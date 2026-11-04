@@ -1,0 +1,287 @@
+# Hausbuch — Architecture Spec
+
+Nov 4, 2026 · Luis
+
+## Purpose and scope
+
+Hausbuch is a single-household landlord workspace, built SaaS-ready, that turns bank statements, invoices and letters into a traceable property ledger, a draft Anlage V each year, and a running profit view through to sale.
+
+**In scope (v1)**
+
+- Properties, units, tenancies and tenants, with a full event history per unit
+- A document vault: upload, photo capture, email-in; typed and linked to what it proves
+- AI-assisted ingestion of bank statements and documents into categorized, split transactions
+- A human review queue for anything the system is not sure about
+- A deterministic Anlage V draft per property and tax year, every figure traceable to sources
+- Performance: actuals plus an adjustable projection to sale, including the 10-year Spekulationsfrist
+- Exports: a field-by-field sheet for typing into ELSTER, plus a yearly CSV + PDF archive
+
+**Non-goals (v1)**
+
+- Filing directly to ELSTER (ERiC integration is a later option, not a launch need)
+- Multi-user property management for third parties (WEG-Verwaltung, Hausverwaltung)
+- Tenant-facing portal, rent collection or payments
+- Betriebskostenabrechnung generation (data is captured so it can be added in phase 4)
+- Tax advice: the app drafts and explains; the user decides. No DATEV export
+
+## Architecture principles
+
+Six rules every component and every agent-written PR is checked against.
+
+1. **AI explains, code calculates.** LLMs extract, classify, match and explain. Every euro figure in a tax or performance view is computed by deterministic, tested code from stored data.
+2. **Every number is traceable.** Each derived figure links to the allocations, transactions and documents it came from. No orphan totals.
+3. **Human-in-the-loop by confidence.** Auto-accept only above a per-category threshold; everything else lands in the review queue with the model's reasoning and a concrete question.
+4. **Append-only history.** Domain changes are recorded as events; corrections are new events, never overwrites. The History timeline and the audit trail are the same data.
+5. **Tax rules are versioned data, not branches in code.** A rule set is keyed by tax year and effective dates, so 2026 stays reproducible after 2027 rules change.
+6. **Originals are immutable.** Uploaded files are stored content-addressed (SHA-256) and never modified; extractions, splits and categories are layers on top.
+
+## Domain model
+
+The core chain is Property → Unit → Tenancy → Tenant; money flows in as Transactions and is split into Allocations, which are what every tax and performance figure sums over.
+
+| Entity | Key fields | Relations | Notes |
+| --- | --- | --- | --- |
+| Owner | name, tax ID ref, marginal rate (user-set), ownership share | owns Properties | Two owners at 50/50, married and filing jointly: one Anlage V carrying both shares |
+| Property | address, type (ETW, EFH, MFH), build year, purchase date, notarized date, price, Nebenkosten, building/land split + split source (Kaufvertrag, BMF Arbeitshilfe, appraisal) | has Units, Loans, Documents | Notarized date starts the Spekulationsfrist; split drives AfA |
+| Unit | label (WE 3), m², rooms, MEA share (WEG) | belongs to Property; has Tenancies | One Unit for an ETW; many for an MFH |
+| Tenancy | start, end, type (unbefristet / Staffel / Index), Kaltmiete, NK-Vorauszahlung, Kaution + account | links Unit and Tenant(s); has RentSchedule | Rent changes are dated RentSchedule rows, never edits |
+| Tenant | name, contact, IBAN (hashed for matching) | in Tenancies | Personal data; see privacy section |
+| Loan | lender, principal, rate, fixed until, follow-up rate (user-set), annuity, schedule | belongs to Property | Schedule splits each payment into interest and Tilgung |
+| Account | bank, IBAN (masked), source (upload / FinTS; aggregator only if SaaS) | has Transactions | Private and property flows share one account in practice |
+| Transaction | booking date, value date, amount, counterparty, IBAN, purpose text, source line hash | from Account; has Allocations | Immutable as imported; dedup on source line hash |
+| Allocation | amount, category, tax treatment, property, unit, tax year, confidence, status | splits one Transaction; links Documents | Sum of allocations = transaction amount (enforced) |
+| Document | file hash, type, extracted fields, dates, amounts | links to any entity | Original immutable; extraction versioned |
+| Rule | matcher (counterparty, IBAN, text pattern), output (category, split template) | created from reviews | How the system learns from your answers |
+| Event | type, entity ref, payload, actor (user / system / AI), timestamp | on every entity | Source of the History timeline and audit trail |
+
+Categories are a fixed taxonomy mapped to Anlage V lines through the tax rule set (next sections), so renaming a category never changes a return.
+
+## Ingestion pipeline
+
+Every input — upload, photo, forwarded mail or bank sync — runs through the same asynchronous pipeline, and only confirmed allocations reach the ledger.
+
+```mermaid
+flowchart TD
+    U[Upload<br/>PDF, CSV, CAMT] --> S
+    P[Photo<br/>mobile capture] --> S
+    E[Email-in<br/>forwarded mail] --> S
+    B[Bank sync<br/>FinTS] --> S
+    S[Store original<br/>immutable · SHA-256 · dedup] --> C[OCR and classify<br/>document type + confidence]
+    C --> X[Extract fields<br/>per-type JSON schema]
+    X --> M[Match and categorize<br/>rules → matchers → documents → LLM]
+    M --> D{Confident?}
+    D -- yes --> A[Auto-confirm<br/>above category threshold]
+    D -- no --> R[Review queue<br/>reasoning + one question]
+    R -- learned rule --> M
+    A --> L[(Ledger<br/>allocations + events)]
+    R -- you confirm --> L
+    L --> T[Anlage V draft]
+    L --> V[Performance view]
+```
+
+The review queue is the only place a person has to act; each answer can become a rule, so the same counterparty is never asked about twice.
+
+- **Idempotent imports:** a statement re-uploaded or overlapping a sync is deduplicated on the source line hash, so imports can be retried safely.
+- **Jobs, not requests:** each stage is a queued job with retries and a dead-letter state shown in the inbox as "couldn't read this".
+- **Re-run on new evidence:** when a missing document arrives (e.g. the Wirtschaftsplan), affected allocations are re-matched and their splits updated as new events.
+
+## AI layer
+
+The AI does four bounded jobs, each with a strict output schema and a fallback to the review queue; it never writes ledger data directly.
+
+| Job | Input | Output (schema) | Model tier | Fallback |
+| --- | --- | --- | --- | --- |
+| Classify document | file + OCR text | type ∈ {statement, invoice, letter, contract, Bescheid, Zinsbescheinigung, Wirtschaftsplan, Hausgeldabrechnung, other}, confidence | small, fast | type = other → review |
+| Extract fields | file + type | per-type JSON: dates, amounts, IBANs, parties, line items, periods | mid | missing required field → review |
+| Match and categorize | transaction + candidate tenancies, loans, documents, rules | allocations[], links[], confidence, reasoning, question? | mid; large only for ambiguous cases | confidence < threshold → review |
+| Explain and ask | allocation + rule context | plain-language reasoning + one concrete question | small | template text |
+
+**Matching order (cheapest first)**
+
+1. Exact rules learned from your past answers (counterparty IBAN + pattern)
+2. Deterministic matchers: tenant IBAN + amount = rent; loan account + amount = annuity, split by schedule
+3. Document match: amount ± 0.01, date window ±10 days, IBAN or invoice number in purpose text
+4. LLM categorization with retrieved context (similar past allocations, the property's open items)
+
+**Guardrails**
+
+- Structured outputs validated against JSON Schema; invalid output is retried once, then sent to review
+- Allocation sums must equal the transaction amount; the validator, not the model, enforces it
+- The model sees only the minimum context: no other tenants' data, IBANs masked except the one being matched
+- Prompt-injection hardening: document text is passed as fenced data; extracted instructions are ignored
+- Every AI decision stores model, prompt version, input hash and output, so a category can be explained and replayed
+- An eval set of real (anonymized) statements and invoices gates prompt and model changes in CI
+
+## Tax rules engine (Anlage V)
+
+A pure function `draft(property, taxYear, ruleSet) → AnlageVDraft` turns confirmed allocations into form lines, each carrying the ids of its sources; nothing here calls a model.
+
+**Shape**
+
+- `RuleSet` = tax year + effective dates + a list of rules + a form mapping (category → Anlage V field for that year's form). Form line numbers move between years, so the mapping is maintained per year, never hard-coded.
+- Each rule is a small tested function over allocations and property facts, returning lines, warnings and open items.
+- Output `AnlageVDraft` = income lines, Werbungskosten lines, result, warnings, missing documents, and a source list per line.
+
+**Rules for v1**
+
+| Rule | Logic | Data it needs |
+| --- | --- | --- |
+| Zuflussprinzip (§11 EStG) | Income and costs in the year paid; recurring payments within 10 days of year end go to the year they belong to | booking and value dates, recurrence flag |
+| AfA linear (§7 Abs. 4) | Rate by completion year: before 1925 2.5%, 1925–2022 2%, from 2023 3%; pro rata by month in the purchase year | build year, transfer-of-ownership month, building share incl. its Nebenkosten, split source |
+| Anschaffungsnahe Herstellungskosten (§6 Abs. 1 Nr. 1a) | Renovation within 3 years of purchase above 15% of building cost (net of VAT) → capitalized into AfA basis, not expensed | renovation allocations, net amounts, purchase date |
+| Erhaltungsaufwand | Deductible in year paid; optional spread over 2–5 years (§82b EStDV) as a user choice | category, user election |
+| Schuldzinsen vs. Tilgung | Interest deductible, repayment not; Geldbeschaffungskosten deductible | loan schedule, Zinsbescheinigung to reconcile |
+| Hausgeld split | Umlagefähig and Verwaltung deductible when paid; Erhaltungsrücklage only when the WEG spends it (from the Hausgeldabrechnung) | Wirtschaftsplan, Hausgeldabrechnung |
+| Umlagen | NK prepayments and settlement back-payments are income; refunds to tenant reduce income | tenancy, settlement documents |
+| Verbilligte Vermietung (§21 Abs. 2) | Rent below 66% of local comparable rent → warning: full deduction at risk | Mietspiegel value entered by user |
+| Private sale (§23) | Sale more than 10 years after the notarized purchase → tax-free; otherwise gain = sale price − selling costs − (cost − AfA claimed) | notarized dates, AfA history |
+
+Each rule ships with fixture tests built from worked examples, reviewed against the official guidance for that year before the year's rule set is published.
+
+**Ownership:** the property is held 50/50 by spouses filing jointly, so the engine produces one Anlage V with both owners' shares and no separate Feststellungserklärung. Unmarried co-owners would need one (ESt 1 B); that is a SaaS-phase extension.
+
+**AfA split source:** when a property is added, the user picks the Kaufvertrag split, the BMF Arbeitshilfe (guided input, result stored), or an appraisal (Gutachten stored as evidence). The engine records which one was used and warns when a contract split gives a building share far above the BMF result, since that is what the Finanzamt tends to question.
+
+The draft is a planning aid; the UI says so on every export.
+
+## Performance and projection
+
+Performance = actuals from confirmed allocations, plus a year-by-year projection to a chosen sale year that reuses the same tax rules, so the forecast and the return never disagree on treatment.
+
+**Actuals (per property, per year)** — rent in (Kaltmiete), cash paid out, tax effect (result × marginal rate), net cash, and principal repaid. Umlagen are shown as pass-through so cash isn't distorted by settlement timing.
+
+**Projection inputs**
+
+- User levers: value growth %, rent growth %, marginal tax rate, sale year
+- From the ledger: loan schedule, AfA basis and rate, current rent, Hausgeld split, purchase and Nebenkosten
+- Defaults the user can edit: upkeep per year, cost inflation, selling costs %
+
+**Per projected year**
+
+1. Rent = current Kaltmiete × (1 + rent growth)^n
+2. Interest and Tilgung from the loan schedule (after the fixed period, a user-set follow-up rate, defaulting to today's rate)
+3. Taxable result = rent − interest − AfA − deductible costs; tax effect = −result × marginal rate
+4. Cash after tax = rent − annuity − costs paid + tax effect
+5. Value = purchase price × (1 + value growth)^n; equity = value − loan balance
+
+**At sale**
+
+```
+Profit = (V_sale − C_sell − T_sale − L_sale) + Σ CF_y − E₀
+```
+
+V = sale value, C = selling costs, T = tax on the sale (zero after the Spekulationsfrist), L = remaining loan, CF = yearly cash after tax, E₀ = initial equity. A profit bridge (appreciation, debt paid down, cash flow, buying costs, selling costs, sale tax) explains where it came from. Annualized return on equity is shown as a simple CAGR; an IRR on dated cash flows is a phase-4 upgrade.
+
+The sale-year lever shows the §23 cliff explicitly: a sale inside 10 years adds the claimed AfA back into the taxable gain.
+
+## System architecture and stack
+
+A modular monolith on one Postgres: one API, one worker pool, no microservices until there is a second user to justify them. It is SaaS-ready from day one: every table carries an owner id that Postgres row-level security enforces.
+
+```mermaid
+flowchart TD
+    subgraph Clients
+        W[Web app<br/>dashboard, inbox, tax, performance]
+        PWA[Mobile PWA<br/>camera capture, quick review]
+    end
+    subgraph API["API · auth and domain services (FastAPI)"]
+        LS[Ledger service<br/>accounts, allocations, events, rules]
+        DS[Documents<br/>vault, signed URLs, extraction versions]
+        TE[Tax engine<br/>pure functions, rule set per year]
+        PE[Projection engine<br/>pure functions, same tax rules]
+    end
+    subgraph Workers["Background workers"]
+        Q[Job queue<br/>Postgres-backed · retries · dead-letter]
+        PW[Pipeline workers<br/>OCR, classify, extract, match, re-match]
+    end
+    subgraph External["External services"]
+        LLM[Claude API · extraction, matching]
+        BANK[Bank · FinTS now, aggregator if SaaS]
+        MAIL[Inbound email · forwarded docs]
+    end
+    subgraph Data["Data · EU region"]
+        PG[(Postgres<br/>domain, events, rule sets)]
+        S3[(Object storage<br/>originals, content-addressed)]
+        SEC[(Secrets manager<br/>bank tokens, API keys)]
+    end
+    W --> API
+    PWA --> API
+    API -- enqueue --> Q
+    Q --> PW
+    PW --> External
+    PW -- write --> Data
+    API -- read / write --> Data
+```
+
+Requests never wait on a model: the API enqueues, workers call the LLM and write results back as pending allocations for the review queue.
+
+| Layer | Choice | Why |
+| --- | --- | --- |
+| Language | Python 3.12 for API, workers and rule engine; TypeScript only in the frontend | python-fints for bank sync; Pydantic models double as LLM output schemas; frontend types generated from OpenAPI |
+| Web + PWA | Next.js with a PWA manifest for capture | One codebase; camera access works in mobile browsers |
+| API | FastAPI with OpenAPI generated from Pydantic models | Agents can code against a typed contract |
+| Database | Postgres 16+, SQLAlchemy + Alembic migrations, row-level security keyed on owner | Relational ledger, JSONB for extractions, events in the same transaction |
+| Queue | Procrastinate (Postgres-backed) on the same Postgres | No extra infrastructure; jobs commit atomically with data |
+| Files | S3-compatible object storage in an EU region | Cheap, immutable originals, signed URLs |
+| AI | Claude API with structured outputs; small model for classify/explain, larger for hard matches | Schema-valid JSON, tiering keeps cost per statement low |
+| Bank | CSV/CAMT/PDF uploads (phase 2), FinTS via python-fints for your own accounts (phase 5); licensed aggregator only if it goes SaaS | Value first; FinTS needs only a free product registration; all behind one BankSource interface |
+| Hosting | EU PaaS or a single VM with managed Postgres | Fits a one-landlord load; scale later |
+| Tests | pytest for rules, golden-file tests for extraction evals, Playwright for flows | Rules and prompts change safely |
+
+## Security, privacy and retention
+
+The app holds bank data, tenant personal data and tax records, so it is built as if it will be audited: EU-only hosting, encryption everywhere, least-privilege access, and explicit retention per document type.
+
+**Security**
+
+- EU region for database, object storage and backups; AI calls through a provider and settings with no training on inputs and EU data processing where offered
+- Encryption at rest (storage + DB) and in transit; IBANs stored masked plus a keyed hash for matching
+- Passkey or TOTP login; short-lived sessions; FinTS PIN and any bank tokens in a secrets manager, never in the DB
+- Object storage private; files served via short-lived signed URLs
+- Audit log = the Event table; admin actions and AI decisions included
+
+**Privacy (GDPR)**
+
+- The landlord is the controller for tenant data; the app documents what it stores and why (lease performance, deposit, Betriebskostenabrechnung)
+- Data minimization in AI prompts (see AI layer); no tenant data in logs
+- Export and delete per person; deletion respects retention holds below
+
+**Retention defaults (user-adjustable)**
+
+| Document class | Default retention | Why |
+| --- | --- | --- |
+| Purchase contract, Kaufpreisaufteilung, loan contract | Life of ownership + 10 years | AfA basis and §23 gain calculation |
+| Bank statements, invoices, Bescheide | 10 years after the tax year | Covers assessment and correction periods with margin |
+| Lease, handover protocol, deposit records | End of tenancy + 4 years | Claims after move-out and deposit settlement |
+| Tenant contact data | End of tenancy + 4 years, then deleted | Minimization |
+
+Retention periods are conservative defaults, not legal advice; confirm with a Steuerberater before enabling auto-delete.
+
+## Delivery phases
+
+Five phases, each shippable on its own; phase 3 is the first one that saves real time at tax season, so phases 1–3 are the MVP.
+
+| Phase | Delivers | Done when |
+| --- | --- | --- |
+| 1 · Vault and ledger | Properties, units, tenancies, tenants, loans; document upload with manual typing and linking; History timeline from events | The current flat, tenancy, loan and all 2026 paperwork are in, and History shows purchase → move-in correctly |
+| 2 · AI inbox | CSV/CAMT/PDF statement import, document classification and extraction, matching pipeline, review queue, learned rules, PWA mobile capture | A month's statement imports with ≥ 80% auto-matched, zero allocation-sum errors, and a repeat answer is never asked twice |
+| 3 · Tax year | Rule set 2026, Anlage V draft with source links, missing-document checklist, 15% limit tracker, ELSTER field sheet and yearly CSV + PDF archive | The 2026 draft reproduces a hand-calculated return to the euro, and every line opens its sources |
+| 4 · Performance | Actuals, projection, profit bridge, §23 sale check, IRR; Betriebskostenabrechnung generator | Projection matches a spreadsheet model for 3 scenarios; one settlement generated from real 2026 data |
+| 5 · Automation | FinTS sync for your own Sparkasse account (pushTAN), email-in address, deadline reminders, rule set 2027 | Statements arrive without manual upload; reminders fire for Grundsteuer and settlement deadlines |
+
+Each phase starts with a short spec PR (schemas, rule fixtures, eval cases) before agents write implementation code.
+
+## Decisions
+
+All open questions were settled on 4 Nov 2026; the sections above reflect them.
+
+| Question | Decision | What it changes |
+| --- | --- | --- |
+| Audience | Personal tool, built SaaS-ready | Owner id + row-level security on every table; no sign-up or billing yet |
+| Bank data | Uploads in phase 2, FinTS for own accounts in phase 5, licensed aggregator only if it goes SaaS | One `BankSource` interface; no provider contract needed for v1 |
+| Ownership | Joint 50/50 with spouse, married, filing jointly | One Anlage V with both shares; no Feststellungserklärung |
+| AfA split | Support all three sources: Kaufvertrag, BMF Arbeitshilfe, appraisal | Property stores the split plus its source and evidence document |
+| Mobile | PWA | One codebase; no app-store releases |
+| Tax adviser | None | ELSTER field sheet is the main export; yearly CSV + PDF archive; no DATEV |
+| Refinancing | User-set follow-up rate, defaulting to today's rate | One extra projection input per loan |
+| Language | Python API, workers and rules; Next.js frontend | FastAPI, Pydantic, python-fints; TypeScript types generated from OpenAPI |
