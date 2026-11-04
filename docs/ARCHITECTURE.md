@@ -176,7 +176,7 @@ The sale-year lever shows the §23 cliff explicitly: a sale inside 10 years adds
 
 ## System architecture and stack
 
-A modular monolith on one Postgres: one API, one worker pool, no microservices until there is a second user to justify them. It is SaaS-ready from day one: every table carries an owner id that Postgres row-level security enforces.
+A modular monolith on one Postgres: one API, one worker pool, no microservices until there is a second user to justify them. It is SaaS-ready from day one: every table carries a workspace id (the household, distinct from the Owner entity) that Postgres row-level security enforces.
 
 ```mermaid
 flowchart TD
@@ -220,7 +220,7 @@ Requests never wait on a model: the API enqueues, workers call the LLM and write
 | Language | Python 3.12 for API, workers and rule engine; TypeScript only in the frontend | python-fints for bank sync; Pydantic models double as LLM output schemas; frontend types generated from OpenAPI |
 | Web + PWA | Next.js with a PWA manifest for capture | One codebase; camera access works in mobile browsers |
 | API | FastAPI with OpenAPI generated from Pydantic models | Agents can code against a typed contract |
-| Database | Postgres 16+, SQLAlchemy + Alembic migrations, row-level security keyed on owner | Relational ledger, JSONB for extractions, events in the same transaction |
+| Database | Postgres 16+, SQLAlchemy + Alembic migrations, row-level security keyed on workspace | Relational ledger, JSONB for extractions, events in the same transaction |
 | Queue | Procrastinate (Postgres-backed) on the same Postgres | No extra infrastructure; jobs commit atomically with data |
 | Files | S3-compatible object storage in an EU region | Cheap, immutable originals, signed URLs |
 | AI | Claude API with structured outputs; small model for classify/explain, larger for hard matches | Schema-valid JSON, tiering keeps cost per statement low |
@@ -277,7 +277,7 @@ All open questions were settled on 4 Nov 2026; the sections above reflect them.
 
 | Question | Decision | What it changes |
 | --- | --- | --- |
-| Audience | Personal tool, built SaaS-ready | Owner id + row-level security on every table; no sign-up or billing yet |
+| Audience | Personal tool, built SaaS-ready | Workspace id + row-level security on every table; no sign-up or billing yet |
 | Bank data | Uploads in phase 2, FinTS for own accounts in phase 5, licensed aggregator only if it goes SaaS | One `BankSource` interface; no provider contract needed for v1 |
 | Ownership | Joint 50/50 with spouse, married, filing jointly | One Anlage V with both shares; no Feststellungserklärung |
 | AfA split | Support all three sources: Kaufvertrag, BMF Arbeitshilfe, appraisal | Property stores the split plus its source and evidence document |

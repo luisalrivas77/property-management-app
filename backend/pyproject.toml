@@ -1,0 +1,40 @@
+[project]
+name = "hausbuch"
+version = "0.1.0"
+description = "Hausbuch: landlord ledger, document vault and Anlage V drafts"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "pydantic>=2.9,<3",
+    "sqlalchemy>=2.0,<2.1",
+    "alembic>=1.13,<2",
+    "psycopg[binary]>=3.2,<4",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pyyaml>=6.0",
+    "ruff>=0.7",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hausbuch"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
+markers = [
+    "db: needs a Postgres database (HAUSBUCH_TEST_DATABASE_URL)",
+    "rule: rule fixture test; skipped until the rule module is implemented",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
