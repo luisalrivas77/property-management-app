@@ -39,7 +39,7 @@ These fill gaps in ARCHITECTURE.md. Each one is a place to push back in review.
 | D2 | Every child references its parent by **composite FK `(workspace_id, id)`**. | RLS hides other workspaces' rows, but a plain FK would still accept another workspace's id. This makes cross-workspace references impossible even if a query bug slips through. |
 | D3 | Closed value sets are **text + CHECK**, mirrored by `StrEnum`s; a test keeps them equal. | Adding a value is one `ALTER`; Postgres enums are awkward to change in migrations. |
 | D4 | **Current-state tables + event log, written in one transaction**; not full event sourcing. Milestone dates (move-in, purchase) change only through a correcting event. | Simple reads, and principle 4 still holds: every change is an event, history is never rewritten. |
-| D5 | **No tenant personal data in event payloads.** `tenant.updated` lists changed field names only. Erasure nulls the tenant's personal columns in place and sets `erased_at`. | Events are append-only and GDPR erasure is not; this keeps both. |
+| D5 | **No tenant personal data in event payloads.** `tenant.updated` lists changed field names only. Erasure nulls the tenant's personal columns in place and sets `erased_at`. Erasure (5 Nov 2026): always refused while a tenancy runs (the data performs the lease); after move-out it waits for the 4-year default unless the tenant asks and the landlord honours it (`on_request`); `tenant.erased` records the basis. The deposit account is the landlord's (Luis's Kautionskonto is in his name), so erasure leaves `tenancy.deposit_*` alone. | Events are append-only and GDPR erasure is not; this keeps both. |
 | D6 | Tenancy "type" is split into **`rent_model`** (fixed / Staffel / Index) and **`fixed_term_until`** (null = unbefristet). | The spec's "unbefristet / Staffel / Index" mixes two independent things: a Staffelmiete can be unbefristet. |
 | D7 | **`notarized_on`** (starts the §23 Spekulationsfrist) and **`purchase_date`** = Übergang von Besitz, Nutzen und Lasten (AfA starts in that month). | The spec names both dates; this pins which is which. |
 | D8 | Nebenkosten are **itemized** (`property_acquisition_cost`). Building/land splits are **append-only candidates**; the property selects one. | Principle 2 (traceable AfA basis), and phase 3 can warn when the contract split is far above the BMF result because both are kept. |
@@ -202,6 +202,9 @@ and reviewed by a reviewer agent; every review finding was fixed or is listed be
 
 ### Pending spec changes (one spec PR, collected from reviews)
 
+Resolved on 5 Nov 2026 and implemented: tenant erasure on request after move-out, and the
+deposit account as the landlord's data (both in D5).
+
 1. **Loan schedule loop limit.** A nonsensical payment (tiny payment, large principal, 0 %)
    loops about 1 s and then fails with an uncoded `ValueError`. Add a period cap and an error
    code.
@@ -213,12 +216,6 @@ and reviewed by a reviewer agent; every review finding was fixed or is listed be
 4. **Retention class for AfA-basis evidence.** Renovation invoices capitalised into the AfA
    basis, and other evidence the §23 gain needs, must be kept for the life of ownership + 10
    years. Today every invoice is a 10-year tax record. Add a subtype.
-5. **Tenant erasure override.** `erase_tenant` refuses while a retention hold applies.
-   Decide whether an explicit, audited override for a GDPR request is wanted; it would need a
-   reason on the `tenant.erased` payload.
-6. **Deposit account as personal data.** Decide whether `tenancy.deposit_*` counts as tenant
-   personal data (a pledged savings book is the tenant's account) and should be erased with
-   the tenant.
-7. **Rate column.** `ScheduleEntry.rate` shows the rate on the period's last day. A
+5. **Rate column.** `ScheduleEntry.rate` shows the rate on the period's last day. A
    split period's interest is blended, and the old/new day counts are not visible on the
    entry (principle 2).

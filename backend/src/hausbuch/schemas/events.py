@@ -119,6 +119,22 @@ class TenantField(StrEnum):
     IBAN = "iban"
 
 
+class ErasureBasis(StrEnum):
+    """Why a tenant's personal data could be erased (decided by Luis, 5 Nov 2026)."""
+
+    RETENTION_EXPIRED = "retention_expired"  # the 4-year default after the last tenancy passed
+    NO_TENANCY = "no_tenancy"  # an applicant who never had a tenancy
+    # The tenant asked (GDPR Art. 17) and the landlord chose to honour it after move-out, inside
+    # the claims period. Never possible while a tenancy runs: the data performs the lease.
+    DATA_SUBJECT_REQUEST = "data_subject_request"
+
+
+class TenantErased(Schema):
+    """Records the basis of an erasure, never any of the erased values."""
+
+    basis: ErasureBasis
+
+
 class TenantUpdated(Schema):
     """Names the fields that changed, never their values."""
 
@@ -262,7 +278,7 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     E.UNIT_UPDATED: EventSpec(Updated, "forbidden", "Unit fields changed"),
     E.TENANT_CREATED: EventSpec(Empty, "forbidden", "Tenant recorded"),
     E.TENANT_UPDATED: EventSpec(TenantUpdated, "forbidden", "Tenant contact data changed"),
-    E.TENANT_ERASED: EventSpec(Empty, "forbidden", "Tenant personal data erased"),
+    E.TENANT_ERASED: EventSpec(TenantErased, "forbidden", "Tenant personal data erased"),
     E.TENANCY_CREATED: EventSpec(TenancyCreated, "optional", "Lease signed (date = signed_on)"),
     E.TENANCY_UPDATED: EventSpec(Updated, "forbidden", "Tenancy fields changed"),
     E.TENANCY_STARTED: EventSpec(Empty, "required", "Move-in"),

@@ -20,7 +20,14 @@ from hausbuch.db.tables import tenant as tenant_table
 from hausbuch.rules.retention import tenant_retention
 from hausbuch.schemas.document import RetentionPolicy, TenantRetentionInput
 from hausbuch.schemas.enums import EntityType, RetentionHold
-from hausbuch.schemas.events import Empty, EventType, TenantField, TenantUpdated
+from hausbuch.schemas.events import (
+    Empty,
+    ErasureBasis,
+    EventType,
+    TenantErased,
+    TenantField,
+    TenantUpdated,
+)
 from hausbuch.schemas.tenancy import Tenant, TenantCreate
 
 from .context import CommandContext
@@ -106,13 +113,24 @@ def update_tenant(
 
 
 def erase_tenant(
-    ctx: CommandContext, tenant_id: UUID, *, policy: RetentionPolicy = DEFAULT_RETENTION_POLICY
+    ctx: CommandContext,
+    tenant_id: UUID,
+    *,
+    on_request: bool = False,
+    policy: RetentionPolicy = DEFAULT_RETENTION_POLICY,
 ) -> Tenant:
     """Null every personal column and set erased_at (GDPR erasure). Idempotent.
 
-    Deletion respects retention holds (ARCHITECTURE.md, privacy): refused with
-    RetentionHoldError while any of the tenant's tenancies runs, or until retain_until has
-    passed. A tenant with no tenancy (an applicant, hold "unlinked") may be erased.
+    Deletion respects retention holds (ARCHITECTURE.md, privacy):
+    - Always refused while any of the tenant's tenancies runs: the data performs the lease,
+      so there is no right to erasure yet.
+    - Otherwise refused until retain_until has passed (end of tenancy + 4 years by default),
+      unless on_request: the tenant asked and the landlord chose to honour it. Keeping data
+      for possible legal claims is allowed but not required, so that choice is the landlord's.
+    - A tenant with no tenancy (an applicant, hold "unlinked") may always be erased.
+
+    The tenant.erased event records the basis, never any erased value. Documents linked to the
+    tenant (e.g. the lease) keep their own retention and are not touched here.
     """
     current = require_row(ctx.conn, tenant_table, EntityType.TENANT, tenant_id, for_update=True)
     if current.erased_at is not None:
@@ -131,10 +149,16 @@ def erase_tenant(
         raise RetentionHoldError(
             f"tenant {tenant_id} has a running tenancy; their data is retained", result=result
         )
-    if result.retain_until is not None and result.retain_until >= ctx.now.date():
+    if on_request:
+        basis = ErasureBasis.DATA_SUBJECT_REQUEST
+    elif result.hold is RetentionHold.UNLINKED:
+        basis = ErasureBasis.NO_TENANCY
+    elif result.retain_until is not None and result.retain_until >= ctx.now.date():
         raise RetentionHoldError(
             f"tenant {tenant_id}'s data is retained until {result.retain_until}", result=result
         )
+    else:
+        basis = ErasureBasis.RETENTION_EXPIRED
     row = ctx.conn.execute(
         update(tenant_table)
         .where(tenant_table.c.id == tenant_id)
@@ -149,7 +173,7 @@ def erase_tenant(
         )
         .returning(*_READ_COLUMNS)
     ).one()
-    append_event(ctx, EventType.TENANT_ERASED, tenant_id, Empty())
+    append_event(ctx, EventType.TENANT_ERASED, tenant_id, TenantErased(basis=basis))
     return _to_tenant(row)
 
 

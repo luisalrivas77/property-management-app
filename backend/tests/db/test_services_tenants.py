@@ -279,6 +279,47 @@ def test_erasure_waits_for_the_retention_period_after_move_out(run, read, fresh_
     assert _events(read, a, old.id)[-1].type is EventType.TENANT_ERASED
 
 
+def test_on_request_erasure_inside_the_claims_period_records_its_basis(run, read, fresh_workspaces):
+    """Luis, 5 Nov 2026: after move-out a tenant's request may be honoured inside the 4-year
+    default (keeping data for claims is allowed, not required); the event records why."""
+    a, _ = fresh_workspaces
+    unit_id = _unit(run, a)
+    moved_out = _create(run, a)
+    _let(run, a, unit_id, moved_out.id, date(2023, 1, 1), date(2024, 12, 31))
+
+    with pytest.raises(RetentionHoldError):  # without the request, the default still holds
+        run(a, erase_tenant, moved_out.id, now=LATER)
+    erased = run(a, erase_tenant, moved_out.id, on_request=True, now=LATER)
+
+    assert erased.erased_at == LATER and erased.full_name is None
+    event = _events(read, a, moved_out.id)[-1]
+    assert event.type is EventType.TENANT_ERASED
+    assert event.payload == {"basis": "data_subject_request"}
+
+
+def test_a_request_cannot_erase_a_tenant_whose_tenancy_runs(run, read, fresh_workspaces):
+    """While the lease runs the data performs the contract: no right to erasure yet."""
+    a, _ = fresh_workspaces
+    anna = _create(run, a)
+    _let(run, a, _unit(run, a), anna.id, date(2024, 7, 1))
+
+    with pytest.raises(RetentionHoldError, match="running tenancy"):
+        run(a, erase_tenant, anna.id, on_request=True, now=LATER)
+    _assert_untouched(read, a, anna)
+
+
+def test_erasure_basis_without_a_request(run, read, fresh_workspaces):
+    a, _ = fresh_workspaces
+    applicant, old = _create(run, a), _create(run, a)
+    _let(run, a, _unit(run, a), old.id, date(2016, 1, 1), date(2020, 6, 30))
+
+    run(a, erase_tenant, applicant.id, now=LATER)
+    run(a, erase_tenant, old.id, now=LATER)
+
+    assert _events(read, a, applicant.id)[-1].payload == {"basis": "no_tenancy"}
+    assert _events(read, a, old.id)[-1].payload == {"basis": "retention_expired"}
+
+
 def test_a_tenant_without_any_tenancy_can_be_erased(run, read, fresh_workspaces):
     a, _ = fresh_workspaces
     applicant = _create(run, a)
