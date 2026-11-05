@@ -27,6 +27,18 @@ from hausbuch.auth import ceremony
 CEREMONY = "__Host-hb_ceremony"
 
 
+def error_kind(response) -> str:
+    """The error string, nothing else in the body. Today the auth routes' HTTPException
+    renders as FastAPI's {"detail": kind}; with chunk 1's handler it is the ErrorResponse
+    envelope {"error": kind, ...}, whose only other allowed field here is request_id."""
+    body = response.json()
+    if "detail" in body:
+        assert set(body) == {"detail"}, body
+        return body["detail"]
+    assert set(body) <= {"error", "request_id"}, body
+    return body["error"]
+
+
 @pytest.fixture
 def enrolled(client, household, authenticator):
     assert enroll(client, household.token, authenticator).status_code == 201
@@ -35,7 +47,7 @@ def enrolled(client, household, authenticator):
 
 def _refused(response) -> None:
     assert response.status_code == 401, response.text
-    assert response.json() == {"detail": "unauthenticated"}  # no reason, no echo
+    assert error_kind(response) == "unauthenticated"  # no reason, no echo
 
 
 def _passkey_count(sql, household) -> int:
@@ -331,7 +343,7 @@ def test_unsafe_auth_requests_need_our_origin(api, enrolled, origin):
         headers=headers,
     )
     assert response.status_code == 403
-    assert response.json() == {"detail": "forbidden_origin"}
+    assert error_kind(response) == "forbidden_origin"
     assert session_cookie(browser) is None
     assert browser.post("/api/auth/login/options", headers=headers).status_code == 403
     assert browser.get("/api/auth/me").status_code == 401  # GET is not origin-checked
