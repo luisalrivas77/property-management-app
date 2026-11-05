@@ -255,6 +255,16 @@ def get_tenancy(conn: Connection, tenancy_id: UUID) -> Tenancy | None:
     return None if row is None else _to_tenancy(conn, row)
 
 
+def list_tenancies(conn: Connection, unit_id: UUID) -> list[Tenancy]:
+    """Every tenancy of the unit, ended ones included, by move-in date."""
+    rows = conn.execute(
+        select(tenancy_table)
+        .where(tenancy_table.c.unit_id == unit_id)
+        .order_by(tenancy_table.c.start_date, tenancy_table.c.id)
+    ).all()
+    return [_to_tenancy(conn, r) for r in rows]
+
+
 # --- Rent schedule -----------------------------------------------------------------
 
 

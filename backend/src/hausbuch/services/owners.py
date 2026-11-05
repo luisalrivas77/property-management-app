@@ -96,6 +96,12 @@ def get_owner(conn: Connection, owner_id: UUID) -> Owner | None:
     return _select_owner(conn, owner_id, for_update=False)
 
 
+def list_owners(conn: Connection) -> list[Owner]:
+    """Every owner of the workspace, by name."""
+    rows = conn.execute(select(owner_table).order_by(owner_table.c.full_name, owner_table.c.id))
+    return [Owner.model_validate(dict(r._mapping)) for r in rows]
+
+
 def _select_owner(conn: Connection, owner_id: UUID, *, for_update: bool) -> Owner | None:
     query = select(owner_table).where(owner_table.c.id == owner_id)
     if for_update:

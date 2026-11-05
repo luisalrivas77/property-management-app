@@ -190,6 +190,18 @@ def get_tenant(conn: Connection, tenant_id: UUID) -> Tenant | None:
     return None if row is None else _to_tenant(row)
 
 
+def list_tenants(conn: Connection) -> list[Tenant]:
+    """Every tenant of the workspace, by name; erased ones (no name, erased_at set) last."""
+    rows = conn.execute(
+        select(*_READ_COLUMNS).order_by(
+            tenant_table.c.full_name.asc().nulls_last(),
+            tenant_table.c.created_at,
+            tenant_table.c.id,
+        )
+    )
+    return [_to_tenant(r) for r in rows]
+
+
 def _validate_contact(contact: dict[str, str | None]) -> None:
     """Check the contact fields with TenantCreate's rules without echoing their values."""
     probe = {"full_name": "x"} | contact

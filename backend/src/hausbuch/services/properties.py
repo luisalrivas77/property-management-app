@@ -206,6 +206,14 @@ def get_property(conn: Connection, property_id: UUID) -> Property | None:
     return None if row is None else _to_property(row)
 
 
+def list_properties(conn: Connection) -> list[Property]:
+    """Every property of the workspace, by label."""
+    rows = conn.execute(
+        select(property_table).order_by(property_table.c.label, property_table.c.id)
+    )
+    return [_to_property(r) for r in rows]
+
+
 # --- Ownership ---------------------------------------------------------------
 
 
