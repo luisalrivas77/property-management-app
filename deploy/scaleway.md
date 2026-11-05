@@ -175,7 +175,14 @@ Then, on the instance's page:
 - Note the public endpoint's **IP and port**: they go into the owner URL.
 - Download the instance's **TLS certificate**. Step 4's `psql` uses it
   (`sslmode=verify-full`), and the owner URL may too (stronger than its `sslmode=require`
-  minimum, see step 8).
+  minimum, see step 8). The CLI prints it as a JSON string; this saves it as a PEM file
+  outside the repository:
+
+  ```bash
+  mkdir -p ~/.hausbuch
+  scw rdb instance get-certificate <instance-id> region=fr-par -o json \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin).rstrip())' > ~/.hausbuch/hausbuch-db.pem
+  ```
 
 Do **not** create users or databases in the console's Users tab. Step 4 creates them in SQL,
 because the console cannot express the grants Hausbuch needs.
@@ -196,14 +203,19 @@ What this does, in plain words:
    (`PUBLIC`) and gives it to the two Hausbuch roles only;
 4. withdraws that temporary right from the admin.
 
-Run it once, from your computer, through the public endpoint, as the admin:
+Run it once, from your computer, through the public endpoint, as the admin. The script
+`deploy/scaleway-db-setup.sql` holds the SQL below and asks for the two role passwords with
+psql's `\password`, which hides what you type and sends only a hash, so no password lands on
+screen, in your shell history or in the server log. Run it in your own terminal (it needs
+typed input):
 
 ```bash
-psql "host=<public-ip> port=<public-port> dbname=rdb user=scwadmin sslmode=verify-full sslrootcert=./<instance-cert>.pem"
+psql "host=<public-ip> port=<public-port> dbname=rdb user=scwadmin sslmode=verify-full sslrootcert=$HOME/.hausbuch/hausbuch-db.pem" \
+  -f deploy/scaleway-db-setup.sql
 ```
 
 (`rdb` is the default database of a Scaleway instance. Any database the admin may connect to
-works.)
+works.) What the script runs, with passwords inline instead of `\password`:
 
 ```sql
 CREATE ROLE hausbuch_owner LOGIN PASSWORD '<owner password>';
@@ -400,11 +412,10 @@ scw rdb acl list instance-id=<instance-id> region=fr-par             # what is a
 If they differ, replace the allow-list with your current address only. In the console:
 the instance → **Allowed IPs** → add `<new-ip>/32`, then delete the old entry. With the
 CLI, one command replaces every rule (check the argument names with
-`scw rdb acl set --help` if it complains):
+`scw rdb acl set --help` if it complains; this form was run with scw 2.65 on 5 Nov 2026):
 
 ```bash
-scw rdb acl set instance-id=<instance-id> region=fr-par \
-  rules.0.ip=<new-ip>/32 rules.0.description="Luis admin"
+scw rdb acl set <new-ip>/32 instance-id=<instance-id> descriptions.0="Luis admin" region=fr-par
 ```
 
 Never add `0.0.0.0/0` back. After a trip, set the list back to your home IP. A connection
