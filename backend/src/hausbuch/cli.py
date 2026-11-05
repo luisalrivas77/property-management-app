@@ -21,6 +21,7 @@ from urllib.parse import urlsplit
 from uuid import UUID
 
 from sqlalchemy import Engine, create_engine, pool
+from sqlalchemy.exc import DBAPIError
 
 from hausbuch.db.session import UnsafeDatabaseRoleError, create_app_engine
 from hausbuch.settings import SettingsError, load_admin_database_url
@@ -33,7 +34,14 @@ def main(argv: Sequence[str] | None = None, environ: Mapping[str, str] = os.envi
     try:
         return args.command(args, environ)
     except (CliError, UnsafeDatabaseRoleError) as exc:
-        print(f"hausbuch {args.name}: {exc}", file=sys.stderr)
+        print(f"hausbuch {args.command_name}: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    except DBAPIError as exc:
+        # Never the DBAPI message or SQLAlchemy's statement/parameters: they carry values
+        # (§10.5). The class name (e.g. InsufficientPrivilege) and constraint are enough.
+        constraint = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
+        detail = type(exc.orig).__name__ + (f", constraint {constraint}" if constraint else "")
+        print(f"hausbuch {args.command_name}: the database refused ({detail})", file=sys.stderr)
         return EXIT_ERROR
 
 
@@ -197,7 +205,7 @@ def _parser() -> argparse.ArgumentParser:
         help="allow a second workspace in the same database (SaaS path, not used in v1)",
     )
     boot.add_argument("--origin", help="web origin for the URL (default: HAUSBUCH_ORIGIN)")
-    boot.set_defaults(command=bootstrap, name="bootstrap")
+    boot.set_defaults(command=bootstrap, command_name="bootstrap")
 
     inv = commands.add_parser(
         "invite", help="a fresh enrollment URL for an existing user (recovery)"
@@ -213,10 +221,10 @@ def _parser() -> argparse.ArgumentParser:
         "--revoke-sessions", action="store_true", help="revoke all of the user's sessions"
     )
     inv.add_argument("--origin", help="web origin for the URL (default: HAUSBUCH_ORIGIN)")
-    inv.set_defaults(command=invite, name="invite")
+    inv.set_defaults(command=invite, command_name="invite")
 
     api = commands.add_parser("openapi", help="print the API's OpenAPI document")
-    api.set_defaults(command=openapi, name="openapi")
+    api.set_defaults(command=openapi, command_name="openapi")
     return parser
 
 
