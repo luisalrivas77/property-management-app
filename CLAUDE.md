@@ -12,6 +12,26 @@ anything, and check every change against its six architecture principles.
 
 @docs/ARCHITECTURE.md
 
+## Phase specs
+
+Each phase's spec (schemas, migrations, rule fixtures, decisions) lives in `docs/phases/`.
+Read the current phase's spec before implementing; rule fixtures are the contract and change
+only in a spec PR, never to make an implementation pass.
+
+- Phase 1, vault and ledger: `docs/phases/phase-1.md`
+
+## Layout and commands
+
+- `backend/`: Python 3.12, managed with uv. Schemas in `src/hausbuch/schemas/`, pure rules in
+  `src/hausbuch/rules/`, hand-written SQL migrations in `migrations/versions/`, YAML rule
+  fixtures in `tests/fixtures/`.
+- From `backend/`:
+  - `uv sync --python 3.12`
+  - `uv run ruff check . && uv run ruff format --check .`
+  - `uv run pytest -q -rs` (db tests need `HAUSBUCH_TEST_ADMIN_URL`, a superuser URL)
+  - `uv run alembic upgrade head` (needs `HAUSBUCH_DATABASE_URL`; run as the schema owner,
+    not a superuser)
+
 ## Working rules
 
 - If a change conflicts with the spec, stop and flag it rather than silently diverging.

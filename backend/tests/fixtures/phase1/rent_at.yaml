@@ -1,0 +1,72 @@
+# Rule fixture: rent in force on a date (hausbuch.rules.rent.rent_at)
+#
+# rent_at(rows, at) -> RentScheduleEntry | None
+# 1. Drop every row that another row supersedes (supersedes_id points at it).
+# 2. Of the remaining rows with effective_from <= at, take the latest effective_from;
+#    on a tie, the latest recorded_at.
+# 3. None if nothing qualifies (before the first row).
+# Tenancy bounds are not checked here; see validation.yaml (rent_schedule.outside_tenancy).
+
+tenancy_id: 0000000e-0000-4000-8000-000000000001
+workspace_id: 0000000a-0000-4000-8000-000000000001
+
+rows:
+  - id: 00000a00-0000-4000-8000-000000000001
+    effective_from: 2024-07-01
+    cold_rent: "950.00"
+    operating_costs_prepayment: "220.00"
+    reason: initial
+    recorded_at: 2026-11-05T09:10:00Z
+  - id: 00000a00-0000-4000-8000-000000000002   # Staffel step, typed as 990 by mistake
+    effective_from: 2025-07-01
+    cold_rent: "990.00"
+    operating_costs_prepayment: "220.00"
+    reason: staffel_step
+    recorded_at: 2026-11-05T09:11:00Z
+  - id: 00000a00-0000-4000-8000-000000000003   # corrects the amount of row 2
+    effective_from: 2025-07-01
+    cold_rent: "1000.00"
+    operating_costs_prepayment: "220.00"
+    reason: correction
+    supersedes_id: 00000a00-0000-4000-8000-000000000002
+    recorded_at: 2026-11-06T08:00:00Z
+  - id: 00000a00-0000-4000-8000-000000000004   # next step, entered with the wrong date
+    effective_from: 2026-01-01
+    cold_rent: "1020.00"
+    operating_costs_prepayment: "240.00"
+    reason: staffel_step
+    recorded_at: 2026-11-06T08:05:00Z
+  - id: 00000a00-0000-4000-8000-000000000005   # corrects the date of row 4
+    effective_from: 2026-07-01
+    cold_rent: "1020.00"
+    operating_costs_prepayment: "240.00"
+    reason: correction
+    supersedes_id: 00000a00-0000-4000-8000-000000000004
+    recorded_at: 2026-11-06T08:06:00Z
+
+cases:
+  - {id: before_first_row, at: 2024-06-30, expect: null}
+  - {id: first_day, at: 2024-07-01, expect: 00000a00-0000-4000-8000-000000000001}
+  - {id: day_before_step, at: 2025-06-30, expect: 00000a00-0000-4000-8000-000000000001}
+  - {id: corrected_amount_wins, at: 2025-07-01, expect: 00000a00-0000-4000-8000-000000000003}
+  - {id: superseded_date_ignored, at: 2026-03-01, expect: 00000a00-0000-4000-8000-000000000003}
+  - {id: corrected_date_applies, at: 2026-07-01, expect: 00000a00-0000-4000-8000-000000000005}
+  - {id: open_ended, at: 2030-01-01, expect: 00000a00-0000-4000-8000-000000000005}
+
+# Tie-break without a correction: same effective_from, later recorded_at wins.
+tie_break:
+  rows:
+    - id: 00000a00-0000-4000-8000-000000000011
+      effective_from: 2024-07-01
+      cold_rent: "950.00"
+      operating_costs_prepayment: "220.00"
+      reason: initial
+      recorded_at: 2026-11-05T09:10:00Z
+    - id: 00000a00-0000-4000-8000-000000000012
+      effective_from: 2024-07-01
+      cold_rent: "960.00"
+      operating_costs_prepayment: "220.00"
+      reason: agreement
+      recorded_at: 2026-11-05T09:20:00Z
+  cases:
+    - {id: later_recorded_wins, at: 2024-08-01, expect: 00000a00-0000-4000-8000-000000000012}

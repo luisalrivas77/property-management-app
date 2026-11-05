@@ -1,0 +1,62 @@
+# Rule fixture: service-layer invariants the database cannot express (hausbuch.rules.validation)
+#
+# Each check returns a list of error codes; empty = valid. Codes are stable API contract.
+#
+# check_ownership_shares(shares: list[Fraction])
+#   ownership.shares_must_sum_to_one   exact rational sum != 1
+# check_tenancy_parties(roles: list[TenancyRole])
+#   tenancy.no_tenant                  empty list
+#   tenancy.exactly_one_primary        zero or several primary
+# check_rent_row(tenancy_start, tenancy_end, effective_from)
+#   rent_schedule.outside_tenancy      effective_from < start, or > end when end is set
+# check_correction(original, correction)   (fields: type, entity_type, entity_id)
+#   event.correction_mismatch          type or entity differs
+
+ownership_shares:
+  - {id: half_half, shares: [{numerator: 1, denominator: 2}, {numerator: 1, denominator: 2}], expect: []}
+  - {id: sole_owner, shares: [{numerator: 1, denominator: 1}], expect: []}
+  - id: thirds_exact
+    shares: [{numerator: 1, denominator: 3}, {numerator: 2, denominator: 3}]
+    expect: []
+  - id: under
+    shares: [{numerator: 1, denominator: 2}, {numerator: 1, denominator: 3}]
+    expect: [ownership.shares_must_sum_to_one]
+  - id: over
+    shares: [{numerator: 2, denominator: 3}, {numerator: 1, denominator: 2}]
+    expect: [ownership.shares_must_sum_to_one]
+
+tenancy_parties:
+  - {id: single, roles: [primary], expect: []}
+  - {id: couple, roles: [primary, co_tenant], expect: []}
+  - {id: empty, roles: [], expect: [tenancy.no_tenant]}
+  - {id: no_primary, roles: [co_tenant, co_tenant], expect: [tenancy.exactly_one_primary]}
+  - {id: two_primaries, roles: [primary, primary], expect: [tenancy.exactly_one_primary]}
+
+rent_rows:
+  - {id: on_start, tenancy_start: 2024-07-01, tenancy_end: null, effective_from: 2024-07-01, expect: []}
+  - {id: open_ended, tenancy_start: 2024-07-01, tenancy_end: null, effective_from: 2031-01-01, expect: []}
+  - id: before_start
+    tenancy_start: 2024-07-01
+    tenancy_end: null
+    effective_from: 2024-06-01
+    expect: [rent_schedule.outside_tenancy]
+  - id: after_end
+    tenancy_start: 2024-07-01
+    tenancy_end: 2026-06-30
+    effective_from: 2026-07-01
+    expect: [rent_schedule.outside_tenancy]
+  - {id: on_end, tenancy_start: 2024-07-01, tenancy_end: 2026-06-30, effective_from: 2026-06-30, expect: []}
+
+corrections:
+  - id: same_type_and_entity
+    original: {type: tenancy.started, entity_type: tenancy, entity_id: 0000000e-0000-4000-8000-000000000001}
+    correction: {type: tenancy.started, entity_type: tenancy, entity_id: 0000000e-0000-4000-8000-000000000001}
+    expect: []
+  - id: different_type
+    original: {type: tenancy.started, entity_type: tenancy, entity_id: 0000000e-0000-4000-8000-000000000001}
+    correction: {type: tenancy.ended, entity_type: tenancy, entity_id: 0000000e-0000-4000-8000-000000000001}
+    expect: [event.correction_mismatch]
+  - id: different_entity
+    original: {type: tenancy.started, entity_type: tenancy, entity_id: 0000000e-0000-4000-8000-000000000001}
+    correction: {type: tenancy.started, entity_type: tenancy, entity_id: 0000000e-0000-4000-8000-000000000002}
+    expect: [event.correction_mismatch]

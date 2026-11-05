@@ -1,0 +1,101 @@
+# Rule fixture: retention (hausbuch.rules.retention)
+#
+# document_retention(input, policy) -> RetentionResult
+# tenant_retention(input, policy)   -> RetentionResult   (class tenant_contact)
+#
+# Class from (subtype, type), subtype first:
+#   purchase_contract, price_split_evidence, appraisal, loan_contract -> ownership_records
+#   lease, handover_protocol, deposit_record                          -> tenancy_records
+#   any other typed document                                          -> tax_records
+#   untyped (type null)                                               -> hold: untyped
+# Dates: every period ends on 31 Dec of (base year + N years). This is the conservative reading
+#   (never earlier than "date + N years") and matches §147 AO for tax records.
+#   ownership_records: base = latest ownership_end_dates; any null -> hold while_owned
+#   tenancy_records / tenant_contact: base = latest tenancy_end_dates; any null -> tenancy_active
+#   either list empty -> hold unlinked
+#   tax_records: base = tax_year, else year(document_date), else year(received_on)
+# Policy defaults: ownership 10, tax 10, tenancy 4, tenant contact 4 (user-adjustable).
+
+default_policy: {}
+
+cases:
+  - id: statement_by_tax_year
+    input: {type: statement, tax_year: 2026, document_date: 2027-01-03, received_on: 2027-01-05}
+    expect: {retention_class: tax_records, retain_until: 2036-12-31}
+
+  - id: invoice_falls_back_to_document_date
+    input: {type: invoice, document_date: 2026-03-14, received_on: 2026-11-05}
+    expect: {retention_class: tax_records, retain_until: 2036-12-31}
+
+  - id: letter_falls_back_to_received_on
+    input: {type: letter, received_on: 2026-11-05}
+    expect: {retention_class: tax_records, retain_until: 2036-12-31}
+
+  - id: untyped_is_held
+    input: {type: null, received_on: 2026-11-05}
+    expect: {retention_class: null, hold: untyped}
+
+  - id: purchase_contract_while_owned
+    input:
+      type: contract
+      subtype: purchase_contract
+      document_date: 2024-03-15
+      received_on: 2026-11-05
+      ownership_end_dates: [null]
+    expect: {retention_class: ownership_records, hold: while_owned}
+
+  - id: purchase_contract_after_sale
+    input:
+      type: contract
+      subtype: purchase_contract
+      received_on: 2026-11-05
+      ownership_end_dates: [2035-06-30]
+    expect: {retention_class: ownership_records, retain_until: 2045-12-31}
+
+  - id: appraisal_not_linked
+    input: {type: other, subtype: appraisal, received_on: 2026-11-05}
+    expect: {retention_class: ownership_records, hold: unlinked}
+
+  - id: lease_running
+    input:
+      type: contract
+      subtype: lease
+      received_on: 2026-11-05
+      tenancy_end_dates: [null]
+    expect: {retention_class: tenancy_records, hold: tenancy_active}
+
+  - id: handover_protocol_after_move_out
+    input:
+      type: other
+      subtype: handover_protocol
+      received_on: 2026-11-05
+      tenancy_end_dates: [2028-09-30]
+    expect: {retention_class: tenancy_records, retain_until: 2032-12-31}
+
+  - id: subtype_wins_over_type
+    description: a Kautionskonto statement is a deposit record, not a tax record
+    input:
+      type: statement
+      subtype: deposit_record
+      tax_year: 2026
+      received_on: 2026-11-05
+      tenancy_end_dates: [2027-12-31]
+    expect: {retention_class: tenancy_records, retain_until: 2031-12-31}
+
+  - id: custom_policy
+    policy: {tax_records_years: 12}
+    input: {type: bescheid, tax_year: 2026, received_on: 2027-08-01}
+    expect: {retention_class: tax_records, retain_until: 2038-12-31}
+
+tenant_cases:
+  - id: active_tenancy
+    input: {tenancy_end_dates: [2025-06-30, null]}
+    expect: {retention_class: tenant_contact, hold: tenancy_active}
+
+  - id: latest_end_counts
+    input: {tenancy_end_dates: [2025-06-30, 2027-03-31]}
+    expect: {retention_class: tenant_contact, retain_until: 2031-12-31}
+
+  - id: never_had_a_tenancy
+    input: {tenancy_end_dates: []}
+    expect: {retention_class: tenant_contact, hold: unlinked}

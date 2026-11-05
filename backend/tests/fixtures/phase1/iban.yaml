@@ -1,0 +1,54 @@
+# Rule fixture: IBAN handling (hausbuch.rules.iban)
+#
+# normalize_iban(raw) -> str      strip whitespace, upper-case, check length for the country
+#                                 (DE = 22) and the ISO 13616 mod-97 checksum; else InvalidIban
+# mask_iban(normalized) -> str    country + check digits + " **** " + last four
+# iban_hmac(normalized, key)      HMAC-SHA256 over the normalized IBAN as ASCII; 32 bytes
+#
+# The key below is a test key. Production keys live in the secrets manager, never in Postgres.
+
+hmac_key_utf8: hausbuch-test-key-not-a-secret
+
+cases:
+  - id: de_compact
+    raw: DE89370400440532013000
+    expect:
+      normalized: DE89370400440532013000
+      masked: DE89 **** 3000
+      hmac_hex: d66820547afb2d96a816fbd93061834dd041a2e00f158ab7c6edc3381e0a7728
+
+  - id: de_spaced_lower_case_matches_compact
+    raw: de89 3704 0044 0532 0130 00
+    expect:
+      normalized: DE89370400440532013000
+      masked: DE89 **** 3000
+      hmac_hex: d66820547afb2d96a816fbd93061834dd041a2e00f158ab7c6edc3381e0a7728
+
+  - id: at
+    raw: AT611904300234573201
+    expect:
+      normalized: AT611904300234573201
+      masked: AT61 **** 3201
+      hmac_hex: ce7c415c7dad7c95fa1342c1e4f0adeb1cb5d7c76c9b74fc78015129b8611c32
+
+  - id: gb_alphanumeric_bban
+    raw: GB82WEST12345698765432
+    expect:
+      normalized: GB82WEST12345698765432
+      masked: GB82 **** 5432
+      hmac_hex: fded149d178bfb9a8df12a7fc2c43d2afa24ad44d4334af0eedb9afa0ddea983
+
+  - id: bad_checksum
+    raw: DE89370400440532013001
+    expect:
+      error: iban.bad_checksum
+
+  - id: wrong_length_for_country
+    raw: DE8937040044053201300
+    expect:
+      error: iban.bad_length
+
+  - id: not_an_iban
+    raw: "1234 5678"
+    expect:
+      error: iban.malformed
