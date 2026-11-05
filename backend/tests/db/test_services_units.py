@@ -113,10 +113,14 @@ def test_domain_errors_write_nothing(run, read, fresh_workspaces):
     flat = run(a, create_unit, _flat(prop.id), now=CREATED_AT)
     other = run(a, create_unit, _flat(prop.id).model_copy(update={"label": "WE 4"}))
 
-    with pytest.raises(ConflictError, match="WE 3"):
-        run(a, create_unit, _flat(prop.id))
-    with pytest.raises(ConflictError, match="WE 3"):
-        run(a, update_unit, other.id, label="WE 3")
+    for attempt in (
+        lambda: run(a, create_unit, _flat(prop.id)),
+        lambda: run(a, update_unit, other.id, label="WE 3"),
+    ):
+        with pytest.raises(ConflictError, match="already has a unit with that label") as excinfo:
+            attempt()
+        assert excinfo.value.constraint == "unit_property_id_label_key"
+        assert "WE 3" not in str(excinfo.value)  # never the submitted value (§3.5)
     with pytest.raises(NotFoundError, match="property"):
         run(a, create_unit, _flat(uuid.uuid4()))
     with pytest.raises(ValidationError):

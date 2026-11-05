@@ -166,6 +166,7 @@ def test_unit_label_conflict_and_patch(client_a):
     assert response.status_code == 409
     body = response.json()
     assert (body["error"], body["constraint"]) == ("conflict", "unit_property_id_label_key")
+    assert "WE 3" not in response.text
 
     patched = ok(client_a.patch(f"/api/units/{unit['id']}", json={"rooms": None, "label": "WE 3a"}))
     assert (patched["rooms"], patched["label"], patched["mea"]) == (None, "WE 3a", unit["mea"])
