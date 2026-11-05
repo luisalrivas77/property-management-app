@@ -495,6 +495,24 @@ def test_correct_move_in_leaves_rows_on_other_dates(run, read, flat):
     assert read(a, list_rent_schedule, tenancy.id) == after
 
 
+def test_correct_move_in_later_than_a_second_row_is_refused_whole(run, read, flat):
+    """Old 15.07, a step on 01.08, move-in corrected to 02.08: the first row would move, but
+    the step would fall before the tenancy, so the whole correction is refused and nothing is
+    written (from the review of the move-in coupling; guards against computing the moving
+    rows too broadly)."""
+    a, _, unit, tenants = flat
+    tenancy = _create(run, a, _lease(unit, tenants, start_date=date(2024, 7, 15)))
+    _step(run, a, tenancy.id, date(2024, 8, 1), "1000.00")
+    rows, events = read(a, list_rent_schedule, tenancy.id), _events(read, a, tenancy.id)
+    with pytest.raises(RuleViolationError) as raised:
+        run(a, correct_move_in, tenancy.id, date(2024, 8, 2))
+    assert raised.value.code == RENT_OUTSIDE_TENANCY
+    assert "2024-08-01" in str(raised.value) and "2024-07-15" not in str(raised.value)
+    assert read(a, get_tenancy, tenancy.id).start_date == date(2024, 7, 15)
+    assert read(a, list_rent_schedule, tenancy.id) == rows
+    assert _events(read, a, tenancy.id) == events
+
+
 def test_correct_move_in_moves_an_already_corrected_first_row(run, read, flat):
     """The first row was corrected once (rent 950 -> 960); the move-in correction supersedes
     that correction, the latest row of its chain, and corrects the chain's latest event."""

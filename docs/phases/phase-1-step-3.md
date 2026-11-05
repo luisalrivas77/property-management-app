@@ -2,13 +2,14 @@
 
 Nov 5, 2026 · design by the architect agent; coder chunks are in §11.
 
-**Status (5 Nov 2026):** chunks **0, 1, 2, 3a and 5** are merged to `main` (#6, #7). Chunks
-**3b** (domain screens, plus the invite-member and rename-passkey parts of `/settings`) and **4a**
-(deploy artefacts: both images, `deploy/scaleway.md`, `scripts/dev-db.sh`, the `images.yml`
-workflow) are built and on the working branch. **To do:**
-- chunk 4b: Playwright e2e in CI;
-- the fixes in §10.8;
-- the decided follow-ups in §10.8 (admin commands from Luis's computer; move-in moves the first rent row).
+**Status (5 Nov 2026): built.** All chunks are done and reviewed:
+- 0, 1, 2, 3a and 5 merged to `main` in #6 and #7;
+- 3b, 4a, 4b and the §10.8 follow-ups on the working branch for the closing PR.
+
+The six Playwright e2e flows pass against the merged branch. Left for phase 1 step 4, the
+first deploy and real data:
+- the Q13/Q15/Q16 measurements in `deploy/scaleway.md`;
+- the open question in §10.8 item 8.
 
 **Done when** (phase 1): Luis enters his real flat (ETW), its tenancy, its loan and all 2026
 paperwork through the browser, and History shows purchase → move-in correctly. This step
@@ -952,6 +953,13 @@ Chunk 3b found these API gaps; none of them blocked a screen:
    when it opens inline. The original download now reads its media type from
    `document_file` (new `document_media_type`), the same source as the detail. The tenancy
    page's rent schedule reloads after a move-in correction, since that moves the first row.
+
+8. **Open question (not a defect; for Luis, later):** two rent rows in force on the **same**
+   date. `rent_at.yaml`'s tie-break case treats that state as legitimate. A move-in correction
+   there is refused, which is the correct guard, but no command can retire one of the two rows,
+   so the state is a dead end. A supported way out, e.g. a deterministic order when moving
+   both, would touch the `rent_at` tie-break contract, so it belongs in a spec PR. It is rare:
+   it needs an initial rent and a rent agreement entered for the same day.
 
 ## 11. Delivery plan: chunks, ownership, order
 

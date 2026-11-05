@@ -194,13 +194,13 @@ and reviewed by a reviewer agent; every review finding was fixed or is listed be
      links, and retention dates.
    - **Done criterion:** History built through the services matches all four `timeline.yaml`
      cases (`tests/db/test_history.py`).
-3. **IN PROGRESS: API and first screens**, designed in `docs/phases/phase-1-step-3.md`. The API,
-   passkey sign-in, the S3 store, the frontend scaffold, the domain screens and the deploy
-   artefacts are built; e2e tests, the step 3 §10.8 fixes and the first deploy remain. Original note: FastAPI endpoints; passkey sign-in (decided 5 Nov 2026);
+3. **DONE: API and first screens**, designed in `docs/phases/phase-1-step-3.md`: the API, passkey
+   sign-in, the S3 store, all screens, deploy artefacts and Playwright e2e in CI, all reviewed. Original note: FastAPI endpoints; passkey sign-in (decided 5 Nov 2026);
    an S3 store behind `BlobStore`; the Next.js screens. The API's error handler must build
    422 responses with `errors(include_input=False)`: `hide_input_in_errors` (spec amendment 1)
    only masks the error text, not the structured errors, which can carry IBANs and tax numbers.
-4. **TODO: real data.** Enter the real flat, tenancy, loan and 2026 paperwork; check History.
+4. **TODO: deploy and real data.** Follow `deploy/scaleway.md`, record its first-deploy checks, then
+   enter the real flat, tenancy, loan and 2026 paperwork; check History.
    Compare the loan schedule with the bank's Tilgungsplan (open question 3).
 
 ### Known gaps (not yet built)
