@@ -250,6 +250,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/properties/{property_id}/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Property Documents
+         * @description The documents linked to the property or to one of its units, those units' tenancies
+         *     or its loans, each once with every matching link in `via`. Unlike the tenancy, loan and
+         *     tenant `/documents` reads, this rolls up children; owner and tenant links are not.
+         */
+        get: operations["property_documents_api_properties__property_id__documents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/units": {
         parameters: {
             query?: never;
@@ -294,6 +316,28 @@ export interface paths {
         };
         /** Unit Tenancies */
         get: operations["unit_tenancies_api_units__unit_id__tenancies_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/units/{unit_id}/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Unit Documents
+         * @description The documents linked to the unit or to one of its tenancies, each once with every
+         *     matching link in `via`. Unlike the tenancy, loan and tenant `/documents` reads, this rolls
+         *     up children; tenant links are not.
+         */
+        get: operations["unit_documents_api_units__unit_id__documents_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1665,6 +1709,18 @@ export interface components {
          * @enum {string}
          */
         LinkTarget: "owner" | "property" | "unit" | "tenant" | "tenancy" | "loan";
+        /**
+         * LinkTargetRef
+         * @description One entity a document is linked to (a document_link row without its own id).
+         */
+        LinkTargetRef: {
+            target_type: components["schemas"]["LinkTarget"];
+            /**
+             * Target Id
+             * Format: uuid
+             */
+            target_id: string;
+        };
         /** Loan */
         Loan: {
             /**
@@ -2133,6 +2189,16 @@ export interface components {
             address?: components["schemas"]["Address"];
             /** Build Year */
             build_year?: number;
+        };
+        /**
+         * RelatedDocument
+         * @description GET /properties/{id}/documents and GET /units/{id}/documents: a document linked to the
+         *     target or to one of its children (units, tenancies, loans), with every such link.
+         */
+        RelatedDocument: {
+            document: components["schemas"]["Document"];
+            /** Via */
+            via: components["schemas"]["LinkTargetRef"][];
         };
         /**
          * RentChangeReason
@@ -3222,6 +3288,37 @@ export interface operations {
             };
         };
     };
+    property_documents_api_properties__property_id__documents_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                property_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RelatedDocument"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     unit_create_api_units_post: {
         parameters: {
             query?: never;
@@ -3339,6 +3436,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Tenancy"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    unit_documents_api_units__unit_id__documents_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                unit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RelatedDocument"][];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
