@@ -12,7 +12,9 @@ Redaction rules, enforced here and tested by tests/api/test_no_echo.py:
   pydantic.ValidationError raised inside a service is read with
   errors(include_input=False, include_url=False, include_context=False) and every entry is
   validated as a FieldError, which forbids extra keys: a leaked key fails loudly instead of
-  reaching the client.
+  reaching the client. Pydantic's `msg` names the constraint, except for `uuid_parsing`,
+  whose text can quote an input character ("invalid character: found `I` at 0"): that one
+  is replaced with fixed text.
 - A DBAPI error's text contains the offending values (a duplicate email names the email).
   Neither its text nor any traceback is returned or logged: the log gets its class, its
   constraint name and SQLSTATE, and the hausbuch frame it surfaced in.
@@ -53,6 +55,8 @@ TENANCY_OVERLAP = "tenancy.overlap"
 # The keys a 422 entry may carry (FieldError). Everything else in FastAPI's error dicts
 # (input, ctx, url) is dropped.
 _FIELD_ERROR_KEYS = ("type", "loc", "msg")
+# Messages that may quote the input, by error type, and the fixed text sent instead.
+_FIXED_MSGS = {"uuid_parsing": "Input should be a valid UUID"}
 
 
 class ApiError(Exception):
@@ -114,13 +118,13 @@ def _classify(exc: BaseException) -> Rendered:
             return Rendered(exc.status, body, dict(exc.headers))
         case RequestValidationError():
             detail = [
-                FieldError.model_validate({k: e[k] for k in _FIELD_ERROR_KEYS})
+                FieldError.model_validate(_neutral({k: e[k] for k in _FIELD_ERROR_KEYS}))
                 for e in exc.errors()
             ]
             return Rendered(422, ErrorResponse(error=kind.VALIDATION, detail=detail))
         case ValidationError():
             detail = [
-                FieldError.model_validate(e)
+                FieldError.model_validate(_neutral(e))
                 for e in exc.errors(include_input=False, include_url=False, include_context=False)
             ]
             return Rendered(422, ErrorResponse(error=kind.VALIDATION, detail=detail))
@@ -181,6 +185,12 @@ def _classify(exc: BaseException) -> Rendered:
             return _http_exception(exc)
         case _:
             return Rendered(500, ErrorResponse(error=kind.INTERNAL))
+
+
+def _neutral(error: dict[str, Any]) -> dict[str, Any]:
+    """The error with a fixed `msg` when pydantic's own may quote the input (§3.6)."""
+    fixed = _FIXED_MSGS.get(error.get("type"))
+    return error if fixed is None else error | {"msg": fixed}
 
 
 # Framework HTTPExceptions: our own 401, the router's 404/405, the body parser's 400, the

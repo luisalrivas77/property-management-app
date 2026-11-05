@@ -30,7 +30,7 @@ from sqlalchemy import insert
 from hausbuch.api.errors import render
 from hausbuch.api.logging import REQUEST_LOGGER, JsonFormatter
 from hausbuch.db.tables import app_user
-from hausbuch.schemas.property import OwnerCreate
+from hausbuch.schemas.property import OwnerCreate, UnitCreate
 from hausbuch.services.events import InvalidEventError
 
 pytestmark = pytest.mark.db
@@ -117,6 +117,32 @@ def test_an_iban_too_long_for_the_schema_is_not_echoed(client_a, logs):
     assert response.status_code == 422
     assert response.json()["detail"][0]["loc"] == ["body", "iban"]
     assert_not_echoed(response, logs, TOO_LONG_IBAN)
+
+
+FIXED_UUID_MSG = "Input should be a valid UUID"
+
+
+def test_a_malformed_uuid_gets_a_fixed_message(client_a, logs):
+    """Pydantic's uuid_parsing msg quotes an input character ("invalid character: found `I`
+    at 0"); the handler replaces it with fixed text."""
+    response = client_a.post(
+        "/api/units",
+        json={"property_id": LABELLED_TAX_NUMBER, "label": "WE 4", "floor_area_m2": "50.00"},
+    )
+    assert response.status_code == 422
+    [error] = response.json()["detail"]
+    assert error == {"loc": ["body", "property_id"], "msg": FIXED_UUID_MSG, "type": "uuid_parsing"}
+    assert_not_echoed(response, logs, LABELLED_TAX_NUMBER, TAX_NUMBER)
+
+
+def test_render_gives_a_malformed_uuid_a_fixed_message():
+    """The same for a pydantic.ValidationError raised inside a service."""
+    with pytest.raises(ValidationError) as excinfo:
+        UnitCreate.model_validate(
+            {"property_id": LABELLED_TAX_NUMBER, "label": "WE 4", "floor_area_m2": "50.00"}
+        )
+    [error] = render(excinfo.value, uuid4()).body.detail
+    assert (error.type, error.msg) == ("uuid_parsing", FIXED_UUID_MSG)
 
 
 # --- 422 rule_violation: protect_iban refuses the check digits -------------------------
