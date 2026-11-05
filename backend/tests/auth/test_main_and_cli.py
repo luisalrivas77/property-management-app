@@ -15,7 +15,20 @@ import uuid
 import psycopg
 import pytest
 from authenticator import SoftAuthenticator
-from conftest import ADMIN_URL, APP, ORIGIN, OWNER, RP_ID, db, enroll, new_client, role_url
+
+# Module-level only: inside a test body, `conftest` may already be tests/db's module.
+from conftest import (
+    ADMIN_URL,
+    APP,
+    ORIGIN,
+    OWNER,
+    RP_ID,
+    db,
+    enroll,
+    make_settings,
+    new_client,
+    role_url,
+)
 from psycopg import sql as pgsql
 
 from hausbuch import cli
@@ -178,8 +191,6 @@ def test_bootstrap_as_the_owner_then_enroll(dev_db, capsys, tmp_path):
     assert "luis@example.org" not in out.lower()  # no email in the output
 
     # The link works against an API on the same database, as the app role.
-    from conftest import make_settings
-
     engine = db.make_engine(dev_db, APP)
     try:
         app = _build(make_settings(), engine, tmp_path)

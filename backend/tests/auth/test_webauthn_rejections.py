@@ -8,7 +8,18 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from authenticator import AT, BE, BS, UP, UV, SoftAuthenticator
-from conftest import ORIGIN, RP_ID, enroll, login, new_client, put_cookie, session_cookie
+
+# Module-level only: inside a test body, `conftest` may already be tests/db's module.
+from conftest import (
+    ORIGIN,
+    RP_ID,
+    enroll,
+    login,
+    make_settings,
+    new_client,
+    put_cookie,
+    session_cookie,
+)
 
 from hausbuch.api.routes import auth as auth_routes
 from hausbuch.auth import ceremony
@@ -98,8 +109,6 @@ def test_packed_attestation_would_verify_but_is_not_accepted(monkeypatch, househ
 
 
 def _settings():
-    from conftest import make_settings
-
     return make_settings()
 
 
