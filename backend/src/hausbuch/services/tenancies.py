@@ -25,7 +25,6 @@ from hausbuch.db.tables import tenant as tenant_table
 from hausbuch.db.tables import unit as unit_table
 from hausbuch.rules.rent import rent_at
 from hausbuch.rules.validation import RENT_OUTSIDE_TENANCY, check_rent_row, check_tenancy_parties
-from hausbuch.schemas.common import NonNegativeMoney, Schema
 from hausbuch.schemas.enums import EntityType, RentChangeReason, TenancyRole
 from hausbuch.schemas.events import (
     DepositReceived,
@@ -36,7 +35,8 @@ from hausbuch.schemas.events import (
     RentScheduled,
     TenancyCreated,
 )
-from hausbuch.schemas.tenancy import (
+from hausbuch.schemas.tenancy import (  # InitialRent is re-exported: it used to live here
+    InitialRent,
     RentScheduleCreate,
     RentScheduleEntry,
     Tenancy,
@@ -61,15 +61,6 @@ from .owners import UNSET, Unset
 _OVERLAP = "tenancy_no_overlap"
 _SUPERSEDED_ONCE = "rent_schedule_supersedes_id_key"
 _DATE_FIELDS = set(TenancyCreate.model_fields) - {"deposit_iban"}
-
-
-class InitialRent(Schema):
-    """The first rent row, recorded with the tenancy (reason 'initial')."""
-
-    cold_rent: NonNegativeMoney
-    operating_costs_prepayment: NonNegativeMoney = Decimal("0")
-    effective_from: date | None = None  # default: the tenancy's start_date
-    document_id: UUID | None = None
 
 
 def create_tenancy(

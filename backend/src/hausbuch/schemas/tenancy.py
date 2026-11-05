@@ -116,3 +116,12 @@ class RentScheduleEntry(RentScheduleCreate):
     id: UUID
     workspace_id: UUID
     recorded_at: datetime
+
+
+class InitialRent(Schema):
+    """The first rent row, recorded with the tenancy (reason 'initial')."""
+
+    cold_rent: NonNegativeMoney
+    operating_costs_prepayment: NonNegativeMoney = Decimal("0")
+    effective_from: date | None = None  # default: the tenancy's start_date
+    document_id: UUID | None = None
