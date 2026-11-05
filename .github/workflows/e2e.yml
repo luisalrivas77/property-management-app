@@ -1,0 +1,70 @@
+name: e2e
+
+# Playwright end-to-end tests (docs/phases/phase-1-step-3.md §10.3, §10.4): Chromium against
+# the real API and the web app's standalone server, on a throwaway Postgres 16 database set up
+# like production by scripts/e2e-db.sh.
+on:
+  pull_request:
+    paths:
+      - "frontend/**"
+      - "backend/**"
+      - "scripts/**"
+      - ".github/workflows/e2e.yml"
+
+jobs:
+  playwright:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # scripts/e2e-db.sh's admin connection (a superuser here; the steps work without one).
+      HAUSBUCH_DEV_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Backend dependencies
+        working-directory: backend
+        run: uv sync --locked --python 3.12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Chromium for Playwright
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: E2E database
+        run: scripts/e2e-db.sh up
+      - name: Playwright tests
+        working-directory: frontend
+        env:
+          HAUSBUCH_E2E_ARTIFACTS: ${{ runner.temp }}/e2e
+        run: npx playwright test
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            ${{ runner.temp }}/e2e/report
+            ${{ runner.temp }}/e2e/results
+          retention-days: 14
+      - name: Drop the e2e database
+        if: always()
+        run: scripts/e2e-db.sh down
