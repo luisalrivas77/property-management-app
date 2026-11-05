@@ -73,10 +73,16 @@ def test_put_refuses_different_bytes_under_an_existing_key(store):
     assert store.get(KEY) == DATA
 
 
-def test_stored_file_is_read_only_and_no_temp_file_is_left(store):
+def _mode(path) -> int:
+    return stat.S_IMODE(path.stat().st_mode)
+
+
+def test_stored_file_is_private_read_only_and_no_temp_file_is_left(store):
     store.put(KEY, DATA, "application/pdf")
     path = store.root / KEY
-    assert stat.S_IMODE(path.stat().st_mode) & 0o222 == 0
+    assert _mode(path) == 0o400
+    workspace_dir, sha_dir = store.root / str(WS), store.root / str(WS) / "sha256"
+    assert [_mode(d) for d in (store.root, workspace_dir, sha_dir)] == [0o700] * 3
     assert sorted(p.name for p in path.parent.iterdir()) == [path.name]
 
 

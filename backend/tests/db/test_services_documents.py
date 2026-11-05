@@ -20,7 +20,7 @@ from sqlalchemy.exc import DBAPIError
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import document_extraction as extraction_table
 from hausbuch.db.tables import document_file as file_table
-from hausbuch.schemas.document import DocumentTyping, ManualDocumentFields, RetentionPolicy
+from hausbuch.schemas.document import DocumentTyping, ManualDocumentFields
 from hausbuch.schemas.enums import (
     ActorType,
     DocumentSource,
@@ -241,6 +241,79 @@ def test_same_bytes_in_another_workspace_is_a_separate_document(app_engine, work
     assert blob_store.exists(blob_key(a, in_a.file_sha256))
     assert blob_store.exists(blob_key(b, in_b.file_sha256))
     assert len(_events(app_engine, a, in_a.id)) == len(_events(app_engine, b, in_b.id)) == 1
+
+
+def test_re_upload_restores_a_lost_blob(app_engine, workspaces, blob_store):
+    a, _ = workspaces
+    data = _bytes()
+    first = _upload(app_engine, blob_store, a, data)
+    key = blob_key(a, first.file_sha256)
+    blob_store.delete(key)  # lost out of band
+
+    again = _upload(app_engine, blob_store, a, data)
+
+    assert again.id == first.id
+    assert blob_store.exists(key)
+    with workspace_transaction(app_engine, a) as conn:
+        assert read_original(conn, blob_store, first.id) == data
+    assert len(_events(app_engine, a, first.id)) == 1
+
+
+def test_re_upload_fails_when_other_bytes_sit_under_the_key(app_engine, workspaces, blob_store):
+    a, _ = workspaces
+    data = _bytes()
+    first = _upload(app_engine, blob_store, a, data)
+    key = blob_key(a, first.file_sha256)
+    blob_store.delete(key)
+    blob_store.put(key, b"forged", PDF)
+
+    with pytest.raises(BlobConflictError):
+        _upload(app_engine, blob_store, a, data)
+    assert blob_store.get(key) == b"forged"  # never overwritten; read_original will flag it
+    with workspace_transaction(app_engine, a) as conn, pytest.raises(OriginalIntegrityError):
+        read_original(conn, blob_store, first.id)
+
+
+def test_concurrent_uploads_of_the_same_bytes_give_one_document(app_engine, workspaces, blob_store):
+    a, _ = workspaces
+    data = _bytes()
+    sha = hashlib.sha256(data).digest()
+    results: list = []
+
+    def second_upload():
+        try:
+            with workspace_transaction(app_engine, a) as conn:
+                conn.execute(text("SET LOCAL lock_timeout = '10s'"))
+                ctx = new_command(conn, a, ACTOR, now=LATER)
+                results.append(
+                    upload_document(
+                        ctx, blob_store, data, media_type=PDF, source=DocumentSource.EMAIL
+                    )
+                )
+        except BaseException as exc:
+            results.append(exc)
+
+    with workspace_transaction(app_engine, a) as conn:
+        first = upload_document(
+            new_command(conn, a, ACTOR, now=NOW),
+            blob_store,
+            data,
+            media_type=PDF,
+            source=DocumentSource.UPLOAD,
+        )
+        other = threading.Thread(target=second_upload)
+        other.start()
+        other.join(timeout=0.5)
+        assert other.is_alive()  # waiting on this transaction's unique key
+    other.join(timeout=15)
+
+    assert not other.is_alive()
+    [second] = results
+    assert not isinstance(second, BaseException), second
+    assert second.id == first.id and second.source is DocumentSource.UPLOAD
+    assert [e.type for e in _events(app_engine, a, first.id)] == [EventType.DOCUMENT_UPLOADED]
+    with workspace_transaction(app_engine, a) as conn:
+        assert len(conn.execute(select(file_table).where(file_table.c.sha256 == sha)).all()) == 1
 
 
 @pytest.mark.parametrize(
@@ -545,6 +618,30 @@ def test_link_and_unlink_errors(app_engine, workspaces, blob_store):
     assert len(_events(app_engine, a, doc.id)) == 1
 
 
+@pytest.mark.parametrize("command", [link_document, unlink_document])
+@pytest.mark.parametrize("bad_id", [None, "not-a-uuid"], ids=["none", "string"])
+def test_a_non_uuid_target_is_rejected_before_any_sql(
+    app_engine, workspaces, blob_store, command, bad_id
+):
+    a, _ = workspaces
+    doc = _upload(app_engine, blob_store, a, _bytes())
+    with _seed(app_engine, a) as raw:
+        prop = insert_property(raw, a)
+        unit = insert_unit(raw, a, prop)
+    _link(app_engine, a, doc.id, LinkTarget.PROPERTY, prop)
+    _link(app_engine, a, doc.id, LinkTarget.UNIT, unit)
+
+    with workspace_transaction(app_engine, a) as conn:
+        ctx = new_command(conn, a, ACTOR, now=LATER)
+        with recorded_sql(conn) as statements, pytest.raises(TypeError, match="target_id"):
+            command(ctx, doc.id, LinkTarget.OWNER, bad_id)
+        assert statements == []
+
+    with workspace_transaction(app_engine, a) as conn:
+        assert {lk.target_id for lk in list_links(conn, doc.id)} == {prop, unit}
+    assert len(_events(app_engine, a, doc.id)) == 3
+
+
 def test_documents_are_isolated_by_workspace(app_engine, workspaces, blob_store):
     a, b = workspaces
     doc = _upload(app_engine, blob_store, a, _bytes())
@@ -751,16 +848,27 @@ def test_unlinking_changes_retention(app_engine, workspaces, blob_store):
         assert document_retention(conn, doc.id).hold is RetentionHold.UNLINKED
 
 
-def test_received_on_is_the_utc_date_whatever_the_session_time_zone(
-    app_engine, workspaces, blob_store
+@pytest.mark.parametrize("session_tz", ["UTC", "Europe/Berlin"])
+@pytest.mark.parametrize(
+    ("received_at", "received_on", "retain_until"),
+    [
+        (datetime(2026, 12, 31, 22, 59, tzinfo=UTC), date(2026, 12, 31), date(2036, 12, 31)),
+        (datetime(2026, 12, 31, 23, 30, tzinfo=UTC), date(2027, 1, 1), date(2037, 12, 31)),
+    ],
+    ids=["23:59-in-berlin", "00:30-in-berlin"],
+)
+def test_received_on_is_the_berlin_date_whatever_the_session_time_zone(
+    app_engine, workspaces, blob_store, session_tz, received_at, received_on, retain_until
 ):
     a, _ = workspaces
-    late_on_new_years_eve = datetime(2026, 12, 31, 23, 30, tzinfo=UTC)  # 00:30 in Berlin
-    doc = _upload(app_engine, blob_store, a, _bytes(), now=late_on_new_years_eve)
+    doc = _upload(app_engine, blob_store, a, _bytes(), now=received_at)
     _type(app_engine, a, doc.id, DocumentTyping(type=DocumentType.LETTER))
 
     with workspace_transaction(app_engine, a) as conn:
-        conn.execute(text("SET LOCAL TimeZone = 'Europe/Berlin'"))
-        assert document_retention_input(conn, doc.id).received_on == date(2026, 12, 31)
-        result = document_retention(conn, doc.id, RetentionPolicy(tax_records_years=1))
-    assert result.retain_until == date(2027, 12, 31)
+        conn.execute(text(f"SET LOCAL TimeZone = '{session_tz}'"))
+        assert document_retention_input(conn, doc.id).received_on == received_on
+        result = document_retention(conn, doc.id)
+    assert (result.retention_class, result.retain_until) == (
+        RetentionClass.TAX_RECORDS,
+        retain_until,
+    )

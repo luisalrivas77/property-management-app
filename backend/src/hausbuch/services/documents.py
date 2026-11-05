@@ -8,8 +8,8 @@ the current typing, document_extraction an append-only version per change (D9, p
 
 import hashlib
 import re
-from datetime import UTC
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import Connection, delete, exists, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -48,6 +48,8 @@ _MEDIA_TYPE = re.compile(r"[a-z]+/[a-z0-9.+-]+")
 _FOREIGN_KEY_VIOLATION = "23503"
 _UNIQUE_VIOLATION = "23505"
 _DEFAULT_POLICY = RetentionPolicy()  # frozen, so safe to share as a default
+# The landlord's calendar: received_on is the local date a document arrived on.
+LOCAL_TIME_ZONE = ZoneInfo("Europe/Berlin")
 
 
 class InvalidUploadError(ValueError):
@@ -89,7 +91,12 @@ def upload_document(
     original_filename: str | None = None,
 ) -> Document:
     """Store an original and register it, or return the workspace's existing document for the
-    same bytes (one document per file per workspace, D9); a re-upload writes nothing."""
+    same bytes (one document per file per workspace, D9).
+
+    A re-upload writes no rows and no event, but it does put the blob again: that restores an
+    original lost from the store, and fails with BlobConflictError if different bytes sit
+    under the key.
+    """
     if not data:
         raise InvalidUploadError("an upload must not be empty")
     if not isinstance(media_type, str) or not _MEDIA_TYPE.fullmatch(media_type):
@@ -98,14 +105,14 @@ def upload_document(
 
     digest = hashlib.sha256(data)
     sha_bytes, sha_hex = digest.digest(), digest.hexdigest()
+    key = blob_key(ctx.workspace_id, sha_hex)
+    # Blob first, rows second, and on every upload: put is idempotent, so a re-upload heals a
+    # lost blob. If the transaction later rolls back, the blob stays behind unreferenced; that
+    # is harmless: the key is content-addressed, so a retry reuses it.
+    store.put(key, data, media_type)
     existing = _select_document_by_sha(ctx.conn, sha_bytes)
     if existing is not None:
         return existing
-
-    key = blob_key(ctx.workspace_id, sha_hex)
-    # Blob first, rows second. If the transaction later rolls back, the blob stays behind
-    # unreferenced; that is harmless: the key is content-addressed, so a retry reuses it.
-    store.put(key, data, media_type)
 
     # ON CONFLICT DO NOTHING: a concurrent upload of the same bytes waits for the other
     # transaction, then finds its rows instead of failing on the unique keys.
@@ -119,7 +126,8 @@ def upload_document(
             storage_key=key,
             created_at=ctx.now,
         )
-        .on_conflict_do_nothing()
+        # Only the same file may conflict; a storage_key collision must fail loudly.
+        .on_conflict_do_nothing(index_elements=["workspace_id", "sha256"])
     )
     row = ctx.conn.execute(
         pg_insert(document_table)
@@ -217,7 +225,7 @@ def link_document(
     ctx: CommandContext, document_id: UUID, target_type: LinkTarget, target_id: UUID
 ) -> DocumentLink:
     """Link a document to the entity it proves."""
-    target_type = LinkTarget(target_type)
+    target_type = _check_link_args(document_id, target_type, target_id)
     if _select_document(ctx.conn, document_id, for_update=False) is None:
         raise NotFoundError(EntityType.DOCUMENT, document_id)
     try:
@@ -257,7 +265,7 @@ def unlink_document(
     ctx: CommandContext, document_id: UUID, target_type: LinkTarget, target_id: UUID
 ) -> None:
     """Remove a link. The document.linked event stays; document.unlinked records the removal."""
-    target_type = LinkTarget(target_type)
+    target_type = _check_link_args(document_id, target_type, target_id)
     removed = ctx.conn.execute(
         delete(link_table)
         .where(link_table.c.document_id == document_id)
@@ -401,14 +409,25 @@ def document_retention_input(conn: Connection, document_id: UUID) -> DocumentRet
         subtype=None if typing is None else typing.subtype,
         tax_year=None if typing is None else typing.tax_year,
         document_date=None if typing is None else typing.document_date,
-        # The UTC calendar date, so the result does not depend on the session's TimeZone.
-        received_on=doc.received_at.astimezone(UTC).date(),
+        # The local (Berlin) calendar date, whatever the session's TimeZone. Per D11 retention
+        # must never end early, and §147 AO counts the local calendar year: a document received
+        # at 00:30 on 1 Jan in Berlin belongs to the new year, though it is still 31 Dec in UTC.
+        received_on=doc.received_at.astimezone(LOCAL_TIME_ZONE).date(),
         ownership_end_dates=ownership_end_dates,
         tenancy_end_dates=tenancy_end_dates,
     )
 
 
 # --- Helpers -----------------------------------------------------------------
+
+
+def _check_link_args(document_id: UUID, target_type: LinkTarget, target_id: UUID) -> LinkTarget:
+    """Refuse anything but UUIDs before any SQL: a None target_id would render as
+    `<target>_id IS NULL` and match every other link of the document."""
+    for name, value in (("document_id", document_id), ("target_id", target_id)):
+        if not isinstance(value, UUID):
+            raise TypeError(f"{name} must be a UUID, got {type(value).__name__}")
+    return LinkTarget(target_type)
 
 
 def _link_column(target_type: LinkTarget):

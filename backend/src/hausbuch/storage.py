@@ -17,7 +17,8 @@ from typing import Protocol, runtime_checkable
 from uuid import UUID
 
 _SHA256_HEX = re.compile(r"[0-9a-f]{64}")
-_READ_ONLY = stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH
+_READ_ONLY = stat.S_IRUSR  # 0o400: originals hold tenant and bank data; owner-read only
+_PRIVATE_DIR = stat.S_IRWXU  # 0o700
 
 
 class BlobStoreError(Exception):
@@ -68,7 +69,8 @@ class LocalBlobStore:
 
     def __init__(self, root: Path) -> None:
         self.root = Path(root).resolve()
-        self.root.mkdir(parents=True, exist_ok=True)
+        self.root.parent.mkdir(parents=True, exist_ok=True)
+        _mkdir_private(self.root)
 
     def put(self, key: str, data: bytes, media_type: str) -> None:
         # media_type is metadata for an object store's Content-Type; a local file has none.
@@ -76,7 +78,9 @@ class LocalBlobStore:
         if path.exists():
             self._check_same(path, key, data)
             return
-        path.parent.mkdir(parents=True, exist_ok=True)
+        for directory in reversed(path.parent.relative_to(self.root).parents):
+            _mkdir_private(self.root / directory)  # every level below root, top down
+        _mkdir_private(path.parent)
         fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=".tmp-")
         tmp = Path(tmp_name)
         try:
@@ -122,3 +126,12 @@ class LocalBlobStore:
     def _check_same(path: Path, key: str, data: bytes) -> None:
         if path.read_bytes() != data:
             raise BlobConflictError(f"{key!r} holds different bytes; originals are immutable")
+
+
+def _mkdir_private(path: Path) -> None:
+    """Create `path` as 0o700 if it is missing. chmod after mkdir, since mkdir applies the umask."""
+    try:
+        path.mkdir(mode=_PRIVATE_DIR)
+    except FileExistsError:
+        return
+    path.chmod(_PRIVATE_DIR)
