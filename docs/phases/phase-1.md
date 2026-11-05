@@ -237,3 +237,30 @@ Collected from the phase 1 reviews and decided in one spec PR.
    recomputed from its own row (principle 2):
    - `interest_days`: the period's 30E/360 days;
    - `follow_up_days`: of those, the days after `fixed_until`, charged at the follow-up rate.
+
+### Spec amendment 2 (5 Nov 2026): decimals are strings on the wire
+
+From the phase 1 step 3 spec PR (`docs/phases/phase-1-step-3.md` §3.4, §12, Q1), before the
+HTTP API exists.
+
+1. **Money, rates, shares, areas and rooms reject JSON numbers.** `Money`, `NonNegativeMoney`,
+   `PositiveMoney`, `Rate`, `TaxRate`, `BuildingShare`, `Area` and `Rooms`
+   (`schemas/common.py`) accept a decimal string (`"1400.00"`) or a `Decimal` and refuse a
+   `float` with the fixed message "must be a decimal string, not a number". A float may already
+   have been rounded before it reached the server (`0.1 + 0.2`), and before this amendment it
+   was silently accepted.
+2. **Ints are refused too** (`1400`, and `true`, which Python treats as an int). An int is
+   exact, so accepting it would lose nothing, but a client that sends JSON numbers would then
+   work for whole euros and fail only on amounts with cents: the bug would pass a test with
+   `1400` and surface in production on `1400.50`. Refusing every JSON number makes such a
+   client fail on its first request, and keeps the server's behaviour equal to its published
+   schema. Nothing in the code base or the fixtures passed an int.
+3. **JSON schema `type: string`** (both validation and serialization), with a pattern for the
+   canonical form, e.g. `^[0-9]+(\.[0-9]{1,2})?$` for non-negative money. The pattern is
+   documentation for clients; the server still validates with Pydantic's Decimal rules
+   (digits, decimal places, bounds), so a form such as `"1E+3"` is still accepted as before.
+   The generated TypeScript types are therefore `string`, and the frontend never holds money
+   in a `number`.
+4. **No fixture outcome changes:** every money and rate value in `tests/fixtures/phase1/` is
+   quoted. The full suite (497 tests) passes unchanged; `tests/test_money_strings.py` covers
+   the aliases and checks that no schema in `hausbuch.schemas` publishes a JSON `number`.
