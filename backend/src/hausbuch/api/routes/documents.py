@@ -87,7 +87,11 @@ def upload_media_type(declared: str | None, allowed: frozenset[str]) -> str:
     return media_type
 
 
-@router.post("/documents", status_code=201)
+@router.post(
+    "/documents",
+    status_code=201,
+    responses={200: {"model": Document, "description": "The bytes were already in the vault"}},
+)
 async def document_upload(
     file: Annotated[UploadFile, File()],
     cmd: Cmd,

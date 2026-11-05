@@ -124,7 +124,11 @@ def rent_schedule_add(body: RentScheduleCreate, cmd: Cmd) -> RentScheduleEntry:
     )
 
 
-@router.post("/rent-schedule/{row_id}/corrections", status_code=201)
+@router.post(
+    "/rent-schedule/{row_id}/corrections",
+    status_code=201,
+    responses={200: {"model": RentScheduleEntry, "description": "Nothing to correct"}},
+)
 def rent_row_correct(
     row_id: UUID, body: RentRowCorrection, cmd: Cmd, response: Response
 ) -> RentScheduleEntry:
