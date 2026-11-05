@@ -9,7 +9,9 @@ from uuid import uuid4
 
 import pytest
 from api_support import ORIGIN, TOKEN_A, client_for, ok
+from fastapi import HTTPException
 
+from hausbuch.api.errors import render
 from hausbuch.api.logging import JsonFormatter, configure_logging
 from hausbuch.storage import BlobConflictError
 
@@ -27,6 +29,26 @@ def test_unknown_paths_and_methods(client_a):
     assert response.json()["error"] == "not_found"
     response = client_a.get("/api/owners/not-a-uuid")
     assert (response.status_code, response.json()["error"]) == (422, "validation")
+
+
+def _rendered_body(exc: BaseException) -> dict:
+    return json.loads(render(exc, None).response().body)
+
+
+@pytest.mark.parametrize(("status", "kind"), [(409, "conflict"), (404, "not_found")])
+def test_an_http_exception_naming_its_kind_carries_no_generic_message(status, kind):
+    """The auth routes raise HTTPException(detail=<ErrorKind>): the kind is kept and the
+    status's generic text ("no such endpoint", "could not be read") is not added."""
+    assert _rendered_body(HTTPException(status, detail=kind)) == {"error": kind}
+
+
+def test_a_framework_404_keeps_its_fixed_text(client_a):
+    assert _rendered_body(HTTPException(404)) == {
+        "error": "not_found",
+        "message": "no such endpoint",
+    }
+    response = client_a.get("/api/nothing-here")
+    assert (response.status_code, response.json()["message"]) == (404, "no such endpoint")
 
 
 def test_malformed_json_is_a_validation_error(client_a):
