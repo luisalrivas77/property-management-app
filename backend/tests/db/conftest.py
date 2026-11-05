@@ -204,3 +204,14 @@ def _insert(conn, table: str, row: dict) -> uuid.UUID:
         sql.SQL(", ").join(sql.Placeholder() * len(row)),
     )
     return conn.execute(query, list(row.values())).fetchone()[0]
+
+
+# --- Document vault ------------------------------------------------------------
+
+
+@pytest.fixture
+def blob_store(tmp_path):
+    """A LocalBlobStore of its own per test, under pytest's tmp_path."""
+    from hausbuch.storage import LocalBlobStore
+
+    return LocalBlobStore(tmp_path / "blobs")
