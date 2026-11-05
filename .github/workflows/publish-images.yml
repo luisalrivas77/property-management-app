@@ -1,0 +1,167 @@
+name: publish-images
+
+# Builds the deploy images and pushes them to the Scaleway Container Registry, so no Docker is
+# needed on Luis's computer (decided 5 Nov 2026, docs/ARCHITECTURE.md Decisions). Started by
+# hand from the Actions tab ("Run workflow"), on main only. How to use it:
+# deploy/scaleway.md, step 7.
+#
+# Needs one repository secret, SCW_REGISTRY_SECRET_KEY: the secret key of a Scaleway API key
+# whose application may only push to the Container Registry (deploy/scaleway.md, step 7).
+#
+# Tags are never overwritten, so a rollback to "the previous tag" is exact:
+#   api            <commit>                   e.g. 3f9c2a1b7d4e
+#   web            <commit>-<url hash>        the API URL is baked in at build time, so a
+#                                             new API URL gives a new tag on the same commit
+#   sigterm-probe  <commit>                   the throwaway Q15 probe
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: "Which image to build and push"
+        type: choice
+        options: [api, web, both, sigterm-probe]
+        default: api
+      api_url:
+        description: "web/both only: the API container's URL, e.g. https://hausbuchapi-xxxx.functions.fnc.fr-par.scw.cloud"
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-images
+  cancel-in-progress: false
+
+env:
+  REGISTRY: rg.fr-par.scw.cloud
+  # Registry namespace names are shared by everyone in the region; if "hausbuch" was taken,
+  # set the repository variable SCW_REGISTRY_NAMESPACE to the name you got.
+  NAMESPACE: ${{ vars.SCW_REGISTRY_NAMESPACE || 'hausbuch' }}
+
+jobs:
+  publish:
+    # Only code that is on main (and so passed CI) reaches the registry.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      # Inputs go through env, never straight into the script, so a crafted value cannot run.
+      - name: Work out what to build
+        id: plan
+        env:
+          IMAGE: ${{ inputs.image }}
+          API_URL: ${{ inputs.api_url }}
+        run: |
+          set -euo pipefail
+          commit="${GITHUB_SHA::12}"
+          api=false; web=false; probe=false
+          case "$IMAGE" in
+            api) api=true ;;
+            web) web=true ;;
+            both) api=true; web=true ;;
+            sigterm-probe) probe=true ;;
+            *) echo "unknown image: $IMAGE" >&2; exit 1 ;;
+          esac
+          if [ "$web" = true ]; then
+            api_url="${API_URL%/}"
+            if ! [[ "$api_url" =~ ^https://[A-Za-z0-9.-]+$ ]]; then
+              echo "api_url must be https://<host> with no path, got: '$API_URL'" >&2
+              exit 1
+            fi
+            url_hash="$(printf '%s' "$api_url" | sha256sum | cut -c1-8)"
+            echo "api_url=$api_url" >> "$GITHUB_OUTPUT"
+            echo "web_tag=$commit-$url_hash" >> "$GITHUB_OUTPUT"
+          fi
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "api=$api" >> "$GITHUB_OUTPUT"
+          echo "web=$web" >> "$GITHUB_OUTPUT"
+          echo "probe=$probe" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to the Scaleway registry
+        env:
+          SCW_REGISTRY_SECRET_KEY: ${{ secrets.SCW_REGISTRY_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SCW_REGISTRY_SECRET_KEY" ]; then
+            echo "The repository secret SCW_REGISTRY_SECRET_KEY is not set (deploy/scaleway.md, step 7)." >&2
+            exit 1
+          fi
+          printf '%s' "$SCW_REGISTRY_SECRET_KEY" \
+            | docker login "$REGISTRY/$NAMESPACE" -u nologin --password-stdin
+
+      # A tag that already exists is never replaced: it would make rollbacks lie.
+      - name: Refuse to overwrite an existing tag
+        env:
+          API: ${{ steps.plan.outputs.api }}
+          WEB: ${{ steps.plan.outputs.web }}
+          PROBE: ${{ steps.plan.outputs.probe }}
+          COMMIT: ${{ steps.plan.outputs.commit }}
+          WEB_TAG: ${{ steps.plan.outputs.web_tag }}
+        run: |
+          set -euo pipefail
+          refs=()
+          [ "$API" = true ] && refs+=("$REGISTRY/$NAMESPACE/api:$COMMIT")
+          [ "$WEB" = true ] && refs+=("$REGISTRY/$NAMESPACE/web:$WEB_TAG")
+          [ "$PROBE" = true ] && refs+=("$REGISTRY/$NAMESPACE/sigterm-probe:$COMMIT")
+          for ref in "${refs[@]}"; do
+            if docker manifest inspect "$ref" > /dev/null 2>&1; then
+              echo "$ref already exists; nothing was pushed." >&2
+              exit 1
+            fi
+          done
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build and push the API image
+        if: steps.plan.outputs.api == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/api.Dockerfile
+          platforms: linux/amd64
+          tags: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/api:${{ steps.plan.outputs.commit }}
+          push: true
+          cache-from: type=gha,scope=api
+
+      - name: Build and push the web image
+        if: steps.plan.outputs.web == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/web.Dockerfile
+          platforms: linux/amd64
+          build-args: HAUSBUCH_API_URL=${{ steps.plan.outputs.api_url }}
+          tags: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/web:${{ steps.plan.outputs.web_tag }}
+          push: true
+          cache-from: type=gha,scope=web
+
+      - name: Build and push the SIGTERM probe
+        if: steps.plan.outputs.probe == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: deploy
+          file: deploy/sigterm-probe.Dockerfile
+          platforms: linux/amd64
+          tags: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/sigterm-probe:${{ steps.plan.outputs.commit }}
+          push: true
+
+      - name: Summary
+        env:
+          API: ${{ steps.plan.outputs.api }}
+          WEB: ${{ steps.plan.outputs.web }}
+          PROBE: ${{ steps.plan.outputs.probe }}
+          COMMIT: ${{ steps.plan.outputs.commit }}
+          WEB_TAG: ${{ steps.plan.outputs.web_tag }}
+          API_URL: ${{ steps.plan.outputs.api_url }}
+        run: |
+          {
+            echo "### Pushed to the Scaleway registry"
+            echo
+            [ "$API" = true ] && echo "- API: \`$REGISTRY/$NAMESPACE/api:$COMMIT\`"
+            [ "$WEB" = true ] && echo "- Web: \`$REGISTRY/$NAMESPACE/web:$WEB_TAG\` (forwards /api to $API_URL)"
+            [ "$PROBE" = true ] && echo "- SIGTERM probe: \`$REGISTRY/$NAMESPACE/sigterm-probe:$COMMIT\`"
+            echo
+            echo "Point the container at this tag in the Scaleway console (deploy/scaleway.md)."
+          } >> "$GITHUB_STEP_SUMMARY"

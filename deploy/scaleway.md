@@ -20,7 +20,8 @@ flag differs, follow the console and `scw <command> --help`.
 - **Managed PostgreSQL 16** (DB-DEV-S) on a private network for the API, plus a public
   endpoint that only your computer's IP address may reach, for the admin commands.
 - **An Object Storage bucket** (private, EU) for the original documents.
-- **A Container Registry namespace** for the two images.
+- **A Container Registry namespace** for the two images, which a GitHub Actions job builds
+  and pushes (`.github/workflows/publish-images.yml`), so your computer needs no Docker.
 - **Secret Manager** as the one place where every secret value is kept.
 
 Everything lives in one Scaleway project in region **fr-par** (Paris). The expected cost is
@@ -104,8 +105,8 @@ On your computer:
 
 - A checkout of this repository.
 - `uv`, for the admin commands (installed in "Admin commands from your computer" below).
-- Docker (with BuildKit, the default since Docker 23), only to build and push the images in
-  step 7. The admin commands do not need it.
+- No Docker: the images are built and pushed by GitHub Actions (step 7), and the admin
+  commands use `uv`.
 - `psql` 16 or later.
 - The Scaleway CLI `scw`, signed in with `scw init` (project: the Hausbuch project, region
   `fr-par`).
@@ -268,36 +269,44 @@ project as its default Object Storage project. Keep the access key and the secre
 Each image gets an immutable tag (the git commit), so a rollback is "deploy the previous
 tag".
 
-Console: Containers → Container Registry → **Create namespace** `hausbuch` in fr-par,
-**private**.
+The images are built and pushed by a GitHub Actions job, `publish-images`
+(`.github/workflows/publish-images.yml`), started by hand. No Docker on your computer
+(decided 5 Nov 2026). It builds only from `main`, and it refuses to overwrite a tag that
+already exists.
 
-```bash
-scw registry namespace create name=hausbuch region=fr-par is-public=false
-# Log Docker in with any API key of yours (user "nologin", the secret key as password):
-echo "$SCW_SECRET_KEY" | docker login rg.fr-par.scw.cloud/hausbuch -u nologin --password-stdin
-```
+**The registry namespace.** Console: Containers → Container Registry → **Create namespace**
+`hausbuch` in fr-par, **private**. Or: `scw registry namespace create name=hausbuch
+region=fr-par is-public=false`. Namespace names are shared by everyone in the region. If
+`hausbuch` is taken, pick another name, then in GitHub (Settings → Secrets and variables →
+Actions → **Variables**) create the variable `SCW_REGISTRY_NAMESPACE` holding that name.
+Below, `hausbuch` stands for whichever name you got.
 
-Build and push the **API image** from the repo root:
+**A key that can only push images** (once):
 
-```bash
-TAG=$(git rev-parse --short HEAD)
-docker build --platform linux/amd64 -f deploy/api.Dockerfile -t rg.fr-par.scw.cloud/hausbuch/api:$TAG .
-docker push rg.fr-par.scw.cloud/hausbuch/api:$TAG
-```
+1. Console: IAM → Applications → **Create application** `hausbuch-ci-registry`. Give it a
+   policy with **ContainerRegistryFullAccess** in the Hausbuch project only. It must not
+   reach the database, the bucket or the secrets.
+2. Create an **API key** for that application. Scaleway shows the secret key **once**.
+3. Go straight to GitHub: Settings → Secrets and variables → Actions → **New repository
+   secret**, name `SCW_REGISTRY_SECRET_KEY`, value the secret key. Paste it only there:
+   not into a chat, a terminal you share, or a file. GitHub never shows it again either; to
+   replace it, create a new key, update the secret, and delete the old key.
 
-The **web image** needs the API container's URL at **build time** (§10.6). Next.js writes
-the `/api/*` forwarding rule into the build, and setting `HAUSBUCH_API_URL` on the running
-container changes nothing (checked: a container started with a different value still
-forwarded to the build-time one). So build it after step 10, once the API URL exists:
+**Run it:** GitHub → Actions → **publish-images** → **Run workflow**, branch `main`:
 
-```bash
-docker build --platform linux/amd64 -f deploy/web.Dockerfile \
-  --build-arg HAUSBUCH_API_URL=https://<api-container-endpoint> \
-  -t rg.fr-par.scw.cloud/hausbuch/web:$TAG .
-docker push rg.fr-par.scw.cloud/hausbuch/web:$TAG
-```
+- **First the API image:** image `api`. It is tagged with the first 12 characters of the
+  commit, e.g. `api:3f9c2a1b7d4e`, shown on the run's summary page.
+- **The web image comes after step 10**, once the API container's URL exists. It needs that
+  URL at **build time** (§10.6): Next.js writes the `/api/*` forwarding rule into the build,
+  and setting `HAUSBUCH_API_URL` on the running container changes nothing (checked: a
+  container started with a different value still forwarded to the build-time one). Run with
+  image `web` and **api_url** set to `https://<api-container-endpoint>` (host only, no path).
+  Its tag is `<commit>-<8 characters derived from the URL>`, so a new API URL on the same
+  commit gets a new tag instead of overwriting the old one.
+- `both` builds the two together, for updates once the API URL is fixed.
 
-A new API URL means a new web image.
+The summary page lists each pushed image's full name; that is what you point the container
+at in steps 10 and 11.
 
 ## Step 8: Secrets
 
@@ -488,7 +497,8 @@ The API's optional settings keep their defaults unless you have a reason to chan
 
 ## Step 11: The web container and the domain
 
-Build and push the web image now (step 7, second half), with the API endpoint from step 10.
+Push the web image now: run `publish-images` with image `web` and the API endpoint from
+step 10 as `api_url` (step 7).
 
 Console: in the same namespace, **Deploy container** `hausbuch-web`:
 
@@ -596,12 +606,9 @@ presigned uploads to phase 2 (Q13's recommendation).
 
 The API needs at least 30 s: the worker's 20 s grace, inside uvicorn's 25 s graceful
 shutdown. Measure it with the throwaway probe in `deploy/sigterm-probe.Dockerfile`. It
-ignores SIGTERM and logs once a second until it is killed:
-
-```bash
-docker build --platform linux/amd64 -f deploy/sigterm-probe.Dockerfile -t rg.fr-par.scw.cloud/hausbuch/sigterm-probe deploy
-docker push rg.fr-par.scw.cloud/hausbuch/sigterm-probe
-```
+ignores SIGTERM and logs once a second until it is killed. Push it with the
+`publish-images` job (step 7), image `sigterm-probe`; it lands as
+`sigterm-probe:<commit>`. Then:
 
 1. deploy it as a temporary container (port 8080, min-scale 1);
 2. once it is ready, trigger a stop: redeploy it, or set min-scale 0 and wait for
@@ -637,8 +644,9 @@ image. Keep the order: grace < uvicorn's timeout < the platform's kill timeout.
 
 ## Deploying an update
 
-1. Build and push both images with the new commit's tag (step 7). The web image only needs
-   a rebuild when `frontend/` changed or the API URL changed.
+1. Merge the change to `main`, then run `publish-images` (step 7) with `api`, `web` or
+   `both`. The web image only needs a rebuild when `frontend/` changed or the API URL
+   changed.
 2. If the commit adds migrations, run them first, from your computer with the **new**
    commit checked out (step 9; check the allow-list holds your current IP). Migrations are
    append-only and additive, so the old API keeps working against the new schema while the
@@ -651,8 +659,8 @@ image. Keep the order: grace < uvicorn's timeout < the platform's kill timeout.
 
 ## Rolling back
 
-- **A bad image:** point the container back at the previous tag. Tags are commit hashes and
-  never reused, so "the previous version" is exact.
+- **A bad image:** point the container back at the previous tag. Tags are built from commit hashes
+  and never overwritten (the job refuses), so "the previous version" is exact.
 - **A failed deploy** (the new instance never becomes ready): Scaleway keeps the previous
   version serving for up to **24 hours**, then removes both. So fix or roll back the same
   day.

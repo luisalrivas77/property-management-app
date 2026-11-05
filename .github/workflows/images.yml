@@ -1,7 +1,8 @@
 name: images
 
 # Builds both deploy images (deploy/api.Dockerfile, deploy/web.Dockerfile) and smoke-tests
-# them. Nothing is pushed: the images go to Scaleway's registry by hand (deploy/scaleway.md).
+# them. Nothing is pushed here: publish-images.yml pushes to Scaleway's registry, started by
+# hand from main (deploy/scaleway.md, step 7).
 on:
   pull_request:
     paths:
