@@ -28,7 +28,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 import boto3
 import pytest
 from botocore.awsrequest import AWSResponse
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, ConnectionClosedError
 
 from hausbuch.settings import Settings, SettingsError
 from hausbuch.storage import (
@@ -413,6 +413,27 @@ def test_put_gives_up_on_a_key_that_keeps_changing(s3, fake, key_of):
 def no_backoff(monkeypatch):
     """botocore sleeps between retries; the tests count attempts, they need not wait."""
     monkeypatch.setattr("botocore.retries.standard.ExponentialBackoff.delay_amount", lambda *_: 0)
+
+
+def test_a_put_whose_response_is_lost_is_retried_and_compares_equal(s3, fake, key_of, no_backoff):
+    """The realistic route to a 412: the server stores the object, the response is lost,
+    botocore retries the PUT with If-None-Match, gets 412, and put compares equal bytes."""
+    key = key_of(DATA)
+    real_put = fake._put
+    calls = {"n": 0}
+
+    def put_then_lose_the_response(request, key, headers):
+        calls["n"] += 1
+        response = real_put(request, key, headers)
+        if calls["n"] == 1:
+            raise ConnectionClosedError(endpoint_url=request.url)
+        return response
+
+    fake._put = put_then_lose_the_response
+    s3.put(key, DATA, PDF)
+
+    assert len(fake.methods("PUT")) == 2
+    assert fake.objects == {key: (DATA, PDF)}
 
 
 def test_transient_server_errors_are_retried(s3, fake, key_of, no_backoff):

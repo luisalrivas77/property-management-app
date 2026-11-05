@@ -13,7 +13,9 @@ How put keeps that promise
        for a botocore retry after a lost response: the retry gets 412, compares equal bytes,
        and succeeds.
     A server that ignores the header degrades this to head-then-put: sequential writes are
-    still refused, but two writers racing on one key within milliseconds could both write.
+    still refused, but two writers racing on one key can both write. The window runs from our
+    HEAD's 404 until our PUT completes, i.e. the whole upload (up to READ_TIMEOUT_S on a slow
+    link), not milliseconds.
     Content addressing makes that race harmless in practice (equal keys mean equal SHA-256,
     so honest writers send equal bytes), and read_original's SHA-256 check catches the rest.
     Whether Scaleway honours the header is Q16: run this module's tests against a real bucket
@@ -169,6 +171,9 @@ class S3BlobStore:
             body.close()
 
     def exists(self, key: str) -> bool:
+        """False for a missing key, and also for a missing or misnamed bucket: S3 answers a
+        HEAD with a bodiless 404 either way. put, get and delete raise NoSuchBucket instead,
+        so no write or read can mistake a missing bucket for a missing original."""
         _check_key(key)
         return self._size(key) is not None
 

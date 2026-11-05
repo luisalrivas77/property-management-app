@@ -637,12 +637,21 @@ Confirmed environment facts the design relies on (no longer assumptions):
 ## 8. S3 store behind `BlobStore`
 
 `hausbuch/storage_s3.py`: `S3BlobStore(bucket, client)` implementing the protocol with
-`boto3`, EU region, private bucket, SSE enabled bucket-side. `put` uses a conditional write
-(`IfNoneMatch="*"`, generally available on AWS S3 since 2024; whether Scaleway Object Storage
-honours it must be checked once by hand, Q16) and on a precondition failure fetches and
-compares bytes to reproduce `LocalBlobStore`'s "same bytes = no-op, different bytes =
-`BlobConflictError`" contract; if the endpoint ignores the precondition, `put` falls back to
-`head` + compare before writing and the doc records the weaker guarantee. `get` verifies nothing
+`boto3`, EU region, private bucket, SSE enabled bucket-side. `put` (as built in chunk 5):
+1. It **HEADs first**. If the key exists, a different size is an immediate conflict;
+   otherwise it fetches and compares the bytes. Equal bytes upload nothing.
+2. Otherwise it PUTs with `IfNoneMatch="*"` and, on a 412/409, goes back to step 1 and
+   compares again.
+
+That reproduces `LocalBlobStore`'s contract: same bytes = no-op, different bytes =
+`BlobConflictError`.
+- **If the endpoint ignores the precondition,** the same sequence degrades to head-then-put,
+  with a race window lasting the whole upload. That's harmless for content-addressed keys,
+  and `read_original` checks the SHA-256.
+- **Header support:** Scaleway documents `If-None-Match` support on PutObject. The one-time
+  check against a real bucket (Q16) still has to be recorded in `deploy/scaleway.md`.
+- **Why HEAD first:** an earlier draft of this section said PUT first; the HEAD-first order is
+  at least as safe and avoids re-uploading on every dedup (chunk 5 review). `get` verifies nothing
 itself (`read_original` checks the SHA-256). `delete` is retention-only and unused in phase 1.
 `presigned_get_url(key, ttl=60)` is an extra method for the download endpoint's future `302`.
 Settings: `HAUSBUCH_BLOB_STORE=s3`, `HAUSBUCH_S3_BUCKET`, `HAUSBUCH_S3_ENDPOINT_URL`,
