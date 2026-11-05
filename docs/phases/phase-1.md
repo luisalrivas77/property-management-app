@@ -224,6 +224,11 @@ and reviewed by a reviewer agent; every review finding was fixed or is listed be
      API, also through the web proxy); a signed-in 25 MiB upload, Q16 (If-None-Match on the
      bucket), Q15 (SIGTERM timeout) and the allow-list check from another network are not
      run yet. No real data has been entered.
+   - 6 Nov 2026: the document roll-up (#13: property and unit pages list documents linked
+     to them directly or through their units, tenancies and loans) is live. `hausbuch-api`
+     runs `api:8844916ea91b` and `hausbuch-web` runs `web:8844916ea91b-16ef9db2`, both built
+     from `8844916`; no migration. Roll back to `api:309b07f0b945` and
+     `web:2221bd1f9a4e-16ef9db2`.
 
 ### Known gaps (not yet built)
 
