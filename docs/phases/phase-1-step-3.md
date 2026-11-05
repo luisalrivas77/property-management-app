@@ -1,7 +1,12 @@
 # Phase 1, step 3: HTTP API, passkey sign-in, first screens
 
-Nov 5, 2026 · design, **not yet built**. Architect output for the orchestrator; coder chunks are
-in §11. Extends `docs/phases/phase-1.md` (D1–D12, spec amendment 1). Incorporates the Scaleway
+Nov 5, 2026 · design by the architect agent; coder chunks are in §11.
+
+**Status (5 Nov 2026):** chunks **0, 1, 2, 3a and 5 are built, reviewed and fixed**: chunk 0
+is merged to `main` in #6, and the rest are on the working branch for one PR. The §10.5–10.7
+rules are implemented. **To do:** chunk 3b (domain screens, plus the invite-member and
+rename-passkey parts of `/settings`) and chunk 4 (e2e, CI, deploy artefacts, the Q16 bucket
+check). Extends `docs/phases/phase-1.md` (D1–D12, spec amendment 1). Incorporates the Scaleway
 compatibility test of 5 Nov 2026 (§7, §14).
 
 **Done when** (phase 1): Luis enters his real flat (ETW), its tenancy, its loan and all 2026
