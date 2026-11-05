@@ -28,6 +28,13 @@ only in a spec PR, never to make an implementation pass.
 
 - Phase 1, vault and ledger: `docs/phases/phase-1.md`
 
+## UI mockups
+
+Six screen mockups (PNG + static HTML) live in `docs/mockups/`. Before building or changing a
+screen, read `docs/mockups/README.md` and look at the matching PNG. They set layout, content
+and flow; visual style stays with `frontend/src/app/globals.css`; their numbers are sample
+data, never fixtures.
+
 ## Layout and commands
 
 - `backend/`: Python 3.12, managed with uv. Schemas in `src/hausbuch/schemas/`, pure rules in
