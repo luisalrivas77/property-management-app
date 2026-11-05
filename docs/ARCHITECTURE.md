@@ -41,7 +41,7 @@ The core chain is Property → Unit → Tenancy → Tenant; money flows in as Tr
 
 | Entity | Key fields | Relations | Notes |
 | --- | --- | --- | --- |
-| Owner | name, tax ID ref, marginal rate (user-set), ownership share | owns Properties | Two owners at 50/50, married and filing jointly: one Anlage V carrying both shares |
+| Owner | name, tax ID ref, ownership share, expected gross pay per year, church tax yes/no, optional marginal-rate override | owns Properties | Two owners at 50/50, married and filing jointly: one Anlage V carrying both shares. The marginal rate is derived from income, not typed in (see Performance) |
 | Property | address, type (ETW, EFH, MFH), build year, purchase date, notarized date, price, Nebenkosten, building/land split + split source (Kaufvertrag, BMF Arbeitshilfe, appraisal) | has Units, Loans, Documents | Notarized date starts the Spekulationsfrist; split drives AfA |
 | Unit | label (WE 3), m², rooms, MEA share (WEG) | belongs to Property; has Tenancies | One Unit for an ETW; many for an MFH |
 | Tenancy | start, end, type (unbefristet / Staffel / Index), Kaltmiete, NK-Vorauszahlung, Kaution + account | links Unit and Tenant(s); has RentSchedule | Rent changes are dated RentSchedule rows, never edits |
@@ -148,11 +148,11 @@ The draft is a planning aid; the UI says so on every export.
 
 Performance = actuals from confirmed allocations, plus a year-by-year projection to a chosen sale year that reuses the same tax rules, so the forecast and the return never disagree on treatment.
 
-**Actuals (per property, per year)** — rent in (Kaltmiete), cash paid out, tax effect (result × marginal rate), net cash, and principal repaid. Umlagen are shown as pass-through so cash isn't distorted by settlement timing.
+**Actuals (per property, per year)** — rent in (Kaltmiete), cash paid out, tax effect (result × that year's marginal rate), net cash, and principal repaid. Umlagen are shown as pass-through so cash isn't distorted by settlement timing.
 
 **Projection inputs**
 
-- User levers: value growth %, rent growth %, marginal tax rate, sale year
+- User levers: value growth %, rent growth %, expected gross pay per owner (or a marginal-rate override), sale year
 - From the ledger: loan schedule, AfA basis and rate, current rent, Hausgeld split, purchase and Nebenkosten
 - Defaults the user can edit: upkeep per year, cost inflation, selling costs %
 
@@ -163,6 +163,16 @@ Performance = actuals from confirmed allocations, plus a year-by-year projection
 3. Taxable result = rent − interest − AfA − deductible costs; tax effect = −result × marginal rate
 4. Cash after tax = rent − annuity − costs paid + tax effect
 5. Value = purchase price × (1 + value growth)^n; equity = value − loan balance
+
+**Marginal rate (decided 6 Nov 2026)**
+
+The rate is computed, not remembered: people know their gross pay, not their Grenzsteuersatz, and the assessment (Einkommensteuerbescheid) that states the real taxable income arrives months after the year it covers, so the current and future years always need an estimate.
+
+1. Per owner and year, the user enters expected gross pay; standard deductions (Werbungskosten-Pauschbetrag, employee social-insurance share, Sonderausgaben) are estimated by default and editable. The result is marked as an estimate.
+2. The rental result for that year comes from the ledger (actuals) or the projection, and is added to the estimated taxable income (zvE) automatically.
+3. The joint splitting tariff (§32a EStG) gives the marginal rate at that zvE, plus the solidarity surcharge where it applies and church tax (8 or 9% by state) when the user says yes. The tariff is versioned rule data per tax year like every other rule; a projected year without a published tariff reuses the latest one.
+4. When a Bescheid arrives, its zvE replaces the estimate for that year as a new event (append-only, the estimate stays in History); phase 2 extraction can read it from the document, or the user types it in.
+5. An explicit rate entered by the user always overrides the derived one for that year, and the UI shows which source each year used (estimate, Bescheid, override).
 
 **At sale**
 
@@ -269,7 +279,7 @@ Five phases, each shippable on its own; phase 3 is the first one that saves real
 | 1 · Vault and ledger | Properties, units, tenancies, tenants, loans; document upload with manual typing and linking; History timeline from events | The current flat, tenancy, loan and all 2026 paperwork are in, and History shows purchase → move-in correctly |
 | 2 · AI inbox | CSV/CAMT/PDF statement import, document classification and extraction, matching pipeline, review queue, learned rules, PWA mobile capture | A month's statement imports with ≥ 80% auto-matched, zero allocation-sum errors, and a repeat answer is never asked twice |
 | 3 · Tax year | Rule set 2026, Anlage V draft with source links, missing-document checklist, 15% limit tracker, ELSTER field sheet and yearly CSV + PDF archive | The 2026 draft reproduces a hand-calculated return to the euro, and every line opens its sources |
-| 4 · Performance | Actuals, projection, profit bridge, §23 sale check, IRR; Betriebskostenabrechnung generator | Projection matches a spreadsheet model for 3 scenarios; one settlement generated from real 2026 data |
+| 4 · Performance | Actuals, projection, profit bridge, §23 sale check, IRR, marginal rate derived from expected income; Betriebskostenabrechnung generator | Projection matches a spreadsheet model for 3 scenarios; one settlement generated from real 2026 data |
 | 5 · Automation | FinTS sync for your own Sparkasse account (pushTAN), email-in address, deadline reminders, rule set 2027 | Statements arrive without manual upload; reminders fire for Grundsteuer and settlement deadlines |
 
 Each phase starts with a short spec PR (schemas, rule fixtures, eval cases) before agents write implementation code.
@@ -296,3 +306,4 @@ All open questions were settled on 4 Nov 2026; the sections above reflect them. 
 | Image builds (5 Nov 2026) | The API and web images are built and pushed to the Scaleway registry by a hand-started GitHub Actions job (`publish-images`), from `main` only; tags come from the commit and are never overwritten | No Docker on Luis's computer, which is not powerful enough to run it comfortably; GitHub holds one Scaleway key that can only push images |
 | Sessions (5 Nov 2026) | Opaque server-side sessions in Postgres, 12 h absolute / 2 h idle, `SameSite=Lax` + Origin check | Gives "short-lived sessions" a number; tunable per environment |
 | UI style (5 Nov 2026) | The app uses the mockups' visual style (`docs/mockups/`): green palette, Manrope self-hosted from npm, left sidebar shell; dark mode kept with a green-derived palette | Replaces the original teal, system-font look and the top bar; still plain CSS, no component library, German labels |
+| Marginal rate (6 Nov 2026) | Derived from each owner's expected gross pay plus the ledger's rental result on the joint splitting tariff, with church tax and Soli; a Bescheid's zvE replaces the estimate for its year as a new event; a user-set rate overrides | Owner stores expected income and church-tax flag instead of a typed rate; the §32a tariff becomes per-year rule data; the phase 4 spec PR starts from this |
