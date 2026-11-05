@@ -28,7 +28,7 @@ def check_tenancy_parties(roles: Sequence[TenancyRole]) -> list[str]:
     """A tenancy has at least one tenant and exactly one of them is primary."""
     if not roles:
         return [NO_TENANT]
-    primaries = sum(1 for r in roles if r is TenancyRole.PRIMARY)
+    primaries = sum(1 for r in roles if r == TenancyRole.PRIMARY)
     return [] if primaries == 1 else [EXACTLY_ONE_PRIMARY]
 
 

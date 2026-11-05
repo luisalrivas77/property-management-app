@@ -44,11 +44,10 @@ def _entries(terms: LoanTerms) -> Iterator[ScheduleEntry]:
         number += 1
         due_on = _add_months(terms.first_payment_on, number - 1)
         rate = _rate_on(terms, due_on)
-        if number == 1:
-            fraction = Decimal(_days360(terms.disbursed_on, terms.first_payment_on)) / 360
-        else:
-            fraction = Decimal(1) / 12
-        interest = (balance * rate * fraction).quantize(CENT, rounding=ROUND_HALF_UP)
+        days = _days360(terms.disbursed_on, terms.first_payment_on) if number == 1 else 30
+        # Divide last: days/360 is a repeating decimal, and rounding it first can push an
+        # exact half cent (e.g. 50.205) just below the tie, so half-up would round it down.
+        interest = (balance * rate * days / 360).quantize(CENT, rounding=ROUND_HALF_UP)
         if balance + interest <= payment:
             this_payment, principal = balance + interest, balance
         elif interest >= payment:

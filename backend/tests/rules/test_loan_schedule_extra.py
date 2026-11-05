@@ -125,3 +125,18 @@ def test_independent_of_the_callers_decimal_context():
         next((g for g, e in zip(got.entries, expected.entries, strict=True) if g != e), None)
         is None
     )
+
+
+def test_first_period_half_cent_tie_rounds_up():
+    """4 days of 30E/360 on 125,512.50 at 3.6 % is exactly 50.205: half-up gives 50.21.
+
+    Rounding days/360 before multiplying once pushed this just below the tie (50.20).
+    """
+    terms = LoanTerms(
+        principal=D("125512.50"),
+        nominal_rate=D("0.036"),
+        monthly_payment=D("1400.00"),
+        disbursed_on=date(2025, 1, 8),
+        first_payment_on=date(2025, 1, 12),
+    )
+    assert build_schedule(terms).entries[0].interest == D("50.21")
