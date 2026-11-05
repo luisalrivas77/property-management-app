@@ -75,6 +75,7 @@ READS = [
     "/api/tenancies/{tenancy}",
     "/api/tenancies/{tenancy}/rent-schedule",
     "/api/tenancies/{tenancy}/rent?at=2025-01-01",
+    "/api/tenancies/{tenancy}/deposits",
     "/api/tenancies/{tenancy}/documents",
     "/api/loans/{loan}",
     "/api/loans/{loan}/schedule",

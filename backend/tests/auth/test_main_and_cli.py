@@ -298,6 +298,7 @@ def test_openapi_prints_the_auth_contract(capsys):
         "/api/auth/passkeys/{passkey_id}",
         "/api/auth/invites",
         "/api/auth/invites/{invite_id}",
+        "/api/auth/members",  # §10.8 item 7
     }
     assert set(document["paths"]["/api/auth/passkeys/{passkey_id}"]) == {"patch", "delete"}
     assert out == cli.openapi_json()  # deterministic, so the committed copy can be diffed

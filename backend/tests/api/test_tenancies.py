@@ -193,6 +193,23 @@ def test_deposit_notice_move_out_and_move_in_correction(client_a):
         "2024-07-01",
     )
 
+    assert ok(client_a.get(f"{base}/deposits")) == [
+        {
+            "event_id": event["id"],
+            "amount": "950.00",
+            "received_on": "2024-07-01",
+            "recorded_at": event["recorded_at"],
+        }
+    ]
+    second = create(
+        client_a, f"{base}/deposit-received", {"amount": "1900.00", "received_on": "2024-08-01"}
+    )
+    deposits = ok(client_a.get(f"{base}/deposits"))  # §10.8 item 7, in recording order
+    assert [(d["event_id"], d["amount"]) for d in deposits] == [
+        (event["id"], "950.00"),
+        (second["id"], "1900.00"),
+    ]
+
     moved = ok(client_a.post(f"{base}/corrections/move-in", json={"new_date": "2024-06-15"}))
     assert moved["start_date"] == "2024-06-15"
 
@@ -253,7 +270,7 @@ def test_a_move_in_correction_moves_the_first_rent_row(client_a):
 
 def test_unknown_tenancy_reads_are_404(client_a):
     missing = uuid4()
-    for sub in ("", "/rent-schedule", "/rent?at=2025-01-01", "/documents"):
+    for sub in ("", "/rent-schedule", "/rent?at=2025-01-01", "/deposits", "/documents"):
         response = client_a.get(f"/api/tenancies/{missing}{sub}")
         assert (response.status_code, response.json()["entity_type"]) == (404, "tenancy"), sub
     response = client_a.post(f"/api/tenancies/{missing}/end", json={"end_date": "2026-01-01"})

@@ -260,6 +260,30 @@ def test_invite_spouse_enroll_both_see_the_same_property(signed_in, household, a
     ]
 
 
+def test_members_list_enrolled_and_invited_members(signed_in, household, api, client):
+    """GET /auth/members (§10.8 item 7): both household members, with has_passkey; no
+    passkey, session or token detail; 401 without a session."""
+    [me] = signed_in.get("/api/auth/members").json()
+    assert me["user"]["email"] == household.email and me["has_passkey"] is True
+
+    email = unique_email("ana")
+    invite = signed_in.post("/api/auth/invites", json={"email": email, "display_name": "Ana"})
+    members = signed_in.get("/api/auth/members").json()
+    assert [(m["user"]["email"], m["has_passkey"]) for m in members] == [
+        (household.email, True),
+        (email, False),
+    ]
+    assert set(members[1]) == {"user", "has_passkey"}
+    assert "token" not in str(members) and "enroll" not in str(members)
+
+    token = invite.json()["enrollment_url"].split("#token=")[1]
+    spouse = new_client(api)
+    assert enroll(spouse, token, SoftAuthenticator(rp_id=RP_ID, origin=ORIGIN)).status_code == 201
+    assert [m["has_passkey"] for m in spouse.get("/api/auth/members").json()] == [True, True]
+
+    assert new_client(api).get("/api/auth/members").status_code == 401
+
+
 def test_invite_reuse_is_refused(client, household, authenticator, sql):
     assert enroll(client, household.token, authenticator).status_code == 201
     other = new_client(client.app)

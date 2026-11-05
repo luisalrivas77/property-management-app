@@ -315,6 +315,7 @@ label, floor_area_m2, rooms, mea), `GET /units/{id}/tenancies` → `list[Tenancy
 | `GET /tenancies/{id}` | → `Tenancy` | `get_tenancy` |
 | `POST /tenancies/{id}/corrections/move-in` | `DateCorrection {new_date}` → `Tenancy` | `correct_move_in` |
 | `POST /tenancies/{id}/deposit-received` | `DepositReceivedBody {amount, received_on}` → 201 `Event` | `record_deposit_received` |
+| `GET /tenancies/{id}/deposits` | → `list[DepositReceipt {event_id, amount, received_on, recorded_at}]` (§10.8 item 7) | `list_events` (the `tenancy.deposit_received` events) |
 | `POST /tenancies/{id}/notice` | `NoticeBody {given_by, given_on, ends_on}` → `Tenancy` | `give_notice` |
 | `POST /tenancies/{id}/end` | `EndTenancyBody {end_date}` → `Tenancy` | `end_tenancy` |
 | `GET /tenancies/{id}/rent-schedule` | → `list[RentScheduleEntry]` (superseded rows included; the UI greys them) | `list_rent_schedule` |
@@ -349,7 +350,7 @@ still fails (data from before the check), `GET …/schedule` answers 409 `rule_v
 | --- | --- | --- |
 | `POST /documents` | multipart: `file` (required), `source` (default `upload`) → 201/200 `Document` | `upload_document(store, data, media_type, source, original_filename)` |
 | `GET /documents?target_type=&target_id=` | → `list[Document]` | `list_documents` |
-| `GET /documents/{id}` | → `DocumentDetail {document, links, extraction, retention}` | `get_document`, `list_links`, `current_extraction`, `document_retention` (one read transaction) |
+| `GET /documents/{id}` | → `DocumentDetail {document, links, extraction, retention, media_type, opens_inline}` | `get_document`, `list_links`, `current_extraction`, `document_retention`, `document_media_type` (one read transaction) |
 | `PUT /documents/{id}/typing` | `DocumentTypingBody {typing: DocumentTyping, fields: ManualDocumentFields \| None}` → `Document` | `type_document` |
 | `GET /documents/{id}/links` | → `list[DocumentLink]` | `list_links` |
 | `POST /documents/{id}/links` | `LinkBody {target_type, target_id}` → 201 `DocumentLink`; 409 duplicate; 404 target | `link_document` |
@@ -388,7 +389,7 @@ Both are plain reads of the services; the frontend renders `TimelineEntry.payloa
 `UnitPatch`, `TenantPatch`, `LoanPatch`, `RentRowCorrection`; `NotarizedOnCorrection`,
 `DateCorrection`, `OwnershipBody`, `DepositReceivedBody`, `NoticeBody`, `EndTenancyBody`,
 `ErasureBody`, `DocumentTypingBody`, `LinkBody`, `DocumentDetail`, `TenancyCreateRequest`,
-`LoanCreateRequest`; auth: `Passkey`, `Session`, `Invite`, `InviteCreate`, `Me`,
+`LoanCreateRequest`, `DepositReceipt` (§10.8); auth: `Passkey`, `Session`, `Invite`, `InviteCreate`, `Me`, `Member` (§10.8),
 `EnrollmentOptionsRequest`, `EnrollmentVerifyRequest`, `LoginVerifyRequest`, `PasskeyLabel`.
 `InitialRent` moves from `services/tenancies.py` to `schemas/tenancy.py` (re-exported from the
 service module, so nothing else changes) because `TenancyCreateRequest` must not import
@@ -526,6 +527,7 @@ Endpoints (`routes/auth.py`):
 | `POST /auth/invites` | session | `InviteCreate {email, display_name}` → 201 `Invite {id, user, enrollment_url, expires_at}` (the URL is shown once) |
 | `GET /auth/invites` | session | → pending invites (no token) |
 | `DELETE /auth/invites/{id}` | session | → 204 |
+| `GET /auth/members` | session | → `list[Member {user: AppUser, has_passkey}]`, oldest first (§10.8 item 7) |
 
 Sign-in verification (`auth/webauthn.py`): parse `rawId` → `auth_lookup_transaction` reads
 the `auth_passkey` row (404-as-401 if unknown) → `verify_authentication_response(credential,
@@ -933,6 +935,14 @@ Chunk 3b found these API gaps; none of them blocked a screen:
    rent row exists.
 7. **No list of household members**, no read endpoint for deposits received (the tenancy page
    reads them from the event log), and document responses lack the media type.
+   **Implemented:** `GET /auth/members` (`Member {user, has_passkey}`),
+   `GET /tenancies/{id}/deposits` (`DepositReceipt`, from the `tenancy.deposit_received`
+   events; a corrected one would show its latest event), and `DocumentDetail.media_type` plus
+   `opens_inline` (the §4.7 inline allow-list). `/settings` lists the members, the tenancy
+   page reads the new deposits endpoint, and the document page offers "Original öffnen" only
+   when it opens inline. The original download now reads its media type from
+   `document_file` (new `document_media_type`), the same source as the detail. The tenancy
+   page's rent schedule reloads after a move-in correction, since that moves the first row.
 
 ## 11. Delivery plan: chunks, ownership, order
 

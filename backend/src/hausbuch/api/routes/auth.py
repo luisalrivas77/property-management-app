@@ -42,6 +42,7 @@ from hausbuch.schemas.auth import (
     InviteCreate,
     LoginVerifyRequest,
     Me,
+    Member,
     Passkey,
     PasskeyLabel,
     PasskeyVerifyRequest,
@@ -344,6 +345,14 @@ def list_invites(request: Request, auth: Auth) -> list[Invite]:
     with workspace_transaction(_engine(request), auth.workspace_id) as conn:
         conn.execute(_READ_ONLY)
         return invites.list_pending_invites(conn, now=_now())
+
+
+@router.get("/members")
+def list_members(request: Request, auth: Auth) -> list[Member]:
+    """The household's members, enrolled or invited, oldest first (§6.7, for /settings)."""
+    with workspace_transaction(_engine(request), auth.workspace_id) as conn:
+        conn.execute(_READ_ONLY)
+        return invites.list_members(conn)
 
 
 @router.delete("/invites/{invite_id}", status_code=204)

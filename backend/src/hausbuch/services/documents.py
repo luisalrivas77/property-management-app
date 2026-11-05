@@ -347,17 +347,21 @@ def current_extraction(conn: Connection, document_id: UUID) -> DocumentExtractio
     return None if row is None else DocumentExtraction.model_validate(dict(row._mapping))
 
 
+def document_media_type(conn: Connection, document_id: UUID) -> str | None:
+    """The media type of the document's file (document_file.media_type), None if no such
+    document is visible."""
+    return conn.execute(
+        select(file_table.c.media_type)
+        .select_from(_document_with_file())
+        .where(document_table.c.id == document_id)
+    ).scalar_one_or_none()
+
+
 def read_original(conn: Connection, store: BlobStore, document_id: UUID) -> bytes:
     """The original bytes, verified against the recorded SHA-256."""
     row = conn.execute(
         select(file_table.c.sha256, file_table.c.size_bytes, file_table.c.storage_key)
-        .select_from(
-            document_table.join(
-                file_table,
-                (file_table.c.workspace_id == document_table.c.workspace_id)
-                & (file_table.c.sha256 == document_table.c.file_sha256),
-            )
-        )
+        .select_from(_document_with_file())
         .where(document_table.c.id == document_id)
     ).one_or_none()
     if row is None:
@@ -448,6 +452,14 @@ def document_retention_input(conn: Connection, document_id: UUID) -> DocumentRet
 
 
 # --- Helpers -----------------------------------------------------------------
+
+
+def _document_with_file():
+    return document_table.join(
+        file_table,
+        (file_table.c.workspace_id == document_table.c.workspace_id)
+        & (file_table.c.sha256 == document_table.c.file_sha256),
+    )
 
 
 def _check_link_args(document_id: UUID, target_type: LinkTarget, target_id: UUID) -> LinkTarget:

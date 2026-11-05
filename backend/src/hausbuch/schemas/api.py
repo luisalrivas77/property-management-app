@@ -11,7 +11,7 @@ Patch.changes() is exactly the keyword arguments the matching update_* service t
 services' UNSET convention).
 """
 
-from datetime import date
+from datetime import date, datetime
 from enum import StrEnum
 from typing import Any, Literal
 from uuid import UUID
@@ -244,3 +244,17 @@ class DocumentDetail(Schema):
     links: list[DocumentLink]
     extraction: DocumentExtraction | None  # the current (highest) version, if typed fields
     retention: RetentionResult
+    media_type: str  # the file's, as uploaded (document_file.media_type)
+    # Whether GET /documents/{id}/original?disposition=inline shows it in the browser (§4.7:
+    # PDF and raster images only); otherwise the original is always a download.
+    opens_inline: bool
+
+
+class DepositReceipt(Schema):
+    """GET /tenancies/{id}/deposits: one Kaution payment received (a tenancy.deposit_received
+    event; the latest of its chain, should one ever be corrected)."""
+
+    event_id: UUID
+    amount: PositiveMoney
+    received_on: date  # the event's effective date
+    recorded_at: datetime

@@ -446,6 +446,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tenancies/{tenancy_id}/deposits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tenancy Deposits
+         * @description The Kaution payments received (tenancy.deposit_received), in recording order.
+         */
+        get: operations["tenancy_deposits_api_tenancies__tenancy_id__deposits_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tenancies/{tenancy_id}/notice": {
         parameters: {
             query?: never;
@@ -1063,6 +1083,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Members
+         * @description The household's members, enrolled or invited, oldest first (§6.7, for /settings).
+         */
+        get: operations["list_members_api_auth_members_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/invites/{invite_id}": {
         parameters: {
             query?: never;
@@ -1213,6 +1253,30 @@ export interface components {
          * @enum {string}
          */
         DepositForm: "none" | "cash_account" | "bank_guarantee" | "surety";
+        /**
+         * DepositReceipt
+         * @description GET /tenancies/{id}/deposits: one Kaution payment received (a tenancy.deposit_received
+         *     event; the latest of its chain, should one ever be corrected).
+         */
+        DepositReceipt: {
+            /**
+             * Event Id
+             * Format: uuid
+             */
+            event_id: string;
+            /** Amount */
+            amount: string;
+            /**
+             * Received On
+             * Format: date
+             */
+            received_on: string;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+        };
         /** DepositReceivedBody */
         DepositReceivedBody: {
             /** Amount */
@@ -1270,6 +1334,10 @@ export interface components {
             links: components["schemas"]["DocumentLink"][];
             extraction: components["schemas"]["DocumentExtraction"] | null;
             retention: components["schemas"]["RetentionResult"];
+            /** Media Type */
+            media_type: string;
+            /** Opens Inline */
+            opens_inline: boolean;
         };
         /**
          * DocumentExtraction
@@ -1762,6 +1830,16 @@ export interface components {
             user: components["schemas"]["AppUser"];
             workspace: components["schemas"]["Workspace"];
             session: components["schemas"]["Session"];
+        };
+        /**
+         * Member
+         * @description GET /auth/members: one household member (an app_user of the workspace). has_passkey
+         *     is false while an invited member has not enrolled yet. Never a passkey or a session.
+         */
+        Member: {
+            user: components["schemas"]["AppUser"];
+            /** Has Passkey */
+            has_passkey: boolean;
         };
         /** NotarizedOnCorrection */
         NotarizedOnCorrection: {
@@ -3602,6 +3680,37 @@ export interface operations {
             };
         };
     };
+    tenancy_deposits_api_tenancies__tenancy_id__deposits_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenancy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepositReceipt"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     tenancy_notice_api_tenancies__tenancy_id__notice_post: {
         parameters: {
             query?: never;
@@ -4824,6 +4933,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Invite"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_members_api_auth_members_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Member"][];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

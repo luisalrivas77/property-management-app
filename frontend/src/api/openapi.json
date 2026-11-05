@@ -1408,6 +1408,51 @@
         }
       }
     },
+    "/api/tenancies/{tenancy_id}/deposits": {
+      "get": {
+        "summary": "Tenancy Deposits",
+        "description": "The Kaution payments received (tenancy.deposit_received), in recording order.",
+        "operationId": "tenancy_deposits_api_tenancies__tenancy_id__deposits_get",
+        "parameters": [
+          {
+            "name": "tenancy_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Tenancy Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DepositReceipt"
+                  },
+                  "title": "Response Tenancy Deposits Api Tenancies  Tenancy Id  Deposits Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/tenancies/{tenancy_id}/notice": {
       "post": {
         "summary": "Tenancy Notice",
@@ -3111,6 +3156,42 @@
         }
       }
     },
+    "/api/auth/members": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "List Members",
+        "description": "The household's members, enrolled or invited, oldest first (§6.7, for /settings).",
+        "operationId": "list_members_api_auth_members_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Member"
+                  },
+                  "type": "array",
+                  "title": "Response List Members Api Auth Members Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/auth/invites/{invite_id}": {
       "delete": {
         "tags": [
@@ -3438,6 +3519,40 @@
         ],
         "title": "DepositForm"
       },
+      "DepositReceipt": {
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Event Id"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "received_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Received On"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Recorded At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "event_id",
+          "amount",
+          "received_on",
+          "recorded_at"
+        ],
+        "title": "DepositReceipt",
+        "description": "GET /tenancies/{id}/deposits: one Kaution payment received (a tenancy.deposit_received\nevent; the latest of its chain, should one ever be corrected)."
+      },
       "DepositReceivedBody": {
         "properties": {
           "amount": {
@@ -3555,6 +3670,14 @@
           },
           "retention": {
             "$ref": "#/components/schemas/RetentionResult"
+          },
+          "media_type": {
+            "type": "string",
+            "title": "Media Type"
+          },
+          "opens_inline": {
+            "type": "boolean",
+            "title": "Opens Inline"
           }
         },
         "additionalProperties": false,
@@ -3563,7 +3686,9 @@
           "document",
           "links",
           "extraction",
-          "retention"
+          "retention",
+          "media_type",
+          "opens_inline"
         ],
         "title": "DocumentDetail",
         "description": "GET /documents/{id}: one read transaction over the document and its layers."
@@ -4853,6 +4978,25 @@
         ],
         "title": "Me",
         "description": "GET /auth/me, and the response of a successful sign-in or enrollment."
+      },
+      "Member": {
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/AppUser"
+          },
+          "has_passkey": {
+            "type": "boolean",
+            "title": "Has Passkey"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "user",
+          "has_passkey"
+        ],
+        "title": "Member",
+        "description": "GET /auth/members: one household member (an app_user of the workspace). has_passkey\nis false while an invited member has not enrolled yet. Never a passkey or a session."
       },
       "NotarizedOnCorrection": {
         "properties": {

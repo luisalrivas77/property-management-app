@@ -3,7 +3,8 @@
 // Mietverhältnis (§9.1): parties and terms, the Mietstaffel (superseded rows struck through,
 // "korrigieren" per row, "Mietänderung"), the actions Kaution erhalten, Kündigung, Auszug and
 // Einzug korrigieren, and the linked documents. The move-in date changes only through its
-// correction; the page says when it was corrected (from History, §9.4).
+// correction; the page says when it was corrected (from History, §9.4). Deposits received
+// come from GET …/deposits.
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback } from "react";
@@ -62,13 +63,13 @@ function TenancyDetail({ tenancy, unit, property, tenants, onChanged }: TenancyD
     [property.id, unit.id],
   );
   const loadDeposits = useCallback(
-    () => ok(api.GET("/api/events", { params: { query: { entity_type: "tenancy", entity_id: tenancy.id } } })),
+    () => ok(api.GET("/api/tenancies/{tenancy_id}/deposits", { params: { path: { tenancy_id: tenancy.id } } })),
     [tenancy.id],
   );
   const history = useLoad(loadHistory);
-  const events = useLoad(loadDeposits);
+  const received = useLoad(loadDeposits);
   const moveInFrom = correctedFrom(findMilestone(history.data, "tenancy.started", tenancy.id), tenancy.start_date);
-  const deposits = (events.data ?? []).filter((event) => event.type === "tenancy.deposit_received");
+  const deposits = received.data ?? [];
   const ended = tenancy.end_date !== null && tenancy.end_date < todayIso();
   const byId = new Map(tenants.map((tenant) => [tenant.id, tenant]));
   const path = { params: { path: { tenancy_id: tenancy.id } } };
@@ -76,7 +77,7 @@ function TenancyDetail({ tenancy, unit, property, tenants, onChanged }: TenancyD
   function changed() {
     onChanged();
     history.reload();
-    events.reload();
+    received.reload();
   }
 
   return (
@@ -128,12 +129,7 @@ function TenancyDetail({ tenancy, unit, property, tenants, onChanged }: TenancyD
             "Kaution erhalten",
             deposits.length === 0
               ? "–"
-              : deposits
-                  .map((event) => {
-                    const amount = event.payload.amount;
-                    return `${formatMoney(typeof amount === "string" ? amount : null)} am ${formatDate(event.effective_date)}`;
-                  })
-                  .join("; "),
+              : deposits.map((deposit) => `${formatMoney(deposit.amount)} am ${formatDate(deposit.received_on)}`).join("; "),
           ],
         ]}
       />
@@ -187,7 +183,9 @@ function TenancyDetail({ tenancy, unit, property, tenants, onChanged }: TenancyD
         </ActionDialog>
       </div>
       <h2>Mietstaffel</h2>
-      <RentSchedule tenancy={tenancy} onChanged={() => history.reload()} />
+      {/* Keyed on the move-in: correcting it also moves the first rent row (§10.8 item 6), so
+          the schedule reloads. */}
+      <RentSchedule key={tenancy.start_date} tenancy={tenancy} onChanged={() => history.reload()} />
       <h2>Dokumente</h2>
       <LinkedDocuments targetType="tenancy" targetId={tenancy.id} />
     </>
