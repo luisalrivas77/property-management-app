@@ -2,15 +2,19 @@ import type { ReactNode } from "react";
 
 import { AuthGate } from "@/auth/AuthGate";
 
-import { TopBar } from "./TopBar";
+import { Sidebar } from "./Sidebar";
 
-// Every signed-in screen (§9.2): the AuthGate resolves the session first, then the top bar
-// and the content column render.
+// Every signed-in screen (§9.2): the AuthGate resolves the session first, then the sidebar
+// and the content column render side by side (stacked on a phone).
 export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <AuthGate>
-      <TopBar />
-      <main className="content">{children}</main>
+      <div className="shell">
+        <Sidebar />
+        <main className="content">
+          <div className="content-inner">{children}</div>
+        </main>
+      </div>
     </AuthGate>
   );
 }

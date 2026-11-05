@@ -1,38 +1,7 @@
 /* The domain screens' additions to globals.css (same tokens, no component library, §9).
    Imported once by components/ui.tsx, which every domain screen uses. */
 
-:root {
-  --ok: #1f6b3a;
-  --ok-bg: #e7f4ea;
-  --warn: #7a5300;
-  --warn-bg: #fdf3dc;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --ok: #8fd6a5;
-    --ok-bg: #18301f;
-    --warn: #f0c96b;
-    --warn-bg: #352a12;
-  }
-}
-
-/* --- inputs beyond type=text --- */
-
-input[type="date"],
-input[type="email"],
-input[type="tel"],
-input[type="search"],
-select,
-textarea {
-  width: 100%;
-  padding: 0.5rem 0.6rem;
-  font: inherit;
-  color: inherit;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
+/* --- inputs beyond the text-like ones in globals.css --- */
 
 textarea {
   min-height: 4.5rem;
@@ -41,10 +10,11 @@ textarea {
 
 input[type="checkbox"],
 input[type="radio"] {
-  width: 1.1rem;
-  height: 1.1rem;
-  margin: 0 0.4rem 0 0;
+  width: 18px;
+  height: 18px;
+  margin: 0 0.5rem 0 0;
   vertical-align: middle;
+  accent-color: var(--accent);
 }
 
 .visually-hidden {
@@ -59,12 +29,11 @@ input[type="radio"] {
 label.inline {
   display: inline-flex;
   align-items: center;
-  font-weight: 400;
-}
-
-:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  min-height: 44px;
+  margin-bottom: 0;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text);
 }
 
 [aria-invalid="true"] {
@@ -72,33 +41,36 @@ label.inline {
 }
 
 .field-errors {
-  margin: 0.3rem 0 0;
+  margin: 0.35rem 0 0;
   padding-left: 1.1rem;
   color: var(--danger);
-  font-size: 0.9rem;
+  font-size: 13px;
 }
 
 .hint {
-  margin: 0.25rem 0 0;
+  margin: 0.35rem 0 0;
+  font-size: 13px;
 }
 
 fieldset {
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 0.75rem 1rem 1rem;
+  border-radius: var(--radius-card);
+  padding: 12px 20px 20px;
   margin: 0;
 }
 
 legend {
-  font-weight: 600;
-  padding: 0 0.3rem;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-2);
+  padding: 0 6px;
 }
 
 /* A form laid out as a grid of fields: one column on a phone, two from tablet width. */
 .grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 0.75rem 1rem;
+  gap: 16px 20px;
 }
 
 @media (min-width: 640px) {
@@ -110,34 +82,27 @@ legend {
   }
 }
 
-/* A link that does what a primary button does (navigates to a form). */
-a.button-link {
-  display: inline-block;
-  padding: 0.5rem 1rem;
-  border-radius: var(--radius);
-  border: 1px solid var(--accent);
-  background: var(--accent);
-  color: var(--accent-text);
-  text-decoration: none;
-}
-
-a.button-link.secondary {
-  background: transparent;
-  color: var(--accent);
-}
-
 /* --- headings, breadcrumbs, tabs --- */
 
+/* Title row: h1, then the actions on the right; a muted line (address, household) goes on
+   its own line under the title. */
 .page-head {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.5rem 1rem;
-  margin-bottom: 1rem;
+  align-items: center;
+  gap: 8px 16px;
+  margin-bottom: 24px;
 }
 
 .page-head h1 {
   margin: 0;
+}
+
+.page-head > .muted {
+  order: 1;
+  flex-basis: 100%;
+  margin-top: -2px;
+  font-size: 15px;
 }
 
 .page-head .spacer,
@@ -149,92 +114,134 @@ a.button-link.secondary {
   list-style: none;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
+  gap: 4px;
   padding: 0;
-  margin: 0 0 0.75rem;
-  font-size: 0.9rem;
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--muted);
 }
 
 .breadcrumbs li + li::before {
   content: "›";
-  margin-right: 0.25rem;
-  color: var(--muted);
+  margin-right: 4px;
 }
 
 .tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
+  gap: 4px;
   border-bottom: 1px solid var(--border);
-  margin: 0 0 1.25rem;
+  margin: 0 0 24px;
 }
 
 .tabs a {
-  padding: 0.45rem 0.75rem;
-  text-decoration: none;
-  border: 1px solid transparent;
-  border-bottom: none;
-  border-radius: var(--radius) var(--radius) 0 0;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 14px;
   margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.tabs a:hover {
+  color: var(--text);
 }
 
 .tabs a[aria-current="page"] {
-  background: var(--surface);
-  border-color: var(--border);
-  color: var(--text);
-  font-weight: 600;
+  color: var(--accent-strong);
+  font-weight: 700;
+  border-bottom-color: var(--accent);
 }
 
 /* --- cards, facts, tables --- */
 
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(min(20rem, 100%), 1fr));
+  gap: 16px;
 }
 
 .cards .card h2 {
   margin-top: 0;
 }
 
-.facts {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 0.4rem 1.5rem;
-  margin: 0;
+.cards .card h2 a {
+  color: var(--text);
+  text-decoration: none;
 }
 
-@media (min-width: 640px) {
-  .facts {
-    grid-template-columns: 1fr 1fr;
-  }
+.cards .card h2 a:hover {
+  color: var(--accent-strong);
+  text-decoration: underline;
+}
+
+/* The small section labels in an Übersicht card (Einheiten, Darlehen). */
+.cards .card strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.cards .card ul {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+}
+
+.cards .card li {
+  background: var(--bg);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 14px;
+}
+
+.cards .card li + li {
+  margin-top: 6px;
+}
+
+/* Label/value facts (Stammdaten): label above value, in a card of their own. */
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(13rem, 100%), 1fr));
+  gap: 16px 24px;
+  margin: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: 20px 24px;
+}
+
+.card .facts,
+.dialog .facts {
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
 }
 
 .facts div {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 0.75rem;
-  border-bottom: 1px solid var(--border);
-  padding: 0.3rem 0;
+  min-width: 0;
 }
 
 .facts dt {
+  font-size: 12px;
+  font-weight: 600;
   color: var(--muted);
-  min-width: 11rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .facts dd {
-  margin: 0;
-}
-
-/* Wide tables scroll inside their box on a phone instead of widening the page. */
-.table-wrap {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-.table-wrap table {
-  min-width: 34rem;
+  margin: 4px 0 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 td.num,
@@ -253,33 +260,47 @@ tr.superseded td.actions {
   text-decoration: none;
 }
 
+/* --- pills and tags --- */
+
+/* Status pill (e.g. "gilt heute", "AfA-Basis"). */
+.badge {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-tint);
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+/* "korrigiert, ursprünglich …" and "Korrektur": a warning pill. */
 .corrected {
   display: inline-block;
   margin-left: 0.4rem;
-  padding: 0 0.4rem;
-  border-radius: var(--radius);
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
   background: var(--warn-bg);
   color: var(--warn);
-  font-size: 0.85rem;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+  text-decoration: none;
 }
 
-.badge {
+/* A neutral type tag (document type, "nicht vermietet"). */
+.tag {
   display: inline-block;
-  padding: 0 0.4rem;
-  border-radius: var(--radius);
-  background: var(--ok-bg);
-  color: var(--ok);
-  font-size: 0.85rem;
-}
-
-.notice-ok {
-  background: var(--ok-bg);
-  color: var(--ok);
-}
-
-.notice-warn {
-  background: var(--warn-bg);
-  color: var(--warn);
+  padding: 2px 8px;
+  border-radius: var(--radius-tag);
+  background: var(--tag-bg);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
 }
 
 .section {
@@ -290,76 +311,131 @@ tr.superseded td.actions {
 
 .timeline {
   list-style: none;
-  padding: 0;
   margin: 0;
-  border-left: 2px solid var(--border);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: 24px 24px 4px;
+}
+
+.card .timeline {
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
 }
 
 .timeline li {
   position: relative;
-  padding: 0.4rem 0 0.6rem 1rem;
+  padding: 0 0 20px 26px;
+  font-size: 14px;
 }
 
 .timeline li::before {
   content: "";
   position: absolute;
-  left: -6px;
-  top: 0.85rem;
+  left: 0;
+  top: 5px;
   width: 10px;
   height: 10px;
   border-radius: 50%;
   background: var(--accent);
 }
 
+.timeline li::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 19px;
+  bottom: 4px;
+  width: 2px;
+  background: var(--border);
+}
+
+.timeline li:last-child::after {
+  display: none;
+}
+
 .timeline .when {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  margin-right: 0.5rem;
 }
 
 .timeline .what {
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .timeline .summary {
   display: block;
+  margin-top: 2px;
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 13px;
 }
 
 /* --- audit trail --- */
 
 .audit-group {
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-card);
   background: var(--surface);
-  padding: 0.5rem 0.75rem;
-  margin-bottom: 0.6rem;
+  padding: 14px 20px;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+.audit-group > .muted {
+  margin: 0;
+  font-size: 13px;
+}
+
+.audit-group .when {
+  font-weight: 700;
+  color: var(--muted);
 }
 
 .audit-group ul {
   list-style: none;
-  margin: 0.3rem 0 0;
+  margin: 6px 0 0;
   padding: 0;
+}
+
+.audit-group li + li {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--divider);
+}
+
+.audit-group summary {
+  cursor: pointer;
+  min-height: 32px;
+  display: list-item;
+  padding: 4px 0;
 }
 
 .audit-group pre {
   margin: 0.3rem 0 0;
+  padding: 10px 12px;
+  background: var(--bg);
+  border-radius: var(--radius-nav);
   white-space: pre-wrap;
   word-break: break-word;
-  font-size: 0.8rem;
+  font-size: 12px;
 }
 
 /* --- dialog, drop zone --- */
 
 .dialog {
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-card);
   background: var(--surface);
   color: var(--text);
   width: min(36rem, calc(100vw - 2rem));
   max-height: calc(100vh - 2rem);
-  padding: 1.25rem;
+  padding: 24px;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.18);
 }
 
 .dialog::backdrop {
@@ -371,23 +447,50 @@ tr.superseded td.actions {
 }
 
 .dropzone {
-  border: 2px dashed var(--border);
-  border-radius: var(--radius);
-  padding: 1.25rem;
+  border: 2px dashed var(--border-strong);
+  border-radius: var(--radius-card);
+  padding: 24px;
   text-align: center;
   background: var(--surface);
 }
 
 .dropzone.over {
   border-color: var(--accent);
+  background: var(--accent-tint);
+}
+
+.dropzone label {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+input[type="file"] {
+  max-width: 100%;
+  font: inherit;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+input[type="file"]::file-selector-button {
+  min-height: 44px;
+  margin-right: 12px;
+  padding: 0 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .one-time-link {
   word-break: break-all;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.85rem;
+  font-size: 13px;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 0.5rem;
+  padding: 10px 12px;
 }

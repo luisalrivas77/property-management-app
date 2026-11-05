@@ -5,10 +5,12 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 
 import { useAuth } from "@/auth/AuthGate";
+import { BrandMark } from "@/lib/BrandMark";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
-// §9.2: Hausbuch · Übersicht · Dokumente · Eigentümer · Einstellungen · name · Abmelden.
-// Dokumente and Eigentümer are chunk 3b's screens.
+// §9.2 navigation, as the mockups' left sidebar (UI style decision, 5 Nov 2026): Hausbuch ·
+// Übersicht · Dokumente · Eigentümer · Einstellungen, then the user's name and Abmelden.
+// On a phone it stacks above the content (globals.css, .shell).
 const NAV = [
   { href: "/", label: "Übersicht" },
   { href: "/documents", label: "Dokumente" },
@@ -20,16 +22,17 @@ function isCurrent(pathname: string, href: string): boolean {
   return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function TopBar() {
+export function Sidebar() {
   const { me, signOut } = useAuth();
   const pathname = usePathname();
   const [error, setError] = useState<unknown>(null);
 
   return (
-    <header className="topbar">
+    <header className="sidebar">
       <nav aria-label="Hauptnavigation">
         <Link href="/" className="brand">
-          Hausbuch
+          <BrandMark />
+          <span>Hausbuch</span>
         </Link>
         {NAV.map(({ href, label }) => (
           <Link
@@ -41,11 +44,12 @@ export function TopBar() {
             {label}
           </Link>
         ))}
-        <span className="spacer" />
-        <span className="muted">{me.user.display_name}</span>
-        <button type="button" className="link" onClick={() => signOut().catch(setError)}>
-          Abmelden
-        </button>
+        <div className="sidebar-user">
+          <span className="user-name">{me.user.display_name}</span>
+          <button type="button" className="link" onClick={() => signOut().catch(setError)}>
+            Abmelden
+          </button>
+        </div>
       </nav>
       <ErrorNotice error={error} />
     </header>

@@ -69,61 +69,63 @@ export default function SettingsPage() {
       <ErrorNotice error={listError} />
       {passkeys === null && listError == null ? <p className="muted">Lädt …</p> : null}
       {passkeys !== null ? (
-        <table>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Angelegt</th>
-              <th>Zuletzt benutzt</th>
-              <th>Synchronisiert</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {passkeys.map((passkey) => (
-              <tr key={passkey.id}>
-                <td>
-                  {renaming === passkey.id ? (
-                    <RenamePasskey
-                      passkey={passkey}
-                      onDone={async (changed) => {
-                        setRenaming(null);
-                        if (changed) await reload();
-                      }}
-                    />
-                  ) : (
-                    <>
-                      {passkey.label}
-                      {passkey.id === me.session.passkey_id ? <span className="muted"> (diese Sitzung)</span> : null}
-                    </>
-                  )}
-                </td>
-                <td>{formatDateTime(passkey.created_at)}</td>
-                <td>{formatDateTime(passkey.last_used_at)}</td>
-                <td>{passkey.backed_up ? "ja" : "nein"}</td>
-                <td className="row">
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => setRenaming(passkey.id)}
-                    disabled={renaming !== null || removing !== null}
-                  >
-                    Umbenennen
-                  </button>
-                  <button
-                    type="button"
-                    className="danger"
-                    onClick={() => remove(passkey)}
-                    disabled={removing !== null || passkeys.length === 1}
-                    title={passkeys.length === 1 ? "Der letzte Passkey kann nicht entfernt werden." : undefined}
-                  >
-                    {removing === passkey.id ? "Entfernt …" : "Entfernen"}
-                  </button>
-                </td>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Angelegt</th>
+                <th>Zuletzt benutzt</th>
+                <th>Synchronisiert</th>
+                <th />
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {passkeys.map((passkey) => (
+                <tr key={passkey.id}>
+                  <td>
+                    {renaming === passkey.id ? (
+                      <RenamePasskey
+                        passkey={passkey}
+                        onDone={async (changed) => {
+                          setRenaming(null);
+                          if (changed) await reload();
+                        }}
+                      />
+                    ) : (
+                      <>
+                        {passkey.label}
+                        {passkey.id === me.session.passkey_id ? <span className="muted"> (diese Sitzung)</span> : null}
+                      </>
+                    )}
+                  </td>
+                  <td>{formatDateTime(passkey.created_at)}</td>
+                  <td>{formatDateTime(passkey.last_used_at)}</td>
+                  <td>{passkey.backed_up ? "ja" : "nein"}</td>
+                  <td className="row">
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => setRenaming(passkey.id)}
+                      disabled={renaming !== null || removing !== null}
+                    >
+                      Umbenennen
+                    </button>
+                    <button
+                      type="button"
+                      className="danger"
+                      onClick={() => remove(passkey)}
+                      disabled={removing !== null || passkeys.length === 1}
+                      title={passkeys.length === 1 ? "Der letzte Passkey kann nicht entfernt werden." : undefined}
+                    >
+                      {removing === passkey.id ? "Entfernt …" : "Entfernen"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : null}
       {passkeys?.length === 1 ? (
         <p className="muted">

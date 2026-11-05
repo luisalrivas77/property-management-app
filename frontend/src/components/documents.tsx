@@ -226,7 +226,9 @@ export function LinkedDocuments({ targetType, targetId }: { targetType: LinkTarg
                       <td>
                         <Link href={`/documents/${document.id}`}>{documentLabel(document)}</Link>
                       </td>
-                      <td>{documentKind(document)}</td>
+                      <td>
+                        <span className="tag">{documentKind(document)}</span>
+                      </td>
                       <td>{formatDate(document.received_at)}</td>
                       <td className="actions">
                         <a href={`/api/documents/${document.id}/original?disposition=inline`} target="_blank" rel="noopener">
