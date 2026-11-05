@@ -17,15 +17,14 @@ from typing import Any
 from fastapi import FastAPI
 from sqlalchemy import Engine, event, text
 
+from hausbuch.api.app import engine_pool_options
+from hausbuch.api.logging import configure_logging
 from hausbuch.auth.sessions import SessionResolverImpl
 from hausbuch.db.session import UnsafeDatabaseRoleError, create_app_engine
 from hausbuch.settings import Settings, load_settings
 from hausbuch.storage import BlobStore, LocalBlobStore
 
 from .app import create_app
-
-REQUEST_POOL_SIZE = 5  # §3.2; the worker's share (settings.worker_concurrency) comes on top
-MAX_OVERFLOW = 5
 
 # Ownership through membership counts (pg_has_role MEMBER): SET ROLE would make it effective.
 _OWNER_CHECK = """
@@ -62,11 +61,8 @@ def build_app(
 
 
 def create_api_engine(settings: Settings) -> Engine:
-    return create_app_engine(
-        settings.database_url,
-        pool_size=REQUEST_POOL_SIZE + settings.worker_concurrency,
-        max_overflow=MAX_OVERFLOW,
-    )
+    # One source for the pool sizing (§3.7): chunk 1's engine_pool_options.
+    return create_app_engine(settings.database_url, **engine_pool_options(settings))
 
 
 def create_blob_store(settings: Settings) -> BlobStore:
@@ -122,6 +118,8 @@ def __getattr__(name: str) -> Any:
     global _app
     if name == "app":
         if _app is None:
+            # JSON logs with redaction (chunk 1); run uvicorn with --no-access-log.
+            configure_logging()
             _app = build_app()
         return _app
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

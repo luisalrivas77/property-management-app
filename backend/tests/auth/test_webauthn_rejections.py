@@ -35,7 +35,7 @@ def error_kind(response) -> str:
     if "detail" in body:
         assert set(body) == {"detail"}, body
         return body["detail"]
-    assert set(body) <= {"error", "request_id"}, body
+    assert set(body) <= {"error", "message", "request_id"}, body  # chunk 1's envelope
     return body["error"]
 
 

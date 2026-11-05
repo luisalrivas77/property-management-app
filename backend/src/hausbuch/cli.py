@@ -10,7 +10,6 @@ committed as frontend/src/api/openapi.json.
 """
 
 import argparse
-import json
 import os
 import sys
 import tempfile
@@ -137,7 +136,7 @@ def openapi(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
 def openapi_json() -> str:
     """The OpenAPI document of the real app, built with placeholder settings and an engine
     that never connects (create_app does not touch the database)."""
-    from hausbuch.api.app import create_app
+    from hausbuch.api.app import create_app, openapi_document
     from hausbuch.settings import Settings
     from hausbuch.storage import LocalBlobStore
 
@@ -154,7 +153,7 @@ def openapi_json() -> str:
     engine = create_engine("postgresql+psycopg://", poolclass=pool.NullPool)
     try:
         app = create_app(settings, engine, LocalBlobStore(settings.blob_root), _NoSessions())
-        return json.dumps(app.openapi(), indent=2, ensure_ascii=False) + "\n"
+        return openapi_document(app)  # the committed file's exact format (chunk 1)
     finally:
         engine.dispose()
 

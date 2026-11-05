@@ -111,12 +111,11 @@ def test_every_router_is_included_under_api(engine, tmp_path, monkeypatch):
         assert client.get(f"/{name}-probe").status_code == 404
 
 
-def test_routes_live_under_api_and_no_docs_are_served(engine, tmp_path):
-    """Was "the stub routers are empty" in chunk 0; with chunks 1 and 2 merged the rule that
-    stays is: every route is under /api/ (the platform's /healthz aside), no docs pages."""
+def test_every_endpoint_is_under_api_and_no_docs_are_served(engine, tmp_path):
     app = _app(engine, tmp_path)
-    paths = app.openapi()["paths"]
-    assert all(p.startswith("/api/") or p == "/healthz" for p in paths), sorted(paths)
+    # Chunk 1 filled the domain routers (the stub asserted paths == {}); /healthz is the one
+    # endpoint outside /api, and it is left out of the schema.
+    assert all(path.startswith(f"{API_PREFIX}/") for path in app.openapi()["paths"])
     assert app.openapi()["info"]["title"] == "Hausbuch"
     client = TestClient(app)
     for path in ("/docs", "/redoc", "/openapi.json"):
@@ -168,7 +167,9 @@ def test_current_auth_refuses_without_a_valid_session(engine, tmp_path, cookie):
     client = _whoami_client(engine, tmp_path, FakeResolver({TOKEN: AUTH}))
     response = client.get("/whoami", headers={"Cookie": cookie} if cookie else {})
     assert response.status_code == 401
-    assert response.json() == {"detail": "unauthenticated"}  # chunk 1 renders ErrorResponse
+    body = response.json()  # an ErrorResponse since chunk 1 (the stub returned {"detail": ...})
+    assert body["error"] == "unauthenticated"
+    assert set(body) == {"error", "request_id"}
 
 
 def test_an_oversized_token_is_refused_without_a_lookup(engine, tmp_path):
