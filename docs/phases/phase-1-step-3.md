@@ -674,7 +674,8 @@ production always uses `s3`.
 
 Stack: `next` 16.4 (Turbopack default; `proxy.ts` replaces `middleware.ts` in 16), React 19,
 TypeScript strict, `@simplewebauthn/browser` 14, `openapi-fetch` + generated `types.ts`,
-plain CSS (one `globals.css`, a handful of utility classes; no component library, no
+plain CSS in the mockup style (decided 5 Nov 2026; this replaced the original top bar,
+teal accent and system font: `docs/mockups/README.md`) (one `globals.css`, a handful of utility classes; no component library, no
 Tailwind). German labels throughout. The PWA manifest (`app/manifest.ts`, icons, `display:
 standalone`) ships now so the app can be installed on the phone; no service worker and no
 offline mode until phase 2's capture flow needs them.
@@ -701,8 +702,9 @@ over `GET /documents`, with an inline upload.
 
 ### 9.2 Layout and navigation
 
-`app/(app)/layout.tsx`: top bar (Hausbuch · Übersicht · Dokumente · Eigentümer ·
-Einstellungen · user display name · Abmelden), content column max ~960 px, breadcrumb inside
+`app/(app)/layout.tsx`: left sidebar (Hausbuch · Übersicht · Dokumente · Eigentümer ·
+Einstellungen · user display name · Abmelden; it stacks above the content on a phone),
+content column max ~1160 px, breadcrumb inside
 a property (Immobilie › Einheit › Mietverhältnis). `app/(public)/layout.tsx` for `/login` and
 `/enroll`. The `(app)` layout wraps children in an `AuthGate` client component that calls
 `GET /auth/me` once, stores `Me` in a context, and redirects to `/login` on 401. No `proxy.ts`

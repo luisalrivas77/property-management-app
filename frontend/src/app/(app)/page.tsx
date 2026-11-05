@@ -111,7 +111,7 @@ export default function OverviewPage() {
                                   {current.upcoming ? ` ab ${formatDate(current.tenancy.start_date)}` : ""}
                                 </Link>
                               ) : (
-                                <span className="muted">nicht vermietet</span>
+                                <span className="tag">nicht vermietet</span>
                               )}
                             </li>
                           );

@@ -57,7 +57,9 @@ export default function DocumentsPage() {
                       <td>
                         <Link href={`/documents/${document.id}`}>{documentLabel(document)}</Link>
                       </td>
-                      <td>{documentKind(document)}</td>
+                      <td>
+                        <span className="tag">{documentKind(document)}</span>
+                      </td>
                       <td>{document.typing?.tax_year ?? "–"}</td>
                       <td>{formatDateTime(document.received_at)}</td>
                     </tr>

@@ -31,9 +31,9 @@ only in a spec PR, never to make an implementation pass.
 ## UI mockups
 
 Six screen mockups (PNG + static HTML) live in `docs/mockups/`. Before building or changing a
-screen, read `docs/mockups/README.md` and look at the matching PNG. They set layout, content
-and flow; visual style stays with `frontend/src/app/globals.css`; their numbers are sample
-data, never fixtures.
+screen, read `docs/mockups/README.md` and look at the matching PNG. They set layout, content,
+flow and the visual style (tokens and classes in `frontend/src/app/globals.css`); labels stay
+German; their numbers are sample data, never fixtures.
 
 ## Layout and commands
 

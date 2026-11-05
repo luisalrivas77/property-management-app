@@ -19,10 +19,13 @@ spacing). Links between the HTML files work, so you can click through them in a 
 
 - **Layout, content and flow come from the mockups.** Which facts a screen shows, how they are
   grouped, what links where, and the order of a flow (upload → review → confirm).
-- **Visual style stays with the existing frontend** (`frontend/src/app/globals.css`): its
-  colours, font, dark mode and the no-component-library rule. The mockups' green palette and
-  Manrope font are not adopted unless Luis decides so; if that changes, it is recorded here
-  and in `docs/ARCHITECTURE.md`.
+- **Visual style comes from the mockups too** (decided 5 Nov 2026, see the Decisions table in
+  `docs/ARCHITECTURE.md`): green palette, Manrope, cards, pills, the left sidebar. The tokens
+  live in `frontend/src/app/globals.css`; use those variables and classes rather than copying
+  hex values or inline styles from the HTML files. Still plain CSS with no component library,
+  and dark mode stays.
+- **Labels stay German.** The mockups are written in English with German tax terms; the app's
+  labels are German throughout (`docs/phases/phase-1-step-3.md` §9).
 - **The numbers are sample data**, not test fixtures. The flat, tenant and amounts are made up
   (Musterstraße 12, M. Mustermann). Rule fixtures in `backend/tests/fixtures/` are the
   contract; where a mockup figure disagrees with a fixture or with the spec, the fixture and
@@ -36,5 +39,6 @@ spacing). Links between the HTML files work, so you can click through them in a 
 - **Copy is English placeholder text** with German tax terms kept as-is. Bracketed text such
   as `[tenant email]` or `[your-inbox]` marks values that do not exist yet.
 
-The 02 screen overlaps with phase 1 screens that are already built. Do not restyle or
-restructure those to match the mockup unless a task asks for it.
+The phase 1 screens that were already built were restyled to this look on 5 Nov 2026; their
+structure and German labels were kept. Do not restructure them to match the 02 mockup's
+layout unless a task asks for it.
