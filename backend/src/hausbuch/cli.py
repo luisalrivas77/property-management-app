@@ -33,8 +33,16 @@ def main(argv: Sequence[str] | None = None, environ: Mapping[str, str] = os.envi
     args = _parser().parse_args(argv)
     try:
         return args.command(args, environ)
-    except (CliError, UnsafeDatabaseRoleError) as exc:
+    except CliError as exc:
         print(f"hausbuch {args.command_name}: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    except UnsafeDatabaseRoleError:
+        print(
+            f"hausbuch {args.command_name}: HAUSBUCH_ADMIN_DATABASE_URL connects as a superuser "
+            "or a BYPASSRLS role; the CLI must run as the schema owner (hausbuch_owner), never "
+            "as a superuser",
+            file=sys.stderr,
+        )
         return EXIT_ERROR
     except DBAPIError as exc:
         # Never the DBAPI message or SQLAlchemy's statement/parameters: they carry values

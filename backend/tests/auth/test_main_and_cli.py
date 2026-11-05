@@ -217,7 +217,7 @@ def test_bootstrap_refuses_a_superuser_url(dev_db, capsys):
     environ = {"HAUSBUCH_ADMIN_DATABASE_URL": role_url(dev_db, None), "HAUSBUCH_ORIGIN": ORIGIN}
     code, out, err = _cli(capsys, [*BOOTSTRAP, "--name", "Luis"], environ)
     assert code == 1 and out == ""
-    assert "superuser or has BYPASSRLS" in err
+    assert "connects as a superuser or a BYPASSRLS role" in err and "hausbuch_owner" in err
 
 
 def test_bootstrap_as_the_app_role_fails_without_echoing_sql(dev_db, capsys):
