@@ -48,19 +48,6 @@ class FakeResolver:
         return self.sessions.get(token)
 
 
-class FakeWorker:
-    """The Worker protocol (§3.7), recording what the lifespan does to it."""
-
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, float | None]] = []
-
-    async def start(self) -> None:
-        self.calls.append(("start", None))
-
-    async def stop(self, timeout: float) -> None:
-        self.calls.append(("stop", timeout))
-
-
 def auth_for(workspace_id: UUID) -> AuthContext:
     return AuthContext(
         workspace_id=workspace_id, user_id=uuid4(), session_id=uuid4(), passkey_id=None
