@@ -176,7 +176,7 @@ and sets `app.workspace_id` per transaction (`SET LOCAL`).
 
 ## Implementation status
 
-As of 5 Nov 2026, merged to `main` in #4. Each step was built by a coder agent
+As of 5 Nov 2026: steps 1–2 merged to `main` in #4, step 3 in #6, #7 and #8. Each step was built by a coder agent
 and reviewed by a reviewer agent; every review finding was fixed or is listed below.
 
 1. **DONE: rules** (`hausbuch.rules.*`): loan schedule, rent in force, History timeline,
