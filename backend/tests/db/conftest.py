@@ -204,3 +204,38 @@ def _insert(conn, table: str, row: dict) -> uuid.UUID:
         sql.SQL(", ").join(sql.Placeholder() * len(row)),
     )
     return conn.execute(query, list(row.values())).fetchone()[0]
+
+
+# --- Domain service helpers ---------------------------------------------------
+
+TEST_IBAN_KEY = bytes(range(32))  # test key only; production keys come from the secrets manager
+
+
+@pytest.fixture
+def run(app_engine):
+    """run(ws, command, *args, now=None, **kwargs): one service command (a function taking a
+    CommandContext) in its own workspace transaction, committed on return, as a test user."""
+    from hausbuch.db.session import workspace_transaction
+    from hausbuch.schemas.enums import ActorType
+    from hausbuch.services.context import Actor, new_command
+
+    actor = Actor(ActorType.USER, "user:test")
+
+    def _run(ws, command, *args, now=None, **kwargs):
+        with workspace_transaction(app_engine, ws) as conn:
+            return command(new_command(conn, ws, actor, now=now), *args, **kwargs)
+
+    return _run
+
+
+@pytest.fixture
+def read(app_engine):
+    """read(ws, query, *args, **kwargs): one query (a function taking a Connection) in its
+    own workspace transaction."""
+    from hausbuch.db.session import workspace_transaction
+
+    def _read(ws, query, *args, **kwargs):
+        with workspace_transaction(app_engine, ws) as conn:
+            return query(conn, *args, **kwargs)
+
+    return _read
