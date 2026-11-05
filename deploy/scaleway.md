@@ -13,10 +13,12 @@ flag differs, follow the console and `scw <command> --help`.
   talk to it, on your own domain. It forwards every `/api/*` request to the API container.
 - **`hausbuch-api`**: a Serverless Container running the FastAPI app, with the job worker in
   the same process (phase 2 fills it). It always runs one instance (min-scale 1, max-scale 1).
-- **One-off commands** from the same API image: database migrations, `hausbuch bootstrap`
-  (first workspace and user) and `hausbuch invite` (a fresh enrollment link, e.g. after a lost
-  phone). Only these get the database **owner** password; the API never does.
-- **Managed PostgreSQL 16** (DB-DEV-S) on a private network, with daily backups.
+- **Admin commands, run from your own computer** with `uv` from the repo checkout (no
+  Docker): database migrations, `hausbuch bootstrap` (first workspace and user) and
+  `hausbuch invite` (a fresh enrollment link, e.g. after a lost phone). Only these use the
+  database **owner** password, which stays on your computer; the API never has it.
+- **Managed PostgreSQL 16** (DB-DEV-S) on a private network for the API, plus a public
+  endpoint that only your computer's IP address may reach, for the admin commands.
 - **An Object Storage bucket** (private, EU) for the original documents.
 - **A Container Registry namespace** for the two images.
 - **Secret Manager** as the one place where every secret value is kept.
@@ -28,30 +30,23 @@ create anything; the API container's min-scale 1 means it is billed around the c
 
 ## Read this first: five things the spec did not know
 
-The first deploy will run into these. Two need a decision from you before you start
-(marked **Decision**). The rest are already handled in the steps below.
+The first deploy will run into these. All five are handled in the steps below.
 
-1. **Decision: Serverless Jobs cannot reach a private network.** Scaleway's Jobs FAQ says
-   so: "Serverless Jobs does not currently support Scaleway VPC or Private Networks, though
-   this feature is under development". Jobs also have no fixed IP address. The spec puts
-   the database on a private network *and* runs migrations, bootstrap and invite as Jobs.
-   Both cannot be true today. Pick one:
+1. **Admin commands run from your computer, not as Serverless Jobs** (decided 5 Nov 2026,
+   `docs/ARCHITECTURE.md`, Decisions, "Admin commands"). Migrations, `hausbuch bootstrap`
+   and `hausbuch invite` run on your own computer with `uv`, straight from the repo
+   checkout. They reach the database through its public endpoint, whose allow-list holds
+   only your computer's current IP address, so the rest of the internet cannot reach the
+   database port. The owner URL (`HAUSBUCH_ADMIN_DATABASE_URL`) lives only on your computer;
+   it is never stored at Scaleway. The root of trust is "the owner password plus an allowed
+   IP". The cost: you must be at an allowed IP to migrate or recover a passkey, and you
+   update the allow-list when your IP changes ("Admin commands from your computer" below).
 
-   - **A (recommended): run the one-off commands from your own computer.** The database
-     keeps a public endpoint, but its allow-list holds only your home IP address, so the
-     internet cannot reach it. You run the same image with `docker run`, and the owner URL
-     stays in your password manager; it is never stored at Scaleway. The cost: you must be
-     at an allowed IP to migrate or recover a passkey, and you update the allow-list when
-     your home IP changes. This also changes a recorded decision (`docs/ARCHITECTURE.md`,
-     Decisions, "Provisioning": "a Serverless Job on Scaleway"). The root of trust becomes
-     "the owner password plus an allowed IP" instead of "the ability to run a Job".
-   - **B (the spec as written): Serverless Jobs over the public endpoint.** Because Jobs
-     have no fixed IP, the allow-list must stay open to all of Scaleway's IP ranges (or to
-     everyone). Every Scaleway-hosted machine can then reach the database port. What still
-     protects it: a long random password, TLS, and CONNECT revoked from everyone else.
-
-   Switch to Jobs on the private network (the spec's intent) once Scaleway ships VPC support
-   for Jobs. Every one-off command below is written for both options.
+   *Not used: Serverless Jobs.* The spec first planned Jobs. Scaleway's Jobs FAQ says
+   "Serverless Jobs does not currently support Scaleway VPC or Private Networks, though this
+   feature is under development", and Jobs have no fixed IP address. A Job could therefore
+   only reach the database through a public endpoint open to all of Scaleway's IP ranges,
+   which is much wider than one home IP. Revisit Jobs once they can join a private network.
 
 2. **The spec's one-time SQL leaves the database open to every role** (§14). The spec runs
    `REVOKE CONNECT … FROM PUBLIC` after the admin's temporary membership in `hausbuch_owner`
@@ -97,9 +92,9 @@ The first deploy will run into these. Two need a decision from you before you st
 Two smaller differences from the spec:
 
 - **Serverless Containers cannot read Secret Manager yet** ("Secrets on Serverless
-  Containers are not linked with Secret Manager product yet"). Jobs can. So Secret Manager
-  is where each value lives, and for the containers you paste the value into the
-  container's *secret environment variables*.
+  Containers are not linked with Secret Manager product yet"). So Secret Manager is where
+  each container value lives, and you paste the value into the container's *secret
+  environment variables*.
 - **Scaleway ignores Docker's `HEALTHCHECK`.** The health check is configured on the
   container itself (step 10).
 
@@ -107,7 +102,10 @@ Two smaller differences from the spec:
 
 On your computer:
 
-- Docker (with BuildKit, the default since Docker 23).
+- A checkout of this repository.
+- `uv`, for the admin commands (installed in "Admin commands from your computer" below).
+- Docker (with BuildKit, the default since Docker 23), only to build and push the images in
+  step 7. The admin commands do not need it.
 - `psql` 16 or later.
 - The Scaleway CLI `scw`, signed in with `scw init` (project: the Hausbuch project, region
   `fr-par`).
@@ -166,15 +164,17 @@ Then, on the instance's page:
 
 - **Network**: note the **private endpoint** (an IP in `hausbuch-db`, port 5432). The API
   uses it.
-- **Public endpoint**: Scaleway creates one by default, open to `0.0.0.0/0`.
-  - Option A: in **Allowed IPs**, add your home IP as `x.x.x.x/32` and delete
-    `0.0.0.0/0`.
-  - Option B: replace `0.0.0.0/0` with Scaleway's IP prefixes
-    (https://www.scaleway.com/en/peering/), or leave it open if you accept that.
-  - (Removing the public endpoint makes the instance re-initialise. Re-adding one gets a new IP
-    and port, so it is not something to toggle per migration.)
-- Download the instance's **TLS certificate** (for `sslmode=verify-full` from your
-  computer).
+- **Public endpoint**: Scaleway creates one by default, open to `0.0.0.0/0`. Keep the
+  endpoint (the admin commands use it) but close it to everyone except you: in **Allowed
+  IPs**, add your computer's current public IPv4 address as `x.x.x.x/32` and **delete
+  `0.0.0.0/0`**. `curl -4 https://ifconfig.me` prints that address. How to update it when
+  it changes is in "Admin commands from your computer" below. (Removing the public endpoint
+  makes the instance re-initialise, and re-adding one gets a new IP and port, so it is not
+  something to toggle per migration.)
+- Note the public endpoint's **IP and port**: they go into the owner URL.
+- Download the instance's **TLS certificate**. Step 4's `psql` uses it
+  (`sslmode=verify-full`), and the owner URL may too (stronger than its `sslmode=require`
+  minimum, see step 8).
 
 Do **not** create users or databases in the console's Users tab. Step 4 creates them in SQL,
 because the console cannot express the grants Hausbuch needs.
@@ -303,50 +303,124 @@ A new API URL means a new web image.
 
 Secret Manager is the one place every secret value is kept, versioned.
 
-Console: Security & Identity → Secret Manager, in fr-par. Create one secret per value:
+Console: Security & Identity → Secret Manager, in fr-par. Create one secret per value the
+containers use:
 
 | Secret | Value | Used by |
 | --- | --- | --- |
 | `hausbuch-app-database-url` | `postgresql+psycopg://hausbuch_app:<app password>@<private-ip>:5432/hausbuch?sslmode=require` | API container |
-| `hausbuch-owner-database-url` | `postgresql+psycopg://hausbuch_owner:<owner password>@<public-ip>:<public-port>/hausbuch?sslmode=require` | one-off commands **only** |
 | `hausbuch-iban-hmac-key` | 64 hex characters | API container |
 | `hausbuch-session-key` | 64 hex characters (a different value) | API container |
 | `hausbuch-s3-access-key` | the step 6 access key | API container |
 | `hausbuch-s3-secret-key` | the step 6 secret key | API container |
 
 `sslmode=require` encrypts the connection but does not check the server's certificate: the
-container image does not carry the instance's CA. From your computer, use
-`sslmode=verify-full&sslrootcert=<file>` with the certificate from step 3.
+container image does not carry the instance's CA.
 
-With option A the owner URL does not need to be in Secret Manager at all; your password
-manager is enough.
+**The owner URL is not stored at Scaleway.** It is kept only on your computer, in your
+password manager and in the admin env file described in "Admin commands from your
+computer" below:
+
+```
+postgresql+psycopg://hausbuch_owner:<owner password>@<public-ip>:<public-port>/hausbuch?sslmode=require
+```
+
+`sslmode=require` is the minimum: never connect to the public endpoint without TLS. Since
+your computer has the certificate from step 3, you can make it stronger with
+`?sslmode=verify-full&sslrootcert=/absolute/path/to/<instance-cert>.pem`, which also checks
+that you are talking to your instance.
+
+## Admin commands from your computer
+
+Migrations, `hausbuch bootstrap` and `hausbuch invite` run on your computer, from the repo
+checkout, as `hausbuch_owner`. No Docker and no image: `uv` installs the backend's exact
+locked dependencies and Python 3.12 into `backend/.venv`. Set this up once; steps 9 and 12
+and every later migration use it.
+
+**1. Install uv** (once):
+
+```bash
+# macOS or Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# or, on a Mac with Homebrew:  brew install uv
+# Windows (PowerShell):  powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+uv --version
+```
+
+**2. Install the `hausbuch` CLI from the checkout** (once, and again after each `git pull`):
+
+```bash
+cd backend && uv sync --python 3.12
+```
+
+That one line creates `backend/.venv` with the `hausbuch` command and Alembic. Run them
+from `backend/` as `uv run hausbuch …` and `uv run alembic …`. `uv sync` downloads Python
+3.12 itself if your computer does not have it.
+
+**3. The admin env file** (once). It holds the owner URL from step 8 and the web origin
+that enrollment links point to. Create it so that only you can read it, and paste the
+URL in rather than typing it into a command, so it never lands in your shell history:
+
+```bash
+umask 077
+cat > ~/.hausbuch-owner.env     # paste the two lines below, then press Ctrl-D
+ls -l ~/.hausbuch-owner.env     # -rw------- : readable by you only
+```
+
+```
+HAUSBUCH_ADMIN_DATABASE_URL=postgresql+psycopg://hausbuch_owner:<owner password>@<public-ip>:<public-port>/hausbuch?sslmode=require
+HAUSBUCH_ORIGIN=https://hausbuch.example.org
+```
+
+This file and your password manager are the only places the owner URL exists. Never copy
+it to Scaleway, into the API container, into the repository, or into a chat. `uv run
+--env-file ~/.hausbuch-owner.env …` loads it for one command only, so it is not left in
+your shell's environment either.
+
+**4. Your IP must be on the database's allow-list.** The public endpoint accepts only the
+addresses in its **Allowed IPs** (step 3). A home connection's public IP changes now and
+then, and a different network (travel, a phone hotspot) has a different one. Before an
+admin command, compare:
+
+```bash
+curl -4 https://ifconfig.me; echo                                    # your current IPv4
+scw rdb instance list region=fr-par                                  # the instance's ID
+scw rdb acl list instance-id=<instance-id> region=fr-par             # what is allowed
+```
+
+If they differ, replace the allow-list with your current address only. In the console:
+the instance → **Allowed IPs** → add `<new-ip>/32`, then delete the old entry. With the
+CLI, one command replaces every rule (check the argument names with
+`scw rdb acl set --help` if it complains):
+
+```bash
+scw rdb acl set instance-id=<instance-id> region=fr-par \
+  rules.0.ip=<new-ip>/32 rules.0.description="Luis admin"
+```
+
+Never add `0.0.0.0/0` back. After a trip, set the list back to your home IP. A connection
+from an address that is not allowed does not get an error from Postgres; it times out
+(`connection timeout expired` or `Operation timed out`), so a hang at connect usually means
+the allow-list.
 
 ## Step 9: Migrations (one-off, as the owner)
 
 Migrations create and change the tables. They run as `hausbuch_owner` and must run before a
-new API image that needs them. The image's `hausbuch-migrate` command runs
-`alembic upgrade head`. It reads the owner URL from `HAUSBUCH_ADMIN_DATABASE_URL`, the same
-variable `bootstrap` and `invite` read. Without it, the command refuses.
-
-**Option A, from your computer** (owner URL in a file only you can read, never in shell
-history):
+new API image that needs them. Run them from your computer, from a checkout of **the same
+commit as the image you are about to deploy**, so the migrations and the code match:
 
 ```bash
-umask 077
-printf 'HAUSBUCH_ADMIN_DATABASE_URL=%s\n' '<owner URL>' > ~/.hausbuch-owner.env
-docker run --rm --env-file ~/.hausbuch-owner.env rg.fr-par.scw.cloud/hausbuch/api:$TAG hausbuch-migrate
+git checkout <commit of the image tag> && cd backend && uv sync --python 3.12
+uv run --env-file ~/.hausbuch-owner.env sh -c \
+  'HAUSBUCH_DATABASE_URL="$HAUSBUCH_ADMIN_DATABASE_URL" exec alembic upgrade head'
 ```
 
-**Option B, as a Serverless Job.** Console: Serverless → Jobs → **Create job definition**
-`hausbuch-migrate`:
-
-- image `rg.fr-par.scw.cloud/hausbuch/api:<tag>`;
-- the smallest resources;
-- **secret reference**: `HAUSBUCH_ADMIN_DATABASE_URL` from `hausbuch-owner-database-url`;
-- **startup command** `["hausbuch-migrate"]`;
-- no retries.
-
-Run it, and read its logs for `Running upgrade … -> …`.
+Alembic reads `HAUSBUCH_DATABASE_URL`; the `sh -c` hands it the owner URL for this one
+process only. That is what the image's `hausbuch-migrate` script does too, so the owner URL
+never sits in a variable under the API's name. (On Windows, run these from WSL or Git Bash,
+which have `sh`.) The upgrade prints nothing when it succeeds; confirm the version with the
+same command and `alembic current` instead of `alembic upgrade head`. It must print the
+newest migration followed by `(head)`.
 
 After the first run, check that the tables are owned by the owner:
 
@@ -383,10 +457,12 @@ curl -i https://<api-container-endpoint>/healthz      # 200 {"status":"ok"}
 
 ### Environment of each container and command
 
-| Variable | `hausbuch-api` | `hausbuch-web` | migrate | bootstrap / invite |
+The last two columns are your computer's `~/.hausbuch-owner.env`, not anything at Scaleway.
+
+| Variable | `hausbuch-api` | `hausbuch-web` | migrate (your computer) | bootstrap / invite (your computer) |
 | --- | --- | --- | --- | --- |
 | `HAUSBUCH_DATABASE_URL` | **secret**: app role, private IP | — | — | — |
-| `HAUSBUCH_ADMIN_DATABASE_URL` | **never** | — | **secret**: owner | **secret**: owner |
+| `HAUSBUCH_ADMIN_DATABASE_URL` | **never** | — | owner, public endpoint | owner, public endpoint |
 | `HAUSBUCH_IBAN_HMAC_KEY` | **secret** | — | — | — |
 | `HAUSBUCH_SESSION_KEY` | **secret** | — | — | — |
 | `AWS_ACCESS_KEY_ID` | **secret** (step 6) | — | — | — |
@@ -437,22 +513,13 @@ from the API through the web container.
 ## Step 12: Bootstrap the workspace and enroll at once
 
 `hausbuch bootstrap` creates the workspace, your user and a one-time enrollment link, valid
-24 hours. It refuses to run a second time.
-
-**Option A, from your computer:**
+24 hours. It refuses to run a second time. Run it from your computer, in `backend/` (set
+up in "Admin commands from your computer"; `HAUSBUCH_ORIGIN` comes from the env file):
 
 ```bash
-docker run --rm --env-file ~/.hausbuch-owner.env -e HAUSBUCH_ORIGIN=https://hausbuch.example.org \
-  rg.fr-par.scw.cloud/hausbuch/api:$TAG \
+uv run --env-file ~/.hausbuch-owner.env \
   hausbuch bootstrap --workspace "Haushalt Rivas" --email luis@example.org --name "Luis"
 ```
-
-**Option B, as a Job:**
-
-- a job definition `hausbuch-cli`: same image, the owner-URL secret reference, and
-  `HAUSBUCH_ORIGIN` as a plain variable;
-- run it with the contextual startup command `["hausbuch"]` and the arguments
-  `["bootstrap", "--workspace", "Haushalt Rivas", "--email", "luis@example.org", "--name", "Luis"]`.
 
 It prints:
 
@@ -461,23 +528,21 @@ Workspace 8f1c… created. Enrol the first passkey within 24 h:
 https://hausbuch.example.org/enroll#token=…   (shown once; not stored)
 ```
 
-**The rule for enrollment links (§10.7):** the link is printed to standard output. With
-option B that means it is in the Job's logs, where anyone with log access can read it. That
-is acceptable because the link works once and expires after 24 hours. So:
+**The rule for enrollment links (§10.7):** the link is printed to standard output, here
+your own terminal, and it is the only key to the account until a passkey is enrolled. It
+works once and expires after 24 hours. So:
 
-- **open the link and enroll your passkey immediately** after the command finishes;
+- **open the link and enroll your passkey immediately** after the command finishes. Do not
+  paste it into a chat, a ticket or a note; clear the terminal's scrollback once you have
+  enrolled;
 - **if the link is refused** ("already used" or "invalid"), assume someone else used it.
   Run `hausbuch invite` at once with both revoke flags, which deletes every passkey and
   session of that user (the intruder's included), then enroll with the new link:
 
   ```bash
-  docker run --rm --env-file ~/.hausbuch-owner.env -e HAUSBUCH_ORIGIN=https://hausbuch.example.org \
-    rg.fr-par.scw.cloud/hausbuch/api:$TAG \
+  uv run --env-file ~/.hausbuch-owner.env \
     hausbuch invite --email luis@example.org --revoke-passkeys --revoke-sessions
   ```
-
-  (As a Job: the `hausbuch-cli` definition with the arguments
-  `["invite", "--email", "luis@example.org", "--revoke-passkeys", "--revoke-sessions"]`.)
 
 The same `invite` command is the recovery path when all passkeys are lost (§6.7). Your
 spouse joins from the app: Einstellungen → "Mitglied einladen".
@@ -568,15 +633,16 @@ image. Keep the order: grace < uvicorn's timeout < the platform's kill timeout.
 | Q13 platform body limit (25 MiB straight to the API) | | |
 | Q13 end-to-end 25 MiB upload through the web container | | |
 | Q15 SIGTERM → kill timeout | | |
-| Option A or B chosen for one-off commands | | |
+| Public endpoint reachable only from your IP (from another network, `psql` times out) | | |
 
 ## Deploying an update
 
 1. Build and push both images with the new commit's tag (step 7). The web image only needs
    a rebuild when `frontend/` changed or the API URL changed.
-2. If the commit adds migrations, run `hausbuch-migrate` with the **new** image first (step
-   9). Migrations are append-only and additive, so the old API keeps working against the
-   new schema while the new one rolls out.
+2. If the commit adds migrations, run them first, from your computer with the **new**
+   commit checked out (step 9; check the allow-list holds your current IP). Migrations are
+   append-only and additive, so the old API keeps working against the new schema while the
+   new one rolls out.
 3. Point `hausbuch-api` at the new tag. Scaleway starts the new instance and switches
    traffic once it is ready. Then the old instance gets SIGTERM and drains: new requests
    get 503 `shutting_down`, which the web client retries once.

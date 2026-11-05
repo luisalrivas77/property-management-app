@@ -599,8 +599,9 @@ if it does not, the proxy adds a fixed header the API accepts instead (Q14).
   users share the workspace; `actor_id` keeps them apart in the audit trail. There are no roles
   in v1: both are full members (Q5).
 - **All passkeys lost**: `uv run hausbuch invite --email luis@example.org [--revoke-passkeys]
-  [--revoke-sessions]` (a Serverless Job on Scaleway) prints a fresh enrollment URL (same
-  table, same flow). Root of trust = the ability to run a Job with the owner DB credentials;
+  [--revoke-sessions]` (run from Luis's computer, §10.8 item 1; first planned as a
+  Serverless Job) prints a fresh enrollment URL (same table, same flow). Root of trust = the
+  owner DB credentials plus an allow-listed IP (first: the ability to run a Job);
   there is no email or SMS recovery in v1 (no outbound mail infrastructure, and a recovery
   mail would be the weakest link of a passkey-only design). The UI refuses to delete the last
   passkey (409) so the CLI path is the only way to reach "no passkeys".
@@ -901,6 +902,14 @@ Chunk 4a found these by running the images and the setup for real:
      allowed only from his IP;
    - (B) Jobs over a public endpoint open to Scaleway's IP ranges;
    - (C) a short-lived private Serverless Container per command.
+
+   **Runbook updated:** `deploy/scaleway.md` now makes (A) the only path. It covers
+   installing uv, `uv sync` in `backend/`, the admin env file with
+   `HAUSBUCH_ADMIN_DATABASE_URL` (`sslmode=require`) on Luis's computer only, the
+   public-endpoint allow-list of his current IP and how to replace it, migrations as
+   `uv run --env-file … alembic upgrade head` from the deployed commit, and the §10.7 link
+   rule. The Job path is a short "not used" note. §6.7's and §14's mentions of Jobs below
+   are superseded by it.
 2. **§14's one-time SQL as first written didn't lock the database.** A non-superuser admin's
    `REVOKE CONNECT … FROM PUBLIC` silently does nothing once its membership in the owner role
    is gone. The revoke must run as the owner (`SET ROLE hausbuch_owner`) **before** the
@@ -1057,7 +1066,7 @@ Two Serverless Containers from two images, both listening on **8080**:
 | --- | --- | --- | --- | --- |
 | `hausbuch-api` | `backend/Dockerfile` (uv, Python 3.12) | `uvicorn hausbuch.api.main:app --host 0.0.0.0 --port 8080 --timeout-graceful-shutdown 25`, worker inside (§3.7) | **min 1, max 1** in v1 (one worker; sessions and jobs live in Postgres, so max > 1 is safe later) | `HAUSBUCH_DATABASE_URL` (app role), `HAUSBUCH_IBAN_HMAC_KEY`, `HAUSBUCH_SESSION_KEY`, `HAUSBUCH_RP_ID`, `HAUSBUCH_ORIGIN`, `HAUSBUCH_BLOB_STORE=s3`, `HAUSBUCH_S3_*`, `HAUSBUCH_RUN_WORKER=true`; health check `GET /healthz` |
 | `hausbuch-web` | `frontend/Dockerfile` (Next standalone output) | `node server.js` on 8080, `/api/*` rewritten to the API container URL | min 0 is acceptable (stateless; cold start only costs a page load) | `HAUSBUCH_API_URL` |
-| Jobs (same `backend` image) | — | `alembic upgrade head`, `hausbuch bootstrap`, `hausbuch invite` | run-to-completion | `HAUSBUCH_ADMIN_DATABASE_URL` (owner role) **only here**, never in the API container |
+| ~~Jobs (same `backend` image)~~ superseded by §10.8 item 1: run from Luis's computer with `uv` | — | `alembic upgrade head`, `hausbuch bootstrap`, `hausbuch invite` | run-to-completion | `HAUSBUCH_ADMIN_DATABASE_URL` (owner role) **only there**, never in the API container |
 
 Why min-scale 1 on the API: a container whose process does not listen on 8080 is killed after
 about five minutes, so a separate worker container is not an option in v1, and the in-process
