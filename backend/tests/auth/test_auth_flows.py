@@ -342,6 +342,9 @@ def test_inviting_a_taken_email_is_a_conflict_without_the_email(signed_in, house
     )
     assert response.status_code == 409
     assert household.email not in response.text
+    # The route names the kind; the generic "could not be read" text must not ride along.
+    assert response.json()["error"] == "conflict"
+    assert response.json().get("message") is None
 
 
 def test_session_endpoints_need_a_session(client):

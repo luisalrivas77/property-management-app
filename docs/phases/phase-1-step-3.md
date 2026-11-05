@@ -861,6 +861,26 @@ Binding for the chunks that follow:
 - The frontend CI's `openapi.json` staleness check becomes meaningful once `hausbuch openapi`
   (chunk 2) and the real routers (chunk 1) land.
 
+## 10.7 Rules from the chunk 2 review (orchestrator, 5 Nov 2026)
+
+- **Re-inviting a member who never enrolled.** Today a deleted or expired invite makes the
+  email unusable: `app_user.email` is globally unique, and the app role can't delete users.
+  Decision: `POST /auth/invites` for an email whose `app_user` is **in this workspace and has
+  no passkey** reuses that row. It deletes the user's pending invites and issues a fresh
+  link. An email belonging to a user with a passkey, or to another workspace, stays a 409.
+  This refines §6.3's "creates their app_user row".
+- **Enrollment links in Job logs** (§6.5, chunk 4's `deploy/scaleway.md`). The CLI prints the
+  link to stdout, which on Scaleway lands in the Job's logs. That is acceptable for v1
+  because the link is single-use and expires after 24 h. The deploy notes must say:
+  - enroll immediately after the Job runs;
+  - a refused link means "assume it was used": run `hausbuch invite --email … --revoke-passkeys
+    --revoke-sessions`, which evicts whoever used it.
+  - A shorter `--ttl` is optional hardening for later.
+- **Test helpers.** The three `tests/{api,auth,db}/conftest.py` are all importable as
+  `conftest`, so `pytest tests/auth tests/db/...` in one run picks the wrong one. Fix
+  repo-wide by moving shared helpers into uniquely named support modules, as `api_support.py`
+  already does. No behaviour change.
+
 ## 11. Delivery plan: chunks, ownership, order
 
 Every chunk commits pathspec-limited to its owned paths; nobody edits another chunk's files.

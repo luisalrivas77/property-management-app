@@ -60,7 +60,7 @@ class CliError(Exception):
 
 
 def bootstrap(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
-    from hausbuch.auth.errors import WorkspaceExistsError
+    from hausbuch.auth.errors import DuplicateUserError, WorkspaceExistsError
     from hausbuch.auth.invites import enrollment_url
     from hausbuch.auth.lookup import provisioned_workspace_ids
     from hausbuch.auth.provisioning import provision_workspace
@@ -81,6 +81,11 @@ def bootstrap(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
         raise CliError(
             "the database has a workspace already; pass --another-workspace to add one "
             "(SaaS path, not used in v1), or use `hausbuch invite` for a new enrollment link"
+        ) from None
+    except DuplicateUserError:
+        # No email in the message: the operator typed it, and stderr may reach a log.
+        raise CliError(
+            "a user with that email exists already; use `hausbuch invite` instead"
         ) from None
     except ValueError as exc:  # pydantic's ValidationError too: bad email, empty name
         raise CliError(f"invalid input ({_fields(exc)})") from None

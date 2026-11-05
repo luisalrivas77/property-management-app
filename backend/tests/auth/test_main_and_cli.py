@@ -212,6 +212,15 @@ def test_bootstrap_as_the_owner_then_enroll(dev_db, capsys, tmp_path):
         environ,
     )
     assert code == 0 and "https://other.example/enroll#token=" in out
+    # An email that exists already is a clean CLI error, not a traceback, and names no email.
+    code, out, err = _cli(
+        capsys,
+        ["bootstrap", "--workspace", "Drei", "--email", "b@example.org", "--name", "B"]
+        + ["--another-workspace", "--origin", "https://other.example"],
+        environ,
+    )
+    assert code == 1 and out == "" and "exists already" in err
+    assert "b@example.org" not in err and "Traceback" not in err
 
     # Recovery: `hausbuch invite` prints a fresh link for the existing user.
     code, out, err = _cli(

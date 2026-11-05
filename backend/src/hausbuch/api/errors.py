@@ -208,7 +208,9 @@ def _http_exception(exc: StarletteHTTPException) -> Rendered:
     # carry headers: a cleared ceremony cookie, WWW-Authenticate. Keep both (integration of
     # chunks 1 and 2: dropping the headers left the ceremony cookie set after a refusal).
     if isinstance(exc.detail, str) and exc.detail in _ERROR_KIND_VALUES and 400 <= status < 500:
-        kind = ErrorKind(exc.detail)
+        # The route chose the kind; the generic status text ("could not be read", "no such
+        # endpoint") would then be wrong. Auth refusals carry no message by design (§6.3).
+        kind, message = ErrorKind(exc.detail), None
     headers = dict(exc.headers or {})
     if kind is ErrorKind.SHUTTING_DOWN:
         headers["Retry-After"] = _RETRY_AFTER_S
