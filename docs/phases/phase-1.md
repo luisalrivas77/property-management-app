@@ -188,8 +188,9 @@ and reviewed by a reviewer agent; every review finding was fixed or is listed be
    - **Done criterion:** History built through the services matches all four `timeline.yaml`
      cases (`tests/db/test_history.py`).
 3. **TODO: API and first screens.** FastAPI endpoints; passkey sign-in (decided 5 Nov 2026);
-   an S3 store behind `BlobStore`; the Next.js screens. The API's error handler must never
-   return or log pydantic `input_value` for `*Create` schemas, since they can echo IBAN input.
+   an S3 store behind `BlobStore`; the Next.js screens. The API's error handler must build
+   422 responses with `errors(include_input=False)`: `hide_input_in_errors` (spec amendment 1)
+   only masks the error text, not the structured errors, which can carry IBANs and tax numbers.
 4. **TODO: real data.** Enter the real flat, tenancy, loan and 2026 paperwork; check History.
    Compare the loan schedule with the bank's Tilgungsplan (open question 3).
 
@@ -211,7 +212,11 @@ Collected from the phase 1 reviews and decided in one spec PR.
    Steuer-ID or Steuernummer: 10–13 digits, ignoring spaces, `/`, `.` and `-`. A tax number
    would otherwise land permanently in the append-only log.
    `OwnerCreate`, `TenantCreate`, `TenancyCreate` and `LoanCreate` set `hide_input_in_errors`,
-   so a validation error never echoes a tax number or an IBAN into a log or an API response.
+   so the error's text (`str`/`repr`, what lands in a log) never echoes a tax number or an
+   IBAN. This does **not** cover `errors()` or `json()`, which FastAPI's default 422 response
+   is built from. The API step must build its error responses with `errors(include_input=False)`.
+   (This corrects the first version of this item, which claimed API responses were covered;
+   the implementing coder found it.)
 3. **`document.typed` payload** adds:
    - `document_date`: a retention input, so its value is traced;
    - `changed_fields`, which can include `title`. The title's value is never recorded,
