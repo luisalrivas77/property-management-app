@@ -199,9 +199,30 @@ and reviewed by a reviewer agent; every review finding was fixed or is listed be
    an S3 store behind `BlobStore`; the Next.js screens. The API's error handler must build
    422 responses with `errors(include_input=False)`: `hide_input_in_errors` (spec amendment 1)
    only masks the error text, not the structured errors, which can carry IBANs and tax numbers.
-4. **TODO: deploy and real data.** Follow `deploy/scaleway.md`, record its first-deploy checks, then
+4. **IN PROGRESS: deploy and real data.** Follow `deploy/scaleway.md`, record its first-deploy checks, then
    enter the real flat, tenancy, loan and 2026 paperwork; check History.
    Compare the loan schedule with the bank's Tilgungsplan (open question 3).
+   - 5 Nov 2026: runbook steps 1–4 done. The VPC and both private networks exist; the
+     PostgreSQL 16 instance (DB-DEV-S, encrypted, daily backups) is ready, its public endpoint
+     allow-lists one IP; the one-time setup (`deploy/scaleway-db-setup.sql`) passed its check
+     (`f | t | t | f | f | f`: PUBLIC cannot connect). Steps 5–7 done the same day: a private
+     bucket with versioning and encryption at rest (off by default, switched on before any upload), the API's S3 key (expires after a year, see known gaps), and the
+     registry with `api:309b07f0b945` pushed by `publish-images`. Step 8 done (five Opaque secrets in Secret Manager). Step 9 done: migrations to
+     `0003_auth_passkeys` from Luis's computer, 21 tables owned by `hausbuch_owner`, all with
+     forced RLS and `hausbuch_app` grants. Step 10 done: `hausbuch-api` runs
+     `api:309b07f0b945` (250 mVCPU / 512 MB, min = max = 1); `/healthz` answers 200 (its
+     `SELECT 1` runs as `hausbuch_app` over the private network) and `/api/auth/me` 401.
+     The S3 path is untested until the first upload. The domain is `hausbuch.rcubed.fr`
+     (bought 5 Nov 2026, the passkey RP ID). Step 11 done: `publish-images` built
+     `web:309b07f0b945-16ef9db2` against the API endpoint, and `hausbuch-web` runs it
+     (min-scale 0, max 2, HTTPS only). CNAME `hausbuch.rcubed.fr` → the web container, custom
+     domain with Scaleway's certificate; `https://hausbuch.rcubed.fr/login` is 200 and
+     `/api/auth/me` 401 from the API. Step 12 done: `hausbuch bootstrap` created the
+     workspace and Luis's user, and Luis enrolled a passkey and signed in. First-deploy
+     checks (`deploy/scaleway.md`, Results): Q13's platform limit passes (25 MiB reaches the
+     API, also through the web proxy); a signed-in 25 MiB upload, Q16 (If-None-Match on the
+     bucket), Q15 (SIGTERM timeout) and the allow-list check from another network are not
+     run yet. No real data has been entered.
 
 ### Known gaps (not yet built)
 
@@ -209,6 +230,12 @@ and reviewed by a reviewer agent; every review finding was fixed or is listed be
   `tenancy.notice_given` or `loan.disbursed`, and no party changes on a tenancy. Step 4 will
   need them on the first typo.
 - No retention auto-delete job, and no sweeper for blobs orphaned by rolled-back uploads.
+  The production bucket has versioning on (5 Nov 2026), so whoever builds that job must
+  also add a lifecycle rule expiring noncurrent versions (30 days, `deploy/scaleway.md`
+  step 5), or deleted documents survive as hidden copies.
+- No warning before a Scaleway API key expires (one year after creation; Luis, 5 Nov 2026).
+  The API's S3 key lapses around 5 Nov 2027 and uploads then fail. Until phase 5's deadline
+  reminders cover it, it is a calendar entry; rotation is in `deploy/scaleway.md` step 6.
 
 ### Spec amendment 1 (5 Nov 2026)
 

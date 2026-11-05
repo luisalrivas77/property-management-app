@@ -175,7 +175,14 @@ Then, on the instance's page:
 - Note the public endpoint's **IP and port**: they go into the owner URL.
 - Download the instance's **TLS certificate**. Step 4's `psql` uses it
   (`sslmode=verify-full`), and the owner URL may too (stronger than its `sslmode=require`
-  minimum, see step 8).
+  minimum, see step 8). The CLI prints it as a JSON string; this saves it as a PEM file
+  outside the repository:
+
+  ```bash
+  mkdir -p ~/.hausbuch
+  scw rdb instance get-certificate <instance-id> region=fr-par -o json \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin).rstrip())' > ~/.hausbuch/hausbuch-db.pem
+  ```
 
 Do **not** create users or databases in the console's Users tab. Step 4 creates them in SQL,
 because the console cannot express the grants Hausbuch needs.
@@ -196,14 +203,19 @@ What this does, in plain words:
    (`PUBLIC`) and gives it to the two Hausbuch roles only;
 4. withdraws that temporary right from the admin.
 
-Run it once, from your computer, through the public endpoint, as the admin:
+Run it once, from your computer, through the public endpoint, as the admin. The script
+`deploy/scaleway-db-setup.sql` holds the SQL below and asks for the two role passwords with
+psql's `\password`, which hides what you type and sends only a hash, so no password lands on
+screen, in your shell history or in the server log. Run it in your own terminal (it needs
+typed input):
 
 ```bash
-psql "host=<public-ip> port=<public-port> dbname=rdb user=scwadmin sslmode=verify-full sslrootcert=./<instance-cert>.pem"
+psql "host=<public-ip> port=<public-port> dbname=rdb user=scwadmin sslmode=verify-full sslrootcert=$HOME/.hausbuch/hausbuch-db.pem" \
+  -f deploy/scaleway-db-setup.sql
 ```
 
 (`rdb` is the default database of a Scaleway instance. Any database the admin may connect to
-works.)
+works.) What the script runs, with passwords inline instead of `\password`:
 
 ```sql
 CREATE ROLE hausbuch_owner LOGIN PASSWORD '<owner password>';
@@ -245,10 +257,19 @@ names are global) in **fr-par**, visibility **private**. The full bucket setting
 in the docstring of `backend/src/hausbuch/storage_s3.py`:
 
 - no public ACL or policy;
-- encryption at rest on;
+- encryption at rest on. **Scaleway creates buckets with it off** ("Bucket encryption:
+  disabled"), and neither `scw object bucket create` nor the app turns it on: enable it in
+  the console (bucket → settings → Bucket encryption, Scaleway-managed keys) **before the
+  first upload**, since it covers objects written from then on. Done 5 Nov 2026;
 - **no lifecycle rules**: retention is the app's decision, never a timer's;
 - Object Lock off;
-- versioning optional.
+- versioning **on** (switched on 5 Nov 2026): a deleted original is kept as a hidden
+  "noncurrent" version and can be restored. It does not stop a leaked API key, which may
+  delete versions too, and once on it can only be suspended, never switched off.
+  **Before the retention auto-delete job ships**, add one lifecycle rule that expires
+  noncurrent versions after 30 days. Without it, a document the app deletes for retention
+  (tenant data included) survives as a hidden copy, so GDPR erasure would not be real. That
+  rule never touches a current object, so the app still decides when a file goes.
 
 ```bash
 scw object bucket create name=hausbuch-originals-<random> region=fr-par
@@ -263,6 +284,14 @@ that grants Object Storage access in the Hausbuch project only. The app needs re
 and delete on objects, and **list on the bucket**: without list, S3 answers a missing key
 with 403 instead of 404. Then create an **API key** for the application, with the Hausbuch
 project as its default Object Storage project. Keep the access key and the secret key.
+
+**Scaleway API keys expire after one year** (the key created here on 5 Nov 2026 expires around
+5 Nov 2027; IAM → API keys shows the exact date). Nothing warns you: when it lapses, every
+upload and download fails with an S3 auth error. Put the date in your calendar a few weeks
+ahead. To rotate: create a new key for the same application, put it into the container's
+secret variables (step 8, step 10), redeploy, check an upload, then delete the old key. The
+GitHub registry key (step 7) expires the same way; when it lapses, `publish-images` fails at
+login.
 
 ## Step 7: Registry and images
 
@@ -400,11 +429,10 @@ scw rdb acl list instance-id=<instance-id> region=fr-par             # what is a
 If they differ, replace the allow-list with your current address only. In the console:
 the instance → **Allowed IPs** → add `<new-ip>/32`, then delete the old entry. With the
 CLI, one command replaces every rule (check the argument names with
-`scw rdb acl set --help` if it complains):
+`scw rdb acl set --help` if it complains; this form was run with scw 2.65 on 5 Nov 2026):
 
 ```bash
-scw rdb acl set instance-id=<instance-id> region=fr-par \
-  rules.0.ip=<new-ip>/32 rules.0.description="Luis admin"
+scw rdb acl set <new-ip>/32 instance-id=<instance-id> descriptions.0="Luis admin" region=fr-par
 ```
 
 Never add `0.0.0.0/0` back. After a trip, set the list back to your home IP. A connection
@@ -447,6 +475,14 @@ container** `hausbuch-api`:
   scaled to zero);
 - resources: start at the smallest tier that runs it;
 - private network **`hausbuch-apps`**; public endpoint **on** (Q14: public for v1);
+- privacy **Public** (the app signs users in itself; a Private container would demand a
+  Scaleway token from the web container), and **HTTPS connections only** ticked;
+- protocol **HTTP/1**. The console's HTTP/2 option means the container itself speaks
+  cleartext HTTP/2 (h2c), which uvicorn does not: every request would fail. Browsers still
+  get HTTP/2 from Scaleway's edge;
+- leave the command and arguments empty (the image starts uvicorn) and the request timeout
+  at its default of 300 s (at least the web proxy's 120 s);
+- autoscaling: any rule, with minimum and maximum both `1`;
 - **health check**: an **HTTP** liveness probe on path **`/healthz`**, timeout **3 s**.
   The app's own database probe allows itself 2 s, so the 1 s default timeout would mark a
   healthy container as failing;
@@ -637,7 +673,7 @@ image. Keep the order: grace < uvicorn's timeout < the platform's kill timeout.
 | Check | Date | Result |
 | --- | --- | --- |
 | Q16 If-None-Match honoured on the bucket | | |
-| Q13 platform body limit (25 MiB straight to the API) | | |
+| Q13 platform body limit (25 MiB straight to the API) | 5 Nov 2026 | Passes: a 25 MiB multipart POST to `/api/documents` without a session got the app's 401 in 5.4 s, so the platform let the whole body through. The same body through `hausbuch.rcubed.fr` (web container proxy) got 401 in 6.5 s, so the `next.config.ts` limits hold too. |
 | Q13 end-to-end 25 MiB upload through the web container | | |
 | Q15 SIGTERM → kill timeout | | |
 | Public endpoint reachable only from your IP (from another network, `psql` times out) | | |
@@ -676,7 +712,7 @@ image. Keep the order: grace < uvicorn's timeout < the platform's kill timeout.
   Restoring creates the data as of that backup. Test one restore into a new instance or
   database once, early, and note the date here.
 - **Object Storage** holds the originals and is not covered by the database backup.
-  Versioning on the bucket (step 5) is the optional extra protection.
+  Versioning on the bucket (step 5, on since 5 Nov 2026) is the extra protection.
 - **A nightly `pg_dump` to the bucket is optional, and not possible with Hausbuch's own
   roles** (point 5 at the top). It needs a role that bypasses row-level security, and only
   a role that has `BYPASSRLS` itself can create one. Check whether Scaleway's admin does:
