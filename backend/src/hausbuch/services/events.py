@@ -24,6 +24,17 @@ class InvalidEventError(ValueError):
     """The event would break the catalog's rules; nothing was written."""
 
 
+# History scope (schemas/events.py): property_id on every event of a property, its units,
+# tenancies and loans; unit_id additionally on unit and tenancy events. Owner, tenant and
+# document events may carry either, but need neither.
+REQUIRED_SCOPE: dict[EntityType, tuple[str, ...]] = {
+    EntityType.PROPERTY: ("property_id",),
+    EntityType.LOAN: ("property_id",),
+    EntityType.UNIT: ("property_id", "unit_id"),
+    EntityType.TENANCY: ("property_id", "unit_id"),
+}
+
+
 def append_event(
     ctx: CommandContext,
     type: EventType,
@@ -44,12 +55,17 @@ def append_event(
         raise InvalidEventError(f"{event_type} needs a {spec.payload.__name__} payload, got {got}")
     if unit_id is not None and property_id is None:
         raise InvalidEventError("an event scoped to a unit needs its property_id")
+    entity_type = EntityType(event_type.split(".", 1)[0])
+    scope = {"property_id": property_id, "unit_id": unit_id}
+    missing = [name for name in REQUIRED_SCOPE.get(entity_type, ()) if scope[name] is None]
+    if missing:
+        raise InvalidEventError(f"{event_type} needs {' and '.join(missing)} (History scope)")
 
     row = {
         "id": uuid4(),
         "workspace_id": ctx.workspace_id,
         "type": event_type.value,
-        "entity_type": EntityType(event_type.split(".", 1)[0]).value,
+        "entity_type": entity_type.value,
         "entity_id": entity_id,
         "property_id": property_id,
         "unit_id": unit_id,

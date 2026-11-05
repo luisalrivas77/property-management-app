@@ -15,7 +15,9 @@ from hausbuch.schemas.events import (
     DepositReceived,
     Empty,
     EventType,
+    LoanDisbursed,
     OwnerCreated,
+    UnitCreated,
     Updated,
 )
 from hausbuch.services.context import Actor, new_command
@@ -80,6 +82,26 @@ REJECTED = {
             effective_date=date(2026, 1, 1),
         ),
     ),
+    "tenancy-without-property": (
+        "needs property_id and unit_id",
+        dict(type=EventType.TENANCY_STARTED, payload=Empty(), effective_date=date(2026, 1, 1)),
+    ),
+    "unit-event-without-unit": (
+        "needs unit_id",
+        dict(
+            type=EventType.UNIT_CREATED,
+            payload=UnitCreated(label="WE 3", floor_area_m2=Decimal("68.40")),
+            property_id=uuid.uuid4(),
+        ),
+    ),
+    "loan-without-property": (
+        "needs property_id",
+        dict(
+            type=EventType.LOAN_DISBURSED,
+            payload=LoanDisbursed(amount=Decimal("240000.00")),
+            effective_date=date(2024, 4, 30),
+        ),
+    ),
 }
 
 
@@ -91,13 +113,16 @@ def test_rejects_a_bad_event_before_any_sql(app_engine, workspaces, case):
     entity_id = uuid.uuid4()
     with workspace_transaction(app_engine, a) as conn:
         ctx = new_command(conn, a, ACTOR, now=NOW)
-        with recorded_sql(conn) as statements, pytest.raises(InvalidEventError, match=reason):
-            append_event(ctx, kwargs.pop("type"), entity_id, kwargs.pop("payload"), **kwargs)
-        assert statements == []
+        with recorded_sql(conn) as statements:
+            with pytest.raises(InvalidEventError, match=reason):
+                append_event(ctx, kwargs.pop("type"), entity_id, kwargs.pop("payload"), **kwargs)
+            assert statements == []
 
-        # The transaction is still usable, and the rejected event left no row.
-        assert list_events(conn, entity_id=entity_id) == []
-        append_event(ctx, EventType.OWNER_CREATED, entity_id, OwnerCreated())
+            # The transaction is still usable, and the rejected event left no row.
+            assert list_events(conn, entity_id=entity_id) == []
+            append_event(ctx, EventType.OWNER_CREATED, entity_id, OwnerCreated())
+            # Positive control: the recorder does see statements on this connection.
+            assert any("INSERT INTO event" in s for s in statements), statements
         assert [e.type for e in list_events(conn, entity_id=entity_id)] == ["owner.created"]
 
 
