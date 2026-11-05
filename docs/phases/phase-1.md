@@ -195,8 +195,8 @@ and reviewed by a reviewer agent; every review finding was fixed or is listed be
    - **Done criterion:** History built through the services matches all four `timeline.yaml`
      cases (`tests/db/test_history.py`).
 3. **IN PROGRESS: API and first screens**, designed in `docs/phases/phase-1-step-3.md`. The API,
-   passkey sign-in, the S3 store and the frontend scaffold with its auth screens are built and
-   reviewed; the domain screens, e2e tests and deployment remain. Original note: FastAPI endpoints; passkey sign-in (decided 5 Nov 2026);
+   passkey sign-in, the S3 store, the frontend scaffold, the domain screens and the deploy
+   artefacts are built; e2e tests, the step 3 §10.8 fixes and the first deploy remain. Original note: FastAPI endpoints; passkey sign-in (decided 5 Nov 2026);
    an S3 store behind `BlobStore`; the Next.js screens. The API's error handler must build
    422 responses with `errors(include_input=False)`: `hide_input_in_errors` (spec amendment 1)
    only masks the error text, not the structured errors, which can carry IBANs and tax numbers.

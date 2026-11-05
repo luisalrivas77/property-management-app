@@ -2,12 +2,13 @@
 
 Nov 5, 2026 · design by the architect agent; coder chunks are in §11.
 
-**Status (5 Nov 2026):** chunks **0, 1, 2, 3a and 5 are built, reviewed and fixed**: chunk 0
-is merged to `main` in #6, and the rest are on the working branch for one PR. The §10.5–10.7
-rules are implemented. **To do:** chunk 3b (domain screens, plus the invite-member and
-rename-passkey parts of `/settings`) and chunk 4 (e2e, CI, deploy artefacts, the Q16 bucket
-check). Extends `docs/phases/phase-1.md` (D1–D12, spec amendment 1). Incorporates the Scaleway
-compatibility test of 5 Nov 2026 (§7, §14).
+**Status (5 Nov 2026):** chunks **0, 1, 2, 3a and 5** are merged to `main` (#6, #7). Chunks
+**3b** (domain screens, plus the invite-member and rename-passkey parts of `/settings`) and **4a**
+(deploy artefacts: both images, `deploy/scaleway.md`, `scripts/dev-db.sh`, the `images.yml`
+workflow) are built and on the working branch. **To do:**
+- chunk 4b: Playwright e2e in CI;
+- the fixes in §10.8;
+- the admin-commands decision (§10.8 item 1).
 
 **Done when** (phase 1): Luis enters his real flat (ETW), its tenancy, its loan and all 2026
 paperwork through the browser, and History shows purchase → move-in correctly. This step
@@ -885,6 +886,40 @@ Binding for the chunks that follow:
   `conftest`, so `pytest tests/auth tests/db/...` in one run picks the wrong one. Fix
   repo-wide by moving shared helpers into uniquely named support modules, as `api_support.py`
   already does. No behaviour change.
+
+## 10.8 Findings from chunks 4a and 3b (orchestrator, 5 Nov 2026)
+
+Chunk 4a found these by running the images and the setup for real:
+
+1. **One-off commands can't run as Serverless Jobs against a private-only database.** Per
+   Scaleway's docs, Jobs can't join a private network and have no fixed IP. That breaks §14,
+   and the Provisioning row in `docs/ARCHITECTURE.md`. *Decision pending (Luis).* The options
+   in `deploy/scaleway.md`:
+   - (A) run the same commands from Luis's computer, with the database's public endpoint
+     allowed only from his IP;
+   - (B) Jobs over a public endpoint open to Scaleway's IP ranges;
+   - (C) a short-lived private Serverless Container per command.
+2. **§14's one-time SQL as first written didn't lock the database.** A non-superuser admin's
+   `REVOKE CONNECT … FROM PUBLIC` silently does nothing once its membership in the owner role
+   is gone. The revoke must run as the owner (`SET ROLE hausbuch_owner`) **before** the
+   membership is dropped. `deploy/scaleway.md` and `scripts/dev-db.sh` use that order and end
+   with a check query. (§14 as first written was wrong; the test found it.)
+3. **Uploads over 10 MB fail through the web container.** Next's proxy cuts bodies at 10 MB
+   and times out after 30 s. The fix, tested in a copy:
+   `experimental: { proxyClientMaxBodySize: "26mb", proxyTimeout: 120_000 }` in
+   `frontend/next.config.ts`.
+4. **The API exits when the DB is unreachable at startup.** Scaleway can start a container
+   before its private network is ready. `main.py` should retry the startup role check with a
+   bounded backoff. The runbook also uses Scaleway's two-private-networks workaround.
+5. **`pg_dump` as the owner gives an empty backup** under forced RLS: `--enable-row-security`
+   "succeeds" with zero rows. The runbook says how to back up correctly.
+
+Chunk 3b found these API gaps; none of them blocked a screen:
+
+6. **Correcting the move-in doesn't move the initial rent row.** *Question for Luis*: should
+   `correct_move_in` also correct an initial rent row that started on the old date?
+7. **No list of household members**, no read endpoint for deposits received (the tenancy page
+   reads them from the event log), and document responses lack the media type.
 
 ## 11. Delivery plan: chunks, ownership, order
 
