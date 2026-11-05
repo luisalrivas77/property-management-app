@@ -207,8 +207,9 @@ and reviewed by a reviewer agent; every review finding was fixed or is listed be
      allow-lists one IP; the one-time setup (`deploy/scaleway-db-setup.sql`) passed its check
      (`f | t | t | f | f | f`: PUBLIC cannot connect). Steps 5–7 done the same day: a private
      bucket with versioning and encryption at rest (off by default, switched on before any upload), the API's S3 key (expires after a year, see known gaps), and the
-     registry with `api:309b07f0b945` pushed by `publish-images`. Step 8 done (five Opaque secrets in Secret Manager). Steps 9–12 and the
-     first-deploy checks are not done; no migrations have run yet.
+     registry with `api:309b07f0b945` pushed by `publish-images`. Step 8 done (five Opaque secrets in Secret Manager). Step 9 done: migrations to
+     `0003_auth_passkeys` from Luis's computer, 21 tables owned by `hausbuch_owner`, all with
+     forced RLS and `hausbuch_app` grants. Steps 10–12 and the first-deploy checks are not done.
 
 ### Known gaps (not yet built)
 
