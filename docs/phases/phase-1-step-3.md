@@ -836,6 +836,8 @@ Order: 0 → {1, 2, 3a, 5} → 3b → 4. Chunk 0 is small enough for one coder (
 and must land first; four coders can then run at once. Step 4 of phase 1 (real data) starts
 after 4, on the deployed instance.
 
+**Ownership of `api/main.py` (orchestrator, 5 Nov 2026):** `main.py` is the composition root that builds the settings, engine, BlobStore and chunk 2's `SessionResolverImpl` and calls `create_app`. It is owned by **chunk 2**, not chunk 1 (the table above lists it under chunk 1, which contradicted the rule below; found while implementing chunk 0). Chunk 1's tests build the app with `create_app` and a fake resolver and never need `main.py`.
+
 Interfaces the parallel chunks must agree on, restated: chunk 1 never imports `hausbuch.auth`
 (it talks to `SessionResolver` only); chunk 2 never edits `api/app.py` (it exposes
 `auth_router` and `SessionResolverImpl`; chunk 0's `app.py` stub already includes
