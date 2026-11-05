@@ -205,8 +205,10 @@ and reviewed by a reviewer agent; every review finding was fixed or is listed be
    - 5 Nov 2026: runbook steps 1–4 done. The VPC and both private networks exist; the
      PostgreSQL 16 instance (DB-DEV-S, encrypted, daily backups) is ready, its public endpoint
      allow-lists one IP; the one-time setup (`deploy/scaleway-db-setup.sql`) passed its check
-     (`f | t | t | f | f | f`: PUBLIC cannot connect). Steps 5–12 and the first-deploy checks
-     are not done; no migrations have run yet.
+     (`f | t | t | f | f | f`: PUBLIC cannot connect). Steps 5–7 done the same day: a private
+     bucket with versioning, the API's S3 key (expires after a year, see known gaps), and the
+     registry with `api:309b07f0b945` pushed by `publish-images`. Steps 8–12 and the
+     first-deploy checks are not done; no migrations have run yet.
 
 ### Known gaps (not yet built)
 
@@ -214,6 +216,9 @@ and reviewed by a reviewer agent; every review finding was fixed or is listed be
   `tenancy.notice_given` or `loan.disbursed`, and no party changes on a tenancy. Step 4 will
   need them on the first typo.
 - No retention auto-delete job, and no sweeper for blobs orphaned by rolled-back uploads.
+  The production bucket has versioning on (5 Nov 2026), so whoever builds that job must
+  also add a lifecycle rule expiring noncurrent versions (30 days, `deploy/scaleway.md`
+  step 5), or deleted documents survive as hidden copies.
 - No warning before a Scaleway API key expires (one year after creation; Luis, 5 Nov 2026).
   The API's S3 key lapses around 5 Nov 2027 and uploads then fail. Until phase 5's deadline
   reminders cover it, it is a calendar entry; rotation is in `deploy/scaleway.md` step 6.

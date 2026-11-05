@@ -260,7 +260,13 @@ in the docstring of `backend/src/hausbuch/storage_s3.py`:
 - encryption at rest on;
 - **no lifecycle rules**: retention is the app's decision, never a timer's;
 - Object Lock off;
-- versioning optional.
+- versioning **on** (switched on 5 Nov 2026): a deleted original is kept as a hidden
+  "noncurrent" version and can be restored. It does not stop a leaked API key, which may
+  delete versions too, and once on it can only be suspended, never switched off.
+  **Before the retention auto-delete job ships**, add one lifecycle rule that expires
+  noncurrent versions after 30 days. Without it, a document the app deletes for retention
+  (tenant data included) survives as a hidden copy, so GDPR erasure would not be real. That
+  rule never touches a current object, so the app still decides when a file goes.
 
 ```bash
 scw object bucket create name=hausbuch-originals-<random> region=fr-par
@@ -695,7 +701,7 @@ image. Keep the order: grace < uvicorn's timeout < the platform's kill timeout.
   Restoring creates the data as of that backup. Test one restore into a new instance or
   database once, early, and note the date here.
 - **Object Storage** holds the originals and is not covered by the database backup.
-  Versioning on the bucket (step 5) is the optional extra protection.
+  Versioning on the bucket (step 5, on since 5 Nov 2026) is the extra protection.
 - **A nightly `pg_dump` to the bucket is optional, and not possible with Hausbuch's own
   roles** (point 5 at the top). It needs a role that bypasses row-level security, and only
   a role that has `BYPASSRLS` itself can create one. Check whether Scaleway's admin does:
