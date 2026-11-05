@@ -51,8 +51,8 @@ def _stored(app_engine, ws, tenant_id):
         return row[0], row[1], " ".join(events)
 
 
-def test_create_stores_mask_and_hmac_never_the_plaintext(app_engine, workspaces, read):
-    a, _ = workspaces
+def test_create_stores_mask_and_hmac_never_the_plaintext(app_engine, fresh_workspaces, read):
+    a, _ = fresh_workspaces
     with workspace_transaction(app_engine, a) as conn:
         ctx = new_command(conn, a, ACTOR, now=CREATED_AT)
         anna = create_tenant(ctx, ANNA, iban_key=TEST_IBAN_KEY)
@@ -79,14 +79,16 @@ def test_create_stores_mask_and_hmac_never_the_plaintext(app_engine, workspaces,
     assert (created.property_id, created.unit_id, created.effective_date) == (None, None, None)
 
 
-def test_a_tenant_without_an_iban(run, read, workspaces):
-    a, _ = workspaces
+def test_a_tenant_without_an_iban(run, read, fresh_workspaces):
+    a, _ = fresh_workspaces
     bert = _create(run, a, TenantCreate(full_name="Bert Beispiel"))
     assert (bert.iban_masked, bert.email) == (None, None)
 
 
-def test_a_bad_iban_raises_its_rule_code_and_writes_nothing(run, read, app_engine, workspaces):
-    a, _ = workspaces
+def test_a_bad_iban_raises_its_rule_code_and_writes_nothing(
+    run, read, app_engine, fresh_workspaces
+):
+    a, _ = fresh_workspaces
     bad = "DE89370400440532013001"
     with workspace_transaction(app_engine, a) as conn:
         before = conn.execute(text("SELECT count(*) FROM tenant")).scalar_one()
@@ -105,8 +107,8 @@ def test_a_bad_iban_raises_its_rule_code_and_writes_nothing(run, read, app_engin
     assert read(a, get_tenant, anna.id) == anna
 
 
-def test_update_lists_changed_fields_never_values(run, read, app_engine, workspaces):
-    a, _ = workspaces
+def test_update_lists_changed_fields_never_values(run, read, app_engine, fresh_workspaces):
+    a, _ = fresh_workspaces
     anna = _create(run, a)
 
     updated = run(
@@ -138,8 +140,8 @@ def test_update_lists_changed_fields_never_values(run, read, app_engine, workspa
     assert len(_events(read, a, anna.id)) == 3
 
 
-def test_invalid_update_hides_the_value_and_writes_nothing(run, read, workspaces):
-    a, _ = workspaces
+def test_invalid_update_hides_the_value_and_writes_nothing(run, read, fresh_workspaces):
+    a, _ = fresh_workspaces
     anna = _create(run, a)
     with pytest.raises(ValueError, match="full_name") as raised:
         run(a, update_tenant, anna.id, full_name="")
@@ -150,8 +152,8 @@ def test_invalid_update_hides_the_value_and_writes_nothing(run, read, workspaces
     assert len(_events(read, a, anna.id)) == 1
 
 
-def test_erase_nulls_personal_data_and_keeps_the_events(run, read, app_engine, workspaces):
-    a, _ = workspaces
+def test_erase_nulls_personal_data_and_keeps_the_events(run, read, app_engine, fresh_workspaces):
+    a, _ = fresh_workspaces
     anna = _create(run, a)
     run(a, update_tenant, anna.id, email="new@example.org", now=LATER)
 
@@ -172,8 +174,8 @@ def test_erase_nulls_personal_data_and_keeps_the_events(run, read, app_engine, w
     assert len(_events(read, a, anna.id)) == 3
 
 
-def test_tenant_is_invisible_from_another_workspace(run, read, workspaces):
-    a, b = workspaces
+def test_tenant_is_invisible_from_another_workspace(run, read, fresh_workspaces):
+    a, b = fresh_workspaces
     anna = _create(run, a)
     assert read(b, get_tenant, anna.id) is None
     with pytest.raises(NotFoundError, match="tenant"):

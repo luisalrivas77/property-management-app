@@ -47,8 +47,8 @@ def _unit_events(read, ws, unit_id):
     return read(ws, list_events, entity_id=unit_id)
 
 
-def test_create_writes_the_row_and_a_scoped_event(app_engine, workspaces, run, read):
-    a, _ = workspaces
+def test_create_writes_the_row_and_a_scoped_event(app_engine, fresh_workspaces, run, read):
+    a, _ = fresh_workspaces
     prop = run(a, create_property, PROPERTY, now=CREATED_AT)
     with workspace_transaction(app_engine, a) as conn:
         ctx = new_command(conn, a, ACTOR, now=CREATED_AT)
@@ -69,8 +69,8 @@ def test_create_writes_the_row_and_a_scoped_event(app_engine, workspaces, run, r
     }
 
 
-def test_a_unit_without_rooms_or_mea(run, read, workspaces):
-    a, _ = workspaces
+def test_a_unit_without_rooms_or_mea(run, read, fresh_workspaces):
+    a, _ = fresh_workspaces
     prop = run(a, create_property, PROPERTY, now=CREATED_AT)
     parking = UnitCreate(
         property_id=prop.id, label="TG-Stellplatz 12", floor_area_m2=Decimal("12.50")
@@ -85,8 +85,8 @@ def test_a_unit_without_rooms_or_mea(run, read, workspaces):
     }
 
 
-def test_update_records_changes_and_none_clears(run, read, workspaces):
-    a, _ = workspaces
+def test_update_records_changes_and_none_clears(run, read, fresh_workspaces):
+    a, _ = fresh_workspaces
     prop = run(a, create_property, PROPERTY, now=CREATED_AT)
     flat = run(a, create_unit, _flat(prop.id), now=CREATED_AT)
 
@@ -107,8 +107,8 @@ def test_update_records_changes_and_none_clears(run, read, workspaces):
     assert len(_unit_events(read, a, flat.id)) == 2
 
 
-def test_domain_errors_write_nothing(run, read, workspaces):
-    a, _ = workspaces
+def test_domain_errors_write_nothing(run, read, fresh_workspaces):
+    a, _ = fresh_workspaces
     prop = run(a, create_property, PROPERTY, now=CREATED_AT)
     flat = run(a, create_unit, _flat(prop.id), now=CREATED_AT)
     other = run(a, create_unit, _flat(prop.id).model_copy(update={"label": "WE 4"}))
@@ -127,8 +127,8 @@ def test_domain_errors_write_nothing(run, read, workspaces):
     assert read(a, get_unit, flat.id) == flat
 
 
-def test_unit_is_invisible_from_another_workspace(run, read, workspaces):
-    a, b = workspaces
+def test_unit_is_invisible_from_another_workspace(run, read, fresh_workspaces):
+    a, b = fresh_workspaces
     prop = run(a, create_property, PROPERTY, now=CREATED_AT)
     flat = run(a, create_unit, _flat(prop.id), now=CREATED_AT)
     assert read(b, get_unit, flat.id) is None

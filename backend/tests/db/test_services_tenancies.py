@@ -57,9 +57,9 @@ RENT = InitialRent(cold_rent=Decimal("950.00"), operating_costs_prepayment=Decim
 
 
 @pytest.fixture
-def flat(run, workspaces):
+def flat(run, fresh_workspaces):
     """(workspace, property, unit, two tenants) for one test."""
-    a, _ = workspaces
+    a, _ = fresh_workspaces
     prop = run(
         a,
         create_property,
@@ -229,8 +229,8 @@ def test_parties_need_exactly_one_primary(app_engine, run, flat, roles):
     assert _tenancy_count(app_engine, a, unit.id) == 0
 
 
-def test_create_rejects_bad_input_and_writes_nothing(app_engine, run, flat, workspaces):
-    a, b = workspaces
+def test_create_rejects_bad_input_and_writes_nothing(app_engine, run, flat, fresh_workspaces):
+    a, b = fresh_workspaces
     _, _, unit, (anna, ben) = flat
     foreign = run(b, create_tenant, TenantCreate(full_name="Eve"), iban_key=TEST_IBAN_KEY).id
     run(a, erase_tenant, ben)
@@ -289,9 +289,9 @@ def test_failure_after_create_leaves_nothing(app_engine, read, flat):
     assert _tenancy_count(app_engine, a, unit.id) == 0
 
 
-def test_tenancy_is_invisible_from_another_workspace(run, read, flat, workspaces):
+def test_tenancy_is_invisible_from_another_workspace(run, read, flat, fresh_workspaces):
     a, _, unit, tenants = flat
-    _, b = workspaces
+    _, b = fresh_workspaces
     tenancy = _create(run, a, _lease(unit, tenants))
     assert read(b, get_tenancy, tenancy.id) is None
     assert read(b, list_rent_schedule, tenancy.id) == []

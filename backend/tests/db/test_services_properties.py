@@ -72,8 +72,8 @@ def _types(events):
 # --- create ------------------------------------------------------------------
 
 
-def test_create_writes_the_row_and_the_purchase_milestones(app_engine, workspaces, read):
-    a, _ = workspaces
+def test_create_writes_the_row_and_the_purchase_milestones(app_engine, fresh_workspaces, read):
+    a, _ = fresh_workspaces
     with workspace_transaction(app_engine, a) as conn:
         ctx = new_command(conn, a, ACTOR, now=CREATED_AT)
         flat = create_property(ctx, FLAT)
@@ -106,8 +106,8 @@ def test_create_writes_the_row_and_the_purchase_milestones(app_engine, workspace
         assert e.correlation_id == ctx.correlation_id
 
 
-def test_property_is_invisible_from_another_workspace(run, read, workspaces):
-    a, b = workspaces
+def test_property_is_invisible_from_another_workspace(run, read, fresh_workspaces):
+    a, b = fresh_workspaces
     flat = run(a, create_property, FLAT, now=CREATED_AT)
     assert read(b, get_property, flat.id) is None
     assert _events(read, b, flat.id) == []
@@ -118,8 +118,8 @@ def test_property_is_invisible_from_another_workspace(run, read, workspaces):
     assert read(a, get_property, flat.id) == flat
 
 
-def test_failure_after_create_leaves_neither_row_nor_events(app_engine, workspaces, read):
-    a, _ = workspaces
+def test_failure_after_create_leaves_neither_row_nor_events(app_engine, fresh_workspaces, read):
+    a, _ = fresh_workspaces
 
     class Boom(Exception):
         pass
@@ -135,8 +135,8 @@ def test_failure_after_create_leaves_neither_row_nor_events(app_engine, workspac
 # --- update ------------------------------------------------------------------
 
 
-def test_update_records_the_changed_fields(run, read, workspaces):
-    a, _ = workspaces
+def test_update_records_the_changed_fields(run, read, fresh_workspaces):
+    a, _ = fresh_workspaces
     flat = run(a, create_property, FLAT, now=CREATED_AT)
     moved = ADDRESS.model_copy(update={"house_number": "12a"})
 
@@ -165,8 +165,8 @@ def test_update_records_the_changed_fields(run, read, workspaces):
     }
 
 
-def test_noop_and_invalid_updates_write_nothing(run, read, workspaces):
-    a, _ = workspaces
+def test_noop_and_invalid_updates_write_nothing(run, read, fresh_workspaces):
+    a, _ = fresh_workspaces
     flat = run(a, create_property, FLAT, now=CREATED_AT)
     assert run(a, update_property, flat.id, label=FLAT.label, now=LATER) == flat
     with pytest.raises(ValidationError):
@@ -178,8 +178,8 @@ def test_noop_and_invalid_updates_write_nothing(run, read, workspaces):
 # --- milestone corrections -----------------------------------------------------
 
 
-def test_purchase_date_corrections_form_a_chain(run, read, workspaces):
-    a, _ = workspaces
+def test_purchase_date_corrections_form_a_chain(run, read, fresh_workspaces):
+    a, _ = fresh_workspaces
     flat = run(a, create_property, FLAT, now=CREATED_AT)
 
     run(a, correct_purchase_date, flat.id, date(2024, 5, 11), now=LATER)
@@ -198,8 +198,10 @@ def test_purchase_date_corrections_form_a_chain(run, read, workspaces):
     assert second.property_id == flat.id and second.payload == {}
 
 
-def test_purchase_date_correction_is_validated_and_a_noop_writes_nothing(run, read, workspaces):
-    a, _ = workspaces
+def test_purchase_date_correction_is_validated_and_a_noop_writes_nothing(
+    run, read, fresh_workspaces
+):
+    a, _ = fresh_workspaces
     flat = run(a, create_property, FLAT, now=CREATED_AT)
     with pytest.raises(ValidationError, match="purchase_date must not be before notarized_on"):
         run(a, correct_purchase_date, flat.id, date(2024, 3, 14), now=LATER)
@@ -208,8 +210,8 @@ def test_purchase_date_correction_is_validated_and_a_noop_writes_nothing(run, re
     assert len(_events(read, a, flat.id)) == 3
 
 
-def test_notarized_on_correction_carries_the_full_payload(run, read, workspaces):
-    a, _ = workspaces
+def test_notarized_on_correction_carries_the_full_payload(run, read, fresh_workspaces):
+    a, _ = fresh_workspaces
     flat = run(a, create_property, FLAT, now=CREATED_AT)
 
     fixed = run(
@@ -247,8 +249,8 @@ def _owners(run, ws):
     ]
 
 
-def test_set_ownership_replaces_the_shares(run, read, workspaces):
-    a, _ = workspaces
+def test_set_ownership_replaces_the_shares(run, read, fresh_workspaces):
+    a, _ = fresh_workspaces
     flat = run(a, create_property, FLAT, now=CREATED_AT)
     erika, max_ = _owners(run, a)
     halves = [OwnerShare(owner_id=erika, share=HALF), OwnerShare(owner_id=max_, share=HALF)]
@@ -269,8 +271,8 @@ def test_set_ownership_replaces_the_shares(run, read, workspaces):
     assert len(_events(read, a, flat.id)) == 5
 
 
-def test_invalid_ownership_is_rejected_and_writes_nothing(run, read, workspaces):
-    a, b = workspaces
+def test_invalid_ownership_is_rejected_and_writes_nothing(run, read, fresh_workspaces):
+    a, b = fresh_workspaces
     flat = run(a, create_property, FLAT, now=CREATED_AT)
     erika, max_ = _owners(run, a)
     foreign = _owners(run, b)[0]
@@ -304,8 +306,8 @@ def test_invalid_ownership_is_rejected_and_writes_nothing(run, read, workspaces)
 # --- acquisition costs and price splits ----------------------------------------
 
 
-def test_acquisition_cost_is_itemized_with_its_paid_date(run, read, workspaces):
-    a, _ = workspaces
+def test_acquisition_cost_is_itemized_with_its_paid_date(run, read, fresh_workspaces):
+    a, _ = fresh_workspaces
     flat = run(a, create_property, FLAT, now=CREATED_AT)
     tax = AcquisitionCostCreate(
         property_id=flat.id,
@@ -335,8 +337,8 @@ def test_acquisition_cost_is_itemized_with_its_paid_date(run, read, workspaces):
     assert read(a, list_acquisition_costs, flat.id) == [cost]
 
 
-def test_price_splits_are_candidates_and_one_is_selected(run, read, workspaces):
-    a, _ = workspaces
+def test_price_splits_are_candidates_and_one_is_selected(run, read, fresh_workspaces):
+    a, _ = fresh_workspaces
     flat = run(a, create_property, FLAT, now=CREATED_AT)
     other = run(a, create_property, FLAT.model_copy(update={"label": "Other"}), now=CREATED_AT)
     contract = run(

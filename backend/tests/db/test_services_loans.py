@@ -30,8 +30,8 @@ ACCOUNT = "DE89370400440532013000"
 
 
 @pytest.fixture
-def prop(run, workspaces):
-    a, _ = workspaces
+def prop(run, fresh_workspaces):
+    a, _ = fresh_workspaces
     return run(
         a,
         create_property,
@@ -74,8 +74,8 @@ def _events(read, ws, loan_id):
     return read(ws, list_events, entity_id=loan_id)
 
 
-def test_create_writes_the_row_and_both_milestones(app_engine, workspaces, read, prop):
-    a, _ = workspaces
+def test_create_writes_the_row_and_both_milestones(app_engine, fresh_workspaces, read, prop):
+    a, _ = fresh_workspaces
     with workspace_transaction(app_engine, a) as conn:
         ctx = new_command(conn, a, ACTOR, now=CREATED_AT)
         loan = create_loan(ctx, _terms(prop.id), iban_key=TEST_IBAN_KEY, signed_on=date(2024, 3, 1))
@@ -117,8 +117,8 @@ def test_create_writes_the_row_and_both_milestones(app_engine, workspaces, read,
         assert e.correlation_id == ctx.correlation_id
 
 
-def test_the_schedule_is_computed_from_the_stored_terms(run, read, workspaces, prop):
-    a, _ = workspaces
+def test_the_schedule_is_computed_from_the_stored_terms(run, read, fresh_workspaces, prop):
+    a, _ = fresh_workspaces
     loan = _create(run, a, _terms(prop.id, account_iban=None))
 
     schedule = read(a, loan_schedule, loan.id)
@@ -136,16 +136,20 @@ def test_the_schedule_is_computed_from_the_stored_terms(run, read, workspaces, p
         read(a, loan_schedule, uuid.uuid4())
 
 
-def test_a_loan_that_never_amortizes_is_stored_but_has_no_schedule(run, read, workspaces, prop):
-    a, _ = workspaces
+def test_a_loan_that_never_amortizes_is_stored_but_has_no_schedule(
+    run, read, fresh_workspaces, prop
+):
+    a, _ = fresh_workspaces
     interest_only = _create(run, a, _terms(prop.id, monthly_payment=Decimal("730.00")))
     with pytest.raises(RuleError) as raised:
         read(a, loan_schedule, interest_only.id)
     assert raised.value.code == PAYMENT_DOES_NOT_COVER_INTEREST
 
 
-def test_update_records_changes_and_masks_the_account(run, read, app_engine, workspaces, prop):
-    a, _ = workspaces
+def test_update_records_changes_and_masks_the_account(
+    run, read, app_engine, fresh_workspaces, prop
+):
+    a, _ = fresh_workspaces
     loan = _create(run, a, _terms(prop.id))
 
     updated = run(
@@ -181,8 +185,8 @@ def test_update_records_changes_and_masks_the_account(run, read, app_engine, wor
     assert len(_events(read, a, loan.id)) == 4
 
 
-def test_domain_errors_write_nothing(run, read, workspaces, prop):
-    a, b = workspaces
+def test_domain_errors_write_nothing(run, read, fresh_workspaces, prop):
+    a, b = fresh_workspaces
     loan = _create(run, a, _terms(prop.id, follow_up_rate=Decimal("0.04")))
 
     with pytest.raises(ValidationError, match="follow_up_rate needs fixed_until"):
@@ -206,8 +210,8 @@ def test_domain_errors_write_nothing(run, read, workspaces, prop):
     assert len(_events(read, a, loan.id)) == 2
 
 
-def test_loan_is_invisible_from_another_workspace(run, read, workspaces, prop):
-    a, b = workspaces
+def test_loan_is_invisible_from_another_workspace(run, read, fresh_workspaces, prop):
+    a, b = fresh_workspaces
     loan = _create(run, a, _terms(prop.id))
     assert read(b, get_loan, loan.id) is None
     assert read(b, list_loans, prop.id) == []

@@ -56,8 +56,8 @@ def _started(ctx, tenancy_id, scope, day, corrects=None):
     )
 
 
-def test_a_chain_goes_forward_and_latest_in_chain_follows_it(app_engine, workspaces):
-    a, _ = workspaces
+def test_a_chain_goes_forward_and_latest_in_chain_follows_it(app_engine, fresh_workspaces):
+    a, _ = fresh_workspaces
     tenancy_id, scope = uuid.uuid4(), _scope()
     with workspace_transaction(app_engine, a) as conn:
         ctx = new_command(conn, a, ACTOR, now=NOW)
@@ -72,8 +72,8 @@ def test_a_chain_goes_forward_and_latest_in_chain_follows_it(app_engine, workspa
         assert milestone_root(conn, EventType.TENANCY_STARTED, tenancy_id) == first
 
 
-def test_only_the_latest_event_of_a_chain_can_be_corrected(app_engine, workspaces):
-    a, _ = workspaces
+def test_only_the_latest_event_of_a_chain_can_be_corrected(app_engine, fresh_workspaces):
+    a, _ = fresh_workspaces
     tenancy_id, scope = uuid.uuid4(), _scope()
     with workspace_transaction(app_engine, a) as conn:
         ctx = new_command(conn, a, ACTOR, now=NOW)
@@ -125,8 +125,8 @@ REJECTED = {
 
 
 @pytest.mark.parametrize("case", sorted(REJECTED))
-def test_a_mismatched_correction_is_rejected_before_any_insert(app_engine, workspaces, case):
-    a, _ = workspaces
+def test_a_mismatched_correction_is_rejected_before_any_insert(app_engine, fresh_workspaces, case):
+    a, _ = fresh_workspaces
     code, build = REJECTED[case]
     tenancy_id, scope = uuid.uuid4(), _scope()
     with workspace_transaction(app_engine, a) as conn:
@@ -150,8 +150,8 @@ def test_a_mismatched_correction_is_rejected_before_any_insert(app_engine, works
         assert latest_in_chain(conn, original.id) == original
 
 
-def test_two_concurrent_corrections_of_one_event_cannot_both_commit(app_engine, workspaces):
-    a, _ = workspaces
+def test_two_concurrent_corrections_of_one_event_cannot_both_commit(app_engine, fresh_workspaces):
+    a, _ = fresh_workspaces
     tenancy_id, scope = uuid.uuid4(), _scope()
     with workspace_transaction(app_engine, a) as conn:
         original = _started(
@@ -187,8 +187,8 @@ def test_two_concurrent_corrections_of_one_event_cannot_both_commit(app_engine, 
         assert len(list_events(conn, entity_id=tenancy_id)) == 2
 
 
-def test_correcting_an_unknown_or_foreign_event_is_rejected(app_engine, workspaces):
-    a, b = workspaces
+def test_correcting_an_unknown_or_foreign_event_is_rejected(app_engine, fresh_workspaces):
+    a, b = fresh_workspaces
     tenancy_id, scope = uuid.uuid4(), _scope()
     with workspace_transaction(app_engine, b) as conn:
         foreign = _started(

@@ -212,6 +212,16 @@ TEST_IBAN_KEY = bytes(range(32))  # test key only; production keys come from the
 
 
 @pytest.fixture
+def fresh_workspaces(dbname) -> tuple[uuid.UUID, uuid.UUID]:
+    """Two new, empty workspaces for one test, so committed service data never leaks into
+    tests that count the rows of the session-wide `workspaces`."""
+    a, b = uuid.uuid4(), uuid.uuid4()
+    with _admin(dbname) as conn:
+        conn.execute("INSERT INTO workspace (id, name) VALUES (%s, 'A'), (%s, 'B')", (a, b))
+    return a, b
+
+
+@pytest.fixture
 def run(app_engine):
     """run(ws, command, *args, now=None, **kwargs): one service command (a function taking a
     CommandContext) in its own workspace transaction, committed on return, as a test user."""
