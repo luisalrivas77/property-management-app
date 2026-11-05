@@ -73,15 +73,12 @@ def create_blob_store(settings: Settings) -> BlobStore:
     if settings.blob_store == "local":
         assert settings.blob_root is not None  # Settings checks it
         return LocalBlobStore(settings.blob_root)
-    # s3: the S3 store lands with chunk 5 (§8); imported lazily so local setups need no boto3.
-    import boto3
-
+    # s3 (chunk 5, §8). from_settings builds the client with the store's own timeouts, retry
+    # mode and checksum settings (Content-MD5 instead of botocore's default checksums), which a
+    # plain boto3.client would lose. Imported lazily so local setups need no boto3.
     from hausbuch.storage_s3 import S3BlobStore
 
-    client = boto3.client(
-        "s3", endpoint_url=settings.s3_endpoint_url, region_name=settings.s3_region
-    )
-    return S3BlobStore(settings.s3_bucket, client)
+    return S3BlobStore.from_settings(settings)
 
 
 def refuse_schema_owner(engine: Engine) -> Engine:

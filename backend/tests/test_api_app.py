@@ -111,9 +111,12 @@ def test_every_router_is_included_under_api(engine, tmp_path, monkeypatch):
         assert client.get(f"/{name}-probe").status_code == 404
 
 
-def test_the_stub_routers_are_empty_and_no_docs_are_served(engine, tmp_path):
+def test_routes_live_under_api_and_no_docs_are_served(engine, tmp_path):
+    """Was "the stub routers are empty" in chunk 0; with chunks 1 and 2 merged the rule that
+    stays is: every route is under /api/ (the platform's /healthz aside), no docs pages."""
     app = _app(engine, tmp_path)
-    assert app.openapi()["paths"] == {}
+    paths = app.openapi()["paths"]
+    assert all(p.startswith("/api/") or p == "/healthz" for p in paths), sorted(paths)
     assert app.openapi()["info"]["title"] == "Hausbuch"
     client = TestClient(app)
     for path in ("/docs", "/redoc", "/openapi.json"):
