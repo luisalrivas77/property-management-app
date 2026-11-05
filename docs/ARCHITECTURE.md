@@ -236,7 +236,7 @@ The app holds bank data, tenant personal data and tax records, so it is built as
 
 - EU region for database, object storage and backups; AI calls through a provider and settings with no training on inputs and EU data processing where offered
 - Encryption at rest (storage + DB) and in transit; IBANs stored masked plus a keyed hash for matching
-- Passkey or TOTP login; short-lived sessions; FinTS PIN and any bank tokens in a secrets manager, never in the DB
+- Passkey login (decided 5 Nov 2026); short-lived sessions; FinTS PIN and any bank tokens in a secrets manager, never in the DB
 - Object storage private; files served via short-lived signed URLs
 - Audit log = the Event table; admin actions and AI decisions included
 
@@ -273,7 +273,7 @@ Each phase starts with a short spec PR (schemas, rule fixtures, eval cases) befo
 
 ## Decisions
 
-All open questions were settled on 4 Nov 2026; the sections above reflect them.
+All open questions were settled on 4 Nov 2026; the sections above reflect them. Later decisions carry their date.
 
 | Question | Decision | What it changes |
 | --- | --- | --- |
@@ -285,3 +285,4 @@ All open questions were settled on 4 Nov 2026; the sections above reflect them.
 | Tax adviser | None | ELSTER field sheet is the main export; yearly CSV + PDF archive; no DATEV |
 | Refinancing | User-set follow-up rate, defaulting to today's rate | One extra projection input per loan |
 | Language | Python API, workers and rules; Next.js frontend | FastAPI, Pydantic, python-fints; TypeScript types generated from OpenAPI |
+| Login (5 Nov 2026) | Passkeys (WebAuthn) only; no passwords, no TOTP | Phase 1 API step builds passkey registration and sign-in |
