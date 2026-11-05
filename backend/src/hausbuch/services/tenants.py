@@ -18,8 +18,8 @@ from hausbuch.db.tables import tenancy as tenancy_table
 from hausbuch.db.tables import tenancy_tenant as party_table
 from hausbuch.db.tables import tenant as tenant_table
 from hausbuch.rules.retention import tenant_retention
-from hausbuch.schemas.document import RetentionPolicy, TenantRetentionInput
-from hausbuch.schemas.enums import EntityType, RetentionHold
+from hausbuch.schemas.document import RetentionPolicy, RetentionResult, TenantRetentionInput
+from hausbuch.schemas.enums import EntityType, RetentionClass, RetentionHold
 from hausbuch.schemas.events import (
     Empty,
     ErasureBasis,
@@ -144,21 +144,29 @@ def erase_tenant(
             .where(party_table.c.tenant_id == tenant_id)
         ).scalars()
     )
-    result = tenant_retention(TenantRetentionInput(tenancy_end_dates=end_dates), policy)
-    if result.hold is RetentionHold.TENANCY_ACTIVE:
+    # "Running" is decided here, not by the retention hold: the retention rule treats a
+    # recorded future end date as a known end (retention.yaml), but the tenant still lives in
+    # the flat until then. The end date itself still runs (dates are inclusive).
+    today = ctx.now.date()
+    if any(end is None or end >= today for end in end_dates):
         raise RetentionHoldError(
-            f"tenant {tenant_id} has a running tenancy; their data is retained", result=result
+            f"tenant {tenant_id} has a running tenancy; their data is retained",
+            result=RetentionResult(
+                retention_class=RetentionClass.TENANT_CONTACT, hold=RetentionHold.TENANCY_ACTIVE
+            ),
         )
-    if on_request:
-        basis = ErasureBasis.DATA_SUBJECT_REQUEST
-    elif result.hold is RetentionHold.UNLINKED:
+    result = tenant_retention(TenantRetentionInput(tenancy_end_dates=end_dates), policy)
+    # The basis records what permitted the erasure: a request only when it was needed.
+    if result.hold is RetentionHold.UNLINKED:
         basis = ErasureBasis.NO_TENANCY
-    elif result.retain_until is not None and result.retain_until >= ctx.now.date():
+    elif result.retain_until is not None and result.retain_until < today:
+        basis = ErasureBasis.RETENTION_EXPIRED
+    elif on_request:
+        basis = ErasureBasis.DATA_SUBJECT_REQUEST
+    else:
         raise RetentionHoldError(
             f"tenant {tenant_id}'s data is retained until {result.retain_until}", result=result
         )
-    else:
-        basis = ErasureBasis.RETENTION_EXPIRED
     row = ctx.conn.execute(
         update(tenant_table)
         .where(tenant_table.c.id == tenant_id)

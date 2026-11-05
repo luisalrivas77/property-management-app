@@ -297,15 +297,53 @@ def test_on_request_erasure_inside_the_claims_period_records_its_basis(run, read
     assert event.payload == {"basis": "data_subject_request"}
 
 
-def test_a_request_cannot_erase_a_tenant_whose_tenancy_runs(run, read, fresh_workspaces):
-    """While the lease runs the data performs the contract: no right to erasure yet."""
+@pytest.mark.parametrize(
+    ("start", "end"),
+    [
+        (date(2024, 7, 1), None),  # open-ended
+        (date(2024, 7, 1), date(2027, 6, 30)),  # end already recorded, still in the future
+        (date(2027, 1, 1), date(2027, 12, 31)),  # signed, not yet started
+        (date(2024, 7, 1), LATER.date()),  # moving out today: the end date still runs
+    ],
+    ids=["open-ended", "future-end", "not-yet-started", "ends-today"],
+)
+def test_a_request_cannot_erase_a_tenant_whose_tenancy_runs(
+    run, read, fresh_workspaces, start, end
+):
+    """While a lease runs or is still to come, the data performs the contract: no right to
+    erasure yet. A recorded future end date does not make the tenancy over (review of the
+    first version: it let a request erase a tenant who still lived in the flat)."""
     a, _ = fresh_workspaces
     anna = _create(run, a)
-    _let(run, a, _unit(run, a), anna.id, date(2024, 7, 1))
+    _let(run, a, _unit(run, a), anna.id, start, end)
 
-    with pytest.raises(RetentionHoldError, match="running tenancy"):
+    with pytest.raises(RetentionHoldError, match="running tenancy") as raised:
         run(a, erase_tenant, anna.id, on_request=True, now=LATER)
+    assert raised.value.result.hold is RetentionHold.TENANCY_ACTIVE
     _assert_untouched(read, a, anna)
+
+
+def test_a_request_erases_from_the_day_after_move_out(run, read, fresh_workspaces):
+    a, _ = fresh_workspaces
+    anna = _create(run, a)
+    _let(run, a, _unit(run, a), anna.id, date(2024, 7, 1), date(2026, 11, 5))  # moved out
+
+    erased = run(a, erase_tenant, anna.id, on_request=True, now=LATER)  # 6 Nov
+    assert erased.full_name is None
+    assert _events(read, a, anna.id)[-1].payload == {"basis": "data_subject_request"}
+
+
+def test_the_recorded_basis_is_what_permitted_the_erasure(run, read, fresh_workspaces):
+    """A request only becomes the basis when it was needed, i.e. inside the claims period."""
+    a, _ = fresh_workspaces
+    applicant, old = _create(run, a), _create(run, a)
+    _let(run, a, _unit(run, a), old.id, date(2016, 1, 1), date(2020, 6, 30))  # expired 2024
+
+    run(a, erase_tenant, applicant.id, on_request=True, now=LATER)
+    run(a, erase_tenant, old.id, on_request=True, now=LATER)
+
+    assert _events(read, a, applicant.id)[-1].payload == {"basis": "no_tenancy"}
+    assert _events(read, a, old.id)[-1].payload == {"basis": "retention_expired"}
 
 
 def test_erasure_basis_without_a_request(run, read, fresh_workspaces):
