@@ -3,10 +3,14 @@
 Conventions:
 - Monthly, in arrears. Payment n is due on first_payment_on + (n-1) months, on the base day of
   month, clamped to the month's last day (the 30th is Feb 28, then the 30th again in March).
-- Interest is 30E/360: period 1 accrues days360(disbursed_on, first_payment_on) / 360, every
-  later period 1/12. Rounded half-up to the cent each period.
-- The rate is nominal_rate while due_on <= fixed_until, then follow_up_rate (null = keep
-  nominal_rate). The monthly payment does not change at the switch.
+- Interest is 30E/360 and accrues over the period it pays for, in arrears: from the previous
+  due date (disbursed_on for payment 1) up to but not including due_on. Period 1 has
+  days360(disbursed_on, first_payment_on) days, every later period 30.
+- Each day accrues at the rate in force that day: nominal_rate up to and including
+  fixed_until, follow_up_rate after it (null = keep nominal_rate). A period that straddles
+  fixed_until is split by days360 at the day after fixed_until. Interest is rounded half-up
+  to the cent once per period. The monthly payment does not change at the switch.
+- ScheduleEntry.rate is the rate in force on the period's last day.
 - principal = payment - interest; the final payment is the remaining balance + interest.
 - A period whose interest uses up the whole payment raises loan.payment_does_not_cover_interest.
 - Year totals are per calendar year of due_on.
@@ -14,7 +18,7 @@ Conventions:
 
 import calendar
 from collections.abc import Iterator
-from datetime import date
+from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Context, Decimal, localcontext
 
 from hausbuch.schemas.loan import LoanSchedule, LoanTerms, ScheduleEntry, YearTotals
@@ -39,15 +43,21 @@ def build_schedule(terms: LoanTerms) -> LoanSchedule:
 def _entries(terms: LoanTerms) -> Iterator[ScheduleEntry]:
     balance = terms.principal
     payment = terms.monthly_payment
+    # First day at the follow-up rate; None when the rate never changes.
+    switch_on = None if terms.fixed_until is None else terms.fixed_until + timedelta(days=1)
+    follow_up = terms.nominal_rate if terms.follow_up_rate is None else terms.follow_up_rate
+    start = terms.disbursed_on
     number = 0
     while balance > 0:
         number += 1
         due_on = _add_months(terms.first_payment_on, number - 1)
-        rate = _rate_on(terms, due_on)
         days = _days360(terms.disbursed_on, terms.first_payment_on) if number == 1 else 30
+        old_days = days if switch_on is None else max(0, min(days, _days360(start, switch_on)))
         # Divide last: days/360 is a repeating decimal, and rounding it first can push an
         # exact half cent (e.g. 50.205) just below the tie, so half-up would round it down.
-        interest = (balance * rate * days / 360).quantize(CENT, rounding=ROUND_HALF_UP)
+        accrued = balance * (terms.nominal_rate * old_days + follow_up * (days - old_days))
+        interest = (accrued / 360).quantize(CENT, rounding=ROUND_HALF_UP)
+        rate = terms.nominal_rate if switch_on is None or due_on <= switch_on else follow_up
         if balance + interest <= payment:
             this_payment, principal = balance + interest, balance
         elif interest >= payment:
@@ -70,6 +80,7 @@ def _entries(terms: LoanTerms) -> Iterator[ScheduleEntry]:
             closing_balance=closing,
         )
         balance = closing
+        start = due_on
 
 
 def _year_totals(entries: list[ScheduleEntry]) -> list[YearTotals]:
@@ -86,12 +97,6 @@ def _year_totals(entries: list[ScheduleEntry]) -> list[YearTotals]:
         )
         for year, rows in years.items()
     ]
-
-
-def _rate_on(terms: LoanTerms, due_on: date) -> Decimal:
-    if terms.fixed_until is None or due_on <= terms.fixed_until:
-        return terms.nominal_rate
-    return terms.nominal_rate if terms.follow_up_rate is None else terms.follow_up_rate
 
 
 def _add_months(base: date, months: int) -> date:
