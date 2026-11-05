@@ -47,7 +47,11 @@ def test_the_app_role_starts(app_engine, settings, tmp_path):
     assert isinstance(app.state.session_resolver, main.SessionResolverImpl)
 
 
-def test_the_schema_owner_is_refused(owner_engine, settings, tmp_path):
+def test_the_schema_owner_is_refused(owner_engine, settings, tmp_path, monkeypatch):
+    def no_retry(seconds):  # §10.8 item 4: a role refusal is never retried
+        raise AssertionError(f"build_app waited {seconds} s on a role refusal")
+
+    monkeypatch.setattr(main.time, "sleep", no_retry)
     with pytest.raises(main.SchemaOwnerRoleError, match="'hausbuch_owner'"):
         _build(settings, owner_engine, tmp_path)
 

@@ -80,10 +80,12 @@ The first deploy will run into these. Two need a decision from you before you st
 
 4. **In fr-par, a container can start before its private network is ready.** Scaleway
    documents this as a known issue limited to fr-par. The API checks its database role at
-   startup and exits if the database is unreachable; it does not retry (checked locally:
-   exit 1 at once). Scaleway's mitigation is to put the containers and the database on
-   **two private networks in the same VPC**, which step 2 does. A startup retry in
-   `hausbuch/api/main.py` would be the full fix (a backend change, not done here).
+   startup. While the database cannot be reached it now retries, up to 6 attempts with
+   waits of 1, 2, 4, 8 and 16 s (about a minute at most), logging each attempt as
+   `database unreachable at startup` without the URL; then it exits. A role refusal
+   (superuser, BYPASSRLS, schema owner) is never retried and exits at once. Scaleway's
+   mitigation is also in place: the containers and the database sit on **two private
+   networks in the same VPC**, which step 2 does.
 
 5. **The optional nightly `pg_dump` cannot run as a Hausbuch role.** Every table has forced
    row-level security, so `pg_dump` as `hausbuch_owner` stops with `query would be affected

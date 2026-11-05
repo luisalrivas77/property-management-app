@@ -911,6 +911,11 @@ Chunk 4a found these by running the images and the setup for real:
 4. **The API exits when the DB is unreachable at startup.** Scaleway can start a container
    before its private network is ready. `main.py` should retry the startup role check with a
    bounded backoff. The runbook also uses Scaleway's two-private-networks workaround.
+   **Implemented:** `check_database_role_with_retry` retries on `OperationalError` /
+   `InterfaceError` (SQLAlchemy's and psycopg's) only: 6 attempts, waits 1–16 s, no new
+   attempt once the next wait would pass 60 s. Each attempt is logged by error class, never
+   the URL or the driver message. Role refusals raise at once. A connect that hangs is bounded
+   by the OS or a `connect_timeout` in the URL, not by this loop.
 5. **`pg_dump` as the owner gives an empty backup** under forced RLS: `--enable-row-security`
    "succeeds" with zero rows. The runbook says how to back up correctly.
 
