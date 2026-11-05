@@ -66,18 +66,24 @@ function Original({ detail }: { detail: DocumentDetail }) {
       <Facts
         rows={[
           ["Datei", document.original_filename ?? "–"],
+          ["Dateityp", detail.media_type],
           ["Eingang", formatDateTime(document.received_at)],
           ["Prüfsumme (SHA-256)", <code key="sha">{shortId(document.file_sha256, 16)}…</code>],
         ]}
       />
       <div className="row">
-        <a href={`${base}?disposition=inline`} target="_blank" rel="noopener" className="button-link secondary">
-          Original öffnen
-        </a>
+        {/* Only PDF and images open in the browser (§4.7); anything else is always a download,
+            so "öffnen" is offered only where it opens. */}
+        {detail.opens_inline ? (
+          <a href={`${base}?disposition=inline`} target="_blank" rel="noopener" className="button-link secondary">
+            Original öffnen
+          </a>
+        ) : null}
         <a href={`${base}?disposition=attachment`} className="button-link secondary">
           Original herunterladen
         </a>
       </div>
+      {detail.opens_inline ? null : <p className="muted">Dieser Dateityp wird nicht im Browser angezeigt, nur heruntergeladen.</p>}
       <p className="muted">Das Original bleibt unverändert; Typ, Felder und Verknüpfungen liegen als eigene Ebenen darüber.</p>
     </div>
   );

@@ -63,6 +63,14 @@ class Invite(Schema):
     expires_at: datetime
 
 
+class Member(Schema):
+    """GET /auth/members: one household member (an app_user of the workspace). has_passkey
+    is false while an invited member has not enrolled yet. Never a passkey or a session."""
+
+    user: AppUser
+    has_passkey: bool
+
+
 class Me(Schema):
     """GET /auth/me, and the response of a successful sign-in or enrollment."""
 

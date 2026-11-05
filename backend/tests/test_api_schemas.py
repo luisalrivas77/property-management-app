@@ -60,6 +60,7 @@ def test_the_named_models_exist():
         "DocumentTypingBody",
         "LinkBody",
         "DocumentDetail",
+        "DepositReceipt",  # §10.8 item 7
         "TenancyCreateRequest",
         "LoanCreateRequest",
     ]:
@@ -70,6 +71,7 @@ def test_the_named_models_exist():
         "Invite",
         "InviteCreate",
         "Me",
+        "Member",  # §10.8 item 7
         "EnrollmentOptionsRequest",
         "EnrollmentVerifyRequest",
         "LoginVerifyRequest",

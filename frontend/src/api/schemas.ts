@@ -13,6 +13,7 @@ export type Me = Schemas["Me"];
 export type AppUser = Schemas["AppUser"];
 export type Passkey = Schemas["Passkey"];
 export type Invite = Schemas["Invite"];
+export type Member = Schemas["Member"];
 export type InviteCreate = Schemas["InviteCreate"];
 
 // owners and properties
@@ -53,6 +54,7 @@ export type RentScheduleCreate = Schemas["RentScheduleCreate"];
 export type RentRowCorrection = Schemas["RentRowCorrection"];
 export type RentChangeReason = Schemas["RentChangeReason"];
 export type NoticeBody = Schemas["NoticeBody"];
+export type DepositReceipt = Schemas["DepositReceipt"];
 
 // loans
 export type Loan = Schemas["Loan"];

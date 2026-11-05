@@ -12,6 +12,7 @@ from sqlalchemy import Connection
 
 from hausbuch.schemas.api import (
     DateCorrection,
+    DepositReceipt,
     DepositReceivedBody,
     EndTenancyBody,
     NoticeBody,
@@ -20,8 +21,9 @@ from hausbuch.schemas.api import (
 )
 from hausbuch.schemas.document import Document
 from hausbuch.schemas.enums import EntityType, LinkTarget
-from hausbuch.schemas.events import Event
+from hausbuch.schemas.events import DepositReceived, Event, EventType
 from hausbuch.schemas.tenancy import RentScheduleCreate, RentScheduleEntry, Tenancy
+from hausbuch.services.events import list_events
 from hausbuch.services.tenancies import (
     correct_move_in,
     correct_rent_row,
@@ -66,6 +68,32 @@ def tenancy_deposit_received(tenancy_id: UUID, body: DepositReceivedBody, cmd: C
     return cmd.run(
         record_deposit_received, tenancy_id, amount=body.amount, received_on=body.received_on
     )
+
+
+def _deposits(conn: Connection, tenancy_id: UUID) -> list[DepositReceipt]:
+    require(conn, get_tenancy, EntityType.TENANCY, tenancy_id)
+    events = [
+        e
+        for e in list_events(conn, entity_type=EntityType.TENANCY, entity_id=tenancy_id)
+        if e.type is EventType.TENANCY_DEPOSIT_RECEIVED
+    ]
+    corrected = {e.corrects_event_id for e in events if e.corrects_event_id is not None}
+    return [
+        DepositReceipt(
+            event_id=e.id,
+            amount=DepositReceived.model_validate(e.payload).amount,
+            received_on=e.effective_date,
+            recorded_at=e.recorded_at,
+        )
+        for e in events
+        if e.id not in corrected
+    ]
+
+
+@router.get("/tenancies/{tenancy_id}/deposits")
+def tenancy_deposits(tenancy_id: UUID, cmd: Cmd) -> list[DepositReceipt]:
+    """The Kaution payments received (tenancy.deposit_received), in recording order."""
+    return cmd.read(_deposits, tenancy_id)
 
 
 @router.post("/tenancies/{tenancy_id}/notice")

@@ -10,12 +10,21 @@ The API refuses to start under a role that could step outside its least-privileg
   tables, or that may INSERT into `workspace`. As the owner the API would gain INSERT on
   workspace and DELETE on event. Provisioning as the owner is the CLI's job (hausbuch.cli).
 The owner check runs once at startup and again on every new pooled connection.
+
+The startup check is retried on connection errors only, with a bounded exponential backoff
+(§10.8 item 4): Scaleway can start the container before its private network is ready. A role
+refusal is never retried; it fails at once.
 """
 
+import logging
+import time
+from collections.abc import Callable
 from typing import Any
 
+import psycopg
 from fastapi import FastAPI
 from sqlalchemy import Engine, event, text
+from sqlalchemy import exc as sa_exc
 
 from hausbuch.api.app import engine_pool_options
 from hausbuch.api.logging import configure_logging
@@ -38,6 +47,21 @@ SELECT current_user,
        coalesce(has_table_privilege(current_user, to_regclass('workspace'), 'INSERT'), false)
 """
 
+log = logging.getLogger("hausbuch.api.main")
+
+# Startup retry (§10.8 item 4): waits of 1, 2, 4, 8 and 16 s between six attempts, and no
+# new attempt once the next wait would pass the budget (attempts that hang count too).
+STARTUP_ATTEMPTS = 6
+STARTUP_FIRST_DELAY_S = 1.0
+STARTUP_BUDGET_S = 60.0
+# The database could not be reached. Role refusals (UnsafeDatabaseRoleError and its
+# subclass SchemaOwnerRoleError) are RuntimeErrors, deliberately outside this tuple.
+_CONNECTION_ERRORS: tuple[type[Exception], ...] = (
+    sa_exc.OperationalError,
+    sa_exc.InterfaceError,
+    psycopg.OperationalError,
+)
+
 
 class SchemaOwnerRoleError(UnsafeDatabaseRoleError):
     """The API's database role is the schema owner, or can create workspaces."""
@@ -54,7 +78,7 @@ def build_app(
     settings = settings if settings is not None else load_settings()
     engine = engine if engine is not None else create_api_engine(settings)
     refuse_schema_owner(engine)
-    check_database_role(engine)  # fail at startup, not on the first request
+    check_database_role_with_retry(engine)  # fail at startup, not on the first request
     store = blob_store if blob_store is not None else create_blob_store(settings)
     resolver = SessionResolverImpl(engine, settings)
     return create_app(settings, engine, store, resolver, worker=None)  # phase 1: no jobs
@@ -91,6 +115,55 @@ def check_database_role(engine: Engine) -> None:
         role, owns_tables, inserts_workspace = conn.execute(text(_OWNER_CHECK)).one()
         conn.rollback()
     _raise_if_owner(role, owns_tables, inserts_workspace)
+
+
+def check_database_role_with_retry(
+    engine: Engine,
+    *,
+    attempts: int = STARTUP_ATTEMPTS,
+    first_delay_s: float = STARTUP_FIRST_DELAY_S,
+    budget_s: float = STARTUP_BUDGET_S,
+    sleep: Callable[[float], None] | None = None,
+    clock: Callable[[], float] = time.monotonic,
+) -> None:
+    """check_database_role, retried while the database cannot be reached. A role refusal
+    raises at once. Each failed attempt is logged by error class only: a driver message can
+    name the host, and the URL (with its password) is never logged."""
+    sleep = sleep if sleep is not None else time.sleep
+    started = clock()
+    delay = first_delay_s
+    for attempt in range(1, attempts + 1):
+        try:
+            check_database_role(engine)
+        except _CONNECTION_ERRORS as exc:
+            error = type(getattr(exc, "orig", None) or exc).__name__
+            fields = {"event": "db_unreachable", "attempt": attempt, "of": attempts}
+            if attempt == attempts or clock() - started + delay > budget_s:
+                log.error(
+                    "database unreachable at startup (%s); giving up after %d attempt(s)",
+                    error,
+                    attempt,
+                    extra={"fields": fields | {"error": error}},
+                )
+                raise
+            log.warning(
+                "database unreachable at startup (%s), attempt %d of %d; retrying in %g s",
+                error,
+                attempt,
+                attempts,
+                delay,
+                extra={"fields": fields | {"error": error, "retry_in_s": delay}},
+            )
+            sleep(delay)
+            delay *= 2
+        else:
+            if attempt > 1:
+                log.info(
+                    "database reachable after %d attempts",
+                    attempt,
+                    extra={"fields": {"event": "db_reachable", "attempt": attempt}},
+                )
+            return
 
 
 def _refuse_owner_on_connect(dbapi_connection, _connection_record) -> None:

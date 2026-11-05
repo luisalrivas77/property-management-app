@@ -315,6 +315,7 @@ label, floor_area_m2, rooms, mea), `GET /units/{id}/tenancies` → `list[Tenancy
 | `GET /tenancies/{id}` | → `Tenancy` | `get_tenancy` |
 | `POST /tenancies/{id}/corrections/move-in` | `DateCorrection {new_date}` → `Tenancy` | `correct_move_in` |
 | `POST /tenancies/{id}/deposit-received` | `DepositReceivedBody {amount, received_on}` → 201 `Event` | `record_deposit_received` |
+| `GET /tenancies/{id}/deposits` | → `list[DepositReceipt {event_id, amount, received_on, recorded_at}]` (§10.8 item 7) | `list_events` (the `tenancy.deposit_received` events) |
 | `POST /tenancies/{id}/notice` | `NoticeBody {given_by, given_on, ends_on}` → `Tenancy` | `give_notice` |
 | `POST /tenancies/{id}/end` | `EndTenancyBody {end_date}` → `Tenancy` | `end_tenancy` |
 | `GET /tenancies/{id}/rent-schedule` | → `list[RentScheduleEntry]` (superseded rows included; the UI greys them) | `list_rent_schedule` |
@@ -349,7 +350,7 @@ still fails (data from before the check), `GET …/schedule` answers 409 `rule_v
 | --- | --- | --- |
 | `POST /documents` | multipart: `file` (required), `source` (default `upload`) → 201/200 `Document` | `upload_document(store, data, media_type, source, original_filename)` |
 | `GET /documents?target_type=&target_id=` | → `list[Document]` | `list_documents` |
-| `GET /documents/{id}` | → `DocumentDetail {document, links, extraction, retention}` | `get_document`, `list_links`, `current_extraction`, `document_retention` (one read transaction) |
+| `GET /documents/{id}` | → `DocumentDetail {document, links, extraction, retention, media_type, opens_inline}` | `get_document`, `list_links`, `current_extraction`, `document_retention`, `document_media_type` (one read transaction) |
 | `PUT /documents/{id}/typing` | `DocumentTypingBody {typing: DocumentTyping, fields: ManualDocumentFields \| None}` → `Document` | `type_document` |
 | `GET /documents/{id}/links` | → `list[DocumentLink]` | `list_links` |
 | `POST /documents/{id}/links` | `LinkBody {target_type, target_id}` → 201 `DocumentLink`; 409 duplicate; 404 target | `link_document` |
@@ -388,7 +389,7 @@ Both are plain reads of the services; the frontend renders `TimelineEntry.payloa
 `UnitPatch`, `TenantPatch`, `LoanPatch`, `RentRowCorrection`; `NotarizedOnCorrection`,
 `DateCorrection`, `OwnershipBody`, `DepositReceivedBody`, `NoticeBody`, `EndTenancyBody`,
 `ErasureBody`, `DocumentTypingBody`, `LinkBody`, `DocumentDetail`, `TenancyCreateRequest`,
-`LoanCreateRequest`; auth: `Passkey`, `Session`, `Invite`, `InviteCreate`, `Me`,
+`LoanCreateRequest`, `DepositReceipt` (§10.8); auth: `Passkey`, `Session`, `Invite`, `InviteCreate`, `Me`, `Member` (§10.8),
 `EnrollmentOptionsRequest`, `EnrollmentVerifyRequest`, `LoginVerifyRequest`, `PasskeyLabel`.
 `InitialRent` moves from `services/tenancies.py` to `schemas/tenancy.py` (re-exported from the
 service module, so nothing else changes) because `TenancyCreateRequest` must not import
@@ -526,6 +527,7 @@ Endpoints (`routes/auth.py`):
 | `POST /auth/invites` | session | `InviteCreate {email, display_name}` → 201 `Invite {id, user, enrollment_url, expires_at}` (the URL is shown once) |
 | `GET /auth/invites` | session | → pending invites (no token) |
 | `DELETE /auth/invites/{id}` | session | → 204 |
+| `GET /auth/members` | session | → `list[Member {user: AppUser, has_passkey}]`, oldest first (§10.8 item 7) |
 
 Sign-in verification (`auth/webauthn.py`): parse `rawId` → `auth_lookup_transaction` reads
 the `auth_passkey` row (404-as-401 if unknown) → `verify_authentication_response(credential,
@@ -597,8 +599,9 @@ if it does not, the proxy adds a fixed header the API accepts instead (Q14).
   users share the workspace; `actor_id` keeps them apart in the audit trail. There are no roles
   in v1: both are full members (Q5).
 - **All passkeys lost**: `uv run hausbuch invite --email luis@example.org [--revoke-passkeys]
-  [--revoke-sessions]` (a Serverless Job on Scaleway) prints a fresh enrollment URL (same
-  table, same flow). Root of trust = the ability to run a Job with the owner DB credentials;
+  [--revoke-sessions]` (run from Luis's computer, §10.8 item 1; first planned as a
+  Serverless Job) prints a fresh enrollment URL (same table, same flow). Root of trust = the
+  owner DB credentials plus an allow-listed IP (first: the ability to run a Job);
   there is no email or SMS recovery in v1 (no outbound mail infrastructure, and a recovery
   mail would be the weakest link of a passkey-only design). The UI refuses to delete the last
   passkey (409) so the CLI path is the only way to reach "no passkeys".
@@ -899,6 +902,14 @@ Chunk 4a found these by running the images and the setup for real:
      allowed only from his IP;
    - (B) Jobs over a public endpoint open to Scaleway's IP ranges;
    - (C) a short-lived private Serverless Container per command.
+
+   **Runbook updated:** `deploy/scaleway.md` now makes (A) the only path. It covers
+   installing uv, `uv sync` in `backend/`, the admin env file with
+   `HAUSBUCH_ADMIN_DATABASE_URL` (`sslmode=require`) on Luis's computer only, the
+   public-endpoint allow-list of his current IP and how to replace it, migrations as
+   `uv run --env-file … alembic upgrade head` from the deployed commit, and the §10.7 link
+   rule. The Job path is a short "not used" note. §6.7's and §14's mentions of Jobs below
+   are superseded by it.
 2. **§14's one-time SQL as first written didn't lock the database.** A non-superuser admin's
    `REVOKE CONNECT … FROM PUBLIC` silently does nothing once its membership in the owner role
    is gone. The revoke must run as the owner (`SET ROLE hausbuch_owner`) **before** the
@@ -911,6 +922,11 @@ Chunk 4a found these by running the images and the setup for real:
 4. **The API exits when the DB is unreachable at startup.** Scaleway can start a container
    before its private network is ready. `main.py` should retry the startup role check with a
    bounded backoff. The runbook also uses Scaleway's two-private-networks workaround.
+   **Implemented:** `check_database_role_with_retry` retries on `OperationalError` /
+   `InterfaceError` (SQLAlchemy's and psycopg's) only: 6 attempts, waits 1–16 s, no new
+   attempt once the next wait would pass 60 s. Each attempt is logged by error class, never
+   the URL or the driver message. Role refusals raise at once. A connect that hangs is bounded
+   by the OS or a `connect_timeout` in the URL, not by this loop.
 5. **`pg_dump` as the owner gives an empty backup** under forced RLS: `--enable-row-security`
    "succeeds" with zero rows. The runbook says how to back up correctly.
 
@@ -920,8 +936,22 @@ Chunk 3b found these API gaps; none of them blocked a screen:
    `correct_move_in` also corrects the rent row that started exactly on the old move-in date (a
    `correction` row plus a correcting `tenancy.rent_scheduled` event, so History shows it).
    Rows with other dates are untouched.
+   **Implemented:** `correct_move_in` calls `correct_rent_row` for the row in force on the old
+   date, after updating the tenancy, in the same transaction. Two refusals guard against a
+   silent change of which row applies: two rows in force on the old date (they would tie with
+   the same `recorded_at`), and a moved row landing on another row's date (it would win the
+   tie). The done-criterion replays are unchanged: they correct the move-in before the first
+   rent row exists.
 7. **No list of household members**, no read endpoint for deposits received (the tenancy page
    reads them from the event log), and document responses lack the media type.
+   **Implemented:** `GET /auth/members` (`Member {user, has_passkey}`),
+   `GET /tenancies/{id}/deposits` (`DepositReceipt`, from the `tenancy.deposit_received`
+   events; a corrected one would show its latest event), and `DocumentDetail.media_type` plus
+   `opens_inline` (the §4.7 inline allow-list). `/settings` lists the members, the tenancy
+   page reads the new deposits endpoint, and the document page offers "Original öffnen" only
+   when it opens inline. The original download now reads its media type from
+   `document_file` (new `document_media_type`), the same source as the detail. The tenancy
+   page's rent schedule reloads after a move-in correction, since that moves the first row.
 
 ## 11. Delivery plan: chunks, ownership, order
 
@@ -1036,7 +1066,7 @@ Two Serverless Containers from two images, both listening on **8080**:
 | --- | --- | --- | --- | --- |
 | `hausbuch-api` | `backend/Dockerfile` (uv, Python 3.12) | `uvicorn hausbuch.api.main:app --host 0.0.0.0 --port 8080 --timeout-graceful-shutdown 25`, worker inside (§3.7) | **min 1, max 1** in v1 (one worker; sessions and jobs live in Postgres, so max > 1 is safe later) | `HAUSBUCH_DATABASE_URL` (app role), `HAUSBUCH_IBAN_HMAC_KEY`, `HAUSBUCH_SESSION_KEY`, `HAUSBUCH_RP_ID`, `HAUSBUCH_ORIGIN`, `HAUSBUCH_BLOB_STORE=s3`, `HAUSBUCH_S3_*`, `HAUSBUCH_RUN_WORKER=true`; health check `GET /healthz` |
 | `hausbuch-web` | `frontend/Dockerfile` (Next standalone output) | `node server.js` on 8080, `/api/*` rewritten to the API container URL | min 0 is acceptable (stateless; cold start only costs a page load) | `HAUSBUCH_API_URL` |
-| Jobs (same `backend` image) | — | `alembic upgrade head`, `hausbuch bootstrap`, `hausbuch invite` | run-to-completion | `HAUSBUCH_ADMIN_DATABASE_URL` (owner role) **only here**, never in the API container |
+| ~~Jobs (same `backend` image)~~ superseded by §10.8 item 1: run from Luis's computer with `uv` | — | `alembic upgrade head`, `hausbuch bootstrap`, `hausbuch invite` | run-to-completion | `HAUSBUCH_ADMIN_DATABASE_URL` (owner role) **only there**, never in the API container |
 
 Why min-scale 1 on the API: a container whose process does not listen on 8080 is killed after
 about five minutes, so a separate worker container is not an option in v1, and the in-process

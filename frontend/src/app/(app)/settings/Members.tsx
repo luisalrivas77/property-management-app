@@ -1,13 +1,15 @@
 "use client";
 
-// Mitglieder (§6.7, §10.6): invite a household member (the spouse). POST /auth/invites
-// answers with the enrollment link exactly once; it is shown here with a copy button and
-// never again (GET /auth/invites lists pending invites without it). The link is a bearer
-// secret until used: hand it over directly, not in a group chat.
+// Mitglieder (§6.7, §10.6): the household's members (GET /auth/members: enrolled or only
+// invited), and inviting one (the spouse). POST /auth/invites answers with the enrollment
+// link exactly once; it is shown here with a copy button and never again (GET /auth/invites
+// lists pending invites without it). The link is a bearer secret until used: hand it over
+// directly, not in a group chat.
 import { useCallback, useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
 import type { Invite } from "@/api/schemas";
+import { useAuth } from "@/auth/AuthGate";
 import { Field, FormBanner, Submit, useFormErrors } from "@/components/form";
 import { formatDateTime } from "@/components/format";
 import { Loading } from "@/components/ui";
@@ -15,9 +17,12 @@ import { useLoad } from "@/components/useLoad";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 const loadInvites = () => ok(api.GET("/api/auth/invites"));
+const loadMembers = () => ok(api.GET("/api/auth/members"));
 const KEYS = ["email", "display_name"] as const;
 
 export function Members() {
+  const { me } = useAuth();
+  const members = useLoad(loadMembers);
   const invites = useLoad(loadInvites);
   const [created, setCreated] = useState<Invite | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -30,11 +35,12 @@ export function Members() {
         await ok(api.DELETE("/api/auth/invites/{invite_id}", { params: { path: { invite_id: invite.id } } }));
         if (created?.id === invite.id) setCreated(null);
         invites.reload();
+        members.reload();
       } catch (caught) {
         setError(caught);
       }
     },
-    [created, invites],
+    [created, invites, members],
   );
 
   return (
@@ -42,6 +48,34 @@ export function Members() {
       <p className="muted">
         Beide im Haushalt sehen und bearbeiten dasselbe; das Protokoll hält fest, wer was eingetragen hat.
       </p>
+      <Loading state={members}>
+        {(list) => (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Mitglied</th>
+                  <th>E-Mail</th>
+                  <th>Passkey</th>
+                </tr>
+              </thead>
+              <tbody>
+                {list.map((member) => (
+                  <tr key={member.user.id}>
+                    <td>
+                      {member.user.display_name}
+                      {member.user.id === me.user.id ? <span className="muted"> (du)</span> : null}
+                    </td>
+                    <td>{member.user.email}</td>
+                    <td>{member.has_passkey ? "eingerichtet" : "noch keiner (eingeladen)"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Loading>
+      <h3>Offene Einladungen</h3>
       {created?.enrollment_url ? <OneTimeLink invite={created} url={created.enrollment_url} onDismiss={() => setCreated(null)} /> : null}
       <Loading state={invites}>
         {(list) =>
@@ -82,6 +116,7 @@ export function Members() {
         onCreated={(invite) => {
           setCreated(invite);
           invites.reload();
+          members.reload();
         }}
       />
     </div>
