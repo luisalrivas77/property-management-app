@@ -5,6 +5,8 @@
 frontend/node_modules
 frontend/.next
 frontend/e2e
+# Test-only, and it imports from e2e/; left in, it breaks the build's type check.
+frontend/playwright.config.ts
 frontend/playwright-report
 frontend/test-results
 frontend/*.tsbuildinfo
