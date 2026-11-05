@@ -213,11 +213,11 @@ and reviewed by a reviewer agent; every review finding was fixed or is listed be
      `api:309b07f0b945` (250 mVCPU / 512 MB, min = max = 1); `/healthz` answers 200 (its
      `SELECT 1` runs as `hausbuch_app` over the private network) and `/api/auth/me` 401.
      The S3 path is untested until the first upload. The domain is `hausbuch.rcubed.fr`
-     (bought 5 Nov 2026, the passkey RP ID). Step 11 partly done: `publish-images`
-     built `web:309b07f0b945-16ef9db2` against the API endpoint, and `hausbuch-web` runs it
-     (min-scale 0, max 2, HTTPS only); its default endpoint serves `/login` (200) and forwards
-     `/api/auth/me` to the API (401). The CNAME and the custom domain are not set yet.
-     Step 12 and the first-deploy checks are not done.
+     (bought 5 Nov 2026, the passkey RP ID). Step 11 done: `publish-images` built
+     `web:309b07f0b945-16ef9db2` against the API endpoint, and `hausbuch-web` runs it
+     (min-scale 0, max 2, HTTPS only). CNAME `hausbuch.rcubed.fr` → the web container, custom
+     domain with Scaleway's certificate; `https://hausbuch.rcubed.fr/login` is 200 and
+     `/api/auth/me` 401 from the API. Step 12 and the first-deploy checks are not done.
 
 ### Known gaps (not yet built)
 
