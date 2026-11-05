@@ -81,6 +81,8 @@ def append_event(
     missing = [name for name in REQUIRED_SCOPE.get(entity_type, ()) if scope[name] is None]
     if missing:
         raise InvalidEventError(f"{event_type} needs {' and '.join(missing)} (History scope)")
+    if entity_type is EntityType.UNIT and unit_id != entity_id:
+        raise InvalidEventError(f"{event_type} must be scoped to its own unit (unit_id)")
 
     row = {
         "id": uuid4(),
