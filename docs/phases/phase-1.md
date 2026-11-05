@@ -27,7 +27,8 @@ event log, and the History timeline.
 
 **Out (later phases):** accounts, transactions, allocations, rules learned from reviews and the
 review queue (phase 2); AI provenance columns (phase 2); tax rule sets and Anlage V (phase 3);
-auth credential tables (passkey / TOTP, with the API PR); the retention auto-delete job.
+TOTP (sign-in is passkeys only, decided 5 Nov 2026; the passkey, session and invite tables
+arrived with step 3, migration `0003`); the retention auto-delete job.
 
 ## Decisions taken in this spec
 
@@ -50,14 +51,16 @@ These fill gaps in ARCHITECTURE.md. Each one is a place to push back in review.
 
 ## Data model
 
-18 tables. Every table has `workspace_id`, forced RLS (`workspace_isolation` policy on
-`current_workspace_id()`), and grants for the `hausbuch_app` role (least privilege; see
-`APP_GRANTS` in the migration).
+21 tables: 18 from migration `0001`, and the three `auth_*` tables from `0003` (phase 1 step
+3, `docs/phases/phase-1-step-3.md` §6.2). Every table has `workspace_id`, forced RLS
+(`workspace_isolation` policy on `current_workspace_id()`), and grants for the `hausbuch_app`
+role (least privilege; see `APP_GRANTS` in the migrations). The auth tables also have a
+SELECT-only `auth_lookup` policy (see the invariants below).
 
 | Table | Holds | Mutability |
 | --- | --- | --- |
 | `workspace` | The household (RLS tenant) | Name only |
-| `app_user` | Person who signs in | Read-only to the app |
+| `app_user` | Person who signs in | Insert by invite; never updated or deleted by the app |
 | `owner` | Legal owner, Steuer-ID reference, marginal rate | Mutable + events |
 | `property` | Address, kind, build year, both purchase dates, price, selected split, ownership end | Mutable + events |
 | `property_ownership` | Owner shares as exact fractions | Mutable + events |
@@ -74,6 +77,9 @@ These fill gaps in ARCHITECTURE.md. Each one is a place to push back in review.
 | `document_extraction` | Versioned typed fields (manual in phase 1) | **No update** |
 | `document_link` | Document → exactly one owner/property/unit/tenant/tenancy/loan | Insert/delete + events |
 | `event` | The domain log | **Append-only**, no truncate |
+| `auth_passkey` | Passkey (WebAuthn credential): credential id (unique across workspaces), COSE public key, sign count, label | Insert, update (sign count, last use, label), delete; no events (step 3 Q6) |
+| `auth_session` | Server-side session: SHA-256 of the cookie token, expiry (absolute and idle), revocation | Insert, update (last seen, revoked), delete of expired rows; no events |
+| `auth_invite` | One-time enrollment link: SHA-256 of the URL token, purpose `enrollment`, expiry, use | Insert, update (used), delete; no events |
 
 IBANs (tenant, Kaution account, loan account) are stored as `DE89 **** 3000` plus
 HMAC-SHA256 under a key from the secrets manager. The plaintext is accepted on input only and is
@@ -84,6 +90,7 @@ never stored or returned.
 | Invariant | Enforced by |
 | --- | --- |
 | Workspace isolation (read and write) | RLS, forced, on every table |
+| Unset workspace means no rows visible, except SELECT on the three auth tables while `app.auth_lookup = 'on'` (transaction-local), set only by `hausbuch.auth.lookup` | RLS: the `auth_lookup` policy is `FOR SELECT` and exists on those three tables only (`tests/db/test_auth_tables.py`) |
 | No cross-workspace references | Composite FKs |
 | No overlapping tenancies on a unit (inclusive dates, open end = forever) | `EXCLUDE USING gist` |
 | At most one primary tenant | Partial unique index |
