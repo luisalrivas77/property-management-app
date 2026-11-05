@@ -1,7 +1,9 @@
 """Tenant commands end to end, as hausbuch_app under RLS. Personal data stays out of events."""
 
+import threading
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from decimal import Decimal
 
 import pytest
 from conftest import TEST_IBAN_KEY
@@ -10,13 +12,18 @@ from sqlalchemy import text
 from hausbuch.db.session import workspace_transaction
 from hausbuch.rules.errors import RuleError
 from hausbuch.rules.iban import BAD_CHECKSUM, iban_hmac
-from hausbuch.schemas.enums import ActorType
+from hausbuch.schemas.document import RetentionPolicy
+from hausbuch.schemas.enums import ActorType, PropertyKind, RentModel, RetentionHold
 from hausbuch.schemas.events import EventType
-from hausbuch.schemas.tenancy import TenantCreate
+from hausbuch.schemas.property import Address, PropertyCreate, UnitCreate
+from hausbuch.schemas.tenancy import TenancyCreate, TenancyParty, TenantCreate
 from hausbuch.services.context import Actor, new_command
-from hausbuch.services.errors import ConflictError, NotFoundError
+from hausbuch.services.errors import ConflictError, NotFoundError, RetentionHoldError
 from hausbuch.services.events import list_events
+from hausbuch.services.properties import create_property
+from hausbuch.services.tenancies import create_tenancy
 from hausbuch.services.tenants import create_tenant, erase_tenant, get_tenant, update_tenant
+from hausbuch.services.units import create_unit
 
 CREATED_AT = datetime(2026, 11, 5, 16, 0, tzinfo=UTC)
 LATER = datetime(2026, 11, 6, 9, 0, tzinfo=UTC)
@@ -185,3 +192,156 @@ def test_tenant_is_invisible_from_another_workspace(run, read, fresh_workspaces)
     with pytest.raises(NotFoundError):
         run(a, erase_tenant, uuid.uuid4())
     assert read(a, get_tenant, anna.id) == anna
+
+
+# --- erasure respects retention holds ------------------------------------------
+
+
+def _unit(run, ws):
+    prop = run(
+        ws,
+        create_property,
+        PropertyCreate(
+            label="Wohnung",
+            kind=PropertyKind.ETW,
+            address=Address(
+                street="Lindenstraße", house_number="12", postal_code="10115", city="Berlin"
+            ),
+            build_year=1994,
+            notarized_on=date(2015, 3, 15),
+            purchase_date=date(2015, 5, 1),
+            purchase_price=Decimal("289000.00"),
+        ),
+        now=CREATED_AT,
+    )
+    unit = UnitCreate(property_id=prop.id, label="WE 3", floor_area_m2=Decimal("68.40"))
+    return run(ws, create_unit, unit, now=CREATED_AT).id
+
+
+def _lease(unit_id, tenant_id, start, end=None):
+    return TenancyCreate(
+        unit_id=unit_id,
+        parties=[TenancyParty(tenant_id=tenant_id, role="primary")],
+        start_date=start,
+        end_date=end,
+        rent_model=RentModel.FIXED,
+    )
+
+
+def _let(run, ws, unit_id, tenant_id, start, end=None):
+    lease = _lease(unit_id, tenant_id, start, end)
+    return run(ws, create_tenancy, lease, initial_rent=None, iban_key=TEST_IBAN_KEY, now=CREATED_AT)
+
+
+def _assert_untouched(read, ws, tenant):
+    assert read(ws, get_tenant, tenant.id) == tenant
+    assert [e.type for e in _events(read, ws, tenant.id)] == [EventType.TENANT_CREATED]
+
+
+def test_a_tenant_with_a_running_tenancy_cannot_be_erased(run, read, fresh_workspaces):
+    a, _ = fresh_workspaces
+    anna = _create(run, a)
+    unit_id = _unit(run, a)
+    _let(run, a, unit_id, anna.id, date(2016, 1, 1), date(2019, 12, 31))  # an earlier lease
+    _let(run, a, unit_id, anna.id, date(2024, 7, 1))  # still running
+
+    with pytest.raises(RetentionHoldError, match="running tenancy") as raised:
+        run(a, erase_tenant, anna.id, now=LATER)
+
+    assert raised.value.result.hold is RetentionHold.TENANCY_ACTIVE
+    assert isinstance(raised.value, ConflictError)
+    _assert_untouched(read, a, anna)
+
+
+def test_erasure_waits_for_the_retention_period_after_move_out(run, read, fresh_workspaces):
+    a, _ = fresh_workspaces
+    unit_id = _unit(run, a)
+    recent, old = _create(run, a), _create(run, a)
+    _let(run, a, unit_id, recent.id, date(2023, 1, 1), date(2024, 12, 31))
+    _let(run, a, unit_id, old.id, date(2016, 1, 1), date(2020, 6, 30))
+
+    # Moved out 2024: retained until 31 Dec 2028 (4 years, D11).
+    with pytest.raises(RetentionHoldError, match="2028-12-31") as raised:
+        run(a, erase_tenant, recent.id, now=LATER)
+    assert raised.value.result.retain_until == date(2028, 12, 31)
+    _assert_untouched(read, a, recent)
+
+    # Moved out 2020: retained until 31 Dec 2024, inclusive; a longer policy holds it still.
+    on_last_day = datetime(2024, 12, 31, 12, 0, tzinfo=UTC)
+    with pytest.raises(RetentionHoldError, match="2024-12-31"):
+        run(a, erase_tenant, old.id, now=on_last_day)
+    with pytest.raises(RetentionHoldError, match="2030-12-31"):
+        run(a, erase_tenant, old.id, policy=RetentionPolicy(tenant_contact_years=10), now=LATER)
+    _assert_untouched(read, a, old)
+
+    erased = run(a, erase_tenant, old.id, now=LATER)
+    assert erased.erased_at == LATER and erased.full_name is None
+    assert _events(read, a, old.id)[-1].type is EventType.TENANT_ERASED
+
+
+def test_a_tenant_without_any_tenancy_can_be_erased(run, read, fresh_workspaces):
+    a, _ = fresh_workspaces
+    applicant = _create(run, a)
+    assert run(a, erase_tenant, applicant.id, now=LATER).erased_at == LATER
+
+
+def test_erasure_waits_for_a_tenancy_being_created(app_engine, run, read, fresh_workspaces):
+    """create_tenancy holds the tenant FOR KEY SHARE, so an erasure started meanwhile waits
+    for it, then sees the new tenancy and refuses."""
+    a, _ = fresh_workspaces
+    anna = _create(run, a)
+    unit_id = _unit(run, a)
+    errors: list[Exception] = []
+
+    def erase():
+        try:
+            run(a, erase_tenant, anna.id, now=LATER)
+        except Exception as exc:  # noqa: BLE001 - collected for the assertion below
+            errors.append(exc)
+
+    with workspace_transaction(app_engine, a) as conn:
+        ctx = new_command(conn, a, ACTOR, now=CREATED_AT)
+        lease = _lease(unit_id, anna.id, date(2024, 7, 1))
+        create_tenancy(ctx, lease, initial_rent=None, iban_key=TEST_IBAN_KEY)
+        other = threading.Thread(target=erase)
+        other.start()
+        other.join(timeout=1)
+        assert other.is_alive()  # blocked on the tenant row
+    other.join(timeout=10)
+
+    assert not other.is_alive()
+    [error] = errors
+    assert isinstance(error, RetentionHoldError)
+    _assert_untouched(read, a, anna)
+
+
+def test_a_tenancy_waits_for_an_erasure_in_flight(app_engine, run, read, fresh_workspaces):
+    """The other order: an erasure locks the tenant first. create_tenancy's FOR KEY SHARE read
+    waits for it, then sees erased_at, so no tenancy is left pointing at an erased tenant."""
+    a, _ = fresh_workspaces
+    applicant = _create(run, a)
+    unit_id = _unit(run, a)
+    errors: list[Exception] = []
+
+    def let():
+        try:
+            _let(run, a, unit_id, applicant.id, date(2024, 7, 1))
+        except Exception as exc:  # noqa: BLE001 - collected for the assertion below
+            errors.append(exc)
+
+    with workspace_transaction(app_engine, a) as conn:
+        erase_tenant(new_command(conn, a, ACTOR, now=LATER), applicant.id)
+        other = threading.Thread(target=let)
+        other.start()
+        other.join(timeout=1)
+        assert other.is_alive()  # blocked on the tenant row
+    other.join(timeout=10)
+
+    assert not other.is_alive()
+    [error] = errors
+    assert isinstance(error, ConflictError) and "erased" in str(error)
+    with workspace_transaction(app_engine, a) as conn:
+        count = conn.execute(
+            text("SELECT count(*) FROM tenancy_tenant WHERE tenant_id = :t"), {"t": applicant.id}
+        ).scalar_one()
+    assert count == 0
