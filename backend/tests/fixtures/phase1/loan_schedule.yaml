@@ -7,8 +7,12 @@
 #   due date (disbursed_on for payment 1) up to but not including due_on. Period 1 has
 #   days360(disbursed_on, first_payment_on) days; every later period has 30.
 # - Each day accrues at the rate in force that day: nominal_rate up to and including
-#   fixed_until, follow_up_rate after it (null -> nominal_rate). A period straddling
-#   fixed_until is split by days360 at the day after fixed_until (standard per-day accrual).
+#   fixed_until, follow_up_rate after it (null -> nominal_rate); standard per-day accrual.
+#   Let switch = the day after fixed_until. A period with due_on <= switch is entirely at
+#   nominal_rate; one starting on or after switch is entirely at follow_up_rate. A period
+#   straddling it gets days_new = min(period days, days360(switch, due_on)) at follow_up_rate
+#   and days_old = period days - days_new at nominal_rate. (Measured from the switch because
+#   days360 between clamped month-end dates is not 30: Jan 30 -> Feb 28 measures 28.)
 #   Interest = balance * (rate_old * days_old + rate_new * days_new) / 360, rounded half-up to
 #   the cent once per period. The monthly payment does not change at the switch.
 # - rate (per entry) is the rate in force on the period's last day.
@@ -17,6 +21,8 @@
 # its due date fell after fixed_until. With payments in arrears that charged the last fixed
 # month (e.g. June, paid on 1 July) at the new rate. Cases follow_up_rate_to_payoff and
 # payment_below_interest_after_switch were recomputed; mid_period_rate_switch was added.
+# Same day, after review: the split is decided by date first and the follow-up days are
+# counted from the switch; three month-end cases (payments on the 30th) were added.
 # - principal = payment - interest. Final payment = remaining balance + interest.
 # - A period whose interest >= payment is an error (the loan would never amortize).
 # - years: totals per calendar year of due_on; closing_balance = after that year's last payment.
@@ -126,6 +132,55 @@ cases:
       years:
       - {year: 2025, interest: "883.02", principal: "10116.98", payment: "11000.00", closing_balance: "9883.02"}
       - {year: 2026, interest: "375.30", principal: "9883.02", payment: "10258.32", closing_balance: "0.00"}
+
+  - id: switch_day_is_a_clamped_february_due_date
+    description: "Payments on the 30th; fixed rate ends 27 Feb. The Feb 28 payment covers only fixed-rate days, so it is entirely at 3.6 % (no phantom follow-up days from February's short 30E/360 count)."
+    terms:
+      principal: "200000.00"
+      nominal_rate: "0.036"
+      monthly_payment: "1400.00"
+      disbursed_on: 2024-12-30
+      first_payment_on: 2025-01-30
+      fixed_until: 2025-02-27
+      follow_up_rate: "0.05"
+    expect:
+      entry_count: 217
+      entries:
+      - {number: 2, due_on: 2025-02-28, rate: "0.036", opening_balance: "199200.00", interest: "597.60", principal: "802.40", payment: "1400.00", closing_balance: "198397.60"}
+      - {number: 3, due_on: 2025-03-30, rate: "0.05", opening_balance: "198397.60", interest: "826.66", principal: "573.34", payment: "1400.00", closing_balance: "197824.26"}
+
+  - id: fixed_rate_ends_february_with_month_end_payments
+    description: "Payments on the 30th; fixed rate ends 28 Feb. The Mar 30 payment covers Feb 28 (3.6 %) and Mar 1-29 (5 %): 29 days at 5 % counted from the switch, the old rate takes the rest of the 30-day month."
+    terms:
+      principal: "200000.00"
+      nominal_rate: "0.036"
+      monthly_payment: "1400.00"
+      disbursed_on: 2024-12-30
+      first_payment_on: 2025-01-30
+      fixed_until: 2025-02-28
+      follow_up_rate: "0.05"
+    expect:
+      entry_count: 217
+      entries:
+      - {number: 2, due_on: 2025-02-28, rate: "0.036", opening_balance: "199200.00", interest: "597.60", principal: "802.40", payment: "1400.00", closing_balance: "198397.60"}
+      - {number: 3, due_on: 2025-03-30, rate: "0.05", opening_balance: "198397.60", interest: "818.94", principal: "581.06", payment: "1400.00", closing_balance: "197816.54"}
+      - {number: 4, due_on: 2025-04-30, rate: "0.05", opening_balance: "197816.54", interest: "824.24", principal: "575.76", payment: "1400.00", closing_balance: "197240.78"}
+
+  - id: fixed_rate_ends_late_march_with_month_end_payments
+    description: "Payments on the 30th; fixed rate ends 28 Mar. The Mar 30 payment covers 29 days at 3.6 % and Mar 29 at 5 %."
+    terms:
+      principal: "200000.00"
+      nominal_rate: "0.036"
+      monthly_payment: "1400.00"
+      disbursed_on: 2024-12-30
+      first_payment_on: 2025-01-30
+      fixed_until: 2025-03-28
+      follow_up_rate: "0.05"
+    expect:
+      entry_count: 217
+      entries:
+      - {number: 3, due_on: 2025-03-30, rate: "0.05", opening_balance: "198397.60", interest: "602.91", principal: "797.09", payment: "1400.00", closing_balance: "197600.51"}
+      - {number: 4, due_on: 2025-04-30, rate: "0.05", opening_balance: "197600.51", interest: "823.34", principal: "576.66", payment: "1400.00", closing_balance: "197023.85"}
 
   - id: payment_below_interest
     description: 6 % on 100k is 500.00 interest a month; a 400.00 payment never amortizes.

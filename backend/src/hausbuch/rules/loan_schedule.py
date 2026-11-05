@@ -7,9 +7,11 @@ Conventions:
   due date (disbursed_on for payment 1) up to but not including due_on. Period 1 has
   days360(disbursed_on, first_payment_on) days, every later period 30.
 - Each day accrues at the rate in force that day: nominal_rate up to and including
-  fixed_until, follow_up_rate after it (null = keep nominal_rate). A period that straddles
-  fixed_until is split by days360 at the day after fixed_until. Interest is rounded half-up
-  to the cent once per period. The monthly payment does not change at the switch.
+  fixed_until, follow_up_rate after it (null = keep nominal_rate). A period whose due date is
+  on or before the day after fixed_until is entirely at nominal_rate; one starting on or after
+  it is entirely at follow_up_rate. A period straddling it gets days360(switch day, due_on)
+  days at follow_up_rate, capped at the period's days, and the rest at nominal_rate. Interest
+  is rounded half-up to the cent once per period. The monthly payment does not change.
 - ScheduleEntry.rate is the rate in force on the period's last day.
 - principal = payment - interest; the final payment is the remaining balance + interest.
 - A period whose interest uses up the whole payment raises loan.payment_does_not_cover_interest.
@@ -52,7 +54,7 @@ def _entries(terms: LoanTerms) -> Iterator[ScheduleEntry]:
         number += 1
         due_on = _add_months(terms.first_payment_on, number - 1)
         days = _days360(terms.disbursed_on, terms.first_payment_on) if number == 1 else 30
-        old_days = days if switch_on is None else max(0, min(days, _days360(start, switch_on)))
+        old_days = _days_at_old_rate(start, due_on, days, switch_on)
         # Divide last: days/360 is a repeating decimal, and rounding it first can push an
         # exact half cent (e.g. 50.205) just below the tie, so half-up would round it down.
         accrued = balance * (terms.nominal_rate * old_days + follow_up * (days - old_days))
@@ -81,6 +83,22 @@ def _entries(terms: LoanTerms) -> Iterator[ScheduleEntry]:
         )
         balance = closing
         start = due_on
+
+
+def _days_at_old_rate(start: date, due_on: date, days: int, switch_on: date | None) -> int:
+    """Days of the period [start, due_on) at nominal_rate; switch_on is the first follow-up day.
+
+    Decided by date first: days360 between clamped month-end dates is not the period's fixed
+    30 days (Jan 30 -> Feb 28 measures 28, Feb 28 -> Mar 30 measures 32), so measuring the
+    old part from `start` would leak phantom days to the wrong rate. The follow-up part is
+    measured from the switch to the due date, where every day is a real day after fixed_until;
+    the old rate takes the rest of the period.
+    """
+    if switch_on is None or switch_on >= due_on:
+        return days
+    if switch_on <= start:
+        return 0
+    return days - min(days, _days360(switch_on, due_on))
 
 
 def _year_totals(entries: list[ScheduleEntry]) -> list[YearTotals]:

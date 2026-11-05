@@ -140,3 +140,27 @@ def test_first_period_half_cent_tie_rounds_up():
         first_payment_on=date(2025, 1, 12),
     )
     assert build_schedule(terms).entries[0].interest == D("50.21")
+
+
+@pytest.mark.parametrize("base_day", [1, 15, 28, 29, 30, 31])
+@pytest.mark.parametrize("fixed_until_day", [(2, 27), (2, 28), (3, 28), (3, 30), (6, 15), (6, 30)])
+def test_a_row_at_the_old_rate_is_a_full_month_at_the_old_rate(base_day, fixed_until_day):
+    """If a regular period shows the old rate, none of its days accrued at the new one.
+
+    This invariant failed for payments on the 29th-31st when the fixed rate ended just
+    before a clamped February due date (phantom follow-up days).
+    """
+    first = date(2025, 1, min(base_day, 31))
+    terms = LoanTerms(
+        principal=D("200000.00"),
+        nominal_rate=D("0.036"),
+        monthly_payment=D("1400.00"),
+        disbursed_on=date(2024, 12, min(base_day, 31)),
+        first_payment_on=first,
+        fixed_until=date(2025, *fixed_until_day),
+        follow_up_rate=D("0.05"),
+    )
+    for e in build_schedule(terms).entries[1:24]:
+        if e.rate == D("0.036"):
+            expected = (e.opening_balance * D("0.036") * 30 / 360).quantize(D("0.01"))
+            assert e.interest == expected, (e.number, e.due_on)
