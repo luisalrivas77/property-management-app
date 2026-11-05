@@ -1,0 +1,13 @@
+# Build context for deploy/web.Dockerfile is the repo root; send only the frontend sources.
+# (BuildKit reads <Dockerfile>.dockerignore next to the Dockerfile.)
+*
+!frontend/
+frontend/node_modules
+frontend/.next
+frontend/e2e
+# Test-only, and it imports from e2e/; left in, it breaks the build's type check.
+frontend/playwright.config.ts
+frontend/playwright-report
+frontend/test-results
+frontend/*.tsbuildinfo
+**/.env*

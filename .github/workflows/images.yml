@@ -1,0 +1,80 @@
+name: images
+
+# Builds both deploy images (deploy/api.Dockerfile, deploy/web.Dockerfile) and smoke-tests
+# them. Nothing is pushed: the images go to Scaleway's registry by hand (deploy/scaleway.md).
+on:
+  pull_request:
+    paths:
+      - "deploy/**"
+      - "backend/**"
+      - "frontend/**"
+      - ".github/workflows/images.yml"
+  push:
+    branches: [main]
+    paths:
+      - "deploy/**"
+      - "backend/**"
+      - "frontend/**"
+      - ".github/workflows/images.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: images-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/api.Dockerfile
+          tags: hausbuch-api:ci
+          push: false
+          load: true
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+      # The installed package imports the whole app, and the one-off commands are on PATH.
+      # (Running it against a database is the e2e job's work, chunk 4b.)
+      - name: Smoke test
+        run: |
+          docker run --rm hausbuch-api:ci hausbuch openapi > /dev/null
+          docker run --rm hausbuch-api:ci alembic -c /app/alembic.ini heads
+          docker run --rm hausbuch-api:ci sh -c 'test "$(id -u)" = 10001'
+          # Without the owner URL the migrate command must refuse, not fall back to anything.
+          if docker run --rm hausbuch-api:ci hausbuch-migrate; then
+            echo "hausbuch-migrate ran without HAUSBUCH_ADMIN_DATABASE_URL" >&2
+            exit 1
+          fi
+
+  web:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/web.Dockerfile
+          # A placeholder: the real API URL is baked in when Luis builds for Scaleway.
+          build-args: HAUSBUCH_API_URL=https://api.hausbuch.invalid
+          tags: hausbuch-web:ci
+          push: false
+          load: true
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max
+      - name: Smoke test
+        run: |
+          docker run -d --name web -p 127.0.0.1:8080:8080 hausbuch-web:ci
+          for i in $(seq 1 30); do
+            curl -fsS -o /dev/null http://127.0.0.1:8080/login && break
+            sleep 1
+          done
+          curl -fsS -o /dev/null http://127.0.0.1:8080/login
+          test "$(docker exec web id -u)" = 1000
+          docker rm -f web

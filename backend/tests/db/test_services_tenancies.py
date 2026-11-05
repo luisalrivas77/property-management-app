@@ -24,6 +24,7 @@ from hausbuch.schemas.enums import (
 from hausbuch.schemas.events import EventType
 from hausbuch.schemas.property import Address, PropertyCreate, UnitCreate
 from hausbuch.schemas.tenancy import TenancyCreate, TenancyParty, TenantCreate
+from hausbuch.services import tenancies as tenancies_service
 from hausbuch.services.context import Actor, new_command
 from hausbuch.services.errors import (
     ConflictError,
@@ -32,6 +33,7 @@ from hausbuch.services.errors import (
     TenancyOverlapError,
 )
 from hausbuch.services.events import list_events
+from hausbuch.services.history import property_history
 from hausbuch.services.properties import create_property
 from hausbuch.services.tenancies import (
     InitialRent,
@@ -410,14 +412,168 @@ def test_correct_move_in_appends_a_correcting_event(run, read, flat):
     assert (correction.property_id, correction.unit_id) == (prop.id, unit.id)
 
     assert run(a, correct_move_in, tenancy.id, date(2024, 7, 1)) == fixed  # no-op
-    _step(run, a, tenancy.id, date(2024, 7, 1), "950.00", RentChangeReason.INITIAL)
+    # A rent row on another date than the move-in stays put, so it must stay inside. (Before
+    # §10.8 item 6 this used a row on the move-in date itself; that row now moves along.)
+    _step(run, a, tenancy.id, date(2024, 7, 10), "950.00", RentChangeReason.INITIAL)
     with pytest.raises(RuleViolationError) as raised:
-        run(a, correct_move_in, tenancy.id, date(2024, 7, 2))
+        run(a, correct_move_in, tenancy.id, date(2024, 7, 11))
     assert raised.value.code == RENT_OUTSIDE_TENANCY
     with pytest.raises(ValidationError, match="signed_on"):
         run(a, correct_move_in, tenancy.id, date(2024, 6, 1))
     assert read(a, get_tenancy, tenancy.id).start_date == date(2024, 7, 1)
     assert len(_events(read, a, tenancy.id)) == 4
+
+
+def _rent_events(read, ws, tenancy_id):
+    return [e for e in _events(read, ws, tenancy_id) if e.type is EventType.TENANCY_RENT_SCHEDULED]
+
+
+def test_correct_move_in_moves_the_first_rent_row(run, read, flat):
+    """§10.8 item 6: 15.07 -> 01.07 moves the rent row that started on 15.07, as a correction
+    row plus a correcting tenancy.rent_scheduled event; History shows it corrected."""
+    a, prop, unit, tenants = flat
+    tenancy = _create(run, a, _lease(unit, tenants, start_date=date(2024, 7, 15)))
+    [first] = read(a, list_rent_schedule, tenancy.id)
+    [first_event] = _rent_events(read, a, tenancy.id)
+    assert first.effective_from == date(2024, 7, 15)
+
+    run(a, correct_move_in, tenancy.id, date(2024, 7, 1), now=LATER)
+
+    rows = read(a, list_rent_schedule, tenancy.id)
+    [moved] = [r for r in rows if r.id != first.id]
+    assert (moved.reason, moved.supersedes_id, moved.effective_from) == (
+        RentChangeReason.CORRECTION,
+        first.id,
+        date(2024, 7, 1),
+    )
+    assert (moved.cold_rent, moved.operating_costs_prepayment, moved.recorded_at) == (
+        first.cold_rent,
+        first.operating_costs_prepayment,
+        LATER,
+    )
+    assert read(a, rent_on, tenancy.id, date(2024, 7, 1)) == moved
+    assert read(a, rent_on, tenancy.id, date(2024, 6, 30)) is None
+
+    started_fix, rent_fix = _events(read, a, tenancy.id)[-2:]
+    assert started_fix.type is EventType.TENANCY_STARTED
+    assert rent_fix.type is EventType.TENANCY_RENT_SCHEDULED
+    assert rent_fix.corrects_event_id == first_event.id
+    assert rent_fix.correlation_id == started_fix.correlation_id  # one command
+    assert (rent_fix.effective_date, rent_fix.property_id, rent_fix.unit_id) == (
+        date(2024, 7, 1),
+        prop.id,
+        unit.id,
+    )
+    assert rent_fix.payload["supersedes_id"] == str(first.id)
+
+    history = [e for e in read(a, property_history, prop.id) if e.entity_id == tenancy.id]
+    [rent_entry] = [e for e in history if e.type is EventType.TENANCY_RENT_SCHEDULED]
+    assert (rent_entry.effective_date, rent_entry.corrected) == (date(2024, 7, 1), True)
+    assert rent_entry.original_effective_date == date(2024, 7, 15)
+    assert (rent_entry.root_event_id, rent_entry.event_id) == (first_event.id, rent_fix.id)
+    [moved_in] = [e for e in history if e.type is EventType.TENANCY_STARTED]
+    assert (moved_in.effective_date, moved_in.corrected) == (date(2024, 7, 1), True)
+
+
+def test_correct_move_in_leaves_rows_on_other_dates(run, read, flat):
+    """Only the row on the old move-in date moves; a later step keeps its row and event."""
+    a, _, unit, tenants = flat
+    tenancy = _create(run, a, _lease(unit, tenants, start_date=date(2024, 7, 15)))
+    step = _step(run, a, tenancy.id, date(2025, 7, 1), "1000.00")
+    before = read(a, list_rent_schedule, tenancy.id)
+
+    run(a, correct_move_in, tenancy.id, date(2024, 8, 1), now=LATER)
+
+    after = read(a, list_rent_schedule, tenancy.id)
+    assert all(r in after for r in before) and len(after) == len(before) + 1
+    [moved] = [r for r in after if r not in before]
+    assert (moved.effective_from, moved.supersedes_id) == (date(2024, 8, 1), before[0].id)
+    assert step in after and read(a, rent_on, tenancy.id, date(2025, 7, 1)) == step
+    # A later correction that the first row would land on is refused, not a silent tie.
+    with pytest.raises(ValueError, match="2025-07-01"):
+        run(a, correct_move_in, tenancy.id, date(2025, 7, 1))
+    assert read(a, list_rent_schedule, tenancy.id) == after
+
+
+def test_correct_move_in_later_than_a_second_row_is_refused_whole(run, read, flat):
+    """Old 15.07, a step on 01.08, move-in corrected to 02.08: the first row would move, but
+    the step would fall before the tenancy, so the whole correction is refused and nothing is
+    written (from the review of the move-in coupling; guards against computing the moving
+    rows too broadly)."""
+    a, _, unit, tenants = flat
+    tenancy = _create(run, a, _lease(unit, tenants, start_date=date(2024, 7, 15)))
+    _step(run, a, tenancy.id, date(2024, 8, 1), "1000.00")
+    rows, events = read(a, list_rent_schedule, tenancy.id), _events(read, a, tenancy.id)
+    with pytest.raises(RuleViolationError) as raised:
+        run(a, correct_move_in, tenancy.id, date(2024, 8, 2))
+    assert raised.value.code == RENT_OUTSIDE_TENANCY
+    assert "2024-08-01" in str(raised.value) and "2024-07-15" not in str(raised.value)
+    assert read(a, get_tenancy, tenancy.id).start_date == date(2024, 7, 15)
+    assert read(a, list_rent_schedule, tenancy.id) == rows
+    assert _events(read, a, tenancy.id) == events
+
+
+def test_correct_move_in_moves_an_already_corrected_first_row(run, read, flat):
+    """The first row was corrected once (rent 950 -> 960); the move-in correction supersedes
+    that correction, the latest row of its chain, and corrects the chain's latest event."""
+    a, prop, unit, tenants = flat
+    tenancy = _create(run, a, _lease(unit, tenants, start_date=date(2024, 7, 15)))
+    [first] = read(a, list_rent_schedule, tenancy.id)
+    fixed = run(a, correct_rent_row, first.id, cold_rent=Decimal("960.00"), now=LATER)
+    fixed_event = _rent_events(read, a, tenancy.id)[-1]
+
+    run(a, correct_move_in, tenancy.id, date(2024, 7, 1), now=LATER)
+
+    [moved] = [r for r in read(a, list_rent_schedule, tenancy.id) if r.supersedes_id == fixed.id]
+    assert (moved.effective_from, moved.cold_rent) == (date(2024, 7, 1), Decimal("960.00"))
+    assert _rent_events(read, a, tenancy.id)[-1].corrects_event_id == fixed_event.id
+    [rent_entry] = [
+        e
+        for e in read(a, property_history, prop.id)
+        if e.entity_id == tenancy.id and e.type is EventType.TENANCY_RENT_SCHEDULED
+    ]
+    assert rent_entry.original_effective_date == date(2024, 7, 15)
+    assert rent_entry.payload["cold_rent"] == "960.00"
+
+
+def test_correct_move_in_refuses_two_rows_on_the_move_in_date(run, read, flat):
+    a, _, unit, tenants = flat
+    tenancy = _create(run, a, _lease(unit, tenants, start_date=date(2024, 7, 15)))
+    _step(run, a, tenancy.id, date(2024, 7, 15), "960.00", RentChangeReason.AGREEMENT)
+    before = _events(read, a, tenancy.id)
+    with pytest.raises(ValueError, match="2 rent rows start on 2024-07-15"):
+        run(a, correct_move_in, tenancy.id, date(2024, 7, 1))
+    assert _events(read, a, tenancy.id) == before
+
+
+@pytest.mark.parametrize("where", ["after the command", "in the rent correction"])
+def test_a_failed_move_in_correction_rolls_back_both_corrections(
+    app_engine, run, read, flat, monkeypatch, where
+):
+    a, _, unit, tenants = flat
+    tenancy = _create(run, a, _lease(unit, tenants, start_date=date(2024, 7, 15)))
+    rows, events = read(a, list_rent_schedule, tenancy.id), _events(read, a, tenancy.id)
+
+    class Boom(Exception):
+        pass
+
+    if where == "in the rent correction":
+        real = tenancies_service.correct_rent_row
+
+        def correct_then_fail(*args, **kwargs):
+            real(*args, **kwargs)
+            raise Boom
+
+        monkeypatch.setattr(tenancies_service, "correct_rent_row", correct_then_fail)
+
+    with pytest.raises(Boom), workspace_transaction(app_engine, a) as conn:
+        ctx = new_command(conn, a, ACTOR, now=LATER)
+        correct_move_in(ctx, tenancy.id, date(2024, 7, 1))
+        raise Boom
+
+    assert read(a, get_tenancy, tenancy.id).start_date == date(2024, 7, 15)
+    assert read(a, list_rent_schedule, tenancy.id) == rows
+    assert _events(read, a, tenancy.id) == events
 
 
 def test_correct_move_in_cannot_overlap_the_previous_tenancy(run, read, flat):

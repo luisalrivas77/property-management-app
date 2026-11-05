@@ -13,7 +13,7 @@ from sqlalchemy import Connection, delete, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
 from hausbuch.db.tables import app_user, auth_invite, auth_passkey
-from hausbuch.schemas.auth import Invite, InviteCreate
+from hausbuch.schemas.auth import Invite, InviteCreate, Member
 from hausbuch.schemas.workspace import AppUser
 
 from .errors import DuplicateUserError, InviteNotFoundError
@@ -149,6 +149,32 @@ def list_pending_invites(conn: Connection, *, now: datetime) -> list[Invite]:
             Invite(id=values["invite_id"], user=user, expires_at=values["invite_expires_at"])
         )
     return invites
+
+
+def list_members(conn: Connection) -> list[Member]:
+    """GET /auth/members: the workspace's users, oldest first, and whether each has enrolled
+    a passkey. Users with a pending or expired invite only are members too (has_passkey
+    false): their row exists from the invite on (§6.7)."""
+    has_passkey = (
+        select(auth_passkey.c.id)
+        .where(
+            auth_passkey.c.workspace_id == app_user.c.workspace_id,
+            auth_passkey.c.user_id == app_user.c.id,
+        )
+        .exists()
+    )
+    rows = conn.execute(
+        select(app_user, has_passkey.label("has_passkey")).order_by(
+            app_user.c.created_at, app_user.c.id
+        )
+    )
+    return [
+        Member(
+            user=AppUser.model_validate({c.name: row._mapping[c.name] for c in app_user.columns}),
+            has_passkey=row.has_passkey,
+        )
+        for row in rows
+    ]
 
 
 def delete_invite(conn: Connection, invite_id: UUID) -> None:

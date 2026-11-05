@@ -1,8 +1,7 @@
 "use client";
 
-// Einstellungen (§9.1, §6.7): the user's passkeys (list, add, remove) and signing out.
-// Renaming passkeys and inviting a household member are listed in §9.1 too; they are not part
-// of chunk 3a.
+// Einstellungen (§9.1, §6.7): the user's passkeys (list, add, rename, remove), the household's
+// members (invite → one-time enrollment link, pending invites) and signing out.
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
@@ -10,6 +9,9 @@ import type { Passkey } from "@/api/schemas";
 import { useAuth } from "@/auth/AuthGate";
 import { addPasskey, defaultPasskeyLabel } from "@/auth/passkeys";
 import { ErrorNotice } from "@/lib/ErrorNotice";
+
+import { Members } from "./Members";
+import { RenamePasskey } from "./RenamePasskey";
 
 const MAX_LABEL_LENGTH = 100; // auth_passkey.label CHECK
 const dateTime = new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeStyle: "short" });
@@ -25,6 +27,7 @@ export default function SettingsPage() {
   const [rowError, setRowError] = useState<unknown>(null);
   const [signOutError, setSignOutError] = useState<unknown>(null);
   const [removing, setRemoving] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
 
   const reload = useCallback(() => {
     return ok(api.GET("/api/auth/passkeys")).then(
@@ -80,13 +83,33 @@ export default function SettingsPage() {
             {passkeys.map((passkey) => (
               <tr key={passkey.id}>
                 <td>
-                  {passkey.label}
-                  {passkey.id === me.session.passkey_id ? <span className="muted"> (diese Sitzung)</span> : null}
+                  {renaming === passkey.id ? (
+                    <RenamePasskey
+                      passkey={passkey}
+                      onDone={async (changed) => {
+                        setRenaming(null);
+                        if (changed) await reload();
+                      }}
+                    />
+                  ) : (
+                    <>
+                      {passkey.label}
+                      {passkey.id === me.session.passkey_id ? <span className="muted"> (diese Sitzung)</span> : null}
+                    </>
+                  )}
                 </td>
                 <td>{formatDateTime(passkey.created_at)}</td>
                 <td>{formatDateTime(passkey.last_used_at)}</td>
                 <td>{passkey.backed_up ? "ja" : "nein"}</td>
-                <td>
+                <td className="row">
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => setRenaming(passkey.id)}
+                    disabled={renaming !== null || removing !== null}
+                  >
+                    Umbenennen
+                  </button>
                   <button
                     type="button"
                     className="danger"
@@ -110,6 +133,9 @@ export default function SettingsPage() {
       <ErrorNotice error={rowError} />
 
       <AddPasskey onAdded={reload} />
+
+      <h2>Mitglieder</h2>
+      <Members />
 
       <h2>Abmelden</h2>
       <div className="row">

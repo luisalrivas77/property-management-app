@@ -20,10 +20,10 @@ from starlette.concurrency import run_in_threadpool
 from hausbuch.schemas.api import DocumentDetail, DocumentTypingBody, ErrorKind, LinkBody
 from hausbuch.schemas.document import Document, DocumentLink, RetentionResult
 from hausbuch.schemas.enums import DocumentSource, EntityType, LinkTarget
-from hausbuch.schemas.events import DocumentUploaded, EventType
 from hausbuch.services.context import CommandContext
 from hausbuch.services.documents import (
     current_extraction,
+    document_media_type,
     document_retention,
     get_document,
     link_document,
@@ -34,7 +34,6 @@ from hausbuch.services.documents import (
     unlink_document,
     upload_document,
 )
-from hausbuch.services.events import list_events
 from hausbuch.storage import BlobStore
 
 from ..deps import Cmd, SettingsDep, StoreDep, domain_router, found, require
@@ -138,11 +137,14 @@ def documents_list(
 
 def _detail(conn: Connection, document_id: UUID) -> DocumentDetail:
     document = found(get_document(conn, document_id), EntityType.DOCUMENT, document_id)
+    media_type = found(document_media_type(conn, document_id), EntityType.DOCUMENT, document_id)
     return DocumentDetail(
         document=document,
         links=list_links(conn, document_id),
         extraction=current_extraction(conn, document_id),
         retention=document_retention(conn, document_id),
+        media_type=media_type,
+        opens_inline=media_type in INLINE_MEDIA_TYPES,
     )
 
 
@@ -196,19 +198,11 @@ def _retention(conn: Connection, document_id: UUID) -> RetentionResult:
 
 
 def _original(conn: Connection, store: BlobStore, document_id: UUID) -> tuple[bytes, str, Document]:
-    """The verified bytes, their media type and the document, in one read.
-
-    The media type is read from the document's document.uploaded event, which records
-    the document_file row's media_type: the services have no query that returns the
-    document_file row itself."""
+    """The verified bytes, their media type (document_file.media_type, the same source as
+    DocumentDetail.media_type) and the document, in one read."""
     document = found(get_document(conn, document_id), EntityType.DOCUMENT, document_id)
     data = read_original(conn, store, document_id)
-    [uploaded] = [
-        e
-        for e in list_events(conn, entity_type=EntityType.DOCUMENT, entity_id=document_id)
-        if e.type is EventType.DOCUMENT_UPLOADED
-    ]
-    media_type = DocumentUploaded.model_validate(uploaded.payload).media_type
+    media_type = found(document_media_type(conn, document_id), EntityType.DOCUMENT, document_id)
     return data, media_type, document
 
 

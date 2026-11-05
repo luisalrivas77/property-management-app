@@ -9,8 +9,7 @@
 import createClient, { type Middleware } from "openapi-fetch";
 
 import { ApiError, readErrorBody } from "./errors";
-// Chunk 3b: `import type { paths } from "./types"` once types.ts is generated from the API.
-import type { paths } from "./interim-auth-types";
+import type { paths } from "./types"; // generated from openapi.json: `npm run gen:types`
 
 const MAX_RETRY_AFTER_MS = 10_000;
 const DEFAULT_RETRY_AFTER_MS = 2_000;

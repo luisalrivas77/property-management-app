@@ -122,6 +122,7 @@ def test_typing_links_detail_and_retention(client_a):
         "hold": "tenancy_active",
     }
     assert ok(client_a.get(f"{base}/retention")) == detail["retention"]
+    assert (detail["media_type"], detail["opens_inline"]) == ("application/pdf", True)
 
     tenancy_id = setup["tenancy"]["id"]
     assert ok(client_a.get(f"/api/tenancies/{tenancy_id}/documents")) == [typed]
@@ -180,6 +181,9 @@ def test_inline_is_refused_for_text_and_the_name_falls_back_to_the_hash(
     assert response.headers["content-disposition"] == (
         f"attachment; filename=\"{sha[:12]}.txt\"; filename*=UTF-8''{sha[:12]}.txt"
     )
+    # The detail says so up front (§10.8 item 7), so the UI offers a download, not "open".
+    detail = ok(client_a.get(f"/api/documents/{document.id}"))
+    assert (detail["media_type"], detail["opens_inline"]) == ("text/plain", False)
 
 
 def test_documents_of_unknown_targets_are_404(client_a):
