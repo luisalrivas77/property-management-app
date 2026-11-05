@@ -7,7 +7,7 @@ import pytest
 from conftest import make_engine
 from sqlalchemy import text
 
-from hausbuch.db.session import workspace_transaction
+from hausbuch.db.session import UnsafeDatabaseRoleError, workspace_transaction
 
 CURRENT = text("SELECT current_workspace_id(), pg_backend_pid()")
 
@@ -50,6 +50,19 @@ def test_workspace_does_not_leak_to_the_next_transaction(
         assert pid_after == pid, "the pool should have reused the same connection"
         assert ws_after is None
         assert conn.execute(text("SELECT count(*) FROM workspace")).scalar_one() == 0
+
+
+def test_engine_refuses_a_role_that_bypasses_rls(dbname, workspaces):
+    a, _ = workspaces
+    engine = make_engine(dbname, role="postgres")
+    try:
+        with (
+            pytest.raises(UnsafeDatabaseRoleError, match="'postgres'"),
+            workspace_transaction(engine, a),
+        ):
+            pytest.fail("a superuser connection must never be handed out")
+    finally:
+        engine.dispose()
 
 
 def test_rejects_a_non_uuid_workspace(app_engine):
