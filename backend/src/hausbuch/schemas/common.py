@@ -1,11 +1,18 @@
-"""Shared value types. Money is Decimal (EUR, 2 places), never float."""
+"""Shared value types. Money is Decimal (EUR, 2 places), never float.
+
+Spec amendment 2 (docs/phases/phase-1.md): the decimal types below accept a decimal string or
+a Decimal and nothing else. A float (a JSON number such as 1400.0) is refused, because it may
+already have been rounded before it arrived, and so is an int, so that a client sending JSON
+numbers fails on every value rather than only on the ones with cents. Their JSON schema is
+`type: string`, which is what the generated TypeScript types follow.
+"""
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Annotated, Self
+from typing import Annotated, Any, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, WithJsonSchema, model_validator
 
 
 class Schema(BaseModel):
@@ -14,21 +21,57 @@ class Schema(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+def _decimal_string_only(value: Any) -> Any:
+    """Refuse JSON numbers before Pydantic's lax Decimal coercion sees them. The message is a
+    fixed string: it never echoes the value."""
+    if isinstance(value, float | int):  # bool is an int too
+        raise ValueError("must be a decimal string, not a number")
+    return value
+
+
+_STRING_ONLY = BeforeValidator(_decimal_string_only)
+
+
+def _string_schema(decimal_places: int, *, signed: bool = False) -> WithJsonSchema:
+    """JSON schema `string` with the canonical decimal form. The pattern is for clients; the
+    server validates with Pydantic's Decimal rules (digits, places, bounds)."""
+    sign = "-?" if signed else ""
+    return WithJsonSchema(
+        {"type": "string", "pattern": rf"^{sign}[0-9]+(\.[0-9]{{1,{decimal_places}}})?$"}
+    )
+
+
 # numeric(14,2) in Postgres. v1 is EUR only.
-Money = Annotated[Decimal, Field(max_digits=14, decimal_places=2)]
-NonNegativeMoney = Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)]
-PositiveMoney = Annotated[Decimal, Field(gt=0, max_digits=14, decimal_places=2)]
+Money = Annotated[
+    Decimal, Field(max_digits=14, decimal_places=2), _STRING_ONLY, _string_schema(2, signed=True)
+]
+NonNegativeMoney = Annotated[
+    Decimal, Field(ge=0, max_digits=14, decimal_places=2), _STRING_ONLY, _string_schema(2)
+]
+PositiveMoney = Annotated[
+    Decimal, Field(gt=0, max_digits=14, decimal_places=2), _STRING_ONLY, _string_schema(2)
+]
 
 # numeric(7,6): a rate as a fraction, 0.036 = 3.6 % p.a.
-Rate = Annotated[Decimal, Field(ge=0, lt=1, max_digits=7, decimal_places=6)]
+Rate = Annotated[
+    Decimal, Field(ge=0, lt=1, max_digits=7, decimal_places=6), _STRING_ONLY, _string_schema(6)
+]
 # numeric(5,4): marginal income tax rate incl. Soli/church tax, 0.4431 = 44.31 %.
-TaxRate = Annotated[Decimal, Field(ge=0, lt=1, max_digits=5, decimal_places=4)]
+TaxRate = Annotated[
+    Decimal, Field(ge=0, lt=1, max_digits=5, decimal_places=4), _STRING_ONLY, _string_schema(4)
+]
 # numeric(7,6), open interval: building share of the purchase price.
-BuildingShare = Annotated[Decimal, Field(gt=0, lt=1, max_digits=7, decimal_places=6)]
+BuildingShare = Annotated[
+    Decimal, Field(gt=0, lt=1, max_digits=7, decimal_places=6), _STRING_ONLY, _string_schema(6)
+]
 
 # numeric(8,2) and numeric(4,1)
-Area = Annotated[Decimal, Field(gt=0, max_digits=8, decimal_places=2)]
-Rooms = Annotated[Decimal, Field(gt=0, max_digits=4, decimal_places=1)]
+Area = Annotated[
+    Decimal, Field(gt=0, max_digits=8, decimal_places=2), _STRING_ONLY, _string_schema(2)
+]
+Rooms = Annotated[
+    Decimal, Field(gt=0, max_digits=4, decimal_places=1), _STRING_ONLY, _string_schema(1)
+]
 
 TaxYear = Annotated[int, Field(ge=2000, le=2100)]
 Year = Annotated[int, Field(ge=1800, le=2100)]

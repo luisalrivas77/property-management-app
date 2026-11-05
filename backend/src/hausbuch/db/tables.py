@@ -1,4 +1,4 @@
-"""SQLAlchemy Core tables for migration 0001.
+"""SQLAlchemy Core tables for migrations 0001-0003.
 
 The migration is the source of truth. This module mirrors its columns (name, type, nullability,
 whether a server default exists) and primary keys, so services can build typed queries; it
@@ -10,6 +10,7 @@ tests/db/test_tables_match_migration.py reflects the migrated database and fails
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     Column,
     Date,
     DateTime,
@@ -359,4 +360,54 @@ event = Table(
     _uuid("corrects_event_id", nullable=True),
     Column("payload", JSONB, nullable=False, server_default=text("'{}'")),
     Column("payload_version", SmallInteger, nullable=False, server_default=text("1")),
+)
+
+
+# --- Auth (migration 0003; readable before sign-in only under app.auth_lookup) -----
+
+auth_passkey = Table(
+    "auth_passkey",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("user_id"),
+    Column("credential_id", LargeBinary, nullable=False),
+    Column("public_key", LargeBinary, nullable=False),
+    Column("sign_count", BigInteger, nullable=False, server_default=text("0")),
+    _uuid("aaguid", nullable=True),
+    Column("transports", JSONB, nullable=True),
+    Column("backup_eligible", Boolean, nullable=False),
+    Column("backed_up", Boolean, nullable=False),
+    _text("label"),
+    _created_at(),
+    _timestamp("last_used_at", nullable=True, default=False),
+)
+
+auth_session = Table(
+    "auth_session",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("user_id"),
+    _uuid("passkey_id", nullable=True),
+    Column("token_hash", LargeBinary, nullable=False),
+    _created_at(),
+    _timestamp("last_seen_at"),
+    _timestamp("expires_at", default=False),
+    _timestamp("idle_expires_at", default=False),
+    _timestamp("revoked_at", nullable=True, default=False),
+)
+
+auth_invite = Table(
+    "auth_invite",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("user_id"),
+    Column("token_hash", LargeBinary, nullable=False),
+    _text("purpose", server_default=text("'enrollment'")),
+    _uuid("created_by", nullable=True),
+    _created_at(),
+    _timestamp("expires_at", default=False),
+    _timestamp("used_at", nullable=True, default=False),
 )

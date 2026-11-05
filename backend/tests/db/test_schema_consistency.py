@@ -22,6 +22,7 @@ COLUMNS: dict[tuple[str, str], type[StrEnum]] = {
     ("document_extraction", "source"): E.ExtractionSource,
     ("event", "actor_type"): E.ActorType,
     ("event", "entity_type"): E.EntityType,
+    ("auth_invite", "purpose"): E.InvitePurpose,
 }
 
 
@@ -39,7 +40,9 @@ def _allowed_values(conn, table: str, column: str) -> set[str]:
             (table, column),
         )
     ]
-    lists = [d for d in defs if "ANY (ARRAY[" in d]
+    # Postgres renders IN ('a', 'b') as = ANY (ARRAY[...]), and IN ('a') as = 'a'.
+    single = re.compile(rf"CHECK \(\({column} = '[^']*'::text\)\)")
+    lists = [d for d in defs if "ANY (ARRAY[" in d or single.fullmatch(d)]
     assert len(lists) == 1, f"expected one value-list CHECK on {table}.{column}, got {defs}"
     return set(re.findall(r"'([^']*)'::text", lists[0]))
 

@@ -25,7 +25,6 @@ from hausbuch.db.tables import tenant as tenant_table
 from hausbuch.db.tables import unit as unit_table
 from hausbuch.rules.rent import rent_at
 from hausbuch.rules.validation import RENT_OUTSIDE_TENANCY, check_rent_row, check_tenancy_parties
-from hausbuch.schemas.common import NonNegativeMoney, Schema
 from hausbuch.schemas.enums import EntityType, RentChangeReason, TenancyRole
 from hausbuch.schemas.events import (
     DepositReceived,
@@ -36,7 +35,8 @@ from hausbuch.schemas.events import (
     RentScheduled,
     TenancyCreated,
 )
-from hausbuch.schemas.tenancy import (
+from hausbuch.schemas.tenancy import (  # InitialRent is re-exported: it used to live here
+    InitialRent,
     RentScheduleCreate,
     RentScheduleEntry,
     Tenancy,
@@ -61,15 +61,6 @@ from .owners import UNSET, Unset
 _OVERLAP = "tenancy_no_overlap"
 _SUPERSEDED_ONCE = "rent_schedule_supersedes_id_key"
 _DATE_FIELDS = set(TenancyCreate.model_fields) - {"deposit_iban"}
-
-
-class InitialRent(Schema):
-    """The first rent row, recorded with the tenancy (reason 'initial')."""
-
-    cold_rent: NonNegativeMoney
-    operating_costs_prepayment: NonNegativeMoney = Decimal("0")
-    effective_from: date | None = None  # default: the tenancy's start_date
-    document_id: UUID | None = None
 
 
 def create_tenancy(
@@ -253,6 +244,16 @@ def end_tenancy(ctx: CommandContext, tenancy_id: UUID, end_date: date) -> Tenanc
 def get_tenancy(conn: Connection, tenancy_id: UUID) -> Tenancy | None:
     row = conn.execute(select(tenancy_table).where(tenancy_table.c.id == tenancy_id)).one_or_none()
     return None if row is None else _to_tenancy(conn, row)
+
+
+def list_tenancies(conn: Connection, unit_id: UUID) -> list[Tenancy]:
+    """Every tenancy of the unit, ended ones included, by move-in date."""
+    rows = conn.execute(
+        select(tenancy_table)
+        .where(tenancy_table.c.unit_id == unit_id)
+        .order_by(tenancy_table.c.start_date, tenancy_table.c.id)
+    ).all()
+    return [_to_tenancy(conn, r) for r in rows]
 
 
 # --- Rent schedule -----------------------------------------------------------------

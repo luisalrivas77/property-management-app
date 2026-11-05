@@ -100,11 +100,15 @@ def connect(dbname) -> Iterator:
 
     @contextmanager
     def _connect(role: str = APP, workspace: uuid.UUID | None = None):
-        conn = psycopg.connect(ADMIN_URL, dbname=dbname)
+        # SET ROLE and the session-level workspace run under autocommit, so a rollback inside
+        # a test can never undo them and silently continue as the superuser (review of step 3
+        # chunk 0: SET ROLE inside the implicit transaction reverted to postgres on rollback).
+        conn = psycopg.connect(ADMIN_URL, dbname=dbname, autocommit=True)
         opened.append(conn)
         conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(role)))
         if workspace is not None:
             conn.execute("SELECT set_config('app.workspace_id', %s, false)", (str(workspace),))
+        conn.autocommit = False
         try:
             yield conn
         finally:

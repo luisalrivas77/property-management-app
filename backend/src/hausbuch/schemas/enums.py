@@ -141,3 +141,9 @@ class RetentionHold(StrEnum):
     TENANCY_ACTIVE = "tenancy_active"
     UNTYPED = "untyped"
     UNLINKED = "unlinked"
+
+
+class InvitePurpose(StrEnum):
+    """auth_invite.purpose (migration 0003). One value today; kept as a CHECK'd set (D3)."""
+
+    ENROLLMENT = "enrollment"  # first user, household member, or recovery: enrol a passkey

@@ -1,4 +1,6 @@
-"""The phase 1 migration: structure, row-level security, and the invariants it enforces."""
+"""The phase 1 migrations: structure, row-level security, and the invariants they enforce.
+
+The auth tables of 0003 and their auth_lookup policy are tested in test_auth_tables.py."""
 
 import hashlib
 import uuid
@@ -37,6 +39,9 @@ MIGRATION_TABLES = {
     "loan",
     "document_link",
     "event",
+    "auth_passkey",
+    "auth_session",
+    "auth_invite",
 }
 
 

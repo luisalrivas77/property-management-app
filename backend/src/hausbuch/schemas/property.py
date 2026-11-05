@@ -23,6 +23,16 @@ from .enums import AcquisitionCostKind, PriceSplitSource, PropertyKind
 # --- Owner -------------------------------------------------------------------
 
 
+def reject_raw_tax_number(value: str | None) -> str | None:
+    """Reject any value containing what looks like a Steuer-ID (11 digits) or Steuernummer
+    (10-13 digits), labelled or not ("IdNr. 12345678901"): it would otherwise land
+    permanently in the append-only event log. Separators inside the number are ignored.
+    Shared by OwnerCreate and the API's OwnerPatch."""
+    if value is not None and re.search(r"(?<!\d)\d{10,13}(?!\d)", re.sub(r"[\s/.-]", "", value)):
+        raise ValueError("tax_id_ref must be a secrets-manager reference, not a tax number")
+    return value
+
+
 class OwnerCreate(Schema):
     # Validation errors never echo input: a mistyped Steuer-ID must not reach a log.
     model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
@@ -35,14 +45,7 @@ class OwnerCreate(Schema):
     @field_validator("tax_id_ref")
     @classmethod
     def _not_a_raw_tax_number(cls, value: str | None) -> str | None:
-        """Reject any value containing what looks like a Steuer-ID (11 digits) or Steuernummer
-        (10-13 digits), labelled or not ("IdNr. 12345678901"): it would otherwise land
-        permanently in the append-only event log. Separators inside the number are ignored."""
-        if value is not None and re.search(
-            r"(?<!\d)\d{10,13}(?!\d)", re.sub(r"[\s/.-]", "", value)
-        ):
-            raise ValueError("tax_id_ref must be a secrets-manager reference, not a tax number")
-        return value
+        return reject_raw_tax_number(value)
 
 
 class Owner(OwnerCreate, MutableRecord):
