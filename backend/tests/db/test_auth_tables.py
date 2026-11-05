@@ -463,3 +463,38 @@ def test_owner_inserts_a_workspace_only_with_its_id_set(connect):
         conn.execute("INSERT INTO workspace (id, name) VALUES (%s, 'X')", (new,))
         user = _user(conn, new)
         _invite(conn, new, user)
+
+
+def test_the_role_survives_a_rollback_inside_a_test(connect, fresh_workspaces):
+    """Guards the connect fixture: after a mid-test rollback the test still runs as the app
+    role, never as the superuser, so RLS tests cannot pass vacuously."""
+    a, _ = fresh_workspaces
+    with connect(APP, a) as conn:
+        conn.rollback()
+        assert conn.execute("SELECT current_user").fetchone()[0] == APP
+
+
+def test_a_passkey_with_sessions_cannot_be_deleted_bare(connect, fresh_workspaces):
+    """Step 3 contract (orchestrator, 5 Nov 2026, after the chunk 0 review): deleting a passkey
+    must end the sessions it opened. The session FK is deliberately NO ACTION, so code that
+    deletes a passkey without first revoking and detaching its sessions fails loudly."""
+    a, _ = fresh_workspaces
+    with connect(OWNER, a) as conn:
+        user = _user(conn, a)
+        passkey = _passkey(conn, a, user)
+        session = _session(conn, a, user, passkey=passkey)
+        conn.commit()
+    with connect(APP, a) as conn:
+        with pytest.raises(errors.ForeignKeyViolation), conn.transaction():
+            conn.execute("DELETE FROM auth_passkey WHERE id = %s", (passkey,))
+        # The required order: revoke and detach the sessions, then delete the passkey.
+        conn.execute(
+            "UPDATE auth_session SET revoked_at = coalesce(revoked_at, now()), passkey_id = NULL"
+            " WHERE passkey_id = %s",
+            (passkey,),
+        )
+        conn.execute("DELETE FROM auth_passkey WHERE id = %s", (passkey,))
+        revoked, linked = conn.execute(
+            "SELECT revoked_at IS NOT NULL, passkey_id FROM auth_session WHERE id = %s", (session,)
+        ).fetchone()
+        assert revoked and linked is None

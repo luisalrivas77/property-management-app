@@ -813,6 +813,29 @@ check (§5), then the Playwright job (Postgres service, `uv run`, `npx playwrigh
 chromium`). E2E runs on PRs touching `frontend/` or `backend/src/hausbuch/api/`. Image builds
 (§14) run on `main` only.
 
+## 10.5 Rules from the chunk 0 review (orchestrator, 5 Nov 2026)
+
+Binding for the chunks that follow:
+
+- **Deleting a passkey ends the sessions it opened** (chunk 2: `DELETE /auth/passkeys/{id}`
+  and `hausbuch invite --revoke-passkeys`). In one `workspace_transaction`, revoke its
+  un-revoked sessions and set their `passkey_id` to NULL, then delete the passkey.
+  - The `auth_session → auth_passkey` FK is deliberately `NO ACTION`, so code that forgets
+    this fails loudly. A lost device's passkey must never leave its sessions alive.
+  - `test_a_passkey_with_sessions_cannot_be_deleted_bare` pins the contract.
+- **Atomic sign counter** (chunk 2). The lookup transaction can't lock rows; `FOR UPDATE`
+  under the flag returns nothing, by design. So the WebAuthn sign-count check must be atomic
+  inside the workspace transaction: `UPDATE auth_passkey SET sign_count = :new WHERE id = :id
+  AND sign_count < :new`, then treat 0 rows as a cloned authenticator. Otherwise two
+  concurrent assertions could both pass.
+- **The API refuses the owner role** (chunk 2, `main.py`). The API must not start as the
+  schema owner: it would gain INSERT on `workspace` and DELETE on `event`. Refuse at startup
+  when the connected role owns the schema's tables, or has INSERT on `workspace`, in the
+  same spirit as the existing superuser/BYPASSRLS refusal.
+- **No raw DB errors in logs or responses** (chunk 1). `IntegrityError` text contains the
+  offending values: for example, a duplicate `app_user.email` names the email. Never log or
+  return `str(exc)` for DBAPI errors; log the constraint name only (§3.6).
+
 ## 11. Delivery plan: chunks, ownership, order
 
 Every chunk commits pathspec-limited to its owned paths; nobody edits another chunk's files.
