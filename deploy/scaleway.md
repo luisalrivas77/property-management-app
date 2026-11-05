@@ -276,6 +276,14 @@ and delete on objects, and **list on the bucket**: without list, S3 answers a mi
 with 403 instead of 404. Then create an **API key** for the application, with the Hausbuch
 project as its default Object Storage project. Keep the access key and the secret key.
 
+**Scaleway API keys expire after one year** (the key created here on 5 Nov 2026 expires around
+5 Nov 2027; IAM → API keys shows the exact date). Nothing warns you: when it lapses, every
+upload and download fails with an S3 auth error. Put the date in your calendar a few weeks
+ahead. To rotate: create a new key for the same application, put it into the container's
+secret variables (step 8, step 10), redeploy, check an upload, then delete the old key. The
+GitHub registry key (step 7) expires the same way; when it lapses, `publish-images` fails at
+login.
+
 ## Step 7: Registry and images
 
 Each image gets an immutable tag (the git commit), so a rollback is "deploy the previous

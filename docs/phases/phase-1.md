@@ -214,6 +214,9 @@ and reviewed by a reviewer agent; every review finding was fixed or is listed be
   `tenancy.notice_given` or `loan.disbursed`, and no party changes on a tenancy. Step 4 will
   need them on the first typo.
 - No retention auto-delete job, and no sweeper for blobs orphaned by rolled-back uploads.
+- No warning before a Scaleway API key expires (one year after creation; Luis, 5 Nov 2026).
+  The API's S3 key lapses around 5 Nov 2027 and uploads then fail. Until phase 5's deadline
+  reminders cover it, it is a calendar entry; rotation is in `deploy/scaleway.md` step 6.
 
 ### Spec amendment 1 (5 Nov 2026)
 
