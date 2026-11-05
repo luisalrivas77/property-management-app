@@ -10,8 +10,14 @@ from uuid import UUID
 
 from sqlalchemy import Connection
 
-from hausbuch.schemas.api import DateCorrection, NotarizedOnCorrection, OwnershipBody, PropertyPatch
-from hausbuch.schemas.enums import EntityType
+from hausbuch.schemas.api import (
+    DateCorrection,
+    NotarizedOnCorrection,
+    OwnershipBody,
+    PropertyPatch,
+    RelatedDocument,
+)
+from hausbuch.schemas.enums import EntityType, LinkTarget
 from hausbuch.schemas.loan import Loan
 from hausbuch.schemas.property import (
     AcquisitionCost,
@@ -42,6 +48,7 @@ from hausbuch.services.properties import (
 from hausbuch.services.units import list_units
 
 from ..deps import Cmd, domain_router, found, require
+from .documents import related_documents
 
 router = domain_router()
 OWNERSHIP = "property_ownership"
@@ -154,3 +161,14 @@ def _loans(conn: Connection, property_id: UUID) -> list[Loan]:
 @router.get("/properties/{property_id}/loans")
 def property_loans(property_id: UUID, cmd: Cmd) -> list[Loan]:
     return cmd.read(_loans, property_id)
+
+
+# --- Documents ---------------------------------------------------------------------------
+
+
+@router.get("/properties/{property_id}/documents")
+def property_documents(property_id: UUID, cmd: Cmd) -> list[RelatedDocument]:
+    """The documents linked to the property or to one of its units, those units' tenancies
+    or its loans, each once with every matching link in `via`. Unlike the tenancy, loan and
+    tenant `/documents` reads, this rolls up children; owner and tenant links are not."""
+    return cmd.read(related_documents(LinkTarget.PROPERTY, get_property), property_id)

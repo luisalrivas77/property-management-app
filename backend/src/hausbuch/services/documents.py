@@ -11,7 +11,7 @@ import re
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import Connection, delete, exists, insert, select, update
+from sqlalchemy import Connection, delete, exists, insert, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 
@@ -27,6 +27,7 @@ from hausbuch.db.tables import tenancy as tenancy_table
 from hausbuch.db.tables import tenancy_tenant as tenancy_tenant_table
 from hausbuch.db.tables import unit as unit_table
 from hausbuch.rules import retention
+from hausbuch.schemas.api import LinkTargetRef, RelatedDocument
 from hausbuch.schemas.document import (
     Document,
     DocumentExtraction,
@@ -56,6 +57,8 @@ _MEDIA_TYPE = re.compile(r"[a-z]+/[a-z0-9.+-]+")
 _FOREIGN_KEY_VIOLATION = "23503"
 _UNIQUE_VIOLATION = "23505"
 _DEFAULT_POLICY = RetentionPolicy()  # frozen, so safe to share as a default
+# The order of a related document's `via`: the page's own (direct) link first, then children.
+_VIA_ORDER = {LinkTarget.PROPERTY: 0, LinkTarget.UNIT: 1, LinkTarget.TENANCY: 2, LinkTarget.LOAN: 3}
 # The landlord's calendar: received_on is the local date a document arrived on.
 LOCAL_TIME_ZONE = ZoneInfo("Europe/Berlin")
 
@@ -325,6 +328,72 @@ def list_documents(
         linked = linked.where(column.is_not(None) if target_id is None else column == target_id)
         query = query.where(exists(linked))
     return [_to_document(r) for r in conn.execute(query)]
+
+
+def list_related_documents(
+    conn: Connection, *, target_type: LinkTarget, target_id: UUID
+) -> list[RelatedDocument]:
+    """The documents of a property or a unit together with those of its children, oldest
+    first like list_documents, one entry per document.
+
+    A property rolls up links to itself, its units, those units' tenancies and its loans; a
+    unit, links to itself and its tenancies. Owner and tenant links are never rolled up: owners
+    are household-wide, and tenants (personal data) reach a property only through
+    tenancy_tenant. `via` is every matching link of the document, the direct one first, then
+    unit, tenancy and loan links, each group by target id.
+    """
+    if not isinstance(target_id, UUID):  # as in _check_link_args: None would match IS NULL
+        raise TypeError(f"target_id must be a UUID, got {type(target_id).__name__}")
+    links = link_table.c
+    target_type = LinkTarget(target_type)
+    if target_type is LinkTarget.PROPERTY:
+        units = select(unit_table.c.id).where(unit_table.c.property_id == target_id)
+        matches = or_(
+            links.property_id == target_id,
+            links.unit_id.in_(units),
+            links.tenancy_id.in_(
+                select(tenancy_table.c.id).where(tenancy_table.c.unit_id.in_(units))
+            ),
+            links.loan_id.in_(select(loan_table.c.id).where(loan_table.c.property_id == target_id)),
+        )
+    elif target_type is LinkTarget.UNIT:
+        matches = or_(
+            links.unit_id == target_id,
+            links.tenancy_id.in_(
+                select(tenancy_table.c.id).where(tenancy_table.c.unit_id == target_id)
+            ),
+        )
+    else:
+        raise ValueError(f"documents roll up to a property or a unit only, not {target_type}")
+
+    linked = select(links.id).where(links.document_id == document_table.c.id).where(matches)
+    documents = [
+        _to_document(r)
+        for r in conn.execute(
+            select(document_table)
+            .where(exists(linked))
+            .order_by(document_table.c.received_at, document_table.c.id)
+        )
+    ]
+    if not documents:
+        return []
+    via: dict[UUID, list[DocumentLink]] = {d.id: [] for d in documents}
+    query = select(link_table).where(links.document_id.in_(via)).where(matches)
+    for row in conn.execute(query):
+        link = _to_link(row)
+        via[link.document_id].append(link)
+    return [
+        RelatedDocument(
+            document=d,
+            via=[
+                LinkTargetRef(target_type=lk.target_type, target_id=lk.target_id)
+                for lk in sorted(
+                    via[d.id], key=lambda lk: (_VIA_ORDER[lk.target_type], lk.target_id)
+                )
+            ],
+        )
+        for d in documents
+    ]
 
 
 def list_links(conn: Connection, document_id: UUID) -> list[DocumentLink]:

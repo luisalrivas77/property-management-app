@@ -10,8 +10,10 @@ from api_support import (
     client_for,
     create,
     flat,
+    loan_body,
     make_settings,
     new_property,
+    new_unit,
     ok,
     upload,
 )
@@ -186,8 +188,52 @@ def test_inline_is_refused_for_text_and_the_name_falls_back_to_the_hash(
     assert (detail["media_type"], detail["opens_inline"]) == ("text/plain", False)
 
 
+def _link(client, document, target_type, target_id):
+    body = {"target_type": target_type, "target_id": target_id}
+    return create(client, f"/api/documents/{document['id']}/links", body)
+
+
+def test_a_property_and_a_unit_roll_up_the_documents_of_their_children(client_a):
+    setup = flat(client_a)
+    prop, unit, tenancy = (setup[k]["id"] for k in ("property", "unit", "tenancy"))
+    loan = create(client_a, "/api/loans", loan_body(prop))["id"]
+    other_unit = new_unit(client_a, prop, label="WE 4")["id"]
+    deed, lease, loan_contract, by_tenant, elsewhere = (
+        ok(upload(client_a, f"%PDF-1.7 {name}".encode(), filename=f"{name}.pdf"), 201)
+        for name in ("Kaufvertrag", "Mietvertrag", "Darlehensvertrag", "Ausweis", "WE4")
+    )
+    _link(client_a, deed, "property", prop)
+    _link(client_a, lease, "tenancy", tenancy)
+    _link(client_a, lease, "property", prop)
+    _link(client_a, loan_contract, "loan", loan)
+    _link(client_a, by_tenant, "tenant", setup["tenant"]["id"])  # never rolled up
+    _link(client_a, elsewhere, "unit", other_unit)
+
+    assert ok(client_a.get(f"/api/properties/{prop}/documents")) == [
+        {"document": deed, "via": [{"target_type": "property", "target_id": prop}]},
+        {
+            "document": lease,
+            "via": [
+                {"target_type": "property", "target_id": prop},
+                {"target_type": "tenancy", "target_id": tenancy},
+            ],
+        },
+        {"document": loan_contract, "via": [{"target_type": "loan", "target_id": loan}]},
+        {"document": elsewhere, "via": [{"target_type": "unit", "target_id": other_unit}]},
+    ]
+    assert ok(client_a.get(f"/api/units/{unit}/documents")) == [
+        {"document": lease, "via": [{"target_type": "tenancy", "target_id": tenancy}]},
+    ]
+    assert ok(client_a.get(f"/api/units/{other_unit}/documents")) == [
+        {"document": elsewhere, "via": [{"target_type": "unit", "target_id": other_unit}]},
+    ]
+    # The direct read is unchanged.
+    query = f"/api/documents?target_type=property&target_id={prop}"
+    assert ok(client_a.get(query)) == [deed, lease]
+
+
 def test_documents_of_unknown_targets_are_404(client_a):
-    for target in ("tenants", "tenancies", "loans"):
+    for target in ("properties", "units", "tenants", "tenancies", "loans"):
         response = client_a.get(f"/api/{target}/{uuid4()}/documents")
         assert response.status_code == 404, target
     missing = uuid4()

@@ -2,16 +2,17 @@
 
 // Documents shared by several screens (§9.1): upload, the document picker (Nebenkosten,
 // Kaufpreisaufteilung, Mietstaffel; one component over GET /documents with an inline upload),
-// and the "linked documents" panel of an entity page.
+// and the "linked documents" panel of an entity page (on a property or unit page it also lists
+// the documents of its units, tenancies and loans).
 import Link from "next/link";
 import { useCallback, useId, useRef, useState, type ChangeEvent } from "react";
 
 import { api, ok } from "@/api/client";
-import type { Document, LinkTarget, UploadBody } from "@/api/schemas";
+import type { Document, LinkTarget, LinkTargetRef, RelatedDocument, UploadBody } from "@/api/schemas";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { formatDate, shortId } from "./format";
-import { DOCUMENT_TYPE } from "./labels";
+import { DOCUMENT_TYPE, LINK_TARGET } from "./labels";
 import { Loading } from "./ui";
 import { useLoad } from "./useLoad";
 
@@ -156,12 +157,66 @@ export function DocumentPicker({
   );
 }
 
-/** The documents linked to one entity, with link (pick or upload) and unlink (§4.7). */
-export function LinkedDocuments({ targetType, targetId }: { targetType: LinkTarget; targetId: string }) {
-  const load = useCallback(
-    () => ok(api.GET("/api/documents", { params: { query: { target_type: targetType, target_id: targetId } } })),
-    [targetType, targetId],
+/** The documents of one target: rolled up from its children for a property or a unit,
+ * otherwise only those linked directly (each then has the one direct link as its `via`). */
+async function loadLinked(targetType: LinkTarget, targetId: string): Promise<RelatedDocument[]> {
+  if (targetType === "property") {
+    return ok(api.GET("/api/properties/{property_id}/documents", { params: { path: { property_id: targetId } } }));
+  }
+  if (targetType === "unit") {
+    return ok(api.GET("/api/units/{unit_id}/documents", { params: { path: { unit_id: targetId } } }));
+  }
+  const documents = await ok(
+    api.GET("/api/documents", { params: { query: { target_type: targetType, target_id: targetId } } }),
   );
+  return documents.map((document) => ({ document, via: [{ target_type: targetType, target_id: targetId }] }));
+}
+
+/** The pages of the children a document can be rolled up through. */
+const VIA_HREF: Partial<Record<LinkTarget, (id: string) => string>> = {
+  unit: (id) => `/units/${id}`,
+  tenancy: (id) => `/tenancies/${id}`,
+  loan: (id) => `/loans/${id}`,
+};
+
+function isDirect(ref: LinkTargetRef, targetType: LinkTarget, targetId: string): boolean {
+  return ref.target_type === targetType && ref.target_id === targetId;
+}
+
+/** "direkt" for the page's own link, else the child's kind, linking to its page. */
+function ViaLinks({ via, targetType, targetId }: { via: LinkTargetRef[]; targetType: LinkTarget; targetId: string }) {
+  return (
+    <>
+      {via.map((ref, index) => {
+        const separator = index > 0 ? ", " : null;
+        const key = `${ref.target_type}:${ref.target_id}`;
+        if (isDirect(ref, targetType, targetId)) {
+          return (
+            <span key={key}>
+              {separator}direkt
+            </span>
+          );
+        }
+        const href = VIA_HREF[ref.target_type];
+        return (
+          <span key={key}>
+            {separator}
+            {href ? <Link href={href(ref.target_id)}>{LINK_TARGET[ref.target_type]}</Link> : LINK_TARGET[ref.target_type]}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
+/**
+ * The documents linked to one entity, with link (pick or upload) and unlink (§4.7). On a
+ * property or unit page the list also holds the documents of its children, with a "Verknüpft
+ * über" column; only a direct link can be removed here, the others on the child's page.
+ */
+export function LinkedDocuments({ targetType, targetId }: { targetType: LinkTarget; targetId: string }) {
+  const load = useCallback(() => loadLinked(targetType, targetId), [targetType, targetId]);
+  const rollsUp = targetType === "property" || targetType === "unit";
   const linked = useLoad(load);
   const pickerId = useId();
   const [picked, setPicked] = useState<string | null>(null);
@@ -217,11 +272,12 @@ export function LinkedDocuments({ targetType, targetId }: { targetType: LinkTarg
                     <th>Dokument</th>
                     <th>Art</th>
                     <th>Eingang</th>
+                    {rollsUp ? <th>Verknüpft über</th> : null}
                     <th />
                   </tr>
                 </thead>
                 <tbody>
-                  {list.map((document) => (
+                  {list.map(({ document, via }) => (
                     <tr key={document.id}>
                       <td>
                         <Link href={`/documents/${document.id}`}>{documentLabel(document)}</Link>
@@ -230,13 +286,23 @@ export function LinkedDocuments({ targetType, targetId }: { targetType: LinkTarg
                         <span className="tag">{documentKind(document)}</span>
                       </td>
                       <td>{formatDate(document.received_at)}</td>
+                      {rollsUp ? (
+                        <td>
+                          <ViaLinks via={via} targetType={targetType} targetId={targetId} />
+                        </td>
+                      ) : null}
                       <td className="actions">
                         <a href={`/api/documents/${document.id}/original?disposition=inline`} target="_blank" rel="noopener">
                           Öffnen
-                        </a>{" "}
-                        <button type="button" className="link" onClick={() => void unlink(document)}>
-                          Verknüpfung entfernen
-                        </button>
+                        </a>
+                        {via.some((ref) => isDirect(ref, targetType, targetId)) ? (
+                          <>
+                            {" "}
+                            <button type="button" className="link" onClick={() => void unlink(document)}>
+                              Verknüpfung entfernen
+                            </button>
+                          </>
+                        ) : null}
                       </td>
                     </tr>
                   ))}

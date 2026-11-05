@@ -17,7 +17,13 @@ from fastapi import File, Form, Query, Response, UploadFile
 from sqlalchemy import Connection
 from starlette.concurrency import run_in_threadpool
 
-from hausbuch.schemas.api import DocumentDetail, DocumentTypingBody, ErrorKind, LinkBody
+from hausbuch.schemas.api import (
+    DocumentDetail,
+    DocumentTypingBody,
+    ErrorKind,
+    LinkBody,
+    RelatedDocument,
+)
 from hausbuch.schemas.document import Document, DocumentLink, RetentionResult
 from hausbuch.schemas.enums import DocumentSource, EntityType, LinkTarget
 from hausbuch.services.context import CommandContext
@@ -29,6 +35,7 @@ from hausbuch.services.documents import (
     link_document,
     list_documents,
     list_links,
+    list_related_documents,
     read_original,
     type_document,
     unlink_document,
@@ -57,6 +64,19 @@ def linked_documents(
     def query(conn: Connection, target_id: UUID) -> list[Document]:
         require(conn, getter, EntityType(target_type.value), target_id)
         return list_documents(conn, target_type=target_type, target_id=target_id)
+
+    return query
+
+
+def related_documents(
+    target_type: LinkTarget, getter: Callable[[Connection, UUID], Any]
+) -> Callable[[Connection, UUID], list[RelatedDocument]]:
+    """A read: the documents of a property or unit rolled up from its children (units,
+    tenancies, loans), 404 if the target does not exist."""
+
+    def query(conn: Connection, target_id: UUID) -> list[RelatedDocument]:
+        require(conn, getter, EntityType(target_type.value), target_id)
+        return list_related_documents(conn, target_type=target_type, target_id=target_id)
 
     return query
 

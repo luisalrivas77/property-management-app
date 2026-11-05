@@ -284,6 +284,7 @@ arguments, which maps onto the services' `UNSET` convention without touching the
 | `GET /properties/{id}/loans` | → `list[Loan]` | `list_loans` |
 | `GET /properties/{id}/history?unit_id=` | → `list[TimelineEntry]` | `property_history` |
 | `GET /properties/{id}/events` | → `list[Event]` | `audit_trail(property_id=)` |
+| `GET /properties/{id}/documents` | → `list[RelatedDocument {document, via: list[LinkTargetRef]}]`: linked to the property, its units, their tenancies or its loans (not owner or tenant links); added 6 Nov 2026 | `list_related_documents` |
 
 Ownership is a separate `PUT` rather than part of `POST /properties` so that the property form
 stays one command per request (§3.2); the UI chains the two calls.
@@ -291,7 +292,7 @@ stays one command per request (§3.2); the UI chains the two calls.
 ### 4.3 Units
 
 `POST /units` (`UnitCreate` → 201 `Unit`), `GET /units/{id}`, `PATCH /units/{id}` (`UnitPatch`:
-label, floor_area_m2, rooms, mea), `GET /units/{id}/tenancies` → `list[Tenancy]`
+label, floor_area_m2, rooms, mea), `GET /units/{id}/tenancies` → `list[Tenancy]`, `GET /units/{id}/documents` → `list[RelatedDocument]` (the unit and its tenancies; added 6 Nov 2026)
 (`list_tenancies(conn, unit_id)` **new**).
 
 ### 4.4 Tenants

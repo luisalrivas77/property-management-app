@@ -250,6 +250,23 @@ class DocumentDetail(Schema):
     opens_inline: bool
 
 
+class LinkTargetRef(Schema):
+    """One entity a document is linked to (a document_link row without its own id)."""
+
+    target_type: LinkTarget
+    target_id: UUID
+
+
+class RelatedDocument(Schema):
+    """GET /properties/{id}/documents and GET /units/{id}/documents: a document linked to the
+    target or to one of its children (units, tenancies, loans), with every such link."""
+
+    document: Document
+    # The direct link (target_type property or unit) first, then unit, tenancy and loan
+    # links, each group by target_id.
+    via: list[LinkTargetRef]
+
+
 class DepositReceipt(Schema):
     """GET /tenancies/{id}/deposits: one Kaution payment received (a tenancy.deposit_received
     event; the latest of its chain, should one ever be corrected)."""

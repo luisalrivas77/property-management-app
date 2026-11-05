@@ -7,7 +7,7 @@ import stat
 import threading
 import uuid
 from contextlib import contextmanager
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 
 import psycopg
@@ -21,6 +21,7 @@ from sqlalchemy.exc import DBAPIError
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import document_extraction as extraction_table
 from hausbuch.db.tables import document_file as file_table
+from hausbuch.schemas.api import LinkTargetRef, RelatedDocument
 from hausbuch.schemas.document import DocumentTyping, ManualDocumentFields
 from hausbuch.schemas.enums import (
     ActorType,
@@ -47,6 +48,7 @@ from hausbuch.services.documents import (
     link_document,
     list_documents,
     list_links,
+    list_related_documents,
     read_original,
     type_document,
     unlink_document,
@@ -728,6 +730,159 @@ def test_documents_are_isolated_by_workspace(app_engine, workspaces, blob_store)
         _link(app_engine, b, doc.id, LinkTarget.PROPERTY, b_property)
     with pytest.raises(LinkNotFoundError):
         _unlink(app_engine, b, doc.id, LinkTarget.PROPERTY, b_property)
+
+
+# --- roll-up to a property or a unit -------------------------------------------------
+
+
+def _uploads(engine, store, ws, count):
+    """`count` documents received one minute apart, so the roll-up's order is checkable."""
+    return [
+        _upload(engine, store, ws, _bytes(), now=NOW + timedelta(minutes=i)) for i in range(count)
+    ]
+
+
+def _related(engine, ws, target_type, target_id):
+    with workspace_transaction(engine, ws) as conn:
+        return list_related_documents(conn, target_type=target_type, target_id=target_id)
+
+
+def _ref(target_type, target_id):
+    return LinkTargetRef(target_type=target_type, target_id=target_id)
+
+
+def test_a_property_rolls_up_its_units_tenancies_and_loans(app_engine, workspaces, blob_store):
+    a, _ = workspaces
+    docs = _uploads(app_engine, blob_store, a, 9)
+    direct, by_unit, by_tenancy, by_loan, both, by_owner, by_tenant, sibling, sibling_unit = docs
+    with _seed(app_engine, a) as raw:
+        prop = insert_property(raw, a)
+        unit = insert_unit(raw, a, prop)
+        unit_2 = insert_unit(raw, a, prop, label="WE 4")
+        tenancy = insert_tenancy(raw, a, unit, "2024-06-01")
+        loan = _insert_loan(raw, a, prop)
+        tenant = _insert_tenant(raw, a)
+        _add_party(raw, a, tenancy, tenant)
+        owner = _insert_owner(raw, a)
+        other = insert_property(raw, a)
+        other_unit = insert_unit(raw, a, other)
+    links = [
+        (direct, LinkTarget.PROPERTY, prop),
+        (by_unit, LinkTarget.UNIT, unit),
+        (by_tenancy, LinkTarget.TENANCY, tenancy),
+        (by_loan, LinkTarget.LOAN, loan),
+        # Linked in reverse of the `via` order, which must not depend on the link order.
+        (both, LinkTarget.TENANCY, tenancy),
+        (both, LinkTarget.UNIT, unit_2),
+        (both, LinkTarget.UNIT, unit),
+        (both, LinkTarget.PROPERTY, prop),
+        (by_owner, LinkTarget.OWNER, owner),  # household-wide: not rolled up
+        (by_tenant, LinkTarget.TENANT, tenant),  # personal data, via tenancy_tenant: not rolled up
+        (sibling, LinkTarget.PROPERTY, other),
+        (sibling_unit, LinkTarget.UNIT, other_unit),
+    ]
+    for doc, target_type, target_id in links:
+        _link(app_engine, a, doc.id, target_type, target_id)
+
+    related = _related(app_engine, a, LinkTarget.PROPERTY, prop)
+
+    assert related == [
+        RelatedDocument(document=direct, via=[_ref(LinkTarget.PROPERTY, prop)]),
+        RelatedDocument(document=by_unit, via=[_ref(LinkTarget.UNIT, unit)]),
+        RelatedDocument(document=by_tenancy, via=[_ref(LinkTarget.TENANCY, tenancy)]),
+        RelatedDocument(document=by_loan, via=[_ref(LinkTarget.LOAN, loan)]),
+        RelatedDocument(
+            document=both,
+            via=[
+                _ref(LinkTarget.PROPERTY, prop),
+                *(_ref(LinkTarget.UNIT, u) for u in sorted([unit, unit_2])),
+                _ref(LinkTarget.TENANCY, tenancy),
+            ],
+        ),
+    ]
+    # The direct read is unchanged: only the property's own links.
+    with workspace_transaction(app_engine, a) as conn:
+        assert list_documents(conn, target_type=LinkTarget.PROPERTY, target_id=prop) == [
+            direct,
+            both,
+        ]
+    assert _related(app_engine, a, LinkTarget.PROPERTY, other) == [
+        RelatedDocument(document=sibling, via=[_ref(LinkTarget.PROPERTY, other)]),
+        RelatedDocument(document=sibling_unit, via=[_ref(LinkTarget.UNIT, other_unit)]),
+    ]
+
+
+def test_a_unit_rolls_up_its_tenancies_but_not_its_siblings(app_engine, workspaces, blob_store):
+    a, _ = workspaces
+    docs = _uploads(app_engine, blob_store, a, 7)
+    direct, first, second, sibling, sibling_tenancy, of_property, of_loan = docs
+    with _seed(app_engine, a) as raw:
+        prop = insert_property(raw, a)
+        unit = insert_unit(raw, a, prop)
+        tenancy_1 = insert_tenancy(raw, a, unit, "2023-01-01", "2023-12-31")
+        tenancy_2 = insert_tenancy(raw, a, unit, "2024-06-01")
+        other_unit = insert_unit(raw, a, prop, label="WE 4")
+        other_tenancy = insert_tenancy(raw, a, other_unit, "2024-06-01")
+        loan = _insert_loan(raw, a, prop)
+    links = [
+        (direct, LinkTarget.UNIT, unit),
+        (first, LinkTarget.TENANCY, tenancy_1),
+        (second, LinkTarget.TENANCY, tenancy_2),
+        (sibling, LinkTarget.UNIT, other_unit),
+        (sibling_tenancy, LinkTarget.TENANCY, other_tenancy),
+        (of_property, LinkTarget.PROPERTY, prop),  # the parent's: not on the unit
+        (of_loan, LinkTarget.LOAN, loan),
+    ]
+    for doc, target_type, target_id in links:
+        _link(app_engine, a, doc.id, target_type, target_id)
+
+    assert _related(app_engine, a, LinkTarget.UNIT, unit) == [
+        RelatedDocument(document=direct, via=[_ref(LinkTarget.UNIT, unit)]),
+        RelatedDocument(document=first, via=[_ref(LinkTarget.TENANCY, tenancy_1)]),
+        RelatedDocument(document=second, via=[_ref(LinkTarget.TENANCY, tenancy_2)]),
+    ]
+    assert [r.document for r in _related(app_engine, a, LinkTarget.PROPERTY, prop)] == docs
+
+
+def test_the_roll_up_of_an_empty_or_unknown_target_is_empty(app_engine, workspaces, blob_store):
+    a, _ = workspaces
+    with _seed(app_engine, a) as raw:
+        prop = insert_property(raw, a)
+    assert _related(app_engine, a, LinkTarget.PROPERTY, prop) == []
+    assert _related(app_engine, a, LinkTarget.UNIT, uuid.uuid4()) == []
+
+
+def test_the_roll_up_is_isolated_by_workspace(app_engine, workspaces, blob_store):
+    a, b = workspaces
+    doc = _upload(app_engine, blob_store, a, _bytes())
+    with _seed(app_engine, a) as raw:
+        prop = insert_property(raw, a)
+        unit = insert_unit(raw, a, prop)
+    _link(app_engine, a, doc.id, LinkTarget.UNIT, unit)
+    assert [r.document for r in _related(app_engine, a, LinkTarget.PROPERTY, prop)] == [doc]
+
+    assert _related(app_engine, b, LinkTarget.PROPERTY, prop) == []
+    assert _related(app_engine, b, LinkTarget.UNIT, unit) == []
+
+
+@pytest.mark.parametrize(
+    "target_type", [LinkTarget.OWNER, LinkTarget.TENANT, LinkTarget.TENANCY, LinkTarget.LOAN]
+)
+def test_only_a_property_or_a_unit_rolls_up(app_engine, workspaces, target_type):
+    a, _ = workspaces
+    with workspace_transaction(app_engine, a) as conn:
+        with recorded_sql(conn) as statements, pytest.raises(ValueError, match="roll up"):
+            list_related_documents(conn, target_type=target_type, target_id=uuid.uuid4())
+        assert statements == []
+
+
+@pytest.mark.parametrize("bad_id", [None, "not-a-uuid"], ids=["none", "string"])
+def test_the_roll_up_rejects_a_non_uuid_target_before_any_sql(app_engine, workspaces, bad_id):
+    a, _ = workspaces
+    with workspace_transaction(app_engine, a) as conn:
+        with recorded_sql(conn) as statements, pytest.raises(TypeError, match="target_id"):
+            list_related_documents(conn, target_type=LinkTarget.PROPERTY, target_id=bad_id)
+        assert statements == []
 
 
 # --- retention -------------------------------------------------------------------
