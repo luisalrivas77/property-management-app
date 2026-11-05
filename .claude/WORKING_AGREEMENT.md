@@ -115,6 +115,10 @@ Cost is driven by **scope breadth**, not model tier — a reviewer pointed at a 
 
 ## Multiple agents at once
 
+**Parallel agents are welcome** (Luis, 5 Nov 2026): run several coders, or several
+reviewers with different FOCUSes, whenever the work splits cleanly. Split by behaviour, not
+just by file, and never give two agents the same function. Each runs under one of:
+
 1. **Separate worktrees** (`isolation: "worktree"`), or
 2. **disjoint path ownership**, declared up front, with every commit pathspec-limited (`git commit -m "..." -- <paths>`). 🚨 **Never `git add -A`, `git add .`, or `git commit -a` in a shared checkout** — a plain commit has swept a concurrent agent's uncommitted work into the wrong commit.
 3. **Agents commit; they do not push.** You review and push serially, so one push maps to one CI run and a red build is attributable.
