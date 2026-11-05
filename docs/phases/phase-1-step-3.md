@@ -845,6 +845,22 @@ Binding for the chunks that follow:
   offending values: for example, a duplicate `app_user.email` names the email. Never log or
   return `str(exc)` for DBAPI errors; log the constraint name only (§3.6).
 
+## 10.6 Handover notes from chunk 3a (orchestrator, 5 Nov 2026)
+
+- **Chunk 3b** adds the two `/settings` pieces 3a left out: renaming a passkey, and
+  **inviting a household member**. The spouse's invite screen is needed before real use.
+  3b also replaces the `(app)/page.tsx` placeholder and `src/api/interim-auth-types.ts` (with
+  its generator script) with types generated from the real `openapi.json`.
+- **Chunk 4:**
+  - Next's rewrite fixes the API address **at build time**, so the web image needs
+    `HAUSBUCH_API_URL` as a build argument, or a `proxy.ts` that routes at runtime.
+  - The rewrite adds `x-forwarded-host` but not `x-forwarded-for`, so the API sees the web
+    container's IP. That matters for per-IP rate limiting (Q9).
+  - Next's proxy times out after 30 s by default. Measure it with a 25 MiB upload together
+    with the Scaleway body limit (Q13).
+- The frontend CI's `openapi.json` staleness check becomes meaningful once `hausbuch openapi`
+  (chunk 2) and the real routers (chunk 1) land.
+
 ## 11. Delivery plan: chunks, ownership, order
 
 Every chunk commits pathspec-limited to its owned paths; nobody edits another chunk's files.
