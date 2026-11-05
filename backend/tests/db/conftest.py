@@ -115,6 +115,33 @@ def connect(dbname) -> Iterator:
         conn.close()
 
 
+# --- SQLAlchemy engines for service tests --------------------------------------
+
+
+def make_engine(dbname: str, role: str = APP, **engine_kwargs):
+    """An app engine on the test database whose connections act as `role` (SET ROLE once per
+    physical connection, so it survives the pool's reset-on-return rollback)."""
+    from hausbuch.db.session import create_app_engine
+
+    url = psycopg.conninfo.make_conninfo(ADMIN_URL, dbname=dbname)
+
+    def creator() -> psycopg.Connection:
+        conn = psycopg.connect(url, autocommit=True)
+        conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(role)))
+        conn.autocommit = False
+        return conn
+
+    return create_app_engine("postgresql+psycopg://", creator=creator, **engine_kwargs)
+
+
+@pytest.fixture
+def app_engine(dbname) -> Iterator:
+    """Engine acting as hausbuch_app: services run under the app role and RLS."""
+    engine = make_engine(dbname)
+    yield engine
+    engine.dispose()
+
+
 # --- Seed helpers (plain SQL; there is no service layer yet) -----------------
 
 
