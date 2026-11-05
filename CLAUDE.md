@@ -12,6 +12,14 @@ anything, and check every change against its six architecture principles.
 
 @docs/ARCHITECTURE.md
 
+## Working agreement and agents
+
+The main session orchestrates: it scopes, judges results and does small changes itself, and
+hands bigger work to the agents in `.claude/agents/` (coder, reviewer, architect). How and when,
+plus the reporting and chat-writing rules, are in the working agreement:
+
+@.claude/WORKING_AGREEMENT.md
+
 ## Phase specs
 
 Each phase's spec (schemas, migrations, rule fixtures, decisions) lives in `docs/phases/`.
