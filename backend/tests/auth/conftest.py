@@ -200,6 +200,13 @@ def add_passkey(client: TestClient, device: SoftAuthenticator, label="Laptop", *
     return client.post("/api/auth/passkeys/verify", json={"credential": credential, "label": label})
 
 
+def put_cookie(client: TestClient, name: str, value: str) -> None:
+    """Replace a cookie the way a forging browser would. A bare cookies.set() would add a
+    second cookie beside the server-set one, and the server would read the original."""
+    client.cookies.delete(name)
+    client.cookies.set(name, value, domain=RP_ID, path="/")
+
+
 def session_cookie(client: TestClient) -> str | None:
     return client.cookies.get("__Host-hb_session")
 
