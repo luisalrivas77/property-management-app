@@ -1,7 +1,12 @@
 # Phase 1, step 3: HTTP API, passkey sign-in, first screens
 
-Nov 5, 2026 · design, **not yet built**. Architect output for the orchestrator; coder chunks are
-in §11. Extends `docs/phases/phase-1.md` (D1–D12, spec amendment 1). Incorporates the Scaleway
+Nov 5, 2026 · design by the architect agent; coder chunks are in §11.
+
+**Status (5 Nov 2026):** chunks **0, 1, 2, 3a and 5 are built, reviewed and fixed**: chunk 0
+is merged to `main` in #6, and the rest are on the working branch for one PR. The §10.5–10.7
+rules are implemented. **To do:** chunk 3b (domain screens, plus the invite-member and
+rename-passkey parts of `/settings`) and chunk 4 (e2e, CI, deploy artefacts, the Q16 bucket
+check). Extends `docs/phases/phase-1.md` (D1–D12, spec amendment 1). Incorporates the Scaleway
 compatibility test of 5 Nov 2026 (§7, §14).
 
 **Done when** (phase 1): Luis enters his real flat (ETW), its tenancy, its loan and all 2026
@@ -637,12 +642,21 @@ Confirmed environment facts the design relies on (no longer assumptions):
 ## 8. S3 store behind `BlobStore`
 
 `hausbuch/storage_s3.py`: `S3BlobStore(bucket, client)` implementing the protocol with
-`boto3`, EU region, private bucket, SSE enabled bucket-side. `put` uses a conditional write
-(`IfNoneMatch="*"`, generally available on AWS S3 since 2024; whether Scaleway Object Storage
-honours it must be checked once by hand, Q16) and on a precondition failure fetches and
-compares bytes to reproduce `LocalBlobStore`'s "same bytes = no-op, different bytes =
-`BlobConflictError`" contract; if the endpoint ignores the precondition, `put` falls back to
-`head` + compare before writing and the doc records the weaker guarantee. `get` verifies nothing
+`boto3`, EU region, private bucket, SSE enabled bucket-side. `put` (as built in chunk 5):
+1. It **HEADs first**. If the key exists, a different size is an immediate conflict;
+   otherwise it fetches and compares the bytes. Equal bytes upload nothing.
+2. Otherwise it PUTs with `IfNoneMatch="*"` and, on a 412/409, goes back to step 1 and
+   compares again.
+
+That reproduces `LocalBlobStore`'s contract: same bytes = no-op, different bytes =
+`BlobConflictError`.
+- **If the endpoint ignores the precondition,** the same sequence degrades to head-then-put,
+  with a race window lasting the whole upload. That's harmless for content-addressed keys,
+  and `read_original` checks the SHA-256.
+- **Header support:** Scaleway documents `If-None-Match` support on PutObject. The one-time
+  check against a real bucket (Q16) still has to be recorded in `deploy/scaleway.md`.
+- **Why HEAD first:** an earlier draft of this section said PUT first; the HEAD-first order is
+  at least as safe and avoids re-uploading on every dedup (chunk 5 review). `get` verifies nothing
 itself (`read_original` checks the SHA-256). `delete` is retention-only and unused in phase 1.
 `presigned_get_url(key, ttl=60)` is an extra method for the download endpoint's future `302`.
 Settings: `HAUSBUCH_BLOB_STORE=s3`, `HAUSBUCH_S3_BUCKET`, `HAUSBUCH_S3_ENDPOINT_URL`,
@@ -835,6 +849,42 @@ Binding for the chunks that follow:
 - **No raw DB errors in logs or responses** (chunk 1). `IntegrityError` text contains the
   offending values: for example, a duplicate `app_user.email` names the email. Never log or
   return `str(exc)` for DBAPI errors; log the constraint name only (§3.6).
+
+## 10.6 Handover notes from chunk 3a (orchestrator, 5 Nov 2026)
+
+- **Chunk 3b** adds the two `/settings` pieces 3a left out: renaming a passkey, and
+  **inviting a household member**. The spouse's invite screen is needed before real use.
+  3b also replaces the `(app)/page.tsx` placeholder and `src/api/interim-auth-types.ts` (with
+  its generator script) with types generated from the real `openapi.json`.
+- **Chunk 4:**
+  - Next's rewrite fixes the API address **at build time**, so the web image needs
+    `HAUSBUCH_API_URL` as a build argument, or a `proxy.ts` that routes at runtime.
+  - The rewrite adds `x-forwarded-host` but not `x-forwarded-for`, so the API sees the web
+    container's IP. That matters for per-IP rate limiting (Q9).
+  - Next's proxy times out after 30 s by default. Measure it with a 25 MiB upload together
+    with the Scaleway body limit (Q13).
+- The frontend CI's `openapi.json` staleness check becomes meaningful once `hausbuch openapi`
+  (chunk 2) and the real routers (chunk 1) land.
+
+## 10.7 Rules from the chunk 2 review (orchestrator, 5 Nov 2026)
+
+- **Re-inviting a member who never enrolled.** Today a deleted or expired invite makes the
+  email unusable: `app_user.email` is globally unique, and the app role can't delete users.
+  Decision: `POST /auth/invites` for an email whose `app_user` is **in this workspace and has
+  no passkey** reuses that row. It deletes the user's pending invites and issues a fresh
+  link. An email belonging to a user with a passkey, or to another workspace, stays a 409.
+  This refines §6.3's "creates their app_user row".
+- **Enrollment links in Job logs** (§6.5, chunk 4's `deploy/scaleway.md`). The CLI prints the
+  link to stdout, which on Scaleway lands in the Job's logs. That is acceptable for v1
+  because the link is single-use and expires after 24 h. The deploy notes must say:
+  - enroll immediately after the Job runs;
+  - a refused link means "assume it was used": run `hausbuch invite --email … --revoke-passkeys
+    --revoke-sessions`, which evicts whoever used it.
+  - A shorter `--ttl` is optional hardening for later.
+- **Test helpers.** The three `tests/{api,auth,db}/conftest.py` are all importable as
+  `conftest`, so `pytest tests/auth tests/db/...` in one run picks the wrong one. Fix
+  repo-wide by moving shared helpers into uniquely named support modules, as `api_support.py`
+  already does. No behaviour change.
 
 ## 11. Delivery plan: chunks, ownership, order
 

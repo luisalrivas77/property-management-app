@@ -2,7 +2,7 @@
 server defaults and primary keys. The migration is the source of truth."""
 
 import pytest
-from conftest import OWNER, make_engine
+from db.db_support import OWNER, make_engine
 from sqlalchemy import inspect
 from sqlalchemy.dialects import postgresql
 

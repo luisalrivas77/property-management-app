@@ -37,7 +37,6 @@ def create_unit(ctx: CommandContext, data: UnitCreate) -> Unit:
             created_at=ctx.now,
             updated_at=ctx.now,
         ),
-        data.label,
     )
     created = _to_unit(row)
     append_event(
@@ -89,7 +88,6 @@ def update_unit(
         update(unit_table)
         .where(unit_table.c.id == unit_id)
         .values(**_columns(new_values), updated_at=ctx.now),
-        new.label,
     )
     updated = _to_unit(row)
     changes = diff_changes(old, updated.model_dump(include=fields))
@@ -118,13 +116,14 @@ def list_units(conn: Connection, property_id: UUID) -> list[Unit]:
     return [_to_unit(r) for r in rows]
 
 
-def _write(ctx: CommandContext, statement: Any, label: str) -> Row:
+def _write(ctx: CommandContext, statement: Any) -> Row:
     try:
         return ctx.conn.execute(statement.returning(*unit_table.c)).one()
     except IntegrityError as exc:
         if violated_constraint(exc) == _LABEL_TAKEN:
+            # Service messages never quote a submitted value (§3.5); the constraint names it.
             raise ConflictError(
-                f"the property already has a unit labelled {label!r}", constraint=_LABEL_TAKEN
+                "the property already has a unit with that label", constraint=_LABEL_TAKEN
             ) from exc
         raise
 

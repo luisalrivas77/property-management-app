@@ -1,0 +1,21 @@
+# dependencies
+/node_modules
+
+# Next.js build output
+/.next/
+/out/
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# env files (never commit secrets; the frontend has none, HAUSBUCH_API_URL is not one)
+.env*
+
+# Written by `next dev` when it detects a coding agent (next.config `agentRules`); the repo's
+# agent instructions live in CLAUDE.md, not in a generated file.
+/AGENTS.md
+
+# logs and OS noise
+npm-debug.log*
+.DS_Store

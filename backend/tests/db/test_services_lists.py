@@ -4,7 +4,7 @@ list_owners, list_properties, list_tenants, list_tenancies. Pure reads under RLS
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
-from conftest import TEST_IBAN_KEY
+from db.db_support import TEST_IBAN_KEY
 
 from hausbuch.schemas.enums import PropertyKind, RentModel, TenancyRole
 from hausbuch.schemas.property import Address, OwnerCreate, PropertyCreate, UnitCreate

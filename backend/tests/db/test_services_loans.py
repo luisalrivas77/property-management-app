@@ -5,7 +5,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
-from conftest import TEST_IBAN_KEY
+from db.db_support import TEST_IBAN_KEY
 from pydantic import ValidationError
 from sqlalchemy import text
 

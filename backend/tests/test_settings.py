@@ -151,3 +151,23 @@ def test_admin_url_is_separate_from_the_api_settings():
         load_admin_database_url({})
     settings = load_settings(ENV | {"HAUSBUCH_ADMIN_DATABASE_URL": owner})
     assert owner not in {getattr(settings, f) for f in settings.__dataclass_fields__}
+
+
+def test_the_s3_blob_store_gets_the_stores_own_client_config():
+    """Integration of chunks 2 and 5: main.create_blob_store must build the S3 store through
+    S3BlobStore.from_settings, so the client keeps the store's timeouts, retries and the
+    Content-MD5-only checksum setting. A plain boto3.client lost all three."""
+    from hausbuch.api.main import create_blob_store
+    from hausbuch.storage_s3 import (
+        CONNECT_TIMEOUT_S,
+        MAX_ATTEMPTS,
+        READ_TIMEOUT_S,
+        S3BlobStore,
+    )
+
+    store = create_blob_store(load_settings(ENV))
+    assert isinstance(store, S3BlobStore)
+    config = store.client.meta.config
+    assert (config.connect_timeout, config.read_timeout) == (CONNECT_TIMEOUT_S, READ_TIMEOUT_S)
+    assert config.retries["total_max_attempts"] == MAX_ATTEMPTS
+    assert config.request_checksum_calculation == "when_required"
