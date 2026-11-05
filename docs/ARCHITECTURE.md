@@ -215,17 +215,19 @@ flowchart TD
 
 Requests never wait on a model: the API enqueues, workers call the LLM and write results back as pending allocations for the review queue.
 
+In v1 the job worker runs inside the API process (a FastAPI lifespan task) in the one container that serves port 8080, so "Background workers" is a task in the API container rather than a second deployable; a separate worker container comes only when load justifies it (decided 5 Nov 2026, see Decisions).
+
 | Layer | Choice | Why |
 | --- | --- | --- |
 | Language | Python 3.12 for API, workers and rule engine; TypeScript only in the frontend | python-fints for bank sync; Pydantic models double as LLM output schemas; frontend types generated from OpenAPI |
 | Web + PWA | Next.js with a PWA manifest for capture | One codebase; camera access works in mobile browsers |
-| API | FastAPI with OpenAPI generated from Pydantic models | Agents can code against a typed contract |
+| API | FastAPI with OpenAPI generated from Pydantic models; py_webauthn for passkeys | Agents can code against a typed contract |
 | Database | Postgres 16+, SQLAlchemy + Alembic migrations, row-level security keyed on workspace | Relational ledger, JSONB for extractions, events in the same transaction |
 | Queue | Procrastinate (Postgres-backed) on the same Postgres | No extra infrastructure; jobs commit atomically with data |
 | Files | S3-compatible object storage in an EU region | Cheap, immutable originals, signed URLs |
 | AI | Claude API with structured outputs; small model for classify/explain, larger for hard matches | Schema-valid JSON, tiering keeps cost per statement low |
 | Bank | CSV/CAMT/PDF uploads (phase 2), FinTS via python-fints for your own accounts (phase 5); licensed aggregator only if it goes SaaS | Value first; FinTS needs only a free product registration; all behind one BankSource interface |
-| Hosting | EU PaaS or a single VM with managed Postgres | Fits a one-landlord load; scale later |
+| Hosting | Scaleway (EU): Serverless Containers for API+worker and web, Managed PostgreSQL on a private network, Object Storage; one-off commands as Serverless Jobs (decided 5 Nov 2026) | EU-only vendor, DPA, data and backups; about €20/month ex VAT at this load; compatibility tested 5 Nov 2026 |
 | Tests | pytest for rules, golden-file tests for extraction evals, Playwright for flows | Rules and prompts change safely |
 
 ## Security, privacy and retention
@@ -238,7 +240,8 @@ The app holds bank data, tenant personal data and tax records, so it is built as
 - Encryption at rest (storage + DB) and in transit; IBANs stored masked plus a keyed hash for matching
 - Passkey login (decided 5 Nov 2026); short-lived sessions; FinTS PIN and any bank tokens in a secrets manager, never in the DB
 - Object storage private; files served via short-lived signed URLs
-- Audit log = the Event table; admin actions and AI decisions included
+- Audit log = the Event table; admin actions and AI decisions included (sign-in and passkey actions go to the server log in phase 1 and join the Event table in the phase 2 spec PR, decided 5 Nov 2026)
+- Database reachable only on the private network; `CONNECT` revoked from `PUBLIC` and granted to the two Hausbuch roles only
 
 **Privacy (GDPR)**
 
@@ -286,3 +289,7 @@ All open questions were settled on 4 Nov 2026; the sections above reflect them. 
 | Refinancing | User-set follow-up rate, defaulting to today's rate | One extra projection input per loan |
 | Language | Python API, workers and rules; Next.js frontend | FastAPI, Pydantic, python-fints; TypeScript types generated from OpenAPI |
 | Login (5 Nov 2026) | Passkeys (WebAuthn) only; no passwords, no TOTP | Phase 1 API step builds passkey registration and sign-in |
+| Hosting (5 Nov 2026) | Scaleway, all in an EU region | Compatibility test passed: non-superuser roles, `btree_gist`, forced RLS and workspace creation work without a superuser; database creation needs one setup step (`deploy/scaleway.md`) |
+| Worker placement (5 Nov 2026) | The job worker runs inside the API process in the container that serves port 8080, min-scale 1 | Scaleway Serverless Containers stop a process that does not listen on 8080; a separate worker only when load justifies it |
+| Provisioning (5 Nov 2026) | Workspaces and first users are created by `hausbuch bootstrap`, a CLI running as the schema-owner role (a Serverless Job on Scaleway); members join by one-time enrollment link; recovery is a new link from the CLI | No sign-up endpoint; the owner DB URL is an operator secret the API never holds |
+| Sessions (5 Nov 2026) | Opaque server-side sessions in Postgres, 12 h absolute / 2 h idle, `SameSite=Lax` + Origin check | Gives "short-lived sessions" a number; tunable per environment |
