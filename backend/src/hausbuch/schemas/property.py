@@ -35,9 +35,12 @@ class OwnerCreate(Schema):
     @field_validator("tax_id_ref")
     @classmethod
     def _not_a_raw_tax_number(cls, value: str | None) -> str | None:
-        """Reject what looks like a raw Steuer-ID (11 digits) or Steuernummer (10-13 digits),
-        which would otherwise land permanently in the append-only event log."""
-        if value is not None and re.fullmatch(r"\d{10,13}", re.sub(r"[\s/.-]", "", value)):
+        """Reject any value containing what looks like a Steuer-ID (11 digits) or Steuernummer
+        (10-13 digits), labelled or not ("IdNr. 12345678901"): it would otherwise land
+        permanently in the append-only event log. Separators inside the number are ignored."""
+        if value is not None and re.search(
+            r"(?<!\d)\d{10,13}(?!\d)", re.sub(r"[\s/.-]", "", value)
+        ):
             raise ValueError("tax_id_ref must be a secrets-manager reference, not a tax number")
         return value
 

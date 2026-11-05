@@ -8,6 +8,9 @@
 #   cost_basis_evidence (spec amendment 1)                          -> ownership_records
 #   lease, handover_protocol, deposit_record                          -> tenancy_records
 #   any other typed document                                          -> tax_records
+#   cost_basis_reference (recorded as evidence of an acquisition cost or a price split)
+#     -> ownership_records whatever the subtype; checked after untyped, before the subtype
+#     (spec amendment 1, so a capitalised invoice can't be deleted for a forgotten subtype)
 #   untyped (type null)                                               -> hold: untyped
 # Dates: every period ends on 31 Dec of (base year + N years). This is the conservative reading
 #   (never earlier than "date + N years") and matches §147 AO for tax records.
@@ -106,6 +109,29 @@ cases:
       received_on: 2026-11-05
       ownership_end_dates: [2035-06-30]
     expect: {retention_class: ownership_records, retain_until: 2045-12-31}
+
+  - id: cost_evidence_without_subtype_while_owned
+    description: a notary invoice recorded as an acquisition cost but typed without a subtype is still kept while owned
+    input:
+      type: invoice
+      tax_year: 2025
+      received_on: 2026-11-05
+      cost_basis_reference: true
+      ownership_end_dates: [null]
+    expect: {retention_class: ownership_records, hold: while_owned}
+
+  - id: cost_evidence_without_subtype_after_sale
+    input:
+      type: bescheid
+      tax_year: 2024
+      received_on: 2026-11-05
+      cost_basis_reference: true
+      ownership_end_dates: [2035-06-30]
+    expect: {retention_class: ownership_records, retain_until: 2045-12-31}
+
+  - id: untyped_cost_evidence_is_still_held
+    input: {type: null, received_on: 2026-11-05, cost_basis_reference: true}
+    expect: {retention_class: null, hold: untyped}
 
 tenant_cases:
   - id: active_tenancy

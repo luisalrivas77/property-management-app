@@ -740,6 +740,10 @@ TENANCY_PATHS = [LinkTarget.TENANCY, LinkTarget.TENANT]
 
 def _retention_params():
     for case in RETENTION.cases:
+        if case.input.cost_basis_reference:
+            # Built from a cost-evidence record, not a link: covered by
+            # test_cost_evidence_is_an_ownership_record_without_the_subtype.
+            continue
         if case.input.ownership_end_dates:
             paths = OWNERSHIP_PATHS
         elif case.input.tenancy_end_dates:
@@ -920,6 +924,37 @@ def test_cost_basis_evidence_is_kept_while_the_property_is_owned(
         RetentionHold.WHILE_OWNED,
         None,
     )
+
+
+@pytest.mark.parametrize(
+    ("ownership_ended_on", "expected"),
+    [
+        (None, (RetentionHold.WHILE_OWNED, None)),
+        (date(2035, 6, 30), (None, date(2045, 12, 31))),
+    ],
+    ids=["while-owned", "after-sale"],
+)
+def test_cost_evidence_is_an_ownership_record_without_the_subtype(
+    app_engine, workspaces, blob_store, ownership_ended_on, expected
+):
+    """Spec amendment 1 (Luis, 5 Nov 2026): a document recorded as the evidence of an
+    acquisition cost backs the AfA basis, so it is kept for the life of ownership + 10 years
+    even when typed as a plain invoice and never linked to the property."""
+    a, _ = workspaces
+    doc = _upload(app_engine, blob_store, a, _bytes())
+    _type(app_engine, a, doc.id, DocumentTyping(type=DocumentType.INVOICE, tax_year=2025))
+    with _seed(app_engine, a) as raw:
+        prop = insert_property(raw, a, ownership_ended_on=ownership_ended_on)
+        raw.execute(
+            "INSERT INTO property_acquisition_cost (workspace_id, property_id, kind, amount,"
+            " document_id) VALUES (%s, %s, 'notary', 3400.00, %s)",
+            (a, prop, doc.id),
+        )
+
+    with workspace_transaction(app_engine, a) as conn:
+        result = document_retention(conn, doc.id)
+    assert result.retention_class is RetentionClass.OWNERSHIP_RECORDS
+    assert (result.hold, result.retain_until) == expected
 
 
 def test_unlinking_changes_retention(app_engine, workspaces, blob_store):

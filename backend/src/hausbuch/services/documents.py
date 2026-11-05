@@ -21,6 +21,8 @@ from hausbuch.db.tables import document_file as file_table
 from hausbuch.db.tables import document_link as link_table
 from hausbuch.db.tables import loan as loan_table
 from hausbuch.db.tables import property_ as property_table
+from hausbuch.db.tables import property_acquisition_cost as cost_table
+from hausbuch.db.tables import property_price_split as split_table
 from hausbuch.db.tables import tenancy as tenancy_table
 from hausbuch.db.tables import tenancy_tenant as tenancy_tenant_table
 from hausbuch.db.tables import unit as unit_table
@@ -401,6 +403,14 @@ def document_retention_input(conn: Connection, document_id: UUID) -> DocumentRet
         conn,
         select(tenancy_table.c.unit_id).where(tenancy_table.c.id.in_(ids[LinkTarget.TENANCY])),
     )
+    # Recorded as the evidence of an acquisition cost or a price split: the AfA basis and the
+    # §23 gain are built from it, so it is an ownership record of that property (amendment 1).
+    cost_basis_properties = _scalars(
+        conn, select(cost_table.c.property_id).where(cost_table.c.document_id == document_id)
+    ) | _scalars(
+        conn,
+        select(split_table.c.property_id).where(split_table.c.evidence_document_id == document_id),
+    )
     property_ids = (
         ids[LinkTarget.PROPERTY]
         | _scalars(conn, select(unit_table.c.property_id).where(unit_table.c.id.in_(unit_ids)))
@@ -408,6 +418,7 @@ def document_retention_input(conn: Connection, document_id: UUID) -> DocumentRet
             conn,
             select(loan_table.c.property_id).where(loan_table.c.id.in_(ids[LinkTarget.LOAN])),
         )
+        | cost_basis_properties
     )
     ownership_end_dates = list(
         conn.execute(
@@ -432,6 +443,7 @@ def document_retention_input(conn: Connection, document_id: UUID) -> DocumentRet
         received_on=doc.received_at.astimezone(LOCAL_TIME_ZONE).date(),
         ownership_end_dates=ownership_end_dates,
         tenancy_end_dates=tenancy_end_dates,
+        cost_basis_reference=bool(cost_basis_properties),
     )
 
 

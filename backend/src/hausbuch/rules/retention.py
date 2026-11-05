@@ -40,7 +40,11 @@ def document_retention(input: DocumentRetentionInput, policy: RetentionPolicy) -
     if input.type is None:
         # Untyped wins even over a subtype: nothing is ever scheduled for deletion unseen.
         return RetentionResult(retention_class=None, hold=RetentionHold.UNTYPED)
-    cls = _CLASS_BY_SUBTYPE.get(input.subtype, RetentionClass.TAX_RECORDS)
+    if input.cost_basis_reference:
+        # Backs the AfA basis or the §23 gain: kept for the life of ownership + N years.
+        cls = RetentionClass.OWNERSHIP_RECORDS
+    else:
+        cls = _CLASS_BY_SUBTYPE.get(input.subtype, RetentionClass.TAX_RECORDS)
     match cls:
         case RetentionClass.OWNERSHIP_RECORDS:
             return _after_latest(

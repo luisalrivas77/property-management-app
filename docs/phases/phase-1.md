@@ -208,9 +208,11 @@ Collected from the phase 1 reviews and decided in one spec PR.
 1. **Loan term cap.** More than 1,200 payments (100 years) raises the new error code
    `loan.term_too_long`, at payment 1201. A nonsensical payment used to loop for about a second
    and then fail with an uncoded `ValueError`.
-2. **No raw tax numbers.** `OwnerCreate.tax_id_ref` rejects anything that looks like a raw
-   Steuer-ID or Steuernummer: 10–13 digits, ignoring spaces, `/`, `.` and `-`. A tax number
-   would otherwise land permanently in the append-only log.
+2. **No raw tax numbers.** `OwnerCreate.tax_id_ref` rejects any value *containing* a run of
+   10–13 digits (spaces, `/`, `.` and `-` ignored), labelled or not, e.g. "IdNr. 12345678901".
+   A tax number would otherwise land permanently in the append-only log. The first version
+   only rejected digits-only values; a review found labelled forms got through, and Luis
+   chose to catch them.
    `OwnerCreate`, `TenantCreate`, `TenancyCreate` and `LoanCreate` set `hide_input_in_errors`,
    so the error's text (`str`/`repr`, what lands in a log) never echoes a tax number or an
    IBAN. This does **not** cover `errors()` or `json()`, which FastAPI's default 422 response
@@ -226,6 +228,11 @@ Collected from the phase 1 reviews and decided in one spec PR.
    falls in `ownership_records` (life of ownership + 10 years), because the §23 gain is
    computed from it. Before, such an invoice was a 10-year tax record and could have been
    deleted while still needed. Migration `0002` extends the subtype CHECK.
+   **Retention also follows the structure** (Luis, after review): a document recorded as the
+   evidence of an acquisition cost or a building/land split is an ownership record whatever
+   its subtype, because the protection must not depend on remembering a subtype. This is the
+   new `DocumentRetentionInput.cost_basis_reference`; the properties it backs count for
+   `ownership_end_dates`.
 5. **Traceable interest.** `ScheduleEntry` adds two fields, so every interest figure can be
    recomputed from its own row (principle 2):
    - `interest_days`: the period's 30E/360 days;

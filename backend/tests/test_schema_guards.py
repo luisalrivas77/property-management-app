@@ -29,8 +29,26 @@ def _assert_not_echoed(error: ValidationError, value: str) -> None:
 
 @pytest.mark.parametrize(
     "raw",
-    ["12345678901", "12 345 678 901", "123/456/78901", "21/815/08150"],
-    ids=["steuer-id", "steuer-id-spaced", "steuernummer-12", "steuernummer-elster"],
+    [
+        "12345678901",
+        "12 345 678 901",
+        "123/456/78901",
+        "21/815/08150",
+        "IdNr. 12345678901",
+        "St.-Nr. 21/815/08150",
+        "DE12345678901",
+        "12345678901x",
+    ],
+    ids=[
+        "steuer-id",
+        "steuer-id-spaced",
+        "steuernummer-12",
+        "steuernummer-elster",
+        "labelled-steuer-id",
+        "labelled-steuernummer",
+        "prefixed",
+        "suffixed",
+    ],
 )
 def test_owner_rejects_a_raw_tax_number_without_echoing_it(raw):
     with pytest.raises(ValidationError) as excinfo:
