@@ -209,7 +209,12 @@ and reviewed by a reviewer agent; every review finding was fixed or is listed be
      bucket with versioning and encryption at rest (off by default, switched on before any upload), the API's S3 key (expires after a year, see known gaps), and the
      registry with `api:309b07f0b945` pushed by `publish-images`. Step 8 done (five Opaque secrets in Secret Manager). Step 9 done: migrations to
      `0003_auth_passkeys` from Luis's computer, 21 tables owned by `hausbuch_owner`, all with
-     forced RLS and `hausbuch_app` grants. Steps 10–12 and the first-deploy checks are not done.
+     forced RLS and `hausbuch_app` grants. Step 10 done: `hausbuch-api` runs
+     `api:309b07f0b945` (250 mVCPU / 512 MB, min = max = 1); `/healthz` answers 200 (its
+     `SELECT 1` runs as `hausbuch_app` over the private network) and `/api/auth/me` 401.
+     The S3 path is untested until the first upload. The domain is `hausbuch.rcubed.fr`
+     (bought 5 Nov 2026, the passkey RP ID). Steps 11–12 and the first-deploy checks are not
+     done.
 
 ### Known gaps (not yet built)
 

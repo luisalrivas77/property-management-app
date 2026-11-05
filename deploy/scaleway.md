@@ -475,6 +475,14 @@ container** `hausbuch-api`:
   scaled to zero);
 - resources: start at the smallest tier that runs it;
 - private network **`hausbuch-apps`**; public endpoint **on** (Q14: public for v1);
+- privacy **Public** (the app signs users in itself; a Private container would demand a
+  Scaleway token from the web container), and **HTTPS connections only** ticked;
+- protocol **HTTP/1**. The console's HTTP/2 option means the container itself speaks
+  cleartext HTTP/2 (h2c), which uvicorn does not: every request would fail. Browsers still
+  get HTTP/2 from Scaleway's edge;
+- leave the command and arguments empty (the image starts uvicorn) and the request timeout
+  at its default of 300 s (at least the web proxy's 120 s);
+- autoscaling: any rule, with minimum and maximum both `1`;
 - **health check**: an **HTTP** liveness probe on path **`/healthz`**, timeout **3 s**.
   The app's own database probe allows itself 2 s, so the 1 s default timeout would mark a
   healthy container as failing;
