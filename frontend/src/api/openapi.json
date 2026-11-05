@@ -808,6 +808,51 @@
         }
       }
     },
+    "/api/properties/{property_id}/documents": {
+      "get": {
+        "summary": "Property Documents",
+        "description": "The documents linked to the property or to one of its units, those units' tenancies\nor its loans, each once with every matching link in `via`. Unlike the tenancy, loan and\ntenant `/documents` reads, this rolls up children; owner and tenant links are not.",
+        "operationId": "property_documents_api_properties__property_id__documents_get",
+        "parameters": [
+          {
+            "name": "property_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Property Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RelatedDocument"
+                  },
+                  "title": "Response Property Documents Api Properties  Property Id  Documents Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/units": {
       "post": {
         "summary": "Unit Create",
@@ -961,6 +1006,51 @@
                     "$ref": "#/components/schemas/Tenancy"
                   },
                   "title": "Response Unit Tenancies Api Units  Unit Id  Tenancies Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/units/{unit_id}/documents": {
+      "get": {
+        "summary": "Unit Documents",
+        "description": "The documents linked to the unit or to one of its tenancies, each once with every\nmatching link in `via`. Unlike the tenancy, loan and tenant `/documents` reads, this rolls\nup children; tenant links are not.",
+        "operationId": "unit_documents_api_units__unit_id__documents_get",
+        "parameters": [
+          {
+            "name": "unit_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Unit Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RelatedDocument"
+                  },
+                  "title": "Response Unit Documents Api Units  Unit Id  Documents Get"
                 }
               }
             }
@@ -4513,6 +4603,26 @@
         "title": "LinkTarget",
         "description": "What a document can be linked to (document_link has one FK column per target)."
       },
+      "LinkTargetRef": {
+        "properties": {
+          "target_type": {
+            "$ref": "#/components/schemas/LinkTarget"
+          },
+          "target_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Target Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "target_type",
+          "target_id"
+        ],
+        "title": "LinkTargetRef",
+        "description": "One entity a document is linked to (a document_link row without its own id)."
+      },
       "Loan": {
         "properties": {
           "id": {
@@ -5699,6 +5809,28 @@
         "type": "object",
         "title": "PropertyPatch",
         "description": "Non-milestone fields only: the purchase dates and price change through corrections."
+      },
+      "RelatedDocument": {
+        "properties": {
+          "document": {
+            "$ref": "#/components/schemas/Document"
+          },
+          "via": {
+            "items": {
+              "$ref": "#/components/schemas/LinkTargetRef"
+            },
+            "type": "array",
+            "title": "Via"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "document",
+          "via"
+        ],
+        "title": "RelatedDocument",
+        "description": "GET /properties/{id}/documents and GET /units/{id}/documents: a document linked to the\ntarget or to one of its children (units, tenancies, loans), with every such link."
       },
       "RentChangeReason": {
         "type": "string",
