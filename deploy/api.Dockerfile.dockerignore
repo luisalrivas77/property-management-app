@@ -1,0 +1,11 @@
+# Build context for deploy/api.Dockerfile is the repo root; send only what the image uses.
+# (BuildKit reads <Dockerfile>.dockerignore next to the Dockerfile.)
+*
+!backend/pyproject.toml
+!backend/uv.lock
+!backend/src/
+!backend/alembic.ini
+!backend/migrations/
+!deploy/hausbuch-migrate.sh
+**/__pycache__
+**/*.pyc
