@@ -7,10 +7,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from authenticator import AT, BE, BS, UP, UV, SoftAuthenticator
-
-# Module-level only: inside a test body, `conftest` may already be tests/db's module.
-from conftest import (
+from auth_support import (
     ORIGIN,
     RP_ID,
     enroll,
@@ -20,6 +17,7 @@ from conftest import (
     put_cookie,
     session_cookie,
 )
+from authenticator import AT, BE, BS, UP, UV, SoftAuthenticator
 
 from hausbuch.api.routes import auth as auth_routes
 from hausbuch.auth import ceremony

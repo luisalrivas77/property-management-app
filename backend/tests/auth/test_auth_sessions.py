@@ -6,7 +6,7 @@ import hashlib
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from conftest import enroll, login, make_settings, new_client, session_cookie
+from auth_support import enroll, login, make_settings, new_client, session_cookie
 
 from hausbuch.api.main import build_app
 from hausbuch.auth import sessions, tokens

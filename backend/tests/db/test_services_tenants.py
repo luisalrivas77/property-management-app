@@ -6,7 +6,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
-from conftest import TEST_IBAN_KEY
+from db.db_support import TEST_IBAN_KEY
 from sqlalchemy import text
 
 from hausbuch.db.session import workspace_transaction

@@ -12,7 +12,7 @@ from decimal import Decimal
 
 import psycopg
 import pytest
-from conftest import OWNER, insert_property, insert_tenancy, insert_unit
+from db.db_support import OWNER, insert_property, insert_tenancy, insert_unit
 from fixture_models import RetentionFixture, load
 from sqlalchemy import event as sa_event
 from sqlalchemy import select, text, update
@@ -123,7 +123,7 @@ def recorded_sql(conn):
         sa_event.remove(conn, "before_cursor_execute", record)
 
 
-# Small SQL seeds for link targets conftest has no helper for.
+# Small SQL seeds for link targets db_support has no helper for.
 
 
 def _insert_owner(raw, ws) -> uuid.UUID:

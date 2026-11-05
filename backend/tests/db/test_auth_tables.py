@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from conftest import APP, OWNER, _insert, insert_event, insert_property, make_engine
+from db.db_support import APP, OWNER, _insert, insert_event, insert_property, make_engine
 from psycopg import errors
 from psycopg.types.json import Jsonb
 from sqlalchemy import text

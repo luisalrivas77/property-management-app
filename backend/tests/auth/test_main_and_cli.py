@@ -14,21 +14,17 @@ import uuid
 
 import psycopg
 import pytest
-from authenticator import SoftAuthenticator
-
-# Module-level only: inside a test body, `conftest` may already be tests/db's module.
-from conftest import (
-    ADMIN_URL,
-    APP,
+from auth_support import (
     ORIGIN,
-    OWNER,
     RP_ID,
-    db,
     enroll,
     make_settings,
     new_client,
     role_url,
 )
+from authenticator import SoftAuthenticator
+from db import db_support
+from db.db_support import ADMIN_URL, APP, OWNER
 from psycopg import sql as pgsql
 
 from hausbuch import cli
@@ -57,7 +53,7 @@ def test_the_schema_owner_is_refused(owner_engine, settings, tmp_path):
 
 
 def test_a_superuser_is_refused(dbname, settings, tmp_path):
-    engine = db.make_engine(dbname, "postgres")
+    engine = db_support.make_engine(dbname, "postgres")
     try:
         with pytest.raises(UnsafeDatabaseRoleError, match="superuser"):
             _build(settings, engine, tmp_path)
@@ -85,7 +81,7 @@ def _grant(dbname, statement, role):
 
 def test_a_role_that_may_insert_workspaces_is_refused(dbname, extra_role, settings, tmp_path):
     _grant(dbname, "GRANT SELECT, INSERT ON workspace TO {}", extra_role)
-    engine = db.make_engine(dbname, extra_role)
+    engine = db_support.make_engine(dbname, extra_role)
     try:
         with pytest.raises(main.SchemaOwnerRoleError, match="insert workspaces"):
             _build(settings, engine, tmp_path)
@@ -95,7 +91,7 @@ def test_a_role_that_may_insert_workspaces_is_refused(dbname, extra_role, settin
 
 def test_a_member_of_the_owner_role_is_refused(dbname, extra_role, settings, tmp_path):
     _grant(dbname, f"GRANT {OWNER} TO {{}}", extra_role)
-    engine = db.make_engine(dbname, extra_role)
+    engine = db_support.make_engine(dbname, extra_role)
     try:
         with pytest.raises(main.SchemaOwnerRoleError):
             _build(settings, engine, tmp_path)
@@ -160,12 +156,12 @@ def test_main_app_refuses_the_owner_url(dbname, tmp_path, monkeypatch):
 @pytest.fixture
 def dev_db():
     """A fresh database like the dev setup: owned by hausbuch_owner, migrated as the owner."""
-    name = db.create_database()
+    name = db_support.create_database()
     try:
-        db.alembic(name, "upgrade", "head")
+        db_support.alembic(name, "upgrade", "head")
         yield name
     finally:
-        db.drop_database(name)
+        db_support.drop_database(name)
 
 
 def _cli(capsys, argv, environ) -> tuple[int, str, str]:
@@ -191,7 +187,7 @@ def test_bootstrap_as_the_owner_then_enroll(dev_db, capsys, tmp_path):
     assert "luis@example.org" not in out.lower()  # no email in the output
 
     # The link works against an API on the same database, as the app role.
-    engine = db.make_engine(dev_db, APP)
+    engine = db_support.make_engine(dev_db, APP)
     try:
         app = _build(make_settings(), engine, tmp_path)
         client = new_client(app)

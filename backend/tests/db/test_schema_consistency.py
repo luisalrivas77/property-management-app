@@ -4,7 +4,7 @@ import re
 from enum import StrEnum
 
 import pytest
-from conftest import OWNER
+from db.db_support import OWNER
 
 from hausbuch.schemas import enums as E
 

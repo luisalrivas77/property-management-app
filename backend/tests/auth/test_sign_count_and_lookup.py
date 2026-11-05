@@ -13,8 +13,8 @@ from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from auth_support import ORIGIN, RP_ID, add_passkey, enroll, login, new_client, unique_email
 from authenticator import SoftAuthenticator
-from conftest import ORIGIN, RP_ID, add_passkey, enroll, login, new_client, unique_email
 from sqlalchemy import event, text
 from sqlalchemy.exc import DBAPIError
 

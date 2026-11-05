@@ -20,7 +20,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
-from conftest import OWNER, TEST_IBAN_KEY, insert_event
+from db.db_support import OWNER, TEST_IBAN_KEY, insert_event
 from fixture_models import TimelineFixture, load
 
 from hausbuch.schemas.common import Fraction

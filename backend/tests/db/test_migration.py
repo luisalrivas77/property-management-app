@@ -6,7 +6,7 @@ import hashlib
 import uuid
 
 import pytest
-from conftest import (
+from db.db_support import (
     APP,
     OWNER,
     alembic,

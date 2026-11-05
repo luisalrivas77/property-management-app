@@ -1,7 +1,8 @@
 """Helpers shared by the API tests (imported as `api_support`; tests/api is on sys.path).
 
-Kept out of conftest.py: tests/db's test modules import their helpers with
-`from conftest import ...`, so a second module named conftest must not be the one they need.
+Kept out of conftest.py: tests/api, tests/auth and tests/db each have a conftest.py, all
+importable as `conftest`, so test modules import helpers from uniquely named support modules
+(this one, tests/auth/auth_support.py, tests/db/db_support.py), never from `conftest`.
 """
 
 from collections.abc import Iterable
@@ -19,7 +20,7 @@ from hausbuch.settings import Settings
 ORIGIN = "https://testserver"  # HAUSBUCH_ORIGIN of the test app; plain http is localhost-only
 TOKEN_A = "a" * 43
 TOKEN_B = "b" * 43
-TEST_IBAN_KEY = bytes(range(32))  # the same test key as tests/db/conftest.py
+TEST_IBAN_KEY = bytes(range(32))  # the same test key as tests/db/db_support.py
 # A valid German IBAN (the standard example) and one with wrong check digits.
 GOOD_IBAN = "DE89 3704 0044 0532 0130 00"
 BAD_CHECKSUM_IBAN = "DE00 3704 0044 0532 0130 00"

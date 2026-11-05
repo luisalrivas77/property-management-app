@@ -15,11 +15,11 @@ from collections.abc import Iterator
 import pytest
 from api_support import TOKEN_A, TOKEN_B, FakeResolver, auth_for, client_for, make_settings
 from db.conftest import (  # noqa: F401  (pytest finds fixtures by name in this module)
-    ADMIN_URL,
     app_engine,
     dbname,
     fresh_workspaces,
 )
+from db.db_support import ADMIN_URL
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 

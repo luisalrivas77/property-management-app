@@ -7,8 +7,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from authenticator import SoftAuthenticator
-from conftest import (
+from auth_support import (
     ORIGIN,
     RP_ID,
     add_passkey,
@@ -18,6 +17,7 @@ from conftest import (
     session_cookie,
     unique_email,
 )
+from authenticator import SoftAuthenticator
 
 from hausbuch.api.commands import Commands
 from hausbuch.schemas.enums import PropertyKind

@@ -6,19 +6,19 @@ with UnsafeDatabaseRoleError, the app role cannot provision; and the recovery pa
 from datetime import UTC, datetime
 
 import pytest
-from authenticator import SoftAuthenticator
-from conftest import (
-    APP,
+from auth_support import (
     ORIGIN,
     RP_ID,
     add_passkey,
-    db,
     enroll,
     login,
     new_client,
     role_url,
     unique_email,
 )
+from authenticator import SoftAuthenticator
+from db import db_support
+from db.db_support import APP
 from pydantic import ValidationError
 from sqlalchemy import create_engine, insert, pool, text
 from sqlalchemy.exc import DBAPIError
@@ -67,7 +67,7 @@ def test_the_app_role_cannot_provision(app_engine):
 
 
 def test_a_superuser_engine_is_refused_by_create_app_engine(dbname):
-    superuser = db.make_engine(dbname, "postgres")
+    superuser = db_support.make_engine(dbname, "postgres")
     try:
         with pytest.raises(UnsafeDatabaseRoleError, match="'postgres'"):
             _provision(superuser)

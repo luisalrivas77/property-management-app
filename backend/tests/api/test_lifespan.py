@@ -11,7 +11,7 @@ import time
 
 import pytest
 from api_support import TOKEN_A, FakeResolver, make_settings
-from db.conftest import make_engine
+from db.db_support import make_engine
 from sqlalchemy import create_engine
 
 from hausbuch.api.app import create_app
