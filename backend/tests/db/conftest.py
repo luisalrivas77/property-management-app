@@ -115,6 +115,33 @@ def connect(dbname) -> Iterator:
         conn.close()
 
 
+# --- SQLAlchemy engines for service tests --------------------------------------
+
+
+def make_engine(dbname: str, role: str = APP, **engine_kwargs):
+    """An app engine on the test database whose connections act as `role` (SET ROLE once per
+    physical connection, so it survives the pool's reset-on-return rollback)."""
+    from hausbuch.db.session import create_app_engine
+
+    url = psycopg.conninfo.make_conninfo(ADMIN_URL, dbname=dbname)
+
+    def creator() -> psycopg.Connection:
+        conn = psycopg.connect(url, autocommit=True)
+        conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(role)))
+        conn.autocommit = False
+        return conn
+
+    return create_app_engine("postgresql+psycopg://", creator=creator, **engine_kwargs)
+
+
+@pytest.fixture
+def app_engine(dbname) -> Iterator:
+    """Engine acting as hausbuch_app: services run under the app role and RLS."""
+    engine = make_engine(dbname)
+    yield engine
+    engine.dispose()
+
+
 # --- Seed helpers (plain SQL; there is no service layer yet) -----------------
 
 
@@ -177,3 +204,59 @@ def _insert(conn, table: str, row: dict) -> uuid.UUID:
         sql.SQL(", ").join(sql.Placeholder() * len(row)),
     )
     return conn.execute(query, list(row.values())).fetchone()[0]
+
+
+# --- Document vault ------------------------------------------------------------
+
+
+@pytest.fixture
+def blob_store(tmp_path):
+    """A LocalBlobStore of its own per test, under pytest's tmp_path."""
+    from hausbuch.storage import LocalBlobStore
+
+    return LocalBlobStore(tmp_path / "blobs")
+
+
+# --- Domain service helpers ---------------------------------------------------
+
+TEST_IBAN_KEY = bytes(range(32))  # test key only; production keys come from the secrets manager
+
+
+@pytest.fixture
+def fresh_workspaces(dbname) -> tuple[uuid.UUID, uuid.UUID]:
+    """Two new, empty workspaces for one test, so committed service data never leaks into
+    tests that count the rows of the session-wide `workspaces`."""
+    a, b = uuid.uuid4(), uuid.uuid4()
+    with _admin(dbname) as conn:
+        conn.execute("INSERT INTO workspace (id, name) VALUES (%s, 'A'), (%s, 'B')", (a, b))
+    return a, b
+
+
+@pytest.fixture
+def run(app_engine):
+    """run(ws, command, *args, now=None, **kwargs): one service command (a function taking a
+    CommandContext) in its own workspace transaction, committed on return, as a test user."""
+    from hausbuch.db.session import workspace_transaction
+    from hausbuch.schemas.enums import ActorType
+    from hausbuch.services.context import Actor, new_command
+
+    actor = Actor(ActorType.USER, "user:test")
+
+    def _run(ws, command, *args, now=None, **kwargs):
+        with workspace_transaction(app_engine, ws) as conn:
+            return command(new_command(conn, ws, actor, now=now), *args, **kwargs)
+
+    return _run
+
+
+@pytest.fixture
+def read(app_engine):
+    """read(ws, query, *args, **kwargs): one query (a function taking a Connection) in its
+    own workspace transaction."""
+    from hausbuch.db.session import workspace_transaction
+
+    def _read(ws, query, *args, **kwargs):
+        with workspace_transaction(app_engine, ws) as conn:
+            return query(conn, *args, **kwargs)
+
+    return _read

@@ -3,15 +3,31 @@
 # Conventions (docs/phases/phase-1.md#loan-schedule):
 # - Monthly annuity, payable in arrears. Payment n is due on first_payment_on + (n-1) months,
 #   on the same day of month, clamped to the month's last day (30th -> Feb 28).
-# - Interest is 30E/360: period 1 = balance * rate * days360(disbursed_on, first_payment_on) / 360;
-#   every later period = balance * rate / 12. Rounded half-up to the cent each period.
-# - Rate: nominal_rate while due_on <= fixed_until, then follow_up_rate (null -> nominal_rate).
-#   The monthly payment does not change at the switch.
+# - Interest is 30E/360 and accrues over the period it pays for, in arrears: from the previous
+#   due date (disbursed_on for payment 1) up to but not including due_on. Period 1 has
+#   days360(disbursed_on, first_payment_on) days; every later period has 30.
+# - Each day accrues at the rate in force that day: nominal_rate up to and including
+#   fixed_until, follow_up_rate after it (null -> nominal_rate); standard per-day accrual.
+#   Let switch = the day after fixed_until. A period with due_on <= switch is entirely at
+#   nominal_rate; one starting on or after switch is entirely at follow_up_rate. A period
+#   straddling it gets days_new = min(period days, days360(switch, due_on)) at follow_up_rate
+#   and days_old = period days - days_new at nominal_rate. (Measured from the switch because
+#   days360 between clamped month-end dates is not 30: Jan 30 -> Feb 28 measures 28.)
+#   Interest = balance * (rate_old * days_old + rate_new * days_new) / 360, rounded half-up to
+#   the cent once per period. The monthly payment does not change at the switch.
+# - rate (per entry) is the rate in force on the period's last day.
+#
+# Changed 2026-11-05 (Luis): the earlier rule charged a whole period at the follow-up rate when
+# its due date fell after fixed_until. With payments in arrears that charged the last fixed
+# month (e.g. June, paid on 1 July) at the new rate. Cases follow_up_rate_to_payoff and
+# payment_below_interest_after_switch were recomputed; mid_period_rate_switch was added.
+# Same day, after review: the split is decided by date first and the follow-up days are
+# counted from the switch; three month-end cases (payments on the 30th) were added.
 # - principal = payment - interest. Final payment = remaining balance + interest.
 # - A period whose interest >= payment is an error (the loan would never amortize).
 # - years: totals per calendar year of due_on; closing_balance = after that year's last payment.
 #
-# Synthetic examples, computed with an independent reference script and spot-checked by hand
+# Synthetic examples, computed with an independent exact-fraction reference and spot-checked by hand
 # (e.g. entry 3 of full_first_month: 298998.50 * 0.036 / 12 = 896.9955 -> 897.00).
 # entries / years list a subset, matched by number / year; entry_count is the full length.
 
@@ -75,26 +91,96 @@ cases:
       - {number: 3, due_on: 2025-04-01, rate: "0.05", opening_balance: "18162.84", interest: "75.68", principal: "924.32", payment: "1000.00", closing_balance: "17238.52"}
       - {number: 4, due_on: 2025-05-01, rate: "0.05", opening_balance: "17238.52", interest: "71.83", principal: "928.17", payment: "1000.00", closing_balance: "16310.35"}
       - {number: 5, due_on: 2025-06-01, rate: "0.05", opening_balance: "16310.35", interest: "67.96", principal: "932.04", payment: "1000.00", closing_balance: "15378.31"}
-      - {number: 6, due_on: 2025-07-01, rate: "0.08", opening_balance: "15378.31", interest: "102.52", principal: "897.48", payment: "1000.00", closing_balance: "14480.83"}
-      - {number: 7, due_on: 2025-08-01, rate: "0.08", opening_balance: "14480.83", interest: "96.54", principal: "903.46", payment: "1000.00", closing_balance: "13577.37"}
-      - {number: 8, due_on: 2025-09-01, rate: "0.08", opening_balance: "13577.37", interest: "90.52", principal: "909.48", payment: "1000.00", closing_balance: "12667.89"}
-      - {number: 9, due_on: 2025-10-01, rate: "0.08", opening_balance: "12667.89", interest: "84.45", principal: "915.55", payment: "1000.00", closing_balance: "11752.34"}
-      - {number: 10, due_on: 2025-11-01, rate: "0.08", opening_balance: "11752.34", interest: "78.35", principal: "921.65", payment: "1000.00", closing_balance: "10830.69"}
-      - {number: 11, due_on: 2025-12-01, rate: "0.08", opening_balance: "10830.69", interest: "72.20", principal: "927.80", payment: "1000.00", closing_balance: "9902.89"}
-      - {number: 12, due_on: 2026-01-01, rate: "0.08", opening_balance: "9902.89", interest: "66.02", principal: "933.98", payment: "1000.00", closing_balance: "8968.91"}
-      - {number: 13, due_on: 2026-02-01, rate: "0.08", opening_balance: "8968.91", interest: "59.79", principal: "940.21", payment: "1000.00", closing_balance: "8028.70"}
-      - {number: 14, due_on: 2026-03-01, rate: "0.08", opening_balance: "8028.70", interest: "53.52", principal: "946.48", payment: "1000.00", closing_balance: "7082.22"}
-      - {number: 15, due_on: 2026-04-01, rate: "0.08", opening_balance: "7082.22", interest: "47.21", principal: "952.79", payment: "1000.00", closing_balance: "6129.43"}
-      - {number: 16, due_on: 2026-05-01, rate: "0.08", opening_balance: "6129.43", interest: "40.86", principal: "959.14", payment: "1000.00", closing_balance: "5170.29"}
-      - {number: 17, due_on: 2026-06-01, rate: "0.08", opening_balance: "5170.29", interest: "34.47", principal: "965.53", payment: "1000.00", closing_balance: "4204.76"}
-      - {number: 18, due_on: 2026-07-01, rate: "0.08", opening_balance: "4204.76", interest: "28.03", principal: "971.97", payment: "1000.00", closing_balance: "3232.79"}
-      - {number: 19, due_on: 2026-08-01, rate: "0.08", opening_balance: "3232.79", interest: "21.55", principal: "978.45", payment: "1000.00", closing_balance: "2254.34"}
-      - {number: 20, due_on: 2026-09-01, rate: "0.08", opening_balance: "2254.34", interest: "15.03", principal: "984.97", payment: "1000.00", closing_balance: "1269.37"}
-      - {number: 21, due_on: 2026-10-01, rate: "0.08", opening_balance: "1269.37", interest: "8.46", principal: "991.54", payment: "1000.00", closing_balance: "277.83"}
-      - {number: 22, due_on: 2026-11-01, rate: "0.08", opening_balance: "277.83", interest: "1.85", principal: "277.83", payment: "279.68", closing_balance: "0.00"}
+      - {number: 6, due_on: 2025-07-01, rate: "0.05", opening_balance: "15378.31", interest: "64.08", principal: "935.92", payment: "1000.00", closing_balance: "14442.39"}
+      - {number: 7, due_on: 2025-08-01, rate: "0.08", opening_balance: "14442.39", interest: "96.28", principal: "903.72", payment: "1000.00", closing_balance: "13538.67"}
+      - {number: 8, due_on: 2025-09-01, rate: "0.08", opening_balance: "13538.67", interest: "90.26", principal: "909.74", payment: "1000.00", closing_balance: "12628.93"}
+      - {number: 9, due_on: 2025-10-01, rate: "0.08", opening_balance: "12628.93", interest: "84.19", principal: "915.81", payment: "1000.00", closing_balance: "11713.12"}
+      - {number: 10, due_on: 2025-11-01, rate: "0.08", opening_balance: "11713.12", interest: "78.09", principal: "921.91", payment: "1000.00", closing_balance: "10791.21"}
+      - {number: 11, due_on: 2025-12-01, rate: "0.08", opening_balance: "10791.21", interest: "71.94", principal: "928.06", payment: "1000.00", closing_balance: "9863.15"}
+      - {number: 12, due_on: 2026-01-01, rate: "0.08", opening_balance: "9863.15", interest: "65.75", principal: "934.25", payment: "1000.00", closing_balance: "8928.90"}
+      - {number: 13, due_on: 2026-02-01, rate: "0.08", opening_balance: "8928.90", interest: "59.53", principal: "940.47", payment: "1000.00", closing_balance: "7988.43"}
+      - {number: 14, due_on: 2026-03-01, rate: "0.08", opening_balance: "7988.43", interest: "53.26", principal: "946.74", payment: "1000.00", closing_balance: "7041.69"}
+      - {number: 15, due_on: 2026-04-01, rate: "0.08", opening_balance: "7041.69", interest: "46.94", principal: "953.06", payment: "1000.00", closing_balance: "6088.63"}
+      - {number: 16, due_on: 2026-05-01, rate: "0.08", opening_balance: "6088.63", interest: "40.59", principal: "959.41", payment: "1000.00", closing_balance: "5129.22"}
+      - {number: 17, due_on: 2026-06-01, rate: "0.08", opening_balance: "5129.22", interest: "34.19", principal: "965.81", payment: "1000.00", closing_balance: "4163.41"}
+      - {number: 18, due_on: 2026-07-01, rate: "0.08", opening_balance: "4163.41", interest: "27.76", principal: "972.24", payment: "1000.00", closing_balance: "3191.17"}
+      - {number: 19, due_on: 2026-08-01, rate: "0.08", opening_balance: "3191.17", interest: "21.27", principal: "978.73", payment: "1000.00", closing_balance: "2212.44"}
+      - {number: 20, due_on: 2026-09-01, rate: "0.08", opening_balance: "2212.44", interest: "14.75", principal: "985.25", payment: "1000.00", closing_balance: "1227.19"}
+      - {number: 21, due_on: 2026-10-01, rate: "0.08", opening_balance: "1227.19", interest: "8.18", principal: "991.82", payment: "1000.00", closing_balance: "235.37"}
+      - {number: 22, due_on: 2026-11-01, rate: "0.08", opening_balance: "235.37", interest: "1.57", principal: "235.37", payment: "236.94", closing_balance: "0.00"}
       years:
-      - {year: 2025, interest: "902.89", principal: "10097.11", payment: "11000.00", closing_balance: "9902.89"}
-      - {year: 2026, interest: "376.79", principal: "9902.89", payment: "10279.68", closing_balance: "0.00"}
+      - {year: 2025, interest: "863.15", principal: "10136.85", payment: "11000.00", closing_balance: "9863.15"}
+      - {year: 2026, interest: "373.79", principal: "9863.15", payment: "10236.94", closing_balance: "0.00"}
+
+  - id: mid_period_rate_switch
+    description: Fixed rate ends on 15 June; the payment due 1 July covers June, half at 5 %, half at 8 %.
+    terms:
+      principal: "20000.00"
+      nominal_rate: "0.05"
+      monthly_payment: "1000.00"
+      disbursed_on: 2025-01-01
+      first_payment_on: 2025-02-01
+      fixed_until: 2025-06-15
+      follow_up_rate: "0.08"
+    expect:
+      entry_count: 22
+      entries:
+      - {number: 5, due_on: 2025-06-01, rate: "0.05", opening_balance: "16310.35", interest: "67.96", principal: "932.04", payment: "1000.00", closing_balance: "15378.31"}
+      - {number: 6, due_on: 2025-07-01, rate: "0.08", opening_balance: "15378.31", interest: "83.30", principal: "916.70", payment: "1000.00", closing_balance: "14461.61"}
+      - {number: 7, due_on: 2025-08-01, rate: "0.08", opening_balance: "14461.61", interest: "96.41", principal: "903.59", payment: "1000.00", closing_balance: "13558.02"}
+      - {number: 22, due_on: 2026-11-01, rate: "0.08", opening_balance: "256.61", interest: "1.71", principal: "256.61", payment: "258.32", closing_balance: "0.00"}
+      years:
+      - {year: 2025, interest: "883.02", principal: "10116.98", payment: "11000.00", closing_balance: "9883.02"}
+      - {year: 2026, interest: "375.30", principal: "9883.02", payment: "10258.32", closing_balance: "0.00"}
+
+  - id: switch_day_is_a_clamped_february_due_date
+    description: "Payments on the 30th; fixed rate ends 27 Feb. The Feb 28 payment covers only fixed-rate days, so it is entirely at 3.6 % (no phantom follow-up days from February's short 30E/360 count)."
+    terms:
+      principal: "200000.00"
+      nominal_rate: "0.036"
+      monthly_payment: "1400.00"
+      disbursed_on: 2024-12-30
+      first_payment_on: 2025-01-30
+      fixed_until: 2025-02-27
+      follow_up_rate: "0.05"
+    expect:
+      entry_count: 217
+      entries:
+      - {number: 2, due_on: 2025-02-28, rate: "0.036", opening_balance: "199200.00", interest: "597.60", principal: "802.40", payment: "1400.00", closing_balance: "198397.60"}
+      - {number: 3, due_on: 2025-03-30, rate: "0.05", opening_balance: "198397.60", interest: "826.66", principal: "573.34", payment: "1400.00", closing_balance: "197824.26"}
+
+  - id: fixed_rate_ends_february_with_month_end_payments
+    description: "Payments on the 30th; fixed rate ends 28 Feb. The Mar 30 payment covers Feb 28 (3.6 %) and Mar 1-29 (5 %): 29 days at 5 % counted from the switch, the old rate takes the rest of the 30-day month."
+    terms:
+      principal: "200000.00"
+      nominal_rate: "0.036"
+      monthly_payment: "1400.00"
+      disbursed_on: 2024-12-30
+      first_payment_on: 2025-01-30
+      fixed_until: 2025-02-28
+      follow_up_rate: "0.05"
+    expect:
+      entry_count: 217
+      entries:
+      - {number: 2, due_on: 2025-02-28, rate: "0.036", opening_balance: "199200.00", interest: "597.60", principal: "802.40", payment: "1400.00", closing_balance: "198397.60"}
+      - {number: 3, due_on: 2025-03-30, rate: "0.05", opening_balance: "198397.60", interest: "818.94", principal: "581.06", payment: "1400.00", closing_balance: "197816.54"}
+      - {number: 4, due_on: 2025-04-30, rate: "0.05", opening_balance: "197816.54", interest: "824.24", principal: "575.76", payment: "1400.00", closing_balance: "197240.78"}
+
+  - id: fixed_rate_ends_late_march_with_month_end_payments
+    description: "Payments on the 30th; fixed rate ends 28 Mar. The Mar 30 payment covers 29 days at 3.6 % and Mar 29 at 5 %."
+    terms:
+      principal: "200000.00"
+      nominal_rate: "0.036"
+      monthly_payment: "1400.00"
+      disbursed_on: 2024-12-30
+      first_payment_on: 2025-01-30
+      fixed_until: 2025-03-28
+      follow_up_rate: "0.05"
+    expect:
+      entry_count: 217
+      entries:
+      - {number: 3, due_on: 2025-03-30, rate: "0.05", opening_balance: "198397.60", interest: "602.91", principal: "797.09", payment: "1400.00", closing_balance: "197600.51"}
+      - {number: 4, due_on: 2025-04-30, rate: "0.05", opening_balance: "197600.51", interest: "823.34", principal: "576.66", payment: "1400.00", closing_balance: "197023.85"}
 
   - id: payment_below_interest
     description: 6 % on 100k is 500.00 interest a month; a 400.00 payment never amortizes.
@@ -118,4 +204,4 @@ cases:
       fixed_until: 2025-12-31
       follow_up_rate: "0.06"
     expect:
-      error: {code: loan.payment_does_not_cover_interest, at_number: 12}
+      error: {code: loan.payment_does_not_cover_interest, at_number: 13}

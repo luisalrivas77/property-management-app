@@ -10,7 +10,7 @@ contract the implementation PR codes against:
 | Pydantic schemas | `backend/src/hausbuch/schemas/` | Final for phase 1 |
 | Migration (DDL, RLS, grants, append-only triggers) | `backend/migrations/versions/0001_phase1_vault_ledger.py` | Tested against Postgres 16 |
 | Rule fixtures | `backend/tests/fixtures/phase1/*.yaml` | Validated against the schemas |
-| Rule tests | `backend/tests/rules/` | Skipped until `hausbuch.rules.*` exists, then must pass unchanged |
+| Rule tests | `backend/tests/rules/` | **Passing** against `hausbuch.rules.*` (5 Nov 2026); fixtures unchanged except the approved loan-schedule spec change (D10) |
 | Schema tests | `backend/tests/db/`, `backend/tests/test_fixtures_valid.py` | Passing |
 
 **Done when** (from ARCHITECTURE.md): the current flat, its tenancy, its loan and all 2026
@@ -39,12 +39,12 @@ These fill gaps in ARCHITECTURE.md. Each one is a place to push back in review.
 | D2 | Every child references its parent by **composite FK `(workspace_id, id)`**. | RLS hides other workspaces' rows, but a plain FK would still accept another workspace's id. This makes cross-workspace references impossible even if a query bug slips through. |
 | D3 | Closed value sets are **text + CHECK**, mirrored by `StrEnum`s; a test keeps them equal. | Adding a value is one `ALTER`; Postgres enums are awkward to change in migrations. |
 | D4 | **Current-state tables + event log, written in one transaction**; not full event sourcing. Milestone dates (move-in, purchase) change only through a correcting event. | Simple reads, and principle 4 still holds: every change is an event, history is never rewritten. |
-| D5 | **No tenant personal data in event payloads.** `tenant.updated` lists changed field names only. Erasure nulls the tenant's personal columns in place and sets `erased_at`. | Events are append-only and GDPR erasure is not; this keeps both. |
+| D5 | **No tenant personal data in event payloads.** `tenant.updated` lists changed field names only. Erasure nulls the tenant's personal columns in place and sets `erased_at`. Erasure (5 Nov 2026): always refused while a tenancy runs (the data performs the lease); after move-out it waits for the 4-year default unless the tenant asks and the landlord honours it (`on_request`); `tenant.erased` records the basis. The deposit account is the landlord's (Luis's Kautionskonto is in his name), so erasure leaves `tenancy.deposit_*` alone. | Events are append-only and GDPR erasure is not; this keeps both. |
 | D6 | Tenancy "type" is split into **`rent_model`** (fixed / Staffel / Index) and **`fixed_term_until`** (null = unbefristet). | The spec's "unbefristet / Staffel / Index" mixes two independent things: a Staffelmiete can be unbefristet. |
 | D7 | **`notarized_on`** (starts the §23 Spekulationsfrist) and **`purchase_date`** = Übergang von Besitz, Nutzen und Lasten (AfA starts in that month). | The spec names both dates; this pins which is which. |
 | D8 | Nebenkosten are **itemized** (`property_acquisition_cost`). Building/land splits are **append-only candidates**; the property selects one. | Principle 2 (traceable AfA basis), and phase 3 can warn when the contract split is far above the BMF result because both are kept. |
 | D9 | `document.type` is the classifier's 9 types; an optional **`subtype`** covers what retention and the AfA basis need (Kaufvertrag, lease, Gutachten, …). **One document per file per workspace.** | Keeps the AI layer's output contract unchanged; re-uploads dedup to the same document. |
-| D10 | The loan schedule is **computed, not stored**: 30E/360, rounded half-up per period, payment unchanged when the rate switches. `follow_up_rate` null = keep the current rate. | Deterministic and reproducible (principle 1). Conventions are listed in `loan_schedule.yaml`. |
+| D10 | The loan schedule is **computed, not stored**: 30E/360, in arrears, rounded half-up per period, payment unchanged when the rate switches. `follow_up_rate` null = keep the current rate. **Interest accrues per day at the rate in force that day**, so a period straddling `fixed_until` is split at the day after it (changed 5 Nov 2026; the first version charged the whole period at the new rate once its due date passed `fixed_until`, which overcharged the last fixed month). | Deterministic and reproducible (principle 1). Conventions are listed in `loan_schedule.yaml`. |
 | D11 | Retention periods end on **31 Dec of (base year + N)**. | The conservative reading of the defaults, never earlier than "date + N years". Matches §147 AO for tax records. |
 | D12 | A wrong rent row is **superseded** by a `correction` row (`supersedes_id`), never edited. | Rent changes are dated rows, never edits (domain model). |
 
@@ -119,7 +119,7 @@ exception with a `code` attribute (plus `at_number` for loan errors).
 
 | Function | Fixture | Notes |
 | --- | --- | --- |
-| `loan_schedule.build_schedule(LoanTerms) -> LoanSchedule` | `loan_schedule.yaml` | 5 cases: full and partial first period, rate switch to payoff, two never-amortizing errors |
+| `loan_schedule.build_schedule(LoanTerms) -> LoanSchedule` | `loan_schedule.yaml` | 6 cases: full and partial first period, rate switch at a month end to payoff, rate switch mid-period, two never-amortizing errors |
 | `rent.rent_at(rows, at: date) -> RentScheduleEntry \| None` | `rent_at.yaml` | Corrections by amount and by date; tie-break |
 | `timeline.build_history(events, TimelineScope) -> list[TimelineEntry]` | `timeline.yaml` | Done-criterion scenario: purchase, loan, possession (corrected twice), two lettings, a second property; result independent of input order |
 | `retention.document_retention(DocumentRetentionInput, RetentionPolicy) -> RetentionResult` | `retention.yaml` | Every class and hold, custom policy |
@@ -159,7 +159,7 @@ each other and with the conventions written in them.
 ```bash
 cd backend
 uv sync --python 3.12
-uv run pytest -q -rs     # rule tests skip; db tests skip without a database
+uv run pytest -q -rs     # db tests skip without a database
 HAUSBUCH_TEST_ADMIN_URL=postgresql://postgres:postgres@localhost:5432/postgres uv run pytest -q
 HAUSBUCH_DATABASE_URL=postgresql+psycopg://hausbuch_owner:…@localhost/hausbuch uv run alembic upgrade head
 ```
@@ -167,10 +167,55 @@ HAUSBUCH_DATABASE_URL=postgresql+psycopg://hausbuch_owner:…@localhost/hausbuch
 Run migrations as the schema owner, not as a superuser. The app connects as `hausbuch_app`
 and sets `app.workspace_id` per transaction (`SET LOCAL`).
 
-## Next: implementation PR
+## Implementation status
 
-1. `hausbuch.rules.*` until every test in `tests/rules/` passes with fixtures unchanged.
-2. Service layer: each command writes state + events in one transaction, enforcing the
-   service-layer invariants.
-3. FastAPI endpoints from these schemas; object storage for originals; auth.
-4. Enter the real flat, tenancy, loan and 2026 paperwork; check History.
+As of 5 Nov 2026, on branch `claude/repo-upload-q8egpv`. Each step was built by a coder agent
+and reviewed by a reviewer agent; every review finding was fixed or is listed below.
+
+1. **DONE: rules** (`hausbuch.rules.*`): loan schedule, rent in force, History timeline,
+   retention, IBAN, validation. Every test in `tests/rules/` passes.
+   - Review fix: first-period half-cent rounding.
+   - Spec change: per-day interest accrual at the end of the fixed rate (D10).
+2. **DONE: service layer.**
+   - **Foundation:** settings, Core tables with a drift test against the migration, and
+     workspace-scoped transactions. The engine refuses DB roles that bypass RLS.
+   - **Event writer:** `append_event` validates the catalog, the scope and corrections before
+     any SQL.
+   - **Domain services:** owners, properties, units, tenants, tenancies (rent schedule,
+     corrections), loans, and History / audit trail.
+   - **Document vault:** content-addressed originals, dedup, typing with extraction versions,
+     links, and retention dates.
+   - **Done criterion:** History built through the services matches all four `timeline.yaml`
+     cases (`tests/db/test_history.py`).
+3. **TODO: API and first screens.** FastAPI endpoints; passkey sign-in (decided 5 Nov 2026);
+   an S3 store behind `BlobStore`; the Next.js screens. The API's error handler must never
+   return or log pydantic `input_value` for `*Create` schemas, since they can echo IBAN input.
+4. **TODO: real data.** Enter the real flat, tenancy, loan and 2026 paperwork; check History.
+   Compare the loan schedule with the bank's Tilgungsplan (open question 3).
+
+### Known gaps (not yet built)
+
+- There is no correction command for `tenancy.ended`, `tenancy.created` (`signed_on`),
+  `tenancy.notice_given` or `loan.disbursed`, and no party changes on a tenancy. Step 4 will
+  need them on the first typo.
+- No retention auto-delete job, and no sweeper for blobs orphaned by rolled-back uploads.
+
+### Pending spec changes (one spec PR, collected from reviews)
+
+Resolved on 5 Nov 2026 and implemented: tenant erasure on request after move-out, and the
+deposit account as the landlord's data (both in D5).
+
+1. **Loan schedule loop limit.** A nonsensical payment (tiny payment, large principal, 0 %)
+   loops about 1 s and then fails with an uncoded `ValueError`. Add a period cap and an error
+   code.
+2. **`OwnerCreate.tax_id_ref` guard.** Reject a raw 10–11 digit Steuer-ID, which would
+   otherwise land permanently in the append-only log.
+3. **`document.typed` payload.** Add `document_date`, which is a retention input, and a
+   `changed_fields` list naming `title` (never the title's value: it often contains tenant
+   names, D5).
+4. **Retention class for AfA-basis evidence.** Renovation invoices capitalised into the AfA
+   basis, and other evidence the §23 gain needs, must be kept for the life of ownership + 10
+   years. Today every invoice is a 10-year tax record. Add a subtype.
+5. **Rate column.** `ScheduleEntry.rate` shows the rate on the period's last day. A
+   split period's interest is blended, and the old/new day counts are not visible on the
+   entry (principle 2).
