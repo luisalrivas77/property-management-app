@@ -141,10 +141,9 @@ test("the done criterion: ETW, loan, tenancy, lease, corrected move-in, History 
       /^30\.04\.2024\s*Darlehen ausgezahlt · Sparkasse Musterstadt\s*240\.000,00 €$/,
       /^01\.05\.2024\s*Übergang Besitz, Nutzen und Lasten/,
       /^01\.07\.2024\s*Einzug · WE 3, Max Muster\s*korrigiert, ursprünglich 15\.07\.2024$/,
-      // The first rent row starts on the move-in. Whether correcting the move-in also moves
-      // that row (decided 5 Nov 2026, §10.8 item 6) does not change the order: the row is
-      // recorded after the move-in, so it sorts after it on the same date.
-      /^(01|15)\.07\.2024\s*Miete · WE 3, Max Muster\s*Anfangsmiete: 950,00 € kalt \+ 220,00 € NK-Vorauszahlung/,
+      // Luis, 5 Nov 2026: correcting the move-in also moves the first rent row, so the rent
+      // starts on the corrected date and History marks it corrected (design §10.8 item 6).
+      /^01\.07\.2024\s*Miete · WE 3, Max Muster\s*korrigiert, ursprünglich 15\.07\.2024\s*Korrektur: 950,00 € kalt \+ 220,00 € NK-Vorauszahlung/,
     ]);
   });
 });
