@@ -673,7 +673,7 @@ image. Keep the order: grace < uvicorn's timeout < the platform's kill timeout.
 | Check | Date | Result |
 | --- | --- | --- |
 | Q16 If-None-Match honoured on the bucket | | |
-| Q13 platform body limit (25 MiB straight to the API) | | |
+| Q13 platform body limit (25 MiB straight to the API) | 5 Nov 2026 | Passes: a 25 MiB multipart POST to `/api/documents` without a session got the app's 401 in 5.4 s, so the platform let the whole body through. The same body through `hausbuch.rcubed.fr` (web container proxy) got 401 in 6.5 s, so the `next.config.ts` limits hold too. |
 | Q13 end-to-end 25 MiB upload through the web container | | |
 | Q15 SIGTERM → kill timeout | | |
 | Public endpoint reachable only from your IP (from another network, `psql` times out) | | |

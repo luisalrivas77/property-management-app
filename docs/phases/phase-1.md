@@ -217,7 +217,12 @@ and reviewed by a reviewer agent; every review finding was fixed or is listed be
      `web:309b07f0b945-16ef9db2` against the API endpoint, and `hausbuch-web` runs it
      (min-scale 0, max 2, HTTPS only). CNAME `hausbuch.rcubed.fr` → the web container, custom
      domain with Scaleway's certificate; `https://hausbuch.rcubed.fr/login` is 200 and
-     `/api/auth/me` 401 from the API. Step 12 and the first-deploy checks are not done.
+     `/api/auth/me` 401 from the API. Step 12 done: `hausbuch bootstrap` created the
+     workspace and Luis's user, and Luis enrolled a passkey and signed in. First-deploy
+     checks (`deploy/scaleway.md`, Results): Q13's platform limit passes (25 MiB reaches the
+     API, also through the web proxy); a signed-in 25 MiB upload, Q16 (If-None-Match on the
+     bucket), Q15 (SIGTERM timeout) and the allow-list check from another network are not
+     run yet. No real data has been entered.
 
 ### Known gaps (not yet built)
 
