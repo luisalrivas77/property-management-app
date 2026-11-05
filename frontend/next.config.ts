@@ -15,6 +15,15 @@ const nextConfig: NextConfig = {
   output: "standalone", // the web container runs `node server.js` (§14)
   poweredByHeader: false,
   reactStrictMode: true,
+  // The /api rewrite is a proxy, and Next's proxy buffers at most 10 MB of a request body and
+  // gives up after 30 s by default: an upload above 10 MB reached the API cut short and then
+  // hung until that timeout. Room for the API's 25 MiB upload limit plus multipart framing,
+  // and two minutes for a slow phone connection (docs/phases/phase-1-step-3.md §10.8 item 3).
+  // Proven by frontend/e2e/upload-limit.spec.ts.
+  experimental: {
+    proxyClientMaxBodySize: "26mb",
+    proxyTimeout: 120_000,
+  },
   async rewrites() {
     return [{ source: "/api/:path*", destination: `${apiUrl}/api/:path*` }];
   },
