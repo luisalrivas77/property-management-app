@@ -1,9 +1,9 @@
 """Passkey flows end to end over HTTP, with the software authenticator (§6.3-§6.7, §10.2):
 bootstrap -> enroll -> me; login -> me -> logout -> 401; logout-all; a second passkey; the
-spouse's invite; last-passkey delete refused; invite reuse refused; deleting a passkey ends
-its sessions (§10.5)."""
+spouse's invite; last-passkey delete refused; invite reuse refused; re-inviting a member who
+never enrolled (§10.7); deleting a passkey ends its sessions (§10.5)."""
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
 
@@ -20,6 +20,8 @@ from auth_support import (
 from authenticator import SoftAuthenticator
 
 from hausbuch.api.commands import Commands
+from hausbuch.api.routes import auth as auth_routes
+from hausbuch.auth import invites
 from hausbuch.schemas.enums import PropertyKind
 from hausbuch.schemas.property import Address, PropertyCreate
 from hausbuch.services.properties import create_property, list_properties
@@ -343,6 +345,97 @@ def test_inviting_a_taken_email_is_a_conflict_without_the_email(signed_in, house
     assert response.status_code == 409
     assert household.email not in response.text
     # The route names the kind; the generic "could not be read" text must not ride along.
+    assert response.json()["error"] == "conflict"
+    assert response.json().get("message") is None
+
+
+def _invite(browser, email: str):
+    return browser.post("/api/auth/invites", json={"email": email, "display_name": "Ana"})
+
+
+def _token(invite: dict) -> str:
+    return invite["enrollment_url"].split("#token=")[1]
+
+
+def _enroll_options(browser, token: str) -> int:
+    return browser.post("/api/auth/enroll/options", json={"token": token}).status_code
+
+
+def test_reinviting_a_member_whose_invite_was_deleted_reuses_their_row(signed_in):
+    """§10.7: a member who never enrolled can be invited again; the old link stays dead."""
+    email = unique_email("ana")
+    first = _invite(signed_in, email).json()
+    assert signed_in.delete(f"/api/auth/invites/{first['id']}").status_code == 204
+
+    again = _invite(signed_in, email)
+    assert again.status_code == 201, again.text
+    second = again.json()
+    assert second["user"]["id"] == first["user"]["id"]
+    assert second["id"] != first["id"]
+    assert second["enrollment_url"] != first["enrollment_url"]
+    assert [i["id"] for i in signed_in.get("/api/auth/invites").json()] == [second["id"]]
+
+    browser = new_client(signed_in.app)
+    assert _enroll_options(browser, _token(first)) == 401
+    device = SoftAuthenticator(rp_id=RP_ID, origin=ORIGIN)
+    assert enroll(browser, _token(second), device, label="Ana").status_code == 201
+    assert browser.get("/api/auth/me").json()["user"]["id"] == first["user"]["id"]
+
+
+def test_reinviting_a_member_whose_invite_expired(signed_in, monkeypatch):
+    email = unique_email("ana")
+    first = _invite(signed_in, email).json()
+    later = datetime.now(UTC) + invites.INVITE_TTL + timedelta(hours=1)
+    monkeypatch.setattr(auth_routes, "_now", lambda: later)
+
+    again = _invite(signed_in, email)
+    assert again.status_code == 201, again.text
+    second = again.json()
+    assert second["user"]["id"] == first["user"]["id"]
+    browser = new_client(signed_in.app)
+    assert _enroll_options(browser, _token(first)) == 401
+    assert _enroll_options(new_client(signed_in.app), _token(second)) == 200
+
+
+def test_reinviting_a_pending_member_retires_their_earlier_link(signed_in, sql, household):
+    email = unique_email("ana")
+    first = _invite(signed_in, email).json()
+    second = _invite(signed_in, email).json()
+    assert second["user"]["id"] == first["user"]["id"]
+    assert [i["id"] for i in signed_in.get("/api/auth/invites").json()] == [second["id"]]
+    assert _enroll_options(new_client(signed_in.app), _token(first)) == 401
+    rows = sql(
+        "SELECT count(*) FROM auth_invite WHERE user_id = %s",
+        (UUID(first["user"]["id"]),),
+        workspace=household.workspace_id,
+    )
+    assert rows == [(1,)]
+
+
+def test_reinviting_an_enrolled_member_is_a_conflict_without_the_email(signed_in):
+    email = unique_email("ana")
+    invite = _invite(signed_in, email).json()
+    device = SoftAuthenticator(rp_id=RP_ID, origin=ORIGIN)
+    assert enroll(new_client(signed_in.app), _token(invite), device).status_code == 201
+
+    response = _invite(signed_in, email)
+    assert response.status_code == 409
+    assert email not in response.text
+    assert response.json()["error"] == "conflict"
+    assert response.json().get("message") is None
+
+
+def test_inviting_another_workspaces_member_is_a_conflict(signed_in, owner_engine):
+    """The other household's user has no passkey yet: still theirs, still a 409."""
+    from hausbuch.auth.provisioning import provision_workspace
+
+    email = unique_email("nachbar")
+    provision_workspace(
+        owner_engine, name="Haushalt Nachbar", email=email, display_name="N", now=datetime.now(UTC)
+    )
+    response = _invite(signed_in, email)
+    assert response.status_code == 409
+    assert email not in response.text
     assert response.json()["error"] == "conflict"
     assert response.json().get("message") is None
 

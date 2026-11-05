@@ -12,7 +12,7 @@ from uuid import UUID
 from sqlalchemy import Connection, delete, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from hausbuch.db.tables import app_user, auth_invite
+from hausbuch.db.tables import app_user, auth_invite, auth_passkey
 from hausbuch.schemas.auth import Invite, InviteCreate
 from hausbuch.schemas.workspace import AppUser
 
@@ -92,11 +92,41 @@ def invite_member(
     now: datetime,
 ) -> tuple[AppUser, IssuedInvite]:
     """POST /auth/invites: the member's user row (it exists from the invite on, harmless
-    while un-enrolled) and their invite."""
-    user = create_user(
-        conn, workspace_id, email=body.email, display_name=body.display_name, now=now
-    )
+    while un-enrolled) and their invite.
+
+    A member of this workspace who never enrolled (no passkey; their link was deleted or
+    expired) keeps their row: their pending invites stop working and a fresh one is issued
+    (§10.7). The row is reused as stored, display name included (the app role cannot update
+    app_user). An email of an enrolled user, or of another workspace (invisible under RLS),
+    falls through to create_user and is a DuplicateUserError."""
+    user = _unenrolled_user(conn, workspace_id, body.email)
+    if user is None:
+        user = create_user(
+            conn, workspace_id, email=body.email, display_name=body.display_name, now=now
+        )
+    else:
+        delete_pending_invites(conn, user.id)
     return user, create_invite(conn, workspace_id, user.id, created_by=created_by, now=now)
+
+
+def _unenrolled_user(conn: Connection, workspace_id: UUID, email: str) -> AppUser | None:
+    """This workspace's user with that email, if they have no passkey."""
+    has_passkey = (
+        select(auth_passkey.c.id)
+        .where(
+            auth_passkey.c.workspace_id == app_user.c.workspace_id,
+            auth_passkey.c.user_id == app_user.c.id,
+        )
+        .exists()
+    )
+    row = conn.execute(
+        select(app_user).where(
+            app_user.c.workspace_id == workspace_id,
+            app_user.c.email == email.lower(),
+            ~has_passkey,
+        )
+    ).one_or_none()
+    return None if row is None else AppUser.model_validate(row._asdict())
 
 
 def list_pending_invites(conn: Connection, *, now: datetime) -> list[Invite]:
