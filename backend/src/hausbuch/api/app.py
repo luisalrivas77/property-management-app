@@ -14,6 +14,7 @@ Middleware order, outermost first (each sees what the next one returns):
     routes                 exception handlers -> ErrorResponse (errors.py)
 """
 
+import json
 from importlib.metadata import version
 from typing import Any, Protocol, runtime_checkable
 
@@ -120,3 +121,10 @@ def create_app(
     for module in ROUTE_MODULES:
         app.include_router(module.router, prefix=API_PREFIX, responses=ERROR_RESPONSES)
     return app
+
+
+def openapi_document(app: FastAPI) -> str:
+    """app.openapi() as committed in frontend/src/api/openapi.json (§5): two-space JSON,
+    keys in FastAPI's order, UTF-8 as is, one trailing newline. `hausbuch openapi` should
+    print exactly this, so the committed file and the CLI never differ by formatting."""
+    return json.dumps(app.openapi(), indent=2, ensure_ascii=False) + "\n"
