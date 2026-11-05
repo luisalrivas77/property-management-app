@@ -36,7 +36,13 @@ from hausbuch.schemas.document import (
     RetentionResult,
 )
 from hausbuch.schemas.enums import DocumentSource, EntityType, ExtractionSource, LinkTarget
-from hausbuch.schemas.events import DocumentLinked, DocumentTyped, DocumentUploaded, EventType
+from hausbuch.schemas.events import (
+    DocumentField,
+    DocumentLinked,
+    DocumentTyped,
+    DocumentUploaded,
+    EventType,
+)
 from hausbuch.storage import BlobStore, blob_key
 
 from .context import CommandContext
@@ -207,6 +213,15 @@ def type_document(
         .returning(*document_table.c)
     ).one()
     typed = _to_document(row)
+    # In the DocumentField order; an untyped document had no value for any field. The title
+    # is named here but its value never enters the payload (D5).
+    previous = current.typing
+    changed = [
+        field
+        for field in DocumentField
+        if (None if previous is None else getattr(previous, field.value))
+        != getattr(typing, field.value)
+    ]
     append_event(
         ctx,
         EventType.DOCUMENT_TYPED,
@@ -214,7 +229,9 @@ def type_document(
         DocumentTyped(
             type=typing.type,
             subtype=typing.subtype,
+            document_date=typing.document_date,
             tax_year=typing.tax_year,
+            changed_fields=changed,
             extraction_version=version,
         ),
     )
