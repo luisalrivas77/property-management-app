@@ -220,6 +220,37 @@ def test_deposit_notice_move_out_and_move_in_correction(client_a):
     assert (response.status_code, response.json()["error"]) == (409, "conflict")
 
 
+def test_a_move_in_correction_moves_the_first_rent_row(client_a):
+    """§10.8 item 6 over HTTP: 15.07 -> 01.07; History shows the rent at 01.07, corrected."""
+    prop = new_property(client_a)
+    unit = new_unit(client_a, prop["id"])
+    tenant = new_tenant(client_a)
+    body = tenancy_body(
+        unit["id"],
+        [tenant["id"]],
+        start_date="2024-07-15",
+        initial_rent={"cold_rent": "950.00", "operating_costs_prepayment": "220.00"},
+    )
+    tenancy = create(client_a, "/api/tenancies", body)
+    base = f"/api/tenancies/{tenancy['id']}"
+    ok(client_a.post(f"{base}/corrections/move-in", json={"new_date": "2024-07-01"}))
+
+    moved, first = ok(client_a.get(f"{base}/rent-schedule"))  # effective order
+    assert (moved["effective_from"], moved["reason"], moved["supersedes_id"]) == (
+        "2024-07-01",
+        "correction",
+        first["id"],
+    )
+    assert ok(client_a.get(f"{base}/rent?at=2024-07-01")) == moved
+    history = ok(client_a.get(f"/api/properties/{prop['id']}/history"))
+    [rent] = [e for e in history if e["type"] == "tenancy.rent_scheduled"]
+    assert (rent["effective_date"], rent["corrected"], rent["original_effective_date"]) == (
+        "2024-07-01",
+        True,
+        "2024-07-15",
+    )
+
+
 def test_unknown_tenancy_reads_are_404(client_a):
     missing = uuid4()
     for sub in ("", "/rent-schedule", "/rent?at=2025-01-01", "/documents"):

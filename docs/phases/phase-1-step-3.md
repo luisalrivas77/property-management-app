@@ -920,6 +920,12 @@ Chunk 3b found these API gaps; none of them blocked a screen:
    `correct_move_in` also corrects the rent row that started exactly on the old move-in date (a
    `correction` row plus a correcting `tenancy.rent_scheduled` event, so History shows it).
    Rows with other dates are untouched.
+   **Implemented:** `correct_move_in` calls `correct_rent_row` for the row in force on the old
+   date, after updating the tenancy, in the same transaction. Two refusals guard against a
+   silent change of which row applies: two rows in force on the old date (they would tie with
+   the same `recorded_at`), and a moved row landing on another row's date (it would win the
+   tie). The done-criterion replays are unchanged: they correct the move-in before the first
+   rent row exists.
 7. **No list of household members**, no read endpoint for deposits received (the tenancy page
    reads them from the event log), and document responses lack the media type.
 

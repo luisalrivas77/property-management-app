@@ -2,7 +2,8 @@
 in the same transaction (D4).
 
 - Move-in (tenancy.started) and move-out (tenancy.ended) are milestones; move-in changes only
-  through correct_move_in, which appends a correcting event.
+  through correct_move_in, which appends a correcting event and moves the rent row that
+  started on the old move-in date with it (§10.8 item 6).
 - Rent rows are never edited: a wrong row is superseded by a correction row (D12), and its
   tenancy.rent_scheduled event is corrected by the new row's event.
 - No two tenancies of a unit overlap: the database's exclusion constraint decides, and its
@@ -10,6 +11,7 @@ in the same transaction (D4).
 - Tenancy events carry the unit's property_id and unit_id (History scope).
 """
 
+from collections.abc import Set
 from datetime import date
 from decimal import Decimal
 from typing import Any, Literal
@@ -152,8 +154,13 @@ def create_tenancy(
 
 def correct_move_in(ctx: CommandContext, tenancy_id: UUID, new_date: date) -> Tenancy:
     """Correct the move-in date: updates start_date and appends a correcting tenancy.started
-    against the latest event in its chain. Rent rows in force must stay inside the tenancy,
-    and the move-in cannot be after the end date of a notice already given."""
+    against the latest event in its chain. The move-in cannot be after the end date of a
+    notice already given.
+
+    The rent row in force that started on the old move-in date moves with it, in the same
+    transaction, through correct_rent_row (a correction row plus a correcting
+    tenancy.rent_scheduled event, so History shows it corrected). Every other rent row in
+    force keeps its date and must stay inside the tenancy."""
     row, scope = _lock(ctx.conn, tenancy_id)
     current = _to_tenancy(ctx.conn, row)
     _validate_dates(current, start_date=new_date)
@@ -166,7 +173,27 @@ def correct_move_in(ctx: CommandContext, tenancy_id: UUID, new_date: date) -> Te
             raise ValueError(
                 f"a notice ends the tenancy on {notice.ends_on}; it cannot start after that"
             )
-    _require_rows_inside(ctx.conn, tenancy_id, new_date, current.end_date)
+    in_force = _rows_in_force(ctx.conn, tenancy_id)
+    first = [r for r in in_force if r.effective_from == row.start_date]
+    if len(first) > 1:
+        # Two rows on one date tie on effective_from. Moving both in one command would give
+        # them the same recorded_at, so which one applies would hang on their random ids.
+        raise ValueError(
+            f"{len(first)} rent rows start on {row.start_date}; correct all but one of them "
+            "before correcting the move-in"
+        )
+    if first:
+        # The moved row would tie with a later row on the new date and, being recorded last,
+        # silently replace it. (A row before the new date is refused as outside, below.)
+        reached = [r for r in in_force if r not in first and r.effective_from == new_date]
+        if reached:
+            raise ValueError(
+                f"the rent row from {row.start_date} would move onto the row from "
+                f"{reached[0].effective_from}; correct one of them first"
+            )
+    _require_rows_inside(
+        ctx.conn, tenancy_id, new_date, current.end_date, moving={r.id for r in first}
+    )
 
     root = milestone_root(ctx.conn, EventType.TENANCY_STARTED, tenancy_id)
     latest = latest_in_chain(ctx.conn, root.id)
@@ -180,6 +207,8 @@ def correct_move_in(ctx: CommandContext, tenancy_id: UUID, new_date: date) -> Te
         corrects_event_id=latest.id,
         **scope,
     )
+    for rent_row in first:  # after the update, so correct_rent_row checks the new start date
+        correct_rent_row(ctx, rent_row.id, effective_from=new_date)
     return _to_tenancy(ctx.conn, updated)
 
 
@@ -401,16 +430,27 @@ def _insert_rent_row(
     return entry
 
 
-def _require_rows_inside(
-    conn: Connection, tenancy_id: UUID, start_date: date, end_date: date | None
-) -> None:
-    """Every rent row still in force (not superseded) must fall inside the new dates."""
+def _rows_in_force(conn: Connection, tenancy_id: UUID) -> list[RentScheduleEntry]:
+    """The tenancy's rent rows that no correction supersedes, in effective order."""
     rows = list_rent_schedule(conn, tenancy_id)
     superseded = {r.supersedes_id for r in rows if r.supersedes_id is not None}
+    return [r for r in rows if r.id not in superseded]
+
+
+def _require_rows_inside(
+    conn: Connection,
+    tenancy_id: UUID,
+    start_date: date,
+    end_date: date | None,
+    *,
+    moving: Set[UUID] = frozenset(),
+) -> None:
+    """Every rent row still in force (not superseded) must fall inside the new dates, except
+    the rows in `moving`, which the caller corrects to a date inside them."""
     outside = [
         r
-        for r in rows
-        if r.id not in superseded and check_rent_row(start_date, end_date, r.effective_from)
+        for r in _rows_in_force(conn, tenancy_id)
+        if r.id not in moving and check_rent_row(start_date, end_date, r.effective_from)
     ]
     if outside:
         raise RuleViolationError(
