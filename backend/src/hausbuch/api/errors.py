@@ -223,7 +223,9 @@ def shutting_down() -> ApiError:
 
 def describe_failure(exc: BaseException) -> dict[str, Any]:
     """Log fields for a 500: the class, where it surfaced in hausbuch, and, only for
-    hausbuch's own exception classes, the message. Never a traceback, never a DBAPI text."""
+    hausbuch's own exception classes, the message. Never a traceback, never a DBAPI text,
+    and no message built from one (`InvalidEventError(f"...: {exc}") from exc` embeds a
+    ValidationError's text, input values included)."""
     fields: dict[str, Any] = {"exc_type": _qualified_name(type(exc))}
     where = _innermost_own_frame(exc)
     if where is not None:
@@ -233,7 +235,9 @@ def describe_failure(exc: BaseException) -> dict[str, Any]:
         diag = getattr(orig, "diag", None)
         fields["constraint"] = getattr(diag, "constraint_name", None)
         fields["sqlstate"] = getattr(orig, "sqlstate", None)
-    elif _is_own(cls_module=type(exc).__module__):
+    elif _is_own(cls_module=type(exc).__module__) and not isinstance(
+        exc.__cause__, ValidationError | DBAPIError
+    ):
         fields["exc_message"] = str(exc)
     cause = exc.__cause__
     if cause is None and not exc.__suppress_context__:

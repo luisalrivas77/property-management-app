@@ -24,12 +24,14 @@ from api_support import (
     ok,
     tenancy_body,
 )
+from pydantic import ValidationError
 from sqlalchemy import insert
 
 from hausbuch.api.errors import render
 from hausbuch.api.logging import REQUEST_LOGGER, JsonFormatter
 from hausbuch.db.tables import app_user
 from hausbuch.schemas.property import OwnerCreate
+from hausbuch.services.events import InvalidEventError
 
 pytestmark = pytest.mark.db
 
@@ -228,6 +230,26 @@ def test_a_database_error_is_logged_by_constraint_only(client_a, logs, monkeypat
     assert line["exc_type"] == "sqlalchemy.exc.IntegrityError"
     assert line["exc_where"].startswith("hausbuch.api.commands:run:")  # innermost hausbuch frame
     assert "exc_message" not in line
+
+
+def test_a_message_built_from_a_validation_error_is_not_logged(client_a, logs, monkeypatch):
+    """append_event wraps an Event ValidationError as InvalidEventError(f"...: {exc}"): a
+    hausbuch class, but its text carries the payload. It is a 500, logged by class only."""
+
+    def bad_event(ctx, data):
+        try:
+            OwnerCreate.model_validate({"full_name": "x", "extra": CONTRACT_NUMBER})
+        except ValidationError as exc:
+            raise InvalidEventError(f"invalid owner.created event: {exc}") from exc
+
+    monkeypatch.setattr("hausbuch.api.routes.owners.create_owner", bad_event)
+    response = client_a.post("/api/owners", json={"full_name": "x"})
+    assert (response.status_code, response.json()["error"]) == (500, "internal")
+    [line] = logs.request_lines()
+    assert line["exc_type"] == "hausbuch.services.events.InvalidEventError"
+    assert line["exc_cause"] == "pydantic_core._pydantic_core.ValidationError"
+    assert "exc_message" not in line
+    assert_not_echoed(response, logs, CONTRACT_NUMBER)
 
 
 def test_the_request_line_carries_no_body_and_the_route_template(client_a, logs, auth_a):
