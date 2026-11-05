@@ -6,10 +6,18 @@ import { browserSupportsWebAuthn } from "@simplewebauthn/browser";
 import { useRouter } from "next/navigation";
 import { useState, useSyncExternalStore } from "react";
 
+import { ApiError } from "@/api/errors";
 import { signInWithPasskey } from "@/auth/passkeys";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 const subscribeNever = () => () => {};
+
+// A 401 from login/verify means the passkey was not accepted, not that a session ran out.
+function loginErrorText(error: unknown): string | null {
+  return error instanceof ApiError && error.status === 401
+    ? "Dieser Passkey wurde nicht erkannt. Gehört er zu diesem Hausbuch?"
+    : null;
+}
 
 export function LoginForm() {
   const router = useRouter();
@@ -43,7 +51,7 @@ export function LoginForm() {
       ) : (
         <p>Dieser Browser unterstützt keine Passkeys. Bitte einen aktuellen Browser verwenden.</p>
       )}
-      <ErrorNotice error={error} />
+      <ErrorNotice error={error} text={loginErrorText} />
       <p className="muted">
         Noch kein Passkey? Die Einladung kommt als Link, der mit <code>/enroll#token=</code> beginnt.
       </p>

@@ -15,18 +15,40 @@ import { ErrorNotice } from "@/lib/ErrorNotice";
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const MAX_LABEL_LENGTH = 100; // auth_passkey.label CHECK
 
-// The token as it was in the fragment when this page first rendered in this tab. Read once
-// and kept, because the effect below removes the fragment.
+// The token of the last enrollment link opened in this tab. Kept here because the effect in
+// Enroll removes the fragment from the URL once it has been read.
 let fragmentToken: string | null | undefined;
 
 function readFragmentToken(): string | null {
-  if (fragmentToken === undefined) {
-    fragmentToken = new URLSearchParams(window.location.hash.slice(1)).get("token");
-  }
+  const inUrl = new URLSearchParams(window.location.hash.slice(1)).get("token");
+  if (inUrl !== null) fragmentToken = inUrl; // a newly opened link always wins
+  else if (fragmentToken === undefined) fragmentToken = null;
   return fragmentToken;
 }
 
-const subscribeNever = () => () => {};
+function forgetFragmentToken(): void {
+  fragmentToken = undefined;
+}
+
+/** Read the token into fragmentToken, then drop the fragment from the address bar and the
+ * history entry. The router's own history state is kept; replaceState fires no hashchange. */
+function takeFragment(): void {
+  readFragmentToken();
+  if (window.location.hash) {
+    window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
+  }
+}
+
+// Opening a second link in the same tab while on /enroll only changes the fragment: the
+// page is not reloaded, so listen for it.
+function subscribeToFragment(onChange: () => void): () => void {
+  const handler = () => {
+    takeFragment();
+    onChange();
+  };
+  window.addEventListener("hashchange", handler);
+  return () => window.removeEventListener("hashchange", handler);
+}
 
 type TokenState = { status: "reading" } | { status: "missing" } | { status: "malformed" } | { status: "ok"; token: string };
 
@@ -37,15 +59,10 @@ function tokenState(token: string | null | undefined): TokenState {
 }
 
 export function Enroll() {
-  const token = useSyncExternalStore(subscribeNever, readFragmentToken, () => undefined);
+  const token = useSyncExternalStore(subscribeToFragment, readFragmentToken, () => undefined);
   const state = tokenState(token);
 
-  useEffect(() => {
-    readFragmentToken(); // make sure it is kept before the fragment goes
-    if (window.location.hash) {
-      window.history.replaceState(null, "", window.location.pathname + window.location.search);
-    }
-  }, []);
+  useEffect(takeFragment, []);
 
   return (
     <section className="card stack">
@@ -78,6 +95,7 @@ function EnrollForm({ token }: { token: string }) {
     setError(null);
     try {
       await enrollWithInvite(token, label.trim());
+      forgetFragmentToken(); // used up: never offer it again in this tab
       router.replace("/");
     } catch (caught) {
       setError(caught);

@@ -15,10 +15,13 @@ export function describeError(error: unknown): ErrorDescription {
   return { text: "Unerwarteter Fehler.", code: null, details: [], requestId: null };
 }
 
-/** The error line under a form or button. Renders nothing for `null`. */
-export function ErrorNotice({ error }: { error: unknown }) {
+/** The error line under a form or button. Renders nothing for `null`. `text`, when given,
+ * replaces the sentence for a context where the generic one would mislead. */
+export function ErrorNotice({ error, text: override }: { error: unknown; text?: (error: unknown) => string | null }) {
   if (error == null) return null;
-  const { text, code, details, requestId } = describeError(error);
+  const described = describeError(error);
+  const { code, details, requestId } = described;
+  const text = override?.(error) ?? described.text;
   return (
     <div className="notice notice-error" role="alert">
       <p>
