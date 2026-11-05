@@ -107,12 +107,16 @@ class DocumentRetentionInput(Schema):
     """Facts a retention decision depends on, gathered from the document and its links.
 
     ownership_end_dates: one entry per property the document is linked to (directly, or via a
-      unit, tenancy or loan of that property); null = still owned.
+      unit, tenancy or loan of that property), or backs as cost evidence; null = still owned.
     tenancy_end_dates: one entry per tenancy linked; null = still running.
+    cost_basis_reference: the document is recorded as the evidence of an acquisition cost or a
+      building/land split, so the AfA basis and the §23 gain are built from it. It is then an
+      ownership record whatever its subtype (spec amendment 1, Luis 5 Nov 2026).
     """
 
     type: DocumentType | None
     subtype: DocumentSubtype | None = None
+    cost_basis_reference: bool = False
     tax_year: TaxYear | None = None
     document_date: date | None = None
     received_on: date

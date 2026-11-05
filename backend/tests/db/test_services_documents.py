@@ -1,6 +1,7 @@
 """The document vault end to end: services under hausbuch_app and RLS, with a LocalBlobStore."""
 
 import hashlib
+import json
 import os
 import stat
 import threading
@@ -454,11 +455,73 @@ def test_typing_creates_extraction_versions_and_current_is_the_latest(
 
     typed_events = _events(app_engine, a, doc.id)[1:]
     assert [e.type for e in typed_events] == [EventType.DOCUMENT_TYPED] * 3
+    invoice = {"type": "invoice", "subtype": None, "document_date": None}
     assert [e.payload for e in typed_events] == [
-        {"type": "invoice", "subtype": None, "tax_year": 2026, "extraction_version": 1},
-        {"type": "invoice", "subtype": None, "tax_year": 2026, "extraction_version": 2},
-        {"type": "invoice", "subtype": None, "tax_year": 2025, "extraction_version": None},
+        invoice
+        | {"tax_year": 2026, "changed_fields": ["type", "title", "tax_year"]}
+        | {"extraction_version": 1},
+        invoice | {"tax_year": 2026, "changed_fields": [], "extraction_version": 2},
+        invoice | {"tax_year": 2025, "changed_fields": ["tax_year"], "extraction_version": None},
     ]
+
+
+def test_typed_event_records_the_date_and_changed_fields_but_never_the_title(
+    app_engine, workspaces, blob_store
+):
+    """Spec amendment 1: document.typed names the changed fields, title included, and traces
+    document_date (a retention input); the title's value (it often names the tenant) never
+    reaches a payload."""
+    a, _ = workspaces
+    titles = ["Mietvertrag Max Mieter", "Mietvertrag Max und Erika Mieter"]
+    doc = _upload(app_engine, blob_store, a, _bytes())
+    first = DocumentTyping(type=DocumentType.LETTER, title=titles[0])
+    steps = [
+        (first, ["type", "title"]),
+        (first.model_copy(update={"title": titles[1]}), ["title"]),
+        (
+            DocumentTyping(
+                type=DocumentType.CONTRACT,
+                subtype=DocumentSubtype.LEASE,
+                title=titles[1],
+                document_date=date(2024, 5, 15),
+                tax_year=2024,
+            ),
+            ["type", "subtype", "document_date", "tax_year"],
+        ),
+        (
+            DocumentTyping(
+                type=DocumentType.CONTRACT,
+                subtype=DocumentSubtype.LEASE,
+                document_date=date(2024, 5, 16),
+                tax_year=2024,
+            ),
+            ["title", "document_date"],
+        ),
+    ]
+    for typing, _ in steps:
+        _type(app_engine, a, doc.id, typing)
+
+    events = _events(app_engine, a, doc.id)
+    typed_events = events[1:]
+    assert [e.type for e in typed_events] == [EventType.DOCUMENT_TYPED] * len(steps)
+    for event, (typing, changed) in zip(typed_events, steps, strict=True):
+        assert event.payload["changed_fields"] == changed
+        assert event.payload["document_date"] == (
+            None if typing.document_date is None else typing.document_date.isoformat()
+        )
+        assert "title" not in event.payload
+    assert typed_events[-1].payload == {
+        "type": "contract",
+        "subtype": "lease",
+        "document_date": "2024-05-16",
+        "tax_year": 2024,
+        "changed_fields": ["title", "document_date"],
+        "extraction_version": None,
+    }
+    recorded = json.dumps([e.payload for e in events])
+    for title in titles:
+        assert title not in recorded
+    assert "Mieter" not in recorded
 
 
 @pytest.mark.parametrize("fields", [None, FIELDS_1], ids=["no-fields", "same-fields"])
@@ -677,6 +740,10 @@ TENANCY_PATHS = [LinkTarget.TENANCY, LinkTarget.TENANT]
 
 def _retention_params():
     for case in RETENTION.cases:
+        if case.input.cost_basis_reference:
+            # Built from a cost-evidence record, not a link: covered by
+            # test_cost_evidence_is_an_ownership_record_without_the_subtype.
+            continue
         if case.input.ownership_end_dates:
             paths = OWNERSHIP_PATHS
         elif case.input.tenancy_end_dates:
@@ -830,6 +897,64 @@ def test_an_owner_link_reaches_no_property(app_engine, workspaces, blob_store):
         gathered = document_retention_input(conn, doc.id)
         assert (gathered.ownership_end_dates, gathered.tenancy_end_dates) == ([], [])
         assert document_retention(conn, doc.id).hold is RetentionHold.UNLINKED
+
+
+def test_cost_basis_evidence_is_kept_while_the_property_is_owned(
+    app_engine, workspaces, blob_store
+):
+    """Spec amendment 1: a capitalised renovation invoice is an ownership record, not a
+    10-year tax record (which would have been 2035-12-31 from its tax year)."""
+    a, _ = workspaces
+    doc = _upload(app_engine, blob_store, a, _bytes())
+    typing = DocumentTyping(
+        type=DocumentType.INVOICE,
+        subtype=DocumentSubtype.COST_BASIS_EVIDENCE,
+        tax_year=2025,
+        document_date=date(2025, 9, 1),
+    )
+    _type(app_engine, a, doc.id, typing)
+    with _seed(app_engine, a) as raw:
+        prop = insert_property(raw, a)
+    _link(app_engine, a, doc.id, LinkTarget.PROPERTY, prop)
+
+    with workspace_transaction(app_engine, a) as conn:
+        result = document_retention(conn, doc.id)
+    assert (result.retention_class, result.hold, result.retain_until) == (
+        RetentionClass.OWNERSHIP_RECORDS,
+        RetentionHold.WHILE_OWNED,
+        None,
+    )
+
+
+@pytest.mark.parametrize(
+    ("ownership_ended_on", "expected"),
+    [
+        (None, (RetentionHold.WHILE_OWNED, None)),
+        (date(2035, 6, 30), (None, date(2045, 12, 31))),
+    ],
+    ids=["while-owned", "after-sale"],
+)
+def test_cost_evidence_is_an_ownership_record_without_the_subtype(
+    app_engine, workspaces, blob_store, ownership_ended_on, expected
+):
+    """Spec amendment 1 (Luis, 5 Nov 2026): a document recorded as the evidence of an
+    acquisition cost backs the AfA basis, so it is kept for the life of ownership + 10 years
+    even when typed as a plain invoice and never linked to the property."""
+    a, _ = workspaces
+    doc = _upload(app_engine, blob_store, a, _bytes())
+    _type(app_engine, a, doc.id, DocumentTyping(type=DocumentType.INVOICE, tax_year=2025))
+    with _seed(app_engine, a) as raw:
+        prop = insert_property(raw, a, ownership_ended_on=ownership_ended_on)
+        raw.execute(
+            "INSERT INTO property_acquisition_cost (workspace_id, property_id, kind, amount,"
+            " document_id) VALUES (%s, %s, 'notary', 3400.00, %s)",
+            (a, prop, doc.id),
+        )
+
+    with workspace_transaction(app_engine, a) as conn:
+        result = document_retention(conn, doc.id)
+    assert result.retention_class is RetentionClass.OWNERSHIP_RECORDS
+    assert (result.hold, result.retain_until) == expected
 
 
 def test_unlinking_changes_retention(app_engine, workspaces, blob_store):

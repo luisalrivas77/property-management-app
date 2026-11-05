@@ -21,6 +21,8 @@ from hausbuch.db.tables import document_file as file_table
 from hausbuch.db.tables import document_link as link_table
 from hausbuch.db.tables import loan as loan_table
 from hausbuch.db.tables import property_ as property_table
+from hausbuch.db.tables import property_acquisition_cost as cost_table
+from hausbuch.db.tables import property_price_split as split_table
 from hausbuch.db.tables import tenancy as tenancy_table
 from hausbuch.db.tables import tenancy_tenant as tenancy_tenant_table
 from hausbuch.db.tables import unit as unit_table
@@ -36,7 +38,13 @@ from hausbuch.schemas.document import (
     RetentionResult,
 )
 from hausbuch.schemas.enums import DocumentSource, EntityType, ExtractionSource, LinkTarget
-from hausbuch.schemas.events import DocumentLinked, DocumentTyped, DocumentUploaded, EventType
+from hausbuch.schemas.events import (
+    DocumentField,
+    DocumentLinked,
+    DocumentTyped,
+    DocumentUploaded,
+    EventType,
+)
 from hausbuch.storage import BlobStore, blob_key
 
 from .context import CommandContext
@@ -207,6 +215,15 @@ def type_document(
         .returning(*document_table.c)
     ).one()
     typed = _to_document(row)
+    # In the DocumentField order; an untyped document had no value for any field. The title
+    # is named here but its value never enters the payload (D5).
+    previous = current.typing
+    changed = [
+        field
+        for field in DocumentField
+        if (None if previous is None else getattr(previous, field.value))
+        != getattr(typing, field.value)
+    ]
     append_event(
         ctx,
         EventType.DOCUMENT_TYPED,
@@ -214,7 +231,9 @@ def type_document(
         DocumentTyped(
             type=typing.type,
             subtype=typing.subtype,
+            document_date=typing.document_date,
             tax_year=typing.tax_year,
+            changed_fields=changed,
             extraction_version=version,
         ),
     )
@@ -384,6 +403,14 @@ def document_retention_input(conn: Connection, document_id: UUID) -> DocumentRet
         conn,
         select(tenancy_table.c.unit_id).where(tenancy_table.c.id.in_(ids[LinkTarget.TENANCY])),
     )
+    # Recorded as the evidence of an acquisition cost or a price split: the AfA basis and the
+    # §23 gain are built from it, so it is an ownership record of that property (amendment 1).
+    cost_basis_properties = _scalars(
+        conn, select(cost_table.c.property_id).where(cost_table.c.document_id == document_id)
+    ) | _scalars(
+        conn,
+        select(split_table.c.property_id).where(split_table.c.evidence_document_id == document_id),
+    )
     property_ids = (
         ids[LinkTarget.PROPERTY]
         | _scalars(conn, select(unit_table.c.property_id).where(unit_table.c.id.in_(unit_ids)))
@@ -391,6 +418,7 @@ def document_retention_input(conn: Connection, document_id: UUID) -> DocumentRet
             conn,
             select(loan_table.c.property_id).where(loan_table.c.id.in_(ids[LinkTarget.LOAN])),
         )
+        | cost_basis_properties
     )
     ownership_end_dates = list(
         conn.execute(
@@ -415,6 +443,7 @@ def document_retention_input(conn: Connection, document_id: UUID) -> DocumentRet
         received_on=doc.received_at.astimezone(LOCAL_TIME_ZONE).date(),
         ownership_end_dates=ownership_end_dates,
         tenancy_end_dates=tenancy_end_dates,
+        cost_basis_reference=bool(cost_basis_properties),
     )
 
 

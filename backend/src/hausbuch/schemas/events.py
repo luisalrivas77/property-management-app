@@ -190,10 +190,23 @@ class DocumentUploaded(Schema):
     source: DocumentSource
 
 
+class DocumentField(StrEnum):
+    TYPE = "type"
+    SUBTYPE = "subtype"
+    TITLE = "title"
+    DOCUMENT_DATE = "document_date"
+    TAX_YEAR = "tax_year"
+
+
 class DocumentTyped(Schema):
+    """The typing as it now stands, and which fields changed. The title's value is never
+    recorded: it often names the tenant (D5)."""
+
     type: DocumentType
     subtype: DocumentSubtype | None = None
+    document_date: date | None = None  # a retention input, so its value is traced
     tax_year: TaxYear | None = None
+    changed_fields: list[DocumentField] = Field(default_factory=list)
     extraction_version: int | None = Field(default=None, ge=1)
 
 

@@ -1,5 +1,12 @@
 """Retention per document class and for tenant contact data (tests/fixtures/phase1/retention.yaml).
 
+Class from (subtype, type), subtype first:
+- purchase_contract, price_split_evidence, appraisal, loan_contract and cost_basis_evidence
+  (spec amendment 1: evidence of cost in the AfA basis, needed for the §23 gain)
+  -> ownership_records;
+- lease, handover_protocol, deposit_record -> tenancy_records;
+- any other typed document -> tax_records; an untyped one is held (untyped).
+
 Every period ends on 31 Dec of (base year + N years) (D11): never earlier than "date + N
 years", and the same as §147 AO for tax records. A date that cannot be known yet is a hold.
 Conservative defaults, not legal advice.
@@ -21,6 +28,7 @@ _CLASS_BY_SUBTYPE: dict[DocumentSubtype, RetentionClass] = {
     DocumentSubtype.PRICE_SPLIT_EVIDENCE: RetentionClass.OWNERSHIP_RECORDS,
     DocumentSubtype.APPRAISAL: RetentionClass.OWNERSHIP_RECORDS,
     DocumentSubtype.LOAN_CONTRACT: RetentionClass.OWNERSHIP_RECORDS,
+    DocumentSubtype.COST_BASIS_EVIDENCE: RetentionClass.OWNERSHIP_RECORDS,
     DocumentSubtype.LEASE: RetentionClass.TENANCY_RECORDS,
     DocumentSubtype.HANDOVER_PROTOCOL: RetentionClass.TENANCY_RECORDS,
     DocumentSubtype.DEPOSIT_RECORD: RetentionClass.TENANCY_RECORDS,
@@ -32,7 +40,11 @@ def document_retention(input: DocumentRetentionInput, policy: RetentionPolicy) -
     if input.type is None:
         # Untyped wins even over a subtype: nothing is ever scheduled for deletion unseen.
         return RetentionResult(retention_class=None, hold=RetentionHold.UNTYPED)
-    cls = _CLASS_BY_SUBTYPE.get(input.subtype, RetentionClass.TAX_RECORDS)
+    if input.cost_basis_reference:
+        # Backs the AfA basis or the §23 gain: kept for the life of ownership + N years.
+        cls = RetentionClass.OWNERSHIP_RECORDS
+    else:
+        cls = _CLASS_BY_SUBTYPE.get(input.subtype, RetentionClass.TAX_RECORDS)
     match cls:
         case RetentionClass.OWNERSHIP_RECORDS:
             return _after_latest(
