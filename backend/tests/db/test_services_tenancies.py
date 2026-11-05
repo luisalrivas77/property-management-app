@@ -437,6 +437,29 @@ def test_correct_move_in_cannot_overlap_the_previous_tenancy(run, read, flat):
     assert len(_events(read, a, tenancy.id)) == 2
 
 
+def test_correct_move_in_cannot_pass_the_notice_end(run, read, flat):
+    a, _, unit, tenants = flat
+    tenancy = _create(run, a, _lease(unit, tenants), initial_rent=None)
+    run(
+        a,
+        give_notice,
+        tenancy.id,
+        given_by="tenant",
+        given_on=date(2026, 3, 31),
+        ends_on=date(2026, 6, 30),
+        now=LATER,
+    )
+    before = _events(read, a, tenancy.id)
+
+    with pytest.raises(ValueError, match="2026-06-30"):
+        run(a, correct_move_in, tenancy.id, date(2026, 7, 15), now=LATER)
+
+    assert read(a, get_tenancy, tenancy.id).start_date == date(2024, 7, 1)
+    assert _events(read, a, tenancy.id) == before
+    # A correction that stays before the notice's end is still accepted.
+    assert run(a, correct_move_in, tenancy.id, date(2024, 7, 2)).start_date == date(2024, 7, 2)
+
+
 def test_deposit_notice_and_move_out(run, read, flat):
     a, prop, unit, tenants = flat
     tenancy = _create(run, a, _lease(unit, tenants))

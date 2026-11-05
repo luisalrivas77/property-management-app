@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 
 from hausbuch.rules.errors import RuleError
+from hausbuch.schemas.document import RetentionResult
 from hausbuch.schemas.enums import EntityType
 
 
@@ -48,6 +49,17 @@ class ConflictError(ValueError):
 
 class TenancyOverlapError(ConflictError):
     """Another tenancy of the same unit overlaps these dates (both ends inclusive)."""
+
+
+class RetentionHoldError(ConflictError):
+    """The data is still under a retention hold, so it may not be deleted yet.
+
+    result: the retention decision that refused it (a hold, or a retain_until not yet past).
+    """
+
+    def __init__(self, message: str, *, result: RetentionResult) -> None:
+        super().__init__(message)
+        self.result = result
 
 
 def violated_constraint(exc: IntegrityError) -> str | None:

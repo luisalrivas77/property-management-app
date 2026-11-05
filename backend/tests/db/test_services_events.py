@@ -94,6 +94,14 @@ REJECTED = {
             property_id=uuid.uuid4(),
         ),
     ),
+    "unit-event-scoped-to-another-unit": (
+        "scoped to its own unit",
+        dict(
+            type=EventType.UNIT_UPDATED,
+            payload=Updated(changes={"label": {"old": "WE 3", "new": "WE 4"}}),
+            **_property_scope(),  # unit_id is a different unit than the event's entity
+        ),
+    ),
     "loan-without-property": (
         "needs property_id",
         dict(

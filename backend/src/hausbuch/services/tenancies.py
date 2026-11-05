@@ -161,12 +161,20 @@ def create_tenancy(
 
 def correct_move_in(ctx: CommandContext, tenancy_id: UUID, new_date: date) -> Tenancy:
     """Correct the move-in date: updates start_date and appends a correcting tenancy.started
-    against the latest event in its chain. Rent rows in force must stay inside the tenancy."""
+    against the latest event in its chain. Rent rows in force must stay inside the tenancy,
+    and the move-in cannot be after the end date of a notice already given."""
     row, scope = _lock(ctx.conn, tenancy_id)
     current = _to_tenancy(ctx.conn, row)
     _validate_dates(current, start_date=new_date)
     if new_date == current.start_date:
         return current
+    if current.notice_given_on is not None:
+        notice_root = milestone_root(ctx.conn, EventType.TENANCY_NOTICE_GIVEN, tenancy_id)
+        notice = NoticeGiven.model_validate(latest_in_chain(ctx.conn, notice_root.id).payload)
+        if new_date > notice.ends_on:
+            raise ValueError(
+                f"a notice ends the tenancy on {notice.ends_on}; it cannot start after that"
+            )
     _require_rows_inside(ctx.conn, tenancy_id, new_date, current.end_date)
 
     root = milestone_root(ctx.conn, EventType.TENANCY_STARTED, tenancy_id)
@@ -415,12 +423,15 @@ def _require_rows_inside(
 
 
 def _require_tenants(conn: Connection, tenant_ids: list[UUID]) -> None:
+    """The parties exist and are not erased. FOR KEY SHARE holds them until commit, so a
+    concurrent erase_tenant (FOR UPDATE) waits and then sees this tenancy's retention hold;
+    if the erasure locked first, this read waits and then sees erased_at."""
     found = {
         r.id: r
         for r in conn.execute(
-            select(tenant_table.c.id, tenant_table.c.erased_at).where(
-                tenant_table.c.id.in_(tenant_ids)
-            )
+            select(tenant_table.c.id, tenant_table.c.erased_at)
+            .where(tenant_table.c.id.in_(tenant_ids))
+            .with_for_update(read=True, key_share=True)
         )
     }
     for tenant_id in tenant_ids:
