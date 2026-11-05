@@ -119,7 +119,7 @@ exception with a `code` attribute (plus `at_number` for loan errors).
 
 | Function | Fixture | Notes |
 | --- | --- | --- |
-| `loan_schedule.build_schedule(LoanTerms) -> LoanSchedule` | `loan_schedule.yaml` | 6 cases: full and partial first period, rate switch at a month end to payoff, rate switch mid-period, two never-amortizing errors |
+| `loan_schedule.build_schedule(LoanTerms) -> LoanSchedule` | `loan_schedule.yaml` | 10 cases: full and partial first period, rate switch at a month end, mid-period and around clamped month ends, two never-amortizing errors, the term cap |
 | `rent.rent_at(rows, at: date) -> RentScheduleEntry \| None` | `rent_at.yaml` | Corrections by amount and by date; tie-break |
 | `timeline.build_history(events, TimelineScope) -> list[TimelineEntry]` | `timeline.yaml` | Done-criterion scenario: purchase, loan, possession (corrected twice), two lettings, a second property; result independent of input order |
 | `retention.document_retention(DocumentRetentionInput, RetentionPolicy) -> RetentionResult` | `retention.yaml` | Every class and hold, custom policy |
@@ -127,7 +127,7 @@ exception with a `code` attribute (plus `at_number` for loan errors).
 | `iban.normalize_iban / mask_iban / iban_hmac` | `iban.yaml` | Test key only; mod-97 and length checks |
 | `validation.check_ownership_shares / check_tenancy_parties / check_rent_row / check_correction -> list[str]` | `validation.yaml` | The service-layer invariants above |
 
-Error codes (stable API contract): `loan.payment_does_not_cover_interest`,
+Error codes (stable API contract): `loan.payment_does_not_cover_interest`, `loan.term_too_long`,
 `iban.malformed`, `iban.bad_length`, `iban.bad_checksum`, `ownership.shares_must_sum_to_one`,
 `tenancy.no_tenant`, `tenancy.exactly_one_primary`, `rent_schedule.outside_tenancy`,
 `event.correction_mismatch`.
@@ -169,7 +169,7 @@ and sets `app.workspace_id` per transaction (`SET LOCAL`).
 
 ## Implementation status
 
-As of 5 Nov 2026, on branch `claude/repo-upload-q8egpv`. Each step was built by a coder agent
+As of 5 Nov 2026, merged to `main` in #4. Each step was built by a coder agent
 and reviewed by a reviewer agent; every review finding was fixed or is listed below.
 
 1. **DONE: rules** (`hausbuch.rules.*`): loan schedule, rent in force, History timeline,
@@ -200,22 +200,28 @@ and reviewed by a reviewer agent; every review finding was fixed or is listed be
   need them on the first typo.
 - No retention auto-delete job, and no sweeper for blobs orphaned by rolled-back uploads.
 
-### Pending spec changes (one spec PR, collected from reviews)
+### Spec amendment 1 (5 Nov 2026)
 
-Resolved on 5 Nov 2026 and implemented: tenant erasure on request after move-out, and the
-deposit account as the landlord's data (both in D5).
+Collected from the phase 1 reviews and decided in one spec PR.
 
-1. **Loan schedule loop limit.** A nonsensical payment (tiny payment, large principal, 0 %)
-   loops about 1 s and then fails with an uncoded `ValueError`. Add a period cap and an error
-   code.
-2. **`OwnerCreate.tax_id_ref` guard.** Reject a raw 10–11 digit Steuer-ID, which would
-   otherwise land permanently in the append-only log.
-3. **`document.typed` payload.** Add `document_date`, which is a retention input, and a
-   `changed_fields` list naming `title` (never the title's value: it often contains tenant
-   names, D5).
-4. **Retention class for AfA-basis evidence.** Renovation invoices capitalised into the AfA
-   basis, and other evidence the §23 gain needs, must be kept for the life of ownership + 10
-   years. Today every invoice is a 10-year tax record. Add a subtype.
-5. **Rate column.** `ScheduleEntry.rate` shows the rate on the period's last day. A
-   split period's interest is blended, and the old/new day counts are not visible on the
-   entry (principle 2).
+1. **Loan term cap.** More than 1,200 payments (100 years) raises the new error code
+   `loan.term_too_long`, at payment 1201. A nonsensical payment used to loop for about a second
+   and then fail with an uncoded `ValueError`.
+2. **No raw tax numbers.** `OwnerCreate.tax_id_ref` rejects anything that looks like a raw
+   Steuer-ID or Steuernummer: 10–13 digits, ignoring spaces, `/`, `.` and `-`. A tax number
+   would otherwise land permanently in the append-only log.
+   `OwnerCreate`, `TenantCreate`, `TenancyCreate` and `LoanCreate` set `hide_input_in_errors`,
+   so a validation error never echoes a tax number or an IBAN into a log or an API response.
+3. **`document.typed` payload** adds:
+   - `document_date`: a retention input, so its value is traced;
+   - `changed_fields`, which can include `title`. The title's value is never recorded,
+     because it often names the tenant (D5).
+4. **AfA-basis evidence.** New document subtype `cost_basis_evidence`, for Nebenkosten
+   invoices and renovation invoices capitalised as anschaffungsnahe Herstellungskosten. It
+   falls in `ownership_records` (life of ownership + 10 years), because the §23 gain is
+   computed from it. Before, such an invoice was a 10-year tax record and could have been
+   deleted while still needed. Migration `0002` extends the subtype CHECK.
+5. **Traceable interest.** `ScheduleEntry` adds two fields, so every interest figure can be
+   recomputed from its own row (principle 2):
+   - `interest_days`: the period's 30E/360 days;
+   - `follow_up_days`: of those, the days after `fixed_until`, charged at the follow-up rate.

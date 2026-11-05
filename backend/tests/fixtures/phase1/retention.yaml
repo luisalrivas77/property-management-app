@@ -4,7 +4,8 @@
 # tenant_retention(input, policy)   -> RetentionResult   (class tenant_contact)
 #
 # Class from (subtype, type), subtype first:
-#   purchase_contract, price_split_evidence, appraisal, loan_contract -> ownership_records
+#   purchase_contract, price_split_evidence, appraisal, loan_contract,
+#   cost_basis_evidence (spec amendment 1)                          -> ownership_records
 #   lease, handover_protocol, deposit_record                          -> tenancy_records
 #   any other typed document                                          -> tax_records
 #   untyped (type null)                                               -> hold: untyped
@@ -86,6 +87,25 @@ cases:
     policy: {tax_records_years: 12}
     input: {type: bescheid, tax_year: 2026, received_on: 2027-08-01}
     expect: {retention_class: tax_records, retain_until: 2038-12-31}
+
+  - id: cost_basis_invoice_while_owned
+    description: a renovation invoice capitalised into the AfA basis is kept while the property is owned, not 10 years after its tax year
+    input:
+      type: invoice
+      subtype: cost_basis_evidence
+      tax_year: 2025
+      received_on: 2026-11-05
+      ownership_end_dates: [null]
+    expect: {retention_class: ownership_records, hold: while_owned}
+
+  - id: cost_basis_invoice_after_sale
+    input:
+      type: invoice
+      subtype: cost_basis_evidence
+      tax_year: 2025
+      received_on: 2026-11-05
+      ownership_end_dates: [2035-06-30]
+    expect: {retention_class: ownership_records, retain_until: 2045-12-31}
 
 tenant_cases:
   - id: active_tenancy

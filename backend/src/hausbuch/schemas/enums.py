@@ -88,6 +88,9 @@ class DocumentSubtype(StrEnum):
     LEASE = "lease"  # Mietvertrag
     HANDOVER_PROTOCOL = "handover_protocol"  # Übergabeprotokoll
     DEPOSIT_RECORD = "deposit_record"  # Kautionsnachweis
+    # Evidence of acquisition or production cost in the AfA basis: Nebenkosten invoices,
+    # renovation invoices capitalised as anschaffungsnahe Herstellungskosten (spec amendment 1).
+    COST_BASIS_EVIDENCE = "cost_basis_evidence"
 
 
 class ExtractionSource(StrEnum):

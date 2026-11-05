@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Self
 from uuid import UUID
 
-from pydantic import Field, model_validator
+from pydantic import ConfigDict, Field, model_validator
 
 from .common import (
     IbanInput,
@@ -20,6 +20,9 @@ from .enums import DepositForm, RentChangeReason, RentModel, TenancyRole
 
 
 class TenantCreate(Schema):
+    # Validation errors never echo input: IBANs must not reach a log or an API error.
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+
     full_name: str = Field(min_length=1)
     email: str | None = None
     phone: str | None = None
@@ -45,6 +48,9 @@ class TenancyParty(Schema):
 
 
 class TenancyCreate(Schema):
+    # Validation errors never echo input: IBANs must not reach a log or an API error.
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+
     unit_id: UUID
     parties: list[TenancyParty] = Field(min_length=1)  # exactly one primary (service rule)
     signed_on: date | None = None

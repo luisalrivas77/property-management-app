@@ -1,10 +1,11 @@
 """Owner, Property and Unit, plus the facts the AfA basis is built from."""
 
+import re
 from datetime import date, datetime
 from typing import Self
 from uuid import UUID
 
-from pydantic import Field, JsonValue, model_validator
+from pydantic import ConfigDict, Field, JsonValue, field_validator, model_validator
 
 from .common import (
     Area,
@@ -23,10 +24,22 @@ from .enums import AcquisitionCostKind, PriceSplitSource, PropertyKind
 
 
 class OwnerCreate(Schema):
+    # Validation errors never echo input: a mistyped Steuer-ID must not reach a log.
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+
     full_name: str = Field(min_length=1)
     # Reference into the secrets manager. The raw Steuer-ID is never stored in Postgres.
     tax_id_ref: str | None = None
     marginal_tax_rate: TaxRate | None = None  # user-set
+
+    @field_validator("tax_id_ref")
+    @classmethod
+    def _not_a_raw_tax_number(cls, value: str | None) -> str | None:
+        """Reject what looks like a raw Steuer-ID (11 digits) or Steuernummer (10-13 digits),
+        which would otherwise land permanently in the append-only event log."""
+        if value is not None and re.fullmatch(r"\d{10,13}", re.sub(r"[\s/.-]", "", value)):
+            raise ValueError("tax_id_ref must be a secrets-manager reference, not a tax number")
+        return value
 
 
 class Owner(OwnerCreate, MutableRecord):
