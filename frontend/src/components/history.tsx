@@ -107,6 +107,14 @@ export function findMilestone(entries: TimelineEntry[] | undefined, type: Timeli
   return entries?.find((entry) => entry.type === type && entry.entity_id === entityId);
 }
 
+/** The original date to show next to a stored milestone date, when History says it was
+ * corrected. Only while History and the entity agree on the date in force: right after a
+ * correction one of the two reloads first, and a note beside a stale date would be wrong. */
+export function correctedFrom(entry: TimelineEntry | undefined, storedDate: string): string | null {
+  if (!entry?.corrected || !entry.original_effective_date || entry.effective_date !== storedDate) return null;
+  return entry.original_effective_date;
+}
+
 function groupByCorrelation(events: Event[]): Event[][] {
   const groups: Event[][] = [];
   for (const event of events) {

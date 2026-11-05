@@ -14,7 +14,7 @@ import { DateCorrectionForm } from "@/components/corrections";
 import { LinkedDocuments } from "@/components/documents";
 import { tenantName } from "@/components/entities";
 import { formatDate, formatMoney, todayIso } from "@/components/format";
-import { findMilestone } from "@/components/history";
+import { correctedFrom, findMilestone } from "@/components/history";
 import { DEPOSIT_FORM, RENT_MODEL, TENANCY_ROLE } from "@/components/labels";
 import { ActionDialog, Breadcrumbs, CorrectedNote, Facts, Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
@@ -67,7 +67,7 @@ function TenancyDetail({ tenancy, unit, property, tenants, onChanged }: TenancyD
   );
   const history = useLoad(loadHistory);
   const events = useLoad(loadDeposits);
-  const moveIn = findMilestone(history.data, "tenancy.started", tenancy.id);
+  const moveInFrom = correctedFrom(findMilestone(history.data, "tenancy.started", tenancy.id), tenancy.start_date);
   const deposits = (events.data ?? []).filter((event) => event.type === "tenancy.deposit_received");
   const ended = tenancy.end_date !== null && tenancy.end_date < todayIso();
   const byId = new Map(tenants.map((tenant) => [tenant.id, tenant]));
@@ -110,9 +110,7 @@ function TenancyDetail({ tenancy, unit, property, tenants, onChanged }: TenancyD
             "Einzug",
             <>
               {formatDate(tenancy.start_date)}
-              {moveIn?.corrected && moveIn.original_effective_date ? (
-                <CorrectedNote original={formatDate(moveIn.original_effective_date)} />
-              ) : null}
+              {moveInFrom ? <CorrectedNote original={formatDate(moveInFrom)} /> : null}
             </>,
           ],
           ["Befristet bis", tenancy.fixed_term_until ? formatDate(tenancy.fixed_term_until) : "unbefristet"],

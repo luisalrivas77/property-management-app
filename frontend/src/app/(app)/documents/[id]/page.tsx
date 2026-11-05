@@ -24,6 +24,8 @@ export default function DocumentPage() {
   const load = useCallback(() => ok(api.GET("/api/documents/{document_id}", { params: { path: { document_id: id } } })), [id]);
   const detail = useLoad(load);
   const directory = useLoad(loadDirectory);
+  // Lives here, not in TypingForm: the form remounts (its key) when the saved typing reloads.
+  const [typingSaved, setTypingSaved] = useState(false);
 
   return (
     <section>
@@ -34,7 +36,16 @@ export default function DocumentPage() {
             <h1>{documentLabel(data.document)}</h1>
             <Original detail={data} />
             <h2>Typisierung</h2>
-            <TypingForm key={`${data.document.updated_at}-${data.extraction?.version ?? 0}`} detail={data} onSaved={detail.reload} />
+            {typingSaved ? <Notice>Typisierung gespeichert.</Notice> : null}
+            <TypingForm
+              key={`${data.document.updated_at}-${data.extraction?.version ?? 0}`}
+              detail={data}
+              onSubmit={() => setTypingSaved(false)}
+              onSaved={() => {
+                setTypingSaved(true);
+                detail.reload();
+              }}
+            />
             <h2>Verknüpfungen</h2>
             <Links detail={data} targets={directory.data ? targets(directory.data) : null} onChanged={detail.reload} />
             {directory.error ? <ErrorNotice error={directory.error} /> : null}
@@ -88,7 +99,7 @@ const TYPING_KEYS = [
   "fields.notes",
 ] as const;
 
-function TypingForm({ detail, onSaved }: { detail: DocumentDetail; onSaved: () => void }) {
+function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onSubmit: () => void; onSaved: () => void }) {
   const typing = detail.document.typing;
   const fields = detail.extraction?.fields;
   const [type, setType] = useState<DocumentType | "">(typing?.type ?? "");
@@ -103,7 +114,6 @@ function TypingForm({ detail, onSaved }: { detail: DocumentDetail; onSaved: () =
   const [reference, setReference] = useState(fields?.reference ?? "");
   const [notes, setNotes] = useState(fields?.notes ?? "");
   const [busy, setBusy] = useState(false);
-  const [saved, setSaved] = useState(false);
   const form = useFormErrors(TYPING_KEYS);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -124,7 +134,7 @@ function TypingForm({ detail, onSaved }: { detail: DocumentDetail; onSaved: () =
     // No extraction yet and nothing typed: send no fields (no empty version 1).
     const empty = Object.values(manual).every((value) => value === null);
     setBusy(true);
-    setSaved(false);
+    onSubmit();
     form.clear();
     try {
       await ok(
@@ -136,7 +146,6 @@ function TypingForm({ detail, onSaved }: { detail: DocumentDetail; onSaved: () =
           },
         }),
       );
-      setSaved(true);
       onSaved();
     } catch (error) {
       form.fail(error);
@@ -147,7 +156,6 @@ function TypingForm({ detail, onSaved }: { detail: DocumentDetail; onSaved: () =
 
   return (
     <form className="card stack" onSubmit={submit} noValidate>
-      {saved ? <Notice>Gespeichert.</Notice> : null}
       <div className="grid">
         <Field id="doc-type" label="Typ" errors={form.of("typing.type")}>
           <select value={type} onChange={(e) => setType(e.target.value as DocumentType | "")} required>

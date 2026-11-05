@@ -73,10 +73,10 @@ export default function TenantPage() {
 }
 
 function retentionExplanation(result: RetentionResult): string {
-  const kind = result.retention_class ? ` (${RETENTION_CLASS[result.retention_class]})` : "";
-  if (result.retain_until) return `Die Daten müssen bis ${formatDate(result.retain_until)} aufbewahrt werden${kind}.`;
-  if (result.hold) return `Die Daten müssen aufbewahrt werden, ${RETENTION_HOLD[result.hold]}${kind}.`;
-  return "Die Aufbewahrungsfrist läuft noch.";
+  const kind = result.retention_class ? ` Aufbewahrungsklasse: ${RETENTION_CLASS[result.retention_class]}.` : "";
+  if (result.retain_until) return `Die Daten müssen bis ${formatDate(result.retain_until)} aufbewahrt werden.${kind}`;
+  if (result.hold) return `Die Daten müssen aufbewahrt werden, ${RETENTION_HOLD[result.hold]}.${kind}`;
+  return `Die Aufbewahrungsfrist läuft noch.${kind}`;
 }
 
 function EraseTenant({ tenant, onErased }: { tenant: Tenant; onErased: () => void }) {

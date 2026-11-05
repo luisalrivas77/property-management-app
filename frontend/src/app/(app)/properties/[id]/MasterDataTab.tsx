@@ -9,7 +9,7 @@ import { api, ok } from "@/api/client";
 import type { Property } from "@/api/schemas";
 import { DateCorrectionForm } from "@/components/corrections";
 import { formatDate, formatMoney } from "@/components/format";
-import { findMilestone } from "@/components/history";
+import { correctedFrom, findMilestone } from "@/components/history";
 import { PROPERTY_KIND } from "@/components/labels";
 import { ActionDialog, CorrectedNote, Facts } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
@@ -20,8 +20,11 @@ export function MasterDataTab({ property, onChanged }: { property: Property; onC
     [property.id],
   );
   const history = useLoad(loadHistory);
-  const notarized = findMilestone(history.data, "property.purchase_notarized", property.id);
-  const possession = findMilestone(history.data, "property.possession_transferred", property.id);
+  const notarizedFrom = correctedFrom(findMilestone(history.data, "property.purchase_notarized", property.id), property.notarized_on);
+  const possessionFrom = correctedFrom(
+    findMilestone(history.data, "property.possession_transferred", property.id),
+    property.purchase_date,
+  );
   const path = { params: { path: { property_id: property.id } } };
 
   function changed() {
@@ -44,18 +47,14 @@ export function MasterDataTab({ property, onChanged }: { property: Property; onC
             "Notartermin",
             <>
               {formatDate(property.notarized_on)}
-              {notarized?.corrected && notarized.original_effective_date ? (
-                <CorrectedNote original={formatDate(notarized.original_effective_date)} />
-              ) : null}
+              {notarizedFrom ? <CorrectedNote original={formatDate(notarizedFrom)} /> : null}
             </>,
           ],
           [
             "Übergang (Besitz, Nutzen, Lasten)",
             <>
               {formatDate(property.purchase_date)}
-              {possession?.corrected && possession.original_effective_date ? (
-                <CorrectedNote original={formatDate(possession.original_effective_date)} />
-              ) : null}
+              {possessionFrom ? <CorrectedNote original={formatDate(possessionFrom)} /> : null}
             </>,
           ],
           ["Kaufpreis", formatMoney(property.purchase_price)],

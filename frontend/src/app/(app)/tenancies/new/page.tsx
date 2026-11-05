@@ -101,6 +101,8 @@ const loadTenants = () => ok(api.GET("/api/tenants"));
 function TenancyForm({ unit }: { unit: Unit; property: Property }) {
   const router = useRouter();
   const tenants = useLoad(loadTenants);
+  // Tenants created inline here: selectable at once, before the list has reloaded.
+  const [created, setCreated] = useState<Tenant[]>([]);
   const [parties, setParties] = useState<Party[]>([{ tenantId: "", role: "primary" }]);
   const [signedOn, setSignedOn] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -124,6 +126,7 @@ function TenancyForm({ unit }: { unit: Unit; property: Property }) {
   }
 
   function addCreatedTenant(tenant: Tenant) {
+    setCreated((current) => [...current, tenant]);
     tenants.reload();
     setParties((current) => {
       const empty = current.findIndex((party) => party.tenantId === "");
@@ -192,7 +195,7 @@ function TenancyForm({ unit }: { unit: Unit; property: Property }) {
                     <Field id={`party-${index}-tenant`} label={`Mieter ${index + 1}`}>
                       <select value={party.tenantId} onChange={(e) => setParty(index, { tenantId: e.target.value })}>
                         <option value="">– wählen –</option>
-                        {list
+                        {[...list, ...created.filter((tenant) => !list.some((t) => t.id === tenant.id))]
                           .filter((tenant) => !tenant.erased_at)
                           .map((tenant) => (
                             <option key={tenant.id} value={tenant.id}>
