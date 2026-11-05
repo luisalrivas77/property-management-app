@@ -227,7 +227,7 @@ In v1 the job worker runs inside the API process (a FastAPI lifespan task) in th
 | Files | S3-compatible object storage in an EU region | Cheap, immutable originals, signed URLs |
 | AI | Claude API with structured outputs; small model for classify/explain, larger for hard matches | Schema-valid JSON, tiering keeps cost per statement low |
 | Bank | CSV/CAMT/PDF uploads (phase 2), FinTS via python-fints for your own accounts (phase 5); licensed aggregator only if it goes SaaS | Value first; FinTS needs only a free product registration; all behind one BankSource interface |
-| Hosting | Scaleway (EU): Serverless Containers for API+worker and web, Managed PostgreSQL on a private network, Object Storage; one-off commands as Serverless Jobs (decided 5 Nov 2026) | EU-only vendor, DPA, data and backups; about €20/month ex VAT at this load; compatibility tested 5 Nov 2026 |
+| Hosting | Scaleway (EU): Serverless Containers for API+worker and web, Managed PostgreSQL on a private network, Object Storage; one-off admin commands run from the operator's computer with `uv` (decided 5 Nov 2026) | EU-only vendor, DPA, data and backups; about €20/month ex VAT at this load; compatibility tested 5 Nov 2026 |
 | Tests | pytest for rules, golden-file tests for extraction evals, Playwright for flows | Rules and prompts change safely |
 
 ## Security, privacy and retention
@@ -241,7 +241,7 @@ The app holds bank data, tenant personal data and tax records, so it is built as
 - Passkey login (decided 5 Nov 2026); short-lived sessions; FinTS PIN and any bank tokens in a secrets manager, never in the DB
 - Object storage private; files served via short-lived signed URLs
 - Audit log = the Event table; admin actions and AI decisions included (sign-in and passkey actions go to the server log in phase 1 and join the Event table in the phase 2 spec PR, decided 5 Nov 2026)
-- Database reachable only on the private network; `CONNECT` revoked from `PUBLIC` and granted to the two Hausbuch roles only
+- Database reachable on the private network for the app, plus a public endpoint that accepts only the operator's IP for the rare admin commands; `CONNECT` revoked from `PUBLIC` and granted to the two Hausbuch roles only
 
 **Privacy (GDPR)**
 
@@ -291,5 +291,6 @@ All open questions were settled on 4 Nov 2026; the sections above reflect them. 
 | Login (5 Nov 2026) | Passkeys (WebAuthn) only; no passwords, no TOTP | Phase 1 API step builds passkey registration and sign-in |
 | Hosting (5 Nov 2026) | Scaleway, all in an EU region | Compatibility test passed: non-superuser roles, `btree_gist`, forced RLS and workspace creation work without a superuser; database creation needs one setup step (`deploy/scaleway.md`) |
 | Worker placement (5 Nov 2026) | The job worker runs inside the API process in the container that serves port 8080, min-scale 1 | Scaleway Serverless Containers stop a process that does not listen on 8080; a separate worker only when load justifies it |
-| Provisioning (5 Nov 2026) | Workspaces and first users are created by `hausbuch bootstrap`, a CLI running as the schema-owner role (a Serverless Job on Scaleway); members join by one-time enrollment link; recovery is a new link from the CLI | No sign-up endpoint; the owner DB URL is an operator secret the API never holds |
+| Provisioning (5 Nov 2026) | Workspaces and first users are created by `hausbuch bootstrap`, a CLI running as the schema-owner role; members join by one-time enrollment link; recovery is a new link from the CLI | No sign-up endpoint; the owner DB URL is an operator secret the API never holds |
+| Admin commands (5 Nov 2026, revised) | `bootstrap`, `invite` and migrations run from Luis's computer with `uv` (no Docker), against the database's public endpoint allow-listed to his IP | Scaleway Serverless Jobs cannot join a private network (found while building the deploy artefacts), so the planned Jobs could not reach a private-only database; the owner URL stays on Luis's machine |
 | Sessions (5 Nov 2026) | Opaque server-side sessions in Postgres, 12 h absolute / 2 h idle, `SameSite=Lax` + Origin check | Gives "short-lived sessions" a number; tunable per environment |

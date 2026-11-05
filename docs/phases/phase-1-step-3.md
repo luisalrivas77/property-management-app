@@ -8,7 +8,7 @@ Nov 5, 2026 · design by the architect agent; coder chunks are in §11.
 workflow) are built and on the working branch. **To do:**
 - chunk 4b: Playwright e2e in CI;
 - the fixes in §10.8;
-- the admin-commands decision (§10.8 item 1).
+- the decided follow-ups in §10.8 (admin commands from Luis's computer; move-in moves the first rent row).
 
 **Done when** (phase 1): Luis enters his real flat (ETW), its tenancy, its loan and all 2026
 paperwork through the browser, and History shows purchase → move-in correctly. This step
@@ -893,7 +893,7 @@ Chunk 4a found these by running the images and the setup for real:
 
 1. **One-off commands can't run as Serverless Jobs against a private-only database.** Per
    Scaleway's docs, Jobs can't join a private network and have no fixed IP. That breaks §14,
-   and the Provisioning row in `docs/ARCHITECTURE.md`. *Decision pending (Luis).* The options
+   and the Provisioning row in `docs/ARCHITECTURE.md`. **Decided (Luis, 5 Nov 2026): option (A)**, run from his computer with `uv`, no Docker; recorded in ARCHITECTURE's Decisions table. The options were
    in `deploy/scaleway.md`:
    - (A) run the same commands from Luis's computer, with the database's public endpoint
      allowed only from his IP;
@@ -916,8 +916,10 @@ Chunk 4a found these by running the images and the setup for real:
 
 Chunk 3b found these API gaps; none of them blocked a screen:
 
-6. **Correcting the move-in doesn't move the initial rent row.** *Question for Luis*: should
-   `correct_move_in` also correct an initial rent row that started on the old date?
+6. **Correcting the move-in doesn't move the initial rent row.** **Decided (Luis, 5 Nov 2026):**
+   `correct_move_in` also corrects the rent row that started exactly on the old move-in date (a
+   `correction` row plus a correcting `tenancy.rent_scheduled` event, so History shows it).
+   Rows with other dates are untouched.
 7. **No list of household members**, no read endpoint for deposits received (the tenancy page
    reads them from the event log), and document responses lack the media type.
 
