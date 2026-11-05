@@ -257,7 +257,10 @@ names are global) in **fr-par**, visibility **private**. The full bucket setting
 in the docstring of `backend/src/hausbuch/storage_s3.py`:
 
 - no public ACL or policy;
-- encryption at rest on;
+- encryption at rest on. **Scaleway creates buckets with it off** ("Bucket encryption:
+  disabled"), and neither `scw object bucket create` nor the app turns it on: enable it in
+  the console (bucket → settings → Bucket encryption, Scaleway-managed keys) **before the
+  first upload**, since it covers objects written from then on. Done 5 Nov 2026;
 - **no lifecycle rules**: retention is the app's decision, never a timer's;
 - Object Lock off;
 - versioning **on** (switched on 5 Nov 2026): a deleted original is kept as a hidden
