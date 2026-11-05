@@ -15,6 +15,12 @@ Conventions:
 - ScheduleEntry.rate is the rate in force on the period's last day.
 - principal = payment - interest; the final payment is the remaining balance + interest.
 - A period whose interest uses up the whole payment raises loan.payment_does_not_cover_interest.
+- More than 1,200 payments (100 years) raises loan.term_too_long at payment 1201, checked
+  before that payment is computed (spec amendment 1).
+- Each entry carries interest_days (the period's 30E/360 days) and follow_up_days (those after
+  fixed_until, at the follow-up rate), so its interest is traceable from the entry alone:
+  interest = opening_balance * (nominal * (interest_days - follow_up_days)
+             + follow_up * follow_up_days) / 360, rounded half-up (principle 2).
 - Year totals are per calendar year of due_on.
 """
 
@@ -28,6 +34,9 @@ from hausbuch.schemas.loan import LoanSchedule, LoanTerms, ScheduleEntry, YearTo
 from .errors import RuleError
 
 PAYMENT_DOES_NOT_COVER_INTEREST = "loan.payment_does_not_cover_interest"
+TERM_TOO_LONG = "loan.term_too_long"
+
+MAX_PAYMENTS = 1200  # 100 years of monthly payments
 
 CENT = Decimal("0.01")
 ZERO = Decimal("0.00")
@@ -52,6 +61,12 @@ def _entries(terms: LoanTerms) -> Iterator[ScheduleEntry]:
     number = 0
     while balance > 0:
         number += 1
+        if number > MAX_PAYMENTS:
+            raise RuleError(
+                TERM_TOO_LONG,
+                f"balance {balance} is not repaid after {MAX_PAYMENTS} payments",
+                at_number=number,
+            )
         due_on = _add_months(terms.first_payment_on, number - 1)
         days = _days360(terms.disbursed_on, terms.first_payment_on) if number == 1 else 30
         old_days = _days_at_old_rate(start, due_on, days, switch_on)
@@ -75,6 +90,8 @@ def _entries(terms: LoanTerms) -> Iterator[ScheduleEntry]:
             number=number,
             due_on=due_on,
             rate=rate,
+            interest_days=days,
+            follow_up_days=days - old_days,
             opening_balance=balance,
             interest=interest,
             principal=principal,

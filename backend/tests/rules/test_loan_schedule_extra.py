@@ -7,7 +7,11 @@ from decimal import Decimal as D
 import pytest
 
 from hausbuch.rules.errors import RuleError
-from hausbuch.rules.loan_schedule import PAYMENT_DOES_NOT_COVER_INTEREST, build_schedule
+from hausbuch.rules.loan_schedule import (
+    PAYMENT_DOES_NOT_COVER_INTEREST,
+    TERM_TOO_LONG,
+    build_schedule,
+)
 from hausbuch.schemas.loan import LoanTerms
 
 
@@ -164,3 +168,54 @@ def test_a_row_at_the_old_rate_is_a_full_month_at_the_old_rate(base_day, fixed_u
         if e.rate == D("0.036"):
             expected = (e.opening_balance * D("0.036") * 30 / 360).quantize(D("0.01"))
             assert e.interest == expected, (e.number, e.due_on)
+
+
+@pytest.mark.parametrize("base_day", [1, 15, 28, 29, 30, 31])
+@pytest.mark.parametrize("fixed_until_day", [(2, 27), (2, 28), (3, 28), (3, 30), (6, 15), (6, 30)])
+def test_every_row_recomputes_its_interest_from_its_own_fields(base_day, fixed_until_day):
+    """Spec amendment 1: interest_days and follow_up_days make each row traceable."""
+    nominal, follow_up = D("0.036"), D("0.05")
+    terms = LoanTerms(
+        principal=D("200000.00"),
+        nominal_rate=nominal,
+        monthly_payment=D("1400.00"),
+        disbursed_on=date(2024, 12, base_day),
+        first_payment_on=date(2025, 1, base_day),
+        fixed_until=date(2025, *fixed_until_day),
+        follow_up_rate=follow_up,
+    )
+    entries = build_schedule(terms).entries
+    for e in entries:
+        old_days = e.interest_days - e.follow_up_days
+        accrued = e.opening_balance * (nominal * old_days + follow_up * e.follow_up_days)
+        expected = (accrued / 360).quantize(D("0.01"), rounding=decimal.ROUND_HALF_UP)
+        assert e.interest == expected, (e.number, e.due_on)
+    # The switch is crossed exactly once: no follow-up days before it, only after it.
+    split = [e.follow_up_days for e in entries[1:]]
+    assert split == sorted(split)
+    assert split[0] == 0 and split[-1] == 30
+    assert all(e.interest_days == 30 for e in entries[1:])
+
+
+def test_first_period_days_are_recorded():
+    s = build_schedule(terms(disbursed_on=date(2027, 10, 16), first_payment_on=date(2027, 11, 30)))
+    assert (s.entries[0].interest_days, s.entries[0].follow_up_days) == (44, 0)
+
+
+def test_term_cap_allows_exactly_1200_payments():
+    # 0 %, so 120,000.00 at 100.00 a month is exactly 1,200 payments.
+    s = build_schedule(
+        terms(principal=D("120000.00"), nominal_rate=D("0"), monthly_payment=D("100.00"))
+    )
+    assert len(s.entries) == 1200
+    assert s.entries[-1].number == 1200
+    assert (s.entries[-1].payment, s.entries[-1].closing_balance) == (D("100.00"), 0)
+
+
+def test_term_cap_fires_at_payment_1201():
+    # One cent more than the case above needs a 1,201st payment.
+    with pytest.raises(RuleError) as excinfo:
+        build_schedule(
+            terms(principal=D("120000.01"), nominal_rate=D("0"), monthly_payment=D("100.00"))
+        )
+    assert (excinfo.value.code, excinfo.value.at_number) == (TERM_TOO_LONG, 1201)
