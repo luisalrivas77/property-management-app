@@ -50,10 +50,32 @@ const KIND_TEXT: Record<ErrorKind, string> = {
   internal: "Interner Serverfehler.",
 };
 
-/** German text for stable rule codes (phase-1.md). Chunk 3b adds the domain codes. */
+/** German text for the stable rule codes (phase-1.md, §9.5). */
 export const RULE_CODE_TEXT: Record<string, string> = {
   "ownership.shares_must_sum_to_one": "Die Anteile müssen zusammen genau 1 ergeben.",
+  "tenancy.exactly_one_primary": "Ein Mietverhältnis braucht genau einen Hauptmieter.",
+  "tenancy.no_tenant": "Ein Mietverhältnis braucht mindestens einen Mieter.",
+  "tenancy.overlap": "Für diese Einheit gibt es in diesem Zeitraum schon ein Mietverhältnis.",
+  "rent_schedule.outside_tenancy": "Die Miete muss innerhalb der Laufzeit des Mietverhältnisses beginnen.",
+  "iban.malformed": "Das ist keine gültige IBAN.",
+  "iban.bad_length": "Die IBAN hat für dieses Land nicht die richtige Länge.",
+  "iban.bad_checksum": "Die Prüfziffern der IBAN stimmen nicht.",
+  "loan.payment_does_not_cover_interest": "Die Rate deckt die Zinsen nicht; das Darlehen würde nie getilgt.",
+  "loan.term_too_long": "Mit dieser Rate dauert die Tilgung länger als 100 Jahre.",
+  "event.correction_mismatch": "Die Korrektur passt nicht zum ursprünglichen Eintrag.",
 };
+
+/** The German sentence for one rule code, with the payment number of a loan schedule error. */
+export function ruleCodeText(code: string, atNumber?: number | null): string | null {
+  const text = RULE_CODE_TEXT[code];
+  if (!text) return null;
+  return atNumber != null && code.startsWith("loan.") ? `${text} (ab Rate Nr. ${atNumber})` : text;
+}
+
+/** Every rule code of an error body, without repeats (`code` is also `codes[0]`). */
+export function ruleCodes(body: ErrorResponse): string[] {
+  return [...new Set([...(body.codes ?? []), ...(body.code ? [body.code] : [])])];
+}
 
 export interface ErrorDescription {
   /** One German sentence. */
@@ -81,10 +103,16 @@ export function describeApiError(error: ApiError): ErrorDescription {
     return { text, code: null, details: [], requestId: error.requestId };
   }
   const details: string[] = [];
-  for (const code of [...(body.codes ?? []), ...(body.code ? [body.code] : [])]) {
-    details.push(RULE_CODE_TEXT[code] ?? code);
+  const codes = ruleCodes(body);
+  let allCodesKnown = codes.length > 0;
+  for (const code of codes) {
+    const known = ruleCodeText(code, body.at_number);
+    if (!known) allCodesKnown = false;
+    details.push(known ?? code);
   }
-  if (body.message) details.push(body.message);
+  // A known code says it in German; the server's message would only repeat it in English (and
+  // a loan schedule message names the submitted payment). Unknown codes show the message.
+  if (body.message && !allCodesKnown) details.push(body.message);
   for (const fieldError of body.detail ?? []) details.push(fieldErrorLine(fieldError));
   return { text: KIND_TEXT[body.error] ?? "Fehler.", code: body.error, details, requestId: error.requestId };
 }

@@ -25,7 +25,7 @@ function asJson(value: object): Json {
 
 /** Sign in with any discoverable passkey of this site (no username, §6.1). */
 export async function signInWithPasskey(): Promise<Me> {
-  const options = await ok(api.POST("/api/auth/login/options", { body: {} }));
+  const options = await ok(api.POST("/api/auth/login/options"));
   const credential = await startAuthentication({
     optionsJSON: options as unknown as PublicKeyCredentialRequestOptionsJSON,
   });
@@ -43,7 +43,7 @@ export async function enrollWithInvite(token: string, label: string): Promise<Me
 
 /** Add a further passkey for the signed-in user (e.g. the laptop after the phone). */
 export async function addPasskey(label: string): Promise<Passkey> {
-  const options = await ok(api.POST("/api/auth/passkeys/options", { body: {} }));
+  const options = await ok(api.POST("/api/auth/passkeys/options"));
   const credential = await startRegistration({
     optionsJSON: options as unknown as PublicKeyCredentialCreationOptionsJSON,
   });
