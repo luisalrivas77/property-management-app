@@ -331,7 +331,10 @@ selector, styled like the "Paperwork for this return" card in `docs/mockups/04-t
 one row per item with a status icon, a German label, a one-line hint, and the document(s)
 that satisfy it as links (or, for a missing item, a link to the tab where it is fixed).
 Footer: "Planungshilfe, keine Steuerberatung." Years offered: purchase year to the current
-year, ending at the year ownership ended; default the current year.
+year, ending at the year ownership ended; default the current year. Never before 2000, the
+tax-year floor (no document can carry an earlier tax year); a property bought before 2000
+starts at 2000 (review fix, 6 Nov 2026: before it, every checklist request for such a
+property failed with 422).
 
 **Rule.** `rules.document_checklist.build_checklist(ChecklistFacts, tax_year, today) ->
 list[ChecklistItem]`, pure, fixture `tests/fixtures/phase1/document_checklist.yaml`. The

@@ -324,6 +324,30 @@ def test_the_year_defaults_to_today_clamped_into_the_years(read, flat):
     )
 
 
+def test_a_property_bought_before_2000_offers_years_from_2000(run, read, fresh_workspaces):
+    # Review finding: the response model refused 1999 in available_years (TaxYear >= 2000).
+    a, _ = fresh_workspaces
+    prop = run(
+        a,
+        create_property,
+        PropertyCreate(
+            label="Altbau",
+            kind=PropertyKind.EFH,
+            address=Address(
+                street="Gartenweg", house_number="3", postal_code="10115", city="Berlin"
+            ),
+            build_year=1960,
+            notarized_on=date(1999, 3, 15),
+            purchase_date=date(1999, 5, 1),
+            purchase_price=Decimal("150000.00"),
+        ),
+        now=NOW,
+    )
+    got = read(a, document_checklist, prop.id, tax_year=None, today=TODAY)
+    assert got.available_years[0] == 2000 and got.available_years[-1] == 2026
+    assert got.tax_year == 2026
+
+
 def test_a_year_outside_the_available_years_is_refused(read, flat):
     for year in (2023, 2027):
         with pytest.raises(ValueError, match="outside this property's years 2024-2026"):

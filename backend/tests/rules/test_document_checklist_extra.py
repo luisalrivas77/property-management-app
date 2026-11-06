@@ -29,6 +29,14 @@ def test_years_run_from_the_purchase_year_to_this_year():
     assert available_years(_facts(), date(2026, 11, 6)) == [2024, 2025, 2026]
 
 
+def test_years_start_at_the_tax_year_floor_for_an_old_purchase():
+    # Review finding: a pre-2000 purchase used to offer 1999, which TaxYear refuses, so
+    # every checklist request for such a property failed with 422.
+    facts = ChecklistFacts(property_id=P, kind=PropertyKind.EFH, purchase_date=date(1999, 5, 1))
+    years = available_years(facts, date(2026, 11, 6))
+    assert years[0] == 2000 and years[-1] == 2026
+
+
 def test_years_end_with_the_year_ownership_ended():
     facts = _facts(ownership_ended_on=date(2025, 6, 30))
     assert available_years(facts, date(2026, 11, 6)) == [2024, 2025]

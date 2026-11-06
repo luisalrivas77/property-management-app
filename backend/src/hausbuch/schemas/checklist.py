@@ -192,6 +192,7 @@ class DocumentChecklist(Schema):
 
     property_id: UUID
     tax_year: TaxYear
-    # Purchase year through the current year, ending with the year ownership ended.
+    # Purchase year (2000 at the earliest) through the current year, ending with the year
+    # ownership ended.
     available_years: list[TaxYear]
     items: list[DocumentChecklistItem]

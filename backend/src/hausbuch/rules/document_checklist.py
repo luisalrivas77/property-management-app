@@ -32,6 +32,7 @@ from hausbuch.schemas.checklist import (
     ChecklistTenancy,
     RequirementCode,
 )
+from hausbuch.schemas.common import TAX_YEAR_MIN
 from hausbuch.schemas.enums import (
     AcquisitionCostKind,
     DepositForm,
@@ -187,12 +188,13 @@ def owned_in(facts: ChecklistFacts, tax_year: int) -> bool:
 
 def available_years(facts: ChecklistFacts, today: date) -> list[int]:
     """The years a checklist can be asked for: purchase year through the current year,
-    ending with the year ownership ended. Never empty: a property entered before the year
-    its Übergang falls in (bought on 1 Jan next year) offers that purchase year alone."""
+    ending with the year ownership ended, and from TAX_YEAR_MIN at the earliest (no document
+    can carry an earlier tax year). Never empty: a property entered before the year its
+    Übergang falls in (bought on 1 Jan next year) offers that purchase year alone."""
     last = today.year
     if facts.ownership_ended_on is not None:
         last = min(last, facts.ownership_ended_on.year)
-    first = facts.purchase_date.year
+    first = max(facts.purchase_date.year, TAX_YEAR_MIN)
     return list(range(first, max(first, last) + 1))
 
 
