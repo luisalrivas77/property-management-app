@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="de"><head>
+<meta charset="utf-8">
+<title>Anlagen ETF</title>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap"><style>
+body{margin:0}
+a{color:#1F6F54}a:hover{color:#14523E}
+</style></head>
+<body>
+
+
+<div style="min-height: 100vh; display: flex; flex-wrap: wrap; background: #F4F5F2; font-family: Manrope, system-ui, sans-serif; color: #17201C; font-variant-numeric: tabular-nums">
+
+<nav aria-label="Hauptnavigation" style="flex: 1 1 220px; box-sizing: border-box; background: #FFFFFF; border-right: 1px solid #E1E4DE; padding: 24px 16px; display: flex; flex-direction: column; gap: 4px">
+<div style="display: flex; align-items: center; gap: 10px; padding: 0 12px 20px">
+<div style="width: 32px; height: 32px; border-radius: 8px; background: #1F6F54; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7v9H3z"></path><path d="M9 20v-6h6v6"></path></svg></div>
+<span style="font-weight: 800; font-size: 18px; letter-spacing: -0.02em">Hausbuch</span>
+</div>
+
+<a href="07-household-overview.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Übersicht</span></a>
+
+<a href="03-inbox.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Posteingang</span><span style="background: #3A4BA8; color: #FFFFFF; font-size: 12px; font-weight: 700; border-radius: 10px; padding: 2px 8px">5</span></a>
+
+<a href="08-accounts.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Konten</span></a>
+
+<a href="09-holdings.html" aria-current="page" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 700; color: #14523E; background: #E3F0EA"><span>Anlagen</span></a>
+
+<a href="10-household-cashflow.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Haushalt</span></a>
+
+<a href="02-property.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Immobilien</span></a>
+
+<a href="11-tax-anlage-so.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Steuern</span></a>
+
+<a href="12-planning-household.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Planung</span></a>
+
+<a href="02-property.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Dokumente</span></a>
+
+<div style="margin-top: 16px; padding: 16px 12px 0; border-top: 1px solid #E1E4DE; display: flex; justify-content: space-between; align-items: center; font-size: 14px"><span style="font-weight: 700">Luis</span><a href="07-household-overview.html" style="font-size: 14px; font-weight: 600">Einstellungen</a></div>
+</nav>
+
+<main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 32px 40px 48px">
+<div style="max-width: 1160px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px">
+
+<div>
+<p style="margin: 0 0 4px; font-size: 13px; font-weight: 600; color: #5A635E; text-transform: uppercase; letter-spacing: 0.06em">Anlagen · Kurse vom 6.11.2026 (Tagesschluss)</p>
+<h1 style="margin: 0; font-size: 32px; font-weight: 800; letter-spacing: -0.02em">Anlagen</h1>
+</div>
+
+<div role="tablist" aria-label="Anlagen" style="display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid #E1E4DE">
+<a href="09-holdings.html" role="tab" aria-selected="false" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; font-size: 14px; text-decoration: none; font-weight: 600; color: #5A635E">Übersicht</a><a href="09b-holdings-etf.html" role="tab" aria-selected="true" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; font-size: 14px; text-decoration: none; font-weight: 700; color: #14523E; border-bottom: 2px solid #1F6F54">ETF</a><a href="09c-holdings-crypto.html" role="tab" aria-selected="false" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; font-size: 14px; text-decoration: none; font-weight: 600; color: #5A635E">Krypto</a>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px">
+<div style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 18px 20px"><p style="margin: 0; font-size: 13px; font-weight: 600; color: #5A635E">Depotwert</p><p style="margin: 6px 0 0; font-size: 26px; font-weight: 800">38.920 €</p><p style="margin: 4px 0 0; font-size: 13px; color: #5A635E">quirion · gemeinsam 50/50</p></div>
+<div style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 18px 20px"><p style="margin: 0; font-size: 13px; font-weight: 600; color: #5A635E">Unrealisierter Gewinn</p><p style="margin: 6px 0 0; font-size: 26px; font-weight: 800; color: #14523E">+4.010 €</p><p style="margin: 4px 0 0; font-size: 13px; color: #5A635E">Einstand 34.910 € · +11,5 %</p></div>
+<div style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 18px 20px"><p style="margin: 0; font-size: 13px; font-weight: 600; color: #5A635E">Sparplan</p><p style="margin: 6px 0 0; font-size: 26px; font-weight: 800">500 € / Monat</p><p style="margin: 4px 0 0; font-size: 13px; color: #5A635E">Ausführung zum Monatsanfang</p></div>
+<div style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 18px 20px"><p style="margin: 0; font-size: 13px; font-weight: 600; color: #5A635E">Erträge 2026 bisher</p><p style="margin: 6px 0 0; font-size: 26px; font-weight: 800">412 €</p><p style="margin: 4px 0 0; font-size: 13px; color: #5A635E">Ausschüttungen und Rebalancing</p></div>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+
+<div style="flex: 3 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 20px">
+<section style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 20px 0 6px">
+<h2 style="margin: 0 24px 10px; font-size: 18px; font-weight: 800">Positionen</h2>
+<div style="overflow-x: auto">
+<div style="min-width: 680px">
+<div style="display: grid; grid-template-columns: minmax(0, 1.8fr) 90px 90px 100px 100px 110px; gap: 12px; padding: 8px 24px; font-size: 12px; font-weight: 700; color: #5A635E; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid #E1E4DE">
+<span>ETF</span><span style="text-align: right">Anteile</span><span style="text-align: right">Kurs</span><span style="text-align: right">Wert</span><span style="text-align: right">Einstand</span><span style="text-align: right">Gewinn</span>
+</div>
+
+<div style="display: grid; grid-template-columns: minmax(0, 1.8fr) 90px 90px 100px 100px 110px; gap: 12px; align-items: center; padding: 13px 24px; border-bottom: 1px solid #ECEEE9; font-size: 14px">
+<span style="min-width: 0"><span style="display: block; font-weight: 700">Aktien-ETF Welt</span><span style="display: block; font-size: 12px; color: #5A635E">thesaurierend · Teilfreistellung 30 %</span></span>
+<span style="text-align: right">128,4</span>
+<span style="text-align: right">209,35 €</span>
+<span style="text-align: right; font-weight: 800">26.880 €</span>
+<span style="text-align: right; color: #3E4843">23.100 €</span>
+<span style="text-align: right"><span style="display: block; font-weight: 800; color: #14523E">+3.780 €</span><span style="display: block; font-size: 12px; color: #14523E">+16,4 %</span></span>
+</div>
+
+<div style="display: grid; grid-template-columns: minmax(0, 1.8fr) 90px 90px 100px 100px 110px; gap: 12px; align-items: center; padding: 13px 24px; border-bottom: 1px solid #ECEEE9; font-size: 14px">
+<span style="min-width: 0"><span style="display: block; font-weight: 700">Anleihen-ETF Euro</span><span style="display: block; font-size: 12px; color: #5A635E">ausschüttend · keine Teilfreistellung</span></span>
+<span style="text-align: right">52,0</span>
+<span style="text-align: right">133,08 €</span>
+<span style="text-align: right; font-weight: 800">6.920 €</span>
+<span style="text-align: right; color: #3E4843">7.050 €</span>
+<span style="text-align: right"><span style="display: block; font-weight: 800; color: #7A3F0B">−130 €</span><span style="display: block; font-size: 12px; color: #7A3F0B">−1,8 %</span></span>
+</div>
+
+<div style="display: grid; grid-template-columns: minmax(0, 1.8fr) 90px 90px 100px 100px 110px; gap: 12px; align-items: center; padding: 13px 24px; border-bottom: 1px solid #ECEEE9; font-size: 14px">
+<span style="min-width: 0"><span style="display: block; font-weight: 700">Aktien-ETF Schwellenländer</span><span style="display: block; font-size: 12px; color: #5A635E">thesaurierend · Teilfreistellung 30 %</span></span>
+<span style="text-align: right">140,2</span>
+<span style="text-align: right">36,52 €</span>
+<span style="text-align: right; font-weight: 800">5.120 €</span>
+<span style="text-align: right; color: #3E4843">4.760 €</span>
+<span style="text-align: right"><span style="display: block; font-weight: 800; color: #14523E">+360 €</span><span style="display: block; font-size: 12px; color: #14523E">+7,6 %</span></span>
+</div>
+
+</div>
+</div>
+<div style="padding: 14px 24px 12px">
+<p style="margin: 0 0 8px; font-size: 13px; font-weight: 700; color: #3E4843">Gewichtung im Depot</p>
+<div style="display: flex; height: 14px; border-radius: 7px; overflow: hidden; gap: 2px" role="img" aria-label="Aktien Welt 69 Prozent, Anleihen 18 Prozent, Schwellenländer 13 Prozent">
+<div style="width: 69.1%; background: #1F6F54"></div><div style="width: 17.8%; background: #9CC9B5"></div><div style="width: 13.1%; background: #4F9B7E"></div>
+</div>
+<p style="margin: 8px 0 0; font-size: 12px; color: #5A635E">Aktien Welt 69 % · Anleihen Euro 18 % · Schwellenländer 13 % · quirion gleicht die Gewichte beim Rebalancing selbst aus</p>
+</div>
+</section>
+
+<section style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 20px 24px">
+<h2 style="margin: 0 0 8px; font-size: 18px; font-weight: 800">Letzte Dokumente aus der Postbox</h2>
+
+<div style="display: flex; gap: 14px; align-items: center; padding: 11px 0; border-bottom: 1px solid #ECEEE9; flex-wrap: wrap">
+<span style="flex: none; width: 82px; font-size: 13px; color: #5A635E">02.11.2026</span>
+<span style="flex: 1 1 220px; min-width: 0"><span style="display: block; font-weight: 700; font-size: 14px">Wertpapierabrechnung Sparplan Oktober</span><span style="display: block; font-size: 12px; color: #5A635E">3 Käufe · 500 €</span></span>
+<span style="font-size: 12px; font-weight: 700; border-radius: 6px; padding: 4px 8px; background: #E3F0EA; color: #14523E">Käufe gebucht</span>
+</div>
+
+<div style="display: flex; gap: 14px; align-items: center; padding: 11px 0; border-bottom: 1px solid #ECEEE9; flex-wrap: wrap">
+<span style="flex: none; width: 82px; font-size: 13px; color: #5A635E">15.10.2026</span>
+<span style="flex: 1 1 220px; min-width: 0"><span style="display: block; font-weight: 700; font-size: 14px">Ausschüttung Anleihen-ETF Euro</span><span style="display: block; font-size: 12px; color: #5A635E">38,20 € · vom Pauschbetrag gedeckt</span></span>
+<span style="font-size: 12px; font-weight: 700; border-radius: 6px; padding: 4px 8px; background: #E3F0EA; color: #14523E">Ertrag gebucht</span>
+</div>
+
+<div style="display: flex; gap: 14px; align-items: center; padding: 11px 0; border-bottom: 1px solid #ECEEE9; flex-wrap: wrap">
+<span style="flex: none; width: 82px; font-size: 13px; color: #5A635E">30.09.2026</span>
+<span style="flex: 1 1 220px; min-width: 0"><span style="display: block; font-weight: 700; font-size: 14px">Quartalsbericht Q3</span><span style="display: block; font-size: 12px; color: #5A635E">Bestände und Wertentwicklung</span></span>
+<span style="font-size: 12px; font-weight: 700; border-radius: 6px; padding: 4px 8px; background: #E3F0EA; color: #14523E">Bestand abgeglichen</span>
+</div>
+
+<div style="display: flex; gap: 14px; align-items: center; padding: 11px 0; border-bottom: 1px solid #ECEEE9; flex-wrap: wrap">
+<span style="flex: none; width: 82px; font-size: 13px; color: #5A635E">14.09.2026</span>
+<span style="flex: 1 1 220px; min-width: 0"><span style="display: block; font-weight: 700; font-size: 14px">Rebalancing</span><span style="display: block; font-size: 12px; color: #5A635E">2 Verkäufe, 1 Kauf · Gewinn 146 €</span></span>
+<span style="font-size: 12px; font-weight: 700; border-radius: 6px; padding: 4px 8px; background: #E3F0EA; color: #14523E">Käufe und Verkäufe gebucht</span>
+</div>
+
+</section>
+</div>
+
+<aside style="flex: 2 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+<section style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 20px 24px; display: flex; flex-direction: column; gap: 12px">
+<h2 style="margin: 0; font-size: 16px; font-weight: 800">Sparer-Pauschbetrag 2026</h2>
+<div>
+<div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; margin-bottom: 6px"><span>Genutzt</span><span>412 € von 2.000 €</span></div>
+<div style="height: 12px; border-radius: 6px; background: #ECEEE9; overflow: hidden"><div style="width: 20.6%; height: 12px; background: #1F6F54"></div></div>
+</div>
+<p style="margin: 0; font-size: 13px; color: #3E4843; line-height: 1.5">Gemeinsam 2.000 € im Jahr, verteilt per Freistellungsauftrag. Bis 1.600 € Erträge behält quirion keine Abgeltungsteuer ein.</p>
+<div style="background: #F4F5F2; border-radius: 10px; padding: 4px 14px">
+<div style="display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid #E1E4DE; font-size: 13px"><span>Freistellungsauftrag quirion</span><span style="font-weight: 800">1.600 €</span></div>
+<div style="display: flex; justify-content: space-between; padding: 9px 0; font-size: 13px"><span>Freistellungsauftrag Sparkasse</span><span style="font-weight: 800">400 €</span></div>
+</div>
+<p style="margin: 0; font-size: 13px; color: #14523E; font-weight: 600">Passt: das Tagesgeld bringt 2026 voraussichtlich 380 € Zinsen.</p>
+</section>
+<section style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 20px 24px; display: flex; flex-direction: column; gap: 8px">
+<h2 style="margin: 0; font-size: 16px; font-weight: 800">Vorabpauschale für 2026</h2>
+<p style="margin: 0; font-size: 22px; font-weight: 800">ca. 610 €</p>
+<p style="margin: 0; font-size: 13px; color: #3E4843; line-height: 1.5">Steuerpflichtiger Betrag nach Teilfreistellung (Aktien-ETF 30 % steuerfrei). Sie gilt am ersten Werktag 2027 als zugeflossen und wird mit dem Freistellungsauftrag 2027 verrechnet; eine Abbuchung ist nicht zu erwarten.</p>
+</section>
+<section style="background: #E8EBF8; border: 1px solid #CCD3F0; border-radius: 12px; padding: 18px 22px">
+<h2 style="margin: 0 0 6px; font-size: 15px; font-weight: 800">Für die Steuererklärung</h2>
+<p style="margin: 0; font-size: 14px; line-height: 1.5; color: #3B4370">Die Jahressteuerbescheinigung 2026 kommt im Frühjahr. Die App liest sie und prüft im Tab Anlage KAP, ob sich die Abgabe lohnt (Günstigerprüfung).</p>
+</section>
+</aside>
+
+</div>
+</div>
+</main>
+</div>
+
+
+
+
+</body></html>
