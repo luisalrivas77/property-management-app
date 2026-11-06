@@ -7,6 +7,7 @@ import pytest
 from db.db_support import OWNER
 
 from hausbuch.schemas import enums as E
+from hausbuch.schemas.ai import AiJob
 
 COLUMNS: dict[tuple[str, str], type[StrEnum]] = {
     ("property", "kind"): E.PropertyKind,
@@ -23,6 +24,11 @@ COLUMNS: dict[tuple[str, str], type[StrEnum]] = {
     ("event", "actor_type"): E.ActorType,
     ("event", "entity_type"): E.EntityType,
     ("auth_invite", "purpose"): E.InvitePurpose,
+    # Phase 2
+    ("document_extraction", "kind"): E.ExtractionKind,
+    ("ai_call", "job"): AiJob,
+    ("proposal", "status"): E.ProposalStatus,
+    ("proposal", "target_mode"): E.ProposalTargetMode,
 }
 
 

@@ -1,8 +1,9 @@
-"""SQLAlchemy Core tables for migrations 0001-0003.
+"""SQLAlchemy Core tables for migrations 0001-0007.
 
 The migration is the source of truth. This module mirrors its columns (name, type, nullability,
 whether a server default exists) and primary keys, so services can build typed queries; it
 carries no CHECKs, FKs, indexes or policies, and is never used to create a schema.
+Procrastinate's procrastinate_* tables (0005) are not mirrored: they belong to the queue (D20).
 tests/db/test_tables_match_migration.py reflects the migrated database and fails on any drift.
 
 `property_` has a trailing underscore so it does not shadow the builtin.
@@ -84,6 +85,9 @@ workspace = Table(
     _id(),
     _text("name"),
     _created_at(),
+    # 0005 (phase 2 settings)
+    Column("ai_tenant_documents", Boolean, nullable=False, server_default=text("false")),
+    Column("auto_accept_llm", Boolean, nullable=False, server_default=text("false")),
 )
 
 app_user = Table(
@@ -151,6 +155,9 @@ document_extraction = Table(
     Column("fields", JSONB, nullable=False),
     Column("schema_version", SmallInteger, nullable=False, server_default=text("1")),
     _created_at(),
+    # 0005
+    _text("kind", server_default=text("'manual'")),
+    _uuid("ai_call_id", nullable=True),
 )
 
 # --- Property ----------------------------------------------------------------
@@ -410,4 +417,53 @@ auth_invite = Table(
     _created_at(),
     _timestamp("expires_at", default=False),
     _timestamp("used_at", nullable=True, default=False),
+)
+
+
+# --- Phase 2: AI calls and proposals (0005) ----------------------------------
+
+ai_call = Table(
+    "ai_call",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _text("job"),
+    _uuid("document_id", nullable=True),
+    _uuid("transaction_id", nullable=True),
+    _text("model"),
+    _text("prompt_version"),
+    _text("inference_geo", nullable=True),
+    Column("input_sha256", LargeBinary, nullable=False),
+    Column("input_tokens", Integer, nullable=True),
+    Column("output_tokens", Integer, nullable=True),
+    Column("cache_read_tokens", Integer, nullable=True),
+    _text("stop_reason", nullable=True),
+    Column("output", JSONB, nullable=True),
+    _text("raw_text", nullable=True),
+    _text("error_code", nullable=True),
+    Column("duration_ms", Integer, nullable=True),
+    _created_at(),
+)
+
+proposal = Table(
+    "proposal",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("document_id"),
+    _text("kind", nullable=True),
+    _text("status", server_default=text("'queued'")),
+    _text("error_code", nullable=True),
+    _uuid("extraction_id", nullable=True),
+    _uuid("ai_call_id", nullable=True),
+    _text("target_mode", server_default=text("'create'")),
+    Column("targets", JSONB, nullable=True),
+    Column("fields", JSONB, nullable=True),
+    Column("decisions", JSONB, nullable=True),
+    Column("applied_entities", JSONB, nullable=True),
+    _created_at(),
+    _updated_at(),
+    _timestamp("decided_at", nullable=True, default=False),
+    _uuid("decided_by", nullable=True),
+    _timestamp("scrubbed_at", nullable=True, default=False),
 )
