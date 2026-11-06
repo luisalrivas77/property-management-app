@@ -133,7 +133,7 @@ exception with a `code` attribute (plus `at_number` for loan errors).
 | `retention.tenant_retention(TenantRetentionInput, RetentionPolicy) -> RetentionResult` | `retention.yaml` | |
 | `iban.normalize_iban / mask_iban / iban_hmac` | `iban.yaml` | Test key only; mod-97 and length checks |
 | `validation.check_ownership_shares / check_tenancy_parties / check_rent_row / check_correction -> list[str]` | `validation.yaml` | The service-layer invariants above |
-| `document_checklist.build_checklist(ChecklistFacts, tax_year, today) -> list[ChecklistItem]` | `document_checklist.yaml` | Spec amendment 3 (6 Nov 2026); **not built yet** |
+| `document_checklist.build_checklist(ChecklistFacts, tax_year, today) -> list[ChecklistItem]` | `document_checklist.yaml` | Spec amendment 3 (6 Nov 2026); 30 cases, each also run with its input lists shuffled; **not built yet** |
 
 Error codes (stable API contract): `loan.payment_does_not_cover_interest`, `loan.term_too_long`,
 `iban.malformed`, `iban.bad_length`, `iban.bad_checksum`, `ownership.shares_must_sum_to_one`,
