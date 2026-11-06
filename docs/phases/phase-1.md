@@ -133,7 +133,7 @@ exception with a `code` attribute (plus `at_number` for loan errors).
 | `retention.tenant_retention(TenantRetentionInput, RetentionPolicy) -> RetentionResult` | `retention.yaml` | |
 | `iban.normalize_iban / mask_iban / iban_hmac` | `iban.yaml` | Test key only; mod-97 and length checks |
 | `validation.check_ownership_shares / check_tenancy_parties / check_rent_row / check_correction -> list[str]` | `validation.yaml` | The service-layer invariants above |
-| `document_checklist.build_checklist(ChecklistFacts, tax_year, today) -> list[ChecklistItem]` | `document_checklist.yaml` | Spec amendment 3 (6 Nov 2026); 30 cases, each also run with its input lists shuffled; **not built yet** |
+| `document_checklist.build_checklist(ChecklistFacts, tax_year, today) -> list[ChecklistItem]` | `document_checklist.yaml` | Spec amendment 3 (6 Nov 2026); 31 cases, each also run with its input lists shuffled; built on `feat/document-checklist`, not merged yet |
 
 Error codes (stable API contract): `loan.payment_does_not_cover_interest`, `loan.term_too_long`,
 `iban.malformed`, `iban.bad_length`, `iban.bad_checksum`, `ownership.shares_must_sum_to_one`,
@@ -236,7 +236,9 @@ and reviewed by a reviewer agent; every review finding was fixed or is listed be
      Still open from the first-deploy checks: a signed-in 25 MiB upload, Q16, Q15 and the
      allow-list check from another network.
 5. **IN PROGRESS: document checklist** (spec amendment 3, 6 Nov 2026): the Unterlagen tab
-   per property. Scoped and sent to a coder; not built yet.
+   per property. Built by a coder on `feat/document-checklist` (rule, migration `0004`, API,
+   tab, e2e); in review; not merged or deployed. Deploying it needs migration `0004` run from
+   Luis's computer before the new API image.
 
 ### Known gaps (not yet built)
 
@@ -317,7 +319,7 @@ HTTP API exists.
 
 ### Spec amendment 3 (6 Nov 2026): document checklist per property
 
-**Status: SCOPE-ONLY, implementation dispatched 6 Nov 2026.** Luis asked for it while
+**Status: BUILT on `feat/document-checklist` (6 Nov 2026), in review, not merged or deployed.** Luis asked for it while
 entering the real data: a list on each property of the documents the tax return needs, with
 which ones are in and which are missing. ARCHITECTURE.md had the missing-document checklist
 in phase 3, derived from the tax rules; this brings the part phase 1 can already know forward,
@@ -352,7 +354,7 @@ Items, for property P and tax year Y (P counts if owned on any day of Y):
 | `purchase_contract` | property | subtype `purchase_contract` linked to P | always |
 | `price_split` | property | depends on the selected split: none selected → `missing` (fix in Kaufpreisaufteilung); `purchase_contract` → present iff the purchase contract is; `appraisal` → its `evidence_document_id`; `bmf_tool` → present without a document (the result is stored) | always |
 | `acquisition_cost_evidence` | one per acquisition cost row | the row's `document_id` | always |
-| `grundsteuerbescheid` | property | new subtype `grundsteuerbescheid` (type `bescheid`) linked to P with `tax_year` null or ≤ Y | always |
+| `grundsteuerbescheid` | property | new subtype `grundsteuerbescheid` (type `bescheid`) linked to P or one of its units (an ETW's Bescheid is issued per flat; revised 6 Nov 2026 after the coder flagged it) with `tax_year` null or ≤ Y | always |
 | `loan_contract` | per loan of P disbursed on or before 31 Dec Y | subtype `loan_contract` linked to the loan | always |
 | `zinsbescheinigung` | per such loan | type `zinsbescheinigung`, `tax_year` = Y, linked to the loan | 28 Feb Y+1 |
 | `lease` | per tenancy of P's units overlapping Y | subtype `lease` linked to the tenancy | always |

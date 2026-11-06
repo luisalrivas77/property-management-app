@@ -115,7 +115,7 @@ CATALOGUE: tuple[Requirement, ...] = (
         RequirementCode.GRUNDSTEUERBESCHEID,
         ChecklistScopeType.PROPERTY,
         subtype=DocumentSubtype.GRUNDSTEUERBESCHEID,
-        targets=_PROPERTY,
+        targets=_PROPERTY_OR_UNIT,  # issued per flat for an ETW (spec amendment 3, revised)
         tax_year=TaxYearRule.AT_MOST,
     ),
     Requirement(

@@ -10,8 +10,8 @@
 #   purchase_contract          property  subtype purchase_contract linked to P           always
 #   price_split                property  by the selected split (below)                     always
 #   acquisition_cost_evidence  per cost  the row's document_id (whatever its typing)       always
-#   grundsteuerbescheid        property  subtype grundsteuerbescheid linked to P,
-#                                        tax_year null or <= Y                             always
+#   grundsteuerbescheid        property  subtype grundsteuerbescheid linked to P or one of
+#                                        its units, tax_year null or <= Y                  always
 #   loan_contract              per loan  subtype loan_contract linked to the loan          always
 #   zinsbescheinigung          per loan  type zinsbescheinigung, tax_year = Y, linked to
 #                                        the loan                                    28 Feb Y+1
@@ -264,6 +264,27 @@ cases:
       - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
       - {code: price_split, status: missing, scope: {type: property, id: *P}}
       - {code: grundsteuerbescheid, status: present, scope: {type: property, id: *P}, documents: [*D1]}
+
+  - id: grundsteuerbescheid_linked_to_a_unit_counts
+    description: >
+      for an ETW the Bescheid is issued per flat, so one filed on the unit counts (spec
+      amendment 3, revised 6 Nov 2026); one on another property does not
+    tax_year: 2026
+    today: 2026-11-06
+    facts:
+      <<: *etw
+      units: [{id: *U1, label: WE 1}]
+      documents:
+        - {id: *D1, type: bescheid, subtype: grundsteuerbescheid, tax_year: 2025,
+           received_at: 2026-11-01T09:00:00Z, links: [{target_type: unit, target_id: *U1}]}
+        - {id: *D2, type: bescheid, subtype: grundsteuerbescheid,
+           received_at: 2026-11-01T10:00:00Z, links: [{target_type: property, target_id: *P_OTHER}]}
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: present, scope: {type: property, id: *P}, documents: [*D1]}
+      - {code: wirtschaftsplan, status: missing, due_on: 2026-01-01, scope: {type: property, id: *P}}
+      - {code: hausgeldabrechnung, status: expected, due_on: 2027-06-30, scope: {type: property, id: *P}}
 
   - id: grundsteuerbescheid_for_a_later_year_only_is_missing
     description: >
