@@ -36,7 +36,7 @@ Design plans for later phases (not specs; only what the Decisions table records 
 
 ## UI mockups
 
-Six screen mockups (PNG + static HTML) live in `docs/mockups/`. Before building or changing a
+Twelve screen mockups (PNG + static HTML) live in `docs/mockups/`: 01–06 for the landlord module, 07–12 for the household phases 6–9. Before building or changing a
 screen, read `docs/mockups/README.md` and look at the matching PNG. They set layout, content,
 flow and the visual style (tokens and classes in `frontend/src/app/globals.css`); labels stay
 German; their numbers are sample data, never fixtures.

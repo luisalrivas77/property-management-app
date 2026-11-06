@@ -1,8 +1,8 @@
 # UI mockups
 
-Nov 5, 2026 · from the design canvas made with the architecture spec
+Nov 5, 2026 (01–06) and Nov 6, 2026 (07–12) · from the design canvas made with the architecture spec
 
-Six screens that show what Hausbuch should look like and how its flows fit together. Each one
+Twelve screens that show what Hausbuch should look like and how its flows fit together. Each one
 comes as a PNG (look at it) and a static HTML file (read the exact structure, labels and
 spacing). Links between the HTML files work, so you can click through them in a browser.
 
@@ -14,6 +14,26 @@ spacing). Links between the HTML files work, so you can click through them in a 
 | Tax year | `04-tax-year.png` / `.html` | 3 | Anlage V draft: income and Werbungskosten lines, each linking to its sources; paperwork checklist; 15% renovation limit; exports |
 | Performance | `05-performance.png` / `.html` | 4 | Actuals for the year, projection levers, §23 sale-date check, sale KPIs, equity by year, profit bridge, year-by-year table |
 | Mobile capture | `06-mobile-capture.png` / `.html` (390 px) | 2 | PWA camera capture with the recognized invoice and its suggested property and category |
+
+### Household screens (phases 6–9, added 6 Nov 2026)
+
+Drawn from `docs/design/household-finances.md` §1 (layout and screens) and Luis's answers in its
+§10. Unlike 01–06 these are in German, as the app is, and they show the nine-entry sidebar the
+design agreed: Übersicht, Posteingang, Konten, Anlagen, Haushalt, Immobilien, Steuern, Planung,
+Dokumente. Links to Posteingang, Immobilien and the Anlage V tab open 02–05.
+
+| Screen | Files | Phase | What it shows |
+| --- | --- | --- | --- |
+| Übersicht (Haushalt) | `07-household-overview.png` / `.html` | 6 (grows with 7–9) | Net worth, last month's cash flow and savings rate, cash reserve in months, open inbox items, the AI sync notice, asset mix (property net of loan, ETF, bank, crypto), the property card, upcoming dates (Verlustbescheinigung, year-end crypto holdings statement, Vorabpauschale, the next lot turning tax-free), recent activity |
+| Konten | `08-accounts.png` / `.html` | 6 | Every account grouped as bank, depot, crypto and liabilities, with source (camt export, quirion PDFs, BISON CSV, Helius, balance-only RPC), owner chip (Luis, Partnerin, Gemeinsam 50/50), balance and reconciliation status; how data gets in; internal transfers never counted |
+| Anlagen | `09-holdings.png` / `.html` | 6–7 | All ETF and crypto positions with value, unrealized gain and tax status; selecting a row shows its lots (date, units, cost, source, "steuerfrei ab …") and what can be sold tax-free today |
+| Haushalt | `10-household-cashflow.png` / `.html` | 6 | Income, spending and savings rate for a month and the 12-month average, monthly surplus chart, spending by category, income rows, and transfers to own accounts counted as saved, not spent |
+| Steuern · Anlage SO | `11-tax-anlage-so.png` / `.html` | 8 | The tax year with tabs V, KAP, SO and an owner switch (Luis / Partnerin); §23 result with the €1,000 Freigrenze meter, the undecided LP positions with both results, sales and swaps with holding time, §22 Nr. 3 rewards against €256, the filing checklist, what BISON reports under the wife's name, exports |
+| Planung · Haushalt | `12-planning-household.png` / `.html` | 9 | Investable amount per month and how it is derived, the existing savings plans, reserve gap, two levers (reserve target, buffer), three ways to reach the reserve target, and the AI explanation panel in own-use mode (names existing accounts only) |
+
+The Anlagen, Steuern and Planung screens are interactive in the original (row selection, owner
+switch, levers); the static HTML shows one state. Owners appear as "Luis", "Partnerin" and
+"Gemeinsam 50/50"; every amount, coin and address is sample data.
 
 ## How to use them
 

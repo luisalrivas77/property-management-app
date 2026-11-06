@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="de"><head>
+<meta charset="utf-8">
+<title>Haushalt</title>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap"><style>
+body{margin:0}
+a{color:#1F6F54}a:hover{color:#14523E}
+</style></head>
+<body>
+
+
+<div style="min-height: 100vh; display: flex; flex-wrap: wrap; background: #F4F5F2; font-family: Manrope, system-ui, sans-serif; color: #17201C; font-variant-numeric: tabular-nums">
+
+<nav aria-label="Hauptnavigation" style="flex: 1 1 220px; box-sizing: border-box; background: #FFFFFF; border-right: 1px solid #E1E4DE; padding: 24px 16px; display: flex; flex-direction: column; gap: 4px">
+<div style="display: flex; align-items: center; gap: 10px; padding: 0 12px 20px">
+<div style="width: 32px; height: 32px; border-radius: 8px; background: #1F6F54; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7v9H3z"></path><path d="M9 20v-6h6v6"></path></svg></div>
+<span style="font-weight: 800; font-size: 18px; letter-spacing: -0.02em">Hausbuch</span>
+</div>
+
+<a href="07-household-overview.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Übersicht</span></a>
+
+<a href="03-inbox.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Posteingang</span><span style="background: #3A4BA8; color: #FFFFFF; font-size: 12px; font-weight: 700; border-radius: 10px; padding: 2px 8px">5</span></a>
+
+<a href="08-accounts.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Konten</span></a>
+
+<a href="09-holdings.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Anlagen</span></a>
+
+<a href="10-household-cashflow.html" aria-current="page" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 700; color: #14523E; background: #E3F0EA"><span>Haushalt</span></a>
+
+<a href="02-property.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Immobilien</span></a>
+
+<a href="11-tax-anlage-so.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Steuern</span></a>
+
+<a href="12-planning-household.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Planung</span></a>
+
+<a href="02-property.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Dokumente</span></a>
+
+<div style="margin-top: 16px; padding: 16px 12px 0; border-top: 1px solid #E1E4DE; display: flex; justify-content: space-between; align-items: center; font-size: 14px"><span style="font-weight: 700">Luis</span><a href="07-household-overview.html" style="font-size: 14px; font-weight: 600">Einstellungen</a></div>
+</nav>
+
+<main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 32px 40px 48px">
+<div style="max-width: 1160px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px">
+
+<div style="display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; align-items: flex-end">
+<div>
+<p style="margin: 0 0 4px; font-size: 13px; font-weight: 600; color: #5A635E; text-transform: uppercase; letter-spacing: 0.06em">Haushalt · Oktober 2026</p>
+<h1 style="margin: 0; font-size: 32px; font-weight: 800; letter-spacing: -0.02em">Wohin das Geld geht</h1>
+</div>
+<label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #3E4843">Monat
+<select style="min-height: 44px; border: 1px solid #C9CEC6; border-radius: 10px; padding: 0 12px; font: inherit; font-size: 14px; font-weight: 600; background: #FFFFFF; color: #17201C"><option>Oktober 2026</option><option>September 2026</option></select>
+</label>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px">
+<div style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 18px 20px"><p style="margin: 0; font-size: 13px; font-weight: 600; color: #5A635E">Einnahmen</p><p style="margin: 6px 0 0; font-size: 24px; font-weight: 800">6.450 €</p><p style="margin: 4px 0 0; font-size: 13px; color: #5A635E">Ø 12 Monate 5.966 €</p></div>
+<div style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 18px 20px"><p style="margin: 0; font-size: 13px; font-weight: 600; color: #5A635E">Ausgaben</p><p style="margin: 6px 0 0; font-size: 24px; font-weight: 800">4.980 €</p><p style="margin: 4px 0 0; font-size: 13px; color: #5A635E">Ø 12 Monate 4.822 €</p></div>
+<div style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 18px 20px"><p style="margin: 0; font-size: 13px; font-weight: 600; color: #5A635E">Sparquote</p><p style="margin: 6px 0 0; font-size: 24px; font-weight: 800; color: #14523E">23 %</p><p style="margin: 4px 0 0; font-size: 13px; color: #5A635E">Ø 12 Monate 19 %</p></div>
+<a href="03-inbox.html" style="background: #FBEEDC; border: 1px solid #F0D6B0; border-radius: 12px; padding: 18px 20px; text-decoration: none; color: #7A3F0B"><p style="margin: 0; font-size: 13px; font-weight: 600">Ohne Kategorie</p><p style="margin: 6px 0 0; font-size: 24px; font-weight: 800">2 Umsätze</p><p style="margin: 4px 0 0; font-size: 13px">Im Posteingang beantworten →</p></a>
+</div>
+
+<section style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 24px">
+<div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 12px">
+<h2 style="margin: 0; font-size: 18px; font-weight: 800">Überschuss je Monat</h2>
+<span style="font-size: 13px; color: #5A635E">Einnahmen minus Ausgaben · Ø 1.144 €</span>
+</div>
+<div style="display: flex; align-items: flex-end; gap: 8px; height: 160px; border-bottom: 1px solid #C9CEC6" role="img" aria-label="Monatlicher Überschuss November 2025 bis Oktober 2026, zwischen 380 und 1.540 Euro">
+
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 160px; gap: 4px">
+<span style="font-size: 11px; color: #5A635E">1.120</span>
+<div style="width: 100%; max-width: 48px; height: 95px; border-radius: 6px 6px 0 0; background: #9CC9B5"></div>
+</div>
+
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 160px; gap: 4px">
+<span style="font-size: 11px; color: #5A635E">380</span>
+<div style="width: 100%; max-width: 48px; height: 32px; border-radius: 6px 6px 0 0; background: #9CC9B5"></div>
+</div>
+
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 160px; gap: 4px">
+<span style="font-size: 11px; color: #5A635E">1.540</span>
+<div style="width: 100%; max-width: 48px; height: 130px; border-radius: 6px 6px 0 0; background: #9CC9B5"></div>
+</div>
+
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 160px; gap: 4px">
+<span style="font-size: 11px; color: #5A635E">1.310</span>
+<div style="width: 100%; max-width: 48px; height: 111px; border-radius: 6px 6px 0 0; background: #9CC9B5"></div>
+</div>
+
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 160px; gap: 4px">
+<span style="font-size: 11px; color: #5A635E">980</span>
+<div style="width: 100%; max-width: 48px; height: 83px; border-radius: 6px 6px 0 0; background: #9CC9B5"></div>
+</div>
+
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 160px; gap: 4px">
+<span style="font-size: 11px; color: #5A635E">1.410</span>
+<div style="width: 100%; max-width: 48px; height: 119px; border-radius: 6px 6px 0 0; background: #9CC9B5"></div>
+</div>
+
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 160px; gap: 4px">
+<span style="font-size: 11px; color: #5A635E">1.260</span>
+<div style="width: 100%; max-width: 48px; height: 106px; border-radius: 6px 6px 0 0; background: #9CC9B5"></div>
+</div>
+
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 160px; gap: 4px">
+<span style="font-size: 11px; color: #5A635E">1.050</span>
+<div style="width: 100%; max-width: 48px; height: 89px; border-radius: 6px 6px 0 0; background: #9CC9B5"></div>
+</div>
+
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 160px; gap: 4px">
+<span style="font-size: 11px; color: #5A635E">640</span>
+<div style="width: 100%; max-width: 48px; height: 54px; border-radius: 6px 6px 0 0; background: #9CC9B5"></div>
+</div>
+
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 160px; gap: 4px">
+<span style="font-size: 11px; color: #5A635E">1.190</span>
+<div style="width: 100%; max-width: 48px; height: 100px; border-radius: 6px 6px 0 0; background: #9CC9B5"></div>
+</div>
+
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 160px; gap: 4px">
+<span style="font-size: 11px; color: #5A635E">1.380</span>
+<div style="width: 100%; max-width: 48px; height: 116px; border-radius: 6px 6px 0 0; background: #9CC9B5"></div>
+</div>
+
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 160px; gap: 4px">
+<span style="font-size: 11px; color: #5A635E">1.470</span>
+<div style="width: 100%; max-width: 48px; height: 124px; border-radius: 6px 6px 0 0; background: #1F6F54"></div>
+</div>
+
+</div>
+<div style="display: flex; gap: 8px; margin-top: 6px">
+<span style="flex: 1; min-width: 0; text-align: center; font-size: 11px; color: #5A635E">Nov</span><span style="flex: 1; min-width: 0; text-align: center; font-size: 11px; color: #5A635E">Dez</span><span style="flex: 1; min-width: 0; text-align: center; font-size: 11px; color: #5A635E">Jan</span><span style="flex: 1; min-width: 0; text-align: center; font-size: 11px; color: #5A635E">Feb</span><span style="flex: 1; min-width: 0; text-align: center; font-size: 11px; color: #5A635E">Mär</span><span style="flex: 1; min-width: 0; text-align: center; font-size: 11px; color: #5A635E">Apr</span><span style="flex: 1; min-width: 0; text-align: center; font-size: 11px; color: #5A635E">Mai</span><span style="flex: 1; min-width: 0; text-align: center; font-size: 11px; color: #5A635E">Jun</span><span style="flex: 1; min-width: 0; text-align: center; font-size: 11px; color: #5A635E">Jul</span><span style="flex: 1; min-width: 0; text-align: center; font-size: 11px; color: #5A635E">Aug</span><span style="flex: 1; min-width: 0; text-align: center; font-size: 11px; color: #5A635E">Sep</span><span style="flex: 1; min-width: 0; text-align: center; font-size: 11px; color: #5A635E">Okt</span>
+</div>
+</section>
+
+<div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+
+<section style="flex: 3 1 520px; min-width: 0; background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 20px 24px">
+<h2 style="margin: 0 0 8px; font-size: 18px; font-weight: 800">Ausgaben nach Kategorie</h2>
+<div style="display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 2fr) 90px 90px; gap: 12px; padding: 8px 0; font-size: 12px; font-weight: 700; color: #5A635E; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid #E1E4DE">
+<span>Kategorie</span><span>Anteil</span><span style="text-align: right">Oktober</span><span style="text-align: right">Ø 12 Mon.</span>
+</div>
+
+<div style="display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 2fr) 90px 90px; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px">
+<span style="font-weight: 700">Wohnen</span>
+<span style="height: 8px; border-radius: 4px; background: #ECEEE9; overflow: hidden"><span style="display: block; height: 8px; border-radius: 4px; background: #4F9B7E; width: 100%"></span></span>
+<span style="text-align: right; font-weight: 800">1.620 €</span>
+<span style="text-align: right; color: #5A635E">1.620 €</span>
+</div>
+
+<div style="display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 2fr) 90px 90px; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px">
+<span style="font-weight: 700">Lebensmittel und Drogerie</span>
+<span style="height: 8px; border-radius: 4px; background: #ECEEE9; overflow: hidden"><span style="display: block; height: 8px; border-radius: 4px; background: #4F9B7E; width: 48%"></span></span>
+<span style="text-align: right; font-weight: 800">780 €</span>
+<span style="text-align: right; color: #5A635E">740 €</span>
+</div>
+
+<div style="display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 2fr) 90px 90px; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px">
+<span style="font-weight: 700">Familie und Kind</span>
+<span style="height: 8px; border-radius: 4px; background: #ECEEE9; overflow: hidden"><span style="display: block; height: 8px; border-radius: 4px; background: #4F9B7E; width: 19%"></span></span>
+<span style="text-align: right; font-weight: 800">310 €</span>
+<span style="text-align: right; color: #5A635E">240 €</span>
+</div>
+
+<div style="display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 2fr) 90px 90px; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px">
+<span style="font-weight: 700">Mobilität</span>
+<span style="height: 8px; border-radius: 4px; background: #ECEEE9; overflow: hidden"><span style="display: block; height: 8px; border-radius: 4px; background: #4F9B7E; width: 26%"></span></span>
+<span style="text-align: right; font-weight: 800">420 €</span>
+<span style="text-align: right; color: #5A635E">460 €</span>
+</div>
+
+<div style="display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 2fr) 90px 90px; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px">
+<span style="font-weight: 700">Versicherungen</span>
+<span style="height: 8px; border-radius: 4px; background: #ECEEE9; overflow: hidden"><span style="display: block; height: 8px; border-radius: 4px; background: #4F9B7E; width: 18%"></span></span>
+<span style="text-align: right; font-weight: 800">290 €</span>
+<span style="text-align: right; color: #5A635E">290 €</span>
+</div>
+
+<div style="display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 2fr) 90px 90px; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px">
+<span style="font-weight: 700">Abos und Verträge</span>
+<span style="height: 8px; border-radius: 4px; background: #ECEEE9; overflow: hidden"><span style="display: block; height: 8px; border-radius: 4px; background: #4F9B7E; width: 5%"></span></span>
+<span style="text-align: right; font-weight: 800">85 €</span>
+<span style="text-align: right; color: #5A635E">92 €</span>
+</div>
+
+<div style="display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 2fr) 90px 90px; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px">
+<span style="font-weight: 700">Freizeit und Reisen</span>
+<span style="height: 8px; border-radius: 4px; background: #ECEEE9; overflow: hidden"><span style="display: block; height: 8px; border-radius: 4px; background: #4F9B7E; width: 33%"></span></span>
+<span style="text-align: right; font-weight: 800">540 €</span>
+<span style="text-align: right; color: #5A635E">610 €</span>
+</div>
+
+<div style="display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 2fr) 90px 90px; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px">
+<span style="font-weight: 700">Sonstiges</span>
+<span style="height: 8px; border-radius: 4px; background: #ECEEE9; overflow: hidden"><span style="display: block; height: 8px; border-radius: 4px; background: #4F9B7E; width: 58%"></span></span>
+<span style="text-align: right; font-weight: 800">935 €</span>
+<span style="text-align: right; color: #5A635E">770 €</span>
+</div>
+
+<div style="display: flex; justify-content: space-between; padding: 12px 0 0; font-weight: 800"><span>Summe</span><span>4.980 €</span></div>
+</section>
+
+<div style="flex: 2 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+<section style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 20px 24px">
+<h2 style="margin: 0 0 8px; font-size: 18px; font-weight: 800">Einnahmen</h2>
+
+<div style="display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px"><span><span style="display: block; font-weight: 700">Gehalt Luis</span><span style="display: block; font-size: 12px; color: #5A635E">Girokonto · monatlich</span></span><span style="font-weight: 800">3.900 €</span></div>
+
+<div style="display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px"><span><span style="display: block; font-weight: 700">Einkommen Partnerin</span><span style="display: block; font-size: 12px; color: #5A635E">Girokonto · monatlich</span></span><span style="font-weight: 800">2.050 €</span></div>
+
+<div style="display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px"><span><span style="display: block; font-weight: 700">Sonstige Einnahmen</span><span style="display: block; font-size: 12px; color: #5A635E">Erstattungen, Verkäufe</span></span><span style="font-weight: 800">500 €</span></div>
+
+</section>
+<section style="background: #E8EBF8; border: 1px solid #CCD3F0; border-radius: 12px; padding: 20px 24px">
+<h2 style="margin: 0 0 6px; font-size: 16px; font-weight: 800">Gespart, nicht ausgegeben</h2>
+<p style="margin: 0; font-size: 14px; line-height: 1.5; color: #3B4370">Überweisungen an eigene Konten zählen nicht als Ausgaben: quirion-Sparplan 500 €, Giro → BISON 300 €. Vom Überschuss (1.470 €) sind damit 800 € angelegt und 670 € auf Giro und Tagesgeld geblieben.</p>
+</section>
+</div>
+
+</div>
+</div>
+</main>
+</div>
+
+
+
+
+</body></html>

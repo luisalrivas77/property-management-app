@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="de"><head>
+<meta charset="utf-8">
+<title>Planung Haushalt</title>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap"><style>
+body{margin:0}
+a{color:#1F6F54}a:hover{color:#14523E}
+</style></head>
+<body>
+
+
+<div style="min-height: 100vh; display: flex; flex-wrap: wrap; background: #F4F5F2; font-family: Manrope, system-ui, sans-serif; color: #17201C; font-variant-numeric: tabular-nums">
+
+<nav aria-label="Hauptnavigation" style="flex: 1 1 220px; box-sizing: border-box; background: #FFFFFF; border-right: 1px solid #E1E4DE; padding: 24px 16px; display: flex; flex-direction: column; gap: 4px">
+<div style="display: flex; align-items: center; gap: 10px; padding: 0 12px 20px">
+<div style="width: 32px; height: 32px; border-radius: 8px; background: #1F6F54; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7v9H3z"></path><path d="M9 20v-6h6v6"></path></svg></div>
+<span style="font-weight: 800; font-size: 18px; letter-spacing: -0.02em">Hausbuch</span>
+</div>
+
+<a href="07-household-overview.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Übersicht</span></a>
+
+<a href="03-inbox.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Posteingang</span><span style="background: #3A4BA8; color: #FFFFFF; font-size: 12px; font-weight: 700; border-radius: 10px; padding: 2px 8px">5</span></a>
+
+<a href="08-accounts.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Konten</span></a>
+
+<a href="09-holdings.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Anlagen</span></a>
+
+<a href="10-household-cashflow.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Haushalt</span></a>
+
+<a href="02-property.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Immobilien</span></a>
+
+<a href="11-tax-anlage-so.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Steuern</span></a>
+
+<a href="12-planning-household.html" aria-current="page" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 700; color: #14523E; background: #E3F0EA"><span>Planung</span></a>
+
+<a href="02-property.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Dokumente</span></a>
+
+<div style="margin-top: 16px; padding: 16px 12px 0; border-top: 1px solid #E1E4DE; display: flex; justify-content: space-between; align-items: center; font-size: 14px"><span style="font-weight: 700">Luis</span><a href="07-household-overview.html" style="font-size: 14px; font-weight: 600">Einstellungen</a></div>
+</nav>
+
+<main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 32px 40px 48px">
+<div style="max-width: 1160px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px">
+
+<div>
+<p style="margin: 0 0 4px; font-size: 13px; font-weight: 600; color: #5A635E; text-transform: uppercase; letter-spacing: 0.06em">Planung · Basis: November 2025 bis Oktober 2026</p>
+<h1 style="margin: 0; font-size: 32px; font-weight: 800; letter-spacing: -0.02em">Wie viel kann ich anlegen?</h1>
+</div>
+
+<div role="tablist" aria-label="Planung" style="display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid #E1E4DE">
+<a href="05-performance.html" role="tab" aria-selected="false" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; font-size: 14px; font-weight: 600; color: #5A635E; text-decoration: none">Immobilie · Projektion bis Verkauf</a>
+<button role="tab" aria-selected="true" style="min-height: 44px; padding: 0 14px; border: none; background: none; font: inherit; font-size: 14px; font-weight: 700; color: #14523E; border-bottom: 2px solid #1F6F54; cursor: pointer">Haushalt</button>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px">
+<div style="background: #1F6F54; color: #FFFFFF; border-radius: 12px; padding: 18px 20px"><p style="margin: 0; font-size: 13px; font-weight: 600; color: #D5E6DE">Anlegbar pro Monat</p><p style="margin: 6px 0 0; font-size: 26px; font-weight: 800">1.030 €</p><p style="margin: 4px 0 0; font-size: 13px; color: #D5E6DE">Ø Überschuss minus Puffer</p></div>
+<div style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 18px 20px"><p style="margin: 0; font-size: 13px; font-weight: 600; color: #5A635E">Schon angelegt pro Monat</p><p style="margin: 6px 0 0; font-size: 24px; font-weight: 800">800 €</p><p style="margin: 4px 0 0; font-size: 13px; color: #5A635E">quirion 500 € · BISON 300 €</p></div>
+<div style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 18px 20px"><p style="margin: 0; font-size: 13px; font-weight: 600; color: #5A635E">Reserve heute</p><p style="margin: 6px 0 0; font-size: 24px; font-weight: 800">21.340 €</p><p style="margin: 4px 0 0; font-size: 13px; color: #5A635E">4,3 Monatsausgaben</p></div>
+<div style="background: #FBEEDC; border: 1px solid #F0D6B0; border-radius: 12px; padding: 18px 20px; color: #7A3F0B"><p style="margin: 0; font-size: 13px; font-weight: 600">Bis zum Reserveziel fehlen</p><p style="margin: 6px 0 0; font-size: 24px; font-weight: 800">7.592 €</p><p style="margin: 4px 0 0; font-size: 13px">Ziel 28.932 € (6 Monate)</p></div>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+
+<div style="flex: 3 1 540px; min-width: 0; display: flex; flex-direction: column; gap: 20px">
+
+<section style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 20px 24px">
+<h2 style="margin: 0 0 12px; font-size: 18px; font-weight: 800">Stellschrauben</h2>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px">
+
+<div style="background: #F4F5F2; border-radius: 10px; padding: 12px 14px">
+<p style="margin: 0; font-size: 13px; font-weight: 700; color: #3E4843">Reserveziel</p>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px">
+<button aria-label="Reserveziel senken" style="width: 44px; height: 44px; border-radius: 10px; border: 1px solid #C9CEC6; background: #FFFFFF; font: inherit; font-size: 20px; font-weight: 700; color: #17201C; cursor: pointer">−</button>
+<span style="font-size: 22px; font-weight: 800">6 Monate</span>
+<button aria-label="Reserveziel erhöhen" style="width: 44px; height: 44px; border-radius: 10px; border: 1px solid #C9CEC6; background: #FFFFFF; font: inherit; font-size: 20px; font-weight: 700; color: #17201C; cursor: pointer">+</button>
+</div>
+<p style="margin: 6px 0 0; font-size: 12px; color: #5A635E">In Monatsausgaben (Ø 4.822 €)</p>
+</div>
+
+<div style="background: #F4F5F2; border-radius: 10px; padding: 12px 14px">
+<p style="margin: 0; font-size: 13px; font-weight: 700; color: #3E4843">Puffer für Unvorhergesehenes</p>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px">
+<button aria-label="Puffer senken" style="width: 44px; height: 44px; border-radius: 10px; border: 1px solid #C9CEC6; background: #FFFFFF; font: inherit; font-size: 20px; font-weight: 700; color: #17201C; cursor: pointer">−</button>
+<span style="font-size: 22px; font-weight: 800">10 %</span>
+<button aria-label="Puffer erhöhen" style="width: 44px; height: 44px; border-radius: 10px; border: 1px solid #C9CEC6; background: #FFFFFF; font: inherit; font-size: 20px; font-weight: 700; color: #17201C; cursor: pointer">+</button>
+</div>
+<p style="margin: 6px 0 0; font-size: 12px; color: #5A635E">Vom Überschuss, bleibt auf dem Girokonto</p>
+</div>
+
+</div>
+</section>
+
+<section style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 20px 24px">
+<h2 style="margin: 0 0 4px; font-size: 18px; font-weight: 800">Drei Wege zum Reserveziel</h2>
+<p style="margin: 0 0 12px; font-size: 13px; color: #5A635E">Gleiche Zahlen, andere Reihenfolge. Du entscheidest; die App rechnet nur.</p>
+
+<div style="display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center; padding: 14px 16px; border-radius: 10px; margin-bottom: 8px; background: #F4F5F2">
+<div style="flex: 1 1 280px; min-width: 0">
+<p style="margin: 0; font-size: 15px; font-weight: 800">Reserve zuerst</p>
+<p style="margin: 2px 0 0; font-size: 13px; color: #3E4843">Sparpläne bei quirion und BISON pausieren, 1.030 € im Monat aufs Tagesgeld</p>
+</div>
+<div style="text-align: right">
+<p style="margin: 0; font-size: 15px; font-weight: 800">Juli 2027</p>
+<p style="margin: 2px 0 0; font-size: 12px; color: #5A635E">danach 1.030 € im Monat anlegen</p>
+</div>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center; padding: 14px 16px; border-radius: 10px; margin-bottom: 8px; background: #E3F0EA">
+<div style="flex: 1 1 280px; min-width: 0">
+<p style="margin: 0; font-size: 15px; font-weight: 800">BISON ruhen lassen</p>
+<p style="margin: 2px 0 0; font-size: 13px; color: #3E4843">quirion 500 € weiter, 530 € im Monat aufs Tagesgeld</p>
+</div>
+<div style="text-align: right">
+<p style="margin: 0; font-size: 15px; font-weight: 800">Februar 2028</p>
+<p style="margin: 2px 0 0; font-size: 12px; color: #5A635E">danach wieder beide Sparpläne</p>
+</div>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center; padding: 14px 16px; border-radius: 10px; margin-bottom: 8px; background: #F4F5F2">
+<div style="flex: 1 1 280px; min-width: 0">
+<p style="margin: 0; font-size: 15px; font-weight: 800">Alles weiter wie bisher</p>
+<p style="margin: 2px 0 0; font-size: 13px; color: #3E4843">Beide Sparpläne weiter, Rest 230 € im Monat aufs Tagesgeld</p>
+</div>
+<div style="text-align: right">
+<p style="margin: 0; font-size: 15px; font-weight: 800">September 2029</p>
+<p style="margin: 2px 0 0; font-size: 12px; color: #5A635E">Sparpläne laufen durchgehend</p>
+</div>
+</div>
+
+</section>
+
+<section style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 20px 24px">
+<h2 style="margin: 0 0 8px; font-size: 16px; font-weight: 800">So entsteht die Zahl</h2>
+
+<div style="display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px"><span style="color: #3E4843">Ø Einnahmen (12 Monate)</span><span style="font-weight: 700">5.966 €</span></div>
+
+<div style="display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px"><span style="color: #3E4843">Ø Ausgaben (12 Monate, ohne Überweisungen an eigene Konten)</span><span style="font-weight: 700">− 4.822 €</span></div>
+
+<div style="display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px"><span style="color: #3E4843">Ø Überschuss</span><span style="font-weight: 700">1.144 €</span></div>
+
+<div style="display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px"><span style="color: #3E4843">Puffer 10 %</span><span style="font-weight: 700">− 114 €</span></div>
+
+<div style="display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px"><span style="color: #3E4843">Anlegbar pro Monat</span><span style="font-weight: 800; color: #14523E">1.030 €</span></div>
+
+</section>
+
+</div>
+
+<aside style="flex: 2 1 320px; min-width: 0; background: #FFFFFF; border: 1px solid #CCD3F0; border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; align-items: center; gap: 8px">
+<span style="background: #3A4BA8; color: #FFFFFF; font-size: 11px; font-weight: 800; border-radius: 5px; padding: 3px 6px; letter-spacing: 0.04em">KI</span>
+<span style="font-size: 13px; font-weight: 700; color: #3B4370">Erklärung zu deinen Zahlen</span>
+</div>
+<p style="margin: 0; font-size: 15px; line-height: 1.6; color: #17201C">Im Schnitt bleiben dir nach allen Ausgaben 1.144 € im Monat. Davon fließen schon 800 € in deine Sparpläne bei quirion und BISON.</p>
+<p style="margin: 0; font-size: 15px; line-height: 1.6; color: #17201C">Deine Reserve deckt 4,3 Monatsausgaben. Für dein Ziel von 6 Monaten fehlen 7.592 €. Lässt du alles wie bisher, kommen nur 230 € im Monat dazu; das Ziel wäre im September 2029 erreicht.</p>
+<p style="margin: 0; font-size: 15px; line-height: 1.6; color: #17201C">Lässt du den BISON-Sparplan eine Weile ruhen, ist die Reserve schon im Februar 2028 voll; danach können beide Sparpläne wieder laufen. Krypto macht heute 5 % eures Vermögens aus, ETF 17 %.</p>
+<div style="background: #F4F5F2; border-radius: 10px; padding: 12px 14px; font-size: 12px; line-height: 1.5; color: #5A635E">Alle Beträge rechnet die App aus deinen Umsätzen; die KI formuliert nur. Sie nennt Beträge, Anlageklassen und deine bestehenden Konten, nie ein neues Produkt (Modus: eigene Nutzung). Keine Anlageberatung.</div>
+</aside>
+
+</div>
+</div>
+</main>
+</div>
+
+
+
+
+</body></html>
