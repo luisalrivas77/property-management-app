@@ -297,6 +297,14 @@ and reviewed by a reviewer agent; every review finding was fixed or is listed be
      years (or on request after it ends). Cost: a tenant added by mistake stays held too.
    Reviewed once (fix first: the retention hole, History showing pre-edit Nebenkosten values,
    correction dates out of order; all three fixed), 1391 backend tests pass against Postgres.
+8. **DONE: show who rents each unit** (6 Nov 2026, after phase 1 closed). Luis found tenants
+   and properties disjointed: a tenancy was only reachable via property → Einheiten → unit.
+   The property's Stammdaten tab now has the mockup's "Aktuelles Mietverhältnis" card per
+   unit (tenants, start, Kaltmiete and NK-Vorauszahlung from `GET /api/tenancies/{id}/rent`,
+   Kaution, status), the Einheiten tab a Mieter column, the tenant page a Mietverhältnisse
+   table (new read-only `GET /api/tenants/{id}/tenancies`: current parties only; retention
+   still follows removed ones), and the sidebar a Mieter entry. Display only, no migration;
+   merged as #23. A tenancy that has not started yet counts as the unit's current one.
 
 ### Known gaps (not yet built)
 
