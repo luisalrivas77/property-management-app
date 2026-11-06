@@ -745,7 +745,9 @@ image. Keep the order: grace < uvicorn's timeout < the platform's kill timeout.
    commit checked out (step 9; check the allow-list holds your current IP). Migrations are
    append-only and additive, so the old API keeps working against the new schema while the
    new one rolls out.
-3. Point `hausbuch-api` at the new tag. Scaleway starts the new instance and switches
+3. Point `hausbuch-api` at the new tag (console, or `scw container container update <id>
+   region=fr-par image=rg.fr-par.scw.cloud/hausbuch/api:<tag>`; the field is `image`, and the
+   older `registry-image` is accepted but silently changes nothing). Scaleway starts the new instance and switches
    traffic once it is ready. Then the old instance gets SIGTERM and drains: new requests
    get 503 `shutting_down`, which the web client retries once.
 4. Point `hausbuch-web` at its new tag.
