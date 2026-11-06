@@ -38,6 +38,37 @@ def test_tenant_round_trip(client_a):
     assert updated["payload"] == {"changed_fields": ["phone", "iban"]}  # names, never values
 
 
+def test_a_tenants_tenancies(client_a):
+    setup = flat(client_a)
+    tenant = setup["tenant"]
+    path = f"/api/tenants/{tenant['id']}/tenancies"
+    assert [t["id"] for t in ok(client_a.get(path))] == [setup["tenancy"]["id"]]
+
+    # Co-tenant of a later tenancy in a second unit: listed too, by move-in, with its role.
+    end = f"/api/tenancies/{setup['tenancy']['id']}/end"
+    ok(client_a.post(end, json={"end_date": "2025-06-30"}))
+    other_unit = new_unit(client_a, setup["property"]["id"], label="WE 4")
+    primary = new_tenant(client_a, full_name="Bert")
+    body = tenancy_body(other_unit["id"], [primary["id"], tenant["id"]], start_date="2025-07-01")
+    later = create(client_a, "/api/tenancies", body)
+    listed = ok(client_a.get(path))
+    assert [t["id"] for t in listed] == [setup["tenancy"]["id"], later["id"]]
+    assert {"tenant_id": tenant["id"], "role": "co_tenant"} in listed[1]["parties"]
+    others = ok(client_a.get(f"/api/tenants/{primary['id']}/tenancies"))
+    assert [t["id"] for t in others] == [later["id"]]
+
+    # Removed from the later tenancy: no longer a party, so no longer listed.
+    parties = {"parties": [{"tenant_id": primary["id"], "role": "primary"}]}
+    ok(client_a.put(f"/api/tenancies/{later['id']}/parties", json=parties))
+    assert [t["id"] for t in ok(client_a.get(path))] == [setup["tenancy"]["id"]]
+
+    # No tenancy: an empty list. Unknown tenant: 404.
+    applicant = new_tenant(client_a, full_name="Clara")
+    assert ok(client_a.get(f"/api/tenants/{applicant['id']}/tenancies")) == []
+    response = client_a.get(f"/api/tenants/{uuid4()}/tenancies")
+    assert (response.status_code, response.json()["entity_type"]) == (404, "tenant")
+
+
 def test_an_invalid_contact_field_is_named_not_echoed(client_a):
     tenant = new_tenant(client_a)
     response = client_a.patch(f"/api/tenants/{tenant['id']}", json={"full_name": ""})

@@ -1462,6 +1462,51 @@
         }
       }
     },
+    "/api/tenants/{tenant_id}/tenancies": {
+      "get": {
+        "summary": "Tenant Tenancies",
+        "description": "The tenancies the tenant is a party of now (any role), ended ones included, by move-in\ndate. A tenant removed from a tenancy is no longer listed for it.",
+        "operationId": "tenant_tenancies_api_tenants__tenant_id__tenancies_get",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Tenant Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Tenancy"
+                  },
+                  "title": "Response Tenant Tenancies Api Tenants  Tenant Id  Tenancies Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/tenancies": {
       "post": {
         "summary": "Tenancy Create",

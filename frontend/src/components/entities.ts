@@ -55,6 +55,25 @@ export function partyNames(tenancy: Tenancy, tenants: Tenant[]): string {
     .join(", ");
 }
 
+/** Whether the tenancy runs on `today` (both dates inclusive). */
+export function isRunning(tenancy: Tenancy, today: string): boolean {
+  return tenancy.start_date <= today && (tenancy.end_date === null || tenancy.end_date >= today);
+}
+
+/** The tenancy in force today, else the next one to start. */
+export function currentTenancy(tenancies: Tenancy[], today: string): { tenancy: Tenancy; upcoming: boolean } | null {
+  const running = tenancies.find((t) => isRunning(t, today));
+  if (running) return { tenancy: running, upcoming: false };
+  const next = tenancies.find((t) => t.start_date > today);
+  return next ? { tenancy: next, upcoming: true } : null;
+}
+
+/** "läuft", "beendet" or "beginnt am 01.07.2024", from the dates. */
+export function tenancyStatus(tenancy: Tenancy, today: string): string {
+  if (tenancy.start_date > today) return `beginnt am ${formatDate(tenancy.start_date)}`;
+  return isRunning(tenancy, today) ? "läuft" : "beendet";
+}
+
 export interface Target {
   type: LinkTarget;
   id: string;

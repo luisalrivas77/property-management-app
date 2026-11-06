@@ -206,6 +206,13 @@ legend {
   margin-top: 6px;
 }
 
+/* A card's title row: heading left, status pill right (Aktuelles Mietverhältnis). */
+.card-head h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+}
+
 /* Label/value facts (Stammdaten): label above value, in a card of their own. */
 .facts {
   display: grid;

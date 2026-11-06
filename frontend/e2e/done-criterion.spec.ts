@@ -132,6 +132,34 @@ test("the done criterion: ETW, loan, tenancy, lease, corrected move-in, History 
     await expect(page.getByText("korrigiert, ursprünglich 15.07.2024")).toBeVisible();
   });
 
+  await test.step("the property shows who rents each unit, the tenant shows their tenancy", async () => {
+    await page.goto(propertyUrl);
+    const flat = page.getByRole("article", { name: "Mietverhältnis WE 3" });
+    await expect(flat.getByText("läuft · unbefristet")).toBeVisible();
+    await expect(flat.getByRole("link", { name: "Max Muster" })).toBeVisible();
+    await expect(flat.getByText("01.07.2024")).toBeVisible(); // the corrected move-in
+    await expect(flat.getByText("950,00 €", { exact: true })).toBeVisible();
+    await expect(flat.getByText("220,00 €", { exact: true })).toBeVisible();
+    await expect(flat.getByText("2.850,00 €, Barkaution / Kautionskonto")).toBeVisible();
+    await expect(flat.getByRole("link", { name: "Zum Mietverhältnis" })).toHaveAttribute("href", tenancyUrl);
+    const parking = page.getByRole("article", { name: "Mietverhältnis TG-Stellplatz 12" });
+    await expect(parking.getByRole("link", { name: "Mietverhältnis anlegen" })).toHaveAttribute("href", /^\/tenancies\/new\?unit=/);
+
+    await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: "Einheiten" }).click();
+    const rows = page.getByRole("table").getByRole("row");
+    await expect(rows.filter({ hasText: "WE 3" }).getByRole("link", { name: "Max Muster" })).toHaveAttribute("href", tenancyUrl);
+    await expect(rows.filter({ hasText: "TG-Stellplatz 12" })).toContainText("leer");
+
+    await page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Mieter" }).click();
+    await page.getByRole("link", { name: "Max Muster" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Max Muster" })).toBeVisible();
+    const tenancy = page.getByRole("table").getByRole("row").filter({ hasText: "WE 3" });
+    await expect(tenancy).toContainText("Wohnung Lindenstraße");
+    await expect(tenancy).toContainText("Hauptmieter");
+    await expect(tenancy).toContainText("01.07.2024");
+    await expect(tenancy.getByRole("link", { name: "läuft" })).toHaveAttribute("href", tenancyUrl);
+  });
+
   await test.step("Verlauf: purchase → financing → possession → move-in (corrected) → rent", async () => {
     await page.goto(propertyUrl);
     await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: "Verlauf" }).click();

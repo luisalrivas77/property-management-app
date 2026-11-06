@@ -556,6 +556,20 @@ def list_tenancies(conn: Connection, unit_id: UUID) -> list[Tenancy]:
     return [_to_tenancy(conn, r) for r in rows]
 
 
+def list_tenancies_of_tenant(conn: Connection, tenant_id: UUID) -> list[Tenancy]:
+    """Every tenancy the tenant is a party of now, ended ones included, by move-in date.
+
+    A tenant removed from a tenancy (set_parties) is no longer a party, so it is not listed
+    here; retention still follows it (parties.tenancies_ever_of)."""
+    rows = conn.execute(
+        select(tenancy_table)
+        .join(party_table, party_table.c.tenancy_id == tenancy_table.c.id)
+        .where(party_table.c.tenant_id == tenant_id)
+        .order_by(tenancy_table.c.start_date, tenancy_table.c.id)
+    ).all()
+    return [_to_tenancy(conn, r) for r in rows]
+
+
 # --- Rent schedule -----------------------------------------------------------------
 
 
