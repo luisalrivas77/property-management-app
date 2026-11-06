@@ -7,10 +7,13 @@ ever appears in an error body or a log line (§3.6).
 
 from uuid import UUID
 
+from sqlalchemy import Connection
+
 from hausbuch.schemas.api import ErasureBody, TenantPatch
 from hausbuch.schemas.document import Document
 from hausbuch.schemas.enums import EntityType, LinkTarget
-from hausbuch.schemas.tenancy import Tenant, TenantCreate
+from hausbuch.schemas.tenancy import Tenancy, Tenant, TenantCreate
+from hausbuch.services.tenancies import list_tenancies_of_tenant
 from hausbuch.services.tenants import (
     create_tenant,
     erase_tenant,
@@ -19,7 +22,7 @@ from hausbuch.services.tenants import (
     update_tenant,
 )
 
-from ..deps import Cmd, SettingsDep, domain_router, found
+from ..deps import Cmd, SettingsDep, domain_router, found, require
 from .documents import linked_documents
 
 router = domain_router()
@@ -55,3 +58,15 @@ def tenant_erase(tenant_id: UUID, body: ErasureBody, cmd: Cmd) -> Tenant:
 @router.get("/tenants/{tenant_id}/documents")
 def tenant_documents(tenant_id: UUID, cmd: Cmd) -> list[Document]:
     return cmd.read(linked_documents(LinkTarget.TENANT, get_tenant), tenant_id)
+
+
+def _tenancies(conn: Connection, tenant_id: UUID) -> list[Tenancy]:
+    require(conn, get_tenant, EntityType.TENANT, tenant_id)
+    return list_tenancies_of_tenant(conn, tenant_id)
+
+
+@router.get("/tenants/{tenant_id}/tenancies")
+def tenant_tenancies(tenant_id: UUID, cmd: Cmd) -> list[Tenancy]:
+    """The tenancies the tenant is a party of now (any role), ended ones included, by move-in
+    date. A tenant removed from a tenancy is no longer listed for it."""
+    return cmd.read(_tenancies, tenant_id)
