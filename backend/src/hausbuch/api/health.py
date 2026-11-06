@@ -4,6 +4,13 @@
 {"status": "unavailable"}. The body never says why: no DB host, role or error text. It keeps
 answering while the process drains, so the platform does not kill an instance that is still
 finishing its work.
+
+Phase 2 (§5.1): with a job worker in the process, the body also says `"worker": "ok"` while
+its loop runs and `"stopped"` otherwise (crashed and waiting to restart, or shutting down).
+A stopped worker does not make the instance unhealthy: the API still serves, and the
+worker's supervisor restarts it. No worker (HAUSBUCH_RUN_WORKER=false, phase 1 tests) and a
+worker that does not report `running` leave the field out; api/app.py's Worker protocol does
+not declare `running` yet.
 """
 
 import asyncio
@@ -35,4 +42,9 @@ async def healthz(request: Request) -> JSONResponse:
     except Exception as exc:  # any failure is "unavailable"; only its class is logged
         request.state.error_log = {"error": "unhealthy", "exc_type": type(exc).__name__}
         return JSONResponse({"status": "unavailable"}, status_code=503)
-    return JSONResponse({"status": "ok"})
+    body = {"status": "ok"}
+    worker = getattr(request.app.state, "worker", None)
+    running = getattr(worker, "running", None)
+    if isinstance(running, bool):
+        body["worker"] = "ok" if running else "stopped"
+    return JSONResponse(body)
