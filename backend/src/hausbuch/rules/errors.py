@@ -27,6 +27,11 @@ AI_UNPARSABLE = "ai.unparsable"  # no parsable line, twice (§5.3)
 AI_REFUSED = "ai.refused"  # stop_reason refusal or max_tokens, twice (§5.3)
 AI_TOO_MANY_PAGES = "ai.too_many_pages"  # past the API's page limit (§5.2)
 AI_UNSUPPORTED_MEDIA_TYPE = "ai.unsupported_media_type"  # HEIC and others (D30)
+# Used by the document_read job beyond §12:
+AI_API_ERROR = "ai.api_error"  # the API answered with an error that retries did not clear
+AI_UNAVAILABLE = "ai.unavailable"  # the API could not be reached (timeouts, overload)
+AI_UNREADABLE = "ai.unreadable"  # the original could not be prepared for the model
+AI_INTERNAL_ERROR = "ai.internal_error"  # a bug in the job; the dead letter names it
 
 AI_ERROR_CODES = frozenset(
     {
@@ -36,5 +41,9 @@ AI_ERROR_CODES = frozenset(
         AI_REFUSED,
         AI_TOO_MANY_PAGES,
         AI_UNSUPPORTED_MEDIA_TYPE,
+        AI_API_ERROR,
+        AI_UNAVAILABLE,
+        AI_UNREADABLE,
+        AI_INTERNAL_ERROR,
     }
 )

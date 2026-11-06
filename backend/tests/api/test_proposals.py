@@ -163,6 +163,7 @@ def test_tenant_data_upload_is_blocked_without_a_job(client_a, enqueued):
     assert body["proposal_status"] == "blocked_tenant_data"
     polled = ok(client_a.get(f"/api/proposals/{body['proposal_id']}"))
     assert polled["error_code"] == "ai.blocked_tenant_data"
+    assert polled["contains_tenant_data"] is True
     assert enqueued == []
 
 
@@ -220,8 +221,12 @@ def test_apply_reject_and_rerun(client_a, client_b, app_engine, sessions, enqueu
         201,
     )
     assert blocked["status"] == "blocked_tenant_data"
+    assert (rerun["contains_tenant_data"], blocked["contains_tenant_data"]) == (False, True)
+    # A re-run without a body keeps the flag of the latest proposal.
+    kept = ok(client_a.post(f"/api/documents/{document_id}/proposals"), 201)
+    assert (kept["status"], kept["contains_tenant_data"]) == ("blocked_tenant_data", True)
     statuses = [p["status"] for p in ok(client_a.get(f"/api/documents/{document_id}/proposals"))]
-    assert statuses == ["blocked_tenant_data", "superseded", "applied"]
+    assert statuses == ["blocked_tenant_data", "blocked_tenant_data", "superseded", "applied"]
 
     # Blocked before any read, it proposes nothing: there is nothing to decide.
     nothing = client_a.post(f"/api/proposals/{blocked['id']}/reject")

@@ -609,3 +609,66 @@ def test_the_service_repeats_the_tenant_gate_on_the_classifier_result(
         ).all()
 
     assert read(ws, extractions) == []
+
+
+# --- The uploader's tenant-data flag on the row (D16 gate 2) -----------------------------
+
+
+def test_the_upload_flag_is_stored_and_a_rerun_keeps_it(
+    run, read, dbname, fresh_workspaces, blob_store, enqueued
+):
+    ws, _ = fresh_workspaces
+    plain = _upload(run, ws, blob_store, b"%PDF plain")
+    assert run(ws, proposals.request_read, plain.id).contains_tenant_data is False
+
+    doc = _upload(run, ws, blob_store, b"%PDF flagged")
+    blocked = run(ws, proposals.request_read, doc.id, contains_tenant_data=True)
+    assert read(ws, proposals.get_proposal, blocked.id).contains_tenant_data is True
+
+    with _admin(dbname) as conn:
+        conn.execute("UPDATE workspace SET ai_tenant_documents = true WHERE id = %s", (ws,))
+    # A re-run copies the flag from the latest proposal; an explicit false does not clear it.
+    again = run(ws, proposals.rerun_proposal, doc.id, contains_tenant_data=False)
+    assert again.status is ProposalStatus.QUEUED and again.contains_tenant_data is True
+    # An explicit true adds it to a document that did not have it.
+    flagged = run(ws, proposals.rerun_proposal, plain.id, contains_tenant_data=True)
+    assert flagged.contains_tenant_data is True
+
+
+def test_a_reupload_that_says_tenant_data_rereads_the_pending_proposal_with_the_flag(
+    run, read, fresh_workspaces, blob_store, enqueued
+):
+    ws, _ = fresh_workspaces
+    doc = _upload(run, ws, blob_store)
+    first = run(ws, proposals.proposal_for_upload, doc.id, created=True, contains_tenant_data=False)
+    again = run(ws, proposals.proposal_for_upload, doc.id, created=False, contains_tenant_data=True)
+    assert again.id != first.id
+    assert again.contains_tenant_data is True
+    assert again.status is ProposalStatus.BLOCKED_TENANT_DATA
+    assert read(ws, proposals.get_proposal, first.id).status is ProposalStatus.SUPERSEDED
+    assert [c["proposal_id"] for c in enqueued] == [first.id]
+
+
+def test_the_stored_flag_blocks_the_read_when_the_setting_was_turned_off(
+    run, read, job, dbname, fresh_workspaces, blob_store, enqueued
+):
+    """Queued while the workspace allowed tenant documents, read after it stopped: the
+    service still blocks on the row's flag though the classifier saw no tenant data."""
+    ws, _ = fresh_workspaces
+    doc = _upload(run, ws, blob_store, b"%PDF turned off")
+    with _admin(dbname) as conn:
+        conn.execute("UPDATE workspace SET ai_tenant_documents = true WHERE id = %s", (ws,))
+    queued = run(ws, proposals.request_read, doc.id, contains_tenant_data=True)
+    with _admin(dbname) as conn:
+        conn.execute("UPDATE workspace SET ai_tenant_documents = false WHERE id = %s", (ws,))
+    stored = job(
+        ws,
+        proposals.record_read_result,
+        queued.id,
+        classification=PURCHASE,
+        classify_call_id=run(ws, _ai_call, doc.id, "classify"),
+        values=PURCHASE_VALUES,
+        extract_call_id=run(ws, _ai_call, doc.id, "extract"),
+    )
+    assert stored.status is ProposalStatus.BLOCKED_TENANT_DATA
+    assert stored.extraction_id is None

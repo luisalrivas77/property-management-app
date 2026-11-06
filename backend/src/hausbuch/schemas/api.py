@@ -358,8 +358,9 @@ class DocumentUploadResult(Schema):
 
 
 class ProposalRerunBody(Schema):
-    """POST /documents/{id}/proposals (optional body): read the document again. The upload's
-    contains_tenant_data is not stored, so a re-run says it again (D16)."""
+    """POST /documents/{id}/proposals (optional body): read the document again. The
+    tenant-data flag is copied from the document's latest proposal; true adds it, false
+    never removes it (D16)."""
 
     contains_tenant_data: bool = False
 

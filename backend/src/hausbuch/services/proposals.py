@@ -146,9 +146,10 @@ def request_read(
     ctx: CommandContext, document_id: UUID, *, contains_tenant_data: bool = False
 ) -> Proposal:
     """A new proposal for the document and its `document_read` job, in the caller's
-    transaction (§6.1). With `contains_tenant_data` and the workspace's ai_tenant_documents
-    off, the privacy gate stops it here (§5.5 step 2): stored `blocked_tenant_data`, nothing
-    enqueued, since the job never learns the flag."""
+    transaction (§6.1). The uploader's `contains_tenant_data` is stored on the row (the job
+    reads it there); with it set and the workspace's ai_tenant_documents off, the privacy
+    gate already stops it here (§5.5 step 2): stored `blocked_tenant_data`, nothing
+    enqueued, so no job and no model call."""
     if documents.get_document(ctx.conn, document_id) is None:
         raise NotFoundError(EntityType.DOCUMENT, document_id)
     blocked = contains_tenant_data and not _ai_tenant_documents(ctx.conn)
@@ -159,6 +160,7 @@ def request_read(
             document_id=document_id,
             status=(ProposalStatus.BLOCKED_TENANT_DATA if blocked else ProposalStatus.QUEUED).value,
             error_code=AI_BLOCKED_TENANT_DATA if blocked else None,
+            contains_tenant_data=contains_tenant_data,
             created_at=ctx.now,
             updated_at=ctx.now,
         )
@@ -183,14 +185,17 @@ def proposal_for_upload(
 ) -> Proposal:
     """The proposal an upload with `ai` answers with: a new one for a new document; for the
     same bytes uploaded again (D9), the document's pending proposal (queued, running or
-    ready) if it has one, so a double upload costs no second model call. After a decision,
-    a failure or a block the upload asks for a new read."""
+    ready) if it has one, so a double upload costs no second model call; unless this upload
+    says tenant data and the pending one did not: then it is re-run with the flag. After a
+    decision, a failure or a block the upload asks for a new read."""
     if not created:
         pending = [
             p for p in list_document_proposals(ctx.conn, document_id) if p.status in _SUPERSEDABLE
         ]
-        if pending:
+        if pending and (pending[0].contains_tenant_data or not contains_tenant_data):
             return pending[0]
+        if pending:
+            return rerun_proposal(ctx, document_id, contains_tenant_data=True)
     return request_read(ctx, document_id, contains_tenant_data=contains_tenant_data)
 
 
@@ -198,9 +203,13 @@ def rerun_proposal(
     ctx: CommandContext, document_id: UUID, *, contains_tenant_data: bool = False
 ) -> Proposal:
     """POST /documents/{id}/proposals: supersede the document's undecided proposals
-    (queued, running, ready) and request a new read."""
+    (queued, running, ready) and request a new read. The tenant-data flag is copied from
+    the document's latest proposal; `contains_tenant_data` can add it, never remove it
+    (once said, a document stays a tenant document, D16)."""
     if documents.get_document(ctx.conn, document_id) is None:
         raise NotFoundError(EntityType.DOCUMENT, document_id)
+    latest = list_document_proposals(ctx.conn, document_id)
+    flagged = contains_tenant_data or bool(latest and latest[0].contains_tenant_data)
     pending = ctx.conn.execute(
         select(proposal_table)
         .where(proposal_table.c.document_id == document_id)
@@ -212,7 +221,7 @@ def rerun_proposal(
         old = _to_proposal(row)
         _set(ctx, old.id, status=ProposalStatus.SUPERSEDED)
         append_event(ctx, EventType.PROPOSAL_SUPERSEDED, old.id, _noted(old))
-    return request_read(ctx, document_id, contains_tenant_data=contains_tenant_data)
+    return request_read(ctx, document_id, contains_tenant_data=flagged)
 
 
 # --- The job's two seams -----------------------------------------------------------------
@@ -250,8 +259,10 @@ def record_read_result(
     # The job applies the gate (§5.5 step 3); this repeats it, so no classifier result can
     # bring a tenant document past a workspace that has not allowed them (D16).
     if not blocked_tenant_data and not _ai_tenant_documents(ctx.conn):
-        blocked_tenant_data = classification.contains_tenant_data or (
-            classification.subtype in _TENANT_SUBTYPES
+        blocked_tenant_data = (
+            current.contains_tenant_data
+            or classification.contains_tenant_data
+            or classification.subtype in _TENANT_SUBTYPES
         )
     append_event(
         ctx,
@@ -871,6 +882,7 @@ def _to_proposal(row) -> Proposal:
         status=m["status"],
         error_code=m["error_code"],
         target_mode=m["target_mode"],
+        contains_tenant_data=m["contains_tenant_data"],
         records=[ProposalRecord.model_validate(r) for r in (m["fields"] or [])],
         extraction_id=m["extraction_id"],
         ai_call_id=m["ai_call_id"],

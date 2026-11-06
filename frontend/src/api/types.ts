@@ -2928,6 +2928,11 @@ export interface components {
             /** Error Code */
             error_code: string | null;
             target_mode: components["schemas"]["ProposalTargetMode"];
+            /**
+             * Contains Tenant Data
+             * @default false
+             */
+            contains_tenant_data: boolean;
             /** Records */
             records?: components["schemas"]["ProposalRecord"][];
             /** Extraction Id */
@@ -3012,8 +3017,9 @@ export interface components {
         };
         /**
          * ProposalRerunBody
-         * @description POST /documents/{id}/proposals (optional body): read the document again. The upload's
-         *     contains_tenant_data is not stored, so a re-run says it again (D16).
+         * @description POST /documents/{id}/proposals (optional body): read the document again. The
+         *     tenant-data flag is copied from the document's latest proposal; true adds it, false
+         *     never removes it (D16).
          */
         ProposalRerunBody: {
             /**
