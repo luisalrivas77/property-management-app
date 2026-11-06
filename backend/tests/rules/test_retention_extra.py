@@ -58,3 +58,20 @@ def test_zero_years_ends_with_the_base_year():
         RetentionPolicy(tax_records_years=0),
     )
     assert got.retain_until == date(2026, 12, 31)
+
+
+def test_grundsteuerbescheid_is_a_tax_record():
+    """Spec amendment 3: the new subtype stays a 10-year tax record, even while owned."""
+    got = document_retention(
+        DocumentRetentionInput(
+            type=DocumentType.BESCHEID,
+            subtype=DocumentSubtype.GRUNDSTEUERBESCHEID,
+            tax_year=2025,
+            received_on=date(2026, 11, 6),
+            ownership_end_dates=[None],
+        ),
+        POLICY,
+    )
+    assert got == RetentionResult(
+        retention_class=RetentionClass.TAX_RECORDS, retain_until=date(2035, 12, 31)
+    )

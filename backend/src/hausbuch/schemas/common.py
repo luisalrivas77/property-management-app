@@ -73,7 +73,8 @@ Rooms = Annotated[
     Decimal, Field(gt=0, max_digits=4, decimal_places=1), _STRING_ONLY, _string_schema(1)
 ]
 
-TaxYear = Annotated[int, Field(ge=2000, le=2100)]
+TAX_YEAR_MIN = 2000  # also the floor of document.tax_year's CHECK
+TaxYear = Annotated[int, Field(ge=TAX_YEAR_MIN, le=2100)]
 Year = Annotated[int, Field(ge=1800, le=2100)]
 
 # Display form only: country + check digits + last four, e.g. "DE89 **** 3000".
