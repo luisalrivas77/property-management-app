@@ -33,6 +33,7 @@ from hausbuch.auth.errors import (
     LastPasskeyError,
     PasskeyNotFoundError,
 )
+from hausbuch.auth.events import append_user_event
 from hausbuch.db.session import workspace_transaction
 from hausbuch.schemas.api import ErrorKind
 from hausbuch.schemas.auth import (
@@ -46,6 +47,13 @@ from hausbuch.schemas.auth import (
     Passkey,
     PasskeyLabel,
     PasskeyVerifyRequest,
+)
+from hausbuch.schemas.events import (
+    Empty,
+    EventType,
+    UserInvited,
+    UserPasskeyRef,
+    UserSessionsRevoked,
 )
 from hausbuch.settings import Settings
 
@@ -218,15 +226,20 @@ def login_verify(body: LoginVerifyRequest, request: Request, response: Response)
 
 @router.post("/logout", status_code=204)
 def logout(request: Request, auth: Auth) -> Response:
+    now = _now()
     with workspace_transaction(_engine(request), auth.workspace_id) as conn:
-        sessions.revoke_session(conn, auth.session_id, now=_now())
+        sessions.revoke_session(conn, auth.session_id, now=now)
+        _event(conn, request, auth, EventType.USER_SIGNED_OUT, Empty(), now)
     return _signed_out(request)
 
 
 @router.post("/logout-all", status_code=204)
 def logout_all(request: Request, auth: Auth) -> Response:
+    now = _now()
     with workspace_transaction(_engine(request), auth.workspace_id) as conn:
-        sessions.revoke_user_sessions(conn, auth.user_id, now=_now())
+        count = sessions.revoke_user_sessions(conn, auth.user_id, now=now)
+        revoked = UserSessionsRevoked(count=count)
+        _event(conn, request, auth, EventType.USER_SESSIONS_REVOKED, revoked, now)
     return _signed_out(request)
 
 
@@ -237,6 +250,20 @@ def me(request: Request, auth: Auth) -> Me:
         return sessions.load_me(
             conn, workspace_id=auth.workspace_id, user_id=auth.user_id, session_id=auth.session_id
         )
+
+
+def _event(conn, request: Request, auth: AuthContext, type: EventType, payload, now) -> None:
+    """A user.* event by the signed-in caller about themself (§10), correlated with the
+    request like every domain command's events."""
+    append_user_event(
+        conn,
+        type,
+        payload,
+        workspace_id=auth.workspace_id,
+        user_id=auth.user_id,
+        now=now,
+        correlation_id=getattr(request.state, "request_id", None),
+    )
 
 
 def _signed_out(request: Request) -> Response:
@@ -297,7 +324,10 @@ def rename_passkey(
 ) -> Passkey:
     try:
         with workspace_transaction(_engine(request), auth.workspace_id) as conn:
-            return passkeys.rename_passkey(conn, auth.user_id, passkey_id, body.label)
+            renamed = passkeys.rename_passkey(conn, auth.user_id, passkey_id, body.label)
+            ref = UserPasskeyRef(passkey_id=passkey_id)
+            _event(conn, request, auth, EventType.USER_PASSKEY_RENAMED, ref, _now())
+            return renamed
     except PasskeyNotFoundError:
         raise AuthRouteError(404, ErrorKind.NOT_FOUND) from None
 
@@ -307,8 +337,11 @@ def delete_passkey(passkey_id: UUID, request: Request, auth: Auth) -> Response:
     """Ends the sessions this passkey opened (§10.5), the caller's own included if it signed
     in with it; 409 for the user's last passkey (§6.7)."""
     try:
+        now = _now()
         with workspace_transaction(_engine(request), auth.workspace_id) as conn:
-            passkeys.delete_passkey(conn, auth.user_id, passkey_id, now=_now())
+            passkeys.delete_passkey(conn, auth.user_id, passkey_id, now=now)
+            ref = UserPasskeyRef(passkey_id=passkey_id)
+            _event(conn, request, auth, EventType.USER_PASSKEY_REMOVED, ref, now)
     except PasskeyNotFoundError:
         raise AuthRouteError(404, ErrorKind.NOT_FOUND) from None
     except LastPasskeyError:
@@ -326,10 +359,13 @@ def create_invite(body: InviteCreate, request: Request, auth: Auth) -> Invite:
     """The enrollment URL is in this response only (the one time the token exists)."""
     settings = _settings(request)
     try:
+        now = _now()
         with workspace_transaction(_engine(request), auth.workspace_id) as conn:
             user, issued = invites.invite_member(
-                conn, auth.workspace_id, body, created_by=auth.user_id, now=_now()
+                conn, auth.workspace_id, body, created_by=auth.user_id, now=now
             )
+            invited = UserInvited(invite_id=issued.id, invited_user_id=user.id)
+            _event(conn, request, auth, EventType.USER_INVITED, invited, now)
     except DuplicateUserError:
         raise AuthRouteError(409, ErrorKind.CONFLICT) from None
     return Invite(
