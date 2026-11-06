@@ -1,6 +1,7 @@
 "use client";
 
 // Dokument (§9.1): the original (open inline or download; never modified, principle 6), the
+// pre-fill proposal to review ("Vorschlag", phase-2.md §6.4, components/proposals.tsx), the
 // typing form (Typ, Untertyp, Titel, Datum, Steuerjahr, manual fields: a new extraction
 // version when they change), the links (Zieltyp + picker, remove), and the retention result.
 import Link from "next/link";
@@ -15,6 +16,7 @@ import { collector, Field, FormBanner, Submit, useFormErrors } from "@/component
 import { formatDate, formatDateTime, shortId } from "@/components/format";
 import { blankToNull, decimalInput, toSignedMoneyString, toYear } from "@/components/input";
 import { DOCUMENT_SUBTYPE, DOCUMENT_TYPE, LINK_TARGET, options, RETENTION_CLASS, RETENTION_HOLD } from "@/components/labels";
+import { ProposalSection } from "@/components/proposals";
 import { Breadcrumbs, Facts, Loading, Notice } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 import { ErrorNotice } from "@/lib/ErrorNotice";
@@ -35,7 +37,8 @@ export default function DocumentPage() {
             <Breadcrumbs items={[{ href: "/documents", label: "Dokumente" }, { label: documentLabel(data.document) }]} />
             <h1>{documentLabel(data.document)}</h1>
             <Original detail={data} />
-            <h2>Typisierung</h2>
+            <ProposalSection detail={data} directory={directory.data ?? null} onApplied={detail.reload} />
+            <h2 id="typisierung">Typisierung</h2>
             {typingSaved ? <Notice>Typisierung gespeichert.</Notice> : null}
             <TypingForm
               key={`${data.document.updated_at}-${data.extraction?.version ?? 0}`}
