@@ -239,6 +239,10 @@ and reviewed by a reviewer agent; every review finding was fixed or is listed be
      upload is dropped by decision (largest real document about 300 KB; results in
      `deploy/scaleway.md`). Still open: Q16 (If-None-Match on the bucket), Q15 (SIGTERM
      timeout) and the real data.
+   - 6 Nov 2026: Q15 answered: Scaleway kills a container about 270 s after SIGTERM, well
+     above the API's 30 s need, so the shutdown settings stay. Still open: Q16 (the bucket
+     refuses the conditional overwrite, but the real-bucket test then failed reading the
+     original back with an unnamed error; diagnosis running) and the real data.
 
 ### Known gaps (not yet built)
 
