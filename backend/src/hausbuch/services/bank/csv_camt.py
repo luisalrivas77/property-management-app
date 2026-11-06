@@ -24,7 +24,9 @@ from hausbuch.schemas.bank import ParsedStatement, StatementFormat, StatementLin
 
 PENDING_INFO = "Umsatz vorgemerkt"
 _FIRST_COLUMN = "Auftragskonto"
-_AMOUNT = re.compile(r"^-?(?:[0-9]{1,3}(?:\.[0-9]{3})+|[0-9]+)(?:,[0-9]{1,2})?$")
+# Bounded at 12 integer digits, inside the Money column's range, so a longer number is the
+# file's error (statement.unparsable), not a database or validation error.
+_AMOUNT = re.compile(r"^-?(?:[0-9]{1,3}(?:\.[0-9]{3}){1,3}|[0-9]{1,12})(?:,[0-9]{1,2})?$")
 _DATE_FORMATS = ("%d.%m.%y", "%d.%m.%Y")
 
 # Canonical column name -> accepted header spellings.

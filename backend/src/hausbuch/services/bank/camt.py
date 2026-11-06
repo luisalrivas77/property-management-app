@@ -20,8 +20,10 @@ counterparty BIC, the entry status and the report's id.
 """
 
 import io
+import lzma
 import re
 import zipfile
+import zlib
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -131,7 +133,15 @@ def _archive_members(data: bytes) -> list[bytes]:
             try:
                 with archive.open(info) as handle:
                     content = handle.read(budget + 1)
-            except (zipfile.BadZipFile, NotImplementedError, RuntimeError, OSError, EOFError):
+            except (
+                zipfile.BadZipFile,
+                NotImplementedError,
+                RuntimeError,
+                OSError,
+                EOFError,
+                zlib.error,  # a corrupt deflate stream
+                lzma.LZMAError,  # a corrupt LZMA stream
+            ):
                 raise RuleError(ARCHIVE_REJECTED, "a member could not be read") from None
             if len(content) > budget:
                 raise RuleError(

@@ -260,6 +260,33 @@ cases:
         DE50100000000000000001;04.01.27;04.01.27;GUTSCHRIFT;Miete;Erika Beispiel;;1.40,00;EUR
     error: statement.unparsable
 
+  - id: amount_with_thirteen_integer_digits
+    description: 'Amounts have at most 12 integer digits (the Money range); a longer one is the file''s error, not a validation error.'
+    input:
+      media_type: text/csv
+      text: |
+        Auftragskonto;Buchungstag;Valutadatum;Buchungstext;Verwendungszweck;Beguenstigter/Zahlungspflichtiger;Kontonummer/IBAN;Betrag;Waehrung
+        DE50100000000000000001;04.01.27;04.01.27;GUTSCHRIFT;Miete;Erika Beispiel;;1234567890123,00;EUR
+    error: statement.unparsable
+
+  - id: amount_with_thirty_one_digits
+    description: 'A very long number must not reach Decimal arithmetic or the database.'
+    input:
+      media_type: text/csv
+      text: |
+        Auftragskonto;Buchungstag;Valutadatum;Buchungstext;Verwendungszweck;Beguenstigter/Zahlungspflichtiger;Kontonummer/IBAN;Betrag;Waehrung
+        DE50100000000000000001;04.01.27;04.01.27;GUTSCHRIFT;Miete;Erika Beispiel;;1111111111111111111111111111111;EUR
+    error: statement.unparsable
+
+  - id: amount_with_four_thousands_groups
+    description: 'Thirteen digits written with thousands dots is just as out of range.'
+    input:
+      media_type: text/csv
+      text: |
+        Auftragskonto;Buchungstag;Valutadatum;Buchungstext;Verwendungszweck;Beguenstigter/Zahlungspflichtiger;Kontonummer/IBAN;Betrag;Waehrung
+        DE50100000000000000001;04.01.27;04.01.27;GUTSCHRIFT;Miete;Erika Beispiel;;1.234.567.890.123,00;EUR
+    error: statement.unparsable
+
   - id: amount_with_a_decimal_point
     description: 'A decimal point (1400.00) is ambiguous in a German export (a thousands dot?), so it is refused rather than guessed.'
     input:
