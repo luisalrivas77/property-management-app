@@ -161,6 +161,22 @@ class DuplicateDecisionBody(Schema):
 # --- Inputs and outputs of rules.statements -------------------------------------------
 
 
+class LineForHash(Schema):
+    """A parsed line as rules.statements.line_hash reads it (line_hash.yaml). The service
+    builds it from a StatementLine after computing the counterparty IBAN's keyed HMAC: the
+    hash never sees the plaintext IBAN, so a stored hash cannot be brute-forced back to it."""
+
+    booking_date: date
+    value_date: date | None = None
+    amount: Money
+    counterparty_name: str | None = None
+    counterparty_iban_hmac: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    purpose: str = ""
+    booking_text: str | None = None
+    bank_reference: str | None = None
+    end_to_end_ref: str | None = None
+
+
 class StoredLine(Schema):
     """A transaction as the dedup and balance rules see it. counterparty_iban_hmac is hex;
     counterparty_name is as stored (the rule normalizes it)."""

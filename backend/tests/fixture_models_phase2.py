@@ -30,7 +30,15 @@ from hausbuch.schemas.allocation import (
     ServicePeriod,
     TaxTreatment,
 )
-from hausbuch.schemas.common import Confidence, Money, Schema
+from hausbuch.schemas.bank import (
+    LineForHash,
+    ReconcileResult,
+    StatementFormat,
+    StoredLine,
+    WindowSums,
+)
+from hausbuch.schemas.common import Confidence, Money, Schema, Sha256Hex
+from hausbuch.schemas.enums import DuplicateStatus
 
 FIXTURES = Path(__file__).parent / "fixtures" / "phase2"
 
@@ -229,6 +237,111 @@ class RoutingFixture(Schema):
         return self
 
 
+# --- line_hash.yaml --------------------------------------------------------------------
+
+
+class LineHashCase(Lenient):
+    files: list[list[LineForHash]] = Field(min_length=1)
+    expect: list[list[Sha256Hex]]
+
+    @model_validator(mode="after")
+    def _shape(self) -> Self:
+        if [len(f) for f in self.files] != [len(h) for h in self.expect]:
+            raise ValueError(f"{self.id}: one pinned hash per line of every file")
+        return self
+
+
+class LineHashFixture(Schema):
+    account_id: UUID
+    cases: list[LineHashCase]
+
+
+# --- duplicates.yaml -------------------------------------------------------------------
+
+
+class LikelyCase(Lenient):
+    new_line: StoredLine
+    existing: list[StoredLine]
+    expect: list[UUID]
+
+
+class Exclusion(Schema):
+    excluded_id: UUID
+    excluded_as_duplicate_of: UUID
+
+
+class ResolveCase(Lenient):
+    transaction_id: UUID
+    other_transaction_id: UUID
+    status: Literal[DuplicateStatus.KEPT_BOTH, DuplicateStatus.MERGED]
+    expect: Exclusion | None
+
+
+class DuplicatesFixture(Schema):
+    ids: dict[str, str]
+    likely: list[LikelyCase]
+    resolve: list[ResolveCase]
+
+
+# --- reconcile.yaml --------------------------------------------------------------------
+
+
+class Anchor(Schema):
+    balance: Money
+    on: date
+
+
+class BalanceLine(Schema):
+    id: UUID
+    booking_date: date
+    amount: Money
+    excluded_as_duplicate_of: UUID | None = None
+
+    def stored(self) -> StoredLine:
+        """The StoredLine the rule reads; account, format and hash do not affect the sums."""
+        return StoredLine(
+            id=self.id,
+            account_id=UUID(int=0),
+            format=StatementFormat.CSV_CAMT,
+            line_hash=self.id.hex * 2,
+            booking_date=self.booking_date,
+            amount=self.amount,
+            excluded_as_duplicate_of=self.excluded_as_duplicate_of,
+        )
+
+
+class FileWindow(Schema):
+    first_booking_on: date
+    last_booking_on: date
+    declared_closing: Money | None
+    file_opening: Money | None
+
+
+class ReconcileExpect(Schema):
+    sums: WindowSums
+    result: ReconcileResult
+
+
+class ReconcileCase(Lenient):
+    anchor: Anchor
+    lines: list[BalanceLine]
+    file: FileWindow
+    expect: ReconcileExpect
+
+    @model_validator(mode="after")
+    def _arithmetic(self) -> Self:
+        """The expected computed balances follow from the expected sums."""
+        r, w, a = self.expect.result, self.expect.sums, self.anchor.balance
+        if (r.computed_opening, r.computed_closing) != (a + w.stored_before, a + w.stored_through):
+            raise ValueError(f"{self.id}: computed balances do not follow from the sums")
+        return self
+
+
+class ReconcileFixture(Schema):
+    anchor: Anchor
+    cases: list[ReconcileCase]
+
+
 MODELS: dict[str, type[Schema]] = {
     "categories": CategoriesFixture,
     "thresholds": ThresholdsFixture,
@@ -237,6 +350,9 @@ MODELS: dict[str, type[Schema]] = {
     "matchers": MatchersFixture,
     "rules": RulesFixture,
     "review_routing": RoutingFixture,
+    "line_hash": LineHashFixture,
+    "duplicates": DuplicatesFixture,
+    "reconcile": ReconcileFixture,
 }
 
 
