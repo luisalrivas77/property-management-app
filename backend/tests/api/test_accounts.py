@@ -122,3 +122,13 @@ def test_another_workspace_gets_404_and_empty_lists(client_a, client_b):
     assert _upload(client_b, account["id"]).status_code == 404
     assert ok(client_b.get("/api/accounts")) == []
     assert ok(client_b.get("/api/possible-duplicates")) == []
+
+
+def test_a_statement_upload_gets_the_upload_limit_not_the_json_limit(client_a):
+    """A year of daily reports or a PDF is over the 1 MiB JSON limit: the imports path must
+    reach the route (which then judges the file), not be refused at the transport."""
+    account = create(client_a, "/api/accounts", ACCOUNT)
+    big = b"PK\x03\x04" + b"\0" * (2 * 1024 * 1024)
+    response = _upload(client_a, account["id"], data=big)
+    assert response.status_code != 413, response.text
+    assert response.status_code == 422
