@@ -1,0 +1,649 @@
+# Rule fixture: document checklist (hausbuch.rules.document_checklist.build_checklist)
+#
+# build_checklist(facts, tax_year, today) -> list[ChecklistItem]
+# Spec amendment 3 (docs/phases/phase-1.md, 6 Nov 2026). The items a property's tax year
+# needs, each with its status and the documents that satisfy it.
+#
+# Owned in Y: purchase_date <= 31 Dec Y and (ownership_ended_on null or >= 1 Jan Y).
+#   Not owned in Y -> [] (no items at all).
+# Items, in this order (the spec's table), then by scope:
+#   purchase_contract          property  subtype purchase_contract linked to P           always
+#   price_split                property  by the selected split (below)                     always
+#   acquisition_cost_evidence  per cost  the row's document_id (whatever its typing)       always
+#   grundsteuerbescheid        property  subtype grundsteuerbescheid linked to P,
+#                                        tax_year null or <= Y                             always
+#   loan_contract              per loan  subtype loan_contract linked to the loan          always
+#   zinsbescheinigung          per loan  type zinsbescheinigung, tax_year = Y, linked to
+#                                        the loan                                    28 Feb Y+1
+#   lease                      per ten.  subtype lease linked to the tenancy               always
+#   handover_protocol          per ten.  subtype handover_protocol linked to the tenancy;
+#                                        only if the tenancy started on/after purchase_date always
+#   deposit_record             per ten.  subtype deposit_record linked to the tenancy; only
+#                                        if deposit_form != none                           always
+#   wirtschaftsplan            property  ETW only; type wirtschaftsplan, tax_year = Y,
+#                                        linked to P or one of its units                1 Jan Y
+#   hausgeldabrechnung         property  ETW only; type hausgeldabrechnung, tax_year = Y,
+#                                        linked to P or one of its units             30 Jun Y+1
+#   Loans: those disbursed on or before 31 Dec Y. Tenancies: those of P's units overlapping Y
+#   (start_date <= 31 Dec Y and (end_date null or end_date >= 1 Jan Y)).
+# price_split by the property's selected split:
+#   none selected -> missing; purchase_contract -> the purchase_contract item's status and
+#   documents; appraisal -> present with its evidence_document_id; bmf_tool -> present, no
+#   document (the result is stored).
+# Matching: a requirement with a subtype matches on the subtype; one with only a type matches
+#   on the type. An untyped document matches nothing. "Linked" = a document_link to one of the
+#   requirement's accepted targets for that scope; any other target does not count.
+# Status:
+#   present    at least one match; all matches listed, oldest first (received_at, then id)
+#   incomplete no match, but a document of the right type/subtype on the right target has
+#              tax_year null (only for "tax_year = Y" rules; listed oldest first). Wins over
+#              expected: setting the tax year is something to do now.
+#   expected   none, and due_on > today
+#   missing    none, and due (due_on <= today, or "always")
+# due_on: null for "always" items, else the date above (28 Feb literally, also in leap years).
+# Scope order: loan by disbursed_on, tenancy by start_date, cost row by kind (in the order
+#   real_estate_transfer_tax, notary, land_registry, broker, other) then amount; ties by id.
+# Scope context (no tenant personal data, D5): loan -> lender; tenancy -> unit_label and
+#   tenancy_start; acquisition_cost -> cost_kind and cost_amount; property -> none.
+# Every case must give the same result for any order of the facts' lists (the rule test
+#   shuffles them).
+
+ids:
+  property: &P 0000000b-0000-4000-8000-000000000001
+  property_other: &P_OTHER 0000000b-0000-4000-8000-000000000002
+  unit_flat: &U1 0000000c-0000-4000-8000-000000000001
+  unit_parking: &U2 0000000c-0000-4000-8000-000000000002
+  tenancy_1: &T1 0000000e-0000-4000-8000-000000000001
+  tenancy_2: &T2 0000000e-0000-4000-8000-000000000002
+  tenancy_3: &T3 0000000e-0000-4000-8000-000000000003
+  tenancy_4: &T4 0000000e-0000-4000-8000-000000000004
+  loan_1: &L1 0000000f-0000-4000-8000-000000000001
+  loan_2: &L2 0000000f-0000-4000-8000-000000000002
+  loan_3: &L3 0000000f-0000-4000-8000-000000000003
+  split: &S1 0000005a-0000-4000-8000-000000000001
+  cost_1: &C1 000000ac-0000-4000-8000-000000000001
+  cost_2: &C2 000000ac-0000-4000-8000-000000000002
+  cost_3: &C3 000000ac-0000-4000-8000-000000000003
+  cost_4: &C4 000000ac-0000-4000-8000-000000000004
+  doc_1: &D1 00000d0c-0000-4000-8000-000000000001
+  doc_2: &D2 00000d0c-0000-4000-8000-000000000002
+  doc_3: &D3 00000d0c-0000-4000-8000-000000000003
+  doc_4: &D4 00000d0c-0000-4000-8000-000000000004
+
+# Shared facts, merged into cases with <<. Bought (Übergang) on 1 May 2024, still owned.
+bases:
+  efh: &efh {property_id: *P, kind: efh, purchase_date: 2024-05-01}
+  etw: &etw {property_id: *P, kind: etw, purchase_date: 2024-05-01}
+
+cases:
+  # --- Property kind and the bare minimum --------------------------------------------
+
+  - id: efh_with_nothing_in
+    description: an EFH has the three property items and no WEG items
+    tax_year: 2026
+    today: 2026-11-06
+    facts: {<<: *efh}
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+
+  - id: etw_with_nothing_in
+    description: an ETW adds Wirtschaftsplan (due 1 Jan Y) and Hausgeldabrechnung (30 Jun Y+1)
+    tax_year: 2026
+    today: 2026-11-06
+    facts:
+      <<: *etw
+      units: [{id: *U1, label: WE 1}]
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: wirtschaftsplan, status: missing, due_on: 2026-01-01, scope: {type: property, id: *P}}
+      - {code: hausgeldabrechnung, status: expected, due_on: 2027-06-30, scope: {type: property, id: *P}}
+
+  - id: mfh_has_no_weg_items
+    description: WEG documents linked to an MFH create no items
+    tax_year: 2026
+    today: 2026-11-06
+    facts:
+      property_id: *P
+      kind: mfh
+      purchase_date: 2024-05-01
+      units: [{id: *U1, label: WE 1}]
+      documents:
+        - {id: *D1, type: wirtschaftsplan, tax_year: 2026, received_at: 2026-11-01T09:00:00Z,
+           links: [{target_type: property, target_id: *P}]}
+        - {id: *D2, type: hausgeldabrechnung, tax_year: 2026, received_at: 2026-11-02T09:00:00Z,
+           links: [{target_type: unit, target_id: *U1}]}
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+
+  # --- Purchase contract and price split ---------------------------------------------
+
+  - id: purchase_contract_present_oldest_first_and_split_mirrors_it
+    description: >
+      two Kaufvertrag copies, listed by received_at; the selected split comes from the
+      contract, so price_split has the contract's status and documents
+    tax_year: 2026
+    today: 2026-11-06
+    facts:
+      <<: *efh
+      selected_price_split: {id: *S1, source: purchase_contract}
+      documents:
+        - {id: *D1, type: contract, subtype: purchase_contract, received_at: 2026-11-03T09:00:00Z,
+           links: [{target_type: property, target_id: *P}]}
+        - {id: *D2, type: contract, subtype: purchase_contract, received_at: 2026-11-01T09:00:00Z,
+           links: [{target_type: property, target_id: *P}]}
+    expect:
+      - {code: purchase_contract, status: present, scope: {type: property, id: *P}, documents: [*D2, *D1]}
+      - {code: price_split, status: present, scope: {type: property, id: *P}, documents: [*D2, *D1]}
+      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+
+  - id: split_from_contract_without_the_contract_and_wrong_targets
+    description: >
+      a contract without the subtype, a Kaufvertrag linked to another property, one linked to
+      a unit, and an untyped document linked to P count for nothing; the contract split is
+      therefore missing too
+    tax_year: 2026
+    today: 2026-11-06
+    facts:
+      <<: *efh
+      selected_price_split: {id: *S1, source: purchase_contract}
+      units: [{id: *U1, label: Haus}]
+      documents:
+        - {id: *D1, type: contract, received_at: 2026-11-01T09:00:00Z,
+           links: [{target_type: property, target_id: *P}]}
+        - {id: *D2, type: contract, subtype: purchase_contract, received_at: 2026-11-01T10:00:00Z,
+           links: [{target_type: property, target_id: *P_OTHER}]}
+        - {id: *D3, type: contract, subtype: purchase_contract, received_at: 2026-11-01T11:00:00Z,
+           links: [{target_type: unit, target_id: *U1}]}
+        - {id: *D4, received_at: 2026-11-01T12:00:00Z,
+           links: [{target_type: property, target_id: *P}]}
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+
+  - id: split_by_appraisal_counts_its_evidence
+    description: the Gutachten is the split's evidence_document_id; it need not be linked
+    tax_year: 2026
+    today: 2026-11-06
+    facts:
+      <<: *efh
+      selected_price_split: {id: *S1, source: appraisal, evidence_document_id: *D1}
+      documents:
+        - {id: *D1, type: other, subtype: appraisal, received_at: 2026-11-01T09:00:00Z}
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: present, scope: {type: property, id: *P}, documents: [*D1]}
+      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+
+  - id: split_by_bmf_tool_needs_no_document
+    description: the BMF Arbeitshilfe result is stored with the split
+    tax_year: 2026
+    today: 2026-11-06
+    facts:
+      <<: *efh
+      selected_price_split: {id: *S1, source: bmf_tool}
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: present, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+
+  # --- Acquisition costs ---------------------------------------------------------------
+
+  - id: acquisition_cost_rows_by_kind_then_amount
+    description: >
+      one item per cost row, after price_split; present iff the row has a document_id
+      (whatever that document's typing or links); input order reversed on purpose
+    tax_year: 2026
+    today: 2026-11-06
+    facts:
+      <<: *efh
+      acquisition_costs:
+        - {id: *C1, kind: broker, amount: "12000.00", document_id: *D1}
+        - {id: *C2, kind: notary, amount: "2100.50"}
+        - {id: *C3, kind: real_estate_transfer_tax, amount: "17500.00", document_id: *D2}
+        - {id: *C4, kind: broker, amount: "450.00"}
+      documents:
+        - {id: *D1, type: invoice, subtype: cost_basis_evidence, received_at: 2026-11-01T09:00:00Z}
+        - {id: *D2, type: bescheid, received_at: 2026-11-01T10:00:00Z}
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - code: acquisition_cost_evidence
+        status: present
+        scope: {type: acquisition_cost, id: *C3, cost_kind: real_estate_transfer_tax, cost_amount: "17500.00"}
+        documents: [*D2]
+      - code: acquisition_cost_evidence
+        status: missing
+        scope: {type: acquisition_cost, id: *C2, cost_kind: notary, cost_amount: "2100.50"}
+      - code: acquisition_cost_evidence
+        status: missing
+        scope: {type: acquisition_cost, id: *C4, cost_kind: broker, cost_amount: "450.00"}
+      - code: acquisition_cost_evidence
+        status: present
+        scope: {type: acquisition_cost, id: *C1, cost_kind: broker, cost_amount: "12000.00"}
+        documents: [*D1]
+      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+
+  # --- Grundsteuerbescheid --------------------------------------------------------------
+
+  - id: grundsteuerbescheid_without_or_before_the_year_counts
+    description: >
+      tax_year null and tax_year <= Y both count (oldest first); a Bescheid for a later year
+      does not
+    tax_year: 2026
+    today: 2026-11-06
+    facts:
+      <<: *efh
+      documents:
+        - {id: *D1, type: bescheid, subtype: grundsteuerbescheid, received_at: 2026-11-04T09:00:00Z,
+           links: [{target_type: property, target_id: *P}]}
+        - {id: *D2, type: bescheid, subtype: grundsteuerbescheid, tax_year: 2025,
+           received_at: 2026-11-02T09:00:00Z, links: [{target_type: property, target_id: *P}]}
+        - {id: *D3, type: bescheid, subtype: grundsteuerbescheid, tax_year: 2027,
+           received_at: 2026-11-01T09:00:00Z, links: [{target_type: property, target_id: *P}]}
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: present, scope: {type: property, id: *P}, documents: [*D2, *D1]}
+
+  - id: grundsteuerbescheid_for_the_same_year_counts
+    tax_year: 2026
+    today: 2026-11-06
+    facts:
+      <<: *efh
+      documents:
+        - {id: *D1, type: bescheid, subtype: grundsteuerbescheid, tax_year: 2026,
+           received_at: 2026-11-01T09:00:00Z, links: [{target_type: property, target_id: *P}]}
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: present, scope: {type: property, id: *P}, documents: [*D1]}
+
+  - id: grundsteuerbescheid_for_a_later_year_only_is_missing
+    description: >
+      the "null or <= Y" rule never yields incomplete; a Bescheid without the subtype does not
+      count either
+    tax_year: 2026
+    today: 2026-11-06
+    facts:
+      <<: *efh
+      documents:
+        - {id: *D1, type: bescheid, subtype: grundsteuerbescheid, tax_year: 2027,
+           received_at: 2026-11-01T09:00:00Z, links: [{target_type: property, target_id: *P}]}
+        - {id: *D2, type: bescheid, tax_year: 2026,
+           received_at: 2026-11-01T10:00:00Z, links: [{target_type: property, target_id: *P}]}
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+
+  # --- Loans ------------------------------------------------------------------------------
+
+  - id: loans_by_disbursement_and_none_after_the_year
+    description: >
+      all loan_contract items, then all zinsbescheinigung items, each by disbursed_on; a loan
+      disbursed after 31 Dec Y has no items; the Zinsbescheinigung is expected until 28 Feb Y+1
+    tax_year: 2026
+    today: 2026-11-06
+    facts:
+      <<: *efh
+      loans:
+        - {id: *L3, lender: Bausparkasse, disbursed_on: 2027-01-15}
+        - {id: *L2, lender: KfW, disbursed_on: 2024-06-01}
+        - {id: *L1, lender: Sparkasse, disbursed_on: 2024-04-15}
+      documents:
+        - {id: *D1, type: contract, subtype: loan_contract, received_at: 2026-11-01T09:00:00Z,
+           links: [{target_type: loan, target_id: *L1}]}
+        - {id: *D2, type: contract, subtype: loan_contract, received_at: 2026-11-01T10:00:00Z,
+           links: [{target_type: loan, target_id: *L3}]}
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: loan_contract, status: present, scope: {type: loan, id: *L1, lender: Sparkasse}, documents: [*D1]}
+      - {code: loan_contract, status: missing, scope: {type: loan, id: *L2, lender: KfW}}
+      - {code: zinsbescheinigung, status: expected, due_on: 2027-02-28, scope: {type: loan, id: *L1, lender: Sparkasse}}
+      - {code: zinsbescheinigung, status: expected, due_on: 2027-02-28, scope: {type: loan, id: *L2, lender: KfW}}
+
+  - id: zinsbescheinigung_for_the_year_is_present
+    description: >
+      only tax_year = Y counts; another year's is ignored, and a null-year one does not turn a
+      present item incomplete
+    tax_year: 2025
+    today: 2026-03-15
+    facts:
+      <<: *efh
+      loans: [{id: *L1, lender: Sparkasse, disbursed_on: 2024-04-15}]
+      documents:
+        - {id: *D1, type: zinsbescheinigung, tax_year: 2025, received_at: 2026-01-20T09:00:00Z,
+           links: [{target_type: loan, target_id: *L1}]}
+        - {id: *D2, type: zinsbescheinigung, tax_year: 2024, received_at: 2025-01-20T09:00:00Z,
+           links: [{target_type: loan, target_id: *L1}]}
+        - {id: *D3, type: zinsbescheinigung, received_at: 2026-02-01T09:00:00Z,
+           links: [{target_type: loan, target_id: *L1}]}
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: loan_contract, status: missing, scope: {type: loan, id: *L1, lender: Sparkasse}}
+      - {code: zinsbescheinigung, status: present, due_on: 2026-02-28, scope: {type: loan, id: *L1, lender: Sparkasse}, documents: [*D1]}
+
+  - id: zinsbescheinigung_without_tax_year_is_incomplete_before_due
+    description: >
+      a Zinsbescheinigung on the loan with no tax_year is incomplete, also before it is due
+      (incomplete wins over expected); one for an earlier year does not count
+    tax_year: 2026
+    today: 2026-11-06
+    facts:
+      <<: *efh
+      loans: [{id: *L1, lender: Sparkasse, disbursed_on: 2024-04-15}]
+      documents:
+        - {id: *D1, type: zinsbescheinigung, received_at: 2026-11-02T09:00:00Z,
+           links: [{target_type: loan, target_id: *L1}]}
+        - {id: *D2, type: zinsbescheinigung, tax_year: 2025, received_at: 2026-01-20T09:00:00Z,
+           links: [{target_type: loan, target_id: *L1}]}
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: loan_contract, status: missing, scope: {type: loan, id: *L1, lender: Sparkasse}}
+      - {code: zinsbescheinigung, status: incomplete, due_on: 2027-02-28, scope: {type: loan, id: *L1, lender: Sparkasse}, documents: [*D1]}
+
+  - id: zinsbescheinigung_without_tax_year_is_incomplete_after_due
+    tax_year: 2025
+    today: 2026-03-15
+    facts:
+      <<: *efh
+      loans: [{id: *L1, lender: Sparkasse, disbursed_on: 2024-04-15}]
+      documents:
+        - {id: *D1, type: zinsbescheinigung, received_at: 2026-01-20T09:00:00Z,
+           links: [{target_type: loan, target_id: *L1}]}
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: loan_contract, status: missing, scope: {type: loan, id: *L1, lender: Sparkasse}}
+      - {code: zinsbescheinigung, status: incomplete, due_on: 2026-02-28, scope: {type: loan, id: *L1, lender: Sparkasse}, documents: [*D1]}
+
+  - id: zinsbescheinigung_on_the_wrong_target_does_not_count
+    description: >
+      linked to the property, or to the other loan, it is not this loan's (nor incomplete)
+    tax_year: 2025
+    today: 2026-03-01
+    facts:
+      <<: *efh
+      loans:
+        - {id: *L1, lender: Sparkasse, disbursed_on: 2024-04-15}
+        - {id: *L2, lender: KfW, disbursed_on: 2024-06-01}
+      documents:
+        - {id: *D1, type: zinsbescheinigung, tax_year: 2025, received_at: 2026-01-20T09:00:00Z,
+           links: [{target_type: property, target_id: *P}]}
+        - {id: *D2, type: zinsbescheinigung, received_at: 2026-01-21T09:00:00Z,
+           links: [{target_type: loan, target_id: *L2}]}
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: loan_contract, status: missing, scope: {type: loan, id: *L1, lender: Sparkasse}}
+      - {code: loan_contract, status: missing, scope: {type: loan, id: *L2, lender: KfW}}
+      - {code: zinsbescheinigung, status: missing, due_on: 2026-02-28, scope: {type: loan, id: *L1, lender: Sparkasse}}
+      - {code: zinsbescheinigung, status: incomplete, due_on: 2026-02-28, scope: {type: loan, id: *L2, lender: KfW}, documents: [*D2]}
+
+  - id: zinsbescheinigung_expected_the_day_before_due
+    description: a loan disbursed on 31 Dec Y has items for Y
+    tax_year: 2025
+    today: 2026-02-27
+    facts:
+      <<: *efh
+      loans: [{id: *L1, lender: Sparkasse, disbursed_on: 2025-12-31}]
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: loan_contract, status: missing, scope: {type: loan, id: *L1, lender: Sparkasse}}
+      - {code: zinsbescheinigung, status: expected, due_on: 2026-02-28, scope: {type: loan, id: *L1, lender: Sparkasse}}
+
+  - id: zinsbescheinigung_missing_on_the_due_date
+    description: expected only while due_on > today; on the day itself it is missing
+    tax_year: 2025
+    today: 2026-02-28
+    facts:
+      <<: *efh
+      loans: [{id: *L1, lender: Sparkasse, disbursed_on: 2025-12-31}]
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: loan_contract, status: missing, scope: {type: loan, id: *L1, lender: Sparkasse}}
+      - {code: zinsbescheinigung, status: missing, due_on: 2026-02-28, scope: {type: loan, id: *L1, lender: Sparkasse}}
+
+  - id: zinsbescheinigung_due_on_28_february_in_a_leap_year
+    description: Y+1 = 2024 is a leap year; due is still 28 Feb, so on 29 Feb it is missing
+    tax_year: 2023
+    today: 2024-02-29
+    facts:
+      property_id: *P
+      kind: efh
+      purchase_date: 2022-10-01
+      loans: [{id: *L1, lender: Sparkasse, disbursed_on: 2022-09-15}]
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: loan_contract, status: missing, scope: {type: loan, id: *L1, lender: Sparkasse}}
+      - {code: zinsbescheinigung, status: missing, due_on: 2024-02-28, scope: {type: loan, id: *L1, lender: Sparkasse}}
+
+  # --- Tenancies --------------------------------------------------------------------------
+
+  - id: tenancy_items_by_start_date
+    description: >
+      T1 was taken over with the property (started before purchase_date): lease and deposit,
+      no handover protocol. T2 started on purchase_date with no deposit: lease and handover.
+      T3 started after: all three. A lease linked to the unit, not the tenancy, does not count.
+      All leases first, then handovers, then deposits, each by start_date.
+    tax_year: 2026
+    today: 2026-11-06
+    facts:
+      <<: *efh
+      units:
+        - {id: *U2, label: Stellplatz 4}
+        - {id: *U1, label: WE 1}
+      tenancies:
+        - {id: *T3, unit_id: *U1, start_date: 2026-05-01, deposit_form: bank_guarantee}
+        - {id: *T2, unit_id: *U2, start_date: 2024-05-01, deposit_form: none}
+        - {id: *T1, unit_id: *U1, start_date: 2019-08-01, end_date: 2026-03-31, deposit_form: cash_account}
+      documents:
+        - {id: *D1, type: contract, subtype: lease, received_at: 2026-11-01T09:00:00Z,
+           links: [{target_type: tenancy, target_id: *T1}]}
+        - {id: *D2, type: contract, subtype: lease, received_at: 2026-11-01T10:00:00Z,
+           links: [{target_type: unit, target_id: *U1}]}
+        - {id: *D3, type: other, subtype: handover_protocol, received_at: 2026-11-01T11:00:00Z,
+           links: [{target_type: tenancy, target_id: *T3}]}
+        - {id: *D4, type: statement, subtype: deposit_record, received_at: 2026-11-01T12:00:00Z,
+           links: [{target_type: tenancy, target_id: *T1}]}
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - code: lease
+        status: present
+        scope: {type: tenancy, id: *T1, unit_label: WE 1, tenancy_start: 2019-08-01}
+        documents: [*D1]
+      - code: lease
+        status: missing
+        scope: {type: tenancy, id: *T2, unit_label: Stellplatz 4, tenancy_start: 2024-05-01}
+      - code: lease
+        status: missing
+        scope: {type: tenancy, id: *T3, unit_label: WE 1, tenancy_start: 2026-05-01}
+      - code: handover_protocol
+        status: missing
+        scope: {type: tenancy, id: *T2, unit_label: Stellplatz 4, tenancy_start: 2024-05-01}
+      - code: handover_protocol
+        status: present
+        scope: {type: tenancy, id: *T3, unit_label: WE 1, tenancy_start: 2026-05-01}
+        documents: [*D3]
+      - code: deposit_record
+        status: present
+        scope: {type: tenancy, id: *T1, unit_label: WE 1, tenancy_start: 2019-08-01}
+        documents: [*D4]
+      - code: deposit_record
+        status: missing
+        scope: {type: tenancy, id: *T3, unit_label: WE 1, tenancy_start: 2026-05-01}
+
+  - id: tenancies_outside_the_year_have_no_items
+    description: >
+      T1 ended on 31 Dec Y-1 and T2 starts on 1 Jan Y+1: no items. T3 ended on 1 Jan Y and T4
+      starts on 31 Dec Y: both overlap Y.
+    tax_year: 2026
+    today: 2026-11-06
+    facts:
+      <<: *efh
+      units:
+        - {id: *U1, label: WE 1}
+        - {id: *U2, label: Stellplatz 4}
+      tenancies:
+        - {id: *T1, unit_id: *U1, start_date: 2020-01-01, end_date: 2025-12-31, deposit_form: cash_account}
+        - {id: *T2, unit_id: *U1, start_date: 2027-01-01, deposit_form: cash_account}
+        - {id: *T3, unit_id: *U2, start_date: 2018-03-01, end_date: 2026-01-01, deposit_form: none}
+        - {id: *T4, unit_id: *U2, start_date: 2026-12-31, deposit_form: none}
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - code: lease
+        status: missing
+        scope: {type: tenancy, id: *T3, unit_label: Stellplatz 4, tenancy_start: 2018-03-01}
+      - code: lease
+        status: missing
+        scope: {type: tenancy, id: *T4, unit_label: Stellplatz 4, tenancy_start: 2026-12-31}
+      - code: handover_protocol
+        status: missing
+        scope: {type: tenancy, id: *T4, unit_label: Stellplatz 4, tenancy_start: 2026-12-31}
+
+  # --- WEG documents (ETW) ------------------------------------------------------------------
+
+  - id: weg_documents_linked_to_the_property_or_a_unit_count
+    description: >
+      a Wirtschaftsplan linked to the unit counts; a Hausgeldabrechnung linked to the property
+      counts; next year's Wirtschaftsplan does not
+    tax_year: 2025
+    today: 2026-11-06
+    facts:
+      <<: *etw
+      units: [{id: *U1, label: WE 1}]
+      documents:
+        - {id: *D1, type: wirtschaftsplan, tax_year: 2025, received_at: 2025-01-10T09:00:00Z,
+           links: [{target_type: unit, target_id: *U1}]}
+        - {id: *D2, type: hausgeldabrechnung, tax_year: 2025, received_at: 2026-05-10T09:00:00Z,
+           links: [{target_type: property, target_id: *P}]}
+        - {id: *D3, type: wirtschaftsplan, tax_year: 2026, received_at: 2025-12-10T09:00:00Z,
+           links: [{target_type: property, target_id: *P}]}
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: wirtschaftsplan, status: present, due_on: 2025-01-01, scope: {type: property, id: *P}, documents: [*D1]}
+      - {code: hausgeldabrechnung, status: present, due_on: 2026-06-30, scope: {type: property, id: *P}, documents: [*D2]}
+
+  - id: weg_documents_without_tax_year_are_incomplete
+    description: >
+      both incomplete (the Hausgeldabrechnung before it is due); a Wirtschaftsplan linked to
+      another property is ignored
+    tax_year: 2026
+    today: 2026-11-06
+    facts:
+      <<: *etw
+      units: [{id: *U1, label: WE 1}]
+      documents:
+        - {id: *D1, type: wirtschaftsplan, received_at: 2026-01-10T09:00:00Z,
+           links: [{target_type: property, target_id: *P}]}
+        - {id: *D2, type: hausgeldabrechnung, received_at: 2026-05-10T09:00:00Z,
+           links: [{target_type: unit, target_id: *U1}]}
+        - {id: *D3, type: wirtschaftsplan, tax_year: 2026, received_at: 2026-01-11T09:00:00Z,
+           links: [{target_type: property, target_id: *P_OTHER}]}
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: wirtschaftsplan, status: incomplete, due_on: 2026-01-01, scope: {type: property, id: *P}, documents: [*D1]}
+      - {code: hausgeldabrechnung, status: incomplete, due_on: 2027-06-30, scope: {type: property, id: *P}, documents: [*D2]}
+
+  - id: hausgeldabrechnung_expected_the_day_before_due
+    tax_year: 2025
+    today: 2026-06-29
+    facts:
+      <<: *etw
+      units: [{id: *U1, label: WE 1}]
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: wirtschaftsplan, status: missing, due_on: 2025-01-01, scope: {type: property, id: *P}}
+      - {code: hausgeldabrechnung, status: expected, due_on: 2026-06-30, scope: {type: property, id: *P}}
+
+  - id: hausgeldabrechnung_missing_on_the_due_date
+    tax_year: 2025
+    today: 2026-06-30
+    facts:
+      <<: *etw
+      units: [{id: *U1, label: WE 1}]
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: wirtschaftsplan, status: missing, due_on: 2025-01-01, scope: {type: property, id: *P}}
+      - {code: hausgeldabrechnung, status: missing, due_on: 2026-06-30, scope: {type: property, id: *P}}
+
+  - id: wirtschaftsplan_expected_before_its_year
+    description: due on 1 Jan Y, so on 31 Dec Y-1 it is still expected
+    tax_year: 2027
+    today: 2026-12-31
+    facts:
+      <<: *etw
+      units: [{id: *U1, label: WE 1}]
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: wirtschaftsplan, status: expected, due_on: 2027-01-01, scope: {type: property, id: *P}}
+      - {code: hausgeldabrechnung, status: expected, due_on: 2028-06-30, scope: {type: property, id: *P}}
+
+  # --- Ownership in Y -----------------------------------------------------------------------
+
+  - id: not_owned_before_the_purchase_year
+    tax_year: 2023
+    today: 2026-11-06
+    facts: {<<: *efh}
+    expect: []
+
+  - id: not_owned_after_the_sale_year
+    tax_year: 2026
+    today: 2026-11-06
+    facts: {<<: *efh, ownership_ended_on: 2025-06-30}
+    expect: []
+
+  - id: owned_from_the_last_day_of_the_year
+    description: owned on one day of Y (purchase on 31 Dec) is enough
+    tax_year: 2026
+    today: 2026-12-31
+    facts: {property_id: *P, kind: efh, purchase_date: 2026-12-31}
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+
+  - id: owned_until_the_first_day_of_the_year
+    description: sold on 1 Jan Y still counts for Y
+    tax_year: 2026
+    today: 2026-11-06
+    facts: {<<: *efh, ownership_ended_on: 2026-01-01}
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
