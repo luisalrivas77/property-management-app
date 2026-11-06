@@ -26,7 +26,8 @@ Each phase's spec (schemas, migrations, rule fixtures, decisions) lives in `docs
 Read the current phase's spec before implementing; rule fixtures are the contract and change
 only in a spec PR, never to make an implementation pass.
 
-- Phase 1, vault and ledger: `docs/phases/phase-1.md`
+- Phase 1, vault and ledger: `docs/phases/phase-1.md` (closed 6 Nov 2026)
+- Phase 2, AI inbox with master-data pre-fill first: `docs/phases/phase-2.md` (spec draft)
 
 ## UI mockups
 
