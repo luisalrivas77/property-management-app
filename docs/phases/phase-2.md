@@ -767,6 +767,13 @@ shown as derived, never produced by the model.
    version (02 or 08) and presence of `OPBD`/`CLBD` balances are confirmed; if it carries no
    balances, the PDF statement supplies them (§7.1). Also check how far back the export reaches
    (one vendor claims 90 days); older months then come in as PDF statements.
+   **Checked 6 Nov 2026 against Luis's real export** (`rental_account_bank_export-camt52v8.CSV`,
+   kept outside the repo; only its structure was read): despite "camt52v8" in the name it is the
+   **CSV-CAMT layout**, not XML: `;`-separated, the 17 columns of §7.1 exactly, dates `dd.mm.yy`,
+   umlauts only (cp1252 and ISO-8859-15 agree), newest line first, every line `Umsatz gebucht`,
+   **no balances**. 22 lines from 1 Apr 2026 (the account's first booking, so the export reached
+   the whole history) to 6 Nov 2026. Open again: whether the export dialog also offers a real XML
+   (camt) download; if not, the balances come from a typed closing balance or the PDF statement.
 4. ~~**Luis: Anthropic account**~~ **Decided 6 Nov 2026:** workspace `hausbuch` with a $25
    monthly limit (key in Scaleway only) and workspace `hausbuch-evals` with a $10 limit (key
    on Luis's computer); subprocessor notices go to the Console account's email (§11.3).
