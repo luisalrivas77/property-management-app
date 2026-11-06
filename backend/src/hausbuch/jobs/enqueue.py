@@ -19,9 +19,12 @@ import procrastinate
 from procrastinate.exceptions import AlreadyEnqueued
 from sqlalchemy import Connection
 
-from .document_read import TASK_NAME
-
 logger = logging.getLogger("hausbuch.jobs.enqueue")
+
+# Defined here, not in document_read: document_read imports services.proposals, which imports
+# this module, so importing the name from document_read is a cycle that breaks whenever
+# hausbuch.jobs.document_read is the first of the three to be imported.
+TASK_NAME = "document_read"
 
 # Never opened: defer() with `connection=` uses the given connection, not a pool.
 _DEFER_APP = procrastinate.App(connector=procrastinate.SyncPsycopgConnector())

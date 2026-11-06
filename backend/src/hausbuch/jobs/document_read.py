@@ -53,7 +53,7 @@ from hausbuch.services.context import Actor, new_command
 from hausbuch.settings import Settings
 from hausbuch.storage import BlobStore
 
-TASK_NAME = "document_read"
+from .enqueue import TASK_NAME
 
 # Proposal error codes this job produces (phase-2.md §12 names the first six; the last
 # three are new here and reported to the spec).
