@@ -1,26 +1,27 @@
 "use client";
 
-// Einheiten and Darlehen of a property. Each loan shows its year totals from the Tilgungsplan
-// (GET /loans/{id}/schedule); the loan page has every payment.
+// Einheiten and Darlehen of a property. Each unit shows who rents it now (the tenancy in force
+// today, else the next to start), or "leer". Each loan shows its year totals from the
+// Tilgungsplan (GET /loans/{id}/schedule); the loan page has every payment.
 import Link from "next/link";
 import { useCallback } from "react";
 
 import { api, ok } from "@/api/client";
-import { formatArea, formatDate, formatDecimal, formatFraction, formatMoney, formatPercent } from "@/components/format";
+import { currentTenancy, partyNames } from "@/components/entities";
+import { formatArea, formatDate, formatDecimal, formatFraction, formatMoney, formatPercent, todayIso } from "@/components/format";
 import { LoanYearTotals } from "@/components/loans";
+import { loadPropertyContext } from "@/components/propertyContext";
 import { Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 
 export function UnitsTab({ propertyId }: { propertyId: string }) {
-  const load = useCallback(
-    () => ok(api.GET("/api/properties/{property_id}/units", { params: { path: { property_id: propertyId } } })),
-    [propertyId],
-  );
-  const units = useLoad(load);
+  const load = useCallback(() => loadPropertyContext(propertyId), [propertyId]);
+  const context = useLoad(load);
+  const today = todayIso();
   return (
     <div className="stack">
-      <Loading state={units}>
-        {(list) =>
+      <Loading state={context}>
+        {({ units: list, tenancies, tenants }) =>
           list.length === 0 ? (
             <p className="muted">Noch keine Einheiten. Eine ETW hat meist eine Wohnung, oft dazu einen Stellplatz.</p>
           ) : (
@@ -32,19 +33,36 @@ export function UnitsTab({ propertyId }: { propertyId: string }) {
                     <th className="num">Fläche</th>
                     <th className="num">Zimmer</th>
                     <th className="num">MEA</th>
+                    <th>Mieter</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {list.map((unit) => (
-                    <tr key={unit.id}>
-                      <td>
-                        <Link href={`/units/${unit.id}`}>{unit.label}</Link>
-                      </td>
-                      <td className="num">{formatArea(unit.floor_area_m2)}</td>
-                      <td className="num">{formatDecimal(unit.rooms)}</td>
-                      <td className="num">{formatFraction(unit.mea)}</td>
-                    </tr>
-                  ))}
+                  {list.map((unit) => {
+                    const current = currentTenancy(
+                      tenancies.filter((t) => t.unit_id === unit.id),
+                      today,
+                    );
+                    return (
+                      <tr key={unit.id}>
+                        <td>
+                          <Link href={`/units/${unit.id}`}>{unit.label}</Link>
+                        </td>
+                        <td className="num">{formatArea(unit.floor_area_m2)}</td>
+                        <td className="num">{formatDecimal(unit.rooms)}</td>
+                        <td className="num">{formatFraction(unit.mea)}</td>
+                        <td>
+                          {current ? (
+                            <Link href={`/tenancies/${current.tenancy.id}`}>
+                              {partyNames(current.tenancy, tenants)}
+                              {current.upcoming ? ` ab ${formatDate(current.tenancy.start_date)}` : ""}
+                            </Link>
+                          ) : (
+                            <span className="tag">leer</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

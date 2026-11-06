@@ -1,7 +1,8 @@
 "use client";
 
 // Stammdaten: the property's fields, with the two milestone dates and their correction
-// dialogs. A corrected date says so, with the original date from History (§9.4).
+// dialogs. A corrected date says so, with the original date from History (§9.4). Below them,
+// the current tenancy per unit (CurrentTenancies).
 import Link from "next/link";
 import { useCallback } from "react";
 
@@ -13,6 +14,8 @@ import { correctedFrom, findMilestone } from "@/components/history";
 import { PROPERTY_KIND } from "@/components/labels";
 import { ActionDialog, CorrectedNote, Facts } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
+
+import { CurrentTenancies } from "./CurrentTenancies";
 
 export function MasterDataTab({ property, onChanged }: { property: Property; onChanged: () => void }) {
   const loadHistory = useCallback(
@@ -109,6 +112,7 @@ export function MasterDataTab({ property, onChanged }: { property: Property; onC
         Notartermin und Übergang werden nie überschrieben: eine Korrektur ist ein eigener Eintrag im{" "}
         <Link href={`/properties/${property.id}?tab=protokoll`}>Protokoll</Link>.
       </p>
+      <CurrentTenancies propertyId={property.id} />
     </div>
   );
 }

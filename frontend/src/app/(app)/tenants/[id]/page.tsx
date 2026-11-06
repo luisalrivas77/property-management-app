@@ -1,18 +1,20 @@
 "use client";
 
-// Mieter (§9.1): contact data (IBAN write-only, mask shown), documents, and erasure (GDPR).
-// Erasure is refused with 409 retention_hold while the data must still be kept; the page then
-// says until when, or why no date can be given yet.
+// Mieter (§9.1): contact data (IBAN write-only, mask shown), the tenancies they are a party
+// of (GET /tenants/{id}/tenancies, with property, unit and role), documents, and erasure
+// (GDPR). Erasure is refused with 409 retention_hold while the data must still be kept; the
+// page then says until when, or why no date can be given yet.
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useState } from "react";
 
 import { api, ok } from "@/api/client";
 import { ApiError } from "@/api/errors";
-import type { RetentionResult, Tenant } from "@/api/schemas";
+import type { Property, RetentionResult, Tenancy, Tenant, Unit } from "@/api/schemas";
 import { LinkedDocuments } from "@/components/documents";
-import { tenantName } from "@/components/entities";
-import { formatDate, formatDateTime } from "@/components/format";
-import { RETENTION_CLASS, RETENTION_HOLD } from "@/components/labels";
+import { tenancyStatus, tenantName } from "@/components/entities";
+import { formatDate, formatDateTime, todayIso } from "@/components/format";
+import { RETENTION_CLASS, RETENTION_HOLD, TENANCY_ROLE } from "@/components/labels";
 import { ActionDialog, Breadcrumbs, Facts, Loading, Notice } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 import { ErrorNotice } from "@/lib/ErrorNotice";
@@ -57,6 +59,8 @@ export default function TenantPage() {
                 </div>
               </>
             )}
+            <h2>Mietverhältnisse</h2>
+            <TenantTenancies tenantId={data.id} />
             <h2>Dokumente</h2>
             <LinkedDocuments targetType="tenant" targetId={data.id} />
             {data.erased_at ? null : (
@@ -69,6 +73,81 @@ export default function TenantPage() {
         )}
       </Loading>
     </section>
+  );
+}
+
+interface TenancyRow {
+  tenancy: Tenancy;
+  unit: Unit | undefined;
+  property: Property | undefined;
+}
+
+/** The tenant's tenancies with their unit and property: one call per distinct unit and
+ * property, a handful at this scale. */
+async function loadTenantTenancies(tenantId: string): Promise<TenancyRow[]> {
+  const tenancies = await ok(api.GET("/api/tenants/{tenant_id}/tenancies", { params: { path: { tenant_id: tenantId } } }));
+  const units = await Promise.all(
+    [...new Set(tenancies.map((t) => t.unit_id))].map((unitId) =>
+      ok(api.GET("/api/units/{unit_id}", { params: { path: { unit_id: unitId } } })),
+    ),
+  );
+  const properties = await Promise.all(
+    [...new Set(units.map((u) => u.property_id))].map((propertyId) =>
+      ok(api.GET("/api/properties/{property_id}", { params: { path: { property_id: propertyId } } })),
+    ),
+  );
+  const unitById = new Map(units.map((unit) => [unit.id, unit]));
+  const propertyById = new Map(properties.map((property) => [property.id, property]));
+  return tenancies.map((tenancy) => {
+    const unit = unitById.get(tenancy.unit_id);
+    return { tenancy, unit, property: unit && propertyById.get(unit.property_id) };
+  });
+}
+
+function TenantTenancies({ tenantId }: { tenantId: string }) {
+  const load = useCallback(() => loadTenantTenancies(tenantId), [tenantId]);
+  const rows = useLoad(load);
+  const today = todayIso();
+  return (
+    <Loading state={rows}>
+      {(list) =>
+        list.length === 0 ? (
+          <p className="muted">Kein Mietverhältnis.</p>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Immobilie</th>
+                  <th>Einheit</th>
+                  <th>Rolle</th>
+                  <th>Einzug</th>
+                  <th>Auszug</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {list.map(({ tenancy, unit, property }) => {
+                  const role = tenancy.parties.find((party) => party.tenant_id === tenantId)?.role;
+                  return (
+                    <tr key={tenancy.id}>
+                      <td>{property ? <Link href={`/properties/${property.id}`}>{property.label}</Link> : "–"}</td>
+                      <td>{unit ? <Link href={`/units/${unit.id}`}>{unit.label}</Link> : "–"}</td>
+                      <td>{role ? TENANCY_ROLE[role] : "–"}</td>
+                      <td>{formatDate(tenancy.start_date)}</td>
+                      <td>{formatDate(tenancy.end_date)}</td>
+                      <td>
+                        <Link href={`/tenancies/${tenancy.id}`}>{tenancyStatus(tenancy, today)}</Link>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )
+      }
+    </Loading>
   );
 }
 

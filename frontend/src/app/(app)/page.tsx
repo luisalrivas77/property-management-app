@@ -7,7 +7,7 @@ import Link from "next/link";
 import { api, ok } from "@/api/client";
 import type { Loan, Property, Tenancy, Tenant, Unit } from "@/api/schemas";
 import { useAuth } from "@/auth/AuthGate";
-import { partyNames } from "@/components/entities";
+import { currentTenancy, partyNames } from "@/components/entities";
 import { formatArea, formatDate, formatMoney, todayIso } from "@/components/format";
 import { PROPERTY_KIND } from "@/components/labels";
 import { Loading } from "@/components/ui";
@@ -43,14 +43,6 @@ async function loadOverview(): Promise<Overview> {
     }),
   );
   return { cards, tenants };
-}
-
-/** The tenancy in force today, else the next one to start. */
-function currentTenancy(tenancies: Tenancy[], today: string): { tenancy: Tenancy; upcoming: boolean } | null {
-  const running = tenancies.find((t) => t.start_date <= today && (t.end_date === null || t.end_date >= today));
-  if (running) return { tenancy: running, upcoming: false };
-  const next = tenancies.find((t) => t.start_date > today);
-  return next ? { tenancy: next, upcoming: true } : null;
 }
 
 export default function OverviewPage() {
