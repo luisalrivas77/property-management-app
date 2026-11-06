@@ -11,7 +11,7 @@ implementation steps code against:
 
 | Artifact | Where | Status |
 | --- | --- | --- |
-| Pydantic schemas | `backend/src/hausbuch/schemas/` (`ai.py`, `proposal.py`, `bank.py`, `allocation.py`; additions to `enums.py`, `events.py`, `api.py`, `document.py`) | Written in step 0 (PR #24, 6 Nov 2026), under review; `schemas/extraction.py` added (§4.1 names it) |
+| Pydantic schemas | `backend/src/hausbuch/schemas/` (`ai.py`, `proposal.py`, `bank.py`, `allocation.py`; additions to `enums.py`, `events.py`, `api.py`, `document.py`) | Written in step 0 (PR #24, 6 Nov 2026), reviewed (one round, findings F1–F10 fixed or decided as D31–D32); `schemas/extraction.py` added (§4.1 names it) |
 | Migrations | `0005_jobs_ai_proposals`, `0006_accounts_statements`, `0007_allocations_rules` | Written in step 0 (PR #24), tested against Postgres 16 (29 tables); none applied to production: each is applied by the step that first needs it |
 | Rule fixtures | `backend/tests/fixtures/phase2/*.yaml` | Written in step 0 (PR #24): 14 files; `csv_camt.yaml` and `camt053.yaml` deferred until Luis's real camt export |
 | Eval cases | `backend/tests/evals/` (recorded) + `HAUSBUCH_EVAL_DIR` (real, outside the repo) | Not yet: recorded responses need a live API call, so they start in step 1 |
