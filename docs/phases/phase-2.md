@@ -2,7 +2,7 @@
 
 Nov 6, 2026 · spec draft (architect), checked by the orchestrator (prices, citations vs structured
 outputs, data residency and PDF limits against the live API docs); awaiting Luis's decisions in
-§16, no implementation. Phase 1 is closed (Luis, 6 Nov 2026):
+§16 (four of five settled 6 Nov 2026; the Sparkasse export format is still open), no implementation. Phase 1 is closed (Luis, 6 Nov 2026):
 documents upload, and the real data will be entered through the pre-fill this phase builds
 first.
 
@@ -53,7 +53,7 @@ Numbering continues from phase 1's D12. Each one is a place to push back in revi
 | D14 | **Nothing an AI job produces reaches a domain table.** A job writes an `ai_call` row, a `document_extraction` version (source `ai`) and a `proposal`; only `apply` (a user command) calls the existing `create_*` / `update_*` / `correct_*` services, in one transaction with one `correlation_id`. | Principle 1 and 3; all phase 1 validation, events and RLS stay as they are. |
 | D15 | **Every proposed value carries a source: page number + quoted text, and a code-derived confidence.** Extraction uses the Claude **citations** feature (one line per field, parsed in code) because citations and JSON structured outputs cannot be combined in one request (API returns 400, checked 6 Nov 2026). Code validates each parsed value with the Pydantic field type and checks the value is recoverable from the cited text; confidence is a function of those checks, never a number the model reports. | The review must be "a glance": the quote is API-extracted and guaranteed to point into the document. Changes an ARCHITECTURE guardrail (§15). |
 | D16 | **Tenant documents are not sent to the model until Luis switches it on.** Workspace setting `ai_tenant_documents` (default `false`); uploads carry `contains_tenant_data`; the classifier's result is a second gate (lease / handover / deposit / tenant letter found on a document not marked → extraction stops, output discarded). | ARCHITECTURE: terms confirmed before tenant documents are sent. Findings and the decision Luis must take are in §11. |
-| D17 | **Default model tiers:** `claude-haiku-5-5` classifies and explains; `claude-sonnet-5-5` extracts, pre-fills and categorizes; `claude-opus-5-5` only for a match the Sonnet call marked ambiguous. `inference_geo` is a setting (default `global`). | Prices 6 Nov 2026: Haiku $0.10/$0.50, Sonnet $2/$10, Opus $4/$20 per MTok; Haiku is 5× dearer over 100k prompt tokens, which a 30-page contract exceeds, so it never reads whole contracts. |
+| D17 | **Default model tiers:** `claude-haiku-5-5` classifies and explains; `claude-sonnet-5-5` extracts, pre-fills and categorizes; `claude-opus-5-5` only for a match the Sonnet call marked ambiguous. `inference_geo` is a setting, default `us` (Luis, 6 Nov 2026: one named processing location for the privacy note, +10 %). | Prices 6 Nov 2026: Haiku $0.10/$0.50, Sonnet $2/$10, Opus $4/$20 per MTok; Haiku is 5× dearer over 100k prompt tokens, which a 30-page contract exceeds, so it never reads whole contracts. |
 | D18 | **AI provenance is a table (`ai_call`), not event payload.** Events record `ai_call_id`, type, confidence and field *names*; the table holds model, prompt version, input hash, token counts, the parsed output and the raw text. | D5: outputs quote tenant names; the event log is append-only and outlives erasure. `ai_call` rows follow their document's retention and are scrubbed by tenant erasure (§4.4). |
 | D19 | **Proposal values are personal data at rest.** `proposal.fields` and `.decisions` are nulled 90 days after apply/reject (sweeper, with the retention job) and immediately by `erase_tenant` for proposals that created or patched that tenant. The eval record keeps per-field decisions and, for non-personal fields only, proposed and final values. | Measurement without a second copy of tenant data. |
 | D20 | **Procrastinate's schema is applied by migration `0005` as `hausbuch_owner`**, its tables are not RLS'd and not mirrored in `tables.py`; every job payload carries `workspace_id` and opens its own `workspace_transaction` as the app role. | Step 3 spec §3.7 already fixed this; the drift test and the 21-table count exclude `procrastinate_*`. |
@@ -279,7 +279,7 @@ class LlmMatchOutput(Schema):           # structured output of the categorize jo
 `HAUSBUCH_AI_ENABLED` (default `false`: production turns it on), `HAUSBUCH_ANTHROPIC_API_KEY`
 (secret, required when enabled), `HAUSBUCH_AI_MODEL_CLASSIFY` (`claude-haiku-5-5`),
 `HAUSBUCH_AI_MODEL_EXTRACT` (`claude-sonnet-5-5`), `HAUSBUCH_AI_MODEL_HARD`
-(`claude-opus-5-5`), `HAUSBUCH_AI_INFERENCE_GEO` (`global` | `us`), `HAUSBUCH_AI_MAX_PAGES`
+(`claude-opus-5-5`), `HAUSBUCH_AI_INFERENCE_GEO` (`us` default | `global`), `HAUSBUCH_AI_MAX_PAGES`
 (100), `HAUSBUCH_AI_TIMEOUT_S` (120), `HAUSBUCH_EVAL_DIR` (optional). Dependencies added in
 the spec PR at once (as step 3 did): `anthropic`, `procrastinate` (psycopg connector; needs
 `psycopg[pool]`), `pypdf` (page count and splitting only), `lxml` (camt.053).
@@ -618,13 +618,14 @@ switched on:
 3. **Decline**: tenant documents stay typed by hand (phase 1 forms), everything else is
    pre-filled. The setting stays `false`.
 
-Until decided, step 2 ships behind the setting at `false`. Also to record in
+**Decided (Luis, 6 Nov 2026): option 1, accept.** Step 2 still ships with the setting at `false`; Luis switches it on once Anthropic is named as a processor in the privacy note to the tenant. The gate and the `contains_tenant_data` flag stay, so the choice remains reversible. Also to record in
 `docs/ARCHITECTURE.md` (§15): the subprocessor notice address (the Console account's email).
 
 ### 11.3 Keys and deploy (`deploy/scaleway.md`, new step 13)
 
-Create a Console **workspace** named `hausbuch` with a monthly spend limit (e.g. $20) and one
-API key scoped to it; set `default_inference_geo` per the decision above. Store the key in
+Create a Console **workspace** named `hausbuch` with a monthly spend limit of $25 and one
+API key scoped to it, plus a second workspace `hausbuch-evals` ($10 limit) whose key stays on
+Luis's computer for eval runs (Luis, 6 Nov 2026: two keys, so either can be revoked alone); set `default_inference_geo` per the decision above. Store the key in
 Secret Manager as `hausbuch-anthropic-api-key`, paste it into the API container's secret
 environment variables as `HAUSBUCH_ANTHROPIC_API_KEY` (containers cannot read Secret Manager
 directly, runbook finding), set `HAUSBUCH_AI_ENABLED=true`, redeploy, and check
@@ -751,18 +752,24 @@ shown as derived, never produced by the model.
 
 ## 16. Open questions
 
-1. **Luis: tenant documents** (§11.2, options 1–3). Needed before step 2 ships enabled.
-2. **Luis: `inference_geo`** `us` (fixed location, +10 %) or `global` for the non-tenant
-   documents already agreed; default in this spec: `global`.
-3. **Luis: Sparkasse exports.** Which formats his online banking offers (CSV-CAMT, camt.053
-   XML, PDF Kontoauszug, CSV-MT940) and one real file of each, before step 3; whether he
-   prefers typing the closing balance per CSV import or uploading the monthly PDF too.
-4. **Luis: Anthropic account.** A Console organization on the Commercial Terms with a
-   spend limit; who receives subprocessor notices.
-5. **Kaufvertrag Übergang clause.** Most contracts tie it to the payment date; the proposal
-   leaves `purchase_date` empty with the clause quoted. Alternative: propose the Kaufpreis
-   payment date once the bank statement is in (step 4 can set it from the matched
-   transaction). Leaning: do both; the second is a step 4 nicety.
+1. ~~**Luis: tenant documents**~~ **Decided 6 Nov 2026: option 1** (first-party API, US
+   processing under the DPA; §11.2). The setting is switched on after the privacy note names
+   Anthropic.
+2. ~~**Luis: `inference_geo`**~~ **Decided 6 Nov 2026: `us`** for all documents.
+3. **Luis: Sparkasse exports (open).** Luis prefers camt XML (option 1: balances and bank
+   references in the file). Web research on 6 Nov 2026 could not confirm that Sparkasse
+   online banking offers a real camt export to private customers: guides agree only on
+   "Excel (CSV-CAMT V2)"; Sparkassen are moving EBICS delivery to camt version 08; one vendor
+   claims a 90-day export window. Luis checks the export menu of the rental account. Fallback
+   if there is no XML: CSV plus the monthly PDF statement for the balances (no typing). One
+   real file of each available format is needed before step 3.
+4. ~~**Luis: Anthropic account**~~ **Decided 6 Nov 2026:** workspace `hausbuch` with a $25
+   monthly limit (key in Scaleway only) and workspace `hausbuch-evals` with a $10 limit (key
+   on Luis's computer); subprocessor notices go to the Console account's email (§11.3).
+5. ~~**Kaufvertrag Übergang clause**~~ **Decided 6 Nov 2026:** the proposal leaves
+   `purchase_date` empty with the clause quoted and Luis types it during pre-fill; step 4
+   adds a cross-check that warns when the matched Kaufpreis (2nd Rate) payment date differs
+   from the recorded date. The fix is a correction event, as today.
 6. **Review queue thresholds.** `thresholds.yaml` defaults (0.9 recurring, never for
    capitalized/other) are guesses; revisit after the first real month.
 7. **Hausgeld `ruecklage` treatment** stays `undecided` until phase 3's Hausgeldabrechnung
