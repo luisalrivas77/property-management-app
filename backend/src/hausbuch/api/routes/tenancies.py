@@ -1,7 +1,9 @@
 """Tenancies: rent schedule, corrections, deposit, notice, move-out.
 
 Endpoints: docs/phases/phase-1-step-3.md §4.5. Rent rows are append-only (D12): a wrong row
-is superseded by POST /rent-schedule/{row_id}/corrections, never edited.
+is superseded by POST /rent-schedule/{row_id}/corrections, never edited. The milestones
+(contract date, move-in, notice, move-out, each Kaution receipt) change only through their
+corrections, which append correcting events.
 """
 
 from datetime import date
@@ -26,8 +28,12 @@ from hausbuch.schemas.events import DepositReceived, Event, EventType
 from hausbuch.schemas.tenancy import RentScheduleCreate, RentScheduleEntry, Tenancy
 from hausbuch.services.events import list_events
 from hausbuch.services.tenancies import (
+    correct_deposit_received,
     correct_move_in,
+    correct_move_out,
+    correct_notice,
     correct_rent_row,
+    correct_signed_on,
     create_tenancy,
     end_tenancy,
     get_tenancy,
@@ -73,6 +79,30 @@ def tenancy_correct_move_in(tenancy_id: UUID, body: DateCorrection, cmd: Cmd) ->
     return cmd.run(correct_move_in, tenancy_id, body.new_date)
 
 
+@router.post("/tenancies/{tenancy_id}/corrections/signed-on")
+def tenancy_correct_signed_on(tenancy_id: UUID, body: DateCorrection, cmd: Cmd) -> Tenancy:
+    """The contract date (tenancy.created); also records one that was left empty."""
+    return cmd.run(correct_signed_on, tenancy_id, body.new_date)
+
+
+@router.post("/tenancies/{tenancy_id}/corrections/notice")
+def tenancy_correct_notice(tenancy_id: UUID, body: NoticeBody, cmd: Cmd) -> Tenancy:
+    """The notice already given (tenancy.notice_given); 409 if there is none."""
+    return cmd.run(
+        correct_notice,
+        tenancy_id,
+        given_by=body.given_by,
+        given_on=body.given_on,
+        ends_on=body.ends_on,
+    )
+
+
+@router.post("/tenancies/{tenancy_id}/corrections/move-out")
+def tenancy_correct_move_out(tenancy_id: UUID, body: DateCorrection, cmd: Cmd) -> Tenancy:
+    """The move-out date (tenancy.ended); 409 if the tenancy has not ended."""
+    return cmd.run(correct_move_out, tenancy_id, body.new_date)
+
+
 @router.post("/tenancies/{tenancy_id}/deposit-received", status_code=201)
 def tenancy_deposit_received(tenancy_id: UUID, body: DepositReceivedBody, cmd: Cmd) -> Event:
     return cmd.run(
@@ -104,6 +134,22 @@ def _deposits(conn: Connection, tenancy_id: UUID) -> list[DepositReceipt]:
 def tenancy_deposits(tenancy_id: UUID, cmd: Cmd) -> list[DepositReceipt]:
     """The Kaution payments received (tenancy.deposit_received), in recording order."""
     return cmd.read(_deposits, tenancy_id)
+
+
+@router.post("/tenancies/{tenancy_id}/deposits/{event_id}/corrections")
+def tenancy_correct_deposit(
+    tenancy_id: UUID, event_id: UUID, body: DepositReceivedBody, cmd: Cmd
+) -> Event:
+    """Correct one receipt from GET .../deposits (its event_id): the correcting event, or the
+    receipt itself when nothing changes. 404 deposit_receipt for an id that is not one of this
+    tenancy's receipts, 409 for one already corrected."""
+    return cmd.run(
+        correct_deposit_received,
+        tenancy_id,
+        event_id,
+        amount=body.amount,
+        received_on=body.received_on,
+    )
 
 
 @router.post("/tenancies/{tenancy_id}/notice")

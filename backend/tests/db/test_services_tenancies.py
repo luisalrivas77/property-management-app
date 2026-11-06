@@ -37,8 +37,12 @@ from hausbuch.services.history import property_history
 from hausbuch.services.properties import create_property
 from hausbuch.services.tenancies import (
     InitialRent,
+    correct_deposit_received,
     correct_move_in,
+    correct_move_out,
+    correct_notice,
     correct_rent_row,
+    correct_signed_on,
     create_tenancy,
     end_tenancy,
     get_tenancy,
@@ -817,3 +821,225 @@ def test_update_refusals_write_nothing(run, read, flat, fresh_workspaces):
 
     assert read(a, get_tenancy, tenancy.id) == tenancy
     assert len(_events(read, a, tenancy.id)) == 2
+
+
+# --- milestone corrections: contract date, notice, move-out, Kaution receipt -------
+
+
+def _noticed(run, ws, tenancy_id):
+    return run(
+        ws,
+        give_notice,
+        tenancy_id,
+        given_by="tenant",
+        given_on=date(2026, 3, 31),
+        ends_on=date(2026, 6, 30),
+        now=CREATED_AT,
+    )
+
+
+def test_correct_signed_on_corrects_tenancy_created(run, read, flat):
+    a, prop, unit, tenants = flat
+    tenancy = _create(run, a, _lease(unit, tenants, signed_on=None), initial_rent=None)
+    created = _events(read, a, tenancy.id)[0]
+
+    fixed = run(a, correct_signed_on, tenancy.id, date(2024, 6, 10), now=LATER)
+
+    assert fixed.signed_on == date(2024, 6, 10) and fixed.updated_at == LATER
+    correction = _events(read, a, tenancy.id)[-1]
+    assert (correction.type, correction.corrects_event_id) == (
+        EventType.TENANCY_CREATED,
+        created.id,
+    )
+    assert (correction.effective_date, correction.payload) == (date(2024, 6, 10), created.payload)
+    assert (correction.property_id, correction.unit_id) == (prop.id, unit.id)
+    [signed] = [
+        h for h in read(a, property_history, prop.id) if h.type is EventType.TENANCY_CREATED
+    ]
+    assert (signed.effective_date, signed.corrected, signed.original_effective_date) == (
+        date(2024, 6, 10),
+        True,
+        None,  # it had no date before
+    )
+
+    again = run(a, correct_signed_on, tenancy.id, date(2024, 6, 12), now=LATER)
+    assert _events(read, a, tenancy.id)[-1].corrects_event_id == correction.id
+    assert run(a, correct_signed_on, tenancy.id, date(2024, 6, 12)) == again  # no-op
+    with pytest.raises(ValidationError, match="signed_on"):
+        run(a, correct_signed_on, tenancy.id, date(2024, 7, 2))
+    assert len(_events(read, a, tenancy.id)) == 4
+
+
+def test_correct_notice_corrects_who_when_and_to_which_date(run, read, flat):
+    a, prop, unit, tenants = flat
+    tenancy = _create(run, a, _lease(unit, tenants), initial_rent=None)
+    with pytest.raises(ConflictError, match="no notice"):
+        run(
+            a,
+            correct_notice,
+            tenancy.id,
+            given_by="tenant",
+            given_on=date(2026, 3, 31),
+            ends_on=date(2026, 6, 30),
+        )
+    _noticed(run, a, tenancy.id)
+    notice = _events(read, a, tenancy.id)[-1]
+
+    fixed = run(
+        a,
+        correct_notice,
+        tenancy.id,
+        given_by="landlord",
+        given_on=date(2026, 3, 30),
+        ends_on=date(2026, 9, 30),
+        now=LATER,
+    )
+
+    assert fixed.notice_given_on == date(2026, 3, 30)
+    correction = _events(read, a, tenancy.id)[-1]
+    assert (correction.type, correction.corrects_event_id, correction.effective_date) == (
+        EventType.TENANCY_NOTICE_GIVEN,
+        notice.id,
+        date(2026, 3, 30),
+    )
+    assert correction.payload == {"given_by": "landlord", "ends_on": "2026-09-30"}
+    # The move-in correction checks the corrected end, not the original one.
+    with pytest.raises(ValueError, match="2026-09-30"):
+        run(a, correct_move_in, tenancy.id, date(2026, 10, 1))
+
+    same = dict(given_by="landlord", given_on=date(2026, 3, 30), ends_on=date(2026, 9, 30))
+    assert run(a, correct_notice, tenancy.id, **same) == fixed  # no-op
+    with pytest.raises(ValueError, match="before it is given"):
+        run(a, correct_notice, tenancy.id, **same | {"ends_on": date(2026, 3, 1)})
+    with pytest.raises(ValueError, match="before it starts"):
+        run(
+            a,
+            correct_notice,
+            tenancy.id,
+            **same | {"given_on": date(2024, 1, 1), "ends_on": date(2024, 6, 30)},
+        )
+    # The tenancy may have ended meanwhile; the notice can still be corrected.
+    run(a, end_tenancy, tenancy.id, date(2026, 9, 30), now=LATER)
+    run(a, correct_notice, tenancy.id, **same | {"given_by": "tenant"}, now=LATER)
+    assert _events(read, a, tenancy.id)[-1].corrects_event_id == correction.id
+    assert len(_events(read, a, tenancy.id)) == 6
+
+
+def test_correct_move_out_moves_the_end(run, read, flat):
+    a, prop, unit, tenants = flat
+    tenancy = _create(run, a, _lease(unit, tenants))
+    with pytest.raises(ConflictError, match="not ended"):
+        run(a, correct_move_out, tenancy.id, date(2026, 6, 30))
+    _step(run, a, tenancy.id, date(2025, 7, 1), "1000.00")
+    run(a, end_tenancy, tenancy.id, date(2026, 6, 30), now=CREATED_AT)
+    ended = _events(read, a, tenancy.id)[-1]
+
+    fixed = run(a, correct_move_out, tenancy.id, date(2026, 7, 31), now=LATER)
+
+    assert fixed.end_date == date(2026, 7, 31)
+    correction = _events(read, a, tenancy.id)[-1]
+    assert (correction.type, correction.corrects_event_id, correction.effective_date) == (
+        EventType.TENANCY_ENDED,
+        ended.id,
+        date(2026, 7, 31),
+    )
+    [out] = [h for h in read(a, property_history, prop.id) if h.type is EventType.TENANCY_ENDED]
+    assert (out.effective_date, out.corrected, out.original_effective_date) == (
+        date(2026, 7, 31),
+        True,
+        date(2026, 6, 30),
+    )
+    assert run(a, correct_move_out, tenancy.id, date(2026, 7, 31)) == fixed  # no-op
+
+    with pytest.raises(RuleViolationError) as raised:  # the 2025-07-01 step is in force
+        run(a, correct_move_out, tenancy.id, date(2025, 6, 30))
+    assert raised.value.code == RENT_OUTSIDE_TENANCY
+    with pytest.raises(ValidationError, match="end_date"):
+        run(a, correct_move_out, tenancy.id, date(2024, 6, 30))
+    following = _create(
+        run, a, _lease(unit, tenants, start_date=date(2026, 8, 1), signed_on=None), None
+    )
+    with pytest.raises(TenancyOverlapError):
+        run(a, correct_move_out, tenancy.id, date(2026, 8, 1))
+    assert read(a, get_tenancy, tenancy.id) == fixed
+    assert read(a, get_tenancy, following.id).start_date == date(2026, 8, 1)
+
+
+def test_a_move_out_recorded_at_create_can_be_corrected(run, read, flat):
+    a, _, unit, tenants = flat
+    past = _lease(
+        unit, tenants, start_date=date(2023, 1, 1), end_date=date(2024, 6, 30), signed_on=None
+    )
+    tenancy = _create(run, a, past, initial_rent=None)
+    fixed = run(a, correct_move_out, tenancy.id, date(2024, 5, 31), now=LATER)
+    assert fixed.end_date == date(2024, 5, 31)
+    ended = [e for e in _events(read, a, tenancy.id) if e.type is EventType.TENANCY_ENDED]
+    assert [e.effective_date for e in ended] == [date(2024, 6, 30), date(2024, 5, 31)]
+    assert ended[1].corrects_event_id == ended[0].id
+
+
+def test_correct_deposit_received_corrects_one_receipt(run, read, flat, fresh_workspaces):
+    a, prop, unit, tenants = flat
+    _, b = fresh_workspaces
+    tenancy = _create(run, a, _lease(unit, tenants), initial_rent=None)
+    earlier = _lease(
+        unit, tenants, start_date=date(2023, 1, 1), end_date=date(2023, 12, 31), signed_on=None
+    )
+    other = _create(run, a, earlier, initial_rent=None)
+
+    def receive(tenancy_id, amount, day):
+        return run(
+            a,
+            record_deposit_received,
+            tenancy_id,
+            amount=Decimal(amount),
+            received_on=day,
+            now=CREATED_AT,
+        )
+
+    first = receive(tenancy.id, "950.00", date(2024, 7, 1))
+    second = receive(tenancy.id, "1900.00", date(2024, 8, 1))
+    foreign = receive(other.id, "500.00", date(2023, 1, 1))
+
+    fixed = run(
+        a,
+        correct_deposit_received,
+        tenancy.id,
+        first.id,
+        amount=Decimal("1000.00"),
+        received_on=date(2024, 7, 2),
+        now=LATER,
+    )
+
+    assert (fixed.type, fixed.corrects_event_id, fixed.effective_date, fixed.payload) == (
+        EventType.TENANCY_DEPOSIT_RECEIVED,
+        first.id,
+        date(2024, 7, 2),
+        {"amount": "1000.00"},
+    )
+    assert (fixed.property_id, fixed.unit_id) == (prop.id, unit.id)
+    same = dict(amount=Decimal("1000"), received_on=date(2024, 7, 2))
+    assert run(a, correct_deposit_received, tenancy.id, fixed.id, **same) == fixed  # no-op
+    with pytest.raises(ConflictError, match="already corrected"):
+        run(a, correct_deposit_received, tenancy.id, first.id, **same)
+    with pytest.raises(NotFoundError, match="deposit_receipt"):
+        run(a, correct_deposit_received, tenancy.id, foreign.id, **same)  # another tenancy's
+    with pytest.raises(NotFoundError, match="deposit_receipt"):
+        run(a, correct_deposit_received, tenancy.id, _events(read, a, tenancy.id)[0].id, **same)
+    with pytest.raises(NotFoundError, match="deposit_receipt"):
+        run(a, correct_deposit_received, tenancy.id, uuid.uuid4(), **same)
+    with pytest.raises(NotFoundError, match="tenancy"):
+        run(b, correct_deposit_received, tenancy.id, second.id, **same)
+    with pytest.raises(ValidationError):
+        run(
+            a,
+            correct_deposit_received,
+            tenancy.id,
+            second.id,
+            amount=Decimal("0"),
+            received_on=date(2024, 8, 1),
+        )
+    deposits = [
+        e for e in _events(read, a, tenancy.id) if e.type is EventType.TENANCY_DEPOSIT_RECEIVED
+    ]
+    assert [e.id for e in deposits] == [first.id, second.id, fixed.id]

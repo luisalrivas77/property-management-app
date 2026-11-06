@@ -1639,6 +1639,159 @@
         }
       }
     },
+    "/api/tenancies/{tenancy_id}/corrections/signed-on": {
+      "post": {
+        "summary": "Tenancy Correct Signed On",
+        "description": "The contract date (tenancy.created); also records one that was left empty.",
+        "operationId": "tenancy_correct_signed_on_api_tenancies__tenancy_id__corrections_signed_on_post",
+        "parameters": [
+          {
+            "name": "tenancy_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Tenancy Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DateCorrection"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tenancy"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tenancies/{tenancy_id}/corrections/notice": {
+      "post": {
+        "summary": "Tenancy Correct Notice",
+        "description": "The notice already given (tenancy.notice_given); 409 if there is none.",
+        "operationId": "tenancy_correct_notice_api_tenancies__tenancy_id__corrections_notice_post",
+        "parameters": [
+          {
+            "name": "tenancy_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Tenancy Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoticeBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tenancy"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tenancies/{tenancy_id}/corrections/move-out": {
+      "post": {
+        "summary": "Tenancy Correct Move Out",
+        "description": "The move-out date (tenancy.ended); 409 if the tenancy has not ended.",
+        "operationId": "tenancy_correct_move_out_api_tenancies__tenancy_id__corrections_move_out_post",
+        "parameters": [
+          {
+            "name": "tenancy_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Tenancy Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DateCorrection"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tenancy"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/tenancies/{tenancy_id}/deposit-received": {
       "post": {
         "summary": "Tenancy Deposit Received",
@@ -1717,6 +1870,67 @@
                     "$ref": "#/components/schemas/DepositReceipt"
                   },
                   "title": "Response Tenancy Deposits Api Tenancies  Tenancy Id  Deposits Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tenancies/{tenancy_id}/deposits/{event_id}/corrections": {
+      "post": {
+        "summary": "Tenancy Correct Deposit",
+        "description": "Correct one receipt from GET .../deposits (its event_id): the correcting event, or the\nreceipt itself when nothing changes. 404 deposit_receipt for an id that is not one of this\ntenancy's receipts, 409 for one already corrected.",
+        "operationId": "tenancy_correct_deposit_api_tenancies__tenancy_id__deposits__event_id__corrections_post",
+        "parameters": [
+          {
+            "name": "tenancy_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Tenancy Id"
+            }
+          },
+          {
+            "name": "event_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Event Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DepositReceivedBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Event"
                 }
               }
             }

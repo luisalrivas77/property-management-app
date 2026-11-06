@@ -50,8 +50,14 @@ def entities_of_a(client_a) -> dict[str, str]:
         "/api/acquisition-costs",
         {"property_id": setup["property"]["id"], "kind": "notary", "amount": "1200.00"},
     )
+    deposit = create(
+        client_a,
+        f"/api/tenancies/{setup['tenancy']['id']}/deposit-received",
+        {"amount": "950.00", "received_on": "2024-07-01"},
+    )
     return {
         "cost": cost["id"],
+        "deposit": deposit["id"],
         "owner": owner["id"],
         "property": setup["property"]["id"],
         "unit": setup["unit"]["id"],
@@ -121,6 +127,18 @@ WRITES = [
     ("POST", "/api/tenants/{tenant}/erase", {}),
     ("PATCH", "/api/tenancies/{tenancy}", {"deposit_bank": "x"}),
     ("POST", "/api/tenancies/{tenancy}/corrections/move-in", {"new_date": "2024-07-02"}),
+    ("POST", "/api/tenancies/{tenancy}/corrections/signed-on", {"new_date": "2024-06-01"}),
+    (
+        "POST",
+        "/api/tenancies/{tenancy}/corrections/notice",
+        {"given_by": "tenant", "given_on": "2026-01-01", "ends_on": "2026-03-31"},
+    ),
+    ("POST", "/api/tenancies/{tenancy}/corrections/move-out", {"new_date": "2026-01-01"}),
+    (
+        "POST",
+        "/api/tenancies/{tenancy}/deposits/{deposit}/corrections",
+        {"amount": "1.00", "received_on": "2024-07-01"},
+    ),
     (
         "POST",
         "/api/tenancies/{tenancy}/deposit-received",
@@ -184,6 +202,15 @@ def test_another_workspaces_document_cannot_become_a_beleg(entities_of_a, client
     )
     assert (response.status_code, response.json()["entity_type"]) == (404, "document")
     assert ok(client_b.get(f"/api/properties/{prop['id']}/acquisition-costs")) == [cost]
+
+
+def test_another_workspaces_deposit_receipt_cannot_be_corrected(entities_of_a, client_b):
+    tenancy = flat(client_b)["tenancy"]
+    response = client_b.post(
+        f"/api/tenancies/{tenancy['id']}/deposits/{entities_of_a['deposit']}/corrections",
+        json={"amount": "1.00", "received_on": "2024-07-01"},
+    )
+    assert (response.status_code, response.json()["entity_type"]) == (404, "deposit_receipt")
 
 
 def test_lists_are_per_workspace(entities_of_a, client_b):

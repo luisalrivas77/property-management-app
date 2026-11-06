@@ -522,6 +522,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tenancies/{tenancy_id}/corrections/signed-on": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tenancy Correct Signed On
+         * @description The contract date (tenancy.created); also records one that was left empty.
+         */
+        post: operations["tenancy_correct_signed_on_api_tenancies__tenancy_id__corrections_signed_on_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tenancies/{tenancy_id}/corrections/notice": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tenancy Correct Notice
+         * @description The notice already given (tenancy.notice_given); 409 if there is none.
+         */
+        post: operations["tenancy_correct_notice_api_tenancies__tenancy_id__corrections_notice_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tenancies/{tenancy_id}/corrections/move-out": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tenancy Correct Move Out
+         * @description The move-out date (tenancy.ended); 409 if the tenancy has not ended.
+         */
+        post: operations["tenancy_correct_move_out_api_tenancies__tenancy_id__corrections_move_out_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tenancies/{tenancy_id}/deposit-received": {
         parameters: {
             query?: never;
@@ -553,6 +613,28 @@ export interface paths {
         get: operations["tenancy_deposits_api_tenancies__tenancy_id__deposits_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tenancies/{tenancy_id}/deposits/{event_id}/corrections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tenancy Correct Deposit
+         * @description Correct one receipt from GET .../deposits (its event_id): the correcting event, or the
+         *     receipt itself when nothing changes. 404 deposit_receipt for an id that is not one of this
+         *     tenancy's receipts, 409 for one already corrected.
+         */
+        post: operations["tenancy_correct_deposit_api_tenancies__tenancy_id__deposits__event_id__corrections_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4105,6 +4187,111 @@ export interface operations {
             };
         };
     };
+    tenancy_correct_signed_on_api_tenancies__tenancy_id__corrections_signed_on_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenancy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DateCorrection"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Tenancy"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    tenancy_correct_notice_api_tenancies__tenancy_id__corrections_notice_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenancy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NoticeBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Tenancy"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    tenancy_correct_move_out_api_tenancies__tenancy_id__corrections_move_out_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenancy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DateCorrection"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Tenancy"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     tenancy_deposit_received_api_tenancies__tenancy_id__deposit_received_post: {
         parameters: {
             query?: never;
@@ -4158,6 +4345,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DepositReceipt"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    tenancy_correct_deposit_api_tenancies__tenancy_id__deposits__event_id__corrections_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenancy_id: string;
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DepositReceivedBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Event"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

@@ -4,6 +4,11 @@ in the same transaction (D4).
 - Move-in (tenancy.started) and move-out (tenancy.ended) are milestones; move-in changes only
   through correct_move_in, which appends a correcting event and moves the rent row that
   started on the old move-in date with it (§10.8 item 6).
+- The contract date (tenancy.created), the notice, the move-out and each Kaution receipt are
+  corrected the same way (correct_signed_on, correct_notice, correct_move_out,
+  correct_deposit_received): the row follows and a correcting event repeats the milestone.
+  A notice or move-out cannot be withdrawn: a correction keeps the event's type and needs a
+  date, so there is nothing to say "it never happened" with.
 - The other fields (Befristung, Mietmodell, Kaution) change through update_tenancy, which
   appends tenancy.updated with old and new values (the deposit account is the landlord's, D5,
   and appears masked only).
@@ -60,7 +65,14 @@ from .errors import (
     require_valid,
     violated_constraint,
 )
-from .events import append_event, diff_changes, find_event, latest_in_chain, milestone_root
+from .events import (
+    append_event,
+    diff_changes,
+    find_event,
+    get_event,
+    latest_in_chain,
+    milestone_root,
+)
 from .iban import protect_iban
 from .lookup import require_document, require_row
 from .owners import UNSET, Unset
@@ -274,6 +286,136 @@ def update_tenancy(
     return _to_tenancy(ctx.conn, updated)
 
 
+def correct_signed_on(ctx: CommandContext, tenancy_id: UUID, new_date: date) -> Tenancy:
+    """Correct (or, if it was unknown, record) the contract date: updates signed_on and
+    appends a correcting tenancy.created with the corrected event's payload unchanged. It
+    cannot be after the move-in. No-op if it is already the stored date."""
+    row, scope = _lock(ctx.conn, tenancy_id)
+    current = _to_tenancy(ctx.conn, row)
+    _validate_dates(current, signed_on=new_date)
+    if new_date == current.signed_on:
+        return current
+    latest = latest_in_chain(
+        ctx.conn, milestone_root(ctx.conn, EventType.TENANCY_CREATED, tenancy_id).id
+    )
+    updated = _update_tenancy(ctx, tenancy_id, signed_on=new_date)
+    append_event(
+        ctx,
+        EventType.TENANCY_CREATED,
+        tenancy_id,
+        TenancyCreated.model_validate(latest.payload),
+        effective_date=new_date,
+        corrects_event_id=latest.id,
+        **scope,
+    )
+    return _to_tenancy(ctx.conn, updated)
+
+
+def correct_notice(
+    ctx: CommandContext,
+    tenancy_id: UUID,
+    *,
+    given_by: Literal["tenant", "landlord"],
+    given_on: date,
+    ends_on: date,
+) -> Tenancy:
+    """Correct the notice already given (who, when, to which date): updates notice_given_on
+    and appends a correcting tenancy.notice_given. The same rules as give_notice, except that
+    the tenancy may already have ended. No-op if nothing changes."""
+    payload = NoticeGiven(given_by=given_by, ends_on=ends_on)
+    if ends_on < given_on:
+        raise ValueError("a notice cannot end the tenancy before it is given")
+    row, scope = _lock(ctx.conn, tenancy_id)
+    current = _to_tenancy(ctx.conn, row)
+    if current.notice_given_on is None:
+        raise ConflictError("no notice was given, so there is none to correct")
+    if ends_on < current.start_date:
+        raise ValueError("a notice cannot end the tenancy before it starts")
+    latest = latest_in_chain(
+        ctx.conn, milestone_root(ctx.conn, EventType.TENANCY_NOTICE_GIVEN, tenancy_id).id
+    )
+    if latest.effective_date == given_on and NoticeGiven.model_validate(latest.payload) == payload:
+        return current
+    updated = _update_tenancy(ctx, tenancy_id, notice_given_on=given_on)
+    append_event(
+        ctx,
+        EventType.TENANCY_NOTICE_GIVEN,
+        tenancy_id,
+        payload,
+        effective_date=given_on,
+        corrects_event_id=latest.id,
+        **scope,
+    )
+    return _to_tenancy(ctx.conn, updated)
+
+
+def correct_move_out(ctx: CommandContext, tenancy_id: UUID, new_date: date) -> Tenancy:
+    """Correct the move-out date: updates end_date and appends a correcting tenancy.ended.
+    As on end_tenancy, the rent rows in force must stay inside the tenancy, and the unit's
+    other tenancies must not overlap. No-op if it is already the stored date."""
+    row, scope = _lock(ctx.conn, tenancy_id)
+    current = _to_tenancy(ctx.conn, row)
+    if current.end_date is None:
+        raise ConflictError("the tenancy has not ended, so there is no move-out to correct")
+    _validate_dates(current, end_date=new_date)
+    if new_date == current.end_date:
+        return current
+    _require_rows_inside(ctx.conn, tenancy_id, current.start_date, new_date)
+    latest = latest_in_chain(
+        ctx.conn, milestone_root(ctx.conn, EventType.TENANCY_ENDED, tenancy_id).id
+    )
+    updated = _update_tenancy(ctx, tenancy_id, end_date=new_date)
+    append_event(
+        ctx,
+        EventType.TENANCY_ENDED,
+        tenancy_id,
+        Empty(),
+        effective_date=new_date,
+        corrects_event_id=latest.id,
+        **scope,
+    )
+    return _to_tenancy(ctx.conn, updated)
+
+
+def correct_deposit_received(
+    ctx: CommandContext,
+    tenancy_id: UUID,
+    event_id: UUID,
+    *,
+    amount: Decimal,
+    received_on: date,
+) -> Event:
+    """Correct one Kaution receipt (amount and date): appends a tenancy.deposit_received that
+    corrects it. event_id must be a receipt of this tenancy that is not yet corrected (the
+    ids GET .../deposits lists). No-op (returns the receipt) if nothing changes."""
+    payload = DepositReceived(amount=amount)
+    _, scope = _lock(ctx.conn, tenancy_id)
+    receipt = get_event(ctx.conn, event_id)
+    if (
+        receipt is None
+        or receipt.type is not EventType.TENANCY_DEPOSIT_RECEIVED
+        or receipt.entity_id != tenancy_id
+    ):
+        raise NotFoundError("deposit_receipt", event_id)
+    latest = latest_in_chain(ctx.conn, event_id)
+    if latest.id != event_id:
+        raise ConflictError(
+            f"deposit receipt {event_id} is already corrected by {latest.id}; correct that one"
+        )
+    recorded = DepositReceived.model_validate(receipt.payload)
+    if receipt.effective_date == received_on and recorded.amount == payload.amount:
+        return receipt
+    return append_event(
+        ctx,
+        EventType.TENANCY_DEPOSIT_RECEIVED,
+        tenancy_id,
+        payload,
+        effective_date=received_on,
+        corrects_event_id=event_id,
+        **scope,
+    )
+
+
 def record_deposit_received(
     ctx: CommandContext, tenancy_id: UUID, *, amount: Decimal, received_on: date
 ) -> Event:
@@ -318,7 +460,7 @@ def give_notice(
 
 def end_tenancy(ctx: CommandContext, tenancy_id: UUID, end_date: date) -> Tenancy:
     """Move-out: sets end_date and appends tenancy.ended. Rent rows in force must not start
-    after it. Once set, the end date is a milestone (correcting it is not supported yet)."""
+    after it. Once set, the end date is a milestone, changed only by correct_move_out."""
     row, scope = _lock(ctx.conn, tenancy_id)
     current = _to_tenancy(ctx.conn, row)
     if current.end_date is not None:

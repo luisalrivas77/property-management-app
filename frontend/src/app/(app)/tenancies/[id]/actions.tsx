@@ -1,13 +1,14 @@
 "use client";
 
 // The tenancy's actions (§4.5): Bearbeiten (the non-milestone fields), Kaution erhalten,
-// Kündigung, Auszug. Each is one command.
+// Kündigung, Auszug, and the corrections of a Kaution receipt and of the notice. Each is one
+// command; a correction appends a correcting event, so History shows it marked korrigiert.
 // Refusals (a notice that ends before it is given, a tenancy already ended) come from the API
 // as 422 `invalid` or 409 `conflict` and show its message.
 import { useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
-import type { DepositForm as DepositKind, RentModel, Tenancy, TenancyPatch } from "@/api/schemas";
+import type { DepositForm as DepositKind, DepositReceipt, RentModel, Tenancy, TenancyPatch } from "@/api/schemas";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "@/components/form";
 import { blankToNull, decimalInput, toMoneyString } from "@/components/input";
 import { DEPOSIT_FORM, NOTICE_GIVEN_BY, options, RENT_MODEL } from "@/components/labels";
@@ -104,9 +105,12 @@ export function EditTenancyForm({ tenancy, onDone }: { tenancy: Tenancy; onDone:
   );
 }
 
-export function DepositForm({ tenancy, onDone }: { tenancy: Tenancy; onDone: () => void }) {
-  const [amount, setAmount] = useState(tenancy.deposit_amount === "0.00" ? "" : decimalInput(tenancy.deposit_amount));
-  const [receivedOn, setReceivedOn] = useState("");
+/** "Kaution erhalten", or with `receipt` the correction of that receipt (amount and date). */
+export function DepositForm({ tenancy, receipt, onDone }: { tenancy: Tenancy; receipt?: DepositReceipt; onDone: () => void }) {
+  const [amount, setAmount] = useState(
+    receipt ? decimalInput(receipt.amount) : tenancy.deposit_amount === "0.00" ? "" : decimalInput(tenancy.deposit_amount),
+  );
+  const [receivedOn, setReceivedOn] = useState(receipt?.received_on ?? "");
   const [busy, setBusy] = useState(false);
   const form = useFormErrors(["amount", "received_on"]);
 
@@ -119,7 +123,17 @@ export function DepositForm({ tenancy, onDone }: { tenancy: Tenancy; onDone: () 
     setBusy(true);
     form.clear();
     try {
-      await ok(api.POST("/api/tenancies/{tenancy_id}/deposit-received", { ...path(tenancy), body: { amount: money, received_on: receivedOn } }));
+      const body = { amount: money, received_on: receivedOn };
+      if (receipt) {
+        await ok(
+          api.POST("/api/tenancies/{tenancy_id}/deposits/{event_id}/corrections", {
+            params: { path: { tenancy_id: tenancy.id, event_id: receipt.event_id } },
+            body,
+          }),
+        );
+      } else {
+        await ok(api.POST("/api/tenancies/{tenancy_id}/deposit-received", { ...path(tenancy), body }));
+      }
       onDone();
     } catch (error) {
       form.fail(error);
@@ -130,23 +144,34 @@ export function DepositForm({ tenancy, onDone }: { tenancy: Tenancy; onDone: () 
 
   return (
     <form className="stack" onSubmit={submit} noValidate>
-      <p className="muted">Auch für eine Rate der Kaution; jede Zahlung ist ein eigener Eintrag.</p>
+      <p className="muted">
+        {receipt
+          ? "Die Korrektur wird als eigener Eintrag protokolliert; der Verlauf zeigt danach Betrag und Datum der Korrektur."
+          : "Auch für eine Rate der Kaution; jede Zahlung ist ein eigener Eintrag."}
+      </p>
       <Field id="deposit-received-amount" label="Betrag (€)" errors={form.of("amount")}>
         <input type="text" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} required autoComplete="off" />
       </Field>
       <Field id="deposit-received-on" label="Erhalten am" errors={form.of("received_on")}>
         <input type="date" value={receivedOn} onChange={(e) => setReceivedOn(e.target.value)} required />
       </Field>
-      <Submit busy={busy}>Speichern</Submit>
+      <Submit busy={busy}>{receipt ? "Korrektur speichern" : "Speichern"}</Submit>
       <FormBanner errors={form.errors} />
     </form>
   );
 }
 
-export function NoticeForm({ tenancy, onDone }: { tenancy: Tenancy; onDone: () => void }) {
-  const [givenBy, setGivenBy] = useState<"tenant" | "landlord">("tenant");
-  const [givenOn, setGivenOn] = useState("");
-  const [endsOn, setEndsOn] = useState("");
+export interface NoticeValues {
+  given_by: "tenant" | "landlord";
+  given_on: string;
+  ends_on: string;
+}
+
+/** "Kündigung", or with `current` the correction of the notice already given. */
+export function NoticeForm({ tenancy, current, onDone }: { tenancy: Tenancy; current?: NoticeValues; onDone: () => void }) {
+  const [givenBy, setGivenBy] = useState<"tenant" | "landlord">(current?.given_by ?? "tenant");
+  const [givenOn, setGivenOn] = useState(current?.given_on ?? "");
+  const [endsOn, setEndsOn] = useState(current?.ends_on ?? "");
   const [busy, setBusy] = useState(false);
   const form = useFormErrors(["given_by", "given_on", "ends_on"]);
 
@@ -159,7 +184,9 @@ export function NoticeForm({ tenancy, onDone }: { tenancy: Tenancy; onDone: () =
     setBusy(true);
     form.clear();
     try {
-      await ok(api.POST("/api/tenancies/{tenancy_id}/notice", { ...path(tenancy), body: { given_by: givenBy, given_on: givenOn, ends_on: endsOn } }));
+      const body = { given_by: givenBy, given_on: givenOn, ends_on: endsOn };
+      if (current) await ok(api.POST("/api/tenancies/{tenancy_id}/corrections/notice", { ...path(tenancy), body }));
+      else await ok(api.POST("/api/tenancies/{tenancy_id}/notice", { ...path(tenancy), body }));
       onDone();
     } catch (error) {
       form.fail(error);
@@ -185,8 +212,12 @@ export function NoticeForm({ tenancy, onDone }: { tenancy: Tenancy; onDone: () =
       <Field id="notice-ends" label="Zum (Ende des Mietverhältnisses)" errors={form.of("ends_on")}>
         <input type="date" value={endsOn} onChange={(e) => setEndsOn(e.target.value)} required />
       </Field>
-      <p className="muted">Der Auszug selbst wird danach mit „Auszug“ erfasst.</p>
-      <Submit busy={busy}>Kündigung speichern</Submit>
+      <p className="muted">
+        {current
+          ? "Die Korrektur wird als eigener Eintrag protokolliert; der Verlauf zeigt danach die korrigierte Kündigung."
+          : "Der Auszug selbst wird danach mit „Auszug“ erfasst."}
+      </p>
+      <Submit busy={busy}>{current ? "Korrektur speichern" : "Kündigung speichern"}</Submit>
       <FormBanner errors={form.errors} />
     </form>
   );
@@ -214,7 +245,7 @@ export function EndForm({ tenancy, onDone }: { tenancy: Tenancy; onDone: () => v
 
   return (
     <form className="stack" onSubmit={submit} noValidate>
-      <p className="muted">Das Auszugsdatum ist ein Meilenstein; eine Korrektur ist bisher nicht vorgesehen. Bitte genau prüfen.</p>
+      <p className="muted">Das Auszugsdatum ist ein Meilenstein: danach ändert es nur „Auszug korrigieren“, als eigener Eintrag im Verlauf.</p>
       <Field id="end-date" label="Auszug am" errors={form.of("end_date")}>
         <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} required />
       </Field>

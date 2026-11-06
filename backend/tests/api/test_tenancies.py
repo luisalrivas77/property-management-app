@@ -283,6 +283,67 @@ def test_a_tenancy_is_patched_and_its_deposit_account_stays_write_only(client_a)
     assert (response.status_code, response.json()["entity_type"]) == (404, "tenancy")
 
 
+def test_contract_date_notice_move_out_and_deposit_corrections(client_a):
+    setup = flat(client_a)
+    base = f"/api/tenancies/{setup['tenancy']['id']}"
+
+    signed = ok(client_a.post(f"{base}/corrections/signed-on", json={"new_date": "2024-06-10"}))
+    assert signed["signed_on"] == "2024-06-10"
+    response = client_a.post(f"{base}/corrections/signed-on", json={"new_date": "2024-07-02"})
+    assert (response.status_code, response.json()["error"]) == (422, "validation")  # after move-in
+
+    notice = {"given_by": "tenant", "given_on": "2026-03-01", "ends_on": "2026-05-31"}
+    response = client_a.post(f"{base}/corrections/notice", json=notice)
+    assert (response.status_code, response.json()["error"]) == (409, "conflict")  # none yet
+    ok(client_a.post(f"{base}/notice", json=notice))
+    fixed = ok(
+        client_a.post(f"{base}/corrections/notice", json=notice | {"given_on": "2026-02-28"})
+    )
+    assert fixed["notice_given_on"] == "2026-02-28"
+
+    response = client_a.post(f"{base}/corrections/move-out", json={"new_date": "2026-05-31"})
+    assert (response.status_code, response.json()["error"]) == (409, "conflict")  # not ended
+    ok(client_a.post(f"{base}/end", json={"end_date": "2026-05-31"}))
+    moved = ok(client_a.post(f"{base}/corrections/move-out", json={"new_date": "2026-06-30"}))
+    assert moved["end_date"] == "2026-06-30"
+
+    receipt = create(
+        client_a, f"{base}/deposit-received", {"amount": "950.00", "received_on": "2024-07-01"}
+    )
+    corrected = ok(
+        client_a.post(
+            f"{base}/deposits/{receipt['id']}/corrections",
+            json={"amount": "980.00", "received_on": "2024-07-02"},
+        )
+    )
+    assert (corrected["corrects_event_id"], corrected["payload"]) == (
+        receipt["id"],
+        {"amount": "980.00"},
+    )
+    assert ok(client_a.get(f"{base}/deposits")) == [
+        {
+            "event_id": corrected["id"],
+            "amount": "980.00",
+            "received_on": "2024-07-02",
+            "recorded_at": corrected["recorded_at"],
+        }
+    ]
+    body = {"amount": "990.00", "received_on": "2024-07-02"}
+    response = client_a.post(f"{base}/deposits/{receipt['id']}/corrections", json=body)
+    assert (response.status_code, response.json()["error"]) == (409, "conflict")
+    response = client_a.post(f"{base}/deposits/{uuid4()}/corrections", json=body)
+    assert (response.status_code, response.json()["entity_type"]) == (404, "deposit_receipt")
+
+    history = ok(client_a.get(f"/api/properties/{setup['property']['id']}/history"))
+    corrected_types = {e["type"] for e in history if e["corrected"]}
+    assert corrected_types == {
+        "tenancy.created",
+        "tenancy.notice_given",
+        "tenancy.ended",
+        "tenancy.deposit_received",
+    }
+
+
 def test_a_move_in_correction_moves_the_first_rent_row(client_a):
     """§10.8 item 6 over HTTP: 15.07 -> 01.07; History shows the rent at 01.07, corrected."""
     prop = new_property(client_a)
