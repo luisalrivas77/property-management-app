@@ -29,8 +29,9 @@ from hausbuch.rules.errors import (
     PROPOSAL_ALREADY_DECIDED,
     PROPOSAL_NOT_READY,
 )
+from hausbuch.rules.extraction_parse import extraction_kind
 from hausbuch.rules.loan_schedule import build_schedule
-from hausbuch.rules.prefill import build_proposal, extraction_kind
+from hausbuch.rules.prefill import build_proposal
 from hausbuch.schemas.ai import ClassifyOutput, ExtractedValue
 from hausbuch.schemas.api import (
     AcquisitionCostPatch,
@@ -260,7 +261,7 @@ def record_read_result(
     if (values is None) != (extract_call_id is None):
         raise ValueError("extracted values come with the extract call's id, and only then")
     document_id = current.document_id
-    kind = extraction_kind(classification)
+    kind = extraction_kind(classification.type, classification.subtype)
     # The job applies the gate (§5.5 step 3); this repeats it, so no classifier result can
     # bring a tenant document past a workspace that has not allowed them (D16).
     if not blocked_tenant_data and not _ai_tenant_documents(ctx.conn):

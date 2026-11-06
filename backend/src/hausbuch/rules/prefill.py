@@ -25,12 +25,11 @@ from uuid import UUID
 
 from pydantic import JsonValue
 
-from hausbuch.schemas.ai import ClassifyOutput, ConfidenceLevel, ExtractedValue
+from hausbuch.schemas.ai import ConfidenceLevel, ExtractedValue
 from hausbuch.schemas.enums import (
     AcquisitionCostKind,
     DepositForm,
     DocumentSubtype,
-    DocumentType,
     ExtractionKind,
     PropertyKind,
     RentModel,
@@ -64,34 +63,6 @@ _MILESTONES = ("notarized_on", "purchase_date")
 _ADDRESS_KEYS = ("street", "house_number", "postal_code")
 # A handover protocol is linked to the tenancy whose move-in is this close to its date.
 _HANDOVER_WINDOW_DAYS = 31
-
-
-# --- Classification -> extraction kind -----------------------------------------------
-
-
-def extraction_kind(classification: ClassifyOutput) -> ExtractionKind | None:
-    """The field set a classified document is read with; None for one without a field set
-    (a letter, "other"): its proposal is the typing only."""
-    t, s = classification.type, classification.subtype
-    by_subtype = {
-        DocumentSubtype.PURCHASE_CONTRACT: ExtractionKind.PURCHASE_CONTRACT,
-        DocumentSubtype.LOAN_CONTRACT: ExtractionKind.LOAN_CONTRACT,
-        DocumentSubtype.LEASE: ExtractionKind.LEASE,
-        DocumentSubtype.HANDOVER_PROTOCOL: ExtractionKind.HANDOVER_PROTOCOL,
-        DocumentSubtype.DEPOSIT_RECORD: ExtractionKind.DEPOSIT_RECORD,
-        DocumentSubtype.GRUNDSTEUERBESCHEID: ExtractionKind.GRUNDSTEUERBESCHEID,
-    }
-    if s in by_subtype:
-        return by_subtype[s]
-    by_type = {
-        DocumentType.INVOICE: ExtractionKind.INVOICE,
-        DocumentType.BESCHEID: ExtractionKind.BESCHEID,
-        DocumentType.WIRTSCHAFTSPLAN: ExtractionKind.WIRTSCHAFTSPLAN,
-        DocumentType.HAUSGELDABRECHNUNG: ExtractionKind.HAUSGELDABRECHNUNG,
-        DocumentType.ZINSBESCHEINIGUNG: ExtractionKind.ZINSBESCHEINIGUNG,
-        DocumentType.STATEMENT: ExtractionKind.STATEMENT,
-    }
-    return by_type.get(t)
 
 
 # --- Entry point ---------------------------------------------------------------------
@@ -778,4 +749,4 @@ def _ownership_share(clause: str, buyers: int) -> tuple[int, int] | None:
     return None
 
 
-__all__ = ["build_proposal", "extraction_kind"]
+__all__ = ["build_proposal"]
