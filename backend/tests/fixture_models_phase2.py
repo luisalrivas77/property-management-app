@@ -13,8 +13,9 @@ from uuid import UUID
 
 import yaml
 from fixture_models import Lenient
-from pydantic import Field, ValidationError, model_validator
+from pydantic import Field, JsonValue, ValidationError, model_validator
 
+from hausbuch.schemas.ai import CitedTextBlock, ExtractedValue, SourceRef
 from hausbuch.schemas.allocation import (
     AllocationCategory,
     AllocationDraft,
@@ -38,7 +39,9 @@ from hausbuch.schemas.bank import (
     WindowSums,
 )
 from hausbuch.schemas.common import Confidence, Money, Schema, Sha256Hex
-from hausbuch.schemas.enums import DuplicateStatus
+from hausbuch.schemas.enums import DuplicateStatus, ExtractionKind
+from hausbuch.schemas.extraction import EXTRACTION_MODELS, _Typing
+from hausbuch.schemas.proposal import PrefillContext, RecordEntity
 
 FIXTURES = Path(__file__).parent / "fixtures" / "phase2"
 
@@ -342,6 +345,109 @@ class ReconcileFixture(Schema):
     cases: list[ReconcileCase]
 
 
+# --- extraction_parse.yaml -------------------------------------------------------------
+
+
+def _extraction_model(kind: ExtractionKind | None) -> type[_Typing]:
+    return _Typing if kind is None else EXTRACTION_MODELS[kind]
+
+
+class ParseCase(Lenient):
+    kind: ExtractionKind
+    page_offset: int = Field(default=0, ge=0)
+    blocks: list[CitedTextBlock] = Field(min_length=1)
+    expect: dict[str, ExtractedValue]
+
+    @model_validator(mode="after")
+    def _known_fields(self) -> Self:
+        unknown = set(self.expect) - set(_extraction_model(self.kind).model_fields)
+        if unknown:
+            raise ValueError(f"{self.id}: not fields of {self.kind}: {sorted(unknown)}")
+        return self
+
+
+class ParseFixture(Schema):
+    cases: list[ParseCase]
+
+
+# --- prefill.yaml ----------------------------------------------------------------------
+
+
+class Cited(Schema):
+    """Shorthand for an input value that passed every check: {v, p, q}."""
+
+    v: JsonValue
+    p: int = Field(ge=1)
+    q: str = Field(min_length=1)
+
+    def full(self) -> ExtractedValue:
+        return ExtractedValue(
+            value=self.v,
+            source=SourceRef(page=self.p, quote=self.q),
+            checks=["cited", "value_in_quote", "validates"],
+            confidence="high",
+        )
+
+
+class RecordExpect(Schema):
+    key: str = Field(min_length=1)
+    entity_type: RecordEntity
+    mode: Literal["create", "patch", "correction", "unchanged"]
+    target_id: UUID | None = None
+    values: dict[str, JsonValue]
+    derived: dict[str, list[str]] = Field(default_factory=dict)
+    current: dict[str, JsonValue] | None = None
+    notes_contain: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _consistent(self) -> Self:
+        if self.mode != "create" and self.target_id is None:
+            raise ValueError(f"{self.key}: mode {self.mode} needs target_id")
+        if self.current is not None and self.target_id is None:
+            raise ValueError(f"{self.key}: current is only set for an existing record")
+        if not set(self.derived) <= set(self.values):
+            raise ValueError(f"{self.key}: a derived field must be in values")
+        return self
+
+
+class PrefillExpect(Schema):
+    keys: list[str] = Field(min_length=1)
+    records: list[RecordExpect]
+
+    @model_validator(mode="after")
+    def _keys(self) -> Self:
+        detailed = [r.key for r in self.records]
+        if len(set(self.keys)) != len(self.keys) or len(set(detailed)) != len(detailed):
+            raise ValueError("record keys must be unique")
+        if not set(detailed) <= set(self.keys):
+            raise ValueError(f"records not in keys: {sorted(set(detailed) - set(self.keys))}")
+        return self
+
+
+class PrefillCase(Lenient):
+    kind: ExtractionKind | None
+    context: PrefillContext
+    extraction: dict[str, Cited | ExtractedValue]
+    expect: PrefillExpect
+
+    def extraction_model(self) -> _Typing:
+        values = {k: v.full() if isinstance(v, Cited) else v for k, v in self.extraction.items()}
+        return _extraction_model(self.kind).model_validate(values)
+
+    @model_validator(mode="after")
+    def _valid_extraction(self) -> Self:
+        self.extraction_model()
+        if self.kind is not None and self.kind is ExtractionKind.MANUAL:
+            raise ValueError(f"{self.id}: manual extractions are never pre-filled")
+        return self
+
+
+class PrefillFixture(Schema):
+    ids: dict[str, str]
+    shared: dict[str, Any]
+    cases: list[PrefillCase]
+
+
 MODELS: dict[str, type[Schema]] = {
     "categories": CategoriesFixture,
     "thresholds": ThresholdsFixture,
@@ -353,6 +459,8 @@ MODELS: dict[str, type[Schema]] = {
     "line_hash": LineHashFixture,
     "duplicates": DuplicatesFixture,
     "reconcile": ReconcileFixture,
+    "extraction_parse": ParseFixture,
+    "prefill": PrefillFixture,
 }
 
 
