@@ -230,9 +230,7 @@ export function ImportsTable({
             <th>Umsätze</th>
             <th className="num">Endsaldo</th>
             <th>Status</th>
-            <th>
-              <span className="visually-hidden">Aktionen</span>
-            </th>
+            <th />
           </tr>
         </thead>
         <tbody>
@@ -466,20 +464,14 @@ function DuplicateCard({
         </table>
       </div>
       {pair.status === "open" ? (
-        <>
-          <p className="muted">
-            Dieselbe Zahlung in zwei Formaten importiert? „Zusammenführen“ nimmt den später importierten Umsatz aus allen
-            Salden; „Beide behalten“, wenn es zwei echte Zahlungen waren.
-          </p>
-          <div className="row">
-            <button type="button" disabled={busy} onClick={() => void decide("merged")}>
-              Zusammenführen
-            </button>
-            <button type="button" className="secondary" disabled={busy} onClick={() => void decide("kept_both")}>
-              Beide behalten
-            </button>
-          </div>
-        </>
+        <div className="row">
+          <button type="button" disabled={busy} onClick={() => void decide("merged")}>
+            Zusammenführen
+          </button>
+          <button type="button" className="secondary" disabled={busy} onClick={() => void decide("kept_both")}>
+            Beide behalten
+          </button>
+        </div>
       ) : (
         <p>
           <span className="badge badge-muted">{DUPLICATE_STATUS[pair.status]}</span>
@@ -517,7 +509,18 @@ export function DuplicatesList({
   );
   return (
     <div className="stack">
-      {open.length === 0 ? <p className="muted">Keine offenen möglichen Doppelbuchungen.</p> : open.map(card)}
+      {open.length === 0 ? (
+        <p className="muted">Keine offenen möglichen Doppelbuchungen.</p>
+      ) : (
+        <>
+          <p className="muted">
+            Dieselbe Zahlung zweimal importiert, etwa einmal als CSV und einmal als camt? „Zusammenführen“ nimmt den später
+            importierten Umsatz aus allen Salden, und die Kontoauszüge werden neu abgestimmt. „Beide behalten“, wenn es zwei
+            echte Zahlungen waren.
+          </p>
+          {open.map(card)}
+        </>
+      )}
       {decided.length > 0 ? (
         <details>
           <summary>{decided.length} bereits entschieden</summary>
