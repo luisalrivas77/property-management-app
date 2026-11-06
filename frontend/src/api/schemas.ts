@@ -106,6 +106,22 @@ export type ChecklistScopeType = Schemas["ChecklistScopeType"];
 export type ChecklistStatus = Schemas["ChecklistStatus"];
 export type RequirementCode = Schemas["RequirementCode"];
 
+// bank accounts and statement imports (phase 2 step 3)
+export type Account = Schemas["Account"];
+export type AccountCreate = Schemas["AccountCreate"];
+export type AccountPatch = Schemas["AccountPatch"];
+export type AccountSource = Schemas["AccountSource"];
+export type StatementImport = Schemas["StatementImport"];
+export type StatementFormat = Schemas["StatementFormat"];
+export type ImportStatus = Schemas["ImportStatus"];
+export type BalanceSource = Schemas["BalanceSource"];
+export type DeclareBalanceBody = Schemas["DeclareBalanceBody"];
+export type Transaction = Schemas["Transaction"];
+export type PossibleDuplicate = Schemas["PossibleDuplicate"];
+export type DuplicateStatus = Schemas["DuplicateStatus"];
+export type DuplicateDecisionBody = Schemas["DuplicateDecisionBody"];
+export type ImportBody = Schemas["Body_account_import_api_accounts__account_id__imports_post"];
+
 // history and audit
 export type TimelineEntry = Schemas["TimelineEntry"];
 export type Event = Schemas["Event"];

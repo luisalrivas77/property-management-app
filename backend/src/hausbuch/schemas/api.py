@@ -23,6 +23,7 @@ from .common import (
     Area,
     Fraction,
     IbanInput,
+    Money,
     NonNegativeMoney,
     PositiveMoney,
     Rate,
@@ -157,6 +158,19 @@ class TenantPatch(Patch):
     email: str | None = None
     phone: str | None = None
     iban: IbanInput | None = None  # write-only; null removes it
+
+
+class AccountPatch(Patch):
+    """PATCH /accounts/{id}. The IBAN cannot change: a different IBAN is another account.
+    Moving the anchor (opening_balance, opening_balance_on) re-checks every import."""
+
+    model_config = _HIDE_INPUT
+
+    label: str = Field(default=None, min_length=1, max_length=100)
+    bank: str = Field(default=None, min_length=1)
+    opening_balance: Money = Field(default=None)
+    opening_balance_on: date = Field(default=None)
+    is_owner_account: bool = Field(default=None)
 
 
 class LoanPatch(Patch):

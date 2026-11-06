@@ -1,0 +1,469 @@
+# Parser fixture: camt.052 / camt.053 (hausbuch.services.bank.parse_statement, camt.read_camt)
+#
+# parse_statement(data: bytes, media_type) -> ParseOutcome(statement: ParsedStatement,
+#                                                          balance_error: str | None)
+# Spec: docs/phases/phase-2.md §7.1, D33 (camt.052 v08 is Sparkasse's primary export, format
+# value `camt` for both roots) and D34 (a ZIP of daily reports: member rules and limits
+# checked before any XML is parsed; per-report OPBD + Σ booked Ntry = CLBD and each OPBD =
+# the previous report's CLBD, else the import goes to review; XML with entity resolution and
+# network access off, a DOCTYPE refused).
+#
+# Samples: bank_samples/camt052.zip is an ANONYMISED copy of Luis's real export (17 daily
+# reports, 22 entries, Apr-Nov 2026): names, IBANs, BICs, references, purpose texts and
+# amounts replaced with synthetic values, balances recomputed (they reconcile and chain, and
+# dip below zero, which exercises DBIT balances). Never put an original export here.
+#
+# Reading rules the cases pin:
+#   - sign from CdtDbtInd: DBIT negative, for entries and balances; amounts are Decimal text
+#   - only Sts BOOK entries become lines; a skipped entry adds one warning
+#   - counterparty: Cdtr/CdtrAcct on a debit, Dbtr/DbtrAcct on a credit; an account with
+#     only Othr/Id (the bank's own booking, e.g. ABSCHLUSS) has no IBAN
+#   - bank_reference = AcctSvcrRef, else NtryRef; EndToEndId and MndtId from TxDtls/Refs
+#   - purpose = every RmtInf/Ustrd, whitespace-collapsed, joined with one space
+#   - booking_text = AddtlNtryInf
+#   - raw: status, bank_transaction_code (from TxDtls; the entry-level BkTxCd is empty in
+#     the real export), counterparty_bic, creditor_id (direct debits), report_id; never an
+#     IBAN
+#   - reports ordered by their CLBD date (the report's own day; each OPBD is dated the
+#     previous report's day). opening = first OPBD (or PRCD), closing = last CLBD.
+#     Two reports for one day are a chain break.
+#
+# Input: `file` under bank_samples/ (with `member`: that one member of the ZIP, uploaded as
+# a single .xml), inline `text`, or a `zip` the test builds; `replace` pairs apply to the
+# text of the file or of each of its members. Exactly one of `expect` / `error`.
+
+cases:
+
+  - id: sparkasse_zip_of_daily_reports
+    description: The anonymised export as downloaded; 17 reports chain from 0,00 to -3.028,51.
+    input: {file: camt052.zip, media_type: application/zip}
+    expect:
+      format: camt
+      account_iban: DE50100000000000000001
+      opening_balance: "0.00"
+      closing_balance: "-3028.51"
+      line_count: 22
+      total: "-3028.51"
+      first_booking_on: 2026-04-01
+      last_booking_on: 2026-11-06
+      lines:
+        - index: 0
+          line:
+            booking_date: 2026-04-01
+            value_date: 2026-04-01
+            amount: "136.69"
+            purpose: Verwendungszweck 1 Zeile 2
+            booking_text: ABSCHLUSS
+            bank_reference: 2026-01-01-10.00.00.000001
+            raw:
+              status: BOOK
+              bank_transaction_code: {domain: ACMT, family: OPCL, sub_family: ACCC, proprietary: NMSC+805+6666+999}
+              report_id: camt0001_TESTBANK
+        - index: 1
+          line:
+            booking_date: 2026-06-30
+            value_date: 2026-06-30
+            amount: "241.58"
+            counterparty_name: Partei A
+            counterparty_iban: DE16100000000000001001
+            purpose: Verwendungszweck 2
+            booking_text: ÜBERWEISUNGSGUTSCHRIFT
+            bank_reference: 2026-01-01-10.00.00.000002
+            raw:
+              status: BOOK
+              bank_transaction_code: {domain: XTND, family: NTAV, sub_family: NTAV, proprietary: NMSC+835+9314+999}
+              counterparty_bic: TSTADEFFXXX
+              report_id: camt0002_TESTBANK
+        - index: 2
+          line:
+            booking_date: 2026-06-30
+            value_date: 2026-06-30
+            amount: "-360.18"
+            counterparty_name: Partei B
+            counterparty_iban: DE86100000000000001002
+            purpose: Verwendungszweck 3
+            booking_text: EINZELÜBERWEISUNG
+            bank_reference: 2026-01-01-10.00.00.000003
+            raw:
+              status: BOOK
+              bank_transaction_code: {domain: PMNT, family: ICDT, sub_family: ESCT, proprietary: NTRF+116+9314+999}
+              counterparty_bic: TSTBDEFFXXX
+              report_id: camt0002_TESTBANK
+        - index: 9
+          description: The one entry without remittance information.
+          line:
+            booking_date: 2026-09-28
+            value_date: 2026-09-28
+            amount: "740.18"
+            counterparty_name: Partei D
+            counterparty_iban: DE32100000000000001004
+            purpose: ""
+            booking_text: GUTSCHRIFT ÜBERWEISUNG
+            bank_reference: 2026-01-01-10.00.00.000010
+            raw:
+              status: BOOK
+              bank_transaction_code: {domain: PMNT, family: RCDT, sub_family: ESCT, proprietary: NTRF+166+9223+999}
+              counterparty_bic: TSTDDEFFXXX
+              report_id: camt0008_TESTBANK
+        - index: 17
+          description: A direct debit with end-to-end id, mandate and creditor id.
+          line:
+            booking_date: 2026-11-02
+            value_date: 2026-11-02
+            amount: "-724.70"
+            counterparty_name: Partei E
+            counterparty_iban: DE05100000000000001005
+            purpose: Verwendungszweck 18
+            booking_text: FOLGELASTSCHRIFT
+            bank_reference: 2026-01-01-10.00.00.000018
+            end_to_end_ref: E2E-REF-0005
+            mandate_ref: MANDAT-0001
+            raw:
+              status: BOOK
+              bank_transaction_code: {domain: PMNT, family: RDDT, sub_family: ESDD, proprietary: NDDT+105+9248+999}
+              counterparty_bic: TSTEDEFFXXX
+              creditor_id: DE98ZZZ09999999991
+              report_id: camt0014_TESTBANK
+        - index: 21
+          line:
+            booking_date: 2026-11-06
+            value_date: 2026-11-06
+            amount: "458.98"
+            counterparty_name: Partei I
+            counterparty_iban: DE91100000000000001009
+            purpose: Verwendungszweck 22
+            booking_text: GUTSCHRIFT ÜBERWEISUNG
+            bank_reference: 2026-01-01-10.00.00.000022
+            raw:
+              status: BOOK
+              bank_transaction_code: {domain: PMNT, family: RCDT, sub_family: ESCT, proprietary: NTRF+166+9249+999}
+              counterparty_bic: TSTHDEFFXXX
+              report_id: camt0017_TESTBANK
+
+  - id: second_download_differs_only_in_creation_time
+    description: The real ZIP was downloaded twice and the files differ only in CreDtTm; the parse is identical (the db test checks a second import adds no line).
+    input:
+      file: camt052.zip
+      media_type: application/zip
+      replace: [["2026-11-06T20:55:37+01:00", "2026-11-07T08:12:03+01:00"]]
+    expect:
+      format: camt
+      account_iban: DE50100000000000000001
+      opening_balance: "0.00"
+      closing_balance: "-3028.51"
+      line_count: 22
+      total: "-3028.51"
+      first_booking_on: 2026-04-01
+      last_booking_on: 2026-11-06
+
+  - id: single_report_xml_without_zip
+    description: One daily report uploaded on its own (three entries, the balance turns negative).
+    input: {file: camt052.zip, member: 2026.06.30.xml, media_type: application/xml}
+    expect:
+      format: camt
+      account_iban: DE50100000000000000001
+      opening_balance: "136.69"
+      closing_balance: "-608.15"
+      line_count: 3
+      total: "-744.84"
+      first_booking_on: 2026-06-30
+      last_booking_on: 2026-06-30
+
+  - id: camt053_statement_root
+    description: camt.053.001.02 (BkToCstmrStmt/Stmt) with the older shapes - Sts as text, PRCD as opening, Nm directly under Cdtr/Dbtr, BIC, NtryRef as reference, ValDt as DtTm, entry-level BkTxCd - and one pending entry, skipped.
+    input:
+      media_type: text/xml
+      text: |
+        <?xml version="1.0" encoding="UTF-8"?>
+        <Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02">
+          <BkToCstmrStmt>
+            <GrpHdr><MsgId>M-2027-01</MsgId><CreDtTm>2027-02-01T06:00:00</CreDtTm></GrpHdr>
+            <Stmt>
+              <Id>STMT-2027-01</Id>
+              <Acct><Id><IBAN>DE50100000000000000001</IBAN></Id><Ccy>EUR</Ccy></Acct>
+              <Bal><Tp><CdOrPrtry><Cd>PRCD</Cd></CdOrPrtry></Tp><Amt Ccy="EUR">5000.00</Amt><CdtDbtInd>CRDT</CdtDbtInd><Dt><Dt>2026-12-31</Dt></Dt></Bal>
+              <Bal><Tp><CdOrPrtry><Cd>CLBD</Cd></CdOrPrtry></Tp><Amt Ccy="EUR">5990.00</Amt><CdtDbtInd>CRDT</CdtDbtInd><Dt><Dt>2027-01-31</Dt></Dt></Bal>
+              <Ntry>
+                <NtryRef>REF-0001</NtryRef>
+                <Amt Ccy="EUR">1400.00</Amt><CdtDbtInd>CRDT</CdtDbtInd><Sts>BOOK</Sts>
+                <BookgDt><Dt>2027-01-04</Dt></BookgDt><ValDt><Dt>2027-01-04</Dt></ValDt>
+                <BkTxCd><Domn><Cd>PMNT</Cd><Fmly><Cd>RCDT</Cd><SubFmlyCd>ESCT</SubFmlyCd></Fmly></Domn></BkTxCd>
+                <NtryDtls><TxDtls>
+                  <Refs><EndToEndId>NOTPROVIDED</EndToEndId></Refs>
+                  <RltdPties><Dbtr><Nm>Erika  Beispiel</Nm></Dbtr><DbtrAcct><Id><IBAN>DE16100000000000001001</IBAN></Id></DbtrAcct></RltdPties>
+                  <RltdAgts><DbtrAgt><FinInstnId><BIC>TSTADEFFXXX</BIC></FinInstnId></DbtrAgt></RltdAgts>
+                  <RmtInf><Ustrd>Miete 01/2027</Ustrd></RmtInf>
+                </TxDtls></NtryDtls>
+                <AddtlNtryInf>GUTSCHRIFT</AddtlNtryInf>
+              </Ntry>
+              <Ntry>
+                <Amt Ccy="EUR">410.00</Amt><CdtDbtInd>DBIT</CdtDbtInd><Sts>BOOK</Sts>
+                <BookgDt><Dt>2027-01-05</Dt></BookgDt><ValDt><DtTm>2027-01-05T10:00:00</DtTm></ValDt>
+                <AcctSvcrRef>ACC-0002</AcctSvcrRef>
+                <NtryDtls><TxDtls>
+                  <RltdPties><Cdtr><Nm>WEG Lindenstrasse 12</Nm></Cdtr><CdtrAcct><Id><IBAN>DE86100000000000001002</IBAN></Id></CdtrAcct></RltdPties>
+                  <RmtInf><Ustrd>Hausgeld</Ustrd><Ustrd>  01/2027  WE 3</Ustrd></RmtInf>
+                </TxDtls></NtryDtls>
+                <AddtlNtryInf>DAUERAUFTRAG</AddtlNtryInf>
+              </Ntry>
+              <Ntry>
+                <Amt Ccy="EUR">99.00</Amt><CdtDbtInd>DBIT</CdtDbtInd><Sts>PDNG</Sts>
+                <BookgDt><Dt>2027-01-31</Dt></BookgDt>
+                <AcctSvcrRef>ACC-0003</AcctSvcrRef>
+              </Ntry>
+            </Stmt>
+          </BkToCstmrStmt>
+        </Document>
+    expect:
+      format: camt
+      account_iban: DE50100000000000000001
+      opening_balance: "5000.00"
+      closing_balance: "5990.00"
+      line_count: 2
+      total: "990.00"
+      first_booking_on: 2027-01-04
+      last_booking_on: 2027-01-05
+      warnings: [an entry that is not booked was skipped]
+      lines:
+        - index: 0
+          line:
+            booking_date: 2027-01-04
+            value_date: 2027-01-04
+            amount: "1400.00"
+            counterparty_name: Erika Beispiel
+            counterparty_iban: DE16100000000000001001
+            purpose: Miete 01/2027
+            booking_text: GUTSCHRIFT
+            bank_reference: REF-0001
+            end_to_end_ref: NOTPROVIDED
+            raw:
+              status: BOOK
+              bank_transaction_code: {domain: PMNT, family: RCDT, sub_family: ESCT}
+              counterparty_bic: TSTADEFFXXX
+              report_id: STMT-2027-01
+        - index: 1
+          line:
+            booking_date: 2027-01-05
+            value_date: 2027-01-05
+            amount: "-410.00"
+            counterparty_name: WEG Lindenstrasse 12
+            counterparty_iban: DE86100000000000001002
+            purpose: Hausgeld 01/2027 WE 3
+            booking_text: DAUERAUFTRAG
+            bank_reference: ACC-0002
+            raw:
+              status: BOOK
+              report_id: STMT-2027-01
+
+  - id: missing_day_breaks_the_chain
+    description: Two reports with the day between them left out; each report balances on its own, but the second's OPBD (136,69) is not the first's CLBD (-608,15).
+    input:
+      media_type: application/zip
+      zip:
+        - {name: 2026.04.01.xml, member: 2026.04.01.xml}
+        - {name: 2026.07.01.xml, member: 2026.07.01.xml}
+    expect:
+      format: camt
+      account_iban: DE50100000000000000001
+      opening_balance: "0.00"
+      closing_balance: "-471.46"
+      balance_error: statement.chain_break
+      line_count: 2
+      total: "273.38"
+      first_booking_on: 2026-04-01
+      last_booking_on: 2026-07-01
+
+  - id: reports_are_ordered_by_their_day
+    description: Members named so their order in the archive is reversed; the reports still chain once ordered by CLBD date.
+    input:
+      media_type: application/zip
+      zip:
+        - {name: a.xml, member: 2026.07.01.xml}
+        - {name: b.xml, member: 2026.06.30.xml}
+        - {name: c.xml, member: 2026.04.01.xml}
+    expect:
+      format: camt
+      account_iban: DE50100000000000000001
+      opening_balance: "0.00"
+      closing_balance: "-471.46"
+      line_count: 5
+      total: "-471.46"
+      first_booking_on: 2026-04-01
+      last_booking_on: 2026-07-01
+
+  - id: the_same_day_twice_breaks_the_chain
+    description: One day's report under two names.
+    input:
+      media_type: application/zip
+      zip:
+        - {name: 2026.04.01.xml, member: 2026.04.01.xml}
+        - {name: copy.xml, member: 2026.04.01.xml}
+    expect:
+      format: camt
+      account_iban: DE50100000000000000001
+      opening_balance: "0.00"
+      closing_balance: "136.69"
+      balance_error: statement.chain_break
+      line_count: 2
+      total: "273.38"
+      first_booking_on: 2026-04-01
+      last_booking_on: 2026-04-01
+
+  - id: report_sum_break
+    description: A report whose CLBD is one cent off its OPBD plus its entries (a misread or edited file).
+    input:
+      file: camt052.zip
+      member: 2026.04.01.xml
+      media_type: application/xml
+      replace: [['<Amt Ccy="EUR">136.69</Amt><CdtDbtInd>CRDT</CdtDbtInd><Dt><Dt>2026-04-01</Dt></Dt></Bal>', '<Amt Ccy="EUR">136.70</Amt><CdtDbtInd>CRDT</CdtDbtInd><Dt><Dt>2026-04-01</Dt></Dt></Bal>']]
+    expect:
+      format: camt
+      account_iban: DE50100000000000000001
+      opening_balance: "0.00"
+      closing_balance: "136.70"
+      balance_error: statement.report_unbalanced
+      line_count: 1
+      total: "136.69"
+      first_booking_on: 2026-04-01
+      last_booking_on: 2026-04-01
+
+  # --- ZIP member rules (D34): the whole upload is rejected ---------------------------
+
+  - id: zip_member_with_parent_path
+    input: {media_type: application/zip, zip: [{name: ../2026.04.01.xml, member: 2026.04.01.xml}]}
+    error: statement.archive_rejected
+
+  - id: zip_member_in_a_folder
+    input: {media_type: application/zip, zip: [{name: camt/2026.04.01.xml, member: 2026.04.01.xml}]}
+    error: statement.archive_rejected
+
+  - id: zip_member_with_backslash
+    input: {media_type: application/zip, zip: [{name: 'camt\2026.04.01.xml', member: 2026.04.01.xml}]}
+    error: statement.archive_rejected
+
+  - id: zip_member_not_xml
+    input:
+      media_type: application/zip
+      zip:
+        - {name: 2026.04.01.xml, member: 2026.04.01.xml}
+        - {name: readme.txt, text: hello}
+    error: statement.archive_rejected
+
+  - id: zip_with_401_members
+    input: {media_type: application/zip, zip: [{name: day.xml, member: 2026.04.01.xml, repeat: 401}]}
+    error: statement.archive_rejected
+
+  - id: zip_with_400_members_is_read
+    description: The limit itself is allowed; 400 copies of one day are then a chain break, not a rejection.
+    input: {media_type: application/zip, zip: [{name: day.xml, member: 2026.04.01.xml, repeat: 400}]}
+    expect:
+      format: camt
+      account_iban: DE50100000000000000001
+      opening_balance: "0.00"
+      closing_balance: "136.69"
+      balance_error: statement.chain_break
+      line_count: 400
+      total: "54676.00"
+      first_booking_on: 2026-04-01
+      last_booking_on: 2026-04-01
+
+  - id: zip_over_20_mib_uncompressed
+    input:
+      media_type: application/zip
+      zip:
+        - {name: 2026.04.01.xml, member: 2026.04.01.xml}
+        - {name: big.xml, zeros: 20971521}
+    error: statement.archive_rejected
+
+  - id: zip_inside_zip
+    description: A nested archive named like a report.
+    input:
+      media_type: application/zip
+      zip:
+        - name: inner.xml
+          zip_of: [{name: 2026.04.01.xml, member: 2026.04.01.xml}]
+    error: statement.archive_rejected
+
+  - id: zip_corrupt
+    input: {media_type: application/zip, text: "PK\x03\x04 not really an archive"}
+    error: statement.archive_rejected
+
+  # --- XML safety and content ---------------------------------------------------------
+
+  - id: entity_declaration_refused
+    description: An internal entity (the building block of entity-expansion attacks); refused, not expanded.
+    input:
+      media_type: application/xml
+      text: |
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE Document [<!ENTITY a "aaaaaaaaaa"><!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;">]>
+        <Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02"><BkToCstmrStmt><GrpHdr><MsgId>&b;</MsgId></GrpHdr></BkToCstmrStmt></Document>
+    error: statement.entity_declared
+
+  - id: external_entity_refused
+    description: An external entity pointing at a local file; nothing is read.
+    input:
+      media_type: application/xml
+      text: |
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE Document [<!ENTITY x SYSTEM "file:///etc/passwd">]>
+        <Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02"><BkToCstmrStmt><GrpHdr><MsgId>&x;</MsgId></GrpHdr></BkToCstmrStmt></Document>
+    error: statement.entity_declared
+
+  - id: entity_declaration_inside_a_zip
+    input:
+      media_type: application/zip
+      zip:
+        - name: 2026.04.01.xml
+          text: |
+            <?xml version="1.0"?>
+            <!DOCTYPE Document [<!ENTITY x SYSTEM "http://example.invalid/x">]>
+            <Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.052.001.08"><BkToCstmrAcctRpt>&x;</BkToCstmrAcctRpt></Document>
+    error: statement.entity_declared
+
+  - id: not_well_formed
+    input:
+      media_type: application/xml
+      text: '<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02"><BkToCstmrStmt><Stmt></BkToCstmrStmt>'
+    error: statement.unparsable
+
+  - id: another_iso20022_message
+    description: Mentions the root name but is not a camt.052/053 document.
+    input:
+      media_type: application/xml
+      text: '<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pain.001.001.09"><BkToCstmrStmt/></Document>'
+    error: statement.unparsable
+
+  - id: amount_with_a_decimal_comma
+    input:
+      file: camt052.zip
+      member: 2026.04.01.xml
+      media_type: application/xml
+      replace: [['<Amt Ccy="EUR">136.69</Amt><CdtDbtInd>CRDT</CdtDbtInd><Sts>', '<Amt Ccy="EUR">136,69</Amt><CdtDbtInd>CRDT</CdtDbtInd><Sts>']]
+    error: statement.unparsable
+
+  - id: amount_with_three_decimals
+    input:
+      file: camt052.zip
+      member: 2026.04.01.xml
+      media_type: application/xml
+      replace: [['<Amt Ccy="EUR">136.69</Amt><CdtDbtInd>CRDT</CdtDbtInd><Sts>', '<Amt Ccy="EUR">136.691</Amt><CdtDbtInd>CRDT</CdtDbtInd><Sts>']]
+    error: statement.unparsable
+
+  - id: not_euro
+    input:
+      file: camt052.zip
+      member: 2026.04.01.xml
+      media_type: application/xml
+      replace: [['<Ccy>EUR</Ccy>', '<Ccy>CHF</Ccy>']]
+    error: statement.unsupported_currency
+
+  - id: unknown_format
+    description: Neither camt, a ZIP nor CSV-CAMT.
+    input: {media_type: text/plain, text: "Kontoauszug Nr. 1/2027\n"}
+    error: statement.unknown_format
+
+  - id: pdf_not_imported_yet
+    description: PDF statements are read by the extraction job (step 1); step 3 has no import path for them.
+    input: {media_type: application/pdf, text: "%PDF-1.7\n"}
+    error: statement.unknown_format

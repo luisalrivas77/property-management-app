@@ -580,6 +580,56 @@ input[type="file"]::file-selector-button {
   font-size: 13px;
 }
 
+/* --- Konten: statement imports and transactions (phase 2 step 3; the imported-statement
+   rows of docs/mockups/03-inbox.png) --- */
+
+/* Status pill variants of .badge (abgestimmt): warning (Saldo fehlt, offen), danger (nicht
+   abgestimmt, fehlgeschlagen), neutral (zusammengeführt, beide behalten). */
+.badge.badge-warn {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.badge.badge-danger {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.badge.badge-muted {
+  background: var(--tag-bg);
+  color: var(--muted);
+}
+
+td .badge:first-child {
+  margin-left: 0;
+}
+
+/* An incoming amount (credit), as the mockup's "+1,030.00". */
+td.amount-in {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* A line that no longer counts (a merged duplicate). */
+tr.excluded td {
+  color: var(--muted);
+}
+
+/* The lines under an import row or a transaction: sums, purpose text, the reason. */
+.cell-detail {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* Von / bis and the filter buttons on one line. */
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  align-items: flex-end;
+}
+
 /* --- Vorschlag: the pre-fill review on the document page (phase-2.md §6.4; the side panel
    of docs/mockups/03-inbox.png: one card per record, proposed values as rows) --- */
 

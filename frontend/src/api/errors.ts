@@ -66,6 +66,25 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   // phase 2 (phase-2.md §12)
   "proposal.already_decided": "Über diesen Vorschlag wurde schon entschieden (übernommen oder verworfen).",
   "proposal.not_ready": "Dieser Vorschlag ist noch nicht fertig oder wurde ersetzt.",
+  // bank statements (phase-2.md §12 and the step 3 additions, rules/statements.py)
+  "statement.unreconciled": "Der berechnete Endsaldo stimmt nicht mit dem Saldo der Bank überein.",
+  "statement.opening_mismatch": "Der Anfangssaldo der Datei stimmt nicht mit dem berechneten Kontostand überein.",
+  "statement.before_anchor":
+    "Der Auszug enthält Umsätze am oder vor dem Datum des Anfangssaldos. Den Anfangssaldo auf einen früheren Tag legen.",
+  "statement.unknown_format": "Dateiformat nicht erkannt. Erwartet: camt (XML oder ZIP) oder Sparkasse CSV-CAMT.",
+  "statement.unparsable": "Die Datei ist beschädigt oder unvollständig und konnte nicht gelesen werden.",
+  "statement.archive_rejected":
+    "Das ZIP-Archiv wurde abgelehnt: nur XML-Dateien ohne Ordner, höchstens 400 Dateien und 20 MiB, keine ZIPs im ZIP.",
+  "statement.entity_declared": "Die XML-Datei enthält eine DTD oder Entity-Deklaration und wird aus Sicherheitsgründen abgelehnt.",
+  "statement.report_unbalanced": "In einem Tagesbericht ergeben Anfangssaldo und Umsätze nicht den Endsaldo.",
+  "statement.chain_break": "Ein Tagesbericht beginnt nicht mit dem Endsaldo des vorherigen; vermutlich fehlt ein Tag.",
+  "statement.account_mismatch": "Der Auszug gehört zu einem anderen Konto: die IBAN in der Datei passt nicht.",
+  "statement.unsupported_currency": "Es werden nur Umsätze in Euro unterstützt.",
+  "statement.empty": "Die Datei enthält keine gebuchten Umsätze.",
+  "statement.owner_account": "Auf ein Privatkonto der Eigentümer werden keine Kontoauszüge importiert.",
+  "statement.balance_from_file": "Dieser Auszug bringt seine Salden selbst mit; ein Saldo wird nicht eingegeben.",
+  "statement.duplicate_accounts_differ": "Die beiden Umsätze gehören zu verschiedenen Konten.",
+  "statement.duplicate_excludes_both": "Zusammenführen würde beide Umsätze aus dem Saldo nehmen; einer muss zählen.",
 };
 
 /** German text for a proposal's `error_code`: why reading the document failed or was

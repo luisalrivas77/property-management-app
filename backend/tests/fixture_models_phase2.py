@@ -36,6 +36,7 @@ from hausbuch.schemas.bank import (
     LineForHash,
     ReconcileResult,
     StatementFormat,
+    StatementLine,
     StoredLine,
     WindowSums,
 )
@@ -597,6 +598,114 @@ class RepeatFixture(Schema):
     cases: list[RepeatCase]
 
 
+# --- camt.yaml, csv_camt.yaml (step 3) ---------------------------------------------------
+# Inputs are built from the anonymised copies of Luis's Sparkasse exports in
+# fixtures/phase2/bank_samples/ (never the originals) or from inline text, so the archive
+# limit cases (401 members, 21 MiB, nested ZIPs) are generated, not committed.
+
+BANK_SAMPLES = FIXTURES / "bank_samples"
+
+
+class ZipMember(Schema):
+    """One member of a ZIP the test builds. Exactly one source: a member of the sample ZIP
+    (`member`), inline `text`, `zeros` bytes of 0x00, or a nested archive (`zip_of`)."""
+
+    name: str
+    member: str | None = None
+    text: str | None = None
+    zeros: int | None = Field(default=None, ge=0)
+    zip_of: list["ZipMember"] | None = None
+    # > 1: the member is added this many times as <stem>-<i>.xml
+    repeat: int = Field(default=1, ge=1)
+
+    @model_validator(mode="after")
+    def _one_source(self) -> Self:
+        sources = [self.member, self.text, self.zeros, self.zip_of]
+        if sum(s is not None for s in sources) != 1:
+            raise ValueError(f"member {self.name!r}: exactly one of member/text/zeros/zip_of")
+        return self
+
+
+class BankInput(Schema):
+    """The uploaded bytes. `file` is under bank_samples/; with `member` the one member of
+    that ZIP is the upload. `replace` ([old, new] pairs, each old must occur) is applied to
+    the text of the file, or of every member of a ZIP file."""
+
+    media_type: str
+    file: str | None = None
+    member: str | None = None
+    text: str | None = None
+    encoding: str = "utf-8"
+    replace: list[tuple[str, str]] = Field(default_factory=list)
+    zip: list[ZipMember] | None = None
+
+    @model_validator(mode="after")
+    def _one_source(self) -> Self:
+        if sum(s is not None for s in (self.file, self.text, self.zip)) != 1:
+            raise ValueError("exactly one of file/text/zip")
+        if self.member is not None and self.file is None:
+            raise ValueError("member needs file")
+        return self
+
+
+class PinnedLine(Schema):
+    index: int = Field(ge=0)
+    description: str | None = None
+    line: StatementLine
+
+
+class ParserExpect(Schema):
+    format: StatementFormat
+    account_iban: str | None
+    opening_balance: Money | None
+    closing_balance: Money | None
+    balance_error: str | None = None  # statement.report_unbalanced / statement.chain_break
+    line_count: int = Field(ge=0)
+    total: Money  # sum of the line amounts
+    first_booking_on: date | None
+    last_booking_on: date | None
+    warnings: list[str] = Field(default_factory=list)
+    lines: list[PinnedLine] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _consistent(self) -> Self:
+        if any(p.index >= self.line_count for p in self.lines):
+            raise ValueError("a pinned line index is past line_count")
+        balances = (self.opening_balance, self.closing_balance)
+        if (
+            None not in balances
+            and self.balance_error is None
+            and self.opening_balance + self.total != self.closing_balance
+        ):
+            raise ValueError("opening + total must equal closing when nothing breaks")
+        return self
+
+
+class ParserCase(Lenient):
+    input: BankInput
+    expect: ParserExpect | None = None
+    error: str | None = None  # a statement.* RuleError code
+
+    @model_validator(mode="after")
+    def _one_outcome(self) -> Self:
+        if (self.expect is None) == (self.error is None):
+            raise ValueError(f"{self.id}: exactly one of expect/error")
+        if self.error is not None and not self.error.startswith("statement."):
+            raise ValueError(f"{self.id}: errors are statement.* codes")
+        return self
+
+
+class ParserFixture(Schema):
+    cases: list[ParserCase]
+
+    @model_validator(mode="after")
+    def _samples_exist(self) -> Self:
+        for case in self.cases:
+            if case.input.file is not None and not (BANK_SAMPLES / case.input.file).is_file():
+                raise ValueError(f"{case.id}: no sample {case.input.file}")
+        return self
+
+
 MODELS: dict[str, type[Schema]] = {
     "categories": CategoriesFixture,
     "thresholds": ThresholdsFixture,
@@ -612,6 +721,8 @@ MODELS: dict[str, type[Schema]] = {
     "prefill": PrefillFixture,
     "month_statement": MonthStatementFixture,
     "repeat_answer": RepeatFixture,
+    "camt": ParserFixture,
+    "csv_camt": ParserFixture,
 }
 
 

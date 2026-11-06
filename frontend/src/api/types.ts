@@ -1138,6 +1138,180 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Accounts List
+         * @description Rental accounts first, then the owners' own accounts, each by label.
+         */
+        get: operations["accounts_list_api_accounts_get"];
+        put?: never;
+        /**
+         * Account Create
+         * @description 409 when the workspace already has an account with this IBAN.
+         */
+        post: operations["account_create_api_accounts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/accounts/{account_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Account Get */
+        get: operations["account_get_api_accounts__account_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Account Update
+         * @description Moving the anchor re-checks every import of the account.
+         */
+        patch: operations["account_update_api_accounts__account_id__patch"];
+        trace?: never;
+    };
+    "/api/accounts/{account_id}/imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Account Imports
+         * @description Newest first.
+         */
+        get: operations["account_imports_api_accounts__account_id__imports_get"];
+        put?: never;
+        /**
+         * Account Import
+         * @description Import a camt.052/053 file, a ZIP of camt reports or a Sparkasse CSV-CAMT export. The
+         *     format is sniffed from the bytes. 201 with a new import, 200 with the existing one for
+         *     the same bytes; 422 rule_violation with a statement.* code when the file cannot be
+         *     imported (nothing is stored then); 413 / 415 as for POST /documents.
+         */
+        post: operations["account_import_api_accounts__account_id__imports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/accounts/{account_id}/transactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Account Transactions
+         * @description Newest booking day first; excluded duplicates included, flagged by
+         *     excluded_as_duplicate_of. Filters: one import's lines, a booking-date range.
+         */
+        get: operations["account_transactions_api_accounts__account_id__transactions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/{import_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Import Get */
+        get: operations["import_get_api_imports__import_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/{import_id}/balances": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Balances
+         * @description The balance read in online banking, for a file that states none (CSV). Reconciles the
+         *     import; may be sent again to correct it. 422 statement.balance_from_file for a camt
+         *     import, whose balances come from the file.
+         */
+        post: operations["import_balances_api_imports__import_id__balances_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/possible-duplicates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Possible Duplicates List
+         * @description Newest first; `status=open` for the ones still to decide.
+         */
+        get: operations["possible_duplicates_list_api_possible_duplicates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/possible-duplicates/{possible_duplicate_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Possible Duplicate Decide
+         * @description kept_both, or merged: the later-imported line leaves every balance and the account's
+         *     imports are re-checked. 409 when already decided; 422 statement.duplicate_excludes_both
+         *     or statement.duplicate_accounts_differ.
+         */
+        post: operations["possible_duplicate_decide_api_possible_duplicates__possible_duplicate_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/properties/{property_id}/history": {
         parameters: {
             query?: never;
@@ -1453,6 +1627,92 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** Account */
+        Account: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Label */
+            label: string;
+            /** Bank */
+            bank: string;
+            /** Iban Masked */
+            iban_masked: string;
+            source: components["schemas"]["AccountSource"];
+            /** Opening Balance */
+            opening_balance: string;
+            /**
+             * Opening Balance On
+             * Format: date
+             */
+            opening_balance_on: string;
+            /** Is Owner Account */
+            is_owner_account: boolean;
+        };
+        /** AccountCreate */
+        AccountCreate: {
+            /** Label */
+            label: string;
+            /** Bank */
+            bank: string;
+            /** Iban */
+            iban: string;
+            /** Opening Balance */
+            opening_balance: string;
+            /**
+             * Opening Balance On
+             * Format: date
+             */
+            opening_balance_on: string;
+            /**
+             * Is Owner Account
+             * @default false
+             */
+            is_owner_account: boolean;
+        };
+        /**
+         * AccountPatch
+         * @description PATCH /accounts/{id}. The IBAN cannot change: a different IBAN is another account.
+         *     Moving the anchor (opening_balance, opening_balance_on) re-checks every import.
+         */
+        AccountPatch: {
+            /** Label */
+            label?: string;
+            /** Bank */
+            bank?: string;
+            /** Opening Balance */
+            opening_balance?: string;
+            /**
+             * Opening Balance On
+             * Format: date
+             */
+            opening_balance_on?: string;
+            /** Is Owner Account */
+            is_owner_account?: boolean;
+        };
+        /**
+         * AccountSource
+         * @description account.source (migration 0006). Only `upload` in phase 2.
+         * @enum {string}
+         */
+        AccountSource: "upload" | "fints" | "aggregator";
         /** AcquisitionCost */
         AcquisitionCost: {
             /**
@@ -1598,6 +1858,12 @@ export interface components {
             entity_id?: string | null;
         };
         /**
+         * BalanceSource
+         * @description statement_import.balance_source: where the declared balances came from (D21).
+         * @enum {string}
+         */
+        BalanceSource: "file" | "user" | "none";
+        /**
          * BescheidExtraction
          * @description A Bescheid other than Grundsteuer, e.g. the Grunderwerbsteuerbescheid.
          */
@@ -1618,6 +1884,11 @@ export interface components {
             due_on?: components["schemas"]["ExtractedValue"];
             /** @description the year it concerns, if stated */
             tax_year?: components["schemas"]["ExtractedValue"];
+        };
+        /** Body_account_import_api_accounts__account_id__imports_post */
+        Body_account_import_api_accounts__account_id__imports_post: {
+            /** File */
+            file: string;
         };
         /** Body_document_upload_api_documents_post */
         Body_document_upload_api_documents_post: {
@@ -1689,6 +1960,13 @@ export interface components {
          */
         ChecklistStatus: "present" | "missing" | "expected" | "incomplete";
         /**
+         * Currency
+         * @description transaction.currency. v1 is EUR only (one value, kept as a CHECK'd set like
+         *     InvitePurpose).
+         * @enum {string}
+         */
+        Currency: "EUR";
+        /**
          * DateCorrection
          * @description Corrects a milestone date: purchase date (Übergang) or move-in.
          */
@@ -1698,6 +1976,16 @@ export interface components {
              * Format: date
              */
             new_date: string;
+        };
+        /**
+         * DeclareBalanceBody
+         * @description POST /imports/{id}/balances: the closing balance Luis reads in online banking.
+         */
+        DeclareBalanceBody: {
+            /** Closing Balance */
+            closing_balance: string;
+            /** Opening Balance */
+            opening_balance?: string | null;
         };
         /**
          * DepositForm
@@ -1967,6 +2255,19 @@ export interface components {
             proposal_id?: string | null;
             proposal_status?: components["schemas"]["ProposalStatus"] | null;
         };
+        /**
+         * DuplicateDecisionBody
+         * @description POST /possible-duplicates/{id}.
+         */
+        DuplicateDecisionBody: {
+            status: components["schemas"]["DuplicateStatus"];
+        };
+        /**
+         * DuplicateStatus
+         * @description possible_duplicate.status (D22).
+         * @enum {string}
+         */
+        DuplicateStatus: "open" | "kept_both" | "merged";
         /** EndTenancyBody */
         EndTenancyBody: {
             /**
@@ -2240,6 +2541,13 @@ export interface components {
             /** @description Entnahme aus der Rücklage */
             ruecklage_spent?: components["schemas"]["ExtractedValue"];
         };
+        /**
+         * ImportStatus
+         * @description statement_import.status. `imported` with no declared closing balance is what the
+         *     inbox shows as "pending balance" (reconcile's pending_balance).
+         * @enum {string}
+         */
+        ImportStatus: "imported" | "reconciled" | "unreconciled" | "failed";
         /**
          * InitialRent
          * @description The first rent row, recorded with the tenancy (reason 'initial').
@@ -2733,6 +3041,41 @@ export interface components {
             };
             /** Label */
             label: string;
+        };
+        /**
+         * PossibleDuplicate
+         * @description transaction_id was stored first; other_transaction_id is the later-imported line,
+         *     the one `merged` excludes.
+         */
+        PossibleDuplicate: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Transaction Id
+             * Format: uuid
+             */
+            transaction_id: string;
+            /**
+             * Other Transaction Id
+             * Format: uuid
+             */
+            other_transaction_id: string;
+            status: components["schemas"]["DuplicateStatus"];
+            /** Decided At */
+            decided_at?: string | null;
         };
         /** PriceSplit */
         PriceSplit: {
@@ -3306,6 +3649,68 @@ export interface components {
             /** @description the booking lines */
             lines?: components["schemas"]["ExtractedValue"];
         };
+        /**
+         * StatementFormat
+         * @description statement_import.format (migration 0006).
+         * @enum {string}
+         */
+        StatementFormat: "csv_camt" | "camt" | "pdf";
+        /** StatementImport */
+        StatementImport: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            format: components["schemas"]["StatementFormat"];
+            /** Lines Total */
+            lines_total: number;
+            /** Lines New */
+            lines_new: number;
+            /** Lines Skipped */
+            lines_skipped: number;
+            /** First Booking On */
+            first_booking_on: string | null;
+            /** Last Booking On */
+            last_booking_on: string | null;
+            /** Declared Opening */
+            declared_opening: string | null;
+            /** Declared Closing */
+            declared_closing: string | null;
+            balance_source: components["schemas"]["BalanceSource"];
+            /** Computed Opening */
+            computed_opening: string | null;
+            /** Computed Closing */
+            computed_closing: string | null;
+            status: components["schemas"]["ImportStatus"];
+            /** Error Code */
+            error_code: string | null;
+        };
         /** Tenancy */
         Tenancy: {
             /**
@@ -3528,6 +3933,63 @@ export interface components {
             payload: {
                 [key: string]: components["schemas"]["JsonValue"];
             };
+        };
+        /**
+         * Transaction
+         * @description Read shape. The counterparty IBAN is shown masked only.
+         */
+        Transaction: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /**
+             * Import Id
+             * Format: uuid
+             */
+            import_id: string;
+            /** Line Hash */
+            line_hash: string;
+            /**
+             * Booking Date
+             * Format: date
+             */
+            booking_date: string;
+            /** Value Date */
+            value_date: string | null;
+            /** Amount */
+            amount: string;
+            currency: components["schemas"]["Currency"];
+            /** Counterparty Name */
+            counterparty_name: string | null;
+            /** Counterparty Iban Masked */
+            counterparty_iban_masked: string | null;
+            /** Purpose */
+            purpose: string;
+            /** Booking Text */
+            booking_text: string | null;
+            /** Bank Reference */
+            bank_reference: string | null;
+            /** End To End Ref */
+            end_to_end_ref: string | null;
+            /** Excluded As Duplicate Of */
+            excluded_as_duplicate_of?: string | null;
         };
         /** Unit */
         Unit: {
@@ -6081,6 +6543,376 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Proposal"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    accounts_list_api_accounts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Account"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    account_create_api_accounts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Account"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    account_get_api_accounts__account_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Account"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    account_update_api_accounts__account_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Account"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    account_imports_api_accounts__account_id__imports_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatementImport"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    account_import_api_accounts__account_id__imports_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_account_import_api_accounts__account_id__imports_post"];
+            };
+        };
+        responses: {
+            /** @description These bytes were already imported */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatementImport"];
+                };
+            };
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatementImport"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    account_transactions_api_accounts__account_id__transactions_get: {
+        parameters: {
+            query?: {
+                import_id?: string | null;
+                booked_from?: string | null;
+                booked_to?: string | null;
+            };
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Transaction"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    import_get_api_imports__import_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                import_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatementImport"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    import_balances_api_imports__import_id__balances_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                import_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeclareBalanceBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatementImport"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    possible_duplicates_list_api_possible_duplicates_get: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["DuplicateStatus"] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PossibleDuplicate"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    possible_duplicate_decide_api_possible_duplicates__possible_duplicate_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                possible_duplicate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DuplicateDecisionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PossibleDuplicate"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

@@ -1,13 +1,17 @@
 // German labels for the API's enums. Typed as Record<Enum, string>, so a value added to the
 // API (and to the generated types) fails the typecheck until it has a label here.
 import type {
+  AccountSource,
   AcquisitionCostKind,
+  BalanceSource,
   DepositForm,
   DocumentSubtype,
   DocumentType,
+  DuplicateStatus,
   EventType,
   ExtractedValue,
   ExtractionKind,
+  ImportStatus,
   LinkTarget,
   PriceSplitSource,
   PropertyKind,
@@ -17,6 +21,7 @@ import type {
   RentModel,
   RetentionClass,
   RetentionHold,
+  StatementFormat,
   TenancyRole,
 } from "@/api/schemas";
 
@@ -236,6 +241,41 @@ export const RECORD_MODE: Record<RecordMode, string> = {
   patch: "ändert Bestehendes",
   correction: "Korrektur",
   unchanged: "unverändert",
+};
+
+// --- bank accounts and statement imports (phase 2 step 3) ---
+
+export const ACCOUNT_SOURCE: Record<AccountSource, string> = {
+  upload: "Upload",
+  fints: "FinTS",
+  aggregator: "Kontoaggregator",
+};
+
+export const STATEMENT_FORMAT: Record<StatementFormat, string> = {
+  camt: "camt (XML)",
+  csv_camt: "CSV-CAMT",
+  pdf: "PDF-Kontoauszug",
+};
+
+/** The pill of an import. `imported` is an import whose closing balance is still missing
+ * (the API's "pending balance": a CSV export, which states none). */
+export const IMPORT_STATUS: Record<ImportStatus, string> = {
+  imported: "Saldo fehlt",
+  reconciled: "abgestimmt",
+  unreconciled: "nicht abgestimmt",
+  failed: "fehlgeschlagen",
+};
+
+export const BALANCE_SOURCE: Record<BalanceSource, string> = {
+  file: "aus der Datei",
+  user: "eingegeben (Online-Banking)",
+  none: "noch keiner",
+};
+
+export const DUPLICATE_STATUS: Record<DuplicateStatus, string> = {
+  open: "offen",
+  kept_both: "beide behalten",
+  merged: "zusammengeführt",
 };
 
 /** The options of a <select> over an enum label map, in declaration order. */

@@ -27,7 +27,12 @@ Read the current phase's spec before implementing; rule fixtures are the contrac
 only in a spec PR, never to make an implementation pass.
 
 - Phase 1, vault and ledger: `docs/phases/phase-1.md` (closed 6 Nov 2026)
-- Phase 2, AI inbox with master-data pre-fill first: `docs/phases/phase-2.md` (spec merged 6 Nov 2026 in PR #24; steps 1 and 3 being built, see its status table)
+- Phase 2, AI inbox with master-data pre-fill first: `docs/phases/phase-2.md` (spec merged 6 Nov 2026 in PR #24; steps 1 and 3 merged 6 Nov 2026, see its status table)
+
+Design plans for later phases (not specs; only what the Decisions table records is agreed):
+
+- Household finances, phases 6–9 (all accounts, crypto, Anlage KAP and SO, financial health):
+  `docs/design/household-finances.md` (agreed 6 Nov 2026, Luis's answers in §10; not specced)
 
 ## UI mockups
 

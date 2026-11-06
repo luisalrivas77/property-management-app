@@ -36,6 +36,9 @@ DEFAULT_UPLOAD_MEDIA_TYPES = frozenset(
         "application/xml",
         "text/xml",
         "message/rfc822",
+        # A Sparkasse camt export is a ZIP of daily reports (phase 2 D34).
+        "application/zip",
+        "application/x-zip-compressed",
     }
 )
 DEFAULT_SESSION_MAX_AGE_S = 12 * 3600  # absolute lifetime (§6.4, Q2)

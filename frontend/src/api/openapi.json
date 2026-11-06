@@ -3326,6 +3326,558 @@
         }
       }
     },
+    "/api/accounts": {
+      "get": {
+        "summary": "Accounts List",
+        "description": "Rental accounts first, then the owners' own accounts, each by label.",
+        "operationId": "accounts_list_api_accounts_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Account"
+                  },
+                  "type": "array",
+                  "title": "Response Accounts List Api Accounts Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Account Create",
+        "description": "409 when the workspace already has an account with this IBAN.",
+        "operationId": "account_create_api_accounts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/accounts/{account_id}": {
+      "get": {
+        "summary": "Account Get",
+        "operationId": "account_get_api_accounts__account_id__get",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Account Update",
+        "description": "Moving the anchor re-checks every import of the account.",
+        "operationId": "account_update_api_accounts__account_id__patch",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/accounts/{account_id}/imports": {
+      "post": {
+        "summary": "Account Import",
+        "description": "Import a camt.052/053 file, a ZIP of camt reports or a Sparkasse CSV-CAMT export. The\nformat is sniffed from the bytes. 201 with a new import, 200 with the existing one for\nthe same bytes; 422 rule_violation with a statement.* code when the file cannot be\nimported (nothing is stored then); 413 / 415 as for POST /documents.",
+        "operationId": "account_import_api_accounts__account_id__imports_post",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_account_import_api_accounts__account_id__imports_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatementImport"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "These bytes were already imported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatementImport"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Account Imports",
+        "description": "Newest first.",
+        "operationId": "account_imports_api_accounts__account_id__imports_get",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StatementImport"
+                  },
+                  "title": "Response Account Imports Api Accounts  Account Id  Imports Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/accounts/{account_id}/transactions": {
+      "get": {
+        "summary": "Account Transactions",
+        "description": "Newest booking day first; excluded duplicates included, flagged by\nexcluded_as_duplicate_of. Filters: one import's lines, a booking-date range.",
+        "operationId": "account_transactions_api_accounts__account_id__transactions_get",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          },
+          {
+            "name": "import_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Import Id"
+            }
+          },
+          {
+            "name": "booked_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Booked From"
+            }
+          },
+          {
+            "name": "booked_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Booked To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Transaction"
+                  },
+                  "title": "Response Account Transactions Api Accounts  Account Id  Transactions Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/imports/{import_id}": {
+      "get": {
+        "summary": "Import Get",
+        "operationId": "import_get_api_imports__import_id__get",
+        "parameters": [
+          {
+            "name": "import_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Import Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatementImport"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/imports/{import_id}/balances": {
+      "post": {
+        "summary": "Import Balances",
+        "description": "The balance read in online banking, for a file that states none (CSV). Reconciles the\nimport; may be sent again to correct it. 422 statement.balance_from_file for a camt\nimport, whose balances come from the file.",
+        "operationId": "import_balances_api_imports__import_id__balances_post",
+        "parameters": [
+          {
+            "name": "import_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Import Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeclareBalanceBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatementImport"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/possible-duplicates": {
+      "get": {
+        "summary": "Possible Duplicates List",
+        "description": "Newest first; `status=open` for the ones still to decide.",
+        "operationId": "possible_duplicates_list_api_possible_duplicates_get",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/DuplicateStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PossibleDuplicate"
+                  },
+                  "title": "Response Possible Duplicates List Api Possible Duplicates Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/possible-duplicates/{possible_duplicate_id}": {
+      "post": {
+        "summary": "Possible Duplicate Decide",
+        "description": "kept_both, or merged: the later-imported line leaves every balance and the account's\nimports are re-checked. 409 when already decided; 422 statement.duplicate_excludes_both\nor statement.duplicate_accounts_differ.",
+        "operationId": "possible_duplicate_decide_api_possible_duplicates__possible_duplicate_id__post",
+        "parameters": [
+          {
+            "name": "possible_duplicate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Possible Duplicate Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DuplicateDecisionBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PossibleDuplicate"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/properties/{property_id}/history": {
       "get": {
         "summary": "History Of Property",
@@ -4108,6 +4660,165 @@
   },
   "components": {
     "schemas": {
+      "Account": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "bank": {
+            "type": "string",
+            "title": "Bank"
+          },
+          "iban_masked": {
+            "type": "string",
+            "pattern": "^[A-Z]{2}[0-9]{2} \\*{4} [A-Z0-9]{4}$",
+            "title": "Iban Masked"
+          },
+          "source": {
+            "$ref": "#/components/schemas/AccountSource"
+          },
+          "opening_balance": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Opening Balance"
+          },
+          "opening_balance_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Opening Balance On"
+          },
+          "is_owner_account": {
+            "type": "boolean",
+            "title": "Is Owner Account"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "workspace_id",
+          "created_at",
+          "updated_at",
+          "label",
+          "bank",
+          "iban_masked",
+          "source",
+          "opening_balance",
+          "opening_balance_on",
+          "is_owner_account"
+        ],
+        "title": "Account"
+      },
+      "AccountCreate": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Label"
+          },
+          "bank": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Bank"
+          },
+          "iban": {
+            "type": "string",
+            "maxLength": 42,
+            "minLength": 15,
+            "title": "Iban"
+          },
+          "opening_balance": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Opening Balance"
+          },
+          "opening_balance_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Opening Balance On"
+          },
+          "is_owner_account": {
+            "type": "boolean",
+            "title": "Is Owner Account",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "label",
+          "bank",
+          "iban",
+          "opening_balance",
+          "opening_balance_on"
+        ],
+        "title": "AccountCreate"
+      },
+      "AccountPatch": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Label"
+          },
+          "bank": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Bank"
+          },
+          "opening_balance": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Opening Balance"
+          },
+          "opening_balance_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Opening Balance On"
+          },
+          "is_owner_account": {
+            "type": "boolean",
+            "title": "Is Owner Account"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "AccountPatch",
+        "description": "PATCH /accounts/{id}. The IBAN cannot change: a different IBAN is another account.\nMoving the anchor (opening_balance, opening_balance_on) re-checks every import."
+      },
+      "AccountSource": {
+        "type": "string",
+        "enum": [
+          "upload",
+          "fints",
+          "aggregator"
+        ],
+        "title": "AccountSource",
+        "description": "account.source (migration 0006). Only `upload` in phase 2."
+      },
       "AcquisitionCost": {
         "properties": {
           "id": {
@@ -4467,6 +5178,16 @@
         "title": "AppliedEntity",
         "description": "One record of an applied proposal and the entity it created or patched (for a link,\nthe entity the document was linked to). entity_id is null for a skipped record."
       },
+      "BalanceSource": {
+        "type": "string",
+        "enum": [
+          "file",
+          "user",
+          "none"
+        ],
+        "title": "BalanceSource",
+        "description": "statement_import.balance_source: where the declared balances came from (D21)."
+      },
       "BescheidExtraction": {
         "properties": {
           "title": {
@@ -4514,6 +5235,20 @@
         "type": "object",
         "title": "BescheidExtraction",
         "description": "A Bescheid other than Grundsteuer, e.g. the Grunderwerbsteuerbescheid."
+      },
+      "Body_account_import_api_accounts__account_id__imports_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_account_import_api_accounts__account_id__imports_post"
       },
       "Body_document_upload_api_documents_post": {
         "properties": {
@@ -4717,6 +5452,14 @@
         ],
         "title": "ChecklistStatus"
       },
+      "Currency": {
+        "type": "string",
+        "enum": [
+          "EUR"
+        ],
+        "title": "Currency",
+        "description": "transaction.currency. v1 is EUR only (one value, kept as a CHECK'd set like\nInvitePurpose)."
+      },
       "DateCorrection": {
         "properties": {
           "new_date": {
@@ -4732,6 +5475,34 @@
         ],
         "title": "DateCorrection",
         "description": "Corrects a milestone date: purchase date (Übergang) or move-in."
+      },
+      "DeclareBalanceBody": {
+        "properties": {
+          "closing_balance": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Closing Balance"
+          },
+          "opening_balance": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opening Balance"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "closing_balance"
+        ],
+        "title": "DeclareBalanceBody",
+        "description": "POST /imports/{id}/balances: the closing balance Luis reads in online banking."
       },
       "DepositForm": {
         "type": "string",
@@ -5373,6 +6144,30 @@
         ],
         "title": "DocumentUploadResult",
         "description": "POST /documents with ai = true (§6.1): the document plus the queued proposal to\npoll. proposal_id is null when the upload did not ask for a proposal."
+      },
+      "DuplicateDecisionBody": {
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/DuplicateStatus"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "DuplicateDecisionBody",
+        "description": "POST /possible-duplicates/{id}."
+      },
+      "DuplicateStatus": {
+        "type": "string",
+        "enum": [
+          "open",
+          "kept_both",
+          "merged"
+        ],
+        "title": "DuplicateStatus",
+        "description": "possible_duplicate.status (D22)."
       },
       "EndTenancyBody": {
         "properties": {
@@ -6126,6 +6921,17 @@
         "type": "object",
         "title": "HausgeldabrechnungExtraction",
         "description": "Hausgeldabrechnung: the year's settlement (read by phase 3's Hausgeld rule)."
+      },
+      "ImportStatus": {
+        "type": "string",
+        "enum": [
+          "imported",
+          "reconciled",
+          "unreconciled",
+          "failed"
+        ],
+        "title": "ImportStatus",
+        "description": "statement_import.status. `imported` with no declared closing balance is what the\ninbox shows as \"pending balance\" (reconcile's pending_balance)."
       },
       "InitialRent": {
         "properties": {
@@ -7361,6 +8167,62 @@
         ],
         "title": "PasskeyVerifyRequest",
         "description": "POST /auth/passkeys/verify: a further passkey for the signed-in user."
+      },
+      "PossibleDuplicate": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "transaction_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Transaction Id"
+          },
+          "other_transaction_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Other Transaction Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DuplicateStatus"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "workspace_id",
+          "created_at",
+          "transaction_id",
+          "other_transaction_id",
+          "status"
+        ],
+        "title": "PossibleDuplicate",
+        "description": "transaction_id was stored first; other_transaction_id is the later-imported line,\nthe one `merged` excludes."
       },
       "PriceSplit": {
         "properties": {
@@ -8638,6 +9500,181 @@
         "title": "StatementExtraction",
         "description": "PDF Kontoauszug (§7.1): balances and lines. Every amount is a model reading, so the\nreconciliation is the guard; `lines` holds one text per booking line, parsed into\nStatementLines by bank.pdf."
       },
+      "StatementFormat": {
+        "type": "string",
+        "enum": [
+          "csv_camt",
+          "camt",
+          "pdf"
+        ],
+        "title": "StatementFormat",
+        "description": "statement_import.format (migration 0006)."
+      },
+      "StatementImport": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "document_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Document Id"
+          },
+          "format": {
+            "$ref": "#/components/schemas/StatementFormat"
+          },
+          "lines_total": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Lines Total"
+          },
+          "lines_new": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Lines New"
+          },
+          "lines_skipped": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Lines Skipped"
+          },
+          "first_booking_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Booking On"
+          },
+          "last_booking_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Booking On"
+          },
+          "declared_opening": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Declared Opening"
+          },
+          "declared_closing": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Declared Closing"
+          },
+          "balance_source": {
+            "$ref": "#/components/schemas/BalanceSource"
+          },
+          "computed_opening": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Computed Opening"
+          },
+          "computed_closing": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Computed Closing"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ImportStatus"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "workspace_id",
+          "created_at",
+          "updated_at",
+          "account_id",
+          "document_id",
+          "format",
+          "lines_total",
+          "lines_new",
+          "lines_skipped",
+          "first_booking_on",
+          "last_booking_on",
+          "declared_opening",
+          "declared_closing",
+          "balance_source",
+          "computed_opening",
+          "computed_closing",
+          "status",
+          "error_code"
+        ],
+        "title": "StatementImport"
+      },
       "Tenancy": {
         "properties": {
           "id": {
@@ -9267,6 +10304,159 @@
         ],
         "title": "TimelineEntry",
         "description": "One milestone. For a correction chain A → B → C only one entry appears, showing C."
+      },
+      "Transaction": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "import_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Import Id"
+          },
+          "line_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Line Hash"
+          },
+          "booking_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Booking Date"
+          },
+          "value_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Date"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "counterparty_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counterparty Name"
+          },
+          "counterparty_iban_masked": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Z]{2}[0-9]{2} \\*{4} [A-Z0-9]{4}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counterparty Iban Masked"
+          },
+          "purpose": {
+            "type": "string",
+            "title": "Purpose"
+          },
+          "booking_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Booking Text"
+          },
+          "bank_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bank Reference"
+          },
+          "end_to_end_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End To End Ref"
+          },
+          "excluded_as_duplicate_of": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excluded As Duplicate Of"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "workspace_id",
+          "created_at",
+          "account_id",
+          "import_id",
+          "line_hash",
+          "booking_date",
+          "value_date",
+          "amount",
+          "currency",
+          "counterparty_name",
+          "counterparty_iban_masked",
+          "purpose",
+          "booking_text",
+          "bank_reference",
+          "end_to_end_ref"
+        ],
+        "title": "Transaction",
+        "description": "Read shape. The counterparty IBAN is shown masked only."
       },
       "Unit": {
         "properties": {

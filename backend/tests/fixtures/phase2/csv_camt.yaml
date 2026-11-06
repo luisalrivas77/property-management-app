@@ -1,0 +1,338 @@
+# Parser fixture: Sparkasse CSV-CAMT (hausbuch.services.bank.parse_statement, csv_camt)
+#
+# parse_statement(data: bytes, media_type) -> ParseOutcome(statement, balance_error=None)
+# Spec: docs/phases/phase-2.md §7.1 (CSV-CAMT V2, the fallback format: `;`-separated,
+# header row, dates dd.mm.yy, comma decimals, 17 columns, NO balances, so opening and
+# closing are null and the import waits for a typed balance, D21), §12.
+#
+# Sample: bank_samples/csv_camt.csv is an ANONYMISED copy of Luis's real export (the same 22
+# bookings as camt052.zip; newest first; every field quoted; Windows-1252; LF line ends).
+# Synthetic values throughout; never put an original export here.
+#
+# Reading rules the cases pin:
+#   - encoding: UTF-8 when valid (a BOM is dropped), else Windows-1252 (the real export;
+#     §7.1 says ISO-8859-15, which differs only in a few symbols such as the euro sign)
+#   - columns found by header name (any order); umlaut spellings and the short V1 names
+#     (Kontonummer, BIC) accepted; Info is optional
+#   - Info "Umsatz vorgemerkt" = pending: skipped, with one warning counting them
+#   - Betrag: decimal comma, optional thousands dots, signed (debits negative), Decimal
+#   - dates dd.mm.yy or dd.mm.yyyy; Valutadatum may be empty
+#   - account_iban = Auftragskonto (every row the same); bank_reference is always null
+#     (the CSV has no bank reference; Kundenreferenz (End-to-End) is end_to_end_ref)
+#   - raw: the non-empty columns that are not stored in their own column, by header name;
+#     never Auftragskonto or Kontonummer/IBAN
+
+
+cases:
+
+  - id: sparkasse_export
+    description: The anonymised export; its 22 lines sum to the camt closing balance, -3.028,51 from 0,00.
+    input: {file: csv_camt.csv, media_type: text/csv}
+    expect:
+      format: csv_camt
+      account_iban: DE50100000000000000001
+      opening_balance: null
+      closing_balance: null
+      line_count: 22
+      total: "-3028.51"
+      first_booking_on: 2026-04-01
+      last_booking_on: 2026-11-06
+      lines:
+        - index: 0
+          line:
+            booking_date: 2026-11-06
+            value_date: 2026-11-06
+            amount: "458.98"
+            counterparty_name: Partei I
+            counterparty_iban: DE91100000000000001009
+            purpose: Verwendungszweck 22
+            booking_text: GUTSCHRIFT UEBERWEISUNG
+            raw: {BIC (SWIFT-Code): TSTHDEFFXXX, Info: Umsatz gebucht}
+        - index: 1
+          description: A direct debit; the creditor id stays in raw.
+          line:
+            booking_date: 2026-11-04
+            value_date: 2026-11-04
+            amount: "-820.47"
+            counterparty_name: Partei H
+            counterparty_iban: DE21100000000000001008
+            purpose: Verwendungszweck 21
+            booking_text: FOLGELASTSCHRIFT
+            mandate_ref: MANDAT-0002
+            raw: {BIC (SWIFT-Code): TSTEDEFFXXX, Glaeubiger ID: DE98ZZZ09999999992, Info: Umsatz gebucht}
+        - index: 5
+          line:
+            booking_date: 2026-10-30
+            value_date: 2026-10-30
+            amount: "-573.79"
+            counterparty_name: Partei C
+            counterparty_iban: DE16100000000000001001
+            purpose: Verwendungszweck 17 Zeile 2 Zeile 3 Zeile 4 Zeile 5 Zeile 6
+            booking_text: EINZUG RATE/ANNUITaeT
+            end_to_end_ref: E2E-REF-0004
+            raw: {BIC (SWIFT-Code): TSTADEFFXXX, Info: Umsatz gebucht}
+        - index: 12
+          description: No Verwendungszweck at all.
+          line:
+            booking_date: 2026-09-28
+            value_date: 2026-09-28
+            amount: "740.18"
+            counterparty_name: Partei D
+            counterparty_iban: DE32100000000000001004
+            purpose: ""
+            booking_text: GUTSCHRIFT UEBERWEISUNG
+            raw: {BIC (SWIFT-Code): TSTDDEFFXXX, Info: Umsatz gebucht}
+        - index: 13
+          description: Booking and value date differ.
+          line:
+            booking_date: 2026-08-31
+            value_date: 2026-08-30
+            amount: "-1073.89"
+            counterparty_name: Partei C
+            counterparty_iban: DE16100000000000001001
+            purpose: Verwendungszweck 9 Zeile 2 Zeile 3 Zeile 4 Zeile 5 Zeile 6
+            booking_text: EINZUG RATE/ANNUITaeT
+            end_to_end_ref: E2E-REF-0002
+            raw: {BIC (SWIFT-Code): TSTADEFFXXX, Info: Umsatz gebucht}
+        - index: 21
+          description: The Rechnungsabschluss has no counterparty name.
+          line:
+            booking_date: 2026-04-01
+            value_date: 2026-04-01
+            amount: "136.69"
+            counterparty_iban: DE64100000000000001010
+            purpose: Verwendungszweck 1 Zeile 2
+            booking_text: ABSCHLUSS
+            raw: {BIC (SWIFT-Code): TSTIDEFFXXX, Info: Umsatz gebucht}
+
+  - id: pending_lines_skipped
+    input:
+      media_type: text/csv
+      text: |
+        "Auftragskonto";"Buchungstag";"Valutadatum";"Buchungstext";"Verwendungszweck";"Glaeubiger ID";"Mandatsreferenz";"Kundenreferenz (End-to-End)";"Sammlerreferenz";"Lastschrift Ursprungsbetrag";"Auslagenersatz Ruecklastschrift";"Beguenstigter/Zahlungspflichtiger";"Kontonummer/IBAN";"BIC (SWIFT-Code)";"Betrag";"Waehrung";"Info"
+        "DE50100000000000000001";"05.01.27";"05.01.27";"LASTSCHRIFT";"Strom";"";"";"";"";"";"";"Stadtwerke";"DE86100000000000001002";"";"-45,00";"EUR";"Umsatz vorgemerkt"
+        "DE50100000000000000001";"04.01.27";"04.01.27";"GUTSCHRIFT";"Miete 01/2027";"";"";"NOTPROVIDED";"";"";"";"Erika Beispiel";"DE16100000000000001001";"";"1400,00";"EUR";"Umsatz gebucht"
+        "DE50100000000000000001";"04.01.27";"";"LASTSCHRIFT";"Versicherung";"";"";"";"";"";"";"Versicherung AG";"DE59100000000000001003";"";"-12,50";"EUR";"Umsatz vorgemerkt"
+    expect:
+      format: csv_camt
+      account_iban: DE50100000000000000001
+      opening_balance: null
+      closing_balance: null
+      line_count: 1
+      total: "1400.00"
+      first_booking_on: 2027-01-04
+      last_booking_on: 2027-01-04
+      warnings: [2 pending line(s) (Umsatz vorgemerkt) skipped]
+      lines:
+        - index: 0
+          line:
+            booking_date: 2027-01-04
+            value_date: 2027-01-04
+            amount: "1400.00"
+            counterparty_name: Erika Beispiel
+            counterparty_iban: DE16100000000000001001
+            purpose: Miete 01/2027
+            booking_text: GUTSCHRIFT
+            end_to_end_ref: NOTPROVIDED
+            raw: {Info: Umsatz gebucht}
+
+  - id: header_variants_unquoted_reordered_windows_1252
+    description: Unquoted, columns in another order, umlaut header names (encoded in Windows-1252), the short V1 names Kontonummer and BIC, no Info column, an empty Valutadatum.
+    input:
+      media_type: text/csv
+      encoding: cp1252
+      text: |
+        Auftragskonto;Buchungstag;Betrag;Währung;Begünstigter/Zahlungspflichtiger;Kontonummer;BIC;Buchungstext;Verwendungszweck;Valutadatum;Gläubiger ID;Mandatsreferenz;Kundenreferenz (End-to-End)
+        DE50100000000000000001;02.02.27;-410,00;EUR;WEG Lindenstraße 12;DE86100000000000001002;TSTBDEFFXXX;DAUERAUFTRAG;Hausgeld 02/2027 WE 3;;;;
+        DE50100000000000000001;01.02.27;1400,00;EUR;Erika Beispiel;DE16100000000000001001;;GUTSCHRIFT;Miete Februar – 2027;01.02.27;;;
+    expect:
+      format: csv_camt
+      account_iban: DE50100000000000000001
+      opening_balance: null
+      closing_balance: null
+      line_count: 2
+      total: "990.00"
+      first_booking_on: 2027-02-01
+      last_booking_on: 2027-02-02
+      lines:
+        - index: 0
+          line:
+            booking_date: 2027-02-02
+            amount: "-410.00"
+            counterparty_name: WEG Lindenstraße 12
+            counterparty_iban: DE86100000000000001002
+            purpose: Hausgeld 02/2027 WE 3
+            booking_text: DAUERAUFTRAG
+            raw: {BIC (SWIFT-Code): TSTBDEFFXXX}
+        - index: 1
+          line:
+            booking_date: 2027-02-01
+            value_date: 2027-02-01
+            amount: "1400.00"
+            counterparty_name: Erika Beispiel
+            counterparty_iban: DE16100000000000001001
+            purpose: Miete Februar – 2027
+            booking_text: GUTSCHRIFT
+            raw: {}
+
+  - id: thousands_dots_and_four_digit_years
+    input:
+      media_type: text/csv
+      text: |
+        "Auftragskonto";"Buchungstag";"Valutadatum";"Buchungstext";"Verwendungszweck";"Glaeubiger ID";"Mandatsreferenz";"Kundenreferenz (End-to-End)";"Sammlerreferenz";"Lastschrift Ursprungsbetrag";"Auslagenersatz Ruecklastschrift";"Beguenstigter/Zahlungspflichtiger";"Kontonummer/IBAN";"BIC (SWIFT-Code)";"Betrag";"Waehrung";"Info"
+        "DE50100000000000000001";"15.03.2027";"16.03.2027";"UEBERWEISUNG";"Rechnung 4711";"";"";"RE-4711";"";"";"";"Handwerker GmbH";"DE59100000000000001003";"";"-12.345,60";"EUR";"Umsatz gebucht"
+        "DE50100000000000000001";"14.03.2027";"14.03.2027";"GUTSCHRIFT";"Zuschuss";"";"";"";"";"";"";"Max Beispiel";"DE91100000000000001009";"";"1.000.000,05";"EUR";"Umsatz gebucht"
+        "DE50100000000000000001";"14.03.2027";"14.03.2027";"ENTGELT";"Kontofuehrung";"";"";"";"";"";"";"";"";"";"-0,5";"EUR";"Umsatz gebucht"
+    expect:
+      format: csv_camt
+      account_iban: DE50100000000000000001
+      opening_balance: null
+      closing_balance: null
+      line_count: 3
+      total: "987653.95"
+      first_booking_on: 2027-03-14
+      last_booking_on: 2027-03-15
+      lines:
+        - index: 0
+          line:
+            booking_date: 2027-03-15
+            value_date: 2027-03-16
+            amount: "-12345.60"
+            counterparty_name: Handwerker GmbH
+            counterparty_iban: DE59100000000000001003
+            purpose: Rechnung 4711
+            booking_text: UEBERWEISUNG
+            end_to_end_ref: RE-4711
+            raw: {Info: Umsatz gebucht}
+        - index: 2
+          description: A bank line with neither name nor IBAN; one decimal place.
+          line:
+            booking_date: 2027-03-14
+            value_date: 2027-03-14
+            amount: "-0.50"
+            purpose: Kontofuehrung
+            booking_text: ENTGELT
+            raw: {Info: Umsatz gebucht}
+
+  - id: utf8_with_bom
+    input:
+      media_type: text/csv
+      encoding: utf-8-sig
+      text: |
+        "Auftragskonto";"Buchungstag";"Valutadatum";"Buchungstext";"Verwendungszweck";"Glaeubiger ID";"Mandatsreferenz";"Kundenreferenz (End-to-End)";"Sammlerreferenz";"Lastschrift Ursprungsbetrag";"Auslagenersatz Ruecklastschrift";"Beguenstigter/Zahlungspflichtiger";"Kontonummer/IBAN";"BIC (SWIFT-Code)";"Betrag";"Waehrung";"Info"
+        "DE50100000000000000001";"04.01.27";"04.01.27";"GUTSCHRIFT";"Miete 01/2027 Müller";"";"";"";"";"";"";"Jörg Müller";"DE16100000000000001001";"";"1400,00";"EUR";"Umsatz gebucht"
+    expect:
+      format: csv_camt
+      account_iban: DE50100000000000000001
+      opening_balance: null
+      closing_balance: null
+      line_count: 1
+      total: "1400.00"
+      first_booking_on: 2027-01-04
+      last_booking_on: 2027-01-04
+      lines:
+        - index: 0
+          line:
+            booking_date: 2027-01-04
+            value_date: 2027-01-04
+            amount: "1400.00"
+            counterparty_name: Jörg Müller
+            counterparty_iban: DE16100000000000001001
+            purpose: Miete 01/2027 Müller
+            booking_text: GUTSCHRIFT
+            raw: {Info: Umsatz gebucht}
+
+  # --- Refused (statement.*): nothing is imported ----------------------------------------
+
+  - id: amount_with_three_decimals
+    input:
+      media_type: text/csv
+      text: |
+        Auftragskonto;Buchungstag;Valutadatum;Buchungstext;Verwendungszweck;Beguenstigter/Zahlungspflichtiger;Kontonummer/IBAN;Betrag;Waehrung
+        DE50100000000000000001;04.01.27;04.01.27;GUTSCHRIFT;Miete;Erika Beispiel;;1400,001;EUR
+    error: statement.unparsable
+
+  - id: amount_with_misplaced_thousands_dot
+    input:
+      media_type: text/csv
+      text: |
+        Auftragskonto;Buchungstag;Valutadatum;Buchungstext;Verwendungszweck;Beguenstigter/Zahlungspflichtiger;Kontonummer/IBAN;Betrag;Waehrung
+        DE50100000000000000001;04.01.27;04.01.27;GUTSCHRIFT;Miete;Erika Beispiel;;1.40,00;EUR
+    error: statement.unparsable
+
+  - id: amount_with_thirteen_integer_digits
+    description: 'Amounts have at most 12 integer digits (the Money range); a longer one is the file''s error, not a validation error.'
+    input:
+      media_type: text/csv
+      text: |
+        Auftragskonto;Buchungstag;Valutadatum;Buchungstext;Verwendungszweck;Beguenstigter/Zahlungspflichtiger;Kontonummer/IBAN;Betrag;Waehrung
+        DE50100000000000000001;04.01.27;04.01.27;GUTSCHRIFT;Miete;Erika Beispiel;;1234567890123,00;EUR
+    error: statement.unparsable
+
+  - id: amount_with_thirty_one_digits
+    description: 'A very long number must not reach Decimal arithmetic or the database.'
+    input:
+      media_type: text/csv
+      text: |
+        Auftragskonto;Buchungstag;Valutadatum;Buchungstext;Verwendungszweck;Beguenstigter/Zahlungspflichtiger;Kontonummer/IBAN;Betrag;Waehrung
+        DE50100000000000000001;04.01.27;04.01.27;GUTSCHRIFT;Miete;Erika Beispiel;;1111111111111111111111111111111;EUR
+    error: statement.unparsable
+
+  - id: amount_with_four_thousands_groups
+    description: 'Thirteen digits written with thousands dots is just as out of range.'
+    input:
+      media_type: text/csv
+      text: |
+        Auftragskonto;Buchungstag;Valutadatum;Buchungstext;Verwendungszweck;Beguenstigter/Zahlungspflichtiger;Kontonummer/IBAN;Betrag;Waehrung
+        DE50100000000000000001;04.01.27;04.01.27;GUTSCHRIFT;Miete;Erika Beispiel;;1.234.567.890.123,00;EUR
+    error: statement.unparsable
+
+  - id: amount_with_a_decimal_point
+    description: 'A decimal point (1400.00) is ambiguous in a German export (a thousands dot?), so it is refused rather than guessed.'
+    input:
+      media_type: text/csv
+      text: |
+        Auftragskonto;Buchungstag;Valutadatum;Buchungstext;Verwendungszweck;Beguenstigter/Zahlungspflichtiger;Kontonummer/IBAN;Betrag;Waehrung
+        DE50100000000000000001;04.01.27;04.01.27;GUTSCHRIFT;Miete;Erika Beispiel;;1400.00;EUR
+    error: statement.unparsable
+
+  - id: iso_date
+    input:
+      media_type: text/csv
+      text: |
+        Auftragskonto;Buchungstag;Valutadatum;Buchungstext;Verwendungszweck;Beguenstigter/Zahlungspflichtiger;Kontonummer/IBAN;Betrag;Waehrung
+        DE50100000000000000001;2027-01-04;04.01.27;GUTSCHRIFT;Miete;Erika Beispiel;;1400,00;EUR
+    error: statement.unparsable
+
+  - id: missing_amount_column
+    input:
+      media_type: text/csv
+      text: |
+        Auftragskonto;Buchungstag;Valutadatum;Buchungstext;Verwendungszweck;Beguenstigter/Zahlungspflichtiger;Kontonummer/IBAN;Waehrung
+        DE50100000000000000001;04.01.27;04.01.27;GUTSCHRIFT;Miete;Erika Beispiel;;EUR
+    error: statement.unparsable
+
+  - id: row_with_a_missing_column
+    input:
+      media_type: text/csv
+      text: |
+        Auftragskonto;Buchungstag;Valutadatum;Buchungstext;Verwendungszweck;Beguenstigter/Zahlungspflichtiger;Kontonummer/IBAN;Betrag;Waehrung
+        DE50100000000000000001;04.01.27;04.01.27;GUTSCHRIFT;Miete;Erika Beispiel;1400,00;EUR
+    error: statement.unparsable
+
+  - id: not_euro
+    input:
+      media_type: text/csv
+      text: |
+        Auftragskonto;Buchungstag;Valutadatum;Buchungstext;Verwendungszweck;Beguenstigter/Zahlungspflichtiger;Kontonummer/IBAN;Betrag;Waehrung
+        DE50100000000000000001;04.01.27;04.01.27;GUTSCHRIFT;Miete;Erika Beispiel;;1400,00;CHF
+    error: statement.unsupported_currency
+
+  - id: two_accounts_in_one_file
+    input:
+      media_type: text/csv
+      text: |
+        Auftragskonto;Buchungstag;Valutadatum;Buchungstext;Verwendungszweck;Beguenstigter/Zahlungspflichtiger;Kontonummer/IBAN;Betrag;Waehrung
+        DE50100000000000000001;04.01.27;04.01.27;GUTSCHRIFT;Miete;Erika Beispiel;;1400,00;EUR
+        DE16100000000000001001;04.01.27;04.01.27;LASTSCHRIFT;Miete;Erika Beispiel;;-1400,00;EUR
+    error: statement.unparsable

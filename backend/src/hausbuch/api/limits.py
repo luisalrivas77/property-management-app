@@ -4,14 +4,17 @@ FastAPI parses a multipart body (spooling the file to disk) before the route run
 checked in the route alone would still accept any size first. This middleware bounds every
 body at the transport level:
 
-- POST /api/documents: HAUSBUCH_MAX_UPLOAD_BYTES plus room for the multipart framing; the
-  route then checks the file part itself against HAUSBUCH_MAX_UPLOAD_BYTES exactly;
+- POST /api/documents and POST /api/accounts/{id}/imports (a statement upload is a document):
+  HAUSBUCH_MAX_UPLOAD_BYTES plus room for the multipart framing; the route then checks the
+  file part itself against HAUSBUCH_MAX_UPLOAD_BYTES exactly;
 - every other request: JSON_BODY_LIMIT (no JSON body of this API comes near it).
 
 A Content-Length over the limit is refused with 413 before anything is read. A body without
 one (chunked) is counted as it streams; past the limit the read fails with a 413
 HTTPException, which FastAPI's body parsing passes through to the error handler.
 """
+
+import re
 
 from starlette.exceptions import HTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -21,12 +24,14 @@ from hausbuch.schemas.api import ErrorKind
 from .errors import ApiError, render
 
 UPLOAD_PATH = "/api/documents"
+IMPORT_PATH = re.compile(r"/api/accounts/[0-9a-fA-F-]{36}/imports")
 MULTIPART_OVERHEAD = 64 * 1024  # boundaries, part headers, the `source` field
 JSON_BODY_LIMIT = 1024 * 1024
 
 
 def body_limit(scope: Scope) -> int:
-    if scope["method"] == "POST" and scope["path"] == UPLOAD_PATH:
+    path = scope["path"]
+    if scope["method"] == "POST" and (path == UPLOAD_PATH or IMPORT_PATH.fullmatch(path)):
         return scope["app"].state.settings.max_upload_bytes + MULTIPART_OVERHEAD
     return JSON_BODY_LIMIT
 
