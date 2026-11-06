@@ -853,6 +853,65 @@
         }
       }
     },
+    "/api/properties/{property_id}/checklist": {
+      "get": {
+        "summary": "Property Checklist",
+        "description": "The documents the property's tax year needs, with their status. tax_year defaults to\nthe current (Berlin) year clamped into available_years; a year outside them is 422.",
+        "operationId": "property_checklist_api_properties__property_id__checklist_get",
+        "parameters": [
+          {
+            "name": "property_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Property Id"
+            }
+          },
+          {
+            "name": "tax_year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 2100,
+                  "minimum": 2000
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tax Year"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentChecklist"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/units": {
       "post": {
         "summary": "Unit Create",
@@ -3583,6 +3642,174 @@
         ],
         "title": "Body_document_upload_api_documents_post"
       },
+      "ChecklistDocumentRef": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DocumentType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "subtype": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DocumentSubtype"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tax_year": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2100.0,
+                "minimum": 2000.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Year"
+          },
+          "document_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Date"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Received At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "subtype",
+          "tax_year",
+          "document_date",
+          "received_at"
+        ],
+        "title": "ChecklistDocumentRef",
+        "description": "A satisfying document, without its title or filename (either can name a tenant, D5):\nthe frontend labels it by type and date and links to the document."
+      },
+      "ChecklistScope": {
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/ChecklistScopeType"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "lender": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lender"
+          },
+          "unit_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Label"
+          },
+          "tenancy_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenancy Start"
+          },
+          "cost_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AcquisitionCostKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cost_amount": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Amount"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "id"
+        ],
+        "title": "ChecklistScope",
+        "description": "The item's subject and its non-personal context (no tenant names, D5)."
+      },
+      "ChecklistScopeType": {
+        "type": "string",
+        "enum": [
+          "property",
+          "acquisition_cost",
+          "loan",
+          "tenancy"
+        ],
+        "title": "ChecklistScopeType",
+        "description": "What one item is about: the property, one cost row, one loan or one tenancy."
+      },
+      "ChecklistStatus": {
+        "type": "string",
+        "enum": [
+          "present",
+          "missing",
+          "expected",
+          "incomplete"
+        ],
+        "title": "ChecklistStatus"
+      },
       "DateCorrection": {
         "properties": {
           "new_date": {
@@ -3735,6 +3962,88 @@
         ],
         "title": "Document",
         "description": "One per file per workspace: re-uploading the same bytes returns this row."
+      },
+      "DocumentChecklist": {
+        "properties": {
+          "property_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Property Id"
+          },
+          "tax_year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 2000.0,
+            "title": "Tax Year"
+          },
+          "available_years": {
+            "items": {
+              "type": "integer",
+              "maximum": 2100.0,
+              "minimum": 2000.0
+            },
+            "type": "array",
+            "title": "Available Years"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentChecklistItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "property_id",
+          "tax_year",
+          "available_years",
+          "items"
+        ],
+        "title": "DocumentChecklist",
+        "description": "GET /properties/{id}/checklist?tax_year=Y."
+      },
+      "DocumentChecklistItem": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/RequirementCode"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ChecklistStatus"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ChecklistScope"
+          },
+          "due_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due On"
+          },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/ChecklistDocumentRef"
+            },
+            "type": "array",
+            "title": "Documents"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "status",
+          "scope",
+          "documents"
+        ],
+        "title": "DocumentChecklistItem"
       },
       "DocumentDetail": {
         "properties": {
@@ -6031,6 +6340,24 @@
           "recorded_at"
         ],
         "title": "RentScheduleEntry"
+      },
+      "RequirementCode": {
+        "type": "string",
+        "enum": [
+          "purchase_contract",
+          "price_split",
+          "acquisition_cost_evidence",
+          "grundsteuerbescheid",
+          "loan_contract",
+          "zinsbescheinigung",
+          "lease",
+          "handover_protocol",
+          "deposit_record",
+          "wirtschaftsplan",
+          "hausgeldabrechnung"
+        ],
+        "title": "RequirementCode",
+        "description": "One kind of paperwork the return needs. German labels and hints live in the frontend."
       },
       "RetentionClass": {
         "type": "string",

@@ -6,8 +6,11 @@ schema names the property); reads of a property's sub-collections come from the 
 and answer 404 when it does not exist in the session's workspace.
 """
 
+from datetime import datetime
+from typing import Annotated
 from uuid import UUID
 
+from fastapi import Query
 from sqlalchemy import Connection
 
 from hausbuch.schemas.api import (
@@ -17,6 +20,7 @@ from hausbuch.schemas.api import (
     PropertyPatch,
     RelatedDocument,
 )
+from hausbuch.schemas.checklist import DocumentChecklist
 from hausbuch.schemas.enums import EntityType, LinkTarget
 from hausbuch.schemas.loan import Loan
 from hausbuch.schemas.property import (
@@ -29,6 +33,8 @@ from hausbuch.schemas.property import (
     PropertyOwnership,
     Unit,
 )
+from hausbuch.services.checklist import document_checklist
+from hausbuch.services.documents import LOCAL_TIME_ZONE
 from hausbuch.services.loans import list_loans
 from hausbuch.services.properties import (
     add_acquisition_cost,
@@ -172,3 +178,18 @@ def property_documents(property_id: UUID, cmd: Cmd) -> list[RelatedDocument]:
     or its loans, each once with every matching link in `via`. Unlike the tenancy, loan and
     tenant `/documents` reads, this rolls up children; owner and tenant links are not."""
     return cmd.read(related_documents(LinkTarget.PROPERTY, get_property), property_id)
+
+
+# --- Document checklist (spec amendment 3) ------------------------------------------------
+
+
+@router.get("/properties/{property_id}/checklist")
+def property_checklist(
+    property_id: UUID,
+    cmd: Cmd,
+    tax_year: Annotated[int | None, Query(ge=2000, le=2100)] = None,
+) -> DocumentChecklist:
+    """The documents the property's tax year needs, with their status. tax_year defaults to
+    the current (Berlin) year clamped into available_years; a year outside them is 422."""
+    today = datetime.now(LOCAL_TIME_ZONE).date()
+    return cmd.read(document_checklist, property_id, tax_year=tax_year, today=today)

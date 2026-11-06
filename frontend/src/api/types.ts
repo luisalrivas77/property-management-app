@@ -272,6 +272,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/properties/{property_id}/checklist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Property Checklist
+         * @description The documents the property's tax year needs, with their status. tax_year defaults to
+         *     the current (Berlin) year clamped into available_years; a year outside them is 422.
+         */
+        get: operations["property_checklist_api_properties__property_id__checklist_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/units": {
         parameters: {
             query?: never;
@@ -1282,6 +1303,61 @@ export interface components {
             source: components["schemas"]["DocumentSource"];
         };
         /**
+         * ChecklistDocumentRef
+         * @description A satisfying document, without its title or filename (either can name a tenant, D5):
+         *     the frontend labels it by type and date and links to the document.
+         */
+        ChecklistDocumentRef: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            type: components["schemas"]["DocumentType"] | null;
+            subtype: components["schemas"]["DocumentSubtype"] | null;
+            /** Tax Year */
+            tax_year: number | null;
+            /** Document Date */
+            document_date: string | null;
+            /**
+             * Received At
+             * Format: date-time
+             */
+            received_at: string;
+        };
+        /**
+         * ChecklistScope
+         * @description The item's subject and its non-personal context (no tenant names, D5).
+         */
+        ChecklistScope: {
+            type: components["schemas"]["ChecklistScopeType"];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Lender */
+            lender?: string | null;
+            /** Unit Label */
+            unit_label?: string | null;
+            /** Tenancy Start */
+            tenancy_start?: string | null;
+            cost_kind?: components["schemas"]["AcquisitionCostKind"] | null;
+            /** Cost Amount */
+            cost_amount?: string | null;
+        };
+        /**
+         * ChecklistScopeType
+         * @description What one item is about: the property, one cost row, one loan or one tenancy.
+         * @enum {string}
+         */
+        ChecklistScopeType: "property" | "acquisition_cost" | "loan" | "tenancy";
+        /**
+         * ChecklistStatus
+         * @enum {string}
+         */
+        ChecklistStatus: "present" | "missing" | "expected" | "incomplete";
+        /**
          * DateCorrection
          * @description Corrects a milestone date: purchase date (Übergang) or move-in.
          */
@@ -1367,6 +1443,33 @@ export interface components {
              */
             updated_at: string;
             typing?: components["schemas"]["DocumentTyping"] | null;
+        };
+        /**
+         * DocumentChecklist
+         * @description GET /properties/{id}/checklist?tax_year=Y.
+         */
+        DocumentChecklist: {
+            /**
+             * Property Id
+             * Format: uuid
+             */
+            property_id: string;
+            /** Tax Year */
+            tax_year: number;
+            /** Available Years */
+            available_years: number[];
+            /** Items */
+            items: components["schemas"]["DocumentChecklistItem"][];
+        };
+        /** DocumentChecklistItem */
+        DocumentChecklistItem: {
+            code: components["schemas"]["RequirementCode"];
+            status: components["schemas"]["ChecklistStatus"];
+            scope: components["schemas"]["ChecklistScope"];
+            /** Due On */
+            due_on?: string | null;
+            /** Documents */
+            documents: components["schemas"]["ChecklistDocumentRef"][];
         };
         /**
          * DocumentDetail
@@ -2291,6 +2394,12 @@ export interface components {
              */
             recorded_at: string;
         };
+        /**
+         * RequirementCode
+         * @description One kind of paperwork the return needs. German labels and hints live in the frontend.
+         * @enum {string}
+         */
+        RequirementCode: "purchase_contract" | "price_split" | "acquisition_cost_evidence" | "grundsteuerbescheid" | "loan_contract" | "zinsbescheinigung" | "lease" | "handover_protocol" | "deposit_record" | "wirtschaftsplan" | "hausgeldabrechnung";
         /**
          * RetentionClass
          * @enum {string}
@@ -3306,6 +3415,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RelatedDocument"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    property_checklist_api_properties__property_id__checklist_get: {
+        parameters: {
+            query?: {
+                tax_year?: number | null;
+            };
+            header?: never;
+            path: {
+                property_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentChecklist"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

@@ -34,8 +34,8 @@ def test_years_end_with_the_year_ownership_ended():
     assert available_years(facts, date(2026, 11, 6)) == [2024, 2025]
 
 
-def test_no_years_while_the_purchase_lies_in_a_later_year():
-    assert available_years(_facts(), date(2023, 12, 31)) == []
+def test_only_the_purchase_year_while_it_lies_ahead():
+    assert available_years(_facts(), date(2023, 12, 31)) == [2024]
 
 
 def test_the_catalogue_has_one_entry_per_code_in_code_order():

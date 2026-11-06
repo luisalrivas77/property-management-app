@@ -187,11 +187,13 @@ def owned_in(facts: ChecklistFacts, tax_year: int) -> bool:
 
 def available_years(facts: ChecklistFacts, today: date) -> list[int]:
     """The years a checklist can be asked for: purchase year through the current year,
-    ending with the year ownership ended. Empty while the purchase lies in a later year."""
+    ending with the year ownership ended. Never empty: a property entered before the year
+    its Übergang falls in (bought on 1 Jan next year) offers that purchase year alone."""
     last = today.year
     if facts.ownership_ended_on is not None:
         last = min(last, facts.ownership_ended_on.year)
-    return list(range(facts.purchase_date.year, last + 1))
+    first = facts.purchase_date.year
+    return list(range(first, max(first, last) + 1))
 
 
 def build_checklist(facts: ChecklistFacts, tax_year: int, today: date) -> list[ChecklistItem]:

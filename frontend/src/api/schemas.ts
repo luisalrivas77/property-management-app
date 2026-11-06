@@ -80,6 +80,15 @@ export type RetentionClass = Schemas["RetentionClass"];
 export type RetentionHold = Schemas["RetentionHold"];
 export type UploadBody = Schemas["Body_document_upload_api_documents_post"];
 
+// document checklist (spec amendment 3)
+export type DocumentChecklist = Schemas["DocumentChecklist"];
+export type DocumentChecklistItem = Schemas["DocumentChecklistItem"];
+export type ChecklistDocumentRef = Schemas["ChecklistDocumentRef"];
+export type ChecklistScope = Schemas["ChecklistScope"];
+export type ChecklistScopeType = Schemas["ChecklistScopeType"];
+export type ChecklistStatus = Schemas["ChecklistStatus"];
+export type RequirementCode = Schemas["RequirementCode"];
+
 // history and audit
 export type TimelineEntry = Schemas["TimelineEntry"];
 export type Event = Schemas["Event"];
