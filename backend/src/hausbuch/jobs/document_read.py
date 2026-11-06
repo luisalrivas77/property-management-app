@@ -227,8 +227,8 @@ def _load(
 def _target_proposal(conn, document_id: UUID, proposal_id: UUID) -> tuple[UUID, bool] | None:
     """The proposal this run serves, with its tenant-data flag (D16 gate 2, read from the
     row and never from the job's arguments): the given one while it is pending; otherwise the
-    document's newest pending one. A re-run enqueued while this job was still queued
-    collapsed into it (queueing lock doc:{id}), so this job reads for the newer proposal."""
+    document's newest pending one, so a job whose proposal a re-run superseded reads for the
+    newer proposal, and the re-run's own job (or any duplicate) then finds nothing pending."""
     columns = (proposal_table.c.id, proposal_table.c.contains_tenant_data)
     row = conn.execute(
         select(*columns).where(
