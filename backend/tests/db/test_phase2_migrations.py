@@ -370,7 +370,7 @@ def test_transactions_are_immutable_except_one_exclusion(connect, workspaces):
         acc = _account(conn, a)
         imp = _import(conn, a, acc)
         first = _transaction(conn, a, acc, imp, b"csv-line")
-        later = _transaction(conn, a, acc, _import(conn, a, acc, format="camt053"), b"camt-line")
+        later = _transaction(conn, a, acc, _import(conn, a, acc, format="camt"), b"camt-line")
         with pytest.raises(errors.InsufficientPrivilege), conn.transaction():
             conn.execute("UPDATE transaction SET amount = 1 WHERE id = %s", (later,))
         with pytest.raises(errors.InsufficientPrivilege), conn.transaction():
@@ -506,7 +506,7 @@ def test_possible_duplicate_is_decided_once_per_pair(connect, workspaces):
     with connect(APP, a) as conn:
         acc = _account(conn, a)
         t1 = _transaction(conn, a, acc, _import(conn, a, acc), b"one")
-        t2 = _transaction(conn, a, acc, _import(conn, a, acc, format="camt053"), b"two")
+        t2 = _transaction(conn, a, acc, _import(conn, a, acc, format="camt"), b"two")
 
         def pair(first, second, **row):
             return _insert(

@@ -50,7 +50,7 @@ class StatementFormat(StrEnum):
     """statement_import.format (migration 0006)."""
 
     CSV_CAMT = "csv_camt"  # Sparkasse CSV-CAMT V2: no balances
-    CAMT053 = "camt053"  # camt XML: balances present
+    CAMT = "camt"  # camt.052 / .053 XML, one file or a ZIP of daily reports; balances (D33/D34)
     PDF = "pdf"  # Kontoauszug, read by the extract job
 
 
@@ -85,7 +85,7 @@ class ParsedStatement(Schema):
 
 
 class BankSource(Protocol):
-    """services/bank/: csv_camt.py, camt053.py, pdf.py (via the extract job)."""
+    """services/bank/: csv_camt.py, camt.py, pdf.py (via the extract job)."""
 
     def parse(self, data: bytes, media_type: str) -> ParsedStatement: ...
 

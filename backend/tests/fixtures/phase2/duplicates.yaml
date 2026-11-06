@@ -39,7 +39,7 @@ likely:
       - &CAMT_RENT
         id: *C1
         account_id: *A
-        format: camt053
+        format: camt
         line_hash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         booking_date: 2027-01-04
         amount: "1400.00"
@@ -60,7 +60,7 @@ likely:
     existing:
       - id: *C1
         account_id: *A
-        format: camt053
+        format: camt
         line_hash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         booking_date: 2027-01-31
         amount: "-9.90"

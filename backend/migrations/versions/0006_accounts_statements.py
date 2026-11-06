@@ -91,7 +91,7 @@ CREATE TABLE statement_import (
     workspace_id      uuid NOT NULL REFERENCES workspace (id),
     account_id        uuid NOT NULL,
     document_id       uuid NOT NULL,
-    format            text NOT NULL CHECK (format IN ('csv_camt', 'camt053', 'pdf')),
+    format            text NOT NULL CHECK (format IN ('csv_camt', 'camt', 'pdf')),
     lines_total       integer NOT NULL DEFAULT 0 CHECK (lines_total >= 0),
     lines_new         integer NOT NULL DEFAULT 0 CHECK (lines_new >= 0),
     lines_skipped     integer NOT NULL DEFAULT 0 CHECK (lines_skipped >= 0),

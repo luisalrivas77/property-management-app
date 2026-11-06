@@ -2,7 +2,7 @@
 
 Nov 6, 2026 · spec draft (architect), checked by the orchestrator (prices, citations vs structured
 outputs, data residency and PDF limits against the live API docs); awaiting Luis's decisions in
-§16 (all five settled 6 Nov 2026; a real camt file is still needed before step 3), no implementation. Phase 1 is closed (Luis, 6 Nov 2026):
+§16 (all five settled 6 Nov 2026; Luis's real camt export checked the same day, D33–D34), no implementation. Phase 1 is closed (Luis, 6 Nov 2026):
 documents upload, and the real data will be entered through the pre-fill this phase builds
 first.
 
@@ -13,7 +13,7 @@ implementation steps code against:
 | --- | --- | --- |
 | Pydantic schemas | `backend/src/hausbuch/schemas/` (`ai.py`, `proposal.py`, `bank.py`, `allocation.py`; additions to `enums.py`, `events.py`, `api.py`, `document.py`) | Written in step 0 (PR #24, 6 Nov 2026), reviewed (one round, findings F1–F10 fixed or decided as D31–D32); `schemas/extraction.py` added (§4.1 names it) |
 | Migrations | `0005_jobs_ai_proposals`, `0006_accounts_statements`, `0007_allocations_rules` | Written in step 0 (PR #24), tested against Postgres 16 (29 tables); none applied to production: each is applied by the step that first needs it |
-| Rule fixtures | `backend/tests/fixtures/phase2/*.yaml` | Written in step 0 (PR #24): 14 files; `csv_camt.yaml` and `camt053.yaml` deferred until Luis's real camt export |
+| Rule fixtures | `backend/tests/fixtures/phase2/*.yaml` | Written in step 0 (PR #24): 14 files; `camt.yaml` and `csv_camt.yaml` deferred to the start of step 3, built from anonymised copies of Luis's real exports (checked 6 Nov 2026, D33) |
 | Eval cases | `backend/tests/evals/` (recorded) + `HAUSBUCH_EVAL_DIR` (real, outside the repo) | Not yet: recorded responses need a live API call, so they start in step 1 |
 | Rule tests | `backend/tests/rules/` | 9 modules in `tests/rules/`, skipped until each rule module lands |
 
@@ -29,8 +29,8 @@ never asked twice. §13 turns the four numbers into fixtures.
 structured validation, provenance storage and the privacy gate; document classification and
 per-type extraction; **pre-fill proposals** (Vorschläge) for property, Nebenkosten, loan,
 tenant, tenancy and rent, with a review screen that shows page + quote per value and applies
-through the existing commands; bank accounts and statement import (CSV-CAMT, camt.053 XML,
-PDF Kontoauszug) behind `BankSource`; dedup and balance reconciliation; transactions and
+through the existing commands; bank accounts and statement import (camt.052 / camt.053 XML,
+including Sparkasse's ZIP of daily reports, CSV-CAMT, PDF Kontoauszug) behind `BankSource`; dedup and balance reconciliation; transactions and
 append-only allocations with service period and recurrence; the matching pipeline (rules →
 deterministic matchers → document match → LLM); the review queue (inbox) with reasoning and
 one question; learned rules storing split methods; dead-letter "couldn't read this"; PWA
@@ -57,8 +57,8 @@ Numbering continues from phase 1's D12. Each one is a place to push back in revi
 | D18 | **AI provenance is a table (`ai_call`), not event payload.** Events record `ai_call_id`, type, confidence and field *names*; the table holds model, prompt version, input hash, token counts, the parsed output and the raw text. | D5: outputs quote tenant names; the event log is append-only and outlives erasure. `ai_call` rows follow their document's retention and are scrubbed by tenant erasure (§4.4). |
 | D19 | **Proposal values are personal data at rest.** `proposal.fields` and `.decisions` are nulled 90 days after apply/reject (sweeper, with the retention job) and immediately by `erase_tenant` for proposals that created or patched that tenant. The eval record keeps per-field decisions and, for non-personal fields only, proposed and final values. | Measurement without a second copy of tenant data. |
 | D20 | **Procrastinate's schema is applied by migration `0005` as `hausbuch_owner`**, its tables are not RLS'd and not mirrored in `tables.py`; every job payload carries `workspace_id` and opens its own `workspace_transaction` as the app role. | Step 3 spec §3.7 already fixed this; the drift test and the 21-table count exclude `procrastinate_*`. |
-| D21 | **Sparkasse CSV-CAMT is the primary statement format, and it carries no balances.** Reconciliation therefore works on **balance anchors**: an opening balance entered once per account, and a declared closing balance per import (typed by Luis from online banking, or read from a camt.053 / PDF Kontoauszug when the file has it). An import whose computed balance differs from the declared one is `unreconciled` and none of its lines reach matching. | Phase 2 input point 3 assumed every statement states balances; the CSV does not (§7.2). |
-| D22 | **Line hash:** the bank's reference where present (camt.053 `AcctSvcrRef`, else `NtryRef`; CSV `Kundenreferenz (End-to-End)` only when non-empty and not `NOTPROVIDED`), else a canonical tuple of the line plus its ordinal among identical lines in the file. **Cross-format duplicates** (same account, amount, booking date, counterparty IBAN or normalized name, different hash) go to review, never auto-booked or dropped. | Phase 2 input point 2, made concrete. |
+| D21 | **Reconciliation works on balance anchors**: an opening balance entered once per account, and a declared closing balance per import, read from the file when it states one (camt XML, PDF Kontoauszug) and typed by Luis from online banking otherwise (the Sparkasse CSV, which carries none). An import whose computed balance differs from the declared one is `unreconciled` and none of its lines reach matching. *Corrected 6 Nov 2026:* this row first said the CSV was the primary format; Luis's real export showed the camt XML is available and carries balances (D33), so typing a balance is the CSV fallback only. | Phase 2 input point 3 assumed every statement states balances; the CSV does not (§7.2). |
+| D22 | **Line hash:** the bank's reference where present (camt `AcctSvcrRef`, else `NtryRef`; Luis's export carries a distinct `AcctSvcrRef` on all 22 entries; CSV `Kundenreferenz (End-to-End)` only when non-empty and not `NOTPROVIDED`), else a canonical tuple of the line plus its ordinal among identical lines in the file. **Cross-format duplicates** (same account, amount, booking date, counterparty IBAN or normalized name, different hash) go to review, never auto-booked or dropped. | Phase 2 input point 2, made concrete. |
 | D23 | **Allocations are append-only rows with `supersedes_id`**, like `rent_schedule`; a correction is a new row set per transaction. Status lives on the row (`proposed`, `confirmed`, `superseded`) and is the one column a trigger lets change, forward only. Considered and not chosen: a separate mutable `allocation_proposal` table so `allocation` holds confirmed rows only (closer to "only confirmed allocations reach the ledger"); rejected because a proposal and its confirmation would then be two rows with the same amounts to keep equal, and every reader (tax, performance) must filter on `status = confirmed` either way. The ledger views and phase 3 read `confirmed` rows only. The validator enforces Σ allocations = transaction amount on every write. | Principle 4; D12's pattern; one table, one filter. |
 | D24 | **Categories are a fixed `AllocationCategory` enum (§8.2); tax treatment per category is rule data** (`rules/categories.py`, fixture `categories.yaml`), not a column the user edits. Phase 3 maps categories to Anlage V lines. | ARCHITECTURE: renaming a category never changes a return. |
 | D25 | **Learned rules store a matcher and a split method**, never amounts: `single_category`, `by_rent_schedule`, `by_loan_schedule`, `by_wirtschaftsplan`, `owner_transfer`. | Phase 2 input point 5. |
@@ -69,6 +69,8 @@ Numbering continues from phase 1's D12. Each one is a place to push back in revi
 | D30 | **Photos are one document each, JPEG only from the capture page.** HEIC is stored (phase 1 accepts it) but marked "couldn't read this": Claude reads PDF, JPEG, PNG, WebP and GIF. | Smallest capture flow; conversion needs a native library the container does not have. |
 | D31 | **An allocation stores no tax year** (review F5, 6 Nov 2026). The year a payment counts in is an output of that year's rule set (the §11 ten-day rule needs booking and value date, service period and the recurring flag, all stored), computed by phase 3's draft, not a column frozen at match time. A reader that needs a year filter before phase 3 uses the transaction's `booking_date`. | Principle 5: 2026 stays reproducible if the rules change, and no append-only row holds a value a later rule could contradict. Amends ARCHITECTURE's Allocation row. |
 | D32 | **Events carry no matcher patterns** (review F2). `rule.created` / `rule.disabled` record the IBAN HMAC, the amount sign and whether name or purpose patterns exist; the patterns themselves stay on the mutable `matching_rule` row, which tenant erasure can scrub (step 2 adds that scrub). | D5: a typed pattern like `schmidt` is personal data and the event log is append-only. |
+| D33 | **Sparkasse's camt export is camt.052 v08, and it is the primary statement format.** Format value `camt` (not `camt053`) covers both camt.052 (`BkToCstmrAcctRpt`/`Rpt`) and camt.053 (`BkToCstmrStmt`/`Stmt`); one parser reads either root, since `Ntry` and `Bal` are the same. Balances `OPBD`/`CLBD` come from the file, so nothing is typed. | Checked 6 Nov 2026 against Luis's real export (§16 Q3): every daily report has both balances, they chain, and the entry count (22) equals the CSV's line count. The spec, enum and migration 0006 had assumed camt.053; 0006 was never applied anywhere but test databases, so it was edited in place. |
+| D34 | **A camt import may be a ZIP of daily reports.** The ZIP is the stored original (principle 6; document type `statement`). Members are read in memory, never extracted to disk: flat `.xml` names only (no `/`, `\` or `..`), at most 400 members and 20 MiB uncompressed in total, no nested archives; anything else rejects the whole upload. Reports are sorted by their `OPBD` date; each must satisfy `OPBD + Σ Ntry = CLBD` and each `OPBD` must equal the previous report's `CLBD`, and any break sends the whole import to review. The import's `file_opening` is the first report's `OPBD`, its `declared_closing` the last report's `CLBD`, `balance_source = file`, so `reconcile` (§7.2) is unchanged. XML is parsed with entity resolution and network access off. Step 3 adds `application/zip` to the accepted upload types. | Sparkasse delivers its camt export this way (one report per booking day, 17 files for Apr–Nov 2026). Days without bookings have no file; the chain check still holds because the balance does not move. |
 
 ## 3. Data model
 
@@ -93,7 +95,7 @@ tests' table lists (21 → 29, excluding `procrastinate_*`).
 | Table | Holds | Mutability |
 | --- | --- | --- |
 | `account` | `label`, `bank`, `iban_masked`, `iban_hmac`, `source` (`upload` now; `fints`, `aggregator` later), `opening_balance`, `opening_balance_on` (the anchor, D21), `is_owner_account boolean` (the owners' private accounts, recognized by IBAN for owner transfers, phase 2 input point 1; they never hold transactions) | Mutable + events |
-| `statement_import` | `account_id`, `document_id` (the uploaded file is a document: source `upload`, type `statement`), `format` (`csv_camt`, `camt053`, `pdf`), `lines_total`, `lines_new`, `lines_skipped`, `first_booking_on`, `last_booking_on`, `declared_opening` / `declared_closing` (nullable), `balance_source` (`file`, `user`, `none`), `computed_closing`, `status` (`imported`, `reconciled`, `unreconciled`, `failed`), `error_code`, `ai_call_id` (PDF only) | Mutable (status, declared balances) + events |
+| `statement_import` | `account_id`, `document_id` (the uploaded file is a document: source `upload`, type `statement`), `format` (`csv_camt`, `camt`, `pdf`; D33), `lines_total`, `lines_new`, `lines_skipped`, `first_booking_on`, `last_booking_on`, `declared_opening` / `declared_closing` (nullable), `balance_source` (`file`, `user`, `none`), `computed_closing`, `status` (`imported`, `reconciled`, `unreconciled`, `failed`), `error_code`, `ai_call_id` (PDF only) | Mutable (status, declared balances) + events |
 | `transaction` | `account_id`, `import_id`, `line_hash bytea` UNIQUE with `(workspace_id, account_id)`, `booking_date`, `value_date`, `amount`, `currency` (`EUR` CHECK), `counterparty_name`, `counterparty_iban_masked`, `counterparty_iban_hmac`, `purpose`, `booking_text` (Buchungstext), `bank_reference`, `end_to_end_ref`, `mandate_ref`, `raw jsonb` (the line as parsed), `is_pending boolean` (CSV `Info = Umsatz vorgemerkt` lines are skipped at import, never stored; the column exists for camt `PDNG`), `excluded_as_duplicate_of uuid` (nullable, write-once: set when a cross-format duplicate is resolved as `merged`; an excluded line counts for no balance and gets no allocations) | **No update, no delete** (immutable as imported); the one exception is setting `excluded_as_duplicate_of` from null, allowed by a column-limited trigger |
 | `possible_duplicate` | `transaction_id`, `other_transaction_id`, `status` (`open`, `kept_both`, `merged`), `decided_at` | Mutable + events; `merged` sets `other_transaction_id.excluded_as_duplicate_of = transaction_id` in the same command (the later-imported line is the excluded one) |
 
@@ -222,7 +224,7 @@ class ProposalApplyBody(Schema):
 class AccountCreate(Schema): label, bank, iban: IbanInput, opening_balance: Money, opening_balance_on: date, is_owner_account: bool = False
 class Account(MutableRecord): label, bank, iban_masked, source, opening_balance, opening_balance_on, is_owner_account
 
-class StatementFormat(StrEnum): CSV_CAMT = "csv_camt"; CAMT053 = "camt053"; PDF = "pdf"
+class StatementFormat(StrEnum): CSV_CAMT = "csv_camt"; CAMT = "camt"; PDF = "pdf"
 
 class StatementLine(Schema):           # the BankSource output, format-independent
     booking_date: date; value_date: date | None; amount: Money; currency: str
@@ -238,7 +240,7 @@ class ParsedStatement(Schema):
     lines: list[StatementLine]
     warnings: list[str]
 
-class BankSource(Protocol):           # services/bank/__init__.py; implementations: csv_camt.py, camt053.py, pdf.py (via extraction)
+class BankSource(Protocol):           # services/bank/__init__.py; implementations: csv_camt.py, camt.py, pdf.py (via extraction)
     def parse(self, data: bytes, media_type: str) -> ParsedStatement: ...
 
 class StatementImport(MutableRecord): account_id, document_id, format, lines_total, lines_new, lines_skipped,
@@ -284,7 +286,7 @@ class LlmMatchOutput(Schema):           # structured output of the categorize jo
 (`claude-opus-5-5`), `HAUSBUCH_AI_INFERENCE_GEO` (`us` default | `global`), `HAUSBUCH_AI_MAX_PAGES`
 (100), `HAUSBUCH_AI_TIMEOUT_S` (120), `HAUSBUCH_EVAL_DIR` (optional). Dependencies added in
 the spec PR at once (as step 3 did): `anthropic`, `procrastinate` (psycopg connector; needs
-`psycopg[pool]`), `pypdf` (page count and splitting only), `lxml` (camt.053).
+`psycopg[pool]`), `pypdf` (page count and splitting only), `lxml` (camt.052 / camt.053, D33).
 
 ## 5. Jobs and the AI layer
 
@@ -441,30 +443,38 @@ argument (default `MANUAL`) so the AI path does not fork it.
 
 ### 7.1 Formats and assumptions (Sparkasse, dedicated rental account)
 
-Assumed from Sparkasse online banking's "Umsätze exportieren" and one community-documented
-layout (not Sparkasse documentation; **Luis supplies one real export of each format before
-step 3 and the parser fixtures are built from it**):
+Checked 6 Nov 2026 against Luis's real exports from Sparkasse online banking's "Umsätze
+exportieren" (kept outside the repo in `~/hausbuch-samples/`; only their structure was read;
+step 3 builds the parser fixtures from anonymised copies):
 
-- **camt XML is the primary format** (Luis, 6 Nov 2026: his Sparkasse online banking offers a
-  camt export; which message, camt.052 or camt.053, and which version, 02 or 08, is read from his
-  real file before step 3). The CSV and PDF formats below are kept as fallbacks.
-- **CSV-CAMT V2** (fallback): `;`-separated, ISO-8859-15, header row, dates `dd.mm.yy`,
+- **camt.052 v08 XML, primary** (D33, D34): a ZIP holding one `BkToCstmrAcctRpt` report per
+  booking day (namespace `urn:iso:std:iso:20022:tech:xsd:camt.052.001.08`, one `Rpt` per file,
+  UTF-8). Every report has `Bal` `OPBD` and `CLBD`; they chain day to day from 0,00 € on the
+  account's first booking. Every entry is `Sts` `BOOK` with one `NtryDtls/TxDtls`; it always
+  carries `BookgDt`, `ValDt`, `Amt`, `CdtDbtInd`, `AcctSvcrRef` (distinct per entry),
+  `BkTxCd` (`Domn` and `Prtry`), `AddtlNtryInf` (the Buchungstext) and `RltdPties`; usually
+  `RmtInf/Ustrd` (21 of 22) and a counterparty `IBAN` and `BICFI` (19 of 22: bank fees and
+  the Rechnungsabschluss have none); sometimes `EndToEndId` (5) and `MndtId` (2); never
+  `NtryRef` or structured remittance. The parser reads these; entries not `BOOK` are skipped.
+  The counterparty is `Cdtr` on a debit and `Dbtr` on a credit; the other side is the
+  account's own IBAN (true on all 19 entries that name a counterparty).
+- **CSV-CAMT V2** (fallback; Luis's export has 22 lines, as many as the XML has entries): `;`-separated, ISO-8859-15, header row, dates `dd.mm.yy`,
   comma decimals, 17 columns: `Auftragskonto; Buchungstag; Valutadatum; Buchungstext;
   Verwendungszweck; Glaeubiger ID; Mandatsreferenz; Kundenreferenz (End-to-End);
   Sammlerreferenz; Lastschrift Ursprungsbetrag; Auslagenersatz Ruecklastschrift;
   Beguenstigter/Zahlungspflichtiger; Kontonummer/IBAN; BIC (SWIFT-Code); Betrag; Waehrung;
   Info`. **No balances.** Lines with `Info = Umsatz vorgemerkt` are pending and skipped.
-- **camt.053 XML** (if the account offers it; v02 or v08: the parser reads `Ntry` with
-  `BookgDt`, `ValDt`, `Amt`, `CdtDbtInd`, `NtryRef`, `AcctSvcrRef`, `RmtInf/Ustrd`,
-  `RltdPties`, `EndToEndId`, `MndtId`, and `Bal` `OPBD`/`CLBD`): balances present.
+- **camt.053 XML** (other banks, or a single statement file): same parser and fields under
+  `BkToCstmrStmt`/`Stmt`; a single `.xml` upload of either message works without a ZIP.
 - **PDF Kontoauszug**: read by the extract job as `StatementExtraction` (alter/neuer
   Kontostand + lines); every amount is a model reading, so **the reconciliation is the
   guard**: an unreconciled PDF import goes to review as a whole (phase 2 input point 3).
 - CSV-MT940 and the Sparkasse app's own export: not supported unless the CAMT export is
   unavailable (open question 3).
 
-Format detection: media type + sniff (`<Document` / `BkToCstmrStmt` → camt053; a header row
-starting with `Auftragskonto;` → csv_camt; `application/pdf` → pdf). The uploaded file is a
+Format detection: media type + sniff (`PK\x03\x04` → ZIP of camt reports; `<Document` with
+`BkToCstmrAcctRpt` or `BkToCstmrStmt` → camt; a header row starting with `Auftragskonto;` →
+csv_camt; `application/pdf` → pdf). The uploaded file is a
 document (type `statement`, `tax_year` = the year of the last line), so the vault, dedup on
 bytes and retention apply unchanged; `POST /accounts/{id}/imports` wraps `upload_document`.
 
@@ -650,7 +660,7 @@ Pure functions in `hausbuch.rules.*`, no I/O, no model calls; errors carry a `co
 | `statements.line_hash(...)` | `line_hash.yaml` | bank reference wins; `NOTPROVIDED` ignored; two identical lines → ordinals 0 and 1; same line re-imported → same hash; whitespace/case in purpose irrelevant |
 | `statements.likely_duplicates(...)` | `duplicates.yaml` | CSV vs camt same payment → duplicate; two CSV lines same day → not; different amount → not; resolution `merged` excludes the later-imported line, `kept_both` keeps both counting |
 | `statements.reconcile(...)` | `reconcile.yaml` | CSV with declared closing ok / off by 0.01; camt with opening mismatch; no declared closing → `pending_balance`; overlapping export (second file repeats three stored lines: stored window sums, reconciles); after a `merged` duplicate the excluded line is out of both sums; file before the anchor |
-| `bank.csv_camt.parse` / `bank.camt053.parse` | `csv_camt.yaml`, `camt053.yaml` (built from Luis's real exports, anonymized by replacing names/IBANs) | header variants, pending lines skipped, comma decimals, `dd.mm.yy` vs `dd.mm.yyyy`, credit/debit sign |
+| `bank.csv_camt.parse` / `bank.camt.parse` | `csv_camt.yaml`, `camt.yaml` (built from Luis's real exports, anonymized by replacing names/IBANs) | header variants, pending lines skipped, comma decimals, `dd.mm.yy` vs `dd.mm.yyyy`, credit/debit sign; camt: both roots, ZIP member rules and limits (D34), per-report sum and day-to-day chain breaks, an entity declaration refused |
 | `periods.service_period(purpose, booking_date, recurring)` | `service_period.yaml` | `Miete 01/2027`, `Miete Januar 2027`, `01.2027`, `2027-01`, `Hausgeld 01/27-03/27`, `Nachzahlung NK 2026` (year), none + recurring → booking month, none + not recurring → null |
 | `matching.match_owner_transfer / match_rent / match_loan / match_document` | `matchers.yaml` | rent exact, rent short by 20 € (review with question), rent for two months in one transfer (period range), annuity split at the fixed-rate switch month, owner top-up, Grundsteuer quarterly vs Bescheid, invoice ±0.01 within window, invoice outside window |
 | `matching.apply_rule(rule, transaction, context)` | `rules.yaml` | single category; `by_loan_schedule` after a rate change (new amounts, same rule); `by_wirtschaftsplan` with a new plan; disabled rule ignored; rule stores no amount (schema test) |
@@ -697,7 +707,7 @@ review": money, persisted state, migrations, RLS, events, fixtures, silent failu
 | 0 **Spec PR** | this doc final; schemas §4; migrations 0005–0007 written and tested against Postgres 16; fixtures §12–13 (rule tests skipped); deps; `tables.py` mirror; ARCHITECTURE edits §15 | all three written, none deployed | schema tests green (29 tables + exclusion), fixtures validate, `uv run pytest` green | M: 1 coder; API cost 0 | **Yes** (migrations, RLS, grants, event CHECK, fixtures): FOCUS procrastinate grants cannot bypass RLS; `ai_call` scrub trigger; no amount field on rules |
 | 1 **Pre-fill for property, Nebenkosten, loan, WEG and Bescheid documents** | Procrastinate worker in the lifespan; `ai/client.py` (Anthropic SDK, prompts, provenance, gate); `document_read` task; `rules/prefill.py`, `rules/extraction_parse.py`; proposals service + routes; review screen; settings; deploy step 13; auth events (§10, small) | **0005** | Luis uploads his Kaufvertrag, four Nebenkosten documents, Darlehensvertrag, Grundsteuerbescheid and Wirtschaftsplan and enters the flat, unit, split, costs and loan by verifying values only; every proposed value shows page + quote; `prefill.yaml` and `extraction_parse.yaml` pass; recorded evals pass in CI; History shows purchase → loan correctly | L: 3 coder chunks in parallel (worker + client + task; rules + proposals + API; frontend) ≈ 3 sessions; API ≈ $2 for the real set, ≈ $5 for prompt iteration | **Yes**: FOCUS apply is one transaction through existing services only; no model output reaches a domain table; tenant gate cannot be bypassed by the classifier result; key never logged |
 | 2 **Mietvertrag, Übergabeprotokoll, Kaution** | lease/handover/deposit extraction kinds; tenant + tenancy + rent proposals; `ai_tenant_documents` setting UI with the §11.2 text; erasure scrub of proposals and `ai_call` | — | after Luis's §11.2 decision: his Mietvertrag enters tenant(s), tenancy and first rent by verification; `tenant.erased` nulls the proposal and call rows (`tests/db`); gate tests | M: 1 coder; API < $1 | **Yes** (personal data, erasure): FOCUS D5 in the new events; scrub completeness |
-| 3 **Accounts and statements** | `account`, `BankSource` + csv_camt + camt053 (+ PDF via extraction), import, dedup, duplicates, balance anchors, reconciliation, transactions list, inbox items for imports | **0006** | Luis's real exports (one per format) import; a re-upload adds zero lines; the month reconciles against the online-banking balance; `line_hash`, `duplicates`, `reconcile`, parser fixtures pass | M: 1–2 coders (parsers + rules; service + UI); API ≈ $0.05 per PDF statement | **Yes** (money, persisted state): FOCUS hash stability; no amount parsed through float; reconciliation blocks matching; `transaction.raw` never holds a plaintext IBAN (only the service enforces it); `resolve_duplicate` requires both lines on one account and refuses mutual exclusion (both copies leaving the balance) |
+| 3 **Accounts and statements** | `account`, `BankSource` + camt (single XML or ZIP) + csv_camt (+ PDF via extraction), import, dedup, duplicates, balance anchors, reconciliation, transactions list, inbox items for imports | **0006** | Luis's real exports (one per format) import; a re-upload adds zero lines; the month reconciles against the online-banking balance; `line_hash`, `duplicates`, `reconcile`, parser fixtures pass | M: 1–2 coders (parsers + rules; service + UI); API ≈ $0.05 per PDF statement | **Yes** (money, persisted state): FOCUS hash stability; no amount parsed through float; reconciliation blocks matching; `transaction.raw` never holds a plaintext IBAN (only the service enforces it); `resolve_duplicate` requires both lines on one account and refuses mutual exclusion (both copies leaving the balance); ZIP limits and flat names enforced before any XML is parsed, entity resolution off |
 | 4 **Matching, allocations, rules, inbox** | matchers, document match, LLM categorize + explain, thresholds, allocation writes with sum check, rules, `match_import`, `rematch_on_evidence`, inbox UI, allocation editor | **0007** | `matchers.yaml`, `rules.yaml`, `allocation_sum.yaml`, `review_routing.yaml`, `month_statement.yaml`, `repeat_answer.yaml` pass; first real month fully confirmed through the inbox; second real month ≥ 80 % auto-matched, 0 sum errors | L: 3 coder chunks (rules; services + jobs + LLM; inbox UI) ≈ 3 sessions; API ≈ $0.20/month | **Yes** (money, events, silent mis-split): FOCUS sum invariant on every path; rules never store amounts; auto-confirm only above threshold |
 | 5 **PWA capture, evals CLI, sweeper** | `/capture`; `hausbuch evals run/report`; `scrub_proposals` periodic task; the bucket lifecycle rule noted in phase 1 known gaps if the retention job lands here | — | a photo from the phone becomes a typed document with a proposal; `evals report` prints per-kind accuracy from the real set | S: 1 coder | No (CI covers it), except the sweeper (persisted deletes) → small review |
 
@@ -728,9 +738,10 @@ Conflicts, stated plainly, and the exact edits (made in the spec PR):
    match, Opus 5.5 for ambiguous matches), citations for extraction, structured outputs for
    classification and matching; one `ModelClient` interface so an EU-hosted route (Bedrock,
    Vertex) can replace it".
-6. **Delivery phases, "Input for the phase 2 spec", point 3**: add "The Sparkasse CSV export
-   carries no balances: reconciliation uses an opening anchor per account and a closing
-   balance declared per import (typed, or read from a camt.053 / PDF statement). D21."
+6. **Delivery phases, "Input for the phase 2 spec", point 3**: add "Reconciliation uses an
+   opening anchor per account and a closing balance declared per import: read from the file
+   for camt XML (Sparkasse's camt.052 export states both balances) and PDF statements, typed
+   for the CSV export, which carries none. D21, D33."
 7. **Decisions table, new rows (6 Nov 2026):**
    - *Pre-fill in phase 2* — "Master data is entered by AI pre-fill from documents, verified
      per value against page + quote, applied through the existing commands only; phase 1
@@ -772,8 +783,15 @@ shown as derived, never produced by the model.
    **CSV-CAMT layout**, not XML: `;`-separated, the 17 columns of §7.1 exactly, dates `dd.mm.yy`,
    umlauts only (cp1252 and ISO-8859-15 agree), newest line first, every line `Umsatz gebucht`,
    **no balances**. 22 lines from 1 Apr 2026 (the account's first booking, so the export reached
-   the whole history) to 6 Nov 2026. Open again: whether the export dialog also offers a real XML
-   (camt) download; if not, the balances come from a typed closing balance or the PDF statement.
+   the whole history) to 6 Nov 2026.
+   **Then checked the XML export** (`rental_account_bank_export-camt52v8.zip`, same place; Luis
+   downloaded it twice, and the `.zip` and `.ZIP` copies differ only in each report's creation
+   timestamp `CreDtTm`): a ZIP of 17 **camt.052 v08** reports, one per booking day from 1 Apr to
+   6 Nov 2026, 22 entries in all, as many as the CSV has lines. Every report states `OPBD` and `CLBD`;
+   in all 17, opening + entries = closing, and each opening equals the previous closing, from
+   0,00 € on the first day. **Settled: the XML is the primary format, its balances are read from
+   the file and nothing is typed** (D33, D34); the export reaches the account's whole history,
+   so the 90-day question does not arise yet. The CSV stays a fallback.
 4. ~~**Luis: Anthropic account**~~ **Decided 6 Nov 2026:** workspace `hausbuch` with a $25
    monthly limit (key in Scaleway only) and workspace `hausbuch-evals` with a $10 limit (key
    on Luis's computer); subprocessor notices go to the Console account's email (§11.3).
