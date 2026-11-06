@@ -37,7 +37,13 @@ from hausbuch.schemas.document import (
     RetentionPolicy,
     RetentionResult,
 )
-from hausbuch.schemas.enums import DocumentSource, EntityType, ExtractionSource, LinkTarget
+from hausbuch.schemas.enums import (
+    DocumentSource,
+    EntityType,
+    ExtractionKind,
+    ExtractionSource,
+    LinkTarget,
+)
 from hausbuch.schemas.events import (
     DocumentField,
     DocumentLinked,
@@ -45,6 +51,7 @@ from hausbuch.schemas.events import (
     DocumentUploaded,
     EventType,
 )
+from hausbuch.schemas.extraction import EXTRACTION_MODELS, AnyExtraction
 from hausbuch.storage import BlobStore, blob_key
 
 from .context import CommandContext
@@ -173,12 +180,18 @@ def type_document(
     ctx: CommandContext,
     document_id: UUID,
     typing: DocumentTyping,
-    fields: ManualDocumentFields | None = None,
+    fields: ManualDocumentFields | AnyExtraction | None = None,
+    *,
+    source: ExtractionSource = ExtractionSource.MANUAL,
+    ai_call_id: UUID | None = None,
 ) -> Document:
     """Set what the document is and, optionally, its typed fields.
 
     Fields that differ from the current extraction (or the first ones) become the next
-    extraction version. Writes nothing and appends no event if neither typing nor fields change.
+    extraction version, recorded with `source` (phase 2: `ai` with the ai_call it came from,
+    when an applied proposal types the document with the fields already read; the default
+    `manual` is a person's typing). Writes nothing and appends no event if neither typing nor
+    fields change.
     """
     current = _select_document(ctx.conn, document_id, for_update=True)
     if current is None:
@@ -188,19 +201,7 @@ def type_document(
     if fields is not None:
         # The document row is locked (FOR UPDATE above), so concurrent typings of the same
         # document serialize here and cannot both compute the same next version.
-        latest = current_extraction(ctx.conn, document_id)
-        if latest is None or latest.fields != fields:
-            version = (latest.version if latest else 0) + 1
-            ctx.conn.execute(
-                insert(extraction_table).values(
-                    workspace_id=ctx.workspace_id,
-                    document_id=document_id,
-                    version=version,
-                    source=ExtractionSource.MANUAL.value,
-                    fields=fields.model_dump(mode="json"),
-                    created_at=ctx.now,
-                )
-            )
+        version = _append_extraction(ctx, document_id, fields, source=source, ai_call_id=ai_call_id)
     if current.typing == typing and version is None:
         return current
 
@@ -241,6 +242,67 @@ def type_document(
         ),
     )
     return typed
+
+
+def record_ai_extraction(
+    ctx: CommandContext, document_id: UUID, fields: AnyExtraction, *, ai_call_id: UUID
+) -> DocumentExtraction:
+    """Record what the model read as the document's next extraction version (source `ai`,
+    phase 2 D14, D15), without typing the document: the typing stays a proposal until the
+    user applies it. Always a new version, even when equal to the last one, so the version
+    names the ai_call it came from. Appends no event (the job's document.extracted does)."""
+    if _select_document(ctx.conn, document_id, for_update=True) is None:
+        raise NotFoundError(EntityType.DOCUMENT, document_id)
+    _append_extraction(
+        ctx, document_id, fields, source=ExtractionSource.AI, ai_call_id=ai_call_id, force=True
+    )
+    extraction = current_extraction(ctx.conn, document_id)
+    assert extraction is not None
+    return extraction
+
+
+def _append_extraction(
+    ctx: CommandContext,
+    document_id: UUID,
+    fields: ManualDocumentFields | AnyExtraction,
+    *,
+    source: ExtractionSource,
+    ai_call_id: UUID | None,
+    force: bool = False,
+) -> int | None:
+    """The next extraction version, or None when the fields equal the current version's
+    (unless `force`). The caller holds the document row's lock. The kind is the fields'
+    model; `ai` needs the ai_call_id (the table's provenance CHECK)."""
+    source = ExtractionSource(source)
+    if (source is ExtractionSource.AI) != (ai_call_id is not None):
+        raise ValueError("an ai extraction carries its ai_call_id, a manual one none")
+    kind = _extraction_kind(fields)
+    latest = current_extraction(ctx.conn, document_id)
+    if not force and latest is not None and latest.fields == fields:
+        return None
+    version = (latest.version if latest else 0) + 1
+    ctx.conn.execute(
+        insert(extraction_table).values(
+            workspace_id=ctx.workspace_id,
+            document_id=document_id,
+            version=version,
+            source=source.value,
+            fields=fields.model_dump(mode="json"),
+            kind=kind.value,
+            ai_call_id=ai_call_id,
+            created_at=ctx.now,
+        )
+    )
+    return version
+
+
+def _extraction_kind(fields: ManualDocumentFields | AnyExtraction) -> ExtractionKind:
+    if isinstance(fields, ManualDocumentFields):
+        return ExtractionKind.MANUAL
+    for kind, model in EXTRACTION_MODELS.items():
+        if type(fields) is model:
+            return kind
+    raise TypeError(f"not an extraction field set: {type(fields).__name__}")
 
 
 def link_document(

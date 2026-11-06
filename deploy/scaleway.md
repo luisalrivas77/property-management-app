@@ -351,6 +351,7 @@ containers use:
 | `hausbuch-session-key` | 64 hex characters (a different value) | API container |
 | `hausbuch-s3-access-key` | the step 6 access key | API container |
 | `hausbuch-s3-secret-key` | the step 6 secret key | API container |
+| `hausbuch-anthropic-api-key` | the Claude API key of the `hausbuch` Console workspace (step 13) | API container |
 
 `sslmode=require` encrypts the connection but does not check the server's certificate: the
 container image does not carry the instance's CA.
@@ -497,7 +498,7 @@ you notice the owner URL pasted into the wrong place: the container exits with
 Note the container's endpoint (`https://…functions.fnc.fr-par.scw.cloud`). Then check it:
 
 ```bash
-curl -i https://<api-container-endpoint>/healthz      # 200 {"status":"ok"}
+curl -i https://<api-container-endpoint>/healthz      # 200 {"status":"ok","worker":"ok"}
 ```
 
 ### Environment of each container and command
@@ -519,6 +520,8 @@ The last two columns are your computer's `~/.hausbuch-owner.env`, not anything a
 | `HAUSBUCH_S3_ENDPOINT_URL` | `https://s3.fr-par.scw.cloud` | — | — | — |
 | `HAUSBUCH_S3_REGION` | `fr-par` | — | — | — |
 | `HAUSBUCH_RUN_WORKER` | `true` | — | — | — |
+| `HAUSBUCH_ANTHROPIC_API_KEY` | **secret** (step 13) | — | — | — |
+| `HAUSBUCH_AI_ENABLED` | `true` once step 13 is done (default `false`) | — | — | — |
 | `HAUSBUCH_API_URL` | — | **build argument**, not a variable (step 7) | — | — |
 
 The API's optional settings keep their defaults unless you have a reason to change them:
@@ -592,6 +595,61 @@ works once and expires after 24 hours. So:
 
 The same `invite` command is the recovery path when all passkeys are lost (§6.7). Your
 spouse joins from the app: Einstellungen → "Mitglied einladen".
+
+## Step 13: The Claude API key (phase 2, AI pre-fill)
+
+Phase 2 reads uploaded documents with the Claude API (phase-2.md §5, §11.3). The API key is
+the only new secret. It is never in the database, the repository, a log line, an `ai_call`
+row or the frontend; `Settings` hides it in `repr` like the other secrets.
+
+**Order: migration `0005` first.** It adds the job queue's tables, `ai_call` and
+`proposal`. Run it from your computer exactly as in step 9, from the commit of the step 1
+image, **before** deploying that image (as with `0004`). `alembic current` must print
+`0005_jobs_ai_proposals (head)` or later.
+
+1. **Two Console workspaces, two keys** (platform.claude.com → Settings → Workspaces), so
+   either key can be revoked without touching the other:
+   - `hausbuch`, monthly spend limit **$25**, for the deployed app;
+   - `hausbuch-evals`, monthly spend limit **$10**, whose key stays on your computer for the
+     eval recordings (`backend/tests/evals/README.md`).
+
+   In each workspace set **`default_inference_geo` = `us`** (decided 6 Nov 2026, D17: one
+   named processing location; it costs 1.1x). The app also sends `inference_geo` on every
+   request (`HAUSBUCH_AI_INFERENCE_GEO`, default `us`), and each `ai_call` row records the
+   geo the API reports back, so a mismatch is visible.
+2. Create **one API key** in the `hausbuch` workspace. Copy it once; the Console does not
+   show it again.
+3. **Secret Manager** (step 8): create the secret `hausbuch-anthropic-api-key` with the key
+   as its value.
+4. **API container** (step 10): add the secret environment variable
+   `HAUSBUCH_ANTHROPIC_API_KEY`, pasting the secret's value (containers cannot read Secret
+   Manager directly), and the plain variable `HAUSBUCH_AI_ENABLED=true`. The container
+   refuses to start with `HAUSBUCH_AI_ENABLED=true` and no key. Leave `HAUSBUCH_RUN_WORKER`
+   at `true`: the reading job runs in this container.
+5. **Redeploy** the container and check that the worker is up:
+
+   ```bash
+   curl -s https://<api-container-endpoint>/healthz    # {"status":"ok","worker":"ok"}
+   ```
+
+   `"worker":"stopped"` means the job worker is not running (it restarts itself after a
+   crash, with backoff); look at the container logs for `worker_crashed` and its
+   `exc_type`. The health check stays green either way, since requests are still served.
+6. Upload one short, non-tenant document (an invoice) with AI on, and check that its
+   proposal turns `ready`. Tenant documents stay blocked until the workspace setting
+   `ai_tenant_documents` is switched on (D16, §11).
+
+**Rotation** (yearly, or at once if a key may have leaked):
+
+1. create a new key in the `hausbuch` Console workspace;
+2. add it to `hausbuch-anthropic-api-key` as a **new secret version**;
+3. paste it into the container's `HAUSBUCH_ANTHROPIC_API_KEY`;
+4. redeploy, and check `/healthz` and one upload as above;
+5. **delete the old key** in the Console. Do this last, so the running container never holds
+   a revoked key.
+
+The `hausbuch-evals` key is rotated the same way, minus the container steps: replace it in
+your computer's env file only.
 
 ## Checks to run at the first deploy, and record here
 

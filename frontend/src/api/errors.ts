@@ -63,6 +63,9 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "loan.payment_does_not_cover_interest": "Die Rate deckt die Zinsen nicht; das Darlehen würde nie getilgt.",
   "loan.term_too_long": "Mit dieser Rate dauert die Tilgung länger als 100 Jahre.",
   "event.correction_mismatch": "Die Korrektur passt nicht zum ursprünglichen Eintrag.",
+  // phase 2 (phase-2.md §12)
+  "proposal.already_decided": "Über diesen Vorschlag wurde schon entschieden (übernommen oder verworfen).",
+  "proposal.not_ready": "Dieser Vorschlag ist noch nicht fertig oder wurde ersetzt.",
   // bank statements (phase-2.md §12 and the step 3 additions, rules/statements.py)
   "statement.unreconciled": "Der berechnete Endsaldo stimmt nicht mit dem Saldo der Bank überein.",
   "statement.opening_mismatch": "Der Anfangssaldo der Datei stimmt nicht mit dem berechneten Kontostand überein.",
@@ -83,6 +86,26 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "statement.duplicate_accounts_differ": "Die beiden Umsätze gehören zu verschiedenen Konten.",
   "statement.duplicate_excludes_both": "Zusammenführen würde beide Umsätze aus dem Saldo nehmen; einer muss zählen.",
 };
+
+/** German text for a proposal's `error_code`: why reading the document failed or was
+ * stopped (phase-2.md §5.5, §12; the job's extra codes in backend rules/errors.py). */
+export const AI_ERROR_TEXT: Record<string, string> = {
+  "ai.disabled": "Automatisches Auslesen ist auf dem Server nicht eingeschaltet.",
+  "ai.blocked_tenant_data": "Dokumente mit Mieterdaten werden nicht an die KI geschickt, solange das nicht freigegeben ist.",
+  "ai.unparsable": "Die Antwort der KI ließ sich auch beim zweiten Versuch nicht auswerten.",
+  "ai.refused": "Die KI hat das Auslesen abgelehnt oder abgebrochen.",
+  "ai.too_many_pages": "Das Dokument hat zu viele Seiten, um es automatisch auszulesen.",
+  "ai.unsupported_media_type": "Dieser Dateityp kann nicht automatisch ausgelesen werden (z. B. HEIC); bitte als PDF, JPEG oder PNG hochladen.",
+  "ai.api_error": "Der KI-Dienst hat die Anfrage mit einem Fehler beantwortet.",
+  "ai.unavailable": "Der KI-Dienst war nicht erreichbar. Später noch einmal auslesen.",
+  "ai.unreadable": "Die Datei ließ sich nicht öffnen (beschädigt oder mit Passwort geschützt).",
+  "ai.internal_error": "Beim Auslesen ist ein interner Fehler aufgetreten.",
+};
+
+/** The German sentence for a proposal's error code; unknown codes get a generic one. */
+export function aiErrorText(code: string | null): string {
+  return (code && AI_ERROR_TEXT[code]) || "Das Dokument konnte nicht gelesen werden.";
+}
 
 /** The German sentence for one rule code, with the payment number of a loan schedule error. */
 export function ruleCodeText(code: string, atNumber?: number | null): string | null {

@@ -8,7 +8,15 @@ import Link from "next/link";
 import { useCallback, useId, useRef, useState, type ChangeEvent } from "react";
 
 import { api, ok } from "@/api/client";
-import type { Document, LinkTarget, LinkTargetRef, RelatedDocument, UploadBody } from "@/api/schemas";
+import type {
+  Document,
+  DocumentUploadResult,
+  LinkTarget,
+  LinkTargetRef,
+  ProposalStatus,
+  RelatedDocument,
+  UploadBody,
+} from "@/api/schemas";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { formatDate, shortId } from "./format";
@@ -24,17 +32,55 @@ export interface Uploaded {
   document: Document;
   /** The same bytes were already in the vault (200 instead of 201, D9). */
   existed: boolean;
+  /** The pre-fill proposal the server queued, or the pending one for bytes already in the
+   * vault; the document page polls it (phase-2.md §6.1). Null without one. */
+  proposalId: string | null;
+  proposalStatus: ProposalStatus | null;
+  /** The upload asked for automatic reading but the server answered without a proposal: its
+   * AI is switched off (HAUSBUCH_AI_ENABLED), so the document is typed by hand. */
+  aiUnavailable: boolean;
+}
+
+export interface UploadOptions {
+  /** Read the document with the AI (pre-fill, §6.1). True leaves the form field `ai` out, so
+   * the server's default (on when its AI is enabled) decides, and a server without AI never
+   * queues a read that could only fail; false sends `ai=false` (phase 1's upload). */
+  autoRead: boolean;
+  /** The uploader says the document holds tenant data: the privacy gate (D16) blocks the
+   * read until the workspace allows tenant documents. */
+  containsTenantData: boolean;
+}
+
+const MANUAL_UPLOAD: UploadOptions = { autoRead: false, containsTenantData: false };
+
+/** POST /documents answers with the Document, or with a DocumentUploadResult (the document
+ * plus the proposal to poll) when it read the upload with AI; a Document has no `document`. */
+function isUploadResult(data: Document | DocumentUploadResult): data is DocumentUploadResult {
+  return "document" in data;
 }
 
 /** POST /documents as multipart. The generated body type names `file` a string (OpenAPI's
  * `format: binary`); openapi-fetch sends a FormData body as is, so the FormData is passed
- * under that type. */
-export async function uploadDocument(file: File): Promise<Uploaded> {
+ * under that type. Without options the upload is phase 1's: no automatic reading. */
+export async function uploadDocument(file: File, options: UploadOptions = MANUAL_UPLOAD): Promise<Uploaded> {
   const form = new FormData();
   form.append("file", file, file.name);
   form.append("source", "upload");
+  if (!options.autoRead) form.append("ai", "false");
+  if (options.containsTenantData) form.append("contains_tenant_data", "true");
   const { data, response } = await api.POST("/api/documents", { body: form as unknown as UploadBody });
-  return { document: data as Document, existed: response.status === 200 };
+  if (!data) throw new Error("POST /documents answered without a body");
+  const existed = response.status === 200;
+  if (isUploadResult(data)) {
+    return {
+      document: data.document,
+      existed,
+      proposalId: data.proposal_id ?? null,
+      proposalStatus: data.proposal_status ?? null,
+      aiUnavailable: options.autoRead && !data.proposal_id,
+    };
+  }
+  return { document: data, existed, proposalId: null, proposalStatus: null, aiUnavailable: options.autoRead };
 }
 
 /** What a person recognises a document by: its title, file name, or hash prefix. */
@@ -49,20 +95,37 @@ export function documentKind(document: Document): string {
   return `${DOCUMENT_TYPE[document.typing.type]}${date}`;
 }
 
-/** File input (plus drag and drop) that uploads each chosen file. */
-export function UploadControl({ onUploaded, label = "Datei hochladen" }: { onUploaded: (result: Uploaded) => void; label?: string }) {
+/**
+ * File input (plus drag and drop) that uploads each chosen file. With `prefill` it offers
+ * "Automatisch auslesen" (on by default) and "Enthält Mieterdaten" (phase-2.md §6.1, D16);
+ * without it (the inline upload of a form typed by hand) nothing is read automatically.
+ */
+export function UploadControl({
+  onUploaded,
+  label = "Datei hochladen",
+  prefill = false,
+}: {
+  onUploaded: (result: Uploaded) => void;
+  label?: string;
+  prefill?: boolean;
+}) {
   const inputId = useId();
+  const autoReadId = useId();
+  const tenantDataId = useId();
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [over, setOver] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const [autoRead, setAutoRead] = useState(true);
+  const [containsTenantData, setContainsTenantData] = useState(false);
 
   async function upload(files: FileList | null) {
     if (!files || files.length === 0) return;
     setBusy(true);
     setError(null);
+    const options: UploadOptions = prefill ? { autoRead, containsTenantData: autoRead && containsTenantData } : MANUAL_UPLOAD;
     try {
-      for (const file of Array.from(files)) onUploaded(await uploadDocument(file));
+      for (const file of Array.from(files)) onUploaded(await uploadDocument(file, options));
     } catch (caught) {
       setError(caught);
     } finally {
@@ -96,6 +159,24 @@ export function UploadControl({ onUploaded, label = "Datei hochladen" }: { onUpl
         onChange={(event: ChangeEvent<HTMLInputElement>) => void upload(event.target.files)}
       />
       <p className="muted hint">PDF, Foto, CSV, XML oder E-Mail; Datei hierher ziehen oder auswählen.</p>
+      {prefill ? (
+        <div className="row upload-options">
+          <label className="inline" htmlFor={autoReadId}>
+            <input id={autoReadId} type="checkbox" checked={autoRead} disabled={busy} onChange={(e) => setAutoRead(e.target.checked)} />
+            Automatisch auslesen
+          </label>
+          <label className="inline" htmlFor={tenantDataId}>
+            <input
+              id={tenantDataId}
+              type="checkbox"
+              checked={containsTenantData}
+              disabled={busy || !autoRead}
+              onChange={(e) => setContainsTenantData(e.target.checked)}
+            />
+            Enthält Mieterdaten
+          </label>
+        </div>
+      ) : null}
       <ErrorNotice error={error} />
     </div>
   );

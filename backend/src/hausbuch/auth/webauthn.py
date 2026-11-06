@@ -15,7 +15,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import webauthn
 from pydantic import JsonValue
@@ -37,11 +37,13 @@ from hausbuch.api.auth_context import AuthContext
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import app_user
 from hausbuch.schemas.auth import CredentialJson, Me, Passkey
+from hausbuch.schemas.events import EventType, UserEnrolled, UserPasskeyEnrolled, UserSignedIn
 from hausbuch.settings import Settings
 
 from . import lookup, tokens
 from .ceremony import CEREMONY_MAX_AGE_S, Ceremony, Subject, new_ceremony
 from .errors import AuthenticationFailed
+from .events import append_user_event
 from .invites import redeem_invite
 from .passkeys import NewCredential, add_passkey, credential_ids, record_assertion
 from .sessions import load_me, open_session
@@ -219,7 +221,31 @@ def enroll(
             label=label,
             now=now,
         )
-        return _open(conn, settings, invite.workspace_id, invite.user_id, passkey.id, now)
+        correlation = uuid4()
+        who = {"workspace_id": invite.workspace_id, "user_id": invite.user_id, "now": now}
+        append_user_event(
+            conn,
+            EventType.USER_ENROLLED,
+            UserEnrolled(invite_id=invite.id),
+            correlation_id=correlation,
+            **who,
+        )
+        append_user_event(
+            conn,
+            EventType.USER_PASSKEY_ENROLLED,
+            UserPasskeyEnrolled(passkey_id=passkey.id, label=passkey.label),
+            correlation_id=correlation,
+            **who,
+        )
+        return _open(
+            conn,
+            settings,
+            invite.workspace_id,
+            invite.user_id,
+            passkey.id,
+            now,
+            correlation_id=correlation,
+        )
 
 
 def login_options(settings: Settings, *, now: datetime) -> tuple[Options, Ceremony]:
@@ -272,7 +298,7 @@ def register_passkey(
         raise AuthenticationFailed("ceremony.subject")
     new = verify_registration(settings, credential, ceremony.challenge)
     with workspace_transaction(engine, auth.workspace_id) as conn:
-        return add_passkey(
+        passkey = add_passkey(
             conn,
             workspace_id=auth.workspace_id,
             user_id=auth.user_id,
@@ -280,6 +306,15 @@ def register_passkey(
             label=label,
             now=now,
         )
+        append_user_event(
+            conn,
+            EventType.USER_PASSKEY_ENROLLED,
+            UserPasskeyEnrolled(passkey_id=passkey.id, label=passkey.label),
+            workspace_id=auth.workspace_id,
+            user_id=auth.user_id,
+            now=now,
+        )
+        return passkey
 
 
 # --- Helpers ----------------------------------------------------------------------------
@@ -320,9 +355,22 @@ def _creation_options(
     return options, ceremony
 
 
-def _open(conn, settings: Settings, workspace_id, user_id, passkey_id, now) -> SignedIn:
+def _open(
+    conn, settings: Settings, workspace_id, user_id, passkey_id, now, *, correlation_id=None
+) -> SignedIn:
+    """Open the session and record user.signed_in (§10), in the caller's transaction: the
+    workspace is known from the passkey or the invite by then."""
     opened = open_session(
         conn, settings, workspace_id=workspace_id, user_id=user_id, passkey_id=passkey_id, now=now
+    )
+    append_user_event(
+        conn,
+        EventType.USER_SIGNED_IN,
+        UserSignedIn(passkey_id=passkey_id),
+        workspace_id=workspace_id,
+        user_id=user_id,
+        now=now,
+        correlation_id=correlation_id,
     )
     me = load_me(conn, workspace_id=workspace_id, user_id=user_id, session_id=opened.session.id)
     return SignedIn(token=opened.token, me=me)

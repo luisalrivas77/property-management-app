@@ -30,6 +30,7 @@ from hausbuch.api.app import engine_pool_options
 from hausbuch.api.logging import configure_logging
 from hausbuch.auth.sessions import SessionResolverImpl
 from hausbuch.db.session import UnsafeDatabaseRoleError, create_app_engine
+from hausbuch.jobs.worker import build_worker
 from hausbuch.settings import Settings, load_settings
 from hausbuch.storage import BlobStore, LocalBlobStore
 
@@ -81,7 +82,10 @@ def build_app(
     check_database_role_with_retry(engine)  # fail at startup, not on the first request
     store = blob_store if blob_store is not None else create_blob_store(settings)
     resolver = SessionResolverImpl(engine, settings)
-    return create_app(settings, engine, store, resolver, worker=None)  # phase 1: no jobs
+    # Phase 2: the job worker runs in this process (§3.7, §5.1); HAUSBUCH_RUN_WORKER=false
+    # builds none (a second instance that only serves requests, or a local API run).
+    worker = build_worker(settings, engine, store) if settings.run_worker else None
+    return create_app(settings, engine, store, resolver, worker=worker)
 
 
 def create_api_engine(settings: Settings) -> Engine:

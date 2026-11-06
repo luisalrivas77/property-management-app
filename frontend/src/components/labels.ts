@@ -9,10 +9,14 @@ import type {
   DocumentType,
   DuplicateStatus,
   EventType,
+  ExtractedValue,
+  ExtractionKind,
   ImportStatus,
   LinkTarget,
   PriceSplitSource,
   PropertyKind,
+  ProposalRecord,
+  ProposalStatus,
   RentChangeReason,
   RentModel,
   RetentionClass,
@@ -20,6 +24,10 @@ import type {
   StatementFormat,
   TenancyRole,
 } from "@/api/schemas";
+
+type Confidence = ExtractedValue["confidence"];
+type Check = NonNullable<ExtractedValue["checks"]>[number];
+type RecordMode = ProposalRecord["mode"];
 
 export const PROPERTY_KIND: Record<PropertyKind, string> = {
   etw: "Eigentumswohnung (ETW)",
@@ -181,6 +189,58 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "transaction.reallocated": "Zuordnung korrigiert",
   "rule.created": "Regel angelegt",
   "rule.disabled": "Regel deaktiviert",
+};
+
+// --- pre-fill proposals (Vorschläge, phase-2.md §6.4) ---
+
+export const PROPOSAL_STATUS: Record<ProposalStatus, string> = {
+  queued: "wartet auf das Auslesen",
+  running: "wird ausgelesen",
+  ready: "bereit zur Prüfung",
+  applied: "übernommen",
+  rejected: "verworfen",
+  superseded: "ersetzt",
+  failed: "konnte nicht gelesen werden",
+  blocked_tenant_data: "enthält Mieterdaten, nicht ausgelesen",
+};
+
+export const EXTRACTION_KIND: Record<ExtractionKind, string> = {
+  manual: "von Hand",
+  purchase_contract: "Kaufvertrag",
+  loan_contract: "Darlehensvertrag",
+  lease: "Mietvertrag",
+  handover_protocol: "Übergabeprotokoll",
+  deposit_record: "Kautionsnachweis",
+  invoice: "Rechnung",
+  bescheid: "Bescheid",
+  grundsteuerbescheid: "Grundsteuerbescheid",
+  wirtschaftsplan: "Wirtschaftsplan",
+  hausgeldabrechnung: "Hausgeldabrechnung",
+  zinsbescheinigung: "Zinsbescheinigung",
+  statement: "Kontoauszug",
+};
+
+/** The confidence dot's text (computed by code from the checks, D15). */
+export const CONFIDENCE: Record<Confidence, string> = {
+  high: "hoch",
+  medium: "mittel",
+  low: "niedrig",
+};
+
+/** What code verified about a value (ExtractedValue.checks). */
+export const CHECK: Record<Check, string> = {
+  cited: "Fundstelle im Dokument",
+  value_in_quote: "Wert steht im Zitat",
+  validates: "Format gültig",
+  derived: "berechnet",
+};
+
+/** The pill next to a record's title: what applying it does. */
+export const RECORD_MODE: Record<RecordMode, string> = {
+  create: "neu",
+  patch: "ändert Bestehendes",
+  correction: "Korrektur",
+  unchanged: "unverändert",
 };
 
 // --- bank accounts and statement imports (phase 2 step 3) ---
