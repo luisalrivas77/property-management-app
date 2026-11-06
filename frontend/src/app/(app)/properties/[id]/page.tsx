@@ -2,7 +2,8 @@
 
 // Immobilie (§9.1): one page, tabs as ?tab=… links. Stammdaten (with the two date
 // corrections), Eigentümer, Nebenkosten, Kaufpreisaufteilung, Einheiten, Darlehen (with the
-// Tilgungsplan per loan), Dokumente, Verlauf (History), Protokoll (audit trail).
+// Tilgungsplan per loan), Unterlagen (the document checklist per tax year), Dokumente,
+// Verlauf (History), Protokoll (audit trail).
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useCallback } from "react";
 
@@ -11,6 +12,7 @@ import { LinkedDocuments } from "@/components/documents";
 import { Breadcrumbs, Loading, TabBar, type Tab } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 
+import { ChecklistTab } from "./ChecklistTab";
 import { AuditTab, HistoryTab } from "./HistoryTabs";
 import { MasterDataTab } from "./MasterDataTab";
 import { OwnershipTab } from "./OwnershipTab";
@@ -24,6 +26,7 @@ type TabKey =
   | "aufteilung"
   | "einheiten"
   | "darlehen"
+  | "unterlagen"
   | "dokumente"
   | "verlauf"
   | "protokoll";
@@ -35,6 +38,7 @@ const TABS: Tab<TabKey>[] = [
   { key: "aufteilung", label: "Kaufpreisaufteilung" },
   { key: "einheiten", label: "Einheiten" },
   { key: "darlehen", label: "Darlehen" },
+  { key: "unterlagen", label: "Unterlagen" },
   { key: "dokumente", label: "Dokumente" },
   { key: "verlauf", label: "Verlauf" },
   { key: "protokoll", label: "Protokoll" },
@@ -79,6 +83,7 @@ function PropertyDetail() {
             {tab === "aufteilung" ? <SplitsTab property={data} onSelected={property.reload} /> : null}
             {tab === "einheiten" ? <UnitsTab propertyId={id} /> : null}
             {tab === "darlehen" ? <LoansTab propertyId={id} /> : null}
+            {tab === "unterlagen" ? <ChecklistTab propertyId={id} /> : null}
             {tab === "dokumente" ? <LinkedDocuments targetType="property" targetId={id} /> : null}
             {tab === "verlauf" ? <HistoryTab propertyId={id} /> : null}
             {tab === "protokoll" ? <AuditTab propertyId={id} /> : null}

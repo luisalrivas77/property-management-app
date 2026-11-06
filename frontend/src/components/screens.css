@@ -494,3 +494,81 @@ input[type="file"]::file-selector-button {
   border-radius: var(--radius);
   padding: 10px 12px;
 }
+
+/* --- Unterlagen: the document checklist (the "Paperwork for this return" card of
+   docs/mockups/04-tax-year.png) --- */
+
+.checklist-head h2 {
+  margin: 0;
+}
+
+.checklist-items {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+
+.checklist-item {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 0;
+  border-top: 1px solid var(--divider);
+}
+
+.checklist-item:first-child {
+  border-top: 0;
+}
+
+.checklist-item p {
+  margin: 0;
+}
+
+/* present = filled check; missing = "!"; expected = empty box; incomplete = "!" */
+.checklist-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  border-radius: var(--radius-tag);
+  border: 2px solid var(--warn);
+  color: var(--warn);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.checklist-present .checklist-icon {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.checklist-expected .checklist-icon {
+  border-color: var(--border-strong);
+}
+
+.checklist-title {
+  font-weight: 700;
+}
+
+.checklist-hint {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.checklist-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 4px !important;
+  font-size: 14px;
+}
+
+.checklist-foot {
+  margin: 12px 0 0;
+  font-size: 13px;
+}
