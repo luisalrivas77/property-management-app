@@ -2,7 +2,9 @@
 
 Nov 6, 2026 · spec draft (architect), checked by the orchestrator (prices, citations vs structured
 outputs, data residency and PDF limits against the live API docs); awaiting Luis's decisions in
-§16 (all five settled 6 Nov 2026; Luis's real camt export checked the same day, D33–D34), no implementation. Phase 1 is closed (Luis, 6 Nov 2026):
+§16 (all five settled 6 Nov 2026; Luis's real camt export checked the same day, D33–D34).
+Merged 6 Nov 2026 (PR #24); steps 1 and 3 are being built in parallel (status table below;
+this header said "no implementation" until step 3 landed its backend). Phase 1 is closed (Luis, 6 Nov 2026):
 documents upload, and the real data will be entered through the pre-fill this phase builds
 first.
 
@@ -16,6 +18,7 @@ implementation steps code against:
 | Rule fixtures | `backend/tests/fixtures/phase2/*.yaml` | Written in step 0 (PR #24): 14 files; `camt.yaml` and `csv_camt.yaml` deferred to the start of step 3, built from anonymised copies of Luis's real exports (checked 6 Nov 2026, D33) |
 | Eval cases | `backend/tests/evals/` (recorded) + `HAUSBUCH_EVAL_DIR` (real, outside the repo) | Not yet: recorded responses need a live API call, so they start in step 1 |
 | Rule tests | `backend/tests/rules/` | 9 modules in `tests/rules/`, skipped until each rule module lands |
+| Step 1 (pre-fill) | `ai/`, `jobs/`, `rules/prefill.py`, `rules/extraction_parse.py`, `services/proposals.py`, proposal routes, upload options and the Vorschlag section on `/documents/[id]` | Built in PR #26 (draft, not merged), backend and UI; reviewed (one round: F1 tenant mark not sticky across re-uploads, F2 queueing lock wedged a document on retry, F3 a job left running by a stopped instance was never retried, F4–F6 small; all fixed, `f6f9364`…`7b90445`). **AI stays off** (`HAUSBUCH_AI_ENABLED=false`) until Luis switches it on after deploy. Not yet: recorded evals (need one live run with the evals key, about $0.10, from Luis's computer); nothing sets status `running` (the UI shows `queued` until ready); a split PDF links only its first chunk's extract call; a non-transient bug after the model calls is retried like an outage (up to four paid reads before `failed`, review F7, left as is); a proposal blocked at upload has no records, so it can be neither applied nor rejected (it stays as the explanation). Deviations: an extra `GET /documents/{id}/proposals`; events are written by the service, not the worker; a duplicate upload answers with the pending proposal; apply defaults a unit label and a loan's property; the price split is recorded but not selected; the UI never sends `ai=true` (the server default decides), sends "behalten" as decision `skipped` and unchanged records as `skip`. The UI would like: whether AI is on (so the upload can hide the option), coded errors from apply (they come back as English text), and `floor_area_m2` optional on a unit (a Kaufvertrag rarely states it). A stalled job rescued by the worker's sweep uses up one of its three retries |
 
 **Done when** (ARCHITECTURE.md, phase 2, extended 6 Nov 2026): the real flat, its loan, its
 tenancy and the 2026 paperwork are entered **through pre-fill** with Luis only verifying
@@ -295,8 +298,8 @@ the spec PR at once (as step 3 did): `anthropic`, `procrastinate` (psycopg conne
 Procrastinate (3.10.0, Sep 2026; Python ≥ 3.10, PostgreSQL ≥ 13) on the same database.
 `api/app.py`'s `Worker` protocol is implemented by `jobs/worker.py` wrapping
 `procrastinate.App.run_worker_async(concurrency=settings.worker_concurrency)` and `stop()`;
-`main.py` passes it instead of `None`. Tasks (`jobs/tasks.py`), each idempotent and keyed by
-a `queueing_lock` so a double enqueue collapses:
+`main.py` passes it instead of `None`. Tasks (`jobs/tasks.py`), each idempotent and holding
+a `lock`, so two jobs for the same document or import never run at once:
 
 | Task | Lock | Retries | Dead letter |
 | --- | --- | --- | --- |
@@ -305,6 +308,15 @@ a `queueing_lock` so a double enqueue collapses:
 | `match_import(workspace_id, import_id)` and `match_transaction(workspace_id, transaction_id)` | `tx:{id}` | 3 | allocation set absent → inbox "Nicht zugeordnet" |
 | `rematch_on_evidence(workspace_id, document_id)` (new Wirtschaftsplan / invoice: re-run matching on open or rule-split transactions it affects) | `doc:{id}` | 3 | logged, inbox note |
 | `scrub_proposals()` periodic daily (D19) | — | — | — |
+
+*Amended in step 1 (review F2, F3, 6 Nov 2026):* this paragraph first said each task was also
+keyed by a `queueing_lock` so a double enqueue collapses. Procrastinate allows one *waiting*
+job per queueing lock, and a retry moves a running job back to waiting, so a retry while a
+re-run's job was already waiting failed inside Procrastinate and left the document's reads
+stuck for good. There is no queueing lock: a second job for the same document is harmless,
+because it finds no pending proposal and sends nothing. A job left running by an instance
+that stopped (every deploy restarts the container) is retried by a sweep in the worker, since
+Procrastinate's own stalled-worker pruning removes the worker but not its job.
 
 A job opens `workspace_transaction(workspace_id)` as the app role, exactly like a request;
 jobs never run in the request thread; requests enqueue and return 202 with the id to poll.
@@ -334,7 +346,7 @@ pages only.
   key is `value = None`. Each value is validated with the target field's Pydantic type;
   `value_in_quote` checks that the digits of an amount/date/IBAN or the normalized string
   occur in the cited text. A response that yields no parsable line is retried once with the
-  same prompt; the second failure is `failed` with `error_code = unparsable`.
+  same prompt; the second failure is `failed` with `error_code = ai.unparsable`.
 - **Match / categorize** (Sonnet, structured output `LlmMatchOutput`; Opus when the Sonnet
   answer has `ambiguous = true`). Input: the transaction, the property's open items, the
   tenancies' masked IBANs (only the one being matched unmasked to the last four), the loans,
@@ -362,9 +374,14 @@ for pre-fill (Luis is waiting at the form); it may serve `rematch_on_evidence` l
 ### 5.5 Privacy gate (D16) in the job
 
 1. `document_read` refuses to send when `settings.ai_enabled` is false → `failed`,
-   `error_code = ai_disabled`.
+   `error_code = ai.disabled` (this line first spelled it `ai_disabled`; the code uses the dotted
+   spelling of §12 everywhere).
 2. When the upload was marked `contains_tenant_data` and `workspace.ai_tenant_documents` is
    false → `blocked_tenant_data`; the detail page explains and offers manual typing.
+   *Amended in step 1 (review F1):* the mark is sticky per document: a proposal inherits it
+   from **any** earlier proposal of the same document, so uploading the same bytes again
+   without the mark does not unlock a read. The gate runs when the proposal is created
+   (nothing is enqueued) and again in the job, from the row.
 3. After classification, if `contains_tenant_data` or type/subtype ∈ {lease,
    handover_protocol, deposit_record, letter from a tenant} and the setting is false → stop,
    `blocked_tenant_data`; the classification's `ai_call` row is kept (it already happened);
@@ -673,6 +690,11 @@ Error codes added: `allocation.sum_mismatch`, `allocation.empty`, `statement.unr
 `statement.unknown_format`, `proposal.already_decided`, `proposal.not_ready`, `ai.disabled`,
 `ai.blocked_tenant_data`, `ai.unparsable`, `ai.refused`, `ai.too_many_pages`,
 `ai.unsupported_media_type`.
+
+Added by step 1 (PR #26): `ai.api_error` (a 4xx from the API other than 429, not retried),
+`ai.unavailable` (429, 5xx or network after the last retry), `ai.unreadable` (a PDF that cannot
+be opened: damaged, or encrypted with a password), `ai.internal_error` (not a model error: a
+bug or the database, after the retries ran out).
 
 ## 13. Done criterion as fixtures and evals
 
