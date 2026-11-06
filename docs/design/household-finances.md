@@ -1,6 +1,9 @@
 # Hausbuch as a household-finance app ("super app")
 
-**Status: design plan, not built. 6 Nov 2026 (architect, from the orchestrator's brief).** Nothing
+**Status: design plan, not built. 6 Nov 2026 (architect, from the orchestrator's brief).
+Agreed by Luis the same day, with two changes to the proposal: phases 4 and 5 stay before 6–9,
+and there are no bot wallets yet. His answers to §10 are under "Luis's answers" there; where an
+answer differs from a default further down, the answer wins.** Nothing
 here is a phase spec; each planned phase still starts with its own spec PR (schemas, a hand-written
 migration, YAML rule fixtures with worked examples) before any implementation. Every external
 fact (limits, prices, tax rules) was read on the date in the Sources section and is cited there;
@@ -434,7 +437,12 @@ stronger than it looks: **the 2026 Anlage SO is due with the same return as the 
 (31 July 2027 without an adviser).** So the crypto ledger and SO must exist by mid-2027 anyway,
 which puts them right after phase 3 and before the property projection. Proposed order:
 
-3 (Anlage V 2026) → **6** (all accounts and net worth) → **7** (crypto ledger) → **8** (KAP and
+**Decided 6 Nov 2026: Luis kept the original order, 3 → 4 → 5 → 6 → 7 → 8 → 9.** The
+consequence: the 2026 Anlage SO may not be ready from the app for the 31 Jul 2027 deadline (he
+files without an adviser), so the 2026 SO may be done by hand or from a tax tool's export, and the
+app takes over from 2027. The proposal below is kept for the record.
+
+Proposed: 3 (Anlage V 2026) → **6** (all accounts and net worth) → **7** (crypto ledger) → **8** (KAP and
 SO 2026) → 4 (property performance) → 5 (automation) → **9** (health and planning).
 
 Two things to consider: pull FinTS (phase 5) forward into phase 6 if monthly exports of three
@@ -496,6 +504,37 @@ wanted for the SO pot (it is a planning figure, not a filing need, so I would no
 | 8 | **Advice mode.** Own-use mode (explainer may name your existing accounts and plans) from the start? | Yes, `own_use` | `generic` only if someone else ever uses it |
 | 9 | **Budgets.** Do you want category budgets with alerts, or only the measured figures? | Measured only in phase 9; budgets optional later | A budget table and a monthly job |
 | 10 | **Steuerberater for 2026?** The reform and the LP/perps questions are the kind of thing a one-off consultation settles | One consultation before filing 2026, with the Steuerreport as the input | With an adviser the 2026 deadline moves to 30 Apr 2028 (standard rule; verify in the phase 8 spec), which relaxes the phase 7/8 timing |
+
+**Luis's answers (6 Nov 2026)**
+
+1. **Bot wallets:** none yet; the bots do not trade real money. When they do, each bot wallet is
+   tracked as one position plus the bot's own trade log (the default above).
+2. **Chains:** two self-custody wallets. An old **Solana** wallet (Luis's), used a lot for DeFi,
+   read in full through Helius. A **BNB Chain cold wallet** that only holds coins bought on BISON:
+   its balance comes from a free BNB Chain RPC node (one balance call, no Etherscan paid plan),
+   and its lots come from the BISON export through the withdrawal's transfer link. If coins ever
+   leave that wallet, the app flags that its full history is now needed. Ethereum and Arbitrum
+   stay in the registry for later; Base and OP are not needed now.
+3. **Owners:** quirion depot joint (50/50); BISON account in Luis's wife's name; Solana wallet
+   Luis's; BNB cold wallet joint 50/50, because the euros that bought the coins came from the
+   joint account (the ownership record stores that reason). BISON reports under the wife's name
+   (DAC8), so the 50/50 split of that wallet's gains is a position stated on the return; the SO
+   tab shows it next to BISON's own figures.
+4. **Wrap, bridge, LP:** defaults accepted; Luis used them "a lot", so expect each new pattern
+   once in the inbox, then a learned rule. LP stays `undecided` with both results shown until he
+   picks a position.
+5. **Prices:** daily close, one source per asset, the trade's own euro leg first.
+6. **quirion documents:** monthly statements, quarterly reports, dividend notes, the annual tax
+   certificate, and per-trade confirmations for purchases and rebalancing ("they send a lot of
+   documents"). Phase 6 builds an extraction kind for each, with the trade confirmations as the
+   source of lot dates and prices.
+7. **History:** bank accounts from 1 Jan 2026. Crypto needs the full history of the Solana wallet
+   and the full BISON export, because coins sold in 2026 need their original purchase dates and
+   costs; movements before 2026 are used for lots only.
+8. **Advice mode:** `own_use`.
+9. **Budgets:** none; measured figures only.
+10. **Adviser:** none; Luis files 2026 himself (deadline 31 Jul 2027). The Steuerreport export
+    still documents the settings and positions taken (BMF letter), in case the Finanzamt asks.
 
 **Do now, regardless (no code needed):** (a) request the BISON transaction history for every year
 since the account opened and keep the files (the BMF letter puts missing exchange data on the

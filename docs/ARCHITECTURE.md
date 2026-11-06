@@ -4,7 +4,7 @@ Nov 4, 2026 · Luis
 
 ## Purpose and scope
 
-Hausbuch is a single-household landlord workspace, built SaaS-ready, that turns bank statements, invoices and letters into a traceable property ledger, a draft Anlage V each year, and a running profit view through to sale.
+Hausbuch is a single-household finance workspace, built SaaS-ready. Its first module, the landlord ledger, turns bank statements, invoices and letters into a traceable property ledger, a draft Anlage V each year, and a running profit view through to sale; planned phases 6–9 add every account and asset of the household, the capital-income and crypto forms (Anlage KAP, Anlage SO), and financial health (agreed 6 Nov 2026, design in `docs/design/household-finances.md`).
 
 **In scope (v1)**
 
@@ -23,6 +23,7 @@ Hausbuch is a single-household landlord workspace, built SaaS-ready, that turns 
 - Tenant-facing portal, rent collection or payments
 - Betriebskostenabrechnung generation (data is captured so it can be added in phase 4)
 - Tax advice: the app drafts and explains; the user decides. No DATEV export
+- Trading, payments or any write access to an account; naming investment products the household does not already hold (no Anlageberatung)
 
 ## Architecture principles
 
@@ -238,6 +239,7 @@ In v1 the job worker runs inside the API process (a FastAPI lifespan task) in th
 | Files | S3-compatible object storage in an EU region | Cheap, immutable originals, signed URLs |
 | AI | Claude API: Haiku 5.5 to classify and explain, Sonnet 5.5 to extract and match, Opus 5.5 for ambiguous matches; citations for extraction, structured outputs for classification and matching; one `ModelClient` interface so an EU-hosted route (Bedrock, Vertex) can replace it | Schema-valid JSON, tiering keeps cost per statement low |
 | Bank | CSV/CAMT/PDF uploads (phase 2), FinTS via python-fints for your own accounts (phase 5); licensed aggregator only if it goes SaaS | Value first; FinTS needs only a free product registration; all behind one BankSource interface |
+| Market and chain data (planned, phases 6–8) | Helius (Solana), Etherscan API V2 (EVM; free tier covers Ethereum, Arbitrum, Polygon, Linea), plain RPC for balance-only wallets, CoinGecko + Kraken public daily prices, ECB FX; behind `ChainSource` and `PriceSource` | Free tiers cover own use; providers are non-EU and must be replaced or contracted for SaaS |
 | Hosting | Scaleway (EU): Serverless Containers for API+worker and web, Managed PostgreSQL on a private network, Object Storage; one-off admin commands run from the operator's computer with `uv` (decided 5 Nov 2026) | EU-only vendor, DPA, data and backups; about €20/month ex VAT at this load; compatibility tested 5 Nov 2026 |
 | Tests | pytest for rules, golden-file tests for extraction evals, Playwright for flows | Rules and prompts change safely |
 
@@ -251,6 +253,7 @@ The app holds bank data, tenant personal data and tax records, so it is built as
 - Encryption at rest (storage + DB) and in transit; IBANs stored masked plus a keyed hash for matching
 - Passkey login (decided 5 Nov 2026); short-lived sessions; FinTS PIN and any bank tokens in a secrets manager, never in the DB
 - Object storage private; files served via short-lived signed URLs
+- Wallets are tracked by public address only; no private keys, seeds or exchange trading keys are ever accepted; chain and price provider keys live in the secrets manager; addresses and hashes are masked in events and never sent to the model (agreed 6 Nov 2026, phases 6–9)
 - Audit log = the Event table; admin actions and AI decisions included (sign-in and passkey actions go to the server log in phase 1 and join the Event table in the phase 2 spec PR, decided 5 Nov 2026)
 - Database reachable on the private network for the app, plus a public endpoint that accepts only the operator's IP for the rare admin commands; `CONNECT` revoked from `PUBLIC` and granted to the two Hausbuch roles only
 
@@ -273,7 +276,7 @@ Retention periods are conservative defaults, not legal advice; confirm with a St
 
 ## Delivery phases
 
-Five phases, each shippable on its own; phase 3 is the first one that saves real time at tax season, so phases 1–3 are the MVP.
+Nine phases, each shippable on its own; phase 3 is the first one that saves real time at tax season, so phases 1–3 are the MVP of the landlord module, and phases 6–9 (planned, agreed 6 Nov 2026) extend it to the whole household.
 
 | Phase | Delivers | Done when |
 | --- | --- | --- |
@@ -282,12 +285,12 @@ Five phases, each shippable on its own; phase 3 is the first one that saves real
 | 3 · Tax year | Rule set 2026, Anlage V draft with source links, missing-document checklist (extends the phase 1 checklist's requirement list with rule-derived items), 15% limit tracker, ELSTER field sheet and yearly CSV + PDF archive | The 2026 draft reproduces a hand-calculated return to the euro, and every line opens its sources |
 | 4 · Performance | Actuals, projection, profit bridge, §23 sale check, IRR, marginal rate derived from expected income; Betriebskostenabrechnung generator | Projection matches a spreadsheet model for 3 scenarios; one settlement generated from real 2026 data |
 | 5 · Automation | FinTS sync for your own Sparkasse account (pushTAN), email-in address, deadline reminders, rule set 2027 | Statements arrive without manual upload; reminders fire for Grundsteuer and settlement deadlines |
-| 6 · Konten & Vermögen (proposed, not agreed) | Every household account with owner shares, quirion via documents, BISON via CSV, prices and valuations, household overview with net worth | See `docs/design/household-finances.md` §9.2 |
-| 7 · Krypto-Ledger (proposed, not agreed) | Wallets on Ethereum, its L2s, BNB Chain and Solana by public address, internal transfers, tax lots, holding-period countdown, year-end holdings statement | See `docs/design/household-finances.md` §9.2 |
-| 8 · Steuern KAP + SO (proposed, not agreed) | Anlage KAP and Anlage SO 2026 as rule sets, one tax screen and field sheet for all forms | See `docs/design/household-finances.md` §9.2 |
-| 9 · Finanzgesundheit & Planung (proposed, not agreed) | Health metrics, household plan, AI explanations limited to amounts and asset classes | See `docs/design/household-finances.md` §9.2 |
+| 6 · Konten & Vermögen (planned) | Account kinds with owner shares, private Sparkasse accounts with a household taxonomy, generalized internal-transfer matcher, quirion depot via document extraction (statements, quarterly reports, dividend notes, trade confirmations, tax certificate), BISON CSV import, assets, prices and valuations, Konten and Anlagen screens, household overview | Every account in with an owner share; second month ≥ 80 % auto-categorized; all internal transfers linked, zero counted as income or cost; one month-end net worth equals a spreadsheet to the euro |
+| 7 · Krypto-Ledger (planned) | Chain registry, Helius (Solana) and Etherscan V2 `ChainSource`, balance-only wallets via RPC, wallet sync with on-chain balance reconciliation, movement categories, protocol decoders as data, lots with FIFO per wallet and the holding-period countdown, year-end holdings statement | Every wallet reconciles to its balance; the Solana wallet's full history classified with ≥ 90 % auto on the second sync; the 31 Dec 2026 statement exists for every wallet and BISON |
+| 8 · Steuern KAP + SO (planned) | Rule set SO (BMF letter of 6 Mar 2025), KAP from Jahressteuerbescheinigungen, Termingeschäfte, per-owner Freigrenzen and Pauschbetrag, Steuern tabs, three-form field sheet, Steuerreport export | A year's SO draft reproduces a hand calculation to the euro with every line opening its lots and prices; the KAP verdict matches a hand check |
+| 9 · Finanzgesundheit & Planung (planned) | Net worth, savings rate, reserve months, debt ratios, LTV, investable surplus; household plan with levers; AI explanation limited to amounts, asset classes and existing accounts, with a validator; `advice_mode` | Metrics match a spreadsheet for three months; the validator rejects every instrument name in the eval set |
 
-Phases 6–9 are a design proposal from 6 Nov 2026 (`docs/design/household-finances.md`): not agreed, not specced, not built. The proposal also moves phases 4 and 5 behind 8; until Luis decides, the order above stands.
+Phases 6–9 were agreed on 6 Nov 2026 in this order, after 4 and 5 (Luis kept the original order). Design: `docs/design/household-finances.md`; each still starts with its own spec PR; none is specced or built. Because they come after phase 5, the 2026 Anlage SO may not come from the app in time for the 31 Jul 2027 deadline; it is then prepared by hand or from a tax tool's export, and the app takes over from 2027.
 
 Each phase starts with a short spec PR (schemas, rule fixtures, eval cases) before agents write implementation code.
 
@@ -336,4 +339,9 @@ All open questions were settled on 4 Nov 2026; the sections above reflect them. 
 | Eval set (6 Nov 2026) | Recorded synthetic evals run in CI; real documents are evaluated from Luis's computer, never committed | Refines "an eval set of real (anonymized) statements … in CI" |
 | AI processing location and account (6 Nov 2026) | All documents are processed with `inference_geo = us` (one named location, +10 % price); a `hausbuch` Console workspace with a $25 monthly limit for the live app and a `hausbuch-evals` workspace with a $10 limit for runs from Luis's computer | `HAUSBUCH_AI_INFERENCE_GEO` defaults to `us`; two API keys; phase 2 spec §11.3 |
 | Allocation tax year (6 Nov 2026) | An allocation stores no tax year; phase 3's rule set derives it (the §11 ten-day rule) from booking and value date, service period and the recurring flag | Keeps a tax year reproducible under the rule set that applies to it; phase 2 spec D31 (from the step 0 review) |
-| Household finances (6 Nov 2026, proposed) | Design plan for growing Hausbuch into the household's finance workspace (all accounts, crypto wallets, Anlage KAP and SO, financial health): `docs/design/household-finances.md` | Nothing yet: its proposed scope line, phase order and Decisions rows (§11) are applied only once Luis answers its open questions (§10) |
+| Household finances (6 Nov 2026) | Hausbuch grows into the household's finance workspace; the landlord ledger is its first module; phases 6–9 follow phases 4 and 5 (Luis kept the original order) | Scope line; sidebar grows to Übersicht, Posteingang, Konten, Anlagen, Haushalt, Immobilien, Steuern, Planung, Dokumente; one inbox and one tax screen for all forms (`docs/design/household-finances.md` §1) |
+| Household accounts and owners (6 Nov 2026) | Every account carries owner shares: quirion depot joint 50/50; BISON in Luis's wife's name; the old Solana wallet Luis's; the BNB cold wallet joint 50/50 because its coins were paid from the joint account (reason stored with the record) | Per-owner Freigrenzen and Pauschbetrag; the SO tab shows BISON's own (wife's-name) figures next to the split |
+| Chains and wallets (6 Nov 2026) | Solana wallet read in full via Helius; the BNB cold wallet only by balance via a free RPC node, its lots from the BISON export through the transfer link; Ethereum and Arbitrum stay in the chain registry; no Etherscan paid plan needed now; no bot wallets yet (when the bots trade real money: one balance plus the bot's trade log) | Chain registry rows; a balance-only wallet kind; a flag when coins leave a balance-only wallet |
+| Crypto tax treatment (6 Nov 2026) | Rule set SO per year as data: FIFO per wallet and token, one-year holding period, €1,000 Freigrenze per spouse, §22 Nr. 3 rewards with €256, perps as Termingeschäfte on KAP; wrapping and canonical bridges are not disposals; LP deposits stay `undecided` with both results shown until Luis picks a position; daily close prices, the trade's own euro leg first | Phase 8 spec; the Steuerreport export attaches settings and positions |
+| History range (6 Nov 2026) | Bank accounts from 1 Jan 2026; crypto with full history (Solana wallet, full BISON export), used before 2026 for lots only | Phase 6 and 7 imports |
+| Advice and budgets (6 Nov 2026) | `advice_mode = own_use`: the AI may name existing accounts and plans, never a new product; no budgets, measured figures only; no account write access, ever | Phase 9 spec; non-goals line |
