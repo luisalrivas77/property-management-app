@@ -3900,7 +3900,8 @@
           "lease",
           "handover_protocol",
           "deposit_record",
-          "cost_basis_evidence"
+          "cost_basis_evidence",
+          "grundsteuerbescheid"
         ],
         "title": "DocumentSubtype",
         "description": "Finer typing where retention or the AfA basis depends on it."

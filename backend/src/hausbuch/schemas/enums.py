@@ -91,6 +91,8 @@ class DocumentSubtype(StrEnum):
     # Evidence of acquisition or production cost in the AfA basis: Nebenkosten invoices,
     # renovation invoices capitalised as anschaffungsnahe Herstellungskosten (spec amendment 1).
     COST_BASIS_EVIDENCE = "cost_basis_evidence"
+    # The property's Grundsteuerbescheid (type bescheid); a tax record (spec amendment 3).
+    GRUNDSTEUERBESCHEID = "grundsteuerbescheid"
 
 
 class ExtractionSource(StrEnum):

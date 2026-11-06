@@ -90,6 +90,7 @@ export const DOCUMENT_SUBTYPE: Record<DocumentSubtype, string> = {
   handover_protocol: "Übergabeprotokoll",
   deposit_record: "Kautionsnachweis",
   cost_basis_evidence: "Nachweis Anschaffungskosten",
+  grundsteuerbescheid: "Grundsteuerbescheid",
 };
 
 export const LINK_TARGET: Record<LinkTarget, string> = {

@@ -13,7 +13,8 @@ from uuid import UUID
 import yaml
 from pydantic import Field, model_validator
 
-from hausbuch.schemas.common import Fraction, Schema
+from hausbuch.schemas.checklist import ChecklistFacts, ChecklistItem
+from hausbuch.schemas.common import Fraction, Schema, TaxYear
 from hausbuch.schemas.document import (
     DocumentRetentionInput,
     RetentionPolicy,
@@ -215,6 +216,22 @@ class ValidationFixture(Schema):
     corrections: list[CorrectionCase]
 
 
+# --- document_checklist.yaml ---------------------------------------------------
+
+
+class ChecklistCase(Lenient):
+    tax_year: TaxYear
+    today: date
+    facts: ChecklistFacts
+    expect: list[ChecklistItem]
+
+
+class ChecklistFixture(Schema):
+    ids: dict[str, UUID]
+    bases: dict[str, dict]  # YAML anchors merged into the cases' facts
+    cases: list[ChecklistCase]
+
+
 MODELS: dict[str, type[Schema]] = {
     "loan_schedule": LoanFixture,
     "rent_at": RentFixture,
@@ -222,6 +239,7 @@ MODELS: dict[str, type[Schema]] = {
     "retention": RetentionFixture,
     "iban": IbanFixture,
     "validation": ValidationFixture,
+    "document_checklist": ChecklistFixture,
 }
 
 
