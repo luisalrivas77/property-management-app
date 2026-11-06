@@ -271,13 +271,13 @@ test("an existing property: übernehmen / behalten per field, unchanged records 
   await page.goto(`/documents/${documentId}`);
   const form = vorschlag(page).getByRole("form", { name: "Vorschlag prüfen" });
   const property = form.getByRole("region", { name: "Immobilie", exact: true });
-  await expect(property.getByLabel("Baujahr")).toHaveValue("1995");
+  await expect(property.getByLabel("Baujahr", { exact: true })).toHaveValue("1995");
   await expect(property).toContainText("Gespeichert: 1994");
   await expect(form.getByRole("region", { name: "Einheit WE 3" })).toContainText("Stimmt mit dem Gespeicherten überein");
 
   // Keep the stored build year; take the city.
   await property.getByRole("radiogroup", { name: "Baujahr: übernehmen oder behalten" }).getByLabel("behalten").check();
-  await expect(property.getByLabel("Baujahr")).toBeDisabled();
+  await expect(property.getByLabel("Baujahr", { exact: true })).toBeDisabled();
   await form.getByRole("button", { name: "Übernehmen" }).click();
   await expect(form.getByText("Über diesen Vorschlag wurde schon entschieden (übernommen oder verworfen).")).toBeVisible();
 
