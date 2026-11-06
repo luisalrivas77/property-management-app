@@ -29,6 +29,12 @@ only in a spec PR, never to make an implementation pass.
 - Phase 1, vault and ledger: `docs/phases/phase-1.md` (closed 6 Nov 2026)
 - Phase 2, AI inbox with master-data pre-fill first: `docs/phases/phase-2.md` (spec draft)
 
+Design plans for later phases (proposals, not specs; nothing in them is agreed until the
+Decisions table says so):
+
+- Household finances, phases 6–9 (all accounts, crypto, Anlage KAP and SO, financial health):
+  `docs/design/household-finances.md` (proposed 6 Nov 2026, open questions in §10)
+
 ## UI mockups
 
 Six screen mockups (PNG + static HTML) live in `docs/mockups/`. Before building or changing a

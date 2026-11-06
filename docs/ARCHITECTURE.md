@@ -282,6 +282,12 @@ Five phases, each shippable on its own; phase 3 is the first one that saves real
 | 3 · Tax year | Rule set 2026, Anlage V draft with source links, missing-document checklist (extends the phase 1 checklist's requirement list with rule-derived items), 15% limit tracker, ELSTER field sheet and yearly CSV + PDF archive | The 2026 draft reproduces a hand-calculated return to the euro, and every line opens its sources |
 | 4 · Performance | Actuals, projection, profit bridge, §23 sale check, IRR, marginal rate derived from expected income; Betriebskostenabrechnung generator | Projection matches a spreadsheet model for 3 scenarios; one settlement generated from real 2026 data |
 | 5 · Automation | FinTS sync for your own Sparkasse account (pushTAN), email-in address, deadline reminders, rule set 2027 | Statements arrive without manual upload; reminders fire for Grundsteuer and settlement deadlines |
+| 6 · Konten & Vermögen (proposed, not agreed) | Every household account with owner shares, quirion via documents, BISON via CSV, prices and valuations, household overview with net worth | See `docs/design/household-finances.md` §9.2 |
+| 7 · Krypto-Ledger (proposed, not agreed) | Wallets on Ethereum, its L2s, BNB Chain and Solana by public address, internal transfers, tax lots, holding-period countdown, year-end holdings statement | See `docs/design/household-finances.md` §9.2 |
+| 8 · Steuern KAP + SO (proposed, not agreed) | Anlage KAP and Anlage SO 2026 as rule sets, one tax screen and field sheet for all forms | See `docs/design/household-finances.md` §9.2 |
+| 9 · Finanzgesundheit & Planung (proposed, not agreed) | Health metrics, household plan, AI explanations limited to amounts and asset classes | See `docs/design/household-finances.md` §9.2 |
+
+Phases 6–9 are a design proposal from 6 Nov 2026 (`docs/design/household-finances.md`): not agreed, not specced, not built. The proposal also moves phases 4 and 5 behind 8; until Luis decides, the order above stands.
 
 Each phase starts with a short spec PR (schemas, rule fixtures, eval cases) before agents write implementation code.
 
@@ -330,3 +336,4 @@ All open questions were settled on 4 Nov 2026; the sections above reflect them. 
 | Eval set (6 Nov 2026) | Recorded synthetic evals run in CI; real documents are evaluated from Luis's computer, never committed | Refines "an eval set of real (anonymized) statements … in CI" |
 | AI processing location and account (6 Nov 2026) | All documents are processed with `inference_geo = us` (one named location, +10 % price); a `hausbuch` Console workspace with a $25 monthly limit for the live app and a `hausbuch-evals` workspace with a $10 limit for runs from Luis's computer | `HAUSBUCH_AI_INFERENCE_GEO` defaults to `us`; two API keys; phase 2 spec §11.3 |
 | Allocation tax year (6 Nov 2026) | An allocation stores no tax year; phase 3's rule set derives it (the §11 ten-day rule) from booking and value date, service period and the recurring flag | Keeps a tax year reproducible under the rule set that applies to it; phase 2 spec D31 (from the step 0 review) |
+| Household finances (6 Nov 2026, proposed) | Design plan for growing Hausbuch into the household's finance workspace (all accounts, crypto wallets, Anlage KAP and SO, financial health): `docs/design/household-finances.md` | Nothing yet: its proposed scope line, phase order and Decisions rows (§11) are applied only once Luis answers its open questions (§10) |
