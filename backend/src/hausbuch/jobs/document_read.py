@@ -228,6 +228,16 @@ def _load(
     return _Original(target, media_type or "", data, allowed, tenant)
 
 
+def _tenant_documents_allowed(deps: JobDeps, workspace_id: UUID) -> bool:
+    """The workspace's D16 setting as it is now (gate 3 re-reads it before extraction)."""
+    with workspace_transaction(deps.engine, workspace_id) as conn:
+        return conn.execute(
+            select(workspace_table.c.ai_tenant_documents).where(
+                workspace_table.c.id == workspace_id
+            )
+        ).scalar_one()
+
+
 def _target_proposal(conn, document_id: UUID, proposal_id: UUID) -> tuple[UUID, bool] | None:
     """The proposal this run serves, with its tenant-data flag (D16 gate 2, read from the
     row and never from the job's arguments): the given one while it is pending; otherwise the
@@ -286,6 +296,13 @@ def _read(
 
     tenant = classification.contains_tenant_data or classification.subtype in TENANT_SUBTYPES
     if tenant and not original.tenant_documents_allowed:  # gate 3
+        _finish(deps, workspace_id, original.proposal_id, classification, classify_id)
+        return
+    # The setting was read before the classify call, which can take minutes: read it again,
+    # so a workspace that has just turned tenant documents off sends none to extraction.
+    if (tenant or original.contains_tenant_data) and not _tenant_documents_allowed(
+        deps, workspace_id
+    ):
         _finish(deps, workspace_id, original.proposal_id, classification, classify_id)
         return
     kind = extraction_kind(classification.type, classification.subtype)

@@ -5,6 +5,7 @@ replaced by recorders, so the tests assert exactly what the job hands over.
 All model responses here are synthetic (hausbuch.ai.fake), never recordings of the real API.
 """
 
+import dataclasses
 import inspect
 import io
 import json
@@ -328,6 +329,48 @@ def test_gate_3_open_when_the_workspace_allows_tenant_documents(setup, recorder,
     [(_, _, kw)] = recorder.results
     assert kw["blocked_tenant_data"] is False
     assert kw["values"]["cold_rent"].value == "850.00"
+
+
+class _TurnsTheSettingOff(FakeModelClient):
+    """Turns the workspace's ai_tenant_documents off while the classify call is out."""
+
+    def __init__(self, engine, ws, script) -> None:
+        super().__init__(script)
+        self.engine, self.ws = engine, ws
+
+    def send(self, request):
+        response = super().send(request)
+        if len(self.requests) == 1:
+            with workspace_transaction(self.engine, self.ws) as conn:
+                conn.execute(
+                    update(workspace_table)
+                    .where(workspace_table.c.id == self.ws)
+                    .values(ai_tenant_documents=False)
+                )
+        return response
+
+
+@pytest.mark.parametrize(
+    ("answer", "flagged"),
+    [(_classify(), True), (_classify("contract", "lease"), False)],
+    ids=["flagged-upload", "lease"],
+)
+def test_the_setting_is_read_again_before_extraction(setup, recorder, app_engine, answer, flagged):
+    """Turned off while the document was being classified: a tenant document (the upload's
+    flag or the classifier's result) is blocked after classification, with no extract call."""
+    deps, ws, doc, proposal = setup(_pdf(1), FakeModelClient(), tenant_data=flagged)
+    _allow_tenant_documents(app_engine, ws)
+    script = [text_response(answer), cited_response(INVOICE_ANSWER)]
+    client = _TurnsTheSettingOff(app_engine, ws, script)
+    deps = dataclasses.replace(deps, model_client=client)
+    _run(deps, ws, doc, proposal)
+
+    assert len(client.requests) == 1  # classify only
+    assert recorder.failures == []
+    [(_, proposal_id, kw)] = recorder.results
+    assert proposal_id == proposal
+    assert kw["blocked_tenant_data"] is True
+    assert kw["values"] is None and kw["extract_call_id"] is None
 
 
 def test_type_without_extraction_is_typing_only(setup, recorder, app_engine):
