@@ -336,7 +336,7 @@ def _extract(
         request = extract_request(deps.settings, kind, block)
         values, call_id = _extract_chunk(deps, workspace_id, document_id, request, kind, start)
         first_id = first_id or call_id
-        _merge(merged, values)
+        merge_values(merged, values)
     assert first_id is not None
     fields = EXTRACTION_MODELS[kind].model_fields
     return {name: merged.get(name, ExtractedValue.missing()) for name in fields}, first_id
@@ -363,7 +363,7 @@ def _extract_chunk(
 _RANK = {"low": 0, "medium": 1, "high": 2}
 
 
-def _merge(merged: dict[str, ExtractedValue], values: dict[str, ExtractedValue]) -> None:
+def merge_values(merged: dict[str, ExtractedValue], values: dict[str, ExtractedValue]) -> None:
     """A stated value replaces a missing one; a later chunk's value replaces an earlier
     stated one only with strictly higher confidence (the first statement wins ties)."""
     for key, value in values.items():

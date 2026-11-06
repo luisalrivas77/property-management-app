@@ -162,10 +162,10 @@ class AnthropicModelClient:
             raise ModelCallError(
                 retryable=True, status=None, duration_ms=_elapsed_ms(started)
             ) from None
-        return _to_response(message, _elapsed_ms(started))
+        return message_to_response(message, _elapsed_ms(started))
 
 
-def _to_response(message: Any, duration_ms: int) -> ModelResponse:
+def message_to_response(message: Any, duration_ms: int) -> ModelResponse:
     blocks: list[CitedTextBlock] = []
     for block in message.content:
         if block.type != "text":
