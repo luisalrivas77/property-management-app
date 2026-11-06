@@ -234,6 +234,11 @@ and reviewed by a reviewer agent; every review finding was fixed or is listed be
      the bucket before committing its row, and the file came back through a signed URL.
      Still open from the first-deploy checks: a signed-in 25 MiB upload, Q16, Q15 and the
      allow-list check from another network.
+   - 6 Nov 2026: the allow-list check passes (the database's public endpoint answers from
+     Luis's home IP and gives no response from a phone hotspot), and the signed-in 25 MiB
+     upload is dropped by decision (largest real document about 300 KB; results in
+     `deploy/scaleway.md`). Still open: Q16 (If-None-Match on the bucket), Q15 (SIGTERM
+     timeout) and the real data.
 
 ### Known gaps (not yet built)
 

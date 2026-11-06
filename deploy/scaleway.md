@@ -674,9 +674,9 @@ image. Keep the order: grace < uvicorn's timeout < the platform's kill timeout.
 | --- | --- | --- |
 | Q16 If-None-Match honoured on the bucket | | |
 | Q13 platform body limit (25 MiB straight to the API) | 5 Nov 2026 | Passes: a 25 MiB multipart POST to `/api/documents` without a session got the app's 401 in 5.4 s, so the platform let the whole body through. The same body through `hausbuch.rcubed.fr` (web container proxy) got 401 in 6.5 s, so the `next.config.ts` limits hold too. |
-| Q13 end-to-end 25 MiB upload through the web container | | |
+| Q13 end-to-end 25 MiB upload through the web container | 6 Nov 2026 | Not run, by decision: the largest real document is about 300 KB, the platform limit above already passes, and a signed-in upload of a real document stored and opened correctly. Run it only if large scans appear. |
 | Q15 SIGTERM → kill timeout | | |
-| Public endpoint reachable only from your IP (from another network, `psql` times out) | | |
+| Public endpoint reachable only from your IP (from another network, `psql` times out) | 6 Nov 2026 | Passes: from home (the allow-listed IP) `pg_isready` against the public endpoint answers "accepting connections"; from a phone hotspot (a different IPv4, checked with `curl -4 ifconfig.me`) it got "no response" twice with a 10 s timeout. `pg_isready` needs no credentials, so no secret was used. |
 
 ## Deploying an update
 
