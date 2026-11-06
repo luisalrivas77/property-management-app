@@ -24,7 +24,14 @@ from uuid import UUID
 from pydantic import Field, JsonValue, model_validator
 
 from .ai import ConfidenceLevel
-from .allocation import AllocationCategory, AllocationMethod, RuleMatcher, SplitMethod
+from .allocation import (
+    HMAC_PATTERN,
+    AllocationCategory,
+    AllocationMethod,
+    HmacHex,
+    MatchingRuleCreate,
+    SplitMethod,
+)
 from .bank import StatementFormat
 from .common import (
     Area,
@@ -437,16 +444,39 @@ class TransactionReallocated(TransactionAllocated):
 
 
 class RuleRecorded(Schema):
-    """rule.created / .disabled. The matcher holds an IBAN hash and patterns, never an
-    amount (D25)."""
+    """rule.created / .disabled. Never an amount (D25), and never a pattern: a pattern is
+    free text the user typed or the model inferred (it can name a person), and events are
+    kept for good. The full matcher stays on the matching_rule row; the event records the
+    IBAN hash, the sign and which patterns exist."""
 
-    matcher: RuleMatcher
+    counterparty_iban_hmac: HmacHex | None = Field(default=None, pattern=HMAC_PATTERN)
+    amount_sign: Literal["credit", "debit"] | None = None
+    has_name_pattern: bool
+    has_purpose_pattern: bool
     split_method: SplitMethod
     category: AllocationCategory | None = None
     property_id: UUID | None = None
     tenancy_id: UUID | None = None
     loan_id: UUID | None = None
     created_from_allocation_id: UUID | None = None
+
+    @model_validator(mode="after")
+    def _matches_something(self) -> Self:
+        if not (self.counterparty_iban_hmac or self.has_name_pattern or self.has_purpose_pattern):
+            raise ValueError("a rule matches on an IBAN hash, a name pattern or a purpose pattern")
+        return self
+
+    @classmethod
+    def of(cls, rule: MatchingRuleCreate) -> Self:
+        """The event payload for a rule: its matcher reduced to hash, sign and pattern flags."""
+        m = rule.matcher
+        return cls(
+            counterparty_iban_hmac=m.counterparty_iban_hmac,
+            amount_sign=m.amount_sign,
+            has_name_pattern=m.counterparty_name_pattern is not None,
+            has_purpose_pattern=m.purpose_pattern is not None,
+            **rule.model_dump(exclude={"matcher"}),
+        )
 
 
 # --- Catalog -----------------------------------------------------------------

@@ -1,11 +1,13 @@
 """Every rule fixture conforms to the spec schemas. Runs before any rule exists."""
 
 from decimal import Decimal
+from typing import get_args
 
 import fixture_models as phase1
 import fixture_models_phase2 as phase2
 import pytest
 from fixture_models import RentFixture
+from pydantic import ValidationError
 
 from hausbuch.schemas.allocation import (
     MatchingRule,
@@ -13,7 +15,7 @@ from hausbuch.schemas.allocation import (
     RoutingDecision,
     RuleMatcher,
 )
-from hausbuch.schemas.events import EVENT_CATALOG, EventType
+from hausbuch.schemas.events import EVENT_CATALOG, EventType, RuleRecorded
 
 PHASES = {"phase1": phase1, "phase2": phase2}
 FIXTURE_FILES = [(p, name) for p, mod in PHASES.items() for name in sorted(mod.MODELS)]
@@ -65,3 +67,36 @@ def test_rule_stores_no_amount():
         for name, field in model.model_fields.items():
             assert "amount" not in name or name == "amount_sign", (model.__name__, name)
             assert field.annotation not in (Decimal, Decimal | None), (model.__name__, name)
+
+
+def _types(annotation) -> set:
+    """annotation and every type nested in it (Optional, unions, Annotated, list[...])."""
+    found = {annotation}
+    for arg in get_args(annotation):
+        found |= _types(arg)
+    return found
+
+
+def test_rule_event_holds_no_pattern():
+    """rule.created / .disabled keep no free text: every str field is held to a fixed shape
+    (an IBAN hash), so a name or purpose pattern cannot be written into the event log."""
+    base = {
+        "split_method": "single_category",
+        "category": "insurance",
+        "has_name_pattern": True,
+        "has_purpose_pattern": True,
+    }
+    RuleRecorded.model_validate(base)
+    text_fields = [n for n, f in RuleRecorded.model_fields.items() if str in _types(f.annotation)]
+    assert text_fields == ["counterparty_iban_hmac"]
+    for name in text_fields:
+        with pytest.raises(ValidationError):
+            RuleRecorded.model_validate(base | {name: "allianz|versicherung"})
+    rule = MatchingRuleCreate(
+        matcher={"counterparty_name_pattern": "allianz", "purpose_pattern": "vers-nr"},
+        split_method="single_category",
+        category="insurance",
+    )
+    event = RuleRecorded.of(rule)
+    assert event.has_name_pattern and event.has_purpose_pattern
+    assert "allianz" not in event.model_dump_json() and "vers-nr" not in event.model_dump_json()

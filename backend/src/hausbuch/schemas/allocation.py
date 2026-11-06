@@ -24,7 +24,7 @@ from .enums import AllocationStatus, ExtractionKind, ImportStatus
 from .loan import LoanTerms
 
 HmacHex = str  # 64 lower-case hex characters: an IBAN's keyed HMAC, as the rules see it
-_HMAC = r"^[0-9a-f]{64}$"
+HMAC_PATTERN = r"^[0-9a-f]{64}$"
 
 
 class AllocationCategory(StrEnum):
@@ -172,7 +172,7 @@ class RuleMatcher(Schema):
     """What a rule matches on. No money field, by design: a rule never stores an amount.
     Patterns are case-insensitive regular expressions searched in the normalized text."""
 
-    counterparty_iban_hmac: HmacHex | None = Field(default=None, pattern=_HMAC)
+    counterparty_iban_hmac: HmacHex | None = Field(default=None, pattern=HMAC_PATTERN)
     counterparty_name_pattern: str | None = None
     purpose_pattern: str | None = None
     amount_sign: Literal["credit", "debit"] | None = None
@@ -254,7 +254,7 @@ class MatchTransaction(Schema):
     value_date: date | None = None
     amount: Money
     counterparty_name: str | None = None
-    counterparty_iban_hmac: HmacHex | None = Field(default=None, pattern=_HMAC)
+    counterparty_iban_hmac: HmacHex | None = Field(default=None, pattern=HMAC_PATTERN)
     purpose: str = ""
     booking_text: str | None = None
 
@@ -281,7 +281,7 @@ class LoanFacts(Schema):
     id: UUID
     property_id: UUID
     lender: str
-    account_iban_hmac: HmacHex | None = Field(default=None, pattern=_HMAC)
+    account_iban_hmac: HmacHex | None = Field(default=None, pattern=HMAC_PATTERN)
     terms: LoanTerms
 
 
@@ -301,7 +301,7 @@ class DocumentFacts(Schema):
     category: AllocationCategory
     property_id: UUID | None = None
     payments: list[DuePayment] = Field(min_length=1)
-    iban_hmac: HmacHex | None = Field(default=None, pattern=_HMAC)
+    iban_hmac: HmacHex | None = Field(default=None, pattern=HMAC_PATTERN)
     reference: str | None = None
 
 
