@@ -37,6 +37,14 @@
 #            fixed); tenancy unit_id = the unit matched by address and unit label.
 #   typing   type and subtype come from context.classification: value, no source, checks
 #            [validates], the classifier's confidence. subtype only when the classifier gave one.
+#            An invoice's tax_year is derived (D36): the year of due_on, else of document_date
+#            (derived_from names the one used); neither stated -> not proposed.
+# Financing invoices (D35): an invoice whose subject or title contains grundschuld, hypothek or
+#   darlehen (casefolded, anywhere) proposes no cost:<kind> record (not create, patch or
+#   unchanged) and no subtype in typing, whatever the classifier said; typing's notes contain
+#   "Geldbeschaffungskosten", plus "aus den Nebenkosten" when a cost row already has this
+#   document as its Beleg; link:property as usual; link:loan when the property has exactly
+#   one loan in the context.
 #
 # Matching existing records (casefold, whitespace collapsed; never by a tenant whose name was
 # erased):
@@ -88,6 +96,7 @@ ids:
   cost_notary: &C2 00000011-0000-4000-8000-000000000002
   document_other: &DOC_OTHER 0000000d-0000-4000-8000-000000000101
   loan: &L 0000000f-0000-4000-8000-000000000001
+  loan_2: &L2 0000000f-0000-4000-8000-000000000002
   tenant_1: &N1 00000012-0000-4000-8000-000000000001
 
 shared:
@@ -312,7 +321,8 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: invoice, subtype: cost_basis_evidence, title: Kostenrechnung Notarin Beispiel, document_date: "2026-03-20"}
+          values: {type: invoice, subtype: cost_basis_evidence, title: Kostenrechnung Notarin Beispiel, document_date: "2026-03-20", tax_year: 2026}
+          derived: {tax_year: [document_date]}
         - key: cost:notary
           entity_type: acquisition_cost
           mode: create
@@ -322,6 +332,115 @@ cases:
           mode: create
           target_id: *P
           values: {}
+
+  - id: notar_invoice_grundschuld_is_financing
+    description: D35. Luis's real case, anonymised. The classifier wrongly says cost_basis_evidence; the subject names a Grundschuld, so code proposes no Nebenkosten row and no subtype, explains why, and links the property's only loan.
+    kind: invoice
+    context:
+      document_id: *DOC
+      classification: {type: invoice, subtype: cost_basis_evidence, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      loans:
+        - {id: *L, property_id: *P, lender: Beispielbank AG, contract_number: "600123456"}
+    extraction: &GRUNDSCHULD_INVOICE
+      title: {v: Notarrechnung Grundschuldbestellung, p: 1, q: "Grundschuld-/Hypothekenbestellung mit ZV-Unterwerfung"}
+      subject: {v: "Grundschuld-/Hypothekenbestellung mit ZV-Unterwerfung", p: 1, q: "Kostenrechnung zur Rechnungsnr. RE26/00001 (Grundschuld-/Hypothekenbestellung mit ZV-Unterwerfung)"}
+      document_date: {v: "2026-03-20", p: 1, q: "Berlin, 20.03.2026"}
+      sender: {v: Notarin Dr. Anna Beispiel, p: 1, q: "Dr. Anna Beispiel, Notarin in Berlin"}
+      amount_total: {v: "612.88", p: 2, q: "Rechnungsbetrag 612,88 €"}
+      reference: {v: RE26/00001, p: 1, q: "Rechnungsnr. RE26/00001"}
+    expect:
+      keys: [typing, link:property, link:loan]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: invoice, title: Notarrechnung Grundschuldbestellung, document_date: "2026-03-20", tax_year: 2026}
+          derived: {tax_year: [document_date]}
+          notes_contain: ["Geldbeschaffungskosten"]
+        - key: link:property
+          entity_type: link
+          mode: create
+          target_id: *P
+          values: {}
+        - key: link:loan
+          entity_type: link
+          mode: create
+          target_id: *L
+          values: {}
+
+  - id: notar_invoice_grundschuld_by_title_only
+    description: D35. The classifier left the subtype empty (the prompt's exclusion worked) and no subject was read; the model-written title alone names the Grundschuld. No loan in the workspace, so no loan link.
+    kind: invoice
+    context:
+      document_id: *DOC
+      classification: {type: invoice, subtype: null, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+    extraction:
+      <<: *GRUNDSCHULD_INVOICE
+      subject: {value: null, confidence: low}
+    expect:
+      keys: [typing, link:property]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: invoice, title: Notarrechnung Grundschuldbestellung, document_date: "2026-03-20", tax_year: 2026}
+          derived: {tax_year: [document_date]}
+          notes_contain: ["Geldbeschaffungskosten"]
+
+  - id: notar_invoice_grundschuld_already_entered_as_nebenkosten
+    description: D35. Luis had typed this invoice as a notary Nebenkosten row and attached it as the Beleg. No cost record is proposed (no unchanged, no patch); the note tells him to remove that row from the Nebenkosten. Two loans on the property, so no loan link is guessed.
+    kind: invoice
+    context:
+      document_id: *DOC
+      classification: {type: invoice, subtype: cost_basis_evidence, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      costs:
+        - {id: *C2, property_id: *P, kind: notary, amount: "612.88", document_id: *DOC, note: RE26/00001}
+      loans:
+        - {id: *L, property_id: *P, lender: Beispielbank AG, contract_number: "600123456"}
+        - {id: *L2, property_id: *P, lender: Förderbank Beispiel, contract_number: "KfW-77"}
+    extraction: *GRUNDSCHULD_INVOICE
+    expect:
+      keys: [typing, link:property]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: invoice, title: Notarrechnung Grundschuldbestellung, document_date: "2026-03-20", tax_year: 2026}
+          derived: {tax_year: [document_date]}
+          notes_contain: ["Geldbeschaffungskosten", "aus den Nebenkosten"]
+
+  - id: notar_invoice_kaufvertrag_mentions_financing_power_stays_nebenkosten
+    description: D35 negative. A Kaufvertrag bill whose subject mentions the Finanzierungsvollmacht is still a Nebenkosten Beleg. D36 tax year from the due date, which falls in the next year.
+    kind: invoice
+    context:
+      document_id: *DOC
+      classification: {type: invoice, subtype: cost_basis_evidence, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      loans:
+        - {id: *L, property_id: *P, lender: Beispielbank AG, contract_number: "600123456"}
+    extraction:
+      title: {v: Notarrechnung Kaufvertrag, p: 1, q: "Kaufvertrag mit Auflassung und Finanzierungsvollmacht"}
+      subject: {v: Kaufvertrag mit Auflassung und Finanzierungsvollmacht, p: 1, q: "Kaufvertrag mit Auflassung und Finanzierungsvollmacht"}
+      document_date: {v: "2026-12-20", p: 1, q: "Berlin, 20.12.2026"}
+      due_on: {v: "2027-01-04", p: 2, q: "zahlbar bis 04.01.2027"}
+      sender: {v: Notarin Dr. Anna Beispiel, p: 1, q: "Dr. Anna Beispiel, Notarin in Berlin"}
+      amount_total: {v: "2312.45", p: 2, q: "Rechnungsbetrag 2.312,45 €"}
+      reference: {v: UR 1234/2026, p: 1, q: "Kostenberechnung zu UR 1234/2026"}
+    expect:
+      keys: [typing, cost:notary, link:property]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: invoice, subtype: cost_basis_evidence, title: Notarrechnung Kaufvertrag, document_date: "2026-12-20", tax_year: 2027}
+          derived: {tax_year: [due_on]}
+        - key: cost:notary
+          entity_type: acquisition_cost
+          mode: create
+          values: {kind: notary, amount: "2312.45", note: UR 1234/2026}
 
   - id: invoice_already_entered_with_this_beleg_unchanged
     description: Luis typed the notary cost and attached this invoice himself; reading the invoice proposes no second row.

@@ -143,6 +143,9 @@ class InvoiceExtraction(_Typing):
     """Invoices: Nebenkosten (notary, Grundbuchamt, broker) now, repairs and others later."""
 
     sender: ExtractedValue = ev("text", "who issued it: decides the cost kind")
+    subject: ExtractedValue = ev(
+        "text", "what it is for, as written (Betreff / Gegenstand): D35 reads it"
+    )
     amount_total: ExtractedValue = ev("money", "gross total (brutto)")
     amount_net: ExtractedValue = ev("money", "net amount, if stated")
     reference: ExtractedValue = ev("text", "invoice no. / Aktenzeichen")
