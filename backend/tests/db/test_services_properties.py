@@ -13,6 +13,7 @@ from hausbuch.schemas.common import Fraction
 from hausbuch.schemas.enums import (
     AcquisitionCostKind,
     ActorType,
+    DocumentSource,
     EntityType,
     PriceSplitSource,
     PropertyKind,
@@ -27,8 +28,10 @@ from hausbuch.schemas.property import (
     PropertyCreate,
 )
 from hausbuch.services.context import Actor, new_command
+from hausbuch.services.documents import upload_document
 from hausbuch.services.errors import NotFoundError, RuleViolationError
 from hausbuch.services.events import list_events
+from hausbuch.services.history import property_history
 from hausbuch.services.owners import create_owner
 from hausbuch.services.properties import (
     add_acquisition_cost,
@@ -40,8 +43,10 @@ from hausbuch.services.properties import (
     list_acquisition_costs,
     list_price_splits,
     record_price_split,
+    remove_acquisition_cost,
     select_price_split,
     set_ownership,
+    update_acquisition_cost,
     update_property,
 )
 
@@ -335,6 +340,183 @@ def test_acquisition_cost_is_itemized_with_its_paid_date(run, read, fresh_worksp
     with pytest.raises(NotFoundError, match="property"):
         run(a, add_acquisition_cost, tax.model_copy(update={"property_id": uuid.uuid4()}))
     assert read(a, list_acquisition_costs, flat.id) == [cost]
+
+
+def test_acquisition_cost_update_changes_the_row_and_traces_the_change(run, read, fresh_workspaces):
+    a, _ = fresh_workspaces
+    flat = run(a, create_property, FLAT, now=CREATED_AT)
+    cost = run(
+        a,
+        add_acquisition_cost,
+        AcquisitionCostCreate(
+            property_id=flat.id,
+            kind=AcquisitionCostKind.NOTARY,
+            amount=Decimal("2100.00"),
+            note="Notar Dr. Beispiel",
+        ),
+        now=CREATED_AT,
+    )
+
+    updated = run(
+        a,
+        update_acquisition_cost,
+        cost.id,
+        amount=Decimal("2100.50"),
+        paid_on=date(2024, 3, 20),
+        note="Notar Dr. Beispiel, Schlussrechnung",
+        now=LATER,
+    )
+
+    assert (updated.amount, updated.paid_on, updated.note) == (
+        Decimal("2100.50"),
+        date(2024, 3, 20),
+        "Notar Dr. Beispiel, Schlussrechnung",
+    )
+    assert (updated.kind, updated.document_id) == (AcquisitionCostKind.NOTARY, None)
+    assert (updated.created_at, updated.updated_at) == (CREATED_AT, LATER)
+    assert read(a, list_acquisition_costs, flat.id) == [updated]
+    event = _events(read, a, flat.id)[-1]
+    assert event.type is EventType.PROPERTY_ACQUISITION_COST_UPDATED
+    assert (event.entity_id, event.property_id, event.effective_date) == (flat.id, flat.id, None)
+    # The note's text is never recorded (as on create): only that it changed.
+    assert event.payload == {
+        "cost_id": str(cost.id),
+        "changes": {
+            "amount": {"old": "2100.00", "new": "2100.50"},
+            "paid_on": {"old": None, "new": "2024-03-20"},
+        },
+        "note_changed": True,
+    }
+    assert "Beispiel" not in str(event.payload)
+
+    # Same values: no write, no event.
+    count = len(_events(read, a, flat.id))
+    assert run(a, update_acquisition_cost, cost.id, amount=Decimal("2100.50")) == updated
+    assert run(a, update_acquisition_cost, cost.id) == updated
+    assert len(_events(read, a, flat.id)) == count
+
+    # A note-only change is still an event, with no values.
+    run(a, update_acquisition_cost, cost.id, note=None, now=LATER)
+    assert _events(read, a, flat.id)[-1].payload == {
+        "cost_id": str(cost.id),
+        "changes": {},
+        "note_changed": True,
+    }
+
+
+def test_acquisition_cost_update_sets_swaps_and_clears_the_beleg(
+    run, read, fresh_workspaces, blob_store
+):
+    a, _ = fresh_workspaces
+    flat = run(a, create_property, FLAT, now=CREATED_AT)
+    first, second = (
+        run(
+            a,
+            upload_document,
+            blob_store,
+            f"%PDF-1.7 {n}".encode(),
+            media_type="application/pdf",
+            source=DocumentSource.UPLOAD,
+            now=CREATED_AT,
+        )
+        for n in (1, 2)
+    )
+    cost = run(
+        a,
+        add_acquisition_cost,
+        AcquisitionCostCreate(
+            property_id=flat.id, kind=AcquisitionCostKind.BROKER, amount=Decimal("9000.00")
+        ),
+        now=CREATED_AT,
+    )
+
+    assert run(a, update_acquisition_cost, cost.id, document_id=first.id).document_id == first.id
+    assert run(a, update_acquisition_cost, cost.id, document_id=second.id).document_id == second.id
+    assert run(a, update_acquisition_cost, cost.id, document_id=None).document_id is None
+    changes = [
+        e.payload["changes"]
+        for e in _events(read, a, flat.id)
+        if e.type is EventType.PROPERTY_ACQUISITION_COST_UPDATED
+    ]
+    assert changes == [
+        {"document_id": {"old": None, "new": str(first.id)}},
+        {"document_id": {"old": str(first.id), "new": str(second.id)}},
+        {"document_id": {"old": str(second.id), "new": None}},
+    ]
+
+    count = len(_events(read, a, flat.id))
+    with pytest.raises(NotFoundError, match="document"):
+        run(a, update_acquisition_cost, cost.id, document_id=uuid.uuid4())
+    with pytest.raises(ValidationError):
+        run(a, update_acquisition_cost, cost.id, amount=Decimal("0"))
+    with pytest.raises(NotFoundError, match="acquisition_cost"):
+        run(a, update_acquisition_cost, uuid.uuid4(), amount=Decimal("1.00"))
+    assert len(_events(read, a, flat.id)) == count
+    assert read(a, list_acquisition_costs, flat.id)[0].document_id is None
+
+
+def test_acquisition_cost_removal_deletes_the_row_and_keeps_what_it_said(
+    run, read, fresh_workspaces, blob_store
+):
+    a, b = fresh_workspaces
+    flat = run(a, create_property, FLAT, now=CREATED_AT)
+    invoice = run(
+        a,
+        upload_document,
+        blob_store,
+        b"%PDF-1.7 invoice",
+        media_type="application/pdf",
+        source=DocumentSource.UPLOAD,
+        now=CREATED_AT,
+    )
+    keep, wrong = (
+        run(
+            a,
+            add_acquisition_cost,
+            AcquisitionCostCreate(
+                property_id=flat.id,
+                kind=kind,
+                amount=Decimal("450.00"),
+                paid_on=date(2024, 4, 2),
+                document_id=invoice.id,
+                note="Doppelt erfasst",
+            ),
+            now=CREATED_AT,
+        )
+        for kind in (AcquisitionCostKind.LAND_REGISTRY, AcquisitionCostKind.OTHER)
+    )
+    with pytest.raises(NotFoundError, match="acquisition_cost"):
+        run(b, remove_acquisition_cost, wrong.id)
+
+    assert run(a, remove_acquisition_cost, wrong.id, now=LATER) is None
+
+    assert read(a, list_acquisition_costs, flat.id) == [keep]
+    event = _events(read, a, flat.id)[-1]
+    assert event.type is EventType.PROPERTY_ACQUISITION_COST_REMOVED
+    assert (event.entity_id, event.property_id) == (flat.id, flat.id)
+    assert event.effective_date == date(2024, 4, 2)
+    assert event.payload == {
+        "cost_id": str(wrong.id),
+        "kind": "other",
+        "amount": "450.00",
+        "paid_on": "2024-04-02",
+        "document_id": str(invoice.id),
+    }
+    # History still shows the row: as recorded, and as removed.
+    history = [
+        (h.type, h.payload["cost_id"])
+        for h in read(a, property_history, flat.id)
+        if "cost_id" in h.payload
+    ]
+    assert history == [
+        (EventType.PROPERTY_ACQUISITION_COST_RECORDED, str(keep.id)),
+        (EventType.PROPERTY_ACQUISITION_COST_RECORDED, str(wrong.id)),
+        (EventType.PROPERTY_ACQUISITION_COST_REMOVED, str(wrong.id)),
+    ]
+    with pytest.raises(NotFoundError, match="acquisition_cost"):
+        run(a, remove_acquisition_cost, wrong.id)
+    with pytest.raises(NotFoundError, match="acquisition_cost"):
+        run(a, update_acquisition_cost, wrong.id, amount=Decimal("1.00"))
 
 
 def test_price_splits_are_candidates_and_one_is_selected(run, read, fresh_workspaces):

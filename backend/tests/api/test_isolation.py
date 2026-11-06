@@ -3,7 +3,7 @@ only, so another household's ids answer 404 on every read and every write, and i
 are empty."""
 
 import pytest
-from api_support import create, flat, loan_body, ok, upload
+from api_support import create, flat, loan_body, ok, property_body, upload
 
 pytestmark = pytest.mark.db
 
@@ -45,7 +45,13 @@ def entities_of_a(client_a) -> dict[str, str]:
         f"/api/documents/{document['id']}/links",
         {"target_type": "property", "target_id": setup["property"]["id"]},
     )
+    cost = create(
+        client_a,
+        "/api/acquisition-costs",
+        {"property_id": setup["property"]["id"], "kind": "notary", "amount": "1200.00"},
+    )
     return {
+        "cost": cost["id"],
         "owner": owner["id"],
         "property": setup["property"]["id"],
         "unit": setup["unit"]["id"],
@@ -106,6 +112,9 @@ WRITES = [
         "/api/acquisition-costs",
         {"property_id": "{property}", "kind": "notary", "amount": "1.00"},
     ),
+    ("PATCH", "/api/acquisition-costs/{cost}", {"amount": "1.00"}),
+    ("PATCH", "/api/acquisition-costs/{cost}", {"document_id": "{document}"}),
+    ("DELETE", "/api/acquisition-costs/{cost}", None),
     ("POST", "/api/units", {"property_id": "{property}", "label": "WE 9", "floor_area_m2": "1.00"}),
     ("PATCH", "/api/units/{unit}", {"label": "x"}),
     ("PATCH", "/api/tenants/{tenant}", {"phone": "1"}),
@@ -159,6 +168,20 @@ def test_writes_to_another_workspace_are_404_and_change_nothing(entities_of_a, c
         assert response.status_code == 404, (method, path, response.text)
     assert ok(client_a.get("/api/events")) == before
     assert ok(client_b.get("/api/events")) == []
+
+
+def test_another_workspaces_document_cannot_become_a_beleg(entities_of_a, client_b):
+    prop = create(client_b, "/api/properties", property_body())
+    cost = create(
+        client_b,
+        "/api/acquisition-costs",
+        {"property_id": prop["id"], "kind": "notary", "amount": "1.00"},
+    )
+    response = client_b.patch(
+        f"/api/acquisition-costs/{cost['id']}", json={"document_id": entities_of_a["document"]}
+    )
+    assert (response.status_code, response.json()["entity_type"]) == (404, "document")
+    assert ok(client_b.get(f"/api/properties/{prop['id']}/acquisition-costs")) == [cost]
 
 
 def test_lists_are_per_workspace(entities_of_a, client_b):

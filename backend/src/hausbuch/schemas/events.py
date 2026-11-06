@@ -94,6 +94,33 @@ class AcquisitionCostRecorded(Schema):
     document_id: UUID | None = None
 
 
+class AcquisitionCostUpdated(Schema):
+    """One Nebenkosten row changed. `changes` holds the traced fields (kind, amount, paid_on,
+    document_id) as old/new pairs. The note is free text that may name people, so, as on
+    create, its value is never recorded: note_changed only says that it changed."""
+
+    cost_id: UUID
+    changes: dict[str, FieldChange] = Field(default_factory=dict)
+    note_changed: bool = False
+
+    @model_validator(mode="after")
+    def _something_changed(self) -> Self:
+        if not self.changes and not self.note_changed:
+            raise ValueError("an acquisition cost update must change something")
+        return self
+
+
+class AcquisitionCostRemoved(Schema):
+    """A Nebenkosten row entered by mistake was deleted; this keeps what it said (not its
+    note, see AcquisitionCostUpdated)."""
+
+    cost_id: UUID
+    kind: AcquisitionCostKind
+    amount: PositiveMoney
+    paid_on: date | None = None
+    document_id: UUID | None = None
+
+
 class PriceSplitRecorded(Schema):
     split_id: UUID
     source: PriceSplitSource
@@ -237,6 +264,8 @@ class EventType(StrEnum):
     PROPERTY_POSSESSION_TRANSFERRED = "property.possession_transferred"
     PROPERTY_OWNERSHIP_SET = "property.ownership_set"
     PROPERTY_ACQUISITION_COST_RECORDED = "property.acquisition_cost_recorded"
+    PROPERTY_ACQUISITION_COST_UPDATED = "property.acquisition_cost_updated"
+    PROPERTY_ACQUISITION_COST_REMOVED = "property.acquisition_cost_removed"
     PROPERTY_PRICE_SPLIT_RECORDED = "property.price_split_recorded"
     PROPERTY_PRICE_SPLIT_SELECTED = "property.price_split_selected"
 
@@ -280,6 +309,12 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     E.PROPERTY_OWNERSHIP_SET: EventSpec(OwnershipSet, "optional", "Ownership shares set"),
     E.PROPERTY_ACQUISITION_COST_RECORDED: EventSpec(
         AcquisitionCostRecorded, "optional", "Anschaffungsnebenkosten item recorded"
+    ),
+    E.PROPERTY_ACQUISITION_COST_UPDATED: EventSpec(
+        AcquisitionCostUpdated, "forbidden", "Anschaffungsnebenkosten item changed"
+    ),
+    E.PROPERTY_ACQUISITION_COST_REMOVED: EventSpec(
+        AcquisitionCostRemoved, "optional", "Anschaffungsnebenkosten item removed (date = paid_on)"
     ),
     E.PROPERTY_PRICE_SPLIT_RECORDED: EventSpec(
         PriceSplitRecorded, "forbidden", "Building/land split candidate recorded"

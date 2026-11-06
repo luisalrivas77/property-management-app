@@ -165,6 +165,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/acquisition-costs/{cost_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Acquisition Cost Remove
+         * @description Delete a row entered by mistake; property.acquisition_cost_removed keeps what it said.
+         */
+        delete: operations["acquisition_cost_remove_api_acquisition_costs__cost_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Acquisition Cost Update
+         * @description Change a Nebenkosten row; document_id sets, swaps or (null) clears its Beleg.
+         */
+        patch: operations["acquisition_cost_update_api_acquisition_costs__cost_id__patch"];
+        trace?: never;
+    };
     "/api/properties/{property_id}/price-splits": {
         parameters: {
             query?: never;
@@ -1250,6 +1274,21 @@ export interface components {
          */
         AcquisitionCostKind: "real_estate_transfer_tax" | "notary" | "land_registry" | "broker" | "other";
         /**
+         * AcquisitionCostPatch
+         * @description PATCH /acquisition-costs/{id}: null clears paid_on, the Beleg (document_id) or the note.
+         */
+        AcquisitionCostPatch: {
+            kind?: components["schemas"]["AcquisitionCostKind"];
+            /** Amount */
+            amount?: string;
+            /** Paid On */
+            paid_on?: string | null;
+            /** Document Id */
+            document_id?: string | null;
+            /** Note */
+            note?: string | null;
+        };
+        /**
          * ActorType
          * @enum {string}
          */
@@ -1721,7 +1760,7 @@ export interface components {
          * EventType
          * @enum {string}
          */
-        EventType: "owner.created" | "owner.updated" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.price_split_recorded" | "property.price_split_selected" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked";
+        EventType: "owner.created" | "owner.updated" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked";
         /**
          * ExtractionSource
          * @enum {string}
@@ -3221,6 +3260,70 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcquisitionCost"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    acquisition_cost_remove_api_acquisition_costs__cost_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cost_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    acquisition_cost_update_api_acquisition_costs__cost_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cost_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcquisitionCostPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

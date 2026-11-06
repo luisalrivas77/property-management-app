@@ -20,9 +20,11 @@ from hausbuch.db.tables import property_ownership as ownership_table
 from hausbuch.db.tables import property_price_split as split_table
 from hausbuch.rules.validation import check_ownership_shares
 from hausbuch.schemas.common import Fraction
-from hausbuch.schemas.enums import EntityType, PropertyKind
+from hausbuch.schemas.enums import AcquisitionCostKind, EntityType, PropertyKind
 from hausbuch.schemas.events import (
     AcquisitionCostRecorded,
+    AcquisitionCostRemoved,
+    AcquisitionCostUpdated,
     Empty,
     EventType,
     OwnershipSet,
@@ -52,6 +54,9 @@ from .owners import UNSET, Unset
 
 _ADDRESS_COLUMNS = tuple(Address.model_fields)
 _CREATE_FIELDS = set(PropertyCreate.model_fields)
+_COST = "acquisition_cost"  # NotFoundError name: the row's events are property events
+_COST_FIELDS = set(AcquisitionCostCreate.model_fields)
+_COST_TRACED = ("kind", "amount", "paid_on", "document_id")  # the note's value is never traced
 
 
 def create_property(ctx: CommandContext, data: PropertyCreate) -> Property:
@@ -305,7 +310,7 @@ def add_acquisition_cost(ctx: CommandContext, data: AcquisitionCostCreate) -> Ac
         )
         .returning(*cost_table.c)
     ).one()
-    cost = AcquisitionCost.model_validate(dict(row._mapping))
+    cost = _to_cost(row)
     append_event(
         ctx,
         EventType.PROPERTY_ACQUISITION_COST_RECORDED,
@@ -319,13 +324,91 @@ def add_acquisition_cost(ctx: CommandContext, data: AcquisitionCostCreate) -> Ac
     return cost
 
 
+def update_acquisition_cost(
+    ctx: CommandContext,
+    cost_id: UUID,
+    *,
+    kind: AcquisitionCostKind | Unset = UNSET,
+    amount: Decimal | Unset = UNSET,
+    paid_on: date | None | Unset = UNSET,
+    document_id: UUID | None | Unset = UNSET,
+    note: str | None | Unset = UNSET,
+) -> AcquisitionCost:
+    """Change the fields passed (None clears paid_on, the Beleg or the note), with the same
+    rules as on create. Appends property.acquisition_cost_updated with the traced fields' old
+    and new values and, for the note, only that it changed. No-op (no write, no event) if
+    nothing changes.
+
+    The row's property.acquisition_cost_recorded event stays as recorded: History keeps the
+    values entered first, the audit trail shows each change."""
+    requested = {
+        name: value
+        for name, value in (
+            ("kind", kind),
+            ("amount", amount),
+            ("paid_on", paid_on),
+            ("document_id", document_id),
+            ("note", note),
+        )
+        if value is not UNSET
+    }
+    current = _to_cost(require_row(ctx.conn, cost_table, _COST, cost_id, for_update=True))
+    new = AcquisitionCostCreate.model_validate(current.model_dump(include=_COST_FIELDS) | requested)
+    traced = {name for name in _COST_TRACED if name in requested}
+    changes = diff_changes(current.model_dump(include=traced), new.model_dump(include=traced))
+    note_changed = "note" in requested and new.note != current.note
+    if not changes and not note_changed:
+        return current
+    if "document_id" in changes:
+        require_document(ctx.conn, new.document_id)
+
+    values = new.model_dump(include=set(changes) | ({"note"} if note_changed else set()))
+    row = ctx.conn.execute(
+        update(cost_table)
+        .where(cost_table.c.id == cost_id)
+        .values(**values, updated_at=ctx.now)
+        .returning(*cost_table.c)
+    ).one()
+    updated = _to_cost(row)
+    append_event(
+        ctx,
+        EventType.PROPERTY_ACQUISITION_COST_UPDATED,
+        updated.property_id,
+        AcquisitionCostUpdated(cost_id=cost_id, changes=changes, note_changed=note_changed),
+        property_id=updated.property_id,
+    )
+    return updated
+
+
+def remove_acquisition_cost(ctx: CommandContext, cost_id: UUID) -> None:
+    """Delete a row entered by mistake. property.acquisition_cost_removed keeps what it said
+    (History date = its paid_on, when known), so History and the audit trail still show it.
+    A document it referenced stays in the vault; its retention no longer counts this row."""
+    current = _to_cost(require_row(ctx.conn, cost_table, _COST, cost_id, for_update=True))
+    ctx.conn.execute(delete(cost_table).where(cost_table.c.id == cost_id))
+    append_event(
+        ctx,
+        EventType.PROPERTY_ACQUISITION_COST_REMOVED,
+        current.property_id,
+        AcquisitionCostRemoved(
+            cost_id=current.id,
+            kind=current.kind,
+            amount=current.amount,
+            paid_on=current.paid_on,
+            document_id=current.document_id,
+        ),
+        property_id=current.property_id,
+        effective_date=current.paid_on,
+    )
+
+
 def list_acquisition_costs(conn: Connection, property_id: UUID) -> list[AcquisitionCost]:
     rows = conn.execute(
         select(cost_table)
         .where(cost_table.c.property_id == property_id)
         .order_by(cost_table.c.created_at, cost_table.c.id)
     )
-    return [AcquisitionCost.model_validate(dict(r._mapping)) for r in rows]
+    return [_to_cost(r) for r in rows]
 
 
 def record_price_split(ctx: CommandContext, data: PriceSplitCreate) -> PriceSplit:
@@ -413,6 +496,10 @@ def _columns(values: dict[str, Any]) -> dict[str, Any]:
     if address is not None:
         values |= address
     return values
+
+
+def _to_cost(row: Row) -> AcquisitionCost:
+    return AcquisitionCost.model_validate(dict(row._mapping))
 
 
 def _to_property(row: Row) -> Property:

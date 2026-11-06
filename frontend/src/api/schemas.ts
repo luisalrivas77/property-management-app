@@ -30,6 +30,7 @@ export type OwnerShare = Schemas["OwnerShare"];
 export type PropertyOwnership = Schemas["PropertyOwnership"];
 export type AcquisitionCost = Schemas["AcquisitionCost"];
 export type AcquisitionCostCreate = Schemas["AcquisitionCostCreate"];
+export type AcquisitionCostPatch = Schemas["AcquisitionCostPatch"];
 export type AcquisitionCostKind = Schemas["AcquisitionCostKind"];
 export type PriceSplit = Schemas["PriceSplit"];
 export type PriceSplitCreate = Schemas["PriceSplitCreate"];

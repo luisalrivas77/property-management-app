@@ -126,6 +126,8 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "property.possession_transferred": "Übergang Besitz, Nutzen und Lasten",
   "property.ownership_set": "Eigentumsanteile festgelegt",
   "property.acquisition_cost_recorded": "Anschaffungsnebenkosten erfasst",
+  "property.acquisition_cost_updated": "Anschaffungsnebenkosten geändert",
+  "property.acquisition_cost_removed": "Anschaffungsnebenkosten entfernt",
   "property.price_split_recorded": "Kaufpreisaufteilung erfasst",
   "property.price_split_selected": "Kaufpreisaufteilung als AfA-Basis gewählt",
   "unit.created": "Einheit angelegt",

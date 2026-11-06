@@ -38,7 +38,7 @@ from .document import (
     ManualDocumentFields,
     RetentionResult,
 )
-from .enums import LinkTarget, PropertyKind
+from .enums import AcquisitionCostKind, LinkTarget, PropertyKind
 from .loan import LoanCreate
 from .property import Address, OwnerShare, reject_raw_tax_number
 from .tenancy import InitialRent, TenancyCreate
@@ -122,6 +122,16 @@ class PropertyPatch(Patch):
     kind: PropertyKind = Field(default=None)
     address: Address = Field(default=None)
     build_year: Year = Field(default=None)
+
+
+class AcquisitionCostPatch(Patch):
+    """PATCH /acquisition-costs/{id}: null clears paid_on, the Beleg (document_id) or the note."""
+
+    kind: AcquisitionCostKind = Field(default=None)
+    amount: PositiveMoney = Field(default=None)
+    paid_on: date | None = None
+    document_id: UUID | None = None
+    note: str | None = None
 
 
 class UnitPatch(Patch):
