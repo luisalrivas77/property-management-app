@@ -243,8 +243,19 @@ and reviewed by a reviewer agent; every review finding was fixed or is listed be
      above the API's 30 s need, so the shutdown settings stay. Still open: Q16 (the bucket
      refuses the conditional overwrite, but the real-bucket test then failed reading the
      original back with an unnamed error; diagnosis running) and the real data.
+   - 6 Nov 2026: Q16 answered: Scaleway honours If-None-Match (412, original intact), but
+     answers the next request on that connection with a bodiless 400 and closes it (results
+     in `deploy/scaleway.md`). Known gap below; the first-deploy checks are otherwise all
+     done. Still open: the real data.
 
 ### Known gaps (not yet built)
+
+- **The request after a 412 can fail** (Q16, found 6 Nov 2026): Scaleway answers the first
+  request on a connection after a refused conditional PUT with a bodiless `400` and closes
+  the connection. `S3BlobStore` treats that as a hard error, so `put`'s lost-race path (and a
+  botocore retry after a lost PUT response) can turn a racing upload into a 500. Nothing
+  stored is harmed. Fix: retry a request once when S3 answers `400` with no error code;
+  `test_real_bucket_honours_if_none_match` reproduces it against the real bucket.
 
 - There is no correction command for `tenancy.ended`, `tenancy.created` (`signed_on`),
   `tenancy.notice_given` or `loan.disbursed`, and no party changes on a tenancy. Step 4 will
