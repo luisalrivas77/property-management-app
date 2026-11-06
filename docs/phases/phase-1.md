@@ -13,9 +13,17 @@ contract the implementation PR codes against:
 | Rule tests | `backend/tests/rules/` | **Passing** against `hausbuch.rules.*` (5 Nov 2026); fixtures unchanged except the approved loan-schedule spec change (D10) |
 | Schema tests | `backend/tests/db/`, `backend/tests/test_fixtures_valid.py` | Passing |
 
-**Done when** (from ARCHITECTURE.md): the current flat, its tenancy, its loan and all 2026
-paperwork are in, and History shows purchase → move-in correctly. `timeline.yaml` encodes that
-second half as a fixture.
+**Status: CLOSED (6 Nov 2026, Luis).** Everything phase 1 builds is live at
+https://hausbuch.rcubed.fr (implementation status below). The data half of the done criterion
+was not met by hand and is moved: Luis decided the real flat, tenancy, loan and paperwork are
+entered through AI pre-fill (the AI reads each uploaded document and fills the forms; he
+verifies every value against its source quote before anything is saved), which is phase 2's
+first step. Documents can be uploaded and linked now. The History half (purchase → move-in)
+is proven by `timeline.yaml` and is checked again on the real data once it is in.
+
+**Done when** (from ARCHITECTURE.md, as written before the closure): the current flat, its
+tenancy, its loan and all 2026 paperwork are in, and History shows purchase → move-in
+correctly. `timeline.yaml` encodes that second half as a fixture.
 
 ## Scope
 
