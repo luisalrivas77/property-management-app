@@ -69,6 +69,8 @@ READS = [
     "/api/properties/{property}/history",
     "/api/properties/{property}/events",
     "/api/properties/{property}/documents",
+    "/api/properties/{property}/checklist",
+    "/api/properties/{property}/checklist?tax_year=2025",
     "/api/units/{unit}",
     "/api/units/{unit}/tenancies",
     "/api/units/{unit}/documents",

@@ -133,6 +133,7 @@ exception with a `code` attribute (plus `at_number` for loan errors).
 | `retention.tenant_retention(TenantRetentionInput, RetentionPolicy) -> RetentionResult` | `retention.yaml` | |
 | `iban.normalize_iban / mask_iban / iban_hmac` | `iban.yaml` | Test key only; mod-97 and length checks |
 | `validation.check_ownership_shares / check_tenancy_parties / check_rent_row / check_correction -> list[str]` | `validation.yaml` | The service-layer invariants above |
+| `document_checklist.build_checklist(ChecklistFacts, tax_year, today) -> list[ChecklistItem]` | `document_checklist.yaml` | Spec amendment 3 (6 Nov 2026); 31 cases, each also run with its input lists shuffled; merged as #20 and deployed 6 Nov 2026 |
 
 Error codes (stable API contract): `loan.payment_does_not_cover_interest`, `loan.term_too_long`,
 `iban.malformed`, `iban.bad_length`, `iban.bad_checksum`, `ownership.shares_must_sum_to_one`,
@@ -247,6 +248,14 @@ and reviewed by a reviewer agent; every review finding was fixed or is listed be
      answers the next request on that connection with a bodiless 400 and closes it (results
      in `deploy/scaleway.md`). Known gap below; the first-deploy checks are otherwise all
      done. Still open: the real data.
+5. **DONE: document checklist** (spec amendment 3, 6 Nov 2026): the Unterlagen tab per
+   property. Built by a coder (rule, migration `0004`, API, tab, e2e), reviewed, merged as
+   #20 (`aa298bb`) and live since 6 Nov 2026: Luis ran migration `0004` from his computer
+   (`alembic current` showed `0004_grundsteuerbescheid (head)`), then `hausbuch-api` moved
+   to `api:aa298bb0752f` and `hausbuch-web` to `web:aa298bb0752f-16ef9db2`. Roll back to
+   `api:8844916ea91b` and `web:8844916ea91b-16ef9db2`; the old images work with `0004`,
+   which only adds a document subtype. Merging it also fixed the auth enrollment tests,
+   which had a fixed 5 Nov 2026 clock and failed on every branch from 6 Nov 09:30 UTC.
 
 ### Known gaps (not yet built)
 
@@ -331,3 +340,73 @@ HTTP API exists.
 4. **No fixture outcome changes:** every money and rate value in `tests/fixtures/phase1/` is
    quoted. The full suite (497 tests) passes unchanged; `tests/test_money_strings.py` covers
    the aliases and checks that no schema in `hausbuch.schemas` publishes a JSON `number`.
+
+### Spec amendment 3 (6 Nov 2026): document checklist per property
+
+**Status: DEPLOYED (6 Nov 2026), merged as #20 (`aa298bb`); see implementation status item 5.** Luis asked for it while
+entering the real data: a list on each property of the documents the tax return needs, with
+which ones are in and which are missing. ARCHITECTURE.md had the missing-document checklist
+in phase 3, derived from the tax rules; this brings the part phase 1 can already know forward,
+and phase 3 extends the same requirement list instead of starting a second one (Decisions,
+6 Nov 2026). It reads data only: no new events, no writes besides one new subtype value.
+
+**UI.** A new property tab **Unterlagen** (between Darlehen and Dokumente) with a year
+selector, styled like the "Paperwork for this return" card in `docs/mockups/04-tax-year.png`:
+one row per item with a status icon, a German label, a one-line hint, and the document(s)
+that satisfy it as links (or, for a missing item, a link to the tab where it is fixed).
+Footer: "Planungshilfe, keine Steuerberatung." Years offered: purchase year to the current
+year, ending at the year ownership ended; default the current year. Never before 2000, the
+tax-year floor (no document can carry an earlier tax year); a property bought before 2000
+starts at 2000 (review fix, 6 Nov 2026: before it, every checklist request for such a
+property failed with 422).
+
+**Rule.** `rules.document_checklist.build_checklist(ChecklistFacts, tax_year, today) ->
+list[ChecklistItem]`, pure, fixture `tests/fixtures/phase1/document_checklist.yaml`. The
+requirement catalogue is data in that module (each entry: code, scope, accepted document
+type/subtype, accepted link targets, whether `tax_year` must match, when it is due), so phase 3
+adds entries rather than code paths. Statuses:
+
+- `present`: a matching document is linked (all matches listed, oldest first);
+- `missing`: none, and it is due;
+- `expected`: none, but not due yet (`due_on` > `today`), e.g. the Zinsbescheinigung before
+  it arrives;
+- `incomplete`: a document of the right type/subtype is linked to the right target but its
+  `tax_year` is null, so it cannot count for a year; the hint says to set the tax year.
+
+"Linked" means a `document_link` to one of the requirement's accepted targets.
+Items, for property P and tax year Y (P counts if owned on any day of Y):
+
+| Code | Scope | Satisfied by | Due |
+| --- | --- | --- | --- |
+| `purchase_contract` | property | subtype `purchase_contract` linked to P | always |
+| `price_split` | property | depends on the selected split: none selected → `missing` (fix in Kaufpreisaufteilung); `purchase_contract` → present iff the purchase contract is; `appraisal` → its `evidence_document_id`; `bmf_tool` → present without a document (the result is stored) | always |
+| `acquisition_cost_evidence` | one per acquisition cost row | the row's `document_id` | always |
+| `grundsteuerbescheid` | property | new subtype `grundsteuerbescheid` (type `bescheid`) linked to P or one of its units (an ETW's Bescheid is issued per flat; revised 6 Nov 2026 after the coder flagged it) with `tax_year` null or ≤ Y | always |
+| `loan_contract` | per loan of P disbursed on or before 31 Dec Y | subtype `loan_contract` linked to the loan | always |
+| `zinsbescheinigung` | per such loan | type `zinsbescheinigung`, `tax_year` = Y, linked to the loan | 28 Feb Y+1 |
+| `lease` | per tenancy of P's units overlapping Y | subtype `lease` linked to the tenancy | always |
+| `handover_protocol` | per such tenancy that started on or after P's `purchase_date` | subtype `handover_protocol` linked to the tenancy | always |
+| `deposit_record` | per such tenancy with `deposit_form` ≠ `none` | subtype `deposit_record` linked to the tenancy | always |
+| `wirtschaftsplan` | property, ETW only | type `wirtschaftsplan`, `tax_year` = Y, linked to P or one of its units | 1 Jan Y |
+| `hausgeldabrechnung` | property, ETW only | type `hausgeldabrechnung`, `tax_year` = Y, linked to P or one of its units | 30 Jun Y+1 |
+
+"Always" means due as soon as the item exists. A requirement whose `tax_year` rule is "null or
+≤ Y" never yields `incomplete`. Items come out in the table's order, then by scope (loan by
+`disbursed_on`, tenancy by `start_date`, cost row by `kind` then amount), so the output is
+independent of input order.
+
+**API.** `GET /api/properties/{id}/checklist?tax_year=Y` → `DocumentChecklist {property_id,
+tax_year, available_years, items}`. Each item carries the code, status, scope (type, id and
+non-personal context: lender, unit label and tenancy start, cost kind and amount), `due_on`
+and the satisfying documents. No tenant names (D5). German strings live in the frontend. A
+`tax_year` outside `available_years` is 422; an unknown or foreign property is 404 like the
+other property routes.
+
+**Migration `0004`.** Adds `grundsteuerbescheid` to the document subtype CHECK and to
+`DocumentSubtype` (label "Grundsteuerbescheid"; retention stays `tax_records`). It also
+amends `retention.yaml` only if a case needs it; no existing fixture outcome changes.
+
+**Out (later):** marking an item "not applicable" (e.g. a tenancy taken over with the
+property and no handover protocol); that is persisted state with events and waits for a
+real case. Insurance policies (in the Hausgeld for an ETW). Everything that needs
+transactions (invoices per cost line, statements per month): phase 3.

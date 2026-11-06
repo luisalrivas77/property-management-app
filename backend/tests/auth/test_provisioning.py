@@ -28,7 +28,10 @@ from hausbuch.auth.provisioning import provision_workspace, reissue_enrollment
 from hausbuch.db.session import UnsafeDatabaseRoleError, workspace_transaction
 from hausbuch.db.tables import workspace
 
-NOW = datetime(2026, 11, 5, 9, 30, tzinfo=UTC)
+# The real clock, not a fixed date: the enrollment tests redeem these invites through the API,
+# which checks their 24 h expiry against the real clock. A fixed date made every one of them
+# fail from the day after it (CI on 6 Nov 2026).
+NOW = datetime.now(UTC)
 
 
 def _provision(engine, **overrides):
