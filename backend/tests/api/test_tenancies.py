@@ -374,9 +374,12 @@ def test_the_parties_are_replaced_as_a_whole(client_a):
     assert (response.status_code, response.json()["entity_type"]) == (404, "tenant")
     assert ok(client_a.get(f"/api/tenancies/{setup['tenancy']['id']}")) == changed
 
-    # Anna is no longer a party: her retention hold through this tenancy goes with her row.
+    # Anna is no longer a party, but removal is bookkeeping: her retention still follows this
+    # tenancy (F1, decided 6 Nov 2026), so while it runs she cannot be erased, even on request.
     alone = ok(client_a.put(path, json={"parties": [{"tenant_id": ben, "role": "primary"}]}))
     assert alone["parties"] == [{"tenant_id": ben, "role": "primary"}]
+    response = client_a.post(f"/api/tenants/{anna}/erase", json={"on_request": True})
+    assert (response.status_code, response.json()["result"]["hold"]) == (409, "tenancy_active")
     response = client_a.put(
         f"/api/tenancies/{uuid4()}/parties",
         json={"parties": [{"tenant_id": ben, "role": "primary"}]},
