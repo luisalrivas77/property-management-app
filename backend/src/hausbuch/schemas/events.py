@@ -96,9 +96,11 @@ class AcquisitionCostRecorded(Schema):
 
 
 class AcquisitionCostUpdated(Schema):
-    """One Nebenkosten row changed. `changes` holds the traced fields (kind, amount, paid_on,
-    document_id) as old/new pairs. The note is free text that may name people, so, as on
-    create, its value is never recorded: note_changed only says that it changed."""
+    """A Nebenkosten row's note changed. The note is free text that may name people, so, as
+    on create, its value is never recorded: note_changed only says that it changed. A change
+    of a traced field (kind, amount, paid_on, document_id) is recorded as a correcting
+    property.acquisition_cost_recorded instead (F2, decided 6 Nov 2026), so the service
+    leaves `changes` empty."""
 
     cost_id: UUID
     changes: dict[str, FieldChange] = Field(default_factory=dict)

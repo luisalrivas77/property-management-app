@@ -48,7 +48,7 @@ from hausbuch.schemas.property import (
 
 from .context import CommandContext
 from .errors import NotFoundError, require_valid
-from .events import append_event, diff_changes, latest_in_chain, milestone_root
+from .events import append_event, diff_changes, find_event, latest_in_chain, milestone_root
 from .lookup import require_document, require_row
 from .owners import UNSET, Unset
 
@@ -315,9 +315,7 @@ def add_acquisition_cost(ctx: CommandContext, data: AcquisitionCostCreate) -> Ac
         ctx,
         EventType.PROPERTY_ACQUISITION_COST_RECORDED,
         cost.property_id,
-        AcquisitionCostRecorded(
-            cost_id=cost.id, kind=cost.kind, amount=cost.amount, document_id=cost.document_id
-        ),
+        _cost_recorded(cost),
         property_id=cost.property_id,
         effective_date=cost.paid_on,
     )
@@ -335,12 +333,18 @@ def update_acquisition_cost(
     note: str | None | Unset = UNSET,
 ) -> AcquisitionCost:
     """Change the fields passed (None clears paid_on, the Beleg or the note), with the same
-    rules as on create. Appends property.acquisition_cost_updated with the traced fields' old
-    and new values and, for the note, only that it changed. No-op (no write, no event) if
-    nothing changes.
+    rules as on create. No-op (no write, no event) if nothing changes.
 
-    The row's property.acquisition_cost_recorded event stays as recorded: History keeps the
-    values entered first, the audit trail shows each change."""
+    A change of a traced field (kind, amount, paid_on, Beleg) appends a correcting
+    property.acquisition_cost_recorded with the corrected row's full payload, dated by the
+    new paid_on and correcting the latest event of this row's chain (principle 4, as
+    loan.disbursed; F2, decided 6 Nov 2026). History then shows the corrected line, marked
+    corrected and carrying the date first recorded; the chain keeps every earlier value.
+    A row dated only now appears in History from now on; one whose paid_on is cleared
+    leaves it (undated events are not milestones).
+
+    A note change appends property.acquisition_cost_updated with note_changed only (the
+    note's text is never recorded), alongside the correction if both change."""
     requested = {
         name: value
         for name, value in (
@@ -370,13 +374,33 @@ def update_acquisition_cost(
         .returning(*cost_table.c)
     ).one()
     updated = _to_cost(row)
-    append_event(
-        ctx,
-        EventType.PROPERTY_ACQUISITION_COST_UPDATED,
-        updated.property_id,
-        AcquisitionCostUpdated(cost_id=cost_id, changes=changes, note_changed=note_changed),
-        property_id=updated.property_id,
-    )
+    if changes:
+        root = find_event(
+            ctx.conn,
+            EventType.PROPERTY_ACQUISITION_COST_RECORDED,
+            updated.property_id,
+            payload_contains={"cost_id": cost_id},
+            root_only=True,
+        )
+        if root is None:
+            raise NotFoundError("acquisition_cost event", cost_id)
+        append_event(
+            ctx,
+            EventType.PROPERTY_ACQUISITION_COST_RECORDED,
+            updated.property_id,
+            _cost_recorded(updated),
+            property_id=updated.property_id,
+            effective_date=updated.paid_on,
+            corrects_event_id=latest_in_chain(ctx.conn, root.id).id,
+        )
+    if note_changed:
+        append_event(
+            ctx,
+            EventType.PROPERTY_ACQUISITION_COST_UPDATED,
+            updated.property_id,
+            AcquisitionCostUpdated(cost_id=cost_id, note_changed=True),
+            property_id=updated.property_id,
+        )
     return updated
 
 
@@ -500,6 +524,13 @@ def _columns(values: dict[str, Any]) -> dict[str, Any]:
 
 def _to_cost(row: Row) -> AcquisitionCost:
     return AcquisitionCost.model_validate(dict(row._mapping))
+
+
+def _cost_recorded(cost: AcquisitionCost) -> AcquisitionCostRecorded:
+    """The payload of a row's acquisition_cost_recorded event, and of each correction."""
+    return AcquisitionCostRecorded(
+        cost_id=cost.id, kind=cost.kind, amount=cost.amount, document_id=cost.document_id
+    )
 
 
 def _to_property(row: Row) -> Property:

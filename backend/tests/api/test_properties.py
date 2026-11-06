@@ -183,9 +183,11 @@ def test_an_acquisition_cost_is_edited_and_removed(client_a):
     response = client_a.delete(path)
     assert (response.status_code, response.json()["entity_type"]) == (404, "acquisition_cost")
     types = [e["type"] for e in ok(client_a.get(f"/api/properties/{prop['id']}/events"))]
-    assert types[-4:] == [
+    # Traced fields are corrections of the recorded line (F2); the note only an update.
+    assert types[-5:] == [
         "property.acquisition_cost_recorded",
-        "property.acquisition_cost_updated",
+        "property.acquisition_cost_recorded",
+        "property.acquisition_cost_recorded",
         "property.acquisition_cost_updated",
         "property.acquisition_cost_removed",
     ]
