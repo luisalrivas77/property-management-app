@@ -247,6 +247,75 @@ def test_worker_runs_a_queued_job(
     assert not worker.running
 
 
+def test_a_stalled_job_is_retried_and_a_live_workers_job_is_left_alone(
+    app_engine, dbname, fresh_workspaces, blob_store, tmp_path, monkeypatch
+):
+    """A job left `doing` by a dead instance (its worker row pruned, worker_id NULL) is
+    reset to todo by the worker's sweep at start and then runs; a `doing` job of a
+    registered worker with a fresh heartbeat is not touched."""
+    ws, _ = fresh_workspaces
+    stalled_doc = _document(app_engine, ws, blob_store)
+    live_doc = _document(app_engine, ws, blob_store)
+    with workspace_transaction(app_engine, ws) as conn:
+        stalled = _proposal(conn, ws, stalled_doc)
+        enqueue_document_read(conn, workspace_id=ws, document_id=stalled_doc, proposal_id=stalled)
+        live = _proposal(conn, ws, live_doc)
+        enqueue_document_read(conn, workspace_id=ws, document_id=live_doc, proposal_id=live)
+    with app_engine.begin() as conn:
+        conn.execute(
+            text("UPDATE procrastinate_jobs SET status = 'doing' WHERE lock = :lock"),
+            {"lock": document_lock(stalled_doc)},
+        )
+        live_worker = conn.execute(
+            text("SELECT worker_id FROM procrastinate_register_worker_v1()")
+        ).scalar_one()
+        conn.execute(
+            text(
+                "UPDATE procrastinate_jobs SET status = 'doing', worker_id = :w WHERE lock = :lock"
+            ),
+            {"w": live_worker, "lock": document_lock(live_doc)},
+        )
+
+    results: list = []
+    monkeypatch.setattr(proposals, "record_read_result", lambda ctx, pid, **kw: results.append(pid))
+    monkeypatch.setattr(
+        proposals, "record_read_failure", lambda ctx, pid, **kw: pytest.fail(f"failed: {kw}")
+    )
+    client = FakeModelClient([text_response(_letter_answer())])
+    worker = build_worker(
+        _settings(dbname, tmp_path),
+        app_engine,
+        blob_store,
+        model_client=client,
+        connector_kwargs={"kwargs": {"options": f"-c role={APP}"}},
+        clock=lambda: NOW,
+    )
+    worker._run_options = {"wait": False, "listen_notify": False}
+
+    async def scenario():
+        await worker.start()
+        await asyncio.wait_for(worker.wait(), timeout=60)
+        await worker.stop(5)
+
+    try:
+        asyncio.run(scenario())
+        assert results == [stalled]
+        [stalled_row] = _jobs(app_engine, ws, stalled_doc)
+        # The sweep's retry counts one attempt and finishing the run another.
+        assert (stalled_row.status, stalled_row.attempts) == ("succeeded", 2)
+        with app_engine.begin() as conn:
+            live_row = conn.execute(
+                text("SELECT status, worker_id, attempts FROM procrastinate_jobs WHERE lock = :l"),
+                {"l": document_lock(live_doc)},
+            ).one()
+        assert tuple(live_row) == ("doing", live_worker, 0)
+    finally:
+        with app_engine.begin() as conn:
+            conn.execute(
+                text("DELETE FROM procrastinate_workers WHERE id = :w"), {"w": live_worker}
+            )
+
+
 def test_conninfo_drops_the_driver_suffix():
     url = "postgresql+psycopg://app:pw@db.internal:5432/hausbuch?sslmode=require"
     assert procrastinate_conninfo(url) == (
