@@ -166,7 +166,7 @@ def run_document_read(
         wait_s = RETRY_WAITS_S[attempt]
         logger.warning("document read retried", extra={"fields": log | {"retry_in_s": wait_s}})
         raise RetryLater(wait_s)
-    _fail(deps, workspace_id, target, code, ai_call_id, log)
+    _fail(deps, workspace_id, target, code, ai_call_id, attempt + 1, log)
 
 
 def _fail(
@@ -175,12 +175,16 @@ def _fail(
     proposal_id: UUID,
     code: str,
     ai_call_id: UUID | None,
+    attempts: int,
     fields: dict,
 ) -> None:
+    """record_read_failure; `attempts` counts the runs so far (the first one included)."""
     try:
         with workspace_transaction(deps.engine, workspace_id) as conn:
             ctx = new_command(conn, workspace_id, SYSTEM_ACTOR, now=deps.clock())
-            proposals.record_read_failure(ctx, proposal_id, error_code=code, ai_call_id=ai_call_id)
+            proposals.record_read_failure(
+                ctx, proposal_id, error_code=code, ai_call_id=ai_call_id, attempts=attempts
+            )
     except Exception as exc:
         fields = fields | {"record_exc_type": type(exc).__name__}
         logger.error("document read failure not recorded", extra={"fields": fields})

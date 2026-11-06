@@ -240,7 +240,10 @@ def test_gate_1_ai_disabled_sends_nothing(setup, recorder, app_engine):
     _run(deps, ws, doc, proposal)
     assert client.requests == []
     [(ctx, proposal_id, kw)] = recorder.failures
-    assert (proposal_id, kw) == (proposal, {"error_code": "ai.disabled", "ai_call_id": None})
+    assert (proposal_id, kw) == (
+        proposal,
+        {"error_code": "ai.disabled", "ai_call_id": None, "attempts": 1},
+    )
     assert ctx.actor.actor_type is ActorType.SYSTEM
     assert _calls(app_engine, ws, doc) == []
 
@@ -256,7 +259,7 @@ def test_gate_2_marked_upload_is_blocked_before_any_call(setup, recorder, app_en
     [(_, proposal_id, kw)] = recorder.failures
     assert (proposal_id, kw) == (
         proposal,
-        {"error_code": "ai.blocked_tenant_data", "ai_call_id": None},
+        {"error_code": "ai.blocked_tenant_data", "ai_call_id": None, "attempts": 1},
     )
 
 
@@ -387,7 +390,7 @@ def test_unsupported_media_type_fails_without_a_call(setup, recorder):
     _run(deps, ws, doc, proposal)
     assert client.requests == []
     [(_, _, kw)] = recorder.failures
-    assert kw == {"error_code": "ai.unsupported_media_type", "ai_call_id": None}
+    assert kw == {"error_code": "ai.unsupported_media_type", "ai_call_id": None, "attempts": 1}
 
 
 def test_damaged_pdf_fails_as_unreadable(setup, recorder):
@@ -412,11 +415,13 @@ def test_retryable_error_asks_for_a_retry_then_fails_on_the_last_attempt(
         assert info.value.wait_s == wait
         assert info.value.__context__ is None or info.value.__suppress_context__
     assert recorder.failures == []
-    _run(deps, ws, doc, proposal, attempt=3)
+    _run(deps, ws, doc, proposal, attempt=job.MAX_RETRIES)
     [(_, _, kw)] = recorder.failures
     rows = _calls(app_engine, ws, doc)
     assert [r.error_code for r in rows] == ["ai.unavailable"] * 4
     assert kw["error_code"] == "ai.unavailable" and kw["ai_call_id"] in {r.id for r in rows}
+    # document.read_failed carries the real count: the first run and three retries.
+    assert kw["attempts"] == job.MAX_RETRIES + 1 == 4
 
 
 def test_a_4xx_is_never_retried(setup, recorder, app_engine):
@@ -438,7 +443,7 @@ def test_an_internal_error_is_retried_then_recorded(setup, recorder, monkeypatch
         _run(deps, ws, doc, proposal, attempt=0)
     _run(deps, ws, doc, proposal, attempt=3)
     [(_, _, kw)] = recorder.failures
-    assert kw == {"error_code": "ai.internal_error", "ai_call_id": None}
+    assert kw == {"error_code": "ai.internal_error", "ai_call_id": None, "attempts": 4}
 
 
 def test_failure_that_cannot_be_recorded_raises_job_failed(setup, monkeypatch):
