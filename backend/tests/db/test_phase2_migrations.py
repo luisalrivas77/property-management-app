@@ -701,6 +701,9 @@ def test_a_rule_never_stores_an_amount(connect, workspaces):
             {"counterparty_iban_hmac": None, "purpose_pattern": None},
             {"counterparty_iban_hmac": "DE89370400440532013000"},  # a plain IBAN, not a hash
             {"purpose_pattern": "Versicherung", "amount_sign": "minus"},
+            {"purpose_pattern": {"x": 1}},  # not a string, though ->> would make it text
+            {"counterparty_name_pattern": 42},
+            {"purpose_pattern": "Versicherung", "amount_sign": ["debit"]},
             [],
         ]
         for matcher in bad_matchers:

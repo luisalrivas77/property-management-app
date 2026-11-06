@@ -11,8 +11,8 @@ closed value sets, forced workspace_isolation RLS, explicit hausbuch_app grants.
   new row set whose rows name the row they supersede, on the same transaction (composite
   FK). Σ amounts per transaction is the service's check (spec §3.4); no CHECK spans rows.
 - matching_rule stores a matcher and a split method, never an amount (D25): the CHECK on
-  matcher allows only its four keys (an IBAN hash, two patterns, an amount sign), and the
-  table has no money column.
+  matcher allows only its four keys (an IBAN hash, two patterns, an amount sign), each a
+  JSON string when present, and the table has no money column.
 - ai_call.transaction_id gets the FK 0005 left out.
 - The downgrade refuses while any of this step's tables holds a row (it would drop
   ledger data); it lifts FORCE RLS first, since the owner has no workspace set.
@@ -58,6 +58,12 @@ SPLIT_METHODS = (
 )
 MATCHER_KEYS = (
     "'counterparty_iban_hmac', 'counterparty_name_pattern', 'purpose_pattern', 'amount_sign'"
+)
+# Every matcher value is a JSON string when present (null counts as absent): ->> would turn
+# an object or a number into text that passes the other checks.
+MATCHER_TYPED = "\n                                    AND ".join(
+    f"(matcher ->> {key} IS NULL OR jsonb_typeof(matcher -> {key}) = 'string')"
+    for key in MATCHER_KEYS.split(", ")
 )
 
 FUNCTIONS = """
@@ -149,6 +155,7 @@ CREATE TABLE matching_rule (
     matcher                     jsonb NOT NULL CHECK (
                                     jsonb_typeof(matcher) = 'object'
                                     AND matcher - ARRAY[{MATCHER_KEYS}] = '{{}}'::jsonb
+                                    AND {MATCHER_TYPED}
                                     AND num_nonnulls(matcher ->> 'counterparty_iban_hmac',
                                                      matcher ->> 'counterparty_name_pattern',
                                                      matcher ->> 'purpose_pattern') >= 1
