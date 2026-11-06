@@ -1,0 +1,52 @@
+# Rule fixture: allocation sum check (hausbuch.rules.allocations.check_sum)
+#
+# check_sum(transaction_amount: Money, drafts: list[AllocationDraft]) -> None
+#   raises RuleError(code) when the drafts do not split the transaction exactly:
+#   - no drafts                          -> allocation.empty
+#   - Σ draft.amount != transaction_amount -> allocation.sum_mismatch (exact Decimal equality,
+#     no tolerance: one cent off is a mismatch)
+# Spec: docs/phases/phase-2.md §3.4, §12, D23. The validator, not the model, enforces the sum,
+# on every write path (matcher, rule, LLM, user). Amounts are signed like the transaction: a
+# debit's parts are negative, so a set whose signs are flipped sums to the wrong amount and is
+# a sum_mismatch too (there is no separate sign code).
+# expect.error: the code, or null when the set is valid.
+
+cases:
+  - id: exact_rent_split
+    description: Rent 1,400 split into cold rent and the NK prepayment.
+    transaction_amount: "1400.00"
+    allocations:
+      - {amount: "1150.00", category: rent_cold, tax_year: 2027, recurring: true}
+      - {amount: "250.00", category: operating_costs_prepayment, tax_year: 2027, recurring: true}
+    expect: {error: null}
+
+  - id: exact_annuity_debit
+    description: A debit split into interest and principal, both negative.
+    transaction_amount: "-1400.00"
+    allocations:
+      - {amount: "-898.50", category: loan_interest, tax_year: 2024, recurring: true}
+      - {amount: "-501.50", category: loan_principal, tax_year: 2024, recurring: true}
+    expect: {error: null}
+
+  - id: off_by_one_cent
+    description: The parts sum to 1,399.99; no rounding tolerance.
+    transaction_amount: "1400.00"
+    allocations:
+      - {amount: "1149.99", category: rent_cold, tax_year: 2027, recurring: true}
+      - {amount: "250.00", category: operating_costs_prepayment, tax_year: 2027, recurring: true}
+    expect: {error: allocation.sum_mismatch}
+
+  - id: empty
+    description: No allocation at all.
+    transaction_amount: "-9.90"
+    allocations: []
+    expect: {error: allocation.empty}
+
+  - id: sign_mismatch
+    description: A debit of -380.00 split into positive parts; the absolute values match, the sum does not.
+    transaction_amount: "-380.00"
+    allocations:
+      - {amount: "210.00", category: hausgeld_umlagefaehig, tax_year: 2027, recurring: true}
+      - {amount: "50.00", category: hausgeld_verwaltung, tax_year: 2027, recurring: true}
+      - {amount: "120.00", category: hausgeld_ruecklage, tax_year: 2027, recurring: true}
+    expect: {error: allocation.sum_mismatch}

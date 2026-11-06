@@ -1,0 +1,67 @@
+# Rule fixture: service period (hausbuch.rules.periods.service_period)
+#
+# service_period(purpose: str, booking_date: date, recurring: bool) -> ServicePeriod | None
+# Spec: docs/phases/phase-2.md D27 and phase 2 input point 4. The period a payment pays for:
+#   1. a month or a range of months parsed from the purpose text, in any of these forms:
+#        MM/YYYY   "Miete 01/2027"          MonthName YYYY  "Miete Januar 2027"
+#        MM.YYYY   "01.2027"                YYYY-MM         "2027-01"
+#        a range   "Hausgeld 01/27-03/27"   (MM/YY-MM/YY; also MM/YYYY-MM/YYYY)
+#      German month names, case-insensitive. A month gives its first to its last day; a range
+#      gives the first day of its first month to the last day of its last month.
+#   2. else a bare four-digit year (2000-2100) in the purpose: that calendar year
+#      ("Nachzahlung NK 2026": a settlement for the year 2026);
+#   3. else, for a recurring line, the booking month;
+#   4. else null.
+# The period is independent of the booking date when the purpose states one (rent for January
+# paid on 30 December is January's rent; the §11 ten-day rule in phase 3 reads both).
+
+cases:
+  - id: mm_slash_yyyy
+    purpose: Miete 01/2027
+    booking_date: 2026-12-30
+    recurring: true
+    expect: {start: 2027-01-01, end: 2027-01-31}
+
+  - id: month_name
+    purpose: Miete Januar 2027 Lindenstr. 12
+    booking_date: 2026-12-30
+    recurring: true
+    expect: {start: 2027-01-01, end: 2027-01-31}
+
+  - id: mm_dot_yyyy
+    purpose: "01.2027"
+    booking_date: 2027-01-04
+    recurring: true
+    expect: {start: 2027-01-01, end: 2027-01-31}
+
+  - id: iso_year_month
+    purpose: "2027-01"
+    booking_date: 2027-01-04
+    recurring: true
+    expect: {start: 2027-01-01, end: 2027-01-31}
+
+  - id: range_two_digit_years
+    purpose: Hausgeld 01/27-03/27
+    booking_date: 2027-01-04
+    recurring: true
+    expect: {start: 2027-01-01, end: 2027-03-31}
+
+  - id: settlement_year
+    description: A bare year, on a line that is not recurring.
+    purpose: Nachzahlung NK 2026
+    booking_date: 2027-03-12
+    recurring: false
+    expect: {start: 2026-01-01, end: 2026-12-31}
+
+  - id: none_recurring_booking_month
+    description: Nothing in the purpose; a recurring line pays for its booking month.
+    purpose: Dauerauftrag Rate
+    booking_date: 2027-02-01
+    recurring: true
+    expect: {start: 2027-02-01, end: 2027-02-28}
+
+  - id: none_not_recurring_null
+    purpose: Rechnung R 8817
+    booking_date: 2027-02-01
+    recurring: false
+    expect: null
