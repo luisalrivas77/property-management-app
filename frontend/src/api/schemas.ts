@@ -82,6 +82,20 @@ export type RetentionResult = Schemas["RetentionResult"];
 export type RetentionClass = Schemas["RetentionClass"];
 export type RetentionHold = Schemas["RetentionHold"];
 export type UploadBody = Schemas["Body_document_upload_api_documents_post"];
+export type DocumentUploadResult = Schemas["DocumentUploadResult"];
+
+// pre-fill proposals (phase-2.md §4.2, §6)
+export type Proposal = Schemas["Proposal"];
+export type ProposalRecord = Schemas["ProposalRecord"];
+export type ProposalStatus = Schemas["ProposalStatus"];
+export type ExtractionKind = Schemas["ExtractionKind"];
+export type ExtractedValue = Schemas["ExtractedValue"];
+export type SourceRef = Schemas["SourceRef"];
+export type FieldDecision = Schemas["FieldDecision"];
+export type ProposalApplyBody = Schemas["ProposalApplyBody"];
+export type ProposalApplyRecord = Schemas["ProposalApplyRecord"];
+export type ProposalApplyResult = Schemas["ProposalApplyResult"];
+export type AppliedEntity = Schemas["AppliedEntity"];
 
 // document checklist (spec amendment 3)
 export type DocumentChecklist = Schemas["DocumentChecklist"];

@@ -23,16 +23,22 @@ export default function DocumentsPage() {
       <h1>Dokumente</h1>
       <UploadControl
         label="Dokumente hochladen"
+        prefill
         onUploaded={(result) => {
           setUploads((current) => [result, ...current].slice(0, 5));
           documents.reload();
         }}
       />
-      {uploads.map(({ document, existed }) => (
-        <Notice key={`${document.id}-${existed}`}>
+      {uploads.map(({ document, existed, proposalId, aiUnavailable }) => (
+        <Notice key={`${document.id}-${existed}-${proposalId ?? ""}`}>
           {existed ? "Bereits vorhanden: " : "Hochgeladen: "}
           <Link href={`/documents/${document.id}`}>{documentLabel(document)}</Link>
-          {document.typing ? null : " – jetzt typisieren und verknüpfen."}
+          {proposalId
+            ? " – wird automatisch ausgelesen; den Vorschlag auf der Dokumentseite prüfen."
+            : document.typing
+              ? null
+              : " – jetzt typisieren und verknüpfen."}
+          {aiUnavailable ? " Automatisches Auslesen ist auf dem Server nicht eingeschaltet." : null}
         </Notice>
       ))}
       <h2>Archiv</h2>
