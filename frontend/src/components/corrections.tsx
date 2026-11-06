@@ -1,7 +1,7 @@
 "use client";
 
-// "Datum korrigieren" (§9.1): milestone dates (Notartermin, Übergang, Einzug) are never
-// edited in place. A correction is its own command, which appends a correcting event; History
+// "Datum korrigieren" (§9.1): milestone dates (Notartermin, Übergang, Einzug, Auszahlung eines
+// Darlehens) are never edited in place. A correction is its own command, which appends a correcting event; History
 // then shows the milestone once, marked "korrigiert, ursprünglich …" (principle 4).
 import { useState, type FormEvent } from "react";
 
@@ -21,6 +21,8 @@ export function DateCorrectionForm({
   label,
   current,
   currentPrice,
+  priceLabel = "Kaufpreis",
+  priceHint = "Leer lassen, wenn der Kaufpreis stimmt.",
   onSubmit,
   onDone,
 }: {
@@ -28,8 +30,11 @@ export function DateCorrectionForm({
   label: string;
   /** The date in force now (ISO). */
   current: string;
-  /** Set for the Notartermin: the price that correction may also fix. */
+  /** Set for the Notartermin (and a loan's payout): the amount that correction may also fix. */
   currentPrice?: string;
+  /** What that amount is called ("Kaufpreis", "Darlehenssumme"). */
+  priceLabel?: string;
+  priceHint?: string;
   onSubmit: (values: CorrectionValues) => Promise<unknown>;
   onDone: () => void;
 }) {
@@ -61,7 +66,7 @@ export function DateCorrectionForm({
     <form className="stack" onSubmit={submit} noValidate>
       <p className="muted">
         Gespeichert: {formatDate(current)}
-        {currentPrice !== undefined ? `, Kaufpreis ${formatMoney(currentPrice)}` : ""}. Die Korrektur wird als eigener Eintrag
+        {currentPrice !== undefined ? `, ${priceLabel} ${formatMoney(currentPrice)}` : ""}. Die Korrektur wird als eigener Eintrag
         protokolliert; der Verlauf zeigt danach das neue Datum mit dem Hinweis auf das ursprüngliche.
       </p>
       <Field id={`${idPrefix}-date`} label={label} errors={form.of("new_date")}>
@@ -70,8 +75,8 @@ export function DateCorrectionForm({
       {currentPrice !== undefined ? (
         <Field
           id={`${idPrefix}-price`}
-          label="Kaufpreis korrigieren (€, optional)"
-          hint="Leer lassen, wenn der Kaufpreis stimmt."
+          label={`${priceLabel} korrigieren (€, optional)`}
+          hint={priceHint}
           errors={form.of("purchase_price")}
         >
           <input type="text" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} autoComplete="off" />

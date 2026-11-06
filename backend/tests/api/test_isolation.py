@@ -128,6 +128,7 @@ WRITES = [
     ("POST", "/api/tenancies/{tenancy}/end", {"end_date": "2026-01-01"}),
     ("POST", "/api/rent-schedule/{row}/corrections", {"cold_rent": "1.00"}),
     ("PATCH", "/api/loans/{loan}", {"lender": "x"}),
+    ("POST", "/api/loans/{loan}/corrections/disbursement", {"new_date": "2024-04-29"}),
     ("POST", "/api/loans", {"$loan_body": "{property}"}),
     ("PUT", "/api/documents/{document}/typing", {"typing": {"type": "other"}}),
     (

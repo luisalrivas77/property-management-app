@@ -723,6 +723,26 @@ export interface paths {
         patch: operations["loan_update_api_loans__loan_id__patch"];
         trace?: never;
     };
+    "/api/loans/{loan_id}/corrections/disbursement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Loan Correct Disbursement
+         * @description Correct the payout (loan.disbursed): date and/or principal. The schedule follows.
+         */
+        post: operations["loan_correct_disbursement_api_loans__loan_id__corrections_disbursement_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/loans/{loan_id}/schedule": {
         parameters: {
             query?: never;
@@ -1445,6 +1465,17 @@ export interface components {
              * Format: date
              */
             received_on: string;
+        };
+        /**
+         * DisbursementCorrection
+         * @description POST /loans/{id}/corrections/disbursement: the payout date and/or the principal; an
+         *     absent (or null) field keeps the recorded value.
+         */
+        DisbursementCorrection: {
+            /** New Date */
+            new_date?: string | null;
+            /** Principal */
+            principal?: string | null;
         };
         /**
          * Document
@@ -4402,6 +4433,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["LoanPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Loan"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    loan_correct_disbursement_api_loans__loan_id__corrections_disbursement_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                loan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DisbursementCorrection"];
             };
         };
         responses: {

@@ -61,6 +61,7 @@ export type DepositReceipt = Schemas["DepositReceipt"];
 export type Loan = Schemas["Loan"];
 export type LoanCreateRequest = Schemas["LoanCreateRequest"];
 export type LoanPatch = Schemas["LoanPatch"];
+export type DisbursementCorrection = Schemas["DisbursementCorrection"];
 export type LoanSchedule = Schemas["LoanSchedule"];
 export type ScheduleEntry = Schemas["ScheduleEntry"];
 export type YearTotals = Schemas["YearTotals"];

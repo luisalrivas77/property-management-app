@@ -73,6 +73,55 @@ def test_a_patch_that_never_amortises_is_rolled_back(client_a):
     assert types == ["loan.created", "loan.disbursed"]
 
 
+def test_the_disbursement_is_corrected_and_history_shows_it(client_a):
+    prop = new_property(client_a)
+    loan = create(client_a, "/api/loans", loan_body(prop["id"]))
+    path = f"/api/loans/{loan['id']}/corrections/disbursement"
+
+    corrected = ok(client_a.post(path, json={"new_date": "2024-04-29", "principal": "235000.00"}))
+    assert (corrected["terms"]["disbursed_on"], corrected["terms"]["principal"]) == (
+        "2024-04-29",
+        "235000.00",
+    )
+    schedule = ok(client_a.get(f"/api/loans/{loan['id']}/schedule"))
+    assert schedule["entries"][0]["opening_balance"] == "235000.00"
+    [payout] = [
+        h
+        for h in ok(client_a.get(f"/api/properties/{prop['id']}/history"))
+        if h["type"] == "loan.disbursed"
+    ]
+    assert (payout["effective_date"], payout["corrected"], payout["original_effective_date"]) == (
+        "2024-04-29",
+        True,
+        "2024-04-30",
+    )
+    assert payout["payload"] == {"amount": "235000.00"}
+
+    assert ok(client_a.post(path, json={"principal": "235000.00"})) == corrected  # no-op
+    for body in ({}, {"new_date": None, "principal": None}, {"principal": 235000}):
+        response = client_a.post(path, json=body)
+        assert response.status_code == 422, body
+    response = client_a.post(f"/api/loans/{uuid4()}/corrections/disbursement", json=body)
+    assert response.status_code == 422  # the body is checked first
+    response = client_a.post(
+        f"/api/loans/{uuid4()}/corrections/disbursement", json={"new_date": "2024-04-29"}
+    )
+    assert (response.status_code, response.json()["entity_type"]) == (404, "loan")
+
+
+def test_a_disbursement_correction_that_never_amortises_is_rolled_back(client_a):
+    prop = new_property(client_a)
+    loan = create(client_a, "/api/loans", loan_body(prop["id"]))
+    response = client_a.post(
+        f"/api/loans/{loan['id']}/corrections/disbursement", json={"principal": "500000.00"}
+    )
+    assert response.status_code == 422
+    assert response.json()["code"] == "loan.payment_does_not_cover_interest"
+    assert ok(client_a.get(f"/api/loans/{loan['id']}")) == loan
+    types = [e["type"] for e in ok(client_a.get(f"/api/events?entity_id={loan['id']}"))]
+    assert types == ["loan.created", "loan.disbursed"]
+
+
 def test_a_stored_loan_that_never_amortises_answers_409(client_a, app_engine, auth_a):
     """Data from before the check (written through the service directly)."""
     prop = new_property(client_a)

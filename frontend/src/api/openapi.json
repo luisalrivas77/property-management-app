@@ -2159,6 +2159,57 @@
         }
       }
     },
+    "/api/loans/{loan_id}/corrections/disbursement": {
+      "post": {
+        "summary": "Loan Correct Disbursement",
+        "description": "Correct the payout (loan.disbursed): date and/or principal. The schedule follows.",
+        "operationId": "loan_correct_disbursement_api_loans__loan_id__corrections_disbursement_post",
+        "parameters": [
+          {
+            "name": "loan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Loan Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DisbursementCorrection"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Loan"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/loans/{loan_id}/schedule": {
       "get": {
         "summary": "Loan Schedule Get",
@@ -4024,6 +4075,38 @@
           "received_on"
         ],
         "title": "DepositReceivedBody"
+      },
+      "DisbursementCorrection": {
+        "properties": {
+          "new_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New Date"
+          },
+          "principal": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Principal"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "DisbursementCorrection",
+        "description": "POST /loans/{id}/corrections/disbursement: the payout date and/or the principal; an\nabsent (or null) field keeps the recorded value."
       },
       "Document": {
         "properties": {

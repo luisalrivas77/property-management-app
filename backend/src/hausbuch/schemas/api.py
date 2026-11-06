@@ -13,10 +13,10 @@ services' UNSET convention).
 
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Any, Literal, Self
 from uuid import UUID
 
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from .common import (
     Area,
@@ -179,6 +179,20 @@ class RentRowCorrection(Patch):
 class NotarizedOnCorrection(Schema):
     new_date: date
     purchase_price: PositiveMoney | None = None  # None = keep the recorded price
+
+
+class DisbursementCorrection(Schema):
+    """POST /loans/{id}/corrections/disbursement: the payout date and/or the principal; an
+    absent (or null) field keeps the recorded value."""
+
+    new_date: date | None = None
+    principal: PositiveMoney | None = None
+
+    @model_validator(mode="after")
+    def _something(self) -> Self:
+        if self.new_date is None and self.principal is None:
+            raise ValueError("give new_date, principal or both")
+        return self
 
 
 class DateCorrection(Schema):
