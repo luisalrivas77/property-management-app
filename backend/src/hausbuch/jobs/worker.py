@@ -10,8 +10,16 @@ event loop serving requests is never blocked by a model call.
   away, say), so one outage does not leave the instance without a worker until redeploy.
 - stop(timeout): cancelling run_worker_async is Procrastinate's graceful stop: no new jobs are
   fetched and running ones get shutdown_graceful_timeout to finish. A sync job still running
-  after that cannot be killed; its row stays `doing` and the next instance's stalled-worker
-  pruning retries it.
+  after that cannot be killed; its row stays `doing` when the process exits.
+- Stalled jobs. Procrastinate itself never resets such a row: at start a worker only prunes
+  the procrastinate_workers rows whose heartbeat is older than 30 s, which sets the jobs'
+  worker_id to NULL, and the job stays `doing`, its lock (doc:{id}) blocking every later job
+  of the document. So the supervisor sweeps once after opening the pool, before the worker
+  loop starts, and then every STALLED_SWEEP_INTERVAL_S while it runs: every `doing` job whose
+  worker row is gone, or whose worker missed its heartbeat for STALLED_AFTER_S (it beats
+  every 10 s, so a live worker's jobs are never selected), is retried now (Procrastinate's
+  get_stalled_jobs + retry_job; the retry counts as an attempt). A failed sweep is logged and
+  the next one tries again; it never stops the worker.
 - running: whether the worker loop is up; /healthz reports it as `worker: ok | stopped`.
 """
 
@@ -33,6 +41,9 @@ from .tasks import DEPS_KEY, register_tasks
 WORKER_NAME = "hausbuch-api"
 RESTART_FIRST_DELAY_S = 1.0
 RESTART_MAX_DELAY_S = 60.0
+STALLED_SWEEP_INTERVAL_S = 60.0
+# Procrastinate's own stalled_worker_timeout default; heartbeats come every 10 s.
+STALLED_AFTER_S = 30
 
 logger = logging.getLogger("hausbuch.jobs.worker")
 
@@ -46,6 +57,7 @@ class JobWorker:
         concurrency: int,
         graceful_timeout_s: float,
         restart_first_delay_s: float = RESTART_FIRST_DELAY_S,
+        stalled_sweep_interval_s: float = STALLED_SWEEP_INTERVAL_S,
         run_options: dict | None = None,
     ) -> None:
         self._app = app
@@ -53,6 +65,7 @@ class JobWorker:
         self._concurrency = concurrency
         self._graceful_timeout_s = graceful_timeout_s
         self._restart_first_delay_s = restart_first_delay_s
+        self._stalled_sweep_interval_s = stalled_sweep_interval_s
         self._run_options = run_options or {}
         self._supervisor: asyncio.Task | None = None
         self._stopping = False
@@ -102,8 +115,14 @@ class JobWorker:
         while not self._stopping:
             try:
                 await self._app.open_async()
-                self._running = True
-                await self._app.run_worker_async(**options)
+                await self.sweep_stalled_jobs()  # before the loop: a wait=False run sees it
+                sweeper = asyncio.create_task(self._sweep_periodically(), name="stalled sweep")
+                try:
+                    self._running = True
+                    await self._app.run_worker_async(**options)
+                finally:
+                    sweeper.cancel()
+                    await asyncio.gather(sweeper, return_exceptions=True)
             except asyncio.CancelledError:
                 self._running = False
                 raise
@@ -116,6 +135,28 @@ class JobWorker:
                 return
             await asyncio.sleep(delay)
             delay = min(delay * 2, RESTART_MAX_DELAY_S)
+
+    async def sweep_stalled_jobs(self) -> int:
+        """Retry the `doing` jobs of dead workers (module docstring); how many were retried.
+        Never raises: a failure is logged (class name only) and 0 returned."""
+        manager = self._app.job_manager
+        retried = 0
+        try:
+            stalled = await manager.get_stalled_jobs(seconds_since_heartbeat=STALLED_AFTER_S)
+            for job in stalled:
+                await manager.retry_job(job)
+                retried += 1
+                fields = {"event": "stalled_job_retried", "job_id": job.id, "task": job.task_name}
+                logger.warning("stalled job retried", extra={"fields": fields})
+        except Exception as exc:
+            fields = {"event": "stalled_sweep_failed", "exc_type": type(exc).__name__}
+            logger.error("stalled-job sweep failed", extra={"fields": fields})
+        return retried
+
+    async def _sweep_periodically(self) -> None:
+        while True:
+            await asyncio.sleep(self._stalled_sweep_interval_s)
+            await self.sweep_stalled_jobs()
 
     async def _close(self) -> None:
         try:

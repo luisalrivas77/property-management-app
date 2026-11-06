@@ -5,6 +5,7 @@ replaced by recorders, so the tests assert exactly what the job hands over.
 All model responses here are synthetic (hausbuch.ai.fake), never recordings of the real API.
 """
 
+import dataclasses
 import inspect
 import io
 import json
@@ -240,7 +241,10 @@ def test_gate_1_ai_disabled_sends_nothing(setup, recorder, app_engine):
     _run(deps, ws, doc, proposal)
     assert client.requests == []
     [(ctx, proposal_id, kw)] = recorder.failures
-    assert (proposal_id, kw) == (proposal, {"error_code": "ai.disabled", "ai_call_id": None})
+    assert (proposal_id, kw) == (
+        proposal,
+        {"error_code": "ai.disabled", "ai_call_id": None, "attempts": 1},
+    )
     assert ctx.actor.actor_type is ActorType.SYSTEM
     assert _calls(app_engine, ws, doc) == []
 
@@ -256,7 +260,7 @@ def test_gate_2_marked_upload_is_blocked_before_any_call(setup, recorder, app_en
     [(_, proposal_id, kw)] = recorder.failures
     assert (proposal_id, kw) == (
         proposal,
-        {"error_code": "ai.blocked_tenant_data", "ai_call_id": None},
+        {"error_code": "ai.blocked_tenant_data", "ai_call_id": None, "attempts": 1},
     )
 
 
@@ -327,6 +331,48 @@ def test_gate_3_open_when_the_workspace_allows_tenant_documents(setup, recorder,
     assert kw["values"]["cold_rent"].value == "850.00"
 
 
+class _TurnsTheSettingOff(FakeModelClient):
+    """Turns the workspace's ai_tenant_documents off while the classify call is out."""
+
+    def __init__(self, engine, ws, script) -> None:
+        super().__init__(script)
+        self.engine, self.ws = engine, ws
+
+    def send(self, request):
+        response = super().send(request)
+        if len(self.requests) == 1:
+            with workspace_transaction(self.engine, self.ws) as conn:
+                conn.execute(
+                    update(workspace_table)
+                    .where(workspace_table.c.id == self.ws)
+                    .values(ai_tenant_documents=False)
+                )
+        return response
+
+
+@pytest.mark.parametrize(
+    ("answer", "flagged"),
+    [(_classify(), True), (_classify("contract", "lease"), False)],
+    ids=["flagged-upload", "lease"],
+)
+def test_the_setting_is_read_again_before_extraction(setup, recorder, app_engine, answer, flagged):
+    """Turned off while the document was being classified: a tenant document (the upload's
+    flag or the classifier's result) is blocked after classification, with no extract call."""
+    deps, ws, doc, proposal = setup(_pdf(1), FakeModelClient(), tenant_data=flagged)
+    _allow_tenant_documents(app_engine, ws)
+    script = [text_response(answer), cited_response(INVOICE_ANSWER)]
+    client = _TurnsTheSettingOff(app_engine, ws, script)
+    deps = dataclasses.replace(deps, model_client=client)
+    _run(deps, ws, doc, proposal)
+
+    assert len(client.requests) == 1  # classify only
+    assert recorder.failures == []
+    [(_, proposal_id, kw)] = recorder.results
+    assert proposal_id == proposal
+    assert kw["blocked_tenant_data"] is True
+    assert kw["values"] is None and kw["extract_call_id"] is None
+
+
 def test_type_without_extraction_is_typing_only(setup, recorder, app_engine):
     client = FakeModelClient([text_response(_classify("letter"))])
     deps, ws, doc, proposal = setup(_pdf(1), client)
@@ -387,7 +433,7 @@ def test_unsupported_media_type_fails_without_a_call(setup, recorder):
     _run(deps, ws, doc, proposal)
     assert client.requests == []
     [(_, _, kw)] = recorder.failures
-    assert kw == {"error_code": "ai.unsupported_media_type", "ai_call_id": None}
+    assert kw == {"error_code": "ai.unsupported_media_type", "ai_call_id": None, "attempts": 1}
 
 
 def test_damaged_pdf_fails_as_unreadable(setup, recorder):
@@ -412,11 +458,13 @@ def test_retryable_error_asks_for_a_retry_then_fails_on_the_last_attempt(
         assert info.value.wait_s == wait
         assert info.value.__context__ is None or info.value.__suppress_context__
     assert recorder.failures == []
-    _run(deps, ws, doc, proposal, attempt=3)
+    _run(deps, ws, doc, proposal, attempt=job.MAX_RETRIES)
     [(_, _, kw)] = recorder.failures
     rows = _calls(app_engine, ws, doc)
     assert [r.error_code for r in rows] == ["ai.unavailable"] * 4
     assert kw["error_code"] == "ai.unavailable" and kw["ai_call_id"] in {r.id for r in rows}
+    # document.read_failed carries the real count: the first run and three retries.
+    assert kw["attempts"] == job.MAX_RETRIES + 1 == 4
 
 
 def test_a_4xx_is_never_retried(setup, recorder, app_engine):
@@ -438,7 +486,7 @@ def test_an_internal_error_is_retried_then_recorded(setup, recorder, monkeypatch
         _run(deps, ws, doc, proposal, attempt=0)
     _run(deps, ws, doc, proposal, attempt=3)
     [(_, _, kw)] = recorder.failures
-    assert kw == {"error_code": "ai.internal_error", "ai_call_id": None}
+    assert kw == {"error_code": "ai.internal_error", "ai_call_id": None, "attempts": 4}
 
 
 def test_failure_that_cannot_be_recorded_raises_job_failed(setup, monkeypatch):

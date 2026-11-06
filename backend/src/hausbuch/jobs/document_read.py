@@ -166,7 +166,7 @@ def run_document_read(
         wait_s = RETRY_WAITS_S[attempt]
         logger.warning("document read retried", extra={"fields": log | {"retry_in_s": wait_s}})
         raise RetryLater(wait_s)
-    _fail(deps, workspace_id, target, code, ai_call_id, log)
+    _fail(deps, workspace_id, target, code, ai_call_id, attempt + 1, log)
 
 
 def _fail(
@@ -175,12 +175,16 @@ def _fail(
     proposal_id: UUID,
     code: str,
     ai_call_id: UUID | None,
+    attempts: int,
     fields: dict,
 ) -> None:
+    """record_read_failure; `attempts` counts the runs so far (the first one included)."""
     try:
         with workspace_transaction(deps.engine, workspace_id) as conn:
             ctx = new_command(conn, workspace_id, SYSTEM_ACTOR, now=deps.clock())
-            proposals.record_read_failure(ctx, proposal_id, error_code=code, ai_call_id=ai_call_id)
+            proposals.record_read_failure(
+                ctx, proposal_id, error_code=code, ai_call_id=ai_call_id, attempts=attempts
+            )
     except Exception as exc:
         fields = fields | {"record_exc_type": type(exc).__name__}
         logger.error("document read failure not recorded", extra={"fields": fields})
@@ -224,11 +228,21 @@ def _load(
     return _Original(target, media_type or "", data, allowed, tenant)
 
 
+def _tenant_documents_allowed(deps: JobDeps, workspace_id: UUID) -> bool:
+    """The workspace's D16 setting as it is now (gate 3 re-reads it before extraction)."""
+    with workspace_transaction(deps.engine, workspace_id) as conn:
+        return conn.execute(
+            select(workspace_table.c.ai_tenant_documents).where(
+                workspace_table.c.id == workspace_id
+            )
+        ).scalar_one()
+
+
 def _target_proposal(conn, document_id: UUID, proposal_id: UUID) -> tuple[UUID, bool] | None:
     """The proposal this run serves, with its tenant-data flag (D16 gate 2, read from the
     row and never from the job's arguments): the given one while it is pending; otherwise the
-    document's newest pending one. A re-run enqueued while this job was still queued
-    collapsed into it (queueing lock doc:{id}), so this job reads for the newer proposal."""
+    document's newest pending one, so a job whose proposal a re-run superseded reads for the
+    newer proposal, and the re-run's own job (or any duplicate) then finds nothing pending."""
     columns = (proposal_table.c.id, proposal_table.c.contains_tenant_data)
     row = conn.execute(
         select(*columns).where(
@@ -282,6 +296,13 @@ def _read(
 
     tenant = classification.contains_tenant_data or classification.subtype in TENANT_SUBTYPES
     if tenant and not original.tenant_documents_allowed:  # gate 3
+        _finish(deps, workspace_id, original.proposal_id, classification, classify_id)
+        return
+    # The setting was read before the classify call, which can take minutes: read it again,
+    # so a workspace that has just turned tenant documents off sends none to extraction.
+    if (tenant or original.contains_tenant_data) and not _tenant_documents_allowed(
+        deps, workspace_id
+    ):
         _finish(deps, workspace_id, original.proposal_id, classification, classify_id)
         return
     kind = extraction_kind(classification.type, classification.subtype)

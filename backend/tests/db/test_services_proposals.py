@@ -672,3 +672,23 @@ def test_the_stored_flag_blocks_the_read_when_the_setting_was_turned_off(
     )
     assert stored.status is ProposalStatus.BLOCKED_TENANT_DATA
     assert stored.extraction_id is None
+
+
+def test_a_reupload_without_the_flag_after_a_block_stays_blocked(
+    run, read, fresh_workspaces, blob_store, enqueued
+):
+    """Once said, a document stays a tenant document (D16): the same bytes uploaded again
+    without the flag after the first proposal was blocked get a new proposal that carries
+    the flag from the earlier one, is blocked again, and enqueues nothing."""
+    ws, _ = fresh_workspaces
+    doc = _upload(run, ws, blob_store, b"%PDF sticky flag")
+    first = run(ws, proposals.proposal_for_upload, doc.id, created=True, contains_tenant_data=True)
+    assert first.status is ProposalStatus.BLOCKED_TENANT_DATA
+    again = run(
+        ws, proposals.proposal_for_upload, doc.id, created=False, contains_tenant_data=False
+    )
+    assert again.id != first.id
+    assert again.status is ProposalStatus.BLOCKED_TENANT_DATA
+    assert again.contains_tenant_data is True
+    assert read(ws, proposals.get_proposal, again.id).contains_tenant_data is True
+    assert enqueued == []

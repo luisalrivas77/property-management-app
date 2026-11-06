@@ -29,8 +29,9 @@ from hausbuch.rules.errors import (
     PROPOSAL_ALREADY_DECIDED,
     PROPOSAL_NOT_READY,
 )
+from hausbuch.rules.extraction_parse import extraction_kind
 from hausbuch.rules.loan_schedule import build_schedule
-from hausbuch.rules.prefill import build_proposal, extraction_kind
+from hausbuch.rules.prefill import build_proposal
 from hausbuch.schemas.ai import ClassifyOutput, ExtractedValue
 from hausbuch.schemas.api import (
     AcquisitionCostPatch,
@@ -149,9 +150,16 @@ def request_read(
     transaction (§6.1). The uploader's `contains_tenant_data` is stored on the row (the job
     reads it there); with it set and the workspace's ai_tenant_documents off, the privacy
     gate already stops it here (§5.5 step 2): stored `blocked_tenant_data`, nothing
-    enqueued, so no job and no model call."""
+    enqueued, so no job and no model call.
+
+    The flag is sticky (D16: once said, a document stays a tenant document): it is set
+    when any earlier proposal of the document carried it, whatever this call passes. Any,
+    not the latest: proposals created in one transaction share created_at."""
     if documents.get_document(ctx.conn, document_id) is None:
         raise NotFoundError(EntityType.DOCUMENT, document_id)
+    contains_tenant_data = contains_tenant_data or any(
+        p.contains_tenant_data for p in list_document_proposals(ctx.conn, document_id)
+    )
     blocked = contains_tenant_data and not _ai_tenant_documents(ctx.conn)
     row = ctx.conn.execute(
         insert(proposal_table)
@@ -203,13 +211,11 @@ def rerun_proposal(
     ctx: CommandContext, document_id: UUID, *, contains_tenant_data: bool = False
 ) -> Proposal:
     """POST /documents/{id}/proposals: supersede the document's undecided proposals
-    (queued, running, ready) and request a new read. The tenant-data flag is copied from
-    the document's latest proposal; `contains_tenant_data` can add it, never remove it
-    (once said, a document stays a tenant document, D16)."""
+    (queued, running, ready) and request a new read. `contains_tenant_data` can add the
+    tenant-data flag, never remove it: request_read keeps it set once any earlier proposal
+    of the document had it (D16)."""
     if documents.get_document(ctx.conn, document_id) is None:
         raise NotFoundError(EntityType.DOCUMENT, document_id)
-    latest = list_document_proposals(ctx.conn, document_id)
-    flagged = contains_tenant_data or bool(latest and latest[0].contains_tenant_data)
     pending = ctx.conn.execute(
         select(proposal_table)
         .where(proposal_table.c.document_id == document_id)
@@ -221,7 +227,7 @@ def rerun_proposal(
         old = _to_proposal(row)
         _set(ctx, old.id, status=ProposalStatus.SUPERSEDED)
         append_event(ctx, EventType.PROPOSAL_SUPERSEDED, old.id, _noted(old))
-    return request_read(ctx, document_id, contains_tenant_data=flagged)
+    return request_read(ctx, document_id, contains_tenant_data=contains_tenant_data)
 
 
 # --- The job's two seams -----------------------------------------------------------------
@@ -255,7 +261,7 @@ def record_read_result(
     if (values is None) != (extract_call_id is None):
         raise ValueError("extracted values come with the extract call's id, and only then")
     document_id = current.document_id
-    kind = extraction_kind(classification)
+    kind = extraction_kind(classification.type, classification.subtype)
     # The job applies the gate (§5.5 step 3); this repeats it, so no classifier result can
     # bring a tenant document past a workspace that has not allowed them (D16).
     if not blocked_tenant_data and not _ai_tenant_documents(ctx.conn):
