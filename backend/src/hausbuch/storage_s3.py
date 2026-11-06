@@ -18,8 +18,8 @@ How put keeps that promise
     link), not milliseconds.
     Content addressing makes that race harmless in practice (equal keys mean equal SHA-256,
     so honest writers send equal bytes), and read_original's SHA-256 check catches the rest.
-    Whether Scaleway honours the header is Q16: run this module's tests against a real bucket
-    (tests/test_storage_s3.py, HAUSBUCH_TEST_S3_BUCKET) and record the result.
+    Whether a server honours the header is what this module's real-bucket tests check
+    (tests/test_storage_s3.py, HAUSBUCH_TEST_S3_BUCKET; Q16).
 
     Scaleway honours it (measured 6 Nov 2026), with one quirk: the request sent next on the
     keep-alive connection that carried the 412, whatever it is, gets an HTTP 400 that does not
