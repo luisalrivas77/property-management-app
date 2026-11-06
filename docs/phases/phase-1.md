@@ -212,7 +212,7 @@ and reviewed by a reviewer agent; every review finding was fixed or is listed be
      forced RLS and `hausbuch_app` grants. Step 10 done: `hausbuch-api` runs
      `api:309b07f0b945` (250 mVCPU / 512 MB, min = max = 1); `/healthz` answers 200 (its
      `SELECT 1` runs as `hausbuch_app` over the private network) and `/api/auth/me` 401.
-     The S3 path is untested until the first upload. The domain is `hausbuch.rcubed.fr`
+     The S3 path was untested until the first upload (6 Nov 2026, below). The domain is `hausbuch.rcubed.fr`
      (bought 5 Nov 2026, the passkey RP ID). Step 11 done: `publish-images` built
      `web:309b07f0b945-16ef9db2` against the API endpoint, and `hausbuch-web` ran it
      (min-scale 0, max 2, HTTPS only); since 5 Nov 2026 it runs `web:2221bd1f9a4e-16ef9db2`
@@ -229,6 +229,11 @@ and reviewed by a reviewer agent; every review finding was fixed or is listed be
      runs `api:8844916ea91b` and `hausbuch-web` runs `web:8844916ea91b-16ef9db2`, both built
      from `8844916`; no migration. Roll back to `api:309b07f0b945` and
      `web:2221bd1f9a4e-16ef9db2`.
+   - 6 Nov 2026: first signed-in upload in production. Luis uploaded a real document and
+     opened it in the app, so the S3 path works end to end: the API writes the original to
+     the bucket before committing its row, and the file came back through a signed URL.
+     Still open from the first-deploy checks: a signed-in 25 MiB upload, Q16, Q15 and the
+     allow-list check from another network.
 
 ### Known gaps (not yet built)
 
