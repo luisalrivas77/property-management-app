@@ -1,0 +1,233 @@
+# Rule fixture: deterministic matchers and the document match (hausbuch.rules.matching)
+#
+# match_owner_transfer(transaction: MatchTransaction, context: MatchContext) -> AllocationSet | None
+# match_rent(transaction, context) -> AllocationSet | None
+# match_loan(transaction, context) -> AllocationSet | None
+# match_document(transaction, context) -> AllocationSet | None
+# Spec: docs/phases/phase-2.md §8.1 steps 2-3, D27. Pure; no model; counterparties are compared
+# by IBAN HMAC only (the matchers never see a plaintext IBAN). Each case names the one matcher
+# it runs; expect null = that matcher does not match.
+#
+# All sets: transaction_id = the transaction's id; tax_year = the booking year (phase 2; the
+# §11 ten-day rule moves it in phase 3); allocation amounts signed like the transaction and
+# summing to it exactly (allocation_sum.yaml); the service period from
+# rules.periods.service_period(purpose, booking_date, recurring) (service_period.yaml).
+# reasoning is free text and not compared; allocations are compared as a set (order free).
+#
+# owner transfer: counterparty_iban_hmac in context.owner_account_hmacs -> one allocation,
+#   owner_transfer_in (credit) / owner_transfer_out (debit), no property (the account is the
+#   property's, the owners' money is not split), recurring false; method matcher_owner, 1.0.
+# rent: counterparty_iban_hmac in a tenancy's tenant_iban_hmacs. The rent in force is the
+#   tenancy's latest rent row with effective_from <= the service period's start (the period is
+#   computed with recurring = true). The period covers n whole months (1 when the purpose
+#   states none: the booking month). Expected amount = n * (cold_rent + prepayment).
+#   - amount == expected: two allocations, rent_cold = n * cold_rent and
+#     operating_costs_prepayment = n * prepayment, with property, unit and tenancy, recurring
+#     true; method matcher_rent, confidence 1.0, no question.
+#   - a credit that differs (n = 1): the same two categories with the prepayment in full and the
+#     cold rent carrying the difference; confidence 0.5 (below every threshold, so it goes to
+#     review) and the question, amounts in German form (cents only when not .00):
+#     "Mieter hat {paid} € statt {expected} € überwiesen. Mietminderung oder Teilzahlung?"
+# loan: counterparty_iban_hmac = a loan's account_iban_hmac (or the counterparty name contains
+#   the lender's name, case-insensitively) and -amount == terms.monthly_payment. Split by the
+#   schedule entry (rules.loan_schedule.build_schedule) whose due_on lies in the booking month:
+#   loan_interest = -entry.interest, loan_principal = -entry.principal, with property and loan,
+#   recurring true; method matcher_loan, 1.0. No entry due in that month -> null.
+#   The entry due on 1 July 2025 below still carries June's interest at the old 5 % (June
+#   accrued before fixed_until), so a matcher that reads "the rate in force on the booking
+#   date" gets it wrong; the follow-up rate's first entry is August's (rules.yaml).
+# document: a context document with a payment p where |amount| is within 0.01 of p.amount,
+#   booking_date within 10 days of p.due_on (inclusive, either side), and the document's
+#   iban_hmac equal to the counterparty's or its reference found in the purpose
+#   (case-insensitive, whitespace-collapsed) -> one allocation of the document's category, the
+#   document as Beleg (document_id) and its property; recurring true when the document has
+#   more than one payment (a Grundsteuerbescheid's installments), else false; method
+#   document_match, confidence 0.95 (auto-confirm per thresholds.yaml).
+
+ids:
+  property: &P 0000000b-0000-4000-8000-000000000001
+  unit: &U 0000000c-0000-4000-8000-000000000001
+  tenancy: &T 0000000e-0000-4000-8000-000000000001
+  loan: &L 0000000f-0000-4000-8000-000000000001
+  doc_grundsteuer: &D_GS 0000000d-0000-4000-8000-000000000001
+  doc_notary: &D_NOTARY 0000000d-0000-4000-8000-000000000002
+  hmac_tenant: &H_TENANT "1111111111111111111111111111111111111111111111111111111111111111"
+  hmac_owner: &H_OWNER "2222222222222222222222222222222222222222222222222222222222222222"
+  hmac_loan: &H_LOAN "3333333333333333333333333333333333333333333333333333333333333333"
+  hmac_stadtkasse: &H_STADT "4444444444444444444444444444444444444444444444444444444444444444"
+  hmac_notary: &H_NOTARY "5555555555555555555555555555555555555555555555555555555555555555"
+  hmac_other: &H_OTHER "9999999999999999999999999999999999999999999999999999999999999999"
+
+context:
+  owner_account_hmacs: [*H_OWNER]
+  tenancies:
+    - id: *T
+      property_id: *P
+      unit_id: *U
+      start_date: 2026-07-01
+      tenant_iban_hmacs: [*H_TENANT]
+      rent:
+        - {effective_from: 2026-07-01, cold_rent: "1150.00", operating_costs_prepayment: "250.00"}
+  loans:
+    - id: *L
+      property_id: *P
+      lender: Beispielbank AG
+      account_iban_hmac: *H_LOAN
+      terms:   # = loan_schedule.yaml follow_up_rate_to_payoff (phase 1)
+        principal: "20000.00"
+        nominal_rate: "0.05"
+        monthly_payment: "1000.00"
+        disbursed_on: 2025-01-01
+        first_payment_on: 2025-02-01
+        fixed_until: 2025-06-30
+        follow_up_rate: "0.08"
+  documents:
+    - id: *D_GS
+      kind: grundsteuerbescheid
+      category: grundsteuer
+      property_id: *P
+      payments:
+        - {due_on: 2027-02-15, amount: "123.45"}
+        - {due_on: 2027-05-15, amount: "123.45"}
+        - {due_on: 2027-08-15, amount: "123.45"}
+        - {due_on: 2027-11-15, amount: "123.45"}
+      iban_hmac: *H_STADT
+      reference: "47110815"
+    - id: *D_NOTARY
+      kind: invoice
+      category: acquisition_cost
+      property_id: *P
+      payments:
+        - {due_on: 2026-03-10, amount: "1234.56"}
+      iban_hmac: *H_NOTARY
+      reference: R 8817
+
+cases:
+  - id: rent_exact
+    matcher: rent
+    transaction: &TX_RENT
+      id: 0000002a-0000-4000-8000-000000000001
+      booking_date: 2027-01-04
+      amount: "1400.00"
+      counterparty_name: Erika Beispiel
+      counterparty_iban_hmac: *H_TENANT
+      purpose: Miete 01/2027
+    expect:
+      method: matcher_rent
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "1150.00", category: rent_cold, property_id: *P, unit_id: *U, tenancy_id: *T, tax_year: 2027, service_period_start: 2027-01-01, service_period_end: 2027-01-31, recurring: true}
+        - {amount: "250.00", category: operating_costs_prepayment, property_id: *P, unit_id: *U, tenancy_id: *T, tax_year: 2027, service_period_start: 2027-01-01, service_period_end: 2027-01-31, recurring: true}
+
+  - id: rent_short_by_20
+    description: The tenant paid 1,380 instead of 1,400; proposed with the prepayment in full, to review with the difference as the question.
+    matcher: rent
+    transaction:
+      <<: *TX_RENT
+      id: 0000002a-0000-4000-8000-000000000002
+      booking_date: 2027-02-03
+      amount: "1380.00"
+      purpose: Miete 02/2027
+    expect:
+      method: matcher_rent
+      confidence: "0.500"
+      question: Mieter hat 1.380 € statt 1.400 € überwiesen. Mietminderung oder Teilzahlung?
+      allocations:
+        - {amount: "1130.00", category: rent_cold, property_id: *P, unit_id: *U, tenancy_id: *T, tax_year: 2027, service_period_start: 2027-02-01, service_period_end: 2027-02-28, recurring: true}
+        - {amount: "250.00", category: operating_costs_prepayment, property_id: *P, unit_id: *U, tenancy_id: *T, tax_year: 2027, service_period_start: 2027-02-01, service_period_end: 2027-02-28, recurring: true}
+
+  - id: rent_two_months_one_transfer
+    description: January and February paid together; one pair of allocations over the range.
+    matcher: rent
+    transaction:
+      <<: *TX_RENT
+      id: 0000002a-0000-4000-8000-000000000003
+      booking_date: 2027-01-04
+      amount: "2800.00"
+      purpose: Miete 01/27-02/27
+    expect:
+      method: matcher_rent
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "2300.00", category: rent_cold, property_id: *P, unit_id: *U, tenancy_id: *T, tax_year: 2027, service_period_start: 2027-01-01, service_period_end: 2027-02-28, recurring: true}
+        - {amount: "500.00", category: operating_costs_prepayment, property_id: *P, unit_id: *U, tenancy_id: *T, tax_year: 2027, service_period_start: 2027-01-01, service_period_end: 2027-02-28, recurring: true}
+
+  - id: annuity_at_fixed_rate_switch
+    description: Entry 6 (due 1 July 2025), the last one at 5 %; loan_schedule.yaml follow_up_rate_to_payoff.
+    matcher: loan
+    transaction:
+      id: 0000002a-0000-4000-8000-000000000004
+      booking_date: 2025-07-01
+      amount: "-1000.00"
+      counterparty_name: Beispielbank AG
+      counterparty_iban_hmac: *H_LOAN
+      purpose: Darlehen 600123456 Rate
+    expect:
+      method: matcher_loan
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "-64.08", category: loan_interest, property_id: *P, loan_id: *L, tax_year: 2025, service_period_start: 2025-07-01, service_period_end: 2025-07-31, recurring: true}
+        - {amount: "-935.92", category: loan_principal, property_id: *P, loan_id: *L, tax_year: 2025, service_period_start: 2025-07-01, service_period_end: 2025-07-31, recurring: true}
+
+  - id: owner_top_up
+    matcher: owner_transfer
+    transaction:
+      id: 0000002a-0000-4000-8000-000000000005
+      booking_date: 2027-01-15
+      amount: "500.00"
+      counterparty_name: Max Beispiel
+      counterparty_iban_hmac: *H_OWNER
+      purpose: Zuschuss Mietkonto
+    expect:
+      method: matcher_owner
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "500.00", category: owner_transfer_in, tax_year: 2027, recurring: false}
+
+  - id: grundsteuer_quarter_vs_bescheid
+    description: The first quarterly installment of the Bescheid, by IBAN and reference.
+    matcher: document
+    transaction:
+      id: 0000002a-0000-4000-8000-000000000006
+      booking_date: 2027-02-15
+      amount: "-123.45"
+      counterparty_name: Stadtkasse Berlin
+      counterparty_iban_hmac: *H_STADT
+      purpose: Grundsteuer 47110815
+    expect:
+      method: document_match
+      confidence: "0.950"
+      question: null
+      allocations:
+        - {amount: "-123.45", category: grundsteuer, property_id: *P, document_id: *D_GS, tax_year: 2027, service_period_start: 2027-02-01, service_period_end: 2027-02-28, recurring: true}
+
+  - id: invoice_within_window
+    description: One cent less than the invoice, ten days after its date (the window is inclusive), found by the reference only.
+    matcher: document
+    transaction: &TX_NOTARY
+      id: 0000002a-0000-4000-8000-000000000007
+      booking_date: 2026-03-20
+      amount: "-1234.55"
+      counterparty_name: Notarin Dr. Beispiel
+      counterparty_iban_hmac: *H_OTHER
+      purpose: Rechnung R 8817
+    expect:
+      method: document_match
+      confidence: "0.950"
+      question: null
+      allocations:
+        - {amount: "-1234.55", category: acquisition_cost, property_id: *P, document_id: *D_NOTARY, tax_year: 2026, recurring: false}
+
+  - id: invoice_outside_window
+    description: Eleven days after the invoice date.
+    matcher: document
+    transaction:
+      <<: *TX_NOTARY
+      id: 0000002a-0000-4000-8000-000000000008
+      booking_date: 2026-03-21
+      amount: "-1234.56"
+    expect: null

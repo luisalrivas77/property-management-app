@@ -1,0 +1,212 @@
+# Rule fixture: review routing (hausbuch.rules.review.route)
+#
+# route(item: RoutingInput) -> Routing(decision, reason)
+# Spec: docs/phases/phase-2.md §8.1, §8.3, D21, D26 and principle 3 (auto-accept only above a
+# per-category threshold). Thresholds come from thresholds.yaml (rules.review.threshold).
+# The first rule that applies decides:
+#   1. import_status != reconciled -> import_review: the whole import goes to review and no
+#      line of it is matched (phase 2 input point 3), whatever the line's set says.
+#        unreconciled -> routing.import_unreconciled
+#        imported     -> routing.import_pending_balance (no closing balance declared yet)
+#        failed       -> routing.import_failed
+#   2. allocation_set null -> review, routing.no_match
+#   3. method rule, confidence 1.0 -> auto_confirm, routing.rule_hit
+#   4. method matcher_*, confidence 1.0 -> auto_confirm, routing.deterministic
+#   5. method matcher_* below 1.0 (an inexact match, e.g. rent short) -> review,
+#      routing.below_threshold
+#   6. method llm and not auto_accept_llm -> review, routing.llm_not_accepted (D26)
+#   7. document_match and llm: if any allocation's category has threshold null -> review,
+#      routing.never_auto; else confidence >= the highest threshold among the set's
+#      categories -> auto_confirm, routing.above_threshold; else review,
+#      routing.below_threshold. (A mixed set is as strict as its strictest category.)
+#   8. method user: never routed (a user's set is confirmed by the user); not in this fixture.
+#
+# per_category: an LLM set of one allocation in that category, confidence 0.9, with
+# auto_accept_llm true; the expected decision at that confidence (test_fixtures_valid.py checks
+# it agrees with thresholds.yaml, and the rule test runs route on it).
+
+tx: &TX 0000002a-0000-4000-8000-000000000201
+rule_id: &R 0000002b-0000-4000-8000-000000000001
+
+per_category:
+  - {category: rent_cold, decision: auto_confirm}
+  - {category: operating_costs_prepayment, decision: auto_confirm}
+  - {category: operating_costs_settlement, decision: review}
+  - {category: deposit_in, decision: review}
+  - {category: deposit_out, decision: review}
+  - {category: owner_transfer_in, decision: auto_confirm}
+  - {category: owner_transfer_out, decision: auto_confirm}
+  - {category: loan_interest, decision: auto_confirm}
+  - {category: loan_principal, decision: auto_confirm}
+  - {category: loan_fees, decision: review}
+  - {category: hausgeld_umlagefaehig, decision: auto_confirm}
+  - {category: hausgeld_verwaltung, decision: auto_confirm}
+  - {category: hausgeld_ruecklage, decision: auto_confirm}
+  - {category: grundsteuer, decision: auto_confirm}
+  - {category: insurance, decision: auto_confirm}
+  - {category: repairs, decision: review}
+  - {category: renovation, decision: review}
+  - {category: acquisition_cost, decision: review}
+  - {category: professional_fees, decision: review}
+  - {category: bank_fees, decision: auto_confirm}
+  - {category: other_income, decision: review}
+  - {category: other_expense, decision: review}
+  - {category: uncategorized, decision: review}
+
+cases:
+  - id: rule_hit
+    item:
+      import_status: reconciled
+      allocation_set:
+        transaction_id: *TX
+        method: rule
+        rule_id: *R
+        confidence: "1.000"
+        allocations:
+          - {amount: "-312.40", category: insurance, tax_year: 2027}
+    expect: {decision: auto_confirm, reason: routing.rule_hit}
+
+  - id: rule_hit_never_auto_category
+    description: A learned rule auto-confirms even a category the model may never auto-confirm; the user answered it once.
+    item:
+      import_status: reconciled
+      allocation_set:
+        transaction_id: *TX
+        method: rule
+        rule_id: *R
+        confidence: "1.000"
+        allocations:
+          - {amount: "-35.70", category: professional_fees, tax_year: 2027, recurring: false}
+    expect: {decision: auto_confirm, reason: routing.rule_hit}
+
+  - id: deterministic_exact
+    item:
+      import_status: reconciled
+      allocation_set:
+        transaction_id: *TX
+        method: matcher_rent
+        confidence: "1.000"
+        allocations:
+          - {amount: "1150.00", category: rent_cold, tax_year: 2027, recurring: true}
+          - {amount: "250.00", category: operating_costs_prepayment, tax_year: 2027, recurring: true}
+    expect: {decision: auto_confirm, reason: routing.deterministic}
+
+  - id: deterministic_inexact
+    description: Rent short by 20 (matchers.yaml rent_short_by_20).
+    item:
+      import_status: reconciled
+      allocation_set:
+        transaction_id: *TX
+        method: matcher_rent
+        confidence: "0.500"
+        question: Mieter hat 1.380 € statt 1.400 € überwiesen. Mietminderung oder Teilzahlung?
+        allocations:
+          - {amount: "1130.00", category: rent_cold, tax_year: 2027, recurring: true}
+          - {amount: "250.00", category: operating_costs_prepayment, tax_year: 2027, recurring: true}
+    expect: {decision: review, reason: routing.below_threshold}
+
+  - id: document_match_above_threshold
+    item:
+      import_status: reconciled
+      allocation_set:
+        transaction_id: *TX
+        method: document_match
+        confidence: "0.950"
+        allocations:
+          - {amount: "-123.45", category: grundsteuer, tax_year: 2027, recurring: true}
+    expect: {decision: auto_confirm, reason: routing.above_threshold}
+
+  - id: document_match_never_auto
+    description: A Nebenkosten invoice is capitalized; never auto-confirmed.
+    item:
+      import_status: reconciled
+      allocation_set:
+        transaction_id: *TX
+        method: document_match
+        confidence: "0.950"
+        allocations:
+          - {amount: "-1234.55", category: acquisition_cost, tax_year: 2026}
+    expect: {decision: review, reason: routing.never_auto}
+
+  - id: llm_not_accepted
+    description: auto_accept_llm false (the default, D26) sends even a high-confidence answer to review.
+    item:
+      import_status: reconciled
+      auto_accept_llm: false
+      allocation_set:
+        transaction_id: *TX
+        method: llm
+        confidence: "0.900"
+        allocations:
+          - {amount: "-89.00", category: insurance, tax_year: 2027}
+    expect: {decision: review, reason: routing.llm_not_accepted}
+
+  - id: llm_high_accepted
+    item:
+      import_status: reconciled
+      auto_accept_llm: true
+      allocation_set:
+        transaction_id: *TX
+        method: llm
+        confidence: "0.900"
+        allocations:
+          - {amount: "-89.00", category: insurance, tax_year: 2027}
+    expect: {decision: auto_confirm, reason: routing.above_threshold}
+
+  - id: llm_medium_below_threshold
+    item:
+      import_status: reconciled
+      auto_accept_llm: true
+      allocation_set:
+        transaction_id: *TX
+        method: llm
+        confidence: "0.600"
+        allocations:
+          - {amount: "-89.00", category: insurance, tax_year: 2027}
+    expect: {decision: review, reason: routing.below_threshold}
+
+  - id: llm_mixed_set_strictest_category
+    description: One part may auto-confirm, the other never; the set goes to review.
+    item:
+      import_status: reconciled
+      auto_accept_llm: true
+      allocation_set:
+        transaction_id: *TX
+        method: llm
+        confidence: "0.900"
+        allocations:
+          - {amount: "-60.00", category: insurance, tax_year: 2027}
+          - {amount: "-29.00", category: other_expense, tax_year: 2027}
+    expect: {decision: review, reason: routing.never_auto}
+
+  - id: no_match
+    item:
+      import_status: reconciled
+      allocation_set: null
+    expect: {decision: review, reason: routing.no_match}
+
+  - id: import_unreconciled_blocks_an_exact_match
+    description: Even a deterministic 1.0 match is not used while its import does not reconcile.
+    item:
+      import_status: unreconciled
+      allocation_set:
+        transaction_id: *TX
+        method: matcher_rent
+        confidence: "1.000"
+        allocations:
+          - {amount: "1150.00", category: rent_cold, tax_year: 2027, recurring: true}
+          - {amount: "250.00", category: operating_costs_prepayment, tax_year: 2027, recurring: true}
+    expect: {decision: import_review, reason: routing.import_unreconciled}
+
+  - id: import_pending_balance
+    description: A CSV import without a declared closing balance yet.
+    item:
+      import_status: imported
+      allocation_set: null
+    expect: {decision: import_review, reason: routing.import_pending_balance}
+
+  - id: import_failed
+    item:
+      import_status: failed
+      allocation_set: null
+    expect: {decision: import_review, reason: routing.import_failed}

@@ -8,15 +8,25 @@ any rule is implemented.
 from datetime import date
 from functools import cache
 from pathlib import Path
-from typing import Literal, Self
+from typing import Any, Literal, Self
+from uuid import UUID
 
 import yaml
 from fixture_models import Lenient
-from pydantic import Field, model_validator
+from pydantic import Field, ValidationError, model_validator
 
 from hausbuch.schemas.allocation import (
     AllocationCategory,
     AllocationDraft,
+    AllocationMethod,
+    AllocationSet,
+    MatchContext,
+    MatchingRule,
+    MatchingRuleCreate,
+    MatchTransaction,
+    Routing,
+    RoutingDecision,
+    RoutingInput,
     ServicePeriod,
     TaxTreatment,
 )
@@ -105,11 +115,128 @@ class ServicePeriodFixture(Schema):
     cases: list[ServicePeriodCase] = Field(min_length=1)
 
 
+# --- matchers.yaml, rules.yaml ---------------------------------------------------------
+
+
+class SetExpect(Schema):
+    """An expected AllocationSet without transaction_id (the case's transaction) and without
+    reasoning (free text, not compared). Allocations are compared as a set."""
+
+    method: AllocationMethod
+    confidence: Confidence
+    question: str | None = None
+    rule_id: UUID | None = None
+    allocations: list[AllocationDraft] = Field(min_length=1)
+
+    def check(self, got: AllocationSet | None, transaction: MatchTransaction) -> None:
+        assert got is not None, "expected an allocation set, got none"
+        assert got.transaction_id == transaction.id
+        assert (got.method, got.confidence, got.question, got.rule_id) == (
+            self.method,
+            self.confidence,
+            self.question,
+            self.rule_id,
+        )
+        key = lambda a: a.model_dump_json()  # noqa: E731
+        assert sorted(got.allocations, key=key) == sorted(self.allocations, key=key)
+        assert sum(a.amount for a in self.allocations) == transaction.amount
+
+
+def _sums(expect: SetExpect | None, transaction: MatchTransaction, case_id: str) -> None:
+    if expect is not None and sum(a.amount for a in expect.allocations) != transaction.amount:
+        raise ValueError(f"{case_id}: expected allocations do not sum to the transaction")
+
+
+class MatcherCase(Lenient):
+    matcher: Literal["owner_transfer", "rent", "loan", "document"]
+    transaction: MatchTransaction
+    expect: SetExpect | None
+
+    @model_validator(mode="after")
+    def _sum(self) -> Self:
+        _sums(self.expect, self.transaction, self.id)
+        return self
+
+
+class MatchersFixture(Schema):
+    ids: dict[str, str]
+    context: MatchContext
+    cases: list[MatcherCase]
+
+
+class RuleCase(Lenient):
+    rule: str
+    transaction: MatchTransaction
+    expect: SetExpect | None
+
+    @model_validator(mode="after")
+    def _sum(self) -> Self:
+        _sums(self.expect, self.transaction, self.id)
+        return self
+
+
+class RejectedRule(Lenient):
+    rule: dict[str, Any]
+
+    @model_validator(mode="after")
+    def _rejected(self) -> Self:
+        try:
+            MatchingRuleCreate.model_validate(self.rule)
+        except ValidationError:
+            return self
+        raise ValueError(f"{self.id}: a rule that stores an amount must not validate")
+
+
+class RulesFixture(Schema):
+    ids: dict[str, str]
+    context: MatchContext
+    rules: dict[str, MatchingRule]
+    cases: list[RuleCase]
+    rejected: list[RejectedRule] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _known_rules(self) -> Self:
+        for case in self.cases:
+            if case.rule not in self.rules:
+                raise ValueError(f"{case.id}: unknown rule {case.rule}")
+            if case.expect and case.expect.rule_id != self.rules[case.rule].id:
+                raise ValueError(f"{case.id}: rule_id is not the rule's id")
+        return self
+
+
+# --- review_routing.yaml ---------------------------------------------------------------
+
+
+class CategoryRouting(Schema):
+    category: AllocationCategory
+    decision: Literal[RoutingDecision.AUTO_CONFIRM, RoutingDecision.REVIEW]
+
+
+class RoutingCase(Lenient):
+    item: RoutingInput
+    expect: Routing
+
+
+class RoutingFixture(Schema):
+    tx: UUID
+    rule_id: UUID
+    per_category: list[CategoryRouting]
+    cases: list[RoutingCase]
+
+    @model_validator(mode="after")
+    def _complete(self) -> Self:
+        _every_category_once([r.category for r in self.per_category], "review_routing.yaml")
+        return self
+
+
 MODELS: dict[str, type[Schema]] = {
     "categories": CategoriesFixture,
     "thresholds": ThresholdsFixture,
     "allocation_sum": SumFixture,
     "service_period": ServicePeriodFixture,
+    "matchers": MatchersFixture,
+    "rules": RulesFixture,
+    "review_routing": RoutingFixture,
 }
 
 
