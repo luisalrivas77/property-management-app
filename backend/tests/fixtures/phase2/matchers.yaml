@@ -24,8 +24,9 @@
 #   - amount == expected: two allocations, rent_cold = n * cold_rent and
 #     operating_costs_prepayment = n * prepayment, with property, unit and tenancy, recurring
 #     true; method matcher_rent, confidence 1.0, no question.
-#   - a credit that differs from the one-month amount by at most 10 % of it: the same two
-#     categories with the prepayment in full and the cold rent carrying the difference;
+#   - a credit that differs from the expected amount (n months, not one) by at most 10 % of
+#     it: the same two categories with the n-month prepayment in full and the cold rent
+#     carrying the difference;
 #     confidence 0.5 (below every threshold, so it goes to review) and the question, amounts
 #     in German form (cents only when not .00):
 #     "Mieter hat {paid} € statt {expected} € überwiesen. Mietminderung oder Teilzahlung?"
@@ -155,6 +156,23 @@ cases:
       question: null
       allocations:
         - {amount: "2300.00", category: rent_cold, property_id: *P, unit_id: *U, tenancy_id: *T, tax_year: 2027, service_period_start: 2027-01-01, service_period_end: 2027-02-28, recurring: true}
+        - {amount: "500.00", category: operating_costs_prepayment, property_id: *P, unit_id: *U, tenancy_id: *T, tax_year: 2027, service_period_start: 2027-01-01, service_period_end: 2027-02-28, recurring: true}
+
+  - id: rent_two_months_short_by_20
+    description: January and February paid together but 20 short; the 10 % band is measured against the two-month amount, so it is proposed with the question rather than not matched.
+    matcher: rent
+    transaction:
+      <<: *TX_RENT
+      id: 0000002a-0000-4000-8000-000000000009
+      booking_date: 2027-01-04
+      amount: "2780.00"
+      purpose: Miete 01/27-02/27
+    expect:
+      method: matcher_rent
+      confidence: "0.500"
+      question: Mieter hat 2.780 € statt 2.800 € überwiesen. Mietminderung oder Teilzahlung?
+      allocations:
+        - {amount: "2280.00", category: rent_cold, property_id: *P, unit_id: *U, tenancy_id: *T, tax_year: 2027, service_period_start: 2027-01-01, service_period_end: 2027-02-28, recurring: true}
         - {amount: "500.00", category: operating_costs_prepayment, property_id: *P, unit_id: *U, tenancy_id: *T, tax_year: 2027, service_period_start: 2027-01-01, service_period_end: 2027-02-28, recurring: true}
 
   - id: annuity_at_fixed_rate_switch
