@@ -448,6 +448,128 @@ class PrefillFixture(Schema):
     cases: list[PrefillCase]
 
 
+# --- month_statement.yaml (done criterion, §13) -----------------------------------------
+
+
+class Balances(Schema):
+    anchor: Money
+    anchor_on: date
+    first_booking_on: date
+    last_booking_on: date
+    declared_closing: Money
+
+
+class AllocationBrief(Schema):
+    category: AllocationCategory
+    amount: Money
+
+
+class LineRouting(Schema):
+    decision: RoutingDecision
+    reason: str
+    method: AllocationMethod | None
+
+    @model_validator(mode="after")
+    def _no_set_no_method(self) -> Self:
+        if (self.method is None) != (self.reason == "routing.no_match"):
+            raise ValueError("method is null exactly when nothing matched")
+        return self
+
+
+class LineRoutingWithSplit(LineRouting):
+    allocations: list[AllocationBrief]
+
+    @model_validator(mode="after")
+    def _split_iff_set(self) -> Self:
+        if (self.method is None) != (not self.allocations):
+            raise ValueError("allocations exactly when a set matched")
+        return self
+
+
+class MonthLine(Lenient):
+    transaction: MatchTransaction
+    first_month: LineRouting
+    second_month: LineRoutingWithSplit
+
+    @model_validator(mode="after")
+    def _sums(self) -> Self:
+        split = self.second_month.allocations
+        if split and sum(a.amount for a in split) != self.transaction.amount:
+            raise ValueError(f"{self.id}: the second month's split does not sum to the line")
+        return self
+
+
+class MonthExpect(Schema):
+    reconciled: bool
+    first_month_auto: int = Field(ge=0)
+    second_month_auto: int = Field(ge=0)
+
+
+class MonthStatementFixture(Schema):
+    ids: dict[str, str]
+    balances: Balances
+    context: MatchContext
+    rules: list[MatchingRule]
+    lines: list[MonthLine] = Field(min_length=12, max_length=12)
+    expect: MonthExpect
+
+    @model_validator(mode="after")
+    def _done_criterion(self) -> Self:
+        auto = RoutingDecision.AUTO_CONFIRM
+        first = sum(line.first_month.decision is auto for line in self.lines)
+        second = sum(line.second_month.decision is auto for line in self.lines)
+        if (first, second) != (self.expect.first_month_auto, self.expect.second_month_auto):
+            raise ValueError(f"auto counts are {first} / {second}, not as expected")
+        if second * 5 < len(self.lines) * 4:
+            raise ValueError("the second month must auto-match at least 80 % of its lines")
+        dates = [line.transaction.booking_date for line in self.lines]
+        b = self.balances
+        if (min(dates), max(dates)) != (b.first_booking_on, b.last_booking_on):
+            raise ValueError("first/last booking dates do not match the lines")
+        net = sum(line.transaction.amount for line in self.lines)
+        if self.expect.reconciled and b.anchor + net != b.declared_closing:
+            raise ValueError("the declared closing is not anchor + the month's lines")
+        return self
+
+
+# --- repeat_answer.yaml (done criterion, §13) ------------------------------------------
+
+
+class Answered(Schema):
+    transaction: MatchTransaction
+    confirmed: AllocationSet
+
+
+class NextLine(Schema):
+    transaction: MatchTransaction
+    expect: SetExpect
+
+
+class RepeatCase(Lenient):
+    answered: Answered
+    expect_rule: MatchingRuleCreate
+    rule_id: UUID
+    next: NextLine
+
+    @model_validator(mode="after")
+    def _consistent(self) -> Self:
+        a, n = self.answered, self.next
+        if a.confirmed.transaction_id != a.transaction.id:
+            raise ValueError(f"{self.id}: the answer is for another transaction")
+        if sum(x.amount for x in a.confirmed.allocations) != a.transaction.amount:
+            raise ValueError(f"{self.id}: the answer does not sum to its line")
+        _sums(n.expect, n.transaction, self.id)
+        if n.expect.rule_id != self.rule_id:
+            raise ValueError(f"{self.id}: the next line must hit the stored rule")
+        return self
+
+
+class RepeatFixture(Schema):
+    ids: dict[str, str]
+    context: MatchContext
+    cases: list[RepeatCase]
+
+
 MODELS: dict[str, type[Schema]] = {
     "categories": CategoriesFixture,
     "thresholds": ThresholdsFixture,
@@ -461,6 +583,8 @@ MODELS: dict[str, type[Schema]] = {
     "reconcile": ReconcileFixture,
     "extraction_parse": ParseFixture,
     "prefill": PrefillFixture,
+    "month_statement": MonthStatementFixture,
+    "repeat_answer": RepeatFixture,
 }
 
 

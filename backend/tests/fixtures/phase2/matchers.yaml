@@ -24,10 +24,13 @@
 #   - amount == expected: two allocations, rent_cold = n * cold_rent and
 #     operating_costs_prepayment = n * prepayment, with property, unit and tenancy, recurring
 #     true; method matcher_rent, confidence 1.0, no question.
-#   - a credit that differs (n = 1): the same two categories with the prepayment in full and the
-#     cold rent carrying the difference; confidence 0.5 (below every threshold, so it goes to
-#     review) and the question, amounts in German form (cents only when not .00):
+#   - a credit that differs from the one-month amount by at most 10 % of it: the same two
+#     categories with the prepayment in full and the cold rent carrying the difference;
+#     confidence 0.5 (below every threshold, so it goes to review) and the question, amounts
+#     in German form (cents only when not .00):
 #     "Mieter hat {paid} € statt {expected} € überwiesen. Mietminderung oder Teilzahlung?"
+#   - any other amount (e.g. a Nebenkosten back-payment from the same tenant) -> null: it is
+#     not rent, and the line goes on to the document match and the model.
 # loan: counterparty_iban_hmac = a loan's account_iban_hmac (or the counterparty name contains
 #   the lender's name, case-insensitively) and -amount == terms.monthly_payment. Split by the
 #   schedule entry (rules.loan_schedule.build_schedule) whose due_on lies in the booking month:
