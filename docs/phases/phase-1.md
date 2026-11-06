@@ -13,9 +13,17 @@ contract the implementation PR codes against:
 | Rule tests | `backend/tests/rules/` | **Passing** against `hausbuch.rules.*` (5 Nov 2026); fixtures unchanged except the approved loan-schedule spec change (D10) |
 | Schema tests | `backend/tests/db/`, `backend/tests/test_fixtures_valid.py` | Passing |
 
-**Done when** (from ARCHITECTURE.md): the current flat, its tenancy, its loan and all 2026
-paperwork are in, and History shows purchase → move-in correctly. `timeline.yaml` encodes that
-second half as a fixture.
+**Status: CLOSED (6 Nov 2026, Luis).** Everything phase 1 builds is live at
+https://hausbuch.rcubed.fr (implementation status below). The data half of the done criterion
+was not met by hand and is moved: Luis decided the real flat, tenancy, loan and paperwork are
+entered through AI pre-fill (the AI reads each uploaded document and fills the forms; he
+verifies every value against its source quote before anything is saved), which is phase 2's
+first step. Documents can be uploaded and linked now. The History half (purchase → move-in)
+is proven by `timeline.yaml` and is checked again on the real data once it is in.
+
+**Done when** (from ARCHITECTURE.md, as written before the closure): the current flat, its
+tenancy, its loan and all 2026 paperwork are in, and History shows purchase → move-in
+correctly. `timeline.yaml` encodes that second half as a fixture.
 
 ## Scope
 
@@ -110,7 +118,7 @@ never stored or returned.
 
 ## Events
 
-29 event types, catalogued in `EVENT_CATALOG` with payload schema, effective-date rule and
+32 event types (29 until #22 added `property.acquisition_cost_updated`, `property.acquisition_cost_removed` and `tenancy.parties_set`, 6 Nov 2026), catalogued in `EVENT_CATALOG` with payload schema, effective-date rule and
 meaning. Envelope: `seq` (recording order), `type`, entity, `property_id` / `unit_id` scope,
 `effective_date` (the domain date; null = not a milestone), actor (`user` / `system` / `ai`),
 `correlation_id` (one command), `corrects_event_id`, `payload`.
@@ -133,7 +141,7 @@ exception with a `code` attribute (plus `at_number` for loan errors).
 | `retention.tenant_retention(TenantRetentionInput, RetentionPolicy) -> RetentionResult` | `retention.yaml` | |
 | `iban.normalize_iban / mask_iban / iban_hmac` | `iban.yaml` | Test key only; mod-97 and length checks |
 | `validation.check_ownership_shares / check_tenancy_parties / check_rent_row / check_correction -> list[str]` | `validation.yaml` | The service-layer invariants above |
-| `document_checklist.build_checklist(ChecklistFacts, tax_year, today) -> list[ChecklistItem]` | `document_checklist.yaml` | Spec amendment 3 (6 Nov 2026); 31 cases, each also run with its input lists shuffled; built on `feat/document-checklist`, not merged yet |
+| `document_checklist.build_checklist(ChecklistFacts, tax_year, today) -> list[ChecklistItem]` | `document_checklist.yaml` | Spec amendment 3 (6 Nov 2026); 31 cases, each also run with its input lists shuffled; merged as #20 and deployed 6 Nov 2026 |
 
 Error codes (stable API contract): `loan.payment_does_not_cover_interest`, `loan.term_too_long`,
 `iban.malformed`, `iban.bad_length`, `iban.bad_checksum`, `ownership.shares_must_sum_to_one`,
@@ -235,16 +243,74 @@ and reviewed by a reviewer agent; every review finding was fixed or is listed be
      the bucket before committing its row, and the file came back through a signed URL.
      Still open from the first-deploy checks: a signed-in 25 MiB upload, Q16, Q15 and the
      allow-list check from another network.
-5. **IN PROGRESS: document checklist** (spec amendment 3, 6 Nov 2026): the Unterlagen tab
-   per property. Built by a coder on `feat/document-checklist` (rule, migration `0004`, API,
-   tab, e2e); in review; not merged or deployed. Deploying it needs migration `0004` run from
-   Luis's computer before the new API image.
+   - 6 Nov 2026: the allow-list check passes (the database's public endpoint answers from
+     Luis's home IP and gives no response from a phone hotspot), and the signed-in 25 MiB
+     upload is dropped by decision (largest real document about 300 KB; results in
+     `deploy/scaleway.md`). Still open: Q16 (If-None-Match on the bucket), Q15 (SIGTERM
+     timeout) and the real data.
+   - 6 Nov 2026: Q15 answered: Scaleway kills a container about 270 s after SIGTERM, well
+     above the API's 30 s need, so the shutdown settings stay. Still open: Q16 (the bucket
+     refuses the conditional overwrite, but the real-bucket test then failed reading the
+     original back with an unnamed error; diagnosis running) and the real data.
+   - 6 Nov 2026: Q16 answered: Scaleway honours If-None-Match (412, original intact), but
+     answers the next request on that connection with a bodiless 400 and closes it (results
+     in `deploy/scaleway.md`). Known gap below; the first-deploy checks are otherwise all
+     done. Still open: the real data.
+5. **DONE: document checklist** (spec amendment 3, 6 Nov 2026): the Unterlagen tab per
+   property. Built by a coder (rule, migration `0004`, API, tab, e2e), reviewed, merged as
+   #20 (`aa298bb`) and live since 6 Nov 2026: Luis ran migration `0004` from his computer
+   (`alembic current` showed `0004_grundsteuerbescheid (head)`), then `hausbuch-api` moved
+   to `api:aa298bb0752f` and `hausbuch-web` to `web:aa298bb0752f-16ef9db2`. Roll back to
+   `api:8844916ea91b` and `web:8844916ea91b-16ef9db2`; the old images work with `0004`,
+   which only adds a document subtype. Merging it also fixed the auth enrollment tests,
+   which had a fixed 5 Nov 2026 clock and failed on every branch from 6 Nov 09:30 UTC.
+6. **DONE: retry after Scaleway's 412 quirk** (Q16, 6 Nov 2026). Scaleway answers the first
+   request on a connection after a refused conditional PUT with a `400` that does not come
+   from S3 (`text/html`, `connection: close`, no `x-amz-request-id`), so a racing upload or
+   another request on that pooled connection failed. `make_s3_client` now retries exactly
+   that response once, immediately; genuine S3 400s carry `x-amz-request-id` and are never
+   retried. Reviewed (ship, no fix scope), merged as #21 (`655bf40`), live as
+   `api:655bf40bd355` (roll back to `api:aa298bb0752f`; no migration). Known limit: the
+   quirk landing on a request's second attempt (after a 503) still raises, rare and loud.
+   Live check passed the same day: Luis ran the real-bucket tests from the fixed code and
+   `test_real_bucket_honours_if_none_match` (refused overwrite, then read back) passed, as
+   did every other real-bucket test.
+7. **DONE: edit and correct records after they are saved** (6 Nov 2026). Luis found while
+   entering real data that a Nebenkosten row's Beleg could only be chosen at creation; a sweep
+   of every record type found the same gap on loans and tenancies. Merged as #22
+   (`0b3a496`), live as `api:0b3a49643513` and `web:0b3a49643513-16ef9db2` (roll back to
+   `api:655bf40bd355` and `web:aa298bb0752f-16ef9db2`); no migration (event types are only
+   checked by pattern). What it adds:
+   - Nebenkosten: `PATCH` and `DELETE /api/acquisition-costs/{id}`. A change to kind, amount,
+     paid_on or the Beleg appends a correcting `property.acquisition_cost_recorded`, so
+     History shows the corrected line; a note-only change is `property.acquisition_cost_updated`
+     (note text never recorded); removal is `property.acquisition_cost_removed`.
+   - Loan: `POST /api/loans/{id}/corrections/disbursement` (payout date and/or principal), a
+     correcting `loan.disbursed`; the schedule follows because it is computed on read.
+   - Tenancy: `PATCH /api/tenancies/{id}` (Befristung, Mietmodell, Kaution, write-only
+     Kautionskonto IBAN); corrections of the contract date, the notice, the move-out and a
+     Kaution receipt; `PUT /api/tenancies/{id}/parties` (event `tenancy.parties_set`, ids and
+     roles only, D5).
+   - Retention (decided 6 Nov 2026, review finding): a tenant's hold follows every tenancy
+     they were ever a party of, read from the event log as well as `tenancy_tenant`, so a
+     co-tenant removed from a running tenancy cannot be erased until that tenancy's end + 4
+     years (or on request after it ends). Cost: a tenant added by mistake stays held too.
+   Reviewed once (fix first: the retention hole, History showing pre-edit Nebenkosten values,
+   correction dates out of order; all three fixed), 1391 backend tests pass against Postgres.
 
 ### Known gaps (not yet built)
 
-- There is no correction command for `tenancy.ended`, `tenancy.created` (`signed_on`),
-  `tenancy.notice_given` or `loan.disbursed`, and no party changes on a tenancy. Step 4 will
-  need them on the first typo.
+- A notice or move-out entered by mistake cannot be withdrawn, only re-dated: a correction
+  repeats its event's type and needs a date (the missing correction commands listed here
+  until 6 Nov 2026 shipped in #22, implementation status item 7).
+- `end_tenancy` does not check the notice date, so a first move-out dated before the notice
+  is accepted; only the move-out correction refuses it.
+- History still shows a removed Nebenkosten row's recorded line next to its "entfernt"
+  entry. Hiding it needs a `build_history` rule (a removal closes the chain with the same
+  `cost_id`) and a `timeline.yaml` case, so a spec change.
+- `*.created` payloads keep their first-entered values after a correction or edit (e.g.
+  `loan.created.principal`, `tenancy.created.tenant_ids`); the row and the later events hold
+  the current state.
 - No retention auto-delete job, and no sweeper for blobs orphaned by rolled-back uploads.
   The production bucket has versioning on (5 Nov 2026), so whoever builds that job must
   also add a lifecycle rule expiring noncurrent versions (30 days, `deploy/scaleway.md`
@@ -319,7 +385,7 @@ HTTP API exists.
 
 ### Spec amendment 3 (6 Nov 2026): document checklist per property
 
-**Status: BUILT on `feat/document-checklist` (6 Nov 2026), in review, not merged or deployed.** Luis asked for it while
+**Status: DEPLOYED (6 Nov 2026), merged as #20 (`aa298bb`); see implementation status item 5.** Luis asked for it while
 entering the real data: a list on each property of the documents the tax return needs, with
 which ones are in and which are missing. ARCHITECTURE.md had the missing-document checklist
 in phase 3, derived from the tax rules; this brings the part phase 1 can already know forward,
