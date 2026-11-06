@@ -15,6 +15,7 @@ from hausbuch.schemas.allocation import (
     RoutingDecision,
     RuleMatcher,
 )
+from hausbuch.schemas.common import Money
 from hausbuch.schemas.events import EVENT_CATALOG, EventType, RuleRecorded
 
 PHASES = {"phase1": phase1, "phase2": phase2}
@@ -61,20 +62,26 @@ def test_routing_table_agrees_with_thresholds():
         assert (row.decision is RoutingDecision.AUTO_CONFIRM) == auto, row.category
 
 
-def test_rule_stores_no_amount():
-    """D25: no field of a learned rule, its matcher or its read shape can hold money."""
-    for model in (RuleMatcher, MatchingRuleCreate, MatchingRule):
-        for name, field in model.model_fields.items():
-            assert "amount" not in name or name == "amount_sign", (model.__name__, name)
-            assert field.annotation not in (Decimal, Decimal | None), (model.__name__, name)
-
-
 def _types(annotation) -> set:
     """annotation and every type nested in it (Optional, unions, Annotated, list[...])."""
     found = {annotation}
     for arg in get_args(annotation):
         found |= _types(arg)
     return found
+
+
+def test_types_sees_through_optional_money():
+    assert Decimal in _types(Money | None)
+    assert Decimal in _types(list[Money])
+
+
+def test_rule_stores_no_amount():
+    """D25: no field of a learned rule, its matcher, its read shape or its events can hold
+    money, however the type is wrapped (Money | None, Annotated, a list)."""
+    for model in (RuleMatcher, MatchingRuleCreate, MatchingRule, RuleRecorded):
+        for name, field in model.model_fields.items():
+            assert "amount" not in name or name == "amount_sign", (model.__name__, name)
+            assert Decimal not in _types(field.annotation), (model.__name__, name)
 
 
 def test_rule_event_holds_no_pattern():
