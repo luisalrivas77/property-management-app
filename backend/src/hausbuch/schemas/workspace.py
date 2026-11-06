@@ -14,6 +14,9 @@ class Workspace(Schema):
     id: UUID
     name: str = Field(min_length=1, max_length=200)
     created_at: datetime
+    # Phase 2 settings (migration 0005), changed only with a workspace.settings_changed event.
+    ai_tenant_documents: bool = False  # tenant documents may be sent to the model (D16)
+    auto_accept_llm: bool = False  # LLM categorizations may auto-confirm (D26)
 
 
 class AppUser(Record):

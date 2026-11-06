@@ -1,8 +1,9 @@
-"""SQLAlchemy Core tables for migrations 0001-0003.
+"""SQLAlchemy Core tables for migrations 0001-0007.
 
 The migration is the source of truth. This module mirrors its columns (name, type, nullability,
 whether a server default exists) and primary keys, so services can build typed queries; it
 carries no CHECKs, FKs, indexes or policies, and is never used to create a schema.
+Procrastinate's procrastinate_* tables (0005) are not mirrored: they belong to the queue (D20).
 tests/db/test_tables_match_migration.py reflects the migrated database and fails on any drift.
 
 `property_` has a trailing underscore so it does not shadow the builtin.
@@ -84,6 +85,9 @@ workspace = Table(
     _id(),
     _text("name"),
     _created_at(),
+    # 0005 (phase 2 settings)
+    Column("ai_tenant_documents", Boolean, nullable=False, server_default=text("false")),
+    Column("auto_accept_llm", Boolean, nullable=False, server_default=text("false")),
 )
 
 app_user = Table(
@@ -151,6 +155,9 @@ document_extraction = Table(
     Column("fields", JSONB, nullable=False),
     Column("schema_version", SmallInteger, nullable=False, server_default=text("1")),
     _created_at(),
+    # 0005
+    _text("kind", server_default=text("'manual'")),
+    _uuid("ai_call_id", nullable=True),
 )
 
 # --- Property ----------------------------------------------------------------
@@ -410,4 +417,187 @@ auth_invite = Table(
     _created_at(),
     _timestamp("expires_at", default=False),
     _timestamp("used_at", nullable=True, default=False),
+)
+
+
+# --- Phase 2: AI calls and proposals (0005) ----------------------------------
+
+ai_call = Table(
+    "ai_call",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _text("job"),
+    _uuid("document_id", nullable=True),
+    _uuid("transaction_id", nullable=True),
+    _text("model"),
+    _text("prompt_version"),
+    _text("inference_geo", nullable=True),
+    Column("input_sha256", LargeBinary, nullable=False),
+    Column("input_tokens", Integer, nullable=True),
+    Column("output_tokens", Integer, nullable=True),
+    Column("cache_read_tokens", Integer, nullable=True),
+    _text("stop_reason", nullable=True),
+    Column("output", JSONB, nullable=True),
+    _text("raw_text", nullable=True),
+    _text("error_code", nullable=True),
+    Column("duration_ms", Integer, nullable=True),
+    _created_at(),
+)
+
+proposal = Table(
+    "proposal",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("document_id"),
+    _text("kind", nullable=True),
+    _text("status", server_default=text("'queued'")),
+    _text("error_code", nullable=True),
+    _uuid("extraction_id", nullable=True),
+    _uuid("ai_call_id", nullable=True),
+    _text("target_mode", server_default=text("'create'")),
+    Column("targets", JSONB, nullable=True),
+    Column("fields", JSONB, nullable=True),
+    Column("decisions", JSONB, nullable=True),
+    Column("applied_entities", JSONB, nullable=True),
+    _created_at(),
+    _updated_at(),
+    _timestamp("decided_at", nullable=True, default=False),
+    _uuid("decided_by", nullable=True),
+    _timestamp("scrubbed_at", nullable=True, default=False),
+)
+
+
+# --- Phase 2: accounts, statements, transactions (0006) ------------------------
+
+account = Table(
+    "account",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _text("label"),
+    _text("bank"),
+    _text("iban_masked"),
+    Column("iban_hmac", LargeBinary, nullable=False),
+    _text("source", server_default=text("'upload'")),
+    _money("opening_balance"),
+    _date("opening_balance_on"),
+    Column("is_owner_account", Boolean, nullable=False, server_default=text("false")),
+    _created_at(),
+    _updated_at(),
+)
+
+statement_import = Table(
+    "statement_import",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("account_id"),
+    _uuid("document_id"),
+    _text("format"),
+    Column("lines_total", Integer, nullable=False, server_default=text("0")),
+    Column("lines_new", Integer, nullable=False, server_default=text("0")),
+    Column("lines_skipped", Integer, nullable=False, server_default=text("0")),
+    _date("first_booking_on", nullable=True),
+    _date("last_booking_on", nullable=True),
+    _money("declared_opening", nullable=True),
+    _money("declared_closing", nullable=True),
+    _text("balance_source", server_default=text("'none'")),
+    _money("computed_opening", nullable=True),
+    _money("computed_closing", nullable=True),
+    _text("status", server_default=text("'imported'")),
+    _text("error_code", nullable=True),
+    _uuid("ai_call_id", nullable=True),
+    _created_at(),
+    _updated_at(),
+)
+
+transaction = Table(
+    "transaction",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("account_id"),
+    _uuid("import_id"),
+    Column("line_hash", LargeBinary, nullable=False),
+    _date("booking_date"),
+    _date("value_date", nullable=True),
+    _money("amount"),
+    _text("currency", server_default=text("'EUR'")),
+    _text("counterparty_name", nullable=True),
+    _text("counterparty_iban_masked", nullable=True),
+    Column("counterparty_iban_hmac", LargeBinary, nullable=True),
+    _text("purpose", server_default=text("''")),
+    _text("booking_text", nullable=True),
+    _text("bank_reference", nullable=True),
+    _text("end_to_end_ref", nullable=True),
+    _text("mandate_ref", nullable=True),
+    Column("raw", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    Column("is_pending", Boolean, nullable=False, server_default=text("false")),
+    _uuid("excluded_as_duplicate_of", nullable=True),
+    _created_at(),
+)
+
+possible_duplicate = Table(
+    "possible_duplicate",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("transaction_id"),
+    _uuid("other_transaction_id"),
+    _text("status", server_default=text("'open'")),
+    _timestamp("decided_at", nullable=True, default=False),
+    _created_at(),
+)
+
+
+# --- Phase 2: allocations and learned rules (0007) -----------------------------
+
+allocation = Table(
+    "allocation",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("transaction_id"),
+    _money("amount"),
+    _text("category"),
+    _uuid("property_id", nullable=True),
+    _uuid("unit_id", nullable=True),
+    _uuid("tenancy_id", nullable=True),
+    _uuid("loan_id", nullable=True),
+    _date("service_period_start", nullable=True),
+    _date("service_period_end", nullable=True),
+    Column("recurring", Boolean, nullable=False, server_default=text("false")),
+    _text("method"),
+    Column("confidence", Numeric(4, 3), nullable=False),
+    _text("status", server_default=text("'proposed'")),
+    _uuid("supersedes_id", nullable=True),
+    _uuid("rule_id", nullable=True),
+    _uuid("ai_call_id", nullable=True),
+    _uuid("document_id", nullable=True),
+    _text("reasoning", nullable=True),
+    _text("question", nullable=True),
+    _timestamp("recorded_at"),
+    _timestamp("confirmed_at", nullable=True, default=False),
+    _uuid("confirmed_by", nullable=True),
+)
+
+matching_rule = Table(
+    "matching_rule",
+    metadata,
+    _id(),
+    _workspace_id(),
+    Column("matcher", JSONB, nullable=False),
+    _text("split_method"),
+    _text("category", nullable=True),
+    _uuid("property_id", nullable=True),
+    _uuid("tenancy_id", nullable=True),
+    _uuid("loan_id", nullable=True),
+    Column("recurring", Boolean, nullable=False, server_default=text("false")),
+    _uuid("created_from_allocation_id", nullable=True),
+    Column("enabled", Boolean, nullable=False, server_default=text("true")),
+    Column("hit_count", Integer, nullable=False, server_default=text("0")),
+    _created_at(),
+    _updated_at(),
 )

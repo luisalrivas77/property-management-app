@@ -65,6 +65,13 @@ BuildingShare = Annotated[
     Decimal, Field(gt=0, lt=1, max_digits=7, decimal_places=6), _STRING_ONLY, _string_schema(6)
 ]
 
+# numeric(4,3), closed interval: a match confidence (allocation.confidence, phase 2). Always a
+# number code computed (deterministic 1.0, document match 0.95, the model's high/medium/low
+# mapped to 0.9/0.6/0.3), never a number a model reported (D15).
+Confidence = Annotated[
+    Decimal, Field(ge=0, le=1, max_digits=4, decimal_places=3), _STRING_ONLY, _string_schema(3)
+]
+
 # numeric(8,2) and numeric(4,1)
 Area = Annotated[
     Decimal, Field(gt=0, max_digits=8, decimal_places=2), _STRING_ONLY, _string_schema(2)

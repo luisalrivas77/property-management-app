@@ -1,0 +1,140 @@
+# Rule fixture: statement line hash (hausbuch.rules.statements.line_hash / line_hashes)
+#
+# line_hash(account_id: UUID, line: LineForHash, ordinal: int) -> str (SHA-256, lower-case hex)
+# line_hashes(account_id: UUID, lines: list[LineForHash]) -> list[str]   # one file, in order
+# Spec: docs/phases/phase-2.md D22, §7.2 and phase 2 input point 2. The hash is what makes an
+# import idempotent: a re-upload of the same file skips every line, and two genuinely equal
+# payments on one day both survive.
+#
+# Canonical encoding v1 (pinned below; changing it re-hashes every stored line, so it is
+# versioned by its first field). Fields are joined with U+001F (unit separator), encoded as
+# UTF-8 and hashed with SHA-256:
+#   reference path, when the line has a bank reference:
+#     ["hausbuch-line-v1", "ref", account_id, booking_date, amount, reference]
+#     reference = bank_reference (camt AcctSvcrRef, else NtryRef) when non-empty, else
+#     end_to_end_ref when non-empty and not "NOTPROVIDED"; stripped. The ordinal is not used.
+#   tuple path, otherwise:
+#     ["hausbuch-line-v1", "line", account_id, booking_date, value_date or "", amount,
+#      counterparty_iban_hmac or "", norm(counterparty_name or ""), norm(purpose),
+#      booking_text or "", ordinal]
+#   account_id: the UUID in canonical lower-case form; dates ISO (YYYY-MM-DD); amount: the
+#   signed Decimal with exactly two places, no thousands separator ("-1234.56", "1400.00");
+#   norm(s) = s.casefold() with every run of whitespace collapsed to one space and the ends
+#   stripped; ordinal: decimal integer.
+# line_hashes: a line's ordinal is the number of earlier lines in the same file with an
+#   identical tuple (every tuple-path field except the ordinal), so [A, B, A] -> 0, 0, 1.
+#
+# Two choices this fixture makes beyond the spec's wording (reported with the spec PR):
+#   - The tuple carries the counterparty IBAN's keyed HMAC, not the normalized IBAN: an
+#     unkeyed hash over a plaintext IBAN could be brute-forced back to it (D5/D22 privacy).
+#   - The reference path keeps booking_date and amount next to the reference, so a reference
+#     a bank repeats across months (a standing order's constant end-to-end id) cannot merge two
+#     different payments.
+#
+# Each case runs line_hashes once per file (a file = one upload) and pins every digest.
+
+account_id: 0000002c-0000-4000-8000-000000000001
+
+cases:
+
+  - id: bank_reference_wins
+    description: The same booking exported twice with different text and a different end-to-end id; the bank's reference decides, so both hash alike.
+    files:
+      - - booking_date: 2027-01-04
+          value_date: 2027-01-04
+          amount: "1400.00"
+          counterparty_name: Erika Beispiel
+          purpose: Miete 01/2027
+          booking_text: GUTSCHRIFT
+          bank_reference: "2027010400012345"
+          end_to_end_ref: MIETE-2027-01
+      - - booking_date: 2027-01-04
+          amount: "1400.00"
+          counterparty_name: BEISPIEL, ERIKA
+          purpose: MIETE 01/2027 LINDENSTR 12 WE 3
+          booking_text: Gutschrift Überweisung
+          bank_reference: "2027010400012345"
+          end_to_end_ref: NOTPROVIDED
+    expect:
+      - ["c5729a5436e035813efc211ecf08dff2366136f2d518a897abb34fce10afe2e4"]
+      - ["c5729a5436e035813efc211ecf08dff2366136f2d518a897abb34fce10afe2e4"]
+
+  - id: end_to_end_reference_when_no_bank_reference
+    description: A CSV line has no bank reference; a real Kundenreferenz (End-to-End) is the reference.
+    files:
+      - - booking_date: 2027-01-04
+          amount: "1400.00"
+          counterparty_name: Erika Beispiel
+          purpose: Miete 01/2027
+          end_to_end_ref: MIETE-2027-01
+      - - booking_date: 2027-01-04
+          amount: "1400.00"
+          counterparty_name: Erika Beispiel
+          purpose: Miete Januar 2027
+          end_to_end_ref: " MIETE-2027-01 "
+    expect:
+      - ["9726167974ddcd945ea921014c0d82f50947c1c384e46fda54ad905e8bf16114"]
+      - ["9726167974ddcd945ea921014c0d82f50947c1c384e46fda54ad905e8bf16114"]
+
+  - id: notprovided_ignored
+    description: NOTPROVIDED (and an empty reference) is no reference; the three lines take the tuple path and hash alike.
+    files:
+      - - &FEE
+          booking_date: 2027-01-31
+          value_date: 2027-01-31
+          amount: "-9.90"
+          purpose: Entgelt Kontofuehrung 01/2027
+          booking_text: ENTGELTABSCHLUSS
+          end_to_end_ref: NOTPROVIDED
+      - - <<: *FEE
+          end_to_end_ref: null
+      - - <<: *FEE
+          end_to_end_ref: ""
+    expect:
+      - ["2d3016f0f1a56e10f07e1446d29f2eceb7ccd7fdd6e6805e2fdd95bac4ef5c13"]
+      - ["2d3016f0f1a56e10f07e1446d29f2eceb7ccd7fdd6e6805e2fdd95bac4ef5c13"]
+      - ["2d3016f0f1a56e10f07e1446d29f2eceb7ccd7fdd6e6805e2fdd95bac4ef5c13"]
+
+  - id: identical_lines_get_ordinals
+    description: Two equal transfers on one day, with a different line between them; ordinals 0, 0, 1, so all three survive.
+    files:
+      - - &TOPUP
+          booking_date: 2027-01-15
+          value_date: 2027-01-15
+          amount: "50.00"
+          counterparty_name: Max Beispiel
+          counterparty_iban_hmac: "2222222222222222222222222222222222222222222222222222222222222222"
+          purpose: Zuschuss
+          booking_text: GUTSCHRIFT
+        - <<: *TOPUP
+          amount: "75.00"
+        - *TOPUP
+    expect:
+      - ["4cd8ca49d68ca9f608cdde2466ba1888c16a2c117183db0018e43ad77a05f101", "f9d1b4099f7322404d1249b139e519a5a4fe6190cafd06307dafde122c9fad59", "95416fe5fbae43e4825ad7721a8cc2cc0b349df5047d19afe0177a39f4151977"]
+
+  - id: reimport_same_hashes
+    description: The previous case's file uploaded again; the same three hashes, so every line is skipped.
+    files:
+      - - *TOPUP
+        - <<: *TOPUP
+          amount: "75.00"
+        - *TOPUP
+    expect:
+      - ["4cd8ca49d68ca9f608cdde2466ba1888c16a2c117183db0018e43ad77a05f101", "f9d1b4099f7322404d1249b139e519a5a4fe6190cafd06307dafde122c9fad59", "95416fe5fbae43e4825ad7721a8cc2cc0b349df5047d19afe0177a39f4151977"]
+
+  - id: whitespace_and_case_in_purpose_irrelevant
+    description: Name and purpose differ only in case and whitespace (a line break inside the purpose).
+    files:
+      - - booking_date: 2027-02-01
+          amount: "-410.00"
+          counterparty_name: WEG  Lindenstrasse 12
+          counterparty_iban_hmac: "6666666666666666666666666666666666666666666666666666666666666666"
+          purpose: "Hausgeld  02/2027\nWE 3"
+      - - booking_date: 2027-02-01
+          amount: "-410.00"
+          counterparty_name: weg lindenstrasse 12
+          counterparty_iban_hmac: "6666666666666666666666666666666666666666666666666666666666666666"
+          purpose: " hausgeld 02/2027 we 3 "
+    expect:
+      - ["d4b27ee5729f0b18919e24c3b3dc323058c5c503386d8e46872c55bc43fa8a0f"]
+      - ["d4b27ee5729f0b18919e24c3b3dc323058c5c503386d8e46872c55bc43fa8a0f"]

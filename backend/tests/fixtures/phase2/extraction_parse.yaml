@@ -1,0 +1,145 @@
+# Rule fixture: parsing an extract response (hausbuch.rules.extraction_parse.parse_lines)
+#
+# parse_lines(blocks: list[CitedTextBlock], kind: ExtractionKind, *, page_offset: int = 0)
+#   -> dict[str, ExtractedValue]
+# Spec: docs/phases/phase-2.md D15, §5.2, §5.3; value kinds and stored forms in
+# hausbuch/schemas/extraction.py (module docstring). The extract call uses citations, so the
+# response is text blocks, each with the page_location citations the API attached; the prompt
+# asks for one `field_key: value` (or `field_key: unbekannt`) line per field.
+#
+# 1. Lines: the blocks' texts concatenated, split on "\n". A line is `key: value` when it starts
+#    with a field key ([a-z0-9_]+), a colon and optional spaces; any other line is ignored.
+#    A key that is not a field of EXTRACTION_MODELS[kind] is ignored. A repeated key: the last
+#    line wins. Only the keys the response stated are returned (the caller fills the others
+#    with ExtractedValue.missing()).
+# 2. The raw value is the rest of the line, stripped. "unbekannt" (any case) or an empty value ->
+#    ExtractedValue.missing() (value null, no source, no checks, confidence low).
+# 3. Source: the first citation of the first block that contributes a non-newline character to
+#    the line -> SourceRef(page = start_page_number + page_offset, quote = cited_text).
+#    page_offset is the first page of the chunk minus 1, for a PDF split into several requests.
+# 4. Value: the raw value normalized by the field's value kind (money "289.000,00 €" ->
+#    "289000.00"; decimal "68,40 m²" -> "68.40"; rate "3,65 %" -> "0.0365"; date "12.03.2026" ->
+#    "2026-03-12"; year -> integer; fraction "85/1000" -> {numerator, denominator}; iban -> no
+#    spaces, upper case; text -> whitespace collapsed; text_list -> split on ";", stripped).
+#    `validates` when that succeeds and the value passes the target field's type (amount with at
+#    most two places, rate in [0, 1), real calendar date, year 1800-2100, fraction <= 1, IBAN
+#    mod-97, non-empty text). When it fails, value = the raw text, whitespace collapsed.
+# 5. `value_in_quote` (only with a source): for money, decimal, rate, date, year, fraction and
+#    iban, the raw value's digits, in order, occur as a contiguous run in the quote's digits;
+#    for text and text_list, every item, casefolded and whitespace-collapsed, occurs in the
+#    casefolded, whitespace-collapsed quote.
+# 6. checks, in this order: cited (a source was found), value_in_quote, validates.
+#    confidence: high = all three; medium = cited and validates; low = anything else.
+#    Confidence is never a number the model reported (D15).
+# expect: the returned dict, exactly (keys and every ExtractedValue field).
+
+cases:
+  - id: german_forms_purchase_contract
+    kind: purchase_contract
+    blocks:
+      - {text: "purchase_price: "}
+      - text: "289.000,00 €"
+        citations: [{cited_text: "Der Kaufpreis beträgt 289.000,00 € (in Worten: zweihundertneunundachtzigtausend Euro).", start_page_number: 6, end_page_number: 7}]
+      - {text: "\nnotarized_on: "}
+      - text: "12.03.2026"
+        citations: [{cited_text: "Verhandelt zu Berlin am 12.03.2026", start_page_number: 1, end_page_number: 2}]
+      - {text: "\nmea: "}
+      - text: "85/1000"
+        citations: [{cited_text: "85/1000 Miteigentumsanteil an dem Grundstück", start_page_number: 2, end_page_number: 3}]
+      - {text: "\nfloor_area_m2: "}
+      - text: "68,40 m²"
+        citations: [{cited_text: "Wohnfläche ca. 68,40 m²", start_page_number: 2, end_page_number: 3}]
+      - {text: "\nbuild_year: "}
+      - text: "1994"
+        citations: [{cited_text: "Das Gebäude wurde 1994 errichtet.", start_page_number: 3, end_page_number: 4}]
+      - {text: "\ncity: "}
+      - text: "Berlin"
+        citations: [{cited_text: "Lindenstraße 12, 10115 Berlin", start_page_number: 2, end_page_number: 3}]
+      - {text: "\nbuyers: "}
+      - text: "Max Beispiel; Erika Beispiel"
+        citations: [{cited_text: "1. Herr Max Beispiel, 2. Frau Erika Beispiel, beide wohnhaft in Berlin", start_page_number: 1, end_page_number: 2}]
+    expect:
+      purchase_price: {value: "289000.00", source: {page: 6, quote: "Der Kaufpreis beträgt 289.000,00 € (in Worten: zweihundertneunundachtzigtausend Euro)."}, checks: [cited, value_in_quote, validates], confidence: high}
+      notarized_on: {value: "2026-03-12", source: {page: 1, quote: "Verhandelt zu Berlin am 12.03.2026"}, checks: [cited, value_in_quote, validates], confidence: high}
+      mea: {value: {numerator: 85, denominator: 1000}, source: {page: 2, quote: "85/1000 Miteigentumsanteil an dem Grundstück"}, checks: [cited, value_in_quote, validates], confidence: high}
+      floor_area_m2: {value: "68.40", source: {page: 2, quote: "Wohnfläche ca. 68,40 m²"}, checks: [cited, value_in_quote, validates], confidence: high}
+      build_year: {value: 1994, source: {page: 3, quote: "Das Gebäude wurde 1994 errichtet."}, checks: [cited, value_in_quote, validates], confidence: high}
+      city: {value: Berlin, source: {page: 2, quote: "Lindenstraße 12, 10115 Berlin"}, checks: [cited, value_in_quote, validates], confidence: high}
+      buyers: {value: [Max Beispiel, Erika Beispiel], source: {page: 1, quote: "1. Herr Max Beispiel, 2. Frau Erika Beispiel, beide wohnhaft in Berlin"}, checks: [cited, value_in_quote, validates], confidence: high}
+
+  - id: german_forms_loan_contract
+    kind: loan_contract
+    blocks:
+      - {text: "nominal_rate: "}
+      - text: "3,65 %"
+        citations: [{cited_text: "Sollzins: 3,65 % p.a. fest bis 31.03.2036", start_page_number: 2, end_page_number: 3}]
+      - {text: "\naccount_iban: "}
+      - text: "DE89 3704 0044 0532 0130 00"
+        citations: [{cited_text: "Darlehenskonto IBAN DE89 3704 0044 0532 0130 00", start_page_number: 1, end_page_number: 2}]
+      - {text: "\nmonthly_payment: "}
+      - text: "1.234,56 €"
+        citations: [{cited_text: "Die monatliche Rate beträgt 1.234,56 EUR.", start_page_number: 2, end_page_number: 3}]
+    expect:
+      nominal_rate: {value: "0.0365", source: {page: 2, quote: "Sollzins: 3,65 % p.a. fest bis 31.03.2036"}, checks: [cited, value_in_quote, validates], confidence: high}
+      account_iban: {value: DE89370400440532013000, source: {page: 1, quote: "Darlehenskonto IBAN DE89 3704 0044 0532 0130 00"}, checks: [cited, value_in_quote, validates], confidence: high}
+      monthly_payment: {value: "1234.56", source: {page: 2, quote: "Die monatliche Rate beträgt 1.234,56 EUR."}, checks: [cited, value_in_quote, validates], confidence: high}
+
+  - id: unbekannt_is_missing
+    kind: purchase_contract
+    blocks:
+      - {text: "build_year: unbekannt\nland_value: Unbekannt\nunit_label: "}
+      - text: "WE 3"
+        citations: [{cited_text: "Wohnung Nr. 3 (WE 3) des Aufteilungsplans", start_page_number: 2, end_page_number: 3}]
+    expect:
+      build_year: {value: null, confidence: low}
+      land_value: {value: null, confidence: low}
+      unit_label: {value: WE 3, source: {page: 2, quote: "Wohnung Nr. 3 (WE 3) des Aufteilungsplans"}, checks: [cited, value_in_quote, validates], confidence: high}
+
+  - id: duplicate_key_last_wins
+    kind: purchase_contract
+    blocks:
+      - {text: "purchase_price: "}
+      - text: "280.000,00 €"
+        citations: [{cited_text: "ursprünglich vereinbarter Kaufpreis 280.000,00 €", start_page_number: 5, end_page_number: 6}]
+      - {text: "\npurchase_price: "}
+      - text: "289.000,00 €"
+        citations: [{cited_text: "Der Kaufpreis beträgt 289.000,00 €", start_page_number: 6, end_page_number: 7}]
+    expect:
+      purchase_price: {value: "289000.00", source: {page: 6, quote: "Der Kaufpreis beträgt 289.000,00 €"}, checks: [cited, value_in_quote, validates], confidence: high}
+
+  - id: unknown_keys_and_prose_ignored
+    kind: invoice
+    blocks:
+      - {text: "Hier sind die Felder:\nverkaeufer: Hans Muster\nnotes: bitte prüfen\nreference: "}
+      - text: "UR 1234/2026"
+        citations: [{cited_text: "Kostenberechnung zu UR 1234/2026", start_page_number: 1, end_page_number: 2}]
+    expect:
+      reference: {value: UR 1234/2026, source: {page: 1, quote: "Kostenberechnung zu UR 1234/2026"}, checks: [cited, value_in_quote, validates], confidence: high}
+
+  - id: value_not_in_quote_medium
+    description: The citation points at the amount in words; the digits are not in the quote.
+    kind: purchase_contract
+    blocks:
+      - {text: "purchase_price: "}
+      - text: "289.000,00 €"
+        citations: [{cited_text: "Kaufpreis: zweihundertneunundachtzigtausend Euro", start_page_number: 6, end_page_number: 7}]
+    expect:
+      purchase_price: {value: "289000.00", source: {page: 6, quote: "Kaufpreis: zweihundertneunundachtzigtausend Euro"}, checks: [cited, validates], confidence: medium}
+
+  - id: no_citation_low
+    kind: purchase_contract
+    blocks:
+      - {text: "notarized_on: 12.03.2026\n"}
+    expect:
+      notarized_on: {value: "2026-03-12", checks: [validates], confidence: low}
+
+  - id: page_offset_for_split_pdf
+    description: The second request of a split PDF starts at page 101; its citations count from 1.
+    kind: loan_contract
+    page_offset: 100
+    blocks:
+      - {text: "fixed_until: "}
+      - text: "31.03.2036"
+        citations: [{cited_text: "Die Sollzinsbindung endet am 31.03.2036.", start_page_number: 3, end_page_number: 4}]
+    expect:
+      fixed_until: {value: "2036-03-31", source: {page: 103, quote: "Die Sollzinsbindung endet am 31.03.2036."}, checks: [cited, value_in_quote, validates], confidence: high}

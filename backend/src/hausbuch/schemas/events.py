@@ -1,4 +1,5 @@
-"""Event envelope, the phase 1 event catalog, and the History timeline shapes.
+"""Event envelope, the event catalog (phase 1, plus phase 2's in docs/phases/phase-2.md
+§3.5), and the History timeline shapes.
 
 Principle 4: domain changes are events; corrections are new events, never overwrites.
 The domain tables hold current state and are written in the same transaction as the event.
@@ -9,7 +10,9 @@ Rules every event obeys (checked by Event's validator and by the DB):
 - effective_date is required, optional or forbidden per type (EVENT_CATALOG).
 - A correction carries corrects_event_id, repeats the same type and entity, and its payload is
   the full corrected payload (not a diff). An event is corrected at most once; chains go forward.
-- Tenant personal data never appears in a payload: events outlive GDPR erasure.
+- Tenant personal data never appears in a payload: events outlive GDPR erasure. Phase 2
+  payloads carry ids, counts, amounts, hashes, types and field *names*; never a counterparty
+  name, a purpose text, a tenant name or a model's text (§3.5).
 """
 
 from dataclasses import dataclass
@@ -20,10 +23,23 @@ from uuid import UUID
 
 from pydantic import Field, JsonValue, model_validator
 
+from .ai import ConfidenceLevel
+from .allocation import (
+    HMAC_PATTERN,
+    AllocationCategory,
+    AllocationMethod,
+    HmacHex,
+    MatchingRuleCreate,
+    SplitMethod,
+)
+from .bank import StatementFormat
 from .common import (
     Area,
     BuildingShare,
+    Confidence,
     Fraction,
+    MaskedIban,
+    Money,
     NonNegativeMoney,
     PositiveMoney,
     Rate,
@@ -37,10 +53,13 @@ from .common import (
 from .enums import (
     AcquisitionCostKind,
     ActorType,
+    BalanceSource,
     DocumentSource,
     DocumentSubtype,
     DocumentType,
+    DuplicateStatus,
     EntityType,
+    ExtractionKind,
     LinkTarget,
     PriceSplitSource,
     PropertyKind,
@@ -48,6 +67,7 @@ from .enums import (
     RentModel,
 )
 from .property import OwnerShare
+from .proposal import FieldDecision, RecordEntity
 from .tenancy import TenancyParty
 
 # --- Payloads ----------------------------------------------------------------
@@ -252,6 +272,217 @@ class DocumentLinked(Schema):
     target_id: UUID
 
 
+# --- Phase 2 payloads (docs/phases/phase-2.md §3.5) ------------------------------
+
+
+class WorkspaceSetting(StrEnum):
+    """The workspace columns migration 0005 adds (D16, D26)."""
+
+    AI_TENANT_DOCUMENTS = "ai_tenant_documents"
+    AUTO_ACCEPT_LLM = "auto_accept_llm"
+
+
+class WorkspaceSettingsChanged(Schema):
+    """Changed setting names and their new values (booleans only)."""
+
+    changes: dict[WorkspaceSetting, bool] = Field(min_length=1)
+
+
+class DocumentClassified(Schema):
+    ai_call_id: UUID
+    type: DocumentType
+    subtype: DocumentSubtype | None = None
+    confidence: ConfidenceLevel
+    contains_tenant_data: bool
+
+
+class DocumentExtracted(Schema):
+    """Field names only: the values may quote tenant data and stay in the extraction."""
+
+    ai_call_id: UUID
+    extraction_version: int = Field(ge=1)
+    kind: ExtractionKind
+    field_names: list[str]
+
+
+class DocumentReadFailed(Schema):
+    error_code: str = Field(min_length=1)
+    attempts: int = Field(ge=1)
+
+
+class ProposalNoted(Schema):
+    """proposal.created / .superseded / .rejected. kind is null while unclassified."""
+
+    document_id: UUID
+    kind: ExtractionKind | None = None
+    record_keys: list[str] = Field(default_factory=list)
+
+
+class AppliedRecord(Schema):
+    """One record of an applied proposal: what it became, and per field what the user did,
+    never the value. entity_id is null for a skipped record."""
+
+    key: str
+    mode: Literal["create", "patch", "correction", "unchanged"]
+    skipped: bool = False
+    entity_type: RecordEntity
+    entity_id: UUID | None = None
+    decisions: dict[str, FieldDecision] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _entity(self) -> Self:
+        if not self.skipped and self.entity_id is None:
+            raise ValueError("an applied record names the entity it created or patched")
+        return self
+
+
+class ProposalApplied(Schema):
+    document_id: UUID
+    kind: ExtractionKind | None = None
+    records: list[AppliedRecord] = Field(min_length=1)
+
+
+class UserSignedIn(Schema):
+    passkey_id: UUID
+
+
+class UserSessionsRevoked(Schema):
+    count: int = Field(ge=0)
+
+
+class UserPasskeyEnrolled(Schema):
+    passkey_id: UUID
+    label: str = Field(min_length=1, max_length=100)
+
+
+class UserPasskeyRef(Schema):
+    """user.passkey_renamed / .passkey_removed: the passkey's id only."""
+
+    passkey_id: UUID
+
+
+class UserInvited(Schema):
+    invite_id: UUID
+    invited_user_id: UUID
+
+
+class UserEnrolled(Schema):
+    invite_id: UUID
+
+
+class AccountCreated(Schema):
+    label: str
+    bank: str
+    iban_masked: MaskedIban
+    opening_balance: Money
+    opening_balance_on: date
+    is_owner_account: bool = False
+
+
+class StatementImported(Schema):
+    account_id: UUID
+    document_id: UUID
+    format: StatementFormat
+    lines_total: int = Field(ge=0)
+    lines_new: int = Field(ge=0)
+    lines_skipped: int = Field(ge=0)
+    first_booking_on: date | None = None
+    last_booking_on: date | None = None
+    transaction_ids: list[UUID] = Field(default_factory=list)  # the new lines
+
+
+class StatementBalanceChecked(Schema):
+    """statement.reconciled / .unreconciled. difference = declared_closing - computed_closing;
+    opening_difference = declared_opening - computed_opening (null without a declared one)."""
+
+    declared_opening: Money | None = None
+    computed_opening: Money
+    declared_closing: Money | None = None
+    computed_closing: Money
+    difference: Money | None = None
+    opening_difference: Money | None = None
+    balance_source: BalanceSource
+
+
+class StatementDuplicateResolved(Schema):
+    possible_duplicate_id: UUID
+    transaction_id: UUID
+    other_transaction_id: UUID
+    status: DuplicateStatus
+
+    @model_validator(mode="after")
+    def _decided(self) -> Self:
+        if self.status is DuplicateStatus.OPEN:
+            raise ValueError("a resolution is kept_both or merged")
+        return self
+
+
+class AllocatedPart(Schema):
+    allocation_id: UUID
+    category: AllocationCategory
+    amount: Money
+    property_id: UUID | None = None
+    unit_id: UUID | None = None
+    tenancy_id: UUID | None = None
+    loan_id: UUID | None = None
+    service_period_start: date | None = None
+    service_period_end: date | None = None
+    recurring: bool
+
+
+class TransactionAllocated(Schema):
+    """transaction.allocated; auto = confirmed without a person (rule or matcher)."""
+
+    allocation_ids: list[UUID] = Field(min_length=1)
+    allocations: list[AllocatedPart] = Field(min_length=1)
+    method: AllocationMethod
+    confidence: Confidence
+    rule_id: UUID | None = None
+    ai_call_id: UUID | None = None
+    auto: bool
+
+
+class TransactionReallocated(TransactionAllocated):
+    supersedes: list[UUID] = Field(min_length=1)
+
+
+class RuleRecorded(Schema):
+    """rule.created / .disabled. Never an amount (D25), and never a pattern: a pattern is
+    free text the user typed or the model inferred (it can name a person), and events are
+    kept for good. The full matcher stays on the matching_rule row; the event records the
+    IBAN hash, the sign and which patterns exist."""
+
+    counterparty_iban_hmac: HmacHex | None = Field(default=None, pattern=HMAC_PATTERN)
+    amount_sign: Literal["credit", "debit"] | None = None
+    has_name_pattern: bool
+    has_purpose_pattern: bool
+    split_method: SplitMethod
+    category: AllocationCategory | None = None
+    property_id: UUID | None = None
+    tenancy_id: UUID | None = None
+    loan_id: UUID | None = None
+    recurring: bool = False
+    created_from_allocation_id: UUID | None = None
+
+    @model_validator(mode="after")
+    def _matches_something(self) -> Self:
+        if not (self.counterparty_iban_hmac or self.has_name_pattern or self.has_purpose_pattern):
+            raise ValueError("a rule matches on an IBAN hash, a name pattern or a purpose pattern")
+        return self
+
+    @classmethod
+    def of(cls, rule: MatchingRuleCreate) -> Self:
+        """The event payload for a rule: its matcher reduced to hash, sign and pattern flags."""
+        m = rule.matcher
+        return cls(
+            counterparty_iban_hmac=m.counterparty_iban_hmac,
+            amount_sign=m.amount_sign,
+            has_name_pattern=m.counterparty_name_pattern is not None,
+            has_purpose_pattern=m.purpose_pattern is not None,
+            **rule.model_dump(exclude={"matcher"}),
+        )
+
+
 # --- Catalog -----------------------------------------------------------------
 
 EffectiveDate = Literal["required", "optional", "forbidden"]
@@ -303,6 +534,40 @@ class EventType(StrEnum):
     DOCUMENT_TYPED = "document.typed"
     DOCUMENT_LINKED = "document.linked"
     DOCUMENT_UNLINKED = "document.unlinked"
+    # Phase 2
+    DOCUMENT_CLASSIFIED = "document.classified"
+    DOCUMENT_EXTRACTED = "document.extracted"
+    DOCUMENT_READ_FAILED = "document.read_failed"
+
+    WORKSPACE_SETTINGS_CHANGED = "workspace.settings_changed"
+
+    PROPOSAL_CREATED = "proposal.created"
+    PROPOSAL_SUPERSEDED = "proposal.superseded"
+    PROPOSAL_REJECTED = "proposal.rejected"
+    PROPOSAL_APPLIED = "proposal.applied"
+
+    USER_SIGNED_IN = "user.signed_in"
+    USER_SIGNED_OUT = "user.signed_out"
+    USER_SESSIONS_REVOKED = "user.sessions_revoked"
+    USER_PASSKEY_ENROLLED = "user.passkey_enrolled"
+    USER_PASSKEY_RENAMED = "user.passkey_renamed"
+    USER_PASSKEY_REMOVED = "user.passkey_removed"
+    USER_INVITED = "user.invited"
+    USER_ENROLLED = "user.enrolled"
+
+    ACCOUNT_CREATED = "account.created"
+    ACCOUNT_UPDATED = "account.updated"
+
+    STATEMENT_IMPORTED = "statement.imported"
+    STATEMENT_RECONCILED = "statement.reconciled"
+    STATEMENT_UNRECONCILED = "statement.unreconciled"
+    STATEMENT_DUPLICATE_RESOLVED = "statement.duplicate_resolved"
+
+    TRANSACTION_ALLOCATED = "transaction.allocated"
+    TRANSACTION_REALLOCATED = "transaction.reallocated"
+
+    RULE_CREATED = "rule.created"
+    RULE_DISABLED = "rule.disabled"
 
 
 E = EventType
@@ -357,6 +622,47 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     E.DOCUMENT_TYPED: EventSpec(DocumentTyped, "forbidden", "Type and fields set"),
     E.DOCUMENT_LINKED: EventSpec(DocumentLinked, "forbidden", "Linked to an entity"),
     E.DOCUMENT_UNLINKED: EventSpec(DocumentLinked, "forbidden", "Link removed"),
+    # Phase 2
+    E.DOCUMENT_CLASSIFIED: EventSpec(DocumentClassified, "forbidden", "Classified by the model"),
+    E.DOCUMENT_EXTRACTED: EventSpec(DocumentExtracted, "forbidden", "Fields read by the model"),
+    E.DOCUMENT_READ_FAILED: EventSpec(DocumentReadFailed, "forbidden", "Could not be read"),
+    E.WORKSPACE_SETTINGS_CHANGED: EventSpec(
+        WorkspaceSettingsChanged, "forbidden", "Workspace settings changed"
+    ),
+    E.PROPOSAL_CREATED: EventSpec(ProposalNoted, "forbidden", "Pre-fill proposal created"),
+    E.PROPOSAL_SUPERSEDED: EventSpec(ProposalNoted, "forbidden", "Proposal replaced by a re-run"),
+    E.PROPOSAL_REJECTED: EventSpec(ProposalNoted, "forbidden", "Proposal rejected"),
+    E.PROPOSAL_APPLIED: EventSpec(ProposalApplied, "forbidden", "Proposal applied"),
+    E.USER_SIGNED_IN: EventSpec(UserSignedIn, "forbidden", "Signed in with a passkey"),
+    E.USER_SIGNED_OUT: EventSpec(Empty, "forbidden", "Signed out"),
+    E.USER_SESSIONS_REVOKED: EventSpec(UserSessionsRevoked, "forbidden", "Sessions revoked"),
+    E.USER_PASSKEY_ENROLLED: EventSpec(UserPasskeyEnrolled, "forbidden", "Passkey added"),
+    E.USER_PASSKEY_RENAMED: EventSpec(UserPasskeyRef, "forbidden", "Passkey renamed"),
+    E.USER_PASSKEY_REMOVED: EventSpec(UserPasskeyRef, "forbidden", "Passkey removed"),
+    E.USER_INVITED: EventSpec(UserInvited, "forbidden", "Enrollment link created"),
+    E.USER_ENROLLED: EventSpec(UserEnrolled, "forbidden", "Enrolled through a link"),
+    E.ACCOUNT_CREATED: EventSpec(AccountCreated, "forbidden", "Bank account recorded"),
+    E.ACCOUNT_UPDATED: EventSpec(Updated, "forbidden", "Bank account fields changed"),
+    E.STATEMENT_IMPORTED: EventSpec(
+        StatementImported, "optional", "Statement imported (date = last booking day)"
+    ),
+    E.STATEMENT_RECONCILED: EventSpec(
+        StatementBalanceChecked, "forbidden", "Statement reconciled to its balance"
+    ),
+    E.STATEMENT_UNRECONCILED: EventSpec(
+        StatementBalanceChecked, "forbidden", "Statement does not match its balance"
+    ),
+    E.STATEMENT_DUPLICATE_RESOLVED: EventSpec(
+        StatementDuplicateResolved, "forbidden", "Possible duplicate decided"
+    ),
+    E.TRANSACTION_ALLOCATED: EventSpec(
+        TransactionAllocated, "required", "Transaction allocated (date = booking date)"
+    ),
+    E.TRANSACTION_REALLOCATED: EventSpec(
+        TransactionReallocated, "required", "Allocation corrected (date = booking date)"
+    ),
+    E.RULE_CREATED: EventSpec(RuleRecorded, "forbidden", "Matching rule learned"),
+    E.RULE_DISABLED: EventSpec(RuleRecorded, "forbidden", "Matching rule disabled"),
 }
 del E
 

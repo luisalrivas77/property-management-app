@@ -107,7 +107,10 @@ const TYPING_KEYS = [
 
 function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onSubmit: () => void; onSaved: () => void }) {
   const typing = detail.document.typing;
-  const fields = detail.extraction?.fields;
+  // Only a manual extraction holds the typed fields this form edits; an AI extraction (phase 2)
+  // has its own per-kind shape and is reviewed through its proposal instead.
+  const extraction = detail.extraction;
+  const fields = extraction?.kind === "manual" ? (extraction.fields as ManualDocumentFields) : undefined;
   const [type, setType] = useState<DocumentType | "">(typing?.type ?? "");
   const [subtype, setSubtype] = useState<DocumentSubtype | "">(typing?.subtype ?? "");
   const [title, setTitle] = useState(typing?.title ?? "");

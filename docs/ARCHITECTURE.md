@@ -49,7 +49,7 @@ The core chain is Property → Unit → Tenancy → Tenant; money flows in as Tr
 | Loan | lender, principal, rate, fixed until, follow-up rate (user-set), annuity, schedule | belongs to Property | Schedule splits each payment into interest and Tilgung |
 | Account | bank, IBAN (masked), source (upload / FinTS; aggregator only if SaaS) | has Transactions | The rental runs on a dedicated account, so every line is property-related; transfers to and from the owners' private accounts are recognized by their IBANs |
 | Transaction | booking date, value date, amount, counterparty, IBAN, purpose text, source line hash | from Account; has Allocations | Immutable as imported; dedup on source line hash |
-| Allocation | amount, category, tax treatment, property, unit, tax year, service period, recurring flag, confidence, status | splits one Transaction; links Documents | Sum of allocations = transaction amount (enforced) |
+| Allocation | amount, category, tax treatment, property, unit, service period, recurring flag, confidence, status (the tax year it counts in is derived by that year's tax rules from the dates, period and flag, not stored; decided 6 Nov 2026) | splits one Transaction; links Documents | Sum of allocations = transaction amount (enforced) |
 | Document | file hash, type, extracted fields, dates, amounts | links to any entity | Original immutable; extraction versioned |
 | Rule | matcher (counterparty, IBAN, text pattern), output (category, split template) | created from reviews | How the system learns from your answers |
 | Event | type, entity ref, payload, actor (user / system / AI), timestamp | on every entity | Source of the History timeline and audit trail |
@@ -92,7 +92,8 @@ The AI does four bounded jobs, each with a strict output schema and a fallback t
 | Job | Input | Output (schema) | Model tier | Fallback |
 | --- | --- | --- | --- | --- |
 | Classify document | file + OCR text | type ∈ {statement, invoice, letter, contract, Bescheid, Zinsbescheinigung, Wirtschaftsplan, Hausgeldabrechnung, other}, confidence | small, fast | type = other → review |
-| Extract fields | file + type | per-type JSON: dates, amounts, IBANs, parties, line items, periods | mid | missing required field → review |
+| Extract fields | file + type | per-type fields (dates, amounts, IBANs, parties, line items, periods), each with page + quote | mid | missing required field → review |
+| Pre-fill proposal | extraction + existing records | records to create or patch, applied only through the existing commands after the user verifies each value | none (code) | nothing applied without the user |
 | Match and categorize | transaction + candidate tenancies, loans, documents, rules | allocations[], links[], confidence, reasoning, question? | mid; large only for ambiguous cases | confidence < threshold → review |
 | Explain and ask | allocation + rule context | plain-language reasoning + one concrete question | small | template text |
 
@@ -105,7 +106,7 @@ The AI does four bounded jobs, each with a strict output schema and a fallback t
 
 **Guardrails**
 
-- Structured outputs validated against JSON Schema; invalid output is retried once, then sent to review
+- Structured outputs validated against JSON Schema; invalid output is retried once, then sent to review. Extraction of document fields uses citations instead (page + quoted text per value) because the API does not combine citations with JSON-schema output; the lines are parsed and validated against the Pydantic field types in code, and a value not recoverable from its quote is marked low-confidence (phase 2, D15)
 - Allocation sums must equal the transaction amount; the validator, not the model, enforces it
 - The model sees only the minimum context: no other tenants' data, IBANs masked except the one being matched
 - Prompt-injection hardening: document text is passed as fenced data; extracted instructions are ignored
@@ -225,7 +226,7 @@ flowchart TD
 
 Requests never wait on a model: the API enqueues, workers call the LLM and write results back as pending allocations for the review queue.
 
-In v1 the job worker runs inside the API process (a FastAPI lifespan task) in the one container that serves port 8080, so "Background workers" is a task in the API container rather than a second deployable; a separate worker container comes only when load justifies it (decided 5 Nov 2026, see Decisions).
+In v1 the job worker runs inside the API process (a FastAPI lifespan task) in the one container that serves port 8080, so "Background workers" is a task in the API container rather than a second deployable; a separate worker container comes only when load justifies it (decided 5 Nov 2026, see Decisions; phase 2: Procrastinate, its schema applied by migration 0005, its tables outside row-level security, spec D20).
 
 | Layer | Choice | Why |
 | --- | --- | --- |
@@ -235,7 +236,7 @@ In v1 the job worker runs inside the API process (a FastAPI lifespan task) in th
 | Database | Postgres 16+, SQLAlchemy + Alembic migrations, row-level security keyed on workspace | Relational ledger, JSONB for extractions, events in the same transaction |
 | Queue | Procrastinate (Postgres-backed) on the same Postgres | No extra infrastructure; jobs commit atomically with data |
 | Files | S3-compatible object storage in an EU region | Cheap, immutable originals, signed URLs |
-| AI | Claude API with structured outputs; small model for classify/explain, larger for hard matches | Schema-valid JSON, tiering keeps cost per statement low |
+| AI | Claude API: Haiku 5.5 to classify and explain, Sonnet 5.5 to extract and match, Opus 5.5 for ambiguous matches; citations for extraction, structured outputs for classification and matching; one `ModelClient` interface so an EU-hosted route (Bedrock, Vertex) can replace it | Schema-valid JSON, tiering keeps cost per statement low |
 | Bank | CSV/CAMT/PDF uploads (phase 2), FinTS via python-fints for your own accounts (phase 5); licensed aggregator only if it goes SaaS | Value first; FinTS needs only a free product registration; all behind one BankSource interface |
 | Hosting | Scaleway (EU): Serverless Containers for API+worker and web, Managed PostgreSQL on a private network, Object Storage; one-off admin commands run from the operator's computer with `uv` (decided 5 Nov 2026) | EU-only vendor, DPA, data and backups; about €20/month ex VAT at this load; compatibility tested 5 Nov 2026 |
 | Tests | pytest for rules, golden-file tests for extraction evals, Playwright for flows | Rules and prompts change safely |
@@ -246,7 +247,7 @@ The app holds bank data, tenant personal data and tax records, so it is built as
 
 **Security**
 
-- EU region for database, object storage and backups; AI calls through a provider and settings with no training on inputs and EU data processing where offered
+- EU region for database, object storage and backups; AI calls through a provider and settings with no training on inputs and EU data processing where offered. Checked 6 Nov 2026: the Claude API offers US or global inference only, no EU option; data is processed under the DPA's standard contractual clauses and deleted within 30 days; tenant documents are sent only after the controller's explicit decision (phase 2 spec §11)
 - Encryption at rest (storage + DB) and in transit; IBANs stored masked plus a keyed hash for matching
 - Passkey login (decided 5 Nov 2026); short-lived sessions; FinTS PIN and any bank tokens in a secrets manager, never in the DB
 - Object storage private; files served via short-lived signed URLs
@@ -277,7 +278,7 @@ Five phases, each shippable on its own; phase 3 is the first one that saves real
 | Phase | Delivers | Done when |
 | --- | --- | --- |
 | 1 · Vault and ledger | Properties, units, tenancies, tenants, loans; document upload with manual typing and linking; History timeline from events; a per-property document checklist from the data phase 1 holds (added 6 Nov 2026) | Closed 6 Nov 2026 with everything built and live; the real data moves to phase 2's AI pre-fill (Decisions) |
-| 2 · AI inbox | AI pre-fill of the master data from uploaded documents, verified field by field (first, added 6 Nov 2026); CSV/CAMT/PDF statement import, document classification and extraction, matching pipeline, review queue, learned rules, PWA mobile capture | A month's statement imports with ≥ 80% auto-matched, zero allocation-sum errors, every statement reconciling to its balances, and a repeat answer is never asked twice |
+| 2 · AI inbox | AI pre-fill of property, Nebenkosten, loan, tenant, tenancy and rent records from uploaded documents, each value shown with its page and quote so it is verified, not typed (first, added 6 Nov 2026); CSV/CAMT/PDF statement import, document classification and extraction, matching pipeline, review queue, learned rules, PWA mobile capture | The real flat, loan and tenancy were entered through pre-fill; a month's statement imports with ≥ 80% auto-matched, zero allocation-sum errors, every statement reconciling to its balances, and a repeat answer is never asked twice |
 | 3 · Tax year | Rule set 2026, Anlage V draft with source links, missing-document checklist (extends the phase 1 checklist's requirement list with rule-derived items), 15% limit tracker, ELSTER field sheet and yearly CSV + PDF archive | The 2026 draft reproduces a hand-calculated return to the euro, and every line opens its sources |
 | 4 · Performance | Actuals, projection, profit bridge, §23 sale check, IRR, marginal rate derived from expected income; Betriebskostenabrechnung generator | Projection matches a spreadsheet model for 3 scenarios; one settlement generated from real 2026 data |
 | 5 · Automation | FinTS sync for your own Sparkasse account (pushTAN), email-in address, deadline reminders, rule set 2027 | Statements arrive without manual upload; reminders fire for Grundsteuer and settlement deadlines |
@@ -288,8 +289,8 @@ Each phase starts with a short spec PR (schemas, rule fixtures, eval cases) befo
 
 1. **Owner transfers, not private lines** (corrected the same day). This point first assumed private and property money share one account; Luis confirmed the rental has a dedicated account, so there are no private lines to filter. What remains: top-ups from and withdrawals to the owners' own accounts are neither income nor cost. A deterministic matcher recognizes the owners' IBANs and books them as owner transfers without the model or the review queue.
 2. **Dedup that neither misses nor merges.** The source line hash uses the bank's own reference where the format has one (CAMT entry and end-to-end references); otherwise it includes the line's position among identical lines in the file, so two genuinely equal payments on one day both survive. The same payment imported in two formats (CSV and CAMT) hashes differently, so a likely cross-format duplicate (same account, amount, date, counterparty) goes to review rather than being booked twice or dropped.
-3. **Statements reconcile.** Each imported statement must satisfy opening balance + Σ lines = closing balance, checked by code. A statement that fails (typically a misread PDF amount) goes to review as a whole and none of its lines reach matching.
-4. **Allocations carry the period they pay for.** Besides the tax year, an allocation stores the service period (e.g. rent for January 2027) and whether the payment is recurring. The §11 ten-day rule in phase 3 and rent-arrears tracking both need it; it is set at match time, defaulting from the purpose text and the schedule.
+3. **Statements reconcile.** Each imported statement must satisfy opening balance + Σ lines = closing balance, checked by code. A statement that fails (typically a misread PDF amount) goes to review as a whole and none of its lines reach matching. Reconciliation uses an opening anchor per account and a closing balance declared per import: read from the file for Sparkasse's camt.052 XML export (checked 6 Nov 2026: every daily report states both balances) and for PDF statements, typed only for the CSV export, which carries none (phase 2 spec D21, D33).
+4. **Allocations carry the period they pay for.** An allocation stores the service period (e.g. rent for January 2027) and whether the payment is recurring. The §11 ten-day rule in phase 3 and rent-arrears tracking both need it; it is set at match time, defaulting from the purpose text and the schedule.
 5. **Learned rules store how to split, not amounts.** A rule for a Hausgeld or annuity payment says "split by the current Wirtschaftsplan" or "split by the loan schedule", never this year's euro amounts, so a new Wirtschaftsplan or a rate change cannot be silently mis-split by an old rule.
 
 Also for the spec: how documents are read (the OCR step has no engine named; the API container is too small for a classic OCR engine, so the default is Claude reading the PDF or image directly, plus the text layer of digital PDFs); confirming the Claude API's data-processing terms (EU processing, no training, retention) before tenant documents are sent; and moving sign-in and passkey events into the Event table (deferred to this spec on 5 Nov 2026).
@@ -321,3 +322,11 @@ All open questions were settled on 4 Nov 2026; the sections above reflect them. 
 | Phase 2 inputs (6 Nov 2026) | Owner transfers recognized by IBAN (the rental account is dedicated, so no private-line filter); reference-based dedup with cross-format duplicates sent to review; statement balance reconciliation; service period and recurrence on allocations; learned rules store split methods, not amounts (Delivery phases, input for the phase 2 spec) | Phase 2 done-criterion requires reconciled statements; the Allocation schema gains period and recurrence fields |
 | Tenant retention after a party change (6 Nov 2026) | A tenant's retention hold follows every tenancy they were ever a party of, including one they were later removed from | Erasure reads the event log as well as the current parties; a co-tenant who moved out early stays held until that tenancy ends + 4 years (or on request after it ends) |
 | Phase 1 closed, data by AI pre-fill (6 Nov 2026) | Phase 1 is closed with everything built and live; the real flat, tenancy, loan and paperwork are entered by AI pre-fill instead of by hand: the AI reads each uploaded document and fills the forms, Luis checks every value against its source quote, and nothing is saved until he confirms | Pre-fill becomes phase 2's first step, ahead of statement import; Luis's accept/edit per field is the first eval signal; the phase 2 spec PR (`docs/phases/phase-2.md`, being drafted) settles it |
+| Pre-fill, value by value (6 Nov 2026) | Master data is entered by AI pre-fill from documents, each value verified against its page and quote and applied through the existing commands only | Phase 2 step 1; `proposal` and `ai_call` tables; phase 2 spec D13–D15 |
+| Tenant documents and the model (6 Nov 2026) | Tenant documents (lease, handover protocol, deposit proof, tenant letters) are not sent to the model until the landlord enables `ai_tenant_documents`, after choosing between first-party US processing under the DPA, an EU-hosted route, or manual entry. Luis chose first-party US processing on 6 Nov 2026; the setting is switched on once the privacy note names Anthropic as a processor | A workspace setting and a classifier gate; phase 2 spec §11.2 |
+| Extraction via citations (6 Nov 2026) | Field extraction uses citations (page + quote), parsed and validated in code; structured outputs stay for classification and matching | The structured-outputs guardrail wording (AI layer) |
+| Statement balances (6 Nov 2026) | Reconciliation on balance anchors: an opening balance per account and a declared closing balance per import. Sparkasse's camt.052 XML export (a ZIP of daily reports) is the primary format and states both balances, so nothing is typed; the CSV is a fallback | `account.opening_balance`, `statement_import.declared_*`; statement format `camt` covers camt.052 and camt.053; ZIP uploads accepted; phase 2 spec D21, D33, D34 |
+| Sign-in events (6 Nov 2026) | Sign-in and passkey events go to the Event table on entity `user`, with no IP or user agent | Closes the 5 Nov 2026 deferral |
+| Eval set (6 Nov 2026) | Recorded synthetic evals run in CI; real documents are evaluated from Luis's computer, never committed | Refines "an eval set of real (anonymized) statements … in CI" |
+| AI processing location and account (6 Nov 2026) | All documents are processed with `inference_geo = us` (one named location, +10 % price); a `hausbuch` Console workspace with a $25 monthly limit for the live app and a `hausbuch-evals` workspace with a $10 limit for runs from Luis's computer | `HAUSBUCH_AI_INFERENCE_GEO` defaults to `us`; two API keys; phase 2 spec §11.3 |
+| Allocation tax year (6 Nov 2026) | An allocation stores no tax year; phase 3's rule set derives it (the §11 ten-day rule) from booking and value date, service period and the recurring flag | Keeps a tax year reproducible under the rule set that applies to it; phase 2 spec D31 (from the step 0 review) |

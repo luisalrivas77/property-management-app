@@ -1,0 +1,117 @@
+# Rule fixture: cross-format duplicates (hausbuch.rules.statements.likely_duplicates,
+# resolve_duplicate)
+#
+# likely_duplicates(new_line: StoredLine, existing: list[StoredLine]) -> list[UUID]
+#   The ids (sorted) of existing lines that are likely the same payment as new_line: same
+#   account, same amount, same booking date, and the same counterparty_iban_hmac (both set) or
+#   the same normalized counterparty_name (casefold, whitespace collapsed, both non-empty),
+#   with a different line_hash AND a different format. Lines that differ only by their ordinal
+#   (two CSV lines of one day) are two payments, not duplicates. Excluded lines are not
+#   candidates. Each id found becomes a possible_duplicate row (transaction_id = the existing
+#   line, other_transaction_id = new_line), which goes to review: never auto-booked, never
+#   dropped (D22).
+# resolve_duplicate(transaction_id: UUID, other_transaction_id: UUID, status) -> Exclusion | None
+#   merged    -> the later-imported line (other_transaction_id) is excluded:
+#                excluded_as_duplicate_of = transaction_id; it leaves both balance sums
+#                (reconcile.yaml) and is never matched or allocated.
+#   kept_both -> None: both lines stay and both count.
+# Spec: docs/phases/phase-2.md D22, §7.2, phase 2 input point 2.
+
+ids:
+  account: &A 0000002c-0000-4000-8000-000000000001
+  camt_line: &C1 0000002a-0000-4000-8000-000000000301
+  csv_line: &X1 0000002a-0000-4000-8000-000000000302
+  hmac_tenant: &H_TENANT "1111111111111111111111111111111111111111111111111111111111111111"
+
+likely:
+  - id: csv_vs_camt_same_payment
+    description: The January rent, stored from a camt.053 file, arrives again in a CSV export (different reference, so a different hash).
+    new_line:
+      id: *X1
+      account_id: *A
+      format: csv_camt
+      line_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      booking_date: 2027-01-04
+      amount: "1400.00"
+      counterparty_iban_hmac: *H_TENANT
+      counterparty_name: BEISPIEL, ERIKA
+    existing:
+      - &CAMT_RENT
+        id: *C1
+        account_id: *A
+        format: camt
+        line_hash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        booking_date: 2027-01-04
+        amount: "1400.00"
+        counterparty_iban_hmac: *H_TENANT
+        counterparty_name: Erika Beispiel
+    expect: [*C1]
+
+  - id: csv_vs_camt_by_name_without_iban
+    description: A bank fee line has no counterparty IBAN; the normalized name decides.
+    new_line:
+      id: *X1
+      account_id: *A
+      format: csv_camt
+      line_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      booking_date: 2027-01-31
+      amount: "-9.90"
+      counterparty_name: "SPARKASSE  BEISPIELSTADT"
+    existing:
+      - id: *C1
+        account_id: *A
+        format: camt
+        line_hash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        booking_date: 2027-01-31
+        amount: "-9.90"
+        counterparty_name: Sparkasse Beispielstadt
+    expect: [*C1]
+
+  - id: two_csv_lines_same_day_not_duplicates
+    description: Two equal top-ups on one day in the same CSV file (ordinals 0 and 1); the same format, so two payments.
+    new_line:
+      id: *X1
+      account_id: *A
+      format: csv_camt
+      line_hash: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      booking_date: 2027-01-15
+      amount: "50.00"
+      counterparty_iban_hmac: "2222222222222222222222222222222222222222222222222222222222222222"
+      counterparty_name: Max Beispiel
+    existing:
+      - id: *C1
+        account_id: *A
+        format: csv_camt
+        line_hash: "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        booking_date: 2027-01-15
+        amount: "50.00"
+        counterparty_iban_hmac: "2222222222222222222222222222222222222222222222222222222222222222"
+        counterparty_name: Max Beispiel
+    expect: []
+
+  - id: different_amount_not_duplicate
+    description: Same tenant, same day, other formats, but 1,380 against 1,400.
+    new_line:
+      id: *X1
+      account_id: *A
+      format: csv_camt
+      line_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      booking_date: 2027-01-04
+      amount: "1380.00"
+      counterparty_iban_hmac: *H_TENANT
+      counterparty_name: Erika Beispiel
+    existing: [*CAMT_RENT]
+    expect: []
+
+resolve:
+  - id: merged_excludes_the_later_line
+    transaction_id: *C1
+    other_transaction_id: *X1
+    status: merged
+    expect: {excluded_id: *X1, excluded_as_duplicate_of: *C1}
+
+  - id: kept_both_keeps_both_counting
+    transaction_id: *C1
+    other_transaction_id: *X1
+    status: kept_both
+    expect: null

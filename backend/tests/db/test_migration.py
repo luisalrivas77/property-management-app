@@ -42,7 +42,18 @@ MIGRATION_TABLES = {
     "auth_passkey",
     "auth_session",
     "auth_invite",
+    # Phase 2 (docs/phases/phase-2.md §3)
+    "ai_call",
+    "proposal",
+    "account",
+    "statement_import",
+    "transaction",
+    "possible_duplicate",
+    "allocation",
+    "matching_rule",
 }
+# Procrastinate's own tables (0005): not RLS'd, no workspace_id (D20). The one exclusion.
+QUEUE_TABLE_PREFIX = "procrastinate_"
 
 
 def test_round_trip_upgrade_downgrade_upgrade():
@@ -63,6 +74,7 @@ def test_every_table_has_forced_rls_and_a_policy(connect):
             FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
             WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relname <> 'alembic_version'
         """).fetchall()
+    rows = [r for r in rows if not r[0].startswith(QUEUE_TABLE_PREFIX)]
     assert {r[0] for r in rows} == MIGRATION_TABLES
     assert all(r[1] and r[2] and r[3] for r in rows), [r for r in rows if not all(r[1:])]
 

@@ -1,0 +1,32 @@
+# Rule fixture: default tax treatment per category (hausbuch.rules.categories.tax_treatment)
+#
+# tax_treatment(category: AllocationCategory) -> TaxTreatment
+# Spec: docs/phases/phase-2.md §8.2 and D24. Categories are a fixed taxonomy; their treatment
+# is rule data, never a column the user edits, so renaming a category never changes a return.
+# Every category appears exactly once (the fixture model checks it). Phase 3 adds the
+# Anlage V line per tax year next to this; it does not change the treatment.
+
+categories:
+  - {category: rent_cold, treatment: income}
+  - {category: operating_costs_prepayment, treatment: income}
+  - {category: operating_costs_settlement, treatment: income}   # negative = refund to the tenant
+  - {category: deposit_in, treatment: pass_through}
+  - {category: deposit_out, treatment: pass_through}
+  - {category: owner_transfer_in, treatment: pass_through}
+  - {category: owner_transfer_out, treatment: pass_through}
+  - {category: loan_interest, treatment: deductible}
+  - {category: loan_principal, treatment: not_deductible}
+  - {category: loan_fees, treatment: deductible}
+  - {category: hausgeld_umlagefaehig, treatment: deductible}
+  - {category: hausgeld_verwaltung, treatment: deductible}
+  - {category: hausgeld_ruecklage, treatment: undecided}         # until phase 3 reads the Hausgeldabrechnung
+  - {category: grundsteuer, treatment: deductible}
+  - {category: insurance, treatment: deductible}
+  - {category: repairs, treatment: deductible}                   # Erhaltungsaufwand
+  - {category: renovation, treatment: undecided}                 # 15 % rule, phase 3
+  - {category: acquisition_cost, treatment: capitalized}
+  - {category: professional_fees, treatment: deductible}
+  - {category: bank_fees, treatment: deductible}
+  - {category: other_income, treatment: income}
+  - {category: other_expense, treatment: undecided}
+  - {category: uncategorized, treatment: undecided}

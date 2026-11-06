@@ -1,0 +1,249 @@
+# Done-criterion fixture: one month of the rental account (docs/phases/phase-2.md §13, §1 and
+# the phase 2 row of ARCHITECTURE.md's delivery table: ">= 80 % auto-matched, zero
+# allocation-sum errors, every statement reconciling to its balances").
+#
+# Synthetic, modelled on the real account's shape (a dedicated account for one ETW): rent in,
+# Hausgeld out, annuity out, Grundsteuer quarterly, two insurances, one owner top-up, one repair
+# invoice, one bank fee, one unknown line, the tenant's Nebenkosten back-payment and the
+# Sondereigentumsverwaltung fee; 12 lines in May 2024. The annuity is phase 1's
+# loan_schedule.yaml full_first_month (entry 1, due 1 May 2024: 900.00 interest, 500.00
+# principal).
+#
+# The pipeline the test runs per line (pure rules only; no model call, so a line nothing
+# matches is "no_match"; with the model it would be an LLM proposal, which D26 never
+# auto-confirms in the first month, so the routing is review either way):
+#   1. statements.window_sums + statements.reconcile on the balances below -> must be
+#      reconciled, so the lines are matched at all (review_routing.yaml rule 1);
+#   2. the first rule in `rules` (first_month: none; second_month: all) whose
+#      matching.apply_rule returns a set; else
+#   3. matching.match_owner_transfer, match_rent, match_loan, then match_document, the first
+#      that returns a set;
+#   4. allocations.check_sum(transaction.amount, set.allocations) on every set (zero errors);
+#   5. review.route(RoutingInput(import_status=reconciled, auto_accept_llm=false, set)).
+# first_month runs with no learned rules; second_month with the rules learned from the
+# first month's answers: Luis confirmed every review line and kept "Künftig immer so
+# zuordnen" ticked for the Hausgeld, both insurances, the bank fee, the NK back-payment and the
+# SE-Verwaltung; he unticked it for the repair (a one-off) and the PayPal line (an unknown
+# merchant). The bank fee rule is a purpose pattern (the line has no counterparty IBAN).
+# The ">= 80 %" criterion is measured on the second month (D26): 10 of 12 auto-confirmed.
+# expect per line and month: the routing decision and reason, the method of the set (null =
+# nothing matched) and, for the second month, the allocations as (category, amount).
+
+ids:
+  workspace: &W 0000000a-0000-4000-8000-000000000001
+  property: &P 0000000b-0000-4000-8000-000000000001
+  unit: &U 0000000c-0000-4000-8000-000000000001
+  tenancy: &T 0000000e-0000-4000-8000-000000000001
+  loan: &L 0000000f-0000-4000-8000-000000000001
+  doc_grundsteuer: &D_GS 0000000d-0000-4000-8000-000000000201
+  doc_repair: &D_REPAIR 0000000d-0000-4000-8000-000000000202
+  doc_wirtschaftsplan: &D_WP 0000000d-0000-4000-8000-000000000203
+  hmac_tenant: &H_TENANT "1111111111111111111111111111111111111111111111111111111111111111"
+  hmac_owner: &H_OWNER "2222222222222222222222222222222222222222222222222222222222222222"
+  hmac_loan: &H_LOAN "3333333333333333333333333333333333333333333333333333333333333333"
+  hmac_stadtkasse: &H_STADT "4444444444444444444444444444444444444444444444444444444444444444"
+  hmac_painter: &H_PAINTER "5555555555555555555555555555555555555555555555555555555555555555"
+  hmac_weg: &H_WEG "6666666666666666666666666666666666666666666666666666666666666666"
+  hmac_insurer: &H_INS "7777777777777777777777777777777777777777777777777777777777777777"
+  hmac_insurer_2: &H_INS2 "7777777777777777777777777777777777777777777777777777777777770002"
+  hmac_se_verwaltung: &H_SEV "8888888888888888888888888888888888888888888888888888888888888888"
+
+balances:
+  anchor: "3000.00"
+  anchor_on: 2024-04-30
+  first_booking_on: 2024-05-02
+  last_booking_on: 2024-05-31
+  declared_closing: "2015.76"
+
+context:
+  owner_account_hmacs: [*H_OWNER]
+  tenancies:
+    - id: *T
+      property_id: *P
+      unit_id: *U
+      start_date: 2024-01-01
+      tenant_iban_hmacs: [*H_TENANT]
+      rent:
+        - {effective_from: 2024-01-01, cold_rent: "1050.00", operating_costs_prepayment: "230.00"}
+  loans:
+    - id: *L
+      property_id: *P
+      lender: Beispielbank AG
+      account_iban_hmac: *H_LOAN
+      terms:   # = loan_schedule.yaml full_first_month (phase 1)
+        principal: "300000.00"
+        nominal_rate: "0.036"
+        monthly_payment: "1400.00"
+        disbursed_on: 2024-04-01
+        first_payment_on: 2024-05-01
+        fixed_until: 2034-04-30
+  documents:
+    - id: *D_GS
+      kind: grundsteuerbescheid
+      category: grundsteuer
+      property_id: *P
+      payments:
+        - {due_on: 2024-02-15, amount: "123.45"}
+        - {due_on: 2024-05-15, amount: "123.45"}
+        - {due_on: 2024-08-15, amount: "123.45"}
+        - {due_on: 2024-11-15, amount: "123.45"}
+      iban_hmac: *H_STADT
+      reference: "47110815"
+    - id: *D_REPAIR
+      kind: invoice
+      category: repairs
+      property_id: *P
+      payments:
+        - {due_on: 2024-05-06, amount: "450.00"}
+      iban_hmac: *H_PAINTER
+      reference: RE 117-B
+  wirtschaftsplaene:
+    - {document_id: *D_WP, property_id: *P, valid_from: 2024-01-01, total: "380.00", umlagefaehig: "210.00", verwaltung: "50.00", ruecklage: "120.00"}
+
+rules:
+  - &RULE
+    id: 0000002b-0000-4000-8000-000000000501
+    workspace_id: *W
+    created_at: 2024-04-20T10:00:00Z
+    updated_at: 2024-04-20T10:00:00Z
+    matcher: {counterparty_iban_hmac: *H_WEG, purpose_pattern: hausgeld, amount_sign: debit}
+    split_method: by_wirtschaftsplan
+    property_id: *P
+  - <<: *RULE
+    id: 0000002b-0000-4000-8000-000000000502
+    matcher: {counterparty_iban_hmac: *H_INS, amount_sign: debit}
+    split_method: single_category
+    category: insurance
+  - <<: *RULE
+    id: 0000002b-0000-4000-8000-000000000503
+    matcher: {counterparty_iban_hmac: *H_INS2, amount_sign: debit}
+    split_method: single_category
+    category: insurance
+  - <<: *RULE
+    id: 0000002b-0000-4000-8000-000000000504
+    matcher: {purpose_pattern: "entgelt kontof", amount_sign: debit}
+    split_method: single_category
+    category: bank_fees
+  - <<: *RULE
+    id: 0000002b-0000-4000-8000-000000000505
+    matcher: {counterparty_iban_hmac: *H_TENANT, purpose_pattern: nachzahlung, amount_sign: credit}
+    split_method: single_category
+    category: operating_costs_settlement
+    tenancy_id: *T
+  - <<: *RULE
+    id: 0000002b-0000-4000-8000-000000000506
+    matcher: {counterparty_iban_hmac: *H_SEV, amount_sign: debit}
+    split_method: single_category
+    category: professional_fees
+
+lines:
+  - id: rent
+    transaction: {id: 0000002a-0000-4000-8000-000000000501, booking_date: 2024-05-02, amount: "1280.00", counterparty_name: Lena Schmidt, counterparty_iban_hmac: *H_TENANT, purpose: Miete 05/2024}
+    first_month: {decision: auto_confirm, reason: routing.deterministic, method: matcher_rent}
+    second_month:
+      decision: auto_confirm
+      reason: routing.deterministic
+      method: matcher_rent
+      allocations: [{category: rent_cold, amount: "1050.00"}, {category: operating_costs_prepayment, amount: "230.00"}]
+
+  - id: hausgeld
+    transaction: {id: 0000002a-0000-4000-8000-000000000502, booking_date: 2024-05-02, amount: "-380.00", counterparty_name: WEG Lindenstrasse 12, counterparty_iban_hmac: *H_WEG, purpose: Hausgeld 05/2024 WE 3}
+    first_month: {decision: review, reason: routing.no_match, method: null}
+    second_month:
+      decision: auto_confirm
+      reason: routing.rule_hit
+      method: rule
+      allocations: [{category: hausgeld_umlagefaehig, amount: "-210.00"}, {category: hausgeld_verwaltung, amount: "-50.00"}, {category: hausgeld_ruecklage, amount: "-120.00"}]
+
+  - id: annuity
+    transaction: {id: 0000002a-0000-4000-8000-000000000503, booking_date: 2024-05-02, amount: "-1400.00", counterparty_name: Beispielbank AG, counterparty_iban_hmac: *H_LOAN, purpose: Darlehen 600123456 Rate}
+    first_month: {decision: auto_confirm, reason: routing.deterministic, method: matcher_loan}
+    second_month:
+      decision: auto_confirm
+      reason: routing.deterministic
+      method: matcher_loan
+      allocations: [{category: loan_interest, amount: "-900.00"}, {category: loan_principal, amount: "-500.00"}]
+
+  - id: grundsteuer
+    transaction: {id: 0000002a-0000-4000-8000-000000000504, booking_date: 2024-05-15, amount: "-123.45", counterparty_name: Stadtkasse Berlin, counterparty_iban_hmac: *H_STADT, purpose: Grundsteuer 47110815}
+    first_month: {decision: auto_confirm, reason: routing.above_threshold, method: document_match}
+    second_month:
+      decision: auto_confirm
+      reason: routing.above_threshold
+      method: document_match
+      allocations: [{category: grundsteuer, amount: "-123.45"}]
+
+  - id: building_insurance
+    transaction: {id: 0000002a-0000-4000-8000-000000000505, booking_date: 2024-05-06, amount: "-312.40", counterparty_name: Beispiel Versicherung AG, counterparty_iban_hmac: *H_INS, purpose: Beitrag Wohngebaeude 2024}
+    first_month: {decision: review, reason: routing.no_match, method: null}
+    second_month:
+      decision: auto_confirm
+      reason: routing.rule_hit
+      method: rule
+      allocations: [{category: insurance, amount: "-312.40"}]
+
+  - id: liability_insurance
+    transaction: {id: 0000002a-0000-4000-8000-000000000506, booking_date: 2024-05-06, amount: "-89.00", counterparty_name: Haftpflicht Versicherung VVaG, counterparty_iban_hmac: *H_INS2, purpose: Haus- und Grundbesitzerhaftpflicht}
+    first_month: {decision: review, reason: routing.no_match, method: null}
+    second_month:
+      decision: auto_confirm
+      reason: routing.rule_hit
+      method: rule
+      allocations: [{category: insurance, amount: "-89.00"}]
+
+  - id: owner_top_up
+    transaction: {id: 0000002a-0000-4000-8000-000000000507, booking_date: 2024-05-10, amount: "500.00", counterparty_name: Max Beispiel, counterparty_iban_hmac: *H_OWNER, purpose: Zuschuss}
+    first_month: {decision: auto_confirm, reason: routing.deterministic, method: matcher_owner}
+    second_month:
+      decision: auto_confirm
+      reason: routing.deterministic
+      method: matcher_owner
+      allocations: [{category: owner_transfer_in, amount: "500.00"}]
+
+  - id: repair_invoice
+    description: Matched to the invoice (0.95), but repairs are never auto-confirmed; no rule was kept for it.
+    transaction: {id: 0000002a-0000-4000-8000-000000000508, booking_date: 2024-05-13, amount: "-450.00", counterparty_name: Malerbetrieb Pinsel GmbH, counterparty_iban_hmac: *H_PAINTER, purpose: Rechnung RE 117-B}
+    first_month: {decision: review, reason: routing.never_auto, method: document_match}
+    second_month:
+      decision: review
+      reason: routing.never_auto
+      method: document_match
+      allocations: [{category: repairs, amount: "-450.00"}]
+
+  - id: bank_fee
+    transaction: {id: 0000002a-0000-4000-8000-000000000509, booking_date: 2024-05-31, amount: "-9.90", purpose: Entgelt Kontofuehrung 05/2024, booking_text: ENTGELTABSCHLUSS}
+    first_month: {decision: review, reason: routing.no_match, method: null}
+    second_month:
+      decision: auto_confirm
+      reason: routing.rule_hit
+      method: rule
+      allocations: [{category: bank_fees, amount: "-9.90"}]
+
+  - id: unknown
+    transaction: {id: 0000002a-0000-4000-8000-000000000510, booking_date: 2024-05-21, amount: "-49.99", counterparty_name: PAYPAL EUROPE, purpose: PP.8812.PP Online-Kauf}
+    first_month: {decision: review, reason: routing.no_match, method: null}
+    second_month: {decision: review, reason: routing.no_match, method: null, allocations: []}
+
+  - id: nk_back_payment
+    description: The tenant's IBAN, but not a rent amount, so the rent matcher does not take it.
+    transaction: {id: 0000002a-0000-4000-8000-000000000511, booking_date: 2024-05-17, amount: "86.20", counterparty_name: Lena Schmidt, counterparty_iban_hmac: *H_TENANT, purpose: Nachzahlung NK 2023}
+    first_month: {decision: review, reason: routing.no_match, method: null}
+    second_month:
+      decision: auto_confirm
+      reason: routing.rule_hit
+      method: rule
+      allocations: [{category: operating_costs_settlement, amount: "86.20"}]
+
+  - id: se_verwaltung
+    transaction: {id: 0000002a-0000-4000-8000-000000000512, booking_date: 2024-05-02, amount: "-35.70", counterparty_name: Hausverwaltung Muster GmbH, counterparty_iban_hmac: *H_SEV, purpose: SE-Verwaltung 05/2024 WE 3}
+    first_month: {decision: review, reason: routing.no_match, method: null}
+    second_month:
+      decision: auto_confirm
+      reason: routing.rule_hit
+      method: rule
+      allocations: [{category: professional_fees, amount: "-35.70"}]
+
+expect:
+  reconciled: true
+  first_month_auto: 4
+  second_month_auto: 10

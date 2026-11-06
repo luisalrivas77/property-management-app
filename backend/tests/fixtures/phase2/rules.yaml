@@ -1,0 +1,222 @@
+# Rule fixture: learned rules (hausbuch.rules.matching.apply_rule)
+#
+# apply_rule(rule: MatchingRule, transaction: MatchTransaction, context: MatchContext)
+#   -> AllocationSet | None
+# Spec: docs/phases/phase-2.md §8.1 step 1, D25 and phase 2 input point 5. A rule stores a
+# matcher and a split method, never an amount, so a new Wirtschaftsplan or a rate change
+# re-splits the next payment instead of being mis-split by an old answer.
+#
+# Hit: rule.enabled, and every matcher field that is set holds: counterparty_iban_hmac equal;
+#   counterparty_name_pattern / purpose_pattern found (re.search, case-insensitive) in the
+#   whitespace-collapsed text; amount_sign credit = amount > 0, debit = amount < 0.
+#   A disabled rule or a miss -> null.
+# Split by split_method; every set has method rule, rule_id = rule.id, confidence 1.0, no
+# question; no tax year (the year an allocation counts in is an output of phase 3's tax rule
+# set, not a stored fact); the service period from rules.periods.service_period:
+#   single_category     one allocation of rule.category over the whole amount, with the rule's
+#                       property / tenancy / loan; recurring = rule.recurring (copied from the
+#                       answer the rule was learned from; a yearly premium is recurring).
+#   by_loan_schedule    as matchers.yaml's loan matcher for rule.loan_id (the schedule entry due
+#                       in the booking month, recurring true); no entry, or -amount !=
+#                       monthly_payment -> null.
+#   by_wirtschaftsplan  the plan in force for rule.property_id = latest valid_from <= the
+#                       service period's start (recurring true). -amount == plan.total ->
+#                       hausgeld_umlagefaehig / _verwaltung / _ruecklage = -parts, the plan's
+#                       document as Beleg, the property; recurring true. Any other amount -> null
+#                       (the line goes to the model and review; never split by a plan whose total
+#                       it does not equal).
+#   by_rent_schedule    as matchers.yaml's rent matcher for rule.tenancy_id.
+#   owner_transfer      as matchers.yaml's owner matcher.
+#
+# rejected: rule bodies that must fail MatchingRuleCreate validation because they try to store
+# an amount (the "rule stores no amount" schema test; checked by tests/test_fixtures_valid.py).
+
+ids:
+  workspace: &W 0000000a-0000-4000-8000-000000000001
+  property: &P 0000000b-0000-4000-8000-000000000001
+  loan: &L 0000000f-0000-4000-8000-000000000001
+  doc_wp_2026: &D_WP26 0000000d-0000-4000-8000-000000000011
+  doc_wp_2027: &D_WP27 0000000d-0000-4000-8000-000000000012
+  hmac_loan: &H_LOAN "3333333333333333333333333333333333333333333333333333333333333333"
+  hmac_weg: &H_WEG "6666666666666666666666666666666666666666666666666666666666666666"
+  hmac_insurer: &H_INS "7777777777777777777777777777777777777777777777777777777777777777"
+
+context:
+  loans:
+    - id: *L
+      property_id: *P
+      lender: Beispielbank AG
+      account_iban_hmac: *H_LOAN
+      terms:   # = loan_schedule.yaml follow_up_rate_to_payoff (phase 1)
+        principal: "20000.00"
+        nominal_rate: "0.05"
+        monthly_payment: "1000.00"
+        disbursed_on: 2025-01-01
+        first_payment_on: 2025-02-01
+        fixed_until: 2025-06-30
+        follow_up_rate: "0.08"
+  wirtschaftsplaene:
+    - {document_id: *D_WP26, property_id: *P, valid_from: 2026-01-01, total: "380.00", umlagefaehig: "210.00", verwaltung: "50.00", ruecklage: "120.00"}
+    - {document_id: *D_WP27, property_id: *P, valid_from: 2027-01-01, total: "410.00", umlagefaehig: "230.00", verwaltung: "55.00", ruecklage: "125.00"}
+
+rules:
+  insurance: &R_INS
+    id: 0000002b-0000-4000-8000-000000000001
+    workspace_id: *W
+    created_at: 2026-12-01T10:00:00Z
+    updated_at: 2026-12-01T10:00:00Z
+    matcher: {counterparty_iban_hmac: *H_INS, amount_sign: debit}
+    split_method: single_category
+    category: insurance
+    property_id: *P
+    recurring: true
+  insurance_disabled:
+    <<: *R_INS
+    id: 0000002b-0000-4000-8000-000000000002
+    enabled: false
+  annuity:
+    id: 0000002b-0000-4000-8000-000000000003
+    workspace_id: *W
+    created_at: 2025-03-01T10:00:00Z
+    updated_at: 2025-03-01T10:00:00Z
+    matcher: {counterparty_iban_hmac: *H_LOAN, amount_sign: debit}
+    split_method: by_loan_schedule
+    loan_id: *L
+  hausgeld:
+    id: 0000002b-0000-4000-8000-000000000004
+    workspace_id: *W
+    created_at: 2026-02-01T10:00:00Z
+    updated_at: 2026-02-01T10:00:00Z
+    matcher: {counterparty_iban_hmac: *H_WEG, purpose_pattern: hausgeld, amount_sign: debit}
+    split_method: by_wirtschaftsplan
+    property_id: *P
+
+cases:
+  - id: single_category
+    description: The yearly premium; the year in the purpose becomes the service period.
+    rule: insurance
+    transaction: &TX_INS
+      id: 0000002a-0000-4000-8000-000000000101
+      booking_date: 2027-01-10
+      amount: "-312.40"
+      counterparty_name: Beispiel Versicherung AG
+      counterparty_iban_hmac: *H_INS
+      purpose: Beitrag Wohngebaeude 2027
+    expect:
+      method: rule
+      rule_id: 0000002b-0000-4000-8000-000000000001
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "-312.40", category: insurance, property_id: *P, service_period_start: 2027-01-01, service_period_end: 2027-12-31, recurring: true}
+
+  - id: loan_schedule_last_fixed_month
+    rule: annuity
+    transaction: &TX_LOAN
+      id: 0000002a-0000-4000-8000-000000000102
+      booking_date: 2025-07-01
+      amount: "-1000.00"
+      counterparty_name: Beispielbank AG
+      counterparty_iban_hmac: *H_LOAN
+      purpose: Darlehen 600123456 Rate
+    expect:
+      method: rule
+      rule_id: 0000002b-0000-4000-8000-000000000003
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "-64.08", category: loan_interest, property_id: *P, loan_id: *L, service_period_start: 2025-07-01, service_period_end: 2025-07-31, recurring: true}
+        - {amount: "-935.92", category: loan_principal, property_id: *P, loan_id: *L, service_period_start: 2025-07-01, service_period_end: 2025-07-31, recurring: true}
+
+  - id: loan_schedule_after_rate_change
+    description: Same rule, same payment, the month after the switch to 8 %; new amounts from the schedule.
+    rule: annuity
+    transaction:
+      <<: *TX_LOAN
+      id: 0000002a-0000-4000-8000-000000000103
+      booking_date: 2025-08-01
+    expect:
+      method: rule
+      rule_id: 0000002b-0000-4000-8000-000000000003
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "-96.28", category: loan_interest, property_id: *P, loan_id: *L, service_period_start: 2025-08-01, service_period_end: 2025-08-31, recurring: true}
+        - {amount: "-903.72", category: loan_principal, property_id: *P, loan_id: *L, service_period_start: 2025-08-01, service_period_end: 2025-08-31, recurring: true}
+
+  - id: wirtschaftsplan_current
+    rule: hausgeld
+    transaction: &TX_WEG
+      id: 0000002a-0000-4000-8000-000000000104
+      booking_date: 2026-12-01
+      amount: "-380.00"
+      counterparty_name: WEG Lindenstrasse 12
+      counterparty_iban_hmac: *H_WEG
+      purpose: Hausgeld 12/2026 WE 3
+    expect:
+      method: rule
+      rule_id: 0000002b-0000-4000-8000-000000000004
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "-210.00", category: hausgeld_umlagefaehig, property_id: *P, document_id: *D_WP26, service_period_start: 2026-12-01, service_period_end: 2026-12-31, recurring: true}
+        - {amount: "-50.00", category: hausgeld_verwaltung, property_id: *P, document_id: *D_WP26, service_period_start: 2026-12-01, service_period_end: 2026-12-31, recurring: true}
+        - {amount: "-120.00", category: hausgeld_ruecklage, property_id: *P, document_id: *D_WP26, service_period_start: 2026-12-01, service_period_end: 2026-12-31, recurring: true}
+
+  - id: wirtschaftsplan_new_plan
+    description: The 2027 plan raised the Hausgeld; the same rule splits by the new plan.
+    rule: hausgeld
+    transaction:
+      <<: *TX_WEG
+      id: 0000002a-0000-4000-8000-000000000105
+      booking_date: 2027-01-04
+      amount: "-410.00"
+      purpose: Hausgeld 01/2027 WE 3
+    expect:
+      method: rule
+      rule_id: 0000002b-0000-4000-8000-000000000004
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "-230.00", category: hausgeld_umlagefaehig, property_id: *P, document_id: *D_WP27, service_period_start: 2027-01-01, service_period_end: 2027-01-31, recurring: true}
+        - {amount: "-55.00", category: hausgeld_verwaltung, property_id: *P, document_id: *D_WP27, service_period_start: 2027-01-01, service_period_end: 2027-01-31, recurring: true}
+        - {amount: "-125.00", category: hausgeld_ruecklage, property_id: *P, document_id: *D_WP27, service_period_start: 2027-01-01, service_period_end: 2027-01-31, recurring: true}
+
+  - id: wirtschaftsplan_old_amount_after_new_plan
+    description: January 2027 paid at the old 380.00 while the 2027 plan says 410.00; not split silently.
+    rule: hausgeld
+    transaction:
+      <<: *TX_WEG
+      id: 0000002a-0000-4000-8000-000000000106
+      booking_date: 2027-01-04
+      purpose: Hausgeld 01/2027 WE 3
+    expect: null
+
+  - id: disabled_rule_ignored
+    rule: insurance_disabled
+    transaction:
+      <<: *TX_INS
+      id: 0000002a-0000-4000-8000-000000000107
+    expect: null
+
+rejected:
+  - id: amount_in_matcher
+    rule:
+      matcher: {counterparty_iban_hmac: *H_WEG, amount: "380.00"}
+      split_method: by_wirtschaftsplan
+      property_id: *P
+  - id: amount_on_rule
+    rule:
+      matcher: {counterparty_iban_hmac: *H_INS}
+      split_method: single_category
+      category: insurance
+      amount: "312.40"
+  - id: split_template_with_amounts
+    rule:
+      matcher: {counterparty_iban_hmac: *H_WEG}
+      split_method: by_wirtschaftsplan
+      property_id: *P
+      split:
+        - {category: hausgeld_umlagefaehig, amount: "210.00"}
+        - {category: hausgeld_verwaltung, amount: "50.00"}
+        - {category: hausgeld_ruecklage, amount: "120.00"}

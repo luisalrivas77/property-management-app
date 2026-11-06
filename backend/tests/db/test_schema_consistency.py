@@ -7,6 +7,9 @@ import pytest
 from db.db_support import OWNER
 
 from hausbuch.schemas import enums as E
+from hausbuch.schemas.ai import AiJob
+from hausbuch.schemas.allocation import AllocationCategory, AllocationMethod, SplitMethod
+from hausbuch.schemas.bank import StatementFormat
 
 COLUMNS: dict[tuple[str, str], type[StrEnum]] = {
     ("property", "kind"): E.PropertyKind,
@@ -23,6 +26,22 @@ COLUMNS: dict[tuple[str, str], type[StrEnum]] = {
     ("event", "actor_type"): E.ActorType,
     ("event", "entity_type"): E.EntityType,
     ("auth_invite", "purpose"): E.InvitePurpose,
+    # Phase 2
+    ("document_extraction", "kind"): E.ExtractionKind,
+    ("ai_call", "job"): AiJob,
+    ("proposal", "status"): E.ProposalStatus,
+    ("proposal", "target_mode"): E.ProposalTargetMode,
+    ("account", "source"): E.AccountSource,
+    ("statement_import", "format"): StatementFormat,
+    ("statement_import", "balance_source"): E.BalanceSource,
+    ("statement_import", "status"): E.ImportStatus,
+    ("transaction", "currency"): E.Currency,
+    ("possible_duplicate", "status"): E.DuplicateStatus,
+    ("allocation", "category"): AllocationCategory,
+    ("allocation", "method"): AllocationMethod,
+    ("allocation", "status"): E.AllocationStatus,
+    ("matching_rule", "split_method"): SplitMethod,
+    ("matching_rule", "category"): AllocationCategory,
 }
 
 

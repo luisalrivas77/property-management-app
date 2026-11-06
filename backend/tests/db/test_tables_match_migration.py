@@ -21,7 +21,12 @@ def reflected(dbname):
     try:
         with engine.connect() as conn:
             insp = inspect(conn)
-            names = set(insp.get_table_names()) - {"alembic_version"}
+            # Procrastinate's tables are the queue's, not mirrored (D20).
+            names = {
+                n
+                for n in insp.get_table_names()
+                if n != "alembic_version" and not n.startswith("procrastinate_")
+            }
             yield {
                 name: (
                     {c["name"]: c for c in insp.get_columns(name)},
@@ -35,7 +40,7 @@ def reflected(dbname):
 
 def test_same_tables(reflected):
     assert set(metadata.tables) == set(reflected)
-    assert len(metadata.tables) == 21
+    assert len(metadata.tables) == 29
 
 
 @pytest.mark.parametrize("table", sorted(metadata.tables))

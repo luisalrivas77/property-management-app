@@ -1,0 +1,43 @@
+# Rule data: auto-confirm threshold per category (hausbuch.rules.review.threshold)
+#
+# threshold(category: AllocationCategory) -> Confidence | None
+# Spec: docs/phases/phase-2.md §8.1 step 4 ("defaults 0.9 for recurring cost categories, never
+# for other_*, repairs or anything capitalized"). null = never auto-confirmed, whatever the
+# confidence. A threshold applies to document matches (confidence 0.95) and to LLM
+# categorizations (0.9 / 0.6 / 0.3, and only with auto_accept_llm, D26); learned rules and
+# exact deterministic matches (confidence 1.0) auto-confirm without it (review_routing.yaml).
+# Auto-confirm iff confidence >= threshold.
+#
+# Reading taken for this spec PR (the spec names the two ends, not every category):
+#   0.9  the payments that recur month by month or quarter by quarter with a stable
+#        counterparty: rent and its prepayment, owner transfers, the annuity's two parts,
+#        the three Hausgeld parts, Grundsteuer, insurance, bank fees.
+#   null everything else: one-offs whose treatment needs a person (settlements, deposits,
+#        loan fees, professional fees), repairs, renovation, acquisition costs (capitalized),
+#        other_income, other_expense, uncategorized.
+# Every category appears exactly once (the fixture model checks it).
+
+thresholds:
+  - {category: rent_cold, threshold: "0.900"}
+  - {category: operating_costs_prepayment, threshold: "0.900"}
+  - {category: operating_costs_settlement, threshold: null}
+  - {category: deposit_in, threshold: null}
+  - {category: deposit_out, threshold: null}
+  - {category: owner_transfer_in, threshold: "0.900"}
+  - {category: owner_transfer_out, threshold: "0.900"}
+  - {category: loan_interest, threshold: "0.900"}
+  - {category: loan_principal, threshold: "0.900"}
+  - {category: loan_fees, threshold: null}
+  - {category: hausgeld_umlagefaehig, threshold: "0.900"}
+  - {category: hausgeld_verwaltung, threshold: "0.900"}
+  - {category: hausgeld_ruecklage, threshold: "0.900"}
+  - {category: grundsteuer, threshold: "0.900"}
+  - {category: insurance, threshold: "0.900"}
+  - {category: repairs, threshold: null}
+  - {category: renovation, threshold: null}
+  - {category: acquisition_cost, threshold: null}
+  - {category: professional_fees, threshold: null}
+  - {category: bank_fees, threshold: "0.900"}
+  - {category: other_income, threshold: null}
+  - {category: other_expense, threshold: null}
+  - {category: uncategorized, threshold: null}

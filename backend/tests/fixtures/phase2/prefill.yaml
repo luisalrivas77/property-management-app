@@ -1,0 +1,643 @@
+# Rule fixture: building a pre-fill proposal (hausbuch.rules.prefill.build_proposal)
+#
+# build_proposal(kind: ExtractionKind | None, extraction, context: PrefillContext)
+#   -> list[ProposalRecord]
+# Spec: docs/phases/phase-2.md §6.2 (what each kind proposes), §6.3, D14, D15. Pure: no I/O, no
+# model. kind null = the classifier found nothing with a field set (a letter, "other"): the
+# extraction is the typing fields only (title, document_date).
+#
+# extraction: per field either a full ExtractedValue or the shorthand {v, p, q} = a value cited
+# on page p with quote q that passed every check (checks cited, value_in_quote, validates;
+# confidence high). Fields not listed are ExtractedValue.missing().
+#
+# Records (key -> entity_type), created in this order when the kind proposes them:
+#   typing (typing), property (property), correction:<field> (property), unit (unit),
+#   price_split (price_split), ownership (ownership), cost:<kind> (acquisition_cost),
+#   loan (loan), tenant:<n> (tenant), tenancy (tenancy), rent (rent_schedule),
+#   link:property / link:loan / link:tenancy (link).
+# Fields are named by the *Create / *Patch field ("address.city" for a nested one). Not fields:
+# what apply supplies itself: the document (Beleg, evidence, rent document_id), the id of a
+# record created in the same apply, a split's source (purchase_contract), the property a
+# unit / split / ownership / cost belongs to (the link:property record's target, or the property
+# created in the same apply) and a tenancy's parties (tenant:1 primary, tenant:2 co_tenant).
+#
+# A field's ExtractedValue:
+#   copied   the extraction field's ExtractedValue; a value may be mapped to the target type
+#            (Wohnungseigentum -> etw, Notar -> notary, Barkaution -> cash_account) and keeps
+#            its source, checks and confidence. A field the extraction did not state is proposed
+#            as missing (value null) when the *Create model requires it, so the form asks.
+#   derived  computed by code: source null, derived_from = the extraction fields it used,
+#            checks [derived, validates], confidence = the lowest of its inputs' (a missing
+#            input counts as low). building_share = (purchase_price - land_value) /
+#            purchase_price, six places, half-up; monthly_payment = principal * (nominal_rate +
+#            initial_repayment_rate) / 12, cents, half-up, only when the contract states no rate;
+#            ownership shares from the clause ("je zur Hälfte" -> 1/2 each, in buyers order);
+#            rent operating_costs_prepayment = Betriebskosten + Heizkosten when both are stated;
+#            tenancy rent_model from rent_clause (Staffel -> staffel, Index -> index, none ->
+#            fixed); tenancy unit_id = the unit matched by address and unit label.
+#   typing   type and subtype come from context.classification: value, no source, checks
+#            [validates], the classifier's confidence. subtype only when the classifier gave one.
+#
+# Matching existing records (casefold, whitespace collapsed; never by a tenant whose name was
+# erased):
+#   property  street + house_number + postal_code. Match -> mode unchanged when every compared
+#             field equals the context's value, else patch with the differing fields; a
+#             milestone date that differs (notarized_on, purchase_date) is never patched: it
+#             gets its own record correction:<field>, mode correction (§6.5, routed through
+#             correct_*). Fields the extraction does not state are not compared or proposed.
+#             current = the context's values of the record's fields.
+#   unit      label on the matched property: same rule, compared on what ExistingUnit holds
+#             (label, mea); fields the context does not hold are not proposed for a match.
+#   cost      checked in this order:
+#             1. a row whose Beleg is this document (document_id = context.document_id; Luis
+#                typed the cost and attached the invoice himself) -> that row is the target,
+#                whatever its kind (kind is not compared or proposed): mode unchanged when
+#                amount and note equal the extraction's (values = both), else patch with the
+#                differing ones (amount and/or note). Never a second row for the same Beleg.
+#             2. a row of that kind on the property without a Beleg (document_id null) ->
+#                patch (amount, note; the apply attaches this document).
+#             3. otherwise create (a row of that kind with a different Beleg is another bill:
+#                two notary invoices are real).
+#             current = the row's values of the record's fields (note null when it has none).
+#   loan      contract_number with whitespace removed, and lender -> patch with every stated
+#             field except the two keys; current null (the context does not hold loan terms).
+#   tenant    exact full_name -> patch with the stated fields except full_name; current null.
+#   linked property for costs and Bescheide without an address: the only property in the
+#             context (with several, no link:property and no cost scope is proposed: not in
+#             these cases).
+# Kaufvertrag: no price_split without land_value; ownership only when every buyer is an owner
+# by name and the clause is understood; purchase_date null with the Übergang clause quoted in
+# the property's notes when the contract ties it to the payment; no property label is proposed
+# (PropertyCreate.label is the user's name for it).
+#
+# expect: keys = the exact set of record keys returned. records = the records checked in
+# detail: entity_type, mode, target_id; values = every field of the record with its value (the
+# record has exactly these fields); derived = the derived fields and their derived_from (every
+# other field has none); current; notes_contain = substrings of the record's notes.
+# The rule test runs every case a second time with each context list shuffled: same result.
+
+ids:
+  document: &DOC 0000000d-0000-4000-8000-000000000100
+  property: &P 0000000b-0000-4000-8000-000000000001
+  property_2: &P2 0000000b-0000-4000-8000-000000000002
+  unit: &U 0000000c-0000-4000-8000-000000000001
+  unit_2: &U2 0000000c-0000-4000-8000-000000000002
+  owner_1: &O1 00000010-0000-4000-8000-000000000001
+  owner_2: &O2 00000010-0000-4000-8000-000000000002
+  cost_grest: &C1 00000011-0000-4000-8000-000000000001
+  cost_notary: &C2 00000011-0000-4000-8000-000000000002
+  document_other: &DOC_OTHER 0000000d-0000-4000-8000-000000000101
+  loan: &L 0000000f-0000-4000-8000-000000000001
+  tenant_1: &N1 00000012-0000-4000-8000-000000000001
+
+shared:
+  classify_kaufvertrag: &CL_KV {type: contract, subtype: purchase_contract, contains_tenant_data: false, language: de, confidence: high}
+  owners: &OWNERS
+    - {id: *O1, full_name: Max Beispiel}
+    - {id: *O2, full_name: Erika Beispiel}
+  property_linden: &PROP_LINDEN
+    id: *P
+    kind: etw
+    address: {street: Lindenstraße, house_number: "12", postal_code: "10115", city: Berlin}
+    build_year: 1994
+    notarized_on: 2026-03-10
+    purchase_date: 2026-05-01
+    purchase_price: "289000.00"
+  property_kastanien: &PROP_KASTANIEN
+    id: *P2
+    kind: etw
+    address: {street: Kastanienallee, house_number: "5", postal_code: "10435", city: Berlin}
+    build_year: 1908
+    notarized_on: 2019-06-03
+    purchase_date: 2019-08-01
+    purchase_price: "240000.00"
+  kaufvertrag: &KV
+    title: {v: Kaufvertrag Lindenstraße 12 WE 3, p: 1, q: "Kaufvertrag über Wohnungseigentum"}
+    document_date: {v: "2026-03-12", p: 1, q: "Verhandelt zu Berlin am 12.03.2026"}
+    property_kind: {v: Wohnungseigentum, p: 2, q: "Wohnungseigentum Nr. 3"}
+    street: {v: Lindenstraße, p: 2, q: "Lindenstraße 12, 10115 Berlin"}
+    house_number: {v: "12", p: 2, q: "Lindenstraße 12, 10115 Berlin"}
+    postal_code: {v: "10115", p: 2, q: "Lindenstraße 12, 10115 Berlin"}
+    city: {v: Berlin, p: 2, q: "Lindenstraße 12, 10115 Berlin"}
+    notarized_on: {v: "2026-03-12", p: 1, q: "Verhandelt zu Berlin am 12.03.2026"}
+    purchase_date: {v: "2026-05-01", p: 9, q: "Besitz, Nutzen und Lasten gehen am 01.05.2026 auf den Käufer über."}
+    purchase_price: {v: "289000.00", p: 6, q: "Der Kaufpreis beträgt 289.000,00 €"}
+    land_value: {v: "57800.00", p: 6, q: "Vom Kaufpreis entfallen 57.800,00 € auf Grund und Boden."}
+    unit_label: {v: WE 3, p: 2, q: "Wohnungseigentum Nr. 3 (WE 3)"}
+    mea: {v: {numerator: 85, denominator: 1000}, p: 2, q: "85/1000 Miteigentumsanteil"}
+    floor_area_m2: {v: "68.40", p: 2, q: "Wohnfläche ca. 68,40 m²"}
+    buyers: {v: [Max Beispiel, Erika Beispiel], p: 1, q: "Herr Max Beispiel und Frau Erika Beispiel"}
+    ownership_clause: {v: je zur Hälfte, p: 1, q: "kaufen je zur Hälfte"}
+  lease_linden: &LEASE
+    title: {v: Mietvertrag Lindenstraße 12 WE 3, p: 1, q: "Mietvertrag für Wohnraum"}
+    document_date: {v: "2026-06-10", p: 12, q: "Berlin, den 10.06.2026"}
+    street: {v: Lindenstraße, p: 1, q: "Lindenstraße 12, 10115 Berlin, WE 3"}
+    house_number: {v: "12", p: 1, q: "Lindenstraße 12, 10115 Berlin, WE 3"}
+    postal_code: {v: "10115", p: 1, q: "Lindenstraße 12, 10115 Berlin, WE 3"}
+    city: {v: Berlin, p: 1, q: "Lindenstraße 12, 10115 Berlin, WE 3"}
+    unit_label: {v: WE 3, p: 1, q: "Lindenstraße 12, 10115 Berlin, WE 3"}
+    tenant_1_full_name: {v: Lena Schmidt, p: 1, q: "Mieter: Lena Schmidt"}
+    start_date: {v: "2026-07-01", p: 2, q: "Das Mietverhältnis beginnt am 01.07.2026."}
+    signed_on: {v: "2026-06-10", p: 12, q: "Berlin, den 10.06.2026"}
+    deposit_amount: {v: "3450.00", p: 5, q: "Kaution in Höhe von 3.450,00 €"}
+    deposit_clause: {v: Barkaution, p: 5, q: "als Barkaution auf ein Mietkautionskonto"}
+    cold_rent: {v: "1150.00", p: 3, q: "Nettokaltmiete 1.150,00 €"}
+    operating_costs_prepayment: {v: "250.00", p: 3, q: "Vorauszahlung Betriebskosten 250,00 €"}
+
+cases:
+  - id: kaufvertrag_new_property
+    kind: purchase_contract
+    context:
+      document_id: *DOC
+      classification: *CL_KV
+      owners: *OWNERS
+    extraction: *KV
+    expect:
+      keys: [typing, property, unit, price_split, ownership, link:property]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: contract, subtype: purchase_contract, title: Kaufvertrag Lindenstraße 12 WE 3, document_date: "2026-03-12"}
+        - key: property
+          entity_type: property
+          mode: create
+          values:
+            kind: etw
+            address.street: Lindenstraße
+            address.house_number: "12"
+            address.postal_code: "10115"
+            address.city: Berlin
+            build_year: null
+            notarized_on: "2026-03-12"
+            purchase_date: "2026-05-01"
+            purchase_price: "289000.00"
+        - key: unit
+          entity_type: unit
+          mode: create
+          values: {label: WE 3, mea: {numerator: 85, denominator: 1000}, floor_area_m2: "68.40"}
+        - key: price_split
+          entity_type: price_split
+          mode: create
+          values: {building_share: "0.800000"}
+          derived: {building_share: [purchase_price, land_value]}
+        - key: ownership
+          entity_type: ownership
+          mode: create
+          values:
+            shares:
+              - {owner_id: *O1, share: {numerator: 1, denominator: 2}}
+              - {owner_id: *O2, share: {numerator: 1, denominator: 2}}
+          derived: {shares: [buyers, ownership_clause]}
+        - key: link:property
+          entity_type: link
+          mode: create
+          values: {}
+
+  - id: kaufvertrag_existing_property
+    description: The flat was typed by hand with the wrong Urkundendatum; price and the rest match.
+    kind: purchase_contract
+    context:
+      document_id: *DOC
+      classification: *CL_KV
+      owners: *OWNERS
+      properties: [*PROP_LINDEN, *PROP_KASTANIEN]
+      units:
+        - {id: *U, property_id: *P, label: WE 3, mea: {numerator: 85, denominator: 1000}}
+        - {id: *U2, property_id: *P2, label: WE 3}
+    extraction: *KV
+    expect:
+      keys: [typing, property, correction:notarized_on, unit, price_split, ownership, link:property]
+      records:
+        - key: property
+          entity_type: property
+          mode: unchanged
+          target_id: *P
+          values:
+            kind: etw
+            address.street: Lindenstraße
+            address.house_number: "12"
+            address.postal_code: "10115"
+            address.city: Berlin
+            purchase_date: "2026-05-01"
+            purchase_price: "289000.00"
+          current:
+            kind: etw
+            address.street: Lindenstraße
+            address.house_number: "12"
+            address.postal_code: "10115"
+            address.city: Berlin
+            purchase_date: "2026-05-01"
+            purchase_price: "289000.00"
+        - key: correction:notarized_on
+          entity_type: property
+          mode: correction
+          target_id: *P
+          values: {notarized_on: "2026-03-12"}
+          current: {notarized_on: "2026-03-10"}
+        - key: unit
+          entity_type: unit
+          mode: unchanged
+          target_id: *U
+          values: {label: WE 3, mea: {numerator: 85, denominator: 1000}}
+          current: {label: WE 3, mea: {numerator: 85, denominator: 1000}}
+        - key: link:property
+          entity_type: link
+          mode: create
+          target_id: *P
+          values: {}
+
+  - id: kaufvertrag_uebergang_by_payment
+    description: Besitzübergang on the day the price is paid in full; no date to propose, the clause is quoted.
+    kind: purchase_contract
+    context:
+      document_id: *DOC
+      classification: *CL_KV
+      owners: *OWNERS
+    extraction:
+      <<: *KV
+      purchase_date:
+        value: null
+        source: {page: 9, quote: "Besitz, Nutzen und Lasten gehen mit dem Tag der vollständigen Kaufpreiszahlung auf den Käufer über."}
+        checks: [cited]
+        confidence: low
+    expect:
+      keys: [typing, property, unit, price_split, ownership, link:property]
+      records:
+        - key: property
+          entity_type: property
+          mode: create
+          values:
+            kind: etw
+            address.street: Lindenstraße
+            address.house_number: "12"
+            address.postal_code: "10115"
+            address.city: Berlin
+            build_year: null
+            notarized_on: "2026-03-12"
+            purchase_date: null
+            purchase_price: "289000.00"
+          notes_contain: ["Tag der vollständigen Kaufpreiszahlung"]
+
+  - id: kaufvertrag_no_land_share
+    description: The contract allocates no price share to the land; no split candidate (the BMF tool or an appraisal decides later).
+    kind: purchase_contract
+    context:
+      document_id: *DOC
+      classification: *CL_KV
+      owners: *OWNERS
+    extraction:
+      <<: *KV
+      land_value: {value: null, confidence: low}
+    expect:
+      keys: [typing, property, unit, ownership, link:property]
+      records: []
+
+  - id: notar_invoice_new_cost
+    kind: invoice
+    context:
+      document_id: *DOC
+      classification: {type: invoice, subtype: cost_basis_evidence, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+    extraction:
+      title: {v: Kostenrechnung Notarin Beispiel, p: 1, q: "Kostenberechnung"}
+      document_date: {v: "2026-03-20", p: 1, q: "Berlin, 20.03.2026"}
+      sender: {v: Notarin Dr. Anna Beispiel, p: 1, q: "Dr. Anna Beispiel, Notarin in Berlin"}
+      amount_total: {v: "2312.45", p: 2, q: "Rechnungsbetrag 2.312,45 €"}
+      amount_net: {v: "1943.24", p: 2, q: "Summe netto 1.943,24 €"}
+      reference: {v: UR 1234/2026, p: 1, q: "Kostenberechnung zu UR 1234/2026"}
+    expect:
+      keys: [typing, cost:notary, link:property]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: invoice, subtype: cost_basis_evidence, title: Kostenrechnung Notarin Beispiel, document_date: "2026-03-20"}
+        - key: cost:notary
+          entity_type: acquisition_cost
+          mode: create
+          values: {kind: notary, amount: "2312.45", note: UR 1234/2026}
+        - key: link:property
+          entity_type: link
+          mode: create
+          target_id: *P
+          values: {}
+
+  - id: invoice_already_entered_with_this_beleg_unchanged
+    description: Luis typed the notary cost and attached this invoice himself; reading the invoice proposes no second row.
+    kind: invoice
+    context:
+      document_id: *DOC
+      classification: {type: invoice, subtype: cost_basis_evidence, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      costs:
+        - {id: *C2, property_id: *P, kind: notary, amount: "2312.45", document_id: *DOC, note: UR 1234/2026}
+    extraction: &NOTAR_INVOICE
+      title: {v: Kostenrechnung Notarin Beispiel, p: 1, q: "Kostenberechnung"}
+      document_date: {v: "2026-03-20", p: 1, q: "Berlin, 20.03.2026"}
+      sender: {v: Notarin Dr. Anna Beispiel, p: 1, q: "Dr. Anna Beispiel, Notarin in Berlin"}
+      amount_total: {v: "2312.45", p: 2, q: "Rechnungsbetrag 2.312,45 €"}
+      amount_net: {v: "1943.24", p: 2, q: "Summe netto 1.943,24 €"}
+      reference: {v: UR 1234/2026, p: 1, q: "Kostenberechnung zu UR 1234/2026"}
+    expect:
+      keys: [typing, cost:notary, link:property]
+      records:
+        - key: cost:notary
+          entity_type: acquisition_cost
+          mode: unchanged
+          target_id: *C2
+          values: {amount: "2312.45", note: UR 1234/2026}
+          current: {amount: "2312.45", note: UR 1234/2026}
+
+  - id: invoice_already_entered_with_this_beleg_amount_differs
+    description: The hand-typed row says 2,312.00 where the attached invoice says 2,312.45; the note agrees. Only the amount is patched, and no second row is proposed.
+    kind: invoice
+    context:
+      document_id: *DOC
+      classification: {type: invoice, subtype: cost_basis_evidence, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      costs:
+        - {id: *C2, property_id: *P, kind: notary, amount: "2312.00", document_id: *DOC, note: UR 1234/2026}
+    extraction: *NOTAR_INVOICE
+    expect:
+      keys: [typing, cost:notary, link:property]
+      records:
+        - key: cost:notary
+          entity_type: acquisition_cost
+          mode: patch
+          target_id: *C2
+          values: {amount: "2312.45"}
+          current: {amount: "2312.00"}
+
+  - id: notar_invoice_second_bill_new_cost
+    description: A notary row already holds another Beleg (an earlier bill); this invoice is a second, real bill, so it is created.
+    kind: invoice
+    context:
+      document_id: *DOC
+      classification: {type: invoice, subtype: cost_basis_evidence, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      costs:
+        - {id: *C2, property_id: *P, kind: notary, amount: "450.00", document_id: *DOC_OTHER, note: UR 0999/2026}
+    extraction: *NOTAR_INVOICE
+    expect:
+      keys: [typing, cost:notary, link:property]
+      records:
+        - key: cost:notary
+          entity_type: acquisition_cost
+          mode: create
+          values: {kind: notary, amount: "2312.45", note: UR 1234/2026}
+
+  - id: grunderwerbsteuer_bescheid_patch_existing_cost_without_beleg
+    description: The Grunderwerbsteuer row was typed by hand without a Beleg; the Bescheid attaches to it.
+    kind: bescheid
+    context:
+      document_id: *DOC
+      classification: {type: bescheid, subtype: cost_basis_evidence, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      costs:
+        - {id: *C1, property_id: *P, kind: real_estate_transfer_tax, amount: "17340.00"}
+    extraction:
+      title: {v: Grunderwerbsteuerbescheid, p: 1, q: "Bescheid über Grunderwerbsteuer"}
+      document_date: {v: "2026-04-02", p: 1, q: "Berlin, den 02.04.2026"}
+      sender: {v: Finanzamt Berlin Grunderwerbsteuerstelle, p: 1, q: "Finanzamt für Körperschaften - Grunderwerbsteuerstelle"}
+      amount_total: {v: "17340.00", p: 1, q: "Die Grunderwerbsteuer wird festgesetzt auf 17.340,00 €"}
+      reference: {v: GrESt 27/123/45678, p: 1, q: "Steuernummer GrESt 27/123/45678"}
+      due_on: {v: "2026-05-02", p: 1, q: "fällig am 02.05.2026"}
+    expect:
+      keys: [typing, cost:real_estate_transfer_tax, link:property]
+      records:
+        - key: cost:real_estate_transfer_tax
+          entity_type: acquisition_cost
+          mode: patch
+          target_id: *C1
+          values: {amount: "17340.00", note: GrESt 27/123/45678}
+          current: {amount: "17340.00", note: null}
+
+  - id: darlehen_rate_derived_from_tilgungssatz
+    description: The contract states Sollzins and anfängliche Tilgung but no Rate; 300,000 x (3.6 % + 2 %) / 12 = 1,400.00.
+    kind: loan_contract
+    context:
+      document_id: *DOC
+      classification: {type: contract, subtype: loan_contract, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+    extraction: &DARLEHEN
+      title: {v: Darlehensvertrag Beispielbank, p: 1, q: "Darlehensvertrag"}
+      document_date: {v: "2026-02-20", p: 8, q: "Berlin, 20.02.2026"}
+      lender: {v: Beispielbank AG, p: 1, q: "Beispielbank AG, Berlin (Darlehensgeber)"}
+      contract_number: {v: "600123456", p: 1, q: "Darlehensnummer 600123456"}
+      principal: {v: "300000.00", p: 1, q: "Nennbetrag 300.000,00 EUR"}
+      nominal_rate: {v: "0.036", p: 2, q: "Sollzins 3,600 % p.a."}
+      initial_repayment_rate: {v: "0.02", p: 2, q: "anfängliche Tilgung 2,00 % p.a."}
+      fixed_until: {v: "2036-03-31", p: 2, q: "Sollzinsbindung bis 31.03.2036"}
+      account_iban: {v: DE89370400440532013000, p: 1, q: "Darlehenskonto DE89 3704 0044 0532 0130 00"}
+      signed_on: {v: "2026-02-20", p: 8, q: "Berlin, 20.02.2026"}
+    expect:
+      keys: [typing, loan, link:loan]
+      records:
+        - key: loan
+          entity_type: loan
+          mode: create
+          values:
+            lender: Beispielbank AG
+            contract_number: "600123456"
+            principal: "300000.00"
+            nominal_rate: "0.036"
+            monthly_payment: "1400.00"
+            fixed_until: "2036-03-31"
+            disbursed_on: null
+            first_payment_on: null
+            account_iban: DE89370400440532013000
+          derived: {monthly_payment: [principal, nominal_rate, initial_repayment_rate]}
+        - key: link:loan
+          entity_type: link
+          mode: create
+          values: {}
+
+  - id: darlehen_patch_by_contract_number
+    description: The loan exists (typed by hand, number without spaces); the contract writes the number with spaces and states the Rate.
+    kind: loan_contract
+    context:
+      document_id: *DOC
+      classification: {type: contract, subtype: loan_contract, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      loans:
+        - {id: *L, property_id: *P, lender: Beispielbank AG, contract_number: "600123456"}
+    extraction:
+      <<: *DARLEHEN
+      contract_number: {v: 600 123 456, p: 1, q: "Darlehensnummer 600 123 456"}
+      monthly_payment: {v: "1400.00", p: 2, q: "monatliche Rate 1.400,00 EUR"}
+    expect:
+      keys: [typing, loan, link:loan]
+      records:
+        - key: loan
+          entity_type: loan
+          mode: patch
+          target_id: *L
+          values:
+            principal: "300000.00"
+            nominal_rate: "0.036"
+            monthly_payment: "1400.00"
+            fixed_until: "2036-03-31"
+            account_iban: DE89370400440532013000
+        - key: link:loan
+          entity_type: link
+          mode: create
+          target_id: *L
+          values: {}
+
+  - id: mietvertrag_two_tenants_one_existing
+    description: Lena Schmidt is already a tenant record; Tom Schmidt is new. Prepayment stated as one amount.
+    kind: lease
+    context:
+      document_id: *DOC
+      classification: &CL_LEASE {type: contract, subtype: lease, contains_tenant_data: true, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      units:
+        - {id: *U, property_id: *P, label: WE 3}
+      tenants:
+        - {id: *N1, full_name: Lena Schmidt}
+        - {id: 00000012-0000-4000-8000-000000000009, full_name: null}
+    extraction:
+      <<: *LEASE
+      tenant_1_email: {v: lena.schmidt@example.org, p: 1, q: "E-Mail: lena.schmidt@example.org"}
+      tenant_2_full_name: {v: Tom Schmidt, p: 1, q: "und Tom Schmidt"}
+    expect:
+      keys: [typing, tenant:1, tenant:2, tenancy, rent, link:tenancy]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: contract, subtype: lease, title: Mietvertrag Lindenstraße 12 WE 3, document_date: "2026-06-10"}
+        - key: tenant:1
+          entity_type: tenant
+          mode: patch
+          target_id: *N1
+          values: {email: lena.schmidt@example.org}
+        - key: tenant:2
+          entity_type: tenant
+          mode: create
+          values: {full_name: Tom Schmidt}
+        - key: tenancy
+          entity_type: tenancy
+          mode: create
+          values:
+            unit_id: *U
+            start_date: "2026-07-01"
+            signed_on: "2026-06-10"
+            rent_model: fixed
+            deposit_amount: "3450.00"
+            deposit_form: cash_account
+          derived:
+            unit_id: [street, house_number, postal_code, unit_label]
+            rent_model: [rent_clause]
+        - key: rent
+          entity_type: rent_schedule
+          mode: create
+          values: {cold_rent: "1150.00", operating_costs_prepayment: "250.00", effective_from: "2026-07-01"}
+        - key: link:tenancy
+          entity_type: link
+          mode: create
+          values: {}
+
+  - id: mietvertrag_unit_by_address
+    description: Both flats are "WE 3"; the address decides which unit the tenancy is on.
+    kind: lease
+    context:
+      document_id: *DOC
+      classification: *CL_LEASE
+      properties: [*PROP_LINDEN, *PROP_KASTANIEN]
+      units:
+        - {id: *U, property_id: *P, label: WE 3}
+        - {id: *U2, property_id: *P2, label: WE 3}
+    extraction:
+      <<: *LEASE
+      street: {v: Kastanienallee, p: 1, q: "Kastanienallee 5, 10435 Berlin, WE 3"}
+      house_number: {v: "5", p: 1, q: "Kastanienallee 5, 10435 Berlin, WE 3"}
+      postal_code: {v: "10435", p: 1, q: "Kastanienallee 5, 10435 Berlin, WE 3"}
+    expect:
+      keys: [typing, tenant:1, tenancy, rent, link:tenancy]
+      records:
+        - key: tenancy
+          entity_type: tenancy
+          mode: create
+          values:
+            unit_id: *U2
+            start_date: "2026-07-01"
+            signed_on: "2026-06-10"
+            rent_model: fixed
+            deposit_amount: "3450.00"
+            deposit_form: cash_account
+          derived:
+            unit_id: [street, house_number, postal_code, unit_label]
+            rent_model: [rent_clause]
+
+  - id: mietvertrag_prepayment_sum
+    description: Betriebskosten 180 and Heizkosten 70 stated separately; the rent row's prepayment is their sum.
+    kind: lease
+    context:
+      document_id: *DOC
+      classification: *CL_LEASE
+      properties: [*PROP_LINDEN]
+      units:
+        - {id: *U, property_id: *P, label: WE 3}
+    extraction:
+      <<: *LEASE
+      operating_costs_prepayment: {v: "180.00", p: 3, q: "Vorauszahlung Betriebskosten 180,00 €"}
+      heating_costs_prepayment: {v: "70.00", p: 3, q: "Vorauszahlung Heizkosten 70,00 €"}
+    expect:
+      keys: [typing, tenant:1, tenancy, rent, link:tenancy]
+      records:
+        - key: rent
+          entity_type: rent_schedule
+          mode: create
+          values: {cold_rent: "1150.00", operating_costs_prepayment: "250.00", effective_from: "2026-07-01"}
+          derived: {operating_costs_prepayment: [operating_costs_prepayment, heating_costs_prepayment]}
+
+  - id: grundsteuer_typing_and_link
+    description: The Bescheid is typed and linked to the property by address; the amounts stay in the extraction for the matchers.
+    kind: grundsteuerbescheid
+    context:
+      document_id: *DOC
+      classification: {type: bescheid, subtype: grundsteuerbescheid, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN, *PROP_KASTANIEN]
+    extraction:
+      title: {v: Grundsteuerbescheid 2025, p: 1, q: "Grundsteuerbescheid"}
+      document_date: {v: "2025-03-14", p: 1, q: "Berlin, 14.03.2025"}
+      street: {v: Lindenstraße, p: 1, q: "Lindenstraße 12, 10115 Berlin"}
+      house_number: {v: "12", p: 1, q: "Lindenstraße 12, 10115 Berlin"}
+      postal_code: {v: "10115", p: 1, q: "Lindenstraße 12, 10115 Berlin"}
+      tax_year: {v: 2025, p: 1, q: "ab dem Kalenderjahr 2025"}
+      reference: {v: "47110815", p: 1, q: "Aktenzeichen 47110815"}
+      yearly_amount: {v: "493.80", p: 2, q: "Jahresbetrag 493,80 €"}
+      installment_amount: {v: "123.45", p: 2, q: "Vierteljahresbetrag 123,45 €"}
+      due_dates: {v: ["15.02.", "15.05.", "15.08.", "15.11."], p: 2, q: "fällig am 15.02., 15.05., 15.08. und 15.11."}
+    expect:
+      keys: [typing, link:property]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: bescheid, subtype: grundsteuerbescheid, title: Grundsteuerbescheid 2025, document_date: "2025-03-14", tax_year: 2025}
+        - key: link:property
+          entity_type: link
+          mode: create
+          target_id: *P
+          values: {}
+
+  - id: unknown_kind_typing_only
+    description: A letter the classifier could not give a field set; typing only, no subtype.
+    kind: null
+    context:
+      document_id: *DOC
+      classification: {type: letter, subtype: null, contains_tenant_data: false, language: de, confidence: medium}
+      properties: [*PROP_LINDEN]
+    extraction:
+      title: {v: Schreiben der Hausverwaltung, p: 1, q: "Betreff: Eigentümerversammlung"}
+      document_date: {v: "2026-09-01", p: 1, q: "Berlin, 01.09.2026"}
+    expect:
+      keys: [typing]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: letter, title: Schreiben der Hausverwaltung, document_date: "2026-09-01"}

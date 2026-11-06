@@ -1,0 +1,158 @@
+# Rule fixture: balance reconciliation (hausbuch.rules.statements.window_sums, reconcile)
+#
+# window_sums(lines: list[StoredLine], *, anchor_on: date, first_booking_on: date,
+#             last_booking_on: date) -> WindowSums
+#   Over the account's stored lines AFTER the file's new lines were inserted, skipping lines
+#   with excluded_as_duplicate_of set (a merged duplicate) and lines booked on or before
+#   anchor_on (the anchor already contains them):
+#     stored_before  = Σ amount, anchor_on < booking_date <  first_booking_on
+#     stored_through = Σ amount, anchor_on < booking_date <= last_booking_on
+# reconcile(anchor: Money, stored_before: Money, stored_through: Money,
+#           declared_closing: Money | None, file_opening: Money | None, *,
+#           anchor_on: date, first_booking_on: date) -> ReconcileResult
+#   computed_opening = anchor + stored_before; computed_closing = anchor + stored_through.
+#   1. first_booking_on <= anchor_on -> unreconciled, error_code statement.before_anchor,
+#      difference null (the anchor is the balance at the END of anchor_on, so a line booked
+#      that day or earlier is already inside it and the file cannot be checked against it).
+#   2. declared_closing null -> pending_balance, difference null (a CSV until Luis types the
+#      closing balance from online banking, D21).
+#   3. difference = declared_closing - computed_closing; opening_difference = file_opening -
+#      computed_opening, null when the file declares no opening. Both are always reported
+#      (from here on), so a mismatch can be explained. reconciled iff difference == 0 and
+#      opening_difference is null or 0; else unreconciled with error_code
+#      statement.opening_mismatch when opening_difference != 0 (it wins: a wrong start
+#      explains a wrong end), otherwise statement.unreconciled.
+# Spec: docs/phases/phase-2.md D21, §7.2 and phase 2 input point 3. Summing the stored window
+# rather than the file's own new lines is what lets an overlapping export reconcile.
+#
+# Each case: the account anchor, the stored lines (id, booking_date, amount and, for a merged
+# duplicate, excluded_as_duplicate_of; the test builds StoredLines from them), the file's
+# window and declared balances, and the expected sums and result.
+# Two choices beyond the spec's wording (reported with the spec PR): window_sums skips lines on
+# or before the anchor day, and rule 1 includes the anchor day itself.
+
+anchor: &ANCHOR {balance: "5000.00", "on": 2026-12-31}
+
+cases:
+  - id: csv_declared_closing_ok
+    anchor: *ANCHOR
+    lines: &JAN
+      - {id: 0000002a-0000-4000-8000-000000000401, booking_date: 2027-01-04, amount: "1400.00"}
+      - {id: 0000002a-0000-4000-8000-000000000402, booking_date: 2027-01-04, amount: "-410.00"}
+      - {id: 0000002a-0000-4000-8000-000000000403, booking_date: 2027-01-04, amount: "-1400.00"}
+      - {id: 0000002a-0000-4000-8000-000000000404, booking_date: 2027-01-31, amount: "-9.90"}
+    file: {first_booking_on: 2027-01-04, last_booking_on: 2027-01-31, declared_closing: "4580.10", file_opening: null}
+    expect:
+      sums: {stored_before: "0.00", stored_through: "-419.90"}
+      result: {status: reconciled, computed_opening: "5000.00", computed_closing: "4580.10", difference: "0.00"}
+
+  - id: csv_declared_closing_off_by_one_cent
+    anchor: *ANCHOR
+    lines: *JAN
+    file: {first_booking_on: 2027-01-04, last_booking_on: 2027-01-31, declared_closing: "4580.11", file_opening: null}
+    expect:
+      sums: {stored_before: "0.00", stored_through: "-419.90"}
+      result: {status: unreconciled, computed_opening: "5000.00", computed_closing: "4580.10", difference: "0.01", error_code: statement.unreconciled}
+
+  - id: camt_opening_mismatch
+    description: February's camt file states an opening of 4,580.00 where the stored January gives 4,580.10 (a misread or a missing line); the closing alone would match, and the opening gap explains the import.
+    anchor: *ANCHOR
+    lines: &JAN_FEB
+      - {id: 0000002a-0000-4000-8000-000000000401, booking_date: 2027-01-04, amount: "1400.00"}
+      - {id: 0000002a-0000-4000-8000-000000000402, booking_date: 2027-01-04, amount: "-410.00"}
+      - {id: 0000002a-0000-4000-8000-000000000403, booking_date: 2027-01-04, amount: "-1400.00"}
+      - {id: 0000002a-0000-4000-8000-000000000404, booking_date: 2027-01-31, amount: "-9.90"}
+      - {id: 0000002a-0000-4000-8000-000000000411, booking_date: 2027-02-01, amount: "1400.00"}
+      - {id: 0000002a-0000-4000-8000-000000000412, booking_date: 2027-02-01, amount: "-410.00"}
+      - {id: 0000002a-0000-4000-8000-000000000413, booking_date: 2027-02-01, amount: "-1400.00"}
+      - {id: 0000002a-0000-4000-8000-000000000414, booking_date: 2027-02-28, amount: "-9.90"}
+    file: {first_booking_on: 2027-02-01, last_booking_on: 2027-02-28, declared_closing: "4160.20", file_opening: "4580.00"}
+    expect:
+      sums: {stored_before: "-419.90", stored_through: "-839.80"}
+      result: {status: unreconciled, computed_opening: "4580.10", computed_closing: "4160.20", difference: "0.00", opening_difference: "-0.10", error_code: statement.opening_mismatch}
+
+  - id: camt_opening_and_closing_mismatch
+    description: Both balances differ (opening by -0.10, closing by -0.20); the opening code wins and both differences are reported.
+    anchor: *ANCHOR
+    lines: *JAN_FEB
+    file: {first_booking_on: 2027-02-01, last_booking_on: 2027-02-28, declared_closing: "4160.00", file_opening: "4580.00"}
+    expect:
+      sums: {stored_before: "-419.90", stored_through: "-839.80"}
+      result: {status: unreconciled, computed_opening: "4580.10", computed_closing: "4160.20", difference: "-0.20", opening_difference: "-0.10", error_code: statement.opening_mismatch}
+
+  - id: camt_closing_mismatch_opening_ok
+    description: The file's opening agrees with the stored balance, so the closing gap is the one reported as statement.unreconciled.
+    anchor: *ANCHOR
+    lines: *JAN_FEB
+    file: {first_booking_on: 2027-02-01, last_booking_on: 2027-02-28, declared_closing: "4160.00", file_opening: "4580.10"}
+    expect:
+      sums: {stored_before: "-419.90", stored_through: "-839.80"}
+      result: {status: unreconciled, computed_opening: "4580.10", computed_closing: "4160.20", difference: "-0.20", opening_difference: "0.00", error_code: statement.unreconciled}
+
+  - id: no_declared_closing_pending
+    anchor: *ANCHOR
+    lines: *JAN
+    file: {first_booking_on: 2027-01-04, last_booking_on: 2027-01-31, declared_closing: null, file_opening: null}
+    expect:
+      sums: {stored_before: "0.00", stored_through: "-419.90"}
+      result: {status: pending_balance, computed_opening: "5000.00", computed_closing: "4580.10", difference: null}
+
+  - id: overlapping_export
+    description: The second camt file runs 20 Jan to 28 Feb and repeats three January lines the first import stored (skipped on insert, still counted in the window); Σ of its new lines alone would miss the three repeated lines (-411.30).
+    anchor: *ANCHOR
+    lines:
+      - {id: 0000002a-0000-4000-8000-000000000421, booking_date: 2027-01-04, amount: "1400.00"}
+      - {id: 0000002a-0000-4000-8000-000000000422, booking_date: 2027-01-04, amount: "-410.00"}
+      - {id: 0000002a-0000-4000-8000-000000000423, booking_date: 2027-01-04, amount: "-1400.00"}
+      - {id: 0000002a-0000-4000-8000-000000000424, booking_date: 2027-01-20, amount: "-312.40"}
+      - {id: 0000002a-0000-4000-8000-000000000425, booking_date: 2027-01-25, amount: "-89.00"}
+      - {id: 0000002a-0000-4000-8000-000000000426, booking_date: 2027-01-31, amount: "-9.90"}
+      - {id: 0000002a-0000-4000-8000-000000000427, booking_date: 2027-02-01, amount: "1400.00"}
+      - {id: 0000002a-0000-4000-8000-000000000428, booking_date: 2027-02-01, amount: "-410.00"}
+      - {id: 0000002a-0000-4000-8000-000000000429, booking_date: 2027-02-01, amount: "-1400.00"}
+      - {id: 0000002a-0000-4000-8000-000000000430, booking_date: 2027-02-28, amount: "-9.90"}
+    file: {first_booking_on: 2027-01-20, last_booking_on: 2027-02-28, declared_closing: "3758.80", file_opening: "4590.00"}
+    expect:
+      sums: {stored_before: "-410.00", stored_through: "-1241.20"}
+      result: {status: reconciled, computed_opening: "4590.00", computed_closing: "3758.80", difference: "0.00", opening_difference: "0.00"}
+
+  - id: merged_duplicates_out_of_both_sums
+    description: The January and the February rent each arrived twice (camt and CSV) and both pairs were merged; the excluded copies count in neither sum.
+    anchor: *ANCHOR
+    lines:
+      - {id: 0000002a-0000-4000-8000-000000000401, booking_date: 2027-01-04, amount: "1400.00"}
+      - {id: 0000002a-0000-4000-8000-000000000441, booking_date: 2027-01-04, amount: "1400.00", excluded_as_duplicate_of: 0000002a-0000-4000-8000-000000000401}
+      - {id: 0000002a-0000-4000-8000-000000000402, booking_date: 2027-01-04, amount: "-410.00"}
+      - {id: 0000002a-0000-4000-8000-000000000403, booking_date: 2027-01-04, amount: "-1400.00"}
+      - {id: 0000002a-0000-4000-8000-000000000404, booking_date: 2027-01-31, amount: "-9.90"}
+      - {id: 0000002a-0000-4000-8000-000000000411, booking_date: 2027-02-01, amount: "1400.00"}
+      - {id: 0000002a-0000-4000-8000-000000000442, booking_date: 2027-02-01, amount: "1400.00", excluded_as_duplicate_of: 0000002a-0000-4000-8000-000000000411}
+      - {id: 0000002a-0000-4000-8000-000000000412, booking_date: 2027-02-01, amount: "-410.00"}
+      - {id: 0000002a-0000-4000-8000-000000000413, booking_date: 2027-02-01, amount: "-1400.00"}
+      - {id: 0000002a-0000-4000-8000-000000000414, booking_date: 2027-02-28, amount: "-9.90"}
+    file: {first_booking_on: 2027-02-01, last_booking_on: 2027-02-28, declared_closing: "4160.20", file_opening: null}
+    expect:
+      sums: {stored_before: "-419.90", stored_through: "-839.80"}
+      result: {status: reconciled, computed_opening: "4580.10", computed_closing: "4160.20", difference: "0.00"}
+
+  - id: file_before_the_anchor
+    description: A December export for an account whose anchor is the balance at the end of 31 Dec.
+    anchor: *ANCHOR
+    lines:
+      - {id: 0000002a-0000-4000-8000-000000000451, booking_date: 2026-12-15, amount: "-410.00"}
+      - {id: 0000002a-0000-4000-8000-000000000452, booking_date: 2027-01-04, amount: "1400.00"}
+    file: {first_booking_on: 2026-12-15, last_booking_on: 2027-01-04, declared_closing: "5990.00", file_opening: null}
+    expect:
+      sums: {stored_before: "0.00", stored_through: "1400.00"}
+      result: {status: unreconciled, computed_opening: "5000.00", computed_closing: "6400.00", difference: null, error_code: statement.before_anchor}
+
+  - id: file_starting_on_the_anchor_day
+    description: The anchor day's own lines are inside the anchor, so a file starting that day is before it too.
+    anchor: *ANCHOR
+    lines:
+      - {id: 0000002a-0000-4000-8000-000000000461, booking_date: 2026-12-31, amount: "-9.90"}
+      - {id: 0000002a-0000-4000-8000-000000000462, booking_date: 2027-01-04, amount: "1400.00"}
+    file: {first_booking_on: 2026-12-31, last_booking_on: 2027-01-04, declared_closing: "6400.00", file_opening: null}
+    expect:
+      sums: {stored_before: "0.00", stored_through: "1400.00"}
+      result: {status: unreconciled, computed_opening: "5000.00", computed_closing: "6400.00", difference: null, error_code: statement.before_anchor}
