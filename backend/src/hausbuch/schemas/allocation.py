@@ -193,6 +193,9 @@ class MatchingRuleCreate(Schema):
     property_id: UUID | None = None
     tenancy_id: UUID | None = None
     loan_id: UUID | None = None
+    # Copied from the confirmed answer; a single_category hit's allocation gets it (the
+    # schedule-based split methods set recurring themselves).
+    recurring: bool = False
     created_from_allocation_id: UUID | None = None
 
     @model_validator(mode="after")

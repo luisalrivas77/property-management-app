@@ -169,6 +169,7 @@ CREATE TABLE matching_rule (
     property_id                 uuid,
     tenancy_id                  uuid,
     loan_id                     uuid,
+    recurring                   boolean NOT NULL DEFAULT false,
     created_from_allocation_id  uuid,
     enabled                     boolean NOT NULL DEFAULT true,
     hit_count                   integer NOT NULL DEFAULT 0 CHECK (hit_count >= 0),
@@ -188,6 +189,9 @@ CREATE TABLE matching_rule (
 COMMENT ON TABLE matching_rule IS
     'Learned rules (D25): a matcher and a split method, never an amount, so a new '
     'Wirtschaftsplan or rate change cannot be mis-split by an old rule.';
+COMMENT ON COLUMN matching_rule.recurring IS
+    'Copied from the confirmed answer; a single_category hit gets it (the schedule-based '
+    'split methods set recurring themselves).';
 
 ALTER TABLE allocation ADD CONSTRAINT allocation_rule_fk
     FOREIGN KEY (workspace_id, rule_id) REFERENCES matching_rule (workspace_id, id);

@@ -13,7 +13,8 @@
 # Split by split_method; every set has method rule, rule_id = rule.id, confidence 1.0, no
 # question; tax_year = booking year; the service period from rules.periods.service_period:
 #   single_category     one allocation of rule.category over the whole amount, with the rule's
-#                       property / tenancy / loan; recurring false.
+#                       property / tenancy / loan; recurring = rule.recurring (copied from the
+#                       answer the rule was learned from; a yearly premium is recurring).
 #   by_loan_schedule    as matchers.yaml's loan matcher for rule.loan_id (the schedule entry due
 #                       in the booking month, recurring true); no entry, or -amount !=
 #                       monthly_payment -> null.
@@ -67,6 +68,7 @@ rules:
     split_method: single_category
     category: insurance
     property_id: *P
+    recurring: true
   insurance_disabled:
     <<: *R_INS
     id: 0000002b-0000-4000-8000-000000000002
@@ -105,7 +107,7 @@ cases:
       confidence: "1.000"
       question: null
       allocations:
-        - {amount: "-312.40", category: insurance, property_id: *P, tax_year: 2027, service_period_start: 2027-01-01, service_period_end: 2027-12-31, recurring: false}
+        - {amount: "-312.40", category: insurance, property_id: *P, tax_year: 2027, service_period_start: 2027-01-01, service_period_end: 2027-12-31, recurring: true}
 
   - id: loan_schedule_last_fixed_month
     rule: annuity

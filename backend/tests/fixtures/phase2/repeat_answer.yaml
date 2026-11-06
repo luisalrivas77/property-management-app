@@ -15,6 +15,8 @@
 #     rent_cold + operating_costs_prepayment of one tenancy -> by_rent_schedule, tenancy_id;
 #     owner_transfer_in / _out -> owner_transfer;
 #     one allocation -> single_category with its category and its property / tenancy / loan.
+#   recurring: true when every confirmed allocation is recurring, else false (whatever the
+#   split method; only single_category hits read it).
 # Then the next line from the same counterparty goes through matching.apply_rule with the
 # stored rule (id below) and must come back as a rule set with confidence 1, no question, and
 # review.route must auto-confirm it (routing.rule_hit): nothing is asked.
@@ -40,12 +42,13 @@ cases:
         method: user
         confidence: "1.000"
         allocations:
-          - {amount: "-312.40", category: insurance, property_id: *P, tax_year: 2024, service_period_start: 2024-01-01, service_period_end: 2024-12-31}
+          - {amount: "-312.40", category: insurance, property_id: *P, tax_year: 2024, service_period_start: 2024-01-01, service_period_end: 2024-12-31, recurring: true}
     expect_rule:
       matcher: {counterparty_iban_hmac: *H_INS, amount_sign: debit}
       split_method: single_category
       category: insurance
       property_id: *P
+      recurring: true
     rule_id: 0000002b-0000-4000-8000-000000000601
     next:
       transaction: {id: 0000002a-0000-4000-8000-000000000602, booking_date: 2025-05-06, amount: "-318.90", counterparty_name: Beispiel Versicherung AG, counterparty_iban_hmac: *H_INS, purpose: Beitrag Wohngebaeude 2025}
@@ -55,7 +58,7 @@ cases:
         confidence: "1.000"
         question: null
         allocations:
-          - {amount: "-318.90", category: insurance, property_id: *P, tax_year: 2025, service_period_start: 2025-01-01, service_period_end: 2025-12-31, recurring: false}
+          - {amount: "-318.90", category: insurance, property_id: *P, tax_year: 2025, service_period_start: 2025-01-01, service_period_end: 2025-12-31, recurring: true}
 
   - id: hausgeld_by_wirtschaftsplan
     description: May's Hausgeld split by hand per the plan becomes a by_wirtschaftsplan rule; June's payment is split by the plan without a question.
@@ -73,6 +76,7 @@ cases:
       matcher: {counterparty_iban_hmac: *H_WEG, purpose_pattern: hausgeld, amount_sign: debit}
       split_method: by_wirtschaftsplan
       property_id: *P
+      recurring: true
     rule_id: 0000002b-0000-4000-8000-000000000602
     next:
       transaction: {id: 0000002a-0000-4000-8000-000000000604, booking_date: 2024-06-03, amount: "-380.00", counterparty_name: WEG Lindenstrasse 12, counterparty_iban_hmac: *H_WEG, purpose: Hausgeld 06/2024 WE 3}

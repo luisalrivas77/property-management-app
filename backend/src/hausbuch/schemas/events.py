@@ -462,6 +462,7 @@ class RuleRecorded(Schema):
     property_id: UUID | None = None
     tenancy_id: UUID | None = None
     loan_id: UUID | None = None
+    recurring: bool = False
     created_from_allocation_id: UUID | None = None
 
     @model_validator(mode="after")

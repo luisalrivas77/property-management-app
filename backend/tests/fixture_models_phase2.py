@@ -29,6 +29,7 @@ from hausbuch.schemas.allocation import (
     RoutingDecision,
     RoutingInput,
     ServicePeriod,
+    SplitMethod,
     TaxTreatment,
 )
 from hausbuch.schemas.bank import (
@@ -210,8 +211,16 @@ class RulesFixture(Schema):
         for case in self.cases:
             if case.rule not in self.rules:
                 raise ValueError(f"{case.id}: unknown rule {case.rule}")
-            if case.expect and case.expect.rule_id != self.rules[case.rule].id:
+            rule = self.rules[case.rule]
+            if case.expect and case.expect.rule_id != rule.id:
                 raise ValueError(f"{case.id}: rule_id is not the rule's id")
+            single = rule.split_method is SplitMethod.SINGLE_CATEGORY
+            if (
+                case.expect
+                and single
+                and any(a.recurring != rule.recurring for a in case.expect.allocations)
+            ):
+                raise ValueError(f"{case.id}: a single_category hit takes rule.recurring")
         return self
 
 
@@ -575,6 +584,8 @@ class RepeatCase(Lenient):
         if sum(x.amount for x in a.confirmed.allocations) != a.transaction.amount:
             raise ValueError(f"{self.id}: the answer does not sum to its line")
         _sums(n.expect, n.transaction, self.id)
+        if self.expect_rule.recurring != all(x.recurring for x in a.confirmed.allocations):
+            raise ValueError(f"{self.id}: the rule's recurring is copied from the answer")
         if n.expect.rule_id != self.rule_id:
             raise ValueError(f"{self.id}: the next line must hit the stored rule")
         return self

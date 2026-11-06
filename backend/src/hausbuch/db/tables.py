@@ -595,6 +595,7 @@ matching_rule = Table(
     _uuid("property_id", nullable=True),
     _uuid("tenancy_id", nullable=True),
     _uuid("loan_id", nullable=True),
+    Column("recurring", Boolean, nullable=False, server_default=text("false")),
     _uuid("created_from_allocation_id", nullable=True),
     Column("enabled", Boolean, nullable=False, server_default=text("true")),
     Column("hit_count", Integer, nullable=False, server_default=text("0")),
