@@ -32,12 +32,14 @@ from .lifespan import DrainMiddleware, lifespan
 from .limits import BodyLimitMiddleware
 from .logging import RequestMiddleware
 from .routes import (
+    accounts,
     auth,
     documents,
     history,
     loans,
     owners,
     properties,
+    statements,
     tenancies,
     tenants,
     units,
@@ -53,6 +55,8 @@ ROUTE_MODULES = (
     tenancies,
     loans,
     documents,
+    accounts,
+    statements,
     history,
     auth,
 )
