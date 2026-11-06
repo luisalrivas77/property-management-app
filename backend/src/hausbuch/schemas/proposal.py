@@ -140,6 +140,7 @@ class ExistingCost(Schema):
     kind: AcquisitionCostKind
     amount: PositiveMoney
     document_id: UUID | None = None  # the Beleg; null = a row "without a Beleg"
+    note: str | None = None
 
 
 class ExistingLoan(Schema):

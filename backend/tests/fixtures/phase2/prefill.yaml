@@ -48,8 +48,17 @@
 #             current = the context's values of the record's fields.
 #   unit      label on the matched property: same rule, compared on what ExistingUnit holds
 #             (label, mea); fields the context does not hold are not proposed for a match.
-#   cost      kind on the property: a row of that kind without a Beleg (document_id null) ->
-#             patch (amount, note; the apply attaches this document); otherwise create.
+#   cost      checked in this order:
+#             1. a row whose Beleg is this document (document_id = context.document_id; Luis
+#                typed the cost and attached the invoice himself) -> that row is the target,
+#                whatever its kind (kind is not compared or proposed): mode unchanged when
+#                amount and note equal the extraction's (values = both), else patch with the
+#                differing ones (amount and/or note). Never a second row for the same Beleg.
+#             2. a row of that kind on the property without a Beleg (document_id null) ->
+#                patch (amount, note; the apply attaches this document).
+#             3. otherwise create (a row of that kind with a different Beleg is another bill:
+#                two notary invoices are real).
+#             current = the row's values of the record's fields (note null when it has none).
 #   loan      contract_number with whitespace removed, and lender -> patch with every stated
 #             field except the two keys; current null (the context does not hold loan terms).
 #   tenant    exact full_name -> patch with the stated fields except full_name; current null.
@@ -76,6 +85,8 @@ ids:
   owner_1: &O1 00000010-0000-4000-8000-000000000001
   owner_2: &O2 00000010-0000-4000-8000-000000000002
   cost_grest: &C1 00000011-0000-4000-8000-000000000001
+  cost_notary: &C2 00000011-0000-4000-8000-000000000002
+  document_other: &DOC_OTHER 0000000d-0000-4000-8000-000000000101
   loan: &L 0000000f-0000-4000-8000-000000000001
   tenant_1: &N1 00000012-0000-4000-8000-000000000001
 
@@ -312,6 +323,70 @@ cases:
           target_id: *P
           values: {}
 
+  - id: invoice_already_entered_with_this_beleg_unchanged
+    description: Luis typed the notary cost and attached this invoice himself; reading the invoice proposes no second row.
+    kind: invoice
+    context:
+      document_id: *DOC
+      classification: {type: invoice, subtype: cost_basis_evidence, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      costs:
+        - {id: *C2, property_id: *P, kind: notary, amount: "2312.45", document_id: *DOC, note: UR 1234/2026}
+    extraction: &NOTAR_INVOICE
+      title: {v: Kostenrechnung Notarin Beispiel, p: 1, q: "Kostenberechnung"}
+      document_date: {v: "2026-03-20", p: 1, q: "Berlin, 20.03.2026"}
+      sender: {v: Notarin Dr. Anna Beispiel, p: 1, q: "Dr. Anna Beispiel, Notarin in Berlin"}
+      amount_total: {v: "2312.45", p: 2, q: "Rechnungsbetrag 2.312,45 €"}
+      amount_net: {v: "1943.24", p: 2, q: "Summe netto 1.943,24 €"}
+      reference: {v: UR 1234/2026, p: 1, q: "Kostenberechnung zu UR 1234/2026"}
+    expect:
+      keys: [typing, cost:notary, link:property]
+      records:
+        - key: cost:notary
+          entity_type: acquisition_cost
+          mode: unchanged
+          target_id: *C2
+          values: {amount: "2312.45", note: UR 1234/2026}
+          current: {amount: "2312.45", note: UR 1234/2026}
+
+  - id: invoice_already_entered_with_this_beleg_amount_differs
+    description: The hand-typed row says 2,312.00 where the attached invoice says 2,312.45; the note agrees. Only the amount is patched, and no second row is proposed.
+    kind: invoice
+    context:
+      document_id: *DOC
+      classification: {type: invoice, subtype: cost_basis_evidence, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      costs:
+        - {id: *C2, property_id: *P, kind: notary, amount: "2312.00", document_id: *DOC, note: UR 1234/2026}
+    extraction: *NOTAR_INVOICE
+    expect:
+      keys: [typing, cost:notary, link:property]
+      records:
+        - key: cost:notary
+          entity_type: acquisition_cost
+          mode: patch
+          target_id: *C2
+          values: {amount: "2312.45"}
+          current: {amount: "2312.00"}
+
+  - id: notar_invoice_second_bill_new_cost
+    description: A notary row already holds another Beleg (an earlier bill); this invoice is a second, real bill, so it is created.
+    kind: invoice
+    context:
+      document_id: *DOC
+      classification: {type: invoice, subtype: cost_basis_evidence, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      costs:
+        - {id: *C2, property_id: *P, kind: notary, amount: "450.00", document_id: *DOC_OTHER, note: UR 0999/2026}
+    extraction: *NOTAR_INVOICE
+    expect:
+      keys: [typing, cost:notary, link:property]
+      records:
+        - key: cost:notary
+          entity_type: acquisition_cost
+          mode: create
+          values: {kind: notary, amount: "2312.45", note: UR 1234/2026}
+
   - id: grunderwerbsteuer_bescheid_patch_existing_cost_without_beleg
     description: The Grunderwerbsteuer row was typed by hand without a Beleg; the Bescheid attaches to it.
     kind: bescheid
@@ -336,7 +411,7 @@ cases:
           mode: patch
           target_id: *C1
           values: {amount: "17340.00", note: GrESt 27/123/45678}
-          current: {amount: "17340.00"}
+          current: {amount: "17340.00", note: null}
 
   - id: darlehen_rate_derived_from_tilgungssatz
     description: The contract states Sollzins and anfängliche Tilgung but no Rate; 300,000 x (3.6 % + 2 %) / 12 = 1,400.00.
