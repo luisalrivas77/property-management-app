@@ -588,6 +588,89 @@
         }
       }
     },
+    "/api/acquisition-costs/{cost_id}": {
+      "patch": {
+        "summary": "Acquisition Cost Update",
+        "description": "Change a Nebenkosten row; document_id sets, swaps or (null) clears its Beleg.",
+        "operationId": "acquisition_cost_update_api_acquisition_costs__cost_id__patch",
+        "parameters": [
+          {
+            "name": "cost_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Cost Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcquisitionCostPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcquisitionCost"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Acquisition Cost Remove",
+        "description": "Delete a row entered by mistake; property.acquisition_cost_removed keeps what it said.",
+        "operationId": "acquisition_cost_remove_api_acquisition_costs__cost_id__delete",
+        "parameters": [
+          {
+            "name": "cost_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Cost Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/properties/{property_id}/price-splits": {
       "get": {
         "summary": "Price Splits List",
@@ -1455,12 +1538,265 @@
             }
           }
         }
+      },
+      "patch": {
+        "summary": "Tenancy Update",
+        "description": "Befristung, Mietmodell and Kaution; the milestones change through corrections.",
+        "operationId": "tenancy_update_api_tenancies__tenancy_id__patch",
+        "parameters": [
+          {
+            "name": "tenancy_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Tenancy Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenancyPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tenancy"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tenancies/{tenancy_id}/parties": {
+      "put": {
+        "summary": "Tenancy Set Parties",
+        "description": "Replace the parties (add, remove, change the primary). 422 rule_violation\ntenancy.exactly_one_primary / tenancy.no_tenant, 404 tenant for an unknown one.",
+        "operationId": "tenancy_set_parties_api_tenancies__tenancy_id__parties_put",
+        "parameters": [
+          {
+            "name": "tenancy_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Tenancy Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenancyPartiesBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tenancy"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/tenancies/{tenancy_id}/corrections/move-in": {
       "post": {
         "summary": "Tenancy Correct Move In",
         "operationId": "tenancy_correct_move_in_api_tenancies__tenancy_id__corrections_move_in_post",
+        "parameters": [
+          {
+            "name": "tenancy_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Tenancy Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DateCorrection"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tenancy"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tenancies/{tenancy_id}/corrections/signed-on": {
+      "post": {
+        "summary": "Tenancy Correct Signed On",
+        "description": "The contract date (tenancy.created); also records one that was left empty.",
+        "operationId": "tenancy_correct_signed_on_api_tenancies__tenancy_id__corrections_signed_on_post",
+        "parameters": [
+          {
+            "name": "tenancy_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Tenancy Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DateCorrection"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tenancy"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tenancies/{tenancy_id}/corrections/notice": {
+      "post": {
+        "summary": "Tenancy Correct Notice",
+        "description": "The notice already given (tenancy.notice_given); 409 if there is none.",
+        "operationId": "tenancy_correct_notice_api_tenancies__tenancy_id__corrections_notice_post",
+        "parameters": [
+          {
+            "name": "tenancy_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Tenancy Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoticeBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tenancy"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tenancies/{tenancy_id}/corrections/move-out": {
+      "post": {
+        "summary": "Tenancy Correct Move Out",
+        "description": "The move-out date (tenancy.ended); 409 if the tenancy has not ended.",
+        "operationId": "tenancy_correct_move_out_api_tenancies__tenancy_id__corrections_move_out_post",
         "parameters": [
           {
             "name": "tenancy_id",
@@ -1585,6 +1921,67 @@
                     "$ref": "#/components/schemas/DepositReceipt"
                   },
                   "title": "Response Tenancy Deposits Api Tenancies  Tenancy Id  Deposits Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tenancies/{tenancy_id}/deposits/{event_id}/corrections": {
+      "post": {
+        "summary": "Tenancy Correct Deposit",
+        "description": "Correct one receipt from GET .../deposits (its event_id): the correcting event, or the\nreceipt itself when nothing changes. 404 deposit_receipt for an id that is not one of this\ntenancy's receipts, 409 for one already corrected.",
+        "operationId": "tenancy_correct_deposit_api_tenancies__tenancy_id__deposits__event_id__corrections_post",
+        "parameters": [
+          {
+            "name": "tenancy_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Tenancy Id"
+            }
+          },
+          {
+            "name": "event_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Event Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DepositReceivedBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Event"
                 }
               }
             }
@@ -2048,6 +2445,57 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/LoanPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Loan"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/loans/{loan_id}/corrections/disbursement": {
+      "post": {
+        "summary": "Loan Correct Disbursement",
+        "description": "Correct the payout (loan.disbursed): date and/or principal. The schedule follows.",
+        "operationId": "loan_correct_disbursement_api_loans__loan_id__corrections_disbursement_post",
+        "parameters": [
+          {
+            "name": "loan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Loan Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DisbursementCorrection"
               }
             }
           }
@@ -3536,6 +3984,57 @@
         "title": "AcquisitionCostKind",
         "description": "Anschaffungsnebenkosten. Itemized so the AfA basis is traceable (principle 2)."
       },
+      "AcquisitionCostPatch": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/AcquisitionCostKind"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "paid_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid On"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "AcquisitionCostPatch",
+        "description": "PATCH /acquisition-costs/{id}: null clears paid_on, the Beleg (document_id) or the note."
+      },
       "ActorType": {
         "type": "string",
         "enum": [
@@ -3890,6 +4389,38 @@
           "received_on"
         ],
         "title": "DepositReceivedBody"
+      },
+      "DisbursementCorrection": {
+        "properties": {
+          "new_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New Date"
+          },
+          "principal": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Principal"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "DisbursementCorrection",
+        "description": "POST /loans/{id}/corrections/disbursement: the payout date and/or the principal; an\nabsent (or null) field keeps the recorded value."
       },
       "Document": {
         "properties": {
@@ -4686,6 +5217,8 @@
           "property.possession_transferred",
           "property.ownership_set",
           "property.acquisition_cost_recorded",
+          "property.acquisition_cost_updated",
+          "property.acquisition_cost_removed",
           "property.price_split_recorded",
           "property.price_split_selected",
           "unit.created",
@@ -4695,6 +5228,7 @@
           "tenant.erased",
           "tenancy.created",
           "tenancy.updated",
+          "tenancy.parties_set",
           "tenancy.started",
           "tenancy.rent_scheduled",
           "tenancy.deposit_received",
@@ -6804,6 +7338,37 @@
         "title": "TenancyCreateRequest",
         "description": "POST /tenancies: TenancyCreate plus the first rent row (create_tenancy's initial_rent)."
       },
+      "TenancyPartiesBody": {
+        "properties": {
+          "parties": {
+            "items": {
+              "$ref": "#/components/schemas/TenancyParty"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Parties"
+          },
+          "effective_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Date"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "parties"
+        ],
+        "title": "TenancyPartiesBody",
+        "description": "PUT /tenancies/{id}/parties: the whole list (exactly one primary; service rule)."
+      },
       "TenancyParty": {
         "properties": {
           "tenant_id": {
@@ -6822,6 +7387,61 @@
           "role"
         ],
         "title": "TenancyParty"
+      },
+      "TenancyPatch": {
+        "properties": {
+          "fixed_term_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fixed Term Until"
+          },
+          "rent_model": {
+            "$ref": "#/components/schemas/RentModel"
+          },
+          "deposit_amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Deposit Amount"
+          },
+          "deposit_form": {
+            "$ref": "#/components/schemas/DepositForm"
+          },
+          "deposit_bank": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deposit Bank"
+          },
+          "deposit_iban": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 42,
+                "minLength": 15
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deposit Iban"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TenancyPatch",
+        "description": "PATCH /tenancies/{id}: the non-milestone fields. Move-in, move-out, notice and contract\ndate change through their corrections, the parties through PUT .../parties."
       },
       "TenancyRole": {
         "type": "string",

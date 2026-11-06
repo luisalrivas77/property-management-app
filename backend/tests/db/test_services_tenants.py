@@ -13,15 +13,22 @@ from hausbuch.db.session import workspace_transaction
 from hausbuch.rules.errors import RuleError
 from hausbuch.rules.iban import BAD_CHECKSUM, iban_hmac
 from hausbuch.schemas.document import RetentionPolicy
-from hausbuch.schemas.enums import ActorType, PropertyKind, RentModel, RetentionHold
+from hausbuch.schemas.enums import (
+    ActorType,
+    PropertyKind,
+    RentModel,
+    RetentionHold,
+    TenancyRole,
+)
 from hausbuch.schemas.events import EventType
 from hausbuch.schemas.property import Address, PropertyCreate, UnitCreate
 from hausbuch.schemas.tenancy import TenancyCreate, TenancyParty, TenantCreate
 from hausbuch.services.context import Actor, new_command
 from hausbuch.services.errors import ConflictError, NotFoundError, RetentionHoldError
 from hausbuch.services.events import list_events
+from hausbuch.services.parties import tenancies_ever_of
 from hausbuch.services.properties import create_property
-from hausbuch.services.tenancies import create_tenancy
+from hausbuch.services.tenancies import create_tenancy, end_tenancy, set_parties
 from hausbuch.services.tenants import create_tenant, erase_tenant, get_tenant, update_tenant
 from hausbuch.services.units import create_unit
 
@@ -424,3 +431,95 @@ def test_a_tenancy_waits_for_an_erasure_in_flight(app_engine, run, read, fresh_w
             text("SELECT count(*) FROM tenancy_tenant WHERE tenant_id = :t"), {"t": applicant.id}
         ).scalar_one()
     assert count == 0
+
+
+PRIMARY, CO_TENANT = TenancyRole.PRIMARY, TenancyRole.CO_TENANT
+
+
+def _shared(run, ws, unit_id, anna_id, ben_id, start, end=None):
+    """A tenancy with Anna as the primary and Ben as a co-tenant."""
+    lease = _lease(unit_id, anna_id, start, end).model_copy(
+        update={
+            "parties": [
+                TenancyParty(tenant_id=anna_id, role=PRIMARY),
+                TenancyParty(tenant_id=ben_id, role=CO_TENANT),
+            ]
+        }
+    )
+    return run(ws, create_tenancy, lease, initial_rent=None, iban_key=TEST_IBAN_KEY, now=CREATED_AT)
+
+
+def _only(run, ws, tenancy_id, tenant_id):
+    """Set the parties to `tenant_id` alone, removing everyone else."""
+    parties = [TenancyParty(tenant_id=tenant_id, role=PRIMARY)]
+    return run(ws, set_parties, tenancy_id, parties, now=CREATED_AT)
+
+
+def test_a_removed_party_is_held_by_the_tenancy_they_left(run, read, fresh_workspaces):
+    """F1 (decided 6 Nov 2026): removing a party is bookkeeping, not the end of the claims
+    period. Retention follows every tenancy the tenant was ever a party of, so a co-tenant
+    removed from a running lease is still held by it, and after move-out the usual period
+    runs from its end. The basis is never no_tenancy for someone who was a party."""
+    a, _ = fresh_workspaces
+    anna, ben = _create(run, a), _create(run, a)
+    tenancy = _shared(run, a, _unit(run, a), anna.id, ben.id, date(2024, 7, 1))
+    assert [p.tenant_id for p in _only(run, a, tenancy.id, anna.id).parties] == [anna.id]
+
+    for on_request in (False, True):
+        with pytest.raises(RetentionHoldError, match="running tenancy") as raised:
+            run(a, erase_tenant, ben.id, on_request=on_request, now=LATER)
+        assert raised.value.result.hold is RetentionHold.TENANCY_ACTIVE
+    _assert_untouched(read, a, ben)
+
+    run(a, end_tenancy, tenancy.id, date(2026, 11, 5), now=CREATED_AT)
+    with pytest.raises(RetentionHoldError, match="2030-12-31") as raised:
+        run(a, erase_tenant, ben.id, now=LATER)
+    assert raised.value.result.retain_until == date(2030, 12, 31)
+    _assert_untouched(read, a, ben)
+
+    erased = run(a, erase_tenant, ben.id, on_request=True, now=LATER)
+    assert erased.full_name is None
+    assert _events(read, a, ben.id)[-1].payload == {"basis": "data_subject_request"}
+
+
+def test_a_party_who_joined_and_left_is_still_held(run, read, fresh_workspaces):
+    """Ben was never in tenancy.created: he joined by set_parties and was removed again. The
+    parties_set event that added him still names the tenancy."""
+    a, _ = fresh_workspaces
+    anna, ben = _create(run, a), _create(run, a)
+    tenancy = _let(run, a, _unit(run, a), anna.id, date(2024, 7, 1))
+    joined = [
+        TenancyParty(tenant_id=anna.id, role=PRIMARY),
+        TenancyParty(tenant_id=ben.id, role=CO_TENANT),
+    ]
+    run(a, set_parties, tenancy.id, joined, now=CREATED_AT)
+    _only(run, a, tenancy.id, anna.id)
+
+    with pytest.raises(RetentionHoldError, match="running tenancy") as raised:
+        run(a, erase_tenant, ben.id, on_request=True, now=LATER)
+    assert raised.value.result.hold is RetentionHold.TENANCY_ACTIVE
+    _assert_untouched(read, a, ben)
+
+
+def test_a_party_removed_long_ago_is_erased_as_expired_not_as_unlinked(run, read, fresh_workspaces):
+    a, _ = fresh_workspaces
+    anna, ben = _create(run, a), _create(run, a)
+    tenancy = _shared(run, a, _unit(run, a), anna.id, ben.id, date(2016, 1, 1), date(2020, 6, 30))
+    _only(run, a, tenancy.id, anna.id)
+
+    run(a, erase_tenant, ben.id, on_request=True, now=LATER)
+    assert _events(read, a, ben.id)[-1].payload == {"basis": "retention_expired"}
+
+
+def test_the_event_log_lookup_stays_in_its_workspace(app_engine, run, fresh_workspaces):
+    """tenancies_ever_of reads the event table under RLS: workspace a cannot see that b's
+    events name a tenant, so b's tenancies never hold anything in a."""
+    a, b = fresh_workspaces
+    anna, ben = _create(run, b), _create(run, b)
+    tenancy = _shared(run, b, _unit(run, b), anna.id, ben.id, date(2024, 7, 1))
+    _only(run, b, tenancy.id, anna.id)
+
+    with workspace_transaction(app_engine, b) as conn:
+        assert tenancies_ever_of(conn, [ben.id]) == {tenancy.id}
+    with workspace_transaction(app_engine, a) as conn:
+        assert tenancies_ever_of(conn, [ben.id]) == set()

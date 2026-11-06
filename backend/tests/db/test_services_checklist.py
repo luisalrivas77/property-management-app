@@ -40,7 +40,9 @@ from hausbuch.services.properties import (
     add_acquisition_cost,
     create_property,
     record_price_split,
+    remove_acquisition_cost,
     select_price_split,
+    update_acquisition_cost,
 )
 from hausbuch.services.tenancies import create_tenancy
 from hausbuch.services.tenants import create_tenant
@@ -352,6 +354,59 @@ def test_a_year_outside_the_available_years_is_refused(read, flat):
     for year in (2023, 2027):
         with pytest.raises(ValueError, match="outside this property's years 2024-2026"):
             read(flat["ws"], document_checklist, flat["property"].id, tax_year=year, today=TODAY)
+
+
+def test_editing_a_cost_row_updates_its_checklist_item(run, read, flat, blob_store):
+    """The item reads the row's document_id: a Beleg attached later by PATCH makes it present,
+    clearing it makes it missing again, and a removed row has no item at all."""
+    ws, pid = flat["ws"], flat["property"].id
+
+    def cost_items():
+        got = read(ws, document_checklist, pid, tax_year=2026, today=TODAY)
+        return [
+            (i.scope.id, i.status, [d.id for d in i.documents])
+            for i in got.items
+            if i.code is RequirementCode.ACQUISITION_COST_EVIDENCE
+        ]
+
+    tax = run(
+        ws,
+        add_acquisition_cost,
+        AcquisitionCostCreate(
+            property_id=pid,
+            kind=AcquisitionCostKind.REAL_ESTATE_TRANSFER_TAX,
+            amount=Decimal("17340.00"),
+        ),
+        now=NOW,
+    )
+    notary = flat["cost"]
+    invoice = flat["docs"]["notary_invoice"]
+    assert cost_items() == [
+        (tax.id, ChecklistStatus.MISSING, []),
+        (notary.id, ChecklistStatus.PRESENT, [invoice.id]),
+    ]
+
+    bescheid = _upload(
+        run,
+        ws,
+        blob_store,
+        DocumentTyping(type=DocumentType.BESCHEID, subtype=DocumentSubtype.COST_BASIS_EVIDENCE),
+        minutes=8,
+    )
+    run(ws, update_acquisition_cost, tax.id, document_id=bescheid.id, now=NOW)
+    assert cost_items() == [
+        (tax.id, ChecklistStatus.PRESENT, [bescheid.id]),
+        (notary.id, ChecklistStatus.PRESENT, [invoice.id]),
+    ]
+
+    run(ws, update_acquisition_cost, notary.id, document_id=None, now=NOW)
+    assert cost_items() == [
+        (tax.id, ChecklistStatus.PRESENT, [bescheid.id]),
+        (notary.id, ChecklistStatus.MISSING, []),
+    ]
+
+    run(ws, remove_acquisition_cost, notary.id, now=NOW)
+    assert cost_items() == [(tax.id, ChecklistStatus.PRESENT, [bescheid.id])]
 
 
 def test_another_workspaces_property_is_not_found(read, fresh_workspaces, flat):

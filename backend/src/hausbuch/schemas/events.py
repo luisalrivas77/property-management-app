@@ -48,6 +48,7 @@ from .enums import (
     RentModel,
 )
 from .property import OwnerShare
+from .tenancy import TenancyParty
 
 # --- Payloads ----------------------------------------------------------------
 
@@ -91,6 +92,35 @@ class AcquisitionCostRecorded(Schema):
     cost_id: UUID
     kind: AcquisitionCostKind
     amount: PositiveMoney
+    document_id: UUID | None = None
+
+
+class AcquisitionCostUpdated(Schema):
+    """A Nebenkosten row's note changed. The note is free text that may name people, so, as
+    on create, its value is never recorded: note_changed only says that it changed. A change
+    of a traced field (kind, amount, paid_on, document_id) is recorded as a correcting
+    property.acquisition_cost_recorded instead (F2, decided 6 Nov 2026), so the service
+    leaves `changes` empty."""
+
+    cost_id: UUID
+    changes: dict[str, FieldChange] = Field(default_factory=dict)
+    note_changed: bool = False
+
+    @model_validator(mode="after")
+    def _something_changed(self) -> Self:
+        if not self.changes and not self.note_changed:
+            raise ValueError("an acquisition cost update must change something")
+        return self
+
+
+class AcquisitionCostRemoved(Schema):
+    """A Nebenkosten row entered by mistake was deleted; this keeps what it said (not its
+    note, see AcquisitionCostUpdated)."""
+
+    cost_id: UUID
+    kind: AcquisitionCostKind
+    amount: PositiveMoney
+    paid_on: date | None = None
     document_id: UUID | None = None
 
 
@@ -162,6 +192,13 @@ class RentScheduled(Schema):
 
 class DepositReceived(Schema):
     amount: PositiveMoney
+
+
+class TenancyPartiesSet(Schema):
+    """The whole party list after a change (a tenant added or removed, another primary):
+    tenant ids and roles only, never names (D5)."""
+
+    parties: list[TenancyParty] = Field(min_length=1)
 
 
 class NoticeGiven(Schema):
@@ -237,6 +274,8 @@ class EventType(StrEnum):
     PROPERTY_POSSESSION_TRANSFERRED = "property.possession_transferred"
     PROPERTY_OWNERSHIP_SET = "property.ownership_set"
     PROPERTY_ACQUISITION_COST_RECORDED = "property.acquisition_cost_recorded"
+    PROPERTY_ACQUISITION_COST_UPDATED = "property.acquisition_cost_updated"
+    PROPERTY_ACQUISITION_COST_REMOVED = "property.acquisition_cost_removed"
     PROPERTY_PRICE_SPLIT_RECORDED = "property.price_split_recorded"
     PROPERTY_PRICE_SPLIT_SELECTED = "property.price_split_selected"
 
@@ -249,6 +288,7 @@ class EventType(StrEnum):
 
     TENANCY_CREATED = "tenancy.created"
     TENANCY_UPDATED = "tenancy.updated"
+    TENANCY_PARTIES_SET = "tenancy.parties_set"
     TENANCY_STARTED = "tenancy.started"
     TENANCY_RENT_SCHEDULED = "tenancy.rent_scheduled"
     TENANCY_DEPOSIT_RECEIVED = "tenancy.deposit_received"
@@ -281,6 +321,12 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     E.PROPERTY_ACQUISITION_COST_RECORDED: EventSpec(
         AcquisitionCostRecorded, "optional", "Anschaffungsnebenkosten item recorded"
     ),
+    E.PROPERTY_ACQUISITION_COST_UPDATED: EventSpec(
+        AcquisitionCostUpdated, "forbidden", "Anschaffungsnebenkosten item changed"
+    ),
+    E.PROPERTY_ACQUISITION_COST_REMOVED: EventSpec(
+        AcquisitionCostRemoved, "optional", "Anschaffungsnebenkosten item removed (date = paid_on)"
+    ),
     E.PROPERTY_PRICE_SPLIT_RECORDED: EventSpec(
         PriceSplitRecorded, "forbidden", "Building/land split candidate recorded"
     ),
@@ -294,6 +340,9 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     E.TENANT_ERASED: EventSpec(TenantErased, "forbidden", "Tenant personal data erased"),
     E.TENANCY_CREATED: EventSpec(TenancyCreated, "optional", "Lease signed (date = signed_on)"),
     E.TENANCY_UPDATED: EventSpec(Updated, "forbidden", "Tenancy fields changed"),
+    E.TENANCY_PARTIES_SET: EventSpec(
+        TenancyPartiesSet, "optional", "Parties changed (date = from when, if known)"
+    ),
     E.TENANCY_STARTED: EventSpec(Empty, "required", "Move-in"),
     E.TENANCY_RENT_SCHEDULED: EventSpec(
         RentScheduled, "required", "Rent row added (date = effective_from)"

@@ -10,10 +10,11 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Query
+from fastapi import Query, Response
 from sqlalchemy import Connection
 
 from hausbuch.schemas.api import (
+    AcquisitionCostPatch,
     DateCorrection,
     NotarizedOnCorrection,
     OwnershipBody,
@@ -47,8 +48,10 @@ from hausbuch.services.properties import (
     list_price_splits,
     list_properties,
     record_price_split,
+    remove_acquisition_cost,
     select_price_split,
     set_ownership,
+    update_acquisition_cost,
     update_property,
 )
 from hausbuch.services.units import list_units
@@ -124,6 +127,19 @@ def acquisition_costs_list(property_id: UUID, cmd: Cmd) -> list[AcquisitionCost]
 @router.post("/acquisition-costs", status_code=201)
 def acquisition_cost_add(body: AcquisitionCostCreate, cmd: Cmd) -> AcquisitionCost:
     return cmd.run(add_acquisition_cost, body)
+
+
+@router.patch("/acquisition-costs/{cost_id}")
+def acquisition_cost_update(cost_id: UUID, body: AcquisitionCostPatch, cmd: Cmd) -> AcquisitionCost:
+    """Change a Nebenkosten row; document_id sets, swaps or (null) clears its Beleg."""
+    return cmd.run(update_acquisition_cost, cost_id, **body.changes())
+
+
+@router.delete("/acquisition-costs/{cost_id}", status_code=204)
+def acquisition_cost_remove(cost_id: UUID, cmd: Cmd) -> Response:
+    """Delete a row entered by mistake; property.acquisition_cost_removed keeps what it said."""
+    cmd.run(remove_acquisition_cost, cost_id)
+    return Response(status_code=204)
 
 
 def _splits(conn: Connection, property_id: UUID) -> list[PriceSplit]:

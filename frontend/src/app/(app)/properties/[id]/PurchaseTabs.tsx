@@ -2,16 +2,18 @@
 
 // Nebenkosten (Anschaffungsnebenkosten, itemised so the AfA basis is traceable) and
 // Kaufpreisaufteilung (building/land split candidates, one selected as the AfA basis).
-// Both are append-only lists: rows are added, never edited (§4.2).
+// A Nebenkosten row can be edited (PATCH, e.g. to attach its Beleg later) or removed when it
+// was entered by mistake; each change is an event in the Protokoll. Split candidates stay
+// append-only (D8): a wrong split is replaced by a new candidate that is then selected.
 import Link from "next/link";
 import { useCallback, useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
-import type { AcquisitionCostKind, Document, PriceSplitSource, Property } from "@/api/schemas";
+import type { AcquisitionCost, AcquisitionCostKind, Document, PriceSplitSource, Property } from "@/api/schemas";
 import { DocumentPicker, documentLabel } from "@/components/documents";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "@/components/form";
 import { formatDate, formatDateTime, formatMoney, formatPercent } from "@/components/format";
-import { blankToNull, toMoneyString, toRate } from "@/components/input";
+import { blankToNull, decimalInput, toMoneyString, toRate } from "@/components/input";
 import { ACQUISITION_COST_KIND, options, PRICE_SPLIT_SOURCE } from "@/components/labels";
 import { ActionDialog, Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
@@ -35,6 +37,28 @@ export function CostsTab({ propertyId }: { propertyId: string }) {
   );
   const costs = useLoad(load);
   const documents = useLoad(loadDocuments);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
+
+  function changed() {
+    costs.reload();
+    documents.reload();
+  }
+
+  async function remove(cost: AcquisitionCost) {
+    const what = `${ACQUISITION_COST_KIND[cost.kind]} über ${formatMoney(cost.amount)}`;
+    if (!window.confirm(`Position „${what}“ entfernen? Der Beleg bleibt im Archiv; das Protokoll behält die Position.`)) return;
+    setRemoving(cost.id);
+    setError(null);
+    try {
+      await ok(api.DELETE("/api/acquisition-costs/{cost_id}", { params: { path: { cost_id: cost.id } } }));
+      changed();
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setRemoving(null);
+    }
+  }
 
   return (
     <div className="stack">
@@ -53,6 +77,7 @@ export function CostsTab({ propertyId }: { propertyId: string }) {
                     <th>Bezahlt am</th>
                     <th>Beleg</th>
                     <th>Notiz</th>
+                    <th />
                   </tr>
                 </thead>
                 <tbody>
@@ -65,6 +90,25 @@ export function CostsTab({ propertyId }: { propertyId: string }) {
                         <DocumentRef id={cost.document_id} documents={documents.data} />
                       </td>
                       <td>{cost.note ?? ""}</td>
+                      <td>
+                        <div className="row">
+                          <ActionDialog label="Bearbeiten" title="Nebenkosten bearbeiten">
+                            {(close) => (
+                              <CostForm
+                                propertyId={propertyId}
+                                cost={cost}
+                                onDone={() => {
+                                  close();
+                                  changed();
+                                }}
+                              />
+                            )}
+                          </ActionDialog>
+                          <button type="button" className="link" onClick={() => void remove(cost)} disabled={removing !== null}>
+                            {removing === cost.id ? "Entfernt …" : "Entfernen"}
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -73,14 +117,14 @@ export function CostsTab({ propertyId }: { propertyId: string }) {
           )
         }
       </Loading>
+      {error ? <FormBanner errors={{ fields: {}, banner: error }} /> : null}
       <ActionDialog label="Position hinzufügen" title="Nebenkosten hinzufügen" buttonClass="">
         {(close) => (
           <CostForm
             propertyId={propertyId}
             onDone={() => {
               close();
-              costs.reload();
-              documents.reload();
+              changed();
             }}
           />
         )}
@@ -89,12 +133,14 @@ export function CostsTab({ propertyId }: { propertyId: string }) {
   );
 }
 
-function CostForm({ propertyId, onDone }: { propertyId: string; onDone: () => void }) {
-  const [kind, setKind] = useState<AcquisitionCostKind>("real_estate_transfer_tax");
-  const [amount, setAmount] = useState("");
-  const [paidOn, setPaidOn] = useState("");
-  const [documentId, setDocumentId] = useState<string | null>(null);
-  const [note, setNote] = useState("");
+/** Add a row, or with `cost` edit it (every field, including the Beleg: pick, swap or
+ * "– kein Dokument –" to clear it). */
+function CostForm({ propertyId, cost, onDone }: { propertyId: string; cost?: AcquisitionCost; onDone: () => void }) {
+  const [kind, setKind] = useState<AcquisitionCostKind>(cost?.kind ?? "real_estate_transfer_tax");
+  const [amount, setAmount] = useState(decimalInput(cost?.amount));
+  const [paidOn, setPaidOn] = useState(cost?.paid_on ?? "");
+  const [documentId, setDocumentId] = useState<string | null>(cost?.document_id ?? null);
+  const [note, setNote] = useState(cost?.note ?? "");
   const [busy, setBusy] = useState(false);
   const form = useFormErrors(COST_KEYS);
 
@@ -105,12 +151,13 @@ function CostForm({ propertyId, onDone }: { propertyId: string; onDone: () => vo
     if (!values.ok || money === undefined) return form.invalid(values.messages);
     setBusy(true);
     form.clear();
+    const fields = { kind, amount: money, paid_on: paidOn || null, document_id: documentId, note: blankToNull(note) };
     try {
-      await ok(
-        api.POST("/api/acquisition-costs", {
-          body: { property_id: propertyId, kind, amount: money, paid_on: paidOn || null, document_id: documentId, note: blankToNull(note) },
-        }),
-      );
+      if (cost) {
+        await ok(api.PATCH("/api/acquisition-costs/{cost_id}", { params: { path: { cost_id: cost.id } }, body: fields }));
+      } else {
+        await ok(api.POST("/api/acquisition-costs", { body: { property_id: propertyId, ...fields } }));
+      }
       onDone();
     } catch (error) {
       form.fail(error);
@@ -142,7 +189,7 @@ function CostForm({ propertyId, onDone }: { propertyId: string; onDone: () => vo
       <Field id="cost-note" label="Notiz (optional)" errors={form.of("note")}>
         <input type="text" value={note} onChange={(e) => setNote(e.target.value)} autoComplete="off" />
       </Field>
-      <Submit busy={busy}>Hinzufügen</Submit>
+      <Submit busy={busy}>{cost ? "Speichern" : "Hinzufügen"}</Submit>
       <FormBanner errors={form.errors} />
     </form>
   );

@@ -3,7 +3,7 @@ only, so another household's ids answer 404 on every read and every write, and i
 are empty."""
 
 import pytest
-from api_support import create, flat, loan_body, ok, upload
+from api_support import create, flat, loan_body, ok, property_body, upload
 
 pytestmark = pytest.mark.db
 
@@ -45,7 +45,19 @@ def entities_of_a(client_a) -> dict[str, str]:
         f"/api/documents/{document['id']}/links",
         {"target_type": "property", "target_id": setup["property"]["id"]},
     )
+    cost = create(
+        client_a,
+        "/api/acquisition-costs",
+        {"property_id": setup["property"]["id"], "kind": "notary", "amount": "1200.00"},
+    )
+    deposit = create(
+        client_a,
+        f"/api/tenancies/{setup['tenancy']['id']}/deposit-received",
+        {"amount": "950.00", "received_on": "2024-07-01"},
+    )
     return {
+        "cost": cost["id"],
+        "deposit": deposit["id"],
         "owner": owner["id"],
         "property": setup["property"]["id"],
         "unit": setup["unit"]["id"],
@@ -106,11 +118,32 @@ WRITES = [
         "/api/acquisition-costs",
         {"property_id": "{property}", "kind": "notary", "amount": "1.00"},
     ),
+    ("PATCH", "/api/acquisition-costs/{cost}", {"amount": "1.00"}),
+    ("PATCH", "/api/acquisition-costs/{cost}", {"document_id": "{document}"}),
+    ("DELETE", "/api/acquisition-costs/{cost}", None),
     ("POST", "/api/units", {"property_id": "{property}", "label": "WE 9", "floor_area_m2": "1.00"}),
     ("PATCH", "/api/units/{unit}", {"label": "x"}),
     ("PATCH", "/api/tenants/{tenant}", {"phone": "1"}),
     ("POST", "/api/tenants/{tenant}/erase", {}),
+    ("PATCH", "/api/tenancies/{tenancy}", {"deposit_bank": "x"}),
+    (
+        "PUT",
+        "/api/tenancies/{tenancy}/parties",
+        {"parties": [{"tenant_id": "{tenant}", "role": "primary"}]},
+    ),
     ("POST", "/api/tenancies/{tenancy}/corrections/move-in", {"new_date": "2024-07-02"}),
+    ("POST", "/api/tenancies/{tenancy}/corrections/signed-on", {"new_date": "2024-06-01"}),
+    (
+        "POST",
+        "/api/tenancies/{tenancy}/corrections/notice",
+        {"given_by": "tenant", "given_on": "2026-01-01", "ends_on": "2026-03-31"},
+    ),
+    ("POST", "/api/tenancies/{tenancy}/corrections/move-out", {"new_date": "2026-01-01"}),
+    (
+        "POST",
+        "/api/tenancies/{tenancy}/deposits/{deposit}/corrections",
+        {"amount": "1.00", "received_on": "2024-07-01"},
+    ),
     (
         "POST",
         "/api/tenancies/{tenancy}/deposit-received",
@@ -119,6 +152,7 @@ WRITES = [
     ("POST", "/api/tenancies/{tenancy}/end", {"end_date": "2026-01-01"}),
     ("POST", "/api/rent-schedule/{row}/corrections", {"cold_rent": "1.00"}),
     ("PATCH", "/api/loans/{loan}", {"lender": "x"}),
+    ("POST", "/api/loans/{loan}/corrections/disbursement", {"new_date": "2024-04-29"}),
     ("POST", "/api/loans", {"$loan_body": "{property}"}),
     ("PUT", "/api/documents/{document}/typing", {"typing": {"type": "other"}}),
     (
@@ -159,6 +193,39 @@ def test_writes_to_another_workspace_are_404_and_change_nothing(entities_of_a, c
         assert response.status_code == 404, (method, path, response.text)
     assert ok(client_a.get("/api/events")) == before
     assert ok(client_b.get("/api/events")) == []
+
+
+def test_another_workspaces_document_cannot_become_a_beleg(entities_of_a, client_b):
+    prop = create(client_b, "/api/properties", property_body())
+    cost = create(
+        client_b,
+        "/api/acquisition-costs",
+        {"property_id": prop["id"], "kind": "notary", "amount": "1.00"},
+    )
+    response = client_b.patch(
+        f"/api/acquisition-costs/{cost['id']}", json={"document_id": entities_of_a["document"]}
+    )
+    assert (response.status_code, response.json()["entity_type"]) == (404, "document")
+    assert ok(client_b.get(f"/api/properties/{prop['id']}/acquisition-costs")) == [cost]
+
+
+def test_another_workspaces_deposit_receipt_cannot_be_corrected(entities_of_a, client_b):
+    tenancy = flat(client_b)["tenancy"]
+    response = client_b.post(
+        f"/api/tenancies/{tenancy['id']}/deposits/{entities_of_a['deposit']}/corrections",
+        json={"amount": "1.00", "received_on": "2024-07-01"},
+    )
+    assert (response.status_code, response.json()["entity_type"]) == (404, "deposit_receipt")
+
+
+def test_another_workspaces_tenant_cannot_become_a_party(entities_of_a, client_b):
+    tenancy = flat(client_b)["tenancy"]
+    response = client_b.put(
+        f"/api/tenancies/{tenancy['id']}/parties",
+        json={"parties": [{"tenant_id": entities_of_a["tenant"], "role": "primary"}]},
+    )
+    assert (response.status_code, response.json()["entity_type"]) == (404, "tenant")
+    assert ok(client_b.get(f"/api/tenancies/{tenancy['id']}")) == tenancy
 
 
 def test_lists_are_per_workspace(entities_of_a, client_b):

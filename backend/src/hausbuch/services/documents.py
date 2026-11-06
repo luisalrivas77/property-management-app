@@ -24,7 +24,6 @@ from hausbuch.db.tables import property_ as property_table
 from hausbuch.db.tables import property_acquisition_cost as cost_table
 from hausbuch.db.tables import property_price_split as split_table
 from hausbuch.db.tables import tenancy as tenancy_table
-from hausbuch.db.tables import tenancy_tenant as tenancy_tenant_table
 from hausbuch.db.tables import unit as unit_table
 from hausbuch.rules import retention
 from hausbuch.schemas.api import LinkTargetRef, RelatedDocument
@@ -51,6 +50,7 @@ from hausbuch.storage import BlobStore, blob_key
 from .context import CommandContext
 from .errors import NotFoundError
 from .events import append_event
+from .parties import tenancies_ever_of
 
 # The document_file.media_type CHECK, so a bad value is refused before any SQL.
 _MEDIA_TYPE = re.compile(r"[a-z]+/[a-z0-9.+-]+")
@@ -466,12 +466,8 @@ def document_retention_input(conn: Connection, document_id: UUID) -> DocumentRet
     for link in links:
         ids[link.target_type].add(link.target_id)
 
-    tenancy_ids = ids[LinkTarget.TENANCY] | _scalars(
-        conn,
-        select(tenancy_tenant_table.c.tenancy_id).where(
-            tenancy_tenant_table.c.tenant_id.in_(ids[LinkTarget.TENANT])
-        ),
-    )
+    # A linked tenant reaches every tenancy they were ever a party of (parties.py).
+    tenancy_ids = ids[LinkTarget.TENANCY] | tenancies_ever_of(conn, ids[LinkTarget.TENANT])
     unit_ids = ids[LinkTarget.UNIT] | _scalars(
         conn,
         select(tenancy_table.c.unit_id).where(tenancy_table.c.id.in_(ids[LinkTarget.TENANCY])),

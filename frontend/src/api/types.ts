@@ -165,6 +165,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/acquisition-costs/{cost_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Acquisition Cost Remove
+         * @description Delete a row entered by mistake; property.acquisition_cost_removed keeps what it said.
+         */
+        delete: operations["acquisition_cost_remove_api_acquisition_costs__cost_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Acquisition Cost Update
+         * @description Change a Nebenkosten row; document_id sets, swaps or (null) clears its Beleg.
+         */
+        patch: operations["acquisition_cost_update_api_acquisition_costs__cost_id__patch"];
+        trace?: never;
+    };
     "/api/properties/{property_id}/price-splits": {
         parameters: {
             query?: never;
@@ -474,6 +498,31 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
+        /**
+         * Tenancy Update
+         * @description Befristung, Mietmodell and Kaution; the milestones change through corrections.
+         */
+        patch: operations["tenancy_update_api_tenancies__tenancy_id__patch"];
+        trace?: never;
+    };
+    "/api/tenancies/{tenancy_id}/parties": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Tenancy Set Parties
+         * @description Replace the parties (add, remove, change the primary). 422 rule_violation
+         *     tenancy.exactly_one_primary / tenancy.no_tenant, 404 tenant for an unknown one.
+         */
+        put: operations["tenancy_set_parties_api_tenancies__tenancy_id__parties_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
         patch?: never;
         trace?: never;
     };
@@ -488,6 +537,66 @@ export interface paths {
         put?: never;
         /** Tenancy Correct Move In */
         post: operations["tenancy_correct_move_in_api_tenancies__tenancy_id__corrections_move_in_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tenancies/{tenancy_id}/corrections/signed-on": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tenancy Correct Signed On
+         * @description The contract date (tenancy.created); also records one that was left empty.
+         */
+        post: operations["tenancy_correct_signed_on_api_tenancies__tenancy_id__corrections_signed_on_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tenancies/{tenancy_id}/corrections/notice": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tenancy Correct Notice
+         * @description The notice already given (tenancy.notice_given); 409 if there is none.
+         */
+        post: operations["tenancy_correct_notice_api_tenancies__tenancy_id__corrections_notice_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tenancies/{tenancy_id}/corrections/move-out": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tenancy Correct Move Out
+         * @description The move-out date (tenancy.ended); 409 if the tenancy has not ended.
+         */
+        post: operations["tenancy_correct_move_out_api_tenancies__tenancy_id__corrections_move_out_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -525,6 +634,28 @@ export interface paths {
         get: operations["tenancy_deposits_api_tenancies__tenancy_id__deposits_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tenancies/{tenancy_id}/deposits/{event_id}/corrections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tenancy Correct Deposit
+         * @description Correct one receipt from GET .../deposits (its event_id): the correcting event, or the
+         *     receipt itself when nothing changes. 404 deposit_receipt for an id that is not one of this
+         *     tenancy's receipts, 409 for one already corrected.
+         */
+        post: operations["tenancy_correct_deposit_api_tenancies__tenancy_id__deposits__event_id__corrections_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -697,6 +828,26 @@ export interface paths {
         head?: never;
         /** Loan Update */
         patch: operations["loan_update_api_loans__loan_id__patch"];
+        trace?: never;
+    };
+    "/api/loans/{loan_id}/corrections/disbursement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Loan Correct Disbursement
+         * @description Correct the payout (loan.disbursed): date and/or principal. The schedule follows.
+         */
+        post: operations["loan_correct_disbursement_api_loans__loan_id__corrections_disbursement_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/loans/{loan_id}/schedule": {
@@ -1250,6 +1401,21 @@ export interface components {
          */
         AcquisitionCostKind: "real_estate_transfer_tax" | "notary" | "land_registry" | "broker" | "other";
         /**
+         * AcquisitionCostPatch
+         * @description PATCH /acquisition-costs/{id}: null clears paid_on, the Beleg (document_id) or the note.
+         */
+        AcquisitionCostPatch: {
+            kind?: components["schemas"]["AcquisitionCostKind"];
+            /** Amount */
+            amount?: string;
+            /** Paid On */
+            paid_on?: string | null;
+            /** Document Id */
+            document_id?: string | null;
+            /** Note */
+            note?: string | null;
+        };
+        /**
          * ActorType
          * @enum {string}
          */
@@ -1406,6 +1572,17 @@ export interface components {
              * Format: date
              */
             received_on: string;
+        };
+        /**
+         * DisbursementCorrection
+         * @description POST /loans/{id}/corrections/disbursement: the payout date and/or the principal; an
+         *     absent (or null) field keeps the recorded value.
+         */
+        DisbursementCorrection: {
+            /** New Date */
+            new_date?: string | null;
+            /** Principal */
+            principal?: string | null;
         };
         /**
          * Document
@@ -1721,7 +1898,7 @@ export interface components {
          * EventType
          * @enum {string}
          */
-        EventType: "owner.created" | "owner.updated" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.price_split_recorded" | "property.price_split_selected" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked";
+        EventType: "owner.created" | "owner.updated" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked";
         /**
          * ExtractionSource
          * @enum {string}
@@ -2572,6 +2749,16 @@ export interface components {
             deposit_iban?: string | null;
             initial_rent?: components["schemas"]["InitialRent"] | null;
         };
+        /**
+         * TenancyPartiesBody
+         * @description PUT /tenancies/{id}/parties: the whole list (exactly one primary; service rule).
+         */
+        TenancyPartiesBody: {
+            /** Parties */
+            parties: components["schemas"]["TenancyParty"][];
+            /** Effective Date */
+            effective_date?: string | null;
+        };
         /** TenancyParty */
         TenancyParty: {
             /**
@@ -2580,6 +2767,23 @@ export interface components {
              */
             tenant_id: string;
             role: components["schemas"]["TenancyRole"];
+        };
+        /**
+         * TenancyPatch
+         * @description PATCH /tenancies/{id}: the non-milestone fields. Move-in, move-out, notice and contract
+         *     date change through their corrections, the parties through PUT .../parties.
+         */
+        TenancyPatch: {
+            /** Fixed Term Until */
+            fixed_term_until?: string | null;
+            rent_model?: components["schemas"]["RentModel"];
+            /** Deposit Amount */
+            deposit_amount?: string;
+            deposit_form?: components["schemas"]["DepositForm"];
+            /** Deposit Bank */
+            deposit_bank?: string | null;
+            /** Deposit Iban */
+            deposit_iban?: string | null;
         };
         /**
          * TenancyRole
@@ -3239,6 +3443,70 @@ export interface operations {
             };
         };
     };
+    acquisition_cost_remove_api_acquisition_costs__cost_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cost_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    acquisition_cost_update_api_acquisition_costs__cost_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cost_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcquisitionCostPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcquisitionCost"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     price_splits_list_api_properties__property_id__price_splits_get: {
         parameters: {
             query?: never;
@@ -3880,7 +4148,182 @@ export interface operations {
             };
         };
     };
+    tenancy_update_api_tenancies__tenancy_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenancy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TenancyPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Tenancy"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    tenancy_set_parties_api_tenancies__tenancy_id__parties_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenancy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TenancyPartiesBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Tenancy"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     tenancy_correct_move_in_api_tenancies__tenancy_id__corrections_move_in_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenancy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DateCorrection"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Tenancy"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    tenancy_correct_signed_on_api_tenancies__tenancy_id__corrections_signed_on_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenancy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DateCorrection"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Tenancy"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    tenancy_correct_notice_api_tenancies__tenancy_id__corrections_notice_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenancy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NoticeBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Tenancy"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    tenancy_correct_move_out_api_tenancies__tenancy_id__corrections_move_out_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -3968,6 +4411,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DepositReceipt"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    tenancy_correct_deposit_api_tenancies__tenancy_id__deposits__event_id__corrections_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenancy_id: string;
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DepositReceivedBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Event"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
@@ -4299,6 +4778,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["LoanPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Loan"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    loan_correct_disbursement_api_loans__loan_id__corrections_disbursement_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                loan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DisbursementCorrection"];
             };
         };
         responses: {

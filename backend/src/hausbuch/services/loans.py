@@ -1,7 +1,8 @@
 """Loan commands: current-state row plus loan.* events in the same transaction (D4).
 
 The repayment schedule is computed from the stored terms on every read, never stored (D10).
-Principal and disbursement date are the loan.disbursed milestone, so update_loan leaves them.
+Principal and disbursement date are the loan.disbursed milestone, so update_loan leaves them;
+they change only through correct_disbursement, which appends a correcting loan.disbursed.
 Loan events carry the property's History scope.
 """
 
@@ -21,7 +22,7 @@ from hausbuch.schemas.loan import Loan, LoanCreate, LoanSchedule, LoanTerms
 
 from .context import CommandContext
 from .errors import NotFoundError
-from .events import append_event, diff_changes
+from .events import append_event, diff_changes, latest_in_chain, milestone_root
 from .iban import protect_iban
 from .lookup import require_row
 from .owners import UNSET, Unset
@@ -152,6 +153,54 @@ def update_loan(
         loan_id,
         Updated(changes=changes),
         property_id=updated.property_id,
+    )
+    return updated
+
+
+def correct_disbursement(
+    ctx: CommandContext,
+    loan_id: UUID,
+    *,
+    new_date: date | None = None,
+    principal: Decimal | None = None,
+) -> Loan:
+    """Correct the loan.disbursed milestone: the payout date and/or the principal (None keeps
+    the recorded value). Updates the row, so the schedule follows it, and appends a correcting
+    loan.disbursed against the latest event of its chain. The loan as a whole must pass
+    create's rules, and it cannot be paid out before its contract date (loan.created).
+    No-op (no write, no event) if nothing changes."""
+    row = require_row(ctx.conn, loan_table, EntityType.LOAN, loan_id, for_update=True)
+    current = _to_loan(row)
+    flat = _flat(current)
+    changes = {
+        "disbursed_on": current.terms.disbursed_on if new_date is None else new_date,
+        "principal": current.terms.principal if principal is None else principal,
+    }
+    LoanCreate.model_validate({name: flat[name] for name in _CREATE_FIELDS} | changes)
+    if all(flat[name] == value for name, value in changes.items()):
+        return current
+    signed = latest_in_chain(ctx.conn, milestone_root(ctx.conn, EventType.LOAN_CREATED, loan_id).id)
+    if signed.effective_date is not None and signed.effective_date > changes["disbursed_on"]:
+        raise ValueError("a loan cannot be paid out before its contract is signed")
+
+    latest = latest_in_chain(
+        ctx.conn, milestone_root(ctx.conn, EventType.LOAN_DISBURSED, loan_id).id
+    )
+    updated_row = ctx.conn.execute(
+        update(loan_table)
+        .where(loan_table.c.id == loan_id)
+        .values(**changes, updated_at=ctx.now)
+        .returning(*loan_table.c)
+    ).one()
+    updated = _to_loan(updated_row)
+    append_event(
+        ctx,
+        EventType.LOAN_DISBURSED,
+        loan_id,
+        LoanDisbursed(amount=updated.terms.principal),
+        property_id=updated.property_id,
+        effective_date=updated.terms.disbursed_on,
+        corrects_event_id=latest.id,
     )
     return updated
 

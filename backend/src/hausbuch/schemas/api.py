@@ -13,10 +13,10 @@ services' UNSET convention).
 
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Any, Literal, Self
 from uuid import UUID
 
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from .common import (
     Area,
@@ -38,10 +38,10 @@ from .document import (
     ManualDocumentFields,
     RetentionResult,
 )
-from .enums import LinkTarget, PropertyKind
+from .enums import AcquisitionCostKind, DepositForm, LinkTarget, PropertyKind, RentModel
 from .loan import LoanCreate
 from .property import Address, OwnerShare, reject_raw_tax_number
-from .tenancy import InitialRent, TenancyCreate
+from .tenancy import InitialRent, TenancyCreate, TenancyParty
 
 # Validation errors never echo input (spec amendment 1): bodies that carry a tax reference or
 # an IBAN hide it from the error's text, like their Create models.
@@ -124,6 +124,16 @@ class PropertyPatch(Patch):
     build_year: Year = Field(default=None)
 
 
+class AcquisitionCostPatch(Patch):
+    """PATCH /acquisition-costs/{id}: null clears paid_on, the Beleg (document_id) or the note."""
+
+    kind: AcquisitionCostKind = Field(default=None)
+    amount: PositiveMoney = Field(default=None)
+    paid_on: date | None = None
+    document_id: UUID | None = None
+    note: str | None = None
+
+
 class UnitPatch(Patch):
     label: str = Field(default=None, min_length=1, max_length=50)
     floor_area_m2: Area = Field(default=None)
@@ -153,6 +163,20 @@ class LoanPatch(Patch):
     account_iban: IbanInput | None = None  # write-only; null removes it
 
 
+class TenancyPatch(Patch):
+    """PATCH /tenancies/{id}: the non-milestone fields. Move-in, move-out, notice and contract
+    date change through their corrections, the parties through PUT .../parties."""
+
+    model_config = _HIDE_INPUT
+
+    fixed_term_until: date | None = None
+    rent_model: RentModel = Field(default=None)
+    deposit_amount: NonNegativeMoney = Field(default=None)
+    deposit_form: DepositForm = Field(default=None)
+    deposit_bank: str | None = None
+    deposit_iban: IbanInput | None = None  # write-only; null removes it
+
+
 class RentRowCorrection(Patch):
     """POST /rent-schedule/{row_id}/corrections: the correction row's values; an absent field
     keeps the wrong row's value (correct_rent_row)."""
@@ -171,6 +195,20 @@ class NotarizedOnCorrection(Schema):
     purchase_price: PositiveMoney | None = None  # None = keep the recorded price
 
 
+class DisbursementCorrection(Schema):
+    """POST /loans/{id}/corrections/disbursement: the payout date and/or the principal; an
+    absent (or null) field keeps the recorded value."""
+
+    new_date: date | None = None
+    principal: PositiveMoney | None = None
+
+    @model_validator(mode="after")
+    def _something(self) -> Self:
+        if self.new_date is None and self.principal is None:
+            raise ValueError("give new_date, principal or both")
+        return self
+
+
 class DateCorrection(Schema):
     """Corrects a milestone date: purchase date (Übergang) or move-in."""
 
@@ -180,6 +218,13 @@ class DateCorrection(Schema):
 class OwnershipBody(Schema):
     shares: list[OwnerShare] = Field(min_length=1)  # must sum to exactly 1 (service rule)
     effective_date: date | None = None
+
+
+class TenancyPartiesBody(Schema):
+    """PUT /tenancies/{id}/parties: the whole list (exactly one primary; service rule)."""
+
+    parties: list[TenancyParty] = Field(min_length=1)
+    effective_date: date | None = None  # from when, if known
 
 
 class DepositReceivedBody(Schema):
