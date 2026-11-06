@@ -47,8 +47,6 @@ _FORMS: dict[ValueKind, str] = {
     "text": "text",
     "text_list": "list",
 }
-# Field meanings that carry an internal note in schemas/extraction.py.
-_MEANINGS = {"title": "a short title for the document, in German"}
 
 
 @dataclass(frozen=True)
@@ -106,7 +104,7 @@ def field_list(kind: ExtractionKind) -> str:
     model = EXTRACTION_MODELS[kind]
     lines = ["Fields:"]
     for name, info in model.model_fields.items():
-        meaning = _MEANINGS.get(name, info.description or name)
+        meaning = info.description or name
         lines.append(f"{name}: {meaning} ({_FORMS[value_kind(model, name)]})")
     return "\n".join(lines)
 

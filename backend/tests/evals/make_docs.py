@@ -168,7 +168,7 @@ DOCS: list[Doc] = [
     Doc(
         name="rechnung_notar",
         type="invoice",
-        subtype=None,
+        subtype="cost_basis_evidence",
         kind="invoice",
         pages=[
             [
@@ -196,9 +196,40 @@ DOCS: list[Doc] = [
         },
     ),
     Doc(
+        # D35: a Grundschuld bill is a financing cost, not purchase-cost evidence.
+        name="rechnung_notar_grundschuld",
+        type="invoice",
+        subtype=None,
+        kind="invoice",
+        pages=[
+            [
+                "Notar Dr. Max Beispiel, Marktplatz 1, 12345 Musterstadt",
+                "Kostenrechnung Nr. 2026-0457 vom 03.03.2026",
+                "zur Urkunde 1235/2026 (Grundschuldbestellung mit ZV-Unterwerfung)",
+                "",
+                "Beurkundungsgebühr                   410,00 EUR",
+                "Auslagen                              40,00 EUR",
+                "Netto                                450,00 EUR",
+                "Umsatzsteuer 19 %                     85,50 EUR",
+                "Gesamtbetrag                         535,50 EUR",
+                "",
+                f"Zahlbar bis 17.03.2026 auf {IBAN_B}.",
+            ]
+        ],
+        expected={
+            "sender": "Notar Dr. Max Beispiel",
+            "amount_total": "535.50",
+            "amount_net": "450.00",
+            "reference": "2026-0457",
+            "iban": "DE02120300000000202051",
+            "due_on": "2026-03-17",
+            "document_date": "2026-03-03",
+        },
+    ),
+    Doc(
         name="grunderwerbsteuerbescheid",
         type="bescheid",
-        subtype=None,
+        subtype="cost_basis_evidence",
         kind="bescheid",
         pages=[
             [

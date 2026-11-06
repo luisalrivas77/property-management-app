@@ -56,7 +56,7 @@ class _Typing(Schema):
 
     # Never in events (D5). The one field the model writes itself rather than copies (D36):
     # its words are usually not in the cited quote, so it parses at medium confidence. The
-    # meaning the model sees is ai.requests._MEANINGS["title"] plus the rule in extract.md.
+    # model sees this description plus the rule in extract.md.
     title: ExtractedValue = ev(
         "text", "a short German title, two to six words naming what the document is"
     )
