@@ -264,7 +264,9 @@ and reviewed by a reviewer agent; every review finding was fixed or is listed be
    retried. Reviewed (ship, no fix scope), merged as #21 (`655bf40`), live as
    `api:655bf40bd355` (roll back to `api:aa298bb0752f`; no migration). Known limit: the
    quirk landing on a request's second attempt (after a 503) still raises, rare and loud.
-   The next real-bucket run of `test_real_bucket_honours_if_none_match` is its live check.
+   Live check passed the same day: Luis ran the real-bucket tests from the fixed code and
+   `test_real_bucket_honours_if_none_match` (refused overwrite, then read back) passed, as
+   did every other real-bucket test.
 
 ### Known gaps (not yet built)
 
