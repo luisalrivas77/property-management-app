@@ -241,7 +241,9 @@ def declare_balances(
         )
         .returning(*_IMPORT_COLUMNS)
     ).one()
-    return _check(ctx, account, row, announce=True)
+    # Compared with the row as it was before this declaration, not the reset one: an
+    # identical declaration (a double click, a retry) must not count as becoming reconciled.
+    return _check(ctx, account, row, announce=True, before=current)
 
 
 def recheck_account(ctx: CommandContext, account_id: UUID, *, skip: UUID | None = None) -> None:
@@ -266,10 +268,16 @@ def _check(
     *,
     announce: bool,
     file_error: str | None = None,
+    before: Row | None = None,
 ) -> StatementImport:
     """Reconcile one import against the stored window and store the result. The event is
     written when the result changed, or always when `announce` (a new import or a new
-    declaration). Nothing is announced while no closing balance is declared (pending)."""
+    declaration). Nothing is announced while no closing balance is declared (pending).
+
+    `before`: the row as it was before the caller's own update (declare_balances resets the
+    status first); "changed" is judged against it, so the hook fires only on a real change.
+    """
+    before = before if before is not None else row
     if row.first_booking_on is None:  # no lines (a PDF read in a later step)
         return _to_import(row)
     sums = rules.window_sums(
@@ -301,8 +309,8 @@ def _check(
         "computed_opening": result.computed_opening,
         "computed_closing": result.computed_closing,
     }
-    changed = any(getattr(row, name) != value for name, value in values.items())
-    if changed:
+    changed = any(getattr(before, name) != value for name, value in values.items())
+    if any(getattr(row, name) != value for name, value in values.items()):
         row = ctx.conn.execute(
             update(import_table)
             .where(import_table.c.id == row.id)
@@ -335,7 +343,11 @@ def _on_reconciled(ctx: CommandContext, import_id: UUID) -> None:
     matched. Step 4 enqueues `match_import(import_id)` here, in the same transaction, so the
     job commits with the result. Lines of an import that is not reconciled are never
     matched (§3.4); `match_import` must re-check the status itself, since a later import or
-    merge can turn a reconciled import unreconciled again."""
+    merge can turn a reconciled import unreconciled again.
+
+    It fires once per change of result, not once per import: an import that stays
+    reconciled while its computed balances move (an anchor change, a merge) fires again, so
+    the job must be idempotent per import (match only lines not yet matched)."""
 
 
 # --- Possible duplicates ---------------------------------------------------------------

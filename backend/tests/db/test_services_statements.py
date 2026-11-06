@@ -251,6 +251,27 @@ def test_csv_waits_for_a_declared_balance_then_reconciles(
     ]
     unreconciled = read(ws, list_events, entity_id=imported.id)[2]
     assert unreconciled.payload["difference"] == "0.36"
+    assert hook_calls == [imported.id, imported.id]  # reconciled twice, with a fault between
+
+
+def test_the_same_declaration_again_does_not_reconcile_twice(
+    run, imp, read, fresh_workspaces, hook_calls
+):
+    """A double click or a retried request declares the identical balance again. The
+    import was reconciled and still is: the declaration is recorded (an event), but the
+    step 4 hook, which queues matching, must not fire a second time."""
+    ws, _ = fresh_workspaces
+    account = _account(run, ws)
+    imported = imp(ws, account.id, CSV_BYTES, media_type="text/csv")
+    run(ws, declare_balances, imported.id, DeclareBalanceBody(closing_balance=CLOSING))
+    again = run(ws, declare_balances, imported.id, DeclareBalanceBody(closing_balance=CLOSING))
+    assert again.status is ImportStatus.RECONCILED
+    assert hook_calls == [imported.id]
+    assert _types(read, ws, imported.id) == [
+        EventType.STATEMENT_IMPORTED,
+        EventType.STATEMENT_RECONCILED,
+        EventType.STATEMENT_RECONCILED,
+    ]
 
 
 def test_a_camt_import_takes_no_declared_balance(run, imp, fresh_workspaces):

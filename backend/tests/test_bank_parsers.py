@@ -172,3 +172,25 @@ def test_check_archive_members_limits():
         with pytest.raises(RuleError) as caught:
             rules.check_archive_members(bad)
         assert caught.value.code == rules.ARCHIVE_REJECTED
+
+
+def _corrupted(method: int) -> bytes:
+    """A one-member archive whose compressed stream is damaged after the local header."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", method) as archive:
+        archive.writestr("2026.04.01.xml", b"<Document>" + b"<x/>" * 400 + b"</Document>")
+    data = bytearray(buffer.getvalue())
+    start = 30 + len("2026.04.01.xml")  # the local header, then the compressed data
+    for i in range(start + 4, start + 24):
+        data[i] ^= 0xFF
+    return bytes(data)
+
+
+@pytest.mark.parametrize(
+    "method", [zipfile.ZIP_DEFLATED, zipfile.ZIP_LZMA, zipfile.ZIP_BZIP2], ids=str
+)
+def test_a_corrupt_member_stream_is_the_files_error(method):
+    """zlib.error and lzma.LZMAError are not OSError subclasses: uncaught, they were a 500."""
+    with pytest.raises(RuleError) as caught:
+        camt.read_camt(_corrupted(method))
+    assert caught.value.code == rules.ARCHIVE_REJECTED
