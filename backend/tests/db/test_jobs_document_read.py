@@ -5,6 +5,7 @@ replaced by recorders, so the tests assert exactly what the job hands over.
 All model responses here are synthetic (hausbuch.ai.fake), never recordings of the real API.
 """
 
+import inspect
 import io
 import json
 import logging
@@ -22,6 +23,7 @@ from hausbuch.db.tables import ai_call as ai_call_table
 from hausbuch.db.tables import proposal as proposal_table
 from hausbuch.db.tables import workspace as workspace_table
 from hausbuch.jobs import document_read as job
+from hausbuch.jobs import tasks
 from hausbuch.jobs.document_read import JobDeps, RetryLater, run_document_read
 from hausbuch.schemas.enums import ActorType, DocumentSource, DocumentType
 from hausbuch.schemas.extraction import EXTRACTION_MODELS, ExtractionKind
@@ -109,7 +111,7 @@ def setup(app_engine, fresh_workspaces, blob_store, tmp_path):
     """setup(data, media_type, client, **settings) -> (deps, ws, document_id, proposal_id)."""
     ws, _ = fresh_workspaces
 
-    def _setup(data: bytes, client, *, media_type="application/pdf", **settings):
+    def _setup(data: bytes, client, *, media_type="application/pdf", tenant_data=False, **settings):
         with workspace_transaction(app_engine, ws) as conn:
             doc = upload_document(
                 new_command(conn, ws, USER, now=NOW),
@@ -118,7 +120,7 @@ def setup(app_engine, fresh_workspaces, blob_store, tmp_path):
                 media_type=media_type,
                 source=DocumentSource.UPLOAD,
             )
-            proposal_id = _new_proposal(conn, ws, doc.id)
+            proposal_id = _new_proposal(conn, ws, doc.id, tenant_data=tenant_data)
         deps = JobDeps(
             engine=app_engine,
             settings=_settings(tmp_path, **settings),
@@ -131,10 +133,10 @@ def setup(app_engine, fresh_workspaces, blob_store, tmp_path):
     return _setup
 
 
-def _new_proposal(conn, ws, document_id) -> uuid.UUID:
+def _new_proposal(conn, ws, document_id, *, tenant_data=False) -> uuid.UUID:
     return conn.execute(
         insert(proposal_table)
-        .values(workspace_id=ws, document_id=document_id)
+        .values(workspace_id=ws, document_id=document_id, contains_tenant_data=tenant_data)
         .returning(proposal_table.c.id)
     ).scalar_one()
 
@@ -244,21 +246,51 @@ def test_gate_1_ai_disabled_sends_nothing(setup, recorder, app_engine):
 
 
 def test_gate_2_marked_upload_is_blocked_before_any_call(setup, recorder, app_engine):
+    """The flag is read from the proposal row (D16 gate 2): with the workspace setting off,
+    a proposal marked as tenant data makes zero model calls and writes no ai_call row."""
     client = FakeModelClient()
-    deps, ws, doc, proposal = setup(_pdf(1), client)
-    _run(deps, ws, doc, proposal, contains_tenant_data=True)
+    deps, ws, doc, proposal = setup(_pdf(1), client, tenant_data=True)
+    _run(deps, ws, doc, proposal)
     assert client.requests == []
-    [(_, _, kw)] = recorder.failures
-    assert kw == {"error_code": "ai.blocked_tenant_data", "ai_call_id": None}
+    assert _calls(app_engine, ws, doc) == []
+    [(_, proposal_id, kw)] = recorder.failures
+    assert (proposal_id, kw) == (
+        proposal,
+        {"error_code": "ai.blocked_tenant_data", "ai_call_id": None},
+    )
 
 
 def test_gate_2_lets_a_marked_upload_through_when_allowed(setup, recorder, app_engine):
     client = FakeModelClient([text_response(_classify("letter"))])
-    deps, ws, doc, proposal = setup(_pdf(1), client)
+    deps, ws, doc, proposal = setup(_pdf(1), client, tenant_data=True)
     _allow_tenant_documents(app_engine, ws)
-    _run(deps, ws, doc, proposal, contains_tenant_data=True)
+    _run(deps, ws, doc, proposal)
     assert recorder.failures == []
     assert len(recorder.results) == 1
+
+
+def test_gate_2_uses_the_flag_of_the_proposal_it_serves(setup, recorder, app_engine):
+    """A job whose proposal is no longer pending serves the document's newest pending one,
+    and that proposal's flag decides gate 2, not the original's."""
+    client = FakeModelClient()
+    deps, ws, doc, first = setup(_pdf(1), client)
+    with workspace_transaction(app_engine, ws) as conn:
+        conn.execute(
+            update(proposal_table)
+            .where(proposal_table.c.id == first)
+            .values(status="failed", error_code="ai.api_error")
+        )
+        second = _new_proposal(conn, ws, doc, tenant_data=True)
+    _run(deps, ws, doc, first)
+    assert client.requests == []
+    [(_, proposal_id, kw)] = recorder.failures
+    assert (proposal_id, kw["error_code"]) == (second, "ai.blocked_tenant_data")
+
+
+def test_the_task_takes_no_tenant_data_argument():
+    """Nothing can bypass gate 2 by enqueueing with contains_tenant_data=False."""
+    assert "contains_tenant_data" not in inspect.signature(run_document_read).parameters
+    assert "contains_tenant_data" not in inspect.signature(tasks.document_read).parameters
 
 
 @pytest.mark.parametrize(

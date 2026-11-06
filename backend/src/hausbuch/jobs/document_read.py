@@ -119,6 +119,7 @@ class _Original:
     media_type: str
     data: bytes
     tenant_documents_allowed: bool
+    contains_tenant_data: bool  # gate 2: the uploader's flag, from the proposal row only
 
 
 def run_document_read(
@@ -128,7 +129,6 @@ def run_document_read(
     document_id: UUID,
     proposal_id: UUID,
     attempt: int,
-    contains_tenant_data: bool = False,
 ) -> None:
     """One attempt (0 is the first run; Procrastinate's job.attempts). Returns when the
     proposal has its outcome (or there was nothing to do); raises RetryLater otherwise.
@@ -146,7 +146,7 @@ def run_document_read(
             return
         target = original.proposal_id
         log["proposal_id"] = str(target)
-        _read(deps, workspace_id, document_id, original, contains_tenant_data)
+        _read(deps, workspace_id, document_id, original)
     except _Stop as stop:
         failure = (stop.code, stop.ai_call_id)
     except _CallFailed as failed:
@@ -207,9 +207,10 @@ def _load(
     deps: JobDeps, workspace_id: UUID, document_id: UUID, proposal_id: UUID
 ) -> _Original | None:
     with workspace_transaction(deps.engine, workspace_id) as conn:
-        target = _target_proposal(conn, document_id, proposal_id)
-        if target is None:
+        found = _target_proposal(conn, document_id, proposal_id)
+        if found is None:
             return None
+        target, tenant = found
         allowed = conn.execute(
             select(workspace_table.c.ai_tenant_documents).where(
                 workspace_table.c.id == workspace_id
@@ -217,32 +218,36 @@ def _load(
         ).scalar_one()
         if not deps.settings.ai_enabled or deps.model_client is None:
             # Gate 1 needs neither the original nor the model; _read raises _Stop for it.
-            return _Original(target, "", b"", allowed)
+            return _Original(target, "", b"", allowed, tenant)
         media_type = document_service.document_media_type(conn, document_id)
         data = document_service.read_original(conn, deps.blob_store, document_id)
-    return _Original(target, media_type or "", data, allowed)
+    return _Original(target, media_type or "", data, allowed, tenant)
 
 
-def _target_proposal(conn, document_id: UUID, proposal_id: UUID) -> UUID | None:
-    """The proposal this run serves: the given one while it is pending; otherwise the
+def _target_proposal(conn, document_id: UUID, proposal_id: UUID) -> tuple[UUID, bool] | None:
+    """The proposal this run serves, with its tenant-data flag (D16 gate 2, read from the
+    row and never from the job's arguments): the given one while it is pending; otherwise the
     document's newest pending one. A re-run enqueued while this job was still queued
     collapsed into it (queueing lock doc:{id}), so this job reads for the newer proposal."""
-    status = conn.execute(
-        select(proposal_table.c.status).where(
-            proposal_table.c.id == proposal_id, proposal_table.c.document_id == document_id
-        )
-    ).scalar_one_or_none()
-    if status in _PENDING:
-        return proposal_id
-    return conn.execute(
-        select(proposal_table.c.id)
-        .where(
+    columns = (proposal_table.c.id, proposal_table.c.contains_tenant_data)
+    row = conn.execute(
+        select(*columns).where(
+            proposal_table.c.id == proposal_id,
             proposal_table.c.document_id == document_id,
             proposal_table.c.status.in_(_PENDING),
         )
-        .order_by(proposal_table.c.created_at.desc(), proposal_table.c.id.desc())
-        .limit(1)
-    ).scalar_one_or_none()
+    ).first()
+    if row is None:
+        row = conn.execute(
+            select(*columns)
+            .where(
+                proposal_table.c.document_id == document_id,
+                proposal_table.c.status.in_(_PENDING),
+            )
+            .order_by(proposal_table.c.created_at.desc(), proposal_table.c.id.desc())
+            .limit(1)
+        ).first()
+    return None if row is None else (row.id, row.contains_tenant_data)
 
 
 # --- 2. classify and extract ---------------------------------------------------------
@@ -253,12 +258,11 @@ def _read(
     workspace_id: UUID,
     document_id: UUID,
     original: _Original,
-    contains_tenant_data: bool,
 ) -> None:
     settings = deps.settings
     if not settings.ai_enabled or deps.model_client is None:
         raise _Stop(AI_DISABLED)  # gate 1
-    if contains_tenant_data and not original.tenant_documents_allowed:
+    if original.contains_tenant_data and not original.tenant_documents_allowed:
         raise _Stop(BLOCKED_TENANT_DATA)  # gate 2
     try:
         documents.check_media_type(original.media_type)

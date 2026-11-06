@@ -36,7 +36,6 @@ def document_read(
     workspace_id: str,
     document_id: str,
     proposal_id: str,
-    contains_tenant_data: bool = False,
 ) -> None:
     deps: JobDeps = context.additional_context[DEPS_KEY]
     assert context.job is not None
@@ -46,7 +45,6 @@ def document_read(
         document_id=UUID(document_id),
         proposal_id=UUID(proposal_id),
         attempt=context.job.attempts,
-        contains_tenant_data=contains_tenant_data,
     )
 
 
