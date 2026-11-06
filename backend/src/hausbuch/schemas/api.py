@@ -41,7 +41,7 @@ from .document import (
 from .enums import AcquisitionCostKind, DepositForm, LinkTarget, PropertyKind, RentModel
 from .loan import LoanCreate
 from .property import Address, OwnerShare, reject_raw_tax_number
-from .tenancy import InitialRent, TenancyCreate
+from .tenancy import InitialRent, TenancyCreate, TenancyParty
 
 # Validation errors never echo input (spec amendment 1): bodies that carry a tax reference or
 # an IBAN hide it from the error's text, like their Create models.
@@ -218,6 +218,13 @@ class DateCorrection(Schema):
 class OwnershipBody(Schema):
     shares: list[OwnerShare] = Field(min_length=1)  # must sum to exactly 1 (service rule)
     effective_date: date | None = None
+
+
+class TenancyPartiesBody(Schema):
+    """PUT /tenancies/{id}/parties: the whole list (exactly one primary; service rule)."""
+
+    parties: list[TenancyParty] = Field(min_length=1)
+    effective_date: date | None = None  # from when, if known
 
 
 class DepositReceivedBody(Schema):

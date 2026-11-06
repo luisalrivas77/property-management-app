@@ -9,6 +9,8 @@ in the same transaction (D4).
   correct_deposit_received): the row follows and a correcting event repeats the milestone.
   A notice or move-out cannot be withdrawn: a correction keeps the event's type and needs a
   date, so there is nothing to say "it never happened" with.
+- The parties change through set_parties (the whole list, exactly one primary), which
+  appends tenancy.parties_set with tenant ids and roles only (D5).
 - The other fields (Befristung, Mietmodell, Kaution) change through update_tenancy, which
   appends tenancy.updated with old and new values (the deposit account is the landlord's, D5,
   and appears masked only).
@@ -25,7 +27,7 @@ from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
 
-from sqlalchemy import Connection, Row, insert, select, update
+from sqlalchemy import Connection, Row, delete, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
 from hausbuch.db.tables import rent_schedule as rent_table
@@ -45,6 +47,7 @@ from hausbuch.schemas.events import (
     NoticeGiven,
     RentScheduled,
     TenancyCreated,
+    TenancyPartiesSet,
     Updated,
 )
 from hausbuch.schemas.tenancy import (  # InitialRent is re-exported: it used to live here
@@ -284,6 +287,64 @@ def update_tenancy(
     updated = _update_tenancy(ctx, tenancy_id, **values)
     append_event(ctx, EventType.TENANCY_UPDATED, tenancy_id, Updated(changes=changes), **scope)
     return _to_tenancy(ctx.conn, updated)
+
+
+def set_parties(
+    ctx: CommandContext,
+    tenancy_id: UUID,
+    parties: list[TenancyParty],
+    *,
+    effective_date: date | None = None,
+) -> Tenancy:
+    """Replace the tenancy's parties with `parties`: add a tenant, remove one, or make
+    another the primary. Exactly one primary, each tenant once, at least one party. A tenant
+    who joins must exist and not be erased; one who stays may have been erased after move-out.
+    effective_date (optional) is when the change took effect: not before the contract (or
+    the move-in) and not after the move-out. Appends tenancy.parties_set with ids and roles
+    only. No-op if the parties are the same."""
+    require_valid(check_tenancy_parties([p.role for p in parties]), "tenancy parties")
+    tenant_ids = [p.tenant_id for p in parties]
+    if len(set(tenant_ids)) != len(tenant_ids):
+        raise ValueError("each tenant may be a party of a tenancy only once")
+    row, scope = _lock(ctx.conn, tenancy_id)
+    current = _to_tenancy(ctx.conn, row)
+    if effective_date is not None:
+        earliest = current.signed_on or current.start_date
+        if effective_date < earliest or (
+            current.end_date is not None and effective_date > current.end_date
+        ):
+            raise ValueError("a change of parties must fall within the tenancy")
+    before = {(p.tenant_id, p.role) for p in current.parties}
+    if {(p.tenant_id, p.role) for p in parties} == before:
+        return current
+    kept = {p.tenant_id for p in current.parties}
+    _require_tenants(ctx.conn, [t for t in tenant_ids if t not in kept])
+
+    # The primary index is not deferrable, so the rows are replaced rather than updated.
+    ctx.conn.execute(delete(party_table).where(party_table.c.tenancy_id == tenancy_id))
+    ctx.conn.execute(
+        insert(party_table),
+        [
+            {
+                "workspace_id": ctx.workspace_id,
+                "tenancy_id": tenancy_id,
+                "tenant_id": p.tenant_id,
+                "role": p.role.value,
+            }
+            for p in parties
+        ],
+    )
+    updated = _update_tenancy(ctx, tenancy_id)
+    result = _to_tenancy(ctx.conn, updated)
+    append_event(
+        ctx,
+        EventType.TENANCY_PARTIES_SET,
+        tenancy_id,
+        TenancyPartiesSet(parties=result.parties),
+        effective_date=effective_date,
+        **scope,
+    )
+    return result
 
 
 def correct_signed_on(ctx: CommandContext, tenancy_id: UUID, new_date: date) -> Tenancy:

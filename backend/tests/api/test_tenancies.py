@@ -344,6 +344,46 @@ def test_contract_date_notice_move_out_and_deposit_corrections(client_a):
     }
 
 
+def test_the_parties_are_replaced_as_a_whole(client_a):
+    setup = flat(client_a)
+    anna = setup["tenant"]["id"]
+    ben = new_tenant(client_a, full_name="Ben Beispiel")["id"]
+    path = f"/api/tenancies/{setup['tenancy']['id']}/parties"
+
+    both = [{"tenant_id": anna, "role": "co_tenant"}, {"tenant_id": ben, "role": "primary"}]
+    changed = ok(client_a.put(path, json={"parties": both, "effective_date": "2025-01-01"}))
+    assert changed["parties"] == [both[1], both[0]]  # primary first
+    event = ok(client_a.get(f"/api/events?entity_id={setup['tenancy']['id']}"))[-1]
+    assert (event["type"], event["effective_date"]) == ("tenancy.parties_set", "2025-01-01")
+    assert "Beispiel" not in str(event)
+
+    for parties, code in (
+        ([{"tenant_id": anna, "role": "co_tenant"}], "tenancy.exactly_one_primary"),
+        (
+            [{"tenant_id": anna, "role": "primary"}, {"tenant_id": ben, "role": "primary"}],
+            "tenancy.exactly_one_primary",
+        ),
+    ):
+        response = client_a.put(path, json={"parties": parties})
+        assert (response.status_code, response.json()["codes"]) == (422, [code])
+    response = client_a.put(path, json={"parties": []})
+    assert (response.status_code, response.json()["error"]) == (422, "validation")
+    response = client_a.put(
+        path, json={"parties": [{"tenant_id": str(uuid4()), "role": "primary"}]}
+    )
+    assert (response.status_code, response.json()["entity_type"]) == (404, "tenant")
+    assert ok(client_a.get(f"/api/tenancies/{setup['tenancy']['id']}")) == changed
+
+    # Anna is no longer a party: her retention hold through this tenancy goes with her row.
+    alone = ok(client_a.put(path, json={"parties": [{"tenant_id": ben, "role": "primary"}]}))
+    assert alone["parties"] == [{"tenant_id": ben, "role": "primary"}]
+    response = client_a.put(
+        f"/api/tenancies/{uuid4()}/parties",
+        json={"parties": [{"tenant_id": ben, "role": "primary"}]},
+    )
+    assert (response.status_code, response.json()["entity_type"]) == (404, "tenancy")
+
+
 def test_a_move_in_correction_moves_the_first_rent_row(client_a):
     """§10.8 item 6 over HTTP: 15.07 -> 01.07; History shows the rent at 01.07, corrected."""
     prop = new_property(client_a)

@@ -1,8 +1,8 @@
 "use client";
 
 // Mietverhältnis (§9.1): parties and terms, the Mietstaffel (superseded rows struck through,
-// "korrigieren" per row, "Mietänderung"), the actions Bearbeiten, Kaution erhalten, Kündigung,
-// Auszug, and the linked documents. The milestones (Vertragsdatum, Einzug, Kündigung, Auszug,
+// "korrigieren" per row, "Mietänderung"), the actions Bearbeiten, Mieter ändern, Kaution
+// erhalten, Kündigung, Auszug, and the linked documents. The milestones (Vertragsdatum, Einzug, Kündigung, Auszug,
 // each Kaution receipt) change only through their corrections, offered once there is
 // something to correct; the page says when a date was corrected (from History, §9.4).
 // Deposits received come from GET …/deposits. A notice or move-out cannot be withdrawn, only
@@ -23,6 +23,7 @@ import { ActionDialog, Breadcrumbs, CorrectedNote, Facts, Loading } from "@/comp
 import { useLoad } from "@/components/useLoad";
 
 import { DepositForm, EditTenancyForm, EndForm, NoticeForm, type NoticeValues } from "./actions";
+import { PartiesForm } from "./PartiesForm";
 import { RentSchedule } from "./RentSchedule";
 
 interface TenancyData {
@@ -176,6 +177,18 @@ function TenancyDetail({ tenancy, unit, property, tenants, onChanged }: TenancyD
           {(close) => (
             <EditTenancyForm
               tenancy={tenancy}
+              onDone={() => {
+                close();
+                changed();
+              }}
+            />
+          )}
+        </ActionDialog>
+        <ActionDialog label="Mieter ändern" title="Mieter ändern">
+          {(close) => (
+            <PartiesForm
+              tenancy={tenancy}
+              tenants={tenants}
               onDone={() => {
                 close();
                 changed();

@@ -126,6 +126,11 @@ WRITES = [
     ("PATCH", "/api/tenants/{tenant}", {"phone": "1"}),
     ("POST", "/api/tenants/{tenant}/erase", {}),
     ("PATCH", "/api/tenancies/{tenancy}", {"deposit_bank": "x"}),
+    (
+        "PUT",
+        "/api/tenancies/{tenancy}/parties",
+        {"parties": [{"tenant_id": "{tenant}", "role": "primary"}]},
+    ),
     ("POST", "/api/tenancies/{tenancy}/corrections/move-in", {"new_date": "2024-07-02"}),
     ("POST", "/api/tenancies/{tenancy}/corrections/signed-on", {"new_date": "2024-06-01"}),
     (
@@ -211,6 +216,16 @@ def test_another_workspaces_deposit_receipt_cannot_be_corrected(entities_of_a, c
         json={"amount": "1.00", "received_on": "2024-07-01"},
     )
     assert (response.status_code, response.json()["entity_type"]) == (404, "deposit_receipt")
+
+
+def test_another_workspaces_tenant_cannot_become_a_party(entities_of_a, client_b):
+    tenancy = flat(client_b)["tenancy"]
+    response = client_b.put(
+        f"/api/tenancies/{tenancy['id']}/parties",
+        json={"parties": [{"tenant_id": entities_of_a["tenant"], "role": "primary"}]},
+    )
+    assert (response.status_code, response.json()["entity_type"]) == (404, "tenant")
+    assert ok(client_b.get(f"/api/tenancies/{tenancy['id']}")) == tenancy
 
 
 def test_lists_are_per_workspace(entities_of_a, client_b):

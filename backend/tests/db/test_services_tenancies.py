@@ -51,6 +51,7 @@ from hausbuch.services.tenancies import (
     record_deposit_received,
     rent_on,
     schedule_rent,
+    set_parties,
     update_tenancy,
 )
 from hausbuch.services.tenants import create_tenant, erase_tenant
@@ -1043,3 +1044,117 @@ def test_correct_deposit_received_corrects_one_receipt(run, read, flat, fresh_wo
         e for e in _events(read, a, tenancy.id) if e.type is EventType.TENANCY_DEPOSIT_RECEIVED
     ]
     assert [e.id for e in deposits] == [first.id, second.id, fixed.id]
+
+
+# --- parties ---------------------------------------------------------------------
+
+
+def _party(tenant_id, role):
+    return TenancyParty(tenant_id=tenant_id, role=role)
+
+
+def test_set_parties_adds_removes_and_swaps_the_primary(app_engine, run, read, flat):
+    a, prop, unit, (anna, ben) = flat
+    tenancy = _create(run, a, _lease(unit, [anna]), initial_rent=None)
+    primary, co = TenancyRole.PRIMARY, TenancyRole.CO_TENANT
+
+    added = run(
+        a,
+        set_parties,
+        tenancy.id,
+        [_party(anna, primary), _party(ben, co)],
+        effective_date=date(2025, 1, 1),
+        now=LATER,
+    )
+    assert added.parties == [_party(anna, primary), _party(ben, co)]
+    assert added.updated_at == LATER and read(a, get_tenancy, tenancy.id) == added
+    event = _events(read, a, tenancy.id)[-1]
+    assert (event.type, event.effective_date) == (EventType.TENANCY_PARTIES_SET, date(2025, 1, 1))
+    assert (event.property_id, event.unit_id) == (prop.id, unit.id)
+    assert event.payload == {
+        "parties": [
+            {"tenant_id": str(anna), "role": "primary"},
+            {"tenant_id": str(ben), "role": "co_tenant"},
+        ]
+    }
+    [entry] = [
+        h for h in read(a, property_history, prop.id) if h.type is EventType.TENANCY_PARTIES_SET
+    ]
+    assert entry.effective_date == date(2025, 1, 1)
+
+    # Ben becomes the primary: the old primary row goes before the new one is written.
+    swapped = run(a, set_parties, tenancy.id, [_party(anna, co), _party(ben, primary)])
+    assert swapped.parties == [_party(ben, primary), _party(anna, co)]
+    assert _events(read, a, tenancy.id)[-1].effective_date is None  # date unknown: no History
+
+    removed = run(a, set_parties, tenancy.id, [_party(ben, primary)])
+    assert removed.parties == [_party(ben, primary)]
+    assert run(a, set_parties, tenancy.id, [_party(ben, primary)]) == removed  # no-op
+    assert len(_events(read, a, tenancy.id)) == 5
+    with workspace_transaction(app_engine, a) as conn:
+        names = conn.execute(
+            text("SELECT payload::text FROM event WHERE entity_id = :id"), {"id": tenancy.id}
+        ).scalars()
+        assert not any("Beispiel" in p for p in names)  # D5: ids and roles only
+
+
+@pytest.mark.parametrize(
+    "roles", [[], ["co_tenant"], ["primary", "primary"]], ids=["none", "no_primary", "two"]
+)
+def test_set_parties_keeps_exactly_one_primary(run, read, flat, roles):
+    a, _, unit, (anna, ben) = flat
+    tenancy = _create(run, a, _lease(unit, [anna]), initial_rent=None)
+    parties = [_party(t, TenancyRole(r)) for t, r in zip((anna, ben), roles, strict=False)]
+    with pytest.raises(RuleViolationError):
+        run(a, set_parties, tenancy.id, parties)
+    assert read(a, get_tenancy, tenancy.id) == tenancy
+
+
+def test_set_parties_refusals_write_nothing(run, read, flat, fresh_workspaces):
+    a, _, unit, (anna, ben) = flat
+    _, b = fresh_workspaces
+    tenancy = _create(run, a, _lease(unit, [anna]), initial_rent=None)
+    primary, co = TenancyRole.PRIMARY, TenancyRole.CO_TENANT
+
+    with pytest.raises(ValueError, match="only once"):
+        run(a, set_parties, tenancy.id, [_party(anna, primary), _party(anna, co)])
+    with pytest.raises(NotFoundError, match="tenant"):
+        run(a, set_parties, tenancy.id, [_party(anna, primary), _party(uuid.uuid4(), co)])
+    with pytest.raises(ValueError, match="within the tenancy"):
+        run(
+            a,
+            set_parties,
+            tenancy.id,
+            [_party(ben, primary)],
+            effective_date=date(2024, 6, 9),  # before the contract date
+        )
+    applicant = run(a, create_tenant, TenantCreate(full_name="Bert"), iban_key=TEST_IBAN_KEY)
+    run(a, erase_tenant, applicant.id)
+    with pytest.raises(ConflictError, match="erased"):
+        run(a, set_parties, tenancy.id, [_party(anna, primary), _party(applicant.id, co)])
+    with pytest.raises(NotFoundError, match="tenancy"):
+        run(b, set_parties, tenancy.id, [_party(ben, primary)])
+
+    assert read(a, get_tenancy, tenancy.id) == tenancy
+    assert len(_events(read, a, tenancy.id)) == 2
+
+
+def test_an_erased_party_may_stay_when_the_primary_changes(run, read, flat):
+    a, _, unit, (anna, ben) = flat
+    lease = _lease(
+        unit,
+        [anna],
+        parties=[_party(anna, TenancyRole.PRIMARY), _party(ben, TenancyRole.CO_TENANT)],
+        start_date=date(2018, 1, 1),
+        end_date=date(2020, 12, 31),
+        signed_on=None,
+    )
+    tenancy = _create(run, a, lease, initial_rent=None)
+    run(a, erase_tenant, ben, on_request=True)
+    swapped = run(
+        a,
+        set_parties,
+        tenancy.id,
+        [_party(anna, TenancyRole.CO_TENANT), _party(ben, TenancyRole.PRIMARY)],
+    )
+    assert swapped.parties[0] == _party(ben, TenancyRole.PRIMARY)

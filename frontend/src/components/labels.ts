@@ -137,6 +137,7 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "tenant.erased": "Mieterdaten gelöscht",
   "tenancy.created": "Mietvertrag unterschrieben",
   "tenancy.updated": "Mietverhältnis geändert",
+  "tenancy.parties_set": "Mieter geändert",
   "tenancy.started": "Einzug",
   "tenancy.rent_scheduled": "Miete",
   "tenancy.deposit_received": "Kaution erhalten",

@@ -505,6 +505,27 @@ export interface paths {
         patch: operations["tenancy_update_api_tenancies__tenancy_id__patch"];
         trace?: never;
     };
+    "/api/tenancies/{tenancy_id}/parties": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Tenancy Set Parties
+         * @description Replace the parties (add, remove, change the primary). 422 rule_violation
+         *     tenancy.exactly_one_primary / tenancy.no_tenant, 404 tenant for an unknown one.
+         */
+        put: operations["tenancy_set_parties_api_tenancies__tenancy_id__parties_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tenancies/{tenancy_id}/corrections/move-in": {
         parameters: {
             query?: never;
@@ -1877,7 +1898,7 @@ export interface components {
          * EventType
          * @enum {string}
          */
-        EventType: "owner.created" | "owner.updated" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked";
+        EventType: "owner.created" | "owner.updated" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked";
         /**
          * ExtractionSource
          * @enum {string}
@@ -2727,6 +2748,16 @@ export interface components {
             /** Deposit Iban */
             deposit_iban?: string | null;
             initial_rent?: components["schemas"]["InitialRent"] | null;
+        };
+        /**
+         * TenancyPartiesBody
+         * @description PUT /tenancies/{id}/parties: the whole list (exactly one primary; service rule).
+         */
+        TenancyPartiesBody: {
+            /** Parties */
+            parties: components["schemas"]["TenancyParty"][];
+            /** Effective Date */
+            effective_date?: string | null;
         };
         /** TenancyParty */
         TenancyParty: {
@@ -4129,6 +4160,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["TenancyPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Tenancy"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    tenancy_set_parties_api_tenancies__tenancy_id__parties_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenancy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TenancyPartiesBody"];
             };
         };
         responses: {

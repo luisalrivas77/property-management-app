@@ -1589,6 +1589,57 @@
         }
       }
     },
+    "/api/tenancies/{tenancy_id}/parties": {
+      "put": {
+        "summary": "Tenancy Set Parties",
+        "description": "Replace the parties (add, remove, change the primary). 422 rule_violation\ntenancy.exactly_one_primary / tenancy.no_tenant, 404 tenant for an unknown one.",
+        "operationId": "tenancy_set_parties_api_tenancies__tenancy_id__parties_put",
+        "parameters": [
+          {
+            "name": "tenancy_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Tenancy Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenancyPartiesBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tenancy"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/tenancies/{tenancy_id}/corrections/move-in": {
       "post": {
         "summary": "Tenancy Correct Move In",
@@ -5177,6 +5228,7 @@
           "tenant.erased",
           "tenancy.created",
           "tenancy.updated",
+          "tenancy.parties_set",
           "tenancy.started",
           "tenancy.rent_scheduled",
           "tenancy.deposit_received",
@@ -7285,6 +7337,37 @@
         ],
         "title": "TenancyCreateRequest",
         "description": "POST /tenancies: TenancyCreate plus the first rent row (create_tenancy's initial_rent)."
+      },
+      "TenancyPartiesBody": {
+        "properties": {
+          "parties": {
+            "items": {
+              "$ref": "#/components/schemas/TenancyParty"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Parties"
+          },
+          "effective_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Date"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "parties"
+        ],
+        "title": "TenancyPartiesBody",
+        "description": "PUT /tenancies/{id}/parties: the whole list (exactly one primary; service rule)."
       },
       "TenancyParty": {
         "properties": {

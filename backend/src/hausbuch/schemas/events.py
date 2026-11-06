@@ -48,6 +48,7 @@ from .enums import (
     RentModel,
 )
 from .property import OwnerShare
+from .tenancy import TenancyParty
 
 # --- Payloads ----------------------------------------------------------------
 
@@ -191,6 +192,13 @@ class DepositReceived(Schema):
     amount: PositiveMoney
 
 
+class TenancyPartiesSet(Schema):
+    """The whole party list after a change (a tenant added or removed, another primary):
+    tenant ids and roles only, never names (D5)."""
+
+    parties: list[TenancyParty] = Field(min_length=1)
+
+
 class NoticeGiven(Schema):
     given_by: Literal["tenant", "landlord"]
     ends_on: date
@@ -278,6 +286,7 @@ class EventType(StrEnum):
 
     TENANCY_CREATED = "tenancy.created"
     TENANCY_UPDATED = "tenancy.updated"
+    TENANCY_PARTIES_SET = "tenancy.parties_set"
     TENANCY_STARTED = "tenancy.started"
     TENANCY_RENT_SCHEDULED = "tenancy.rent_scheduled"
     TENANCY_DEPOSIT_RECEIVED = "tenancy.deposit_received"
@@ -329,6 +338,9 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     E.TENANT_ERASED: EventSpec(TenantErased, "forbidden", "Tenant personal data erased"),
     E.TENANCY_CREATED: EventSpec(TenancyCreated, "optional", "Lease signed (date = signed_on)"),
     E.TENANCY_UPDATED: EventSpec(Updated, "forbidden", "Tenancy fields changed"),
+    E.TENANCY_PARTIES_SET: EventSpec(
+        TenancyPartiesSet, "optional", "Parties changed (date = from when, if known)"
+    ),
     E.TENANCY_STARTED: EventSpec(Empty, "required", "Move-in"),
     E.TENANCY_RENT_SCHEDULED: EventSpec(
         RentScheduled, "required", "Rent row added (date = effective_from)"

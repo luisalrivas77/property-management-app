@@ -52,6 +52,10 @@ export function payloadSummary(type: TimelineEntry["type"], payload: Payload): s
       const rent = `${formatMoney(text(payload, "cold_rent"))} kalt + ${formatMoney(text(payload, "operating_costs_prepayment"))} NK-Vorauszahlung`;
       return reason ? `${reason}: ${rent}` : rent;
     }
+    case "tenancy.parties_set": {
+      const parties = payload.parties;
+      return Array.isArray(parties) ? `jetzt ${parties.length} Mieter` : null;
+    }
     case "tenancy.deposit_received":
       return formatMoney(text(payload, "amount"));
     case "tenancy.notice_given": {

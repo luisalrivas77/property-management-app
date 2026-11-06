@@ -20,6 +20,7 @@ from hausbuch.schemas.api import (
     NoticeBody,
     RentRowCorrection,
     TenancyCreateRequest,
+    TenancyPartiesBody,
     TenancyPatch,
 )
 from hausbuch.schemas.document import Document
@@ -42,6 +43,7 @@ from hausbuch.services.tenancies import (
     record_deposit_received,
     rent_on,
     schedule_rent,
+    set_parties,
     update_tenancy,
 )
 
@@ -72,6 +74,13 @@ def tenancy_update(
 ) -> Tenancy:
     """Befristung, Mietmodell and Kaution; the milestones change through corrections."""
     return cmd.run(update_tenancy, tenancy_id, **body.changes(), iban_key=settings.iban_hmac_key)
+
+
+@router.put("/tenancies/{tenancy_id}/parties")
+def tenancy_set_parties(tenancy_id: UUID, body: TenancyPartiesBody, cmd: Cmd) -> Tenancy:
+    """Replace the parties (add, remove, change the primary). 422 rule_violation
+    tenancy.exactly_one_primary / tenancy.no_tenant, 404 tenant for an unknown one."""
+    return cmd.run(set_parties, tenancy_id, body.parties, effective_date=body.effective_date)
 
 
 @router.post("/tenancies/{tenancy_id}/corrections/move-in")
