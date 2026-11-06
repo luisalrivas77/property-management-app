@@ -2,7 +2,7 @@
 
 Nov 6, 2026 · spec draft (architect), checked by the orchestrator (prices, citations vs structured
 outputs, data residency and PDF limits against the live API docs); awaiting Luis's decisions in
-§16 (four of five settled 6 Nov 2026; the Sparkasse export format is still open), no implementation. Phase 1 is closed (Luis, 6 Nov 2026):
+§16 (all five settled 6 Nov 2026; a real camt file is still needed before step 3), no implementation. Phase 1 is closed (Luis, 6 Nov 2026):
 documents upload, and the real data will be entered through the pre-fill this phase builds
 first.
 
@@ -443,7 +443,10 @@ Assumed from Sparkasse online banking's "Umsätze exportieren" and one community
 layout (not Sparkasse documentation; **Luis supplies one real export of each format before
 step 3 and the parser fixtures are built from it**):
 
-- **CSV-CAMT V2** (primary): `;`-separated, ISO-8859-15, header row, dates `dd.mm.yy`,
+- **camt XML is the primary format** (Luis, 6 Nov 2026: his Sparkasse online banking offers a
+  camt export; which message, camt.052 or camt.053, and which version, 02 or 08, is read from his
+  real file before step 3). The CSV and PDF formats below are kept as fallbacks.
+- **CSV-CAMT V2** (fallback): `;`-separated, ISO-8859-15, header row, dates `dd.mm.yy`,
   comma decimals, 17 columns: `Auftragskonto; Buchungstag; Valutadatum; Buchungstext;
   Verwendungszweck; Glaeubiger ID; Mandatsreferenz; Kundenreferenz (End-to-End);
   Sammlerreferenz; Lastschrift Ursprungsbetrag; Auslagenersatz Ruecklastschrift;
@@ -756,13 +759,12 @@ shown as derived, never produced by the model.
    processing under the DPA; §11.2). The setting is switched on after the privacy note names
    Anthropic.
 2. ~~**Luis: `inference_geo`**~~ **Decided 6 Nov 2026: `us`** for all documents.
-3. **Luis: Sparkasse exports (open).** Luis prefers camt XML (option 1: balances and bank
-   references in the file). Web research on 6 Nov 2026 could not confirm that Sparkasse
-   online banking offers a real camt export to private customers: guides agree only on
-   "Excel (CSV-CAMT V2)"; Sparkassen are moving EBICS delivery to camt version 08; one vendor
-   claims a 90-day export window. Luis checks the export menu of the rental account. Fallback
-   if there is no XML: CSV plus the monthly PDF statement for the balances (no typing). One
-   real file of each available format is needed before step 3.
+3. ~~**Luis: Sparkasse exports**~~ **Decided 6 Nov 2026: camt XML** (option 1). Luis
+   confirmed his online banking offers a camt export. Still needed before step 3: one real
+   camt file, from which the parser fixture is built and the message (camt.052 or camt.053),
+   version (02 or 08) and presence of `OPBD`/`CLBD` balances are confirmed; if it carries no
+   balances, the PDF statement supplies them (§7.1). Also check how far back the export reaches
+   (one vendor claims 90 days); older months then come in as PDF statements.
 4. ~~**Luis: Anthropic account**~~ **Decided 6 Nov 2026:** workspace `hausbuch` with a $25
    monthly limit (key in Scaleway only) and workspace `hausbuch-evals` with a $10 limit (key
    on Luis's computer); subprocessor notices go to the Console account's email (§11.3).
