@@ -49,6 +49,7 @@ from .enums import (
 )
 from .loan import LoanCreate
 from .property import Address, OwnerShare, reject_raw_tax_number
+from .proposal import Proposal, RecordEntity
 from .tenancy import InitialRent, TenancyCreate, TenancyParty
 
 # Validation errors never echo input (spec amendment 1): bodies that carry a tax reference or
@@ -354,6 +355,32 @@ class DocumentUploadResult(Schema):
     document: Document
     proposal_id: UUID | None = None
     proposal_status: ProposalStatus | None = None
+
+
+class ProposalRerunBody(Schema):
+    """POST /documents/{id}/proposals (optional body): read the document again. The
+    tenant-data flag is copied from the document's latest proposal; true adds it, false
+    never removes it (D16)."""
+
+    contains_tenant_data: bool = False
+
+
+class AppliedEntity(Schema):
+    """One record of an applied proposal and the entity it created or patched (for a link,
+    the entity the document was linked to). entity_id is null for a skipped record."""
+
+    key: str
+    entity_type: RecordEntity
+    mode: Literal["create", "patch", "correction", "unchanged"]
+    skipped: bool = False
+    entity_id: UUID | None = None
+
+
+class ProposalApplyResult(Schema):
+    """POST /proposals/{id}/apply: the applied proposal and what each record became."""
+
+    proposal: Proposal
+    applied: list[AppliedEntity]
 
 
 class ConfirmAllocationsBody(Schema):

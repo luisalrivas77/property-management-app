@@ -2656,7 +2656,7 @@
     "/api/documents": {
       "post": {
         "summary": "Document Upload",
-        "description": "201 with a new document; 200 with the existing one when these bytes are already in\nthe vault. 413 past HAUSBUCH_MAX_UPLOAD_BYTES, 415 outside the allow-list.",
+        "description": "201 with a new document; 200 with the existing one when these bytes are already in\nthe vault. 413 past HAUSBUCH_MAX_UPLOAD_BYTES, 415 outside the allow-list.\n\n`ai` (default HAUSBUCH_AI_ENABLED) also queues a pre-fill proposal and answers with a\nDocumentUploadResult (the document plus the proposal to poll, §6.1); without it the\nanswer is the Document, as in phase 1. For bytes already in the vault the document's\nlatest proposal is returned instead of a new read. `contains_tenant_data` with the\nworkspace's ai_tenant_documents off stores the proposal blocked, unread (D16).",
         "operationId": "document_upload_api_documents_post",
         "requestBody": {
           "required": true,
@@ -2674,7 +2674,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Document"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Document"
+                    },
+                    {
+                      "$ref": "#/components/schemas/DocumentUploadResult"
+                    }
+                  ],
+                  "title": "Response Document Upload Api Documents Post"
                 }
               }
             }
@@ -2690,14 +2698,7 @@
             }
           },
           "200": {
-            "description": "The bytes were already in the vault",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Document"
-                }
-              }
-            }
+            "description": "The bytes were already in the vault"
           }
         }
       },
@@ -3076,6 +3077,240 @@
             "description": "The bytes",
             "content": {
               "application/octet-stream": {}
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/proposals/{proposal_id}": {
+      "get": {
+        "summary": "Proposal Get",
+        "description": "Polled by the document page while the proposal is queued or running (§6.1).",
+        "operationId": "proposal_get_api_proposals__proposal_id__get",
+        "parameters": [
+          {
+            "name": "proposal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Proposal Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Proposal"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/proposals/{proposal_id}/apply": {
+      "post": {
+        "summary": "Proposal Apply",
+        "description": "Create or patch every record not skipped, with the values in `body`. 422 with `loc`\nprefixed by the record key when a value fails its model; 422 `proposal.not_ready` /\n`proposal.already_decided` unless the proposal is ready. A failure writes nothing.",
+        "operationId": "proposal_apply_api_proposals__proposal_id__apply_post",
+        "parameters": [
+          {
+            "name": "proposal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Proposal Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProposalApplyBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalApplyResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/proposals/{proposal_id}/reject": {
+      "post": {
+        "summary": "Proposal Reject",
+        "description": "Record the rejection (an eval signal); no domain writes.",
+        "operationId": "proposal_reject_api_proposals__proposal_id__reject_post",
+        "parameters": [
+          {
+            "name": "proposal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Proposal Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Proposal"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/documents/{document_id}/proposals": {
+      "get": {
+        "summary": "Document Proposals",
+        "description": "The document's proposals, newest first (the document page finds its current one).",
+        "operationId": "document_proposals_api_documents__document_id__proposals_get",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Document Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Proposal"
+                  },
+                  "title": "Response Document Proposals Api Documents  Document Id  Proposals Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Document Proposal Rerun",
+        "description": "Read the document again: its queued, running or ready proposal becomes superseded.",
+        "operationId": "document_proposal_rerun_api_documents__document_id__proposals_post",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Document Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ProposalRerunBody"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Proposal"
+                }
+              }
             }
           },
           "default": {
@@ -4168,6 +4403,70 @@
         "title": "AppUser",
         "description": "A person who can sign in. Auth credentials (passkey / TOTP) land with the API PR."
       },
+      "AppliedEntity": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "entity_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EntityType"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "acquisition_cost",
+                  "price_split",
+                  "rent_schedule",
+                  "typing",
+                  "link",
+                  "ownership",
+                  "deposit_received"
+                ]
+              }
+            ],
+            "title": "Entity Type"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "create",
+              "patch",
+              "correction",
+              "unchanged"
+            ],
+            "title": "Mode"
+          },
+          "skipped": {
+            "type": "boolean",
+            "title": "Skipped",
+            "default": false
+          },
+          "entity_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "entity_type",
+          "mode"
+        ],
+        "title": "AppliedEntity",
+        "description": "One record of an applied proposal and the entity it created or patched (for a link,\nthe entity the document was linked to). entity_id is null for a skipped record."
+      },
       "BescheidExtraction": {
         "properties": {
           "title": {
@@ -4226,6 +4525,22 @@
           "source": {
             "$ref": "#/components/schemas/DocumentSource",
             "default": "upload"
+          },
+          "ai": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai"
+          },
+          "contains_tenant_data": {
+            "type": "boolean",
+            "title": "Contains Tenant Data",
+            "default": false
           }
         },
         "type": "object",
@@ -5023,6 +5338,42 @@
         ],
         "title": "DocumentTypingBody"
       },
+      "DocumentUploadResult": {
+        "properties": {
+          "document": {
+            "$ref": "#/components/schemas/Document"
+          },
+          "proposal_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposal Id"
+          },
+          "proposal_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProposalStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "document"
+        ],
+        "title": "DocumentUploadResult",
+        "description": "POST /documents with ai = true (§6.1): the document plus the queued proposal to\npoll. proposal_id is null when the upload did not ask for a proposal."
+      },
       "EndTenancyBody": {
         "properties": {
           "end_date": {
@@ -5543,6 +5894,17 @@
           "ai"
         ],
         "title": "ExtractionSource"
+      },
+      "FieldDecision": {
+        "type": "string",
+        "enum": [
+          "accepted",
+          "edited",
+          "cleared",
+          "skipped"
+        ],
+        "title": "FieldDecision",
+        "description": "What the user did with one proposed value. Recorded per field on apply, without the\nvalue (proposal.applied event, eval record)."
       },
       "FieldError": {
         "properties": {
@@ -7358,6 +7720,335 @@
         "type": "object",
         "title": "PropertyPatch",
         "description": "Non-milestone fields only: the purchase dates and price change through corrections."
+      },
+      "Proposal": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "document_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Document Id"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExtractionKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/ProposalStatus"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "target_mode": {
+            "$ref": "#/components/schemas/ProposalTargetMode"
+          },
+          "contains_tenant_data": {
+            "type": "boolean",
+            "title": "Contains Tenant Data",
+            "default": false
+          },
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/ProposalRecord"
+            },
+            "type": "array",
+            "title": "Records"
+          },
+          "extraction_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extraction Id"
+          },
+          "ai_call_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Call Id"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "workspace_id",
+          "created_at",
+          "updated_at",
+          "document_id",
+          "kind",
+          "status",
+          "error_code",
+          "target_mode",
+          "extraction_id",
+          "ai_call_id",
+          "decided_at"
+        ],
+        "title": "Proposal",
+        "description": "Read shape. kind is null until the document is classified (the row is created\n`queued` at upload); records is empty until `ready`, and again after the D19 scrub."
+      },
+      "ProposalApplyBody": {
+        "properties": {
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/ProposalApplyRecord"
+            },
+            "type": "array",
+            "title": "Records"
+          },
+          "effective_date_corrections": {
+            "additionalProperties": {
+              "type": "string",
+              "format": "date"
+            },
+            "type": "object",
+            "title": "Effective Date Corrections"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "records"
+        ],
+        "title": "ProposalApplyBody",
+        "description": "POST /proposals/{id}/apply."
+      },
+      "ProposalApplyRecord": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Key"
+          },
+          "skip": {
+            "type": "boolean",
+            "title": "Skip",
+            "default": false
+          },
+          "values": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Values"
+          },
+          "decisions": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FieldDecision"
+            },
+            "type": "object",
+            "title": "Decisions"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key"
+        ],
+        "title": "ProposalApplyRecord"
+      },
+      "ProposalApplyResult": {
+        "properties": {
+          "proposal": {
+            "$ref": "#/components/schemas/Proposal"
+          },
+          "applied": {
+            "items": {
+              "$ref": "#/components/schemas/AppliedEntity"
+            },
+            "type": "array",
+            "title": "Applied"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "proposal",
+          "applied"
+        ],
+        "title": "ProposalApplyResult",
+        "description": "POST /proposals/{id}/apply: the applied proposal and what each record became."
+      },
+      "ProposalRecord": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Key"
+          },
+          "entity_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EntityType"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "acquisition_cost",
+                  "price_split",
+                  "rent_schedule",
+                  "typing",
+                  "link",
+                  "ownership",
+                  "deposit_received"
+                ]
+              }
+            ],
+            "title": "Entity Type"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "create",
+              "patch",
+              "correction",
+              "unchanged"
+            ],
+            "title": "Mode"
+          },
+          "target_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Id"
+          },
+          "fields": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ExtractedValue"
+            },
+            "type": "object",
+            "title": "Fields"
+          },
+          "current": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "entity_type",
+          "mode"
+        ],
+        "title": "ProposalRecord",
+        "description": "One record the proposal would create or patch.\n\nkey: \"property\", \"unit\", \"cost:notary\", \"loan\", \"tenant:1\", \"tenancy\", \"rent\", \"typing\",\n  \"price_split\", \"ownership\", \"link:property\", \"correction:notarized_on\", ...\nfields: by the *Create / *Patch field name; a nested field is dotted (\"address.city\").\n  Values the apply step supplies itself (the document as Beleg or evidence, the ids of\n  records created in the same apply, a split's source) are not fields.\ncurrent: the existing record's values of the same fields, when target_id is set."
+      },
+      "ProposalRerunBody": {
+        "properties": {
+          "contains_tenant_data": {
+            "type": "boolean",
+            "title": "Contains Tenant Data",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ProposalRerunBody",
+        "description": "POST /documents/{id}/proposals (optional body): read the document again. The\ntenant-data flag is copied from the document's latest proposal; true adds it, false\nnever removes it (D16)."
+      },
+      "ProposalStatus": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "running",
+          "ready",
+          "applied",
+          "rejected",
+          "superseded",
+          "failed",
+          "blocked_tenant_data"
+        ],
+        "title": "ProposalStatus",
+        "description": "proposal.status (§3.1). applied and rejected are decisions; the rest are job states."
+      },
+      "ProposalTargetMode": {
+        "type": "string",
+        "enum": [
+          "create",
+          "patch"
+        ],
+        "title": "ProposalTargetMode",
+        "description": "proposal.target_mode: whether the proposal creates new records or patches `targets`."
       },
       "PurchaseContractExtraction": {
         "properties": {

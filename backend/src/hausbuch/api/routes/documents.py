@@ -20,12 +20,14 @@ from starlette.concurrency import run_in_threadpool
 from hausbuch.schemas.api import (
     DocumentDetail,
     DocumentTypingBody,
+    DocumentUploadResult,
     ErrorKind,
     LinkBody,
     RelatedDocument,
 )
 from hausbuch.schemas.document import Document, DocumentLink, RetentionResult
 from hausbuch.schemas.enums import DocumentSource, EntityType, LinkTarget
+from hausbuch.schemas.proposal import Proposal
 from hausbuch.services.context import CommandContext
 from hausbuch.services.documents import (
     current_extraction,
@@ -41,6 +43,7 @@ from hausbuch.services.documents import (
     unlink_document,
     upload_document,
 )
+from hausbuch.services.proposals import proposal_for_upload
 from hausbuch.storage import BlobStore
 
 from ..deps import Cmd, SettingsDep, StoreDep, domain_router, found, require
@@ -85,12 +88,25 @@ def related_documents(
 
 
 def _upload(
-    ctx: CommandContext, store: BlobStore, data: bytes, **kwargs: Any
-) -> tuple[Document, bool]:
-    """upload_document, and whether it registered a new document (dedup returns the
-    workspace's existing one for the same bytes, D9)."""
+    ctx: CommandContext,
+    store: BlobStore,
+    data: bytes,
+    *,
+    ai: bool,
+    contains_tenant_data: bool,
+    **kwargs: Any,
+) -> tuple[Document, bool, Proposal | None]:
+    """upload_document, whether it registered a new document (dedup returns the
+    workspace's existing one for the same bytes, D9), and with `ai` the proposal to poll,
+    queued (and its job enqueued) in the same transaction (§6.1)."""
     document = upload_document(ctx, store, data, **kwargs)
-    return document, document.created_at == ctx.now
+    created = document.created_at == ctx.now
+    proposal = None
+    if ai:
+        proposal = proposal_for_upload(
+            ctx, document.id, created=created, contains_tenant_data=contains_tenant_data
+        )
+    return document, created, proposal
 
 
 def upload_media_type(declared: str | None, allowed: frozenset[str]) -> str:
@@ -109,7 +125,7 @@ def upload_media_type(declared: str | None, allowed: frozenset[str]) -> str:
 @router.post(
     "/documents",
     status_code=201,
-    responses={200: {"model": Document, "description": "The bytes were already in the vault"}},
+    responses={200: {"description": "The bytes were already in the vault"}},
 )
 async def document_upload(
     file: Annotated[UploadFile, File()],
@@ -118,27 +134,42 @@ async def document_upload(
     settings: SettingsDep,
     response: Response,
     source: Annotated[DocumentSource, Form()] = DocumentSource.UPLOAD,
-) -> Document:
+    ai: Annotated[bool | None, Form()] = None,
+    contains_tenant_data: Annotated[bool, Form()] = False,
+) -> Document | DocumentUploadResult:
     """201 with a new document; 200 with the existing one when these bytes are already in
-    the vault. 413 past HAUSBUCH_MAX_UPLOAD_BYTES, 415 outside the allow-list."""
+    the vault. 413 past HAUSBUCH_MAX_UPLOAD_BYTES, 415 outside the allow-list.
+
+    `ai` (default HAUSBUCH_AI_ENABLED) also queues a pre-fill proposal and answers with a
+    DocumentUploadResult (the document plus the proposal to poll, §6.1); without it the
+    answer is the Document, as in phase 1. For bytes already in the vault the document's
+    latest proposal is returned instead of a new read. `contains_tenant_data` with the
+    workspace's ai_tenant_documents off stores the proposal blocked, unread (D16)."""
     media_type = upload_media_type(file.content_type, settings.upload_media_types)
     data = await file.read(settings.max_upload_bytes + 1)
     if len(data) > settings.max_upload_bytes:
         raise too_large()
+    use_ai = settings.ai_enabled if ai is None else ai
     # The upload route is async (it awaits the spooled file); the transaction and the blob
     # write block, so they run in the threadpool like every sync route.
-    document, created = await run_in_threadpool(
+    document, created, proposal = await run_in_threadpool(
         cmd.run,
         _upload,
         store,
         data,
+        ai=use_ai,
+        contains_tenant_data=contains_tenant_data,
         media_type=media_type,
         source=source,
         original_filename=file.filename or None,
     )
     if not created:
         response.status_code = 200
-    return document
+    if proposal is None:
+        return document
+    return DocumentUploadResult(
+        document=document, proposal_id=proposal.id, proposal_status=proposal.status
+    )
 
 
 # --- Reads -----------------------------------------------------------------------------
