@@ -926,6 +926,46 @@ def test_correct_notice_corrects_who_when_and_to_which_date(run, read, flat):
     assert len(_events(read, a, tenancy.id)) == 6
 
 
+def test_correct_notice_refuses_a_notice_given_after_the_move_out(run, read, flat):
+    a, _, unit, tenants = flat
+    tenancy = _create(run, a, _lease(unit, tenants), initial_rent=None)
+    _noticed(run, a, tenancy.id)  # given 31 Mar 2026, to 30 Jun 2026
+    ended = run(a, end_tenancy, tenancy.id, date(2026, 6, 30), now=CREATED_AT)
+    count = len(_events(read, a, tenancy.id))
+
+    with pytest.raises(ValueError, match="after the move-out"):
+        run(
+            a,
+            correct_notice,
+            tenancy.id,
+            given_by="tenant",
+            given_on=date(2026, 7, 1),
+            ends_on=date(2026, 7, 31),
+            now=LATER,
+        )
+
+    assert read(a, get_tenancy, tenancy.id) == ended
+    assert len(_events(read, a, tenancy.id)) == count
+
+
+def test_correct_move_out_refuses_a_move_out_before_the_notice(run, read, flat):
+    a, _, unit, tenants = flat
+    tenancy = _create(run, a, _lease(unit, tenants), initial_rent=None)
+    _noticed(run, a, tenancy.id)  # given 31 Mar 2026
+    ended = run(a, end_tenancy, tenancy.id, date(2026, 6, 30), now=CREATED_AT)
+    count = len(_events(read, a, tenancy.id))
+
+    with pytest.raises(ValueError, match="before the notice"):
+        run(a, correct_move_out, tenancy.id, date(2026, 3, 30), now=LATER)
+
+    assert read(a, get_tenancy, tenancy.id) == ended
+    assert len(_events(read, a, tenancy.id)) == count
+    # The day the notice was given is still a valid move-out.
+    assert run(a, correct_move_out, tenancy.id, date(2026, 3, 31), now=LATER).end_date == date(
+        2026, 3, 31
+    )
+
+
 def test_correct_move_out_moves_the_end(run, read, flat):
     a, prop, unit, tenants = flat
     tenancy = _create(run, a, _lease(unit, tenants))

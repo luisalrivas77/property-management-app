@@ -382,7 +382,8 @@ def correct_notice(
 ) -> Tenancy:
     """Correct the notice already given (who, when, to which date): updates notice_given_on
     and appends a correcting tenancy.notice_given. The same rules as give_notice, except that
-    the tenancy may already have ended. No-op if nothing changes."""
+    the tenancy may already have ended; then the notice cannot be dated after the move-out.
+    No-op if nothing changes."""
     payload = NoticeGiven(given_by=given_by, ends_on=ends_on)
     if ends_on < given_on:
         raise ValueError("a notice cannot end the tenancy before it is given")
@@ -392,6 +393,8 @@ def correct_notice(
         raise ConflictError("no notice was given, so there is none to correct")
     if ends_on < current.start_date:
         raise ValueError("a notice cannot end the tenancy before it starts")
+    if current.end_date is not None and given_on > current.end_date:
+        raise ValueError("a notice cannot be given after the move-out")
     latest = latest_in_chain(
         ctx.conn, milestone_root(ctx.conn, EventType.TENANCY_NOTICE_GIVEN, tenancy_id).id
     )
@@ -413,12 +416,15 @@ def correct_notice(
 def correct_move_out(ctx: CommandContext, tenancy_id: UUID, new_date: date) -> Tenancy:
     """Correct the move-out date: updates end_date and appends a correcting tenancy.ended.
     As on end_tenancy, the rent rows in force must stay inside the tenancy, and the unit's
-    other tenancies must not overlap. No-op if it is already the stored date."""
+    other tenancies must not overlap. When a notice was given, the move-out cannot be before
+    it. No-op if it is already the stored date."""
     row, scope = _lock(ctx.conn, tenancy_id)
     current = _to_tenancy(ctx.conn, row)
     if current.end_date is None:
         raise ConflictError("the tenancy has not ended, so there is no move-out to correct")
     _validate_dates(current, end_date=new_date)
+    if current.notice_given_on is not None and new_date < current.notice_given_on:
+        raise ValueError("the move-out cannot be before the notice was given")
     if new_date == current.end_date:
         return current
     _require_rows_inside(ctx.conn, tenancy_id, current.start_date, new_date)
