@@ -110,7 +110,7 @@ never stored or returned.
 
 ## Events
 
-29 event types, catalogued in `EVENT_CATALOG` with payload schema, effective-date rule and
+32 event types (29 until #22 added `property.acquisition_cost_updated`, `property.acquisition_cost_removed` and `tenancy.parties_set`, 6 Nov 2026), catalogued in `EVENT_CATALOG` with payload schema, effective-date rule and
 meaning. Envelope: `seq` (recording order), `type`, entity, `property_id` / `unit_id` scope,
 `effective_date` (the domain date; null = not a milestone), actor (`user` / `system` / `ai`),
 `correlation_id` (one command), `corrects_event_id`, `payload`.
@@ -267,12 +267,42 @@ and reviewed by a reviewer agent; every review finding was fixed or is listed be
    Live check passed the same day: Luis ran the real-bucket tests from the fixed code and
    `test_real_bucket_honours_if_none_match` (refused overwrite, then read back) passed, as
    did every other real-bucket test.
+7. **DONE: edit and correct records after they are saved** (6 Nov 2026). Luis found while
+   entering real data that a Nebenkosten row's Beleg could only be chosen at creation; a sweep
+   of every record type found the same gap on loans and tenancies. Merged as #22
+   (`0b3a496`), live as `api:0b3a49643513` and `web:0b3a49643513-16ef9db2` (roll back to
+   `api:655bf40bd355` and `web:aa298bb0752f-16ef9db2`); no migration (event types are only
+   checked by pattern). What it adds:
+   - Nebenkosten: `PATCH` and `DELETE /api/acquisition-costs/{id}`. A change to kind, amount,
+     paid_on or the Beleg appends a correcting `property.acquisition_cost_recorded`, so
+     History shows the corrected line; a note-only change is `property.acquisition_cost_updated`
+     (note text never recorded); removal is `property.acquisition_cost_removed`.
+   - Loan: `POST /api/loans/{id}/corrections/disbursement` (payout date and/or principal), a
+     correcting `loan.disbursed`; the schedule follows because it is computed on read.
+   - Tenancy: `PATCH /api/tenancies/{id}` (Befristung, Mietmodell, Kaution, write-only
+     Kautionskonto IBAN); corrections of the contract date, the notice, the move-out and a
+     Kaution receipt; `PUT /api/tenancies/{id}/parties` (event `tenancy.parties_set`, ids and
+     roles only, D5).
+   - Retention (decided 6 Nov 2026, review finding): a tenant's hold follows every tenancy
+     they were ever a party of, read from the event log as well as `tenancy_tenant`, so a
+     co-tenant removed from a running tenancy cannot be erased until that tenancy's end + 4
+     years (or on request after it ends). Cost: a tenant added by mistake stays held too.
+   Reviewed once (fix first: the retention hole, History showing pre-edit Nebenkosten values,
+   correction dates out of order; all three fixed), 1391 backend tests pass against Postgres.
 
 ### Known gaps (not yet built)
 
-- There is no correction command for `tenancy.ended`, `tenancy.created` (`signed_on`),
-  `tenancy.notice_given` or `loan.disbursed`, and no party changes on a tenancy. Step 4 will
-  need them on the first typo.
+- A notice or move-out entered by mistake cannot be withdrawn, only re-dated: a correction
+  repeats its event's type and needs a date (the missing correction commands listed here
+  until 6 Nov 2026 shipped in #22, implementation status item 7).
+- `end_tenancy` does not check the notice date, so a first move-out dated before the notice
+  is accepted; only the move-out correction refuses it.
+- History still shows a removed Nebenkosten row's recorded line next to its "entfernt"
+  entry. Hiding it needs a `build_history` rule (a removal closes the chain with the same
+  `cost_id`) and a `timeline.yaml` case, so a spec change.
+- `*.created` payloads keep their first-entered values after a correction or edit (e.g.
+  `loan.created.principal`, `tenancy.created.tenant_ids`); the row and the later events hold
+  the current state.
 - No retention auto-delete job, and no sweeper for blobs orphaned by rolled-back uploads.
   The production bucket has versioning on (5 Nov 2026), so whoever builds that job must
   also add a lifecycle rule expiring noncurrent versions (30 days, `deploy/scaleway.md`
