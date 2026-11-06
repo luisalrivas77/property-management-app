@@ -67,6 +67,8 @@ Numbering continues from phase 1's D12. Each one is a place to push back in revi
 | D28 | **Sign-in and passkey actions become events on entity type `user`** (the `app_user` id): payloads hold passkey id and label, never IP, user agent or credential material. The auth tables themselves stay event-free (step 3 Q6). | Decided 5 Nov 2026, deferred to this spec. |
 | D29 | **Eval set:** recorded responses for synthetic documents live in the repo and run in CI; Luis's real documents live outside the repo (`HAUSBUCH_EVAL_DIR` on his computer) and run by hand before a prompt or model change. | Real documents cannot be committed, even anonymized by hand; ARCHITECTURE's "in CI" holds for the recorded set. |
 | D30 | **Photos are one document each, JPEG only from the capture page.** HEIC is stored (phase 1 accepts it) but marked "couldn't read this": Claude reads PDF, JPEG, PNG, WebP and GIF. | Smallest capture flow; conversion needs a native library the container does not have. |
+| D31 | **An allocation stores no tax year** (review F5, 6 Nov 2026). The year a payment counts in is an output of that year's rule set (the §11 ten-day rule needs booking and value date, service period and the recurring flag, all stored), computed by phase 3's draft, not a column frozen at match time. A reader that needs a year filter before phase 3 uses the transaction's `booking_date`. | Principle 5: 2026 stays reproducible if the rules change, and no append-only row holds a value a later rule could contradict. Amends ARCHITECTURE's Allocation row. |
+| D32 | **Events carry no matcher patterns** (review F2). `rule.created` / `rule.disabled` record the IBAN HMAC, the amount sign and whether name or purpose patterns exist; the patterns themselves stay on the mutable `matching_rule` row, which tenant erasure can scrub (step 2 adds that scrub). | D5: a typed pattern like `schmidt` is personal data and the event log is append-only. |
 
 ## 3. Data model
 
@@ -99,8 +101,8 @@ tests' table lists (21 → 29, excluding `procrastinate_*`).
 
 | Table | Holds | Mutability |
 | --- | --- | --- |
-| `allocation` | `transaction_id`, `amount` (signed, same sign convention as the transaction), `category`, `property_id`, `unit_id`, `tenancy_id`, `loan_id` (nullable scope), `tax_year`, `service_period_start` / `_end` (nullable), `recurring boolean`, `method` (`rule`, `matcher_rent`, `matcher_loan`, `matcher_owner`, `matcher_hausgeld`, `document_match`, `llm`, `user`), `confidence numeric(4,3)`, `status` (`proposed`, `confirmed`, `superseded`), `supersedes_id`, `rule_id`, `ai_call_id`, `document_id` (the Beleg), `reasoning`, `question`, `recorded_at`, `confirmed_at`, `confirmed_by` | **Append-only** rows (D23); `status` flips only `proposed → confirmed` and `→ superseded` (an UPDATE allowed on those two columns only, by trigger) |
-| `matching_rule` | `matcher jsonb` (`counterparty_iban_hmac`, optional `purpose_pattern` regex, optional `amount_sign`), `split_method` (D25), `category` (for `single_category`), `scope` (property / tenancy / loan id), `created_from_allocation_id`, `enabled boolean`, `hit_count` | Mutable + events |
+| `allocation` | `transaction_id`, `amount` (signed, same sign convention as the transaction), `category`, `property_id`, `unit_id`, `tenancy_id`, `loan_id` (nullable scope), `service_period_start` / `_end` (nullable), `recurring boolean`, `method` (`rule`, `matcher_rent`, `matcher_loan`, `matcher_owner`, `matcher_hausgeld`, `document_match`, `llm`, `user`), `confidence numeric(4,3)`, `status` (`proposed`, `confirmed`, `superseded`), `supersedes_id`, `rule_id`, `ai_call_id`, `document_id` (the Beleg), `reasoning`, `question`, `recorded_at`, `confirmed_at`, `confirmed_by` | **Append-only** rows (D23); `status` flips only `proposed → confirmed` and `→ superseded` (an UPDATE allowed on those two columns only, by trigger) |
+| `matching_rule` | `matcher jsonb` (`counterparty_iban_hmac`, optional `counterparty_name_pattern` and `purpose_pattern` regexes, optional `amount_sign`; each value typed by CHECK), `split_method` (D25), `category` (for `single_category`), `recurring boolean` (copied from the confirmed set, review F3), `scope` (property / tenancy / loan id), `created_from_allocation_id`, `enabled boolean`, `hit_count` | Mutable + events |
 | `ai_call.transaction_id` | FK added | — |
 
 ### 3.4 Invariants (new) and where they are enforced
@@ -113,7 +115,7 @@ tests' table lists (21 → 29, excluding `procrastinate_*`).
 | Transactions and `ai_call` rows are never updated (except the erasure scrub columns) | Trigger (`forbid_mutation`, with a column-limited exception for the scrub) |
 | Lines of an unreconciled import never get allocations | Service (`match_import` refuses) · `review_routing.yaml` |
 | A rule never stores an amount | `MatchingRule` schema has no money field; `rules.yaml` |
-| Procrastinate tables are the only non-RLS tables | `tests/db/test_rls.py` extended with the explicit exclusion list |
+| Procrastinate tables are the only non-RLS tables | `tests/db/test_migration.py` (the RLS checks live there) extended with the explicit exclusion list |
 
 ### 3.5 Events added in phase 2
 
@@ -258,7 +260,7 @@ class SplitMethod(StrEnum): SINGLE_CATEGORY, BY_RENT_SCHEDULE, BY_LOAN_SCHEDULE,
 class AllocationDraft(Schema):          # what a matcher, a rule, the model or the user proposes
     amount: Money; category: AllocationCategory
     property_id | unit_id | tenancy_id | loan_id: UUID | None
-    tax_year: TaxYear; service_period_start: date | None; service_period_end: date | None; recurring: bool
+    service_period_start: date | None; service_period_end: date | None; recurring: bool
     document_id: UUID | None
 
 class AllocationSet(Schema):            # one transaction's proposal, validated: Σ amount == transaction.amount
@@ -267,7 +269,7 @@ class AllocationSet(Schema):            # one transaction's proposal, validated:
     rule_id | ai_call_id: UUID | None
 
 class RuleMatcher(Schema): counterparty_iban_hmac: str | None; counterparty_name_pattern: str | None; purpose_pattern: str | None; amount_sign: Literal["credit", "debit"] | None
-class MatchingRuleCreate(Schema): matcher: RuleMatcher; split_method: SplitMethod; category: AllocationCategory | None; property_id / tenancy_id / loan_id
+class MatchingRuleCreate(Schema): matcher: RuleMatcher; split_method: SplitMethod; category: AllocationCategory | None; recurring: bool; property_id / tenancy_id / loan_id
 
 class LlmMatchOutput(Schema):           # structured output of the categorize job (no citations needed)
     allocations: list[LlmAllocation]    # category, amount (string), service_period (text), recurring
@@ -394,7 +396,7 @@ page + cited text; "derived" means code computed it from cited values and shows 
 | **Kautionsnachweis** (`letter` / `deposit_record`) — step 2 | `typing`; `deposit_received` action (amount, received_on) when a payment is stated; `link:tenancy` | `amount`, `received_on` |
 | **Grundsteuerbescheid** (`bescheid` / `grundsteuerbescheid`) | `typing`; `link:property` (by address) | `document_date`, `tax_year` (first year the Bescheid applies to); extraction keeps Aktenzeichen, yearly amount and due dates for phase 3 |
 | **Wirtschaftsplan**, **Hausgeldabrechnung**, **Zinsbescheinigung** | `typing`; `link:property` / `link:loan` | `document_date`, `tax_year`; extraction keeps the Hausgeld split (gesamt, umlagefähig, nicht umlagefähig, Erhaltungsrücklage; monthly), the settlement result, the year's interest: §8's matchers read them |
-| Anything else | `typing` only (type, subtype, document_date, tax_year, title) | — |
+| Anything else | `typing` only (type, subtype, document_date, title; no tax_year, since no field set states one) | — |
 
 Not in this slice: owner creation (two rows, typed once), BMF Arbeitshilfe inputs, Inventar in
 the price, Sondertilgungen, Staffel steps beyond the first rent row (the extraction keeps
@@ -524,7 +526,7 @@ bytes and retention apply unchanged; `POST /accounts/{id}/imports` wraps `upload
    `repairs` or anything `capitalized`).
 
 Every confirmation from review may become a rule ("Künftig immer so zuordnen" checkbox,
-default on when the counterparty has an IBAN), with the split method inferred from the
+default on when the counterparty has an IBAN, **default off when the confirmed category never auto-confirms** (`repairs`, `renovation`, anything capitalized: one confirmation to a tradesman must not silently become a standing auto-confirm; review F6, 6 Nov 2026)), with the split method inferred from the
 confirmed allocations (one category → `single_category`; the matcher's split →
 `by_rent_schedule` etc.). A rule hit on a later line is never asked again (`repeat_answer`
 fixture).
@@ -657,7 +659,7 @@ Pure functions in `hausbuch.rules.*`, no I/O, no model calls; errors carry a `co
 | `review.route(item) -> Routing` | `review_routing.yaml` | threshold table per category; `auto_accept_llm` false → review; deterministic 1.0 → auto; unreconciled import → whole import to review, no lines matched |
 | `thresholds` (data) | `thresholds.yaml` | one row per category |
 
-Error codes added: `allocation.sum_mismatch`, `allocation.empty`, `statement.unreconciled`, `statement.before_anchor`,
+Error codes added: `allocation.sum_mismatch`, `allocation.empty`, `statement.unreconciled`, `statement.opening_mismatch` (wins over `unreconciled`; both differences are reported), `statement.before_anchor`,
 `statement.unknown_format`, `proposal.already_decided`, `proposal.not_ready`, `ai.disabled`,
 `ai.blocked_tenant_data`, `ai.unparsable`, `ai.refused`, `ai.too_many_pages`,
 `ai.unsupported_media_type`.
@@ -695,7 +697,7 @@ review": money, persisted state, migrations, RLS, events, fixtures, silent failu
 | 0 **Spec PR** | this doc final; schemas §4; migrations 0005–0007 written and tested against Postgres 16; fixtures §12–13 (rule tests skipped); deps; `tables.py` mirror; ARCHITECTURE edits §15 | all three written, none deployed | schema tests green (29 tables + exclusion), fixtures validate, `uv run pytest` green | M: 1 coder; API cost 0 | **Yes** (migrations, RLS, grants, event CHECK, fixtures): FOCUS procrastinate grants cannot bypass RLS; `ai_call` scrub trigger; no amount field on rules |
 | 1 **Pre-fill for property, Nebenkosten, loan, WEG and Bescheid documents** | Procrastinate worker in the lifespan; `ai/client.py` (Anthropic SDK, prompts, provenance, gate); `document_read` task; `rules/prefill.py`, `rules/extraction_parse.py`; proposals service + routes; review screen; settings; deploy step 13; auth events (§10, small) | **0005** | Luis uploads his Kaufvertrag, four Nebenkosten documents, Darlehensvertrag, Grundsteuerbescheid and Wirtschaftsplan and enters the flat, unit, split, costs and loan by verifying values only; every proposed value shows page + quote; `prefill.yaml` and `extraction_parse.yaml` pass; recorded evals pass in CI; History shows purchase → loan correctly | L: 3 coder chunks in parallel (worker + client + task; rules + proposals + API; frontend) ≈ 3 sessions; API ≈ $2 for the real set, ≈ $5 for prompt iteration | **Yes**: FOCUS apply is one transaction through existing services only; no model output reaches a domain table; tenant gate cannot be bypassed by the classifier result; key never logged |
 | 2 **Mietvertrag, Übergabeprotokoll, Kaution** | lease/handover/deposit extraction kinds; tenant + tenancy + rent proposals; `ai_tenant_documents` setting UI with the §11.2 text; erasure scrub of proposals and `ai_call` | — | after Luis's §11.2 decision: his Mietvertrag enters tenant(s), tenancy and first rent by verification; `tenant.erased` nulls the proposal and call rows (`tests/db`); gate tests | M: 1 coder; API < $1 | **Yes** (personal data, erasure): FOCUS D5 in the new events; scrub completeness |
-| 3 **Accounts and statements** | `account`, `BankSource` + csv_camt + camt053 (+ PDF via extraction), import, dedup, duplicates, balance anchors, reconciliation, transactions list, inbox items for imports | **0006** | Luis's real exports (one per format) import; a re-upload adds zero lines; the month reconciles against the online-banking balance; `line_hash`, `duplicates`, `reconcile`, parser fixtures pass | M: 1–2 coders (parsers + rules; service + UI); API ≈ $0.05 per PDF statement | **Yes** (money, persisted state): FOCUS hash stability; no amount parsed through float; reconciliation blocks matching |
+| 3 **Accounts and statements** | `account`, `BankSource` + csv_camt + camt053 (+ PDF via extraction), import, dedup, duplicates, balance anchors, reconciliation, transactions list, inbox items for imports | **0006** | Luis's real exports (one per format) import; a re-upload adds zero lines; the month reconciles against the online-banking balance; `line_hash`, `duplicates`, `reconcile`, parser fixtures pass | M: 1–2 coders (parsers + rules; service + UI); API ≈ $0.05 per PDF statement | **Yes** (money, persisted state): FOCUS hash stability; no amount parsed through float; reconciliation blocks matching; `transaction.raw` never holds a plaintext IBAN (only the service enforces it); `resolve_duplicate` requires both lines on one account and refuses mutual exclusion (both copies leaving the balance) |
 | 4 **Matching, allocations, rules, inbox** | matchers, document match, LLM categorize + explain, thresholds, allocation writes with sum check, rules, `match_import`, `rematch_on_evidence`, inbox UI, allocation editor | **0007** | `matchers.yaml`, `rules.yaml`, `allocation_sum.yaml`, `review_routing.yaml`, `month_statement.yaml`, `repeat_answer.yaml` pass; first real month fully confirmed through the inbox; second real month ≥ 80 % auto-matched, 0 sum errors | L: 3 coder chunks (rules; services + jobs + LLM; inbox UI) ≈ 3 sessions; API ≈ $0.20/month | **Yes** (money, events, silent mis-split): FOCUS sum invariant on every path; rules never store amounts; auto-confirm only above threshold |
 | 5 **PWA capture, evals CLI, sweeper** | `/capture`; `hausbuch evals run/report`; `scrub_proposals` periodic task; the bucket lifecycle rule noted in phase 1 known gaps if the retention job lands here | — | a photo from the phone becomes a typed document with a proposal; `evals report` prints per-kind accuracy from the real set | S: 1 coder | No (CI covers it), except the sweeper (persisted deletes) → small review |
 
