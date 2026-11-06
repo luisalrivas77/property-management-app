@@ -40,7 +40,7 @@ def reflected(dbname):
 
 def test_same_tables(reflected):
     assert set(metadata.tables) == set(reflected)
-    assert len(metadata.tables) == 27
+    assert len(metadata.tables) == 29
 
 
 @pytest.mark.parametrize("table", sorted(metadata.tables))

@@ -549,3 +549,54 @@ possible_duplicate = Table(
     _timestamp("decided_at", nullable=True, default=False),
     _created_at(),
 )
+
+
+# --- Phase 2: allocations and learned rules (0007) -----------------------------
+
+allocation = Table(
+    "allocation",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("transaction_id"),
+    _money("amount"),
+    _text("category"),
+    _uuid("property_id", nullable=True),
+    _uuid("unit_id", nullable=True),
+    _uuid("tenancy_id", nullable=True),
+    _uuid("loan_id", nullable=True),
+    Column("tax_year", SmallInteger, nullable=False),
+    _date("service_period_start", nullable=True),
+    _date("service_period_end", nullable=True),
+    Column("recurring", Boolean, nullable=False, server_default=text("false")),
+    _text("method"),
+    Column("confidence", Numeric(4, 3), nullable=False),
+    _text("status", server_default=text("'proposed'")),
+    _uuid("supersedes_id", nullable=True),
+    _uuid("rule_id", nullable=True),
+    _uuid("ai_call_id", nullable=True),
+    _uuid("document_id", nullable=True),
+    _text("reasoning", nullable=True),
+    _text("question", nullable=True),
+    _timestamp("recorded_at"),
+    _timestamp("confirmed_at", nullable=True, default=False),
+    _uuid("confirmed_by", nullable=True),
+)
+
+matching_rule = Table(
+    "matching_rule",
+    metadata,
+    _id(),
+    _workspace_id(),
+    Column("matcher", JSONB, nullable=False),
+    _text("split_method"),
+    _text("category", nullable=True),
+    _uuid("property_id", nullable=True),
+    _uuid("tenancy_id", nullable=True),
+    _uuid("loan_id", nullable=True),
+    _uuid("created_from_allocation_id", nullable=True),
+    Column("enabled", Boolean, nullable=False, server_default=text("true")),
+    Column("hit_count", Integer, nullable=False, server_default=text("0")),
+    _created_at(),
+    _updated_at(),
+)

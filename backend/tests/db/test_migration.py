@@ -49,6 +49,8 @@ MIGRATION_TABLES = {
     "statement_import",
     "transaction",
     "possible_duplicate",
+    "allocation",
+    "matching_rule",
 }
 # Procrastinate's own tables (0005): not RLS'd, no workspace_id (D20). The one exclusion.
 QUEUE_TABLE_PREFIX = "procrastinate_"

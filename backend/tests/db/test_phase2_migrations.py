@@ -32,11 +32,14 @@ EXPECTED_GRANTS = {
     "statement_import": {"SELECT", "INSERT", "UPDATE"},
     "transaction": {"SELECT", "INSERT"},  # never DELETE (immutable as imported)
     "possible_duplicate": {"SELECT", "INSERT", "UPDATE"},
+    "allocation": {"SELECT", "INSERT"},  # never DELETE (append-only, D23)
+    "matching_rule": {"SELECT", "INSERT", "UPDATE"},
 }
 # Columns the app role may UPDATE on tables without a table-wide UPDATE.
 COLUMN_UPDATES = {
     "ai_call": {"output", "raw_text"},
     "transaction": {"excluded_as_duplicate_of"},
+    "allocation": {"status", "confirmed_at", "confirmed_by"},
 }
 
 
@@ -484,6 +487,222 @@ def test_possible_duplicate_is_decided_once_per_pair(connect, workspaces):
             "UPDATE possible_duplicate SET status = 'merged', decided_at = now() WHERE id = %s",
             (dup,),
         )
+
+
+# --- 0007: allocations and rules ----------------------------------------------------
+
+
+def _allocation(conn, ws, tx, **overrides) -> uuid.UUID:
+    row = {
+        "workspace_id": ws,
+        "transaction_id": tx,
+        "amount": "1400.00",
+        "category": "rent_cold",
+        "tax_year": 2026,
+        "method": "matcher_rent",
+        "confidence": "1.000",
+    } | overrides
+    return _insert(conn, "allocation", row)
+
+
+@pytest.fixture
+def tx(connect, workspaces):
+    """(conn, workspace, transaction id) as the app role, rolled back after the test."""
+    a, _ = workspaces
+    with connect(APP, a) as conn:
+        acc = _account(conn, a, hashlib.sha256(uuid.uuid4().bytes).digest())
+        yield conn, a, _transaction(conn, a, acc, _import(conn, a, acc))
+
+
+def test_allocation_status_moves_forward_only(tx):
+    conn, a, t = tx
+    user = _user(conn, a)
+    move = "UPDATE allocation SET status = %s WHERE id = %s"
+    confirmed = _allocation(conn, a, t)
+    conn.execute(
+        "UPDATE allocation SET status = 'confirmed', confirmed_at = now(), confirmed_by = %s"
+        " WHERE id = %s",
+        (user, confirmed),
+    )
+    with pytest.raises(errors.RestrictViolation, match="append-only"), conn.transaction():
+        conn.execute(move, ("proposed", confirmed))  # backwards
+    with pytest.raises(errors.RestrictViolation), conn.transaction():
+        conn.execute(  # re-stamping a confirmation
+            "UPDATE allocation SET confirmed_at = now() + interval '1 hour' WHERE id = %s",
+            (confirmed,),
+        )
+    with pytest.raises(errors.RestrictViolation), conn.transaction():
+        conn.execute(
+            "UPDATE allocation SET confirmed_by = NULL, status = 'superseded' WHERE id = %s",
+            (confirmed,),
+        )
+    conn.execute(move, ("superseded", confirmed))
+    with pytest.raises(errors.RestrictViolation), conn.transaction():
+        conn.execute(move, ("confirmed", confirmed))  # superseded is final
+    proposed = _allocation(conn, a, t)
+    conn.execute(move, ("superseded", proposed))  # a proposal replaced before confirmation
+    with pytest.raises(errors.CheckViolation), conn.transaction():
+        conn.execute(move, ("confirmed", _allocation(conn, a, t)))  # without confirmed_at
+
+
+def test_allocation_amounts_and_scope_never_change(tx, connect):
+    conn, a, t = tx
+    row = _allocation(conn, a, t)
+    with pytest.raises(errors.InsufficientPrivilege), conn.transaction():
+        conn.execute("UPDATE allocation SET amount = 1 WHERE id = %s", (row,))
+    with pytest.raises(errors.InsufficientPrivilege), conn.transaction():
+        conn.execute("DELETE FROM allocation WHERE id = %s", (row,))
+
+
+def test_allocation_is_append_only_even_for_the_owner(connect, workspaces):
+    a, _ = workspaces
+    with connect(OWNER, a) as conn:
+        acc = _account(conn, a, hashlib.sha256(uuid.uuid4().bytes).digest())
+        row = _allocation(conn, a, _transaction(conn, a, acc, _import(conn, a, acc)))
+        for statement in (
+            "UPDATE allocation SET amount = 1 WHERE id = %s",
+            "UPDATE allocation SET status = 'confirmed', confirmed_at = now(), tax_year = 2027"
+            " WHERE id = %s",
+            "DELETE FROM allocation WHERE id = %s",
+        ):
+            with pytest.raises(errors.RestrictViolation), conn.transaction():
+                conn.execute(statement, (row,))
+        with pytest.raises(errors.RestrictViolation), conn.transaction():
+            conn.execute("TRUNCATE allocation CASCADE")
+
+
+def test_a_correction_supersedes_a_row_of_the_same_transaction(tx):
+    conn, a, t = tx
+    acc = conn.execute("SELECT account_id FROM transaction WHERE id = %s", (t,)).fetchone()[0]
+    other = _transaction(conn, a, acc, _import(conn, a, acc), b"other-line")
+    first = _allocation(conn, a, t)
+    with pytest.raises(errors.ForeignKeyViolation), conn.transaction():
+        _allocation(conn, a, other, supersedes_id=first)
+    # Not unique: a corrected set may have more rows than the one it replaces.
+    _allocation(conn, a, t, supersedes_id=first, amount="1380.00", method="user")
+    _allocation(conn, a, t, supersedes_id=first, amount="20.00", method="user")
+
+
+def test_allocation_provenance_checks(tx):
+    conn, a, t = tx
+    doc = _document(conn, a)
+    call = _ai_call(conn, a, None, job="match", transaction_id=t)
+    bad = [
+        {"method": "rule"},  # a rule hit without its rule
+        {"ai_call_id": call},  # an AI call on a matcher allocation
+        {"confidence": "1.001"},
+        {"category": "miete"},
+        {"service_period_start": "2026-10-01"},  # a period has both ends
+        {"service_period_start": "2026-10-31", "service_period_end": "2026-10-01"},
+        {
+            "unit_id": _insert(
+                conn,
+                "unit",
+                {
+                    "workspace_id": a,
+                    "property_id": _property(conn, a),
+                    "label": "WE 9",
+                    "floor_area_m2": "50.00",
+                },
+            )
+        },
+        {"status": "confirmed"},  # confirmed without confirmed_at
+        {"confirmed_at": "2026-11-06T10:00:00Z"},  # proposed with confirmed_at
+    ]
+    for row in bad:
+        with pytest.raises(errors.CheckViolation), conn.transaction():
+            _allocation(conn, a, t, **row)
+    _allocation(
+        conn,
+        a,
+        t,
+        method="llm",
+        ai_call_id=call,
+        confidence="0.600",
+        category="repairs",
+        document_id=doc,
+        service_period_start="2026-10-01",
+        service_period_end="2026-10-31",
+        recurring=True,
+        status="confirmed",
+        confirmed_at="2026-11-06T10:00:00Z",  # confirmed_by null: auto-confirmed
+    )
+
+
+def _property(conn, ws) -> uuid.UUID:
+    from db.db_support import insert_property
+
+    return insert_property(conn, ws)
+
+
+def _rule(conn, ws, matcher, **overrides) -> uuid.UUID:
+    row = {
+        "workspace_id": ws,
+        "matcher": Jsonb(matcher),
+        "split_method": "single_category",
+        "category": "insurance",
+    } | overrides
+    return _insert(conn, "matching_rule", row)
+
+
+IBAN_HMAC_HEX = "ab" * 32
+
+
+def test_a_rule_never_stores_an_amount(connect, workspaces):
+    a, _ = workspaces
+    with connect(APP, a) as conn:
+        bad_matchers = [
+            {"counterparty_iban_hmac": IBAN_HMAC_HEX, "amount": "1400.00"},
+            {"counterparty_iban_hmac": IBAN_HMAC_HEX, "split": {"interest": "900.00"}},
+            {"amount_sign": "debit"},  # matches nothing but a sign
+            {"counterparty_iban_hmac": None, "purpose_pattern": None},
+            {"counterparty_iban_hmac": "DE89370400440532013000"},  # a plain IBAN, not a hash
+            {"purpose_pattern": "Versicherung", "amount_sign": "minus"},
+            [],
+        ]
+        for matcher in bad_matchers:
+            with pytest.raises(errors.CheckViolation), conn.transaction():
+                _rule(conn, a, matcher)
+        _rule(conn, a, {"counterparty_iban_hmac": IBAN_HMAC_HEX, "amount_sign": "debit"})
+        _rule(conn, a, {"counterparty_name_pattern": "allianz", "purpose_pattern": None})
+        cols = {
+            r[0]
+            for r in conn.execute(
+                "SELECT data_type FROM information_schema.columns"
+                " WHERE table_name = 'matching_rule'"
+            )
+        }
+        assert "numeric" not in cols
+
+
+def test_rule_split_methods_need_their_scope(connect, workspaces):
+    a, _ = workspaces
+    matcher = {"counterparty_iban_hmac": IBAN_HMAC_HEX}
+    with connect(APP, a) as conn:
+        prop = _property(conn, a)
+        for split in ("by_rent_schedule", "by_loan_schedule", "by_wirtschaftsplan"):
+            with pytest.raises(errors.CheckViolation), conn.transaction():
+                _rule(conn, a, matcher, split_method=split, category=None)
+        with pytest.raises(errors.CheckViolation), conn.transaction():
+            _rule(conn, a, matcher, category=None)  # single_category without a category
+        with pytest.raises(errors.CheckViolation), conn.transaction():
+            _rule(conn, a, matcher, split_method="owner_transfer")  # a category it ignores
+        _rule(conn, a, matcher, split_method="by_wirtschaftsplan", category=None, property_id=prop)
+        _rule(conn, a, matcher, split_method="owner_transfer", category=None)
+
+
+def test_a_rule_hit_names_its_rule(tx):
+    conn, a, t = tx
+    rule = _rule(conn, a, {"counterparty_iban_hmac": IBAN_HMAC_HEX})
+    with pytest.raises(errors.ForeignKeyViolation), conn.transaction():
+        _allocation(conn, a, t, method="rule", rule_id=uuid.uuid4())
+    _allocation(conn, a, t, method="rule", rule_id=rule)
+
+
+def test_ai_call_transaction_must_exist(connect, workspaces):
+    a, _ = workspaces
+    with connect(APP, a) as conn, pytest.raises(errors.ForeignKeyViolation):
+        _ai_call(conn, a, None, job="match", transaction_id=uuid.uuid4())
 
 
 # --- event.entity_type: all of phase 2 at once ---------------------------------------
