@@ -51,6 +51,7 @@ from hausbuch.schemas.common import Schema
 from hausbuch.schemas.document import DocumentTyping
 from hausbuch.schemas.enums import (
     ActorType,
+    DocumentSubtype,
     EntityType,
     ExtractionKind,
     LinkTarget,
@@ -130,6 +131,11 @@ _LINK_SOURCE = {
     LinkTarget.TENANCY: "tenancy",
 }
 _LOAN_CORRECTED = ("principal", "disbursed_on")  # through correct_disbursement
+# Tenant documents by type (§5.5 step 3); a letter from a tenant is caught by the
+# classifier's contains_tenant_data.
+_TENANT_SUBTYPES = frozenset(
+    {DocumentSubtype.LEASE, DocumentSubtype.HANDOVER_PROTOCOL, DocumentSubtype.DEPOSIT_RECORD}
+)
 _JSONB_COLUMNS = ("targets", "fields", "decisions", "applied_entities")
 
 
@@ -176,12 +182,15 @@ def proposal_for_upload(
     ctx: CommandContext, document_id: UUID, *, created: bool, contains_tenant_data: bool
 ) -> Proposal:
     """The proposal an upload with `ai` answers with: a new one for a new document; for the
-    same bytes uploaded again (D9), the document's latest proposal if it has one (a re-read
-    is the explicit re-run, so a duplicate upload costs no model call)."""
+    same bytes uploaded again (D9), the document's pending proposal (queued, running or
+    ready) if it has one, so a double upload costs no second model call. After a decision,
+    a failure or a block the upload asks for a new read."""
     if not created:
-        latest = list_document_proposals(ctx.conn, document_id)
-        if latest:
-            return latest[0]
+        pending = [
+            p for p in list_document_proposals(ctx.conn, document_id) if p.status in _SUPERSEDABLE
+        ]
+        if pending:
+            return pending[0]
     return request_read(ctx, document_id, contains_tenant_data=contains_tenant_data)
 
 
@@ -238,6 +247,12 @@ def record_read_result(
         raise ValueError("extracted values come with the extract call's id, and only then")
     document_id = current.document_id
     kind = extraction_kind(classification)
+    # The job applies the gate (§5.5 step 3); this repeats it, so no classifier result can
+    # bring a tenant document past a workspace that has not allowed them (D16).
+    if not blocked_tenant_data and not _ai_tenant_documents(ctx.conn):
+        blocked_tenant_data = classification.contains_tenant_data or (
+            classification.subtype in _TENANT_SUBTYPES
+        )
     append_event(
         ctx,
         EventType.DOCUMENT_CLASSIFIED,

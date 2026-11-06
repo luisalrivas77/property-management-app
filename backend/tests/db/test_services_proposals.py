@@ -568,3 +568,44 @@ def test_request_read_for_another_workspaces_document_is_not_found(
     with pytest.raises(NotFoundError):
         run(b, proposals.rerun_proposal, uuid.uuid4())
     assert enqueued == []
+
+
+def test_a_duplicate_upload_after_a_failure_reads_again(
+    run, job, fresh_workspaces, blob_store, enqueued
+):
+    ws, _ = fresh_workspaces
+    doc = _upload(run, ws, blob_store)
+    first = run(ws, proposals.proposal_for_upload, doc.id, created=True, contains_tenant_data=False)
+    job(ws, proposals.record_read_failure, first.id, error_code=AI_UNPARSABLE, ai_call_id=None)
+    again = run(
+        ws, proposals.proposal_for_upload, doc.id, created=False, contains_tenant_data=False
+    )
+    assert again.id != first.id and again.status is ProposalStatus.QUEUED
+    assert [c["proposal_id"] for c in enqueued] == [first.id, again.id]
+
+
+def test_the_service_repeats_the_tenant_gate_on_the_classifier_result(
+    run, read, job, fresh_workspaces, blob_store, enqueued
+):
+    """A job that forgot the gate still cannot store a tenant document's read (D16)."""
+    ws, _ = fresh_workspaces
+    doc, stored, _ = _read_ready(
+        run,
+        job,
+        ws,
+        blob_store,
+        enqueued,
+        PURCHASE.model_copy(update={"contains_tenant_data": True}),
+        PURCHASE_VALUES,
+        b"%PDF gate",
+    )
+    assert stored.status is ProposalStatus.BLOCKED_TENANT_DATA
+    assert [r.key for r in stored.records] == ["typing"]
+    assert stored.extraction_id is None
+
+    def extractions(conn):
+        return conn.execute(
+            select(extraction_table).where(extraction_table.c.document_id == doc.id)
+        ).all()
+
+    assert read(ws, extractions) == []
