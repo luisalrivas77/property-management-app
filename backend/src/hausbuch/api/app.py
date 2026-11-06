@@ -38,6 +38,7 @@ from .routes import (
     loans,
     owners,
     properties,
+    proposals,
     tenancies,
     tenants,
     units,
@@ -53,6 +54,7 @@ ROUTE_MODULES = (
     tenancies,
     loans,
     documents,
+    proposals,
     history,
     auth,
 )

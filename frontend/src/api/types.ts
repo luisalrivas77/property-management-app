@@ -923,6 +923,12 @@ export interface paths {
          * Document Upload
          * @description 201 with a new document; 200 with the existing one when these bytes are already in
          *     the vault. 413 past HAUSBUCH_MAX_UPLOAD_BYTES, 415 outside the allow-list.
+         *
+         *     `ai` (default HAUSBUCH_AI_ENABLED) also queues a pre-fill proposal and answers with a
+         *     DocumentUploadResult (the document plus the proposal to poll, §6.1); without it the
+         *     answer is the Document, as in phase 1. For bytes already in the vault the document's
+         *     latest proposal is returned instead of a new read. `contains_tenant_data` with the
+         *     workspace's ai_tenant_documents off stores the proposal blocked, unread (D16).
          */
         post: operations["document_upload_api_documents_post"];
         delete?: never;
@@ -1040,6 +1046,92 @@ export interface paths {
         get: operations["document_original_api_documents__document_id__original_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/proposals/{proposal_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Proposal Get
+         * @description Polled by the document page while the proposal is queued or running (§6.1).
+         */
+        get: operations["proposal_get_api_proposals__proposal_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/proposals/{proposal_id}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Proposal Apply
+         * @description Create or patch every record not skipped, with the values in `body`. 422 with `loc`
+         *     prefixed by the record key when a value fails its model; 422 `proposal.not_ready` /
+         *     `proposal.already_decided` unless the proposal is ready. A failure writes nothing.
+         */
+        post: operations["proposal_apply_api_proposals__proposal_id__apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/proposals/{proposal_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Proposal Reject
+         * @description Record the rejection (an eval signal); no domain writes.
+         */
+        post: operations["proposal_reject_api_proposals__proposal_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/documents/{document_id}/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Document Proposals
+         * @description The document's proposals, newest first (the document page finds its current one).
+         */
+        get: operations["document_proposals_api_documents__document_id__proposals_get"];
+        put?: never;
+        /**
+         * Document Proposal Rerun
+         * @description Read the document again: its queued, running or ready proposal becomes superseded.
+         */
+        post: operations["document_proposal_rerun_api_documents__document_id__proposals_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1483,6 +1575,29 @@ export interface components {
             display_name: string;
         };
         /**
+         * AppliedEntity
+         * @description One record of an applied proposal and the entity it created or patched (for a link,
+         *     the entity the document was linked to). entity_id is null for a skipped record.
+         */
+        AppliedEntity: {
+            /** Key */
+            key: string;
+            /** Entity Type */
+            entity_type: components["schemas"]["EntityType"] | ("acquisition_cost" | "price_split" | "rent_schedule" | "typing" | "link" | "ownership" | "deposit_received");
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "create" | "patch" | "correction" | "unchanged";
+            /**
+             * Skipped
+             * @default false
+             */
+            skipped: boolean;
+            /** Entity Id */
+            entity_id?: string | null;
+        };
+        /**
          * BescheidExtraction
          * @description A Bescheid other than Grundsteuer, e.g. the Grunderwerbsteuerbescheid.
          */
@@ -1510,6 +1625,13 @@ export interface components {
             file: string;
             /** @default upload */
             source: components["schemas"]["DocumentSource"];
+            /** Ai */
+            ai?: boolean | null;
+            /**
+             * Contains Tenant Data
+             * @default false
+             */
+            contains_tenant_data: boolean;
         };
         /**
          * ChecklistDocumentRef
@@ -1834,6 +1956,17 @@ export interface components {
             typing: components["schemas"]["DocumentTyping"];
             fields?: components["schemas"]["ManualDocumentFields"] | null;
         };
+        /**
+         * DocumentUploadResult
+         * @description POST /documents with ai = true (§6.1): the document plus the queued proposal to
+         *     poll. proposal_id is null when the upload did not ask for a proposal.
+         */
+        DocumentUploadResult: {
+            document: components["schemas"]["Document"];
+            /** Proposal Id */
+            proposal_id?: string | null;
+            proposal_status?: components["schemas"]["ProposalStatus"] | null;
+        };
         /** EndTenancyBody */
         EndTenancyBody: {
             /**
@@ -2004,6 +2137,13 @@ export interface components {
          * @enum {string}
          */
         ExtractionSource: "manual" | "ai";
+        /**
+         * FieldDecision
+         * @description What the user did with one proposed value. Recorded per field on apply, without the
+         *     value (proposal.applied event, eval record).
+         * @enum {string}
+         */
+        FieldDecision: "accepted" | "edited" | "cleared" | "skipped";
         /**
          * FieldError
          * @description One validation error, whitelisted to these three keys: never input, ctx or url (§3.6).
@@ -2752,6 +2892,148 @@ export interface components {
             /** Build Year */
             build_year?: number;
         };
+        /**
+         * Proposal
+         * @description Read shape. kind is null until the document is classified (the row is created
+         *     `queued` at upload); records is empty until `ready`, and again after the D19 scrub.
+         */
+        Proposal: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            kind: components["schemas"]["ExtractionKind"] | null;
+            status: components["schemas"]["ProposalStatus"];
+            /** Error Code */
+            error_code: string | null;
+            target_mode: components["schemas"]["ProposalTargetMode"];
+            /** Records */
+            records?: components["schemas"]["ProposalRecord"][];
+            /** Extraction Id */
+            extraction_id: string | null;
+            /** Ai Call Id */
+            ai_call_id: string | null;
+            /** Decided At */
+            decided_at: string | null;
+        };
+        /**
+         * ProposalApplyBody
+         * @description POST /proposals/{id}/apply.
+         */
+        ProposalApplyBody: {
+            /** Records */
+            records: components["schemas"]["ProposalApplyRecord"][];
+            /** Effective Date Corrections */
+            effective_date_corrections?: {
+                [key: string]: string;
+            };
+        };
+        /** ProposalApplyRecord */
+        ProposalApplyRecord: {
+            /** Key */
+            key: string;
+            /**
+             * Skip
+             * @default false
+             */
+            skip: boolean;
+            /** Values */
+            values?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Decisions */
+            decisions?: {
+                [key: string]: components["schemas"]["FieldDecision"];
+            };
+        };
+        /**
+         * ProposalApplyResult
+         * @description POST /proposals/{id}/apply: the applied proposal and what each record became.
+         */
+        ProposalApplyResult: {
+            proposal: components["schemas"]["Proposal"];
+            /** Applied */
+            applied: components["schemas"]["AppliedEntity"][];
+        };
+        /**
+         * ProposalRecord
+         * @description One record the proposal would create or patch.
+         *
+         *     key: "property", "unit", "cost:notary", "loan", "tenant:1", "tenancy", "rent", "typing",
+         *       "price_split", "ownership", "link:property", "correction:notarized_on", ...
+         *     fields: by the *Create / *Patch field name; a nested field is dotted ("address.city").
+         *       Values the apply step supplies itself (the document as Beleg or evidence, the ids of
+         *       records created in the same apply, a split's source) are not fields.
+         *     current: the existing record's values of the same fields, when target_id is set.
+         */
+        ProposalRecord: {
+            /** Key */
+            key: string;
+            /** Entity Type */
+            entity_type: components["schemas"]["EntityType"] | ("acquisition_cost" | "price_split" | "rent_schedule" | "typing" | "link" | "ownership" | "deposit_received");
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "create" | "patch" | "correction" | "unchanged";
+            /** Target Id */
+            target_id?: string | null;
+            /** Fields */
+            fields?: {
+                [key: string]: components["schemas"]["ExtractedValue"];
+            };
+            /** Current */
+            current?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /** Notes */
+            notes?: string[];
+        };
+        /**
+         * ProposalRerunBody
+         * @description POST /documents/{id}/proposals (optional body): read the document again. The upload's
+         *     contains_tenant_data is not stored, so a re-run says it again (D16).
+         */
+        ProposalRerunBody: {
+            /**
+             * Contains Tenant Data
+             * @default false
+             */
+            contains_tenant_data: boolean;
+        };
+        /**
+         * ProposalStatus
+         * @description proposal.status (§3.1). applied and rejected are decisions; the rest are job states.
+         * @enum {string}
+         */
+        ProposalStatus: "queued" | "running" | "ready" | "applied" | "rejected" | "superseded" | "failed" | "blocked_tenant_data";
+        /**
+         * ProposalTargetMode
+         * @description proposal.target_mode: whether the proposal creates new records or patches `targets`.
+         * @enum {string}
+         */
+        ProposalTargetMode: "create" | "patch";
         /**
          * PurchaseContractExtraction
          * @description Kaufvertrag (contract / purchase_contract).
@@ -5394,9 +5676,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["Document"];
-                };
+                content?: never;
             };
             /** @description Successful Response */
             201: {
@@ -5404,7 +5684,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Document"];
+                    "application/json": components["schemas"]["Document"] | components["schemas"]["DocumentUploadResult"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
@@ -5632,6 +5912,169 @@ export interface operations {
                 };
                 content: {
                     "application/octet-stream": unknown;
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    proposal_get_api_proposals__proposal_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Proposal"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    proposal_apply_api_proposals__proposal_id__apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProposalApplyBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalApplyResult"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    proposal_reject_api_proposals__proposal_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Proposal"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    document_proposals_api_documents__document_id__proposals_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Proposal"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    document_proposal_rerun_api_documents__document_id__proposals_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ProposalRerunBody"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Proposal"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
