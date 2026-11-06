@@ -14,6 +14,8 @@ closed value sets, forced workspace_isolation RLS, explicit hausbuch_app grants.
   matcher allows only its four keys (an IBAN hash, two patterns, an amount sign), and the
   table has no money column.
 - ai_call.transaction_id gets the FK 0005 left out.
+- The downgrade refuses while any of this step's tables holds a row (it would drop
+  ledger data); it lifts FORCE RLS first, since the owner has no workspace set.
 
 Revision ID: 0007_allocations_rules
 Revises: 0006_accounts_statements
@@ -218,6 +220,23 @@ $$;
 """
 
 
+def _refuse_if_rows(tables: list[str]) -> str:
+    """Downgrade guard: refuse to drop a table that holds rows. The downgrade runs as the
+    owner with no app.workspace_id, and forced RLS would hide every row, so each table first
+    stops forcing RLS (the owner then sees all rows). A refusal rolls the ALTERs back."""
+    checks = "".join(
+        f"""
+    ALTER TABLE {table} NO FORCE ROW LEVEL SECURITY;
+    IF EXISTS (SELECT 1 FROM {table}) THEN
+        RAISE EXCEPTION 'downgrade of {revision} refused: table {table} holds rows'
+            USING ERRCODE = 'restrict_violation',
+                  HINT = 'Export and remove the rows first; a downgrade never drops data.';
+    END IF;"""
+        for table in tables
+    )
+    return f"DO $$\nBEGIN{checks}\nEND\n$$;"
+
+
 def upgrade() -> None:
     assert set(APP_GRANTS) == set(TABLES)
     op.execute(FUNCTIONS)
@@ -230,6 +249,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.execute(_refuse_if_rows(list(reversed(TABLES))))
     op.execute("ALTER TABLE ai_call DROP CONSTRAINT ai_call_transaction_fk")
     op.execute("ALTER TABLE allocation DROP CONSTRAINT allocation_rule_fk")
     for table in reversed(TABLES):

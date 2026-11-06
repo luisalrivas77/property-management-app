@@ -13,6 +13,8 @@ forced workspace_isolation RLS, explicit hausbuch_app grants.
   A transaction's import and the line it duplicates are on the same account (composite FKs).
 - statement_import CHECKs: a reconciled import's computed closing equals its declared one; an
   import has a declared closing balance exactly when its balance source is not 'none'.
+- The downgrade refuses while any of this step's tables holds a row (it would drop
+  ledger data); it lifts FORCE RLS first, since the owner has no workspace set.
 
 Revision ID: 0006_accounts_statements
 Revises: 0005_jobs_ai_proposals
@@ -221,6 +223,23 @@ $$;
 """
 
 
+def _refuse_if_rows(tables: list[str]) -> str:
+    """Downgrade guard: refuse to drop a table that holds rows. The downgrade runs as the
+    owner with no app.workspace_id, and forced RLS would hide every row, so each table first
+    stops forcing RLS (the owner then sees all rows). A refusal rolls the ALTERs back."""
+    checks = "".join(
+        f"""
+    ALTER TABLE {table} NO FORCE ROW LEVEL SECURITY;
+    IF EXISTS (SELECT 1 FROM {table}) THEN
+        RAISE EXCEPTION 'downgrade of {revision} refused: table {table} holds rows'
+            USING ERRCODE = 'restrict_violation',
+                  HINT = 'Export and remove the rows first; a downgrade never drops data.';
+    END IF;"""
+        for table in tables
+    )
+    return f"DO $$\nBEGIN{checks}\nEND\n$$;"
+
+
 def upgrade() -> None:
     assert set(APP_GRANTS) == set(TABLES)
     op.execute(FUNCTIONS)
@@ -233,6 +252,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.execute(_refuse_if_rows(list(reversed(TABLES))))
     for table in reversed(TABLES):
         op.execute(f"DROP TABLE {table}")
     op.execute("DROP FUNCTION transaction_exclude_once()")

@@ -9,9 +9,19 @@ import uuid
 from pathlib import Path
 
 import pytest
-from db.db_support import APP, BACKEND, OWNER, _insert
+from db.db_support import (
+    APP,
+    BACKEND,
+    OWNER,
+    _admin,
+    _insert,
+    alembic,
+    create_database,
+    drop_database,
+)
 from psycopg import errors
 from psycopg.types.json import Jsonb
+from sqlalchemy.exc import DBAPIError
 
 from hausbuch.schemas.enums import ExtractionKind
 
@@ -797,3 +807,48 @@ def test_app_role_defers_fetches_and_finishes_a_job(connect):
         assert job == (job_ids[0], "doing")
         conn.execute("SELECT procrastinate_finish_job_v1(%s, 'succeeded', false)", (job[0],))
         conn.execute("SELECT procrastinate_unregister_worker_v1(%s)", (worker,))
+
+
+# --- Downgrade guards (0006, 0007) ---------------------------------------------------
+
+
+def _seed_account(conn, ws) -> str:
+    _account(conn, ws)
+    return "account"
+
+
+def _seed_rule(conn, ws) -> str:
+    _rule(conn, ws, {"purpose_pattern": "versicherung"})
+    return "matching_rule"
+
+
+@pytest.mark.parametrize(
+    ("revision", "seed"),
+    [("0006_accounts_statements", _seed_account), ("0007_allocations_rules", _seed_rule)],
+)
+def test_downgrade_refuses_while_its_tables_hold_rows(revision, seed):
+    """A step's downgrade drops its tables only when they are empty. The owner runs it with no
+    workspace set, where forced RLS hides every row: the guard must still see them."""
+    name = create_database()
+    try:
+        alembic(name, "upgrade", "head")
+        ws = uuid.uuid4()
+        with _admin(name) as conn:
+            conn.execute("INSERT INTO workspace (id, name) VALUES (%s, 'A')", (ws,))
+            conn.execute(f"SET ROLE {OWNER}")
+            conn.execute("SELECT set_config('app.workspace_id', %s, false)", (str(ws),))
+            table = seed(conn, ws)
+        # Later steps' tables are empty, so their downgrades go through.
+        alembic(name, "downgrade", revision)
+        with pytest.raises(DBAPIError, match=f"refused: table {table} holds rows"):
+            alembic(name, "downgrade", "-1")
+        with _admin(name) as conn:
+            assert conn.execute("SELECT version_num FROM alembic_version").fetchall() == [
+                (revision,)
+            ]
+            forced = conn.execute(
+                "SELECT relforcerowsecurity FROM pg_class WHERE oid = %s::regclass", (table,)
+            ).fetchone()
+            assert forced == (True,)  # the refused downgrade's NO FORCE was rolled back
+    finally:
+        drop_database(name)
