@@ -256,15 +256,17 @@ and reviewed by a reviewer agent; every review finding was fixed or is listed be
    `api:8844916ea91b` and `web:8844916ea91b-16ef9db2`; the old images work with `0004`,
    which only adds a document subtype. Merging it also fixed the auth enrollment tests,
    which had a fixed 5 Nov 2026 clock and failed on every branch from 6 Nov 09:30 UTC.
+6. **DONE: retry after Scaleway's 412 quirk** (Q16, 6 Nov 2026). Scaleway answers the first
+   request on a connection after a refused conditional PUT with a `400` that does not come
+   from S3 (`text/html`, `connection: close`, no `x-amz-request-id`), so a racing upload or
+   another request on that pooled connection failed. `make_s3_client` now retries exactly
+   that response once, immediately; genuine S3 400s carry `x-amz-request-id` and are never
+   retried. Reviewed (ship, no fix scope), merged as #21 (`655bf40`), live as
+   `api:655bf40bd355` (roll back to `api:aa298bb0752f`; no migration). Known limit: the
+   quirk landing on a request's second attempt (after a 503) still raises, rare and loud.
+   The next real-bucket run of `test_real_bucket_honours_if_none_match` is its live check.
 
 ### Known gaps (not yet built)
-
-- **The request after a 412 can fail** (Q16, found 6 Nov 2026): Scaleway answers the first
-  request on a connection after a refused conditional PUT with a bodiless `400` and closes
-  the connection. `S3BlobStore` treats that as a hard error, so `put`'s lost-race path (and a
-  botocore retry after a lost PUT response) can turn a racing upload into a 500. Nothing
-  stored is harmed. Fix: retry a request once when S3 answers `400` with no error code;
-  `test_real_bucket_honours_if_none_match` reproduces it against the real bucket.
 
 - There is no correction command for `tenancy.ended`, `tenancy.created` (`signed_on`),
   `tenancy.notice_given` or `loan.disbursed`, and no party changes on a tenancy. Step 4 will
