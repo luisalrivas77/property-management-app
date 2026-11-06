@@ -248,9 +248,14 @@ export function ImportsTable({
                 </td>
                 <td>
                   {lineCounts(imp)}
-                  <p className="cell-detail">
-                    <Link href={`/accounts/${accountId}?tab=umsaetze&import=${imp.id}`}>{imp.lines_total} Umsätze der Datei anzeigen</Link>
-                  </p>
+                  {imp.lines_new > 0 ? (
+                    <p className="cell-detail">
+                      {/* ?import= lists the lines this import stored, not the ones it skipped as known. */}
+                      <Link href={`/accounts/${accountId}?tab=umsaetze&import=${imp.id}`}>
+                        {imp.lines_new === 1 ? "Den neuen Umsatz anzeigen" : `Die ${imp.lines_new} neuen Umsätze anzeigen`}
+                      </Link>
+                    </p>
+                  ) : null}
                 </td>
                 <td className="num">
                   {formatMoney(imp.declared_closing)}

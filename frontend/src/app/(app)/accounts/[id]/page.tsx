@@ -198,7 +198,7 @@ function TransactionsTab({ accountId }: { accountId: string }) {
       {importId ? (
         <div className="notice notice-info">
           <p>
-            Nur die Umsätze eines Kontoauszugs. <Link href={href({})}>Alle Umsätze anzeigen</Link>
+            Nur die Umsätze, die ein Kontoauszug neu gespeichert hat. <Link href={href({})}>Alle Umsätze anzeigen</Link>
           </p>
         </div>
       ) : (
