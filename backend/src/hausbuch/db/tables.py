@@ -467,3 +467,85 @@ proposal = Table(
     _uuid("decided_by", nullable=True),
     _timestamp("scrubbed_at", nullable=True, default=False),
 )
+
+
+# --- Phase 2: accounts, statements, transactions (0006) ------------------------
+
+account = Table(
+    "account",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _text("label"),
+    _text("bank"),
+    _text("iban_masked"),
+    Column("iban_hmac", LargeBinary, nullable=False),
+    _text("source", server_default=text("'upload'")),
+    _money("opening_balance"),
+    _date("opening_balance_on"),
+    Column("is_owner_account", Boolean, nullable=False, server_default=text("false")),
+    _created_at(),
+    _updated_at(),
+)
+
+statement_import = Table(
+    "statement_import",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("account_id"),
+    _uuid("document_id"),
+    _text("format"),
+    Column("lines_total", Integer, nullable=False, server_default=text("0")),
+    Column("lines_new", Integer, nullable=False, server_default=text("0")),
+    Column("lines_skipped", Integer, nullable=False, server_default=text("0")),
+    _date("first_booking_on", nullable=True),
+    _date("last_booking_on", nullable=True),
+    _money("declared_opening", nullable=True),
+    _money("declared_closing", nullable=True),
+    _text("balance_source", server_default=text("'none'")),
+    _money("computed_closing", nullable=True),
+    _text("status", server_default=text("'imported'")),
+    _text("error_code", nullable=True),
+    _uuid("ai_call_id", nullable=True),
+    _created_at(),
+    _updated_at(),
+)
+
+transaction = Table(
+    "transaction",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("account_id"),
+    _uuid("import_id"),
+    Column("line_hash", LargeBinary, nullable=False),
+    _date("booking_date"),
+    _date("value_date", nullable=True),
+    _money("amount"),
+    _text("currency", server_default=text("'EUR'")),
+    _text("counterparty_name", nullable=True),
+    _text("counterparty_iban_masked", nullable=True),
+    Column("counterparty_iban_hmac", LargeBinary, nullable=True),
+    _text("purpose", server_default=text("''")),
+    _text("booking_text", nullable=True),
+    _text("bank_reference", nullable=True),
+    _text("end_to_end_ref", nullable=True),
+    _text("mandate_ref", nullable=True),
+    Column("raw", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    Column("is_pending", Boolean, nullable=False, server_default=text("false")),
+    _uuid("excluded_as_duplicate_of", nullable=True),
+    _created_at(),
+)
+
+possible_duplicate = Table(
+    "possible_duplicate",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("transaction_id"),
+    _uuid("other_transaction_id"),
+    _text("status", server_default=text("'open'")),
+    _timestamp("decided_at", nullable=True, default=False),
+    _created_at(),
+)

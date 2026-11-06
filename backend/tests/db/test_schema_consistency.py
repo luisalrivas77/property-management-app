@@ -8,6 +8,7 @@ from db.db_support import OWNER
 
 from hausbuch.schemas import enums as E
 from hausbuch.schemas.ai import AiJob
+from hausbuch.schemas.bank import StatementFormat
 
 COLUMNS: dict[tuple[str, str], type[StrEnum]] = {
     ("property", "kind"): E.PropertyKind,
@@ -29,6 +30,12 @@ COLUMNS: dict[tuple[str, str], type[StrEnum]] = {
     ("ai_call", "job"): AiJob,
     ("proposal", "status"): E.ProposalStatus,
     ("proposal", "target_mode"): E.ProposalTargetMode,
+    ("account", "source"): E.AccountSource,
+    ("statement_import", "format"): StatementFormat,
+    ("statement_import", "balance_source"): E.BalanceSource,
+    ("statement_import", "status"): E.ImportStatus,
+    ("transaction", "currency"): E.Currency,
+    ("possible_duplicate", "status"): E.DuplicateStatus,
 }
 
 

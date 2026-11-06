@@ -45,6 +45,10 @@ MIGRATION_TABLES = {
     # Phase 2 (docs/phases/phase-2.md §3)
     "ai_call",
     "proposal",
+    "account",
+    "statement_import",
+    "transaction",
+    "possible_duplicate",
 }
 # Procrastinate's own tables (0005): not RLS'd, no workspace_id (D20). The one exclusion.
 QUEUE_TABLE_PREFIX = "procrastinate_"

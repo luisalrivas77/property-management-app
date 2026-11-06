@@ -28,10 +28,15 @@ PRIVILEGES = ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE")
 EXPECTED_GRANTS = {
     "ai_call": {"SELECT", "INSERT", "DELETE"},
     "proposal": {"SELECT", "INSERT", "UPDATE"},
+    "account": {"SELECT", "INSERT", "UPDATE"},
+    "statement_import": {"SELECT", "INSERT", "UPDATE"},
+    "transaction": {"SELECT", "INSERT"},  # never DELETE (immutable as imported)
+    "possible_duplicate": {"SELECT", "INSERT", "UPDATE"},
 }
 # Columns the app role may UPDATE on tables without a table-wide UPDATE.
 COLUMN_UPDATES = {
     "ai_call": {"output", "raw_text"},
+    "transaction": {"excluded_as_duplicate_of"},
 }
 
 
@@ -275,6 +280,209 @@ def test_the_d19_scrub_keeps_an_applied_proposal_valid(connect, workspaces):
             "UPDATE proposal SET fields = NULL, decisions = NULL, scrubbed_at = now()"
             " WHERE id = %s",
             (p,),
+        )
+
+
+# --- 0006: accounts, imports, transactions ------------------------------------------
+
+HMAC_A, HMAC_B = hashlib.sha256(b"iban-a").digest(), hashlib.sha256(b"iban-b").digest()
+
+
+def _account(conn, ws, iban_hmac=HMAC_A, **overrides) -> uuid.UUID:
+    row = {
+        "workspace_id": ws,
+        "label": "Mietkonto",
+        "bank": "Sparkasse",
+        "iban_masked": "DE89 **** 3000",
+        "iban_hmac": iban_hmac,
+        "opening_balance": "1250.00",
+        "opening_balance_on": "2026-09-30",
+    } | overrides
+    return _insert(conn, "account", row)
+
+
+def _import(conn, ws, account_id, **overrides) -> uuid.UUID:
+    row = {
+        "workspace_id": ws,
+        "account_id": account_id,
+        "document_id": _document(conn, ws),
+        "format": "csv_camt",
+    } | overrides
+    return _insert(conn, "statement_import", row)
+
+
+def _transaction(conn, ws, account_id, import_id, line=b"line-1", **overrides) -> uuid.UUID:
+    row = {
+        "workspace_id": ws,
+        "account_id": account_id,
+        "import_id": import_id,
+        "line_hash": hashlib.sha256(line).digest(),
+        "booking_date": "2026-10-01",
+        "amount": "1400.00",
+        "purpose": "Miete Oktober WE 3",
+    } | overrides
+    return _insert(conn, "transaction", row)
+
+
+def test_account_iban_is_unique_per_workspace(connect, workspaces):
+    a, b = workspaces
+    with connect(APP, a) as conn:
+        _account(conn, a)
+        with pytest.raises(errors.UniqueViolation), conn.transaction():
+            _account(conn, a, label="Zweitkonto")
+        with pytest.raises(errors.CheckViolation), conn.transaction():
+            _account(conn, a, HMAC_B, iban_masked="DE89370400440532013000")  # not masked
+    with connect(APP, b) as conn:
+        _account(conn, b)  # the same account in another workspace is another row
+
+
+def test_a_line_is_stored_once_per_account(connect, workspaces):
+    a, _ = workspaces
+    with connect(APP, a) as conn:
+        acc, other = _account(conn, a), _account(conn, a, HMAC_B)
+        imp = _import(conn, a, acc)
+        _transaction(conn, a, acc, imp)
+        with pytest.raises(errors.UniqueViolation), conn.transaction():
+            _transaction(conn, a, acc, _import(conn, a, acc))  # a re-upload
+        # The same line hash on another account is another line; but a transaction's import
+        # must belong to its own account.
+        with pytest.raises(errors.ForeignKeyViolation), conn.transaction():
+            _transaction(conn, a, other, imp)
+        _transaction(conn, a, other, _import(conn, a, other))
+
+
+def test_transactions_are_immutable_except_one_exclusion(connect, workspaces):
+    a, _ = workspaces
+    with connect(APP, a) as conn:
+        acc = _account(conn, a)
+        imp = _import(conn, a, acc)
+        first = _transaction(conn, a, acc, imp, b"csv-line")
+        later = _transaction(conn, a, acc, _import(conn, a, acc, format="camt053"), b"camt-line")
+        with pytest.raises(errors.InsufficientPrivilege), conn.transaction():
+            conn.execute("UPDATE transaction SET amount = 1 WHERE id = %s", (later,))
+        with pytest.raises(errors.InsufficientPrivilege), conn.transaction():
+            conn.execute("DELETE FROM transaction WHERE id = %s", (later,))
+        with pytest.raises(errors.CheckViolation), conn.transaction():
+            conn.execute(
+                "UPDATE transaction SET excluded_as_duplicate_of = id WHERE id = %s", (later,)
+            )
+        set_once = "UPDATE transaction SET excluded_as_duplicate_of = %s WHERE id = %s"
+        conn.execute(set_once, (first, later))
+        with pytest.raises(errors.RestrictViolation, match="append-only"), conn.transaction():
+            conn.execute(set_once, (None, later))  # never back to null
+        with pytest.raises(errors.RestrictViolation), conn.transaction():
+            conn.execute(set_once, (_transaction(conn, a, acc, imp, b"x"), later))  # nor moved
+
+
+def test_transactions_cannot_be_changed_deleted_or_truncated_by_the_owner(connect, workspaces):
+    a, _ = workspaces
+    with connect(OWNER, a) as conn:
+        acc = _account(conn, a)
+        tx = _transaction(conn, a, acc, _import(conn, a, acc))
+        for statement in (
+            "UPDATE transaction SET purpose = 'x' WHERE id = %s",
+            "DELETE FROM transaction WHERE id = %s",
+        ):
+            with pytest.raises(errors.RestrictViolation), conn.transaction():
+                conn.execute(statement, (tx,))
+        with pytest.raises(errors.RestrictViolation), conn.transaction():
+            conn.execute("TRUNCATE transaction CASCADE")
+
+
+def test_a_duplicate_can_only_point_at_a_line_of_the_same_account(connect, workspaces):
+    a, _ = workspaces
+    with connect(APP, a) as conn:
+        acc, other = _account(conn, a), _account(conn, a, HMAC_B)
+        tx = _transaction(conn, a, acc, _import(conn, a, acc))
+        foreign = _transaction(conn, a, other, _import(conn, a, other), b"y")
+        with pytest.raises(errors.ForeignKeyViolation), conn.transaction():
+            conn.execute(
+                "UPDATE transaction SET excluded_as_duplicate_of = %s WHERE id = %s", (foreign, tx)
+            )
+
+
+def test_statement_import_balance_checks(connect, workspaces):
+    a, _ = workspaces
+    with connect(APP, a) as conn:
+        acc = _account(conn, a)
+        bad = [
+            {"balance_source": "user"},  # a source without a declared closing
+            {"declared_closing": "100.00"},  # a declared closing with source none
+            {"declared_opening": "1.00", "balance_source": "none"},
+            {  # reconciled although the computed closing differs
+                "status": "reconciled",
+                "balance_source": "user",
+                "declared_closing": "100.00",
+                "computed_closing": "99.99",
+            },
+            {"status": "unreconciled", "balance_source": "user", "declared_closing": "1.00"},
+            {"status": "failed"},  # failed without an error code
+            {"error_code": "x"},  # an error code on an imported file
+            {"lines_total": 2, "lines_new": 2, "lines_skipped": 1},
+            {"first_booking_on": "2026-10-01"},  # first without last
+            {"first_booking_on": "2026-10-31", "last_booking_on": "2026-10-01"},
+            {"ai_call_id": _ai_call(conn, a, _document(conn, a))},  # only a PDF has an AI call
+        ]
+        for row in bad:
+            with pytest.raises(errors.CheckViolation), conn.transaction():
+                _import(conn, a, acc, **row)
+        _import(
+            conn,
+            a,
+            acc,
+            status="reconciled",
+            balance_source="user",
+            declared_closing="2650.00",
+            computed_closing="2650.00",
+            lines_total=3,
+            lines_new=1,
+            lines_skipped=2,
+            first_booking_on="2026-10-01",
+            last_booking_on="2026-10-31",
+        )
+        _import(
+            conn,
+            a,
+            acc,
+            status="unreconciled",
+            error_code="statement.unreconciled",
+            balance_source="file",
+            declared_opening="1250.00",
+            declared_closing="2650.00",
+            computed_closing="2640.00",
+        )
+        doc = _document(conn, a)
+        _import(conn, a, acc, format="pdf", ai_call_id=_ai_call(conn, a, doc), document_id=doc)
+
+
+def test_possible_duplicate_is_decided_once_per_pair(connect, workspaces):
+    a, _ = workspaces
+    with connect(APP, a) as conn:
+        acc = _account(conn, a)
+        t1 = _transaction(conn, a, acc, _import(conn, a, acc), b"one")
+        t2 = _transaction(conn, a, acc, _import(conn, a, acc, format="camt053"), b"two")
+
+        def pair(first, second, **row):
+            return _insert(
+                conn,
+                "possible_duplicate",
+                {"workspace_id": a, "transaction_id": first, "other_transaction_id": second} | row,
+            )
+
+        for row in (
+            {"status": "merged"},  # decided without a time
+            {"decided_at": "2026-11-06T10:00:00Z"},  # open with a decision time
+        ):
+            with pytest.raises(errors.CheckViolation), conn.transaction():
+                pair(t1, t2, **row)
+        with pytest.raises(errors.CheckViolation), conn.transaction():
+            pair(t1, t1)
+        dup = pair(t1, t2)
+        with pytest.raises(errors.UniqueViolation), conn.transaction():
+            pair(t1, t2)
+        conn.execute(
+            "UPDATE possible_duplicate SET status = 'merged', decided_at = now() WHERE id = %s",
+            (dup,),
         )
 
 
