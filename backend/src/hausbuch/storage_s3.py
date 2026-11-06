@@ -21,6 +21,16 @@ How put keeps that promise
     Whether Scaleway honours the header is Q16: run this module's tests against a real bucket
     (tests/test_storage_s3.py, HAUSBUCH_TEST_S3_BUCKET) and record the result.
 
+    Scaleway honours it (measured 6 Nov 2026), with one quirk: the request sent next on the
+    keep-alive connection that carried the 412, whatever it is, gets an HTTP 400 that does not
+    come from the S3 backend (text/html, `connection: close`, no `x-amz-request-id`, which every
+    genuine S3 response carries, the 412 included). The connection is then closed, so the same
+    request on a fresh connection works. botocore does not retry a 400, so without help the
+    HEAD that put sends after its 412, or any request of another thread that picks up that
+    pooled connection, would fail. make_s3_client therefore retries a 400 without
+    `x-amz-request-id` once, immediately (_retry_proxy_400); a genuine S3 400 such as
+    InvalidArgument or BadDigest carries the header and is never retried.
+
 Integrity
     put sends Content-MD5, so the server rejects bytes damaged in transit. get verifies
     nothing itself: hausbuch.services.documents.read_original checks size and SHA-256 of every
@@ -103,9 +113,38 @@ def make_s3_client(
     """A boto3 S3 client with this module's timeouts and retries. Credentials come from the
     session (default: the SDK's standard chain)."""
     session = session or boto3.session.Session()
-    return session.client(
+    client = session.client(
         "s3", endpoint_url=endpoint_url, region_name=region, config=client_config()
     )
+    client.meta.events.register(
+        "needs-retry.s3", _retry_proxy_400, unique_id="hausbuch-retry-proxy-400"
+    )
+    return client
+
+
+def _retry_proxy_400(
+    response: Any = None, caught_exception: Any = None, attempts: int = 0, **_: Any
+) -> int | None:
+    """botocore needs-retry handler: retry, once and without delay, a 400 that did not come
+    from S3 (no x-amz-request-id; Scaleway's answer on the connection after a 412, see the
+    module docstring). The connection was closed with it, so the retry gets a fresh one.
+
+    botocore calls every needs-retry handler and retries on the first non-None answer; the
+    standard retry handler answers None for a 400, so 0 here means "retry now". attempts is
+    1-based, so only a request's first attempt is retried and this can never loop. The S3
+    region redirector, on the same event, also sends a HeadBucket after a HEAD's bodiless 400
+    (botocore's own behaviour, also without this handler); if that names a region it asks for
+    the same immediate retry, otherwise it answers None. Either way the HEAD is sent twice.
+
+    Retrying is safe for every operation the store issues: GET and HEAD are reads, the PUT is
+    conditional (If-None-Match: *), so a repeat can never overwrite, and DELETE is idempotent.
+    The handler decides from its arguments alone, so the client stays thread-safe."""
+    if caught_exception is not None or response is None or attempts != 1:
+        return None
+    http = response[0]
+    if http is None or http.status_code != 400 or "x-amz-request-id" in http.headers:
+        return None
+    return 0
 
 
 class S3BlobStore:

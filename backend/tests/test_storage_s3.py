@@ -4,8 +4,8 @@ The contract tests run against every store. In CI the S3 store talks to FakeS3, 
 S3 behind a real boto3 client: FakeS3 answers botocore's `before-send` event, so requests are
 serialised, signed, retried and their errors parsed by botocore exactly as against a server;
 only the socket is missing. It honours `If-None-Match: *` like AWS (or ignores it, to model an
-endpoint that does not), verifies Content-MD5, refuses ACL headers, and can inject errors and a
-concurrent writer.
+endpoint that does not), verifies Content-MD5, refuses ACL headers, and can inject errors, a
+concurrent writer, and Scaleway's non-S3 400 on the request after a 412 (`poison`).
 
 The real-bucket run (Q16) is by hand: set HAUSBUCH_TEST_S3_BUCKET, HAUSBUCH_TEST_S3_ENDPOINT_URL
 (e.g. https://s3.fr-par.scw.cloud), HAUSBUCH_TEST_S3_REGION (fr-par) and credentials for the
@@ -78,6 +78,12 @@ class _Raw:
         pass
 
 
+# Every genuine S3 response carries these, errors included.
+_S3_IDS = {"x-amz-request-id": "FAKE0REQUEST0ID", "x-amz-id-2": "fake/host/id"}
+# Scaleway's non-S3 400 has a 90-byte HTML body; its exact text was not recorded.
+_PROXY_400_BODY = b"<html><body><h1>400 Bad Request</h1></body></html>".ljust(90)
+
+
 class FakeS3:
     def __init__(self, bucket: str = BUCKET, *, honour_if_none_match: bool = True) -> None:
         self.bucket = bucket
@@ -86,6 +92,8 @@ class FakeS3:
         self.requests: list[tuple[str, str, dict[str, str]]] = []  # (method, key, headers)
         self.errors: list[tuple[str, int, str]] = []  # queued (method, status, code)
         self.before_put: Callable[[str], None] | None = None  # a concurrent writer
+        self.poisoned: list[str] = []  # queued methods ("*": any) answered with a non-S3 400
+        self.poison_after_412 = False  # Scaleway: the request after a 412 gets a non-S3 400
 
     def attach(self, client) -> None:
         client.meta.events.register("before-send.s3", self._handle)
@@ -93,8 +101,18 @@ class FakeS3:
     def inject(self, method: str, status: int, code: str, times: int = 1) -> None:
         self.errors.extend([(method, status, code)] * times)
 
+    def poison(self, method: str = "*", times: int = 1) -> None:
+        """Answer the next object request(s) of `method` with the 400 Scaleway sends on the
+        connection after a 412: not from S3, so no x-amz-request-id."""
+        self.poisoned.extend([method] * times)
+
     def methods(self, method: str) -> list[tuple[str, str, dict[str, str]]]:
         return [r for r in self.requests if r[0] == method]
+
+    def object_requests(self, method: str) -> list[tuple[str, str, dict[str, str]]]:
+        """Requests on a key, without botocore's own HeadBucket (its region redirector sends
+        one after a HEAD answered 400)."""
+        return [r for r in self.methods(method) if r[1]]
 
     def _handle(self, request, **_) -> AWSResponse:
         url = urlsplit(request.url)
@@ -110,6 +128,10 @@ class FakeS3:
         }
         method = request.method
         self.requests.append((method, key, headers))
+        for i, m in enumerate(self.poisoned):
+            if key and m in ("*", method):
+                del self.poisoned[i]
+                return self._proxy_400(request, method)
         for i, (m, status, code) in enumerate(self.errors):
             if m == method:
                 del self.errors[i]
@@ -119,7 +141,10 @@ class FakeS3:
         if parse_qs(url.query):
             return self._error(request, method, 501, "NotImplemented")  # not used by the store
         if method == "PUT":
-            return self._put(request, key, headers)
+            response = self._put(request, key, headers)
+            if response.status_code == 412 and self.poison_after_412:
+                self.poison()
+            return response
         if key not in self.objects:
             if method == "DELETE":
                 return self._ok(request, 204)
@@ -157,7 +182,7 @@ class FakeS3:
 
     @staticmethod
     def _ok(request, status: int, headers: dict | None = None, body: bytes = b"") -> AWSResponse:
-        return AWSResponse(request.url, status, headers or {}, _Raw(body))
+        return AWSResponse(request.url, status, _S3_IDS | (headers or {}), _Raw(body))
 
     @staticmethod
     def _error(request, method: str, status: int, code: str) -> AWSResponse:
@@ -167,7 +192,21 @@ class FakeS3:
             if method == "HEAD"
             else f"<Error><Code>{code}</Code><Message>fake</Message></Error>".encode()
         )
-        return AWSResponse(request.url, status, {"Content-Type": "application/xml"}, _Raw(body))
+        headers = _S3_IDS | {"Content-Type": "application/xml"}
+        return AWSResponse(request.url, status, headers, _Raw(body))
+
+    @staticmethod
+    def _proxy_400(request, method: str) -> AWSResponse:
+        """Scaleway's answer on the connection after a 412, as measured on 6 Nov 2026: a 90-byte
+        HTML 400 with no x-amz-request-id or x-amz-id-2, and the connection closed."""
+        headers = {
+            "Content-Type": "text/html",
+            "Content-Length": str(len(_PROXY_400_BODY)),
+            "Connection": "close",
+            "Cache-Control": "no-cache",
+        }
+        body = b"" if method == "HEAD" else _PROXY_400_BODY
+        return AWSResponse(request.url, 400, headers, _Raw(body))
 
 
 def _session() -> boto3.session.Session:
@@ -449,6 +488,80 @@ def test_retries_stop_after_max_attempts(s3, fake, key_of, no_backoff):
     with pytest.raises(ClientError, match="InternalError"):
         s3.put(key_of(DATA), DATA, PDF)
     assert len(fake.methods("PUT")) == MAX_ATTEMPTS
+
+
+# Scaleway's non-S3 400 on the connection after a 412 (module docstring of hausbuch.storage_s3).
+# No no_backoff fixture: that retry has no delay.
+
+
+def test_a_non_s3_400_on_get_is_retried_once(s3, fake, key_of):
+    key = key_of(DATA)
+    fake.objects[key] = (DATA, PDF)
+    fake.poison("GET")
+    assert s3.get(key) == DATA
+    assert len(fake.requests) == 2
+
+
+def test_put_survives_the_non_s3_400_after_a_lost_race(s3, fake, key_of):
+    """The measured sequence: HEAD 404, PUT 412 (another writer won with equal bytes), then
+    the HEAD that put sends next gets the non-S3 400. put retries it, compares equal bytes and
+    never sends a second PUT."""
+    key = key_of(DATA)
+    fake.poison_after_412 = True
+    fake.before_put = lambda k: fake.objects.__setitem__(k, (DATA, PDF))
+    s3.put(key, DATA, PDF)
+    sent = [(m, k) for m, k, _ in fake.requests]
+    assert sent == [
+        ("HEAD", key),  # 404
+        ("PUT", key),  # 412
+        ("HEAD", key),  # non-S3 400
+        ("HEAD", ""),  # botocore's region redirector, after a HEAD's 400 (not ours)
+        ("HEAD", key),  # 200, same size
+        ("GET", key),  # 200, same bytes
+    ]
+    assert fake.poisoned == []
+    assert fake.objects == {key: (DATA, PDF)}
+
+
+def test_put_survives_a_non_s3_400_on_the_get_that_compares(s3, fake, key_of):
+    key = key_of(DATA)
+    fake.objects[key] = (DATA, PDF)
+    fake.poison("GET")
+    s3.put(key, DATA, PDF)
+    assert len(fake.methods("GET")) == 2
+    assert fake.methods("PUT") == []
+
+
+def test_a_genuine_s3_400_is_not_retried(s3, fake, key_of):
+    key = key_of(DATA)
+    fake.objects[key] = (DATA, PDF)
+    fake.inject("GET", 400, "InvalidArgument")  # carries x-amz-request-id, like every S3 answer
+    with pytest.raises(ClientError, match="InvalidArgument"):
+        s3.get(key)
+    assert len(fake.requests) == 1
+
+
+def test_a_non_s3_400_twice_in_a_row_is_retried_only_once(s3, fake, key_of):
+    key = key_of(DATA)
+    fake.objects[key] = (DATA, PDF)
+    fake.poison("GET", times=2)
+    with pytest.raises(ClientError) as raised:
+        s3.get(key)
+    assert raised.value.response["ResponseMetadata"]["HTTPStatusCode"] == 400
+    assert len(fake.requests) == 2
+
+
+def test_a_non_s3_400_on_head_is_retried_once(s3, fake, key_of):
+    fake.poison("HEAD")
+    assert s3.exists(key_of(DATA)) is False
+    assert len(fake.object_requests("HEAD")) == 2  # plus the redirector's HeadBucket
+
+
+def test_a_non_s3_400_on_head_twice_raises(s3, fake, key_of):
+    fake.poison("HEAD", times=2)
+    with pytest.raises(ClientError):
+        s3.exists(key_of(DATA))
+    assert len(fake.object_requests("HEAD")) == 2
 
 
 def test_access_denied_is_an_error_not_a_missing_blob(s3, fake, key_of):
