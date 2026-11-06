@@ -15,7 +15,6 @@ from pydantic import ValidationError
 from sqlalchemy import Connection, Row, insert, select, update
 
 from hausbuch.db.tables import tenancy as tenancy_table
-from hausbuch.db.tables import tenancy_tenant as party_table
 from hausbuch.db.tables import tenant as tenant_table
 from hausbuch.rules.retention import tenant_retention
 from hausbuch.schemas.document import RetentionPolicy, RetentionResult, TenantRetentionInput
@@ -36,6 +35,7 @@ from .events import append_event
 from .iban import protect_iban
 from .lookup import require_row
 from .owners import UNSET, Unset
+from .parties import tenancies_ever_of
 
 # Every column the Tenant read shape has; iban_hmac is for matching and never leaves.
 _READ_COLUMNS = [c for c in tenant_table.c if c.name != "iban_hmac"]
@@ -123,7 +123,8 @@ def erase_tenant(
 
     Deletion respects retention holds (ARCHITECTURE.md, privacy):
     - Always refused while any of the tenant's tenancies runs: the data performs the lease,
-      so there is no right to erasure yet.
+      so there is no right to erasure yet. "The tenant's tenancies" are every tenancy they
+      were ever a party of, including one they were later removed from (set_parties).
     - Otherwise refused until retain_until has passed (end of tenancy + 4 years by default),
       unless on_request: the tenant asked and the landlord chose to honour it. Keeping data
       for possible legal claims is allowed but not required, so that choice is the landlord's.
@@ -137,11 +138,11 @@ def erase_tenant(
         return _to_tenant(current)
     # The FOR UPDATE above waits for any create_tenancy holding this tenant FOR KEY SHARE, so
     # a tenancy committed just before is seen here.
+    # Every tenancy they were ever a party of, removed ones included (parties.py).
+    tenancy_ids = tenancies_ever_of(ctx.conn, [tenant_id])
     end_dates = list(
         ctx.conn.execute(
-            select(tenancy_table.c.end_date)
-            .join(party_table, party_table.c.tenancy_id == tenancy_table.c.id)
-            .where(party_table.c.tenant_id == tenant_id)
+            select(tenancy_table.c.end_date).where(tenancy_table.c.id.in_(tenancy_ids))
         ).scalars()
     )
     # "Running" is decided here, not by the retention hold: the retention rule treats a

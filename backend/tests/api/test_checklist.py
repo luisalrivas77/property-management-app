@@ -72,6 +72,30 @@ def test_present_and_missing_items_for_a_year(client_a, let_flat):
     assert by_code["price_split"]["status"] == "missing"
 
 
+def test_a_beleg_attached_by_patch_makes_the_cost_item_present(client_a, let_flat):
+    pid = let_flat["property"]["id"]
+    cost = create(
+        client_a,
+        "/api/acquisition-costs",
+        {"property_id": pid, "kind": "land_registry", "amount": "455.00"},
+    )
+
+    def cost_items():
+        items = ok(_checklist(client_a, pid, tax_year=2025))["items"]
+        return [
+            (i["status"], [d["id"] for d in i["documents"]])
+            for i in items
+            if i["code"] == "acquisition_cost_evidence"
+        ]
+
+    assert cost_items() == [("missing", [])]
+    invoice = ok(upload(client_a, b"%PDF-1.7 Grundbuchamt"), 201)
+    ok(client_a.patch(f"/api/acquisition-costs/{cost['id']}", json={"document_id": invoice["id"]}))
+    assert cost_items() == [("present", [invoice["id"]])]
+    assert client_a.delete(f"/api/acquisition-costs/{cost['id']}").status_code == 204
+    assert cost_items() == []
+
+
 def test_no_tenant_data_and_no_titles(client_a, let_flat):
     """D5: neither the tenant's name nor any document title reaches the checklist."""
     response = _checklist(client_a, let_flat["property"]["id"], tax_year=2025)

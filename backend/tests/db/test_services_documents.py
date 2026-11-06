@@ -12,7 +12,7 @@ from decimal import Decimal
 
 import psycopg
 import pytest
-from db.db_support import OWNER, insert_property, insert_tenancy, insert_unit
+from db.db_support import OWNER, TEST_IBAN_KEY, insert_property, insert_tenancy, insert_unit
 from fixture_models import RetentionFixture, load
 from sqlalchemy import event as sa_event
 from sqlalchemy import select, text, update
@@ -30,10 +30,13 @@ from hausbuch.schemas.enums import (
     DocumentType,
     EntityType,
     LinkTarget,
+    RentModel,
     RetentionClass,
     RetentionHold,
+    TenancyRole,
 )
 from hausbuch.schemas.events import EventType
+from hausbuch.schemas.tenancy import TenancyCreate, TenancyParty
 from hausbuch.services.context import Actor, new_command
 from hausbuch.services.documents import (
     DuplicateLinkError,
@@ -56,6 +59,7 @@ from hausbuch.services.documents import (
 )
 from hausbuch.services.errors import NotFoundError
 from hausbuch.services.events import list_events
+from hausbuch.services.tenancies import create_tenancy, set_parties
 from hausbuch.storage import BlobConflictError, blob_key
 
 NOW = datetime(2026, 11, 5, 9, 30, tzinfo=UTC)
@@ -1033,6 +1037,42 @@ def test_retention_through_a_tenant_uses_all_its_tenancies_and_no_property(
         gathered = document_retention_input(conn, doc.id)
         assert _sorted_dates(gathered.tenancy_end_dates) == [date(2025, 6, 30), date(2027, 3, 31)]
         assert gathered.ownership_end_dates == []
+        result = document_retention(conn, doc.id)
+    assert (result.retention_class, result.retain_until) == (
+        RetentionClass.TENANCY_RECORDS,
+        date(2031, 12, 31),
+    )
+
+
+def test_retention_through_a_tenant_follows_a_tenancy_they_were_removed_from(
+    app_engine, workspaces, blob_store
+):
+    """F1 (decided 6 Nov 2026): a tenant removed from a tenancy by set_parties no longer has a
+    tenancy_tenant row, but documents linked to them still follow that tenancy's end."""
+    a, _ = workspaces
+    doc = _upload(app_engine, blob_store, a, _bytes())
+    _type(app_engine, a, doc.id, LEASE)
+    with _seed(app_engine, a) as raw:
+        unit = insert_unit(raw, a, insert_property(raw, a))
+        stays, leaves = _insert_tenant(raw, a), _insert_tenant(raw, a)
+    lease = TenancyCreate(
+        unit_id=unit,
+        parties=[
+            TenancyParty(tenant_id=stays, role=TenancyRole.PRIMARY),
+            TenancyParty(tenant_id=leaves, role=TenancyRole.CO_TENANT),
+        ],
+        start_date=date(2024, 6, 1),
+        end_date=date(2027, 3, 31),
+        rent_model=RentModel.FIXED,
+    )
+    with workspace_transaction(app_engine, a) as conn:
+        ctx = new_command(conn, a, ACTOR, now=NOW)
+        tenancy = create_tenancy(ctx, lease, initial_rent=None, iban_key=TEST_IBAN_KEY)
+        set_parties(ctx, tenancy.id, [TenancyParty(tenant_id=stays, role=TenancyRole.PRIMARY)])
+    _link(app_engine, a, doc.id, LinkTarget.TENANT, leaves)
+
+    with workspace_transaction(app_engine, a) as conn:
+        assert document_retention_input(conn, doc.id).tenancy_end_dates == [date(2027, 3, 31)]
         result = document_retention(conn, doc.id)
     assert (result.retention_class, result.retain_until) == (
         RetentionClass.TENANCY_RECORDS,

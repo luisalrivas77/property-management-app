@@ -30,6 +30,7 @@ export type OwnerShare = Schemas["OwnerShare"];
 export type PropertyOwnership = Schemas["PropertyOwnership"];
 export type AcquisitionCost = Schemas["AcquisitionCost"];
 export type AcquisitionCostCreate = Schemas["AcquisitionCostCreate"];
+export type AcquisitionCostPatch = Schemas["AcquisitionCostPatch"];
 export type AcquisitionCostKind = Schemas["AcquisitionCostKind"];
 export type PriceSplit = Schemas["PriceSplit"];
 export type PriceSplitCreate = Schemas["PriceSplitCreate"];
@@ -54,12 +55,14 @@ export type RentScheduleCreate = Schemas["RentScheduleCreate"];
 export type RentRowCorrection = Schemas["RentRowCorrection"];
 export type RentChangeReason = Schemas["RentChangeReason"];
 export type NoticeBody = Schemas["NoticeBody"];
+export type TenancyPatch = Schemas["TenancyPatch"];
 export type DepositReceipt = Schemas["DepositReceipt"];
 
 // loans
 export type Loan = Schemas["Loan"];
 export type LoanCreateRequest = Schemas["LoanCreateRequest"];
 export type LoanPatch = Schemas["LoanPatch"];
+export type DisbursementCorrection = Schemas["DisbursementCorrection"];
 export type LoanSchedule = Schemas["LoanSchedule"];
 export type ScheduleEntry = Schemas["ScheduleEntry"];
 export type YearTotals = Schemas["YearTotals"];

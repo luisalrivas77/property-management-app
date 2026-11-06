@@ -1,10 +1,11 @@
 """Properties over HTTP (§4.2): the property, its corrections, ownership, Nebenkosten,
 building/land splits, and the units and loans read from the property."""
 
+from unittest.mock import ANY
 from uuid import uuid4
 
 import pytest
-from api_support import create, loan_body, new_property, new_unit, ok, property_body
+from api_support import create, loan_body, new_property, new_unit, ok, property_body, upload
 
 pytestmark = pytest.mark.db
 
@@ -141,6 +142,56 @@ def test_acquisition_costs_and_price_splits(client_a):
         json={"property_id": str(uuid4()), "kind": "notary", "amount": "1.00"},
     )
     assert (response.status_code, response.json()["entity_type"]) == (404, "property")
+
+
+def test_an_acquisition_cost_is_edited_and_removed(client_a):
+    prop = new_property(client_a)
+    cost = create(
+        client_a,
+        "/api/acquisition-costs",
+        {"property_id": prop["id"], "kind": "notary", "amount": "3120.50", "note": "Rechnung 1"},
+    )
+    invoice = ok(upload(client_a, b"%PDF-1.7 Notarrechnung"), 201)
+    path = f"/api/acquisition-costs/{cost['id']}"
+
+    edited = ok(client_a.patch(path, json={"document_id": invoice["id"], "paid_on": "2024-04-02"}))
+    assert (edited["document_id"], edited["paid_on"], edited["note"]) == (
+        invoice["id"],
+        "2024-04-02",
+        "Rechnung 1",
+    )
+    assert ok(client_a.patch(path, json={"note": None, "amount": "3120.00"}))["note"] is None
+    assert ok(client_a.get(f"/api/properties/{prop['id']}/acquisition-costs")) == [
+        edited | {"note": None, "amount": "3120.00", "updated_at": ANY}
+    ]
+
+    for body, status in (
+        ({"amount": 3120}, 422),  # money is a string on the wire
+        ({"amount": "0"}, 422),
+        ({"kind": None}, 422),  # not nullable
+        ({"kind": "makler"}, 422),
+        ({"unknown": 1}, 422),
+        ({"document_id": str(uuid4())}, 404),
+    ):
+        response = client_a.patch(path, json=body)
+        assert response.status_code == status, (body, response.text)
+    response = client_a.patch(f"/api/acquisition-costs/{uuid4()}", json={"amount": "1.00"})
+    assert (response.status_code, response.json()["entity_type"]) == (404, "acquisition_cost")
+
+    assert client_a.delete(path).status_code == 204
+    assert ok(client_a.get(f"/api/properties/{prop['id']}/acquisition-costs")) == []
+    response = client_a.delete(path)
+    assert (response.status_code, response.json()["entity_type"]) == (404, "acquisition_cost")
+    types = [e["type"] for e in ok(client_a.get(f"/api/properties/{prop['id']}/events"))]
+    # Traced fields are corrections of the recorded line (F2); the note only an update.
+    assert types[-5:] == [
+        "property.acquisition_cost_recorded",
+        "property.acquisition_cost_recorded",
+        "property.acquisition_cost_recorded",
+        "property.acquisition_cost_updated",
+        "property.acquisition_cost_removed",
+    ]
+    assert "Rechnung 1" not in str(ok(client_a.get(f"/api/properties/{prop['id']}/events")))
 
 
 def test_units_and_loans_are_read_from_the_property(client_a):

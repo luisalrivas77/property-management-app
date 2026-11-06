@@ -38,6 +38,7 @@ export function payloadSummary(type: TimelineEntry["type"], payload: Payload): s
       return Array.isArray(shares) ? `${shares.length} Eigentümer` : null;
     }
     case "property.acquisition_cost_recorded":
+    case "property.acquisition_cost_removed":
       return `${inMap(ACQUISITION_COST_KIND, text(payload, "kind")) ?? "Nebenkosten"}: ${formatMoney(text(payload, "amount"))}`;
     case "tenancy.created": {
       const model = inMap(RENT_MODEL, text(payload, "rent_model"));
@@ -50,6 +51,10 @@ export function payloadSummary(type: TimelineEntry["type"], payload: Payload): s
       const reason = inMap(RENT_CHANGE_REASON, text(payload, "reason"));
       const rent = `${formatMoney(text(payload, "cold_rent"))} kalt + ${formatMoney(text(payload, "operating_costs_prepayment"))} NK-Vorauszahlung`;
       return reason ? `${reason}: ${rent}` : rent;
+    }
+    case "tenancy.parties_set": {
+      const parties = payload.parties;
+      return Array.isArray(parties) ? `jetzt ${parties.length} Mieter` : null;
     }
     case "tenancy.deposit_received":
       return formatMoney(text(payload, "amount"));

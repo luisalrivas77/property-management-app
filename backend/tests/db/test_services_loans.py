@@ -20,7 +20,14 @@ from hausbuch.schemas.property import Address, PropertyCreate
 from hausbuch.services.context import Actor, new_command
 from hausbuch.services.errors import NotFoundError
 from hausbuch.services.events import list_events
-from hausbuch.services.loans import create_loan, get_loan, list_loans, loan_schedule, update_loan
+from hausbuch.services.loans import (
+    correct_disbursement,
+    create_loan,
+    get_loan,
+    list_loans,
+    loan_schedule,
+    update_loan,
+)
 from hausbuch.services.properties import create_property
 
 CREATED_AT = datetime(2026, 11, 5, 14, 0, tzinfo=UTC)
@@ -207,6 +214,77 @@ def test_domain_errors_write_nothing(run, read, fresh_workspaces, prop):
 
     assert read(a, get_loan, loan.id) == loan
     assert read(a, list_loans, prop.id) == [loan]
+    assert len(_events(read, a, loan.id)) == 2
+
+
+def test_disbursement_correction_moves_the_milestone_and_the_schedule(
+    run, read, fresh_workspaces, prop
+):
+    a, _ = fresh_workspaces
+    loan = _create(run, a, _terms(prop.id), signed_on=date(2024, 3, 1))
+    first_schedule = read(a, loan_schedule, loan.id)
+
+    corrected = run(
+        a,
+        correct_disbursement,
+        loan.id,
+        new_date=date(2024, 4, 29),
+        principal=Decimal("235000.00"),
+        now=LATER,
+    )
+
+    assert (corrected.terms.disbursed_on, corrected.terms.principal) == (
+        date(2024, 4, 29),
+        Decimal("235000.00"),
+    )
+    assert corrected.terms.model_dump(exclude={"disbursed_on", "principal"}) == (
+        loan.terms.model_dump(exclude={"disbursed_on", "principal"})
+    )
+    assert read(a, get_loan, loan.id) == corrected
+    schedule = read(a, loan_schedule, loan.id)
+    assert schedule == build_schedule(corrected.terms) != first_schedule
+    assert schedule.entries[0].opening_balance == Decimal("235000.00")
+
+    created, disbursed, correction = _events(read, a, loan.id)
+    assert correction.type is EventType.LOAN_DISBURSED
+    assert correction.corrects_event_id == disbursed.id
+    assert (correction.effective_date, correction.payload) == (
+        date(2024, 4, 29),
+        {"amount": "235000.00"},
+    )
+    assert (correction.property_id, correction.unit_id) == (prop.id, None)
+
+    # One field at a time; the other keeps the corrected value. The chain goes forward.
+    again = run(a, correct_disbursement, loan.id, new_date=date(2024, 4, 30), now=LATER)
+    assert (again.terms.disbursed_on, again.terms.principal) == (
+        date(2024, 4, 30),
+        Decimal("235000.00"),
+    )
+    last = _events(read, a, loan.id)[-1]
+    assert last.corrects_event_id == correction.id
+    assert last.payload == {"amount": "235000.00"}
+
+    # Nothing to correct: no write, no event.
+    assert run(a, correct_disbursement, loan.id, principal=Decimal("235000.00")) == again
+    assert len(_events(read, a, loan.id)) == 4
+
+
+def test_disbursement_correction_refusals_write_nothing(run, read, fresh_workspaces, prop):
+    a, b = fresh_workspaces
+    loan = _create(run, a, _terms(prop.id), signed_on=date(2024, 3, 1))
+
+    with pytest.raises(ValidationError, match="first_payment_on must be after disbursed_on"):
+        run(a, correct_disbursement, loan.id, new_date=date(2024, 5, 30))
+    with pytest.raises(ValidationError):
+        run(a, correct_disbursement, loan.id, principal=Decimal("0"))
+    with pytest.raises(ValueError, match="signed"):
+        run(a, correct_disbursement, loan.id, new_date=date(2024, 2, 28))
+    with pytest.raises(NotFoundError, match="loan"):
+        run(b, correct_disbursement, loan.id, new_date=date(2024, 4, 29))
+    with pytest.raises(NotFoundError, match="loan"):
+        run(a, correct_disbursement, uuid.uuid4(), new_date=date(2024, 4, 29))
+
+    assert read(a, get_loan, loan.id) == loan
     assert len(_events(read, a, loan.id)) == 2
 
 

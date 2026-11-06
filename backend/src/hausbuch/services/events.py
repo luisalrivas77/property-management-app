@@ -187,17 +187,26 @@ def milestone_root(conn: Connection, type: EventType, entity_id: UUID) -> Event:
 
 
 def find_event(
-    conn: Connection, type: EventType, entity_id: UUID, *, payload_contains: Mapping[str, Any]
+    conn: Connection,
+    type: EventType,
+    entity_id: UUID,
+    *,
+    payload_contains: Mapping[str, Any],
+    root_only: bool = False,
 ) -> Event | None:
     """The one event of `type` for an entity whose payload contains these JSON values, e.g.
-    the tenancy.rent_scheduled event of one rent row ({"rent_schedule_id": "..."})."""
-    rows = conn.execute(
-        select(event_table).where(
-            event_table.c.type == EventType(type).value,
-            event_table.c.entity_id == entity_id,
-            event_table.c.payload.contains(_JSON.dump_python(payload_contains, mode="json")),
-        )
-    ).all()
+    the tenancy.rent_scheduled event of one rent row ({"rent_schedule_id": "..."}).
+
+    root_only: only a chain's first event, for chains whose corrections repeat the matched
+    values (an acquisition cost's corrections keep its cost_id)."""
+    conditions = [
+        event_table.c.type == EventType(type).value,
+        event_table.c.entity_id == entity_id,
+        event_table.c.payload.contains(_JSON.dump_python(payload_contains, mode="json")),
+    ]
+    if root_only:
+        conditions.append(event_table.c.corrects_event_id.is_(None))
+    rows = conn.execute(select(event_table).where(*conditions)).all()
     if len(rows) > 1:
         raise InvalidEventError(f"{len(rows)} {type} events of {entity_id} match; expected one")
     return Event.model_validate(dict(rows[0]._mapping)) if rows else None

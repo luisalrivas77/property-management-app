@@ -5,7 +5,8 @@
 // in percent and sent as fractions. The API builds the Tilgungsplan before it saves, so a rate
 // that never repays the loan comes back as 422 loan.payment_does_not_cover_interest (with
 // the payment number) and is shown under "Rate". Editing (LoanPatch) cannot change the
-// principal or the disbursement: those are the loan's milestones.
+// principal or the disbursement: those are the loan's milestones, corrected by "Auszahlung
+// korrigieren" on the loan page.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
@@ -176,6 +177,7 @@ export function LoanForm({ propertyId, loan }: { propertyId: string; loan?: Loan
           ]}
         />
       ) : null}
+      {loan ? <p className="muted">Darlehenssumme und Auszahlung ändern Sie auf der Darlehensseite mit „Auszahlung korrigieren“.</p> : null}
       <div className="row">
         <Submit busy={busy}>{loan ? "Speichern" : "Darlehen anlegen"}</Submit>
         <Link href={loan ? `/loans/${loan.id}` : `/properties/${propertyId}?tab=darlehen`}>Abbrechen</Link>
