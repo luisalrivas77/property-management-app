@@ -18,6 +18,7 @@ from uuid import UUID
 
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
+from .allocation import AllocationSet
 from .common import (
     Area,
     Fraction,
@@ -38,7 +39,14 @@ from .document import (
     ManualDocumentFields,
     RetentionResult,
 )
-from .enums import AcquisitionCostKind, DepositForm, LinkTarget, PropertyKind, RentModel
+from .enums import (
+    AcquisitionCostKind,
+    DepositForm,
+    LinkTarget,
+    PropertyKind,
+    ProposalStatus,
+    RentModel,
+)
 from .loan import LoanCreate
 from .property import Address, OwnerShare, reject_raw_tax_number
 from .tenancy import InitialRent, TenancyCreate, TenancyParty
@@ -320,3 +328,65 @@ class DepositReceipt(Schema):
     amount: PositiveMoney
     received_on: date  # the event's effective date
     recorded_at: datetime
+
+
+# --- Phase 2 (docs/phases/phase-2.md §6.1, §8.3) --------------------------------------
+# Bodies that belong to one module live there: ProposalApplyBody (proposal.py),
+# AccountCreate, DeclareBalanceBody and DuplicateDecisionBody (bank.py).
+
+
+class WorkspaceSettings(Schema):
+    """GET /workspace/settings. Both default to false (D16, D26)."""
+
+    ai_tenant_documents: bool
+    auto_accept_llm: bool
+
+
+class WorkspaceSettingsPatch(Patch):
+    ai_tenant_documents: bool = Field(default=None)
+    auto_accept_llm: bool = Field(default=None)
+
+
+class DocumentUploadResult(Schema):
+    """POST /documents with ai = true (§6.1): the document plus the queued proposal to
+    poll. proposal_id is null when the upload did not ask for a proposal."""
+
+    document: Document
+    proposal_id: UUID | None = None
+    proposal_status: ProposalStatus | None = None
+
+
+class ConfirmAllocationsBody(Schema):
+    """PUT /transactions/{id}/allocations: the user's allocation set (method user, or the
+    proposer's when confirmed unchanged) and the "Künftig immer so zuordnen" checkbox."""
+
+    allocation_set: AllocationSet
+    learn_rule: bool = False
+
+
+class InboxItemKind(StrEnum):
+    """GET /inbox (§8.3): one list, newest first."""
+
+    PROPOSAL = "proposal"  # a ready proposal to review
+    READ_FAILED = "read_failed"  # "Konnte nicht gelesen werden"
+    BLOCKED_TENANT_DATA = "blocked_tenant_data"
+    IMPORT_UNRECONCILED = "import_unreconciled"
+    IMPORT_PENDING_BALANCE = "import_pending_balance"
+    POSSIBLE_DUPLICATE = "possible_duplicate"
+    ALLOCATION_PROPOSED = "allocation_proposed"  # a proposed allocation set to confirm
+    UNMATCHED = "unmatched"  # "Nicht zugeordnet": no allocation set at all
+
+
+class InboxItem(Schema):
+    """One thing to act on, with a one-line reasoning and one question. Exactly the ids its
+    action endpoint needs are set."""
+
+    kind: InboxItemKind
+    created_at: datetime
+    reasoning: str | None = None
+    question: str | None = None
+    document_id: UUID | None = None
+    proposal_id: UUID | None = None
+    import_id: UUID | None = None
+    possible_duplicate_id: UUID | None = None
+    transaction_id: UUID | None = None

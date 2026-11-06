@@ -1461,6 +1461,28 @@ export interface components {
             /** Display Name */
             display_name: string;
         };
+        /**
+         * BescheidExtraction
+         * @description A Bescheid other than Grundsteuer, e.g. the Grunderwerbsteuerbescheid.
+         */
+        BescheidExtraction: {
+            /** @description a short title; never in events (D5) */
+            title?: components["schemas"]["ExtractedValue"];
+            /** @description the date the document carries */
+            document_date?: components["schemas"]["ExtractedValue"];
+            /** @description the authority */
+            sender?: components["schemas"]["ExtractedValue"];
+            /** @description the amount assessed */
+            amount_total?: components["schemas"]["ExtractedValue"];
+            /** @description Aktenzeichen / Steuernummer reference */
+            reference?: components["schemas"]["ExtractedValue"];
+            /** @description the authority's IBAN, if stated */
+            iban?: components["schemas"]["ExtractedValue"];
+            /** @description fällig am */
+            due_on?: components["schemas"]["ExtractedValue"];
+            /** @description the year it concerns, if stated */
+            tax_year?: components["schemas"]["ExtractedValue"];
+        };
         /** Body_document_upload_api_documents_post */
         Body_document_upload_api_documents_post: {
             /** File */
@@ -1574,6 +1596,20 @@ export interface components {
             received_on: string;
         };
         /**
+         * DepositRecordExtraction
+         * @description Kautionsnachweis (letter / deposit_record). Step 2.
+         */
+        DepositRecordExtraction: {
+            /** @description a short title; never in events (D5) */
+            title?: components["schemas"]["ExtractedValue"];
+            /** @description the date the document carries */
+            document_date?: components["schemas"]["ExtractedValue"];
+            /** @description Kautionsbetrag */
+            amount?: components["schemas"]["ExtractedValue"];
+            /** @description Eingang */
+            received_on?: components["schemas"]["ExtractedValue"];
+        };
+        /**
          * DisbursementCorrection
          * @description POST /loans/{id}/corrections/disbursement: the payout date and/or the principal; an
          *     absent (or null) field keeps the recorded value.
@@ -1666,6 +1702,12 @@ export interface components {
         /**
          * DocumentExtraction
          * @description Append-only. A new version is a new row; the highest version is current.
+         *
+         *     kind (phase 2, migration 0005) says which field set `fields` holds: `manual` is
+         *     ManualDocumentFields, every other kind its per-type model in schemas/extraction.py. The
+         *     kind is a column, not a key inside the fields, so the union is resolved from it here
+         *     rather than by a Pydantic discriminator. ai_call_id is the call an `ai` version came from
+         *     (D18); a `manual` version on top of it (Luis edited extracted fields) has none.
          */
         DocumentExtraction: {
             /**
@@ -1686,7 +1728,8 @@ export interface components {
             /** Version */
             version: number;
             source: components["schemas"]["ExtractionSource"];
-            fields: components["schemas"]["ManualDocumentFields"];
+            /** Fields */
+            fields: components["schemas"]["ManualDocumentFields"] | components["schemas"]["PurchaseContractExtraction"] | components["schemas"]["LoanContractExtraction"] | components["schemas"]["LeaseExtraction"] | components["schemas"]["HandoverProtocolExtraction"] | components["schemas"]["DepositRecordExtraction"] | components["schemas"]["InvoiceExtraction"] | components["schemas"]["BescheidExtraction"] | components["schemas"]["GrundsteuerbescheidExtraction"] | components["schemas"]["WirtschaftsplanExtraction"] | components["schemas"]["HausgeldabrechnungExtraction"] | components["schemas"]["ZinsbescheinigungExtraction"] | components["schemas"]["StatementExtraction"];
             /**
              * Schema Version
              * @default 1
@@ -1697,6 +1740,10 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** @default manual */
+            kind: components["schemas"]["ExtractionKind"];
+            /** Ai Call Id */
+            ai_call_id?: string | null;
         };
         /**
          * DocumentLink
@@ -1801,7 +1848,7 @@ export interface components {
          * @description Entities that carry events. Also the prefix of every event type.
          * @enum {string}
          */
-        EntityType: "owner" | "property" | "unit" | "tenant" | "tenancy" | "loan" | "document";
+        EntityType: "owner" | "property" | "unit" | "tenant" | "tenancy" | "loan" | "document" | "user" | "proposal" | "account" | "statement" | "transaction" | "rule" | "workspace";
         /** ErasureBody */
         ErasureBody: {
             /**
@@ -1898,7 +1945,39 @@ export interface components {
          * EventType
          * @enum {string}
          */
-        EventType: "owner.created" | "owner.updated" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked";
+        EventType: "owner.created" | "owner.updated" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.classified" | "document.extracted" | "document.read_failed" | "workspace.settings_changed" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "rule.created" | "rule.disabled";
+        /**
+         * ExtractedValue
+         * @description One field of a per-type extraction, or of a proposal record.
+         *
+         *     checks say what code verified: `cited` (the API attached a citation, so `source` is set),
+         *     `value_in_quote` (the value is recoverable from the cited text), `validates` (the value
+         *     passes the target field's Pydantic type), `derived` (code computed it from the fields in
+         *     `derived_from`, e.g. building_share). The confidence is a function of the checks, computed
+         *     by rules.extraction_parse (fixture extraction_parse.yaml); this model only enforces that
+         *     the checks are consistent with the other fields.
+         */
+        ExtractedValue: {
+            value: components["schemas"]["JsonValue"] | null;
+            source?: components["schemas"]["SourceRef"] | null;
+            /** Derived From */
+            derived_from?: string[];
+            /** Checks */
+            checks?: ("cited" | "value_in_quote" | "validates" | "derived")[];
+            /**
+             * Confidence
+             * @enum {string}
+             */
+            confidence: "high" | "medium" | "low";
+        };
+        /**
+         * ExtractionKind
+         * @description document_extraction.kind and proposal.kind (migration 0005): which field set an
+         *     extraction holds. `manual` is phase 1's ManualDocumentFields; the others are the per-type
+         *     models in schemas/extraction.py.
+         * @enum {string}
+         */
+        ExtractionKind: "manual" | "purchase_contract" | "loan_contract" | "lease" | "handover_protocol" | "deposit_record" | "invoice" | "bescheid" | "grundsteuerbescheid" | "wirtschaftsplan" | "hausgeldabrechnung" | "zinsbescheinigung" | "statement";
         /**
          * ExtractionSource
          * @enum {string}
@@ -1925,6 +2004,80 @@ export interface components {
             numerator: number;
             /** Denominator */
             denominator: number;
+        };
+        /**
+         * GrundsteuerbescheidExtraction
+         * @description Grundsteuerbescheid (bescheid / grundsteuerbescheid).
+         */
+        GrundsteuerbescheidExtraction: {
+            /** @description a short title; never in events (D5) */
+            title?: components["schemas"]["ExtractedValue"];
+            /** @description the date the document carries */
+            document_date?: components["schemas"]["ExtractedValue"];
+            /** @description street of the property */
+            street?: components["schemas"]["ExtractedValue"];
+            /** @description house number */
+            house_number?: components["schemas"]["ExtractedValue"];
+            /** @description five-digit PLZ */
+            postal_code?: components["schemas"]["ExtractedValue"];
+            /** @description first year the Bescheid applies to */
+            tax_year?: components["schemas"]["ExtractedValue"];
+            /** @description Aktenzeichen */
+            reference?: components["schemas"]["ExtractedValue"];
+            /** @description Jahresbetrag */
+            yearly_amount?: components["schemas"]["ExtractedValue"];
+            /** @description Vierteljahresbetrag, if stated */
+            installment_amount?: components["schemas"]["ExtractedValue"];
+            /** @description Fälligkeiten, e.g. 15.02.; 15.05.; ... */
+            due_dates?: components["schemas"]["ExtractedValue"];
+            /** @description the Stadtkasse's IBAN, if stated */
+            iban?: components["schemas"]["ExtractedValue"];
+        };
+        /**
+         * HandoverProtocolExtraction
+         * @description Übergabeprotokoll (letter / handover_protocol). Step 2.
+         */
+        HandoverProtocolExtraction: {
+            /** @description a short title; never in events (D5) */
+            title?: components["schemas"]["ExtractedValue"];
+            /** @description the date the document carries */
+            document_date?: components["schemas"]["ExtractedValue"];
+            /** @description street */
+            street?: components["schemas"]["ExtractedValue"];
+            /** @description house number */
+            house_number?: components["schemas"]["ExtractedValue"];
+            /** @description five-digit PLZ */
+            postal_code?: components["schemas"]["ExtractedValue"];
+            /** @description Zählerstände; stay in the extraction */
+            meter_readings?: components["schemas"]["ExtractedValue"];
+        };
+        /**
+         * HausgeldabrechnungExtraction
+         * @description Hausgeldabrechnung: the year's settlement (read by phase 3's Hausgeld rule).
+         */
+        HausgeldabrechnungExtraction: {
+            /** @description a short title; never in events (D5) */
+            title?: components["schemas"]["ExtractedValue"];
+            /** @description the date the document carries */
+            document_date?: components["schemas"]["ExtractedValue"];
+            /** @description street of the property */
+            street?: components["schemas"]["ExtractedValue"];
+            /** @description house number */
+            house_number?: components["schemas"]["ExtractedValue"];
+            /** @description five-digit PLZ */
+            postal_code?: components["schemas"]["ExtractedValue"];
+            /** @description the Abrechnungsjahr */
+            tax_year?: components["schemas"]["ExtractedValue"];
+            /** @description Nachzahlung (+) / Guthaben (-) */
+            settlement_result?: components["schemas"]["ExtractedValue"];
+            /** @description umlagefähige Kosten des Jahres */
+            umlagefaehig_total?: components["schemas"]["ExtractedValue"];
+            /** @description nicht umlagefähige Kosten des Jahres */
+            verwaltung_total?: components["schemas"]["ExtractedValue"];
+            /** @description Zuführung zur Rücklage */
+            ruecklage_contribution?: components["schemas"]["ExtractedValue"];
+            /** @description Entnahme aus der Rücklage */
+            ruecklage_spent?: components["schemas"]["ExtractedValue"];
         };
         /**
          * InitialRent
@@ -1973,7 +2126,83 @@ export interface components {
             /** Display Name */
             display_name: string;
         };
+        /**
+         * InvoiceExtraction
+         * @description Invoices: Nebenkosten (notary, Grundbuchamt, broker) now, repairs and others later.
+         */
+        InvoiceExtraction: {
+            /** @description a short title; never in events (D5) */
+            title?: components["schemas"]["ExtractedValue"];
+            /** @description the date the document carries */
+            document_date?: components["schemas"]["ExtractedValue"];
+            /** @description who issued it: decides the cost kind */
+            sender?: components["schemas"]["ExtractedValue"];
+            /** @description gross total (brutto) */
+            amount_total?: components["schemas"]["ExtractedValue"];
+            /** @description net amount, if stated */
+            amount_net?: components["schemas"]["ExtractedValue"];
+            /** @description invoice no. / Aktenzeichen */
+            reference?: components["schemas"]["ExtractedValue"];
+            /** @description the payee's IBAN, if stated */
+            iban?: components["schemas"]["ExtractedValue"];
+            /** @description Zahlungsziel, if stated */
+            due_on?: components["schemas"]["ExtractedValue"];
+        };
         JsonValue: unknown;
+        /**
+         * LeaseExtraction
+         * @description Mietvertrag (contract / lease). Step 2, gated by ai_tenant_documents (D16).
+         */
+        LeaseExtraction: {
+            /** @description a short title; never in events (D5) */
+            title?: components["schemas"]["ExtractedValue"];
+            /** @description the date the document carries */
+            document_date?: components["schemas"]["ExtractedValue"];
+            /** @description street of the rented flat */
+            street?: components["schemas"]["ExtractedValue"];
+            /** @description house number */
+            house_number?: components["schemas"]["ExtractedValue"];
+            /** @description five-digit PLZ */
+            postal_code?: components["schemas"]["ExtractedValue"];
+            /** @description city */
+            city?: components["schemas"]["ExtractedValue"];
+            /** @description the flat's label, e.g. WE 3 */
+            unit_label?: components["schemas"]["ExtractedValue"];
+            /** @description first named Mieter (primary) */
+            tenant_1_full_name?: components["schemas"]["ExtractedValue"];
+            /** @description if stated */
+            tenant_1_email?: components["schemas"]["ExtractedValue"];
+            /** @description if stated */
+            tenant_1_phone?: components["schemas"]["ExtractedValue"];
+            /** @description if stated */
+            tenant_1_iban?: components["schemas"]["ExtractedValue"];
+            /** @description second named Mieter (co_tenant) */
+            tenant_2_full_name?: components["schemas"]["ExtractedValue"];
+            /** @description if stated */
+            tenant_2_email?: components["schemas"]["ExtractedValue"];
+            /** @description if stated */
+            tenant_2_phone?: components["schemas"]["ExtractedValue"];
+            /** @description if stated */
+            tenant_2_iban?: components["schemas"]["ExtractedValue"];
+            /** @description Mietbeginn */
+            start_date?: components["schemas"]["ExtractedValue"];
+            /** @description Vertragsdatum */
+            signed_on?: components["schemas"]["ExtractedValue"];
+            /** @description Zeitmietvertrag bis, if befristet */
+            fixed_term_until?: components["schemas"]["ExtractedValue"];
+            /** @description Staffel- / Indexmiete clause, if any */
+            rent_clause?: components["schemas"]["ExtractedValue"];
+            /** @description Kaution */
+            deposit_amount?: components["schemas"]["ExtractedValue"];
+            /** @description Barkaution / Bürgschaft ... */
+            deposit_clause?: components["schemas"]["ExtractedValue"];
+            /** @description Nettokaltmiete */
+            cold_rent?: components["schemas"]["ExtractedValue"];
+            /** @description Betriebskostenvorauszahlung */
+            operating_costs_prepayment?: components["schemas"]["ExtractedValue"];
+            /** @description Heizkostenvorauszahlung */
+            heating_costs_prepayment?: components["schemas"]["ExtractedValue"];
+        };
         /** LinkBody */
         LinkBody: {
             target_type: components["schemas"]["LinkTarget"];
@@ -2035,6 +2264,38 @@ export interface components {
             /** Account Iban Masked */
             account_iban_masked: string | null;
             terms: components["schemas"]["LoanTerms"];
+        };
+        /**
+         * LoanContractExtraction
+         * @description Darlehensvertrag (contract / loan_contract).
+         */
+        LoanContractExtraction: {
+            /** @description a short title; never in events (D5) */
+            title?: components["schemas"]["ExtractedValue"];
+            /** @description the date the document carries */
+            document_date?: components["schemas"]["ExtractedValue"];
+            /** @description Darlehensgeber */
+            lender?: components["schemas"]["ExtractedValue"];
+            /** @description Darlehensnummer / Vertragsnummer */
+            contract_number?: components["schemas"]["ExtractedValue"];
+            /** @description Nennbetrag */
+            principal?: components["schemas"]["ExtractedValue"];
+            /** @description Sollzins p.a. */
+            nominal_rate?: components["schemas"]["ExtractedValue"];
+            /** @description monatliche Rate, if stated */
+            monthly_payment?: components["schemas"]["ExtractedValue"];
+            /** @description anfängliche Tilgung p.a. */
+            initial_repayment_rate?: components["schemas"]["ExtractedValue"];
+            /** @description Ende der Sollzinsbindung */
+            fixed_until?: components["schemas"]["ExtractedValue"];
+            /** @description Auszahlung, if stated */
+            disbursed_on?: components["schemas"]["ExtractedValue"];
+            /** @description erste Rate, if stated */
+            first_payment_on?: components["schemas"]["ExtractedValue"];
+            /** @description Darlehenskonto */
+            account_iban?: components["schemas"]["ExtractedValue"];
+            /** @description Vertragsdatum */
+            signed_on?: components["schemas"]["ExtractedValue"];
         };
         /**
          * LoanCreateRequest
@@ -2471,6 +2732,46 @@ export interface components {
             build_year?: number;
         };
         /**
+         * PurchaseContractExtraction
+         * @description Kaufvertrag (contract / purchase_contract).
+         */
+        PurchaseContractExtraction: {
+            /** @description a short title; never in events (D5) */
+            title?: components["schemas"]["ExtractedValue"];
+            /** @description the date the document carries */
+            document_date?: components["schemas"]["ExtractedValue"];
+            /** @description e.g. Wohnungseigentum (-> etw) */
+            property_kind?: components["schemas"]["ExtractedValue"];
+            /** @description street of the property */
+            street?: components["schemas"]["ExtractedValue"];
+            /** @description house number */
+            house_number?: components["schemas"]["ExtractedValue"];
+            /** @description five-digit PLZ */
+            postal_code?: components["schemas"]["ExtractedValue"];
+            /** @description city */
+            city?: components["schemas"]["ExtractedValue"];
+            /** @description Baujahr / Fertigstellung, often absent */
+            build_year?: components["schemas"]["ExtractedValue"];
+            /** @description Urkundendatum */
+            notarized_on?: components["schemas"]["ExtractedValue"];
+            /** @description Übergang von Besitz, Nutzen und Lasten */
+            purchase_date?: components["schemas"]["ExtractedValue"];
+            /** @description Kaufpreis */
+            purchase_price?: components["schemas"]["ExtractedValue"];
+            /** @description price share allocated to the land, if stated */
+            land_value?: components["schemas"]["ExtractedValue"];
+            /** @description WE Nr. as in the Teilungserklärung, e.g. WE 3 */
+            unit_label?: components["schemas"]["ExtractedValue"];
+            /** @description Miteigentumsanteil, e.g. 85/1000 */
+            mea?: components["schemas"]["ExtractedValue"];
+            /** @description Wohnfläche in m², if stated */
+            floor_area_m2?: components["schemas"]["ExtractedValue"];
+            /** @description the buyers' full names */
+            buyers?: components["schemas"]["ExtractedValue"];
+            /** @description e.g. je zur Hälfte */
+            ownership_clause?: components["schemas"]["ExtractedValue"];
+        };
+        /**
          * RelatedDocument
          * @description GET /properties/{id}/documents and GET /units/{id}/documents: a document linked to the
          *     target or to one of its children (units, tenancies, loans), with every such link.
@@ -2660,6 +2961,41 @@ export interface components {
              * Format: date-time
              */
             idle_expires_at: string;
+        };
+        /**
+         * SourceRef
+         * @description Where a value came from: the page (1-indexed, page offset of a split PDF already
+         *     added) and the cited text, verbatim.
+         */
+        SourceRef: {
+            /** Page */
+            page: number;
+            /** Quote */
+            quote: string;
+        };
+        /**
+         * StatementExtraction
+         * @description PDF Kontoauszug (§7.1): balances and lines. Every amount is a model reading, so the
+         *     reconciliation is the guard; `lines` holds one text per booking line, parsed into
+         *     StatementLines by bank.pdf.
+         */
+        StatementExtraction: {
+            /** @description a short title; never in events (D5) */
+            title?: components["schemas"]["ExtractedValue"];
+            /** @description the date the document carries */
+            document_date?: components["schemas"]["ExtractedValue"];
+            /** @description the statement's account */
+            account_iban?: components["schemas"]["ExtractedValue"];
+            /** @description first day covered */
+            period_start?: components["schemas"]["ExtractedValue"];
+            /** @description last day covered */
+            period_end?: components["schemas"]["ExtractedValue"];
+            /** @description alter Kontostand */
+            opening_balance?: components["schemas"]["ExtractedValue"];
+            /** @description neuer Kontostand */
+            closing_balance?: components["schemas"]["ExtractedValue"];
+            /** @description the booking lines */
+            lines?: components["schemas"]["ExtractedValue"];
         };
         /** Tenancy */
         Tenancy: {
@@ -2945,6 +3281,36 @@ export interface components {
             mea?: components["schemas"]["Fraction"] | null;
         };
         /**
+         * WirtschaftsplanExtraction
+         * @description Wirtschaftsplan: the monthly Hausgeld split the by_wirtschaftsplan rule reads (§8.1).
+         */
+        WirtschaftsplanExtraction: {
+            /** @description a short title; never in events (D5) */
+            title?: components["schemas"]["ExtractedValue"];
+            /** @description the date the document carries */
+            document_date?: components["schemas"]["ExtractedValue"];
+            /** @description street of the property */
+            street?: components["schemas"]["ExtractedValue"];
+            /** @description house number */
+            house_number?: components["schemas"]["ExtractedValue"];
+            /** @description five-digit PLZ */
+            postal_code?: components["schemas"]["ExtractedValue"];
+            /** @description the Wirtschaftsjahr */
+            tax_year?: components["schemas"]["ExtractedValue"];
+            /** @description first month the plan applies to */
+            valid_from?: components["schemas"]["ExtractedValue"];
+            /** @description Hausgeld gesamt pro Monat */
+            hausgeld_total_monthly?: components["schemas"]["ExtractedValue"];
+            /** @description davon umlagefähig */
+            hausgeld_umlagefaehig_monthly?: components["schemas"]["ExtractedValue"];
+            /** @description davon nicht umlagefähig */
+            hausgeld_verwaltung_monthly?: components["schemas"]["ExtractedValue"];
+            /** @description davon Erhaltungsrücklage */
+            hausgeld_ruecklage_monthly?: components["schemas"]["ExtractedValue"];
+            /** @description the WEG account the Hausgeld is paid to */
+            iban?: components["schemas"]["ExtractedValue"];
+        };
+        /**
          * Workspace
          * @description One household. Every other table carries workspace_id and is filtered by RLS.
          */
@@ -2961,6 +3327,16 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /**
+             * Ai Tenant Documents
+             * @default false
+             */
+            ai_tenant_documents: boolean;
+            /**
+             * Auto Accept Llm
+             * @default false
+             */
+            auto_accept_llm: boolean;
         };
         /**
          * YearTotals
@@ -2977,6 +3353,24 @@ export interface components {
             payment: string;
             /** Closing Balance */
             closing_balance: string;
+        };
+        /**
+         * ZinsbescheinigungExtraction
+         * @description Zinsbescheinigung: the year's interest, reconciled against the loan schedule.
+         */
+        ZinsbescheinigungExtraction: {
+            /** @description a short title; never in events (D5) */
+            title?: components["schemas"]["ExtractedValue"];
+            /** @description the date the document carries */
+            document_date?: components["schemas"]["ExtractedValue"];
+            /** @description the bank */
+            lender?: components["schemas"]["ExtractedValue"];
+            /** @description Darlehensnummer */
+            contract_number?: components["schemas"]["ExtractedValue"];
+            /** @description the year */
+            tax_year?: components["schemas"]["ExtractedValue"];
+            /** @description gezahlte Zinsen */
+            interest_paid?: components["schemas"]["ExtractedValue"];
         };
     };
     responses: never;

@@ -52,6 +52,35 @@ def test_defaults():
     )
 
 
+def test_ai_defaults_from_the_phase_2_spec():
+    settings = load_settings(ENV)
+    assert settings.ai_enabled is False and settings.anthropic_api_key is None
+    assert (settings.ai_model_classify, settings.ai_model_extract, settings.ai_model_hard) == (
+        "claude-haiku-5-5",
+        "claude-sonnet-5-5",
+        "claude-opus-5-5",
+    )
+    assert settings.ai_inference_geo == "us"
+    assert (settings.ai_max_pages, settings.ai_timeout_s, settings.eval_dir) == (100, 120, None)
+
+
+def test_ai_enabled_with_a_key_and_the_key_stays_out_of_repr():
+    api_key = "sk-ant-test-0123456789"
+    settings = load_settings(
+        ENV
+        | {
+            "HAUSBUCH_AI_ENABLED": "true",
+            "HAUSBUCH_ANTHROPIC_API_KEY": api_key,
+            "HAUSBUCH_AI_INFERENCE_GEO": "global",
+            "HAUSBUCH_EVAL_DIR": "/srv/evals",
+        }
+    )
+    assert settings.ai_enabled is True and settings.anthropic_api_key == api_key
+    assert settings.ai_inference_geo == "global"
+    assert settings.eval_dir == Path("/srv/evals")
+    assert api_key not in repr(settings)
+
+
 def test_dev_environment_from_the_step_3_doc():
     settings = load_settings(
         ENV
@@ -135,6 +164,12 @@ def test_repr_hides_secrets():
         ({"HAUSBUCH_WORKER_CONCURRENCY": "0"}, "positive integer"),
         ({"HAUSBUCH_SHUTDOWN_GRACE_S": "2.5"}, "positive integer"),
         ({"HAUSBUCH_RUN_WORKER": "1"}, "true or false"),
+        ({"HAUSBUCH_AI_ENABLED": "true"}, "needs HAUSBUCH_ANTHROPIC_API_KEY"),
+        ({"HAUSBUCH_AI_ENABLED": "yes"}, "true or false"),
+        ({"HAUSBUCH_AI_INFERENCE_GEO": "eu"}, "must be one of us, global"),
+        ({"HAUSBUCH_AI_MAX_PAGES": "0"}, "positive integer"),
+        ({"HAUSBUCH_AI_MAX_PAGES": "601"}, "must not exceed 600"),
+        ({"HAUSBUCH_AI_TIMEOUT_S": "-5"}, "positive integer"),
     ],
     ids=lambda v: str(v) if isinstance(v, str) else None,
 )

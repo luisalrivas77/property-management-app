@@ -4123,6 +4123,54 @@
         "title": "AppUser",
         "description": "A person who can sign in. Auth credentials (passkey / TOTP) land with the API PR."
       },
+      "BescheidExtraction": {
+        "properties": {
+          "title": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "a short title; never in events (D5)",
+            "value_kind": "text"
+          },
+          "document_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the date the document carries",
+            "value_kind": "date"
+          },
+          "sender": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the authority",
+            "value_kind": "text"
+          },
+          "amount_total": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the amount assessed",
+            "value_kind": "money"
+          },
+          "reference": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Aktenzeichen / Steuernummer reference",
+            "value_kind": "text"
+          },
+          "iban": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the authority's IBAN, if stated",
+            "value_kind": "iban"
+          },
+          "due_on": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "fällig am",
+            "value_kind": "date"
+          },
+          "tax_year": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the year it concerns, if stated",
+            "value_kind": "year"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "BescheidExtraction",
+        "description": "A Bescheid other than Grundsteuer, e.g. the Grunderwerbsteuerbescheid."
+      },
       "Body_document_upload_api_documents_post": {
         "properties": {
           "file": {
@@ -4390,6 +4438,34 @@
         ],
         "title": "DepositReceivedBody"
       },
+      "DepositRecordExtraction": {
+        "properties": {
+          "title": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "a short title; never in events (D5)",
+            "value_kind": "text"
+          },
+          "document_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the date the document carries",
+            "value_kind": "date"
+          },
+          "amount": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Kautionsbetrag",
+            "value_kind": "money"
+          },
+          "received_on": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Eingang",
+            "value_kind": "date"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "DepositRecordExtraction",
+        "description": "Kautionsnachweis (letter / deposit_record). Step 2."
+      },
       "DisbursementCorrection": {
         "properties": {
           "new_date": {
@@ -4649,7 +4725,48 @@
             "$ref": "#/components/schemas/ExtractionSource"
           },
           "fields": {
-            "$ref": "#/components/schemas/ManualDocumentFields"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ManualDocumentFields"
+              },
+              {
+                "$ref": "#/components/schemas/PurchaseContractExtraction"
+              },
+              {
+                "$ref": "#/components/schemas/LoanContractExtraction"
+              },
+              {
+                "$ref": "#/components/schemas/LeaseExtraction"
+              },
+              {
+                "$ref": "#/components/schemas/HandoverProtocolExtraction"
+              },
+              {
+                "$ref": "#/components/schemas/DepositRecordExtraction"
+              },
+              {
+                "$ref": "#/components/schemas/InvoiceExtraction"
+              },
+              {
+                "$ref": "#/components/schemas/BescheidExtraction"
+              },
+              {
+                "$ref": "#/components/schemas/GrundsteuerbescheidExtraction"
+              },
+              {
+                "$ref": "#/components/schemas/WirtschaftsplanExtraction"
+              },
+              {
+                "$ref": "#/components/schemas/HausgeldabrechnungExtraction"
+              },
+              {
+                "$ref": "#/components/schemas/ZinsbescheinigungExtraction"
+              },
+              {
+                "$ref": "#/components/schemas/StatementExtraction"
+              }
+            ],
+            "title": "Fields"
           },
           "schema_version": {
             "type": "integer",
@@ -4660,6 +4777,22 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ExtractionKind",
+            "default": "manual"
+          },
+          "ai_call_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Call Id"
           }
         },
         "additionalProperties": false,
@@ -4674,7 +4807,7 @@
           "created_at"
         ],
         "title": "DocumentExtraction",
-        "description": "Append-only. A new version is a new row; the highest version is current."
+        "description": "Append-only. A new version is a new row; the highest version is current.\n\nkind (phase 2, migration 0005) says which field set `fields` holds: `manual` is\nManualDocumentFields, every other kind its per-type model in schemas/extraction.py. The\nkind is a column, not a key inside the fields, so the union is resolved from it here\nrather than by a Pydantic discriminator. ai_call_id is the call an `ai` version came from\n(D18); a `manual` version on top of it (Luis edited extracted fields) has none."
       },
       "DocumentLink": {
         "properties": {
@@ -4916,7 +5049,14 @@
           "tenant",
           "tenancy",
           "loan",
-          "document"
+          "document",
+          "user",
+          "proposal",
+          "account",
+          "statement",
+          "transaction",
+          "rule",
+          "workspace"
         ],
         "title": "EntityType",
         "description": "Entities that carry events. Also the prefix of every event type."
@@ -5240,9 +5380,116 @@
           "document.uploaded",
           "document.typed",
           "document.linked",
-          "document.unlinked"
+          "document.unlinked",
+          "document.classified",
+          "document.extracted",
+          "document.read_failed",
+          "workspace.settings_changed",
+          "proposal.created",
+          "proposal.superseded",
+          "proposal.rejected",
+          "proposal.applied",
+          "user.signed_in",
+          "user.signed_out",
+          "user.sessions_revoked",
+          "user.passkey_enrolled",
+          "user.passkey_renamed",
+          "user.passkey_removed",
+          "user.invited",
+          "user.enrolled",
+          "account.created",
+          "account.updated",
+          "statement.imported",
+          "statement.reconciled",
+          "statement.unreconciled",
+          "statement.duplicate_resolved",
+          "transaction.allocated",
+          "transaction.reallocated",
+          "rule.created",
+          "rule.disabled"
         ],
         "title": "EventType"
+      },
+      "ExtractedValue": {
+        "properties": {
+          "value": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SourceRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "derived_from": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Derived From"
+          },
+          "checks": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "cited",
+                "value_in_quote",
+                "validates",
+                "derived"
+              ]
+            },
+            "type": "array",
+            "title": "Checks"
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ],
+            "title": "Confidence"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value",
+          "confidence"
+        ],
+        "title": "ExtractedValue",
+        "description": "One field of a per-type extraction, or of a proposal record.\n\nchecks say what code verified: `cited` (the API attached a citation, so `source` is set),\n`value_in_quote` (the value is recoverable from the cited text), `validates` (the value\npasses the target field's Pydantic type), `derived` (code computed it from the fields in\n`derived_from`, e.g. building_share). The confidence is a function of the checks, computed\nby rules.extraction_parse (fixture extraction_parse.yaml); this model only enforces that\nthe checks are consistent with the other fields."
+      },
+      "ExtractionKind": {
+        "type": "string",
+        "enum": [
+          "manual",
+          "purchase_contract",
+          "loan_contract",
+          "lease",
+          "handover_protocol",
+          "deposit_record",
+          "invoice",
+          "bescheid",
+          "grundsteuerbescheid",
+          "wirtschaftsplan",
+          "hausgeldabrechnung",
+          "zinsbescheinigung",
+          "statement"
+        ],
+        "title": "ExtractionKind",
+        "description": "document_extraction.kind and proposal.kind (migration 0005): which field set an\nextraction holds. `manual` is phase 1's ManualDocumentFields; the others are the per-type\nmodels in schemas/extraction.py."
       },
       "ExtractionSource": {
         "type": "string",
@@ -5308,6 +5555,170 @@
         ],
         "title": "Fraction",
         "description": "An exact share: ownership (1/2) or Miteigentumsanteil (85/1000)."
+      },
+      "GrundsteuerbescheidExtraction": {
+        "properties": {
+          "title": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "a short title; never in events (D5)",
+            "value_kind": "text"
+          },
+          "document_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the date the document carries",
+            "value_kind": "date"
+          },
+          "street": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "street of the property",
+            "value_kind": "text"
+          },
+          "house_number": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "house number",
+            "value_kind": "text"
+          },
+          "postal_code": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "five-digit PLZ",
+            "value_kind": "text"
+          },
+          "tax_year": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "first year the Bescheid applies to",
+            "value_kind": "year"
+          },
+          "reference": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Aktenzeichen",
+            "value_kind": "text"
+          },
+          "yearly_amount": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Jahresbetrag",
+            "value_kind": "money"
+          },
+          "installment_amount": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Vierteljahresbetrag, if stated",
+            "value_kind": "money"
+          },
+          "due_dates": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Fälligkeiten, e.g. 15.02.; 15.05.; ...",
+            "value_kind": "text_list"
+          },
+          "iban": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the Stadtkasse's IBAN, if stated",
+            "value_kind": "iban"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "GrundsteuerbescheidExtraction",
+        "description": "Grundsteuerbescheid (bescheid / grundsteuerbescheid)."
+      },
+      "HandoverProtocolExtraction": {
+        "properties": {
+          "title": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "a short title; never in events (D5)",
+            "value_kind": "text"
+          },
+          "document_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the date the document carries",
+            "value_kind": "date"
+          },
+          "street": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "street",
+            "value_kind": "text"
+          },
+          "house_number": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "house number",
+            "value_kind": "text"
+          },
+          "postal_code": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "five-digit PLZ",
+            "value_kind": "text"
+          },
+          "meter_readings": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Zählerstände; stay in the extraction",
+            "value_kind": "text_list"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "HandoverProtocolExtraction",
+        "description": "Übergabeprotokoll (letter / handover_protocol). Step 2."
+      },
+      "HausgeldabrechnungExtraction": {
+        "properties": {
+          "title": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "a short title; never in events (D5)",
+            "value_kind": "text"
+          },
+          "document_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the date the document carries",
+            "value_kind": "date"
+          },
+          "street": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "street of the property",
+            "value_kind": "text"
+          },
+          "house_number": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "house number",
+            "value_kind": "text"
+          },
+          "postal_code": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "five-digit PLZ",
+            "value_kind": "text"
+          },
+          "tax_year": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the Abrechnungsjahr",
+            "value_kind": "year"
+          },
+          "settlement_result": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Nachzahlung (+) / Guthaben (-)",
+            "value_kind": "money"
+          },
+          "umlagefaehig_total": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "umlagefähige Kosten des Jahres",
+            "value_kind": "money"
+          },
+          "verwaltung_total": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "nicht umlagefähige Kosten des Jahres",
+            "value_kind": "money"
+          },
+          "ruecklage_contribution": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Zuführung zur Rücklage",
+            "value_kind": "money"
+          },
+          "ruecklage_spent": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Entnahme aus der Rücklage",
+            "value_kind": "money"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "HausgeldabrechnungExtraction",
+        "description": "Hausgeldabrechnung: the year's settlement (read by phase 3's Hausgeld rule)."
       },
       "InitialRent": {
         "properties": {
@@ -5414,7 +5825,183 @@
         "title": "InviteCreate",
         "description": "POST /auth/invites: a household member to invite (creates their app_user row)."
       },
+      "InvoiceExtraction": {
+        "properties": {
+          "title": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "a short title; never in events (D5)",
+            "value_kind": "text"
+          },
+          "document_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the date the document carries",
+            "value_kind": "date"
+          },
+          "sender": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "who issued it: decides the cost kind",
+            "value_kind": "text"
+          },
+          "amount_total": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "gross total (brutto)",
+            "value_kind": "money"
+          },
+          "amount_net": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "net amount, if stated",
+            "value_kind": "money"
+          },
+          "reference": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "invoice no. / Aktenzeichen",
+            "value_kind": "text"
+          },
+          "iban": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the payee's IBAN, if stated",
+            "value_kind": "iban"
+          },
+          "due_on": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Zahlungsziel, if stated",
+            "value_kind": "date"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "InvoiceExtraction",
+        "description": "Invoices: Nebenkosten (notary, Grundbuchamt, broker) now, repairs and others later."
+      },
       "JsonValue": {},
+      "LeaseExtraction": {
+        "properties": {
+          "title": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "a short title; never in events (D5)",
+            "value_kind": "text"
+          },
+          "document_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the date the document carries",
+            "value_kind": "date"
+          },
+          "street": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "street of the rented flat",
+            "value_kind": "text"
+          },
+          "house_number": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "house number",
+            "value_kind": "text"
+          },
+          "postal_code": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "five-digit PLZ",
+            "value_kind": "text"
+          },
+          "city": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "city",
+            "value_kind": "text"
+          },
+          "unit_label": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the flat's label, e.g. WE 3",
+            "value_kind": "text"
+          },
+          "tenant_1_full_name": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "first named Mieter (primary)",
+            "value_kind": "text"
+          },
+          "tenant_1_email": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "if stated",
+            "value_kind": "text"
+          },
+          "tenant_1_phone": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "if stated",
+            "value_kind": "text"
+          },
+          "tenant_1_iban": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "if stated",
+            "value_kind": "iban"
+          },
+          "tenant_2_full_name": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "second named Mieter (co_tenant)",
+            "value_kind": "text"
+          },
+          "tenant_2_email": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "if stated",
+            "value_kind": "text"
+          },
+          "tenant_2_phone": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "if stated",
+            "value_kind": "text"
+          },
+          "tenant_2_iban": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "if stated",
+            "value_kind": "iban"
+          },
+          "start_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Mietbeginn",
+            "value_kind": "date"
+          },
+          "signed_on": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Vertragsdatum",
+            "value_kind": "date"
+          },
+          "fixed_term_until": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Zeitmietvertrag bis, if befristet",
+            "value_kind": "date"
+          },
+          "rent_clause": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Staffel- / Indexmiete clause, if any",
+            "value_kind": "text"
+          },
+          "deposit_amount": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Kaution",
+            "value_kind": "money"
+          },
+          "deposit_clause": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Barkaution / Bürgschaft ...",
+            "value_kind": "text"
+          },
+          "cold_rent": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Nettokaltmiete",
+            "value_kind": "money"
+          },
+          "operating_costs_prepayment": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Betriebskostenvorauszahlung",
+            "value_kind": "money"
+          },
+          "heating_costs_prepayment": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Heizkostenvorauszahlung",
+            "value_kind": "money"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "LeaseExtraction",
+        "description": "Mietvertrag (contract / lease). Step 2, gated by ai_tenant_documents (D16)."
+      },
       "LinkBody": {
         "properties": {
           "target_type": {
@@ -5539,6 +6126,79 @@
           "terms"
         ],
         "title": "Loan"
+      },
+      "LoanContractExtraction": {
+        "properties": {
+          "title": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "a short title; never in events (D5)",
+            "value_kind": "text"
+          },
+          "document_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the date the document carries",
+            "value_kind": "date"
+          },
+          "lender": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Darlehensgeber",
+            "value_kind": "text"
+          },
+          "contract_number": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Darlehensnummer / Vertragsnummer",
+            "value_kind": "text"
+          },
+          "principal": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Nennbetrag",
+            "value_kind": "money"
+          },
+          "nominal_rate": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Sollzins p.a.",
+            "value_kind": "rate"
+          },
+          "monthly_payment": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "monatliche Rate, if stated",
+            "value_kind": "money"
+          },
+          "initial_repayment_rate": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "anfängliche Tilgung p.a.",
+            "value_kind": "rate"
+          },
+          "fixed_until": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Ende der Sollzinsbindung",
+            "value_kind": "date"
+          },
+          "disbursed_on": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Auszahlung, if stated",
+            "value_kind": "date"
+          },
+          "first_payment_on": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "erste Rate, if stated",
+            "value_kind": "date"
+          },
+          "account_iban": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Darlehenskonto",
+            "value_kind": "iban"
+          },
+          "signed_on": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Vertragsdatum",
+            "value_kind": "date"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "LoanContractExtraction",
+        "description": "Darlehensvertrag (contract / loan_contract)."
       },
       "LoanCreateRequest": {
         "properties": {
@@ -6654,6 +7314,99 @@
         "title": "PropertyPatch",
         "description": "Non-milestone fields only: the purchase dates and price change through corrections."
       },
+      "PurchaseContractExtraction": {
+        "properties": {
+          "title": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "a short title; never in events (D5)",
+            "value_kind": "text"
+          },
+          "document_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the date the document carries",
+            "value_kind": "date"
+          },
+          "property_kind": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "e.g. Wohnungseigentum (-> etw)",
+            "value_kind": "text"
+          },
+          "street": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "street of the property",
+            "value_kind": "text"
+          },
+          "house_number": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "house number",
+            "value_kind": "text"
+          },
+          "postal_code": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "five-digit PLZ",
+            "value_kind": "text"
+          },
+          "city": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "city",
+            "value_kind": "text"
+          },
+          "build_year": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Baujahr / Fertigstellung, often absent",
+            "value_kind": "year"
+          },
+          "notarized_on": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Urkundendatum",
+            "value_kind": "date"
+          },
+          "purchase_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Übergang von Besitz, Nutzen und Lasten",
+            "value_kind": "date"
+          },
+          "purchase_price": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Kaufpreis",
+            "value_kind": "money"
+          },
+          "land_value": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "price share allocated to the land, if stated",
+            "value_kind": "money"
+          },
+          "unit_label": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "WE Nr. as in the Teilungserklärung, e.g. WE 3",
+            "value_kind": "text"
+          },
+          "mea": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Miteigentumsanteil, e.g. 85/1000",
+            "value_kind": "fraction"
+          },
+          "floor_area_m2": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Wohnfläche in m², if stated",
+            "value_kind": "decimal"
+          },
+          "buyers": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the buyers' full names",
+            "value_kind": "text_list"
+          },
+          "ownership_clause": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "e.g. je zur Hälfte",
+            "value_kind": "text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PurchaseContractExtraction",
+        "description": "Kaufvertrag (contract / purchase_contract)."
+      },
       "RelatedDocument": {
         "properties": {
           "document": {
@@ -7079,6 +7832,75 @@
         ],
         "title": "Session",
         "description": "The current session (Me.session). The cookie token is never part of any response."
+      },
+      "SourceRef": {
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Page"
+          },
+          "quote": {
+            "type": "string",
+            "title": "Quote"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "page",
+          "quote"
+        ],
+        "title": "SourceRef",
+        "description": "Where a value came from: the page (1-indexed, page offset of a split PDF already\nadded) and the cited text, verbatim."
+      },
+      "StatementExtraction": {
+        "properties": {
+          "title": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "a short title; never in events (D5)",
+            "value_kind": "text"
+          },
+          "document_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the date the document carries",
+            "value_kind": "date"
+          },
+          "account_iban": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the statement's account",
+            "value_kind": "iban"
+          },
+          "period_start": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "first day covered",
+            "value_kind": "date"
+          },
+          "period_end": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "last day covered",
+            "value_kind": "date"
+          },
+          "opening_balance": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "alter Kontostand",
+            "value_kind": "money"
+          },
+          "closing_balance": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "neuer Kontostand",
+            "value_kind": "money"
+          },
+          "lines": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the booking lines",
+            "value_kind": "text_list"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "StatementExtraction",
+        "description": "PDF Kontoauszug (§7.1): balances and lines. Every amount is a model reading, so the\nreconciliation is the guard; `lines` holds one text per booking line, parsed into\nStatementLines by bank.pdf."
       },
       "Tenancy": {
         "properties": {
@@ -7874,6 +8696,74 @@
         "type": "object",
         "title": "UnitPatch"
       },
+      "WirtschaftsplanExtraction": {
+        "properties": {
+          "title": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "a short title; never in events (D5)",
+            "value_kind": "text"
+          },
+          "document_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the date the document carries",
+            "value_kind": "date"
+          },
+          "street": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "street of the property",
+            "value_kind": "text"
+          },
+          "house_number": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "house number",
+            "value_kind": "text"
+          },
+          "postal_code": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "five-digit PLZ",
+            "value_kind": "text"
+          },
+          "tax_year": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the Wirtschaftsjahr",
+            "value_kind": "year"
+          },
+          "valid_from": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "first month the plan applies to",
+            "value_kind": "date"
+          },
+          "hausgeld_total_monthly": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Hausgeld gesamt pro Monat",
+            "value_kind": "money"
+          },
+          "hausgeld_umlagefaehig_monthly": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "davon umlagefähig",
+            "value_kind": "money"
+          },
+          "hausgeld_verwaltung_monthly": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "davon nicht umlagefähig",
+            "value_kind": "money"
+          },
+          "hausgeld_ruecklage_monthly": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "davon Erhaltungsrücklage",
+            "value_kind": "money"
+          },
+          "iban": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the WEG account the Hausgeld is paid to",
+            "value_kind": "iban"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "WirtschaftsplanExtraction",
+        "description": "Wirtschaftsplan: the monthly Hausgeld split the by_wirtschaftsplan rule reads (§8.1)."
+      },
       "Workspace": {
         "properties": {
           "id": {
@@ -7891,6 +8781,16 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "ai_tenant_documents": {
+            "type": "boolean",
+            "title": "Ai Tenant Documents",
+            "default": false
+          },
+          "auto_accept_llm": {
+            "type": "boolean",
+            "title": "Auto Accept Llm",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -7941,6 +8841,44 @@
         ],
         "title": "YearTotals",
         "description": "Per calendar year of due_on. Interest here is what Anlage V will reconcile against."
+      },
+      "ZinsbescheinigungExtraction": {
+        "properties": {
+          "title": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "a short title; never in events (D5)",
+            "value_kind": "text"
+          },
+          "document_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the date the document carries",
+            "value_kind": "date"
+          },
+          "lender": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the bank",
+            "value_kind": "text"
+          },
+          "contract_number": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Darlehensnummer",
+            "value_kind": "text"
+          },
+          "tax_year": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the year",
+            "value_kind": "year"
+          },
+          "interest_paid": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "gezahlte Zinsen",
+            "value_kind": "money"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ZinsbescheinigungExtraction",
+        "description": "Zinsbescheinigung: the year's interest, reconciled against the loan schedule."
       }
     }
   }

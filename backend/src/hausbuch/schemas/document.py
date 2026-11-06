@@ -1,7 +1,7 @@
 """Document vault: immutable originals, typed metadata, versioned extractions, links."""
 
 from datetime import date, datetime
-from typing import Self
+from typing import Any, Self
 from uuid import UUID
 
 from pydantic import Field, model_validator
@@ -11,11 +11,13 @@ from .enums import (
     DocumentSource,
     DocumentSubtype,
     DocumentType,
+    ExtractionKind,
     ExtractionSource,
     LinkTarget,
     RetentionClass,
     RetentionHold,
 )
+from .extraction import EXTRACTION_MODELS, AnyExtraction
 
 
 class DocumentFile(Schema):
@@ -68,16 +70,47 @@ class ManualDocumentFields(Schema):
 
 
 class DocumentExtraction(Schema):
-    """Append-only. A new version is a new row; the highest version is current."""
+    """Append-only. A new version is a new row; the highest version is current.
+
+    kind (phase 2, migration 0005) says which field set `fields` holds: `manual` is
+    ManualDocumentFields, every other kind its per-type model in schemas/extraction.py. The
+    kind is a column, not a key inside the fields, so the union is resolved from it here
+    rather than by a Pydantic discriminator. ai_call_id is the call an `ai` version came from
+    (D18); a `manual` version on top of it (Luis edited extracted fields) has none.
+    """
 
     id: UUID
     workspace_id: UUID
     document_id: UUID
     version: int = Field(ge=1)
     source: ExtractionSource
-    fields: ManualDocumentFields
+    fields: ManualDocumentFields | AnyExtraction
     schema_version: int = 1
     created_at: datetime
+    kind: ExtractionKind = ExtractionKind.MANUAL
+    ai_call_id: UUID | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _fields_by_kind(cls, data: Any) -> Any:
+        if not isinstance(data, dict) or not isinstance(data.get("fields"), dict):
+            return data
+        kind = ExtractionKind(data.get("kind", ExtractionKind.MANUAL))
+        model = ManualDocumentFields if kind is ExtractionKind.MANUAL else EXTRACTION_MODELS[kind]
+        return data | {"fields": model.model_validate(data["fields"])}
+
+    @model_validator(mode="after")
+    def _provenance(self) -> Self:
+        expected = (
+            ManualDocumentFields
+            if self.kind is ExtractionKind.MANUAL
+            else EXTRACTION_MODELS[self.kind]
+        )
+        if type(self.fields) is not expected:
+            raise ValueError(f"fields of kind {self.kind} must be {expected.__name__}")
+        if (self.source is ExtractionSource.AI) != (self.ai_call_id is not None):
+            raise ValueError("an ai extraction carries its ai_call_id, a manual one none")
+        return self
 
 
 class DocumentLink(Schema):

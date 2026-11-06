@@ -1,7 +1,8 @@
 """Runtime settings, read from the environment by an explicit load_settings() call.
 
 Nothing is read at import time, so importing hausbuch never depends on the environment.
-Names and defaults: docs/phases/phase-1-step-3.md (§3.3, §3.7, §4.7, §6.1, §6.3, §6.4, §8).
+Names and defaults: docs/phases/phase-1-step-3.md (§3.3, §3.7, §4.7, §6.1, §6.3, §6.4, §8), and
+for the AI layer docs/phases/phase-2.md §4.5.
 
 Settings validates itself on construction, so values built directly (tests, the CLI) get the
 same checks as values read from the environment.
@@ -42,6 +43,18 @@ DEFAULT_SESSION_IDLE_S = 2 * 3600  # idle lifetime, slid forward on use
 DEFAULT_WORKER_CONCURRENCY = 2
 DEFAULT_SHUTDOWN_GRACE_S = 20  # below uvicorn's --timeout-graceful-shutdown 25 (§3.7, Q15)
 
+# Phase 2 AI layer (phase-2.md §4.5, D17). Model ids are settings so a tier can change without
+# a release; inference_geo is `us` (Luis, 6 Nov 2026: one named processing location).
+DEFAULT_AI_MODEL_CLASSIFY = "claude-haiku-5-5"
+DEFAULT_AI_MODEL_EXTRACT = "claude-sonnet-5-5"
+DEFAULT_AI_MODEL_HARD = "claude-opus-5-5"
+InferenceGeo = Literal["us", "global"]
+INFERENCE_GEOS: tuple[InferenceGeo, ...] = ("us", "global")
+DEFAULT_AI_INFERENCE_GEO: InferenceGeo = "us"
+DEFAULT_AI_MAX_PAGES = 100  # pages per request; longer PDFs are split (§5.2)
+MAX_AI_PAGES = 600  # the API's limit per request with a 1M context window
+DEFAULT_AI_TIMEOUT_S = 120
+
 # The document_file.media_type CHECK.
 _MEDIA_TYPE = re.compile(r"[a-z]+/[a-z0-9.+-]+")
 _LABEL = r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?"
@@ -74,6 +87,16 @@ class Settings:
     run_worker: bool = True  # the in-process job worker (§3.7)
     worker_concurrency: int = DEFAULT_WORKER_CONCURRENCY
     shutdown_grace_s: int = DEFAULT_SHUTDOWN_GRACE_S
+    # AI layer (phase 2). Off by default: production turns it on with the key.
+    ai_enabled: bool = False
+    anthropic_api_key: str | None = field(default=None, repr=False)
+    ai_model_classify: str = DEFAULT_AI_MODEL_CLASSIFY
+    ai_model_extract: str = DEFAULT_AI_MODEL_EXTRACT
+    ai_model_hard: str = DEFAULT_AI_MODEL_HARD
+    ai_inference_geo: InferenceGeo = DEFAULT_AI_INFERENCE_GEO
+    ai_max_pages: int = DEFAULT_AI_MAX_PAGES
+    ai_timeout_s: int = DEFAULT_AI_TIMEOUT_S
+    eval_dir: Path | None = None  # Luis's real eval documents, outside the repo (D29)
 
     def __post_init__(self) -> None:
         if not self.database_url:
@@ -97,6 +120,8 @@ class Settings:
             ("HAUSBUCH_SESSION_IDLE_S", self.session_idle_s),
             ("HAUSBUCH_WORKER_CONCURRENCY", self.worker_concurrency),
             ("HAUSBUCH_SHUTDOWN_GRACE_S", self.shutdown_grace_s),
+            ("HAUSBUCH_AI_MAX_PAGES", self.ai_max_pages),
+            ("HAUSBUCH_AI_TIMEOUT_S", self.ai_timeout_s),
         ):
             if not isinstance(value, int) or isinstance(value, bool) or value < 1:
                 raise SettingsError(f"{name} must be a positive integer")
@@ -104,6 +129,24 @@ class Settings:
             raise SettingsError(
                 "HAUSBUCH_SESSION_IDLE_S must not exceed HAUSBUCH_SESSION_MAX_AGE_S"
             )
+        self._check_ai()
+
+    def _check_ai(self) -> None:
+        if self.ai_enabled and not self.anthropic_api_key:
+            raise SettingsError("HAUSBUCH_AI_ENABLED=true needs HAUSBUCH_ANTHROPIC_API_KEY")
+        if self.ai_inference_geo not in INFERENCE_GEOS:
+            raise SettingsError(
+                f"HAUSBUCH_AI_INFERENCE_GEO must be one of {', '.join(INFERENCE_GEOS)}"
+            )
+        if self.ai_max_pages > MAX_AI_PAGES:
+            raise SettingsError(f"HAUSBUCH_AI_MAX_PAGES must not exceed {MAX_AI_PAGES}")
+        for name, model in (
+            ("HAUSBUCH_AI_MODEL_CLASSIFY", self.ai_model_classify),
+            ("HAUSBUCH_AI_MODEL_EXTRACT", self.ai_model_extract),
+            ("HAUSBUCH_AI_MODEL_HARD", self.ai_model_hard),
+        ):
+            if not model or model != model.strip():
+                raise SettingsError(f"{name} must be a model id")
 
     def _check_relying_party(self) -> None:
         # WebAuthn needs a domain: an IP address is not a valid RP id.
@@ -162,6 +205,7 @@ def load_settings(environ: Mapping[str, str] = os.environ) -> Settings:
     blob_store = _required(environ, "HAUSBUCH_BLOB_STORE")
     blob_root = _optional(environ, "HAUSBUCH_BLOB_ROOT")
     media_types = _optional(environ, "HAUSBUCH_UPLOAD_MEDIA_TYPES")
+    eval_dir = _optional(environ, "HAUSBUCH_EVAL_DIR")
     return Settings(
         database_url=_required(environ, "HAUSBUCH_DATABASE_URL"),
         iban_hmac_key=_hex_key(environ, "HAUSBUCH_IBAN_HMAC_KEY"),
@@ -185,6 +229,19 @@ def load_settings(environ: Mapping[str, str] = os.environ) -> Settings:
         run_worker=_bool(environ, "HAUSBUCH_RUN_WORKER", True),
         worker_concurrency=_int(environ, "HAUSBUCH_WORKER_CONCURRENCY", DEFAULT_WORKER_CONCURRENCY),
         shutdown_grace_s=_int(environ, "HAUSBUCH_SHUTDOWN_GRACE_S", DEFAULT_SHUTDOWN_GRACE_S),
+        ai_enabled=_bool(environ, "HAUSBUCH_AI_ENABLED", False),
+        anthropic_api_key=_optional(environ, "HAUSBUCH_ANTHROPIC_API_KEY"),
+        ai_model_classify=_optional(environ, "HAUSBUCH_AI_MODEL_CLASSIFY")
+        or DEFAULT_AI_MODEL_CLASSIFY,
+        ai_model_extract=_optional(environ, "HAUSBUCH_AI_MODEL_EXTRACT")
+        or DEFAULT_AI_MODEL_EXTRACT,
+        ai_model_hard=_optional(environ, "HAUSBUCH_AI_MODEL_HARD") or DEFAULT_AI_MODEL_HARD,
+        ai_inference_geo=(
+            _optional(environ, "HAUSBUCH_AI_INFERENCE_GEO") or DEFAULT_AI_INFERENCE_GEO
+        ),  # type: ignore[arg-type]  # checked by Settings
+        ai_max_pages=_int(environ, "HAUSBUCH_AI_MAX_PAGES", DEFAULT_AI_MAX_PAGES),
+        ai_timeout_s=_int(environ, "HAUSBUCH_AI_TIMEOUT_S", DEFAULT_AI_TIMEOUT_S),
+        eval_dir=None if eval_dir is None else Path(eval_dir),
     )
 
 
