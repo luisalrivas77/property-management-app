@@ -425,7 +425,9 @@ export function ProposalSection({
       const next = await ok(
         api.POST("/api/documents/{document_id}/proposals", {
           params: { path: { document_id: documentId } },
-          body: { contains_tenant_data: tenantData },
+          // A re-run keeps the flag the uploader set: a document marked as holding tenant data
+          // is never sent to the AI because a later button had no checkbox.
+          body: { contains_tenant_data: (proposal?.contains_tenant_data ?? false) || tenantData },
         }),
       );
       setProposal(next);
