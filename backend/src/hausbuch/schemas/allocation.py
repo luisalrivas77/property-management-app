@@ -1,6 +1,6 @@
 """Allocations, learned rules and the matching pipeline's inputs (phase-2.md §4.4, §8).
 
-An allocation splits one transaction into category + scope + tax year + service period. Rows
+An allocation splits one transaction into category + scope + service period + recurring. Rows
 are append-only (D23): a correction is a new row set, and status is the one thing that moves,
 forward only. Every tax and performance figure sums over `confirmed` rows. Σ amounts of a
 transaction's non-superseded rows equals the transaction amount; rules.allocations.check_sum
@@ -19,7 +19,7 @@ from uuid import UUID
 from pydantic import Field, model_validator
 
 from .ai import ConfidenceLevel
-from .common import Confidence, Money, MutableRecord, PositiveMoney, Record, Schema, TaxYear
+from .common import Confidence, Money, MutableRecord, PositiveMoney, Record, Schema
 from .enums import AllocationStatus, ExtractionKind, ImportStatus
 from .loan import LoanTerms
 
@@ -100,7 +100,6 @@ class AllocationDraft(Schema):
     unit_id: UUID | None = None
     tenancy_id: UUID | None = None
     loan_id: UUID | None = None
-    tax_year: TaxYear
     service_period_start: date | None = None
     service_period_end: date | None = None
     recurring: bool = False
@@ -147,7 +146,6 @@ class Allocation(Record):
     unit_id: UUID | None
     tenancy_id: UUID | None
     loan_id: UUID | None
-    tax_year: TaxYear
     service_period_start: date | None
     service_period_end: date | None
     recurring: bool

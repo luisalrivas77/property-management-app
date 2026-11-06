@@ -11,7 +11,8 @@
 #   whitespace-collapsed text; amount_sign credit = amount > 0, debit = amount < 0.
 #   A disabled rule or a miss -> null.
 # Split by split_method; every set has method rule, rule_id = rule.id, confidence 1.0, no
-# question; tax_year = booking year; the service period from rules.periods.service_period:
+# question; no tax year (the year an allocation counts in is an output of phase 3's tax rule
+# set, not a stored fact); the service period from rules.periods.service_period:
 #   single_category     one allocation of rule.category over the whole amount, with the rule's
 #                       property / tenancy / loan; recurring = rule.recurring (copied from the
 #                       answer the rule was learned from; a yearly premium is recurring).
@@ -107,7 +108,7 @@ cases:
       confidence: "1.000"
       question: null
       allocations:
-        - {amount: "-312.40", category: insurance, property_id: *P, tax_year: 2027, service_period_start: 2027-01-01, service_period_end: 2027-12-31, recurring: true}
+        - {amount: "-312.40", category: insurance, property_id: *P, service_period_start: 2027-01-01, service_period_end: 2027-12-31, recurring: true}
 
   - id: loan_schedule_last_fixed_month
     rule: annuity
@@ -124,8 +125,8 @@ cases:
       confidence: "1.000"
       question: null
       allocations:
-        - {amount: "-64.08", category: loan_interest, property_id: *P, loan_id: *L, tax_year: 2025, service_period_start: 2025-07-01, service_period_end: 2025-07-31, recurring: true}
-        - {amount: "-935.92", category: loan_principal, property_id: *P, loan_id: *L, tax_year: 2025, service_period_start: 2025-07-01, service_period_end: 2025-07-31, recurring: true}
+        - {amount: "-64.08", category: loan_interest, property_id: *P, loan_id: *L, service_period_start: 2025-07-01, service_period_end: 2025-07-31, recurring: true}
+        - {amount: "-935.92", category: loan_principal, property_id: *P, loan_id: *L, service_period_start: 2025-07-01, service_period_end: 2025-07-31, recurring: true}
 
   - id: loan_schedule_after_rate_change
     description: Same rule, same payment, the month after the switch to 8 %; new amounts from the schedule.
@@ -140,8 +141,8 @@ cases:
       confidence: "1.000"
       question: null
       allocations:
-        - {amount: "-96.28", category: loan_interest, property_id: *P, loan_id: *L, tax_year: 2025, service_period_start: 2025-08-01, service_period_end: 2025-08-31, recurring: true}
-        - {amount: "-903.72", category: loan_principal, property_id: *P, loan_id: *L, tax_year: 2025, service_period_start: 2025-08-01, service_period_end: 2025-08-31, recurring: true}
+        - {amount: "-96.28", category: loan_interest, property_id: *P, loan_id: *L, service_period_start: 2025-08-01, service_period_end: 2025-08-31, recurring: true}
+        - {amount: "-903.72", category: loan_principal, property_id: *P, loan_id: *L, service_period_start: 2025-08-01, service_period_end: 2025-08-31, recurring: true}
 
   - id: wirtschaftsplan_current
     rule: hausgeld
@@ -158,9 +159,9 @@ cases:
       confidence: "1.000"
       question: null
       allocations:
-        - {amount: "-210.00", category: hausgeld_umlagefaehig, property_id: *P, document_id: *D_WP26, tax_year: 2026, service_period_start: 2026-12-01, service_period_end: 2026-12-31, recurring: true}
-        - {amount: "-50.00", category: hausgeld_verwaltung, property_id: *P, document_id: *D_WP26, tax_year: 2026, service_period_start: 2026-12-01, service_period_end: 2026-12-31, recurring: true}
-        - {amount: "-120.00", category: hausgeld_ruecklage, property_id: *P, document_id: *D_WP26, tax_year: 2026, service_period_start: 2026-12-01, service_period_end: 2026-12-31, recurring: true}
+        - {amount: "-210.00", category: hausgeld_umlagefaehig, property_id: *P, document_id: *D_WP26, service_period_start: 2026-12-01, service_period_end: 2026-12-31, recurring: true}
+        - {amount: "-50.00", category: hausgeld_verwaltung, property_id: *P, document_id: *D_WP26, service_period_start: 2026-12-01, service_period_end: 2026-12-31, recurring: true}
+        - {amount: "-120.00", category: hausgeld_ruecklage, property_id: *P, document_id: *D_WP26, service_period_start: 2026-12-01, service_period_end: 2026-12-31, recurring: true}
 
   - id: wirtschaftsplan_new_plan
     description: The 2027 plan raised the Hausgeld; the same rule splits by the new plan.
@@ -177,9 +178,9 @@ cases:
       confidence: "1.000"
       question: null
       allocations:
-        - {amount: "-230.00", category: hausgeld_umlagefaehig, property_id: *P, document_id: *D_WP27, tax_year: 2027, service_period_start: 2027-01-01, service_period_end: 2027-01-31, recurring: true}
-        - {amount: "-55.00", category: hausgeld_verwaltung, property_id: *P, document_id: *D_WP27, tax_year: 2027, service_period_start: 2027-01-01, service_period_end: 2027-01-31, recurring: true}
-        - {amount: "-125.00", category: hausgeld_ruecklage, property_id: *P, document_id: *D_WP27, tax_year: 2027, service_period_start: 2027-01-01, service_period_end: 2027-01-31, recurring: true}
+        - {amount: "-230.00", category: hausgeld_umlagefaehig, property_id: *P, document_id: *D_WP27, service_period_start: 2027-01-01, service_period_end: 2027-01-31, recurring: true}
+        - {amount: "-55.00", category: hausgeld_verwaltung, property_id: *P, document_id: *D_WP27, service_period_start: 2027-01-01, service_period_end: 2027-01-31, recurring: true}
+        - {amount: "-125.00", category: hausgeld_ruecklage, property_id: *P, document_id: *D_WP27, service_period_start: 2027-01-01, service_period_end: 2027-01-31, recurring: true}
 
   - id: wirtschaftsplan_old_amount_after_new_plan
     description: January 2027 paid at the old 380.00 while the 2027 plan says 410.00; not split silently.

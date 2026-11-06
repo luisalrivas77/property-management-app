@@ -14,6 +14,10 @@ closed value sets, forced workspace_isolation RLS, explicit hausbuch_app grants.
   matcher allows only its four keys (an IBAN hash, two patterns, an amount sign), each a
   JSON string when present, and the table has no money column.
 - ai_call.transaction_id gets the FK 0005 left out.
+- allocation stores no tax year: the year an allocation counts in is an output of that
+  year's tax rule set (the §11 ten-day rule, phase 3), derived from the transaction's dates,
+  the service period and recurring, so a year stays reproducible if the rules change
+  (principle 5). A year filter before phase 3 uses the transaction's booking_date.
 - The downgrade refuses while any of this step's tables holds a row (it would drop
   ledger data); it lifts FORCE RLS first, since the owner has no workspace set.
 
@@ -99,7 +103,6 @@ CREATE TABLE allocation (
     unit_id               uuid,
     tenancy_id            uuid,
     loan_id               uuid,
-    tax_year              smallint NOT NULL CHECK (tax_year BETWEEN 2000 AND 2100),
     service_period_start  date,
     service_period_end    date,
     recurring             boolean NOT NULL DEFAULT false,
@@ -140,8 +143,6 @@ CREATE TABLE allocation (
     CHECK (confirmed_by IS NULL OR confirmed_at IS NOT NULL)
 );
 CREATE INDEX allocation_transaction_idx ON allocation (workspace_id, transaction_id);
-CREATE INDEX allocation_confirmed_year_idx ON allocation (workspace_id, property_id, tax_year)
-    WHERE status = 'confirmed';
 COMMENT ON TABLE allocation IS
     'Splits of a transaction (D23): append-only rows, status forward only. Tax and '
     'performance figures sum confirmed rows; the service keeps the sum of a transaction''s '

@@ -37,7 +37,7 @@ def test_route_per_category(row):
             transaction_id=ROUTING.tx,
             method=AllocationMethod.LLM,
             confidence=Decimal("0.900"),
-            allocations=[{"amount": "-10.00", "category": row.category, "tax_year": 2027}],
+            allocations=[{"amount": "-10.00", "category": row.category}],
         ),
     )
     assert rules.route(item).decision == row.decision

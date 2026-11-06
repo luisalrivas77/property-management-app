@@ -63,7 +63,7 @@ cases:
         rule_id: *R
         confidence: "1.000"
         allocations:
-          - {amount: "-312.40", category: insurance, tax_year: 2027}
+          - {amount: "-312.40", category: insurance}
     expect: {decision: auto_confirm, reason: routing.rule_hit}
 
   - id: rule_hit_never_auto_category
@@ -76,7 +76,7 @@ cases:
         rule_id: *R
         confidence: "1.000"
         allocations:
-          - {amount: "-35.70", category: professional_fees, tax_year: 2027, recurring: false}
+          - {amount: "-35.70", category: professional_fees, recurring: false}
     expect: {decision: auto_confirm, reason: routing.rule_hit}
 
   - id: deterministic_exact
@@ -87,8 +87,8 @@ cases:
         method: matcher_rent
         confidence: "1.000"
         allocations:
-          - {amount: "1150.00", category: rent_cold, tax_year: 2027, recurring: true}
-          - {amount: "250.00", category: operating_costs_prepayment, tax_year: 2027, recurring: true}
+          - {amount: "1150.00", category: rent_cold, recurring: true}
+          - {amount: "250.00", category: operating_costs_prepayment, recurring: true}
     expect: {decision: auto_confirm, reason: routing.deterministic}
 
   - id: deterministic_inexact
@@ -101,8 +101,8 @@ cases:
         confidence: "0.500"
         question: Mieter hat 1.380 € statt 1.400 € überwiesen. Mietminderung oder Teilzahlung?
         allocations:
-          - {amount: "1130.00", category: rent_cold, tax_year: 2027, recurring: true}
-          - {amount: "250.00", category: operating_costs_prepayment, tax_year: 2027, recurring: true}
+          - {amount: "1130.00", category: rent_cold, recurring: true}
+          - {amount: "250.00", category: operating_costs_prepayment, recurring: true}
     expect: {decision: review, reason: routing.below_threshold}
 
   - id: document_match_above_threshold
@@ -113,7 +113,7 @@ cases:
         method: document_match
         confidence: "0.950"
         allocations:
-          - {amount: "-123.45", category: grundsteuer, tax_year: 2027, recurring: true}
+          - {amount: "-123.45", category: grundsteuer, recurring: true}
     expect: {decision: auto_confirm, reason: routing.above_threshold}
 
   - id: document_match_never_auto
@@ -125,7 +125,7 @@ cases:
         method: document_match
         confidence: "0.950"
         allocations:
-          - {amount: "-1234.55", category: acquisition_cost, tax_year: 2026}
+          - {amount: "-1234.55", category: acquisition_cost}
     expect: {decision: review, reason: routing.never_auto}
 
   - id: llm_not_accepted
@@ -138,7 +138,7 @@ cases:
         method: llm
         confidence: "0.900"
         allocations:
-          - {amount: "-89.00", category: insurance, tax_year: 2027}
+          - {amount: "-89.00", category: insurance}
     expect: {decision: review, reason: routing.llm_not_accepted}
 
   - id: llm_high_accepted
@@ -150,7 +150,7 @@ cases:
         method: llm
         confidence: "0.900"
         allocations:
-          - {amount: "-89.00", category: insurance, tax_year: 2027}
+          - {amount: "-89.00", category: insurance}
     expect: {decision: auto_confirm, reason: routing.above_threshold}
 
   - id: llm_medium_below_threshold
@@ -162,7 +162,7 @@ cases:
         method: llm
         confidence: "0.600"
         allocations:
-          - {amount: "-89.00", category: insurance, tax_year: 2027}
+          - {amount: "-89.00", category: insurance}
     expect: {decision: review, reason: routing.below_threshold}
 
   - id: llm_mixed_set_strictest_category
@@ -175,8 +175,8 @@ cases:
         method: llm
         confidence: "0.900"
         allocations:
-          - {amount: "-60.00", category: insurance, tax_year: 2027}
-          - {amount: "-29.00", category: other_expense, tax_year: 2027}
+          - {amount: "-60.00", category: insurance}
+          - {amount: "-29.00", category: other_expense}
     expect: {decision: review, reason: routing.never_auto}
 
   - id: no_match
@@ -194,8 +194,8 @@ cases:
         method: matcher_rent
         confidence: "1.000"
         allocations:
-          - {amount: "1150.00", category: rent_cold, tax_year: 2027, recurring: true}
-          - {amount: "250.00", category: operating_costs_prepayment, tax_year: 2027, recurring: true}
+          - {amount: "1150.00", category: rent_cold, recurring: true}
+          - {amount: "250.00", category: operating_costs_prepayment, recurring: true}
     expect: {decision: import_review, reason: routing.import_unreconciled}
 
   - id: import_pending_balance

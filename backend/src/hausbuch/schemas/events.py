@@ -425,7 +425,6 @@ class AllocatedPart(Schema):
     unit_id: UUID | None = None
     tenancy_id: UUID | None = None
     loan_id: UUID | None = None
-    tax_year: TaxYear
     service_period_start: date | None = None
     service_period_end: date | None = None
     recurring: bool

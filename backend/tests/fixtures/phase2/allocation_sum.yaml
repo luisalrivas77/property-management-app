@@ -16,24 +16,24 @@ cases:
     description: Rent 1,400 split into cold rent and the NK prepayment.
     transaction_amount: "1400.00"
     allocations:
-      - {amount: "1150.00", category: rent_cold, tax_year: 2027, recurring: true}
-      - {amount: "250.00", category: operating_costs_prepayment, tax_year: 2027, recurring: true}
+      - {amount: "1150.00", category: rent_cold, recurring: true}
+      - {amount: "250.00", category: operating_costs_prepayment, recurring: true}
     expect: {error: null}
 
   - id: exact_annuity_debit
     description: A debit split into interest and principal, both negative.
     transaction_amount: "-1400.00"
     allocations:
-      - {amount: "-898.50", category: loan_interest, tax_year: 2024, recurring: true}
-      - {amount: "-501.50", category: loan_principal, tax_year: 2024, recurring: true}
+      - {amount: "-898.50", category: loan_interest, recurring: true}
+      - {amount: "-501.50", category: loan_principal, recurring: true}
     expect: {error: null}
 
   - id: off_by_one_cent
     description: The parts sum to 1,399.99; no rounding tolerance.
     transaction_amount: "1400.00"
     allocations:
-      - {amount: "1149.99", category: rent_cold, tax_year: 2027, recurring: true}
-      - {amount: "250.00", category: operating_costs_prepayment, tax_year: 2027, recurring: true}
+      - {amount: "1149.99", category: rent_cold, recurring: true}
+      - {amount: "250.00", category: operating_costs_prepayment, recurring: true}
     expect: {error: allocation.sum_mismatch}
 
   - id: empty
@@ -46,7 +46,7 @@ cases:
     description: A debit of -380.00 split into positive parts; the absolute values match, the sum does not.
     transaction_amount: "-380.00"
     allocations:
-      - {amount: "210.00", category: hausgeld_umlagefaehig, tax_year: 2027, recurring: true}
-      - {amount: "50.00", category: hausgeld_verwaltung, tax_year: 2027, recurring: true}
-      - {amount: "120.00", category: hausgeld_ruecklage, tax_year: 2027, recurring: true}
+      - {amount: "210.00", category: hausgeld_umlagefaehig, recurring: true}
+      - {amount: "50.00", category: hausgeld_verwaltung, recurring: true}
+      - {amount: "120.00", category: hausgeld_ruecklage, recurring: true}
     expect: {error: allocation.sum_mismatch}

@@ -566,7 +566,6 @@ allocation = Table(
     _uuid("unit_id", nullable=True),
     _uuid("tenancy_id", nullable=True),
     _uuid("loan_id", nullable=True),
-    Column("tax_year", SmallInteger, nullable=False),
     _date("service_period_start", nullable=True),
     _date("service_period_end", nullable=True),
     Column("recurring", Boolean, nullable=False, server_default=text("false")),

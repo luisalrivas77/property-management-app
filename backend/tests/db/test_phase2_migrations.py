@@ -541,7 +541,6 @@ def _allocation(conn, ws, tx, **overrides) -> uuid.UUID:
         "transaction_id": tx,
         "amount": "1400.00",
         "category": "rent_cold",
-        "tax_year": 2026,
         "method": "matcher_rent",
         "confidence": "1.000",
     } | overrides
@@ -604,7 +603,7 @@ def test_allocation_is_append_only_even_for_the_owner(connect, workspaces):
         row = _allocation(conn, a, _transaction(conn, a, acc, _import(conn, a, acc)))
         for statement in (
             "UPDATE allocation SET amount = 1 WHERE id = %s",
-            "UPDATE allocation SET status = 'confirmed', confirmed_at = now(), tax_year = 2027"
+            "UPDATE allocation SET status = 'confirmed', confirmed_at = now(), recurring = true"
             " WHERE id = %s",
             "DELETE FROM allocation WHERE id = %s",
         ):

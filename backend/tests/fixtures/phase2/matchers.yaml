@@ -8,8 +8,9 @@
 # by IBAN HMAC only (the matchers never see a plaintext IBAN). Each case names the one matcher
 # it runs; expect null = that matcher does not match.
 #
-# All sets: transaction_id = the transaction's id; tax_year = the booking year (phase 2; the
-# §11 ten-day rule moves it in phase 3); allocation amounts signed like the transaction and
+# All sets: transaction_id = the transaction's id; no tax year (the year an allocation counts
+# in is an output of phase 3's tax rule set, from the transaction's dates, the service period
+# and recurring: the §11 ten-day rule); allocation amounts signed like the transaction and
 # summing to it exactly (allocation_sum.yaml); the service period from
 # rules.periods.service_period(purpose, booking_date, recurring) (service_period.yaml).
 # reasoning is free text and not compared; allocations are compared as a set (order free).
@@ -121,8 +122,8 @@ cases:
       confidence: "1.000"
       question: null
       allocations:
-        - {amount: "1150.00", category: rent_cold, property_id: *P, unit_id: *U, tenancy_id: *T, tax_year: 2027, service_period_start: 2027-01-01, service_period_end: 2027-01-31, recurring: true}
-        - {amount: "250.00", category: operating_costs_prepayment, property_id: *P, unit_id: *U, tenancy_id: *T, tax_year: 2027, service_period_start: 2027-01-01, service_period_end: 2027-01-31, recurring: true}
+        - {amount: "1150.00", category: rent_cold, property_id: *P, unit_id: *U, tenancy_id: *T, service_period_start: 2027-01-01, service_period_end: 2027-01-31, recurring: true}
+        - {amount: "250.00", category: operating_costs_prepayment, property_id: *P, unit_id: *U, tenancy_id: *T, service_period_start: 2027-01-01, service_period_end: 2027-01-31, recurring: true}
 
   - id: rent_short_by_20
     description: The tenant paid 1,380 instead of 1,400; proposed with the prepayment in full, to review with the difference as the question.
@@ -138,8 +139,8 @@ cases:
       confidence: "0.500"
       question: Mieter hat 1.380 € statt 1.400 € überwiesen. Mietminderung oder Teilzahlung?
       allocations:
-        - {amount: "1130.00", category: rent_cold, property_id: *P, unit_id: *U, tenancy_id: *T, tax_year: 2027, service_period_start: 2027-02-01, service_period_end: 2027-02-28, recurring: true}
-        - {amount: "250.00", category: operating_costs_prepayment, property_id: *P, unit_id: *U, tenancy_id: *T, tax_year: 2027, service_period_start: 2027-02-01, service_period_end: 2027-02-28, recurring: true}
+        - {amount: "1130.00", category: rent_cold, property_id: *P, unit_id: *U, tenancy_id: *T, service_period_start: 2027-02-01, service_period_end: 2027-02-28, recurring: true}
+        - {amount: "250.00", category: operating_costs_prepayment, property_id: *P, unit_id: *U, tenancy_id: *T, service_period_start: 2027-02-01, service_period_end: 2027-02-28, recurring: true}
 
   - id: rent_two_months_one_transfer
     description: January and February paid together; one pair of allocations over the range.
@@ -155,8 +156,8 @@ cases:
       confidence: "1.000"
       question: null
       allocations:
-        - {amount: "2300.00", category: rent_cold, property_id: *P, unit_id: *U, tenancy_id: *T, tax_year: 2027, service_period_start: 2027-01-01, service_period_end: 2027-02-28, recurring: true}
-        - {amount: "500.00", category: operating_costs_prepayment, property_id: *P, unit_id: *U, tenancy_id: *T, tax_year: 2027, service_period_start: 2027-01-01, service_period_end: 2027-02-28, recurring: true}
+        - {amount: "2300.00", category: rent_cold, property_id: *P, unit_id: *U, tenancy_id: *T, service_period_start: 2027-01-01, service_period_end: 2027-02-28, recurring: true}
+        - {amount: "500.00", category: operating_costs_prepayment, property_id: *P, unit_id: *U, tenancy_id: *T, service_period_start: 2027-01-01, service_period_end: 2027-02-28, recurring: true}
 
   - id: rent_two_months_short_by_20
     description: January and February paid together but 20 short; the 10 % band is measured against the two-month amount, so it is proposed with the question rather than not matched.
@@ -172,8 +173,8 @@ cases:
       confidence: "0.500"
       question: Mieter hat 2.780 € statt 2.800 € überwiesen. Mietminderung oder Teilzahlung?
       allocations:
-        - {amount: "2280.00", category: rent_cold, property_id: *P, unit_id: *U, tenancy_id: *T, tax_year: 2027, service_period_start: 2027-01-01, service_period_end: 2027-02-28, recurring: true}
-        - {amount: "500.00", category: operating_costs_prepayment, property_id: *P, unit_id: *U, tenancy_id: *T, tax_year: 2027, service_period_start: 2027-01-01, service_period_end: 2027-02-28, recurring: true}
+        - {amount: "2280.00", category: rent_cold, property_id: *P, unit_id: *U, tenancy_id: *T, service_period_start: 2027-01-01, service_period_end: 2027-02-28, recurring: true}
+        - {amount: "500.00", category: operating_costs_prepayment, property_id: *P, unit_id: *U, tenancy_id: *T, service_period_start: 2027-01-01, service_period_end: 2027-02-28, recurring: true}
 
   - id: annuity_at_fixed_rate_switch
     description: Entry 6 (due 1 July 2025), the last one at 5 %; loan_schedule.yaml follow_up_rate_to_payoff.
@@ -190,8 +191,8 @@ cases:
       confidence: "1.000"
       question: null
       allocations:
-        - {amount: "-64.08", category: loan_interest, property_id: *P, loan_id: *L, tax_year: 2025, service_period_start: 2025-07-01, service_period_end: 2025-07-31, recurring: true}
-        - {amount: "-935.92", category: loan_principal, property_id: *P, loan_id: *L, tax_year: 2025, service_period_start: 2025-07-01, service_period_end: 2025-07-31, recurring: true}
+        - {amount: "-64.08", category: loan_interest, property_id: *P, loan_id: *L, service_period_start: 2025-07-01, service_period_end: 2025-07-31, recurring: true}
+        - {amount: "-935.92", category: loan_principal, property_id: *P, loan_id: *L, service_period_start: 2025-07-01, service_period_end: 2025-07-31, recurring: true}
 
   - id: owner_top_up
     matcher: owner_transfer
@@ -207,7 +208,7 @@ cases:
       confidence: "1.000"
       question: null
       allocations:
-        - {amount: "500.00", category: owner_transfer_in, tax_year: 2027, recurring: false}
+        - {amount: "500.00", category: owner_transfer_in, recurring: false}
 
   - id: grundsteuer_quarter_vs_bescheid
     description: The first quarterly installment of the Bescheid, by IBAN and reference.
@@ -224,7 +225,7 @@ cases:
       confidence: "0.950"
       question: null
       allocations:
-        - {amount: "-123.45", category: grundsteuer, property_id: *P, document_id: *D_GS, tax_year: 2027, service_period_start: 2027-02-01, service_period_end: 2027-02-28, recurring: true}
+        - {amount: "-123.45", category: grundsteuer, property_id: *P, document_id: *D_GS, service_period_start: 2027-02-01, service_period_end: 2027-02-28, recurring: true}
 
   - id: invoice_within_window
     description: One cent less than the invoice, ten days after its date (the window is inclusive), found by the reference only.
@@ -241,7 +242,7 @@ cases:
       confidence: "0.950"
       question: null
       allocations:
-        - {amount: "-1234.55", category: acquisition_cost, property_id: *P, document_id: *D_NOTARY, tax_year: 2026, recurring: false}
+        - {amount: "-1234.55", category: acquisition_cost, property_id: *P, document_id: *D_NOTARY, recurring: false}
 
   - id: invoice_outside_window
     description: Eleven days after the invoice date.
