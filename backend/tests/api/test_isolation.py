@@ -119,6 +119,7 @@ WRITES = [
     ("PATCH", "/api/units/{unit}", {"label": "x"}),
     ("PATCH", "/api/tenants/{tenant}", {"phone": "1"}),
     ("POST", "/api/tenants/{tenant}/erase", {}),
+    ("PATCH", "/api/tenancies/{tenancy}", {"deposit_bank": "x"}),
     ("POST", "/api/tenancies/{tenancy}/corrections/move-in", {"new_date": "2024-07-02"}),
     (
         "POST",

@@ -20,7 +20,7 @@ import { DEPOSIT_FORM, RENT_MODEL, TENANCY_ROLE } from "@/components/labels";
 import { ActionDialog, Breadcrumbs, CorrectedNote, Facts, Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 
-import { DepositForm, EndForm, NoticeForm } from "./actions";
+import { DepositForm, EditTenancyForm, EndForm, NoticeForm } from "./actions";
 import { RentSchedule } from "./RentSchedule";
 
 interface TenancyData {
@@ -134,6 +134,17 @@ function TenancyDetail({ tenancy, unit, property, tenants, onChanged }: TenancyD
         ]}
       />
       <div className="row section">
+        <ActionDialog label="Bearbeiten" title="Mietverhältnis bearbeiten">
+          {(close) => (
+            <EditTenancyForm
+              tenancy={tenancy}
+              onDone={() => {
+                close();
+                changed();
+              }}
+            />
+          )}
+        </ActionDialog>
         <ActionDialog label="Einzug korrigieren" title="Einzugsdatum korrigieren">
           {(close) => (
             <DateCorrectionForm

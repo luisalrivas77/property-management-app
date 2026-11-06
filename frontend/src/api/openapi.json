@@ -1538,6 +1538,55 @@
             }
           }
         }
+      },
+      "patch": {
+        "summary": "Tenancy Update",
+        "description": "Befristung, Mietmodell and Kaution; the milestones change through corrections.",
+        "operationId": "tenancy_update_api_tenancies__tenancy_id__patch",
+        "parameters": [
+          {
+            "name": "tenancy_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Tenancy Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenancyPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tenancy"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/tenancies/{tenancy_id}/corrections/move-in": {
@@ -7041,6 +7090,61 @@
           "role"
         ],
         "title": "TenancyParty"
+      },
+      "TenancyPatch": {
+        "properties": {
+          "fixed_term_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fixed Term Until"
+          },
+          "rent_model": {
+            "$ref": "#/components/schemas/RentModel"
+          },
+          "deposit_amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Deposit Amount"
+          },
+          "deposit_form": {
+            "$ref": "#/components/schemas/DepositForm"
+          },
+          "deposit_bank": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deposit Bank"
+          },
+          "deposit_iban": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 42,
+                "minLength": 15
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deposit Iban"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TenancyPatch",
+        "description": "PATCH /tenancies/{id}: the non-milestone fields. Move-in, move-out, notice and contract\ndate change through their corrections, the parties through PUT .../parties."
       },
       "TenancyRole": {
         "type": "string",

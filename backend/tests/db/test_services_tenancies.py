@@ -47,6 +47,7 @@ from hausbuch.services.tenancies import (
     record_deposit_received,
     rent_on,
     schedule_rent,
+    update_tenancy,
 )
 from hausbuch.services.tenants import create_tenant, erase_tenant
 from hausbuch.services.units import create_unit
@@ -685,3 +686,134 @@ def test_deposit_notice_and_move_out(run, read, flat):
     with pytest.raises(RuleViolationError):
         _step(run, a, tenancy.id, date(2026, 7, 1), "1050.00")
     assert read(a, get_tenancy, tenancy.id) == ended
+
+
+# --- update (non-milestone fields) ------------------------------------------------
+
+OTHER_IBAN = "DE02120300000000202051"
+
+
+def test_update_records_old_and_new_values_and_masks_the_deposit_account(
+    app_engine, run, read, flat
+):
+    a, prop, unit, tenants = flat
+    tenancy = _create(run, a, _lease(unit, tenants), initial_rent=None)
+
+    updated = run(
+        a,
+        update_tenancy,
+        tenancy.id,
+        fixed_term_until=date(2027, 6, 30),
+        rent_model=RentModel.INDEX,
+        deposit_amount=Decimal("3000.00"),
+        deposit_bank="Volksbank",
+        deposit_iban=OTHER_IBAN,
+        iban_key=TEST_IBAN_KEY,
+        now=LATER,
+    )
+
+    assert (updated.fixed_term_until, updated.rent_model, updated.deposit_amount) == (
+        date(2027, 6, 30),
+        RentModel.INDEX,
+        Decimal("3000.00"),
+    )
+    assert (updated.deposit_bank, updated.deposit_iban_masked) == ("Volksbank", "DE02 **** 2051")
+    assert updated.updated_at == LATER and read(a, get_tenancy, tenancy.id) == updated
+    assert updated.model_dump(
+        exclude={
+            "fixed_term_until",
+            "rent_model",
+            "deposit_amount",
+            "deposit_bank",
+            "deposit_iban_masked",
+            "updated_at",
+        }
+    ) == (
+        tenancy.model_dump(
+            exclude={
+                "fixed_term_until",
+                "rent_model",
+                "deposit_amount",
+                "deposit_bank",
+                "deposit_iban_masked",
+                "updated_at",
+            }
+        )
+    )
+    event = _events(read, a, tenancy.id)[-1]
+    assert (event.type, event.effective_date) == (EventType.TENANCY_UPDATED, None)
+    assert (event.property_id, event.unit_id) == (prop.id, unit.id)
+    assert event.payload == {
+        "changes": {
+            "fixed_term_until": {"old": None, "new": "2027-06-30"},
+            "rent_model": {"old": "staffel", "new": "index"},
+            "deposit_amount": {"old": "2850.00", "new": "3000.00"},
+            "deposit_bank": {"old": "Sparkasse", "new": "Volksbank"},
+            "deposit_iban_masked": {"old": "DE89 **** 3000", "new": "DE02 **** 2051"},
+        },
+        "reason": None,
+    }
+    with workspace_transaction(app_engine, a) as conn:
+        stored_hmac = conn.execute(
+            text("SELECT deposit_iban_hmac FROM tenancy WHERE id = :id"), {"id": tenancy.id}
+        ).scalar_one()
+        events = conn.execute(
+            text("SELECT e::text FROM event e WHERE entity_id = :id"), {"id": tenancy.id}
+        ).scalars()
+        assert not any(OTHER_IBAN in s for s in events)
+    assert stored_hmac == iban_hmac(OTHER_IBAN, TEST_IBAN_KEY)
+
+    # The same values and the same account again: nothing is written.
+    same = run(
+        a,
+        update_tenancy,
+        tenancy.id,
+        rent_model=RentModel.INDEX,
+        deposit_iban=OTHER_IBAN,
+        iban_key=TEST_IBAN_KEY,
+    )
+    assert same == updated and len(_events(read, a, tenancy.id)) == 3
+
+    # No deposit any more: amount 0, form none, bank and account removed.
+    cleared = run(
+        a,
+        update_tenancy,
+        tenancy.id,
+        deposit_amount=Decimal("0"),
+        deposit_form=DepositForm.NONE,
+        deposit_bank=None,
+        deposit_iban=None,
+        now=LATER,
+    )
+    assert (cleared.deposit_form, cleared.deposit_bank, cleared.deposit_iban_masked) == (
+        DepositForm.NONE,
+        None,
+        None,
+    )
+    assert _events(read, a, tenancy.id)[-1].payload["changes"]["deposit_iban_masked"] == {
+        "old": "DE02 **** 2051",
+        "new": None,
+    }
+
+
+def test_update_refusals_write_nothing(run, read, flat, fresh_workspaces):
+    a, _, unit, tenants = flat
+    _, b = fresh_workspaces
+    tenancy = _create(run, a, _lease(unit, tenants), initial_rent=None)
+
+    with pytest.raises(ValidationError, match="deposit_form 'none'"):
+        run(a, update_tenancy, tenancy.id, deposit_amount=Decimal("0"))
+    with pytest.raises(ValidationError, match="deposit_form 'none'"):
+        run(a, update_tenancy, tenancy.id, deposit_form=DepositForm.NONE)
+    with pytest.raises(ValidationError, match="fixed_term_until"):
+        run(a, update_tenancy, tenancy.id, fixed_term_until=date(2024, 6, 30))
+    with pytest.raises(RuleError) as raised:
+        run(a, update_tenancy, tenancy.id, deposit_iban="DE8937", iban_key=TEST_IBAN_KEY)
+    assert raised.value.code == BAD_LENGTH
+    with pytest.raises(ValueError, match="iban_key"):
+        run(a, update_tenancy, tenancy.id, deposit_iban=OTHER_IBAN)
+    with pytest.raises(NotFoundError, match="tenancy"):
+        run(b, update_tenancy, tenancy.id, deposit_bank="x")
+
+    assert read(a, get_tenancy, tenancy.id) == tenancy
+    assert len(_events(read, a, tenancy.id)) == 2

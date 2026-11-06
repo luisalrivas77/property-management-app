@@ -1,17 +1,108 @@
 "use client";
 
-// The tenancy's actions (§4.5): Kaution erhalten, Kündigung, Auszug. Each is one command.
+// The tenancy's actions (§4.5): Bearbeiten (the non-milestone fields), Kaution erhalten,
+// Kündigung, Auszug. Each is one command.
 // Refusals (a notice that ends before it is given, a tenancy already ended) come from the API
 // as 422 `invalid` or 409 `conflict` and show its message.
 import { useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
-import type { Tenancy } from "@/api/schemas";
+import type { DepositForm as DepositKind, RentModel, Tenancy, TenancyPatch } from "@/api/schemas";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "@/components/form";
-import { decimalInput, toMoneyString } from "@/components/input";
-import { NOTICE_GIVEN_BY, options } from "@/components/labels";
+import { blankToNull, decimalInput, toMoneyString } from "@/components/input";
+import { DEPOSIT_FORM, NOTICE_GIVEN_BY, options, RENT_MODEL } from "@/components/labels";
 
 const path = (tenancy: Tenancy) => ({ params: { path: { tenancy_id: tenancy.id } } });
+
+const EDIT_KEYS = ["fixed_term_until", "rent_model", "deposit_amount", "deposit_form", "deposit_bank", "deposit_iban"] as const;
+
+/** "Bearbeiten": Befristung, Mietmodell, Kaution. Sends only what changed; the IBAN is
+ * write-only (empty keeps the stored one). Einzug, Auszug, Kündigung and Vertragsdatum change
+ * through their corrections, the Mieter through "Mieter ändern". */
+export function EditTenancyForm({ tenancy, onDone }: { tenancy: Tenancy; onDone: () => void }) {
+  const [fixedTermUntil, setFixedTermUntil] = useState(tenancy.fixed_term_until ?? "");
+  const [rentModel, setRentModel] = useState<RentModel>(tenancy.rent_model);
+  const [depositForm, setDepositForm] = useState<DepositKind>(tenancy.deposit_form);
+  const [depositAmount, setDepositAmount] = useState(tenancy.deposit_form === "none" ? "" : decimalInput(tenancy.deposit_amount));
+  const [depositBank, setDepositBank] = useState(tenancy.deposit_bank ?? "");
+  const [iban, setIban] = useState("");
+  const [removeIban, setRemoveIban] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const form = useFormErrors(EDIT_KEYS, { "iban.": "deposit_iban" });
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const values = collector();
+    const amount = depositAmount.trim() === "" ? "0.00" : values.take("deposit_amount", toMoneyString(depositAmount));
+    if (!values.ok || amount === undefined) return form.invalid(values.messages);
+    const body: TenancyPatch = {};
+    if ((fixedTermUntil || null) !== tenancy.fixed_term_until) body.fixed_term_until = fixedTermUntil || null;
+    if (rentModel !== tenancy.rent_model) body.rent_model = rentModel;
+    if (depositForm !== tenancy.deposit_form) body.deposit_form = depositForm;
+    if (amount !== tenancy.deposit_amount) body.deposit_amount = amount;
+    if (blankToNull(depositBank) !== tenancy.deposit_bank) body.deposit_bank = blankToNull(depositBank);
+    if (removeIban) body.deposit_iban = null;
+    else if (iban.trim() !== "") body.deposit_iban = iban.trim();
+    setBusy(true);
+    form.clear();
+    try {
+      await ok(api.PATCH("/api/tenancies/{tenancy_id}", { ...path(tenancy), body }));
+      onDone();
+    } catch (error) {
+      form.fail(error);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="stack" onSubmit={submit} noValidate>
+      <Field id="edit-fixed" label="Befristet bis (optional)" hint="Leer = unbefristet." errors={form.of("fixed_term_until")}>
+        <input type="date" value={fixedTermUntil} onChange={(e) => setFixedTermUntil(e.target.value)} />
+      </Field>
+      <Field id="edit-model" label="Mietmodell" errors={form.of("rent_model")}>
+        <select value={rentModel} onChange={(e) => setRentModel(e.target.value as RentModel)}>
+          {options(RENT_MODEL).map(([value, text]) => (
+            <option key={value} value={value}>
+              {text}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field id="edit-deposit-form" label="Kaution: Art" errors={form.of("deposit_form")}>
+        <select value={depositForm} onChange={(e) => setDepositForm(e.target.value as DepositKind)}>
+          {options(DEPOSIT_FORM).map(([value, text]) => (
+            <option key={value} value={value}>
+              {text}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field id="edit-deposit-amount" label="Kaution: Betrag (€)" hint="Leer = keine Kaution." errors={form.of("deposit_amount")}>
+        <input type="text" inputMode="decimal" value={depositAmount} onChange={(e) => setDepositAmount(e.target.value)} autoComplete="off" />
+      </Field>
+      <Field id="edit-deposit-bank" label="Bank des Kautionskontos (optional)" errors={form.of("deposit_bank")}>
+        <input type="text" value={depositBank} onChange={(e) => setDepositBank(e.target.value)} autoComplete="off" />
+      </Field>
+      <Field
+        id="edit-deposit-iban"
+        label="Neue IBAN des Kautionskontos (optional)"
+        hint={`Gespeichert: ${tenancy.deposit_iban_masked ?? "keine"}. Leer lassen, um sie zu behalten.`}
+        errors={form.of("deposit_iban")}
+      >
+        <input type="text" value={iban} onChange={(e) => setIban(e.target.value)} autoComplete="off" spellCheck={false} disabled={removeIban} />
+      </Field>
+      {tenancy.deposit_iban_masked ? (
+        <label className="inline">
+          <input type="checkbox" checked={removeIban} onChange={(e) => setRemoveIban(e.target.checked)} />
+          Gespeicherte IBAN des Kautionskontos entfernen
+        </label>
+      ) : null}
+      <Submit busy={busy}>Speichern</Submit>
+      <FormBanner errors={form.errors} />
+    </form>
+  );
+}
 
 export function DepositForm({ tenancy, onDone }: { tenancy: Tenancy; onDone: () => void }) {
   const [amount, setAmount] = useState(tenancy.deposit_amount === "0.00" ? "" : decimalInput(tenancy.deposit_amount));

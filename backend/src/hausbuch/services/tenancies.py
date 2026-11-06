@@ -4,6 +4,9 @@ in the same transaction (D4).
 - Move-in (tenancy.started) and move-out (tenancy.ended) are milestones; move-in changes only
   through correct_move_in, which appends a correcting event and moves the rent row that
   started on the old move-in date with it (§10.8 item 6).
+- The other fields (Befristung, Mietmodell, Kaution) change through update_tenancy, which
+  appends tenancy.updated with old and new values (the deposit account is the landlord's, D5,
+  and appears masked only).
 - Rent rows are never edited: a wrong row is superseded by a correction row (D12), and its
   tenancy.rent_scheduled event is corrected by the new row's event.
 - No two tenancies of a unit overlap: the database's exclusion constraint decides, and its
@@ -27,15 +30,17 @@ from hausbuch.db.tables import tenant as tenant_table
 from hausbuch.db.tables import unit as unit_table
 from hausbuch.rules.rent import rent_at
 from hausbuch.rules.validation import RENT_OUTSIDE_TENANCY, check_rent_row, check_tenancy_parties
-from hausbuch.schemas.enums import EntityType, RentChangeReason, TenancyRole
+from hausbuch.schemas.enums import DepositForm, EntityType, RentChangeReason, RentModel, TenancyRole
 from hausbuch.schemas.events import (
     DepositReceived,
     Empty,
     Event,
     EventType,
+    FieldChange,
     NoticeGiven,
     RentScheduled,
     TenancyCreated,
+    Updated,
 )
 from hausbuch.schemas.tenancy import (  # InitialRent is re-exported: it used to live here
     InitialRent,
@@ -55,7 +60,7 @@ from .errors import (
     require_valid,
     violated_constraint,
 )
-from .events import append_event, find_event, latest_in_chain, milestone_root
+from .events import append_event, diff_changes, find_event, latest_in_chain, milestone_root
 from .iban import protect_iban
 from .lookup import require_document, require_row
 from .owners import UNSET, Unset
@@ -209,6 +214,63 @@ def correct_move_in(ctx: CommandContext, tenancy_id: UUID, new_date: date) -> Te
     )
     for rent_row in first:  # after the update, so correct_rent_row checks the new start date
         correct_rent_row(ctx, rent_row.id, effective_from=new_date)
+    return _to_tenancy(ctx.conn, updated)
+
+
+def update_tenancy(
+    ctx: CommandContext,
+    tenancy_id: UUID,
+    *,
+    fixed_term_until: date | None | Unset = UNSET,
+    rent_model: RentModel | Unset = UNSET,
+    deposit_amount: Decimal | Unset = UNSET,
+    deposit_form: DepositForm | Unset = UNSET,
+    deposit_bank: str | None | Unset = UNSET,
+    deposit_iban: str | None | Unset = UNSET,
+    iban_key: bytes | None = None,
+) -> Tenancy:
+    """Change the non-milestone fields. The tenancy as a whole must still pass create's rules
+    (Befristung not before move-in; deposit form 'none' exactly when the amount is 0).
+    deposit_iban is write-only: None removes it; tenancy.updated shows only its mask.
+    No-op (no write, no event) if nothing changes."""
+    requested = {
+        name: value
+        for name, value in (
+            ("fixed_term_until", fixed_term_until),
+            ("rent_model", rent_model),
+            ("deposit_amount", deposit_amount),
+            ("deposit_form", deposit_form),
+            ("deposit_bank", deposit_bank),
+        )
+        if value is not UNSET
+    }
+    account = None
+    if deposit_iban is not UNSET and deposit_iban is not None:
+        if iban_key is None:
+            raise ValueError("iban_key is required to change a tenancy's deposit IBAN")
+        account = protect_iban(deposit_iban, iban_key)
+
+    row, scope = _lock(ctx.conn, tenancy_id)
+    current = _to_tenancy(ctx.conn, row)
+    new = TenancyCreate.model_validate(current.model_dump(include=_DATE_FIELDS) | requested)
+    old = current.model_dump(include=set(requested))
+    values = new.model_dump(include=set(requested))
+    changes = diff_changes(old, values)
+    values = {name: values[name] for name in changes}
+    if deposit_iban is not UNSET:
+        new_hmac = None if account is None else account.hmac
+        if new_hmac != row.deposit_iban_hmac:
+            new_mask = None if account is None else account.masked
+            values |= {"deposit_iban_masked": new_mask, "deposit_iban_hmac": new_hmac}
+            # Always recorded, even when two accounts happen to share a mask.
+            changes["deposit_iban_masked"] = FieldChange(
+                old=current.deposit_iban_masked, new=new_mask
+            )
+    if not values:
+        return current
+
+    updated = _update_tenancy(ctx, tenancy_id, **values)
+    append_event(ctx, EventType.TENANCY_UPDATED, tenancy_id, Updated(changes=changes), **scope)
     return _to_tenancy(ctx.conn, updated)
 
 

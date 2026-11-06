@@ -18,6 +18,7 @@ from hausbuch.schemas.api import (
     NoticeBody,
     RentRowCorrection,
     TenancyCreateRequest,
+    TenancyPatch,
 )
 from hausbuch.schemas.document import Document
 from hausbuch.schemas.enums import EntityType, LinkTarget
@@ -35,6 +36,7 @@ from hausbuch.services.tenancies import (
     record_deposit_received,
     rent_on,
     schedule_rent,
+    update_tenancy,
 )
 
 from ..deps import Cmd, SettingsDep, domain_router, found, require
@@ -56,6 +58,14 @@ def tenancy_create(body: TenancyCreateRequest, cmd: Cmd, settings: SettingsDep) 
 @router.get("/tenancies/{tenancy_id}")
 def tenancy_get(tenancy_id: UUID, cmd: Cmd) -> Tenancy:
     return found(cmd.read(get_tenancy, tenancy_id), EntityType.TENANCY, tenancy_id)
+
+
+@router.patch("/tenancies/{tenancy_id}")
+def tenancy_update(
+    tenancy_id: UUID, body: TenancyPatch, cmd: Cmd, settings: SettingsDep
+) -> Tenancy:
+    """Befristung, Mietmodell and Kaution; the milestones change through corrections."""
+    return cmd.run(update_tenancy, tenancy_id, **body.changes(), iban_key=settings.iban_hmac_key)
 
 
 @router.post("/tenancies/{tenancy_id}/corrections/move-in")

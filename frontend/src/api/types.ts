@@ -498,7 +498,11 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Tenancy Update
+         * @description Befristung, Mietmodell and Kaution; the milestones change through corrections.
+         */
+        patch: operations["tenancy_update_api_tenancies__tenancy_id__patch"];
         trace?: never;
     };
     "/api/tenancies/{tenancy_id}/corrections/move-in": {
@@ -2652,6 +2656,23 @@ export interface components {
             role: components["schemas"]["TenancyRole"];
         };
         /**
+         * TenancyPatch
+         * @description PATCH /tenancies/{id}: the non-milestone fields. Move-in, move-out, notice and contract
+         *     date change through their corrections, the parties through PUT .../parties.
+         */
+        TenancyPatch: {
+            /** Fixed Term Until */
+            fixed_term_until?: string | null;
+            rent_model?: components["schemas"]["RentModel"];
+            /** Deposit Amount */
+            deposit_amount?: string;
+            deposit_form?: components["schemas"]["DepositForm"];
+            /** Deposit Bank */
+            deposit_bank?: string | null;
+            /** Deposit Iban */
+            deposit_iban?: string | null;
+        };
+        /**
          * TenancyRole
          * @enum {string}
          */
@@ -3993,6 +4014,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Tenancy"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    tenancy_update_api_tenancies__tenancy_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenancy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TenancyPatch"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

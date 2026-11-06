@@ -55,6 +55,7 @@ export type RentScheduleCreate = Schemas["RentScheduleCreate"];
 export type RentRowCorrection = Schemas["RentRowCorrection"];
 export type RentChangeReason = Schemas["RentChangeReason"];
 export type NoticeBody = Schemas["NoticeBody"];
+export type TenancyPatch = Schemas["TenancyPatch"];
 export type DepositReceipt = Schemas["DepositReceipt"];
 
 // loans

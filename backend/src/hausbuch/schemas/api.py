@@ -38,7 +38,7 @@ from .document import (
     ManualDocumentFields,
     RetentionResult,
 )
-from .enums import AcquisitionCostKind, LinkTarget, PropertyKind
+from .enums import AcquisitionCostKind, DepositForm, LinkTarget, PropertyKind, RentModel
 from .loan import LoanCreate
 from .property import Address, OwnerShare, reject_raw_tax_number
 from .tenancy import InitialRent, TenancyCreate
@@ -161,6 +161,20 @@ class LoanPatch(Patch):
     fixed_until: date | None = None
     follow_up_rate: Rate | None = None
     account_iban: IbanInput | None = None  # write-only; null removes it
+
+
+class TenancyPatch(Patch):
+    """PATCH /tenancies/{id}: the non-milestone fields. Move-in, move-out, notice and contract
+    date change through their corrections, the parties through PUT .../parties."""
+
+    model_config = _HIDE_INPUT
+
+    fixed_term_until: date | None = None
+    rent_model: RentModel = Field(default=None)
+    deposit_amount: NonNegativeMoney = Field(default=None)
+    deposit_form: DepositForm = Field(default=None)
+    deposit_bank: str | None = None
+    deposit_iban: IbanInput | None = None  # write-only; null removes it
 
 
 class RentRowCorrection(Patch):
