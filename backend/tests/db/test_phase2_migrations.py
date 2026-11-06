@@ -418,6 +418,7 @@ def test_statement_import_balance_checks(connect, workspaces):
                 "declared_closing": "100.00",
                 "computed_closing": "99.99",
             },
+            {"status": "reconciled"},  # reconciled without a declared closing
             {"status": "unreconciled", "balance_source": "user", "declared_closing": "1.00"},
             {"status": "failed"},  # failed without an error code
             {"error_code": "x"},  # an error code on an imported file

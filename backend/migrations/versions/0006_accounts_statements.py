@@ -115,7 +115,8 @@ CREATE TABLE statement_import (
     CHECK (last_booking_on >= first_booking_on),
     CHECK ((balance_source = 'none') = (declared_closing IS NULL)),
     CHECK (declared_opening IS NULL OR declared_closing IS NOT NULL),
-    CHECK (status <> 'reconciled' OR computed_closing = declared_closing),
+    CHECK (status <> 'reconciled'
+           OR (declared_closing IS NOT NULL AND computed_closing = declared_closing)),
     CHECK ((error_code IS NOT NULL) = (status IN ('unreconciled', 'failed'))),
     CHECK (ai_call_id IS NULL OR format = 'pdf')
 );
