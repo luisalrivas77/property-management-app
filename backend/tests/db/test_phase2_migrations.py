@@ -428,6 +428,26 @@ def test_statement_import_balance_checks(connect, workspaces):
                 "declared_closing": "100.00",
                 "computed_closing": "99.99",
             },
+            {  # reconciled without a computed closing (null must not pass as unknown)
+                "status": "reconciled",
+                "balance_source": "user",
+                "declared_closing": "100.00",
+            },
+            {  # reconciled although the file's opening differs from the computed one
+                "status": "reconciled",
+                "balance_source": "file",
+                "declared_opening": "1250.00",
+                "computed_opening": "1250.10",
+                "declared_closing": "100.00",
+                "computed_closing": "100.00",
+            },
+            {  # reconciled with a declared opening but no computed one
+                "status": "reconciled",
+                "balance_source": "file",
+                "declared_opening": "1250.00",
+                "declared_closing": "100.00",
+                "computed_closing": "100.00",
+            },
             {"status": "reconciled"},  # reconciled without a declared closing
             {"status": "unreconciled", "balance_source": "user", "declared_closing": "1.00"},
             {"status": "failed"},  # failed without an error code
@@ -462,8 +482,20 @@ def test_statement_import_balance_checks(connect, workspaces):
             error_code="statement.unreconciled",
             balance_source="file",
             declared_opening="1250.00",
+            computed_opening="1250.00",
             declared_closing="2650.00",
             computed_closing="2640.00",
+        )
+        _import(
+            conn,
+            a,
+            acc,
+            status="reconciled",
+            balance_source="file",
+            declared_opening="1250.00",
+            computed_opening="1250.00",
+            declared_closing="2650.00",
+            computed_closing="2650.00",
         )
         doc = _document(conn, a)
         _import(conn, a, acc, format="pdf", ai_call_id=_ai_call(conn, a, doc), document_id=doc)

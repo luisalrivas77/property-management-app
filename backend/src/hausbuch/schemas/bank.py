@@ -105,6 +105,7 @@ class StatementImport(MutableRecord):
     declared_opening: Money | None
     declared_closing: Money | None
     balance_source: BalanceSource
+    computed_opening: Money | None
     computed_closing: Money | None
     status: ImportStatus
     error_code: str | None
@@ -207,19 +208,25 @@ class ReconcileStatus(StrEnum):
 
 
 class ReconcileResult(Schema):
-    """difference = declared_closing - computed_closing; null while no closing is
-    declared. error_code: statement.unreconciled or statement.before_anchor."""
+    """difference = declared_closing - computed_closing, null while no closing is declared;
+    opening_difference = the file's declared opening - computed_opening, null when the file
+    declares no opening. Both are reported whenever they can be computed, so a mismatch can
+    be explained. error_code: statement.before_anchor; else statement.opening_mismatch when
+    the opening differs (it wins); else statement.unreconciled when the closing differs."""
 
     status: ReconcileStatus
     computed_opening: Money
     computed_closing: Money
     difference: Money | None
+    opening_difference: Money | None = None
     error_code: str | None = None
 
     @model_validator(mode="after")
     def _consistent(self) -> Self:
         if (self.status is ReconcileStatus.UNRECONCILED) != (self.error_code is not None):
             raise ValueError("error_code exactly when unreconciled")
-        if self.status is ReconcileStatus.RECONCILED and self.difference != 0:
+        if self.status is ReconcileStatus.RECONCILED and (
+            self.difference != 0 or self.opening_difference not in (None, 0)
+        ):
             raise ValueError("a reconciled import has no difference")
         return self

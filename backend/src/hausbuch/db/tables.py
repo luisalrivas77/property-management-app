@@ -504,6 +504,7 @@ statement_import = Table(
     _money("declared_opening", nullable=True),
     _money("declared_closing", nullable=True),
     _text("balance_source", server_default=text("'none'")),
+    _money("computed_opening", nullable=True),
     _money("computed_closing", nullable=True),
     _text("status", server_default=text("'imported'")),
     _text("error_code", nullable=True),

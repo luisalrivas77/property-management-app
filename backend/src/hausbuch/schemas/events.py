@@ -392,11 +392,15 @@ class StatementImported(Schema):
 
 
 class StatementBalanceChecked(Schema):
-    """statement.reconciled / .unreconciled. difference = declared - computed."""
+    """statement.reconciled / .unreconciled. difference = declared_closing - computed_closing;
+    opening_difference = declared_opening - computed_opening (null without a declared one)."""
 
+    declared_opening: Money | None = None
+    computed_opening: Money
     declared_closing: Money | None = None
     computed_closing: Money
     difference: Money | None = None
+    opening_difference: Money | None = None
     balance_source: BalanceSource
 
 

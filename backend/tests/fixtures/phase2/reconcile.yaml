@@ -16,10 +16,12 @@
 #      that day or earlier is already inside it and the file cannot be checked against it).
 #   2. declared_closing null -> pending_balance, difference null (a CSV until Luis types the
 #      closing balance from online banking, D21).
-#   3. difference = declared_closing - computed_closing. reconciled iff difference == 0 and
-#      (file_opening is null or file_opening == computed_opening); else unreconciled,
-#      error_code statement.unreconciled. difference is the closing gap only, so an
-#      opening-only mismatch is unreconciled with difference 0.00.
+#   3. difference = declared_closing - computed_closing; opening_difference = file_opening -
+#      computed_opening, null when the file declares no opening. Both are always reported
+#      (from here on), so a mismatch can be explained. reconciled iff difference == 0 and
+#      opening_difference is null or 0; else unreconciled with error_code
+#      statement.opening_mismatch when opening_difference != 0 (it wins: a wrong start
+#      explains a wrong end), otherwise statement.unreconciled.
 # Spec: docs/phases/phase-2.md D21, §7.2 and phase 2 input point 3. Summing the stored window
 # rather than the file's own new lines is what lets an overlapping export reconcile.
 #
@@ -53,7 +55,7 @@ cases:
       result: {status: unreconciled, computed_opening: "5000.00", computed_closing: "4580.10", difference: "0.01", error_code: statement.unreconciled}
 
   - id: camt_opening_mismatch
-    description: February's camt file states an opening of 4,580.00 where the stored January gives 4,580.10 (a misread or a missing line); the closing alone would match.
+    description: February's camt file states an opening of 4,580.00 where the stored January gives 4,580.10 (a misread or a missing line); the closing alone would match, and the opening gap explains the import.
     anchor: *ANCHOR
     lines: &JAN_FEB
       - {id: 0000002a-0000-4000-8000-000000000401, booking_date: 2027-01-04, amount: "1400.00"}
@@ -67,7 +69,25 @@ cases:
     file: {first_booking_on: 2027-02-01, last_booking_on: 2027-02-28, declared_closing: "4160.20", file_opening: "4580.00"}
     expect:
       sums: {stored_before: "-419.90", stored_through: "-839.80"}
-      result: {status: unreconciled, computed_opening: "4580.10", computed_closing: "4160.20", difference: "0.00", error_code: statement.unreconciled}
+      result: {status: unreconciled, computed_opening: "4580.10", computed_closing: "4160.20", difference: "0.00", opening_difference: "-0.10", error_code: statement.opening_mismatch}
+
+  - id: camt_opening_and_closing_mismatch
+    description: Both balances differ (opening by -0.10, closing by -0.20); the opening code wins and both differences are reported.
+    anchor: *ANCHOR
+    lines: *JAN_FEB
+    file: {first_booking_on: 2027-02-01, last_booking_on: 2027-02-28, declared_closing: "4160.00", file_opening: "4580.00"}
+    expect:
+      sums: {stored_before: "-419.90", stored_through: "-839.80"}
+      result: {status: unreconciled, computed_opening: "4580.10", computed_closing: "4160.20", difference: "-0.20", opening_difference: "-0.10", error_code: statement.opening_mismatch}
+
+  - id: camt_closing_mismatch_opening_ok
+    description: The file's opening agrees with the stored balance, so the closing gap is the one reported as statement.unreconciled.
+    anchor: *ANCHOR
+    lines: *JAN_FEB
+    file: {first_booking_on: 2027-02-01, last_booking_on: 2027-02-28, declared_closing: "4160.00", file_opening: "4580.10"}
+    expect:
+      sums: {stored_before: "-419.90", stored_through: "-839.80"}
+      result: {status: unreconciled, computed_opening: "4580.10", computed_closing: "4160.20", difference: "-0.20", opening_difference: "0.00", error_code: statement.unreconciled}
 
   - id: no_declared_closing_pending
     anchor: *ANCHOR
@@ -94,7 +114,7 @@ cases:
     file: {first_booking_on: 2027-01-20, last_booking_on: 2027-02-28, declared_closing: "3758.80", file_opening: "4590.00"}
     expect:
       sums: {stored_before: "-410.00", stored_through: "-1241.20"}
-      result: {status: reconciled, computed_opening: "4590.00", computed_closing: "3758.80", difference: "0.00"}
+      result: {status: reconciled, computed_opening: "4590.00", computed_closing: "3758.80", difference: "0.00", opening_difference: "0.00"}
 
   - id: merged_duplicates_out_of_both_sums
     description: The January and the February rent each arrived twice (camt and CSV) and both pairs were merged; the excluded copies count in neither sum.

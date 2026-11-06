@@ -334,9 +334,25 @@ class ReconcileCase(Lenient):
     @model_validator(mode="after")
     def _arithmetic(self) -> Self:
         """The expected computed balances follow from the expected sums."""
-        r, w, a = self.expect.result, self.expect.sums, self.anchor.balance
+        r, w, a, f = self.expect.result, self.expect.sums, self.anchor.balance, self.file
         if (r.computed_opening, r.computed_closing) != (a + w.stored_before, a + w.stored_through):
             raise ValueError(f"{self.id}: computed balances do not follow from the sums")
+        if r.error_code == "statement.before_anchor":
+            if (r.difference, r.opening_difference) != (None, None):
+                raise ValueError(f"{self.id}: a file before the anchor has no differences")
+            return self
+        closing = None if f.declared_closing is None else f.declared_closing - r.computed_closing
+        opening = None if f.file_opening is None else f.file_opening - r.computed_opening
+        if (r.difference, r.opening_difference) != (closing, opening):
+            raise ValueError(f"{self.id}: differences do not follow from the balances")
+        if opening:
+            code = "statement.opening_mismatch"
+        elif closing:
+            code = "statement.unreconciled"
+        else:
+            code = None
+        if r.error_code != code:
+            raise ValueError(f"{self.id}: error_code should be {code}")
         return self
 
 

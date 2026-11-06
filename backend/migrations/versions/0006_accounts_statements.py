@@ -11,8 +11,9 @@ forced workspace_isolation RLS, explicit hausbuch_app grants.
   cross-format duplicate is resolved as merged (trigger transaction_exclude_once, and a
   column grant). (workspace_id, account_id, line_hash) is unique: re-imports add nothing.
   A transaction's import and the line it duplicates are on the same account (composite FKs).
-- statement_import CHECKs: a reconciled import's computed closing equals its declared one; an
-  import has a declared closing balance exactly when its balance source is not 'none'.
+- statement_import CHECKs: a reconciled import's computed closing equals its declared one, and
+  so does its computed opening when the file declares an opening; an import has a declared
+  closing balance exactly when its balance source is not 'none'.
 - The downgrade refuses while any of this step's tables holds a row (it would drop
   ledger data); it lifts FORCE RLS first, since the owner has no workspace set.
 
@@ -100,6 +101,7 @@ CREATE TABLE statement_import (
     declared_closing  numeric(14,2),
     balance_source    text NOT NULL DEFAULT 'none'
                       CHECK (balance_source IN ('file', 'user', 'none')),
+    computed_opening  numeric(14,2),
     computed_closing  numeric(14,2),
     status            text NOT NULL DEFAULT 'imported' CHECK (status IN (
                           'imported', 'reconciled', 'unreconciled', 'failed')),
@@ -117,8 +119,12 @@ CREATE TABLE statement_import (
     CHECK (last_booking_on >= first_booking_on),
     CHECK ((balance_source = 'none') = (declared_closing IS NULL)),
     CHECK (declared_opening IS NULL OR declared_closing IS NOT NULL),
+    -- IS NOT DISTINCT FROM: a null computed balance must fail, not pass as unknown.
     CHECK (status <> 'reconciled'
-           OR (declared_closing IS NOT NULL AND computed_closing = declared_closing)),
+           OR (declared_closing IS NOT NULL
+               AND computed_closing IS NOT DISTINCT FROM declared_closing
+               AND (declared_opening IS NULL
+                    OR computed_opening IS NOT DISTINCT FROM declared_opening))),
     CHECK ((error_code IS NOT NULL) = (status IN ('unreconciled', 'failed'))),
     CHECK (ai_call_id IS NULL OR format = 'pdf')
 );
