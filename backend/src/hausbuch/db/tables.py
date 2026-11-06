@@ -457,6 +457,7 @@ proposal = Table(
     _uuid("extraction_id", nullable=True),
     _uuid("ai_call_id", nullable=True),
     _text("target_mode", server_default=text("'create'")),
+    Column("contains_tenant_data", Boolean, nullable=False, server_default=text("false")),
     Column("targets", JSONB, nullable=True),
     Column("fields", JSONB, nullable=True),
     Column("decisions", JSONB, nullable=True),

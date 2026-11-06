@@ -158,6 +158,9 @@ CREATE TABLE proposal (
     extraction_id     uuid,
     ai_call_id        uuid,
     target_mode       text NOT NULL DEFAULT 'create' CHECK (target_mode IN ('create', 'patch')),
+    -- D16 gate 2: the uploader marked the document as tenant data. Set at creation, copied by
+    -- a re-run; the job reads it from here, never from its own arguments.
+    contains_tenant_data boolean NOT NULL DEFAULT false,
     targets           jsonb CHECK (targets IS NULL OR jsonb_typeof(targets) = 'array'),
     fields            jsonb CHECK (fields IS NULL OR jsonb_typeof(fields) = 'array'),
     decisions         jsonb CHECK (decisions IS NULL OR jsonb_typeof(decisions) = 'object'),
