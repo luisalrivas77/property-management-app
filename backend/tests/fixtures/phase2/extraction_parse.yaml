@@ -157,3 +157,13 @@ cases:
         citations: [{cited_text: "47,25/1.000 Miteigentumsanteil an", start_page_number: 3, end_page_number: 4}]
     expect:
       mea: {value: {numerator: 4725, denominator: 100000}, source: {page: 3, quote: "47,25/1.000 Miteigentumsanteil an"}, checks: [cited, value_in_quote, validates], confidence: high}
+
+  - id: decimal_share_trailing_zero_kept
+    description: A trailing zero after the comma stays, so the share keeps the document's own scale.
+    kind: purchase_contract
+    blocks:
+      - {text: "mea: "}
+      - text: "47,10/1.000"
+        citations: [{cited_text: "47,10/1.000 Miteigentumsanteil an", start_page_number: 3, end_page_number: 4}]
+    expect:
+      mea: {value: {numerator: 4710, denominator: 100000}, source: {page: 3, quote: "47,10/1.000 Miteigentumsanteil an"}, checks: [cited, value_in_quote, validates], confidence: high}
