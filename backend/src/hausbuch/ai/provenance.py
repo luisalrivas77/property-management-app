@@ -20,19 +20,22 @@ def record_ai_call(
     *,
     workspace_id: UUID,
     request: ModelRequest,
-    document_id: UUID | None,
+    document_id: UUID | None = None,
+    transaction_id: UUID | None = None,
     response: ModelResponse | None = None,
     failure: ModelCallError | None = None,
     output: Any = None,
     error_code: str | None = None,
 ) -> UUID:
-    """Insert the row for one request (a response, or the failure that replaced it)."""
+    """Insert the row for one request (a response, or the failure that replaced it). A
+    document job names its document_id, a matching job its transaction_id."""
     if (response is None) == (failure is None):
         raise ValueError("exactly one of response and failure")
     row: dict[str, Any] = {
         "workspace_id": workspace_id,
         "job": request.job.value,
         "document_id": document_id,
+        "transaction_id": transaction_id,
         "model": request.model,
         "prompt_version": request.prompt_version,
         "input_sha256": request.sha256(),

@@ -135,8 +135,8 @@ class _Builder:
         # A Grundbuchamt Kostenrechnung may be typed bescheid, which has no subject (D35, F1).
         self.financing = (
             kind is ExtractionKind.INVOICE
-            and _names_financing(self.ev("subject").value, self.ev("title").value)
-        ) or (kind is ExtractionKind.BESCHEID and _names_financing(self.ev("title").value))
+            and names_financing(self.ev("subject").value, self.ev("title").value)
+        ) or (kind is ExtractionKind.BESCHEID and names_financing(self.ev("title").value))
 
     # -- values
 
@@ -583,8 +583,11 @@ def _norm(value: Any) -> str:
     return " ".join(str(value).split()).casefold()
 
 
-def _names_financing(*texts: Any) -> bool:
-    """Whether any of the texts names a financing term, anywhere (D35)."""
+def names_financing(*texts: Any) -> bool:
+    """Whether any of the texts names a financing term (Grundschuld, Hypothek, Darlehen),
+    anywhere, case-insensitive (D35). Public for services.matching, which decides a
+    financing invoice exactly as the proposal does: an invoice by its subject or title, a
+    Bescheid by its title."""
     return any(
         term in _norm(text) for text in texts if text is not None for term in _FINANCING_TERMS
     )
