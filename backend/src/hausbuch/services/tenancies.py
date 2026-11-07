@@ -444,6 +444,8 @@ def correct_move_out(ctx: CommandContext, tenancy_id: UUID, new_date: date) -> T
         corrects_event_id=latest.id,
         **scope,
     )
+    if new_date > current.end_date:
+        _rematch_waiting(ctx, tenancy_id)  # rent for the months now inside may be waiting
     return _to_tenancy(ctx.conn, updated)
 
 
@@ -735,7 +737,8 @@ def _rematch_waiting(ctx: CommandContext, tenancy_id: UUID) -> None:
     """Queue rematch_waiting: rent from the tenancy's tenants that waits in the inbox may fit
     the new parties or rent rows (the rent matcher reads both; phase-2.md §8.1). Called for
     every rent row (create_tenancy's initial rent, schedule_rent, correct_rent_row, and
-    correct_move_in through it); one queued job covers a burst (jobs.enqueue)."""
+    correct_move_in through it), set_parties, and correct_move_out to a later date (review F2,
+    7 Nov 2026); one queued job covers a burst (jobs.enqueue)."""
     enqueue.enqueue_rematch_waiting(
         ctx.conn, workspace_id=ctx.workspace_id, kind=enqueue.TRIGGER_TENANCY, entity_id=tenancy_id
     )

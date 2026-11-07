@@ -151,7 +151,11 @@ def enqueue_rematch_waiting(
     the same trigger is already waiting to run: that job reads the entity when it runs, so it
     covers this change too, and a burst of edits (a pre-fill applying a loan field by field,
     a tenancy with its rent rows) queues one job, not one per edit. A job already running
-    may have read the old state, so a new one is queued behind it (same lock).
+    may have read the old state, so a new one is queued behind it (same lock). The lookup
+    holds the waiting job FOR KEY SHARE until the command commits: Procrastinate's fetch
+    takes jobs FOR UPDATE SKIP LOCKED, so the worker cannot start that job between this
+    lookup and the commit and read the entity as it was before this change (review F1,
+    7 Nov 2026; the window is milliseconds and no test can reproduce it).
 
     The dedupe is a lookup, not Procrastinate's queueing_lock: that lock is a unique index
     over waiting jobs, so a duplicate defer raises inside the caller's transaction (aborting
@@ -164,7 +168,10 @@ def enqueue_rematch_waiting(
     trigger = waiting_trigger(kind, entity_id)
     lock = waiting_lock(trigger)
     queued = conn.execute(
-        text("SELECT 1 FROM procrastinate_jobs WHERE lock = :lock AND status = 'todo' LIMIT 1"),
+        text(
+            "SELECT 1 FROM procrastinate_jobs WHERE lock = :lock AND status = 'todo'"
+            " LIMIT 1 FOR KEY SHARE"
+        ),
         {"lock": lock},
     ).first()
     if queued is not None:

@@ -857,6 +857,29 @@ def test_a_new_tenancy_with_its_rent_queues_one_job(world):
     assert len(_waiting_jobs(world, f"tenancy:{tenancy}")) == 1  # the initial rent row
 
 
+def test_a_later_move_out_books_the_rent_now_inside_the_tenancy(world, app_engine, tmp_path):
+    tenancy = world.tenancy()  # 1050.00 + 230.00 from 1 Jan 2024
+    world.cmd(tenancies.end_tenancy, tenancy, date(2026, 6, 30))
+    july = world.line(date(2026, 7, 2), "1280.00", iban=TENANT_IBAN, purpose="Miete 07/2026")
+    world.query(lambda c: c.execute(text("DELETE FROM procrastinate_jobs")))
+    trigger = f"tenancy:{tenancy}"
+
+    world.cmd(tenancies.correct_move_out, tenancy, date(2026, 6, 15))
+    assert _waiting_jobs(world, trigger) == []  # an earlier move-out books nothing new
+    world.cmd(tenancies.correct_move_out, tenancy, date(2026, 7, 31))
+    assert len(_waiting_jobs(world, trigger)) == 1
+
+    client = FakeModelClient()
+    deps = _deps(app_engine, tmp_path, client)
+    assert [p.outcome for p in _rematch(deps, world, "tenancy", tenancy)] == ["written"]
+    assert client.requests == []
+    rows = _rows(world, july)
+    assert sorted((r.category, r.method, r.status) for r in rows) == [
+        ("operating_costs_prepayment", "matcher_rent", "confirmed"),
+        ("rent_cold", "matcher_rent", "confirmed"),
+    ]
+
+
 def test_an_owner_account_added_later_books_the_waiting_transfers(world, app_engine, tmp_path):
     top_up = world.line(date(2026, 3, 2), "500.00", iban=OWNER_IBAN, purpose="Einlage")
     withdrawal = world.line(date(2026, 3, 30), "-200.00", iban=OWNER_IBAN, purpose="Entnahme")
