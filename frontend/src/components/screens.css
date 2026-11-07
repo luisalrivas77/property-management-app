@@ -1025,3 +1025,141 @@ fieldset.allocation-row {
 .allocation-rest.open {
   color: var(--warn);
 }
+
+/* --- Beleg fotografieren (phase-2.md §9, docs/mockups/06-mobile-capture.png): one large
+   camera button, then the session's documents as cards with the proposal's status --- */
+
+.capture {
+  display: grid;
+  gap: 20px;
+  max-width: 560px;
+}
+
+/* The file input is hidden; its label is the button, and shows the input's focus ring. */
+label.capture-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 56px;
+  padding: 0 20px;
+  border-radius: var(--radius-card);
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+label.capture-button:hover {
+  background: var(--accent-strong);
+}
+
+label.capture-button.busy {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.capture-input:focus-visible + label.capture-button {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.capture-action .hint {
+  margin: 8px 0 0;
+}
+
+.capture-session h2 {
+  margin: 0 0 12px;
+}
+
+.capture-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.capture-item {
+  display: grid;
+  gap: 10px;
+  padding: 14px 0 0;
+  border-top: 1px solid var(--divider);
+}
+
+.capture-item:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.capture-head,
+.capture-facts {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.capture-name {
+  min-width: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.capture-head .badge {
+  margin-left: 0;
+}
+
+.capture-date,
+.capture-note,
+.capture-title,
+.capture-amount {
+  margin: 2px 0 0;
+}
+
+.capture-note {
+  font-size: 14px;
+}
+
+.capture-recognized {
+  display: grid;
+  gap: 10px;
+}
+
+.capture-title {
+  font-size: 16px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.capture-amount {
+  font-size: 18px;
+  font-weight: 800;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.capture-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.capture-chip {
+  padding: 5px 8px;
+  border-radius: var(--radius-tag);
+  background: var(--accent-tint);
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+a.button-link.capture-review {
+  width: 100%;
+  min-height: 48px;
+  box-sizing: border-box;
+}
