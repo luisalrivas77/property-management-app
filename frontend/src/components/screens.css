@@ -1104,9 +1104,14 @@ label.capture-button.busy {
 }
 
 .capture-name {
+  flex: 1;
   min-width: 0;
   font-weight: 700;
   overflow-wrap: anywhere;
+}
+
+.capture-name .capture-date {
+  font-weight: 400;
 }
 
 .capture-head .badge {
