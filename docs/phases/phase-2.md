@@ -444,6 +444,18 @@ tenancies (unit, start) and tenants (names) as plain facts. It decides `create` 
 `unchanged` per record, routes milestone dates to `correction`, computes derived values and
 writes `notes`. Fixture `prefill.yaml` (cases in §12). No I/O, no model.
 
+**Known limit (Luis, 7 Nov 2026: noted, not to be built now).** A document finds its property
+by address only (street, house number, postal code; else the workspace's only property), and a
+lease then finds its unit by the label within that property. Two properties at the same
+address (two flats in one building) cannot be told apart: `_match_property` takes the one with
+the smallest id without asking. A lease for a room in the other flat then finds no unit, so its
+tenancy cannot be placed (visible); a second Kaufvertrag in the same building is proposed as a
+`patch` of the first property instead of a `create` (shown with the current values beside it,
+but easy to miss). The fix, if it is ever needed: match on the flat number (WE) as well, and
+ask when it is still ambiguous. Rooms rented separately are modelled as one unit per room under
+the flat's property, labelled as the leases name them (MEA left empty: nothing calculates with
+it).
+
 ### 6.4 Review screen (`/documents/[id]`, new section "Vorschlag")
 
 Mockup style, one card per record ("Immobilie", "Einheit WE 3", "Nebenkosten: Notar",
