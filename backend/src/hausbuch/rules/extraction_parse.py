@@ -33,6 +33,8 @@ _YEAR = re.compile(r"(?<![0-9])[0-9]{4}(?![0-9])")
 _FRACTION = re.compile(r"([0-9][0-9.,]*)\s*/\s*([0-9][0-9.,]*)")
 _IBAN_IN_TEXT = re.compile(r"[A-Za-z]{2}[0-9]{2}(?:\s?[A-Za-z0-9]){10,32}")
 _DIGITS = re.compile(r"[0-9]")
+# A trailing "(Seite 1)", "(S. 2)", "(Seite 1, § 1)": the model's page reference, not the value.
+_PAGE_REFERENCE = re.compile(r"\s*\((?:seite|s\.)\s*[0-9]+[^()]*\)\s*$", re.IGNORECASE)
 
 _MONTHS = {
     "januar": 1, "jänner": 1, "februar": 2, "märz": 3, "maerz": 3, "april": 4, "mai": 5,
@@ -68,13 +70,21 @@ def parse_lines(
         match = _KEY_LINE.fullmatch(text)
         if match is None or match.group(1) not in model.model_fields:
             continue
-        key, raw = match.group(1), match.group(2).strip()
+        key, raw = match.group(1), _without_page_reference(match.group(2).strip())
         if not raw or raw.casefold() == UNKNOWN:
             result[key] = ExtractedValue.missing()
             continue
         source = _source(blocks, contributors, page_offset)
         result[key] = _extracted(raw, value_kind(model, key), source)
     return result
+
+
+def _without_page_reference(raw: str) -> str:
+    """The value without a page reference the model appended to it ("Lena Schmidt (Seite
+    1)", "500,00 € (S. 2)"): only a parenthetical at the very end that starts with Seite or
+    S. and a number. The page is the citation's; left in, it would fail value_in_quote."""
+    stripped = _PAGE_REFERENCE.sub("", raw)
+    return stripped if stripped else raw
 
 
 def _lines(blocks: list[CitedTextBlock]) -> list[tuple[str, list[int]]]:

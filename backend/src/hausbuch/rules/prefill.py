@@ -578,7 +578,7 @@ class _Builder:
         units = [u for u in self.ctx.units if u.property_id == prop.id]
         label = self.ev("unit_label").value
         if label is not None:
-            return _first(u for u in units if _norm(u.label) == _norm(label))
+            return _unit_by_label(units, str(label))
         return units[0] if len(units) == 1 else None
 
     def _initial_rent(self) -> None:
@@ -677,6 +677,41 @@ class _Builder:
 def _norm(value: Any) -> str:
     """Casefold, whitespace collapsed."""
     return " ".join(str(value).split()).casefold()
+
+
+_LABEL_TOKEN = re.compile(r"[^\W\d_]+|\d+")
+_LABEL_FILLERS = frozenset({"nr", "no", "nummer"})
+
+
+def _label_key(label: str) -> tuple[str, ...]:
+    """A unit label's tokens: runs of letters or of digits, casefolded, a number without its
+    leading zeros, the filler words nr / no / nummer dropped ("WE03" -> we 3, "Zimmer Nr. 1"
+    -> zimmer 1). Punctuation and brackets only separate."""
+    tokens = []
+    for token in _LABEL_TOKEN.findall(label.casefold()):
+        if token.isdigit():
+            tokens.append(token.lstrip("0") or "0")
+        elif token not in _LABEL_FILLERS:
+            tokens.append(token)
+    return tuple(tokens)
+
+
+def _contains(haystack: tuple[str, ...], needle: tuple[str, ...]) -> bool:
+    n = len(needle)
+    return n > 0 and any(haystack[i : i + n] == needle for i in range(len(haystack) - n + 1))
+
+
+def _unit_by_label(units: Sequence[ExistingUnit], label: str) -> ExistingUnit | None:
+    """The unit a lease's label names, among the property's units (fixture prefill.yaml,
+    "lease unit"): the one unit whose key equals the label's; else the one unit whose key
+    occurs as a run of whole tokens inside it ("Zimmer Nr. 1 (WE 3, Zimmer 1)" -> Zimmer 1,
+    never Zimmer 10). Several candidates or none: None, never a guess."""
+    key = _label_key(label)
+    equal = [u for u in units if _label_key(u.label) == key]
+    if equal:
+        return equal[0] if len(equal) == 1 else None
+    inside = [u for u in units if _contains(key, _label_key(u.label))]
+    return inside[0] if len(inside) == 1 else None
 
 
 def names_financing(*texts: Any) -> bool:
