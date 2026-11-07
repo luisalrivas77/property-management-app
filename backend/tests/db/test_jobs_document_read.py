@@ -531,6 +531,54 @@ def test_nothing_pending_means_nothing_sent(setup, recorder, app_engine):
     assert client.requests == [] and recorder.results == [] and recorder.failures == []
 
 
+# --- a read still in flight when its proposal is erased (D42 (3)) ----------------------
+
+
+class _ErasesDuringTheCall(FakeModelClient):
+    """Supersedes the proposal (and, with `scrub`, scrubs it as erase_tenant does) while
+    the classify call is out, so the call's ai_call row is written afterwards."""
+
+    def __init__(self, engine, ws, proposal, script, *, scrub) -> None:
+        super().__init__(script)
+        self.engine, self.ws, self.proposal, self.scrub = engine, ws, proposal, scrub
+
+    def send(self, request):
+        response = super().send(request)
+        values = {"status": "superseded"}
+        if self.scrub:
+            values |= {"fields": None, "decisions": None, "scrubbed_at": NOW}
+        with workspace_transaction(self.engine, self.ws) as conn:
+            conn.execute(
+                update(proposal_table).where(proposal_table.c.id == self.proposal).values(values)
+            )
+        return response
+
+
+@pytest.mark.parametrize("scrub", [False, True], ids=["superseded", "scrubbed"])
+def test_a_call_recorded_after_its_proposal_was_erased_keeps_no_content(
+    setup, recorder, app_engine, scrub
+):
+    deps, ws, doc, proposal = setup(_pdf(1), FakeModelClient())
+    client = _ErasesDuringTheCall(
+        app_engine, ws, proposal, [text_response(_classify("letter"))], scrub=scrub
+    )
+    _run(dataclasses.replace(deps, model_client=client), ws, doc, proposal)
+
+    [call] = _calls(app_engine, ws, doc)
+    assert call.output is None and call.raw_text is None
+    # provenance without content: the model, the request hash and the usage stay
+    assert call.job == "classify" and call.model == "fake-model"
+    assert call.input_sha256 is not None and call.input_tokens == 100
+    assert call.error_code is None
+
+
+def test_a_call_for_a_proposal_still_pending_keeps_its_content(setup, recorder, app_engine):
+    deps, ws, doc, proposal = setup(_pdf(1), FakeModelClient([text_response(_classify("letter"))]))
+    _run(deps, ws, doc, proposal)
+    [call] = _calls(app_engine, ws, doc)
+    assert call.output is not None and call.raw_text is not None
+
+
 # --- nothing secret in the logs --------------------------------------------------------
 
 

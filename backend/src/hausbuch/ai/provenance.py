@@ -26,9 +26,12 @@ def record_ai_call(
     failure: ModelCallError | None = None,
     output: Any = None,
     error_code: str | None = None,
+    keep_raw_text: bool = True,
 ) -> UUID:
     """Insert the row for one request (a response, or the failure that replaced it). A
-    document job names its document_id, a matching job its transaction_id."""
+    document job names its document_id, a matching job its transaction_id. `keep_raw_text`
+    False stores a response without its text (the document job's proposal was erased while
+    the call was out; the caller passes no output either)."""
     if (response is None) == (failure is None):
         raise ValueError("exactly one of response and failure")
     row: dict[str, Any] = {
@@ -50,7 +53,7 @@ def record_ai_call(
             "output_tokens": response.output_tokens,
             "cache_read_tokens": response.cache_read_tokens,
             "stop_reason": response.stop_reason,
-            "raw_text": response.text,
+            "raw_text": response.text if keep_raw_text else None,
             "duration_ms": response.duration_ms,
         }
     else:

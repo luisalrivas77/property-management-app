@@ -8,7 +8,11 @@ Transactions. No transaction is held open across a model call (a call can take m
 1. read: the proposal's state, the workspace setting, the original (verified against its
    SHA-256); gates 1 and 2 end the job here;
 2. after each model call, its ai_call row is written and committed at once (failed calls
-   included), so provenance exists before the result is used and survives a later failure;
+   included), so provenance exists before the result is used and survives a later failure.
+   That transaction first reads the proposal row FOR SHARE: a proposal superseded or
+   scrubbed meanwhile (a tenant erasure holds the rows FOR UPDATE while it supersedes and
+   scrubs them) gets a row without output or raw text, so a read still in flight cannot
+   write content back after the erasure (D42 (3)); see _send;
 3. the outcome: services.proposals.record_read_result or record_read_failure, in a
    transaction of its own (D20: every one is a workspace_transaction as the app role).
 
@@ -291,7 +295,7 @@ def _read(
 
     block = documents.document_block(first, original.media_type, citations=False)
     classification, classify_id = _classify(
-        deps, workspace_id, document_id, classify_request(settings, block)
+        deps, workspace_id, document_id, original.proposal_id, classify_request(settings, block)
     )
 
     tenant = classification.contains_tenant_data or classification.subtype in TENANT_SUBTYPES
@@ -325,7 +329,11 @@ def _read(
 
 
 def _classify(
-    deps: JobDeps, workspace_id: UUID, document_id: UUID, request: ModelRequest
+    deps: JobDeps,
+    workspace_id: UUID,
+    document_id: UUID,
+    proposal_id: UUID,
+    request: ModelRequest,
 ) -> tuple[ClassifyOutput, UUID]:
     def parsed(response: ModelResponse) -> _Parsed:
         try:
@@ -334,7 +342,7 @@ def _classify(
             return _Parsed(None, None, UNPARSABLE)
         return _Parsed(classification, classification.model_dump(mode="json"), None)
 
-    return _with_one_retry(deps, workspace_id, document_id, request, parsed)
+    return _with_one_retry(deps, workspace_id, document_id, proposal_id, request, parsed)
 
 
 def _extract(
@@ -359,7 +367,9 @@ def _extract(
             raise _Stop(exc.code, first_id) from None
         block = documents.document_block(data, original.media_type, citations=True)
         request = extract_request(deps.settings, kind, block)
-        values, call_id = _extract_chunk(deps, workspace_id, document_id, request, kind, start)
+        values, call_id = _extract_chunk(
+            deps, workspace_id, document_id, original.proposal_id, request, kind, start
+        )
         first_id = first_id or call_id
         merge_values(merged, values)
     assert first_id is not None
@@ -371,6 +381,7 @@ def _extract_chunk(
     deps: JobDeps,
     workspace_id: UUID,
     document_id: UUID,
+    proposal_id: UUID,
     request: ModelRequest,
     kind: ExtractionKind,
     page_offset: int,
@@ -382,7 +393,7 @@ def _extract_chunk(
         output = {key: value.model_dump(mode="json") for key, value in values.items()}
         return _Parsed(values, output, None)
 
-    return _with_one_retry(deps, workspace_id, document_id, request, parsed)
+    return _with_one_retry(deps, workspace_id, document_id, proposal_id, request, parsed)
 
 
 _RANK = {"low": 0, "medium": 1, "high": 2}
@@ -414,6 +425,7 @@ def _with_one_retry(
     deps: JobDeps,
     workspace_id: UUID,
     document_id: UUID,
+    proposal_id: UUID,
     request: ModelRequest,
     parse: Callable[[ModelResponse], _Parsed],
 ) -> tuple[Any, UUID]:
@@ -422,7 +434,7 @@ def _with_one_retry(
     parsed = _Parsed(None, None, UNPARSABLE)
     call_id: UUID | None = None
     for _ in range(2):
-        parsed, call_id = _send(deps, workspace_id, document_id, request, parse)
+        parsed, call_id = _send(deps, workspace_id, document_id, proposal_id, request, parse)
         if parsed.error_code is None:
             return parsed.result, call_id
     assert parsed.error_code is not None
@@ -433,10 +445,19 @@ def _send(
     deps: JobDeps,
     workspace_id: UUID,
     document_id: UUID,
+    proposal_id: UUID,
     request: ModelRequest,
     parse: Callable[[ModelResponse], _Parsed],
 ) -> tuple[_Parsed, UUID]:
-    """One model call and its ai_call row, committed before the response is used."""
+    """One model call and its ai_call row, committed before the response is used.
+
+    The row's transaction reads the proposal FOR SHARE first. A tenant erasure locks the
+    document's proposals FOR UPDATE, supersedes and scrubs them and nulls the content of
+    their documents' ai_call rows in one transaction, so the two serialise: either this row
+    commits first and the erasure's UPDATE (a later statement, read committed) nulls it, or
+    the erasure commits first and this row is stored without output and raw text (model,
+    tokens and hashes stay: provenance without content). A proposal superseded by a re-run
+    is treated the same way; its result is not used (record_read_result is a no-op)."""
     assert deps.model_client is not None
     try:
         response = deps.model_client.send(request)
@@ -455,16 +476,31 @@ def _send(
     else:
         parsed = parse(response)
     with workspace_transaction(deps.engine, workspace_id) as conn:
+        keep_content = _still_served(conn, proposal_id)
         call_id = record_ai_call(
             conn,
             workspace_id=workspace_id,
             request=request,
             document_id=document_id,
             response=response,
-            output=parsed.output,
+            output=parsed.output if keep_content else None,
             error_code=parsed.error_code,
+            keep_raw_text=keep_content,
         )
     return parsed, call_id
+
+
+def _still_served(conn, proposal_id: UUID) -> bool:
+    """False when the proposal is superseded or scrubbed (or gone); locks it FOR SHARE."""
+    p = proposal_table
+    row = conn.execute(
+        select(p.c.status, p.c.scrubbed_at).where(p.c.id == proposal_id).with_for_update(read=True)
+    ).first()
+    return (
+        row is not None
+        and row.status != ProposalStatus.SUPERSEDED.value
+        and row.scrubbed_at is None
+    )
 
 
 # --- 3. the outcome --------------------------------------------------------------------
