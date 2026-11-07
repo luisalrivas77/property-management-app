@@ -17,6 +17,8 @@ from procrastinate.jobs import Job
 from procrastinate.retry import BaseRetryStrategy, RetryDecision
 
 from .document_read import TASK_NAME, JobDeps, RetryLater, run_document_read
+from .enqueue import MATCH_IMPORT_TASK, MATCH_TRANSACTION_TASK, REMATCH_TASK
+from .matching import run_match_import, run_match_transaction, run_rematch_on_evidence
 
 DEPS_KEY = "hausbuch_deps"
 
@@ -48,6 +50,43 @@ def document_read(
     )
 
 
+def match_import(context: JobContext, *, workspace_id: str, import_id: str) -> None:
+    deps: JobDeps = context.additional_context[DEPS_KEY]
+    assert context.job is not None
+    run_match_import(
+        deps,
+        workspace_id=UUID(workspace_id),
+        import_id=UUID(import_id),
+        attempt=context.job.attempts,
+    )
+
+
+def match_transaction(context: JobContext, *, workspace_id: str, transaction_id: str) -> None:
+    deps: JobDeps = context.additional_context[DEPS_KEY]
+    assert context.job is not None
+    run_match_transaction(
+        deps,
+        workspace_id=UUID(workspace_id),
+        transaction_id=UUID(transaction_id),
+        attempt=context.job.attempts,
+    )
+
+
+def rematch_on_evidence(context: JobContext, *, workspace_id: str, document_id: str) -> None:
+    deps: JobDeps = context.additional_context[DEPS_KEY]
+    assert context.job is not None
+    run_rematch_on_evidence(
+        deps,
+        workspace_id=UUID(workspace_id),
+        document_id=UUID(document_id),
+        attempt=context.job.attempts,
+    )
+
+
 def register_tasks(app: procrastinate.App) -> procrastinate.App:
-    app.task(name=TASK_NAME, pass_context=True, retry=RetryWhenAsked())(document_read)
+    retry = RetryWhenAsked()
+    app.task(name=TASK_NAME, pass_context=True, retry=retry)(document_read)
+    app.task(name=MATCH_IMPORT_TASK, pass_context=True, retry=retry)(match_import)
+    app.task(name=MATCH_TRANSACTION_TASK, pass_context=True, retry=retry)(match_transaction)
+    app.task(name=REMATCH_TASK, pass_context=True, retry=retry)(rematch_on_evidence)
     return app

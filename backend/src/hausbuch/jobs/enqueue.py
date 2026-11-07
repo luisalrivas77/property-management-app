@@ -51,3 +51,65 @@ def enqueue_document_read(
         document_id=str(document_id),
         proposal_id=str(proposal_id),
     )
+
+
+# --- Step 4: matching (§5.1) -------------------------------------------------------------
+#
+# Same pattern: inserted in the caller's transaction, a lock and no queueing lock. A
+# duplicate job is harmless: a line that already has rows is not matched again
+# (services.matching.Line.open_for).
+
+MATCH_IMPORT_TASK = "match_import"
+MATCH_TRANSACTION_TASK = "match_transaction"
+REMATCH_TASK = "rematch_on_evidence"
+
+
+def import_lock(import_id: UUID) -> str:
+    return f"import:{import_id}"
+
+
+def transaction_lock(transaction_id: UUID) -> str:
+    return f"tx:{transaction_id}"
+
+
+def _defer(conn: Connection, task: str, lock: str, **kwargs: str) -> None:
+    _DEFER_APP.configure_task(
+        task, allow_unknown=True, lock=lock, connection=conn.connection.driver_connection
+    ).defer(**kwargs)
+
+
+def enqueue_match_import(conn: Connection, *, workspace_id: UUID, import_id: UUID) -> None:
+    """Queue `match_import` for a reconciled import (it fans out one match_transaction per
+    line). Locked by `import:{id}`, like statement_parse, so it never runs beside a parse."""
+    _defer(
+        conn,
+        MATCH_IMPORT_TASK,
+        import_lock(import_id),
+        workspace_id=str(workspace_id),
+        import_id=str(import_id),
+    )
+
+
+def enqueue_match_transaction(
+    conn: Connection, *, workspace_id: UUID, transaction_id: UUID
+) -> None:
+    """Queue `match_transaction` for one line. Locked by `tx:{id}`."""
+    _defer(
+        conn,
+        MATCH_TRANSACTION_TASK,
+        transaction_lock(transaction_id),
+        workspace_id=str(workspace_id),
+        transaction_id=str(transaction_id),
+    )
+
+
+def enqueue_rematch_on_evidence(conn: Connection, *, workspace_id: UUID, document_id: UUID) -> None:
+    """Queue `rematch_on_evidence` for a document whose new reading may change lines.
+    Locked by `doc:{id}`, so it waits for a running read of the same document."""
+    _defer(
+        conn,
+        REMATCH_TASK,
+        document_lock(document_id),
+        workspace_id=str(workspace_id),
+        document_id=str(document_id),
+    )

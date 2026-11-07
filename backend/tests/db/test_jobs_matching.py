@@ -1,0 +1,506 @@
+"""The matching jobs with a scripted model (phase-2.md §5.1, §5.3, §8.1, D17).
+
+FakeModelClient only: no network, no key. The prompt checks read the request body the
+client would have sent."""
+
+import json
+from datetime import UTC, date, datetime
+from decimal import Decimal
+
+import pytest
+from db.db_support import TEST_IBAN_KEY
+from db.matching_support import (
+    OTHER_TENANT_IBAN,
+    PAINTER_IBAN,
+    TENANT_IBAN,
+    World,
+)
+from sqlalchemy import select, text
+from test_bank_parsers import CAMT, CSV, build
+
+from hausbuch.ai.client import ModelCallError
+from hausbuch.ai.fake import FakeModelClient, text_response
+from hausbuch.ai.provenance import record_ai_call
+from hausbuch.ai.requests import extract_request
+from hausbuch.db.session import workspace_transaction
+from hausbuch.db.tables import ai_call as ai_call_table
+from hausbuch.db.tables import allocation as allocation_table
+from hausbuch.db.tables import event as event_table
+from hausbuch.jobs.document_read import JobDeps, RetryLater
+from hausbuch.jobs.enqueue import import_lock, transaction_lock
+from hausbuch.jobs.matching import (
+    run_match_import,
+    run_match_transaction,
+    run_rematch_on_evidence,
+)
+from hausbuch.schemas.api import InboxItemKind
+from hausbuch.schemas.bank import AccountCreate
+from hausbuch.schemas.enums import DuplicateStatus, ExtractionKind, ImportStatus
+from hausbuch.schemas.extraction import EXTRACTION_MODELS
+from hausbuch.schemas.property import UnitCreate
+from hausbuch.services import documents, review
+from hausbuch.services.accounts import create_account
+from hausbuch.services.statements import (
+    import_statement,
+    list_possible_duplicates,
+    resolve_duplicate,
+)
+from hausbuch.services.units import create_unit
+from hausbuch.settings import Settings
+
+pytestmark = pytest.mark.db
+
+NOW = datetime(2026, 11, 7, 8, 0, tzinfo=UTC)
+
+
+@pytest.fixture(autouse=True)
+def _no_leftover_jobs(app_engine):
+    """These tests read procrastinate_jobs; the queue is session-wide (test_jobs_queue)."""
+
+    def clear():
+        with app_engine.begin() as conn:
+            conn.execute(text("DELETE FROM procrastinate_jobs"))
+
+    clear()
+    yield
+    clear()
+
+
+@pytest.fixture
+def world(app_engine, fresh_workspaces) -> World:
+    return World(app_engine, fresh_workspaces[0])
+
+
+def _deps(app_engine, tmp_path, client, **overrides) -> JobDeps:
+    values = {
+        "database_url": "postgresql+psycopg://hausbuch_app@localhost/unused",
+        "iban_hmac_key": TEST_IBAN_KEY,
+        "session_key": bytes(range(1, 33)),
+        "rp_id": "testserver",
+        "origin": "https://testserver",
+        "blob_store": "local",
+        "blob_root": tmp_path / "blobs",
+        "ai_enabled": True,
+        "anthropic_api_key": "sk-ant-test-not-a-key",
+    } | overrides
+    return JobDeps(
+        engine=app_engine,
+        settings=Settings(**values),
+        blob_store=None,  # type: ignore[arg-type]  # matching reads no original
+        model_client=client,
+        clock=lambda: NOW,
+    )
+
+
+def _answer(*parts, confidence="high", ambiguous=False, question=None, model="fake-sonnet"):
+    body = {
+        "allocations": [
+            {"category": c, "amount": a, "service_period": p, "recurring": r}
+            for c, a, p, r in parts
+        ],
+        "confidence": confidence,
+        "reasoning": "Versicherungsbeitrag laut Verwendungszweck.",
+        "question": question,
+        "ambiguous": ambiguous,
+    }
+    return text_response(json.dumps(body), model=model)
+
+
+def _run(deps, world: World, tx, attempt=0, **kw):
+    return run_match_transaction(
+        deps, workspace_id=world.ws, transaction_id=tx, attempt=attempt, **kw
+    )
+
+
+def _rows(world: World, tx):
+    return world.query(
+        lambda c: c.execute(
+            select(allocation_table)
+            .where(
+                allocation_table.c.transaction_id == tx,
+                allocation_table.c.status != "superseded",
+            )
+            .order_by(allocation_table.c.recorded_at)
+        ).all()
+    )
+
+
+def _calls(world: World, tx):
+    return world.query(
+        lambda c: c.execute(
+            select(ai_call_table)
+            .where(ai_call_table.c.transaction_id == tx)
+            .order_by(ai_call_table.c.created_at, ai_call_table.c.id)
+        ).all()
+    )
+
+
+def _events(world: World, tx):
+    return world.query(
+        lambda c: c.execute(select(event_table).where(event_table.c.entity_id == tx)).all()
+    )
+
+
+def _jobs(world: World):
+    return world.query(
+        lambda c: c.execute(
+            text("SELECT task_name, args, lock FROM procrastinate_jobs ORDER BY id")
+        ).all()
+    )
+
+
+def _sent(client: FakeModelClient) -> str:
+    return json.dumps([r.body() for r in client.requests], ensure_ascii=False)
+
+
+# --- The switch and the threshold ----------------------------------------------------------
+
+
+def test_with_ai_off_nothing_is_sent_and_the_line_stays_unmatched(world, app_engine, tmp_path):
+    client = FakeModelClient()
+    deps = _deps(app_engine, tmp_path, client, ai_enabled=False)
+    tx = world.line(date(2026, 3, 3), "-312.40", name="Allianz", purpose="Beitrag")
+    plan = _run(deps, world, tx)
+    assert (plan.outcome, plan.reason) == ("skipped", "routing.no_match")
+    assert client.requests == [] and _rows(world, tx) == [] and _calls(world, tx) == []
+    (item,) = world.query(review.inbox)
+    assert item.kind is InboxItemKind.UNMATCHED
+
+
+def test_an_llm_set_is_only_proposed_while_auto_accept_llm_is_off(world, app_engine, tmp_path):
+    client = FakeModelClient([_answer(("insurance", "-312.40", None, True))])
+    deps = _deps(app_engine, tmp_path, client)
+    tx = world.line(date(2026, 3, 3), "-312.40", name="Allianz", purpose="Beitrag")
+    _run(deps, world, tx)
+    (row,) = _rows(world, tx)
+    (call,) = _calls(world, tx)
+    assert (row.category, row.method, row.status, row.confidence) == (
+        "insurance",
+        "llm",
+        "proposed",
+        Decimal("0.900"),
+    )
+    assert row.ai_call_id == call.id and row.property_id == world.property_id
+    assert (call.job, call.document_id, call.error_code) == ("match", None, None)
+    assert client.requests[0].model == deps.settings.ai_model_extract
+    assert client.requests[0].output_schema is not None
+    assert _events(world, tx) == []
+
+
+def test_an_llm_set_auto_confirms_only_with_the_setting_and_above_the_threshold(
+    world, app_engine, tmp_path
+):
+    world.set_auto_accept_llm(True)
+    client = FakeModelClient(
+        [
+            _answer(("insurance", "-312.40", None, True)),
+            _answer(("repairs", "-450.00", None, False)),  # never auto-confirms
+            _answer(("insurance", "-99.00", None, True), confidence="medium"),  # 0.6 < 0.9
+        ]
+    )
+    deps = _deps(app_engine, tmp_path, client)
+    sure = world.line(date(2026, 3, 3), "-312.40", name="Allianz")
+    repair = world.line(date(2026, 3, 4), "-450.00", name="Maler Schulz")
+    unsure = world.line(date(2026, 3, 5), "-99.00", name="Versicherung?")
+    for tx in (sure, repair, unsure):
+        _run(deps, world, tx)
+    assert [r.status for r in _rows(world, sure)] == ["confirmed"]
+    assert [r.status for r in _rows(world, repair)] == ["proposed"]
+    assert [r.status for r in _rows(world, unsure)] == ["proposed"]
+    (event,) = _events(world, sure)
+    assert (event.type, event.actor_type, event.actor_id) == (
+        "transaction.allocated",
+        "ai",
+        "fake-sonnet",
+    )
+    assert event.payload["auto"] is True and event.payload["method"] == "llm"
+    assert "tax_year" not in json.dumps(event.payload)
+
+
+# --- Validation and retries ------------------------------------------------------------------
+
+
+def test_a_set_that_does_not_sum_is_asked_once_more(world, app_engine, tmp_path):
+    client = FakeModelClient(
+        [
+            _answer(("insurance", "-300.00", None, True)),
+            _answer(("insurance", "-300.00", None, True), ("bank_fees", "-12.40", None, False)),
+        ]
+    )
+    deps = _deps(app_engine, tmp_path, client)
+    tx = world.line(date(2026, 3, 3), "-312.40", name="Allianz")
+    _run(deps, world, tx)
+    first, second = _calls(world, tx)
+    assert first.error_code == "allocation.sum_mismatch" and second.error_code is None
+    rows = _rows(world, tx)
+    assert sum(r.amount for r in rows) == Decimal("-312.40")
+    assert {r.ai_call_id for r in rows} == {second.id}
+
+
+def test_two_unusable_answers_leave_the_line_unmatched(world, app_engine, tmp_path):
+    client = FakeModelClient([text_response("kein JSON"), text_response('{"allocations": []}')])
+    deps = _deps(app_engine, tmp_path, client)
+    tx = world.line(date(2026, 3, 3), "-312.40", name="Allianz")
+    plan = _run(deps, world, tx)
+    assert (plan.outcome, plan.reason) == ("skipped", "ai.unparsable")
+    assert [c.error_code for c in _calls(world, tx)] == ["ai.unparsable", "ai.unparsable"]
+    assert _rows(world, tx) == []
+    assert [i.kind for i in world.query(review.inbox)] == [InboxItemKind.UNMATCHED]
+
+
+def test_a_refusal_is_asked_once_more(world, app_engine, tmp_path):
+    client = FakeModelClient(
+        [
+            text_response("", stop_reason="refusal"),
+            _answer(("insurance", "-312.40", None, True)),
+        ]
+    )
+    deps = _deps(app_engine, tmp_path, client)
+    tx = world.line(date(2026, 3, 3), "-312.40", name="Allianz")
+    _run(deps, world, tx)
+    assert [c.error_code for c in _calls(world, tx)] == ["ai.refused", None]
+    assert len(_rows(world, tx)) == 1
+
+
+def test_an_ambiguous_answer_is_asked_of_the_hard_model(world, app_engine, tmp_path):
+    client = FakeModelClient(
+        [
+            _answer(("other_expense", "-312.40", None, False), confidence="low", ambiguous=True),
+            _answer(("insurance", "-312.40", None, True), model="fake-opus"),
+        ]
+    )
+    deps = _deps(app_engine, tmp_path, client)
+    tx = world.line(date(2026, 3, 3), "-312.40", name="Allianz")
+    _run(deps, world, tx)
+    assert [r.model for r in client.requests] == [
+        deps.settings.ai_model_extract,
+        deps.settings.ai_model_hard,
+    ]
+    (row,) = _rows(world, tx)
+    assert row.category == "insurance" and row.ai_call_id == _calls(world, tx)[1].id
+
+
+def test_an_unusable_hard_answer_keeps_the_first(world, app_engine, tmp_path):
+    client = FakeModelClient(
+        [
+            _answer(("insurance", "-312.40", None, True), confidence="medium", ambiguous=True),
+            text_response("x"),
+            text_response("y"),
+        ]
+    )
+    deps = _deps(app_engine, tmp_path, client)
+    tx = world.line(date(2026, 3, 3), "-312.40", name="Allianz")
+    _run(deps, world, tx)
+    (row,) = _rows(world, tx)
+    assert row.ai_call_id == _calls(world, tx)[0].id and row.confidence == Decimal("0.600")
+
+
+def test_an_unavailable_api_is_retried_then_the_line_stays_unmatched(world, app_engine, tmp_path):
+    tx = world.line(date(2026, 3, 3), "-312.40", name="Allianz")
+    busy = ModelCallError(retryable=True, status=529)
+    deps = _deps(app_engine, tmp_path, FakeModelClient([busy]))
+    with pytest.raises(RetryLater) as retry:
+        _run(deps, world, tx, attempt=0)
+    assert retry.value.wait_s == 10
+    deps = _deps(app_engine, tmp_path, FakeModelClient([busy]))
+    plan = _run(deps, world, tx, attempt=3)
+    assert plan.outcome == "skipped" and _rows(world, tx) == []
+    assert [c.error_code for c in _calls(world, tx)] == ["ai.unavailable", "ai.unavailable"]
+
+
+def test_a_4xx_is_not_retried(world, app_engine, tmp_path):
+    tx = world.line(date(2026, 3, 3), "-312.40", name="Allianz")
+    client = FakeModelClient([ModelCallError(retryable=False, status=400)])
+    plan = _run(_deps(app_engine, tmp_path, client), world, tx)
+    assert (plan.outcome, plan.reason) == ("skipped", "ai.api_error")
+
+
+# --- Explain ------------------------------------------------------------------------------
+
+
+def test_explain_words_a_matcher_set_bound_for_review(world, app_engine, tmp_path):
+    world.tenancy()
+    question = "Es fehlen 20,00 € an der Miete für Januar. Mietminderung oder Teilzahlung?"
+    client = FakeModelClient(
+        [
+            text_response(
+                json.dumps(
+                    {"reasoning": "Miete vom Mieterkonto, 20 € zu wenig.", "question": question}
+                )
+            )
+        ]
+    )
+    deps = _deps(app_engine, tmp_path, client)
+    tx = world.line(date(2025, 1, 3), "1260.00", iban=TENANT_IBAN, purpose="Miete Erika")
+    _run(deps, world, tx)
+    rows = _rows(world, tx)
+    assert {r.status for r in rows} == {"proposed"} and {r.method for r in rows} == {"matcher_rent"}
+    assert rows[0].question == question
+    (request,) = client.requests
+    assert request.model == deps.settings.ai_model_classify and request.job.value == "explain"
+    sent = _sent(client)
+    assert "Erika" not in sent and "Mustermieterin" not in sent and TENANT_IBAN not in sent
+
+
+def test_explain_failure_keeps_the_template_text(world, app_engine, tmp_path):
+    world.tenancy()
+    client = FakeModelClient([ModelCallError(retryable=True, status=529)])
+    deps = _deps(app_engine, tmp_path, client)
+    tx = world.line(date(2025, 1, 3), "1260.00", iban=TENANT_IBAN, purpose="Miete")
+    _run(deps, world, tx)  # no retry: the template is the fallback
+    rows = _rows(world, tx)
+    assert {r.status for r in rows} == {"proposed"} and "statt" in rows[0].question
+
+
+# --- Data minimization -----------------------------------------------------------------------
+
+
+def test_the_prompt_carries_no_tenant_name_and_no_plaintext_iban(world, app_engine, tmp_path):
+    world.tenancy(name="Erika Mustermieterin")
+    second = world.cmd(
+        create_unit,
+        UnitCreate(property_id=world.property_id, label="WE 4", floor_area_m2=Decimal("50.00")),
+    ).id
+    world.tenancy(name="Otto Zweitmieter", iban=OTHER_TENANT_IBAN, unit_id=second)
+    client = FakeModelClient([_answer(("deposit_in", "3000.00", None, False))])
+    deps = _deps(app_engine, tmp_path, client)
+    tx = world.line(
+        date(2025, 1, 2),
+        "3000.00",
+        iban=TENANT_IBAN,
+        name="Erika Mustermieterin",
+        purpose=f"Kaution fuer Mustermieterin, Rueckzahlung an {PAINTER_IBAN} wie Otto",
+    )
+    _run(deps, world, tx)
+    sent = _sent(client)
+    for secret in ("Erika", "Mustermieterin", "Otto", "Zweitmieter"):
+        assert secret not in sent
+    for iban in (TENANT_IBAN, OTHER_TENANT_IBAN, PAINTER_IBAN):
+        assert iban not in sent and iban[4:12] not in sent
+    assert "Mieter (Mietverhältnis WE 3)" in sent and "[IBAN]" in sent
+
+
+# --- match_import, the hooks and rematch_on_evidence ------------------------------------
+
+
+def test_match_import_refuses_an_unreconciled_import_and_fans_out_a_reconciled_one(
+    world, app_engine, tmp_path
+):
+    deps = _deps(app_engine, tmp_path, FakeModelClient(), ai_enabled=False)
+    lines = [world.line(date(2026, 3, d), "-10.00", name="X") for d in (3, 4)]
+    world.set_import_status(ImportStatus.UNRECONCILED)
+    assert run_match_import(deps, workspace_id=world.ws, import_id=world.import_id, attempt=0) == 0
+    assert _jobs(world) == []
+    world.set_import_status(ImportStatus.RECONCILED)
+    assert run_match_import(deps, workspace_id=world.ws, import_id=world.import_id, attempt=0) == 2
+    jobs = _jobs(world)
+    assert [(j.task_name, j.lock) for j in jobs] == [
+        ("match_transaction", transaction_lock(tx)) for tx in lines
+    ]
+
+
+def _account(world: World):
+    data = AccountCreate(
+        label="Mietkonto",
+        bank="Sparkasse",
+        iban="DE50100000000000000001",
+        opening_balance=Decimal("0.00"),
+        opening_balance_on=date(2026, 3, 31),
+    )
+    return world.cmd(create_account, data, iban_key=TEST_IBAN_KEY)
+
+
+def _import(world: World, blob_store, account_id, data, media_type):
+    return world.cmd(
+        import_statement,
+        blob_store,
+        account_id,
+        data,
+        media_type=media_type,
+        iban_key=TEST_IBAN_KEY,
+        original_filename="export",
+    )
+
+
+def _case_bytes(fixture, case_id):
+    return build(next(c for c in fixture.cases if c.id == case_id).input)
+
+
+def test_a_reconciled_statement_is_matched_end_to_end(
+    app_engine, fresh_workspaces, blob_store, tmp_path
+):
+    world = World(app_engine, fresh_workspaces[1])
+    account = _account(world)
+    zipped = _case_bytes(CAMT, "sparkasse_zip_of_daily_reports")
+    imported = _import(world, blob_store, account.id, zipped, "application/zip")
+    assert imported.status is ImportStatus.RECONCILED
+    assert [(j.task_name, j.lock) for j in _jobs(world)] == [
+        ("match_import", import_lock(imported.id))
+    ]
+    deps = _deps(app_engine, tmp_path, FakeModelClient(), ai_enabled=False)
+    count = run_match_import(deps, workspace_id=world.ws, import_id=imported.id, attempt=0)
+    assert count == imported.lines_total
+    queued = [j for j in _jobs(world) if j.task_name == "match_transaction"]
+    for job in queued:
+        _run(deps, world, job.args["transaction_id"])
+    kinds = [i.kind for i in world.query(review.inbox)]
+    assert kinds == [InboxItemKind.UNMATCHED] * imported.lines_total
+
+
+def test_kept_both_queues_the_later_line(app_engine, fresh_workspaces, blob_store):
+    world = World(app_engine, fresh_workspaces[1])
+    account = _account(world)
+    _import(world, blob_store, account.id, _case_bytes(CSV, "sparkasse_export"), "text/csv")
+    _import(
+        world,
+        blob_store,
+        account.id,
+        _case_bytes(CAMT, "sparkasse_zip_of_daily_reports"),
+        "application/zip",
+    )
+    pair = world.query(list_possible_duplicates)[0]
+    before = len(_jobs(world))
+    world.cmd(resolve_duplicate, pair.id, DuplicateStatus.KEPT_BOTH)
+    jobs = _jobs(world)
+    assert len(jobs) == before + 1
+    assert (jobs[-1].task_name, jobs[-1].lock) == (
+        "match_transaction",
+        transaction_lock(pair.other_transaction_id),
+    )
+
+
+def test_a_new_reading_queues_a_rematch_that_matches_without_the_model(world, app_engine, tmp_path):
+    tx = world.line(date(2026, 3, 12), "-1234.56", iban=PAINTER_IBAN)
+    fields = {
+        "title": "Malerrechnung",
+        "document_date": "2026-03-10",
+        "subject": "Malerarbeiten",
+        "amount_total": "1234.56",
+        "iban": PAINTER_IBAN,
+    }
+    doc = world.document("invoice", {"title": "Malerrechnung"})  # nothing to match on yet
+    deps = _deps(app_engine, tmp_path, FakeModelClient())  # AI on, nothing scripted
+    with workspace_transaction(app_engine, world.ws) as conn:
+        request = extract_request(
+            deps.settings, ExtractionKind.INVOICE, {"type": "text", "text": "x"}
+        )
+        call = record_ai_call(
+            conn,
+            workspace_id=world.ws,
+            request=request,
+            document_id=doc,
+            response=text_response("x"),
+        )
+    model = EXTRACTION_MODELS[ExtractionKind.INVOICE]
+    reading = model.model_validate(
+        {k: {"value": v, "confidence": "high", "checks": ["validates"]} for k, v in fields.items()}
+    )
+    world.cmd(documents.record_ai_extraction, doc, reading, ai_call_id=call)
+    rematch = [j for j in _jobs(world) if j.task_name == "rematch_on_evidence"]
+    assert [j.lock for j in rematch] == [f"doc:{doc}"]
+
+    plans = run_rematch_on_evidence(deps, workspace_id=world.ws, document_id=doc, attempt=0)
+    assert [p.outcome for p in plans] == ["written"]
+    (row,) = _rows(world, tx)
+    assert row.document_id == doc and row.status == "proposed"
+    assert deps.model_client.requests == []  # type: ignore[union-attr]

@@ -120,7 +120,7 @@ def transaction_allocations(
 
 
 def _open_line(conn: Connection, transaction_id: UUID) -> matching.Line:
-    line = matching.load_line(conn, transaction_id)
+    line = matching.load_line(conn, transaction_id, lock=True)
     if line is None:
         raise NotFoundError(EntityType.TRANSACTION, transaction_id)
     if line.import_status is not ImportStatus.RECONCILED:

@@ -18,8 +18,9 @@ Privacy: the counterparty IBAN is stored masked + keyed HMAC only. `transaction.
 holds a plaintext IBAN: the parsers leave the IBAN columns out and `_scrub` masks anything
 else that parses as one. Messages and events never quote a name, purpose or IBAN.
 
-Matching is not started here: step 4 builds `match_import` and enqueues it from
-`_on_reconciled`, the one place an import becomes reconciled.
+Matching starts in `_on_reconciled`, the one place an import becomes reconciled: it queues
+`match_import` in the same transaction (phase 2 step 4). A possible duplicate decided
+kept_both queues `match_transaction` for the later line, which waited for the decision.
 """
 
 import hmac
@@ -37,6 +38,7 @@ from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import possible_duplicate as duplicate_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
+from hausbuch.jobs import enqueue
 from hausbuch.rules import statements as rules
 from hausbuch.rules.errors import RuleError
 from hausbuch.rules.iban import mask_iban, normalize_iban
@@ -339,8 +341,8 @@ def _check(
 
 
 def _on_reconciled(ctx: CommandContext, import_id: UUID) -> None:
-    """HOOK (phase 2 step 4): the import just became reconciled, so its lines may now be
-    matched. Step 4 enqueues `match_import(import_id)` here, in the same transaction, so the
+    """The import just became reconciled, so its lines may now be
+    matched. `match_import(import_id)` is queued here, in the same transaction, so the
     job commits with the result. Lines of an import that is not reconciled are never
     matched (§3.4); `match_import` must re-check the status itself, since a later import or
     merge can turn a reconciled import unreconciled again.
@@ -348,6 +350,7 @@ def _on_reconciled(ctx: CommandContext, import_id: UUID) -> None:
     It fires once per change of result, not once per import: an import that stays
     reconciled while its computed balances move (an anchor change, a merge) fires again, so
     the job must be idempotent per import (match only lines not yet matched)."""
+    enqueue.enqueue_match_import(ctx.conn, workspace_id=ctx.workspace_id, import_id=import_id)
 
 
 # --- Possible duplicates ---------------------------------------------------------------
@@ -414,6 +417,11 @@ def resolve_duplicate(
     )
     if exclusion is not None:
         recheck_account(ctx, keeper.account_id)
+    elif status is DuplicateStatus.KEPT_BOTH:
+        # The later line waited for this decision (services.matching skips it while open).
+        enqueue.enqueue_match_transaction(
+            ctx.conn, workspace_id=ctx.workspace_id, transaction_id=later.id
+        )
     return _to_duplicate(row)
 
 

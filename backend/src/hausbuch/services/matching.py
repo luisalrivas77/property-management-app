@@ -98,15 +98,12 @@ from hausbuch.schemas.loan import LoanTerms
 
 from . import allocations, rules_learned
 from .context import CommandContext
-from .documents import current_extraction
+from .documents import DOCUMENT_EVIDENCE_KINDS, EVIDENCE_KINDS, current_extraction
 from .tenancies import _rows_in_force, rent_on  # rent rows no correction supersedes
 
 C = AllocationCategory
 
-DOCUMENT_KINDS = frozenset(
-    {ExtractionKind.INVOICE, ExtractionKind.BESCHEID, ExtractionKind.GRUNDSTEUERBESCHEID}
-)
-EVIDENCE_KINDS = DOCUMENT_KINDS | {ExtractionKind.WIRTSCHAFTSPLAN}
+DOCUMENT_KINDS = DOCUMENT_EVIDENCE_KINDS
 
 GUARDED_CONFIDENCE = Decimal("0.500")  # below every threshold: the set goes to review
 RENT_BOOKED_QUESTION = (
@@ -152,15 +149,21 @@ class Line:
         return all(a.method is AllocationMethod.RULE for a in self.current)
 
 
-def load_line(conn: Connection, transaction_id: UUID) -> Line | None:
-    row = conn.execute(
+def load_line(conn: Connection, transaction_id: UUID, *, lock: bool = False) -> Line | None:
+    """The line as matching sees it. With `lock`, the transaction row is locked (FOR UPDATE)
+    for the rest of the caller's transaction, so a job and a person answering the same line
+    decide one after the other, the second on the first one's rows."""
+    query = (
         select(
             transaction_table,
             import_table.c.status.label("import_status"),
         )
         .join(import_table, import_table.c.id == transaction_table.c.import_id)
         .where(transaction_table.c.id == transaction_id)
-    ).one_or_none()
+    )
+    if lock:
+        query = query.with_for_update(of=transaction_table)
+    row = conn.execute(query).one_or_none()
     if row is None:
         return None
     awaiting = conn.execute(
@@ -684,7 +687,7 @@ def match_line(
     as `explain`; without, the matcher's set is written with its template text and an
     unmatched line stays without rows (inbox "Nicht zugeordnet"). A re-match never calls
     the model."""
-    line = load_line(ctx.conn, transaction_id)
+    line = load_line(ctx.conn, transaction_id, lock=True)
     if line is None:
         return MatchPlan("skipped", "matching.not_found")
     if not line.open_for(rematch=rematch):
@@ -723,7 +726,7 @@ def write(ctx: CommandContext, line: Line, found: AllocationSet) -> MatchPlan:
 def finish_line(ctx: CommandContext, transaction_id: UUID, found: AllocationSet) -> MatchPlan:
     """After a model call: write the set if the line is still open and still has no rows
     (a person may have answered meanwhile)."""
-    line = load_line(ctx.conn, transaction_id)
+    line = load_line(ctx.conn, transaction_id, lock=True)
     if line is None or not line.open_for(rematch=False):
         return MatchPlan("skipped", "matching.answered_meanwhile")
     return write(ctx, line, found)
@@ -866,20 +869,59 @@ def categorize_input(conn: Connection, line: Line) -> CategorizeInput:
         f"Darlehen {scrub(row.lender)}: Rate {row.monthly_payment} €"
         for row in conn.execute(select(loan_table.c.lender, loan_table.c.monthly_payment))
     ]
+    names, own_unit = _tenant_names(conn, line)
+    counterparty = _without(scrub(tx.counterparty_name), names)
+    if own_unit is not None:
+        counterparty = f"Mieter (Mietverhältnis {own_unit})"
     return CategorizeInput(
         transaction_id=tx.id,
         booking_date=tx.booking_date,
         value_date=tx.value_date,
         amount=tx.amount,
-        counterparty_name=scrub(tx.counterparty_name),
-        purpose=scrub(tx.purpose),
-        booking_text=scrub(tx.booking_text),
+        counterparty_name=counterparty,
+        purpose=_without(scrub(tx.purpose), names),
+        booking_text=_without(scrub(tx.booking_text), names),
         iban_last4=masked[-4:] if masked else None,
         properties=sorted(labels.values()),
         tenancies=tenancies,
         loans=loans,
         similar=_similar(conn, line),
     )
+
+
+TENANT_PLACEHOLDER = "[Mieter]"
+_MIN_NAME_PART = 3
+
+
+def _tenant_names(conn: Connection, line: Line) -> tuple[list[str], str | None]:
+    """Every tenant's name and its parts (longest first), and the unit label when the line
+    comes from a tenant's own account. The line's counterparty is then named by the unit, so
+    no tenant name of any tenancy reaches the model (§5.3, stricter than "never another
+    tenant's name")."""
+    names: set[str] = set()
+    own_unit = None
+    rows = conn.execute(
+        select(tenant_table.c.full_name, tenant_table.c.iban_hmac, unit_table.c.label)
+        .select_from(tenant_table)
+        .outerjoin(party_table, party_table.c.tenant_id == tenant_table.c.id)
+        .outerjoin(tenancy_table, tenancy_table.c.id == party_table.c.tenancy_id)
+        .outerjoin(unit_table, unit_table.c.id == tenancy_table.c.unit_id)
+    )
+    for row in rows:
+        if row.full_name:
+            full = " ".join(row.full_name.split())
+            names.add(full)
+            names.update(p for p in re.split(r"[\s,]+", full) if len(p) >= _MIN_NAME_PART)
+        hmac = line.counterparty_iban_hmac
+        if hmac is not None and row.iban_hmac is not None and bytes(row.iban_hmac) == hmac:
+            own_unit = row.label
+    return sorted(names, key=len, reverse=True), own_unit
+
+
+def _without(text: str, names: list[str]) -> str:
+    for name in names:
+        text = re.sub(re.escape(name), TENANT_PLACEHOLDER, text, flags=re.IGNORECASE)
+    return text
 
 
 def _similar(conn: Connection, line: Line, limit: int = 5) -> list[SimilarAnswer]:
