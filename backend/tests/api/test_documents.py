@@ -169,6 +169,29 @@ def test_the_original_and_its_headers(client_a):
     assert client_a.get(f"{path}?disposition=render").status_code == 422
 
 
+def test_a_titled_document_downloads_under_its_date_and_title(client_a):
+    """Only the download name changes; the bytes and the stored upload name stay."""
+    document = ok(upload(client_a, PDF, filename="Scan_0042.PDF"), 201)
+    base = f"/api/documents/{document['id']}"
+    typing = {"type": "contract", "title": " Darlehensvertrag\nSparkasse / Nachtrag "}
+    ok(client_a.put(f"{base}/typing", json={"typing": typing}))
+    response = client_a.get(f"{base}/original")
+    assert response.content == PDF
+    assert response.headers["content-disposition"] == (
+        'attachment; filename="Darlehensvertrag Sparkasse Nachtrag.pdf"; '
+        "filename*=UTF-8''Darlehensvertrag%20Sparkasse%20Nachtrag.pdf"
+    )
+
+    typing = {"type": "contract", "title": "Übergabeprotokoll", "document_date": "2026-02-20"}
+    ok(client_a.put(f"{base}/typing", json={"typing": typing, "shown_version": 0}))
+    response = client_a.get(f"{base}/original?disposition=inline")
+    assert response.headers["content-disposition"] == (
+        'inline; filename="2026-02-20 _bergabeprotokoll.pdf"; '
+        "filename*=UTF-8''2026-02-20%20%C3%9Cbergabeprotokoll.pdf"
+    )
+    assert ok(client_a.get(base))["document"]["original_filename"] == "Scan_0042.PDF"
+
+
 def test_content_disposition_keeps_the_basename_and_quotes_nothing():
     assert content_disposition("attachment", 'C:\\scans\\03/2024 "final".pdf') == (
         "attachment; filename=\"2024 _final_.pdf\"; filename*=UTF-8''2024%20%22final%22.pdf"

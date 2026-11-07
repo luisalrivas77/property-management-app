@@ -281,7 +281,7 @@ def document_original(
     is ever rendered from the API's origin."""
     data, media_type, document = cmd.read(_original, store, document_id)
     inline = disposition == "inline" and media_type in INLINE_MEDIA_TYPES
-    filename = document.original_filename or _fallback_filename(document, media_type)
+    filename = download_filename(document, media_type)
     return Response(
         content=data,
         headers={
@@ -295,9 +295,35 @@ def document_original(
     )
 
 
+_TITLE_MAX = 120
+
+
+def download_filename(document: Document, media_type: str) -> str:
+    """The name a download is saved under: "<document date> <title><ext>" once the document
+    has a title (confirmed from a pre-fill proposal or typed by hand), so a folder of
+    downloads sorts by date and says what each file is; else the uploaded name; else the
+    hash prefix. Only the name changes, never the bytes (principle 6). The title is user
+    and model text, so it is flattened to one line without path separators here, and
+    `content_disposition` encodes it."""
+    title = document.typing.title if document.typing else None
+    stem = " ".join((title or "").replace("/", " ").replace("\\", " ").split())[:_TITLE_MAX]
+    if not stem:
+        return document.original_filename or _fallback_filename(document, media_type)
+    if document.typing and document.typing.document_date:
+        stem = f"{document.typing.document_date.isoformat()} {stem}"
+    return f"{stem.rstrip(' .')}{_extension(document, media_type)}"
+
+
+def _extension(document: Document, media_type: str) -> str:
+    """The uploaded file's own extension when it has a short one, else the media type's."""
+    suffix = (document.original_filename or "").rpartition(".")
+    if suffix[1] and 1 <= len(suffix[2]) <= 5 and suffix[2].isalnum():
+        return f".{suffix[2].lower()}"
+    return mimetypes.guess_extension(media_type) or ".bin"
+
+
 def _fallback_filename(document: Document, media_type: str) -> str:
-    extension = mimetypes.guess_extension(media_type) or ".bin"
-    return f"{document.file_sha256[:12]}{extension}"
+    return f"{document.file_sha256[:12]}{_extension(document, media_type)}"
 
 
 def content_disposition(kind: str, filename: str) -> str:
