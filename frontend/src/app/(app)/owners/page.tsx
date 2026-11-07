@@ -153,7 +153,7 @@ function OwnerForm({ owner, onDone, onCancel }: { owner?: Owner; onDone: (messag
           id={`${prefix}-rate`}
           label="Grenzsteuersatz (%)"
           hint="Für die Steuerwirkung, z. B. 42."
-          description="Der Steuersatz, mit dem ein zusätzlicher Euro Einkommen besteuert wird, z. B. aus einem Steuerrechner. Hausbuch speichert ihn bisher nur; die geplante Renditeansicht soll damit die Steuerwirkung zeigen."
+          description="Der Steuersatz, mit dem ein zusätzlicher Euro Einkommen besteuert wird, z. B. aus einem Steuerrechner. Hausbuch speichert ihn bisher nur. Später rechnet Hausbuch ihn aus dem erwarteten Bruttogehalt selbst aus; ein hier eingetragener Wert geht dann für sein Jahr vor."
           errors={form.of("marginal_tax_rate")}
         >
           <input type="text" inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} autoComplete="off" />
