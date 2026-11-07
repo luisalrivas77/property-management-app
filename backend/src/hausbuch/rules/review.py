@@ -67,8 +67,10 @@ THRESHOLDS = MappingProxyType(
         C.DEPOSIT_IN: None,
         C.DEPOSIT_OUT: None,
         C.LOAN_FEES: None,
+        C.LOAN_DISBURSEMENT: None,  # the loan's payout, once
         C.REPAIRS: None,
         C.RENOVATION: None,
+        C.PURCHASE_PRICE: None,  # once, at the purchase
         C.ACQUISITION_COST: None,
         C.PROFESSIONAL_FEES: None,
         C.OTHER_INCOME: None,

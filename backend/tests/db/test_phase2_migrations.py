@@ -749,7 +749,8 @@ def test_0008_downgrade_refuses_while_a_rule_has_an_empty_matcher():
     """0007's CHECK cannot hold an emptied rule, and a downgrade never rewrites data."""
     name = create_database()
     try:
-        alembic(name, "upgrade", "head")
+        # Up to 0008 only: a later revision would be the one alembic_version reports.
+        alembic(name, "upgrade", "0008_rule_matcher_erasure")
         ws = uuid.uuid4()
         with _admin(name) as conn:
             conn.execute("INSERT INTO workspace (id, name) VALUES (%s, 'A')", (ws,))
@@ -765,6 +766,58 @@ def test_0008_downgrade_refuses_while_a_rule_has_an_empty_matcher():
             conn.execute("DELETE FROM matching_rule")
         alembic(name, "downgrade", "0007_allocations_rules")
         alembic(name, "upgrade", "head")
+    finally:
+        drop_database(name)
+
+
+def test_the_loan_payout_and_purchase_price_categories_are_accepted(tx):
+    """0009: the two categories added on 7 Nov 2026, on an allocation and on a rule."""
+    conn, a, t = tx
+    for category in ("loan_disbursement", "purchase_price"):
+        _allocation(conn, a, t, category=category, method="user")
+        _rule(conn, a, {"purpose_pattern": category}, category=category)
+    with pytest.raises(errors.CheckViolation), conn.transaction():
+        _allocation(conn, a, t, category="kaufpreis", method="user")
+    with pytest.raises(errors.CheckViolation), conn.transaction():
+        _rule(conn, a, {"purpose_pattern": "kaufpreis"}, category="kaufpreis")
+
+
+@pytest.mark.parametrize("table", ["allocation", "matching_rule"])
+def test_0009_downgrade_refuses_while_a_row_uses_a_new_category(table):
+    """0008's category list cannot hold the new categories, and a downgrade never rewrites
+    data. The owner has no workspace set, where forced RLS hides every row: the guard must
+    still see them."""
+    name = create_database()
+    try:
+        alembic(name, "upgrade", "0009_payout_price_categories")
+        ws = uuid.uuid4()
+        with _admin(name) as conn:
+            conn.execute("INSERT INTO workspace (id, name) VALUES (%s, 'A')", (ws,))
+            conn.execute(f"SET ROLE {OWNER}")
+            conn.execute("SELECT set_config('app.workspace_id', %s, false)", (str(ws),))
+            if table == "allocation":
+                acc = _account(conn, ws)
+                t = _transaction(conn, ws, acc, _import(conn, ws, acc))
+                _allocation(conn, ws, t, category="purchase_price", method="user")
+            else:
+                _rule(conn, ws, {"purpose_pattern": "darlehen"}, category="loan_disbursement")
+        with pytest.raises(DBAPIError, match="refused: a row uses a new category"):
+            alembic(name, "downgrade", "0008_rule_matcher_erasure")
+        with _admin(name) as conn:
+            assert conn.execute("SELECT version_num FROM alembic_version").fetchall() == [
+                ("0009_payout_price_categories",)
+            ]
+            for forced_table in ("allocation", "matching_rule"):
+                forced = conn.execute(
+                    "SELECT relforcerowsecurity FROM pg_class WHERE oid = %s::regclass",
+                    (forced_table,),
+                ).fetchone()
+                assert forced == (True,)  # the refused downgrade's NO FORCE was rolled back
+            if table == "matching_rule":  # allocations are append-only, even for the owner
+                conn.execute("DELETE FROM matching_rule")
+        if table == "matching_rule":
+            alembic(name, "downgrade", "0008_rule_matcher_erasure")
+            alembic(name, "upgrade", "head")
     finally:
         drop_database(name)
 
