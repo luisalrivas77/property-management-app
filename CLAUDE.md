@@ -27,7 +27,7 @@ Read the current phase's spec before implementing; rule fixtures are the contrac
 only in a spec PR, never to make an implementation pass.
 
 - Phase 1, vault and ledger: `docs/phases/phase-1.md` (closed 6 Nov 2026)
-- Phase 2, AI inbox with master-data pre-fill first: `docs/phases/phase-2.md` (spec merged 6 Nov 2026 in PR #24; steps 1 and 3 merged and deployed 6 Nov 2026; invoice reading fix D35–D37 merged and deployed 7 Nov 2026 (PR #28); step 4 matching and inbox merged 7 Nov 2026 (PR #30), not deployed yet; see its status table)
+- Phase 2, AI inbox with master-data pre-fill first: `docs/phases/phase-2.md` (spec merged 6 Nov 2026 in PR #24; steps 1 and 3 merged and deployed 6 Nov 2026; invoice reading fix D35–D37 merged and deployed 7 Nov 2026 (PR #28); step 4 matching and inbox merged and deployed 7 Nov 2026 (PR #30); see its status table)
 
 Design plans for later phases (not specs; only what the Decisions table records is agreed):
 
