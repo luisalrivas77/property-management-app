@@ -10,6 +10,7 @@ import io
 
 from pypdf import PdfReader, PdfWriter
 from pypdf.errors import PdfReadError
+from pypdf.generic import BooleanObject
 
 PDF = "application/pdf"
 IMAGE_TYPES = frozenset({"image/jpeg", "image/png", "image/webp", "image/gif"})
@@ -20,6 +21,10 @@ MAX_TOTAL_PAGES = 600
 UNSUPPORTED_MEDIA_TYPE = "ai.unsupported_media_type"
 TOO_MANY_PAGES = "ai.too_many_pages"
 UNREADABLE = "ai.unreadable"  # a PDF pypdf cannot open (damaged, or encrypted with a password)
+ADOBE_FORM = "document.adobe_form"  # D43: an Adobe-only (dynamic XFA) form
+# The text Adobe puts on the one PDF page of a dynamic XFA form ("Please wait... If this
+# message is not eventually replaced by the proper contents of the document, ..."), lowercased.
+_XFA_PLACEHOLDER = ("please wait", "eventually replaced")
 
 
 class DocumentInputError(Exception):
@@ -94,6 +99,32 @@ def has_text_layer(data: bytes) -> bool:
         return any(
             (page.extract_text() or "").strip() for page in PdfReader(io.BytesIO(data)).pages
         )
+    except Exception:  # pypdf raises a wide range of errors on damaged files
+        return False
+
+
+def is_adobe_only_form(data: bytes) -> bool:
+    """D43: whether the PDF holds its content only as an Adobe XFA form, so its ordinary PDF
+    layer (all the model and every non-Adobe viewer sees) is a placeholder page. True when the
+    catalog says /NeedsRendering true, or when the AcroForm carries /XFA and the page text is
+    Adobe's placeholder; a static XFA form with a real PDF layer is False. False for anything
+    pypdf cannot open (page_count reports that as ai.unreadable) and for non-PDFs."""
+    try:
+        reader = PdfReader(io.BytesIO(data))
+        if reader.is_encrypted and not reader.decrypt(""):
+            return False
+        root = reader.root_object
+        needs_rendering = root.get("/NeedsRendering")
+        if needs_rendering is not None:
+            needs_rendering = needs_rendering.get_object()
+        # A BooleanObject is truthy whatever its value: compare its value.
+        if isinstance(needs_rendering, BooleanObject) and needs_rendering.value:
+            return True
+        acroform = root.get("/AcroForm")
+        if acroform is None or "/XFA" not in acroform.get_object():
+            return False
+        text = " ".join((page.extract_text() or "") for page in reader.pages).lower()
+        return any(marker in " ".join(text.split()) for marker in _XFA_PLACEHOLDER)
     except Exception:  # pypdf raises a wide range of errors on damaged files
         return False
 

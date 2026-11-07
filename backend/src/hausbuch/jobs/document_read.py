@@ -68,6 +68,7 @@ REFUSED = "ai.refused"
 TOO_MANY_PAGES = documents.TOO_MANY_PAGES
 UNSUPPORTED_MEDIA_TYPE = documents.UNSUPPORTED_MEDIA_TYPE
 UNREADABLE = documents.UNREADABLE
+ADOBE_FORM = documents.ADOBE_FORM  # D43, not retried
 INTERNAL_ERROR = "ai.internal_error"  # not a model error: a bug or the database, retried out
 # ai.api_error and ai.unavailable come from hausbuch.ai.client.
 
@@ -285,6 +286,8 @@ def _read(
     try:
         documents.check_media_type(original.media_type)
         pages = documents.page_count(original.data) if original.media_type == documents.PDF else 1
+        if original.media_type == documents.PDF and documents.is_adobe_only_form(original.data):
+            raise _Stop(ADOBE_FORM)  # D43: the model would see only Adobe's placeholder page
         first = (
             documents.pdf_pages(original.data, 0, min(CLASSIFY_PAGES, pages))
             if original.media_type == documents.PDF

@@ -32,6 +32,8 @@ AI_API_ERROR = "ai.api_error"  # the API answered with an error that retries did
 AI_UNAVAILABLE = "ai.unavailable"  # the API could not be reached (timeouts, overload)
 AI_UNREADABLE = "ai.unreadable"  # the original could not be prepared for the model
 AI_INTERNAL_ERROR = "ai.internal_error"  # a bug in the job; the dead letter names it
+# D43: an Adobe-only (dynamic XFA) form; failed before any model call, never retried.
+DOCUMENT_ADOBE_FORM = "document.adobe_form"
 
 AI_ERROR_CODES = frozenset(
     {
@@ -45,5 +47,6 @@ AI_ERROR_CODES = frozenset(
         AI_UNAVAILABLE,
         AI_UNREADABLE,
         AI_INTERNAL_ERROR,
+        DOCUMENT_ADOBE_FORM,
     }
 )

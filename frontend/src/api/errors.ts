@@ -117,6 +117,8 @@ export const AI_ERROR_TEXT: Record<string, string> = {
   "ai.unavailable": "Der KI-Dienst war nicht erreichbar. Später noch einmal auslesen.",
   "ai.unreadable": "Die Datei ließ sich nicht öffnen (beschädigt oder mit Passwort geschützt).",
   "ai.internal_error": "Beim Auslesen ist ein interner Fehler aufgetreten.",
+  "document.adobe_form":
+    "Dieses PDF ist ein Adobe-Formular und lässt sich nur in Adobe Reader anzeigen. Öffnen Sie es dort, drucken Sie es als PDF und laden Sie die Kopie hoch.",
 };
 
 /** The German sentence for a proposal's error code; unknown codes get a generic one. */

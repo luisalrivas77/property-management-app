@@ -15,6 +15,13 @@ from datetime import UTC, datetime
 
 import pytest
 from pypdf import PdfWriter
+from pypdf.generic import (
+    ArrayObject,
+    BooleanObject,
+    DecodedStreamObject,
+    DictionaryObject,
+    NameObject,
+)
 from sqlalchemy import insert, select, update
 
 from hausbuch.ai.client import ModelCallError
@@ -443,6 +450,38 @@ def test_damaged_pdf_fails_as_unreadable(setup, recorder):
     _run(deps, ws, doc, proposal)
     [(_, _, kw)] = recorder.failures
     assert kw["error_code"] == "ai.unreadable"
+
+
+def _adobe_only_form() -> bytes:
+    """A synthetic dynamic XFA form (D43): /NeedsRendering true and an AcroForm with /XFA."""
+    writer = PdfWriter()
+    writer.add_blank_page(width=595, height=842)
+    xfa = DecodedStreamObject()
+    xfa.set_data(b"<xdp:xdp xmlns:xdp='http://ns.adobe.com/xdp/'></xdp:xdp>")
+    root = writer.root_object
+    root[NameObject("/NeedsRendering")] = BooleanObject(True)
+    root[NameObject("/AcroForm")] = DictionaryObject(
+        {
+            NameObject("/Fields"): ArrayObject(),
+            NameObject("/XFA"): writer._add_object(xfa),
+        }
+    )
+    writer.add_metadata({"/Title": uuid.uuid4().hex})
+    out = io.BytesIO()
+    writer.write(out)
+    return out.getvalue()
+
+
+def test_an_adobe_only_form_fails_without_a_call_and_is_not_retried(setup, recorder, app_engine):
+    client = FakeModelClient()
+    deps, ws, doc, proposal = setup(_adobe_only_form(), client)
+    _run(deps, ws, doc, proposal, attempt=0)  # no RetryLater: recorded on the first attempt
+    assert client.requests == []
+    assert _calls(app_engine, ws, doc) == []
+    assert recorder.results == []
+    [(_, proposal_id, kw)] = recorder.failures
+    assert proposal_id == proposal
+    assert kw == {"error_code": "document.adobe_form", "ai_call_id": None, "attempts": 1}
 
 
 # --- retries (§5.1) --------------------------------------------------------------------
