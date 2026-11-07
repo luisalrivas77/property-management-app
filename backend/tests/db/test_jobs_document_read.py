@@ -22,7 +22,7 @@ from pypdf.generic import (
     DictionaryObject,
     NameObject,
 )
-from sqlalchemy import insert, select, update
+from sqlalchemy import insert, null, select, update
 
 from hausbuch.ai.client import ModelCallError
 from hausbuch.ai.fake import FakeModelClient, cited_response, text_response
@@ -585,7 +585,8 @@ class _ErasesDuringTheCall(FakeModelClient):
         response = super().send(request)
         values = {"status": "superseded"}
         if self.scrub:
-            values |= {"fields": None, "decisions": None, "scrubbed_at": NOW}
+            # null(): a Python None would be stored as JSON null, which the CHECK refuses
+            values |= {"fields": null(), "decisions": null(), "scrubbed_at": NOW}
         with workspace_transaction(self.engine, self.ws) as conn:
             conn.execute(
                 update(proposal_table).where(proposal_table.c.id == self.proposal).values(values)
