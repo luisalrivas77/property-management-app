@@ -132,9 +132,11 @@ class _Builder:
         self.x = extraction
         self.ctx = context
         self.records: list[ProposalRecord] = []
-        self.financing = kind is ExtractionKind.INVOICE and _names_financing(
-            self.ev("subject").value, self.ev("title").value
-        )
+        # A Grundbuchamt Kostenrechnung may be typed bescheid, which has no subject (D35, F1).
+        self.financing = (
+            kind is ExtractionKind.INVOICE
+            and _names_financing(self.ev("subject").value, self.ev("title").value)
+        ) or (kind is ExtractionKind.BESCHEID and _names_financing(self.ev("title").value))
 
     # -- values
 
