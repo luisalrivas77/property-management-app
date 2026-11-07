@@ -55,7 +55,8 @@ out (skipped). It records only that decision, never the value, so the record sur
 
 ```bash
 cd backend
-HAUSBUCH_ADMIN_DATABASE_URL=... uv run hausbuch evals report
+export HAUSBUCH_ADMIN_DATABASE_URL=...   # the owner URL, as for bootstrap
+uv run hausbuch evals report
 uv run hausbuch evals report --since 2026-11-01        # only proposals applied since then
 uv run hausbuch evals report --workspace <workspace id>
 ```
@@ -87,7 +88,8 @@ too), and compares the reading with the golden file:
 
 ```bash
 export HAUSBUCH_EVAL_DIR=~/hausbuch-evals
-HAUSBUCH_ANTHROPIC_API_KEY=sk-ant-... uv run hausbuch evals run
+export HAUSBUCH_ANTHROPIC_API_KEY=sk-ant-...   # the hausbuch-evals key
+uv run hausbuch evals run
 uv run hausbuch evals run kaufvertrag            # only some documents
 ```
 
