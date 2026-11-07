@@ -1,0 +1,383 @@
+{
+ "format": 1,
+ "doc": "mietvertrag_zimmer",
+ "synthetic": false,
+ "recorded_on": "2026-11-07",
+ "sdk_version": "2.6.0",
+ "classify": {
+  "prompt_version": "624ea59735496705",
+  "request_sha256": "6fb98ade4c44e96bf70b11c3ce40af1e8b9cf83a28a87afc819bef745894cf2e",
+  "message": {
+   "id": "msg_011Cgp89rCmEzA1zjeEzSzBe",
+   "container": null,
+   "content": [
+    {
+     "citations": null,
+     "text": "{\"type\":\"contract\",\"subtype\":\"lease\",\"contains_tenant_data\":true,\"language\":\"de\",\"confidence\":\"high\"}",
+     "type": "text"
+    }
+   ],
+   "diagnostics": null,
+   "model": "claude-haiku-5-5",
+   "role": "assistant",
+   "stop_details": null,
+   "stop_reason": "end_turn",
+   "stop_sequence": null,
+   "type": "message",
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": "us",
+    "input_tokens": 5379,
+    "output_tokens": 42,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": "standard"
+   }
+  }
+ },
+ "extract": [
+  {
+   "prompt_version": "db37026b509dd7a8",
+   "request_sha256": "635aa1bb65ffb588be9887a4b6bed2d942862cc35e1e0fb3a261b94b484a9e7b",
+   "message": {
+    "id": "msg_011Cgp89ZuixQAyfsgkWWh46",
+    "container": null,
+    "content": [
+     {
+      "citations": null,
+      "text": "title: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Mietvertrag über ein möbliertes Zimmer\r\nVermieter: Luis Testkauf und Ana Testkauf\r\nMieter: Jonas Zimmerbeispiel\r\n§ 1 Vertragsgegenstand\r\nMietobjekt: Kastanienweg 4, 04109 Leipzig\r\nZimmernummer: Zimmer 2\r\nWohnungsnummer (Etage): 2.OG rechts\r\n§ 2 Mietzeit: Das Mietverhältnis beginnt am 01.06.2026\r\nund läuft auf unbestimmte Zeit.",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Mietvertrag über ein möbliertes Zimmer",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": " → Mietvertrag möbliertes Zimmer\ndocument_date: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Leipzig, den 20.05.2026",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "20.05.2026",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nstreet: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Mietvertrag über ein möbliertes Zimmer\r\nVermieter: Luis Testkauf und Ana Testkauf\r\nMieter: Jonas Zimmerbeispiel\r\n§ 1 Vertragsgegenstand\r\nMietobjekt: Kastanienweg 4, 04109 Leipzig\r\nZimmernummer: Zimmer 2\r\nWohnungsnummer (Etage): 2.OG rechts\r\n§ 2 Mietzeit: Das Mietverhältnis beginnt am 01.06.2026\r\nund läuft auf unbestimmte Zeit.",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Kastanienweg",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nhouse_number: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Mietvertrag über ein möbliertes Zimmer\r\nVermieter: Luis Testkauf und Ana Testkauf\r\nMieter: Jonas Zimmerbeispiel\r\n§ 1 Vertragsgegenstand\r\nMietobjekt: Kastanienweg 4, 04109 Leipzig\r\nZimmernummer: Zimmer 2\r\nWohnungsnummer (Etage): 2.OG rechts\r\n§ 2 Mietzeit: Das Mietverhältnis beginnt am 01.06.2026\r\nund läuft auf unbestimmte Zeit.",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "4",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\npostal_code: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Mietvertrag über ein möbliertes Zimmer\r\nVermieter: Luis Testkauf und Ana Testkauf\r\nMieter: Jonas Zimmerbeispiel\r\n§ 1 Vertragsgegenstand\r\nMietobjekt: Kastanienweg 4, 04109 Leipzig\r\nZimmernummer: Zimmer 2\r\nWohnungsnummer (Etage): 2.OG rechts\r\n§ 2 Mietzeit: Das Mietverhältnis beginnt am 01.06.2026\r\nund läuft auf unbestimmte Zeit.",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "04109",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ncity: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Mietvertrag über ein möbliertes Zimmer\r\nVermieter: Luis Testkauf und Ana Testkauf\r\nMieter: Jonas Zimmerbeispiel\r\n§ 1 Vertragsgegenstand\r\nMietobjekt: Kastanienweg 4, 04109 Leipzig\r\nZimmernummer: Zimmer 2\r\nWohnungsnummer (Etage): 2.OG rechts\r\n§ 2 Mietzeit: Das Mietverhältnis beginnt am 01.06.2026\r\nund läuft auf unbestimmte Zeit.",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Leipzig",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nunit_label: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Mietvertrag über ein möbliertes Zimmer\r\nVermieter: Luis Testkauf und Ana Testkauf\r\nMieter: Jonas Zimmerbeispiel\r\n§ 1 Vertragsgegenstand\r\nMietobjekt: Kastanienweg 4, 04109 Leipzig\r\nZimmernummer: Zimmer 2\r\nWohnungsnummer (Etage): 2.OG rechts\r\n§ 2 Mietzeit: Das Mietverhältnis beginnt am 01.06.2026\r\nund läuft auf unbestimmte Zeit.",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Zimmer 2",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ntenant_1_full_name: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Mietvertrag über ein möbliertes Zimmer\r\nVermieter: Luis Testkauf und Ana Testkauf\r\nMieter: Jonas Zimmerbeispiel\r\n§ 1 Vertragsgegenstand\r\nMietobjekt: Kastanienweg 4, 04109 Leipzig\r\nZimmernummer: Zimmer 2\r\nWohnungsnummer (Etage): 2.OG rechts\r\n§ 2 Mietzeit: Das Mietverhältnis beginnt am 01.06.2026\r\nund läuft auf unbestimmte Zeit.",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Jonas Zimmerbeispiel",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ntenant_1_email: unbekannt\ntenant_1_phone: unbekannt\ntenant_1_iban: unbekannt\ntenant_2_full_name: unbekannt\ntenant_2_email: unbekannt\ntenant_2_phone: unbekannt\ntenant_2_iban: unbekannt\nstart_date: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Mietvertrag über ein möbliertes Zimmer\r\nVermieter: Luis Testkauf und Ana Testkauf\r\nMieter: Jonas Zimmerbeispiel\r\n§ 1 Vertragsgegenstand\r\nMietobjekt: Kastanienweg 4, 04109 Leipzig\r\nZimmernummer: Zimmer 2\r\nWohnungsnummer (Etage): 2.OG rechts\r\n§ 2 Mietzeit: Das Mietverhältnis beginnt am 01.06.2026\r\nund läuft auf unbestimmte Zeit.",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "01.06.2026",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nsigned_on: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Leipzig, den 20.05.2026",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "20.05.2026",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nfixed_term_until: unbekannt\nrent_clause: unbekannt\ndeposit_amount: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "§ 3 Miete\r\nNettokaltmiete: 420,00 EUR\r\nBetriebskostenvorauszahlung: 90,00 EUR\r\nHeizkostenvorauszahlung: 40,00 EUR\r\n§ 4 Kaution: 840,00 EUR als Barkaution.\r\n",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "840,00 EUR",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ndeposit_clause: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "§ 3 Miete\r\nNettokaltmiete: 420,00 EUR\r\nBetriebskostenvorauszahlung: 90,00 EUR\r\nHeizkostenvorauszahlung: 40,00 EUR\r\n§ 4 Kaution: 840,00 EUR als Barkaution.\r\n",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "Barkaution",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ncold_rent: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "§ 3 Miete\r\nNettokaltmiete: 420,00 EUR\r\nBetriebskostenvorauszahlung: 90,00 EUR\r\nHeizkostenvorauszahlung: 40,00 EUR\r\n§ 4 Kaution: 840,00 EUR als Barkaution.\r\n",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "420,00 EUR",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\noperating_costs_prepayment: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "§ 3 Miete\r\nNettokaltmiete: 420,00 EUR\r\nBetriebskostenvorauszahlung: 90,00 EUR\r\nHeizkostenvorauszahlung: 40,00 EUR\r\n§ 4 Kaution: 840,00 EUR als Barkaution.\r\n",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "90,00 EUR",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nheating_costs_prepayment: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "§ 3 Miete\r\nNettokaltmiete: 420,00 EUR\r\nBetriebskostenvorauszahlung: 90,00 EUR\r\nHeizkostenvorauszahlung: 40,00 EUR\r\n§ 4 Kaution: 840,00 EUR als Barkaution.\r\n",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "40,00 EUR",
+      "type": "text"
+     }
+    ],
+    "diagnostics": null,
+    "model": "claude-sonnet-5-5",
+    "role": "assistant",
+    "stop_details": null,
+    "stop_reason": "end_turn",
+    "stop_sequence": null,
+    "type": "message",
+    "usage": {
+     "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+     },
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "inference_geo": "us",
+     "input_tokens": 5421,
+     "output_tokens": 641,
+     "output_tokens_details": {
+      "thinking_tokens": 0
+     },
+     "server_tool_use": null,
+     "service_tier": "standard",
+     "speed": "standard"
+    }
+   },
+   "page_offset": 0
+  }
+ ]
+}
