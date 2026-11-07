@@ -409,6 +409,8 @@ def _by_id[T: (TenancyFacts, LoanFacts)](items: Sequence[T], id: object) -> T | 
 
 
 def _hits(matcher: RuleMatcher, tx: MatchTransaction) -> bool:
+    if not matcher.matches_something:  # an erased rule's empty matcher hits nothing
+        return False
     wanted = matcher.counterparty_iban_hmac
     if wanted is not None and tx.counterparty_iban_hmac != wanted:
         return False

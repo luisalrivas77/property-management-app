@@ -15,6 +15,8 @@ export type Passkey = Schemas["Passkey"];
 export type Invite = Schemas["Invite"];
 export type Member = Schemas["Member"];
 export type InviteCreate = Schemas["InviteCreate"];
+export type WorkspaceSettings = Schemas["WorkspaceSettings"];
+export type WorkspaceSettingsPatch = Schemas["WorkspaceSettingsPatch"];
 
 // owners and properties
 export type Owner = Schemas["Owner"];

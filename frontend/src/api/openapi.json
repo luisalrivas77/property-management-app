@@ -3272,7 +3272,7 @@
       },
       "post": {
         "summary": "Document Proposal Rerun",
-        "description": "Read the document again: its queued, running or ready proposal becomes superseded.",
+        "description": "Read the document again: its undecided proposal (blocked included) becomes superseded.",
         "operationId": "document_proposal_rerun_api_documents__document_id__proposals_post",
         "parameters": [
           {
@@ -4174,6 +4174,71 @@
                     "$ref": "#/components/schemas/Event"
                   },
                   "title": "Response Events List Api Events Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspace/settings": {
+      "get": {
+        "summary": "Workspace Settings Get",
+        "operationId": "workspace_settings_get_api_workspace_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceSettings"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Workspace Settings Update",
+        "description": "Only the settings sent change; a patch that changes nothing writes no event.",
+        "operationId": "workspace_settings_update_api_workspace_settings_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceSettingsPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceSettings"
                 }
               }
             }
@@ -11795,6 +11860,41 @@
         ],
         "title": "Workspace",
         "description": "One household. Every other table carries workspace_id and is filtered by RLS."
+      },
+      "WorkspaceSettings": {
+        "properties": {
+          "ai_tenant_documents": {
+            "type": "boolean",
+            "title": "Ai Tenant Documents"
+          },
+          "auto_accept_llm": {
+            "type": "boolean",
+            "title": "Auto Accept Llm"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "ai_tenant_documents",
+          "auto_accept_llm"
+        ],
+        "title": "WorkspaceSettings",
+        "description": "GET /workspace/settings. Both default to false (D16, D26)."
+      },
+      "WorkspaceSettingsPatch": {
+        "properties": {
+          "ai_tenant_documents": {
+            "type": "boolean",
+            "title": "Ai Tenant Documents"
+          },
+          "auto_accept_llm": {
+            "type": "boolean",
+            "title": "Auto Accept Llm"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "WorkspaceSettingsPatch"
       },
       "YearTotals": {
         "properties": {

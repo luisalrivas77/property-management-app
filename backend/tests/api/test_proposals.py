@@ -222,14 +222,15 @@ def test_apply_reject_and_rerun(client_a, client_b, app_engine, sessions, enqueu
     )
     assert blocked["status"] == "blocked_tenant_data"
     assert (rerun["contains_tenant_data"], blocked["contains_tenant_data"]) == (False, True)
-    # A re-run without a body keeps the flag of the latest proposal.
+    # A re-run without a body keeps the flag of the latest proposal; it supersedes the
+    # blocked one (D42 (2)), so the document never has two undecided proposals.
     kept = ok(client_a.post(f"/api/documents/{document_id}/proposals"), 201)
     assert (kept["status"], kept["contains_tenant_data"]) == ("blocked_tenant_data", True)
     statuses = [p["status"] for p in ok(client_a.get(f"/api/documents/{document_id}/proposals"))]
-    assert statuses == ["blocked_tenant_data", "blocked_tenant_data", "superseded", "applied"]
+    assert statuses == ["blocked_tenant_data", "superseded", "superseded", "applied"]
 
     # Blocked before any read, it proposes nothing: there is nothing to decide.
-    nothing = client_a.post(f"/api/proposals/{blocked['id']}/reject")
+    nothing = client_a.post(f"/api/proposals/{kept['id']}/reject")
     assert (nothing.status_code, nothing.json()["code"]) == (422, "proposal.not_ready")
 
 

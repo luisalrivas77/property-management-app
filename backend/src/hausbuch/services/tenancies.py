@@ -33,7 +33,6 @@ from sqlalchemy.exc import IntegrityError
 from hausbuch.db.tables import rent_schedule as rent_table
 from hausbuch.db.tables import tenancy as tenancy_table
 from hausbuch.db.tables import tenancy_tenant as party_table
-from hausbuch.db.tables import tenant as tenant_table
 from hausbuch.db.tables import unit as unit_table
 from hausbuch.rules.rent import rent_at
 from hausbuch.rules.validation import RENT_OUTSIDE_TENANCY, check_rent_row, check_tenancy_parties
@@ -74,11 +73,13 @@ from .events import (
     find_event,
     get_event,
     latest_in_chain,
+    list_events,
     milestone_root,
 )
 from .iban import protect_iban
 from .lookup import require_document, require_row
 from .owners import UNSET, Unset
+from .tenants import require_unerased_tenants
 
 _OVERLAP = "tenancy_no_overlap"
 _SUPERSEDED_ONCE = "rent_schedule_supersedes_id_key"
@@ -499,6 +500,18 @@ def record_deposit_received(
     )
 
 
+def deposit_receipts(conn: Connection, tenancy_id: UUID) -> list[Event]:
+    """The Kaution receipts in force: the tenancy's tenancy.deposit_received events that no
+    later one corrects (the latest of each chain), in recording order."""
+    events = [
+        e
+        for e in list_events(conn, entity_type=EntityType.TENANCY, entity_id=tenancy_id)
+        if e.type is EventType.TENANCY_DEPOSIT_RECEIVED
+    ]
+    corrected = {e.corrects_event_id for e in events if e.corrects_event_id is not None}
+    return [e for e in events if e.id not in corrected]
+
+
 def give_notice(
     ctx: CommandContext,
     tenancy_id: UUID,
@@ -752,19 +765,7 @@ def _require_tenants(conn: Connection, tenant_ids: list[UUID]) -> None:
     """The parties exist and are not erased. FOR KEY SHARE holds them until commit, so a
     concurrent erase_tenant (FOR UPDATE) waits and then sees this tenancy's retention hold;
     if the erasure locked first, this read waits and then sees erased_at."""
-    found = {
-        r.id: r
-        for r in conn.execute(
-            select(tenant_table.c.id, tenant_table.c.erased_at)
-            .where(tenant_table.c.id.in_(tenant_ids))
-            .with_for_update(read=True, key_share=True)
-        )
-    }
-    for tenant_id in tenant_ids:
-        if tenant_id not in found:
-            raise NotFoundError(EntityType.TENANT, tenant_id)
-        if found[tenant_id].erased_at is not None:
-            raise ConflictError(f"tenant {tenant_id} was erased")
+    require_unerased_tenants(conn, tenant_ids)
 
 
 def _lock(conn: Connection, tenancy_id: UUID) -> tuple[Row, dict[str, UUID]]:

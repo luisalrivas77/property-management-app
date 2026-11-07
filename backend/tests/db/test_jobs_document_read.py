@@ -15,7 +15,14 @@ from datetime import UTC, datetime
 
 import pytest
 from pypdf import PdfWriter
-from sqlalchemy import insert, select, update
+from pypdf.generic import (
+    ArrayObject,
+    BooleanObject,
+    DecodedStreamObject,
+    DictionaryObject,
+    NameObject,
+)
+from sqlalchemy import insert, null, select, update
 
 from hausbuch.ai.client import ModelCallError
 from hausbuch.ai.fake import FakeModelClient, cited_response, text_response
@@ -445,6 +452,38 @@ def test_damaged_pdf_fails_as_unreadable(setup, recorder):
     assert kw["error_code"] == "ai.unreadable"
 
 
+def _adobe_only_form() -> bytes:
+    """A synthetic dynamic XFA form (D43): /NeedsRendering true and an AcroForm with /XFA."""
+    writer = PdfWriter()
+    writer.add_blank_page(width=595, height=842)
+    xfa = DecodedStreamObject()
+    xfa.set_data(b"<xdp:xdp xmlns:xdp='http://ns.adobe.com/xdp/'></xdp:xdp>")
+    root = writer.root_object
+    root[NameObject("/NeedsRendering")] = BooleanObject(True)
+    root[NameObject("/AcroForm")] = DictionaryObject(
+        {
+            NameObject("/Fields"): ArrayObject(),
+            NameObject("/XFA"): writer._add_object(xfa),
+        }
+    )
+    writer.add_metadata({"/Title": uuid.uuid4().hex})
+    out = io.BytesIO()
+    writer.write(out)
+    return out.getvalue()
+
+
+def test_an_adobe_only_form_fails_without_a_call_and_is_not_retried(setup, recorder, app_engine):
+    client = FakeModelClient()
+    deps, ws, doc, proposal = setup(_adobe_only_form(), client)
+    _run(deps, ws, doc, proposal, attempt=0)  # no RetryLater: recorded on the first attempt
+    assert client.requests == []
+    assert _calls(app_engine, ws, doc) == []
+    assert recorder.results == []
+    [(_, proposal_id, kw)] = recorder.failures
+    assert proposal_id == proposal
+    assert kw == {"error_code": "document.adobe_form", "ai_call_id": None, "attempts": 1}
+
+
 # --- retries (§5.1) --------------------------------------------------------------------
 
 
@@ -529,6 +568,76 @@ def test_nothing_pending_means_nothing_sent(setup, recorder, app_engine):
     _set_status(app_engine, ws, proposal, "ready")
     _run(deps, ws, doc, proposal)
     assert client.requests == [] and recorder.results == [] and recorder.failures == []
+
+
+def test_a_classifier_blocked_document_is_not_classified_again_on_a_rerun(setup, app_engine):
+    """Gate 3 with the real record_read_result: the classifier's lease result marks the row,
+    so a re-run with the switch still off is blocked at creation and makes no model call."""
+    client = FakeModelClient([text_response(_classify("contract", "lease"))])
+    deps, ws, doc, proposal = setup(_pdf(1), client)
+    _run(deps, ws, doc, proposal)
+    assert len(client.requests) == 1
+
+    with workspace_transaction(app_engine, ws) as conn:
+        ctx = new_command(conn, ws, USER, now=NOW)
+        first = proposals.get_proposal(conn, proposal)
+        again = proposals.rerun_proposal(ctx, doc)
+    assert (first.status.value, first.contains_tenant_data) == ("blocked_tenant_data", True)
+    assert (again.status.value, again.contains_tenant_data) == ("blocked_tenant_data", True)
+
+    # Even a stale job for either proposal finds nothing to read.
+    for proposal_id in (proposal, again.id):
+        _run(deps, ws, doc, proposal_id)
+    assert len(client.requests) == 1
+
+
+# --- a read still in flight when its proposal is erased (D42 (3)) ----------------------
+
+
+class _ErasesDuringTheCall(FakeModelClient):
+    """Supersedes the proposal (and, with `scrub`, scrubs it as erase_tenant does) while
+    the classify call is out, so the call's ai_call row is written afterwards."""
+
+    def __init__(self, engine, ws, proposal, script, *, scrub) -> None:
+        super().__init__(script)
+        self.engine, self.ws, self.proposal, self.scrub = engine, ws, proposal, scrub
+
+    def send(self, request):
+        response = super().send(request)
+        values = {"status": "superseded"}
+        if self.scrub:
+            # null(): a Python None would be stored as JSON null, which the CHECK refuses
+            values |= {"fields": null(), "decisions": null(), "scrubbed_at": NOW}
+        with workspace_transaction(self.engine, self.ws) as conn:
+            conn.execute(
+                update(proposal_table).where(proposal_table.c.id == self.proposal).values(values)
+            )
+        return response
+
+
+@pytest.mark.parametrize("scrub", [False, True], ids=["superseded", "scrubbed"])
+def test_a_call_recorded_after_its_proposal_was_erased_keeps_no_content(
+    setup, recorder, app_engine, scrub
+):
+    deps, ws, doc, proposal = setup(_pdf(1), FakeModelClient())
+    client = _ErasesDuringTheCall(
+        app_engine, ws, proposal, [text_response(_classify("letter"))], scrub=scrub
+    )
+    _run(dataclasses.replace(deps, model_client=client), ws, doc, proposal)
+
+    [call] = _calls(app_engine, ws, doc)
+    assert call.output is None and call.raw_text is None
+    # provenance without content: the model, the request hash and the usage stay
+    assert call.job == "classify" and call.model == "fake-model"
+    assert call.input_sha256 is not None and call.input_tokens == 100
+    assert call.error_code is None
+
+
+def test_a_call_for_a_proposal_still_pending_keeps_its_content(setup, recorder, app_engine):
+    deps, ws, doc, proposal = setup(_pdf(1), FakeModelClient([text_response(_classify("letter"))]))
+    _run(deps, ws, doc, proposal)
+    [call] = _calls(app_engine, ws, doc)
+    assert call.output is not None and call.raw_text is not None
 
 
 # --- nothing secret in the logs --------------------------------------------------------

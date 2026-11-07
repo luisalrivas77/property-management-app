@@ -180,9 +180,14 @@ class ErasureBasis(StrEnum):
 
 
 class TenantErased(Schema):
-    """Records the basis of an erasure, never any of the erased values."""
+    """Records the basis of an erasure, never any of the erased values. The counts are what
+    the erasure scrub cleared (phase-2.md D42 (3)); they default to 0 so events written
+    before the scrub existed still read."""
 
     basis: ErasureBasis
+    proposals_scrubbed: int = Field(default=0, ge=0)
+    ai_calls_scrubbed: int = Field(default=0, ge=0)
+    rules_disabled: int = Field(default=0, ge=0)
 
 
 class TenantUpdated(Schema):

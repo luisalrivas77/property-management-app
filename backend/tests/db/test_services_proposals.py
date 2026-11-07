@@ -17,6 +17,7 @@ from sqlalchemy import insert, select
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import ai_call as ai_call_table
 from hausbuch.db.tables import document_extraction as extraction_table
+from hausbuch.db.tables import proposal as proposal_table
 from hausbuch.jobs import enqueue
 from hausbuch.rules.errors import (
     AI_BLOCKED_TENANT_DATA,
@@ -28,20 +29,24 @@ from hausbuch.schemas.ai import ClassifyOutput, ExtractedValue, SourceRef
 from hausbuch.schemas.enums import (
     AcquisitionCostKind,
     ActorType,
+    DepositForm,
     DocumentSource,
     DocumentSubtype,
     DocumentType,
     LinkTarget,
     PropertyKind,
     ProposalStatus,
+    RentModel,
+    TenancyRole,
 )
 from hausbuch.schemas.events import EventType
-from hausbuch.schemas.property import Address, PropertyCreate
+from hausbuch.schemas.property import Address, PropertyCreate, UnitCreate
 from hausbuch.schemas.proposal import ProposalApplyBody, ProposalApplyRecord
+from hausbuch.schemas.tenancy import TenancyCreate, TenancyParty, TenantCreate
 from hausbuch.services import proposals
 from hausbuch.services.context import Actor, new_command
 from hausbuch.services.documents import get_document, list_links, upload_document
-from hausbuch.services.errors import NotFoundError, RuleViolationError
+from hausbuch.services.errors import ConflictError, NotFoundError, RuleViolationError
 from hausbuch.services.events import list_events
 from hausbuch.services.loans import list_loans
 from hausbuch.services.properties import (
@@ -50,7 +55,10 @@ from hausbuch.services.properties import (
     list_price_splits,
     list_properties,
 )
-from hausbuch.services.units import list_units
+from hausbuch.services.tenancies import create_tenancy, deposit_receipts
+from hausbuch.services.tenants import create_tenant, erase_tenant
+from hausbuch.services.units import create_unit, list_units
+from hausbuch.services.workspace_settings import update_settings
 
 NOW = datetime(2026, 11, 6, 10, 0, tzinfo=UTC)
 JOB = Actor(ActorType.AI, "claude-test-model")
@@ -635,6 +643,168 @@ def test_the_upload_flag_is_stored_and_a_rerun_keeps_it(
     assert flagged.contains_tenant_data is True
 
 
+def test_a_blocked_document_is_read_again_once_the_setting_is_on(
+    run, read, fresh_workspaces, blob_store, enqueued
+):
+    """D42 (2): blocked while ai_tenant_documents was off; after switching it on, a re-run
+    supersedes the blocked proposal (with its event) and queues one read, still flagged."""
+    ws, _ = fresh_workspaces
+    doc = _upload(run, ws, blob_store, b"%PDF blocked then allowed")
+    blocked = run(ws, proposals.request_read, doc.id, contains_tenant_data=True)
+    assert blocked.status is ProposalStatus.BLOCKED_TENANT_DATA and enqueued == []
+
+    run(ws, update_settings, ai_tenant_documents=True)
+    fresh = run(ws, proposals.rerun_proposal, doc.id)
+
+    old = read(ws, proposals.get_proposal, blocked.id)
+    assert old.status is ProposalStatus.SUPERSEDED and old.error_code is None
+    assert _types(read(ws, list_events, entity_id=blocked.id))[-1] == (
+        EventType.PROPOSAL_SUPERSEDED
+    )
+    undecided = [
+        p
+        for p in read(ws, proposals.list_document_proposals, doc.id)
+        if p.status
+        in (
+            ProposalStatus.QUEUED,
+            ProposalStatus.RUNNING,
+            ProposalStatus.READY,
+            ProposalStatus.BLOCKED_TENANT_DATA,
+        )
+    ]
+    assert [p.id for p in undecided] == [fresh.id]
+    assert fresh.status is ProposalStatus.QUEUED and fresh.error_code is None
+    assert fresh.contains_tenant_data is True
+    assert [c["proposal_id"] for c in enqueued] == [fresh.id]
+
+
+def test_a_rerun_with_the_setting_still_off_blocks_again_without_a_second_blocked_item(
+    run, read, fresh_workspaces, blob_store, enqueued
+):
+    ws, _ = fresh_workspaces
+    doc = _upload(run, ws, blob_store, b"%PDF blocked twice")
+    first = run(ws, proposals.request_read, doc.id, contains_tenant_data=True)
+    again = run(ws, proposals.rerun_proposal, doc.id)
+
+    assert again.status is ProposalStatus.BLOCKED_TENANT_DATA
+    assert read(ws, proposals.get_proposal, first.id).status is ProposalStatus.SUPERSEDED
+    blocked = [
+        p
+        for p in read(ws, proposals.list_document_proposals, doc.id)
+        if p.status is ProposalStatus.BLOCKED_TENANT_DATA
+    ]
+    assert [p.id for p in blocked] == [again.id]
+    assert enqueued == []
+
+
+_UNDECIDED = (
+    ProposalStatus.QUEUED,
+    ProposalStatus.RUNNING,
+    ProposalStatus.READY,
+    ProposalStatus.BLOCKED_TENANT_DATA,
+)
+
+
+def _undecided(read, ws, document_id):
+    found = read(ws, proposals.list_document_proposals, document_id)
+    return [p for p in found if p.status in _UNDECIDED]
+
+
+@pytest.mark.parametrize("switch_on", [False, True], ids=["switch-off", "switch-on"])
+def test_a_reupload_of_a_blocked_document_leaves_one_undecided_proposal(
+    run, read, fresh_workspaces, blob_store, enqueued, switch_on
+):
+    """Off: the blocked proposal is the answer, as is (a re-run would only block again).
+    On: it is superseded with its event and a read is queued, the tenant flag kept."""
+    ws, _ = fresh_workspaces
+    doc = _upload(run, ws, blob_store, b"%PDF blocked re-upload")
+    blocked = run(
+        ws, proposals.proposal_for_upload, doc.id, created=True, contains_tenant_data=True
+    )
+    assert blocked.status is ProposalStatus.BLOCKED_TENANT_DATA
+    if switch_on:
+        run(ws, update_settings, ai_tenant_documents=True)
+
+    again = run(
+        ws, proposals.proposal_for_upload, doc.id, created=False, contains_tenant_data=False
+    )
+
+    assert [p.id for p in _undecided(read, ws, doc.id)] == [again.id]
+    if not switch_on:
+        assert again.id == blocked.id and again.status is ProposalStatus.BLOCKED_TENANT_DATA
+        assert enqueued == []
+        return
+    assert again.id != blocked.id
+    assert again.status is ProposalStatus.QUEUED and again.contains_tenant_data is True
+    assert [c["proposal_id"] for c in enqueued] == [again.id]
+    old = read(ws, proposals.get_proposal, blocked.id)
+    assert old.status is ProposalStatus.SUPERSEDED and old.error_code is None
+    assert _types(read(ws, list_events, entity_id=blocked.id))[-1] == (
+        EventType.PROPOSAL_SUPERSEDED
+    )
+
+
+@pytest.mark.parametrize("switch_on", [False, True], ids=["switch-off", "switch-on"])
+def test_a_classifier_tenant_result_marks_the_proposal_like_the_uploader(
+    run, read, job, fresh_workspaces, blob_store, enqueued, switch_on
+):
+    """§5.5 step 3: the classifier's tenant result sets contains_tenant_data on the row
+    (blocked with the switch off, read with it on), so the mark is sticky."""
+    ws, _ = fresh_workspaces
+    if switch_on:
+        run(ws, update_settings, ai_tenant_documents=True)
+    doc = _upload(run, ws, blob_store, b"%PDF classifier lease")
+    proposal = run(ws, proposals.request_read, doc.id)
+    assert proposal.contains_tenant_data is False
+    classify_id = run(ws, _ai_call, doc.id, "classify")
+    lease = PURCHASE.model_copy(update={"subtype": DocumentSubtype.LEASE})
+    stored = job(
+        ws,
+        proposals.record_read_result,
+        proposal.id,
+        classification=lease,
+        classify_call_id=classify_id,
+        values=None,
+        extract_call_id=None,
+        blocked_tenant_data=not switch_on,
+    )
+    assert stored.contains_tenant_data is True
+    expected = ProposalStatus.READY if switch_on else ProposalStatus.BLOCKED_TENANT_DATA
+    assert stored.status is expected
+
+
+def test_a_classifier_blocked_document_is_blocked_at_creation_on_a_rerun(
+    run, read, job, fresh_workspaces, blob_store, enqueued
+):
+    """Classifier-blocked, switch still off: a re-run is blocked by request_read, so no job
+    is enqueued and no classify call is made; the blocked proposal is superseded."""
+    ws, _ = fresh_workspaces
+    doc = _upload(run, ws, blob_store, b"%PDF classifier blocked rerun")
+    proposal = run(ws, proposals.request_read, doc.id)
+    assert [c["proposal_id"] for c in enqueued] == [proposal.id]
+    classify_id = run(ws, _ai_call, doc.id, "classify")
+    tenant_letter = PURCHASE.model_copy(
+        update={"type": DocumentType.LETTER, "subtype": None, "contains_tenant_data": True}
+    )
+    job(
+        ws,
+        proposals.record_read_result,
+        proposal.id,
+        classification=tenant_letter,
+        classify_call_id=classify_id,
+        values=None,
+        extract_call_id=None,
+        blocked_tenant_data=True,
+    )
+
+    again = run(ws, proposals.rerun_proposal, doc.id)
+
+    assert again.status is ProposalStatus.BLOCKED_TENANT_DATA
+    assert again.contains_tenant_data is True
+    assert [c["proposal_id"] for c in enqueued] == [proposal.id]  # nothing new enqueued
+    assert [p.id for p in _undecided(read, ws, doc.id)] == [again.id]
+
+
 def test_a_reupload_that_says_tenant_data_rereads_the_pending_proposal_with_the_flag(
     run, read, fresh_workspaces, blob_store, enqueued
 ):
@@ -678,8 +848,9 @@ def test_a_reupload_without_the_flag_after_a_block_stays_blocked(
     run, read, fresh_workspaces, blob_store, enqueued
 ):
     """Once said, a document stays a tenant document (D16): the same bytes uploaded again
-    without the flag after the first proposal was blocked get a new proposal that carries
-    the flag from the earlier one, is blocked again, and enqueues nothing."""
+    without the flag after the first proposal was blocked, with the setting still off, get
+    the blocked proposal back (never two undecided ones, D42), still flagged, and nothing is
+    enqueued. (Until step 2 this created a second blocked proposal.)"""
     ws, _ = fresh_workspaces
     doc = _upload(run, ws, blob_store, b"%PDF sticky flag")
     first = run(ws, proposals.proposal_for_upload, doc.id, created=True, contains_tenant_data=True)
@@ -687,8 +858,130 @@ def test_a_reupload_without_the_flag_after_a_block_stays_blocked(
     again = run(
         ws, proposals.proposal_for_upload, doc.id, created=False, contains_tenant_data=False
     )
-    assert again.id != first.id
+    assert again.id == first.id
     assert again.status is ProposalStatus.BLOCKED_TENANT_DATA
     assert again.contains_tenant_data is True
     assert read(ws, proposals.get_proposal, again.id).contains_tenant_data is True
     assert enqueued == []
+
+
+# --- Kautionsnachweis (D42 part 2) -----------------------------------------------------------
+
+DEPOSIT = ClassifyOutput(
+    type=DocumentType.LETTER,
+    subtype=DocumentSubtype.DEPOSIT_RECORD,
+    contains_tenant_data=True,
+    language="de",
+    confidence="high",
+)
+DEPOSIT_VALUES = {
+    "title": _v("Kautionsnachweis"),
+    "document_date": _v("2026-07-03"),
+    "amount": _v("3450.00"),
+    "received_on": _v("2026-07-02"),
+}
+
+
+def _let_flat(run, dbname, ws):
+    """The flat let since 1 Jul 2026 with an agreed Kaution of 3,450 €, and tenant documents
+    allowed for the workspace (the gate would block a Kautionsnachweis otherwise)."""
+    with _admin(dbname) as conn:
+        conn.execute("UPDATE workspace SET ai_tenant_documents = true WHERE id = %s", (ws,))
+    prop = run(ws, create_property, FLAT)
+    unit = run(
+        ws,
+        create_unit,
+        UnitCreate(property_id=prop.id, label="WE 3", floor_area_m2=Decimal("68.40")),
+    )
+    tenant = run(ws, create_tenant, TenantCreate(full_name="Lena Beispiel"), iban_key=TEST_IBAN_KEY)
+    lease = TenancyCreate(
+        unit_id=unit.id,
+        parties=[TenancyParty(tenant_id=tenant.id, role=TenancyRole.PRIMARY)],
+        start_date=date(2026, 7, 1),
+        rent_model=RentModel.FIXED,
+        deposit_amount=Decimal("3450.00"),
+        deposit_form=DepositForm.CASH_ACCOUNT,
+    )
+    return run(ws, create_tenancy, lease, initial_rent=None, iban_key=TEST_IBAN_KEY)
+
+
+def test_a_deposit_record_applies_as_a_kaution_receipt_on_its_tenancy(
+    run, read, job, dbname, fresh_workspaces, blob_store, enqueued
+):
+    ws, _ = fresh_workspaces
+    tenancy = _let_flat(run, dbname, ws)
+    doc, ready, _ = _read_ready(
+        run, job, ws, blob_store, enqueued, DEPOSIT, DEPOSIT_VALUES, b"%PDF kaution"
+    )
+    assert ready.status is ProposalStatus.READY
+    records = {r.key: r for r in ready.records}
+    assert set(records) == {"typing", "deposit_received", "link:tenancy"}
+    assert records["deposit_received"].mode == "create"
+    assert records["deposit_received"].fields["tenancy_id"].value == str(tenancy.id)
+
+    result = run(ws, proposals.apply_proposal, ready.id, _accept_all(ready), iban_key=TEST_IBAN_KEY)
+
+    applied = {a.key: a for a in result.applied}
+    assert applied["deposit_received"].entity_id == tenancy.id
+    [receipt] = read(ws, deposit_receipts, tenancy.id)
+    assert receipt.type is EventType.TENANCY_DEPOSIT_RECEIVED
+    assert receipt.payload == {"amount": "3450.00"}
+    assert receipt.effective_date == date(2026, 7, 2)
+    assert (LinkTarget.TENANCY, tenancy.id) in [
+        (lk.target_type, lk.target_id) for lk in read(ws, list_links, doc.id)
+    ]
+
+    # The same payment read from a second copy is already recorded: unchanged, and applying
+    # it adds nothing, even when the record is sent instead of skipped (as the screen does).
+    _, again, _ = _read_ready(
+        run, job, ws, blob_store, enqueued, DEPOSIT, DEPOSIT_VALUES, b"%PDF kaution copy"
+    )
+    second = {r.key: r for r in again.records}["deposit_received"]
+    assert (second.mode, second.target_id) == ("unchanged", tenancy.id)
+    run(ws, proposals.apply_proposal, again.id, _accept_all(again), iban_key=TEST_IBAN_KEY)
+    assert len(read(ws, deposit_receipts, tenancy.id)) == 1
+
+
+# --- An apply that names an erased tenant (D42 (3), review F1) ------------------------------
+
+
+@pytest.mark.parametrize("mode", ["unchanged", "patch"], ids=["unchanged", "empty-patch"])
+def test_an_apply_keeping_an_erased_tenant_conflicts(
+    run, read, fresh_workspaces, blob_store, enqueued, mode
+):
+    """A tenant record kept as it is (unchanged, or a patch with no field sent) still locks
+    and checks the tenant row: after erase_tenant the apply is a ConflictError and the
+    proposal stays ready, so no applied proposal can name the tenant outside the scrub."""
+    ws, _ = fresh_workspaces
+    tenant = run(
+        ws, create_tenant, TenantCreate(full_name="Bewerberin Beispiel"), iban_key=TEST_IBAN_KEY
+    )
+    doc = _upload(run, ws, blob_store, b"%PDF tenant letter " + mode.encode())
+    fields = {"full_name": _v("Bewerberin Beispiel")} if mode == "patch" else {}
+    record = {
+        "key": "tenant:1",
+        "entity_type": "tenant",
+        "mode": mode,
+        "target_id": str(tenant.id),
+        "fields": {k: v.model_dump(mode="json") for k, v in fields.items()},
+    }
+
+    def ready_proposal(ctx):
+        return ctx.conn.execute(
+            insert(proposal_table)
+            .values(
+                workspace_id=ctx.workspace_id,
+                document_id=doc.id,
+                status="ready",
+                fields=[record],
+            )
+            .returning(proposal_table.c.id)
+        ).scalar_one()
+
+    proposal_id = run(ws, ready_proposal)
+    run(ws, erase_tenant, tenant.id)  # an applicant: no tenancy, no retention hold
+
+    body = ProposalApplyBody(records=[ProposalApplyRecord(key="tenant:1", values={})])
+    with pytest.raises(ConflictError):
+        run(ws, proposals.apply_proposal, proposal_id, body, iban_key=TEST_IBAN_KEY)
+    assert read(ws, proposals.get_proposal, proposal_id).status is ProposalStatus.READY

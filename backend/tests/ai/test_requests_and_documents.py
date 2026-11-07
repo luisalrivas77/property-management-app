@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from pypdf import PdfReader, PdfWriter
+from pypdf.generic import ArrayObject, DecodedStreamObject, DictionaryObject, NameObject
 
 from hausbuch.ai import documents
 from hausbuch.ai.requests import (
@@ -48,16 +49,20 @@ def _pdf(pages: int) -> bytes:
     return out.getvalue()
 
 
-def _text_pdf(text: str = "Rechnung Nr. 42") -> bytes:
-    """A one-page PDF with a text layer (Helvetica), as a digital invoice has."""
+def _text_pdf(
+    text: str = "Rechnung Nr. 42", catalog: bytes = b"", extra: tuple[bytes, ...] = ()
+) -> bytes:
+    """A one-page PDF with a text layer (Helvetica), as a digital invoice has. `catalog` adds
+    entries to the catalog; `extra` adds objects numbered from 6."""
     stream = f"BT /F1 12 Tf 72 720 Td ({text}) Tj ET".encode()
     objects = [
-        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Catalog /Pages 2 0 R" + catalog + b" >>",
         b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
         b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R"
         b" /Resources << /Font << /F1 5 0 R >> >> >>",
         b"<< /Length %d >>stream\n" % len(stream) + stream + b"\nendstream",
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        *extra,
     ]
     out = bytearray(b"%PDF-1.4\n")
     offsets = []
@@ -193,6 +198,77 @@ def test_a_pdf_without_a_text_layer_is_sent_without_citations():
     block = documents.document_block(_pdf(2), documents.PDF, citations=True)
     assert block["type"] == "document" and "citations" not in block
     assert not documents.has_text_layer(b"not a pdf")
+
+
+# --- D43: Adobe-only (dynamic XFA) forms, synthetic PDFs only --------------------------
+
+_XFA = b"<xdp:xdp xmlns:xdp='http://ns.adobe.com/xdp/'></xdp:xdp>"
+_XFA_STREAM = b"<< /Length %d >>stream\n" % len(_XFA) + _XFA + b"\nendstream"
+_ACROFORM = b" /AcroForm << /Fields [] /XFA 6 0 R >>"
+_PLACEHOLDER = (
+    "Please wait... If this message is not eventually replaced by the proper contents of the "
+    "document, your PDF viewer may not be able to display this type of document."
+)
+
+
+def test_a_dynamic_xfa_form_is_adobe_only():
+    data = _text_pdf(_PLACEHOLDER, _ACROFORM + b" /NeedsRendering true", (_XFA_STREAM,))
+    assert documents.is_adobe_only_form(data)
+    # NeedsRendering alone decides, whatever the page says
+    assert documents.is_adobe_only_form(_text_pdf("Darlehensvertrag", b" /NeedsRendering true"))
+
+
+@pytest.mark.parametrize("placeholder", ["Please wait ...", "is not eventually replaced by"])
+def test_an_xfa_form_showing_only_the_placeholder_is_adobe_only(placeholder):
+    """Without /NeedsRendering: the AcroForm carries /XFA and the page is the placeholder."""
+    assert documents.is_adobe_only_form(_text_pdf(placeholder, _ACROFORM, (_XFA_STREAM,)))
+
+
+def test_a_static_xfa_form_with_a_real_pdf_layer_is_read_as_usual():
+    data = _text_pdf("Darlehensvertrag Nr. 4711", _ACROFORM, (_XFA_STREAM,))
+    assert not documents.is_adobe_only_form(data)
+    # the placeholder sentence without an XFA form is just text
+    assert not documents.is_adobe_only_form(_text_pdf(_PLACEHOLDER))
+    # NeedsRendering false is not a yes on its own; placeholder + XFA still is
+    assert not documents.is_adobe_only_form(_text_pdf("Text", b" /NeedsRendering false"))
+    assert documents.is_adobe_only_form(
+        _text_pdf(_PLACEHOLDER, _ACROFORM + b" /NeedsRendering false", (_XFA_STREAM,))
+    )
+
+
+def _two_page_form(first: str, second: str) -> bytes:
+    """A two-page static XFA form (AcroForm with /XFA) with a real text layer on each page."""
+    one = PdfReader(io.BytesIO(_text_pdf(first)))
+    two = PdfReader(io.BytesIO(_text_pdf(second)))
+    writer = PdfWriter()
+    writer.add_page(one.pages[0])
+    writer.add_page(two.pages[0])
+    xfa = DecodedStreamObject()
+    xfa.set_data(_XFA)
+    writer.root_object[NameObject("/AcroForm")] = DictionaryObject(
+        {NameObject("/Fields"): ArrayObject(), NameObject("/XFA"): writer._add_object(xfa)}
+    )
+    out = io.BytesIO()
+    writer.write(out)
+    return out.getvalue()
+
+
+def test_a_multi_page_static_xfa_form_saying_please_wait_is_read_as_usual():
+    """Review F2: real content that says "please wait" is not Adobe's one-page placeholder."""
+    data = _two_page_form("Darlehensvertrag", "Please wait for the bank's confirmation.")
+    assert len(PdfReader(io.BytesIO(data)).pages) == 2
+    assert "/XFA" in PdfReader(io.BytesIO(data)).root_object["/AcroForm"]
+    assert not documents.is_adobe_only_form(data)
+    # the one-page placeholder with XFA stays a yes
+    assert documents.is_adobe_only_form(_text_pdf(_PLACEHOLDER, _ACROFORM, (_XFA_STREAM,)))
+
+
+def test_plain_damaged_and_non_pdf_data_is_not_an_adobe_form():
+    assert not documents.is_adobe_only_form(_pdf(2))
+    assert not documents.is_adobe_only_form(_text_pdf())
+    assert not documents.is_adobe_only_form(b"%PDF-1.7 garbage")
+    assert not documents.is_adobe_only_form(b"\x89PNG\r\n\x1a\n")
+    assert not documents.is_adobe_only_form(b"")
 
 
 def test_image_block_has_no_citations():

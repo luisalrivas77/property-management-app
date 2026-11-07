@@ -166,22 +166,27 @@ class Allocation(Record):
 # --- Learned rules (D25) -------------------------------------------------------------
 
 
+_MATCHES_NOTHING = "a rule matches on an IBAN hash, a name pattern or a purpose pattern"
+
+
 class RuleMatcher(Schema):
     """What a rule matches on. No money field, by design: a rule never stores an amount.
     Patterns are case-insensitive regular expressions searched in the normalized text."""
+
+    # A new or enabled rule must match on something (MatchingRuleCreate, MatchingRule); only
+    # a disabled rule may hold an empty matcher, the one a tenant erasure leaves (phase-2.md
+    # D42 (3), migration 0008).
 
     counterparty_iban_hmac: HmacHex | None = Field(default=None, pattern=HMAC_PATTERN)
     counterparty_name_pattern: str | None = None
     purpose_pattern: str | None = None
     amount_sign: Literal["credit", "debit"] | None = None
 
-    @model_validator(mode="after")
-    def _matches_something(self) -> Self:
-        if not (
+    @property
+    def matches_something(self) -> bool:
+        return bool(
             self.counterparty_iban_hmac or self.counterparty_name_pattern or self.purpose_pattern
-        ):
-            raise ValueError("a rule matches on an IBAN hash, a name pattern or a purpose pattern")
-        return self
+        )
 
 
 class MatchingRuleCreate(Schema):
@@ -195,6 +200,12 @@ class MatchingRuleCreate(Schema):
     # schedule-based split methods set recurring themselves).
     recurring: bool = False
     created_from_allocation_id: UUID | None = None
+
+    @model_validator(mode="after")
+    def _matcher(self) -> Self:
+        if not self.matcher.matches_something:
+            raise ValueError(_MATCHES_NOTHING)
+        return self
 
     @model_validator(mode="after")
     def _scope(self) -> Self:
@@ -213,6 +224,12 @@ class MatchingRuleCreate(Schema):
 class MatchingRule(MatchingRuleCreate, MutableRecord):
     enabled: bool = True
     hit_count: int = Field(default=0, ge=0)
+
+    @model_validator(mode="after")
+    def _matcher(self) -> Self:  # replaces MatchingRuleCreate's: erased rules are empty
+        if self.enabled and not self.matcher.matches_something:
+            raise ValueError(_MATCHES_NOTHING)
+        return self
 
 
 # --- The categorize job's structured output (§5.3) ------------------------------------

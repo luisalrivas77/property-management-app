@@ -102,6 +102,7 @@ def test_every_router_is_included_under_api(engine, tmp_path, monkeypatch):
         "statements",
         "allocations",
         "history",
+        "workspace",
         "auth",
     ]
     for module in ROUTE_MODULES:
