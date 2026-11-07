@@ -22,6 +22,9 @@ TAX_TREATMENT = MappingProxyType(
         C.LOAN_INTEREST: T.DEDUCTIBLE,
         C.LOAN_PRINCIPAL: T.NOT_DEDUCTIBLE,
         C.LOAN_FEES: T.DEDUCTIBLE,  # Geldbeschaffungskosten (D35)
+        # The loan's payout into the account: borrowed money, neither income nor a cost; the
+        # principal is on the loan record.
+        C.LOAN_DISBURSEMENT: T.PASS_THROUGH,
         C.HAUSGELD_UMLAGEFAEHIG: T.DEDUCTIBLE,
         C.HAUSGELD_VERWALTUNG: T.DEDUCTIBLE,
         C.HAUSGELD_RUECKLAGE: T.UNDECIDED,  # until phase 3 reads the Hausgeldabrechnung
@@ -29,6 +32,11 @@ TAX_TREATMENT = MappingProxyType(
         C.INSURANCE: T.DEDUCTIBLE,
         C.REPAIRS: T.DEDUCTIBLE,  # Erhaltungsaufwand
         C.RENOVATION: T.UNDECIDED,  # the 15 % rule, phase 3
+        # The price paid to the seller (or a notary escrow account). It enters the AfA basis
+        # through the property record (purchase price and price split), never as a cost of
+        # the year paid: the allocation records that and when it was paid, and phase 3 must
+        # not sum it into the basis a second time.
+        C.PURCHASE_PRICE: T.CAPITALIZED,
         C.ACQUISITION_COST: T.CAPITALIZED,
         C.PROFESSIONAL_FEES: T.DEDUCTIBLE,
         C.BANK_FEES: T.DEDUCTIBLE,

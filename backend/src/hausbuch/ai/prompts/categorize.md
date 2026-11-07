@@ -25,6 +25,7 @@ quarterly, yearly), false for a one-off payment.
 - `loan_interest`: the interest part of a loan payment
 - `loan_principal`: the repayment part (Tilgung) of a loan payment
 - `loan_fees`: a cost of the financing: a notary or Grundbuchamt bill for a Grundschuld, a loan fee
+- `loan_disbursement`: the payout of a loan (Darlehensauszahlung) from the lender into this account
 - `hausgeld_umlagefaehig`: the part of the WEG Hausgeld for operating costs that can be passed on to the tenant
 - `hausgeld_verwaltung`: the part of the WEG Hausgeld for administration (Verwaltervergütung)
 - `hausgeld_ruecklage`: the part of the WEG Hausgeld paid into the reserve (Erhaltungsrücklage)
@@ -32,10 +33,11 @@ quarterly, yearly), false for a one-off payment.
 - `insurance`: an insurance premium for the property
 - `repairs`: a repair or maintenance of the property (Erhaltungsaufwand)
 - `renovation`: a larger renovation or modernization
+- `purchase_price`: payment of the purchase price (Kaufpreis) for the property to the seller or to a notary escrow account (Notaranderkonto)
 - `acquisition_cost`: a cost of buying the property (notary, Grundbuchamt, Grunderwerbsteuer, broker)
 - `professional_fees`: a fee for a professional service (tax software, lawyer, accountant)
 - `bank_fees`: an account fee or other charge of the bank
-- `other_income`: any other money received for the property
+- `other_income`: any other money received for the property; never a loan payout, which is `loan_disbursement`
 - `other_expense`: any other money paid for the property
 - `uncategorized`: you cannot tell what the line is for
 

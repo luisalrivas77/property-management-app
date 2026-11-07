@@ -17,6 +17,7 @@ categories:
   - {category: loan_interest, treatment: deductible}
   - {category: loan_principal, treatment: not_deductible}
   - {category: loan_fees, treatment: deductible}
+  - {category: loan_disbursement, treatment: pass_through}      # the loan's payout: borrowed money, neither income nor a cost
   - {category: hausgeld_umlagefaehig, treatment: deductible}
   - {category: hausgeld_verwaltung, treatment: deductible}
   - {category: hausgeld_ruecklage, treatment: undecided}         # until phase 3 reads the Hausgeldabrechnung
@@ -24,6 +25,7 @@ categories:
   - {category: insurance, treatment: deductible}
   - {category: repairs, treatment: deductible}                   # Erhaltungsaufwand
   - {category: renovation, treatment: undecided}                 # 15 % rule, phase 3
+  - {category: purchase_price, treatment: capitalized}          # enters the AfA basis via the property record, never a cost of the year paid
   - {category: acquisition_cost, treatment: capitalized}
   - {category: professional_fees, treatment: deductible}
   - {category: bank_fees, treatment: deductible}

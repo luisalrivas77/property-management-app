@@ -40,6 +40,7 @@ class AllocationCategory(StrEnum):
     LOAN_INTEREST = "loan_interest"  # deductible
     LOAN_PRINCIPAL = "loan_principal"  # not_deductible
     LOAN_FEES = "loan_fees"  # deductible (Geldbeschaffungskosten)
+    LOAN_DISBURSEMENT = "loan_disbursement"  # pass_through (the loan's payout, borrowed money)
     HAUSGELD_UMLAGEFAEHIG = "hausgeld_umlagefaehig"  # deductible
     HAUSGELD_VERWALTUNG = "hausgeld_verwaltung"  # deductible
     HAUSGELD_RUECKLAGE = "hausgeld_ruecklage"  # undecided until phase 3
@@ -47,6 +48,7 @@ class AllocationCategory(StrEnum):
     INSURANCE = "insurance"  # deductible
     REPAIRS = "repairs"  # deductible (Erhaltungsaufwand)
     RENOVATION = "renovation"  # undecided (15 % rule, phase 3)
+    PURCHASE_PRICE = "purchase_price"  # capitalized (via the property record, not summed)
     ACQUISITION_COST = "acquisition_cost"  # capitalized
     PROFESSIONAL_FEES = "professional_fees"  # deductible
     BANK_FEES = "bank_fees"  # deductible
