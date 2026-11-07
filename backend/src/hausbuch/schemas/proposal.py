@@ -77,7 +77,7 @@ class Proposal(MutableRecord):
     status: ProposalStatus
     error_code: str | None
     target_mode: ProposalTargetMode
-    contains_tenant_data: bool = False  # D16 gate 2, set at upload, copied on re-run
+    contains_tenant_data: bool = False  # D16: set at upload or by the classifier; sticky
     records: list[ProposalRecord] = Field(default_factory=list)
     extraction_id: UUID | None
     ai_call_id: UUID | None

@@ -696,6 +696,114 @@ def test_a_rerun_with_the_setting_still_off_blocks_again_without_a_second_blocke
     assert enqueued == []
 
 
+_UNDECIDED = (
+    ProposalStatus.QUEUED,
+    ProposalStatus.RUNNING,
+    ProposalStatus.READY,
+    ProposalStatus.BLOCKED_TENANT_DATA,
+)
+
+
+def _undecided(read, ws, document_id):
+    found = read(ws, proposals.list_document_proposals, document_id)
+    return [p for p in found if p.status in _UNDECIDED]
+
+
+@pytest.mark.parametrize("switch_on", [False, True], ids=["switch-off", "switch-on"])
+def test_a_reupload_of_a_blocked_document_leaves_one_undecided_proposal(
+    run, read, fresh_workspaces, blob_store, enqueued, switch_on
+):
+    """Off: the blocked proposal is the answer, as is (a re-run would only block again).
+    On: it is superseded with its event and a read is queued, the tenant flag kept."""
+    ws, _ = fresh_workspaces
+    doc = _upload(run, ws, blob_store, b"%PDF blocked re-upload")
+    blocked = run(
+        ws, proposals.proposal_for_upload, doc.id, created=True, contains_tenant_data=True
+    )
+    assert blocked.status is ProposalStatus.BLOCKED_TENANT_DATA
+    if switch_on:
+        run(ws, update_settings, ai_tenant_documents=True)
+
+    again = run(
+        ws, proposals.proposal_for_upload, doc.id, created=False, contains_tenant_data=False
+    )
+
+    assert [p.id for p in _undecided(read, ws, doc.id)] == [again.id]
+    if not switch_on:
+        assert again.id == blocked.id and again.status is ProposalStatus.BLOCKED_TENANT_DATA
+        assert enqueued == []
+        return
+    assert again.id != blocked.id
+    assert again.status is ProposalStatus.QUEUED and again.contains_tenant_data is True
+    assert [c["proposal_id"] for c in enqueued] == [again.id]
+    old = read(ws, proposals.get_proposal, blocked.id)
+    assert old.status is ProposalStatus.SUPERSEDED and old.error_code is None
+    assert _types(read(ws, list_events, entity_id=blocked.id))[-1] == (
+        EventType.PROPOSAL_SUPERSEDED
+    )
+
+
+@pytest.mark.parametrize("switch_on", [False, True], ids=["switch-off", "switch-on"])
+def test_a_classifier_tenant_result_marks_the_proposal_like_the_uploader(
+    run, read, job, fresh_workspaces, blob_store, enqueued, switch_on
+):
+    """§5.5 step 3: the classifier's tenant result sets contains_tenant_data on the row
+    (blocked with the switch off, read with it on), so the mark is sticky."""
+    ws, _ = fresh_workspaces
+    if switch_on:
+        run(ws, update_settings, ai_tenant_documents=True)
+    doc = _upload(run, ws, blob_store, b"%PDF classifier lease")
+    proposal = run(ws, proposals.request_read, doc.id)
+    assert proposal.contains_tenant_data is False
+    classify_id = run(ws, _ai_call, doc.id, "classify")
+    lease = PURCHASE.model_copy(update={"subtype": DocumentSubtype.LEASE})
+    stored = job(
+        ws,
+        proposals.record_read_result,
+        proposal.id,
+        classification=lease,
+        classify_call_id=classify_id,
+        values=None,
+        extract_call_id=None,
+        blocked_tenant_data=not switch_on,
+    )
+    assert stored.contains_tenant_data is True
+    expected = ProposalStatus.READY if switch_on else ProposalStatus.BLOCKED_TENANT_DATA
+    assert stored.status is expected
+
+
+def test_a_classifier_blocked_document_is_blocked_at_creation_on_a_rerun(
+    run, read, job, fresh_workspaces, blob_store, enqueued
+):
+    """Classifier-blocked, switch still off: a re-run is blocked by request_read, so no job
+    is enqueued and no classify call is made; the blocked proposal is superseded."""
+    ws, _ = fresh_workspaces
+    doc = _upload(run, ws, blob_store, b"%PDF classifier blocked rerun")
+    proposal = run(ws, proposals.request_read, doc.id)
+    assert [c["proposal_id"] for c in enqueued] == [proposal.id]
+    classify_id = run(ws, _ai_call, doc.id, "classify")
+    tenant_letter = PURCHASE.model_copy(
+        update={"type": DocumentType.LETTER, "subtype": None, "contains_tenant_data": True}
+    )
+    job(
+        ws,
+        proposals.record_read_result,
+        proposal.id,
+        classification=tenant_letter,
+        classify_call_id=classify_id,
+        values=None,
+        extract_call_id=None,
+        blocked_tenant_data=True,
+    )
+
+    again = run(ws, proposals.rerun_proposal, doc.id)
+
+    assert again.status is ProposalStatus.BLOCKED_TENANT_DATA
+    assert again.contains_tenant_data is True
+    assert [c["proposal_id"] for c in enqueued] == [proposal.id]  # nothing new enqueued
+    assert [p.id for p in _undecided(read, ws, doc.id)] == [again.id]
+
+
 def test_a_reupload_that_says_tenant_data_rereads_the_pending_proposal_with_the_flag(
     run, read, fresh_workspaces, blob_store, enqueued
 ):

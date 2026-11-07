@@ -124,7 +124,7 @@ class _Original:
     media_type: str
     data: bytes
     tenant_documents_allowed: bool
-    contains_tenant_data: bool  # gate 2: the uploader's flag, from the proposal row only
+    contains_tenant_data: bool  # gate 2: the row's flag (uploader or an earlier classify)
 
 
 def run_document_read(

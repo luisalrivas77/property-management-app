@@ -570,6 +570,27 @@ def test_nothing_pending_means_nothing_sent(setup, recorder, app_engine):
     assert client.requests == [] and recorder.results == [] and recorder.failures == []
 
 
+def test_a_classifier_blocked_document_is_not_classified_again_on_a_rerun(setup, app_engine):
+    """Gate 3 with the real record_read_result: the classifier's lease result marks the row,
+    so a re-run with the switch still off is blocked at creation and makes no model call."""
+    client = FakeModelClient([text_response(_classify("contract", "lease"))])
+    deps, ws, doc, proposal = setup(_pdf(1), client)
+    _run(deps, ws, doc, proposal)
+    assert len(client.requests) == 1
+
+    with workspace_transaction(app_engine, ws) as conn:
+        ctx = new_command(conn, ws, USER, now=NOW)
+        first = proposals.get_proposal(conn, proposal)
+        again = proposals.rerun_proposal(ctx, doc)
+    assert (first.status.value, first.contains_tenant_data) == ("blocked_tenant_data", True)
+    assert (again.status.value, again.contains_tenant_data) == ("blocked_tenant_data", True)
+
+    # Even a stale job for either proposal finds nothing to read.
+    for proposal_id in (proposal, again.id):
+        _run(deps, ws, doc, proposal_id)
+    assert len(client.requests) == 1
+
+
 # --- a read still in flight when its proposal is erased (D42 (3)) ----------------------
 
 

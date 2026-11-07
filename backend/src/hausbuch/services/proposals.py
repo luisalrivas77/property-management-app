@@ -198,18 +198,31 @@ def proposal_for_upload(
     ctx: CommandContext, document_id: UUID, *, created: bool, contains_tenant_data: bool
 ) -> Proposal:
     """The proposal an upload with `ai` answers with: a new one for a new document; for the
-    same bytes uploaded again (D9), the document's pending proposal (queued, running or
-    ready) if it has one, so a double upload costs no second model call; unless this upload
-    says tenant data and the pending one did not: then it is re-run with the flag. After a
-    decision, a failure or a block the upload asks for a new read."""
+    same bytes uploaded again (D9), the document's undecided proposal if it has one, so a
+    double upload costs no second model call and a document never has two undecided
+    proposals:
+
+    - pending (queued, running or ready): returned as is, unless this upload says tenant
+      data and the pending one did not: then it is re-run with the flag;
+    - blocked_tenant_data: with ai_tenant_documents now on, re-run (the blocked proposal is
+      superseded, a read is queued); still off, returned as is (a re-run would only block
+      again and drop the classifier's typing), unless this upload adds the tenant flag.
+
+    After a decision or a failure the upload asks for a new read."""
     if not created:
-        pending = [
-            p for p in list_document_proposals(ctx.conn, document_id) if p.status in _SUPERSEDABLE
+        undecided = [
+            p
+            for p in list_document_proposals(ctx.conn, document_id)
+            if p.status in _RERUN_SUPERSEDES
         ]
-        if pending and (pending[0].contains_tenant_data or not contains_tenant_data):
-            return pending[0]
-        if pending:
-            return rerun_proposal(ctx, document_id, contains_tenant_data=True)
+        if undecided:
+            current = undecided[0]  # newest first
+            adds_flag = contains_tenant_data and not current.contains_tenant_data
+            blocked = any(p.status is ProposalStatus.BLOCKED_TENANT_DATA for p in undecided)
+            reread_blocked = blocked and _ai_tenant_documents(ctx.conn)
+            if not adds_flag and not reread_blocked and len(undecided) == 1:
+                return current
+            return rerun_proposal(ctx, document_id, contains_tenant_data=contains_tenant_data)
     return request_read(ctx, document_id, contains_tenant_data=contains_tenant_data)
 
 
@@ -260,6 +273,11 @@ def record_read_result(
     typing-only proposal is stored with status `blocked_tenant_data`.
     `ctx.actor` is the job's actor (ActorType for the AI / system, actor_id the model id).
 
+    A classifier result that says tenant data (its flag or a tenant subtype), and any block,
+    sets the row's contains_tenant_data: the mark is then as sticky as the uploader's (D16),
+    so a later re-run with ai_tenant_documents off is blocked by request_read at creation,
+    without a classify call.
+
     Appends document.classified and, with values, document.extracted (the job does not).
     A no-op returning the proposal as stored when it is no longer queued or running.
     """
@@ -278,6 +296,12 @@ def record_read_result(
             or classification.contains_tenant_data
             or classification.subtype in _TENANT_SUBTYPES
         )
+    tenant_mark = (
+        current.contains_tenant_data
+        or blocked_tenant_data
+        or classification.contains_tenant_data
+        or classification.subtype in _TENANT_SUBTYPES
+    )
     append_event(
         ctx,
         EventType.DOCUMENT_CLASSIFIED,
@@ -325,6 +349,7 @@ def record_read_result(
         proposal_id,
         status=ProposalStatus.BLOCKED_TENANT_DATA if blocked_tenant_data else ProposalStatus.READY,
         error_code=AI_BLOCKED_TENANT_DATA if blocked_tenant_data else None,
+        contains_tenant_data=tenant_mark,
         kind=None if kind is None else kind.value,
         extraction_id=extraction_id,
         ai_call_id=extract_call_id if extraction_id is not None else classify_call_id,
