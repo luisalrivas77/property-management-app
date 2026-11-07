@@ -19,6 +19,7 @@ unit, price_split, ownership, cost:<kind>, loan, tenant:<n>, tenancy, rent, depo
 link:property / link:loan / link:tenancy.
 """
 
+import re
 from collections.abc import Callable, Iterable, Sequence
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
@@ -244,6 +245,7 @@ class _Builder:
                 _property_current(prop),
                 notes=notes,
                 milestones=_MILESTONES,
+                keyed={"address.street": _address_part, "address.house_number": _address_part},
             )
         self._unit(prop)
         self._price_split()
@@ -260,15 +262,25 @@ class _Builder:
         *,
         notes: Sequence[str] = (),
         milestones: Iterable[str] = (),
+        keyed: dict[str, Callable[[Any], str]] | None = None,
     ) -> None:
         """unchanged when every stated field the context holds equals it, else patch with
-        the differing ones; a differing milestone date gets its own correction record."""
+        the differing ones; a differing milestone date gets its own correction record.
+        `keyed` fields compare by that key instead (an address spelled another way is the
+        same address, so the stored spelling is not proposed for change)."""
+        keyed = keyed or {}
+
+        def same(f: str, value: JsonValue) -> bool:
+            if f in keyed:
+                return keyed[f](value) == keyed[f](existing[f])
+            return _same(value, existing[f])
+
         compared = {f: v for f, v in proposed.items() if v.value is not None and f in existing}
         corrections = {
-            f: v for f, v in compared.items() if f in milestones and not _same(v.value, existing[f])
+            f: v for f, v in compared.items() if f in milestones and not same(f, v.value)
         }
         kept = {f: v for f, v in compared.items() if f not in corrections}
-        differing = {f: v for f, v in kept.items() if not _same(v.value, existing[f])}
+        differing = {f: v for f, v in kept.items() if not same(f, v.value)}
         fields = differing or kept
         self.add(
             key,
@@ -669,23 +681,35 @@ def _address_of(extraction: _Typing) -> tuple[str, ...] | None:
         value = getattr(extraction, name, None)
         if not isinstance(value, ExtractedValue) or value.value is None:
             return None
-        parts.append(_norm(value.value))
+        parts.append(_address_part(value.value))
     return tuple(parts)
 
 
 def _match_property(
     extraction: _Typing, properties: Sequence[ExistingProperty]
 ) -> ExistingProperty | None:
-    """By street + house number + postal code."""
+    """By street + house number + postal code, each compared by `_address_part` so a
+    contract writing "Lindenstr. 12" finds the flat typed as "Lindenstraße 12"."""
     address = _address_of(extraction)
     if address is None:
         return None
     return _first(
         p
         for p in properties
-        if (_norm(p.address.street), _norm(p.address.house_number), _norm(p.address.postal_code))
+        if tuple(
+            _address_part(v)
+            for v in (p.address.street, p.address.house_number, p.address.postal_code)
+        )
         == address
     )
+
+
+def _address_part(value: Any) -> str:
+    """Casefolded, ß as ss, spaces, hyphens and dots removed, and a street ending in the
+    abbreviation "str" spelled out: "Lindenstr.", "Linden-Straße" and "Lindenstrasse" are
+    one key; "12 a" and "12a" too."""
+    key = re.sub(r"[\s.\-]", "", str(value).casefold().replace("ß", "ss"))
+    return f"{key}asse" if key.endswith("str") else key
 
 
 def _resolve_property(extraction: _Typing, context: PrefillContext) -> ExistingProperty | None:

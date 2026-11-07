@@ -30,7 +30,7 @@ _NUMERIC_DATE = re.compile(r"([0-9]{1,2})\.\s?([0-9]{1,2})\.\s?([0-9]{4})")
 _ISO_DATE = re.compile(r"([0-9]{4})-([0-9]{2})-([0-9]{2})")
 _WORD_DATE = re.compile(r"([0-9]{1,2})\.?\s+([A-Za-zÄÖÜäöü]+)\s+([0-9]{4})")
 _YEAR = re.compile(r"(?<![0-9])[0-9]{4}(?![0-9])")
-_FRACTION = re.compile(r"([0-9][0-9.]*)\s*/\s*([0-9][0-9.]*)")
+_FRACTION = re.compile(r"([0-9][0-9.,]*)\s*/\s*([0-9][0-9.,]*)")
 _IBAN_IN_TEXT = re.compile(r"[A-Za-z]{2}[0-9]{2}(?:\s?[A-Za-z0-9]){10,32}")
 _DIGITS = re.compile(r"[0-9]")
 
@@ -247,13 +247,33 @@ def _real_date(year: int, month: int, day: int) -> date:
 
 
 def _fraction(raw: str) -> dict[str, int]:
+    """ "85/1000", "85/1.000stel", and a decimal share kept exact and unreduced:
+    "47,25/1.000" -> 4725/100000 (both sides scaled by the same power of ten)."""
     match = _FRACTION.search(raw)
     if match is None:
         raise _Invalid("no fraction")
-    numerator, denominator = (int(g.replace(".", "")) for g in match.groups())
-    if denominator == 0 or numerator > denominator:
+    numerator, denominator = (_share_number(g) for g in match.groups())
+    places = max(-n.as_tuple().exponent for n in (numerator, denominator))
+    scale = Decimal(10) ** max(places, 0)
+    numerator, denominator = int(numerator * scale), int(denominator * scale)
+    if numerator == 0 or denominator == 0 or numerator > denominator:
         raise _Invalid("a fraction is at most 1")
     return {"numerator": numerator, "denominator": denominator}
+
+
+def _share_number(text: str) -> Decimal:
+    """One side of a share: a comma is the decimal mark and dots group thousands (German);
+    without a comma, dots grouping exactly three digits are thousands ("1.000"), else a
+    single dot is the decimal mark ("47.25", as a model may write it)."""
+    text = text.rstrip(".,")
+    if "," in text:
+        text = text.replace(".", "").replace(",", ".", 1)
+    elif _THOUSANDS_ONLY.fullmatch(text):
+        text = text.replace(".", "")
+    try:
+        return Decimal(text).normalize()
+    except InvalidOperation:
+        raise _Invalid("not a number") from None
 
 
 def _iban(raw: str) -> str:
