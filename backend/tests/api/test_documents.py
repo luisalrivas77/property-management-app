@@ -189,7 +189,7 @@ def test_a_titled_document_downloads_under_its_date_and_title(client_a):
         'inline; filename="2026-02-20 _bergabeprotokoll.pdf"; '
         "filename*=UTF-8''2026-02-20%20%C3%9Cbergabeprotokoll.pdf"
     )
-    assert ok(client_a.get(base))["original_filename"] == "Scan_0042.PDF"
+    assert ok(client_a.get(base))["document"]["original_filename"] == "Scan_0042.PDF"
 
 
 def test_content_disposition_keeps_the_basename_and_quotes_nothing():
