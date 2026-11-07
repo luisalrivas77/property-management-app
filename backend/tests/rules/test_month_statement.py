@@ -119,3 +119,10 @@ def test_repeat_answer_is_never_asked_twice(case):
     )
     assert routing.decision is RoutingDecision.AUTO_CONFIRM
     assert found.question is None
+
+
+@pytest.mark.rule
+@pytest.mark.parametrize("case", REPEAT.no_rule, ids=lambda c: c.id)
+def test_an_answer_on_a_matcher_owned_counterparty_becomes_no_rule(case):
+    a = case.answered
+    assert matching.infer_rule(a.transaction, a.confirmed, REPEAT.context) is None

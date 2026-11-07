@@ -17,6 +17,9 @@
 #     one allocation -> single_category with its category and its property / tenancy / loan.
 #   recurring: true when every confirmed allocation is recurring, else false (whatever the
 #   split method; only single_category hits read it).
+#   No single_category rule when the counterparty is an owner account, a tenant's or a loan
+#   account (D38): apply_rule runs before the matchers, so an IBAN-only rule there would
+#   pre-empt the exact rent / loan / owner split for every later line. -> null (no_rule below).
 # Then the next line from the same counterparty goes through matching.apply_rule with the
 # stored rule (id below) and must come back as a rule set with confidence 1, no question, and
 # review.route must auto-confirm it (routing.rule_hit): nothing is asked.
@@ -27,8 +30,36 @@ ids:
   doc_wp_2024: &D_WP24 0000000d-0000-4000-8000-000000000203
   hmac_weg: &H_WEG "6666666666666666666666666666666666666666666666666666666666666666"
   hmac_insurer: &H_INS "7777777777777777777777777777777777777777777777777777777777777777"
+  hmac_tenant: &H_TENANT "1111111111111111111111111111111111111111111111111111111111111111"
+  hmac_owner: &H_OWNER "2222222222222222222222222222222222222222222222222222222222222222"
+  hmac_loan: &H_LOAN "3333333333333333333333333333333333333333333333333333333333333333"
+  unit: &U 0000000c-0000-4000-8000-000000000001
+  tenancy: &T 0000000e-0000-4000-8000-000000000001
+  loan: &L 0000000f-0000-4000-8000-000000000001
 
 context:
+  owner_account_hmacs: [*H_OWNER]
+  tenancies:
+    - id: *T
+      property_id: *P
+      unit_id: *U
+      start_date: 2024-01-01
+      tenant_iban_hmacs: [*H_TENANT]
+      rent:
+        - {effective_from: 2024-01-01, cold_rent: "1150.00", operating_costs_prepayment: "250.00"}
+  loans:
+    - id: *L
+      property_id: *P
+      lender: Beispielbank AG
+      account_iban_hmac: *H_LOAN
+      terms:
+        principal: "20000.00"
+        nominal_rate: "0.05"
+        monthly_payment: "1000.00"
+        disbursed_on: 2025-01-01
+        first_payment_on: 2025-02-01
+        fixed_until: 2025-06-30
+        follow_up_rate: "0.08"
   wirtschaftsplaene:
     - {document_id: *D_WP24, property_id: *P, valid_from: 2024-01-01, total: "380.00", umlagefaehig: "210.00", verwaltung: "50.00", ruecklage: "120.00"}
 
@@ -89,3 +120,37 @@ cases:
           - {amount: "-210.00", category: hausgeld_umlagefaehig, property_id: *P, document_id: *D_WP24, service_period_start: 2024-06-01, service_period_end: 2024-06-30, recurring: true}
           - {amount: "-50.00", category: hausgeld_verwaltung, property_id: *P, document_id: *D_WP24, service_period_start: 2024-06-01, service_period_end: 2024-06-30, recurring: true}
           - {amount: "-120.00", category: hausgeld_ruecklage, property_id: *P, document_id: *D_WP24, service_period_start: 2024-06-01, service_period_end: 2024-06-30, recurring: true}
+
+no_rule:
+  - id: loan_account_bank_fee_is_no_rule
+    description: D38. A one-off fee debited by the loan account, answered as bank_fees; a rule would book the next annuity, principal included, as bank_fees.
+    answered:
+      transaction: {id: 0000002a-0000-4000-8000-000000000701, booking_date: 2025-03-10, amount: "-25.00", counterparty_name: Beispielbank AG, counterparty_iban_hmac: *H_LOAN, purpose: Entgelt Kontoauszug}
+      confirmed:
+        transaction_id: 0000002a-0000-4000-8000-000000000701
+        method: user
+        confidence: "1.000"
+        allocations:
+          - {amount: "-25.00", category: bank_fees, property_id: *P, loan_id: *L, recurring: false}
+
+  - id: tenant_deposit_is_no_rule
+    description: D38. The tenant's Kaution, answered as deposit_in; a rule would book every later rent from the same IBAN as deposit.
+    answered:
+      transaction: {id: 0000002a-0000-4000-8000-000000000702, booking_date: 2024-01-02, amount: "3450.00", counterparty_name: Mieterin Beispiel, counterparty_iban_hmac: *H_TENANT, purpose: Kaution}
+      confirmed:
+        transaction_id: 0000002a-0000-4000-8000-000000000702
+        method: user
+        confidence: "1.000"
+        allocations:
+          - {amount: "3450.00", category: deposit_in, property_id: *P, tenancy_id: *T, recurring: false}
+
+  - id: owner_account_deposit_is_no_rule
+    description: D38. A line from an owner's account answered as something other than an owner transfer.
+    answered:
+      transaction: {id: 0000002a-0000-4000-8000-000000000703, booking_date: 2024-02-01, amount: "500.00", counterparty_name: Max Beispiel, counterparty_iban_hmac: *H_OWNER, purpose: Ruecklage}
+      confirmed:
+        transaction_id: 0000002a-0000-4000-8000-000000000703
+        method: user
+        confidence: "1.000"
+        allocations:
+          - {amount: "500.00", category: other_income, property_id: *P, recurring: false}
