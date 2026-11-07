@@ -348,6 +348,123 @@ cases:
           mode: create
           values: {}
 
+  - id: kaufvertrag_existing_property_without_postal_code
+    description: >-
+      The contract names the flat by its land register entry and "Lindenstraße 12" but states
+      no postal code (added 7 Nov 2026, after Luis's real contract): street and house number,
+      plus the city when the document states one, find the flat when exactly one property fits.
+    kind: purchase_contract
+    context:
+      document_id: *DOC
+      classification: *CL_KV
+      owners: *OWNERS
+      properties: [*PROP_LINDEN, *PROP_KASTANIEN]
+      units:
+        - {id: *U, property_id: *P, label: WE 3, mea: {numerator: 85, denominator: 1000}}
+    extraction:
+      <<: *KV
+      postal_code: {value: null, confidence: low}
+    expect:
+      keys: [typing, property, correction:notarized_on, unit, price_split, ownership, link:property]
+      records:
+        - key: property
+          entity_type: property
+          mode: unchanged
+          target_id: *P
+          values:
+            kind: etw
+            address.street: Lindenstraße
+            address.house_number: "12"
+            address.city: Berlin
+            purchase_date: "2026-05-01"
+            purchase_price: "289000.00"
+          current:
+            kind: etw
+            address.street: Lindenstraße
+            address.house_number: "12"
+            address.city: Berlin
+            purchase_date: "2026-05-01"
+            purchase_price: "289000.00"
+        - key: link:property
+          entity_type: link
+          mode: create
+          target_id: *P
+          values: {}
+
+  - id: kaufvertrag_unverified_postal_code_does_not_decide
+    description: >-
+      A postal code the model wrote but its quote does not contain (checks without
+      value_in_quote) neither finds nor blocks the match; the flat is found by street and
+      house number, and the unverified code is shown as a change to decide, at low confidence.
+    kind: purchase_contract
+    context:
+      document_id: *DOC
+      classification: *CL_KV
+      owners: *OWNERS
+      properties: [*PROP_LINDEN, *PROP_KASTANIEN]
+      units:
+        - {id: *U, property_id: *P, label: WE 3, mea: {numerator: 85, denominator: 1000}}
+    extraction:
+      <<: *KV
+      postal_code: {value: "10117", source: {page: 2, quote: "Lindenstraße 12 in Berlin"}, checks: [cited, validates], confidence: medium}
+    expect:
+      keys: [typing, property, correction:notarized_on, unit, price_split, ownership, link:property]
+      records:
+        - key: property
+          entity_type: property
+          mode: patch
+          target_id: *P
+          values: {address.postal_code: "10117"}
+          current: {address.postal_code: "10115"}
+        - key: link:property
+          entity_type: link
+          mode: create
+          target_id: *P
+          values: {}
+
+  - id: kaufvertrag_without_postal_code_two_candidates_is_new
+    description: >-
+      Without a postal code or a city, two properties at "Lindenstraße 12" (in different
+      towns) both fit: nothing is guessed, a new property is proposed, visibly.
+    kind: purchase_contract
+    context:
+      document_id: *DOC
+      classification: *CL_KV
+      owners: *OWNERS
+      properties:
+        - *PROP_LINDEN
+        - id: *P2
+          kind: etw
+          address: {street: Lindenstraße, house_number: "12", postal_code: "20095", city: Hamburg}
+          build_year: 1960
+          notarized_on: 2020-01-15
+          purchase_date: 2020-03-01
+          purchase_price: "199000.00"
+    extraction:
+      <<: *KV
+      postal_code: {value: null, confidence: low}
+      city: {value: null, confidence: low}
+    expect:
+      keys: [typing, property, unit, price_split, ownership, link:property]
+      records:
+        - key: property
+          entity_type: property
+          mode: create
+          values:
+            kind: etw
+            address.street: Lindenstraße
+            address.house_number: "12"
+            address.postal_code: null
+            address.city: null
+            build_year: null
+            notarized_on: "2026-03-12"
+            purchase_date: "2026-05-01"
+            purchase_price: "289000.00"
+        - key: link:property
+          entity_type: link
+          mode: create
+          values: {}
+
   - id: kaufvertrag_uebergang_by_payment
     description: Besitzübergang on the day the price is paid in full; no date to propose, the clause is quoted.
     kind: purchase_contract
