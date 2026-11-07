@@ -600,19 +600,37 @@ def _same(a: AllocationSet, b: AllocationSet) -> bool:
 
 
 def _guarded(conn: Connection, found: AllocationSet) -> AllocationSet:
+    """Review F3 / D39: a rent set for a tenancy and period, or an instalment of a loan,
+    already confirmed on another line goes to review.
+
+    Two lines are matched by two jobs at once (worker concurrency), each holding only its
+    own transaction row, so both `_booked` reads could see nothing and both auto-confirm.
+    Each check therefore first takes a transaction-scoped advisory lock keyed on the scope
+    (the tenancy or loan id): the second job waits until the first commits, and its
+    `_booked` read (READ COMMITTED: a new snapshot per statement) then sees the first one's
+    rows. INVARIANT: this only works because `_guarded` -> route -> write ->
+    allocations.record_set all run in the one transaction match_line opened, so the lock
+    is held until the set is committed. Do not split that transaction."""
     if found.method is AllocationMethod.USER:
         return found
     tx_id = found.transaction_id
     for d in found.allocations:
         if d.service_period_start is None:
             continue
-        rent = d.category is C.RENT_COLD and d.tenancy_id is not None
-        if rent and _booked(conn, tx_id, d, [C.RENT_COLD], tenancy_id=d.tenancy_id):
-            return _to_review(found, RENT_BOOKED_QUESTION)
-        loan = d.category in _LOAN and d.loan_id is not None
-        if loan and _booked(conn, tx_id, d, list(_LOAN), loan_id=d.loan_id):
-            return _to_review(found, LOAN_BOOKED_QUESTION)
+        if d.category is C.RENT_COLD and d.tenancy_id is not None:
+            _scope_lock(conn, d.tenancy_id)
+            if _booked(conn, tx_id, d, [C.RENT_COLD], tenancy_id=d.tenancy_id):
+                return _to_review(found, RENT_BOOKED_QUESTION)
+        if d.category in _LOAN and d.loan_id is not None:
+            _scope_lock(conn, d.loan_id)
+            if _booked(conn, tx_id, d, list(_LOAN), loan_id=d.loan_id):
+                return _to_review(found, LOAN_BOOKED_QUESTION)
     return found
+
+
+def _scope_lock(conn: Connection, scope_id: UUID) -> None:
+    """pg_advisory_xact_lock on the tenancy or loan id, released at commit or rollback."""
+    conn.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(str(scope_id), 0))))
 
 
 _LOAN = (C.LOAN_INTEREST, C.LOAN_PRINCIPAL)

@@ -5,6 +5,8 @@ these check the routes: status codes, coded 422s, the read shapes (no IBAN, no H
 isolation. No worker runs here, so imported lines stay unmatched until answered.
 """
 
+from uuid import uuid4
+
 import pytest
 from api_support import TOKEN_A, TOKEN_B, auth_for, create, ok
 from db.db_support import _admin
@@ -125,4 +127,14 @@ def test_another_workspace_gets_404(client_a, client_b, lines):
     assert client_b.get(url).status_code == 404
     assert client_b.put(url, json=_body(line, (line["amount"], "bank_fees"))).status_code == 404
     assert ok(client_b.get("/api/inbox")) == []
+    assert ok(client_a.get(url))["allocations"] == []
+
+
+def test_an_unknown_property_is_404_and_writes_nothing(client_a, lines):
+    """Review round 2: a property id outside the workspace is a 404, not a foreign-key 500."""
+    line = _debit(lines)
+    url = f"/api/transactions/{line['id']}/allocations"
+    body = _body(line, (line["amount"], "bank_fees"))
+    body["allocation_set"]["allocations"][0]["property_id"] = str(uuid4())
+    assert client_a.put(url, json=body).status_code == 404
     assert ok(client_a.get(url))["allocations"] == []

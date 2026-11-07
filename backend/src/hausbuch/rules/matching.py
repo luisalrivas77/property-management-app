@@ -200,7 +200,7 @@ def infer_rule(
     (only,) = allocs
     if only.category in _OWNER:
         return rule(SplitMethod.OWNER_TRANSFER)
-    if _matcher_owns(tx.counterparty_iban_hmac, context):
+    if matcher_owns(tx.counterparty_iban_hmac, context):
         return None
     return rule(
         SplitMethod.SINGLE_CATEGORY,
@@ -495,7 +495,7 @@ def _month_end(day: date) -> date:
     return date.fromordinal(following.toordinal() - 1)
 
 
-def _matcher_owns(hmac: str, context: MatchContext) -> bool:
+def matcher_owns(hmac: str, context: MatchContext) -> bool:
     """Whether a deterministic matcher owns this counterparty (D38)."""
     return (
         hmac in context.owner_account_hmacs

@@ -3,8 +3,10 @@
 A rule is created from a confirmed answer ("Künftig immer so zuordnen"): `rules.matching.
 infer_rule` reads the matcher (the line's IBAN hash and amount sign) and the split method
 from the confirmed allocations, never their amounts (D25). The person may add a counterparty
-name or purpose pattern; that is how a line without an IBAN, or a counterparty a matcher owns
-(D38: no IBAN-only single_category rule for an owner, tenant or loan account), gets a rule.
+name or purpose pattern; that is how a line without an IBAN gets a rule. A counterparty a
+matcher owns (D38: no IBAN-only single_category rule for an owner, tenant or loan account)
+gets one only with a purpose pattern; a name pattern alone is refused there, since that name
+is on every one of the counterparty's lines.
 A pattern is a case-insensitive regular expression; one that does not compile is refused
 (rule.invalid_pattern), so no stored rule can fail at match time.
 
@@ -113,9 +115,15 @@ def proposed_rule(
     if inferred is not None:
         matcher = inferred.matcher.model_copy(update=patterns)
         return inferred.model_copy(update={"matcher": matcher})
-    # No IBAN, or a counterparty a matcher owns (D38): a typed pattern narrows it, so a
-    # single-category answer may become a rule.
+    # No IBAN: a typed pattern narrows the rule, so a single-category answer may become one.
+    # A counterparty a matcher owns (owner, tenant or loan account, D38) needs a purpose
+    # pattern: its name is on every one of its lines (the lender's on every annuity), so a
+    # name pattern alone narrows nothing and would book the next rent or annuity wholly
+    # under this answer's category.
     if len(confirmed.allocations) != 1 or tx.amount == 0:
+        return None
+    hmac = tx.counterparty_iban_hmac
+    if hmac is not None and matchers.matcher_owns(hmac, context) and purpose_pattern is None:
         return None
     (only,) = confirmed.allocations
     matcher = RuleMatcher(

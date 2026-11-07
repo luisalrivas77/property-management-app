@@ -4,6 +4,8 @@
 No model here: match_line runs with ai_available=False (jobs.matching, tested in
 test_jobs_matching.py, adds the model calls)."""
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from decimal import Decimal
 
@@ -158,6 +160,34 @@ def test_rent_for_a_period_already_booked_goes_to_review(world):
     rows = _rows(world, second)
     assert {r.status for r in rows} == {"proposed"}
     assert rows[0].question == matching.RENT_BOOKED_QUESTION
+
+
+def test_two_equal_rents_matched_at_once_book_the_period_only_once(world, monkeypatch):
+    """Review F3 across lines: two jobs matching two equal rent lines at the same time each
+    lock only their own line, so both would read "nothing booked yet" and both auto-confirm.
+    The advisory lock on the tenancy in _guarded makes the second wait for the first's
+    commit; it then sees the booked period and goes to review."""
+    world.tenancy()
+    lines = [
+        world.line(date(2025, 1, 2), "1280.00", iban=TENANT_IBAN, purpose="Miete 01/2025"),
+        world.line(date(2025, 1, 3), "1280.00", iban=TENANT_IBAN, purpose="Miete 01/2025"),
+    ]
+    barrier = threading.Barrier(2, timeout=20)
+    original = matching.load_line
+
+    def load_then_wait(conn, transaction_id, **kwargs):
+        line = original(conn, transaction_id, **kwargs)
+        barrier.wait()  # both lines are loaded (and row-locked) before either job commits
+        return line
+
+    monkeypatch.setattr(matching, "load_line", load_then_wait)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        plans = [f.result(timeout=60) for f in [pool.submit(_match, world, tx) for tx in lines]]
+    assert [p.outcome for p in plans] == ["written", "written"]
+    statuses = sorted(",".join(sorted({r.status for r in _rows(world, tx)})) for tx in lines)
+    assert statuses == ["confirmed", "proposed"]
+    (proposed,) = [tx for tx in lines if {r.status for r in _rows(world, tx)} == {"proposed"}]
+    assert {r.question for r in _rows(world, proposed)} == {matching.RENT_BOOKED_QUESTION}
 
 
 def test_loan_annuity_splits_and_a_second_debit_for_the_same_instalment_is_reviewed(world):
@@ -441,6 +471,48 @@ def test_no_iban_only_rule_for_a_tenants_counterparty(world):
     )
     assert narrowed.rule is not None
     assert narrowed.rule.matcher.purpose_pattern == "kaution"
+
+
+def test_a_name_pattern_alone_does_not_learn_a_matcher_owned_counterparty(world):
+    """D38, review round 2: a counterparty-name pattern does not narrow a tenant's or the
+    loan account's line (the name is the same on the rent), so learn_rule needs a purpose
+    pattern there; asked with a name pattern only, the whole answer is refused."""
+    world.tenancy()
+    world.loan()
+    tenant_tx = world.line(
+        date(2024, 1, 2),
+        "3000.00",
+        iban=TENANT_IBAN,
+        name="Erika Mustermieterin",
+        purpose="Kaution",
+    )
+    loan_tx = world.line(
+        date(2024, 6, 3), "-25.00", iban=LOAN_IBAN, name="Beispielbank AG", purpose="Kontoführung"
+    )
+    for tx, amount, category, name in [
+        (tenant_tx, "3000.00", C.DEPOSIT_IN, "Mustermieterin"),
+        (loan_tx, "-25.00", C.BANK_FEES, "Beispielbank"),
+    ]:
+        with pytest.raises(RuleError) as err:
+            _put(
+                world,
+                tx,
+                _answer(tx, (amount, category)),
+                learn_rule=True,
+                counterparty_name_pattern=name,
+            )
+        assert err.value.code == rules_learned.NOT_LEARNABLE
+        assert _rows(world, tx) == []
+    learned = _put(
+        world,
+        loan_tx,
+        _answer(loan_tx, ("-25.00", C.BANK_FEES)),
+        learn_rule=True,
+        purpose_pattern="kontoführung",
+    )
+    assert learned.rule is not None
+    assert learned.rule.matcher.purpose_pattern == "kontoführung"
+    assert world.query(lambda conn: conn.execute(select(rule_table.c.id)).all()) != []
 
 
 def test_an_invalid_pattern_is_refused(world):

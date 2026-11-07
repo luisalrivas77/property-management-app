@@ -34,6 +34,7 @@ from sqlalchemy import Connection, Row, insert, select, update
 
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import loan as loan_table
+from hausbuch.db.tables import property_ as property_table
 from hausbuch.db.tables import property_acquisition_cost as cost_table
 from hausbuch.db.tables import tenancy as tenancy_table
 from hausbuch.db.tables import transaction as transaction_table
@@ -212,6 +213,8 @@ def _check_scope(conn: Connection, drafts: Sequence[AllocationDraft]) -> None:
     belongs to the allocation's property."""
     for d in drafts:
         require_document(conn, d.document_id)
+        if d.property_id is not None:  # else the composite FK would raise a 500
+            require_row(conn, property_table, EntityType.PROPERTY, d.property_id)
         owners: list[UUID] = []
         if d.unit_id is not None:
             owners.append(require_row(conn, unit_table, EntityType.UNIT, d.unit_id).property_id)
