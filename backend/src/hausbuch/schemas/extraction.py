@@ -134,8 +134,14 @@ class LeaseExtraction(_Typing):
     deposit_amount: ExtractedValue = ev("money", "Kaution")
     deposit_clause: ExtractedValue = ev("text", "Barkaution / Bürgschaft ...")
     cold_rent: ExtractedValue = ev("money", "Nettokaltmiete")
-    operating_costs_prepayment: ExtractedValue = ev("money", "Betriebskostenvorauszahlung")
-    heating_costs_prepayment: ExtractedValue = ev("money", "Heizkostenvorauszahlung")
+    operating_costs_prepayment: ExtractedValue = ev(
+        "money",
+        "the monthly Nebenkosten besides the Kaltmiete: the Betriebskostenvorauszahlung, or a"
+        " Nebenkostenpauschale (also one that includes Heizung, Warmwasser or Strom)",
+    )
+    heating_costs_prepayment: ExtractedValue = ev(
+        "money", "Heizkostenvorauszahlung, only when the lease states it as its own amount"
+    )
 
 
 class HandoverProtocolExtraction(_Typing):

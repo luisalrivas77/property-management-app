@@ -8099,12 +8099,12 @@
           },
           "operating_costs_prepayment": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "Betriebskostenvorauszahlung",
+            "description": "the monthly Nebenkosten besides the Kaltmiete: the Betriebskostenvorauszahlung, or a Nebenkostenpauschale (also one that includes Heizung, Warmwasser or Strom)",
             "value_kind": "money"
           },
           "heating_costs_prepayment": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "Heizkostenvorauszahlung",
+            "description": "Heizkostenvorauszahlung, only when the lease states it as its own amount",
             "value_kind": "money"
           }
         },

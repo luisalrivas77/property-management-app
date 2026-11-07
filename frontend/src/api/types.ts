@@ -2951,9 +2951,9 @@ export interface components {
             deposit_clause?: components["schemas"]["ExtractedValue"];
             /** @description Nettokaltmiete */
             cold_rent?: components["schemas"]["ExtractedValue"];
-            /** @description Betriebskostenvorauszahlung */
+            /** @description the monthly Nebenkosten besides the Kaltmiete: the Betriebskostenvorauszahlung, or a Nebenkostenpauschale (also one that includes Heizung, Warmwasser or Strom) */
             operating_costs_prepayment?: components["schemas"]["ExtractedValue"];
-            /** @description Heizkostenvorauszahlung */
+            /** @description Heizkostenvorauszahlung, only when the lease states it as its own amount */
             heating_costs_prepayment?: components["schemas"]["ExtractedValue"];
         };
         /** LinkBody */
