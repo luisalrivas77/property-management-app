@@ -62,13 +62,28 @@ export function TenantForm({
   return (
     <form className="stack" onSubmit={submit} noValidate>
       <div className="grid">
-        <Field id={`${idPrefix}-name`} label="Name" errors={form.of("full_name")}>
+        <Field
+          id={`${idPrefix}-name`}
+          label="Name"
+          description="Der Name der Mieterin oder des Mieters, wie im Mietvertrag."
+          errors={form.of("full_name")}
+        >
           <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} required autoComplete="off" />
         </Field>
-        <Field id={`${idPrefix}-email`} label="E-Mail (optional)" errors={form.of("email")}>
+        <Field
+          id={`${idPrefix}-email`}
+          label="E-Mail (optional)"
+          description="Eine Kontaktangabe, z. B. aus dem Mietvertrag."
+          errors={form.of("email")}
+        >
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" />
         </Field>
-        <Field id={`${idPrefix}-phone`} label="Telefon (optional)" errors={form.of("phone")}>
+        <Field
+          id={`${idPrefix}-phone`}
+          label="Telefon (optional)"
+          description="Eine Kontaktangabe, z. B. aus dem Mietvertrag."
+          errors={form.of("phone")}
+        >
           <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="off" />
         </Field>
         <Field
@@ -79,6 +94,7 @@ export function TenantForm({
               ? `Gespeichert: ${tenant.iban_masked ?? "keine"}. Leer lassen, um sie zu behalten.`
               : "Zum Zuordnen der Mietzahlungen; angezeigt wird danach nur noch eine Maske."
           }
+          description="Die IBAN des Kontos, von dem die Miete kommt, z. B. aus einem Kontoauszug mit einer Mietzahlung. Gespeichert wird sie nur maskiert und als nicht umkehrbarer Prüfwert; daran erkennt Hausbuch die Mietzahlungen."
           errors={form.of("iban")}
         >
           <input

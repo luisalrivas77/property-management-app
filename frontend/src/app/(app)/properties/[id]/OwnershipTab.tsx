@@ -129,7 +129,13 @@ function OwnershipForm({
         <legend>Anteile (als Bruch oder Prozent, z. B. 1/2 oder 50 %; leer = kein Anteil)</legend>
         <div className="grid">
           {owners.map((owner) => (
-            <Field key={owner.id} id={`share-${owner.id}`} label={owner.full_name} errors={form.of(`share-${owner.id}`)}>
+            <Field
+              key={owner.id}
+              id={`share-${owner.id}`}
+              label={owner.full_name}
+              description="Der Anteil dieser Person an der Immobilie laut Kaufvertrag oder Grundbuch, z. B. 1/2 bei „je zur Hälfte“. Alle Anteile zusammen müssen genau 1 (100 %) ergeben."
+              errors={form.of(`share-${owner.id}`)}
+            >
               <input
                 type="text"
                 value={shares[owner.id] ?? ""}
@@ -152,6 +158,7 @@ function OwnershipForm({
         id="ownership-effective"
         label="Gültig ab (optional)"
         hint="Leer lassen beim Kauf; ein Datum, wenn sich die Anteile später ändern."
+        description="Ab wann diese Anteile gelten. Beim Kauf leer lassen; bei einer späteren Änderung, z. B. einer Übertragung, das Datum aus dem Vertrag."
         errors={form.of("effective_date")}
       >
         <input type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} />

@@ -43,7 +43,7 @@ import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import type { Directory } from "./entities";
 import { tenantName } from "./entities";
-import { FormBanner, useFormErrors, type FieldMessages } from "./form";
+import { FieldDescription, FormBanner, InfoToggle, useFormErrors, type FieldMessages } from "./form";
 import { formatArea, formatDate, formatDateTime, formatFraction, formatMoney, formatPercent, formatShare } from "./format";
 import { decimalInput, percentInput, toDecimalString, toFraction, toMoneyString, toRate, toYear, type Parsed } from "./input";
 import {
@@ -74,82 +74,216 @@ interface FieldSpec {
   label: string;
   kind: FieldKind;
   choices?: Readonly<Record<string, string>>;
+  /** What the value is and where it stands, behind the "i" next to the label. */
+  description?: string;
 }
 
-const text = (label: string): FieldSpec => ({ label, kind: "text" });
-const date = (label: string): FieldSpec => ({ label, kind: "date" });
-const money = (label: string): FieldSpec => ({ label, kind: "money" });
-const choice = (label: string, choices: Readonly<Record<string, string>>): FieldSpec => ({ label, kind: "enum", choices });
+const text = (label: string, description?: string): FieldSpec => ({ label, kind: "text", description });
+const date = (label: string, description?: string): FieldSpec => ({ label, kind: "date", description });
+const money = (label: string, description?: string): FieldSpec => ({ label, kind: "money", description });
+const choice = (label: string, choices: Readonly<Record<string, string>>, description?: string): FieldSpec => ({
+  label,
+  kind: "enum",
+  choices,
+  description,
+});
 
 const PROPERTY_FIELDS: Record<string, FieldSpec> = {
-  kind: choice("Art", PROPERTY_KIND),
-  "address.street": text("Straße"),
-  "address.house_number": text("Hausnummer"),
-  "address.postal_code": text("PLZ"),
-  "address.city": text("Ort"),
-  build_year: { label: "Baujahr", kind: "year" },
-  notarized_on: date("Notartermin (Kaufvertrag beurkundet)"),
-  purchase_date: date("Übergang Besitz, Nutzen und Lasten"),
-  purchase_price: money("Kaufpreis (€)"),
+  kind: choice(
+    "Art",
+    PROPERTY_KIND,
+    "Eigentumswohnung, Einfamilien- oder Mehrfamilienhaus, wie im Kaufvertrag beschrieben. Bei einer Eigentumswohnung fragt die Unterlagen-Checkliste zusätzlich nach Wirtschaftsplan und Hausgeldabrechnung.",
+  ),
+  "address.street": text("Straße", "Die Straße der Immobilie, wie sie im Kaufvertrag steht."),
+  "address.house_number": text("Hausnummer", "Die Hausnummer mit Zusatz, wie im Kaufvertrag, z. B. 12a oder 3-5."),
+  "address.postal_code": text("PLZ", "Die fünfstellige Postleitzahl der Immobilie."),
+  "address.city": text("Ort", "Die Stadt oder Gemeinde, in der die Immobilie liegt."),
+  build_year: {
+    label: "Baujahr",
+    kind: "year",
+    description:
+      "Das Jahr, in dem das Gebäude fertiggestellt wurde, laut Kaufvertrag, Exposé oder Energieausweis. Danach richtet sich der AfA-Satz: vor 1925 2,5 %, von 1925 bis 2022 2 %, ab 2023 3 % im Jahr.",
+  },
+  notarized_on: date(
+    "Notartermin (Kaufvertrag beurkundet)",
+    "Der Tag, an dem der Kaufvertrag beim Notar beurkundet wurde: das Datum der Urkunde. Ab diesem Tag laufen die zehn Jahre der Spekulationsfrist, nach denen ein Verkauf steuerfrei ist.",
+  ),
+  purchase_date: date(
+    "Übergang Besitz, Nutzen und Lasten",
+    "Der Tag, an dem die Immobilie laut Kaufvertrag auf Sie überging, meist nach Zahlung des Kaufpreises. Ab diesem Monat läuft die AfA; ab diesem Jahr fragt die Unterlagen-Checkliste nach Unterlagen.",
+  ),
+  purchase_price: money(
+    "Kaufpreis (€)",
+    "Der Kaufpreis laut Kaufvertrag, ohne Nebenkosten wie Grunderwerbsteuer, Notar oder Makler; die stehen als eigene Einträge unter „Nebenkosten“.",
+  ),
 };
 
 /** By record key prefix, then by the *Create / *Patch field name the backend uses. */
 const FIELDS: Record<string, Record<string, FieldSpec>> = {
   typing: {
-    type: choice("Typ des Dokuments", DOCUMENT_TYPE),
-    subtype: choice("Untertyp", DOCUMENT_SUBTYPE),
-    title: text("Titel"),
-    document_date: date("Datum des Dokuments"),
-    tax_year: { label: "Steuerjahr", kind: "year" },
+    type: choice(
+      "Typ des Dokuments",
+      DOCUMENT_TYPE,
+      "Welche Art Dokument das ist, z. B. Rechnung, Kontoauszug oder Bescheid. Danach richtet sich, welche Werte gelesen werden und wofür das Dokument in der Unterlagen-Checkliste zählt.",
+    ),
+    subtype: choice(
+      "Untertyp",
+      DOCUMENT_SUBTYPE,
+      "Genauer als der Typ, z. B. Kaufvertrag, Mietvertrag oder Grundsteuerbescheid. Danach richten sich die Aufbewahrungsfrist und die Unterlagen-Checkliste.",
+    ),
+    title: text("Titel", "Ein kurzer Name, unter dem Sie das Dokument wiederfinden."),
+    document_date: date(
+      "Datum des Dokuments",
+      "Das Datum, das auf dem Dokument steht, z. B. das Rechnungs- oder Bescheiddatum. Ohne Steuerjahr zählt die Aufbewahrungsfrist ab dem Jahr dieses Datums.",
+    ),
+    tax_year: {
+      label: "Steuerjahr",
+      kind: "year",
+      description:
+        "Das Jahr, für das das Dokument gilt, z. B. 2026 bei der Zinsbescheinigung 2026. Die Unterlagen-Checkliste ordnet Jahresunterlagen danach zu, und die Aufbewahrungsfrist zählt ab diesem Jahr.",
+    },
   },
   property: PROPERTY_FIELDS,
   correction: PROPERTY_FIELDS,
   unit: {
-    label: text("Bezeichnung"),
-    mea: { label: "MEA (Miteigentumsanteil)", kind: "fraction" },
-    floor_area_m2: { label: "Fläche (m²)", kind: "area" },
-    rooms: { label: "Zimmer", kind: "area" },
+    label: text("Bezeichnung", "Wie die Einheit in Teilungserklärung oder Kaufvertrag heißt, z. B. „WE 3“ für Wohnung Nr. 3 oder ein Stellplatz."),
+    mea: {
+      label: "MEA (Miteigentumsanteil)",
+      kind: "fraction",
+      description:
+        "Ihr Anteil am gemeinschaftlichen Eigentum der WEG (Grundstück, Dach, Treppenhaus …), laut Teilungserklärung oder Kaufvertrag, z. B. 56,18/1.000. Nach ihm verteilt die WEG meist die gemeinsamen Kosten (Hausgeld). Bei einzeln vermieteten Zimmern einer Wohnung leer lassen.",
+    },
+    floor_area_m2: {
+      label: "Fläche (m²)",
+      kind: "area",
+      description:
+        "Die Wohnfläche in Quadratmetern laut Mietvertrag, Kaufvertrag oder Wohnflächenberechnung. Hausbuch rechnet noch nicht damit; gebraucht wird sie später z. B. für die Betriebskostenabrechnung.",
+    },
+    rooms: { label: "Zimmer", kind: "area", description: "Die Zahl der Zimmer laut Mietvertrag oder Exposé; ein halbes Zimmer als ,5." },
   },
-  price_split: { building_share: { label: "Gebäudeanteil (%)", kind: "rate" } },
-  ownership: { shares: { label: "Eigentumsanteile", kind: "fixed" }, effective_date: date("Gültig ab") },
+  price_split: {
+    building_share: {
+      label: "Gebäudeanteil (%)",
+      kind: "rate",
+      description:
+        "Der Anteil des Kaufpreises, der auf das Gebäude entfällt; der Rest ist Grund und Boden, der nicht abgeschrieben wird. Der Gebäudeanteil ist die Grundlage der AfA.",
+    },
+  },
+  ownership: {
+    shares: {
+      label: "Eigentumsanteile",
+      kind: "fixed",
+      description:
+        "Wem die Immobilie zu welchem Anteil gehört, laut Kaufvertrag (z. B. „je zur Hälfte“). Hausbuch hat die Käufer im Vertrag den angelegten Eigentümern über den Namen zugeordnet.",
+    },
+    effective_date: date("Gültig ab", "Ab wann diese Anteile gelten. Leer beim Kauf; ein Datum nur, wenn sich die Anteile später ändern."),
+  },
   cost: {
-    kind: choice("Art", ACQUISITION_COST_KIND),
-    amount: money("Betrag (€)"),
-    paid_on: date("Bezahlt am"),
-    note: text("Notiz"),
+    kind: choice(
+      "Art",
+      ACQUISITION_COST_KIND,
+      "Welche Erwerbsnebenkosten das sind: Grunderwerbsteuer (Bescheid des Finanzamts), Notar, Grundbuchamt, Makler oder Sonstige.",
+    ),
+    amount: money(
+      "Betrag (€)",
+      "Der Betrag laut Rechnung oder Bescheid. Erwerbsnebenkosten zählen zu den Anschaffungskosten; ihr Gebäudeanteil gehört zur AfA-Grundlage.",
+    ),
+    paid_on: date("Bezahlt am", "Der Tag der Zahlung, laut Kontoauszug."),
+    note: text("Notiz", "Freier Text für Sie, z. B. eine Rechnungsnummer."),
   },
   loan: {
-    lender: text("Bank"),
-    contract_number: text("Vertragsnummer"),
-    principal: money("Darlehenssumme (€)"),
-    nominal_rate: { label: "Nominalzins (% p. a.)", kind: "rate" },
-    monthly_payment: money("Rate (€ / Monat)"),
-    fixed_until: date("Zinsbindung bis"),
-    follow_up_rate: { label: "Anschlusszins (% p. a.)", kind: "rate" },
-    disbursed_on: date("Auszahlung am"),
-    first_payment_on: date("Erste Rate am"),
-    account_iban: text("Darlehenskonto (IBAN)"),
-    signed_on: date("Vertragsdatum"),
+    lender: text(
+      "Bank",
+      "Der Darlehensgeber laut Darlehensvertrag. Steht dieser Name im Kontoauszug als Empfänger, erkennt Hausbuch daran auch die Raten.",
+    ),
+    contract_number: text("Vertragsnummer", "Die Darlehens- oder Vertragsnummer laut Darlehensvertrag; sie unterscheidet mehrere Darlehen derselben Bank."),
+    principal: money(
+      "Darlehenssumme (€)",
+      "Der Darlehensbetrag laut Darlehensvertrag (Nennbetrag). Aus ihm, dem Zins und der Rate rechnet Hausbuch den Tilgungsplan.",
+    ),
+    nominal_rate: {
+      label: "Nominalzins (% p. a.)",
+      kind: "rate",
+      description:
+        "Der gebundene Sollzins pro Jahr laut Darlehensvertrag, nicht der effektive Jahreszins. Mit ihm rechnet der Tilgungsplan den Zinsanteil jeder Rate.",
+    },
+    monthly_payment: money(
+      "Rate (€ / Monat)",
+      "Die monatliche Rate aus Zins und Tilgung laut Darlehensvertrag. Eine Abbuchung in dieser Höhe teilt Hausbuch nach dem Tilgungsplan in Zinsen und Tilgung auf.",
+    ),
+    fixed_until: date(
+      "Zinsbindung bis",
+      "Das Ende der Sollzinsbindung laut Darlehensvertrag. Danach rechnet der Tilgungsplan mit dem Anschlusszins.",
+    ),
+    follow_up_rate: {
+      label: "Anschlusszins (% p. a.)",
+      kind: "rate",
+      description:
+        "Ihre Annahme für den Zins nach der Zinsbindung, solange keine Anschlussfinanzierung vereinbart ist. Leer: der Tilgungsplan rechnet mit dem Nominalzins weiter.",
+    },
+    disbursed_on: date(
+      "Auszahlung am",
+      "Der Tag, an dem die Bank das Darlehen ausgezahlt hat, laut Kontoauszug oder Auszahlungsbestätigung. Ab diesem Tag laufen im Tilgungsplan die Zinsen.",
+    ),
+    first_payment_on: date(
+      "Erste Rate am",
+      "Der Tag, an dem die erste Rate fällig ist, laut Darlehensvertrag. Die weiteren Raten folgen monatlich zum selben Tag.",
+    ),
+    account_iban: text(
+      "Darlehenskonto (IBAN)",
+      "Die IBAN des Darlehenskontos laut Darlehensvertrag. Gespeichert wird sie nur maskiert und als nicht umkehrbarer Prüfwert; daran erkennt Hausbuch die Raten im Kontoauszug.",
+    ),
+    signed_on: date("Vertragsdatum", "Der Tag, an dem der Darlehensvertrag unterschrieben wurde."),
   },
-  tenant: { full_name: text("Name"), email: text("E-Mail"), phone: text("Telefon"), iban: text("IBAN") },
+  tenant: {
+    full_name: text("Name", "Der Name der Mieterin oder des Mieters, wie im Mietvertrag."),
+    email: text("E-Mail", "Eine Kontaktangabe, z. B. aus dem Mietvertrag."),
+    phone: text("Telefon", "Eine Kontaktangabe, z. B. aus dem Mietvertrag."),
+    iban: text(
+      "IBAN",
+      "Die IBAN des Kontos, von dem die Miete kommt. Gespeichert wird sie nur maskiert und als nicht umkehrbarer Prüfwert; daran erkennt Hausbuch die Mietzahlungen im Kontoauszug.",
+    ),
+  },
   tenancy: {
-    unit_id: { label: "Einheit", kind: "fixed" },
-    start_date: date("Mietbeginn"),
-    signed_on: date("Vertragsdatum"),
-    fixed_term_until: date("Befristet bis"),
-    rent_model: choice("Mietmodell", RENT_MODEL),
-    deposit_amount: money("Kaution (€)"),
-    deposit_form: choice("Art der Kaution", DEPOSIT_FORM),
+    unit_id: {
+      label: "Einheit",
+      kind: "fixed",
+      description: "Die vermietete Einheit. Hausbuch hat sie über die Anschrift und die Wohnungsbezeichnung im Mietvertrag gefunden, oder weil die Immobilie nur eine Einheit hat.",
+    },
+    start_date: date("Mietbeginn", "Der Tag, ab dem das Mietverhältnis laut Mietvertrag läuft."),
+    signed_on: date("Vertragsdatum", "Der Tag, an dem der Mietvertrag unterschrieben wurde, meist neben den Unterschriften."),
+    fixed_term_until: date("Befristet bis", "Nur bei einem Zeitmietvertrag: das vereinbarte Ende. Leer, wenn der Vertrag unbefristet ist."),
+    rent_model: choice(
+      "Mietmodell",
+      RENT_MODEL,
+      "Festmiete, Staffelmiete (die Erhöhungen stehen schon im Vertrag) oder Indexmiete (an den Verbraucherpreisindex gekoppelt), laut Mietvertrag.",
+    ),
+    deposit_amount: money("Kaution (€)", "Die vereinbarte Kaution laut Mietvertrag."),
+    deposit_form: choice(
+      "Art der Kaution",
+      DEPOSIT_FORM,
+      "Wie die Kaution geleistet wird, laut Mietvertrag. Ist eine vereinbart, fragt die Unterlagen-Checkliste nach einem Kautionsnachweis.",
+    ),
   },
   rent: {
-    cold_rent: money("Kaltmiete (€ / Monat)"),
-    operating_costs_prepayment: money("NK-Vorauszahlung (€ / Monat)"),
-    effective_from: date("Gültig ab"),
+    cold_rent: money(
+      "Kaltmiete (€ / Monat)",
+      "Die monatliche Miete ohne Nebenkosten laut Mietvertrag. Mit ihr und der NK-Vorauszahlung erkennt Hausbuch eingehende Mietzahlungen und teilt sie auf.",
+    ),
+    operating_costs_prepayment: money(
+      "NK-Vorauszahlung (€ / Monat)",
+      "Die monatliche Vorauszahlung auf Betriebs- und Heizkosten laut Mietvertrag, beide zusammen.",
+    ),
+    effective_from: date("Gültig ab", "Der erste Tag, für den diese Miete gilt, meist der Mietbeginn."),
   },
   deposit_received: {
-    amount: money("Betrag (€)"),
-    received_on: date("Eingegangen am"),
-    tenancy_id: { label: "Mietverhältnis", kind: "fixed" },
+    amount: money("Betrag (€)", "Der Kautionsbetrag, der laut Dokument eingegangen ist."),
+    received_on: date("Eingegangen am", "Der Tag, an dem die Kaution einging, laut Quittung oder Kontoauszug."),
+    tenancy_id: {
+      label: "Mietverhältnis",
+      kind: "fixed",
+      description: "Das Mietverhältnis, zu dem die Kaution gehört. Hausbuch hat es über den vereinbarten Kautionsbetrag gefunden, oder weil nur eines in Frage kommt.",
+    },
   },
 };
 
@@ -1047,14 +1181,18 @@ function FieldRow({
   const quoteId = useId();
   const hintId = useId();
   const errorId = useId();
+  const descriptionId = useId();
   const [quoteOpen, setQuoteOpen] = useState(false);
+  const [descriptionOpen, setDescriptionOpen] = useState(false);
   const spec = specFor(record, name);
   const unchanged = record.mode === "unchanged";
   const existing = record.mode === "patch" || record.mode === "correction";
   const take = state?.take ?? true;
   const current = record.current?.[name];
   const hint = fieldHint(value, hasNotes);
-  const describedBy = [hint ? hintId : null, errors.length > 0 ? errorId : null].filter(Boolean).join(" ") || undefined;
+  const describedBy =
+    [spec.description && descriptionOpen ? descriptionId : null, hint ? hintId : null, errors.length > 0 ? errorId : null].filter(Boolean).join(" ") ||
+    undefined;
   const inputDisabled = disabled || (existing && !take);
 
   let input: ReactNode;
@@ -1106,6 +1244,14 @@ function FieldRow({
     <div className={errors.length > 0 ? "proposal-row field-invalid" : "proposal-row"}>
       <div className="proposal-row-head">
         <label htmlFor={id}>{spec.label}</label>
+        {spec.description ? (
+          <InfoToggle
+            open={descriptionOpen}
+            onToggle={() => setDescriptionOpen((open) => !open)}
+            controls={descriptionId}
+            label={spec.label}
+          />
+        ) : null}
         <ConfidenceDot value={value} />
         {value.source ? (
           <button
@@ -1121,6 +1267,11 @@ function FieldRow({
           </button>
         ) : null}
       </div>
+      {spec.description ? (
+        <FieldDescription id={descriptionId} open={descriptionOpen}>
+          {spec.description}
+        </FieldDescription>
+      ) : null}
       <div className={existing && !unchanged ? "proposal-row-body with-current" : "proposal-row-body"}>
         <div>{input}</div>
         {existing && !unchanged ? (

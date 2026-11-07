@@ -58,10 +58,21 @@ export function EditTenancyForm({ tenancy, onDone }: { tenancy: Tenancy; onDone:
 
   return (
     <form className="stack" onSubmit={submit} noValidate>
-      <Field id="edit-fixed" label="Befristet bis (optional)" hint="Leer = unbefristet." errors={form.of("fixed_term_until")}>
+      <Field
+        id="edit-fixed"
+        label="Befristet bis (optional)"
+        hint="Leer = unbefristet."
+        description="Nur bei einem Zeitmietvertrag: das vereinbarte Ende laut Mietvertrag."
+        errors={form.of("fixed_term_until")}
+      >
         <input type="date" value={fixedTermUntil} onChange={(e) => setFixedTermUntil(e.target.value)} />
       </Field>
-      <Field id="edit-model" label="Mietmodell" errors={form.of("rent_model")}>
+      <Field
+        id="edit-model"
+        label="Mietmodell"
+        description="Festmiete, Staffelmiete (die Erhöhungen stehen schon im Vertrag) oder Indexmiete (an den Verbraucherpreisindex gekoppelt), laut Mietvertrag."
+        errors={form.of("rent_model")}
+      >
         <select value={rentModel} onChange={(e) => setRentModel(e.target.value as RentModel)}>
           {options(RENT_MODEL).map(([value, text]) => (
             <option key={value} value={value}>
@@ -70,7 +81,12 @@ export function EditTenancyForm({ tenancy, onDone }: { tenancy: Tenancy; onDone:
           ))}
         </select>
       </Field>
-      <Field id="edit-deposit-form" label="Kaution: Art" errors={form.of("deposit_form")}>
+      <Field
+        id="edit-deposit-form"
+        label="Kaution: Art"
+        description="Wie die Kaution geleistet wird, laut Mietvertrag. Ist eine vereinbart, fragt die Unterlagen-Checkliste nach einem Kautionsnachweis."
+        errors={form.of("deposit_form")}
+      >
         <select value={depositForm} onChange={(e) => setDepositForm(e.target.value as DepositKind)}>
           {options(DEPOSIT_FORM).map(([value, text]) => (
             <option key={value} value={value}>
@@ -79,16 +95,28 @@ export function EditTenancyForm({ tenancy, onDone }: { tenancy: Tenancy; onDone:
           ))}
         </select>
       </Field>
-      <Field id="edit-deposit-amount" label="Kaution: Betrag (€)" hint="Leer = keine Kaution." errors={form.of("deposit_amount")}>
+      <Field
+        id="edit-deposit-amount"
+        label="Kaution: Betrag (€)"
+        hint="Leer = keine Kaution."
+        description="Die vereinbarte Kaution laut Mietvertrag."
+        errors={form.of("deposit_amount")}
+      >
         <input type="text" inputMode="decimal" value={depositAmount} onChange={(e) => setDepositAmount(e.target.value)} autoComplete="off" />
       </Field>
-      <Field id="edit-deposit-bank" label="Bank des Kautionskontos (optional)" errors={form.of("deposit_bank")}>
+      <Field
+        id="edit-deposit-bank"
+        label="Bank des Kautionskontos (optional)"
+        description="Die Bank, bei der die Kaution angelegt ist, z. B. laut Kontoeröffnung oder Sparbuch."
+        errors={form.of("deposit_bank")}
+      >
         <input type="text" value={depositBank} onChange={(e) => setDepositBank(e.target.value)} autoComplete="off" />
       </Field>
       <Field
         id="edit-deposit-iban"
         label="Neue IBAN des Kautionskontos (optional)"
         hint={`Gespeichert: ${tenancy.deposit_iban_masked ?? "keine"}. Leer lassen, um sie zu behalten.`}
+        description="Die IBAN des Kautionskontos. Gespeichert wird sie nur maskiert."
         errors={form.of("deposit_iban")}
       >
         <input type="text" value={iban} onChange={(e) => setIban(e.target.value)} autoComplete="off" spellCheck={false} disabled={removeIban} />
@@ -149,10 +177,20 @@ export function DepositForm({ tenancy, receipt, onDone }: { tenancy: Tenancy; re
           ? "Die Korrektur wird als eigener Eintrag protokolliert; der Verlauf zeigt danach Betrag und Datum der Korrektur."
           : "Auch für eine Rate der Kaution; jede Zahlung ist ein eigener Eintrag."}
       </p>
-      <Field id="deposit-received-amount" label="Betrag (€)" errors={form.of("amount")}>
+      <Field
+        id="deposit-received-amount"
+        label="Betrag (€)"
+        description="Der Betrag, der tatsächlich eingegangen ist, laut Kontoauszug oder Quittung."
+        errors={form.of("amount")}
+      >
         <input type="text" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} required autoComplete="off" />
       </Field>
-      <Field id="deposit-received-on" label="Erhalten am" errors={form.of("received_on")}>
+      <Field
+        id="deposit-received-on"
+        label="Erhalten am"
+        description="Der Tag, an dem die Kaution einging, laut Kontoauszug oder Quittung."
+        errors={form.of("received_on")}
+      >
         <input type="date" value={receivedOn} onChange={(e) => setReceivedOn(e.target.value)} required />
       </Field>
       <Submit busy={busy}>{receipt ? "Korrektur speichern" : "Speichern"}</Submit>
@@ -197,7 +235,12 @@ export function NoticeForm({ tenancy, current, onDone }: { tenancy: Tenancy; cur
 
   return (
     <form className="stack" onSubmit={submit} noValidate>
-      <Field id="notice-by" label="Gekündigt durch" errors={form.of("given_by")}>
+      <Field
+        id="notice-by"
+        label="Gekündigt durch"
+        description="Wer gekündigt hat, laut Kündigungsschreiben."
+        errors={form.of("given_by")}
+      >
         <select value={givenBy} onChange={(e) => setGivenBy(e.target.value as "tenant" | "landlord")}>
           {options(NOTICE_GIVEN_BY).map(([value, text]) => (
             <option key={value} value={value}>
@@ -206,10 +249,20 @@ export function NoticeForm({ tenancy, current, onDone }: { tenancy: Tenancy; cur
           ))}
         </select>
       </Field>
-      <Field id="notice-on" label="Kündigung vom" errors={form.of("given_on")}>
+      <Field
+        id="notice-on"
+        label="Kündigung vom"
+        description="Das Datum des Kündigungsschreibens."
+        errors={form.of("given_on")}
+      >
         <input type="date" value={givenOn} onChange={(e) => setGivenOn(e.target.value)} required />
       </Field>
-      <Field id="notice-ends" label="Zum (Ende des Mietverhältnisses)" errors={form.of("ends_on")}>
+      <Field
+        id="notice-ends"
+        label="Zum (Ende des Mietverhältnisses)"
+        description="Der Tag, zu dem das Mietverhältnis laut Kündigung endet."
+        errors={form.of("ends_on")}
+      >
         <input type="date" value={endsOn} onChange={(e) => setEndsOn(e.target.value)} required />
       </Field>
       <p className="muted">
@@ -246,7 +299,12 @@ export function EndForm({ tenancy, onDone }: { tenancy: Tenancy; onDone: () => v
   return (
     <form className="stack" onSubmit={submit} noValidate>
       <p className="muted">Das Auszugsdatum ist ein Meilenstein: danach ändert es nur „Auszug korrigieren“, als eigener Eintrag im Verlauf.</p>
-      <Field id="end-date" label="Auszug am" errors={form.of("end_date")}>
+      <Field
+        id="end-date"
+        label="Auszug am"
+        description="Der Tag, an dem das Mietverhältnis endete, z. B. laut Übergabeprotokoll. Danach richtet sich, wie lange Mietunterlagen und Mieterdaten aufbewahrt werden: bis Ende des vierten Jahres danach."
+        errors={form.of("end_date")}
+      >
         <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} required />
       </Field>
       <Submit busy={busy}>Auszug speichern</Submit>

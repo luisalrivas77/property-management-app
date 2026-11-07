@@ -52,6 +52,47 @@ label.inline {
   font-size: 13px;
 }
 
+/* A label with its "i": the button shows or hides the field's description under the label
+   (tap or click, no hover-only tooltip). */
+.field-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.field-head label {
+  margin: 0;
+}
+
+button.info-toggle {
+  flex: none;
+  width: 24px;
+  min-height: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 50%;
+  border-color: var(--border-strong);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+button.info-toggle:not(:disabled):hover,
+button.info-toggle[aria-expanded="true"] {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+  color: var(--accent-strong);
+}
+
+.field-description {
+  margin: 0 0 8px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
 fieldset {
   border: 1px solid var(--border);
   border-radius: var(--radius-card);

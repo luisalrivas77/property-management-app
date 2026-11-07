@@ -76,14 +76,31 @@ export function AccountForm({ account }: { account?: Account }) {
   return (
     <form className="stack" onSubmit={submit} noValidate>
       <div className="grid">
-        <Field id="account-label" label="Bezeichnung" hint="z. B. Mietkonto Musterstraße" errors={form.of("label")}>
+        <Field
+          id="account-label"
+          label="Bezeichnung"
+          hint="z. B. Mietkonto Musterstraße"
+          description="Ein frei wählbarer Name, unter dem Sie das Konto in Hausbuch wiederfinden."
+          errors={form.of("label")}
+        >
           <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} required maxLength={100} autoComplete="off" />
         </Field>
-        <Field id="account-bank" label="Bank" errors={form.of("bank")}>
+        <Field
+          id="account-bank"
+          label="Bank"
+          description="Die Bank, bei der das Konto geführt wird, wie auf dem Kontoauszug."
+          errors={form.of("bank")}
+        >
           <input type="text" value={bank} onChange={(e) => setBank(e.target.value)} required autoComplete="off" />
         </Field>
         {account ? null : (
-          <Field id="account-iban" label="IBAN" hint="Wird nur maskiert angezeigt." errors={form.of("iban")}>
+          <Field
+            id="account-iban"
+            label="IBAN"
+            hint="Wird nur maskiert angezeigt."
+            description="Die IBAN des Kontos laut Kontoauszug. Hausbuch zeigt sie nur maskiert und prüft damit, dass ein hochgeladener Kontoauszug zu diesem Konto gehört."
+            errors={form.of("iban")}
+          >
             <input type="text" value={iban} onChange={(e) => setIban(e.target.value)} required autoComplete="off" spellCheck={false} />
           </Field>
         )}
@@ -91,6 +108,7 @@ export function AccountForm({ account }: { account?: Account }) {
           id="account-opening"
           label="Anfangssaldo (€)"
           hint="Der Kontostand am Ende des Tages unten, laut Bank. Bei einem neuen Konto 0,00; negativ mit Minus."
+          description="Der Kontostand laut Bank am Ende des Tages, den Sie darunter angeben. Von ihm aus prüft Hausbuch, ob jeder importierte Kontoauszug aufgeht: Anfangssaldo plus Umsätze gleich Endsaldo."
           errors={form.of("opening_balance")}
         >
           <input type="text" inputMode="decimal" value={opening} onChange={(e) => setOpening(e.target.value)} required autoComplete="off" />
@@ -99,6 +117,7 @@ export function AccountForm({ account }: { account?: Account }) {
           id="account-opening-on"
           label="Anfangssaldo am"
           hint="Ein Tag vor dem ersten Umsatz, der importiert wird: Umsätze an oder vor diesem Tag passen nicht zum Anfangssaldo."
+          description="Der Tag, an dem dieser Kontostand galt, laut Kontoauszug oder Online-Banking."
           errors={form.of("opening_balance_on")}
         >
           <input type="date" value={openingOn} onChange={(e) => setOpeningOn(e.target.value)} required />

@@ -50,16 +50,39 @@ export function UnitForm({ propertyId, unit }: { propertyId: string; unit?: Unit
   return (
     <form className="stack" onSubmit={submit} noValidate>
       <div className="grid">
-        <Field id="unit-label" label="Bezeichnung" hint="z. B. „WE 3“ oder „TG-Stellplatz 12“" errors={form.of("label")}>
+        <Field
+          id="unit-label"
+          label="Bezeichnung"
+          hint="z. B. „WE 3“ oder „TG-Stellplatz 12“"
+          description="Wie die Einheit in Teilungserklärung oder Kaufvertrag heißt, z. B. „WE 3“ für Wohnung Nr. 3 oder ein Tiefgaragenstellplatz."
+          errors={form.of("label")}
+        >
           <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} required autoComplete="off" />
         </Field>
-        <Field id="unit-area" label="Fläche (m²)" errors={form.of("floor_area_m2")}>
+        <Field
+          id="unit-area"
+          label="Fläche (m²)"
+          description="Die Wohnfläche in Quadratmetern laut Mietvertrag, Kaufvertrag oder Wohnflächenberechnung. Hausbuch rechnet noch nicht damit; gebraucht wird sie später z. B. für die Betriebskostenabrechnung."
+          errors={form.of("floor_area_m2")}
+        >
           <input type="text" inputMode="decimal" value={area} onChange={(e) => setArea(e.target.value)} required autoComplete="off" />
         </Field>
-        <Field id="unit-rooms" label="Zimmer (optional)" hint="z. B. 2,5" errors={form.of("rooms")}>
+        <Field
+          id="unit-rooms"
+          label="Zimmer (optional)"
+          hint="z. B. 2,5"
+          description="Die Zahl der Zimmer laut Mietvertrag oder Exposé; ein halbes Zimmer als ,5."
+          errors={form.of("rooms")}
+        >
           <input type="text" inputMode="decimal" value={rooms} onChange={(e) => setRooms(e.target.value)} autoComplete="off" />
         </Field>
-        <Field id="unit-mea" label="MEA (optional)" hint="Miteigentumsanteil laut Teilungserklärung, z. B. 85/1000" errors={form.of("mea")}>
+        <Field
+          id="unit-mea"
+          label="MEA (optional)"
+          hint="Miteigentumsanteil laut Teilungserklärung, z. B. 85/1000"
+          description="Ihr Anteil am gemeinschaftlichen Eigentum der WEG (Grundstück, Dach, Treppenhaus …), laut Teilungserklärung oder Kaufvertrag, z. B. 56,18/1.000. Nach ihm verteilt die WEG meist die gemeinsamen Kosten (Hausgeld). Bei einzeln vermieteten Zimmern einer Wohnung leer lassen."
+          errors={form.of("mea")}
+        >
           <input type="text" value={mea} onChange={(e) => setMea(e.target.value)} autoComplete="off" />
         </Field>
       </div>

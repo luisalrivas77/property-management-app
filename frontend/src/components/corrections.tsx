@@ -23,6 +23,7 @@ export function DateCorrectionForm({
   currentPrice,
   priceLabel = "Kaufpreis",
   priceHint = "Leer lassen, wenn der Kaufpreis stimmt.",
+  description = "Das richtige Datum laut Dokument. Die Korrektur wird als eigener Eintrag gespeichert; der Verlauf zeigt das ursprüngliche Datum weiter an.",
   onSubmit,
   onDone,
 }: {
@@ -35,6 +36,8 @@ export function DateCorrectionForm({
   /** What that amount is called ("Kaufpreis", "Darlehenssumme"). */
   priceLabel?: string;
   priceHint?: string;
+  /** What the date is, behind the "i" next to its label. */
+  description?: string;
   onSubmit: (values: CorrectionValues) => Promise<unknown>;
   onDone: () => void;
 }) {
@@ -69,7 +72,7 @@ export function DateCorrectionForm({
         {currentPrice !== undefined ? `, ${priceLabel} ${formatMoney(currentPrice)}` : ""}. Die Korrektur wird als eigener Eintrag
         protokolliert; der Verlauf zeigt danach das neue Datum mit dem Hinweis auf das ursprüngliche.
       </p>
-      <Field id={`${idPrefix}-date`} label={label} errors={form.of("new_date")}>
+      <Field id={`${idPrefix}-date`} label={label} description={description} errors={form.of("new_date")}>
         <input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} required />
       </Field>
       {currentPrice !== undefined ? (
@@ -77,6 +80,7 @@ export function DateCorrectionForm({
           id={`${idPrefix}-price`}
           label={`${priceLabel} korrigieren (€, optional)`}
           hint={priceHint}
+          description={`Nur ausfüllen, wenn auch der Betrag (${priceLabel}) falsch erfasst ist: der richtige Betrag laut Vertrag.`}
           errors={form.of("purchase_price")}
         >
           <input type="text" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} autoComplete="off" />

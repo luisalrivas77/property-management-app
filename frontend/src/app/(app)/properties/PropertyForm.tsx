@@ -99,10 +99,21 @@ export function PropertyForm({ property }: { property?: Property }) {
   return (
     <form className="stack" onSubmit={submit} noValidate>
       <div className="grid">
-        <Field id="property-label" label="Bezeichnung" hint="z. B. „Wohnung Lindenstraße“" errors={form.of("label")}>
+        <Field
+          id="property-label"
+          label="Bezeichnung"
+          hint="z. B. „Wohnung Lindenstraße“"
+          description="Ein frei wählbarer Name, unter dem Sie die Immobilie in Hausbuch wiederfinden."
+          errors={form.of("label")}
+        >
           <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} required autoComplete="off" />
         </Field>
-        <Field id="property-kind" label="Art" errors={form.of("kind")}>
+        <Field
+          id="property-kind"
+          label="Art"
+          description="Eigentumswohnung, Einfamilien- oder Mehrfamilienhaus, wie im Kaufvertrag beschrieben. Bei einer Eigentumswohnung fragt die Unterlagen-Checkliste zusätzlich nach Wirtschaftsplan und Hausgeldabrechnung der WEG."
+          errors={form.of("kind")}
+        >
           <select value={kind} onChange={(e) => setKind(e.target.value as PropertyKind)}>
             {options(PROPERTY_KIND).map(([value, text]) => (
               <option key={value} value={value}>
@@ -111,13 +122,28 @@ export function PropertyForm({ property }: { property?: Property }) {
             ))}
           </select>
         </Field>
-        <Field id="property-street" label="Straße" errors={form.of("address.street")}>
+        <Field
+          id="property-street"
+          label="Straße"
+          description="Die Straße der Immobilie, wie sie im Kaufvertrag oder Grundbuch steht."
+          errors={form.of("address.street")}
+        >
           <input type="text" value={street} onChange={(e) => setStreet(e.target.value)} required autoComplete="address-line1" />
         </Field>
-        <Field id="property-house" label="Hausnummer" errors={form.of("address.house_number")}>
+        <Field
+          id="property-house"
+          label="Hausnummer"
+          description="Die Hausnummer mit Zusatz, wie im Kaufvertrag, z. B. 12a oder 3-5."
+          errors={form.of("address.house_number")}
+        >
           <input type="text" value={houseNumber} onChange={(e) => setHouseNumber(e.target.value)} required autoComplete="off" />
         </Field>
-        <Field id="property-postal" label="PLZ" errors={form.of("address.postal_code")}>
+        <Field
+          id="property-postal"
+          label="PLZ"
+          description="Die fünfstellige Postleitzahl der Immobilie."
+          errors={form.of("address.postal_code")}
+        >
           <input
             type="text"
             inputMode="numeric"
@@ -128,21 +154,38 @@ export function PropertyForm({ property }: { property?: Property }) {
             autoComplete="postal-code"
           />
         </Field>
-        <Field id="property-city" label="Ort" errors={form.of("address.city")}>
+        <Field
+          id="property-city"
+          label="Ort"
+          description="Die Stadt oder Gemeinde, in der die Immobilie liegt."
+          errors={form.of("address.city")}
+        >
           <input type="text" value={city} onChange={(e) => setCity(e.target.value)} required autoComplete="address-level2" />
         </Field>
-        <Field id="property-year" label="Baujahr" hint="Bestimmt den AfA-Satz." errors={form.of("build_year")}>
+        <Field
+          id="property-year"
+          label="Baujahr"
+          hint="Bestimmt den AfA-Satz."
+          description="Das Jahr, in dem das Gebäude fertiggestellt wurde, laut Kaufvertrag, Exposé oder Energieausweis. Danach richtet sich der AfA-Satz: vor 1925 2,5 %, von 1925 bis 2022 2 %, ab 2023 3 % im Jahr."
+          errors={form.of("build_year")}
+        >
           <input type="text" inputMode="numeric" value={buildYear} onChange={(e) => setBuildYear(e.target.value)} required maxLength={4} />
         </Field>
         {property ? null : (
           <>
-            <Field id="property-price" label="Kaufpreis (€)" errors={form.of("purchase_price")}>
+            <Field
+              id="property-price"
+              label="Kaufpreis (€)"
+              description="Der Kaufpreis laut Kaufvertrag, ohne Nebenkosten wie Grunderwerbsteuer, Notar oder Makler; die erfassen Sie danach unter „Nebenkosten“."
+              errors={form.of("purchase_price")}
+            >
               <input type="text" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} required autoComplete="off" />
             </Field>
             <Field
               id="property-notarized"
               label="Notartermin (Kaufvertrag beurkundet)"
               hint="Ab hier läuft die zehnjährige Spekulationsfrist."
+              description="Der Tag, an dem der Kaufvertrag beim Notar beurkundet wurde: das Datum der Urkunde, oben auf dem Kaufvertrag. Ab diesem Tag laufen die zehn Jahre der Spekulationsfrist, nach denen ein Verkauf steuerfrei ist."
               errors={form.of("notarized_on")}
             >
               <input type="date" value={notarizedOn} onChange={(e) => setNotarizedOn(e.target.value)} required />
@@ -151,6 +194,7 @@ export function PropertyForm({ property }: { property?: Property }) {
               id="property-purchase-date"
               label="Übergang Besitz, Nutzen und Lasten"
               hint="Ab hier läuft die AfA."
+              description="Der Tag, an dem die Immobilie laut Kaufvertrag auf Sie überging, meist nach Zahlung des Kaufpreises. Ab diesem Monat läuft die AfA; ab diesem Jahr fragt die Unterlagen-Checkliste nach Unterlagen."
               errors={form.of("purchase_date")}
             >
               <input type="date" value={purchaseDate} onChange={(e) => setPurchaseDate(e.target.value)} required />

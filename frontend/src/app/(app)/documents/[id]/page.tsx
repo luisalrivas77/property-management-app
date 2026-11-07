@@ -198,7 +198,12 @@ function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onS
   return (
     <form className="card stack" onSubmit={submit} noValidate>
       <div className="grid">
-        <Field id="doc-type" label="Typ" errors={form.of("typing.type")}>
+        <Field
+          id="doc-type"
+          label="Typ"
+          description="Welche Art Dokument das ist, z. B. Rechnung, Kontoauszug oder Bescheid. Danach richtet sich, welche Werte gelesen werden und wofür das Dokument in der Unterlagen-Checkliste zählt."
+          errors={form.of("typing.type")}
+        >
           <select value={type} onChange={(e) => setType(e.target.value as DocumentType | "")} required>
             <option value="">– wählen –</option>
             {options(DOCUMENT_TYPE).map(([value, text]) => (
@@ -208,7 +213,13 @@ function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onS
             ))}
           </select>
         </Field>
-        <Field id="doc-subtype" label="Untertyp (optional)" hint="Bestimmt die Aufbewahrung, z. B. Kaufvertrag." errors={form.of("typing.subtype")}>
+        <Field
+          id="doc-subtype"
+          label="Untertyp (optional)"
+          hint="Bestimmt die Aufbewahrung, z. B. Kaufvertrag."
+          description="Genauer als der Typ, z. B. Kaufvertrag, Mietvertrag oder Grundsteuerbescheid. Danach richten sich die Aufbewahrungsfrist und die Unterlagen-Checkliste."
+          errors={form.of("typing.subtype")}
+        >
           <select value={subtype} onChange={(e) => setSubtype(e.target.value as DocumentSubtype | "")}>
             <option value="">– keiner –</option>
             {options(DOCUMENT_SUBTYPE).map(([value, text]) => (
@@ -218,13 +229,28 @@ function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onS
             ))}
           </select>
         </Field>
-        <Field id="doc-title" label="Titel (optional)" errors={form.of("typing.title")}>
+        <Field
+          id="doc-title"
+          label="Titel (optional)"
+          description="Ein kurzer Name, unter dem Sie das Dokument wiederfinden."
+          errors={form.of("typing.title")}
+        >
           <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} autoComplete="off" />
         </Field>
-        <Field id="doc-date" label="Datum des Dokuments (optional)" errors={form.of("typing.document_date")}>
+        <Field
+          id="doc-date"
+          label="Datum des Dokuments (optional)"
+          description="Das Datum, das auf dem Dokument steht, z. B. das Rechnungs- oder Bescheiddatum. Ohne Steuerjahr zählt die Aufbewahrungsfrist ab dem Jahr dieses Datums."
+          errors={form.of("typing.document_date")}
+        >
           <input type="date" value={documentDate} onChange={(e) => setDocumentDate(e.target.value)} />
         </Field>
-        <Field id="doc-tax-year" label="Steuerjahr (optional)" errors={form.of("typing.tax_year")}>
+        <Field
+          id="doc-tax-year"
+          label="Steuerjahr (optional)"
+          description="Das Jahr, für das das Dokument gilt, z. B. 2026 bei der Zinsbescheinigung 2026. Die Unterlagen-Checkliste ordnet Jahresunterlagen danach zu, und die Aufbewahrungsfrist zählt ab diesem Jahr."
+          errors={form.of("typing.tax_year")}
+        >
           <input type="text" inputMode="numeric" value={taxYear} onChange={(e) => setTaxYear(e.target.value)} maxLength={4} />
         </Field>
       </div>
@@ -244,32 +270,62 @@ function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onS
         {available.size > 0 ? (
           <div className="grid">
             {available.has("amount_total") ? (
-              <Field id="doc-amount" label="Betrag gesamt (€)" errors={form.of("fields.amount_total")}>
+              <Field
+                id="doc-amount"
+                label="Betrag gesamt (€)"
+                description="Der Gesamtbetrag laut Dokument, bei einer Rechnung brutto. Bei Rechnungen und Bescheiden sucht Hausbuch damit die passende Zahlung im Kontoauszug."
+                errors={form.of("fields.amount_total")}
+              >
                 <input type="text" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoComplete="off" />
               </Field>
             ) : null}
             {available.has("counterparty") ? (
-              <Field id="doc-counterparty" label="Absender / Gegenpartei" errors={form.of("fields.counterparty")}>
+              <Field
+                id="doc-counterparty"
+                label="Absender / Gegenpartei"
+                description="Wer das Dokument ausgestellt hat oder an wen gezahlt wird, z. B. Handwerker, Stadtkasse oder Hausverwaltung."
+                errors={form.of("fields.counterparty")}
+              >
                 <input type="text" value={counterparty} onChange={(e) => setCounterparty(e.target.value)} autoComplete="off" />
               </Field>
             ) : null}
             {available.has("period_start") ? (
-              <Field id="doc-period-start" label="Zeitraum von" errors={form.of("fields.period_start")}>
+              <Field
+                id="doc-period-start"
+                label="Zeitraum von"
+                description="Der Beginn des Zeitraums, für den das Dokument gilt, z. B. des Abrechnungsjahrs einer Hausgeldabrechnung."
+                errors={form.of("fields.period_start")}
+              >
                 <input type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />
               </Field>
             ) : null}
             {available.has("period_end") ? (
-              <Field id="doc-period-end" label="Zeitraum bis" errors={form.of("fields.period_end")}>
+              <Field
+                id="doc-period-end"
+                label="Zeitraum bis"
+                description="Das Ende dieses Zeitraums."
+                errors={form.of("fields.period_end")}
+              >
                 <input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
               </Field>
             ) : null}
             {available.has("reference") ? (
-              <Field id="doc-reference" label="Referenz (Rechnungs-/Aktenzeichen)" errors={form.of("fields.reference")}>
+              <Field
+                id="doc-reference"
+                label="Referenz (Rechnungs-/Aktenzeichen)"
+                description="Die Rechnungsnummer oder das Aktenzeichen laut Dokument. Steht sie im Verwendungszweck einer Überweisung, hilft das, die Zahlung diesem Beleg zuzuordnen."
+                errors={form.of("fields.reference")}
+              >
                 <input type="text" value={reference} onChange={(e) => setReference(e.target.value)} autoComplete="off" />
               </Field>
             ) : null}
             {available.has("notes") ? (
-              <Field id="doc-notes" label="Notizen" errors={form.of("fields.notes")}>
+              <Field
+                id="doc-notes"
+                label="Notizen"
+                description="Freier Text für Sie."
+                errors={form.of("fields.notes")}
+              >
                 <textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
               </Field>
             ) : null}
@@ -353,7 +409,11 @@ function Links({ detail, targets: all, onChanged }: { detail: DocumentDetail; ta
       )}
       <form className="card stack" onSubmit={link}>
         <div className="grid">
-          <Field id="link-type" label="Verknüpfen mit">
+          <Field
+            id="link-type"
+            label="Verknüpfen mit"
+            description="Worauf sich das Dokument bezieht, z. B. die Immobilie, ein Darlehen oder ein Mietverhältnis. Die Unterlagen-Checkliste zählt ein Dokument erst, wenn es mit dem passenden Eintrag verknüpft ist."
+          >
             <select
               value={targetType}
               onChange={(e) => {
@@ -368,7 +428,11 @@ function Links({ detail, targets: all, onChanged }: { detail: DocumentDetail; ta
               ))}
             </select>
           </Field>
-          <Field id="link-target" label={LINK_TARGET[targetType]}>
+          <Field
+            id="link-target"
+            label={LINK_TARGET[targetType]}
+            description="Der Eintrag, mit dem das Dokument verknüpft wird."
+          >
             <select value={targetId} onChange={(e) => setTargetId(e.target.value)} disabled={all === null}>
               <option value="">{all === null ? "Lädt …" : choices.length === 0 ? "– nichts zur Auswahl –" : "– wählen –"}</option>
               {choices.map((target) => (

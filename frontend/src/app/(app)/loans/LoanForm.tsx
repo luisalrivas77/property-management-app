@@ -113,38 +113,81 @@ export function LoanForm({ propertyId, loan }: { propertyId: string; loan?: Loan
   return (
     <form className="stack" onSubmit={submit} noValidate>
       <div className="grid">
-        <Field id="loan-lender" label="Bank" errors={form.of("lender")}>
+        <Field
+          id="loan-lender"
+          label="Bank"
+          description="Der Darlehensgeber laut Darlehensvertrag. Steht dieser Name im Kontoauszug als Empfänger, erkennt Hausbuch daran auch die Raten."
+          errors={form.of("lender")}
+        >
           <input type="text" value={lender} onChange={(e) => setLender(e.target.value)} required autoComplete="off" />
         </Field>
-        <Field id="loan-contract" label="Vertragsnummer (optional)" errors={form.of("contract_number")}>
+        <Field
+          id="loan-contract"
+          label="Vertragsnummer (optional)"
+          description="Die Darlehens- oder Vertragsnummer laut Darlehensvertrag; sie unterscheidet mehrere Darlehen derselben Bank."
+          errors={form.of("contract_number")}
+        >
           <input type="text" value={contractNumber} onChange={(e) => setContractNumber(e.target.value)} autoComplete="off" />
         </Field>
         {loan ? null : (
-          <Field id="loan-principal" label="Darlehenssumme (€)" errors={form.of("principal")}>
+          <Field
+            id="loan-principal"
+            label="Darlehenssumme (€)"
+            description="Der Darlehensbetrag laut Darlehensvertrag (Nennbetrag). Aus ihm, dem Zins und der Rate rechnet Hausbuch den Tilgungsplan."
+            errors={form.of("principal")}
+          >
             <input type="text" inputMode="decimal" value={principal} onChange={(e) => setPrincipal(e.target.value)} required autoComplete="off" />
           </Field>
         )}
-        <Field id="loan-rate" label="Nominalzins (% p. a.)" hint="z. B. 3,65" errors={form.of("nominal_rate")}>
+        <Field
+          id="loan-rate"
+          label="Nominalzins (% p. a.)"
+          hint="z. B. 3,65"
+          description="Der gebundene Sollzins pro Jahr laut Darlehensvertrag, nicht der effektive Jahreszins. Mit ihm rechnet der Tilgungsplan den Zinsanteil jeder Rate."
+          errors={form.of("nominal_rate")}
+        >
           <input type="text" inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} required autoComplete="off" />
         </Field>
-        <Field id="loan-payment" label="Rate (€ / Monat)" hint="Zins und Tilgung zusammen." errors={form.of("monthly_payment")}>
+        <Field
+          id="loan-payment"
+          label="Rate (€ / Monat)"
+          hint="Zins und Tilgung zusammen."
+          description="Die monatliche Rate laut Darlehensvertrag. Eine Abbuchung in dieser Höhe teilt Hausbuch nach dem Tilgungsplan in Zinsen und Tilgung auf."
+          errors={form.of("monthly_payment")}
+        >
           <input type="text" inputMode="decimal" value={payment} onChange={(e) => setPayment(e.target.value)} required autoComplete="off" />
         </Field>
         {loan ? null : (
-          <Field id="loan-disbursed" label="Auszahlung am" errors={form.of("disbursed_on")}>
+          <Field
+            id="loan-disbursed"
+            label="Auszahlung am"
+            description="Der Tag, an dem die Bank das Darlehen ausgezahlt hat, laut Kontoauszug oder Auszahlungsbestätigung. Ab diesem Tag laufen im Tilgungsplan die Zinsen."
+            errors={form.of("disbursed_on")}
+          >
             <input type="date" value={disbursedOn} onChange={(e) => setDisbursedOn(e.target.value)} required />
           </Field>
         )}
-        <Field id="loan-first" label="Erste Rate am" errors={form.of("first_payment_on")}>
+        <Field
+          id="loan-first"
+          label="Erste Rate am"
+          description="Der Tag, an dem die erste Rate fällig ist, laut Darlehensvertrag. Die weiteren Raten folgen monatlich zum selben Tag."
+          errors={form.of("first_payment_on")}
+        >
           <input type="date" value={firstPaymentOn} onChange={(e) => setFirstPaymentOn(e.target.value)} required />
         </Field>
-        <Field id="loan-fixed" label="Zinsbindung bis (optional)" errors={form.of("fixed_until")}>
+        <Field
+          id="loan-fixed"
+          label="Zinsbindung bis (optional)"
+          description="Das Ende der Sollzinsbindung laut Darlehensvertrag. Danach rechnet der Tilgungsplan mit dem Anschlusszins."
+          errors={form.of("fixed_until")}
+        >
           <input type="date" value={fixedUntil} onChange={(e) => setFixedUntil(e.target.value)} />
         </Field>
         <Field
           id="loan-follow-up"
           label="Anschlusszins (% p. a., optional)"
           hint="Annahme für die Zeit nach der Zinsbindung; leer = Nominalzins."
+          description="Ihre Annahme für den Zins nach der Zinsbindung, solange keine Anschlussfinanzierung vereinbart ist. Ohne Angabe rechnet der Tilgungsplan mit dem Nominalzins weiter."
           errors={form.of("follow_up_rate")}
         >
           <input type="text" inputMode="decimal" value={followUpRate} onChange={(e) => setFollowUpRate(e.target.value)} autoComplete="off" />
@@ -153,12 +196,18 @@ export function LoanForm({ propertyId, loan }: { propertyId: string; loan?: Loan
           id="loan-iban"
           label={loan ? "Neue Konto-IBAN (optional)" : "Konto-IBAN (optional)"}
           hint={loan ? `Gespeichert: ${loan.account_iban_masked ?? "keine"}. Leer lassen, um sie zu behalten.` : "Das Darlehenskonto, für die Zuordnung der Raten."}
+          description="Die IBAN des Darlehenskontos laut Darlehensvertrag. Gespeichert wird sie nur maskiert und als nicht umkehrbarer Prüfwert; daran erkennt Hausbuch die Raten im Kontoauszug."
           errors={form.of("account_iban")}
         >
           <input type="text" value={iban} onChange={(e) => setIban(e.target.value)} autoComplete="off" spellCheck={false} disabled={removeIban} />
         </Field>
         {loan ? null : (
-          <Field id="loan-signed" label="Vertragsdatum (optional)" errors={form.of("signed_on")}>
+          <Field
+            id="loan-signed"
+            label="Vertragsdatum (optional)"
+            description="Der Tag, an dem der Darlehensvertrag unterschrieben wurde."
+            errors={form.of("signed_on")}
+          >
             <input type="date" value={signedOn} onChange={(e) => setSignedOn(e.target.value)} />
           </Field>
         )}
