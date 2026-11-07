@@ -8,9 +8,13 @@ the current typing, document_extraction an append-only version per change (D9, p
 
 import hashlib
 import re
+from datetime import date
+from decimal import Decimal
+from typing import Any, get_args
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
+from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import Connection, delete, exists, insert, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
@@ -26,6 +30,8 @@ from hausbuch.db.tables import property_price_split as split_table
 from hausbuch.db.tables import tenancy as tenancy_table
 from hausbuch.db.tables import unit as unit_table
 from hausbuch.rules import retention
+from hausbuch.rules.errors import RuleError
+from hausbuch.schemas.ai import ExtractedValue
 from hausbuch.schemas.api import LinkTargetRef, RelatedDocument
 from hausbuch.schemas.document import (
     Document,
@@ -33,6 +39,8 @@ from hausbuch.schemas.document import (
     DocumentLink,
     DocumentRetentionInput,
     DocumentTyping,
+    HandField,
+    HandFields,
     ManualDocumentFields,
     RetentionPolicy,
     RetentionResult,
@@ -51,7 +59,7 @@ from hausbuch.schemas.events import (
     DocumentUploaded,
     EventType,
 )
-from hausbuch.schemas.extraction import EXTRACTION_MODELS, AnyExtraction
+from hausbuch.schemas.extraction import EXTRACTION_MODELS, AnyExtraction, value_kind
 from hausbuch.storage import BlobStore, blob_key
 
 from .context import CommandContext
@@ -68,6 +76,35 @@ _DEFAULT_POLICY = RetentionPolicy()  # frozen, so safe to share as a default
 _VIA_ORDER = {LinkTarget.PROPERTY: 0, LinkTarget.UNIT: 1, LinkTarget.TENANCY: 2, LinkTarget.LOAN: 3}
 # The landlord's calendar: received_on is the local date a document arrived on.
 LOCAL_TIME_ZONE = ZoneInfo("Europe/Berlin")
+
+# Hand-entry fields of the `manual` kind sent over an AI reading whose kind has no place for
+# one of them (phase 2 D37, §12).
+EXTRACTION_KIND_MISMATCH = "document.extraction_kind_mismatch"
+_HAND_FIELDS: tuple[HandField, ...] = get_args(HandField)
+# D37: where each AI kind keeps the six hand-entry fields (ManualDocumentFields). A kind or a
+# hand field not listed has no place: it is not shown, and a non-null value for it is refused.
+HAND_FIELD_MAP: dict[ExtractionKind, dict[HandField, str]] = {
+    ExtractionKind.INVOICE: {
+        "amount_total": "amount_total",
+        "counterparty": "sender",
+        "reference": "reference",
+        "notes": "subject",
+    },
+    ExtractionKind.BESCHEID: {
+        "amount_total": "amount_total",
+        "counterparty": "sender",
+        "reference": "reference",
+    },
+    ExtractionKind.DEPOSIT_RECORD: {"amount_total": "amount"},
+    ExtractionKind.ZINSBESCHEINIGUNG: {
+        "amount_total": "interest_paid",
+        "counterparty": "lender",
+        "reference": "contract_number",
+    },
+    ExtractionKind.LOAN_CONTRACT: {"counterparty": "lender", "reference": "contract_number"},
+    ExtractionKind.GRUNDSTEUERBESCHEID: {"reference": "reference"},
+    ExtractionKind.STATEMENT: {"period_start": "period_start", "period_end": "period_end"},
+}
 
 
 class InvalidUploadError(ValueError):
@@ -190,8 +227,10 @@ def type_document(
     Fields that differ from the current extraction (or the first ones) become the next
     extraction version, recorded with `source` (phase 2: `ai` with the ai_call it came from,
     when an applied proposal types the document with the fields already read; the default
-    `manual` is a person's typing). Writes nothing and appends no event if neither typing nor
-    fields change.
+    `manual` is a person's typing). Hand-entry fields (ManualDocumentFields) over an AI
+    reading are translated into the reading's own kind (D37, hand_fields_into); a non-null
+    one that kind has no place for raises RuleError(EXTRACTION_KIND_MISMATCH) and nothing is
+    written. Writes nothing and appends no event if neither typing nor fields change.
     """
     current = _select_document(ctx.conn, document_id, for_update=True)
     if current is None:
@@ -201,6 +240,12 @@ def type_document(
     if fields is not None:
         # The document row is locked (FOR UPDATE above), so concurrent typings of the same
         # document serialize here and cannot both compute the same next version.
+        if isinstance(fields, ManualDocumentFields):
+            latest = current_extraction(ctx.conn, document_id)
+            if latest is not None and latest.kind is not ExtractionKind.MANUAL:
+                # D37: hand fields over an AI reading become a version of the reading's kind,
+                # never a `manual` one that would hide it. Equal to the reading: no version.
+                fields = hand_fields_into(latest.kind, latest.fields, fields)
         version = _append_extraction(ctx, document_id, fields, source=source, ai_call_id=ai_call_id)
     if current.typing == typing and version is None:
         return current
@@ -303,6 +348,101 @@ def _extraction_kind(fields: ManualDocumentFields | AnyExtraction) -> Extraction
         if type(fields) is model:
             return kind
     raise TypeError(f"not an extraction field set: {type(fields).__name__}")
+
+
+# --- Hand-entry fields over an AI reading (D37) -----------------------------------------
+
+_HAND_TYPES = {
+    name: TypeAdapter(ManualDocumentFields.model_fields[name].annotation) for name in _HAND_FIELDS
+}
+
+
+def hand_fields(extraction: DocumentExtraction | None) -> HandFields:
+    """The hand-entry section as the typing form shows it: a `manual` extraction's own fields
+    (all six available), or what an AI reading holds in the fields its kind has (HAND_FIELD_MAP).
+    A stored value the hand types cannot hold is shown as null (a low-confidence reading keeps
+    the raw text, e.g. "ca. 400 Euro" in a money field); it is then left as it was on a save
+    that does not type into it."""
+    if extraction is None:
+        return HandFields(values=ManualDocumentFields(), available=list(_HAND_FIELDS))
+    if extraction.kind is ExtractionKind.MANUAL:
+        assert isinstance(extraction.fields, ManualDocumentFields)
+        return HandFields(values=extraction.fields, available=list(_HAND_FIELDS))
+    mapping = HAND_FIELD_MAP.get(extraction.kind, {})
+    return HandFields(
+        values=_hand_values(extraction.fields, mapping),
+        available=[name for name in _HAND_FIELDS if name in mapping],
+    )
+
+
+def hand_fields_into(
+    kind: ExtractionKind, reading: AnyExtraction, typed: ManualDocumentFields
+) -> AnyExtraction:
+    """The reading with the typed hand fields written into it, of the same kind (D37).
+
+    A mapped field whose typed value differs from what the form showed for it (hand_fields)
+    becomes the typed value in its stored form, with no source, checks [validates], confidence
+    high; cleared, it becomes missing. Every other field is the reading's, as it was, so a save
+    that changes nothing returns an equal reading. A non-null hand field the kind has no place
+    for raises RuleError(EXTRACTION_KIND_MISMATCH)."""
+    mapping = HAND_FIELD_MAP.get(kind, {})
+    unplaced = [
+        name for name in _HAND_FIELDS if name not in mapping and getattr(typed, name) is not None
+    ]
+    if unplaced:
+        raise RuleError(
+            EXTRACTION_KIND_MISMATCH,
+            f"a {kind} reading has no place for the hand field(s) {', '.join(unplaced)}",
+        )
+    shown = _hand_values(reading, mapping)
+    model = type(reading)
+    update: dict[str, ExtractedValue] = {}
+    for name, target in mapping.items():
+        kind_of = value_kind(model, target)
+        value = _stored(getattr(typed, name), kind_of)
+        if value == _stored(getattr(shown, name), kind_of):
+            continue
+        update[target] = (
+            ExtractedValue.missing()
+            if value is None
+            else ExtractedValue(value=value, checks=["validates"], confidence="high")
+        )
+    return reading.model_copy(update=update) if update else reading
+
+
+def _hand_values(reading: Any, mapping: dict[HandField, str]) -> ManualDocumentFields:
+    values: dict[str, Any] = {}
+    for name, target in mapping.items():
+        stored = getattr(reading, target).value
+        if stored is None:
+            continue
+        try:
+            values[name] = _HAND_TYPES[name].validate_python(stored)
+        except ValidationError:
+            continue  # not a value the hand field can hold: shown empty, kept as it was
+    try:
+        return ManualDocumentFields.model_validate(values)
+    except ValidationError:
+        # Only the period can fail as a whole (an end before its start): show neither.
+        values.pop("period_start", None)
+        values.pop("period_end", None)
+        return ManualDocumentFields.model_validate(values)
+
+
+def _stored(value: Any, kind: str) -> Any:
+    """A hand value in the form rules.extraction_parse stores for the value kind; None for
+    none (and for a text of whitespace only)."""
+    if value is None:
+        return None
+    if kind == "money":
+        assert isinstance(value, Decimal)
+        return str(value.quantize(Decimal("0.01")))
+    if kind == "date":
+        assert isinstance(value, date)
+        return value.isoformat()
+    if kind == "text":
+        return " ".join(str(value).split()) or None
+    raise AssertionError(f"no hand field maps to a {kind} value")
 
 
 def link_document(

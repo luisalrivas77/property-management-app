@@ -2,7 +2,7 @@
 and its headers, retention."""
 
 import hashlib
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from api_support import (
@@ -17,12 +17,18 @@ from api_support import (
     ok,
     upload,
 )
+from sqlalchemy import insert
 
 from hausbuch.api.app import create_app
 from hausbuch.api.commands import Commands
 from hausbuch.api.limits import MULTIPART_OVERHEAD
 from hausbuch.api.routes.documents import content_disposition
-from hausbuch.services.documents import upload_document
+from hausbuch.db.session import workspace_transaction
+from hausbuch.db.tables import ai_call as ai_call_table
+from hausbuch.schemas.enums import ActorType
+from hausbuch.schemas.extraction import InvoiceExtraction
+from hausbuch.services.context import Actor, new_command
+from hausbuch.services.documents import record_ai_extraction, upload_document
 
 pytestmark = pytest.mark.db
 
@@ -264,3 +270,82 @@ def test_a_property_document_is_an_ownership_record(client_a):
         "retain_until": None,
         "hold": "while_owned",
     }
+
+
+def _record_reading(engine, ws, document_id: str) -> None:
+    """What the document_read job records: an `ai` invoice reading tied to its ai_call."""
+    cited = {"source": {"page": 1, "quote": "…"}, "checks": ["cited"], "confidence": "medium"}
+    reading = InvoiceExtraction.model_validate(
+        {
+            "sender": cited | {"value": "Notar Dr. Beispiel"},
+            "amount_total": cited | {"value": "4321.10"},
+            "amount_net": cited | {"value": "3631.18"},
+            "reference": cited | {"value": "UR 123/2024"},
+        }
+    )
+    with workspace_transaction(engine, ws) as conn:
+        ctx = new_command(conn, ws, Actor(ActorType.AI, "claude-test-model"))
+        call_id = conn.execute(
+            insert(ai_call_table)
+            .values(
+                workspace_id=ws,
+                job="extract",
+                document_id=UUID(document_id),
+                model="claude-test-model",
+                prompt_version="test-1",
+                input_sha256=b"\x04" * 32,
+            )
+            .returning(ai_call_table.c.id)
+        ).scalar_one()
+        record_ai_extraction(ctx, UUID(document_id), reading, ai_call_id=call_id)
+
+
+def test_the_detail_shows_the_hand_fields_of_an_ai_reading(client_a, app_engine, auth_a):
+    document = ok(upload(client_a, b"%PDF-1.7 Notarrechnung D37"), 201)
+    base = f"/api/documents/{document['id']}"
+    detail = ok(client_a.get(base))
+    assert detail["hand_fields"]["available"] == [
+        "amount_total",
+        "period_start",
+        "period_end",
+        "counterparty",
+        "reference",
+        "notes",
+    ]
+    assert set(detail["hand_fields"]["values"].values()) == {None}
+
+    _record_reading(app_engine, auth_a.workspace_id, document["id"])
+    detail = ok(client_a.get(base))
+    assert detail["extraction"]["kind"] == "invoice"
+    assert detail["hand_fields"] == {
+        "values": {
+            "amount_total": "4321.10",
+            "period_start": None,
+            "period_end": None,
+            "counterparty": "Notar Dr. Beispiel",
+            "reference": "UR 123/2024",
+            "notes": None,
+        },
+        "available": ["amount_total", "counterparty", "reference", "notes"],
+    }
+
+    typing = {"type": "invoice", "title": "Notarrechnung"}
+    shown = detail["hand_fields"]["values"]
+    ok(client_a.put(f"{base}/typing", json={"typing": typing, "fields": shown}))
+    assert ok(client_a.get(base))["extraction"] == detail["extraction"]  # no new version
+
+    changed = shown | {"notes": "Beurkundung"}
+    ok(client_a.put(f"{base}/typing", json={"typing": typing, "fields": changed}))
+    after = ok(client_a.get(base))
+    assert (after["extraction"]["version"], after["extraction"]["kind"]) == (2, "invoice")
+    assert (after["extraction"]["source"], after["extraction"]["ai_call_id"]) == ("manual", None)
+    assert after["extraction"]["fields"]["subject"]["value"] == "Beurkundung"
+    assert after["hand_fields"]["values"] == changed
+
+    response = client_a.put(
+        f"{base}/typing", json={"typing": typing, "fields": changed | {"period_end": "2024-03-31"}}
+    )
+    assert response.status_code == 422
+    body = response.json()
+    assert (body["error"], body["code"]) == ("rule_violation", "document.extraction_kind_mismatch")
+    assert ok(client_a.get(base))["extraction"]["version"] == 2

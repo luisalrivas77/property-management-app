@@ -966,7 +966,11 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Document Type */
+        /**
+         * Document Type
+         * @description Over an AI reading, `fields` are written into the reading's own kind (D37); 422
+         *     document.extraction_kind_mismatch for a non-null field that kind has no place for.
+         */
         put: operations["document_type_api_documents__document_id__typing_put"];
         post?: never;
         delete?: never;
@@ -1868,7 +1872,7 @@ export interface components {
          * @description A Bescheid other than Grundsteuer, e.g. the Grunderwerbsteuerbescheid.
          */
         BescheidExtraction: {
-            /** @description a short title; never in events (D5) */
+            /** @description a short German title, two to six words naming what the document is */
             title?: components["schemas"]["ExtractedValue"];
             /** @description the date the document carries */
             document_date?: components["schemas"]["ExtractedValue"];
@@ -2031,7 +2035,7 @@ export interface components {
          * @description Kautionsnachweis (letter / deposit_record). Step 2.
          */
         DepositRecordExtraction: {
-            /** @description a short title; never in events (D5) */
+            /** @description a short German title, two to six words naming what the document is */
             title?: components["schemas"]["ExtractedValue"];
             /** @description the date the document carries */
             document_date?: components["schemas"]["ExtractedValue"];
@@ -2124,6 +2128,7 @@ export interface components {
             /** Links */
             links: components["schemas"]["DocumentLink"][];
             extraction: components["schemas"]["DocumentExtraction"] | null;
+            hand_fields: components["schemas"]["HandFields"];
             retention: components["schemas"]["RetentionResult"];
             /** Media Type */
             media_type: string;
@@ -2472,7 +2477,7 @@ export interface components {
          * @description Grundsteuerbescheid (bescheid / grundsteuerbescheid).
          */
         GrundsteuerbescheidExtraction: {
-            /** @description a short title; never in events (D5) */
+            /** @description a short German title, two to six words naming what the document is */
             title?: components["schemas"]["ExtractedValue"];
             /** @description the date the document carries */
             document_date?: components["schemas"]["ExtractedValue"];
@@ -2496,11 +2501,25 @@ export interface components {
             iban?: components["schemas"]["ExtractedValue"];
         };
         /**
+         * HandFields
+         * @description The document's "Felder (von Hand)" as the typing form shows them (phase 2 D37).
+         *
+         *     For a `manual` extraction (or none) the values are its fields and all six are available.
+         *     For an AI kind, `values` holds what the reading stored for the fields that kind has a place
+         *     for (services.documents.HAND_FIELD_MAP), and `available` names exactly those; a reading the
+         *     hand types cannot hold (a low-confidence raw text in a money field) shows as null.
+         */
+        HandFields: {
+            values: components["schemas"]["ManualDocumentFields"];
+            /** Available */
+            available: ("amount_total" | "period_start" | "period_end" | "counterparty" | "reference" | "notes")[];
+        };
+        /**
          * HandoverProtocolExtraction
          * @description Übergabeprotokoll (letter / handover_protocol). Step 2.
          */
         HandoverProtocolExtraction: {
-            /** @description a short title; never in events (D5) */
+            /** @description a short German title, two to six words naming what the document is */
             title?: components["schemas"]["ExtractedValue"];
             /** @description the date the document carries */
             document_date?: components["schemas"]["ExtractedValue"];
@@ -2518,7 +2537,7 @@ export interface components {
          * @description Hausgeldabrechnung: the year's settlement (read by phase 3's Hausgeld rule).
          */
         HausgeldabrechnungExtraction: {
-            /** @description a short title; never in events (D5) */
+            /** @description a short German title, two to six words naming what the document is */
             title?: components["schemas"]["ExtractedValue"];
             /** @description the date the document carries */
             document_date?: components["schemas"]["ExtractedValue"];
@@ -2600,12 +2619,14 @@ export interface components {
          * @description Invoices: Nebenkosten (notary, Grundbuchamt, broker) now, repairs and others later.
          */
         InvoiceExtraction: {
-            /** @description a short title; never in events (D5) */
+            /** @description a short German title, two to six words naming what the document is */
             title?: components["schemas"]["ExtractedValue"];
             /** @description the date the document carries */
             document_date?: components["schemas"]["ExtractedValue"];
             /** @description who issued it: decides the cost kind */
             sender?: components["schemas"]["ExtractedValue"];
+            /** @description what it is for, as written (Betreff / Gegenstand) */
+            subject?: components["schemas"]["ExtractedValue"];
             /** @description gross total (brutto) */
             amount_total?: components["schemas"]["ExtractedValue"];
             /** @description net amount, if stated */
@@ -2623,7 +2644,7 @@ export interface components {
          * @description Mietvertrag (contract / lease). Step 2, gated by ai_tenant_documents (D16).
          */
         LeaseExtraction: {
-            /** @description a short title; never in events (D5) */
+            /** @description a short German title, two to six words naming what the document is */
             title?: components["schemas"]["ExtractedValue"];
             /** @description the date the document carries */
             document_date?: components["schemas"]["ExtractedValue"];
@@ -2739,7 +2760,7 @@ export interface components {
          * @description Darlehensvertrag (contract / loan_contract).
          */
         LoanContractExtraction: {
-            /** @description a short title; never in events (D5) */
+            /** @description a short German title, two to six words naming what the document is */
             title?: components["schemas"]["ExtractedValue"];
             /** @description the date the document carries */
             document_date?: components["schemas"]["ExtractedValue"];
@@ -3388,7 +3409,7 @@ export interface components {
          * @description Kaufvertrag (contract / purchase_contract).
          */
         PurchaseContractExtraction: {
-            /** @description a short title; never in events (D5) */
+            /** @description a short German title, two to six words naming what the document is */
             title?: components["schemas"]["ExtractedValue"];
             /** @description the date the document carries */
             document_date?: components["schemas"]["ExtractedValue"];
@@ -3632,7 +3653,7 @@ export interface components {
          *     StatementLines by bank.pdf.
          */
         StatementExtraction: {
-            /** @description a short title; never in events (D5) */
+            /** @description a short German title, two to six words naming what the document is */
             title?: components["schemas"]["ExtractedValue"];
             /** @description the date the document carries */
             document_date?: components["schemas"]["ExtractedValue"];
@@ -4056,7 +4077,7 @@ export interface components {
          * @description Wirtschaftsplan: the monthly Hausgeld split the by_wirtschaftsplan rule reads (§8.1).
          */
         WirtschaftsplanExtraction: {
-            /** @description a short title; never in events (D5) */
+            /** @description a short German title, two to six words naming what the document is */
             title?: components["schemas"]["ExtractedValue"];
             /** @description the date the document carries */
             document_date?: components["schemas"]["ExtractedValue"];
@@ -4130,7 +4151,7 @@ export interface components {
          * @description Zinsbescheinigung: the year's interest, reconciled against the loan schedule.
          */
         ZinsbescheinigungExtraction: {
-            /** @description a short title; never in events (D5) */
+            /** @description a short German title, two to six words naming what the document is */
             title?: components["schemas"]["ExtractedValue"];
             /** @description the date the document carries */
             document_date?: components["schemas"]["ExtractedValue"];

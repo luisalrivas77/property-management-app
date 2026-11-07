@@ -37,6 +37,7 @@ from .document import (
     DocumentExtraction,
     DocumentLink,
     DocumentTyping,
+    HandFields,
     ManualDocumentFields,
     RetentionResult,
 )
@@ -311,6 +312,9 @@ class DocumentDetail(Schema):
     document: Document
     links: list[DocumentLink]
     extraction: DocumentExtraction | None  # the current (highest) version, if typed fields
+    # The typing form's "Felder (von Hand)", read from `extraction` through D37's mapping, so
+    # the client never repeats it.
+    hand_fields: HandFields
     retention: RetentionResult
     media_type: str  # the file's, as uploaded (document_file.media_type)
     # Whether GET /documents/{id}/original?disposition=inline shows it in the browser (§4.7:

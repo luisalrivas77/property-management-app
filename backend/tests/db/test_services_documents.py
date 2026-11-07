@@ -15,12 +15,15 @@ import pytest
 from db.db_support import OWNER, TEST_IBAN_KEY, insert_property, insert_tenancy, insert_unit
 from fixture_models import RetentionFixture, load
 from sqlalchemy import event as sa_event
-from sqlalchemy import select, text, update
+from sqlalchemy import insert, select, text, update
 from sqlalchemy.exc import DBAPIError
 
 from hausbuch.db.session import workspace_transaction
+from hausbuch.db.tables import ai_call as ai_call_table
 from hausbuch.db.tables import document_extraction as extraction_table
 from hausbuch.db.tables import document_file as file_table
+from hausbuch.rules.errors import RuleError
+from hausbuch.schemas.ai import ExtractedValue, SourceRef
 from hausbuch.schemas.api import LinkTargetRef, RelatedDocument
 from hausbuch.schemas.document import DocumentTyping, ManualDocumentFields
 from hausbuch.schemas.enums import (
@@ -36,6 +39,7 @@ from hausbuch.schemas.enums import (
     TenancyRole,
 )
 from hausbuch.schemas.events import EventType
+from hausbuch.schemas.extraction import InvoiceExtraction
 from hausbuch.schemas.tenancy import TenancyCreate, TenancyParty
 from hausbuch.services.context import Actor, new_command
 from hausbuch.services.documents import (
@@ -48,11 +52,13 @@ from hausbuch.services.documents import (
     document_retention,
     document_retention_input,
     get_document,
+    hand_fields,
     link_document,
     list_documents,
     list_links,
     list_related_documents,
     read_original,
+    record_ai_extraction,
     type_document,
     unlink_document,
     upload_document,
@@ -1192,3 +1198,152 @@ def test_received_on_is_the_berlin_date_whatever_the_session_time_zone(
         RetentionClass.TAX_RECORDS,
         retain_until,
     )
+
+
+# --- hand fields over an AI reading (phase 2 D37) -------------------------------------
+
+
+def _cited(value, quote="…") -> ExtractedValue:
+    return ExtractedValue(
+        value=value,
+        source=SourceRef(page=1, quote=quote),
+        checks=["cited", "value_in_quote", "validates"],
+        confidence="high",
+    )
+
+
+INVOICE_READING = InvoiceExtraction(
+    title=_cited("Notarrechnung"),
+    document_date=_cited("2024-03-20"),
+    sender=_cited("Notar Dr. Beispiel"),
+    subject=_cited("Beurkundung Kaufvertrag"),
+    amount_total=_cited("4321.10"),
+    amount_net=_cited("3631.18"),
+    reference=_cited("UR 123/2024"),
+)
+NOTARY = DocumentTyping(type=DocumentType.INVOICE, title="Notarrechnung", tax_year=2024)
+
+
+def _read(engine, ws, doc_id, reading=INVOICE_READING):
+    """What the document_read job records: an `ai` version tied to its ai_call."""
+    with workspace_transaction(engine, ws) as conn:
+        ctx = new_command(conn, ws, Actor(ActorType.AI, "claude-test-model"), now=NOW)
+        call_id = conn.execute(
+            insert(ai_call_table)
+            .values(
+                workspace_id=ws,
+                job="extract",
+                document_id=doc_id,
+                model="claude-test-model",
+                prompt_version="test-1",
+                input_sha256=b"\x03" * 32,
+            )
+            .returning(ai_call_table.c.id)
+        ).scalar_one()
+        return record_ai_extraction(ctx, doc_id, reading, ai_call_id=call_id)
+
+
+def _hand_view(engine, ws, doc_id):
+    with workspace_transaction(engine, ws) as conn:
+        return hand_fields(current_extraction(conn, doc_id))
+
+
+def test_an_unchanged_hand_section_over_a_reading_writes_no_version(
+    app_engine, workspaces, blob_store
+):
+    a, _ = workspaces
+    doc = _upload(app_engine, blob_store, a, _bytes("d37-unchanged"))
+    reading = _read(app_engine, a, doc.id)
+    view = _hand_view(app_engine, a, doc.id)
+    assert view.available == ["amount_total", "counterparty", "reference", "notes"]
+    assert view.values == ManualDocumentFields(
+        amount_total=Decimal("4321.10"),
+        counterparty="Notar Dr. Beispiel",
+        reference="UR 123/2024",
+        notes="Beurkundung Kaufvertrag",
+    )
+
+    _type(app_engine, a, doc.id, NOTARY, view.values)
+    with workspace_transaction(app_engine, a) as conn:
+        assert current_extraction(conn, doc.id) == reading
+    typed = _events(app_engine, a, doc.id)[-1]
+    assert typed.type is EventType.DOCUMENT_TYPED
+    assert typed.payload["extraction_version"] is None
+
+
+def test_a_changed_hand_field_writes_a_manual_version_of_the_same_kind(
+    app_engine, workspaces, blob_store
+):
+    a, _ = workspaces
+    doc = _upload(app_engine, blob_store, a, _bytes("d37-changed"))
+    reading = _read(app_engine, a, doc.id)
+    view = _hand_view(app_engine, a, doc.id)
+
+    _type(
+        app_engine,
+        a,
+        doc.id,
+        NOTARY,
+        view.values.model_copy(update={"amount_total": Decimal("4300")}),
+    )
+    with workspace_transaction(app_engine, a) as conn:
+        current = current_extraction(conn, doc.id)
+    assert (current.version, current.kind, current.source, current.ai_call_id) == (
+        reading.version + 1,
+        "invoice",
+        "manual",
+        None,
+    )
+    assert current.fields.amount_total == ExtractedValue(
+        value="4300.00", checks=["validates"], confidence="high"
+    )
+    # Every other field is the reading's, source and all.
+    assert current.fields.model_copy(update={"amount_total": reading.fields.amount_total}) == (
+        reading.fields
+    )
+    assert _events(app_engine, a, doc.id)[-1].payload["extraction_version"] == current.version
+
+
+def test_clearing_a_shown_hand_field_makes_it_missing(app_engine, workspaces, blob_store):
+    a, _ = workspaces
+    doc = _upload(app_engine, blob_store, a, _bytes("d37-cleared"))
+    reading = _read(app_engine, a, doc.id)
+    view = _hand_view(app_engine, a, doc.id)
+
+    _type(app_engine, a, doc.id, NOTARY, view.values.model_copy(update={"reference": None}))
+    with workspace_transaction(app_engine, a) as conn:
+        current = current_extraction(conn, doc.id)
+    assert (current.kind, current.source) == ("invoice", "manual")
+    assert current.fields.reference == ExtractedValue.missing()
+    assert current.fields.sender == reading.fields.sender
+
+
+def test_a_hand_field_the_reading_has_no_place_for_is_refused(app_engine, workspaces, blob_store):
+    a, _ = workspaces
+    doc = _upload(app_engine, blob_store, a, _bytes("d37-mismatch"))
+    reading = _read(app_engine, a, doc.id)
+    view = _hand_view(app_engine, a, doc.id)
+    six_nulls_but_one = view.values.model_copy(update={"period_start": date(2024, 1, 1)})
+
+    with pytest.raises(RuleError) as caught:
+        _type(app_engine, a, doc.id, NOTARY, six_nulls_but_one)
+    assert caught.value.code == "document.extraction_kind_mismatch"
+    with workspace_transaction(app_engine, a) as conn:
+        assert current_extraction(conn, doc.id) == reading
+        assert get_document(conn, doc.id).typing is None  # nothing was written
+
+
+def test_hand_fields_over_a_manual_extraction_keep_the_phase_1_behaviour(
+    app_engine, workspaces, blob_store
+):
+    a, _ = workspaces
+    doc = _upload(app_engine, blob_store, a, _bytes("d37-manual"))
+    _type(app_engine, a, doc.id, INVOICE, FIELDS_1)
+    view = _hand_view(app_engine, a, doc.id)
+    assert (view.values, len(view.available)) == (FIELDS_1, 6)
+
+    with_period = FIELDS_1.model_copy(update={"period_start": date(2026, 1, 1)})
+    _type(app_engine, a, doc.id, INVOICE, with_period)
+    with workspace_transaction(app_engine, a) as conn:
+        current = current_extraction(conn, doc.id)
+    assert (current.version, current.kind, current.fields) == (2, "manual", with_period)

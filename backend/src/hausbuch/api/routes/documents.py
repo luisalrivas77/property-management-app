@@ -34,6 +34,7 @@ from hausbuch.services.documents import (
     document_media_type,
     document_retention,
     get_document,
+    hand_fields,
     link_document,
     list_documents,
     list_links,
@@ -189,10 +190,12 @@ def documents_list(
 def _detail(conn: Connection, document_id: UUID) -> DocumentDetail:
     document = found(get_document(conn, document_id), EntityType.DOCUMENT, document_id)
     media_type = found(document_media_type(conn, document_id), EntityType.DOCUMENT, document_id)
+    extraction = current_extraction(conn, document_id)
     return DocumentDetail(
         document=document,
         links=list_links(conn, document_id),
-        extraction=current_extraction(conn, document_id),
+        extraction=extraction,
+        hand_fields=hand_fields(extraction),
         retention=document_retention(conn, document_id),
         media_type=media_type,
         opens_inline=media_type in INLINE_MEDIA_TYPES,
@@ -208,6 +211,8 @@ def document_get(document_id: UUID, cmd: Cmd) -> DocumentDetail:
 
 @router.put("/documents/{document_id}/typing")
 def document_type(document_id: UUID, body: DocumentTypingBody, cmd: Cmd) -> Document:
+    """Over an AI reading, `fields` are written into the reading's own kind (D37); 422
+    document.extraction_kind_mismatch for a non-null field that kind has no place for."""
     return cmd.run(type_document, document_id, body.typing, body.fields)
 
 
