@@ -98,7 +98,10 @@ class LoanContractExtraction(_Typing):
     disbursed_on: ExtractedValue = ev("date", "Auszahlung, if stated")
     first_payment_on: ExtractedValue = ev("date", "erste Rate, if stated")
     account_iban: ExtractedValue = ev("iban", "Darlehenskonto")
-    signed_on: ExtractedValue = ev("date", "Vertragsdatum")
+    signed_on: ExtractedValue = ev(
+        "date",
+        "Vertragsdatum: when it was signed, often only as 'Ort, den <Datum>' by the signatures",
+    )
 
 
 class LeaseExtraction(_Typing):
@@ -118,7 +121,10 @@ class LeaseExtraction(_Typing):
     tenant_2_phone: ExtractedValue = ev("text", "if stated")
     tenant_2_iban: ExtractedValue = ev("iban", "if stated")
     start_date: ExtractedValue = ev("date", "Mietbeginn")
-    signed_on: ExtractedValue = ev("date", "Vertragsdatum")
+    signed_on: ExtractedValue = ev(
+        "date",
+        "Vertragsdatum: when it was signed, often only as 'Ort, den <Datum>' by the signatures",
+    )
     fixed_term_until: ExtractedValue = ev("date", "Zeitmietvertrag bis, if befristet")
     rent_clause: ExtractedValue = ev("text", "Staffel- / Indexmiete clause, if any")
     deposit_amount: ExtractedValue = ev("money", "Kaution")
@@ -147,7 +153,9 @@ class DepositRecordExtraction(_Typing):
 class InvoiceExtraction(_Typing):
     """Invoices: Nebenkosten (notary, Grundbuchamt, broker) now, repairs and others later."""
 
-    sender: ExtractedValue = ev("text", "who issued it: decides the cost kind")
+    sender: ExtractedValue = ev(
+        "text", "name of who issued it, without the address: decides the cost kind"
+    )
     # rules.prefill reads it to recognize a financing invoice (D35).
     subject: ExtractedValue = ev("text", "what it is for, as written (Betreff / Gegenstand)")
     amount_total: ExtractedValue = ev("money", "gross total (brutto)")
@@ -160,7 +168,7 @@ class InvoiceExtraction(_Typing):
 class BescheidExtraction(_Typing):
     """A Bescheid other than Grundsteuer, e.g. the Grunderwerbsteuerbescheid."""
 
-    sender: ExtractedValue = ev("text", "the authority")
+    sender: ExtractedValue = ev("text", "name of the authority, without the address")
     amount_total: ExtractedValue = ev("money", "the amount assessed")
     reference: ExtractedValue = ev("text", "Aktenzeichen / Steuernummer reference")
     iban: ExtractedValue = ev("iban", "the authority's IBAN, if stated")
