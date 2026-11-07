@@ -24,6 +24,12 @@ import type {
   StatementFormat,
   TenancyRole,
 } from "@/api/schemas";
+import type { components } from "@/api/types";
+
+// Step 4's enums have no alias in schemas.ts yet.
+type AllocationCategory = components["schemas"]["AllocationCategory"];
+type AllocationMethod = components["schemas"]["AllocationMethod"];
+type InboxItemKind = components["schemas"]["InboxItemKind"];
 
 type Confidence = ExtractedValue["confidence"];
 type Check = NonNullable<ExtractedValue["checks"]>[number];
@@ -276,6 +282,60 @@ export const DUPLICATE_STATUS: Record<DuplicateStatus, string> = {
   open: "offen",
   kept_both: "beide behalten",
   merged: "zusammengeführt",
+};
+
+// --- allocations and the review queue (phase 2 step 4, §8.2, §8.3) ---
+
+/** The fixed taxonomy (§8.2). The tax treatment and the Anlage V line come from the rule set,
+ * never from this label, so renaming one changes no figure. */
+export const ALLOCATION_CATEGORY: Record<AllocationCategory, string> = {
+  rent_cold: "Kaltmiete",
+  operating_costs_prepayment: "Nebenkostenvorauszahlung",
+  operating_costs_settlement: "Nebenkostenabrechnung (Nachzahlung oder Erstattung)",
+  deposit_in: "Kaution erhalten",
+  deposit_out: "Kaution zurückgezahlt",
+  owner_transfer_in: "Einlage von einem Eigentümer",
+  owner_transfer_out: "Entnahme an einen Eigentümer",
+  loan_interest: "Darlehenszinsen",
+  loan_principal: "Tilgung",
+  loan_fees: "Geldbeschaffungskosten",
+  hausgeld_umlagefaehig: "Hausgeld, umlagefähig",
+  hausgeld_verwaltung: "Hausgeld, nicht umlagefähig (Verwaltung)",
+  hausgeld_ruecklage: "Hausgeld, Erhaltungsrücklage",
+  grundsteuer: "Grundsteuer",
+  insurance: "Versicherung",
+  repairs: "Erhaltungsaufwand (Reparatur)",
+  renovation: "Renovierung oder Modernisierung",
+  acquisition_cost: "Anschaffungsnebenkosten",
+  professional_fees: "Beratungs- und Rechtskosten",
+  bank_fees: "Kontoführung und Bankgebühren",
+  other_income: "Sonstige Einnahme",
+  other_expense: "Sonstige Ausgabe",
+  uncategorized: "Noch offen (nicht zugeordnet)",
+};
+
+/** Who proposed an allocation set. */
+export const ALLOCATION_METHOD: Record<AllocationMethod, string> = {
+  rule: "gelernte Regel",
+  matcher_rent: "Mietabgleich",
+  matcher_loan: "Tilgungsplan des Darlehens",
+  matcher_owner: "Überweisung eines Eigentümers",
+  matcher_hausgeld: "Wirtschaftsplan",
+  document_match: "passender Beleg",
+  llm: "KI",
+  user: "von Hand",
+};
+
+/** The pill of a review-queue item. */
+export const INBOX_ITEM_KIND: Record<InboxItemKind, string> = {
+  proposal: "Vorschlag",
+  read_failed: "Nicht gelesen",
+  blocked_tenant_data: "Mieterdaten",
+  import_unreconciled: "Nicht abgestimmt",
+  import_pending_balance: "Saldo fehlt",
+  possible_duplicate: "Mögliche Doppelbuchung",
+  allocation_proposed: "Zu prüfen",
+  unmatched: "Nicht zugeordnet",
 };
 
 /** The options of a <select> over an enum label map, in declaration order. */
