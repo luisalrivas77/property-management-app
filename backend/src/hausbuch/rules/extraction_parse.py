@@ -271,7 +271,7 @@ def _share_number(text: str) -> Decimal:
     elif _THOUSANDS_ONLY.fullmatch(text):
         text = text.replace(".", "")
     try:
-        return Decimal(text).normalize()
+        return Decimal(text)
     except InvalidOperation:
         raise _Invalid("not a number") from None
 

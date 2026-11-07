@@ -245,7 +245,7 @@ class _Builder:
                 _property_current(prop),
                 notes=notes,
                 milestones=_MILESTONES,
-                keyed={"address.street": _address_part, "address.house_number": _address_part},
+                keyed={"address.street": _street_key, "address.house_number": _house_number_key},
             )
         self._unit(prop)
         self._price_split()
@@ -681,35 +681,41 @@ def _address_of(extraction: _Typing) -> tuple[str, ...] | None:
         value = getattr(extraction, name, None)
         if not isinstance(value, ExtractedValue) or value.value is None:
             return None
-        parts.append(_address_part(value.value))
-    return tuple(parts)
+        parts.append(value.value)
+    return _address_key(*parts)
+
+
+def _address_key(street: Any, house_number: Any, postal_code: Any) -> tuple[str, ...]:
+    return (_street_key(street), _house_number_key(house_number), _norm(postal_code))
 
 
 def _match_property(
     extraction: _Typing, properties: Sequence[ExistingProperty]
 ) -> ExistingProperty | None:
-    """By street + house number + postal code, each compared by `_address_part` so a
-    contract writing "Lindenstr. 12" finds the flat typed as "Lindenstraße 12"."""
+    """By street + house number + postal code, compared by `_address_key`, so a contract
+    writing "Lindenstr. 12" finds the flat typed as "Lindenstraße 12"."""
     address = _address_of(extraction)
     if address is None:
         return None
     return _first(
         p
         for p in properties
-        if tuple(
-            _address_part(v)
-            for v in (p.address.street, p.address.house_number, p.address.postal_code)
-        )
-        == address
+        if _address_key(p.address.street, p.address.house_number, p.address.postal_code) == address
     )
 
 
-def _address_part(value: Any) -> str:
-    """Casefolded, ß as ss, spaces, hyphens and dots removed, and a street ending in the
+def _street_key(value: Any) -> str:
+    """Casefolded (ß as ss), spaces, hyphens and dots removed, and a street ending in the
     abbreviation "str" spelled out: "Lindenstr.", "Linden-Straße" and "Lindenstrasse" are
-    one key; "12 a" and "12a" too."""
-    key = re.sub(r"[\s.\-]", "", str(value).casefold().replace("ß", "ss"))
+    one key."""
+    key = re.sub(r"[\s.\-]", "", str(value).casefold())
     return f"{key}asse" if key.endswith("str") else key
+
+
+def _house_number_key(value: Any) -> str:
+    """Casefolded, spaces and trailing dots removed: "12 a" is "12a". A hyphen or slash
+    stays significant, so "1-2" (or "1 - 2") is never "12" (review, 7 Nov 2026)."""
+    return re.sub(r"\s", "", str(value).casefold()).rstrip(".")
 
 
 def _resolve_property(extraction: _Typing, context: PrefillContext) -> ExistingProperty | None:
