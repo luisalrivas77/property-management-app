@@ -12,7 +12,7 @@ import { useCallback, useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
 import type { DocumentDetail, DocumentSubtype, DocumentType, HandFields, LinkTarget, ManualDocumentFields } from "@/api/schemas";
-import { documentLabel } from "@/components/documents";
+import { documentLabel, NO_TAX_YEAR } from "@/components/documents";
 import { loadDirectory, targets, type Target } from "@/components/entities";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "@/components/form";
 import { formatDate, formatDateTime, shortId } from "@/components/format";
@@ -93,20 +93,6 @@ function Original({ detail }: { detail: DocumentDetail }) {
     </div>
   );
 }
-
-// Subtypes whose retention runs from ownership or tenancy end dates, not a tax year
-// (backend rules/retention.py _CLASS_BY_SUBTYPE), and whose checklist items ignore the tax
-// year: the Steuerjahr field is hidden for them while it is empty (Luis, 7 Nov 2026). A
-// stored year stays visible so it can be seen and cleared.
-const NO_TAX_YEAR: ReadonlySet<DocumentSubtype | ""> = new Set<DocumentSubtype | "">([
-  "purchase_contract",
-  "price_split_evidence",
-  "appraisal",
-  "loan_contract",
-  "lease",
-  "handover_protocol",
-  "deposit_record",
-]);
 
 const TYPING_KEYS = [
   "typing",

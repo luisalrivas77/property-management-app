@@ -9,7 +9,11 @@
 //   input of the field's type, a confidence dot (computed by code from the checks, D15), the
 //   page badge with the quote (keyboard and tap: a toggle; mouse: its title) and the link that
 //   opens the original at that page, and for an existing record its current value with
-//   "übernehmen / behalten". Nothing is saved before "Übernehmen" (D14): apply sends every
+//   "übernehmen / behalten". A record that creates shows every field of its *Create model
+//   (CREATE_FIELDS), not only the proposed ones: the AI pre-fills what it found, the rest is
+//   typed by hand (Luis, 7 Nov 2026). A tenancy's unit and a Kaution's tenancy are picked from
+//   the workspace's units and tenancies, preselected with the one code matched.
+//   Nothing is saved before "Übernehmen" (D14): apply sends every
 //   record with the final values and the per-field decisions; a 422's `loc` starts with the
 //   record key and lands at its field.
 // - `failed` / `blocked_tenant_data`: the reason in German and a "Von Hand eingeben" link. A
@@ -41,8 +45,9 @@ import type {
 } from "@/api/schemas";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
+import { NO_TAX_YEAR } from "./documents";
 import type { Directory } from "./entities";
-import { tenantName } from "./entities";
+import { targets, tenantName } from "./entities";
 import { FieldDescription, FormBanner, InfoToggle, useFormErrors, type FieldMessages } from "./form";
 import { formatArea, formatDate, formatDateTime, formatFraction, formatMoney, formatPercent, formatShare } from "./format";
 import { decimalInput, percentInput, toDecimalString, toFraction, toMoneyString, toRate, toYear, type Parsed } from "./input";
@@ -68,7 +73,8 @@ const IN_FLIGHT: readonly ProposalStatus[] = ["queued", "running"];
 
 // --- what each field is -----------------------------------------------------------------
 
-type FieldKind = "text" | "money" | "date" | "year" | "rate" | "area" | "fraction" | "enum" | "fixed";
+/** "unit" / "tenancy": the id of one of the workspace's units / tenancies, picked from a list. */
+type FieldKind = "text" | "money" | "date" | "year" | "rate" | "area" | "fraction" | "enum" | "fixed" | "unit" | "tenancy";
 
 interface FieldSpec {
   label: string;
@@ -89,6 +95,10 @@ const choice = (label: string, choices: Readonly<Record<string, string>>, descri
 });
 
 const PROPERTY_FIELDS: Record<string, FieldSpec> = {
+  label: text(
+    "Bezeichnung",
+    "Ein frei wählbarer Name, unter dem Sie die Immobilie in Hausbuch wiederfinden. Leer gelassen heißt sie nach Straße und Hausnummer.",
+  ),
   kind: choice(
     "Art",
     PROPERTY_KIND,
@@ -168,6 +178,7 @@ const FIELDS: Record<string, Record<string, FieldSpec>> = {
       description:
         "Der Anteil des Kaufpreises, der auf das Gebäude entfällt; der Rest ist Grund und Boden, der nicht abgeschrieben wird. Der Gebäudeanteil ist die Grundlage der AfA.",
     },
+    note: text("Notiz", "Freier Text für Sie, z. B. wie der Wert zustande kam."),
   },
   ownership: {
     shares: {
@@ -247,12 +258,17 @@ const FIELDS: Record<string, Record<string, FieldSpec>> = {
   tenancy: {
     unit_id: {
       label: "Einheit",
-      kind: "fixed",
-      description: "Die vermietete Einheit. Hausbuch hat sie über die Anschrift und die Wohnungsbezeichnung im Mietvertrag gefunden, oder weil die Immobilie nur eine Einheit hat.",
+      kind: "unit",
+      description:
+        "Die vermietete Wohnung oder das vermietete Zimmer. Hausbuch schlägt die Einheit vor, deren Bezeichnung zur Anschrift und zur Wohnungs- oder Zimmerangabe im Mietvertrag passt, oder die einzige Einheit der Immobilie; sonst wählen Sie sie hier.",
     },
     start_date: date("Mietbeginn", "Der Tag, ab dem das Mietverhältnis laut Mietvertrag läuft."),
     signed_on: date("Vertragsdatum", "Der Tag, an dem der Mietvertrag unterschrieben wurde, meist neben den Unterschriften."),
     fixed_term_until: date("Befristet bis", "Nur bei einem Zeitmietvertrag: das vereinbarte Ende. Leer, wenn der Vertrag unbefristet ist."),
+    end_date: date(
+      "Auszug",
+      "Nur bei einem schon beendeten Mietverhältnis: der Tag, an dem es endete; sonst leer lassen. Danach richtet sich, wie lange Mietunterlagen und Mieterdaten aufbewahrt werden.",
+    ),
     rent_model: choice(
       "Mietmodell",
       RENT_MODEL,
@@ -264,6 +280,8 @@ const FIELDS: Record<string, Record<string, FieldSpec>> = {
       DEPOSIT_FORM,
       "Wie die Kaution geleistet wird, laut Mietvertrag. Ist eine vereinbart, fragt die Unterlagen-Checkliste nach einem Kautionsnachweis.",
     ),
+    deposit_bank: text("Bank des Kautionskontos", "Die Bank, bei der die Kaution angelegt ist, z. B. laut Kontoeröffnung oder Sparbuch."),
+    deposit_iban: text("IBAN des Kautionskontos", "Die IBAN des Kontos, auf dem die Kaution liegt. Gespeichert wird sie nur maskiert."),
   },
   rent: {
     cold_rent: money(
@@ -281,10 +299,78 @@ const FIELDS: Record<string, Record<string, FieldSpec>> = {
     received_on: date("Eingegangen am", "Der Tag, an dem die Kaution einging, laut Quittung oder Kontoauszug."),
     tenancy_id: {
       label: "Mietverhältnis",
-      kind: "fixed",
-      description: "Das Mietverhältnis, zu dem die Kaution gehört. Hausbuch hat es über den vereinbarten Kautionsbetrag gefunden, oder weil nur eines in Frage kommt.",
+      kind: "tenancy",
+      description:
+        "Das Mietverhältnis, zu dem die Kaution gehört. Hausbuch schlägt das vor, dessen vereinbarte Kaution diesem Betrag entspricht, oder das einzige; sonst wählen Sie es hier.",
     },
   },
+};
+
+/**
+ * The fields of a record that creates (mode `create`), in this order: every field of the model
+ * its apply validates against (backend services/proposals.py `_Apply`), so a value the proposal
+ * lacks can be typed by hand. Left out: what the apply fills itself (the property, the document
+ * as Beleg or evidence, a split's source, a tenancy's parties, a loan's property) and what the
+ * review cannot edit (the address's country, always DE; a BMF split's inputs). A record that
+ * patches or corrects shows only its proposed fields.
+ */
+const CREATE_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  // DocumentTyping
+  typing: ["type", "subtype", "title", "document_date", "tax_year"],
+  // PropertyCreate
+  property: [
+    "label",
+    "kind",
+    "address.street",
+    "address.house_number",
+    "address.postal_code",
+    "address.city",
+    "build_year",
+    "notarized_on",
+    "purchase_date",
+    "purchase_price",
+  ],
+  // UnitCreate
+  unit: ["label", "floor_area_m2", "rooms", "mea"],
+  // PriceSplitCreate
+  price_split: ["building_share", "note"],
+  // OwnershipBody (the shares are shown only when proposed: they are not typed here)
+  ownership: ["shares", "effective_date"],
+  // AcquisitionCostCreate
+  cost: ["kind", "amount", "paid_on", "note"],
+  // LoanCreateRequest
+  loan: [
+    "lender",
+    "contract_number",
+    "principal",
+    "nominal_rate",
+    "monthly_payment",
+    "fixed_until",
+    "follow_up_rate",
+    "disbursed_on",
+    "first_payment_on",
+    "account_iban",
+    "signed_on",
+  ],
+  // TenantCreate
+  tenant: ["full_name", "email", "phone", "iban"],
+  // TenancyCreate
+  tenancy: [
+    "unit_id",
+    "start_date",
+    "signed_on",
+    "fixed_term_until",
+    "end_date",
+    "rent_model",
+    "deposit_amount",
+    "deposit_form",
+    "deposit_bank",
+    "deposit_iban",
+  ],
+  // InitialRent
+  rent: ["cold_rent", "operating_costs_prepayment", "effective_from"],
+  // _DepositValues (DepositReceivedBody + tenancy_id)
+  deposit_received: ["tenancy_id", "amount", "received_on"],
 };
 
 /** The extraction fields a derived value names in `derived_from`. */
@@ -321,6 +407,37 @@ function specFor(record: ProposalRecord, name: string): FieldSpec {
 
 function fieldsOf(record: ProposalRecord): [string, ExtractedValue][] {
   return Object.entries(record.fields ?? {});
+}
+
+/** A row of a record's card: the field and its proposed value, null when the proposal did not
+ * contain the field (a record that creates: typed by hand, or left empty). */
+type Row = [string, ExtractedValue | null];
+
+/** The rows of a record: for one that creates, every field of CREATE_FIELDS in that order (a
+ * structured "fixed" value only when proposed), then any proposed field the list lacks; for
+ * every other mode, only the proposed fields, as before. */
+function rowsOf(record: ProposalRecord): Row[] {
+  const proposed = fieldsOf(record);
+  const schema = record.mode === "create" ? CREATE_FIELDS[prefixOf(record.key)[0]] : undefined;
+  if (!schema) return proposed;
+  const byName = new Map(proposed);
+  const rows: Row[] = [];
+  for (const name of schema) {
+    const value = byName.get(name);
+    if (value) rows.push([name, value]);
+    else if (specFor(record, name).kind !== "fixed") rows.push([name, null]);
+  }
+  for (const [name, value] of proposed) if (!schema.includes(name)) rows.push([name, value]);
+  return rows;
+}
+
+/** The rows the card shows: as rowsOf, but an empty Steuerjahr the proposal did not contain is
+ * hidden for the subtypes the typing form hides it for (NO_TAX_YEAR), while it stays empty. */
+function visibleRows(record: ProposalRecord, state: RecordState): Row[] {
+  return rowsOf(record).filter(([name, value]) => {
+    if (value || name !== "tax_year" || prefixOf(record.key)[0] !== "typing") return true;
+    return !(NO_TAX_YEAR.has(state.fields.subtype?.raw ?? "") && (state.fields.tax_year?.raw ?? "") === "");
+  });
 }
 
 function recordTitle(record: ProposalRecord): string {
@@ -430,14 +547,16 @@ function display(spec: FieldSpec, value: unknown, fixed: (value: unknown) => str
     case "enum":
       return lookup(spec.choices ?? {}, scalar(value));
     case "fixed":
+    case "unit":
+    case "tenancy":
       return fixed(value);
     default:
       return scalar(value) || "–";
   }
 }
 
-/** Values the review shows but does not edit: ownership shares, a tenancy's unit and a
- * Kaution's tenancy, which code matched (by owner names, by address, by the agreed Kaution). */
+/** Ids and structured values as text: ownership shares (matched by owner names, shown, not
+ * edited) and the unit or tenancy an id names (for a stored value, or one the list lacks). */
 function fixedText(directory: Directory | null): (value: unknown) => string {
   return (value) => {
     if (typeof value === "string") {
@@ -866,7 +985,7 @@ function initialState(records: ProposalRecord[]): Record<string, RecordState> {
   const state: Record<string, RecordState> = {};
   for (const record of records) {
     const fields: Record<string, FieldState> = {};
-    for (const [name, value] of fieldsOf(record)) fields[name] = { raw: toRaw(specFor(record, name), value.value), take: true };
+    for (const [name, value] of rowsOf(record)) fields[name] = { raw: value ? toRaw(specFor(record, name), value.value) : "", take: true };
     // An unchanged record would write nothing: it is sent as skipped.
     state[record.key] = { skip: record.mode === "unchanged", fields };
   }
@@ -889,7 +1008,7 @@ function buildApply(
     const values: Record<string, unknown> = {};
     const decisions: Record<string, FieldDecision> = {};
     let keepAll = record.mode === "correction";
-    for (const [name, proposed] of fieldsOf(record)) {
+    for (const [name, proposed] of rowsOf(record)) {
       const field = recordState.fields[name];
       if (!field) continue;
       const spec = specFor(record, name);
@@ -899,9 +1018,11 @@ function buildApply(
       }
       keepAll = false;
       if (spec.kind === "fixed") {
-        if (proposed.value !== null) values[name] = proposed.value;
+        if (proposed && proposed.value !== null) values[name] = proposed.value;
         continue;
       }
+      // A picked unit or tenancy is its id (the raw value), like any text below. A field the
+      // proposal did not contain is sent only when typed; the backend records it as edited.
       const parsed = fromRaw(spec, field.raw);
       if (!parsed.ok) {
         (messages[`${record.key}.${name}`] ??= []).push(parsed.message);
@@ -939,7 +1060,7 @@ function ProposalReview({
   const [state, setState] = useState(() => initialState(records));
   const [busy, setBusy] = useState<"apply" | "reject" | null>(null);
   const keys = useMemo(
-    () => records.flatMap((record) => [record.key, ...fieldsOf(record).map(([name]) => `${record.key}.${name}`)]),
+    () => records.flatMap((record) => [record.key, ...rowsOf(record).map(([name]) => `${record.key}.${name}`)]),
     [records],
   );
   const form = useFormErrors(keys);
@@ -1060,7 +1181,7 @@ function RecordCard({
   const skipId = useId();
   const title = recordTitle(record);
   const unchanged = record.mode === "unchanged";
-  const fields = fieldsOf(record);
+  const fields = visibleRows(record, state);
   const notes = record.notes ?? [];
 
   return (
@@ -1117,6 +1238,7 @@ function RecordCard({
               errors={fieldErrors(name)}
               hasNotes={notes.length > 0}
               originalUrl={originalUrl}
+              directory={directory}
               fixed={fixed}
               onChange={(next) =>
                 onChange((current) => {
@@ -1163,17 +1285,20 @@ function FieldRow({
   errors,
   hasNotes,
   originalUrl,
+  directory,
   fixed,
   onChange,
 }: {
   record: ProposalRecord;
   name: string;
-  value: ExtractedValue;
+  /** null: the proposal did not contain this field (a record that creates). */
+  value: ExtractedValue | null;
   state: FieldState | undefined;
   disabled: boolean;
   errors: string[];
   hasNotes: boolean;
   originalUrl: string | null;
+  directory: Directory | null;
   fixed: (value: unknown) => string;
   onChange: (next: Partial<FieldState>) => void;
 }) {
@@ -1189,7 +1314,8 @@ function FieldRow({
   const existing = record.mode === "patch" || record.mode === "correction";
   const take = state?.take ?? true;
   const current = record.current?.[name];
-  const hint = fieldHint(value, hasNotes);
+  const hint = fieldHint(spec, value, hasNotes);
+  const source = value?.source ?? null;
   const describedBy =
     [spec.description && descriptionOpen ? descriptionId : null, hint ? hintId : null, errors.length > 0 ? errorId : null].filter(Boolean).join(" ") ||
     undefined;
@@ -1199,7 +1325,13 @@ function FieldRow({
   if (unchanged || spec.kind === "fixed") {
     input = (
       <output id={id} className="proposal-fixed" aria-describedby={describedBy}>
-        {display(spec, value.value, fixed)}
+        {display(spec, value?.value, fixed)}
+      </output>
+    );
+  } else if ((spec.kind === "unit" || spec.kind === "tenancy") && directory && pickable(spec.kind, directory).length === 0) {
+    input = (
+      <output id={id} className="proposal-fixed" aria-describedby={describedBy}>
+        <NothingToPick kind={spec.kind} directory={directory} />
       </output>
     );
   } else {
@@ -1217,6 +1349,20 @@ function FieldRow({
         <select {...common} onChange={(e) => onChange({ raw: e.target.value })}>
           <option value="">– wählen –</option>
           {raw && !choices.some(([key]) => key === raw) ? <option value={raw}>{raw}</option> : null}
+          {choices.map(([key, label]) => (
+            <option key={key} value={key}>
+              {label}
+            </option>
+          ))}
+        </select>
+      );
+    } else if (spec.kind === "unit" || spec.kind === "tenancy") {
+      const choices: [string, string][] = directory ? pickable(spec.kind, directory) : [];
+      const raw = state?.raw ?? "";
+      input = (
+        <select {...common} onChange={(e) => onChange({ raw: e.target.value })}>
+          <option value="">– wählen –</option>
+          {raw && !choices.some(([key]) => key === raw) ? <option value={raw}>{fixed(raw)}</option> : null}
           {choices.map(([key, label]) => (
             <option key={key} value={key}>
               {label}
@@ -1252,17 +1398,17 @@ function FieldRow({
             label={spec.label}
           />
         ) : null}
-        <ConfidenceDot value={value} />
-        {value.source ? (
+        {value ? <ConfidenceDot value={value} /> : null}
+        {source ? (
           <button
             type="button"
             className="source-badge"
             aria-expanded={quoteOpen}
             aria-controls={quoteId}
-            title={`„${value.source.quote}“`}
+            title={`„${source.quote}“`}
             onClick={() => setQuoteOpen((open) => !open)}
           >
-            S. {value.source.page}
+            S. {source.page}
             <span className="visually-hidden"> – Fundstelle anzeigen</span>
           </button>
         ) : null}
@@ -1285,10 +1431,10 @@ function FieldRow({
           />
         ) : null}
       </div>
-      {value.source ? (
+      {source ? (
         <div id={quoteId} className="source-quote" hidden={!quoteOpen}>
-          <blockquote>„{value.source.quote}“</blockquote>
-          <SourceLink source={value.source} originalUrl={originalUrl} />
+          <blockquote>„{source.quote}“</blockquote>
+          <SourceLink source={source} originalUrl={originalUrl} />
         </div>
       ) : null}
       {hint ? (
@@ -1307,12 +1453,52 @@ function FieldRow({
   );
 }
 
-function fieldHint(value: ExtractedValue, hasNotes: boolean): string | null {
-  if (value.value === null) return hasNotes ? "Im Dokument nicht als Wert gefunden; siehe Hinweis oben." : "Im Dokument nicht gefunden.";
+function fieldHint(spec: FieldSpec, value: ExtractedValue | null, hasNotes: boolean): string | null {
+  if (!value) return "Nicht im Vorschlag; bei Bedarf von Hand eintragen.";
+  if (value.value === null) {
+    if (spec.kind === "unit") return "Keine Einheit passt eindeutig zum Mietvertrag; bitte wählen.";
+    if (spec.kind === "tenancy") return "Kein Mietverhältnis passt eindeutig; bitte wählen.";
+    return hasNotes ? "Im Dokument nicht als Wert gefunden; siehe Hinweis oben." : "Im Dokument nicht gefunden.";
+  }
   const derived = value.derived_from ?? [];
   if (derived.length > 0) return `Berechnet aus: ${derived.map((name) => lookup(DERIVED_INPUT, name)).join(", ")}.`;
   if (!value.source) return "Ohne Fundstelle (vom Programm gesetzt).";
   return null;
+}
+
+/** The units ("<Immobilie> · <Einheit>") or tenancies (the link picker's label) to pick from. */
+function pickable(kind: "unit" | "tenancy", directory: Directory): [string, string][] {
+  if (kind === "tenancy") {
+    return targets(directory)
+      .filter((target) => target.type === "tenancy")
+      .map((target): [string, string] => [target.id, target.label]);
+  }
+  const propertyById = new Map(directory.properties.map((property) => [property.id, property]));
+  return directory.units.map((unit): [string, string] => [unit.id, `${propertyById.get(unit.property_id)?.label ?? "?"} · ${unit.label}`]);
+}
+
+/** Nothing to pick yet: where to create it first (nothing here is saved before then). */
+function NothingToPick({ kind, directory }: { kind: "unit" | "tenancy"; directory: Directory }) {
+  if (kind === "tenancy") {
+    return (
+      <>
+        Noch kein Mietverhältnis angelegt. Bitte zuerst <Link href="/tenancies/new">das Mietverhältnis anlegen</Link>; danach steht es hier zur
+        Wahl.
+      </>
+    );
+  }
+  const only = directory.properties.length === 1 ? directory.properties[0] : undefined;
+  return only ? (
+    <>
+      Noch keine Einheit angelegt. Bitte zuerst bei der Immobilie <Link href={`/properties/${only.id}/units/new`}>die Einheit anlegen</Link>;
+      danach steht sie hier zur Wahl.
+    </>
+  ) : (
+    <>
+      Noch keine Einheit angelegt. Bitte zuerst bei der Immobilie (<Link href="/">Übersicht</Link>) die Einheit anlegen; danach steht sie hier zur
+      Wahl.
+    </>
+  );
 }
 
 function SourceLink({ source, originalUrl }: { source: SourceRef; originalUrl: string | null }) {

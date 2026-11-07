@@ -5,7 +5,7 @@
 // proven by the backend's own tests.
 import type { Page, Route } from "@playwright/test";
 
-import { expect, test } from "./support";
+import { apiCall, expect, test } from "./support";
 
 const PROPOSAL_ID = "00000000-0000-4000-8000-0000000000a1";
 const PROPERTY_ID = "00000000-0000-4000-8000-0000000000b1";
@@ -286,6 +286,106 @@ test("an existing property: übernehmen / behalten per field, unchanged records 
     { key: "property", skip: false, values: { "address.city": "Berlin-Mitte" }, decisions: { build_year: "skipped" } },
     { key: "unit", skip: true },
   ]);
+});
+
+const missing = { value: null, source: null, derived_from: [], checks: [], confidence: "low" };
+
+/** A room lease whose room Hausbuch could not place, with no Nebenkosten amount stated. */
+const LEASE_RECORDS = [
+  {
+    key: "typing",
+    entity_type: "typing",
+    mode: "create",
+    fields: { type: cited("contract", 1, "Mietvertrag"), subtype: cited("lease", 1, "Mietvertrag über ein Zimmer") },
+    notes: [],
+  },
+  { key: "tenant:1", entity_type: "tenant", mode: "create", fields: { full_name: cited("Lena Beispiel", 1, "Mieterin: Lena Beispiel") }, notes: [] },
+  {
+    key: "tenancy",
+    entity_type: "tenancy",
+    mode: "create",
+    fields: {
+      unit_id: { ...missing, derived_from: ["street", "house_number", "postal_code", "unit_label"], checks: ["derived", "validates"] },
+      start_date: cited("2026-05-01", 1, "Das Mietverhältnis beginnt am 01.05.2026"),
+      rent_model: { value: "fixed", source: null, derived_from: ["rent_clause"], checks: ["derived", "validates"], confidence: "low" },
+      deposit_amount: cited("1000.00", 3, "eine Kaution in Höhe von 1.000,00 €"),
+      deposit_form: { value: "cash_account", source: null, derived_from: ["deposit_amount", "deposit_clause"], checks: ["derived", "validates"], confidence: "low" },
+    },
+    notes: [],
+  },
+  {
+    key: "rent",
+    entity_type: "rent_schedule",
+    mode: "create",
+    fields: { cold_rent: cited("450.00", 2, "Die Miete beträgt monatlich 450,00 €"), effective_from: cited("2026-05-01", 1, "beginnt am 01.05.2026") },
+    notes: [],
+  },
+  { key: "link:tenancy", entity_type: "link", mode: "create", fields: {}, notes: [] },
+];
+
+test("a lease whose room was not found: the unit is picked and a missing value typed by hand", async ({ page, signedIn }) => {
+  void signedIn;
+  const property = await apiCall<{ id: string }>(page, "POST", "/api/properties", {
+    label: "Wohnung Zimmer",
+    kind: "etw",
+    address: { street: "Teststraße", house_number: "5", postal_code: "10115", city: "Berlin", country_code: "DE" },
+    build_year: 1994,
+    notarized_on: "2024-03-15",
+    purchase_date: "2024-05-01",
+    purchase_price: "289000.00",
+  });
+  const room = (label: string) =>
+    apiCall<{ id: string }>(page, "POST", "/api/units", { property_id: property.id, label, floor_area_m2: "14.00", rooms: null, mea: null });
+  const room1 = await room("Zimmer 1");
+  await room("Zimmer 2");
+  const documentId = await uploadPdf(page, "Mietvertrag-Zimmer.pdf");
+  const mock: Mock = {
+    list: [proposal(documentId, { kind: "lease", contains_tenant_data: true, records: LEASE_RECORDS })],
+    poll: null,
+    polls: 0,
+    applies: [],
+    apply: () => ({
+      status: 200,
+      json: {
+        proposal: proposal(documentId, { kind: "lease", status: "applied", records: LEASE_RECORDS, decided_at: NOW }),
+        applied: LEASE_RECORDS.map((r) => ({ key: r.key, entity_type: r.entity_type, mode: "create", skipped: false, entity_id: null })),
+      },
+    }),
+  };
+  await mockProposals(page, mock);
+
+  await page.goto(`/documents/${documentId}`);
+  const form = vorschlag(page).getByRole("form", { name: "Vorschlag prüfen" });
+  const tenancy = form.getByRole("region", { name: "Mietverhältnis", exact: true });
+  const unit = tenancy.getByLabel("Einheit", { exact: true });
+  await expect(unit).toHaveValue("");
+  await expect(tenancy.getByText("Keine Einheit passt eindeutig zum Mietvertrag; bitte wählen.")).toBeVisible();
+  // Every field of the tenancy is there, also those the lease did not state.
+  await expect(tenancy.getByLabel("Auszug", { exact: true })).toHaveValue("");
+  await unit.selectOption({ label: "Wohnung Zimmer · Zimmer 1" });
+
+  // The lease states no Nebenkosten amount: the field is still there, empty, to fill by hand.
+  const rent = form.getByRole("region", { name: "Anfangsmiete" });
+  const prepayment = rent.getByLabel("NK-Vorauszahlung (€ / Monat)");
+  await expect(prepayment).toHaveValue("");
+  await expect(rent.getByText("Nicht im Vorschlag; bei Bedarf von Hand eintragen.")).toBeVisible();
+  await prepayment.fill("150,00");
+
+  await form.getByRole("button", { name: "Übernehmen" }).click();
+  await expect(vorschlag(page).getByText("Übernommen.")).toBeVisible();
+  const sent = mock.applies[0] as { records: Json[] };
+  expect(sent.records.find((r) => r.key === "tenancy")).toEqual({
+    key: "tenancy",
+    skip: false,
+    values: { unit_id: room1.id, start_date: "2026-05-01", rent_model: "fixed", deposit_amount: "1000.00", deposit_form: "cash_account" },
+    decisions: {},
+  });
+  expect(sent.records.find((r) => r.key === "rent")).toEqual({
+    key: "rent",
+    skip: false,
+    values: { cold_rent: "450.00", effective_from: "2026-05-01", operating_costs_prepayment: "150.00" },
+    decisions: {},
+  });
 });
 
 test("a failed read and a tenant document offer manual entry", async ({ page, signedIn }) => {
