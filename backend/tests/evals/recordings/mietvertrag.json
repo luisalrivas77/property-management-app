@@ -8,7 +8,7 @@
   "prompt_version": "624ea59735496705",
   "request_sha256": "9c929028cdf37bf270b9ba1133d68a528dcfafb3e5cfdbe6831839e45f4d2a46",
   "message": {
-   "id": "msg_011CgoewgFEzcQbTxVtwAgaU",
+   "id": "msg_011Cgp89UjvmJrRgXRVbdhNP",
    "container": null,
    "content": [
     {
@@ -46,9 +46,9 @@
  "extract": [
   {
    "prompt_version": "db37026b509dd7a8",
-   "request_sha256": "9a75e9dd55eddb15c3db5f1af9788c97d1e6bdf4c2400ff9ce51fe21a7e7b7d3",
+   "request_sha256": "6f2ed3f125aa8522058a2e11ec052f03b494d1b39ad7c4d335732f571683f7e3",
    "message": {
-    "id": "msg_011CgoewQ6tTB5LyuzD1oEXd",
+    "id": "msg_011Cgp89BKfeZrbtLvoBLLxi",
     "container": null,
     "content": [
      {
@@ -268,7 +268,7 @@
         "type": "page_location"
        }
       ],
-      "text": "2.940,00 €",
+      "text": "2.940,00 EUR",
       "type": "text"
      },
      {
@@ -308,7 +308,7 @@
         "type": "page_location"
        }
       ],
-      "text": "980,00 €",
+      "text": "980,00 EUR",
       "type": "text"
      },
      {
@@ -328,7 +328,7 @@
         "type": "page_location"
        }
       ],
-      "text": "180,00 €",
+      "text": "180,00 EUR",
       "type": "text"
      },
      {
@@ -348,7 +348,7 @@
         "type": "page_location"
        }
       ],
-      "text": "70,00 €",
+      "text": "70,00 EUR",
       "type": "text"
      }
     ],
@@ -367,8 +367,8 @@
      "cache_creation_input_tokens": 0,
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
-     "input_tokens": 5326,
-     "output_tokens": 604,
+     "input_tokens": 5367,
+     "output_tokens": 612,
      "output_tokens_details": {
       "thinking_tokens": 0
      },

@@ -111,7 +111,11 @@ class LeaseExtraction(_Typing):
     house_number: ExtractedValue = ev("text", "house number")
     postal_code: ExtractedValue = ev("text", "five-digit PLZ")
     city: ExtractedValue = ev("text", "city")
-    unit_label: ExtractedValue = ev("text", "the flat's label, e.g. WE 3")
+    unit_label: ExtractedValue = ev(
+        "text",
+        "the let unit's label: for a single room let on its own the room (e.g. Zimmer 3),"
+        " not the flat's floor or number; else the flat's label (e.g. WE 3)",
+    )
     tenant_1_full_name: ExtractedValue = ev("text", "first named Mieter (primary)")
     tenant_1_email: ExtractedValue = ev("text", "if stated")
     tenant_1_phone: ExtractedValue = ev("text", "if stated")
