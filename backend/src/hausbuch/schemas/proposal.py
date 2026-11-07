@@ -15,7 +15,7 @@ from uuid import UUID
 from pydantic import Field, JsonValue, model_validator
 
 from .ai import ClassifyOutput, ExtractedValue
-from .common import Fraction, MutableRecord, PositiveMoney, Schema, Year
+from .common import Fraction, MutableRecord, NonNegativeMoney, PositiveMoney, Schema, Year
 from .enums import (
     AcquisitionCostKind,
     EntityType,
@@ -151,10 +151,21 @@ class ExistingLoan(Schema):
     contract_number: str | None = None
 
 
+class ExistingDepositReceipt(Schema):
+    """A Kaution payment already recorded on the tenancy (tenancy.deposit_received, the
+    latest of its chain)."""
+
+    amount: PositiveMoney
+    received_on: date
+
+
 class ExistingTenancy(Schema):
     id: UUID
     unit_id: UUID
     start_date: date
+    # A Kautionsnachweis is matched to its tenancy by these (D42).
+    deposit_amount: NonNegativeMoney | None = None
+    deposit_receipts: list[ExistingDepositReceipt] = Field(default_factory=list)
 
 
 class ExistingTenant(Schema):

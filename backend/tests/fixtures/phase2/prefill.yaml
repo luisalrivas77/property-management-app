@@ -14,7 +14,7 @@
 #   typing (typing), property (property), correction:<field> (property), unit (unit),
 #   price_split (price_split), ownership (ownership), cost:<kind> (acquisition_cost),
 #   loan (loan), tenant:<n> (tenant), tenancy (tenancy), rent (rent_schedule),
-#   link:property / link:loan / link:tenancy (link).
+#   deposit_received (deposit_received), link:property / link:loan / link:tenancy (link).
 # Fields are named by the *Create / *Patch field ("address.city" for a nested one). Not fields:
 # what apply supplies itself: the document (Beleg, evidence, rent document_id), the id of a
 # record created in the same apply, a split's source (purchase_contract), the property a
@@ -73,6 +73,14 @@
 #   linked property for costs and Bescheide without an address: the only property in the
 #             context (with several, no link:property and no cost scope is proposed: not in
 #             these cases).
+# Kautionsnachweis (D42): with amount and received_on both stated and exactly one tenancy found,
+#   a deposit_received record (amount, received_on copied; tenancy_id derived from [amount] when
+#   the tenancy is the one whose deposit_amount equals the amount; when it is the workspace's
+#   only tenancy, a code value: no source, checks [validates], confidence low) plus link:tenancy
+#   (target = that tenancy). Several tenancies whose deposit_amount equals the amount, or none and not exactly
+#   one tenancy: typing only, typing's notes contain "Mietverhältnis". A receipt already recorded
+#   on that tenancy with the same amount and date: mode unchanged, target_id = the tenancy,
+#   values and current = amount and received_on.
 # Kaufvertrag: no price_split without land_value; ownership only when every buyer is an owner
 # by name and the clause is understood; purchase_date null with the Übergang clause quoted in
 # the property's notes when the contract ties it to the payment; no property label is proposed
@@ -98,6 +106,8 @@ ids:
   loan: &L 0000000f-0000-4000-8000-000000000001
   loan_2: &L2 0000000f-0000-4000-8000-000000000002
   tenant_1: &N1 00000012-0000-4000-8000-000000000001
+  tenancy_1: &T1 00000013-0000-4000-8000-000000000001
+  tenancy_2: &T2 00000013-0000-4000-8000-000000000002
 
 shared:
   classify_kaufvertrag: &CL_KV {type: contract, subtype: purchase_contract, contains_tenant_data: false, language: de, confidence: high}
@@ -784,3 +794,123 @@ cases:
           entity_type: typing
           mode: create
           values: {type: letter, title: Schreiben der Hausverwaltung, document_date: "2026-09-01"}
+
+  # --- Kautionsnachweis (D42) ------------------------------------------------------------
+
+  - id: kautionsnachweis_tenancy_found_by_amount
+    description: Two tenancies; the receipt's amount equals one tenancy's agreed Kaution, so it is that one.
+    kind: deposit_record
+    context:
+      document_id: *DOC
+      classification: &CL_DEPOSIT {type: letter, subtype: deposit_record, contains_tenant_data: true, language: de, confidence: high}
+      properties: [*PROP_LINDEN, *PROP_KASTANIEN]
+      units:
+        - {id: *U, property_id: *P, label: WE 3}
+        - {id: *U2, property_id: *P2, label: WE 3}
+      tenancies:
+        - {id: *T1, unit_id: *U, start_date: 2026-07-01, deposit_amount: "3450.00"}
+        - {id: *T2, unit_id: *U2, start_date: 2024-02-01, deposit_amount: "2400.00"}
+    extraction: &KAUTION
+      title: {v: Kautionsnachweis Mietkautionskonto, p: 1, q: "Bestätigung Mietkautionskonto"}
+      document_date: {v: "2026-07-03", p: 1, q: "Berlin, 03.07.2026"}
+      amount: {v: "3450.00", p: 1, q: "Kautionsbetrag 3.450,00 EUR"}
+      received_on: {v: "2026-07-02", p: 1, q: "eingegangen am 02.07.2026"}
+    expect:
+      keys: [typing, deposit_received, link:tenancy]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: letter, subtype: deposit_record, title: Kautionsnachweis Mietkautionskonto, document_date: "2026-07-03"}
+        - key: deposit_received
+          entity_type: deposit_received
+          mode: create
+          values: {amount: "3450.00", received_on: "2026-07-02", tenancy_id: *T1}
+          derived: {tenancy_id: [amount]}
+        - key: link:tenancy
+          entity_type: link
+          mode: create
+          target_id: *T1
+          values: {}
+
+  - id: kautionsnachweis_only_tenancy
+    description: The first of three instalments matches no agreed Kaution; the workspace has one tenancy, so it is that one.
+    kind: deposit_record
+    context:
+      document_id: *DOC
+      classification: *CL_DEPOSIT
+      properties: [*PROP_LINDEN]
+      units:
+        - {id: *U, property_id: *P, label: WE 3}
+      tenancies:
+        - {id: *T1, unit_id: *U, start_date: 2026-07-01, deposit_amount: "3450.00"}
+    extraction:
+      <<: *KAUTION
+      amount: {v: "1150.00", p: 1, q: "erste Rate der Kaution 1.150,00 EUR"}
+    expect:
+      keys: [typing, deposit_received, link:tenancy]
+      records:
+        - key: deposit_received
+          entity_type: deposit_received
+          mode: create
+          values: {amount: "1150.00", received_on: "2026-07-02", tenancy_id: *T1}
+        - key: link:tenancy
+          entity_type: link
+          mode: create
+          target_id: *T1
+          values: {}
+
+  - id: kautionsnachweis_ambiguous_typing_only
+    description: Two tenancies agree the same Kaution; the receipt cannot say which one, so it is typing only with a note.
+    kind: deposit_record
+    context:
+      document_id: *DOC
+      classification: *CL_DEPOSIT
+      properties: [*PROP_LINDEN, *PROP_KASTANIEN]
+      units:
+        - {id: *U, property_id: *P, label: WE 3}
+        - {id: *U2, property_id: *P2, label: WE 3}
+      tenancies:
+        - {id: *T1, unit_id: *U, start_date: 2026-07-01, deposit_amount: "3450.00"}
+        - {id: *T2, unit_id: *U2, start_date: 2024-02-01, deposit_amount: "3450.00"}
+    extraction: *KAUTION
+    expect:
+      keys: [typing]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: letter, subtype: deposit_record, title: Kautionsnachweis Mietkautionskonto, document_date: "2026-07-03"}
+          notes_contain: [Mietverhältnis]
+
+  - id: kautionsnachweis_already_recorded
+    description: The same payment (amount and date) is already recorded on the tenancy; nothing new to record.
+    kind: deposit_record
+    context:
+      document_id: *DOC
+      classification: *CL_DEPOSIT
+      properties: [*PROP_LINDEN]
+      units:
+        - {id: *U, property_id: *P, label: WE 3}
+      tenancies:
+        - id: *T1
+          unit_id: *U
+          start_date: 2026-07-01
+          deposit_amount: "3450.00"
+          deposit_receipts:
+            - {amount: "3450.00", received_on: 2026-07-02}
+    extraction: *KAUTION
+    expect:
+      keys: [typing, deposit_received, link:tenancy]
+      records:
+        - key: deposit_received
+          entity_type: deposit_received
+          mode: unchanged
+          target_id: *T1
+          values: {amount: "3450.00", received_on: "2026-07-02"}
+          current: {amount: "3450.00", received_on: "2026-07-02"}
+        - key: link:tenancy
+          entity_type: link
+          mode: create
+          target_id: *T1
+          values: {}
