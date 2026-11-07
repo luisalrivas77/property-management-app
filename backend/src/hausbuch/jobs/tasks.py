@@ -19,6 +19,7 @@ from procrastinate.retry import BaseRetryStrategy, RetryDecision
 from .document_read import TASK_NAME, JobDeps, RetryLater, run_document_read
 from .enqueue import MATCH_IMPORT_TASK, MATCH_TRANSACTION_TASK, REMATCH_TASK
 from .matching import run_match_import, run_match_transaction, run_rematch_on_evidence
+from .scrub import SCRUB_CRON, SCRUB_TASK, run_scrub_proposals
 
 DEPS_KEY = "hausbuch_deps"
 
@@ -83,10 +84,26 @@ def rematch_on_evidence(context: JobContext, *, workspace_id: str, document_id: 
     )
 
 
+def scrub_proposals(context: JobContext, *, timestamp: int) -> None:
+    """D19/D41, daily. `timestamp` is the scheduled time Procrastinate's periodic deferrer
+    passes; the cutoff uses the process clock (deps.clock) instead."""
+    deps: JobDeps = context.additional_context[DEPS_KEY]
+    run_scrub_proposals(deps)
+
+
 def register_tasks(app: procrastinate.App) -> procrastinate.App:
+    """The queued tasks, plus scrub_proposals as a periodic task: the worker's periodic
+    deferrer queues it at SCRUB_CRON. Procrastinate skips a schedule missed by more than
+    10 minutes (a worker that was down at 03:15), so that day's scrub moves to the next day;
+    the API container runs at min-scale 1, so that is rare and only delays a scrub."""
     retry = RetryWhenAsked()
     app.task(name=TASK_NAME, pass_context=True, retry=retry)(document_read)
     app.task(name=MATCH_IMPORT_TASK, pass_context=True, retry=retry)(match_import)
     app.task(name=MATCH_TRANSACTION_TASK, pass_context=True, retry=retry)(match_transaction)
     app.task(name=REMATCH_TASK, pass_context=True, retry=retry)(rematch_on_evidence)
+    # No retry: a failed scrub runs again the next day. No queueing lock (jobs/enqueue.py
+    # says why); Procrastinate's periodic_defers table already defers one job per schedule
+    # however many instances run a deferrer, and a duplicate run would scrub nothing.
+    scrub = app.task(name=SCRUB_TASK, pass_context=True)(scrub_proposals)
+    app.periodic(cron=SCRUB_CRON, periodic_id=SCRUB_TASK)(scrub)
     return app
