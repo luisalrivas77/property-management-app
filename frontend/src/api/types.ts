@@ -2919,7 +2919,7 @@ export interface components {
             postal_code?: components["schemas"]["ExtractedValue"];
             /** @description city */
             city?: components["schemas"]["ExtractedValue"];
-            /** @description the flat's label, e.g. WE 3 */
+            /** @description the let unit's label: for a single room let on its own the room (e.g. Zimmer 3), not the flat's floor or number; else the flat's label (e.g. WE 3) */
             unit_label?: components["schemas"]["ExtractedValue"];
             /** @description first named Mieter (primary) */
             tenant_1_full_name?: components["schemas"]["ExtractedValue"];
