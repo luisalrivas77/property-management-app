@@ -6,12 +6,13 @@ client would have sent."""
 import json
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from uuid import UUID
 
 import pytest
 from db.db_support import TEST_IBAN_KEY
 from db.matching_support import (
+    LOAN_IBAN,
     OTHER_TENANT_IBAN,
+    OWNER_IBAN,
     PAINTER_IBAN,
     STADT_IBAN,
     TENANT_IBAN,
@@ -31,12 +32,12 @@ from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import matching_rule as rule_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.jobs.document_read import JobDeps, RetryLater
-from hausbuch.jobs.enqueue import import_lock, rule_lock, transaction_lock
+from hausbuch.jobs.enqueue import import_lock, transaction_lock, waiting_lock
 from hausbuch.jobs.matching import (
     run_match_import,
     run_match_transaction,
     run_rematch_on_evidence,
-    run_rematch_on_rule,
+    run_rematch_waiting,
 )
 from hausbuch.schemas.allocation import (
     AllocationCategory,
@@ -49,13 +50,14 @@ from hausbuch.schemas.bank import AccountCreate
 from hausbuch.schemas.enums import DuplicateStatus, ExtractionKind, ImportStatus
 from hausbuch.schemas.extraction import EXTRACTION_MODELS
 from hausbuch.schemas.property import UnitCreate
-from hausbuch.services import documents, matching, review, rules_learned
+from hausbuch.services import documents, loans, matching, review, rules_learned, tenancies
 from hausbuch.services.accounts import create_account
 from hausbuch.services.statements import (
     import_statement,
     list_possible_duplicates,
     resolve_duplicate,
 )
+from hausbuch.services.tenants import update_tenant
 from hausbuch.services.units import create_unit
 from hausbuch.settings import Settings
 
@@ -551,7 +553,7 @@ def test_a_new_reading_queues_a_rematch_that_matches_without_the_model(world, ap
     assert deps.model_client.requests == []  # type: ignore[union-attr]
 
 
-# --- rematch_on_rule ------------------------------------------------------------------------
+# --- rematch_waiting ------------------------------------------------------------------------
 
 
 def _put(world: World, tx, *parts, learn_rule: bool, **scope):
@@ -612,8 +614,14 @@ def _unreconciled_import(world: World):
         ).scalar_one()
 
 
-def _rule_jobs(world: World):
-    return [j for j in _jobs(world) if j.task_name == "rematch_on_rule"]
+def _rematch(deps, world: World, kind: str, entity_id):
+    return run_rematch_waiting(
+        deps, workspace_id=world.ws, trigger=f"{kind}:{entity_id}", attempt=0
+    )
+
+
+def _rematch_jobs(world: World):
+    return [j for j in _jobs(world) if j.task_name == "rematch_waiting"]
 
 
 def test_a_learned_rule_books_the_payers_waiting_lines_without_the_model(
@@ -647,24 +655,22 @@ def test_a_learned_rule_books_the_payers_waiting_lines_without_the_model(
         (row,) = _rows(world, tx)
         assert (row.method, row.status, row.category) == ("llm", "proposed", category)
     _put(world, by_person, ("-120.00", "other_expense"), learn_rule=False)
-    assert _rule_jobs(world) == []  # no rule, no job
+    assert _rematch_jobs(world) == []  # no rule, no job
 
     rule = _put(
         world, first, ("-120.00", "grundsteuer"), learn_rule=True, property_id=world.property_id
     ).rule
     assert rule is not None and rule.split_method.value == "single_category"
-    (job,) = _rule_jobs(world)
-    assert job.lock == rule_lock(rule.id)
-    assert job.args == {"workspace_id": str(world.ws), "rule_id": str(rule.id)}
+    (job,) = _rematch_jobs(world)
+    assert job.lock == waiting_lock(f"rule:{rule.id}")
+    assert job.args == {"workspace_id": str(world.ws), "trigger": f"rule:{rule.id}"}
 
-    picked = world.query(matching.lines_for_rule, rule.id)
+    picked = world.query(matching.waiting_lines, "rule", rule.id)
     assert picked == [no_rows, other_proposal, same_proposal]
 
     client = FakeModelClient()  # AI on, nothing scripted: any call would fail the test
     deps = _deps(app_engine, tmp_path, client)
-    plans = run_rematch_on_rule(
-        deps, workspace_id=world.ws, rule_id=UUID(job.args["rule_id"]), attempt=0
-    )
+    plans = run_rematch_waiting(deps, workspace_id=world.ws, trigger=job.args["trigger"], attempt=0)
     assert [(p.outcome, p.reason) for p in plans] == [("written", "routing.auto_confirm")] * 3
     assert client.requests == []
 
@@ -696,7 +702,7 @@ def test_a_learned_rule_books_the_payers_waiting_lines_without_the_model(
     listed = {i.transaction_id for i in world.query(review.inbox)}
     assert listed.isdisjoint({first, no_rows, other_proposal, same_proposal, by_person})
     assert {refund, painter} <= listed
-    assert run_rematch_on_rule(deps, workspace_id=world.ws, rule_id=rule.id, attempt=0) == []
+    assert _rematch(deps, world, "rule", rule.id) == []
 
 
 def test_a_rule_disabled_before_its_job_runs_rematches_nothing(world, app_engine, tmp_path):
@@ -704,10 +710,10 @@ def test_a_rule_disabled_before_its_job_runs_rematches_nothing(world, app_engine
     waiting = world.line(date(2026, 5, 15), "-120.00", iban=STADT_IBAN, purpose="Grundsteuer")
     rule = _put(world, first, ("-120.00", "grundsteuer"), learn_rule=True).rule
     world.cmd(rules_learned.disable_rule, rule.id)
-    assert world.query(matching.lines_for_rule, rule.id) == []
+    assert world.query(matching.waiting_lines, "rule", rule.id) == []
     client = FakeModelClient()
     deps = _deps(app_engine, tmp_path, client)
-    assert run_rematch_on_rule(deps, workspace_id=world.ws, rule_id=rule.id, attempt=0) == []
+    assert _rematch(deps, world, "rule", rule.id) == []
     assert _rows(world, waiting) == [] and client.requests == []
 
 
@@ -736,11 +742,11 @@ def test_a_rent_rule_books_the_waiting_rent_that_fits_the_schedule_exactly(
         tenancy_id=tenancy,
     ).rule
     assert rule.split_method.value == "by_rent_schedule" and rule.tenancy_id == tenancy
-    assert world.query(matching.lines_for_rule, rule.id) == [february, march, april]
+    assert world.query(matching.waiting_lines, "rule", rule.id) == [february, march, april]
 
     client = FakeModelClient()
     deps = _deps(app_engine, tmp_path, client)
-    plans = run_rematch_on_rule(deps, workspace_id=world.ws, rule_id=rule.id, attempt=0)
+    plans = _rematch(deps, world, "rule", rule.id)
     assert [p.outcome for p in plans] == ["written", "skipped", "written"]
     assert client.requests == []
     for tx, month in ((february, 2), (april, 4)):
@@ -755,3 +761,136 @@ def test_a_rent_rule_books_the_waiting_rent_that_fits_the_schedule_exactly(
     assert _rows(world, march) == []  # 20 € short: still waiting, nothing asked of the model
     (item,) = [i for i in world.query(review.inbox) if i.transaction_id == march]
     assert item.kind is InboxItemKind.UNMATCHED
+
+
+# --- rematch_waiting on master data entered after the import ------------------------------
+
+
+def _waiting_jobs(world: World, trigger: str):
+    return [j for j in _jobs(world) if j.lock == waiting_lock(trigger)]
+
+
+def test_a_loan_entered_after_the_import_books_the_instalments_that_fit(
+    world, app_engine, tmp_path
+):
+    may = world.line(date(2024, 5, 2), "-1400.00", iban=LOAN_IBAN, purpose="Rate")
+    june = world.line(date(2024, 6, 3), "-1400.00", iban=LOAN_IBAN, purpose="Rate")
+    july = world.line(date(2024, 7, 1), "-1450.00", iban=LOAN_IBAN, purpose="Rate")  # no fit
+    august = world.line(date(2024, 8, 1), "-1400.00", iban=LOAN_IBAN, purpose="Rate")
+    _put(world, august, ("-1400.00", "other_expense"), learn_rule=False)  # a person's answer
+    credit = world.line(date(2024, 5, 2), "50.00", iban=LOAN_IBAN, purpose="Gutschrift")
+
+    loan = world.loan()  # account LOAN_IBAN, 1400.00 a month from 1 May 2024
+    trigger = f"loan:{loan}"
+    (job,) = _waiting_jobs(world, trigger)
+    assert job.task_name == "rematch_waiting"
+    assert job.args == {"workspace_id": str(world.ws), "trigger": trigger}
+    assert world.query(matching.waiting_lines, "loan", loan) == [may, june, july]
+
+    client = FakeModelClient()
+    deps = _deps(app_engine, tmp_path, client)
+    plans = _rematch(deps, world, "loan", loan)
+    assert [p.outcome for p in plans] == ["written", "written", "skipped"]
+    assert client.requests == []
+    entries = world.query(loans.loan_schedule, loan).entries
+    for tx, entry in ((may, entries[0]), (june, entries[1])):
+        rows = _rows(world, tx)
+        assert sorted((r.category, r.amount, r.method, r.status, r.loan_id) for r in rows) == [
+            ("loan_interest", -entry.interest, "matcher_loan", "confirmed", loan),
+            ("loan_principal", -entry.principal, "matcher_loan", "confirmed", loan),
+        ]
+    assert _rows(world, july) == [] and _rows(world, credit) == []
+    (kept,) = _rows(world, august)
+    assert (kept.method, kept.category) == ("user", "other_expense")
+
+
+def test_a_burst_of_loan_edits_queues_one_job_and_the_contract_number_none(world):
+    loan = world.loan()
+    trigger = f"loan:{loan}"
+    world.cmd(loans.update_loan, loan, monthly_payment=Decimal("1500.00"))
+    world.cmd(loans.update_loan, loan, lender="Andere Bank AG")
+    assert len(_waiting_jobs(world, trigger)) == 1  # the waiting job reads the loan when it runs
+    world.query(lambda c: c.execute(text("DELETE FROM procrastinate_jobs")))
+    world.cmd(loans.update_loan, loan, contract_number="DA-4711")
+    assert _waiting_jobs(world, trigger) == []  # the matcher does not read it
+    world.cmd(loans.update_loan, loan, account_iban=PAINTER_IBAN, iban_key=TEST_IBAN_KEY)
+    assert len(_waiting_jobs(world, trigger)) == 1
+
+
+def test_rent_paid_before_the_tenants_iban_was_saved_is_booked_once_it_is(
+    world, app_engine, tmp_path
+):
+    tenancy = world.tenancy(iban=None)  # 1050.00 + 230.00; the tenant's IBAN not known yet
+    tenant_id = world.query(tenancies.get_tenancy, tenancy).parties[0].tenant_id
+
+    def rent(month: int):
+        return world.line(
+            date(2026, month, 2), "1280.00", iban=TENANT_IBAN, purpose=f"Miete {month:02d}/2026"
+        )
+
+    january, february, march = rent(1), rent(2), rent(3)
+    _put(world, march, ("1280.00", "other_income"), learn_rule=False)  # answered by hand
+    world.query(lambda c: c.execute(text("DELETE FROM procrastinate_jobs")))
+
+    world.cmd(update_tenant, tenant_id, iban=TENANT_IBAN, iban_key=TEST_IBAN_KEY)
+    trigger = f"tenant:{tenant_id}"
+    assert len(_waiting_jobs(world, trigger)) == 1
+    assert world.query(matching.waiting_lines, "tenant", tenant_id) == [january, february]
+
+    client = FakeModelClient()
+    deps = _deps(app_engine, tmp_path, client)
+    assert [p.outcome for p in _rematch(deps, world, "tenant", tenant_id)] == ["written"] * 2
+    assert client.requests == []
+    for tx, month in ((january, 1), (february, 2)):
+        rows = _rows(world, tx)
+        assert sorted((r.category, r.amount, r.method, r.status) for r in rows) == [
+            ("operating_costs_prepayment", Decimal("230.00"), "matcher_rent", "confirmed"),
+            ("rent_cold", Decimal("1050.00"), "matcher_rent", "confirmed"),
+        ]
+        assert {r.service_period_start for r in rows} == {date(2026, month, 1)}
+    (kept,) = _rows(world, march)
+    assert (kept.method, kept.category) == ("user", "other_income")
+
+
+def test_a_new_tenancy_with_its_rent_queues_one_job(world):
+    tenancy = world.tenancy()
+    assert len(_waiting_jobs(world, f"tenancy:{tenancy}")) == 1  # the initial rent row
+
+
+def test_an_owner_account_added_later_books_the_waiting_transfers(world, app_engine, tmp_path):
+    top_up = world.line(date(2026, 3, 2), "500.00", iban=OWNER_IBAN, purpose="Einlage")
+    withdrawal = world.line(date(2026, 3, 30), "-200.00", iban=OWNER_IBAN, purpose="Entnahme")
+    answered = world.line(date(2026, 4, 2), "300.00", iban=OWNER_IBAN, purpose="Einlage")
+    _put(world, answered, ("300.00", "other_income"), learn_rule=False)
+    painter = world.line(date(2026, 3, 2), "-80.00", iban=PAINTER_IBAN)
+
+    def account(label: str, iban: str, owner: bool) -> AccountCreate:
+        return AccountCreate(
+            label=label,
+            bank="Sparkasse",
+            iban=iban,
+            opening_balance=Decimal("0.00"),
+            opening_balance_on=date(2026, 1, 1),
+            is_owner_account=owner,
+        )
+
+    world.cmd(
+        create_account,
+        account("Tagesgeld", "DE50100000000000000001", False),
+        iban_key=TEST_IBAN_KEY,
+    )
+    assert _rematch_jobs(world) == []  # not an owner account: nothing to re-match
+    owner = world.cmd(create_account, account("Privat", OWNER_IBAN, True), iban_key=TEST_IBAN_KEY)
+    assert len(_waiting_jobs(world, f"account:{owner.id}")) == 1
+    assert world.query(matching.waiting_lines, "account", owner.id) == [top_up, withdrawal]
+
+    client = FakeModelClient()
+    deps = _deps(app_engine, tmp_path, client)
+    assert [p.outcome for p in _rematch(deps, world, "account", owner.id)] == ["written"] * 2
+    assert client.requests == []
+    for tx, category in ((top_up, "owner_transfer_in"), (withdrawal, "owner_transfer_out")):
+        (row,) = _rows(world, tx)
+        assert (row.category, row.method, row.status) == (category, "matcher_owner", "confirmed")
+    (kept,) = _rows(world, answered)
+    assert (kept.method, kept.category) == ("user", "other_income")
+    assert _rows(world, painter) == []

@@ -42,6 +42,15 @@ function Inbox() {
     router.replace(`/inbox?umsatz=${transactionId}`, { scroll: false });
   }
 
+  // A learned rule re-checks the waiting lines it names in the background (rematch_waiting):
+  // reload the list twice more, so the lines it booked leave the queue without a page reload.
+  const reload = inbox.reload;
+  useEffect(() => {
+    if (!saved?.rule) return;
+    const timers = [3000, 10000].map((ms) => window.setTimeout(reload, ms));
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [saved, reload]);
+
   function onSaved(result: TransactionAllocations) {
     setSaved(result);
     router.replace("/inbox", { scroll: false });
@@ -83,7 +92,9 @@ function Inbox() {
         {saved ? (
           <Notice>
             Zuordnung bestätigt.
-            {saved.rule ? " Regel gespeichert: künftige Buchungen dieser Art werden automatisch so zugeordnet." : null}
+            {saved.rule
+              ? " Regel gespeichert: künftige Buchungen dieser Art werden automatisch so zugeordnet. Wartende Zahlungen, auf die sie passt, werden jetzt neu geprüft."
+              : null}
           </Notice>
         ) : null}
       </div>

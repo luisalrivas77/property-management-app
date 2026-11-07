@@ -34,6 +34,7 @@ from hausbuch.db.tables import rent_schedule as rent_table
 from hausbuch.db.tables import tenancy as tenancy_table
 from hausbuch.db.tables import tenancy_tenant as party_table
 from hausbuch.db.tables import unit as unit_table
+from hausbuch.jobs import enqueue
 from hausbuch.rules.rent import rent_at
 from hausbuch.rules.validation import RENT_OUTSIDE_TENANCY, check_rent_row, check_tenancy_parties
 from hausbuch.schemas.enums import DepositForm, EntityType, RentChangeReason, RentModel, TenancyRole
@@ -345,6 +346,7 @@ def set_parties(
         effective_date=effective_date,
         **scope,
     )
+    _rematch_waiting(ctx, tenancy_id)
     return result
 
 
@@ -725,7 +727,18 @@ def _insert_rent_row(
         corrects_event_id=corrects_event_id,
         **scope,
     )
+    _rematch_waiting(ctx, entry.tenancy_id)
     return entry
+
+
+def _rematch_waiting(ctx: CommandContext, tenancy_id: UUID) -> None:
+    """Queue rematch_waiting: rent from the tenancy's tenants that waits in the inbox may fit
+    the new parties or rent rows (the rent matcher reads both; phase-2.md §8.1). Called for
+    every rent row (create_tenancy's initial rent, schedule_rent, correct_rent_row, and
+    correct_move_in through it); one queued job covers a burst (jobs.enqueue)."""
+    enqueue.enqueue_rematch_waiting(
+        ctx.conn, workspace_id=ctx.workspace_id, kind=enqueue.TRIGGER_TENANCY, entity_id=tenancy_id
+    )
 
 
 def _rows_in_force(conn: Connection, tenancy_id: UUID) -> list[RentScheduleEntry]:

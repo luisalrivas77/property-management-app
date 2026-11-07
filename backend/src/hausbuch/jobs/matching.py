@@ -1,4 +1,4 @@
-"""The matching jobs: match_import, match_transaction, rematch_on_evidence, rematch_on_rule
+"""The matching jobs: match_import, match_transaction, rematch_on_evidence, rematch_waiting
 (phase-2.md §5.1, §5.3, §8.1, D17, D23, D25, D26).
 
 Plain synchronous code over the engine like jobs.document_read (jobs/tasks.py wraps it), so it
@@ -17,11 +17,13 @@ is tested with a fake model client and no queue.
 - rematch_on_evidence: a new reading of an invoice, Bescheid, Grundsteuerbescheid or
   Wirtschaftsplan re-runs the deterministic order on the lines it may change (never the
   model); a change is written as a supersession (services.allocations).
-- rematch_on_rule: a newly learned rule re-runs the deterministic order (never the model) on
-  the lines waiting in the inbox that it names (services.matching.lines_for_rule): no rows,
-  or a proposed set, never a line with confirmed rows. A rule hit auto-confirms by the usual
-  routing, superseding a proposed set; a split that does not fit leaves the line to the
-  matchers and the inbox. So a repeat answer is not asked again for lines imported earlier.
+- rematch_waiting: a change to what the deterministic order reads (a newly learned rule, a
+  loan, a tenant's IBAN, a tenancy's parties or rent rows, an owner account) re-runs it
+  (never the model) on the lines waiting in the inbox that the change may book
+  (services.matching.waiting_lines): no rows, or a proposed set, never a line with confirmed
+  rows. A rule or exact matcher hit auto-confirms by the usual routing, superseding a
+  proposed set; a split that does not fit leaves the line as the order finds it. So an answer
+  given once, or master data entered after the import, books the lines imported earlier.
 
 The AI-enabled switch: with `HAUSBUCH_AI_ENABLED` off (or no client), no request is built and
 an unmatched line stays without rows (inbox "Nicht zugeordnet"). No transaction is held open
@@ -73,8 +75,8 @@ from .document_read import MAX_RETRIES, RETRY_WAITS_S, JobDeps, RetryLater
 from .enqueue import (
     MATCH_IMPORT_TASK,
     MATCH_TRANSACTION_TASK,
-    REMATCH_RULE_TASK,
     REMATCH_TASK,
+    REMATCH_WAITING_TASK,
     enqueue_match_transaction,
 )
 
@@ -448,22 +450,29 @@ def run_rematch_on_evidence(
     return plans
 
 
-# --- rematch_on_rule ------------------------------------------------------------------------
+# --- rematch_waiting ------------------------------------------------------------------------
 
 
-def run_rematch_on_rule(
-    deps: JobDeps, *, workspace_id: UUID, rule_id: UUID, attempt: int
+def run_rematch_waiting(
+    deps: JobDeps, *, workspace_id: UUID, trigger: str, attempt: int
 ) -> list[matching.MatchPlan]:
-    """Re-run the deterministic order on the waiting lines a new rule names, one transaction
-    per line. Never the model. A line answered (or booked by another job) since the lines
-    were picked is no longer waiting once its row is locked, and is left as it is. A rule
-    disabled before the job runs picks no line."""
-    log = {"event": REMATCH_RULE_TASK, "rule_id": str(rule_id), "attempt": attempt}
-    kind = None
+    """Re-run the deterministic order on the waiting lines the trigger ("<kind>:<id>",
+    jobs.enqueue) may book, one transaction per line. Never the model. A line answered (or
+    booked by another job) since the lines were picked is no longer waiting once its row is
+    locked, and is left as it is. A rule disabled before the job runs picks no line; an
+    unreadable trigger picks none either (logged, not retried)."""
+    log = {"event": REMATCH_WAITING_TASK, "trigger": trigger, "attempt": attempt}
+    kind, _, raw = trigger.partition(":")
+    try:
+        entity_id = UUID(raw)
+    except ValueError:
+        logger.error("rematch trigger unreadable", extra={"fields": log})
+        return []
+    failed = None
     plans: list[matching.MatchPlan] = []
     try:
         with workspace_transaction(deps.engine, workspace_id) as conn:
-            ids = matching.lines_for_rule(conn, rule_id)
+            ids = matching.waiting_lines(conn, kind, entity_id)
         for transaction_id in ids:
             with workspace_transaction(deps.engine, workspace_id) as conn:
                 line = matching.load_line(conn, transaction_id, lock=True)
@@ -481,10 +490,13 @@ def run_rematch_on_rule(
                     )
                 )
     except Exception as exc:
-        kind = type(exc).__name__
-    if kind is not None:
-        _retry_or_log(log, attempt, kind)
+        failed = type(exc).__name__
+    if failed is not None:
+        _retry_or_log(log, attempt, failed)
         return plans
     written = sum(1 for p in plans if p.outcome == "written")
-    logger.info("rule rematched", extra={"fields": log | {"lines": len(plans), "written": written}})
+    logger.info(
+        "waiting lines rematched",
+        extra={"fields": log | {"lines": len(plans), "written": written}},
+    )
     return plans

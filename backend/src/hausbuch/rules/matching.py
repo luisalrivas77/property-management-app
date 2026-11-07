@@ -410,7 +410,7 @@ def _by_id[T: (TenancyFacts, LoanFacts)](items: Sequence[T], id: object) -> T | 
 
 def rule_hits(matcher: RuleMatcher, tx: MatchTransaction) -> bool:
     """Whether the line is one the matcher names (IBAN hash, sign, patterns); the split is
-    apply_rule's. Also used to pick the waiting lines a new rule may book (rematch_on_rule)."""
+    apply_rule's. Also used to pick the waiting lines a new rule may book (rematch_waiting)."""
     if not matcher.matches_something:  # an erased rule's empty matcher hits nothing
         return False
     wanted = matcher.counterparty_iban_hmac

@@ -1,4 +1,4 @@
-"""rematch_on_rule's pure parts (phase-2.md §5.1, §8.1): which lines count as waiting, the
+"""rematch_waiting's pure parts (phase-2.md §5.1, §8.1): which lines count as waiting, the
 matcher test that picks them, and the task's registration. The job itself is in
 tests/db/test_jobs_matching.py."""
 
@@ -7,9 +7,10 @@ from decimal import Decimal
 from uuid import uuid4
 
 import procrastinate
+import pytest
 
-from hausbuch.jobs import tasks
-from hausbuch.jobs.enqueue import REMATCH_RULE_TASK, rule_lock
+from hausbuch.jobs import enqueue, tasks
+from hausbuch.jobs.enqueue import REMATCH_WAITING_TASK, waiting_lock, waiting_trigger
 from hausbuch.rules.matching import rule_hits
 from hausbuch.schemas.allocation import (
     Allocation,
@@ -76,7 +77,7 @@ def test_a_line_waits_with_no_rows_or_only_a_proposed_set():
 def test_a_line_with_confirmed_rows_does_not_wait_even_when_a_rematch_could_take_it():
     by_rule = _line(_row(AllocationStatus.CONFIRMED, AllocationMethod.RULE))
     assert by_rule.open_for(rematch=True)  # rematch_on_evidence may re-split it
-    assert not by_rule.waiting  # rematch_on_rule leaves it alone
+    assert not by_rule.waiting  # rematch_waiting leaves it alone
     for method in (AllocationMethod.USER, AllocationMethod.MATCHER_LOAN):
         assert not _line(_row(AllocationStatus.CONFIRMED, method)).waiting
 
@@ -103,8 +104,21 @@ def test_rule_hits_checks_the_iban_hash_the_sign_and_the_patterns():
     assert not rule_hits(matcher, tx("-80.00", purpose="Nachzahlung"))  # pattern misses
 
 
-def test_rematch_on_rule_is_registered_and_locked_per_rule():
+def test_rematch_waiting_is_registered_and_locked_per_trigger():
     app = tasks.register_tasks(procrastinate.App(connector=procrastinate.SyncPsycopgConnector()))
-    assert REMATCH_RULE_TASK == "rematch_on_rule" and REMATCH_RULE_TASK in app.tasks
-    rule_id = uuid4()
-    assert rule_lock(rule_id) == f"rule:{rule_id}"
+    assert REMATCH_WAITING_TASK == "rematch_waiting" and REMATCH_WAITING_TASK in app.tasks
+    entity_id = uuid4()
+    for kind in ("rule", "loan", "tenant", "tenancy", "account"):
+        trigger = waiting_trigger(kind, entity_id)
+        assert trigger == f"{kind}:{entity_id}"
+        assert waiting_lock(trigger) == f"waiting:{kind}:{entity_id}"
+    assert {"rule", "loan", "tenant", "tenancy", "account"} == enqueue.TRIGGER_KINDS
+    with pytest.raises(ValueError):
+        waiting_trigger("iban", entity_id)  # no trigger names an IBAN
+
+
+def test_an_unreadable_trigger_rematches_nothing_and_is_not_retried():
+    from hausbuch.jobs.matching import run_rematch_waiting
+
+    # Returns before touching the database: no deps needed.
+    assert run_rematch_waiting(None, workspace_id=uuid4(), trigger="loan:x", attempt=0) == []  # type: ignore[arg-type]

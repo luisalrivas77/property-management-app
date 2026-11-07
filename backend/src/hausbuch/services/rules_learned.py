@@ -15,7 +15,7 @@ is on only when it can and no confirmed category is one that never auto-confirms
 renovation, anything capitalized: review F6). A request asking for a rule that cannot be
 learned is refused (rule.not_learnable) rather than silently ignored.
 
-A new rule queues rematch_on_rule (§5.1) in the same transaction: the lines already waiting
+A new rule queues rematch_waiting (§5.1) in the same transaction: the lines already waiting
 in the inbox that it names are re-matched by the deterministic order, so an answer given
 once books the payer's other open lines too, not only later imports.
 
@@ -160,7 +160,7 @@ def learn_default(rule: MatchingRuleCreate | None, confirmed: AllocationSet) -> 
 
 def create_rule(ctx: CommandContext, data: MatchingRuleCreate) -> MatchingRule:
     """Store the rule (an enabled rule with the same matcher is disabled first), append
-    rule.created and queue rematch_on_rule for the waiting lines it may now book."""
+    rule.created and queue rematch_waiting for the waiting lines it may now book."""
     matcher = data.matcher.model_dump(mode="json", exclude_none=True)
     for pattern in (data.matcher.counterparty_name_pattern, data.matcher.purpose_pattern):
         check_pattern(pattern)
@@ -182,8 +182,10 @@ def create_rule(ctx: CommandContext, data: MatchingRuleCreate) -> MatchingRule:
     rule = to_rule(row)
     append_event(ctx, EventType.RULE_CREATED, rule.id, RuleRecorded.of(data))
     # The lines already waiting in the inbox that the rule names are re-matched in the
-    # background (rematch_on_rule); queued in this transaction, so only with the rule.
-    enqueue.enqueue_rematch_on_rule(ctx.conn, workspace_id=ctx.workspace_id, rule_id=rule.id)
+    # background (rematch_waiting); queued in this transaction, so only with the rule.
+    enqueue.enqueue_rematch_waiting(
+        ctx.conn, workspace_id=ctx.workspace_id, kind=enqueue.TRIGGER_RULE, entity_id=rule.id
+    )
     return rule
 
 

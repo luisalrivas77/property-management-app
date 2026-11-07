@@ -17,8 +17,10 @@ A line is matched only when it is *open*:
   with a different set, and replaces confirmed rule rows only with a set that auto-confirms.
   A person's confirmation is never re-matched. A proposed set the deterministic order now
   auto-confirms with the same split is confirmed as a new set (the new rule or matcher's).
-  A newly learned rule re-matches the *waiting* lines it names (`lines_for_rule`,
-  rematch_on_rule): no confirmed rows, so never a line a person, matcher or rule booked.
+  A change to what the order reads (a learned rule, a loan, a tenant's IBAN, a tenancy's
+  parties or rent, an owner account) re-matches the *waiting* lines it may book
+  (`waiting_lines`, rematch_waiting): no confirmed rows, so never a line a person, matcher
+  or rule booked.
 
 Service-side guards on a machine set before it is routed (review F3, D39): a rent set whose
 tenancy already has confirmed rent_cold for an overlapping period, and a loan set whose
@@ -66,6 +68,7 @@ from hausbuch.db.tables import tenant as tenant_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.db.tables import unit as unit_table
 from hausbuch.db.tables import workspace as workspace_table
+from hausbuch.jobs import enqueue
 from hausbuch.rules import matching as matchers
 from hausbuch.rules.errors import RuleError
 from hausbuch.rules.iban import iban_hmac, normalize_iban
@@ -176,7 +179,7 @@ class Line:
     def waiting(self) -> bool:
         """The line waits for an answer: no current rows, or only proposed ones. A line
         with confirmed rows (by a person, a matcher or a rule) is not waiting
-        (rematch_on_rule takes waiting lines only)."""
+        (rematch_waiting takes waiting lines only)."""
         return all(a.status is AllocationStatus.PROPOSED for a in self.current)
 
 
@@ -877,21 +880,23 @@ def lines_for_evidence(
     return list(dict.fromkeys(ids))
 
 
-# --- Which lines a new rule may book ------------------------------------------------------
+# --- Which waiting lines a change may book -------------------------------------------------
 
 
-def lines_for_rule(conn: Connection, rule_id: UUID) -> list[UUID]:
-    """Waiting lines a newly learned rule names (rematch_on_rule), oldest first: lines of a
-    reconciled import, not excluded as a duplicate, with no confirmed allocation row (none,
-    or only a proposed set), on the rule's IBAN hash and sign, and hit by its patterns
-    (rules.matching.rule_hits). None for a rule that is gone or disabled. Whether the rule's
-    split fits each line, and the open-duplicate check, are match_line's."""
-    row = conn.execute(select(rule_table).where(rule_table.c.id == rule_id)).one_or_none()
-    if row is None:
-        return []
-    rule = rules_learned.to_rule(row)
-    if not rule.enabled or not rule.matcher.matches_something:
-        return []
+def waiting_lines(conn: Connection, kind: str, entity_id: UUID) -> list[UUID]:
+    """Lines waiting in the inbox that a change to this entity may now let the deterministic
+    order book (rematch_waiting), oldest first. Waiting: a line of a reconciled import, not
+    excluded as a duplicate, with no confirmed allocation row (none, or only a proposed set);
+    a line a person, matcher or rule booked is never picked. Narrowed by what the change can
+    reach:
+    - rule: the rule's IBAN hash and sign, then its patterns (rules.matching.rule_hits);
+      none for a rule that is gone or disabled;
+    - loan: every waiting debit (the loan matcher reads the account hash or the lender's
+      name; a debit is cheap to re-match);
+    - tenant: credits from the tenant's IBAN hash (rent); none without one;
+    - tenancy: credits from any of its tenants' IBAN hashes (new parties or rent rows);
+    - account: lines from an owner account's IBAN hash; none for an account that is not one.
+    Whether a rule or matcher then fits, and the open-duplicate check, are match_line's."""
     t = transaction_table.c
     a = allocation_table.c
     confirmed = exists().where(
@@ -906,16 +911,53 @@ def lines_for_rule(conn: Connection, rule_id: UUID) -> list[UUID]:
             ~confirmed,
         )
     )
-    matcher = rule.matcher
-    if matcher.counterparty_iban_hmac is not None:
-        hmac = bytes.fromhex(matcher.counterparty_iban_hmac)
-        query = query.where(t.counterparty_iban_hmac == hmac)
-    if matcher.amount_sign == "credit":
-        query = query.where(t.amount > 0)
-    elif matcher.amount_sign == "debit":
+    rule = None
+    if kind == enqueue.TRIGGER_RULE:
+        row = conn.execute(select(rule_table).where(rule_table.c.id == entity_id)).one_or_none()
+        if row is None:
+            return []
+        rule = rules_learned.to_rule(row)
+        if not rule.enabled or not rule.matcher.matches_something:
+            return []
+        if rule.matcher.counterparty_iban_hmac is not None:
+            hmac = bytes.fromhex(rule.matcher.counterparty_iban_hmac)
+            query = query.where(t.counterparty_iban_hmac == hmac)
+        if rule.matcher.amount_sign == "credit":
+            query = query.where(t.amount > 0)
+        elif rule.matcher.amount_sign == "debit":
+            query = query.where(t.amount < 0)
+    elif kind == enqueue.TRIGGER_LOAN:
+        found = conn.execute(select(loan_table.c.id).where(loan_table.c.id == entity_id))
+        if found.one_or_none() is None:
+            return []
         query = query.where(t.amount < 0)
+    elif kind in (enqueue.TRIGGER_TENANT, enqueue.TRIGGER_TENANCY):
+        hmacs = select(tenant_table.c.iban_hmac).where(tenant_table.c.iban_hmac.is_not(None))
+        if kind == enqueue.TRIGGER_TENANT:
+            hmacs = hmacs.where(tenant_table.c.id == entity_id)
+        else:
+            hmacs = hmacs.join(party_table, party_table.c.tenant_id == tenant_table.c.id).where(
+                party_table.c.tenancy_id == entity_id
+            )
+        found_hmacs = list(conn.execute(hmacs).scalars())
+        if not found_hmacs:
+            return []
+        query = query.where(t.counterparty_iban_hmac.in_(found_hmacs), t.amount > 0)
+    elif kind == enqueue.TRIGGER_ACCOUNT:
+        owner = conn.execute(
+            select(account_table.c.iban_hmac).where(
+                account_table.c.id == entity_id, account_table.c.is_owner_account.is_(True)
+            )
+        ).scalar_one_or_none()
+        if owner is None:
+            return []
+        query = query.where(t.counterparty_iban_hmac == owner)
+    else:
+        return []
     rows = conn.execute(query.order_by(t.booking_date, t.id)).all()
-    return [r.id for r in rows if matchers.rule_hits(matcher, match_transaction(r))]
+    if rule is None:
+        return [r.id for r in rows]
+    return [r.id for r in rows if matchers.rule_hits(rule.matcher, match_transaction(r))]
 
 
 # --- What the model sees (data minimization, §5.3) -----------------------------------------

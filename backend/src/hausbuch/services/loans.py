@@ -3,7 +3,8 @@
 The repayment schedule is computed from the stored terms on every read, never stored (D10).
 Principal and disbursement date are the loan.disbursed milestone, so update_loan leaves them;
 they change only through correct_disbursement, which appends a correcting loan.disbursed.
-Loan events carry the property's History scope.
+Loan events carry the property's History scope. Creating a loan, or changing what the loan
+matcher reads, queues rematch_waiting for the instalments already waiting in the inbox.
 """
 
 from datetime import date
@@ -15,6 +16,7 @@ from sqlalchemy import Connection, Row, insert, select, update
 
 from hausbuch.db.tables import loan as loan_table
 from hausbuch.db.tables import property_ as property_table
+from hausbuch.jobs import enqueue
 from hausbuch.rules.loan_schedule import build_schedule
 from hausbuch.schemas.enums import EntityType
 from hausbuch.schemas.events import EventType, LoanCreated, LoanDisbursed, Updated
@@ -78,6 +80,7 @@ def create_loan(
         effective_date=terms.disbursed_on,
         **scope,
     )
+    _rematch_waiting(ctx, loan.id)
     return loan
 
 
@@ -154,6 +157,8 @@ def update_loan(
         Updated(changes=changes),
         property_id=updated.property_id,
     )
+    if set(values) - _NOT_MATCHED:
+        _rematch_waiting(ctx, loan_id)
     return updated
 
 
@@ -202,6 +207,7 @@ def correct_disbursement(
         effective_date=updated.terms.disbursed_on,
         corrects_event_id=latest.id,
     )
+    _rematch_waiting(ctx, loan_id)  # the schedule follows the payout date and principal
     return updated
 
 
@@ -242,3 +248,17 @@ def _to_loan(row: Row) -> Loan:
     terms = {name: values.pop(name) for name in _TERMS}
     values.pop("account_iban_hmac")
     return Loan.model_validate(values | {"terms": terms})
+
+
+# The loan matcher reads the account IBAN hash, the lender's name and the schedule terms; a
+# change to anything else (the contract number, the mask beside the hash) books no waiting
+# line.
+_NOT_MATCHED = frozenset({"contract_number", "account_iban_masked"})
+
+
+def _rematch_waiting(ctx: CommandContext, loan_id: UUID) -> None:
+    """Queue rematch_waiting: instalments imported before the loan (or before this change)
+    may now fit its schedule (phase-2.md §8.1)."""
+    enqueue.enqueue_rematch_waiting(
+        ctx.conn, workspace_id=ctx.workspace_id, kind=enqueue.TRIGGER_LOAN, entity_id=loan_id
+    )
