@@ -60,7 +60,7 @@ export function UnitForm({ propertyId, unit }: { propertyId: string; unit?: Unit
           <input type="text" inputMode="decimal" value={rooms} onChange={(e) => setRooms(e.target.value)} autoComplete="off" />
         </Field>
         <Field id="unit-mea" label="MEA (optional)" hint="Miteigentumsanteil laut Teilungserklärung, z. B. 85/1000" errors={form.of("mea")}>
-          <input type="text" inputMode="numeric" value={mea} onChange={(e) => setMea(e.target.value)} autoComplete="off" />
+          <input type="text" value={mea} onChange={(e) => setMea(e.target.value)} autoComplete="off" />
         </Field>
       </div>
       <div className="row">

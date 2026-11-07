@@ -44,7 +44,7 @@ import { ErrorNotice } from "@/lib/ErrorNotice";
 import type { Directory } from "./entities";
 import { tenantName } from "./entities";
 import { FormBanner, useFormErrors, type FieldMessages } from "./form";
-import { formatArea, formatDate, formatDateTime, formatFraction, formatMoney, formatPercent } from "./format";
+import { formatArea, formatDate, formatDateTime, formatFraction, formatMoney, formatPercent, formatShare } from "./format";
 import { decimalInput, percentInput, toDecimalString, toFraction, toMoneyString, toRate, toYear, type Parsed } from "./input";
 import {
   ACQUISITION_COST_KIND,
@@ -290,7 +290,7 @@ function display(spec: FieldSpec, value: unknown, fixed: (value: unknown) => str
     case "area":
       return formatArea(scalar(value));
     case "fraction":
-      return isFraction(value) ? formatFraction(value) : "–";
+      return isFraction(value) ? formatShare(value) : "–";
     case "date":
       return formatDate(scalar(value));
     case "enum":
@@ -318,7 +318,7 @@ function fixedText(directory: Directory | null): (value: unknown) => string {
         .map((entry: unknown) => {
           if (typeof entry !== "object" || entry === null || !("owner_id" in entry) || !("share" in entry)) return "?";
           const owner = directory?.owners.find((o) => o.id === entry.owner_id);
-          const share = isFraction(entry.share) ? formatFraction(entry.share) : "?";
+          const share = isFraction(entry.share) ? formatShare(entry.share) : "?";
           return `${owner?.full_name ?? "Eigentümer"}: ${share}`;
         })
         .join(", ");

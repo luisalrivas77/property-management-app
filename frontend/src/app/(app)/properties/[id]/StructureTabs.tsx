@@ -8,7 +8,7 @@ import { useCallback } from "react";
 
 import { api, ok } from "@/api/client";
 import { currentTenancy, partyNames } from "@/components/entities";
-import { formatArea, formatDate, formatDecimal, formatFraction, formatMoney, formatPercent, todayIso } from "@/components/format";
+import { formatArea, formatDate, formatDecimal, formatMoney, formatPercent, formatShare, todayIso } from "@/components/format";
 import { LoanYearTotals } from "@/components/loans";
 import { loadPropertyContext } from "@/components/propertyContext";
 import { Loading } from "@/components/ui";
@@ -49,7 +49,7 @@ export function UnitsTab({ propertyId }: { propertyId: string }) {
                         </td>
                         <td className="num">{formatArea(unit.floor_area_m2)}</td>
                         <td className="num">{formatDecimal(unit.rooms)}</td>
-                        <td className="num">{formatFraction(unit.mea)}</td>
+                        <td className="num">{formatShare(unit.mea)}</td>
                         <td>
                           {current ? (
                             <Link href={`/tenancies/${current.tenancy.id}`}>
