@@ -126,7 +126,7 @@ test("the done criterion: ETW, loan, tenancy, lease, corrected move-in, History 
 
     await page.getByLabel("Verknüpfen mit").selectOption({ label: "Mietverhältnis" });
     await page.getByLabel("Mietverhältnis", { exact: true }).selectOption({ label: "WE 3: Max Muster (ab 15.07.2024)" });
-    await page.getByRole("button", { name: "Verknüpfen" }).click();
+    await page.getByRole("button", { name: "Verknüpfen", exact: true }).click();
     await expect(page.getByRole("listitem").filter({ hasText: "Mietverhältnis:" })).toContainText("WE 3: Max Muster");
   });
 
