@@ -1303,17 +1303,18 @@ cases:
 
   - id: mietvertrag_unit_ambiguous_is_none
     description: >-
-      Units "WE 3" and "Zimmer 1" both occur inside "Zimmer Nr. 1 (WE 3, Zimmer 1)": two
-      candidates, so no unit is proposed (never a guess). The tenancy is proposed with the
-      unit missing, for the review to pick, and its link waits for the tenancy the apply
-      creates.
+      Units "WE 3 Zimmer 1" and "Zimmer 1" both occur inside "Zimmer Nr. 1 (WE 3, Zimmer 1)":
+      two candidates, so no unit is proposed (never a guess). The tenancy is proposed with
+      the unit missing, for the review to pick, and its link waits for the tenancy the apply
+      creates. (First written with the flat "WE 3" as the second unit; the review's room
+      rule rightly excludes the flat for a room lease, so it became a second room label.)
     kind: lease
     context:
       document_id: *DOC
       classification: *CL_LEASE
       properties: [*PROP_LINDEN]
       units:
-        - {id: *U, property_id: *P, label: WE 3}
+        - {id: *U, property_id: *P, label: WE 3 Zimmer 1}
         - {id: *U2, property_id: *P, label: Zimmer 1}
     extraction:
       <<: *LEASE
