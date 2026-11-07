@@ -57,6 +57,7 @@ from hausbuch.services.properties import (
 from hausbuch.services.tenancies import create_tenancy, deposit_receipts
 from hausbuch.services.tenants import create_tenant
 from hausbuch.services.units import create_unit, list_units
+from hausbuch.services.workspace_settings import update_settings
 
 NOW = datetime(2026, 11, 6, 10, 0, tzinfo=UTC)
 JOB = Actor(ActorType.AI, "claude-test-model")
@@ -639,6 +640,60 @@ def test_the_upload_flag_is_stored_and_a_rerun_keeps_it(
     # An explicit true adds it to a document that did not have it.
     flagged = run(ws, proposals.rerun_proposal, plain.id, contains_tenant_data=True)
     assert flagged.contains_tenant_data is True
+
+
+def test_a_blocked_document_is_read_again_once_the_setting_is_on(
+    run, read, fresh_workspaces, blob_store, enqueued
+):
+    """D42 (2): blocked while ai_tenant_documents was off; after switching it on, a re-run
+    supersedes the blocked proposal (with its event) and queues one read, still flagged."""
+    ws, _ = fresh_workspaces
+    doc = _upload(run, ws, blob_store, b"%PDF blocked then allowed")
+    blocked = run(ws, proposals.request_read, doc.id, contains_tenant_data=True)
+    assert blocked.status is ProposalStatus.BLOCKED_TENANT_DATA and enqueued == []
+
+    run(ws, update_settings, ai_tenant_documents=True)
+    fresh = run(ws, proposals.rerun_proposal, doc.id)
+
+    old = read(ws, proposals.get_proposal, blocked.id)
+    assert old.status is ProposalStatus.SUPERSEDED and old.error_code is None
+    assert _types(read(ws, list_events, entity_id=blocked.id))[-1] == (
+        EventType.PROPOSAL_SUPERSEDED
+    )
+    undecided = [
+        p
+        for p in read(ws, proposals.list_document_proposals, doc.id)
+        if p.status
+        in (
+            ProposalStatus.QUEUED,
+            ProposalStatus.RUNNING,
+            ProposalStatus.READY,
+            ProposalStatus.BLOCKED_TENANT_DATA,
+        )
+    ]
+    assert [p.id for p in undecided] == [fresh.id]
+    assert fresh.status is ProposalStatus.QUEUED and fresh.error_code is None
+    assert fresh.contains_tenant_data is True
+    assert [c["proposal_id"] for c in enqueued] == [fresh.id]
+
+
+def test_a_rerun_with_the_setting_still_off_blocks_again_without_a_second_blocked_item(
+    run, read, fresh_workspaces, blob_store, enqueued
+):
+    ws, _ = fresh_workspaces
+    doc = _upload(run, ws, blob_store, b"%PDF blocked twice")
+    first = run(ws, proposals.request_read, doc.id, contains_tenant_data=True)
+    again = run(ws, proposals.rerun_proposal, doc.id)
+
+    assert again.status is ProposalStatus.BLOCKED_TENANT_DATA
+    assert read(ws, proposals.get_proposal, first.id).status is ProposalStatus.SUPERSEDED
+    blocked = [
+        p
+        for p in read(ws, proposals.list_document_proposals, doc.id)
+        if p.status is ProposalStatus.BLOCKED_TENANT_DATA
+    ]
+    assert [p.id for p in blocked] == [again.id]
+    assert enqueued == []
 
 
 def test_a_reupload_that_says_tenant_data_rereads_the_pending_proposal_with_the_flag(

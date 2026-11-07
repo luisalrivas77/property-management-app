@@ -69,6 +69,6 @@ def document_proposals(document_id: UUID, cmd: Cmd) -> list[Proposal]:
 def document_proposal_rerun(
     document_id: UUID, cmd: Cmd, body: Annotated[ProposalRerunBody | None, Body()] = None
 ) -> Proposal:
-    """Read the document again: its queued, running or ready proposal becomes superseded."""
+    """Read the document again: its undecided proposal (blocked included) becomes superseded."""
     flags = body or ProposalRerunBody()
     return cmd.run(rerun_proposal, document_id, contains_tenant_data=flags.contains_tenant_data)

@@ -12,7 +12,10 @@
 //   "übernehmen / behalten". Nothing is saved before "Übernehmen" (D14): apply sends every
 //   record with the final values and the per-field decisions; a 422's `loc` starts with the
 //   record key and lands at its field.
-// - `failed` / `blocked_tenant_data`: the reason in German and a "Von Hand eingeben" link.
+// - `failed` / `blocked_tenant_data`: the reason in German and a "Von Hand eingeben" link. A
+//   blocked document offers "Neu auslesen" once the household lets the AI read tenant documents
+//   (GET /workspace/settings, read only while a blocked proposal is shown; D42): the re-run
+//   supersedes the blocked proposal and queues a read with the tenant flag kept.
 //
 // Every euro figure shown is the backend's: values are only reformatted (decimal strings moved
 // between "1400.50" and "1.400,50"), never computed here (principle 1). A derived value names
@@ -436,6 +439,25 @@ export function ProposalSection({
   const [busy, setBusy] = useState(false);
   const [tenantData, setTenantData] = useState(false);
   const tenantDataId = useId();
+  // Whether tenant documents may go to the AI now: a blocked proposal can then be read again.
+  // Read only while a blocked proposal is shown; an error leaves the notice as it is.
+  const [tenantDocumentsAllowed, setTenantDocumentsAllowed] = useState(false);
+  const blockedId = proposal?.status === "blocked_tenant_data" ? proposal.id : null;
+  useEffect(() => {
+    if (!blockedId) return;
+    let cancelled = false;
+    ok(api.GET("/api/workspace/settings")).then(
+      (settings) => {
+        if (!cancelled) setTenantDocumentsAllowed(settings.ai_tenant_documents);
+      },
+      () => {
+        if (!cancelled) setTenantDocumentsAllowed(false);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [blockedId]);
 
   async function rerun(confirmText: string | null) {
     if (confirmText && !window.confirm(confirmText)) return;
@@ -507,16 +529,27 @@ export function ProposalSection({
       />
     );
   } else if (proposal.status === "blocked_tenant_data") {
+    const hasTyping = (proposal.records ?? []).length > 0;
     body = (
       <div className="stack">
         <div className="notice notice-warn" role="status">
-          <p>
-            Dieses Dokument enthält Mieterdaten. Solche Dokumente werden erst an die KI geschickt, wenn das für den Haushalt freigegeben ist: unter{" "}
-            <Link href="/settings">Einstellungen</Link>, „Mieterdokumente von der KI lesen lassen“. Bis dahin bitte von Hand eingeben.
-          </p>
+          {tenantDocumentsAllowed ? (
+            <p>
+              Dieses Dokument enthält Mieterdaten und wurde deshalb nicht an die KI geschickt. Inzwischen ist das für den Haushalt freigegeben; es
+              lässt sich jetzt neu auslesen.
+            </p>
+          ) : (
+            <p>
+              Dieses Dokument enthält Mieterdaten. Solche Dokumente werden erst an die KI geschickt, wenn das für den Haushalt freigegeben ist: unter{" "}
+              <Link href="/settings">Einstellungen</Link>, „Mieterdokumente von der KI lesen lassen“. Bis dahin bitte von Hand eingeben.
+            </p>
+          )}
         </div>
+        {tenantDocumentsAllowed ? (
+          <div className="row">{rerunButton("Neu auslesen", hasTyping ? "Das Dokument neu auslesen? Dieser Vorschlag wird ersetzt." : null)}</div>
+        ) : null}
         <ManualEntry kind={proposal.kind} directory={directory} />
-        {(proposal.records ?? []).length > 0 ? (
+        {hasTyping ? (
           <>
             <p className="muted">Erkannt wurde nur die Art des Dokuments; diese Typisierung lässt sich übernehmen.</p>
             <ProposalReview

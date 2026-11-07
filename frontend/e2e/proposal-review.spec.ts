@@ -308,4 +308,18 @@ test("a failed read and a tenant document offer manual entry", async ({ page, si
   await expect(blocked.getByRole("status")).toContainText("erst an die KI geschickt, wenn das für den Haushalt freigegeben ist");
   await expect(blocked.getByRole("link", { name: "Von Hand eingeben" })).toHaveAttribute("href", "/tenancies/new");
   await expect(blocked.getByRole("form", { name: "Vorschlag prüfen" })).toHaveCount(0);
+  await expect(blocked.getByRole("button", { name: "Neu auslesen" })).toHaveCount(0);
+
+  // Once the household lets the AI read tenant documents, the blocked document can be read again.
+  const origin = new URL(page.url()).origin;
+  const patched = await page.request.fetch("/api/workspace/settings", {
+    method: "PATCH",
+    data: { ai_tenant_documents: true },
+    headers: { Origin: origin },
+  });
+  expect(patched.status()).toBe(200);
+  await page.goto(`/documents/${leaseId}`);
+  await expect(blocked.getByRole("status")).toContainText("Inzwischen ist das für den Haushalt freigegeben");
+  await expect(blocked.getByRole("button", { name: "Neu auslesen" })).toBeVisible();
+  await expect(blocked.getByRole("link", { name: "Von Hand eingeben" })).toHaveAttribute("href", "/tenancies/new");
 });

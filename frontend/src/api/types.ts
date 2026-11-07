@@ -1134,7 +1134,7 @@ export interface paths {
         put?: never;
         /**
          * Document Proposal Rerun
-         * @description Read the document again: its queued, running or ready proposal becomes superseded.
+         * @description Read the document again: its undecided proposal (blocked included) becomes superseded.
          */
         post: operations["document_proposal_rerun_api_documents__document_id__proposals_post"];
         delete?: never;

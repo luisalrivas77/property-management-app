@@ -3272,7 +3272,7 @@
       },
       "post": {
         "summary": "Document Proposal Rerun",
-        "description": "Read the document again: its queued, running or ready proposal becomes superseded.",
+        "description": "Read the document again: its undecided proposal (blocked included) becomes superseded.",
         "operationId": "document_proposal_rerun_api_documents__document_id__proposals_post",
         "parameters": [
           {

@@ -109,6 +109,9 @@ _SUPERSEDABLE = (ProposalStatus.QUEUED, ProposalStatus.RUNNING, ProposalStatus.R
 # A blocked proposal still holds the classifier's typing (§5.5 step 3): it can be applied
 # (typing only) or rejected like a ready one.
 _DECIDABLE = (ProposalStatus.READY, ProposalStatus.BLOCKED_TENANT_DATA)
+# What a re-run replaces: every undecided proposal, the blocked one included (D42 (2): a
+# document blocked while ai_tenant_documents was off is read again once it is on).
+_RERUN_SUPERSEDES = (*_SUPERSEDABLE, ProposalStatus.BLOCKED_TENANT_DATA)
 _DECIDED = (ProposalStatus.APPLIED, ProposalStatus.REJECTED)
 
 # §6.5: property -> corrections -> unit -> ownership -> price split -> costs -> loan ->
@@ -214,21 +217,23 @@ def rerun_proposal(
     ctx: CommandContext, document_id: UUID, *, contains_tenant_data: bool = False
 ) -> Proposal:
     """POST /documents/{id}/proposals: supersede the document's undecided proposals
-    (queued, running, ready) and request a new read. `contains_tenant_data` can add the
-    tenant-data flag, never remove it: request_read keeps it set once any earlier proposal
-    of the document had it (D16)."""
+    (queued, running, ready, blocked_tenant_data; a blocked one loses its error_code, which
+    the proposal CHECK allows on failed and blocked proposals only) and request a new read.
+    `contains_tenant_data` can add the tenant-data flag, never remove it: request_read keeps
+    it set once any earlier proposal of the document had it (D16), so with ai_tenant_documents
+    still off a flagged document is blocked again, and with it on it is queued."""
     if documents.get_document(ctx.conn, document_id) is None:
         raise NotFoundError(EntityType.DOCUMENT, document_id)
     pending = ctx.conn.execute(
         select(proposal_table)
         .where(proposal_table.c.document_id == document_id)
-        .where(proposal_table.c.status.in_([s.value for s in _SUPERSEDABLE]))
+        .where(proposal_table.c.status.in_([s.value for s in _RERUN_SUPERSEDES]))
         .order_by(proposal_table.c.created_at, proposal_table.c.id)
         .with_for_update()
     ).all()
     for row in pending:
         old = _to_proposal(row)
-        _set(ctx, old.id, status=ProposalStatus.SUPERSEDED)
+        _set(ctx, old.id, status=ProposalStatus.SUPERSEDED, error_code=None)
         append_event(ctx, EventType.PROPOSAL_SUPERSEDED, old.id, _noted(old))
     return request_read(ctx, document_id, contains_tenant_data=contains_tenant_data)
 
