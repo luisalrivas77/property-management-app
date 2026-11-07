@@ -71,15 +71,48 @@ export function toDecimalString(raw: string, maxDecimals: number): Parsed<string
   return { ok: true, value };
 }
 
-/** "1/2" or "85/1000" → a Fraction (§9.5: shares as n/d). */
+const NOT_A_SHARE = "Als Bruch oder Prozent eingeben, z. B. 1/2, 56,18/1.000 oder 5,618 %.";
+
+/** One side of a share as [digits, decimals], by the backend's rule (extraction_parse
+ * _share_number, the same as canonicalDecimal with thousands): a comma is the decimal mark and
+ * dots group thousands; without a comma, dots grouping exactly three digits are thousands
+ * ("1.000"), else a lone dot is the decimal mark ("56.18"). */
+function shareNumber(raw: string, thousands: boolean): [string, number] | null {
+  const value = canonicalDecimal(raw, thousands);
+  if (value === null) return null;
+  const [int = "", frac = ""] = value.split(".");
+  return [int + frac, frac.length];
+}
+
+/** A share, exact and unreduced (§9.5: shares as n/d): "1/2", "85/1000", "56,18/1.000" or
+ * "56.18/1000" → 5618/100000 (both sides scaled by the same power of ten, as the backend reads
+ * a document); a percentage "5,618 %" → 5618/100000, "50 %" → 50/100. At most the whole. */
 export function toFraction(raw: string): Parsed<Fraction> {
-  const match = /^\s*(\d+)\s*\/\s*(\d+)\s*$/.exec(raw);
-  if (!match) return { ok: false, message: "Als Bruch eingeben, z. B. 1/2." };
-  const numerator = Number(match[1]);
-  const denominator = Number(match[2]);
+  const text = raw.trim();
+  let numeratorDigits: string;
+  let denominatorDigits: string;
+  if (/^[^%]*%$/.test(text)) {
+    // A percentage is at most 100, so a lone dot is its decimal mark ("5.618 %").
+    const side = shareNumber(text, false);
+    if (!side) return { ok: false, message: NOT_A_SHARE };
+    [numeratorDigits] = side;
+    denominatorDigits = `100${"0".repeat(side[1])}`;
+  } else {
+    const parts = text.split("/");
+    if (parts.length !== 2 || text.includes("%")) return { ok: false, message: NOT_A_SHARE };
+    const top = shareNumber(parts[0] ?? "", true);
+    const bottom = shareNumber(parts[1] ?? "", true);
+    if (!top || !bottom) return { ok: false, message: NOT_A_SHARE };
+    const places = Math.max(top[1], bottom[1]);
+    numeratorDigits = top[0] + "0".repeat(places - top[1]);
+    denominatorDigits = bottom[0] + "0".repeat(places - bottom[1]);
+  }
+  const numerator = Number(numeratorDigits);
+  const denominator = Number(denominatorDigits);
   if (numerator < 1 || denominator < 1 || !Number.isSafeInteger(numerator) || !Number.isSafeInteger(denominator)) {
     return { ok: false, message: "Zähler und Nenner müssen positive ganze Zahlen sein." };
   }
+  if (numerator > denominator) return { ok: false, message: "Ein Anteil ist höchstens das Ganze (1/1 oder 100 %)." };
   return { ok: true, value: { numerator, denominator } };
 }
 

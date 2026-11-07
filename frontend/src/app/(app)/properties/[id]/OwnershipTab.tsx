@@ -10,7 +10,7 @@ import { api, ok } from "@/api/client";
 import { ApiError } from "@/api/errors";
 import type { Owner, OwnerShare, PropertyOwnership } from "@/api/schemas";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "@/components/form";
-import { formatFraction } from "@/components/format";
+import { formatFraction, formatShare } from "@/components/format";
 import { toFraction } from "@/components/input";
 import { Loading, Notice } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
@@ -77,7 +77,7 @@ function OwnershipForm({
   onSaved: () => void;
 }) {
   const [shares, setShares] = useState<Record<string, string>>(() =>
-    Object.fromEntries(owners.map((owner) => [owner.id, formatShare(ownership, owner.id)])),
+    Object.fromEntries(owners.map((owner) => [owner.id, shareInput(ownership, owner.id)])),
   );
   const [effectiveDate, setEffectiveDate] = useState("");
   const [busy, setBusy] = useState(false);
@@ -119,20 +119,25 @@ function OwnershipForm({
         <p>
           Aktuell:{" "}
           {ownership.shares
-            .map((share) => `${owners.find((o) => o.id === share.owner_id)?.full_name ?? "?"} ${formatFraction(share.share)}`)
+            .map((share) => `${owners.find((o) => o.id === share.owner_id)?.full_name ?? "?"} ${formatShare(share.share)}`)
             .join(", ")}
         </p>
       ) : (
         <p className="muted">Noch keine Anteile festgelegt.</p>
       )}
       <fieldset className="stack" aria-describedby={sharesErrors.length > 0 ? "shares-error" : undefined}>
-        <legend>Anteile (als Bruch, z. B. 1/2; leer = kein Anteil)</legend>
+        <legend>Anteile (als Bruch oder Prozent, z. B. 1/2 oder 50 %; leer = kein Anteil)</legend>
         <div className="grid">
           {owners.map((owner) => (
-            <Field key={owner.id} id={`share-${owner.id}`} label={owner.full_name} errors={form.of(`share-${owner.id}`)}>
+            <Field
+              key={owner.id}
+              id={`share-${owner.id}`}
+              label={owner.full_name}
+              description="Der Anteil dieser Person an der Immobilie laut Kaufvertrag oder Grundbuch, z. B. 1/2 bei „je zur Hälfte“. Alle Anteile zusammen müssen genau 1 (100 %) ergeben."
+              errors={form.of(`share-${owner.id}`)}
+            >
               <input
                 type="text"
-                inputMode="numeric"
                 value={shares[owner.id] ?? ""}
                 onChange={(e) => setShares((current) => ({ ...current, [owner.id]: e.target.value }))}
                 placeholder="1/2"
@@ -153,6 +158,7 @@ function OwnershipForm({
         id="ownership-effective"
         label="Gültig ab (optional)"
         hint="Leer lassen beim Kauf; ein Datum, wenn sich die Anteile später ändern."
+        description="Ab wann diese Anteile gelten. Beim Kauf leer lassen; bei einer späteren Änderung, z. B. einer Übertragung, das Datum aus dem Vertrag."
         errors={form.of("effective_date")}
       >
         <input type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} />
@@ -163,7 +169,8 @@ function OwnershipForm({
   );
 }
 
-function formatShare(ownership: PropertyOwnership | null, ownerId: string): string {
+/** The owner's current share as the text to prefill its input (round-trips through toFraction). */
+function shareInput(ownership: PropertyOwnership | null, ownerId: string): string {
   const share = ownership?.shares.find((s) => s.owner_id === ownerId)?.share;
   return share ? formatFraction(share) : "";
 }

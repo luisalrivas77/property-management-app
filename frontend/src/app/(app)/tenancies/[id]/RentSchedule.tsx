@@ -164,16 +164,36 @@ function RentChangeForm({ tenancy, onDone }: { tenancy: Tenancy; onDone: () => v
 
   return (
     <form className="stack" onSubmit={submit} noValidate>
-      <Field id="rent-change-from" label="Gültig ab" errors={form.of("effective_from")}>
+      <Field
+        id="rent-change-from"
+        label="Gültig ab"
+        description="Der erste Tag, für den die neue Miete gilt, laut Mieterhöhung, Staffel oder Vereinbarung."
+        errors={form.of("effective_from")}
+      >
         <input type="date" value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} required />
       </Field>
-      <Field id="rent-change-cold" label="Kaltmiete (€ / Monat)" errors={form.of("cold_rent")}>
+      <Field
+        id="rent-change-cold"
+        label="Kaltmiete (€ / Monat)"
+        description="Die neue monatliche Miete ohne Nebenkosten. Ab dem Gültigkeitstag erkennt Hausbuch Mietzahlungen an diesem Betrag."
+        errors={form.of("cold_rent")}
+      >
         <input type="text" inputMode="decimal" value={cold} onChange={(e) => setCold(e.target.value)} required autoComplete="off" />
       </Field>
-      <Field id="rent-change-prepayment" label="NK-Vorauszahlung (€ / Monat)" errors={form.of("operating_costs_prepayment")}>
+      <Field
+        id="rent-change-prepayment"
+        label="NK-Vorauszahlung (€ / Monat)"
+        description="Die neue monatliche Vorauszahlung auf Betriebs- und Heizkosten, beide zusammen. Leer, wenn keine vereinbart ist."
+        errors={form.of("operating_costs_prepayment")}
+      >
         <input type="text" inputMode="decimal" value={prepayment} onChange={(e) => setPrepayment(e.target.value)} autoComplete="off" />
       </Field>
-      <Field id="rent-change-reason" label="Grund" errors={form.of("reason")}>
+      <Field
+        id="rent-change-reason"
+        label="Grund"
+        description="Warum sich die Miete ändert: Staffelstufe, Indexanpassung, Mieterhöhung, Modernisierung oder eine Vereinbarung."
+        errors={form.of("reason")}
+      >
         <select value={reason} onChange={(e) => setReason(e.target.value as RentChangeReason)}>
           {CHANGE_REASONS.map((value) => (
             <option key={value} value={value}>
@@ -182,7 +202,12 @@ function RentChangeForm({ tenancy, onDone }: { tenancy: Tenancy; onDone: () => v
           ))}
         </select>
       </Field>
-      <Field id="rent-change-document" label="Beleg (optional)" errors={form.of("document_id")}>
+      <Field
+        id="rent-change-document"
+        label="Beleg (optional)"
+        description="Das Schreiben, das die Änderung belegt, z. B. Mieterhöhungsverlangen, Indexmitteilung oder der Mietvertrag mit der Staffel."
+        errors={form.of("document_id")}
+      >
         <DocumentPicker value={documentId} onChange={setDocumentId} />
       </Field>
       <Submit busy={busy}>Speichern</Submit>
@@ -231,16 +256,36 @@ function CorrectRowForm({ row, onDone }: { row: RentScheduleEntry; onDone: (mess
       <p className="muted">
         Die Zeile ab {formatDate(row.effective_from)} wird durch eine Korrekturzeile ersetzt und bleibt durchgestrichen sichtbar.
       </p>
-      <Field id={`correct-${row.id}-from`} label="Gültig ab" errors={form.of("effective_from")}>
+      <Field
+        id={`correct-${row.id}-from`}
+        label="Gültig ab"
+        description="Der richtige erste Tag, für den diese Miete gilt."
+        errors={form.of("effective_from")}
+      >
         <input type="date" value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} required />
       </Field>
-      <Field id={`correct-${row.id}-cold`} label="Kaltmiete (€ / Monat)" errors={form.of("cold_rent")}>
+      <Field
+        id={`correct-${row.id}-cold`}
+        label="Kaltmiete (€ / Monat)"
+        description="Die richtige monatliche Miete ohne Nebenkosten."
+        errors={form.of("cold_rent")}
+      >
         <input type="text" inputMode="decimal" value={cold} onChange={(e) => setCold(e.target.value)} required autoComplete="off" />
       </Field>
-      <Field id={`correct-${row.id}-prepayment`} label="NK-Vorauszahlung (€ / Monat)" errors={form.of("operating_costs_prepayment")}>
+      <Field
+        id={`correct-${row.id}-prepayment`}
+        label="NK-Vorauszahlung (€ / Monat)"
+        description="Die richtige monatliche Vorauszahlung auf Betriebs- und Heizkosten. Leer, wenn keine vereinbart ist."
+        errors={form.of("operating_costs_prepayment")}
+      >
         <input type="text" inputMode="decimal" value={prepayment} onChange={(e) => setPrepayment(e.target.value)} autoComplete="off" />
       </Field>
-      <Field id={`correct-${row.id}-document`} label="Beleg (optional)" errors={form.of("document_id")}>
+      <Field
+        id={`correct-${row.id}-document`}
+        label="Beleg (optional)"
+        description="Das Schreiben, das diese Miete belegt, z. B. der Mietvertrag."
+        errors={form.of("document_id")}
+      >
         <DocumentPicker value={documentId} onChange={setDocumentId} />
       </Field>
       <Submit busy={busy}>Korrektur speichern</Submit>

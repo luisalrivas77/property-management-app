@@ -397,6 +397,7 @@ function AllocationEditor({
           id={patternId}
           label="Muster im Verwendungszweck (optional)"
           hint="Für diese Gegenseite lernt Hausbuch keine Regel allein aus der IBAN. Mit einem Muster (z. B. Abschluss) werden künftige Buchungen mit passendem Verwendungszweck so zugeordnet."
+          description="Ein Text aus dem Verwendungszweck, an dem sich diese Art Buchung erkennen lässt, z. B. „Abschluss“ bei der Kontoabrechnung der Bank."
           errors={form.of("purpose_pattern")}
         >
           <input type="text" value={pattern} onChange={(e) => setPattern(e.target.value)} autoComplete="off" maxLength={200} />
@@ -466,7 +467,12 @@ function RowFields({
     <fieldset className="allocation-row">
       <legend>Zeile {index + 1}</legend>
       <div className="allocation-fields">
-        <Field id={`${id}-amount`} label="Betrag (€)" errors={errors("amount")}>
+        <Field
+          id={`${id}-amount`}
+          label="Betrag (€)"
+          description="Der Teil der Buchung, der in diese Kategorie fällt; Ausgaben mit Minus. Alle Zeilen zusammen ergeben genau den Betrag der Buchung."
+          errors={errors("amount")}
+        >
           <input
             type="text"
             inputMode="decimal"
@@ -476,7 +482,12 @@ function RowFields({
             required
           />
         </Field>
-        <Field id={`${id}-category`} label="Kategorie" errors={errors("category")}>
+        <Field
+          id={`${id}-category`}
+          label="Kategorie"
+          description="Wofür das Geld war, z. B. Kaltmiete, Darlehenszinsen oder Hausgeld. Nach ihr ordnet der geplante Anlage-V-Entwurf den Betrag ein."
+          errors={errors("category")}
+        >
           <select value={row.category} onChange={(e) => onChange({ category: e.target.value as AllocationCategory | "" })} required>
             <option value="">– wählen –</option>
             {options(ALLOCATION_CATEGORY).map(([value, label]) => (
@@ -486,7 +497,12 @@ function RowFields({
             ))}
           </select>
         </Field>
-        <Field id={`${id}-property`} label="Immobilie" errors={errors("property_id")}>
+        <Field
+          id={`${id}-property`}
+          label="Immobilie"
+          description="Zu welcher Immobilie der Betrag gehört."
+          errors={errors("property_id")}
+        >
           <select value={row.propertyId} onChange={(e) => setProperty(e.target.value)}>
             <option value="">– keine –</option>
             {directory.properties.map((property) => (
@@ -497,7 +513,12 @@ function RowFields({
           </select>
         </Field>
         {units.length > 0 || row.unitId ? (
-          <Field id={`${id}-unit`} label="Einheit" errors={errors("unit_id")}>
+          <Field
+            id={`${id}-unit`}
+            label="Einheit"
+            description="Zu welcher Einheit der Betrag gehört, z. B. die Wohnung, deren Miete das ist."
+            errors={errors("unit_id")}
+          >
             <select value={row.unitId} onChange={(e) => onChange({ unitId: e.target.value, tenancyId: "" })}>
               <option value="">– keine –</option>
               {units.map((unit) => (
@@ -509,7 +530,12 @@ function RowFields({
           </Field>
         ) : null}
         {tenancies.length > 0 || row.tenancyId ? (
-          <Field id={`${id}-tenancy`} label="Mietverhältnis" errors={errors("tenancy_id")}>
+          <Field
+            id={`${id}-tenancy`}
+            label="Mietverhältnis"
+            description="Bei Miete, Nebenkosten oder Kaution: das Mietverhältnis, zu dem die Zahlung gehört."
+            errors={errors("tenancy_id")}
+          >
             <select value={row.tenancyId} onChange={(e) => setTenancy(e.target.value)}>
               <option value="">– keines –</option>
               {tenancies.map((tenancy) => (
@@ -521,7 +547,12 @@ function RowFields({
           </Field>
         ) : null}
         {loans.length > 0 || row.loanId ? (
-          <Field id={`${id}-loan`} label="Darlehen" errors={errors("loan_id")}>
+          <Field
+            id={`${id}-loan`}
+            label="Darlehen"
+            description="Bei Zinsen, Tilgung oder Geldbeschaffungskosten: das Darlehen, zu dem die Zahlung gehört."
+            errors={errors("loan_id")}
+          >
             <select value={row.loanId} onChange={(e) => onChange({ loanId: e.target.value })}>
               <option value="">– keines –</option>
               {loans.map((loan) => (
@@ -533,10 +564,20 @@ function RowFields({
             </select>
           </Field>
         ) : null}
-        <Field id={`${id}-from`} label="Leistungszeitraum von" errors={errors("service_period_start")}>
+        <Field
+          id={`${id}-from`}
+          label="Leistungszeitraum von"
+          description="Der Zeitraum, für den gezahlt wurde, z. B. 01.01. bis 31.01. für die Januarmiete. Er wird gespeichert, damit Zahlungen um den Jahreswechsel später dem richtigen Steuerjahr zugeordnet werden können."
+          errors={errors("service_period_start")}
+        >
           <input type="date" value={row.periodStart} onChange={(e) => onChange({ periodStart: e.target.value })} />
         </Field>
-        <Field id={`${id}-to`} label="bis" errors={errors("service_period_end")}>
+        <Field
+          id={`${id}-to`}
+          label="bis"
+          description="Das Ende des Leistungszeitraums."
+          errors={errors("service_period_end")}
+        >
           <input type="date" value={row.periodEnd} onChange={(e) => onChange({ periodEnd: e.target.value })} />
         </Field>
       </div>
@@ -549,7 +590,12 @@ function RowFields({
         />
         Wiederkehrend (z. B. monatliche Miete oder Rate)
       </label>
-      <Field id={`${id}-document`} label="Beleg" errors={errors("document_id")}>
+      <Field
+        id={`${id}-document`}
+        label="Beleg"
+        description="Die Rechnung oder das Schreiben zu dieser Zahlung, falls es eines gibt."
+        errors={errors("document_id")}
+      >
         <DocumentPicker value={row.documentId} onChange={(documentId) => onChange({ documentId })} />
       </Field>
       {row.documentId ? (

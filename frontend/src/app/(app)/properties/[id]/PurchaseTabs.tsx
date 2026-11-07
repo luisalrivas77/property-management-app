@@ -168,7 +168,12 @@ function CostForm({ propertyId, cost, onDone }: { propertyId: string; cost?: Acq
 
   return (
     <form className="stack" onSubmit={submit} noValidate>
-      <Field id="cost-kind" label="Art" errors={form.of("kind")}>
+      <Field
+        id="cost-kind"
+        label="Art"
+        description="Welche Erwerbsnebenkosten das sind: Grunderwerbsteuer (Bescheid des Finanzamts), Notar, Grundbuchamt, Makler oder Sonstige."
+        errors={form.of("kind")}
+      >
         <select value={kind} onChange={(e) => setKind(e.target.value as AcquisitionCostKind)}>
           {options(ACQUISITION_COST_KIND).map(([value, text]) => (
             <option key={value} value={value}>
@@ -177,16 +182,36 @@ function CostForm({ propertyId, cost, onDone }: { propertyId: string; cost?: Acq
           ))}
         </select>
       </Field>
-      <Field id="cost-amount" label="Betrag (€)" errors={form.of("amount")}>
+      <Field
+        id="cost-amount"
+        label="Betrag (€)"
+        description="Der Betrag laut Rechnung oder Bescheid. Erwerbsnebenkosten zählen zu den Anschaffungskosten; ihr Gebäudeanteil gehört zur AfA-Grundlage."
+        errors={form.of("amount")}
+      >
         <input type="text" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} required autoComplete="off" />
       </Field>
-      <Field id="cost-paid" label="Bezahlt am (optional)" errors={form.of("paid_on")}>
+      <Field
+        id="cost-paid"
+        label="Bezahlt am (optional)"
+        description="Der Tag der Zahlung, laut Kontoauszug."
+        errors={form.of("paid_on")}
+      >
         <input type="date" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} />
       </Field>
-      <Field id="cost-document" label="Beleg" errors={form.of("document_id")}>
+      <Field
+        id="cost-document"
+        label="Beleg"
+        description="Die Rechnung oder der Bescheid zu dieser Position, aus den Dokumenten oder neu hochgeladen. Mit Beleg gilt die Position in der Unterlagen-Checkliste als belegt."
+        errors={form.of("document_id")}
+      >
         <DocumentPicker value={documentId} onChange={setDocumentId} />
       </Field>
-      <Field id="cost-note" label="Notiz (optional)" errors={form.of("note")}>
+      <Field
+        id="cost-note"
+        label="Notiz (optional)"
+        description="Freier Text für Sie, z. B. eine Rechnungsnummer."
+        errors={form.of("note")}
+      >
         <input type="text" value={note} onChange={(e) => setNote(e.target.value)} autoComplete="off" />
       </Field>
       <Submit busy={busy}>{cost ? "Speichern" : "Hinzufügen"}</Submit>
@@ -324,7 +349,12 @@ function SplitForm({ propertyId, onDone }: { propertyId: string; onDone: () => v
 
   return (
     <form className="stack" onSubmit={submit} noValidate>
-      <Field id="split-source" label="Quelle" errors={form.of("source")}>
+      <Field
+        id="split-source"
+        label="Quelle"
+        description="Woher die Aufteilung stammt: aus dem Kaufvertrag, aus der Arbeitshilfe des Bundesfinanzministeriums (BMF) oder aus einem Gutachten."
+        errors={form.of("source")}
+      >
         <select value={source} onChange={(e) => setSource(e.target.value as PriceSplitSource)}>
           {options(PRICE_SPLIT_SOURCE).map(([value, text]) => (
             <option key={value} value={value}>
@@ -333,13 +363,29 @@ function SplitForm({ propertyId, onDone }: { propertyId: string; onDone: () => v
           ))}
         </select>
       </Field>
-      <Field id="split-share" label="Gebäudeanteil (%)" hint="z. B. 78,5" errors={form.of("building_share")}>
+      <Field
+        id="split-share"
+        label="Gebäudeanteil (%)"
+        hint="z. B. 78,5"
+        description="Der Anteil des Kaufpreises, der auf das Gebäude entfällt; der Rest ist Grund und Boden, der nicht abgeschrieben wird. Der Gebäudeanteil ist die Grundlage der AfA."
+        errors={form.of("building_share")}
+      >
         <input type="text" inputMode="decimal" value={share} onChange={(e) => setShare(e.target.value)} required autoComplete="off" />
       </Field>
-      <Field id="split-document" label="Nachweis (Kaufvertrag, Arbeitshilfe, Gutachten)" errors={form.of("evidence_document_id")}>
+      <Field
+        id="split-document"
+        label="Nachweis (Kaufvertrag, Arbeitshilfe, Gutachten)"
+        description="Das Dokument, aus dem der Anteil stammt: der Kaufvertrag, die ausgefüllte BMF-Arbeitshilfe oder das Gutachten."
+        errors={form.of("evidence_document_id")}
+      >
         <DocumentPicker value={documentId} onChange={setDocumentId} />
       </Field>
-      <Field id="split-note" label="Notiz (optional)" errors={form.of("note")}>
+      <Field
+        id="split-note"
+        label="Notiz (optional)"
+        description="Freier Text für Sie, z. B. wie der Wert zustande kam."
+        errors={form.of("note")}
+      >
         <input type="text" value={note} onChange={(e) => setNote(e.target.value)} autoComplete="off" />
       </Field>
       <Submit busy={busy}>Hinzufügen</Submit>

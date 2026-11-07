@@ -330,6 +330,7 @@ export function BalanceForm({ statementImport: imp, onDone }: { statementImport:
         id={`balance-${imp.id}`}
         label="Endsaldo laut Online-Banking (€)"
         hint={`Der Kontostand am Ende des ${formatDate(imp.last_booking_on)}, nach dem letzten Umsatz der Datei. Negativ mit Minus, z. B. -3.028,51.`}
+        description="Der Kontostand laut Online-Banking nach dem letzten Umsatz dieser Datei. Die CSV-Datei enthält keinen Saldo; mit diesem Wert prüft Hausbuch, ob der Import aufgeht."
         errors={form.of("closing_balance")}
       >
         <input type="text" inputMode="decimal" value={closing} onChange={(e) => setClosing(e.target.value)} autoComplete="off" required />

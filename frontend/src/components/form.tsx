@@ -151,26 +151,81 @@ export function collector() {
 
 type InputLike = ReactElement<{ id?: string; "aria-invalid"?: boolean; "aria-describedby"?: string }>;
 
-/** A labelled input with its messages underneath; wires id, aria-invalid, aria-describedby. */
+/**
+ * The "i" next to a label: a tap or click shows or hides what the field means (no hover-only
+ * tooltip, so it works on a phone). It sits outside the <label>, so the input's accessible name
+ * stays the label text, and it has no aria-label (tests and screen readers find inputs by
+ * label; an aria-label "Erklärung: Baujahr" would match "Baujahr" too). Its name comes from
+ * the visually hidden text instead, as on the source badge.
+ */
+export function InfoToggle({
+  open,
+  onToggle,
+  controls,
+  label,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  /** The id of the description it shows. */
+  controls: string;
+  label: ReactNode;
+}) {
+  return (
+    <button type="button" className="info-toggle" aria-expanded={open} aria-controls={controls} onClick={onToggle}>
+      <span aria-hidden="true">i</span>
+      <span className="visually-hidden">Erklärung: {label}</span>
+    </button>
+  );
+}
+
+/** A field's description, shown by its InfoToggle; always in the DOM so aria-controls points
+ * at it, and described-by only while open. */
+export function FieldDescription({ id, open, children }: { id: string; open: boolean; children: ReactNode }) {
+  return (
+    <p className="muted field-description" id={id} hidden={!open}>
+      {children}
+    </p>
+  );
+}
+
+/** A labelled input with its messages underneath; wires id, aria-invalid, aria-describedby.
+ * `hint` is always shown (a format example, a short note); `description` says what the value
+ * is and where to find it, behind the "i" next to the label. */
 export function Field({
   id,
   label,
   hint,
+  description,
   errors = [],
   children,
 }: {
   id: string;
   label: ReactNode;
   hint?: ReactNode;
+  description?: ReactNode;
   errors?: string[];
   children: InputLike;
 }) {
+  const [open, setOpen] = useState(false);
+  const descriptionId = `${id}-description`;
   const hintId = hint ? `${id}-hint` : null;
   const errorId = errors.length > 0 ? `${id}-error` : null;
-  const describedBy = [hintId, errorId].filter(Boolean).join(" ") || undefined;
+  const describedBy = [description && open ? descriptionId : null, hintId, errorId].filter(Boolean).join(" ") || undefined;
   return (
     <div className={errors.length > 0 ? "field field-invalid" : "field"}>
-      <label htmlFor={id}>{label}</label>
+      {description ? (
+        <>
+          <div className="field-head">
+            <label htmlFor={id}>{label}</label>
+            <InfoToggle open={open} onToggle={() => setOpen((current) => !current)} controls={descriptionId} label={label} />
+          </div>
+          <FieldDescription id={descriptionId} open={open}>
+            {description}
+          </FieldDescription>
+        </>
+      ) : (
+        <label htmlFor={id}>{label}</label>
+      )}
       {cloneElement(children, {
         id,
         "aria-invalid": errors.length > 0 ? true : undefined,

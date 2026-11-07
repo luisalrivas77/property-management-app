@@ -132,18 +132,30 @@ function OwnerForm({ owner, onDone, onCancel }: { owner?: Owner; onDone: (messag
   return (
     <form className="stack" onSubmit={submit} noValidate>
       <div className="grid">
-        <Field id={`${prefix}-name`} label="Name" errors={form.of("full_name")}>
+        <Field
+          id={`${prefix}-name`}
+          label="Name"
+          description="Der Name der Eigentümerin oder des Eigentümers, wie im Kaufvertrag oder Grundbuch."
+          errors={form.of("full_name")}
+        >
           <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} required autoComplete="off" />
         </Field>
         <Field
           id={`${prefix}-tax`}
           label="Steuer-ID-Referenz"
           hint="Ein Verweis, z. B. „Steuer-ID Luis (Ordner Steuern)“, nicht die Nummer selbst."
+          description="Ein Verweis darauf, wo Sie die steuerliche Identifikationsnummer finden; die Nummer selbst gehört nicht hierher."
           errors={form.of("tax_id_ref")}
         >
           <input type="text" value={taxIdRef} onChange={(e) => setTaxIdRef(e.target.value)} autoComplete="off" />
         </Field>
-        <Field id={`${prefix}-rate`} label="Grenzsteuersatz (%)" hint="Für die Steuerwirkung, z. B. 42." errors={form.of("marginal_tax_rate")}>
+        <Field
+          id={`${prefix}-rate`}
+          label="Grenzsteuersatz (%)"
+          hint="Für die Steuerwirkung, z. B. 42."
+          description="Der Steuersatz, mit dem ein zusätzlicher Euro Einkommen besteuert wird, z. B. aus einem Steuerrechner. Hausbuch speichert ihn bisher nur. Später rechnet Hausbuch ihn aus dem erwarteten Bruttogehalt selbst aus; ein hier eingetragener Wert geht dann für sein Jahr vor."
+          errors={form.of("marginal_tax_rate")}
+        >
           <input type="text" inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} autoComplete="off" />
         </Field>
       </div>

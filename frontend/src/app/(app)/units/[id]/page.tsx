@@ -10,7 +10,7 @@ import { api, ok } from "@/api/client";
 import type { Property, Tenant, Unit } from "@/api/schemas";
 import { LinkedDocuments } from "@/components/documents";
 import { partyNames } from "@/components/entities";
-import { formatArea, formatDate, formatDecimal, formatFraction } from "@/components/format";
+import { formatArea, formatDate, formatDecimal, formatShare } from "@/components/format";
 import { HistoryTimeline } from "@/components/history";
 import { historySubject, loadPropertyContext } from "@/components/propertyContext";
 import { RENT_MODEL } from "@/components/labels";
@@ -57,7 +57,7 @@ export default function UnitPage() {
               rows={[
                 ["Fläche", formatArea(unit.floor_area_m2)],
                 ["Zimmer", formatDecimal(unit.rooms)],
-                ["MEA", formatFraction(unit.mea)],
+                ["MEA", formatShare(unit.mea)],
               ]}
             />
             <h2>Mietverhältnisse</h2>

@@ -66,7 +66,11 @@ export function PartiesForm({ tenancy, tenants, onDone }: { tenancy: Tenancy; te
     <form className="stack" onSubmit={submit} noValidate>
       {parties.map((party, index) => (
         <div key={index} className="grid">
-          <Field id={`parties-${index}-tenant`} label={`Mieter ${index + 1}`}>
+          <Field
+            id={`parties-${index}-tenant`}
+            label={`Mieter ${index + 1}`}
+            description="Wer Vertragspartei des Mietvertrags ist. Neue Mieter legen Sie unter „Mieter“ an."
+          >
             <select value={party.tenantId} onChange={(e) => setParty(index, { tenantId: e.target.value })}>
               <option value="">– wählen –</option>
               {choices.map((tenant) => (
@@ -76,7 +80,11 @@ export function PartiesForm({ tenancy, tenants, onDone }: { tenancy: Tenancy; te
               ))}
             </select>
           </Field>
-          <Field id={`parties-${index}-role`} label="Rolle">
+          <Field
+            id={`parties-${index}-role`}
+            label="Rolle"
+            description="Hauptmieter ist die zuerst genannte Vertragspartei; weitere Personen, die den Mietvertrag mit unterschrieben haben, sind Mitmieter."
+          >
             <select value={party.role} onChange={(e) => setParty(index, { role: e.target.value as TenancyRole })}>
               {options(TENANCY_ROLE).map(([value, text]) => (
                 <option key={value} value={value}>
@@ -110,6 +118,7 @@ export function PartiesForm({ tenancy, tenants, onDone }: { tenancy: Tenancy; te
         id="parties-effective"
         label="Gilt ab (optional)"
         hint="Mit Datum erscheint die Änderung im Verlauf. Neue Mieter legen Sie unter „Mieter“ an."
+        description="Ab wann die neue Zusammensetzung gilt, z. B. der Tag, an dem ein Mitmieter laut Vereinbarung ausgeschieden ist."
         errors={form.of("effective_date")}
       >
         <input type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} />

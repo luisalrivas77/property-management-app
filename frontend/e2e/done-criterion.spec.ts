@@ -44,11 +44,21 @@ test("the done criterion: ETW, loan, tenancy, lease, corrected move-in, History 
       await page.getByLabel("Bezeichnung").fill(unit.label);
       await page.getByLabel("Fläche (m²)").fill(unit.area);
       await page.getByLabel("Zimmer (optional)").fill(unit.rooms);
+      if (unit.mea) {
+        // The "i" next to the label opens what the field means; the label itself stays the input's name.
+        const info = page.getByRole("button", { name: "Erklärung: MEA (optional)" });
+        await expect(info).toHaveAttribute("aria-expanded", "false");
+        await info.click();
+        await expect(info).toHaveAttribute("aria-expanded", "true");
+        await expect(page.getByText("Ihr Anteil am gemeinschaftlichen Eigentum der WEG")).toBeVisible();
+      }
       await page.getByLabel("MEA (optional)").fill(unit.mea);
       await page.getByRole("button", { name: "Einheit anlegen" }).click();
       await expect(page.getByRole("link", { name: unit.label, exact: true })).toBeVisible();
     }
     await expect(page.getByRole("table").getByRole("row")).toHaveCount(3);
+    // A share is shown with its percentage.
+    await expect(page.getByRole("row").filter({ hasText: "WE 3" })).toContainText("85/1000 (8,5 %)");
   });
 
   await test.step("the loan", async () => {
@@ -116,7 +126,7 @@ test("the done criterion: ETW, loan, tenancy, lease, corrected move-in, History 
 
     await page.getByLabel("Verknüpfen mit").selectOption({ label: "Mietverhältnis" });
     await page.getByLabel("Mietverhältnis", { exact: true }).selectOption({ label: "WE 3: Max Muster (ab 15.07.2024)" });
-    await page.getByRole("button", { name: "Verknüpfen" }).click();
+    await page.getByRole("button", { name: "Verknüpfen", exact: true }).click();
     await expect(page.getByRole("listitem").filter({ hasText: "Mietverhältnis:" })).toContainText("WE 3: Max Muster");
   });
 
