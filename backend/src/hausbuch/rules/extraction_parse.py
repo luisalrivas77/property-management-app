@@ -82,9 +82,9 @@ def parse_lines(
 def _without_page_reference(raw: str) -> str:
     """The value without a page reference the model appended to it ("Lena Schmidt (Seite
     1)", "500,00 € (S. 2)"): only a parenthetical at the very end that starts with Seite or
-    S. and a number. The page is the citation's; left in, it would fail value_in_quote."""
-    stripped = _PAGE_REFERENCE.sub("", raw)
-    return stripped if stripped else raw
+    S. and a number. The page is the citation's; left in, it would fail value_in_quote. A
+    value that is only a page reference becomes empty, so the field is missing."""
+    return _PAGE_REFERENCE.sub("", raw)
 
 
 def _lines(blocks: list[CitedTextBlock]) -> list[tuple[str, list[int]]]:

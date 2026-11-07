@@ -82,6 +82,8 @@ interface FieldSpec {
   choices?: Readonly<Record<string, string>>;
   /** What the value is and where it stands, behind the "i" next to the label. */
   description?: string;
+  /** An "area" value's decimal places, when not 2 (a unit's rooms: 1, as the backend's Rooms). */
+  decimals?: number;
 }
 
 const text = (label: string, description?: string): FieldSpec => ({ label, kind: "text", description });
@@ -169,7 +171,7 @@ const FIELDS: Record<string, Record<string, FieldSpec>> = {
       description:
         "Die Wohnfläche in Quadratmetern laut Mietvertrag, Kaufvertrag oder Wohnflächenberechnung. Hausbuch rechnet noch nicht damit; gebraucht wird sie später z. B. für die Betriebskostenabrechnung.",
     },
-    rooms: { label: "Zimmer", kind: "area", description: "Die Zahl der Zimmer laut Mietvertrag oder Exposé; ein halbes Zimmer als ,5." },
+    rooms: { label: "Zimmer", kind: "area", decimals: 1, description: "Die Zahl der Zimmer laut Mietvertrag oder Exposé; ein halbes Zimmer als ,5." },
   },
   price_split: {
     building_share: {
@@ -520,7 +522,7 @@ function fromRaw(spec: FieldSpec, raw: string): Parsed<unknown> {
     case "rate":
       return toRate(raw, 6);
     case "area":
-      return toDecimalString(raw, 2);
+      return toDecimalString(raw, spec.decimals ?? 2);
     case "year":
       return toYear(raw);
     case "fraction":

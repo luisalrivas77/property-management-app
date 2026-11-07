@@ -488,7 +488,7 @@ class _Builder:
         for n in (1, 2):
             if self.stated(f"tenant_{n}_full_name"):
                 self._tenant(n)
-        unit = self._lease_unit()
+        unit, exact = self._lease_unit()
         tenancy = None
         if unit is not None:
             start = self.ev("start_date").value
@@ -501,6 +501,9 @@ class _Builder:
             None if unit is None else str(unit.id),
             [(n, self.ev(n)) for n in ("street", "house_number", "postal_code", "unit_label")],
         )
+        if not exact and unit_value.confidence == "high":
+            # Found inside a longer label, not equal to it: the review should look twice.
+            unit_value = unit_value.model_copy(update={"confidence": "medium"})
         rent_model = _derived(
             _rent_model(self.ev("rent_clause").value), [("rent_clause", self.ev("rent_clause"))]
         )
@@ -571,15 +574,17 @@ class _Builder:
             return _derived(None, inputs)
         return mapped if clause.value is not None else None
 
-    def _lease_unit(self) -> ExistingUnit | None:
+    def _lease_unit(self) -> tuple[ExistingUnit | None, bool]:
+        """The tenancy's unit, and whether it was found exactly (an equal label, or the
+        property's only unit); a unit found inside a longer label is not exact."""
         prop = _resolve_property(self.x, self.ctx)
         if prop is None:
-            return None
+            return None, True
         units = [u for u in self.ctx.units if u.property_id == prop.id]
         label = self.ev("unit_label").value
         if label is not None:
             return _unit_by_label(units, str(label))
-        return units[0] if len(units) == 1 else None
+        return (units[0] if len(units) == 1 else None), True
 
     def _initial_rent(self) -> None:
         fields = {"cold_rent": self.ev("cold_rent")}
@@ -701,17 +706,37 @@ def _contains(haystack: tuple[str, ...], needle: tuple[str, ...]) -> bool:
     return n > 0 and any(haystack[i : i + n] == needle for i in range(len(haystack) - n + 1))
 
 
-def _unit_by_label(units: Sequence[ExistingUnit], label: str) -> ExistingUnit | None:
+_ROOM = "zimmer"
+
+
+def _may_be_inside(unit_key: tuple[str, ...], label_key: tuple[str, ...]) -> bool:
+    """Whether a unit key may match inside a longer label: it has both a word and a number
+    (a bare "1" is inside "Wohnung 1. OG", a bare "EG" or "Zimmer" names no one unit), and a
+    label naming a room only matches a unit whose key names one too (a room lease is never
+    booked on the flat: a tenancy cannot move to another unit)."""
+    has_word = any(not t.isdigit() for t in unit_key)
+    has_number = any(t.isdigit() for t in unit_key)
+    if not (has_word and has_number):
+        return False
+    return _ROOM not in label_key or _ROOM in unit_key
+
+
+def _unit_by_label(units: Sequence[ExistingUnit], label: str) -> tuple[ExistingUnit | None, bool]:
     """The unit a lease's label names, among the property's units (fixture prefill.yaml,
-    "lease unit"): the one unit whose key equals the label's; else the one unit whose key
-    occurs as a run of whole tokens inside it ("Zimmer Nr. 1 (WE 3, Zimmer 1)" -> Zimmer 1,
-    never Zimmer 10). Several candidates or none: None, never a guess."""
+    "lease unit"), and whether its label was equal: the one unit whose key equals the
+    label's; else the one unit whose key occurs as a run of whole tokens inside it ("Zimmer
+    Nr. 1 (WE 3, Zimmer 1)" -> Zimmer 1, never Zimmer 10), within _may_be_inside. Several
+    candidates or none: None, never a guess."""
     key = _label_key(label)
     equal = [u for u in units if _label_key(u.label) == key]
     if equal:
-        return equal[0] if len(equal) == 1 else None
-    inside = [u for u in units if _contains(key, _label_key(u.label))]
-    return inside[0] if len(inside) == 1 else None
+        return (equal[0], True) if len(equal) == 1 else (None, True)
+    inside = [
+        u
+        for u in units
+        if _may_be_inside(_label_key(u.label), key) and _contains(key, _label_key(u.label))
+    ]
+    return (inside[0], False) if len(inside) == 1 else (None, False)
 
 
 def names_financing(*texts: Any) -> bool:
