@@ -962,7 +962,7 @@ LEASE_VALUES = {
     "house_number": _v("12"),
     "postal_code": _v("10115"),
     "city": _v("Berlin"),
-    # "WE 3" and "Zimmer 1" both occur in it: no unit is proposed (fixture prefill.yaml).
+    # "WE 3 Zimmer 1" and "Zimmer 1" both occur in it: no unit is proposed (prefill.yaml).
     "unit_label": _v("Zimmer Nr. 1 (WE 3, Zimmer 1)"),
     "tenant_1_full_name": _v("Lena Beispiel"),
     "start_date": _v("2026-05-01"),
@@ -985,7 +985,7 @@ def test_a_lease_applies_with_a_hand_picked_unit_and_a_hand_typed_prepayment(
     run(
         ws,
         create_unit,
-        UnitCreate(property_id=prop.id, label="WE 3", floor_area_m2=Decimal("68.40")),
+        UnitCreate(property_id=prop.id, label="WE 3 Zimmer 1", floor_area_m2=Decimal("14.00")),
     )
     room = run(
         ws,
