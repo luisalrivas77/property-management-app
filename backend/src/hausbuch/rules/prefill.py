@@ -555,17 +555,20 @@ class _Builder:
         above 0, a money deposit (cash_account), derived from the amount and the clause: a
         lease that names no Bürgschaft asks for money ("eine Kaution in Höhe von 1.000,00 €
         ... zu überweisen", Luis's room lease, 7 Nov 2026), and a deposit amount with the
-        form "none" is not a valid tenancy. None when neither is stated."""
+        form "none" is not a valid tenancy. The derived form is low confidence whenever the
+        clause named no form (the code inferred it, review 7 Nov 2026). An amount that is not
+        a number ("drei Nettokaltmieten") proposes the form as missing, so the form asks for
+        it next to the amount. None when neither is stated."""
         clause, amount = self.ev("deposit_clause"), self.ev("deposit_amount")
         mapped = _mapped(clause, _deposit_form)
         if mapped.value is not None:
             return mapped
+        inputs = [("deposit_amount", amount), ("deposit_clause", mapped)]
         value = _decimal(amount.value)
         if value is not None and value > 0:
-            return _derived(
-                DepositForm.CASH_ACCOUNT.value,
-                [("deposit_amount", amount), ("deposit_clause", clause)],
-            )
+            return _derived(DepositForm.CASH_ACCOUNT.value, inputs)
+        if amount.value is not None and value is None:
+            return _derived(None, inputs)
         return mapped if clause.value is not None else None
 
     def _lease_unit(self) -> ExistingUnit | None:
@@ -926,9 +929,19 @@ def _deposit_form(clause: Any) -> DepositForm | None:
         return DepositForm.BANK_GUARANTEE
     if "bürgschaft" in t or "burgschaft" in t:
         return DepositForm.SURETY
-    if any(w in t for w in ("barkaution", "geldkaution", "kautionskonto", "sparbuch")) or re.search(
-        r"\bbar\b", t
-    ):
+    if any(
+        w in t
+        for w in (
+            "barkaution",
+            "geldkaution",
+            "kautionskonto",
+            "sparbuch",
+            "barzahlung",
+            "bareinzahlung",
+            "barsicherheit",
+            "bargeld",
+        )
+    ) or re.search(r"\bbar\b", t):
         return DepositForm.CASH_ACCOUNT
     return None
 
