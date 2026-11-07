@@ -38,7 +38,7 @@ from hausbuch.schemas.bank import AccountCreate
 from hausbuch.schemas.enums import DuplicateStatus, ExtractionKind, ImportStatus
 from hausbuch.schemas.extraction import EXTRACTION_MODELS
 from hausbuch.schemas.property import UnitCreate
-from hausbuch.services import documents, review
+from hausbuch.services import documents, matching, review
 from hausbuch.services.accounts import create_account
 from hausbuch.services.statements import (
     import_statement,
@@ -215,6 +215,40 @@ def test_an_llm_set_auto_confirms_only_with_the_setting_and_above_the_threshold(
     )
     assert event.payload["auto"] is True and event.payload["method"] == "llm"
     assert "tax_year" not in json.dumps(event.payload)
+
+
+def test_an_llm_set_naming_a_matcher_category_or_splitting_is_never_auto_confirmed(
+    world, app_engine, tmp_path
+):
+    """Review finding 3: with auto_accept_llm on and a high confidence, a model's set still
+    goes to review when it names rent, the annuity's parts, Hausgeld or an owner transfer
+    (no matcher recognised the line), or when it splits the amount (principle 1)."""
+    world.set_auto_accept_llm(True)
+    client = FakeModelClient(
+        [
+            _answer(("rent_cold", "1280.00", None, True)),
+            _answer(
+                ("loan_interest", "-900.00", None, True), ("loan_principal", "-500.00", None, True)
+            ),
+            _answer(("insurance", "-200.00", None, True), ("bank_fees", "-12.40", None, True)),
+        ]
+    )
+    deps = _deps(app_engine, tmp_path, client)
+    rent = world.line(date(2026, 3, 2), "1280.00", name="Unbekannt", purpose="Miete")
+    annuity = world.line(date(2026, 3, 3), "-1400.00", name="Irgendeine Bank", purpose="Rate")
+    split = world.line(date(2026, 3, 4), "-212.40", name="Allianz", purpose="Beitrag")
+    for tx in (rent, annuity, split):
+        _run(deps, world, tx)
+    for tx, parts, question in [
+        (rent, 1, matching.LLM_GUARDED_QUESTION),
+        (annuity, 2, matching.LLM_GUARDED_QUESTION),
+        (split, 2, matching.LLM_SPLIT_QUESTION),
+    ]:
+        rows = _rows(world, tx)
+        assert len(rows) == parts and {r.status for r in rows} == {"proposed"}
+        assert {r.question for r in rows} == {question}
+        assert {r.method for r in rows} == {"llm"}
+        assert _events(world, tx) == []  # proposed rows are review items, no event
 
 
 # --- Validation and retries ------------------------------------------------------------------

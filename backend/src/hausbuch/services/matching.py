@@ -115,6 +115,27 @@ LOAN_BOOKED_QUESTION = (
     "oder eine verschobene Rate?"
 )
 
+LLM_GUARDED_QUESTION = (
+    "Die KI hält diese Buchung für Miete, Darlehensrate, Hausgeld oder eine "
+    "Eigentümer-Umbuchung, aber keine feste Regel passt. Stimmt die Aufteilung?"
+)
+LLM_SPLIT_QUESTION = "Die KI hat den Betrag auf mehrere Kategorien aufgeteilt. Stimmen die Beträge?"
+# Categories a deterministic matcher owns (rent, annuity, Hausgeld, owner transfers): the
+# model naming one means no matcher or rule recognised the line, so a person checks it.
+_MATCHER_CATEGORIES = frozenset(
+    {
+        C.RENT_COLD,
+        C.OPERATING_COSTS_PREPAYMENT,
+        C.LOAN_INTEREST,
+        C.LOAN_PRINCIPAL,
+        C.HAUSGELD_UMLAGEFAEHIG,
+        C.HAUSGELD_VERWALTUNG,
+        C.HAUSGELD_RUECKLAGE,
+        C.OWNER_TRANSFER_IN,
+        C.OWNER_TRANSFER_OUT,
+    }
+)
+
 _GRUNDSTEUER_DUE = re.compile(r"^\s*(\d{1,2})\.(\d{1,2})\.?\s*(\d{4})?\s*$")
 _CENT = Decimal("0.01")
 
@@ -657,6 +678,25 @@ def _booked(
     return conn.execute(query).scalar_one() > 0
 
 
+def _llm_guarded(line: Line, found: AllocationSet) -> AllocationSet:
+    """Review finding 3, principle 1 (AI explains, code calculates): a model's set never
+    auto-confirms when it names a matcher-owned category (rent, annuity, Hausgeld, owner
+    transfer: the matchers did not recognise the line, so the model's reading of it is a
+    guess), or when it splits the amount into more than one part (a model-chosen euro split).
+    Such a set goes to review with GUARDED_CONFIDENCE and a question.
+
+    Inert while the workspace's auto_accept_llm is off (the default, D26): rules.review.route
+    then sends every LLM set to review anyway, so the set keeps the model's own confidence
+    and question."""
+    if found.method is not AllocationMethod.LLM or not line.auto_accept_llm:
+        return found
+    if any(a.category in _MATCHER_CATEGORIES for a in found.allocations):
+        return _to_review(found, LLM_GUARDED_QUESTION)
+    if len(found.allocations) > 1:
+        return _to_review(found, LLM_SPLIT_QUESTION)
+    return found
+
+
 def _to_review(found: AllocationSet, question: str) -> AllocationSet:
     return found.model_copy(update={"confidence": GUARDED_CONFIDENCE, "question": question})
 
@@ -747,7 +787,7 @@ def finish_line(ctx: CommandContext, transaction_id: UUID, found: AllocationSet)
     line = load_line(ctx.conn, transaction_id, lock=True)
     if line is None or not line.open_for(rematch=False):
         return MatchPlan("skipped", "matching.answered_meanwhile")
-    return write(ctx, line, found)
+    return write(ctx, line, _llm_guarded(line, found))
 
 
 def _route(line: Line, found: AllocationSet) -> RoutingDecision:
