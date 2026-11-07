@@ -197,7 +197,7 @@ def test_apply_reject_and_rerun(client_a, client_b, app_engine, sessions, enqueu
     invalid = client_a.post(f"/api/proposals/{proposal_id}/apply", json=bad)
     assert invalid.status_code == 422, invalid.text
     assert [e["loc"][:2] for e in invalid.json()["detail"]] == [["cost:notary", "amount"]]
-    assert "-5" not in invalid.text
+    assert '"-5"' not in invalid.text  # the value is never echoed (a random id may contain -5)
     costs = f"/api/properties/{prop['id']}/acquisition-costs"
     assert ok(client_a.get(costs)) == []
 
