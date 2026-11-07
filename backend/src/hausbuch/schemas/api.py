@@ -18,7 +18,7 @@ from uuid import UUID
 
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
-from .allocation import Allocation, AllocationSet, MatchingRule
+from .allocation import Allocation, AllocationCategory, AllocationSet, MatchingRule
 from .bank import Transaction
 from .common import (
     Area,
@@ -442,12 +442,16 @@ class TransactionAllocations(Schema):
     without a typed pattern (false without an IBAN, and for a counterparty a matcher owns,
     D38). learn_rule_default: the checkbox's default for the current rows (off when a rule
     cannot be learned from them, or a category never auto-confirms, review F6).
+    no_default_rule_categories: the categories that never auto-confirm (threshold None in
+    rules.review.THRESHOLDS), in taxonomy order, so the UI can default the checkbox for rows
+    the person types (on unless one of these is among them, §8.1).
     rule: the rule this PUT created, if any."""
 
     transaction: Transaction
     allocations: list[Allocation]
     can_learn_rule: bool
     learn_rule_default: bool
+    no_default_rule_categories: list[AllocationCategory]
     rule: MatchingRule | None = None
 
 

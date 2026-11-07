@@ -11495,6 +11495,13 @@
             "type": "boolean",
             "title": "Learn Rule Default"
           },
+          "no_default_rule_categories": {
+            "items": {
+              "$ref": "#/components/schemas/AllocationCategory"
+            },
+            "type": "array",
+            "title": "No Default Rule Categories"
+          },
           "rule": {
             "anyOf": [
               {
@@ -11512,10 +11519,11 @@
           "transaction",
           "allocations",
           "can_learn_rule",
-          "learn_rule_default"
+          "learn_rule_default",
+          "no_default_rule_categories"
         ],
         "title": "TransactionAllocations",
-        "description": "GET / PUT /transactions/{id}/allocations: the line, its current allocation rows\n(proposed or confirmed; none = not matched) and the rule checkbox.\n\ncan_learn_rule: whether a single-category answer for this line can become a rule\nwithout a typed pattern (false without an IBAN, and for a counterparty a matcher owns,\nD38). learn_rule_default: the checkbox's default for the current rows (off when a rule\ncannot be learned from them, or a category never auto-confirms, review F6).\nrule: the rule this PUT created, if any."
+        "description": "GET / PUT /transactions/{id}/allocations: the line, its current allocation rows\n(proposed or confirmed; none = not matched) and the rule checkbox.\n\ncan_learn_rule: whether a single-category answer for this line can become a rule\nwithout a typed pattern (false without an IBAN, and for a counterparty a matcher owns,\nD38). learn_rule_default: the checkbox's default for the current rows (off when a rule\ncannot be learned from them, or a category never auto-confirms, review F6).\nno_default_rule_categories: the categories that never auto-confirm (threshold None in\nrules.review.THRESHOLDS), in taxonomy order, so the UI can default the checkbox for rows\nthe person types (on unless one of these is among them, §8.1).\nrule: the rule this PUT created, if any."
       },
       "Unit": {
         "properties": {

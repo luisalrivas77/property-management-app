@@ -4333,6 +4333,9 @@ export interface components {
          *     without a typed pattern (false without an IBAN, and for a counterparty a matcher owns,
          *     D38). learn_rule_default: the checkbox's default for the current rows (off when a rule
          *     cannot be learned from them, or a category never auto-confirms, review F6).
+         *     no_default_rule_categories: the categories that never auto-confirm (threshold None in
+         *     rules.review.THRESHOLDS), in taxonomy order, so the UI can default the checkbox for rows
+         *     the person types (on unless one of these is among them, §8.1).
          *     rule: the rule this PUT created, if any.
          */
         TransactionAllocations: {
@@ -4343,6 +4346,8 @@ export interface components {
             can_learn_rule: boolean;
             /** Learn Rule Default */
             learn_rule_default: boolean;
+            /** No Default Rule Categories */
+            no_default_rule_categories: components["schemas"]["AllocationCategory"][];
             rule?: components["schemas"]["MatchingRule"] | null;
         };
         /** Unit */

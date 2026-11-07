@@ -20,6 +20,7 @@ from hausbuch.db.tables import possible_duplicate as duplicate_table
 from hausbuch.db.tables import proposal as proposal_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
+from hausbuch.rules.review import THRESHOLDS
 from hausbuch.schemas.allocation import (
     Allocation,
     AllocationCategory,
@@ -180,6 +181,7 @@ def _response(
         allocations=rows,
         can_learn_rule=can_learn,
         learn_rule_default=default,
+        no_default_rule_categories=[c for c in AllocationCategory if THRESHOLDS[c] is None],
         rule=rule,
     )
 

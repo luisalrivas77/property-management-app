@@ -81,6 +81,9 @@ def test_an_answer_is_confirmed_and_leaves_the_inbox(client_a, lines):
     view = ok(client_a.get(f"/api/transactions/{line['id']}/allocations"))
     assert view["allocations"] == [] and view["transaction"]["id"] == line["id"]
     assert "counterparty_iban_hmac" not in view["transaction"]
+    # The categories that never auto-confirm, for the checkbox default of typed rows (§8.1).
+    assert "repairs" in view["no_default_rule_categories"]
+    assert "insurance" not in view["no_default_rule_categories"]
     answered = ok(
         client_a.put(
             f"/api/transactions/{line['id']}/allocations",
