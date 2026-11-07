@@ -107,3 +107,35 @@ def test_rule_event_holds_no_pattern():
     event = RuleRecorded.of(rule)
     assert event.has_name_pattern and event.has_purpose_pattern
     assert "allianz" not in event.model_dump_json() and "vers-nr" not in event.model_dump_json()
+
+
+def test_only_a_disabled_rule_reads_with_an_empty_matcher():
+    """phase-2.md D42 (3), migration 0008: a tenant erasure empties a disabled rule's
+    matcher. A new rule, and an enabled one, must still match on something; an empty matcher
+    never hits a transaction."""
+    from datetime import UTC, date, datetime
+    from uuid import uuid4
+
+    from hausbuch.rules.matching import _hits
+    from hausbuch.schemas.allocation import MatchTransaction
+
+    for matcher in ({}, {"amount_sign": "credit"}):
+        with pytest.raises(ValidationError, match="a rule matches on"):
+            MatchingRuleCreate(
+                matcher=matcher, split_method="single_category", category="insurance"
+            )
+        now = datetime(2026, 11, 7, tzinfo=UTC)
+        stored = {
+            "id": uuid4(),
+            "workspace_id": uuid4(),
+            "created_at": now,
+            "updated_at": now,
+            "matcher": matcher,
+            "split_method": "single_category",
+            "category": "insurance",
+        }
+        assert not MatchingRule.model_validate(stored | {"enabled": False}).enabled
+        with pytest.raises(ValidationError, match="a rule matches on"):
+            MatchingRule.model_validate(stored | {"enabled": True})
+        tx = MatchTransaction(id=uuid4(), booking_date=date(2026, 11, 2), amount="1400.00")
+        assert _hits(RuleMatcher.model_validate(matcher), tx) is False

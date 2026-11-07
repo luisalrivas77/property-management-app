@@ -15,6 +15,7 @@ import uuid
 from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from decimal import Decimal
 
 import pytest
 from db.db_support import TEST_IBAN_KEY
@@ -56,7 +57,7 @@ from hausbuch.services.documents import (
 from hausbuch.services.errors import RetentionHoldError
 from hausbuch.services.events import list_events
 from hausbuch.services.iban import protect_iban
-from hausbuch.services.rules_learned import create_rule, disable_rule
+from hausbuch.services.rules_learned import create_rule, disable_rule, list_rules
 from hausbuch.services.tenancies import end_tenancy
 from hausbuch.services.tenants import erase_tenant
 from hausbuch.services.units import create_unit
@@ -206,7 +207,11 @@ class Seeded:
 def _seed(run, app_engine, store, a, b, *, moved_out: bool) -> Seeded:
     world = World(app_engine, a)
     run(a, update_settings, ai_tenant_documents=True)
-    we4 = run(a, create_unit, UnitCreate(property_id=world.property_id, label="WE 4")).id
+    we4 = run(
+        a,
+        create_unit,
+        UnitCreate(property_id=world.property_id, label="WE 4", floor_area_m2=Decimal("54.20")),
+    ).id
     otto_tenancy = world.tenancy(
         name="Otto Kontrolle", iban=OTHER_TENANT_IBAN, start=date(2024, 1, 1), unit_id=we4
     )
@@ -421,6 +426,15 @@ def test_erasure_scrubs_proposals_calls_and_rules_and_nothing_else(
     rules = _rules(app_engine, a)
     assert [rules[r][0] for r in (s.rule_hmac, s.rule_hmac_off, s.rule_tenancy)] == [False] * 3
     assert rules[s.otto_rule][0] is True
+    # Their matchers keep no IBAN hash and no pattern, the one already off included (0008);
+    # the amount sign is no personal data and stays. Otto's matcher is untouched.
+    assert rules[s.rule_hmac][1] == {"amount_sign": "credit"}
+    assert rules[s.rule_hmac_off][1] == {"amount_sign": "debit"}
+    assert rules[s.rule_tenancy][1] == {}
+    assert rules[s.otto_rule][1] == {"counterparty_iban_hmac": OTTO_HMAC, "amount_sign": "credit"}
+    # An emptied rule still reads, as disabled (MatchingRule allows the empty matcher there).
+    emptied = {r.id: r for r in read(a, list_rules)}[s.rule_tenancy]
+    assert not emptied.enabled and not emptied.matcher.matches_something
 
     # The tenant row's hash is gone, the other workspace is untouched (RLS).
     with workspace_transaction(app_engine, a) as conn:

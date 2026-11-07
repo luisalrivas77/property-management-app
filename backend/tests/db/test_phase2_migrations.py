@@ -720,6 +720,55 @@ def test_a_rule_never_stores_an_amount(connect, workspaces):
         assert "numeric" not in cols
 
 
+def test_only_a_disabled_rule_may_hold_an_empty_matcher(connect, workspaces):
+    """0008 (phase-2.md D42 (3)): a tenant erasure leaves a disabled rule with an empty
+    matcher. An enabled rule still needs an IBAN hash or a pattern, so neither creating one
+    nor switching an emptied rule back on gets past the CHECK."""
+    a, _ = workspaces
+    empty = [{}, {"amount_sign": "credit"}, {"counterparty_iban_hmac": None}]
+    with connect(APP, a) as conn:
+        for matcher in empty:
+            with pytest.raises(errors.CheckViolation), conn.transaction():
+                _rule(conn, a, matcher)  # enabled by default
+            rule = _rule(conn, a, matcher, enabled=False)
+            with pytest.raises(errors.CheckViolation), conn.transaction():
+                conn.execute("UPDATE matching_rule SET enabled = true WHERE id = %s", (rule,))
+        # Emptying an enabled rule's matcher is refused too; after disabling it, allowed.
+        rule = _rule(conn, a, {"purpose_pattern": "miete"})
+        with pytest.raises(errors.CheckViolation), conn.transaction():
+            conn.execute("UPDATE matching_rule SET matcher = '{}' WHERE id = %s", (rule,))
+        conn.execute("UPDATE matching_rule SET enabled = false WHERE id = %s", (rule,))
+        conn.execute("UPDATE matching_rule SET matcher = '{}' WHERE id = %s", (rule,))
+        # The rest of the CHECK still holds on a disabled rule.
+        for matcher in ({"amount": "1400.00"}, {"amount_sign": "minus"}, {"purpose_pattern": 1}):
+            with pytest.raises(errors.CheckViolation), conn.transaction():
+                _rule(conn, a, matcher, enabled=False)
+
+
+def test_0008_downgrade_refuses_while_a_rule_has_an_empty_matcher():
+    """0007's CHECK cannot hold an emptied rule, and a downgrade never rewrites data."""
+    name = create_database()
+    try:
+        alembic(name, "upgrade", "head")
+        ws = uuid.uuid4()
+        with _admin(name) as conn:
+            conn.execute("INSERT INTO workspace (id, name) VALUES (%s, 'A')", (ws,))
+            conn.execute(f"SET ROLE {OWNER}")
+            conn.execute("SELECT set_config('app.workspace_id', %s, false)", (str(ws),))
+            _rule(conn, ws, {"amount_sign": "credit"}, enabled=False)
+        with pytest.raises(DBAPIError, match="refused: a disabled rule has an empty matcher"):
+            alembic(name, "downgrade", "0007_allocations_rules")
+        with _admin(name) as conn:
+            assert conn.execute("SELECT version_num FROM alembic_version").fetchall() == [
+                ("0008_rule_matcher_erasure",)
+            ]
+            conn.execute("DELETE FROM matching_rule")
+        alembic(name, "downgrade", "0007_allocations_rules")
+        alembic(name, "upgrade", "head")
+    finally:
+        drop_database(name)
+
+
 def test_rule_split_methods_need_their_scope(connect, workspaces):
     a, _ = workspaces
     matcher = {"counterparty_iban_hmac": IBAN_HMAC_HEX}

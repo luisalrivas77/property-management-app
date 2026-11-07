@@ -1,4 +1,4 @@
-"""SQLAlchemy Core tables for migrations 0001-0007.
+"""SQLAlchemy Core tables for migrations 0001-0008.
 
 The migration is the source of truth. This module mirrors its columns (name, type, nullability,
 whether a server default exists) and primary keys, so services can build typed queries; it

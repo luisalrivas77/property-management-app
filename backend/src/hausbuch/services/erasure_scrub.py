@@ -18,10 +18,11 @@ AI layer's tables.
   for the calls of those documents and of transactions whose counterparty IBAN hash is the
   tenant's. The hash is read by the caller before the tenant row is nulled.
 - Learned rules whose matcher holds the tenant's IBAN hash, or which are scoped to one of
-  those tenancies, are disabled through rules_learned.disable_rule (rule.disabled). Their
-  matcher is NOT nulled: the matching_rule CHECK (migration 0007) and RuleMatcher both
-  require at least one of hash, name pattern, purpose pattern, so nulling all three needs a
-  migration (reported, not done here).
+  those tenancies, are disabled through rules_learned.disable_rule (rule.disabled; a rule
+  already off gets no second event), and then every one of them, already off or not, has
+  its matcher's IBAN hash and name and purpose patterns removed (the amount sign is no
+  personal data and stays). Migration 0008 allows that empty matcher on a disabled rule
+  only, and MatchingRule reads it only there; such a rule can never be switched back on.
 - Locks: the caller holds the tenant row FOR UPDATE; the proposals are then locked FOR
   UPDATE in id order before any is changed, so a concurrent apply either finished first
   (and its proposal is scrubbed here) or waits and then finds it superseded.
@@ -53,6 +54,10 @@ _UNDECIDED = (
     ProposalStatus.READY,
     ProposalStatus.BLOCKED_TENANT_DATA,
 )
+
+
+# The matcher keys that can identify the tenant (D42 (3)); amount_sign stays.
+_MATCHER_PERSONAL = ("counterparty_iban_hmac", "counterparty_name_pattern", "purpose_pattern")
 
 
 @dataclass(frozen=True)
@@ -157,13 +162,22 @@ def _disable_rules(
         holds.append(r.c.tenancy_id.in_(tenancy_ids))
     if not holds:
         return 0
-    rule_ids = (
-        ctx.conn.execute(
-            select(r.c.id).where(or_(*holds), r.c.enabled).order_by(r.c.id).with_for_update()
-        )
-        .scalars()
-        .all()
-    )
-    for rule_id in rule_ids:
-        disable_rule(ctx, rule_id)
-    return len(rule_ids)
+    rows = ctx.conn.execute(
+        select(r.c.id, r.c.enabled, r.c.matcher)
+        .where(or_(*holds))
+        .order_by(r.c.id)
+        .with_for_update()
+    ).all()
+    disabled = 0
+    for row in rows:
+        if row.enabled:
+            # Disabled first, while the matcher still validates: its event records the hash
+            # (already in rule.created) and the pattern flags, never a pattern.
+            disable_rule(ctx, row.id)
+            disabled += 1
+        kept = {key: value for key, value in row.matcher.items() if key not in _MATCHER_PERSONAL}
+        if kept != row.matcher:
+            ctx.conn.execute(
+                update(r).where(r.c.id == row.id).values(matcher=kept, updated_at=ctx.now)
+            )
+    return disabled
