@@ -304,6 +304,8 @@ Each phase starts with a short spec PR (schemas, rule fixtures, eval cases) befo
 
 Also for the spec: how documents are read (the OCR step has no engine named; the API container is too small for a classic OCR engine, so the default is Claude reading the PDF or image directly, plus the text layer of digital PDFs); confirming the Claude API's data-processing terms (EU processing, no training, retention) before tenant documents are sent; and moving sign-in and passkey events into the Event table (deferred to this spec on 5 Nov 2026).
 
+**Input for the phase 3 spec (7 Nov 2026, not decided).** The Finanzamt usually receives no documents with the return (since 2017 they are kept and sent only on request, then as PDFs through ELSTER), but what is sent must open everywhere. Two of Luis's real documents do not: the Darlehensvertrag is an Adobe-only XFA form (D43 in the phase 2 spec; only Adobe can draw it), and a room lease has its hand-drawn signatures as PDF annotations that some viewers do not draw (no digital signature in either). The yearly PDF archive could carry a "Finanzamt copy" per document, made by the app by merging annotations into the page and stored next to the untouched original (principle 6); an XFA form still needs a copy printed from Adobe Reader by hand.
+
 ## Decisions
 
 All open questions were settled on 4 Nov 2026; the sections above reflect them. Later decisions carry their date.
