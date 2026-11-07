@@ -10,6 +10,7 @@ import { useCallback, useId, useRef, useState, type ChangeEvent } from "react";
 import { api, ok } from "@/api/client";
 import type {
   Document,
+  DocumentSubtype,
   DocumentUploadResult,
   LinkTarget,
   LinkTargetRef,
@@ -23,6 +24,22 @@ import { formatDate, shortId } from "./format";
 import { DOCUMENT_TYPE, LINK_TARGET } from "./labels";
 import { Loading } from "./ui";
 import { useLoad } from "./useLoad";
+
+// Subtypes whose retention runs from ownership or tenancy end dates, not a tax year
+// (backend rules/retention.py _CLASS_BY_SUBTYPE), and whose checklist items ignore the tax
+// year: the Steuerjahr field is hidden for them while it is empty (Luis, 7 Nov 2026), on the
+// typing form and on the proposal's typing card. A stored year stays visible so it can be
+// seen and cleared.
+const NO_TAX_YEAR_SUBTYPES: readonly DocumentSubtype[] = [
+  "purchase_contract",
+  "price_split_evidence",
+  "appraisal",
+  "loan_contract",
+  "lease",
+  "handover_protocol",
+  "deposit_record",
+];
+export const NO_TAX_YEAR: ReadonlySet<string> = new Set<string>(NO_TAX_YEAR_SUBTYPES);
 
 /** Accepted by POST /documents (§4.7, Q8); the API decides, this only filters the picker. */
 export const UPLOAD_ACCEPT =

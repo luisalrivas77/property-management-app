@@ -56,3 +56,19 @@ def test_build_proposal_ignores_context_order(case, seed):
     expected = rules.build_proposal(case.kind, extraction, case.context)
     got = rules.build_proposal(case.kind, extraction, _shuffled(case.context, seed))
     assert sorted(got, key=lambda r: r.key) == sorted(expected, key=lambda r: r.key)
+
+
+def _unit_confidence(case_id: str) -> str:
+    (case,) = [c for c in FX.cases if c.id == case_id]
+    records = rules.build_proposal(case.kind, case.extraction_model(), case.context)
+    (tenancy,) = [r for r in records if r.key == "tenancy"]
+    return tenancy.fields["unit_id"].confidence
+
+
+@pytest.mark.rule
+def test_a_unit_found_inside_a_longer_label_is_at_most_medium():
+    """prefill.yaml header, "lease unit": a unit whose label was only found inside the
+    lease's longer label is proposed at most at medium, so the review looks twice; an equal
+    label keeps the confidence of its inputs."""
+    assert _unit_confidence("mietvertrag_room_unit_inside_label") == "medium"
+    assert _unit_confidence("mietvertrag_room_one_is_not_room_ten") == "high"

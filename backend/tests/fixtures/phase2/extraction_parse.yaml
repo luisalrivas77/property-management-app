@@ -12,8 +12,15 @@
 #    A key that is not a field of EXTRACTION_MODELS[kind] is ignored. A repeated key: the last
 #    line wins. Only the keys the response stated are returned (the caller fills the others
 #    with ExtractedValue.missing()).
-# 2. The raw value is the rest of the line, stripped. "unbekannt" (any case) or an empty value ->
-#    ExtractedValue.missing() (value null, no source, no checks, confidence low).
+# 2. The raw value is the rest of the line, stripped. A trailing page reference the model wrote
+#    into the value is removed first (added 7 Nov 2026): a parenthetical at the very end that
+#    starts with "Seite" or "S." and a number, any case, optionally with more text inside the
+#    brackets ("(Seite 1)", "(S. 2)", "(Seite 1, § 1)"); any other brackets, and a page
+#    reference that is not at the end, stay. Steps 4 and 5 see the value without it. A value
+#    that is nothing but a page reference is missing (from the review: "(Seite 2)" as an
+#    amount would read as 2.00).
+#    "unbekannt" (any case) or an empty value -> ExtractedValue.missing() (value null, no
+#    source, no checks, confidence low).
 # 3. Source: the first citation of the first block that contributes a non-newline character to
 #    the line -> SourceRef(page = start_page_number + page_offset, quote = cited_text).
 #    page_offset is the first page of the chunk minus 1, for a PDF split into several requests.
@@ -167,3 +174,61 @@ cases:
         citations: [{cited_text: "47,10/1.000 Miteigentumsanteil an", start_page_number: 3, end_page_number: 4}]
     expect:
       mea: {value: {numerator: 4710, denominator: 100000}, source: {page: 3, quote: "47,10/1.000 Miteigentumsanteil an"}, checks: [cited, value_in_quote, validates], confidence: high}
+
+  - id: page_reference_stripped_from_text
+    description: >-
+      The model appended the page to the value line ("Lena Schmidt (Seite 1)", Luis's room
+      lease, 7 Nov 2026): a trailing "(Seite n …)" or "(S. n …)" is not part of the value. Here
+      once outside the cited text, and once inside it, in lower case and with more text in
+      the brackets.
+    kind: lease
+    blocks:
+      - {text: "tenant_1_full_name: "}
+      - text: "Lena Schmidt"
+        citations: [{cited_text: "Mieter: Lena Schmidt, geboren am", start_page_number: 1, end_page_number: 2}]
+      - {text: " (Seite 1)\ntenant_2_full_name: "}
+      - text: "Tom Schmidt (seite 1, § 1)"
+        citations: [{cited_text: "und Tom Schmidt", start_page_number: 1, end_page_number: 2}]
+    expect:
+      tenant_1_full_name: {value: Lena Schmidt, source: {page: 1, quote: "Mieter: Lena Schmidt, geboren am"}, checks: [cited, value_in_quote, validates], confidence: high}
+      tenant_2_full_name: {value: Tom Schmidt, source: {page: 1, quote: "und Tom Schmidt"}, checks: [cited, value_in_quote, validates], confidence: high}
+
+  - id: page_reference_stripped_before_quote_check
+    description: >-
+      A money value with a page reference: stripped before the value_in_quote check, so the
+      page number's digit does not join the amount's ("500002" is not in the quote, "50000" is).
+    kind: lease
+    blocks:
+      - {text: "cold_rent: "}
+      - text: "500,00 € (S. 2)"
+        citations: [{cited_text: "Die Nettokaltmiete beträgt monatlich 500,00 €", start_page_number: 2, end_page_number: 3}]
+    expect:
+      cold_rent: {value: "500.00", source: {page: 2, quote: "Die Nettokaltmiete beträgt monatlich 500,00 €"}, checks: [cited, value_in_quote, validates], confidence: high}
+
+  - id: brackets_that_are_not_a_page_reference_kept
+    description: >-
+      Only a trailing page reference is stripped: other brackets at the end ("(geb. Schmidt)")
+      and a page reference that is not at the end stay part of the value.
+    kind: lease
+    blocks:
+      - {text: "tenant_1_full_name: "}
+      - text: "Lena Müller (geb. Schmidt)"
+        citations: [{cited_text: "Mieterin: Lena Müller (geb. Schmidt)", start_page_number: 1, end_page_number: 2}]
+      - {text: "\nunit_label: "}
+      - text: "Zimmer 1 (S. 2) links"
+        citations: [{cited_text: "das Zimmer 1 links", start_page_number: 1, end_page_number: 2}]
+    expect:
+      tenant_1_full_name: {value: Lena Müller (geb. Schmidt), source: {page: 1, quote: "Mieterin: Lena Müller (geb. Schmidt)"}, checks: [cited, value_in_quote, validates], confidence: high}
+      unit_label: {value: Zimmer 1 (S. 2) links, source: {page: 1, quote: "das Zimmer 1 links"}, checks: [cited, validates], confidence: medium}
+
+  - id: page_reference_only_is_missing
+    description: >-
+      The whole value is a page reference: nothing is left, so the field is missing, never an
+      amount read from the page number.
+    kind: lease
+    blocks:
+      - {text: "cold_rent: "}
+      - text: "(Seite 2)"
+        citations: [{cited_text: "Die Miete steht in § 2", start_page_number: 2, end_page_number: 3}]
+    expect:
+      cold_rent: {value: null, confidence: low}
