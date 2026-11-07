@@ -1057,6 +1057,17 @@ label.capture-button:hover {
   background: var(--accent-strong);
 }
 
+/* With pages in the strip, "Seite hinzufügen" steps back so the upload is the main action. */
+label.capture-button.secondary {
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+}
+
+label.capture-button.secondary:hover {
+  background: var(--bg);
+}
+
 label.capture-button.busy {
   opacity: 0.7;
   cursor: progress;
@@ -1167,4 +1178,69 @@ a.button-link.capture-review {
   width: 100%;
   min-height: 48px;
   box-sizing: border-box;
+}
+
+/* The page strip: a thumbnail per photo, in upload order, each with move and remove. */
+.capture-strip h2 {
+  margin: 0 0 12px;
+}
+
+.capture-strip h2 .muted {
+  font-weight: 500;
+}
+
+.capture-pages {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.capture-page {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.capture-page img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-tag);
+  background: var(--bg);
+}
+
+.capture-page-number {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.capture-page-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.capture-page-actions button {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0;
+}
+
+.capture-strip-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  margin-top: 16px;
+}
+
+.capture-strip-actions > button:first-child {
+  flex: 1 1 220px;
+  min-height: 48px;
 }
