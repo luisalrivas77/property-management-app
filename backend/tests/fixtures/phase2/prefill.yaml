@@ -39,8 +39,8 @@
 #            [validates], the classifier's confidence. subtype only when the classifier gave one.
 #            An invoice's tax_year is derived (D36): the year of due_on, else of document_date
 #            (derived_from names the one used); neither stated -> not proposed.
-# Financing invoices (D35): an invoice whose subject or title contains grundschuld, hypothek or
-#   darlehen (casefolded, anywhere) proposes no cost:<kind> record (not create, patch or
+# Financing invoices (D35): an invoice whose subject or title, or a Bescheid whose title,
+#   contains grundschuld, hypothek or darlehen (casefolded, anywhere) proposes no cost:<kind> record (not create, patch or
 #   unchanged) and no subtype in typing, whatever the classifier said; typing's notes contain
 #   "Geldbeschaffungskosten", plus "aus den Nebenkosten" when a cost row already has this
 #   document as its Beleg; link:property as usual; link:loan when the property has exactly
@@ -531,6 +531,30 @@ cases:
           target_id: *C1
           values: {amount: "17340.00", note: GrESt 27/123/45678}
           current: {amount: "17340.00", note: null}
+
+  - id: bescheid_grundbuchamt_grundschuld_is_financing
+    description: D35 (review F1, 7 Nov 2026). A Grundbuchamt bill for entering the Grundschuld, typed bescheid by the classifier; a Bescheid has no subject, so its title decides. No Nebenkosten row, no subtype.
+    kind: bescheid
+    context:
+      document_id: *DOC
+      classification: {type: bescheid, subtype: cost_basis_evidence, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      loans:
+        - {id: *L, property_id: *P, lender: Beispielbank AG, contract_number: "600123456"}
+    extraction:
+      title: {v: Kostenrechnung Grundschuldeintragung, p: 1, q: "Eintragung einer Grundschuld"}
+      document_date: {v: "2026-04-10", p: 1, q: "Berlin, 10.04.2026"}
+      sender: {v: Amtsgericht Berlin-Mitte Grundbuchamt, p: 1, q: "Amtsgericht Berlin-Mitte - Grundbuchamt"}
+      amount_total: {v: "250.00", p: 1, q: "Gesamtbetrag 250,00 €"}
+      reference: {v: KR 4711/26, p: 1, q: "Kostenrechnung KR 4711/26"}
+    expect:
+      keys: [typing, link:property, link:loan]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: bescheid, title: Kostenrechnung Grundschuldeintragung, document_date: "2026-04-10"}
+          notes_contain: ["Geldbeschaffungskosten"]
 
   - id: darlehen_rate_derived_from_tilgungssatz
     description: The contract states Sollzins and anfängliche Tilgung but no Rate; 300,000 x (3.6 % + 2 %) / 12 = 1,400.00.
