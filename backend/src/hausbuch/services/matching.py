@@ -920,7 +920,8 @@ def _tenant_names(conn: Connection, line: Line) -> tuple[list[str], str | None]:
 
 def _without(text: str, names: list[str]) -> str:
     for name in names:
-        text = re.sub(re.escape(name), TENANT_PLACEHOLDER, text, flags=re.IGNORECASE)
+        # Whole words only: a name part "Jan" must not turn "Januar" into "[Mieter]uar".
+        text = re.sub(rf"\b{re.escape(name)}\b", TENANT_PLACEHOLDER, text, flags=re.IGNORECASE)
     return text
 
 
