@@ -66,6 +66,7 @@ export function AiSettings() {
                   <input
                     type="checkbox"
                     role="switch"
+                    aria-checked={settings[setting]}
                     checked={settings[setting]}
                     disabled={busy !== null}
                     onChange={(event) => void change(setting, event.target.checked)}
