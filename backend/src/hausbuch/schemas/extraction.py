@@ -54,7 +54,12 @@ def value_kind(model: type[Schema], field: str) -> ValueKind:
 class _Typing(Schema):
     """What every kind proposes for the document's own typing (§6.2, last row)."""
 
-    title: ExtractedValue = ev("text", "a short title; never in events (D5)")
+    # Never in events (D5). The one field the model writes itself rather than copies (D36):
+    # its words are usually not in the cited quote, so it parses at medium confidence. The
+    # model sees this description plus the rule in extract.md.
+    title: ExtractedValue = ev(
+        "text", "a short German title, two to six words naming what the document is"
+    )
     document_date: ExtractedValue = ev("date", "the date the document carries")
 
 
@@ -143,6 +148,8 @@ class InvoiceExtraction(_Typing):
     """Invoices: Nebenkosten (notary, Grundbuchamt, broker) now, repairs and others later."""
 
     sender: ExtractedValue = ev("text", "who issued it: decides the cost kind")
+    # rules.prefill reads it to recognize a financing invoice (D35).
+    subject: ExtractedValue = ev("text", "what it is for, as written (Betreff / Gegenstand)")
     amount_total: ExtractedValue = ev("money", "gross total (brutto)")
     amount_net: ExtractedValue = ev("money", "net amount, if stated")
     reference: ExtractedValue = ev("text", "invoice no. / Aktenzeichen")

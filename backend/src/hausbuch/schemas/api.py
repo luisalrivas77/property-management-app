@@ -37,6 +37,7 @@ from .document import (
     DocumentExtraction,
     DocumentLink,
     DocumentTyping,
+    HandFields,
     ManualDocumentFields,
     RetentionResult,
 )
@@ -270,8 +271,19 @@ class ErasureBody(Schema):
 
 
 class DocumentTypingBody(Schema):
+    """PUT /documents/{id}/typing. `shown_version` is the extraction version the hand fields
+    were shown from (0: none yet), required with `fields`; a save from a version that is no
+    longer current is refused (document.extraction_stale, phase 2 D37)."""
+
     typing: DocumentTyping
     fields: ManualDocumentFields | None = None
+    shown_version: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def _version_with_fields(self) -> Self:
+        if self.fields is not None and self.shown_version is None:
+            raise ValueError("shown_version is required with fields")
+        return self
 
 
 class LinkBody(Schema):
@@ -311,6 +323,9 @@ class DocumentDetail(Schema):
     document: Document
     links: list[DocumentLink]
     extraction: DocumentExtraction | None  # the current (highest) version, if typed fields
+    # The typing form's "Felder (von Hand)", read from `extraction` through D37's mapping, so
+    # the client never repeats it.
+    hand_fields: HandFields
     retention: RetentionResult
     media_type: str  # the file's, as uploaded (document_file.media_type)
     # Whether GET /documents/{id}/original?disposition=inline shows it in the browser (§4.7:

@@ -24,7 +24,7 @@ Answer with the JSON object the response format defines, and nothing else.
 - `lease`: Mietvertrag
 - `handover_protocol`: Übergabeprotokoll / Wohnungsübergabeprotokoll
 - `deposit_record`: Kautionsnachweis, a record of the rent deposit
-- `cost_basis_evidence`: an invoice or Bescheid for a cost of buying the property (notary, Grundbuchamt, Grunderwerbsteuer, broker) or of renovating it
+- `cost_basis_evidence`: an invoice or Bescheid for a cost of buying the property (notary, Grundbuchamt, Grunderwerbsteuer, broker) or of renovating it. Not for an invoice about financing: a notary or Grundbuchamt bill for a Grundschuld or Hypothek (Grundschuldbestellung, Hypothekenbestellung, its Eintragung or Löschung), or a fee for a loan (Darlehen): those take subtype null
 - `grundsteuerbescheid`: the property's Grundsteuerbescheid
 
 `contains_tenant_data`: true when the document names a tenant (Mieter) or holds a tenant's

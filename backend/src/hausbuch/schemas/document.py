@@ -1,7 +1,7 @@
 """Document vault: immutable originals, typed metadata, versioned extractions, links."""
 
 from datetime import date, datetime
-from typing import Any, Self
+from typing import Any, Literal, Self
 from uuid import UUID
 
 from pydantic import Field, model_validator
@@ -67,6 +67,25 @@ class ManualDocumentFields(Schema):
         if self.period_start and self.period_end and self.period_end < self.period_start:
             raise ValueError("period_end must not be before period_start")
         return self
+
+
+# The six hand-entry fields by name, in the form's order (D37).
+HandField = Literal[
+    "amount_total", "period_start", "period_end", "counterparty", "reference", "notes"
+]
+
+
+class HandFields(Schema):
+    """The document's "Felder (von Hand)" as the typing form shows them (phase 2 D37).
+
+    For a `manual` extraction (or none) the values are its fields and all six are available.
+    For an AI kind, `values` holds what the reading stored for the fields that kind has a place
+    for (services.documents.HAND_FIELD_MAP), and `available` names exactly those; a reading the
+    hand types cannot hold (a low-confidence raw text in a money field) shows as null.
+    """
+
+    values: ManualDocumentFields
+    available: list[HandField]
 
 
 class DocumentExtraction(Schema):

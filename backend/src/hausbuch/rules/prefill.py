@@ -4,7 +4,9 @@ build_proposal(kind, extraction, context) -> list[ProposalRecord]. Spec:
 docs/phases/phase-2.md §6.2, §6.3, D14, D15. Pure: no I/O, no model. It decides per record
 whether it creates, patches, corrects or leaves an existing record unchanged, computes the
 derived values (building share, the Rate from the Tilgungssatz, ownership shares, the
-prepayment sum, rent model, the tenancy's unit) and writes notes. Nothing it returns reaches a
+prepayment sum, rent model, the tenancy's unit, an invoice's tax year: D36) and writes notes.
+A financing invoice (Grundschuld, Hypothek, Darlehen) is decided here, not by the
+classifier: it proposes no Nebenkosten row (D35). Nothing it returns reaches a
 domain table: only the user's apply does, through the phase 1 services (D14).
 
 Every value inside a record (`fields[*].value`, `current`) is JSON: dates as ISO strings,
@@ -63,6 +65,22 @@ _MILESTONES = ("notarized_on", "purchase_date")
 _ADDRESS_KEYS = ("street", "house_number", "postal_code")
 # A handover protocol is linked to the tenancy whose move-in is this close to its date.
 _HANDOVER_WINDOW_DAYS = 31
+# An invoice whose subject or title names one of these is a financing cost (D35). Deliberately
+# not finanzierung / kaufvertrag / zwangsvollstreckungsunterwerfung: a Kaufvertrag bill names
+# its Finanzierungsvollmacht, a Grundschuld bill the Kaufvertrag it finances.
+_FINANCING_TERMS = ("grundschuld", "hypothek", "darlehen")
+_FINANCING_NOTE = (
+    "Diese Rechnung betrifft die Finanzierung (Grundschuld, Hypothek oder Darlehen). Solche "
+    "Kosten sind Geldbeschaffungskosten: im Jahr der Zahlung als Werbungskosten abziehbar, "
+    "nicht Teil der Anschaffungsnebenkosten und damit nicht der AfA-Grundlage. Darum wird "
+    "kein Nebenkosten-Eintrag vorgeschlagen; die Zahlung wird beim Abgleich des Kontoauszugs "
+    "als Darlehenskosten gebucht. Enthält dieselbe Rechnung auch einen Anteil für den Kauf, "
+    "bitte diesen von Hand als Nebenkosten erfassen."
+)
+_FINANCING_BELEG_NOTE = (
+    "Diese Rechnung ist schon als Beleg eines Nebenkosten-Eintrags hinterlegt. Der Eintrag "
+    "gehört zu den Darlehenskosten: bitte ihn aus den Nebenkosten entfernen."
+)
 
 
 # --- Entry point ---------------------------------------------------------------------
@@ -73,7 +91,7 @@ def build_proposal(
 ) -> list[ProposalRecord]:
     """The records a document proposes (fixture prefill.yaml). `extraction` is the kind's
     extraction model (schemas/extraction.py), `_Typing` when kind is None."""
-    b = _Builder(extraction, context)
+    b = _Builder(kind, extraction, context)
     b.typing()
     match kind:
         case ExtractionKind.PURCHASE_CONTRACT:
@@ -107,10 +125,18 @@ def build_proposal(
 
 
 class _Builder:
-    def __init__(self, extraction: _Typing, context: PrefillContext) -> None:
+    def __init__(
+        self, kind: ExtractionKind | None, extraction: _Typing, context: PrefillContext
+    ) -> None:
+        self.kind = kind
         self.x = extraction
         self.ctx = context
         self.records: list[ProposalRecord] = []
+        # A Grundbuchamt Kostenrechnung may be typed bescheid, which has no subject (D35, F1).
+        self.financing = (
+            kind is ExtractionKind.INVOICE
+            and _names_financing(self.ev("subject").value, self.ev("title").value)
+        ) or (kind is ExtractionKind.BESCHEID and _names_financing(self.ev("title").value))
 
     # -- values
 
@@ -157,12 +183,31 @@ class _Builder:
     def typing(self) -> None:
         c = self.ctx.classification
         fields = {"type": _code_value(c.type.value, c.confidence)}
-        if c.subtype is not None:
+        # A financing invoice carries no subtype, whatever the classifier said (D35).
+        if c.subtype is not None and not self.financing:
             fields["subtype"] = _code_value(c.subtype.value, c.confidence)
         for name in ("title", "document_date", "tax_year"):
             if self.stated(name):
                 fields[name] = self.ev(name)
-        self.add("typing", "typing", "create", fields)
+        if self.kind is ExtractionKind.INVOICE:
+            tax_year = self._invoice_tax_year()
+            if tax_year is not None:
+                fields["tax_year"] = tax_year
+        notes = []
+        if self.financing:
+            notes.append(_FINANCING_NOTE)
+            if any(cost.document_id == self.ctx.document_id for cost in self.ctx.costs):
+                notes.append(_FINANCING_BELEG_NOTE)
+        self.add("typing", "typing", "create", fields, notes=notes)
+
+    def _invoice_tax_year(self) -> ExtractedValue | None:
+        """The filing year of an invoice (D36): the year of due_on, else of document_date;
+        neither stated, nothing. The year a cost counts in stays the payment's (D31)."""
+        for name in ("due_on", "document_date"):
+            on = _iso_date(self.ev(name).value)
+            if on is not None:
+                return _derived(on.year, [(name, self.ev(name))])
+        return None
 
     # -- Kaufvertrag
 
@@ -305,6 +350,14 @@ class _Builder:
     def cost_document(self) -> None:
         prop = _resolve_property(self.x, self.ctx)
         if prop is None:
+            return
+        if self.financing:
+            # D35: no cost record at all (not even unchanged or patch); the note on typing
+            # says why. The loan is linked only when it is not a guess.
+            self.link_property(prop)
+            loans = [loan for loan in self.ctx.loans if loan.property_id == prop.id]
+            if len(loans) == 1:
+                self.link("link:loan", loans[0].id)
             return
         if self.ctx.classification.subtype is DocumentSubtype.COST_BASIS_EVIDENCE:
             self._cost(prop)
@@ -528,6 +581,13 @@ class _Builder:
 def _norm(value: Any) -> str:
     """Casefold, whitespace collapsed."""
     return " ".join(str(value).split()).casefold()
+
+
+def _names_financing(*texts: Any) -> bool:
+    """Whether any of the texts names a financing term, anywhere (D35)."""
+    return any(
+        term in _norm(text) for text in texts if text is not None for term in _FINANCING_TERMS
+    )
 
 
 def _first[T](items: Iterable[T]) -> T | None:

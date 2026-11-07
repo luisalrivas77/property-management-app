@@ -2813,6 +2813,7 @@
     "/api/documents/{document_id}/typing": {
       "put": {
         "summary": "Document Type",
+        "description": "Over an AI reading, `fields` are written into the reading's own kind (D37); 422\ndocument.extraction_kind_mismatch for a non-null field that kind has no place for, 422\ndocument.extraction_stale when `shown_version` is no longer the current version.",
         "operationId": "document_type_api_documents__document_id__typing_put",
         "parameters": [
           {
@@ -5192,7 +5193,7 @@
         "properties": {
           "title": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "a short title; never in events (D5)",
+            "description": "a short German title, two to six words naming what the document is",
             "value_kind": "text"
           },
           "document_date": {
@@ -5573,7 +5574,7 @@
         "properties": {
           "title": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "a short title; never in events (D5)",
+            "description": "a short German title, two to six words naming what the document is",
             "value_kind": "text"
           },
           "document_date": {
@@ -5805,6 +5806,9 @@
               }
             ]
           },
+          "hand_fields": {
+            "$ref": "#/components/schemas/HandFields"
+          },
           "retention": {
             "$ref": "#/components/schemas/RetentionResult"
           },
@@ -5823,6 +5827,7 @@
           "document",
           "links",
           "extraction",
+          "hand_fields",
           "retention",
           "media_type",
           "opens_inline"
@@ -6100,6 +6105,18 @@
                 "type": "null"
               }
             ]
+          },
+          "shown_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shown Version"
           }
         },
         "additionalProperties": false,
@@ -6107,7 +6124,8 @@
         "required": [
           "typing"
         ],
-        "title": "DocumentTypingBody"
+        "title": "DocumentTypingBody",
+        "description": "PUT /documents/{id}/typing. `shown_version` is the extraction version the hand fields\nwere shown from (0: none yet), required with `fields`; a save from a version that is no\nlonger current is refused (document.extraction_stale, phase 2 D37)."
       },
       "DocumentUploadResult": {
         "properties": {
@@ -6762,7 +6780,7 @@
         "properties": {
           "title": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "a short title; never in events (D5)",
+            "description": "a short German title, two to six words naming what the document is",
             "value_kind": "text"
           },
           "document_date": {
@@ -6821,11 +6839,41 @@
         "title": "GrundsteuerbescheidExtraction",
         "description": "Grundsteuerbescheid (bescheid / grundsteuerbescheid)."
       },
+      "HandFields": {
+        "properties": {
+          "values": {
+            "$ref": "#/components/schemas/ManualDocumentFields"
+          },
+          "available": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "amount_total",
+                "period_start",
+                "period_end",
+                "counterparty",
+                "reference",
+                "notes"
+              ]
+            },
+            "type": "array",
+            "title": "Available"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "values",
+          "available"
+        ],
+        "title": "HandFields",
+        "description": "The document's \"Felder (von Hand)\" as the typing form shows them (phase 2 D37).\n\nFor a `manual` extraction (or none) the values are its fields and all six are available.\nFor an AI kind, `values` holds what the reading stored for the fields that kind has a place\nfor (services.documents.HAND_FIELD_MAP), and `available` names exactly those; a reading the\nhand types cannot hold (a low-confidence raw text in a money field) shows as null."
+      },
       "HandoverProtocolExtraction": {
         "properties": {
           "title": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "a short title; never in events (D5)",
+            "description": "a short German title, two to six words naming what the document is",
             "value_kind": "text"
           },
           "document_date": {
@@ -6863,7 +6911,7 @@
         "properties": {
           "title": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "a short title; never in events (D5)",
+            "description": "a short German title, two to six words naming what the document is",
             "value_kind": "text"
           },
           "document_date": {
@@ -7042,7 +7090,7 @@
         "properties": {
           "title": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "a short title; never in events (D5)",
+            "description": "a short German title, two to six words naming what the document is",
             "value_kind": "text"
           },
           "document_date": {
@@ -7053,6 +7101,11 @@
           "sender": {
             "$ref": "#/components/schemas/ExtractedValue",
             "description": "who issued it: decides the cost kind",
+            "value_kind": "text"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "what it is for, as written (Betreff / Gegenstand)",
             "value_kind": "text"
           },
           "amount_total": {
@@ -7091,7 +7144,7 @@
         "properties": {
           "title": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "a short title; never in events (D5)",
+            "description": "a short German title, two to six words naming what the document is",
             "value_kind": "text"
           },
           "document_date": {
@@ -7344,7 +7397,7 @@
         "properties": {
           "title": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "a short title; never in events (D5)",
+            "description": "a short German title, two to six words naming what the document is",
             "value_kind": "text"
           },
           "document_date": {
@@ -8916,7 +8969,7 @@
         "properties": {
           "title": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "a short title; never in events (D5)",
+            "description": "a short German title, two to six words naming what the document is",
             "value_kind": "text"
           },
           "document_date": {
@@ -9456,7 +9509,7 @@
         "properties": {
           "title": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "a short title; never in events (D5)",
+            "description": "a short German title, two to six words naming what the document is",
             "value_kind": "text"
           },
           "document_date": {
@@ -10626,7 +10679,7 @@
         "properties": {
           "title": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "a short title; never in events (D5)",
+            "description": "a short German title, two to six words naming what the document is",
             "value_kind": "text"
           },
           "document_date": {
@@ -10772,7 +10825,7 @@
         "properties": {
           "title": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "a short title; never in events (D5)",
+            "description": "a short German title, two to six words naming what the document is",
             "value_kind": "text"
           },
           "document_date": {

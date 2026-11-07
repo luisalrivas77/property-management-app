@@ -12,6 +12,10 @@ Answer with exactly one line per listed field, in the listed order, and nothing 
 - Write each value exactly as the document writes it, in the document's own form: amounts as
   `1.234,56 €`, dates as `01.03.2027`, percentages as `3,65 %`, shares as `85/1000`, IBANs as
   printed. Do not convert, round or compute anything.
+- The one exception is `title`: write it yourself, in German, two to six words naming what
+  the document is (for example `Notarrechnung Kaufvertrag`, `Notarrechnung
+  Grundschuldbestellung`, `Grunderwerbsteuerbescheid`), not the heading or a reference
+  number copied from the page. Cite the passage it is based on, such as the Betreff.
 - Cite the passage of the document each value comes from.
 - When the document does not state a field, write `field_key: unbekannt`. Never guess, and
   never derive a value from other values.

@@ -77,6 +77,7 @@ export type DocumentLink = Schemas["DocumentLink"];
 export type RelatedDocument = Schemas["RelatedDocument"];
 export type LinkTargetRef = Schemas["LinkTargetRef"];
 export type ManualDocumentFields = Schemas["ManualDocumentFields"];
+export type HandFields = Schemas["HandFields"];
 export type LinkTarget = Schemas["LinkTarget"];
 export type RetentionResult = Schemas["RetentionResult"];
 export type RetentionClass = Schemas["RetentionClass"];
