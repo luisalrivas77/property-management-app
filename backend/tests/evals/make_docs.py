@@ -167,7 +167,8 @@ DOCS: list[Doc] = [
     ),
     Doc(
         # A single room let on its own (Luis's real room leases, 7 Nov 2026): the unit is the
-        # room, while the lease also states the flat's floor, which is not the unit's label.
+        # room, while the lease also states the flat's floor, which is not the unit's label; the
+        # Nebenkosten are one flat rate that includes heating, with no separate heating amount.
         name="mietvertrag_zimmer",
         type="contract",
         subtype="lease",
@@ -188,9 +189,10 @@ DOCS: list[Doc] = [
             ],
             [
                 "§ 3 Miete",
-                "Nettokaltmiete: 420,00 EUR",
-                "Betriebskostenvorauszahlung: 90,00 EUR",
-                "Heizkostenvorauszahlung: 40,00 EUR",
+                "Kostenart                         Höhe in Euro",
+                "Kaltmiete                         420,00 Euro",
+                "Nebenkosten inkl. Betriebs-, Heiz-, Warmwasser, Strom   90,00 Euro",
+                "Eine gesonderte Neben- oder Betriebskostenabrechnung erfolgt nicht.",
                 "§ 4 Kaution: 840,00 EUR als Barkaution.",
                 "",
                 "Leipzig, den 20.05.2026",
@@ -207,10 +209,9 @@ DOCS: list[Doc] = [
             "signed_on": "2026-05-20",
             "cold_rent": "420.00",
             "operating_costs_prepayment": "90.00",
-            "heating_costs_prepayment": "40.00",
             "deposit_amount": "840.00",
         },
-        expected_missing=["tenant_2_full_name", "fixed_term_until"],
+        expected_missing=["tenant_2_full_name", "fixed_term_until", "heating_costs_prepayment"],
     ),
     Doc(
         name="rechnung_notar",
