@@ -749,6 +749,12 @@ class _Apply:
         patch = _validate(record.key, TenantPatch, values)
         if patch.model_fields_set:
             tenants.update_tenant(self.ctx, target, **patch.changes(), iban_key=self.iban_key)
+        else:
+            # Unchanged, or a patch with nothing in it: the tenant row is still locked (FOR
+            # KEY SHARE) and checked, so an apply naming an erased tenant conflicts, and one
+            # racing erase_tenant either waits for it or makes the erasure wait and see this
+            # proposal in its scope (applied_entities names the tenant).
+            tenants.require_unerased_tenants(self.ctx.conn, [target])
         return target
 
     def _tenancy(self, record: ProposalRecord, values: dict[str, Any]) -> UUID:

@@ -31,7 +31,7 @@ from hausbuch.schemas.tenancy import Tenant, TenantCreate
 
 from .context import CommandContext
 from .erasure_scrub import scrub_for_erasure
-from .errors import ConflictError, RetentionHoldError
+from .errors import ConflictError, NotFoundError, RetentionHoldError
 from .events import append_event
 from .iban import protect_iban
 from .lookup import require_row
@@ -196,6 +196,26 @@ def erase_tenant(
     )
     append_event(ctx, EventType.TENANT_ERASED, tenant_id, erased)
     return _to_tenant(row)
+
+
+def require_unerased_tenants(conn: Connection, tenant_ids: list[UUID]) -> None:
+    """The tenants exist and are not erased, locked FOR KEY SHARE until commit. A concurrent
+    erase_tenant (FOR UPDATE on the tenant row) then either waits for this transaction and
+    sees what it wrote (a tenancy's retention hold, an applied proposal naming the tenant),
+    or locked first, and this read waits and sees erased_at: ConflictError."""
+    found = {
+        r.id: r
+        for r in conn.execute(
+            select(tenant_table.c.id, tenant_table.c.erased_at)
+            .where(tenant_table.c.id.in_(tenant_ids))
+            .with_for_update(read=True, key_share=True)
+        )
+    }
+    for tenant_id in tenant_ids:
+        if tenant_id not in found:
+            raise NotFoundError(EntityType.TENANT, tenant_id)
+        if found[tenant_id].erased_at is not None:
+            raise ConflictError(f"tenant {tenant_id} was erased")
 
 
 def get_tenant(conn: Connection, tenant_id: UUID) -> Tenant | None:

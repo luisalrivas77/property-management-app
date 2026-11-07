@@ -24,8 +24,12 @@ AI layer's tables.
   personal data and stays). Migration 0008 allows that empty matcher on a disabled rule
   only, and MatchingRule reads it only there; such a rule can never be switched back on.
 - Locks: the caller holds the tenant row FOR UPDATE; the proposals are then locked FOR
-  UPDATE in id order before any is changed, so a concurrent apply either finished first
-  (and its proposal is scrubbed here) or waits and then finds it superseded.
+  UPDATE in id order before any is changed. An apply that names the tenant (a tenant
+  record created, patched or kept unchanged, or a tenancy listing them) takes the tenant
+  row too (update_tenant FOR UPDATE, otherwise FOR KEY SHARE), so it conflicts with the
+  erasure's lock: committed first, its proposal names the tenant and is in scope here;
+  otherwise it waits and gets ConflictError (erased). An apply of any other proposal on an
+  in-scope document waits for the proposal lock and then finds it superseded.
 - Nothing here writes a value into an event: proposal.superseded names record keys only,
   rule.disabled the IBAN hash (already in rule.created) and pattern flags.
 """

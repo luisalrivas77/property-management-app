@@ -17,6 +17,7 @@ from sqlalchemy import insert, select
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import ai_call as ai_call_table
 from hausbuch.db.tables import document_extraction as extraction_table
+from hausbuch.db.tables import proposal as proposal_table
 from hausbuch.jobs import enqueue
 from hausbuch.rules.errors import (
     AI_BLOCKED_TENANT_DATA,
@@ -45,7 +46,7 @@ from hausbuch.schemas.tenancy import TenancyCreate, TenancyParty, TenantCreate
 from hausbuch.services import proposals
 from hausbuch.services.context import Actor, new_command
 from hausbuch.services.documents import get_document, list_links, upload_document
-from hausbuch.services.errors import NotFoundError, RuleViolationError
+from hausbuch.services.errors import ConflictError, NotFoundError, RuleViolationError
 from hausbuch.services.events import list_events
 from hausbuch.services.loans import list_loans
 from hausbuch.services.properties import (
@@ -55,7 +56,7 @@ from hausbuch.services.properties import (
     list_properties,
 )
 from hausbuch.services.tenancies import create_tenancy, deposit_receipts
-from hausbuch.services.tenants import create_tenant
+from hausbuch.services.tenants import create_tenant, erase_tenant
 from hausbuch.services.units import create_unit, list_units
 from hausbuch.services.workspace_settings import update_settings
 
@@ -939,3 +940,48 @@ def test_a_deposit_record_applies_as_a_kaution_receipt_on_its_tenancy(
     assert (second.mode, second.target_id) == ("unchanged", tenancy.id)
     run(ws, proposals.apply_proposal, again.id, _accept_all(again), iban_key=TEST_IBAN_KEY)
     assert len(read(ws, deposit_receipts, tenancy.id)) == 1
+
+
+# --- An apply that names an erased tenant (D42 (3), review F1) ------------------------------
+
+
+@pytest.mark.parametrize("mode", ["unchanged", "patch"], ids=["unchanged", "empty-patch"])
+def test_an_apply_keeping_an_erased_tenant_conflicts(
+    run, read, fresh_workspaces, blob_store, enqueued, mode
+):
+    """A tenant record kept as it is (unchanged, or a patch with no field sent) still locks
+    and checks the tenant row: after erase_tenant the apply is a ConflictError and the
+    proposal stays ready, so no applied proposal can name the tenant outside the scrub."""
+    ws, _ = fresh_workspaces
+    tenant = run(
+        ws, create_tenant, TenantCreate(full_name="Bewerberin Beispiel"), iban_key=TEST_IBAN_KEY
+    )
+    doc = _upload(run, ws, blob_store, b"%PDF tenant letter " + mode.encode())
+    fields = {"full_name": _v("Bewerberin Beispiel")} if mode == "patch" else {}
+    record = {
+        "key": "tenant:1",
+        "entity_type": "tenant",
+        "mode": mode,
+        "target_id": str(tenant.id),
+        "fields": {k: v.model_dump(mode="json") for k, v in fields.items()},
+    }
+
+    def ready_proposal(ctx):
+        return ctx.conn.execute(
+            insert(proposal_table)
+            .values(
+                workspace_id=ctx.workspace_id,
+                document_id=doc.id,
+                status="ready",
+                fields=[record],
+            )
+            .returning(proposal_table.c.id)
+        ).scalar_one()
+
+    proposal_id = run(ws, ready_proposal)
+    run(ws, erase_tenant, tenant.id)  # an applicant: no tenancy, no retention hold
+
+    body = ProposalApplyBody(records=[ProposalApplyRecord(key="tenant:1", values={})])
+    with pytest.raises(ConflictError):
+        run(ws, proposals.apply_proposal, proposal_id, body, iban_key=TEST_IBAN_KEY)
+    assert read(ws, proposals.get_proposal, proposal_id).status is ProposalStatus.READY
