@@ -25,9 +25,8 @@ from hausbuch.schemas.api import (
 )
 from hausbuch.schemas.document import Document
 from hausbuch.schemas.enums import EntityType, LinkTarget
-from hausbuch.schemas.events import DepositReceived, Event, EventType
+from hausbuch.schemas.events import DepositReceived, Event
 from hausbuch.schemas.tenancy import RentScheduleCreate, RentScheduleEntry, Tenancy
-from hausbuch.services.events import list_events
 from hausbuch.services.tenancies import (
     correct_deposit_received,
     correct_move_in,
@@ -36,6 +35,7 @@ from hausbuch.services.tenancies import (
     correct_rent_row,
     correct_signed_on,
     create_tenancy,
+    deposit_receipts,
     end_tenancy,
     get_tenancy,
     give_notice,
@@ -121,12 +121,6 @@ def tenancy_deposit_received(tenancy_id: UUID, body: DepositReceivedBody, cmd: C
 
 def _deposits(conn: Connection, tenancy_id: UUID) -> list[DepositReceipt]:
     require(conn, get_tenancy, EntityType.TENANCY, tenancy_id)
-    events = [
-        e
-        for e in list_events(conn, entity_type=EntityType.TENANCY, entity_id=tenancy_id)
-        if e.type is EventType.TENANCY_DEPOSIT_RECEIVED
-    ]
-    corrected = {e.corrects_event_id for e in events if e.corrects_event_id is not None}
     return [
         DepositReceipt(
             event_id=e.id,
@@ -134,8 +128,7 @@ def _deposits(conn: Connection, tenancy_id: UUID) -> list[DepositReceipt]:
             received_on=e.effective_date,
             recorded_at=e.recorded_at,
         )
-        for e in events
-        if e.id not in corrected
+        for e in deposit_receipts(conn, tenancy_id)
     ]
 
 

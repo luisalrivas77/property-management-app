@@ -37,6 +37,7 @@ from hausbuch.schemas.api import (
     AcquisitionCostPatch,
     AppliedEntity,
     DateCorrection,
+    DepositReceivedBody,
     DisbursementCorrection,
     LoanCreateRequest,
     LoanPatch,
@@ -63,6 +64,7 @@ from hausbuch.schemas.enums import (
 )
 from hausbuch.schemas.events import (
     AppliedRecord,
+    DepositReceived,
     DocumentClassified,
     DocumentExtracted,
     DocumentReadFailed,
@@ -80,6 +82,7 @@ from hausbuch.schemas.property import (
 )
 from hausbuch.schemas.proposal import (
     ExistingCost,
+    ExistingDepositReceipt,
     ExistingLoan,
     ExistingOwner,
     ExistingProperty,
@@ -401,7 +404,19 @@ def prefill_context(
             for loan in loans.list_loans(conn, p.id)
         ],
         tenancies=[
-            ExistingTenancy(id=t.id, unit_id=t.unit_id, start_date=t.start_date)
+            ExistingTenancy(
+                id=t.id,
+                unit_id=t.unit_id,
+                start_date=t.start_date,
+                deposit_amount=t.deposit_amount,
+                deposit_receipts=[
+                    ExistingDepositReceipt(
+                        amount=DepositReceived.model_validate(e.payload).amount,
+                        received_on=e.effective_date,
+                    )
+                    for e in tenancies.deposit_receipts(conn, t.id)
+                ],
+            )
             for u in unit_rows
             for t in tenancies.list_tenancies(conn, u.id)
         ],
@@ -757,6 +772,22 @@ class _Apply:
         rows = tenancies.list_rent_schedule(self.ctx.conn, tenancy_id)
         return rows[0].id
 
+    def _deposit_received(self, record: ProposalRecord, values: dict[str, Any]) -> UUID:
+        """A Kaution receipt (Kautionsnachweis, D42) on the tenancy the proposal found; the
+        tenancy is the entity. Unchanged: already recorded, nothing is written."""
+        if record.mode == "unchanged":
+            return _target(record)
+        data = dict(values)
+        if data.get("tenancy_id") is None:
+            link = self.records.get("link:tenancy")
+            found = self.entity("tenancy") or (None if link is None else link.target_id)
+            data["tenancy_id"] = None if found is None else str(found)
+        receipt = _validate(record.key, _DepositValues, data)
+        tenancies.record_deposit_received(
+            self.ctx, receipt.tenancy_id, amount=receipt.amount, received_on=receipt.received_on
+        )
+        return receipt.tenancy_id
+
     def _typing(self, record: ProposalRecord, values: dict[str, Any]) -> UUID:
         # The fields the model read are already the document's `ai` extraction version
         # (record_read_result); the apply sets the typing only.
@@ -789,6 +820,7 @@ class _Apply:
         "tenant": _tenant,
         "tenancy": _tenancy,
         "rent": _rent,
+        "deposit_received": _deposit_received,
         "typing": _typing,
         "link": _link,
     }
@@ -796,6 +828,12 @@ class _Apply:
 
 class _LinkValues(Schema):
     target_id: UUID
+
+
+class _DepositValues(DepositReceivedBody):
+    """A deposit_received record's final values (the tenancy is never null)."""
+
+    tenancy_id: UUID
 
 
 # --- Queries -----------------------------------------------------------------------------

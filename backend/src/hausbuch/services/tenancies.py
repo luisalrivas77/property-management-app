@@ -74,6 +74,7 @@ from .events import (
     find_event,
     get_event,
     latest_in_chain,
+    list_events,
     milestone_root,
 )
 from .iban import protect_iban
@@ -497,6 +498,18 @@ def record_deposit_received(
         effective_date=received_on,
         **scope,
     )
+
+
+def deposit_receipts(conn: Connection, tenancy_id: UUID) -> list[Event]:
+    """The Kaution receipts in force: the tenancy's tenancy.deposit_received events that no
+    later one corrects (the latest of each chain), in recording order."""
+    events = [
+        e
+        for e in list_events(conn, entity_type=EntityType.TENANCY, entity_id=tenancy_id)
+        if e.type is EventType.TENANCY_DEPOSIT_RECEIVED
+    ]
+    corrected = {e.corrects_event_id for e in events if e.corrects_event_id is not None}
+    return [e for e in events if e.id not in corrected]
 
 
 def give_notice(

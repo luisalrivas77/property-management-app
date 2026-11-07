@@ -15,8 +15,8 @@ depends on the order of the context's lists (the fixture runs every case shuffle
 several existing records match, the one with the smallest id wins.
 
 Record keys, in this order when a kind proposes them: typing, property, correction:<field>,
-unit, price_split, ownership, cost:<kind>, loan, tenant:<n>, tenancy, rent, link:property /
-link:loan / link:tenancy.
+unit, price_split, ownership, cost:<kind>, loan, tenant:<n>, tenancy, rent, deposit_received,
+link:property / link:loan / link:tenancy.
 """
 
 from collections.abc import Callable, Iterable, Sequence
@@ -77,6 +77,15 @@ _FINANCING_NOTE = (
     "als Darlehenskosten gebucht. Enthält dieselbe Rechnung auch einen Anteil für den Kauf, "
     "bitte diesen von Hand als Nebenkosten erfassen."
 )
+# A Kautionsnachweis whose tenancy cannot be told (D42): typing only, and why.
+_DEPOSIT_SEVERAL_NOTE = (
+    "Die Kaution passt zu keinem oder zu mehreren Mietverhältnissen; bitte den Eingang beim "
+    "richtigen Mietverhältnis von Hand erfassen (Kaution erhalten)."
+)
+_DEPOSIT_NONE_NOTE = (
+    "Es gibt noch kein Mietverhältnis, zu dem die Kaution gehören könnte; bitte zuerst den "
+    "Mietvertrag erfassen und den Eingang dann beim Mietverhältnis eintragen."
+)
 _FINANCING_BELEG_NOTE = (
     "Diese Rechnung ist schon als Beleg eines Nebenkosten-Eintrags hinterlegt. Der Eintrag "
     "gehört zu den Darlehenskosten: bitte ihn aus den Nebenkosten entfernen."
@@ -116,7 +125,9 @@ def build_proposal(
                 loan = context.loans[0]
             if loan is not None:
                 b.link("link:loan", loan.id)
-        case _:  # statement, deposit record (step 2), unknown: typing only
+        case ExtractionKind.DEPOSIT_RECORD:
+            b.deposit_record()
+        case _:  # statement, unknown: typing only
             pass
     return b.records
 
@@ -573,6 +584,59 @@ class _Builder:
         )
         if near:
             self.link("link:tenancy", near[0][1])
+
+    # -- Kautionsnachweis (step 2, D42)
+
+    def deposit_record(self) -> None:
+        """A deposit_received record when amount and date are stated and exactly one tenancy
+        is found: the one whose agreed Kaution equals the amount, else the workspace's only
+        tenancy. Several or none: typing only, with a note. A receipt already recorded on
+        that tenancy with the same amount and date: unchanged."""
+        amount, received_on = self.ev("amount"), self.ev("received_on")
+        on = _iso_date(received_on.value)
+        if _decimal(amount.value) is None or on is None:
+            return
+        tenancies = self.ctx.tenancies
+        by_amount = [
+            t
+            for t in tenancies
+            if t.deposit_amount is not None and _same(amount.value, _json(t.deposit_amount))
+        ]
+        if len(by_amount) == 1:
+            tenancy = by_amount[0]
+            tenancy_value = _derived(str(tenancy.id), [("amount", amount)])
+        elif not by_amount and len(tenancies) == 1:
+            # Nothing in the document points at it: the only candidate, at low confidence.
+            tenancy = tenancies[0]
+            tenancy_value = _code_value(str(tenancy.id), "low")
+        else:
+            self.records[0].notes.append(
+                _DEPOSIT_SEVERAL_NOTE if by_amount or tenancies else _DEPOSIT_NONE_NOTE
+            )
+            return
+        fields = {"amount": amount, "received_on": received_on}
+        recorded = sorted(
+            (
+                r
+                for r in tenancy.deposit_receipts
+                if r.received_on == on and _same(amount.value, _json(r.amount))
+            ),
+            key=lambda r: r.amount,
+        )
+        if recorded:
+            current = {"amount": _json(recorded[0].amount), "received_on": on.isoformat()}
+            self.add(
+                "deposit_received",
+                "deposit_received",
+                "unchanged",
+                fields,
+                target_id=tenancy.id,
+                current=current,
+            )
+        else:
+            fields["tenancy_id"] = tenancy_value
+            self.add("deposit_received", "deposit_received", "create", fields)
+        self.link("link:tenancy", tenancy.id)
 
 
 # --- Matching existing records ----------------------------------------------------------

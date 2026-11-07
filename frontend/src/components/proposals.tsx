@@ -50,6 +50,7 @@ import {
   DEPOSIT_FORM,
   DOCUMENT_SUBTYPE,
   DOCUMENT_TYPE,
+  EVENT_TYPE,
   EXTRACTION_KIND,
   LINK_TARGET,
   options,
@@ -142,6 +143,11 @@ const FIELDS: Record<string, Record<string, FieldSpec>> = {
     operating_costs_prepayment: money("NK-Vorauszahlung (€ / Monat)"),
     effective_from: date("Gültig ab"),
   },
+  deposit_received: {
+    amount: money("Betrag (€)"),
+    received_on: date("Eingegangen am"),
+    tenancy_id: { label: "Mietverhältnis", kind: "fixed" },
+  },
 };
 
 /** The extraction fields a derived value names in `derived_from`. */
@@ -160,6 +166,7 @@ const DERIVED_INPUT: Record<string, string> = {
   postal_code: "PLZ",
   unit_label: "WE-Nummer",
   rent_clause: "Mietklausel",
+  amount: "Kautionsbetrag",
 };
 
 function lookup(map: Readonly<Record<string, string>>, key: string): string {
@@ -206,6 +213,8 @@ function recordTitle(record: ProposalRecord): string {
       return "Mietverhältnis";
     case "rent":
       return "Anfangsmiete";
+    case "deposit_received":
+      return EVENT_TYPE["tenancy.deposit_received"];
     case "link":
       return `Verknüpfung: ${lookup(LINK_TARGET, rest)}`;
     default:
@@ -290,13 +299,16 @@ function display(spec: FieldSpec, value: unknown, fixed: (value: unknown) => str
   }
 }
 
-/** Values the review shows but does not edit: ownership shares and a tenancy's unit, which
- * code matched (by owner names and by address). */
+/** Values the review shows but does not edit: ownership shares, a tenancy's unit and a
+ * Kaution's tenancy, which code matched (by owner names, by address, by the agreed Kaution). */
 function fixedText(directory: Directory | null): (value: unknown) => string {
   return (value) => {
     if (typeof value === "string") {
       const unit = directory?.units.find((u) => u.id === value);
-      return unit ? unit.label : "zugeordnete Einheit";
+      if (unit) return unit.label;
+      const tenancy = directory?.tenancies.find((t) => t.id === value);
+      if (tenancy) return `Mietverhältnis ab ${formatDate(tenancy.start_date)}`;
+      return "zugeordneter Eintrag";
     }
     if (Array.isArray(value)) {
       return value
@@ -635,6 +647,8 @@ function appliedLabel(entity: AppliedEntity): string {
       return `Mietverhältnis ${verb}`;
     case "rent":
       return "Anfangsmiete erfasst";
+    case "deposit_received":
+      return "Kautionseingang erfasst";
     default:
       return entity.key;
   }
@@ -655,6 +669,7 @@ function entityHref(entity: AppliedEntity, propertyId: string | null): string | 
     case "tenant":
       return `/tenants/${id}`;
     case "tenancy":
+    case "deposit_received":
       return `/tenancies/${id}`;
     case "cost":
       return propertyId ? `/properties/${propertyId}?tab=nebenkosten` : null;

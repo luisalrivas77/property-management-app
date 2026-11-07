@@ -28,16 +28,20 @@ from hausbuch.schemas.ai import ClassifyOutput, ExtractedValue, SourceRef
 from hausbuch.schemas.enums import (
     AcquisitionCostKind,
     ActorType,
+    DepositForm,
     DocumentSource,
     DocumentSubtype,
     DocumentType,
     LinkTarget,
     PropertyKind,
     ProposalStatus,
+    RentModel,
+    TenancyRole,
 )
 from hausbuch.schemas.events import EventType
-from hausbuch.schemas.property import Address, PropertyCreate
+from hausbuch.schemas.property import Address, PropertyCreate, UnitCreate
 from hausbuch.schemas.proposal import ProposalApplyBody, ProposalApplyRecord
+from hausbuch.schemas.tenancy import TenancyCreate, TenancyParty, TenantCreate
 from hausbuch.services import proposals
 from hausbuch.services.context import Actor, new_command
 from hausbuch.services.documents import get_document, list_links, upload_document
@@ -50,7 +54,9 @@ from hausbuch.services.properties import (
     list_price_splits,
     list_properties,
 )
-from hausbuch.services.units import list_units
+from hausbuch.services.tenancies import create_tenancy, deposit_receipts
+from hausbuch.services.tenants import create_tenant
+from hausbuch.services.units import create_unit, list_units
 
 NOW = datetime(2026, 11, 6, 10, 0, tzinfo=UTC)
 JOB = Actor(ActorType.AI, "claude-test-model")
@@ -692,3 +698,76 @@ def test_a_reupload_without_the_flag_after_a_block_stays_blocked(
     assert again.contains_tenant_data is True
     assert read(ws, proposals.get_proposal, again.id).contains_tenant_data is True
     assert enqueued == []
+
+
+# --- Kautionsnachweis (D42 part 2) -----------------------------------------------------------
+
+DEPOSIT = ClassifyOutput(
+    type=DocumentType.LETTER,
+    subtype=DocumentSubtype.DEPOSIT_RECORD,
+    contains_tenant_data=True,
+    language="de",
+    confidence="high",
+)
+DEPOSIT_VALUES = {
+    "title": _v("Kautionsnachweis"),
+    "document_date": _v("2026-07-03"),
+    "amount": _v("3450.00"),
+    "received_on": _v("2026-07-02"),
+}
+
+
+def _let_flat(run, dbname, ws):
+    """The flat let since 1 Jul 2026 with an agreed Kaution of 3,450 €, and tenant documents
+    allowed for the workspace (the gate would block a Kautionsnachweis otherwise)."""
+    with _admin(dbname) as conn:
+        conn.execute("UPDATE workspace SET ai_tenant_documents = true WHERE id = %s", (ws,))
+    prop = run(ws, create_property, FLAT)
+    unit = run(ws, create_unit, UnitCreate(property_id=prop.id, label="WE 3"))
+    tenant = run(ws, create_tenant, TenantCreate(full_name="Lena Beispiel"), iban_key=TEST_IBAN_KEY)
+    lease = TenancyCreate(
+        unit_id=unit.id,
+        parties=[TenancyParty(tenant_id=tenant.id, role=TenancyRole.PRIMARY)],
+        start_date=date(2026, 7, 1),
+        rent_model=RentModel.FIXED,
+        deposit_amount=Decimal("3450.00"),
+        deposit_form=DepositForm.CASH_ACCOUNT,
+    )
+    return run(ws, create_tenancy, lease, initial_rent=None, iban_key=TEST_IBAN_KEY)
+
+
+def test_a_deposit_record_applies_as_a_kaution_receipt_on_its_tenancy(
+    run, read, job, dbname, fresh_workspaces, blob_store, enqueued
+):
+    ws, _ = fresh_workspaces
+    tenancy = _let_flat(run, dbname, ws)
+    doc, ready, _ = _read_ready(
+        run, job, ws, blob_store, enqueued, DEPOSIT, DEPOSIT_VALUES, b"%PDF kaution"
+    )
+    assert ready.status is ProposalStatus.READY
+    records = {r.key: r for r in ready.records}
+    assert set(records) == {"typing", "deposit_received", "link:tenancy"}
+    assert records["deposit_received"].mode == "create"
+    assert records["deposit_received"].fields["tenancy_id"].value == str(tenancy.id)
+
+    result = run(ws, proposals.apply_proposal, ready.id, _accept_all(ready), iban_key=TEST_IBAN_KEY)
+
+    applied = {a.key: a for a in result.applied}
+    assert applied["deposit_received"].entity_id == tenancy.id
+    [receipt] = read(ws, deposit_receipts, tenancy.id)
+    assert receipt.type is EventType.TENANCY_DEPOSIT_RECEIVED
+    assert receipt.payload == {"amount": "3450.00"}
+    assert receipt.effective_date == date(2026, 7, 2)
+    assert (LinkTarget.TENANCY, tenancy.id) in [
+        (lk.target_type, lk.target_id) for lk in read(ws, list_links, doc.id)
+    ]
+
+    # The same payment read from a second copy is already recorded: unchanged, and applying
+    # it adds nothing, even when the record is sent instead of skipped (as the screen does).
+    _, again, _ = _read_ready(
+        run, job, ws, blob_store, enqueued, DEPOSIT, DEPOSIT_VALUES, b"%PDF kaution copy"
+    )
+    second = {r.key: r for r in again.records}["deposit_received"]
+    assert (second.mode, second.target_id) == ("unchanged", tenancy.id)
+    run(ws, proposals.apply_proposal, again.id, _accept_all(again), iban_key=TEST_IBAN_KEY)
+    assert len(read(ws, deposit_receipts, tenancy.id)) == 1
