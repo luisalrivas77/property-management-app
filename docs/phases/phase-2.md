@@ -716,9 +716,11 @@ whose `OPBD + Σ Ntry ≠ CLBD`), `statement.chain_break` (a report's `OPBD` is 
 `statement.empty`, `statement.owner_account` (an import onto an owners' private account),
 `statement.balance_from_file` (declaring a balance for a file that states its own),
 `statement.duplicate_accounts_differ`, `statement.duplicate_excludes_both`.
+
 Added 7 Nov 2026 (D37): `document.extraction_kind_mismatch` (a non-empty hand-entry field the AI reading's kind has no place for), `document.extraction_stale` (hand-entry fields shown from a version that is no longer current).
 
 Added 7 Nov 2026 (step 4, service and API level): `allocation.transaction_mismatch` (the set names another line), `allocation.import_not_reconciled`, `allocation.line_not_open`, `allocation.scope_mismatch` (a unit, tenancy or loan of another property, or without its property), `allocation.excluded_transaction` (a line merged away as a duplicate), `rule.not_learnable` (a rule was asked for where none can be learned, D38), `rule.invalid_pattern` (a pattern that does not compile or is longer than 200 characters).
+
 `report_unbalanced` and `chain_break` are faults of the file and stay on the import; no anchor
 or declaration clears them (open question 10).
 
