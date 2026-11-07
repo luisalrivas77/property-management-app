@@ -15,7 +15,10 @@ test("switching on Mieterdokumente is saved and recorded as one event", async ({
   await expect(page.getByText("Anthropic verwendet sie nicht zum Training")).toBeVisible();
 
   const saved = page.waitForResponse((r) => r.url().endsWith("/api/workspace/settings") && r.request().method() === "PATCH");
-  await tenantDocuments.check();
+  // The switch shows the saved state: it flips once the PATCH has answered (nothing in the
+  // app updates optimistically), so click and wait instead of check(), which expects the
+  // state to change with the click itself.
+  await tenantDocuments.click();
   expect((await saved).status()).toBe(200);
   await expect(tenantDocuments).toBeChecked();
 

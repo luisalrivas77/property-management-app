@@ -723,7 +723,11 @@ def _let_flat(run, dbname, ws):
     with _admin(dbname) as conn:
         conn.execute("UPDATE workspace SET ai_tenant_documents = true WHERE id = %s", (ws,))
     prop = run(ws, create_property, FLAT)
-    unit = run(ws, create_unit, UnitCreate(property_id=prop.id, label="WE 3"))
+    unit = run(
+        ws,
+        create_unit,
+        UnitCreate(property_id=prop.id, label="WE 3", floor_area_m2=Decimal("68.40")),
+    )
     tenant = run(ws, create_tenant, TenantCreate(full_name="Lena Beispiel"), iban_key=TEST_IBAN_KEY)
     lease = TenancyCreate(
         unit_id=unit.id,
