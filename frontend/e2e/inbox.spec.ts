@@ -134,3 +134,29 @@ test("a line without an IBAN offers no rule box, only a purpose pattern", async 
   await expect(page.getByRole("status").filter({ hasText: "Zuordnung bestätigt." })).toContainText("Regel gespeichert");
   await expect(queue.getByRole("button").filter({ hasText: /Verwendungszweck 5\b/ })).toHaveCount(0);
 });
+
+test("the rule box follows the category until it is touched: on for bank fees, off for repairs", async ({ page, signedIn }) => {
+  void signedIn;
+  await importSample(page);
+  await openInbox(page);
+
+  // Partei H has an IBAN and no matcher owns it (no tenant, loan or owner account here).
+  await page.getByRole("list", { name: "Offene Punkte" }).getByRole("button").filter({ hasText: "Partei H" }).click();
+  const panel = page.getByRole("complementary", { name: "Zuordnung" });
+  await expect(panel.getByRole("heading", { name: /Partei H/ })).toBeVisible();
+  const learn = panel.getByLabel("Künftig immer so zuordnen");
+  const category = panel.getByRole("group", { name: "Zeile 1" }).getByLabel("Kategorie");
+
+  await expect(learn).toBeChecked();
+  await category.selectOption({ label: "Kontoführung und Bankgebühren" });
+  await expect(learn).toBeChecked();
+  // Repairs never auto-confirm, so one answer must not silently become a standing rule.
+  await category.selectOption({ label: "Erhaltungsaufwand (Reparatur)" });
+  await expect(learn).not.toBeChecked();
+
+  // Once ticked by hand, the choice sticks whatever the category.
+  await learn.check();
+  await category.selectOption({ label: "Kontoführung und Bankgebühren" });
+  await category.selectOption({ label: "Erhaltungsaufwand (Reparatur)" });
+  await expect(learn).toBeChecked();
+});

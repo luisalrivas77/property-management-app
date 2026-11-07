@@ -11,8 +11,14 @@
 // - "Rest" = the line's amount minus the rows, in integer cents from the decimal strings (never
 //   a float on euros). Bestätigen stays disabled until every amount parses and Rest is exactly
 //   0. It is an input aid only: the server's sum check (allocation.sum_mismatch) decides.
-// - "Künftig immer so zuordnen" only when can_learn_rule, defaulting to learn_rule_default;
-//   otherwise an optional purpose pattern can still make a rule (D38). learn_rule is always
+// - "Künftig immer so zuordnen" only when can_learn_rule. Until the person ticks or unticks it,
+//   it follows the rows (§8.1): on for one row whose category is not among
+//   no_default_rule_categories (repairs, renovation, anything capitalized, the catch-alls),
+//   off otherwise. Several rows start off, since a split becomes a rule only by a split
+//   method the UI cannot check (rule.not_learnable would refuse the whole answer). A line
+//   that arrives with rows starts from the server's learn_rule_default and follows the rows
+//   once they are edited. Otherwise an optional purpose pattern can still make a rule
+//   (D38). learn_rule is always
 //   sent explicitly: a typed pattern means "make a rule", whatever the server default for the
 //   category would be.
 import Link from "next/link";
@@ -223,7 +229,9 @@ function AllocationEditor({
   const shownQuestion = (proposed ? current[0]?.question : null) ?? question ?? null;
 
   const [rows, setRows] = useState<Row[]>(() => initialRows(view, directory));
-  const [learn, setLearn] = useState(view.learn_rule_default);
+  // null = not touched: the box follows the rows (see the header).
+  const [learnChoice, setLearnChoice] = useState<boolean | null>(null);
+  const [rowsEdited, setRowsEdited] = useState(false);
   const [pattern, setPattern] = useState("");
   const [busy, setBusy] = useState(false);
   const learnId = useId();
@@ -243,17 +251,24 @@ function AllocationEditor({
   const rest = restOf(line.amount, rows);
   const balanced = rest === 0n;
 
+  const noDefault = new Set(view.no_default_rule_categories);
+  const suggested = rows.length === 1 && rows.every((row) => row.category === "" || !noDefault.has(row.category));
+  const learn = learnChoice ?? (current.length === 0 || rowsEdited ? suggested : view.learn_rule_default);
+
   function update(key: number, patch: Partial<Row>) {
+    setRowsEdited(true);
     setRows((list) => list.map((row) => (row.key === key ? { ...row, ...patch } : row)));
   }
 
   function addRow() {
     const remaining = rest === null || rest === 0n ? "" : decimalInput(centsToString(rest));
     const property = rows[rows.length - 1]?.propertyId ?? "";
+    setRowsEdited(true);
     setRows((list) => [...list, emptyRow(remaining, property)]);
   }
 
   function removeRow(key: number) {
+    setRowsEdited(true);
     setRows((list) => (list.length > 1 ? list.filter((row) => row.key !== key) : list));
   }
 
@@ -371,7 +386,7 @@ function AllocationEditor({
       {view.can_learn_rule ? (
         <div className={form.of("learn_rule").length > 0 ? "field field-invalid" : "field"}>
           <label className="inline" htmlFor={learnId}>
-            <input id={learnId} type="checkbox" checked={learn} onChange={(e) => setLearn(e.target.checked)} />
+            <input id={learnId} type="checkbox" checked={learn} onChange={(e) => setLearnChoice(e.target.checked)} />
             Künftig immer so zuordnen
           </label>
           <p className="muted hint">Weitere Buchungen dieser Gegenseite werden dann ohne Rückfrage so zugeordnet.</p>
