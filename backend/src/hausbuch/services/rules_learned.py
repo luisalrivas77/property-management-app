@@ -15,6 +15,10 @@ is on only when it can and no confirmed category is one that never auto-confirms
 renovation, anything capitalized: review F6). A request asking for a rule that cannot be
 learned is refused (rule.not_learnable) rather than silently ignored.
 
+A new rule queues rematch_waiting (§5.1) in the same transaction: the lines already waiting
+in the inbox that it names are re-matched by the deterministic order, so an answer given
+once books the payer's other open lines too, not only later imports.
+
 A new rule disables any enabled rule with the same matcher (the newer answer wins; two rules
 on one matcher would disagree and match nothing). Events rule.created / rule.disabled carry
 the IBAN hash, the sign and pattern *flags*, never a pattern (D32).
@@ -27,6 +31,7 @@ from uuid import UUID
 from sqlalchemy import Connection, Row, insert, select, update
 
 from hausbuch.db.tables import matching_rule as rule_table
+from hausbuch.jobs import enqueue
 from hausbuch.rules import matching as matchers
 from hausbuch.rules.review import THRESHOLDS
 from hausbuch.schemas.allocation import (
@@ -154,8 +159,8 @@ def learn_default(rule: MatchingRuleCreate | None, confirmed: AllocationSet) -> 
 
 
 def create_rule(ctx: CommandContext, data: MatchingRuleCreate) -> MatchingRule:
-    """Store the rule (an enabled rule with the same matcher is disabled first) and append
-    rule.created."""
+    """Store the rule (an enabled rule with the same matcher is disabled first), append
+    rule.created and queue rematch_waiting for the waiting lines it may now book."""
     matcher = data.matcher.model_dump(mode="json", exclude_none=True)
     for pattern in (data.matcher.counterparty_name_pattern, data.matcher.purpose_pattern):
         check_pattern(pattern)
@@ -176,6 +181,11 @@ def create_rule(ctx: CommandContext, data: MatchingRuleCreate) -> MatchingRule:
     ).one()
     rule = to_rule(row)
     append_event(ctx, EventType.RULE_CREATED, rule.id, RuleRecorded.of(data))
+    # The lines already waiting in the inbox that the rule names are re-matched in the
+    # background (rematch_waiting); queued in this transaction, so only with the rule.
+    enqueue.enqueue_rematch_waiting(
+        ctx.conn, workspace_id=ctx.workspace_id, kind=enqueue.TRIGGER_RULE, entity_id=rule.id
+    )
     return rule
 
 

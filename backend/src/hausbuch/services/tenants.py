@@ -16,6 +16,7 @@ from sqlalchemy import Connection, Row, insert, select, update
 
 from hausbuch.db.tables import tenancy as tenancy_table
 from hausbuch.db.tables import tenant as tenant_table
+from hausbuch.jobs import enqueue
 from hausbuch.rules.retention import tenant_retention
 from hausbuch.schemas.document import RetentionPolicy, RetentionResult, TenantRetentionInput
 from hausbuch.schemas.enums import EntityType, RetentionClass, RetentionHold
@@ -110,6 +111,15 @@ def update_tenant(
     if "iban_hmac" in values:
         changed.append(TenantField.IBAN)
     append_event(ctx, EventType.TENANT_UPDATED, tenant_id, TenantUpdated(changed_fields=changed))
+    if values.get("iban_hmac") is not None:
+        # Rent paid from this IBAN before it was saved waits in the inbox; the rent matcher
+        # can book it now (rematch_waiting, phase-2.md §8.1).
+        enqueue.enqueue_rematch_waiting(
+            ctx.conn,
+            workspace_id=ctx.workspace_id,
+            kind=enqueue.TRIGGER_TENANT,
+            entity_id=tenant_id,
+        )
     return _to_tenant(row)
 
 

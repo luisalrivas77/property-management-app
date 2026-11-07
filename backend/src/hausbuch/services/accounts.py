@@ -20,6 +20,7 @@ from sqlalchemy.exc import IntegrityError
 
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import statement_import as import_table
+from hausbuch.jobs import enqueue
 from hausbuch.schemas.bank import Account, AccountCreate
 from hausbuch.schemas.common import Schema
 from hausbuch.schemas.enums import EntityType
@@ -84,6 +85,8 @@ def create_account(ctx: CommandContext, data: AccountCreate, *, iban_key: bytes)
             is_owner_account=created.is_owner_account,
         ),
     )
+    if created.is_owner_account:
+        _rematch_waiting(ctx, created.id)
     return created
 
 
@@ -134,7 +137,18 @@ def update_account(
     append_event(ctx, EventType.ACCOUNT_UPDATED, account_id, Updated(changes=changes))
     if _ANCHOR_FIELDS & set(changes):
         recheck_account(ctx, account_id)
+    if "is_owner_account" in changes and updated.is_owner_account:
+        _rematch_waiting(ctx, account_id)
     return updated
+
+
+def _rematch_waiting(ctx: CommandContext, account_id: UUID) -> None:
+    """Queue rematch_waiting: transfers from a new owner account wait in the inbox, and the
+    owner-transfer matcher books them now (phase-2.md §8.1). An account's IBAN never changes
+    after creation, so only becoming an owner account counts."""
+    enqueue.enqueue_rematch_waiting(
+        ctx.conn, workspace_id=ctx.workspace_id, kind=enqueue.TRIGGER_ACCOUNT, entity_id=account_id
+    )
 
 
 def get_account(conn: Connection, account_id: UUID) -> Account | None:
