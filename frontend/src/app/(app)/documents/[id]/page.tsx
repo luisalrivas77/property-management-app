@@ -181,6 +181,9 @@ function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onS
           body: {
             typing: { type, subtype: subtype || null, title: blankToNull(title), document_date: documentDate || null, tax_year: year },
             fields: changed ? manual : null,
+            // The version the hand fields were shown from: a re-read since then is refused
+            // (document.extraction_stale, D37) instead of writing stale values as typed ones.
+            shown_version: extraction?.version ?? 0,
           },
         }),
       );

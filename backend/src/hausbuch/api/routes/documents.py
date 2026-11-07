@@ -212,8 +212,11 @@ def document_get(document_id: UUID, cmd: Cmd) -> DocumentDetail:
 @router.put("/documents/{document_id}/typing")
 def document_type(document_id: UUID, body: DocumentTypingBody, cmd: Cmd) -> Document:
     """Over an AI reading, `fields` are written into the reading's own kind (D37); 422
-    document.extraction_kind_mismatch for a non-null field that kind has no place for."""
-    return cmd.run(type_document, document_id, body.typing, body.fields)
+    document.extraction_kind_mismatch for a non-null field that kind has no place for, 422
+    document.extraction_stale when `shown_version` is no longer the current version."""
+    return cmd.run(
+        type_document, document_id, body.typing, body.fields, shown_version=body.shown_version
+    )
 
 
 def _links(conn: Connection, document_id: UUID) -> list[DocumentLink]:

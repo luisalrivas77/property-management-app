@@ -2813,7 +2813,7 @@
     "/api/documents/{document_id}/typing": {
       "put": {
         "summary": "Document Type",
-        "description": "Over an AI reading, `fields` are written into the reading's own kind (D37); 422\ndocument.extraction_kind_mismatch for a non-null field that kind has no place for.",
+        "description": "Over an AI reading, `fields` are written into the reading's own kind (D37); 422\ndocument.extraction_kind_mismatch for a non-null field that kind has no place for, 422\ndocument.extraction_stale when `shown_version` is no longer the current version.",
         "operationId": "document_type_api_documents__document_id__typing_put",
         "parameters": [
           {
@@ -6105,6 +6105,18 @@
                 "type": "null"
               }
             ]
+          },
+          "shown_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shown Version"
           }
         },
         "additionalProperties": false,
@@ -6112,7 +6124,8 @@
         "required": [
           "typing"
         ],
-        "title": "DocumentTypingBody"
+        "title": "DocumentTypingBody",
+        "description": "PUT /documents/{id}/typing. `shown_version` is the extraction version the hand fields\nwere shown from (0: none yet), required with `fields`; a save from a version that is no\nlonger current is refused (document.extraction_stale, phase 2 D37)."
       },
       "DocumentUploadResult": {
         "properties": {

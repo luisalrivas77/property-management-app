@@ -969,7 +969,8 @@ export interface paths {
         /**
          * Document Type
          * @description Over an AI reading, `fields` are written into the reading's own kind (D37); 422
-         *     document.extraction_kind_mismatch for a non-null field that kind has no place for.
+         *     document.extraction_kind_mismatch for a non-null field that kind has no place for, 422
+         *     document.extraction_stale when `shown_version` is no longer the current version.
          */
         put: operations["document_type_api_documents__document_id__typing_put"];
         post?: never;
@@ -2244,10 +2245,17 @@ export interface components {
             /** Tax Year */
             tax_year?: number | null;
         };
-        /** DocumentTypingBody */
+        /**
+         * DocumentTypingBody
+         * @description PUT /documents/{id}/typing. `shown_version` is the extraction version the hand fields
+         *     were shown from (0: none yet), required with `fields`; a save from a version that is no
+         *     longer current is refused (document.extraction_stale, phase 2 D37).
+         */
         DocumentTypingBody: {
             typing: components["schemas"]["DocumentTyping"];
             fields?: components["schemas"]["ManualDocumentFields"] | null;
+            /** Shown Version */
+            shown_version?: number | null;
         };
         /**
          * DocumentUploadResult

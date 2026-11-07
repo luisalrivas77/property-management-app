@@ -24,6 +24,7 @@ from hausbuch.schemas.extraction import (
     LoanContractExtraction,
     StatementExtraction,
     ZinsbescheinigungExtraction,
+    value_kind,
 )
 from hausbuch.services.documents import (
     EXTRACTION_KIND_MISMATCH,
@@ -74,11 +75,25 @@ INVOICE_SHOWN = ManualDocumentFields(
 )
 
 
+# The value kind a hand field's target must hold: what services.documents._stored writes.
+HAND_VALUE_KIND = {"amount_total": "money", "period_start": "date", "period_end": "date"}
+
+
 def test_the_map_names_only_fields_the_kinds_have():
     for kind, mapping in HAND_FIELD_MAP.items():
         model = EXTRACTION_MODELS[kind]
         assert set(mapping) <= set(ALL_SIX)
         assert set(mapping.values()) <= set(model.model_fields), kind
+
+
+def test_each_map_target_holds_the_value_kind_of_its_hand_field():
+    # _stored knows money, date and text only: a target of another kind (an iban, a year)
+    # would fail on the first save, so it must fail here first.
+    for kind, mapping in HAND_FIELD_MAP.items():
+        model = EXTRACTION_MODELS[kind]
+        for hand, target in mapping.items():
+            expected = HAND_VALUE_KIND.get(hand, "text")
+            assert value_kind(model, target) == expected, (kind, hand, target)
 
 
 @pytest.mark.parametrize(

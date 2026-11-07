@@ -18,7 +18,7 @@
 // between "1400.50" and "1.400,50"), never computed here (principle 1). A derived value names
 // the fields code computed it from, as the backend gives them.
 import Link from "next/link";
-import { useCallback, useEffect, useId, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { api, ok } from "@/api/client";
 import { aiErrorText } from "@/api/errors";
@@ -314,10 +314,16 @@ function fixedText(directory: Directory | null): (value: unknown) => string {
 
 // --- the current proposal, polled while it is read ------------------------------------------
 
-function useCurrentProposal(documentId: string) {
+/** `onRead` runs when a polled proposal leaves queued/running: the read wrote a new extraction
+ * version, so the page reloads the document and its typing form shows the new reading (D37). */
+function useCurrentProposal(documentId: string, onRead: () => void) {
   const [proposal, setProposal] = useState<Proposal | null | undefined>(undefined);
   const [error, setError] = useState<unknown>(null);
   const [version, setVersion] = useState(0);
+  const onReadRef = useRef(onRead);
+  useEffect(() => {
+    onReadRef.current = onRead;
+  }, [onRead]);
 
   useEffect(() => {
     let cancelled = false;
@@ -344,7 +350,10 @@ function useCurrentProposal(documentId: string) {
     const timer = window.setTimeout(() => {
       ok(api.GET("/api/proposals/{proposal_id}", { params: { path: { proposal_id: proposal.id } } })).then(
         (next) => {
-          if (!cancelled) setProposal(next);
+          if (cancelled) return;
+          setProposal(next);
+          // Only an in-flight proposal is polled, so a settled answer is the transition.
+          if (!IN_FLIGHT.includes(next.status)) onReadRef.current();
         },
         (caught: unknown) => {
           if (!cancelled) setError(caught);
@@ -397,7 +406,7 @@ function ManualEntry({ kind, directory }: { kind: ExtractionKind | null; directo
 
 /**
  * The "Vorschlag" section of a document page. `onApplied` reloads the page's document (its
- * typing and links change with an apply).
+ * typing and links change with an apply; a finished read changes its extraction).
  */
 export function ProposalSection({
   detail,
@@ -409,7 +418,7 @@ export function ProposalSection({
   onApplied: () => void;
 }) {
   const documentId = detail.document.id;
-  const { proposal, error, setProposal, reload } = useCurrentProposal(documentId);
+  const { proposal, error, setProposal, reload } = useCurrentProposal(documentId, onApplied);
   const [applied, setApplied] = useState<ProposalApplyResult | null>(null);
   const [actionError, setActionError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);

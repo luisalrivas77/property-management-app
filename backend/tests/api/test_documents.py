@@ -103,7 +103,10 @@ def test_typing_links_detail_and_retention(client_a):
         "document_date": "2024-06-10",
     }
     typed = ok(
-        client_a.put(f"{base}/typing", json={"typing": typing, "fields": {"reference": "MV-1"}})
+        client_a.put(
+            f"{base}/typing",
+            json={"typing": typing, "fields": {"reference": "MV-1"}, "shown_version": 0},
+        )
     )
     assert typed["typing"]["subtype"] == "lease"
 
@@ -331,21 +334,34 @@ def test_the_detail_shows_the_hand_fields_of_an_ai_reading(client_a, app_engine,
 
     typing = {"type": "invoice", "title": "Notarrechnung"}
     shown = detail["hand_fields"]["values"]
-    ok(client_a.put(f"{base}/typing", json={"typing": typing, "fields": shown}))
+    response = client_a.put(f"{base}/typing", json={"typing": typing, "fields": shown})
+    assert (response.status_code, response.json()["error"]) == (422, "validation")  # no version
+    body = {"typing": typing, "fields": shown, "shown_version": 1}
+    ok(client_a.put(f"{base}/typing", json=body))
     assert ok(client_a.get(base))["extraction"] == detail["extraction"]  # no new version
 
     changed = shown | {"notes": "Beurkundung"}
-    ok(client_a.put(f"{base}/typing", json={"typing": typing, "fields": changed}))
+    body = {"typing": typing, "fields": changed, "shown_version": 1}
+    ok(client_a.put(f"{base}/typing", json=body))
     after = ok(client_a.get(base))
     assert (after["extraction"]["version"], after["extraction"]["kind"]) == (2, "invoice")
     assert (after["extraction"]["source"], after["extraction"]["ai_call_id"]) == ("manual", None)
     assert after["extraction"]["fields"]["subject"]["value"] == "Beurkundung"
     assert after["hand_fields"]["values"] == changed
 
+    unplaced = changed | {"period_end": "2024-03-31"}
     response = client_a.put(
-        f"{base}/typing", json={"typing": typing, "fields": changed | {"period_end": "2024-03-31"}}
+        f"{base}/typing", json={"typing": typing, "fields": unplaced, "shown_version": 2}
     )
     assert response.status_code == 422
     body = response.json()
     assert (body["error"], body["code"]) == ("rule_violation", "document.extraction_kind_mismatch")
+
+    # Shown from version 1, but version 2 is current now (a re-read, a second tab).
+    response = client_a.put(
+        f"{base}/typing", json={"typing": typing, "fields": shown, "shown_version": 1}
+    )
+    assert response.status_code == 422
+    body = response.json()
+    assert (body["error"], body["code"]) == ("rule_violation", "document.extraction_stale")
     assert ok(client_a.get(base))["extraction"]["version"] == 2

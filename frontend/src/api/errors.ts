@@ -66,6 +66,7 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   // phase 2 (phase-2.md §12)
   "proposal.already_decided": "Über diesen Vorschlag wurde schon entschieden (übernommen oder verworfen).",
   "proposal.not_ready": "Dieser Vorschlag ist noch nicht fertig oder wurde ersetzt.",
+  "document.extraction_stale": "Das Dokument wurde inzwischen neu ausgelesen. Bitte die Seite neu laden und die Felder prüfen.",
   "document.extraction_kind_mismatch": "Für diese Dokumentart gibt es eines der Felder von Hand nicht; es kann nicht gespeichert werden.",
   // bank statements (phase-2.md §12 and the step 3 additions, rules/statements.py)
   "statement.unreconciled": "Der berechnete Endsaldo stimmt nicht mit dem Saldo der Bank überein.",

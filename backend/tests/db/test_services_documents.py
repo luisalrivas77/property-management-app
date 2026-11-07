@@ -92,9 +92,15 @@ def _upload(engine, store, ws, data, *, now=NOW, **kw):
         return upload_document(new_command(conn, ws, ACTOR, now=now), store, data, **kw)
 
 
-def _type(engine, ws, doc_id, typing, fields=None, *, now=LATER):
+def _type(engine, ws, doc_id, typing, fields=None, *, now=LATER, shown_version=None):
     with workspace_transaction(engine, ws) as conn:
-        return type_document(new_command(conn, ws, ACTOR, now=now), doc_id, typing, fields)
+        return type_document(
+            new_command(conn, ws, ACTOR, now=now),
+            doc_id,
+            typing,
+            fields,
+            shown_version=shown_version,
+        )
 
 
 def _link(engine, ws, doc_id, target_type, target_id):
@@ -1263,7 +1269,7 @@ def test_an_unchanged_hand_section_over_a_reading_writes_no_version(
         notes="Beurkundung Kaufvertrag",
     )
 
-    _type(app_engine, a, doc.id, NOTARY, view.values)
+    _type(app_engine, a, doc.id, NOTARY, view.values, shown_version=reading.version)
     with workspace_transaction(app_engine, a) as conn:
         assert current_extraction(conn, doc.id) == reading
     typed = _events(app_engine, a, doc.id)[-1]
@@ -1285,6 +1291,7 @@ def test_a_changed_hand_field_writes_a_manual_version_of_the_same_kind(
         doc.id,
         NOTARY,
         view.values.model_copy(update={"amount_total": Decimal("4300")}),
+        shown_version=reading.version,
     )
     with workspace_transaction(app_engine, a) as conn:
         current = current_extraction(conn, doc.id)
@@ -1310,7 +1317,14 @@ def test_clearing_a_shown_hand_field_makes_it_missing(app_engine, workspaces, bl
     reading = _read(app_engine, a, doc.id)
     view = _hand_view(app_engine, a, doc.id)
 
-    _type(app_engine, a, doc.id, NOTARY, view.values.model_copy(update={"reference": None}))
+    _type(
+        app_engine,
+        a,
+        doc.id,
+        NOTARY,
+        view.values.model_copy(update={"reference": None}),
+        shown_version=reading.version,
+    )
     with workspace_transaction(app_engine, a) as conn:
         current = current_extraction(conn, doc.id)
     assert (current.kind, current.source) == ("invoice", "manual")
@@ -1326,7 +1340,7 @@ def test_a_hand_field_the_reading_has_no_place_for_is_refused(app_engine, worksp
     six_nulls_but_one = view.values.model_copy(update={"period_start": date(2024, 1, 1)})
 
     with pytest.raises(RuleError) as caught:
-        _type(app_engine, a, doc.id, NOTARY, six_nulls_but_one)
+        _type(app_engine, a, doc.id, NOTARY, six_nulls_but_one, shown_version=reading.version)
     assert caught.value.code == "document.extraction_kind_mismatch"
     with workspace_transaction(app_engine, a) as conn:
         assert current_extraction(conn, doc.id) == reading
@@ -1343,7 +1357,39 @@ def test_hand_fields_over_a_manual_extraction_keep_the_phase_1_behaviour(
     assert (view.values, len(view.available)) == (FIELDS_1, 6)
 
     with_period = FIELDS_1.model_copy(update={"period_start": date(2026, 1, 1)})
-    _type(app_engine, a, doc.id, INVOICE, with_period)
+    _type(app_engine, a, doc.id, INVOICE, with_period, shown_version=1)
     with workspace_transaction(app_engine, a) as conn:
         current = current_extraction(conn, doc.id)
     assert (current.version, current.kind, current.fields) == (2, "manual", with_period)
+
+
+def test_hand_fields_shown_from_an_older_reading_are_refused(app_engine, workspaces, blob_store):
+    a, _ = workspaces
+    doc = _upload(app_engine, blob_store, a, _bytes("d37-stale"))
+    first = _read(
+        app_engine, a, doc.id, INVOICE_READING.model_copy(update={"amount_total": _cited("432.10")})
+    )
+    shown = _hand_view(app_engine, a, doc.id).values
+    second = _read(app_engine, a, doc.id)  # "Neu auslesen": the amount read right this time
+    assert (first.version, second.version) == (1, 2)
+    events_before = _events(app_engine, a, doc.id)
+
+    stale = shown.model_copy(update={"notes": "Beurkundung"})
+    with pytest.raises(RuleError) as caught:
+        _type(app_engine, a, doc.id, NOTARY, stale, shown_version=first.version)
+    assert caught.value.code == "document.extraction_stale"
+    with workspace_transaction(app_engine, a) as conn:
+        assert current_extraction(conn, doc.id) == second
+        assert get_document(conn, doc.id).typing is None  # the typing was not saved either
+    assert _events(app_engine, a, doc.id) == events_before
+
+
+def test_a_first_hand_entry_is_shown_from_version_0(app_engine, workspaces, blob_store):
+    a, _ = workspaces
+    doc = _upload(app_engine, blob_store, a, _bytes("d37-version-0"))
+    _type(app_engine, a, doc.id, INVOICE, FIELDS_1, shown_version=0)
+    with pytest.raises(RuleError) as caught:
+        _type(app_engine, a, doc.id, INVOICE, FIELDS_2, shown_version=0)
+    assert caught.value.code == "document.extraction_stale"
+    with workspace_transaction(app_engine, a) as conn:
+        assert current_extraction(conn, doc.id).fields == FIELDS_1

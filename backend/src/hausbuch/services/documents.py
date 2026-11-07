@@ -80,6 +80,8 @@ LOCAL_TIME_ZONE = ZoneInfo("Europe/Berlin")
 # Hand-entry fields of the `manual` kind sent over an AI reading whose kind has no place for
 # one of them (phase 2 D37, §12).
 EXTRACTION_KIND_MISMATCH = "document.extraction_kind_mismatch"
+# Hand-entry fields shown from an extraction version that is no longer current (D37, F1).
+EXTRACTION_STALE = "document.extraction_stale"
 _HAND_FIELDS: tuple[HandField, ...] = get_args(HandField)
 # D37: where each AI kind keeps the six hand-entry fields (ManualDocumentFields). A kind or a
 # hand field not listed has no place: it is not shown, and a non-null value for it is refused.
@@ -221,6 +223,7 @@ def type_document(
     *,
     source: ExtractionSource = ExtractionSource.MANUAL,
     ai_call_id: UUID | None = None,
+    shown_version: int | None = None,
 ) -> Document:
     """Set what the document is and, optionally, its typed fields.
 
@@ -230,7 +233,11 @@ def type_document(
     `manual` is a person's typing). Hand-entry fields (ManualDocumentFields) over an AI
     reading are translated into the reading's own kind (D37, hand_fields_into); a non-null
     one that kind has no place for raises RuleError(EXTRACTION_KIND_MISMATCH) and nothing is
-    written. Writes nothing and appends no event if neither typing nor fields change.
+    written. `shown_version` is the extraction version the fields were shown from (0: none);
+    when given with fields and no longer current, RuleError(EXTRACTION_STALE) is raised and
+    neither typing nor fields are written (None: no check, for callers that compute the
+    fields themselves). Writes nothing and appends no event if neither typing nor fields
+    change.
     """
     current = _select_document(ctx.conn, document_id, for_update=True)
     if current is None:
@@ -240,12 +247,22 @@ def type_document(
     if fields is not None:
         # The document row is locked (FOR UPDATE above), so concurrent typings of the same
         # document serialize here and cannot both compute the same next version.
-        if isinstance(fields, ManualDocumentFields):
-            latest = current_extraction(ctx.conn, document_id)
-            if latest is not None and latest.kind is not ExtractionKind.MANUAL:
-                # D37: hand fields over an AI reading become a version of the reading's kind,
-                # never a `manual` one that would hide it. Equal to the reading: no version.
-                fields = hand_fields_into(latest.kind, latest.fields, fields)
+        latest = current_extraction(ctx.conn, document_id)
+        current_version = 0 if latest is None else latest.version
+        if shown_version is not None and shown_version != current_version:
+            raise RuleError(
+                EXTRACTION_STALE,
+                f"the fields were shown from extraction version {shown_version}, "
+                f"the current one is {current_version}",
+            )
+        if (
+            isinstance(fields, ManualDocumentFields)
+            and latest is not None
+            and latest.kind is not ExtractionKind.MANUAL
+        ):
+            # D37: hand fields over an AI reading become a version of the reading's kind,
+            # never a `manual` one that would hide it. Equal to the reading: no version.
+            fields = hand_fields_into(latest.kind, latest.fields, fields)
         version = _append_extraction(ctx, document_id, fields, source=source, ai_call_id=ai_call_id)
     if current.typing == typing and version is None:
         return current
