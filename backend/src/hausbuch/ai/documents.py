@@ -106,9 +106,11 @@ def has_text_layer(data: bytes) -> bool:
 def is_adobe_only_form(data: bytes) -> bool:
     """D43: whether the PDF holds its content only as an Adobe XFA form, so its ordinary PDF
     layer (all the model and every non-Adobe viewer sees) is a placeholder page. True when the
-    catalog says /NeedsRendering true, or when the AcroForm carries /XFA and the page text is
-    Adobe's placeholder; a static XFA form with a real PDF layer is False. False for anything
-    pypdf cannot open (page_count reports that as ai.unreadable) and for non-PDFs."""
+    catalog says /NeedsRendering true, or when the AcroForm carries /XFA and the PDF is one
+    page whose text holds Adobe's placeholder; a static XFA form with a real PDF layer is
+    False, also when its text says "please wait" somewhere (more than one page, or no XFA).
+    False for anything pypdf cannot open (page_count reports that as ai.unreadable) and for
+    non-PDFs."""
     try:
         reader = PdfReader(io.BytesIO(data))
         if reader.is_encrypted and not reader.decrypt(""):
@@ -123,8 +125,10 @@ def is_adobe_only_form(data: bytes) -> bool:
         acroform = root.get("/AcroForm")
         if acroform is None or "/XFA" not in acroform.get_object():
             return False
-        text = " ".join((page.extract_text() or "") for page in reader.pages).lower()
-        return any(marker in " ".join(text.split()) for marker in _XFA_PLACEHOLDER)
+        if len(reader.pages) != 1:  # Adobe's placeholder layer is a single page
+            return False
+        text = " ".join((reader.pages[0].extract_text() or "").split()).lower()
+        return any(marker in text for marker in _XFA_PLACEHOLDER)
     except Exception:  # pypdf raises a wide range of errors on damaged files
         return False
 

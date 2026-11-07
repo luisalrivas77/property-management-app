@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from pypdf import PdfReader, PdfWriter
+from pypdf.generic import ArrayObject, DecodedStreamObject, DictionaryObject, NameObject
 
 from hausbuch.ai import documents
 from hausbuch.ai.requests import (
@@ -233,6 +234,33 @@ def test_a_static_xfa_form_with_a_real_pdf_layer_is_read_as_usual():
     assert documents.is_adobe_only_form(
         _text_pdf(_PLACEHOLDER, _ACROFORM + b" /NeedsRendering false", (_XFA_STREAM,))
     )
+
+
+def _two_page_form(first: str, second: str) -> bytes:
+    """A two-page static XFA form (AcroForm with /XFA) with a real text layer on each page."""
+    one = PdfReader(io.BytesIO(_text_pdf(first)))
+    two = PdfReader(io.BytesIO(_text_pdf(second)))
+    writer = PdfWriter()
+    writer.add_page(one.pages[0])
+    writer.add_page(two.pages[0])
+    xfa = DecodedStreamObject()
+    xfa.set_data(_XFA)
+    writer.root_object[NameObject("/AcroForm")] = DictionaryObject(
+        {NameObject("/Fields"): ArrayObject(), NameObject("/XFA"): writer._add_object(xfa)}
+    )
+    out = io.BytesIO()
+    writer.write(out)
+    return out.getvalue()
+
+
+def test_a_multi_page_static_xfa_form_saying_please_wait_is_read_as_usual():
+    """Review F2: real content that says "please wait" is not Adobe's one-page placeholder."""
+    data = _two_page_form("Darlehensvertrag", "Please wait for the bank's confirmation.")
+    assert len(PdfReader(io.BytesIO(data)).pages) == 2
+    assert "/XFA" in PdfReader(io.BytesIO(data)).root_object["/AcroForm"]
+    assert not documents.is_adobe_only_form(data)
+    # the one-page placeholder with XFA stays a yes
+    assert documents.is_adobe_only_form(_text_pdf(_PLACEHOLDER, _ACROFORM, (_XFA_STREAM,)))
 
 
 def test_plain_damaged_and_non_pdf_data_is_not_an_adobe_form():
