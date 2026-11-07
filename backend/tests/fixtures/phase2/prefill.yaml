@@ -923,6 +923,105 @@ cases:
             unit_id: [street, house_number, postal_code, unit_label]
             rent_model: [rent_clause]
 
+  - id: mietvertrag_money_deposit_without_form_word
+    description: >-
+      The deposit clause names an amount to transfer but no form word (Luis's room lease, 7 Nov
+      2026: "eine Kaution in Höhe von 1.000,00 € ... auf dasselbe Konto ... zu überweisen").
+      A stated amount above 0 with no Bürgschaft named is a money deposit: cash_account,
+      derived from the amount and the clause, never "none" next to an amount.
+    kind: lease
+    context:
+      document_id: *DOC
+      classification: *CL_LEASE
+      properties: [*PROP_LINDEN]
+      units:
+        - {id: *U, property_id: *P, label: WE 3}
+    extraction:
+      <<: *LEASE
+      deposit_amount: {v: "1000.00", p: 3, q: "eine Kaution in Höhe von: 1.000,00 €"}
+      deposit_clause: {v: "Kaution auf dasselbe Konto wie in Punkt 5.1 zu überweisen", p: 3, q: "ist die Kaution auf dasselbe Konto wie in Punkt 5.1 hinterlegt zu überweisen"}
+    expect:
+      keys: [typing, tenant:1, tenancy, rent, link:tenancy]
+      records:
+        - key: tenancy
+          entity_type: tenancy
+          mode: create
+          values:
+            unit_id: *U
+            start_date: "2026-07-01"
+            signed_on: "2026-06-10"
+            rent_model: fixed
+            deposit_amount: "1000.00"
+            deposit_form: cash_account
+          derived:
+            unit_id: [street, house_number, postal_code, unit_label]
+            rent_model: [rent_clause]
+            deposit_form: [deposit_amount, deposit_clause]
+
+  - id: mietvertrag_deposit_amount_without_clause
+    description: >-
+      The lease states a deposit amount but no clause about its form: a money deposit
+      (cash_account), derived from the amount, so the tenancy is valid as proposed.
+    kind: lease
+    context:
+      document_id: *DOC
+      classification: *CL_LEASE
+      properties: [*PROP_LINDEN]
+      units:
+        - {id: *U, property_id: *P, label: WE 3}
+    extraction:
+      <<: *LEASE
+      deposit_clause: {value: null, confidence: low}
+    expect:
+      keys: [typing, tenant:1, tenancy, rent, link:tenancy]
+      records:
+        - key: tenancy
+          entity_type: tenancy
+          mode: create
+          values:
+            unit_id: *U
+            start_date: "2026-07-01"
+            signed_on: "2026-06-10"
+            rent_model: fixed
+            deposit_amount: "3450.00"
+            deposit_form: cash_account
+          derived:
+            unit_id: [street, house_number, postal_code, unit_label]
+            rent_model: [rent_clause]
+            deposit_form: [deposit_amount, deposit_clause]
+
+  - id: mietvertrag_no_deposit_is_not_cash
+    description: >-
+      "bar" counts only as a word: "Eine Kaution ist nicht vereinbart." contains it inside
+      "vereinbart" and is not a cash deposit. No amount is stated, so the form is proposed
+      as missing with its quote, for the person to decide.
+    kind: lease
+    context:
+      document_id: *DOC
+      classification: *CL_LEASE
+      properties: [*PROP_LINDEN]
+      units:
+        - {id: *U, property_id: *P, label: WE 3}
+    extraction:
+      <<: *LEASE
+      deposit_amount: {value: null, confidence: low}
+      deposit_clause: {v: "Eine Kaution ist nicht vereinbart.", p: 5, q: "Eine Kaution ist nicht vereinbart."}
+    expect:
+      keys: [typing, tenant:1, tenancy, rent, link:tenancy]
+      records:
+        - key: tenancy
+          entity_type: tenancy
+          mode: create
+          values:
+            unit_id: *U
+            start_date: "2026-07-01"
+            signed_on: "2026-06-10"
+            rent_model: fixed
+            deposit_form: null
+          derived:
+            unit_id: [street, house_number, postal_code, unit_label]
+            rent_model: [rent_clause]
+
   - id: mietvertrag_prepayment_sum
     description: Betriebskosten 180 and Heizkosten 70 stated separately; the rent row's prepayment is their sum.
     kind: lease
