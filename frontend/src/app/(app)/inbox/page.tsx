@@ -55,6 +55,9 @@ function Inbox() {
       <p className="eyebrow">Posteingang</p>
       <div className="page-head">
         <h1>Hochladen, bestätigen, fertig</h1>
+        <Link className="button-link" href="/capture">
+          Beleg fotografieren
+        </Link>
       </div>
 
       <div className="stack">

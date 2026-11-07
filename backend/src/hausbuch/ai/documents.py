@@ -72,15 +72,30 @@ def pdf_pages(data: bytes, start: int, stop: int) -> bytes:
 
 def document_block(data: bytes, media_type: str, *, citations: bool) -> dict:
     """The content block for a PDF (a `document`, citations on or off) or an image (an
-    `image`; the API cites documents only, so values read from a photo carry no source)."""
+    `image`; the API cites documents only, so values read from a photo carry no source).
+
+    Citations cite the PDF's text layer, so a PDF with none (photos combined into a PDF by
+    the capture page, D30, or a scan) is sent with citations off: its values carry no source,
+    exactly as a photo's do, instead of risking a request the API may refuse."""
     encoded = base64.standard_b64encode(data).decode("ascii")
     source = {"type": "base64", "media_type": media_type, "data": encoded}
     if media_type == PDF:
         block: dict = {"type": "document", "source": source}
-        if citations:
+        if citations and has_text_layer(data):
             block["citations"] = {"enabled": True}
         return block
     return {"type": "image", "source": source}
+
+
+def has_text_layer(data: bytes) -> bool:
+    """Whether any page of the PDF has extractable text (False for a PDF pypdf cannot read:
+    the caller's own checks refuse that one)."""
+    try:
+        return any(
+            (page.extract_text() or "").strip() for page in PdfReader(io.BytesIO(data)).pages
+        )
+    except Exception:  # pypdf raises a wide range of errors on damaged files
+        return False
 
 
 def _reader(data: bytes) -> PdfReader:

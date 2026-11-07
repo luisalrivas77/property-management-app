@@ -28,26 +28,28 @@ import json
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Any
 
 from anthropic.types import Message
 from make_docs import Doc, doc_pdf
 
 from hausbuch.ai import documents
 from hausbuch.ai.client import ModelRequest, ModelResponse, message_to_response
-from hausbuch.ai.requests import (
-    CLASSIFY_PAGES,
-    classify_request,
-    extract_request,
-    load_prompt,
-    parse_classification,
+from hausbuch.ai.requests import load_prompt, parse_classification
+
+# The request builders and the merge are the package's (shared with `hausbuch evals run`).
+from hausbuch.evals.reading import (
+    chunk_values,
+    classify_request_for,
+    eval_settings,
+    extract_requests_for,
+    merged_values,
 )
-from hausbuch.jobs.document_read import merge_values  # the job's own chunk merge
-from hausbuch.rules.extraction_parse import extraction_kind, parse_lines
+from hausbuch.rules.extraction_parse import extraction_kind
 from hausbuch.schemas.ai import ClassifyOutput, ExtractedValue
 from hausbuch.schemas.enums import ExtractionKind
-from hausbuch.schemas.extraction import EXTRACTION_MODELS
 from hausbuch.settings import Settings
+
+__all__ = ["eval_settings"]  # re-exported: test_recorded_evals and record.py import it here
 
 FORMAT = 1
 RECORDINGS_DIR = Path(__file__).parent / "recordings"
@@ -59,34 +61,10 @@ class Requests:
     extract: list[tuple[int, ModelRequest]]  # (page offset, request)
 
 
-def eval_settings(**overrides: Any) -> Settings:
-    """Settings for building requests: only the AI fields matter (models, geo, pages)."""
-    values: dict[str, Any] = {
-        "database_url": "postgresql+psycopg://unused@localhost/unused",
-        "iban_hmac_key": bytes(range(32)),
-        "session_key": bytes(range(1, 33)),
-        "rp_id": "evals",
-        "origin": "https://evals",
-        "blob_store": "local",
-        "blob_root": Path("/nonexistent"),
-    } | overrides
-    return Settings(**values)
-
-
 def build_requests(doc: Doc, settings: Settings) -> Requests:
     data = doc_pdf(doc)
-    pages = documents.page_count(data)
-    first = documents.pdf_pages(data, 0, min(CLASSIFY_PAGES, pages))
-    classify = classify_request(
-        settings, documents.document_block(first, documents.PDF, citations=False)
-    )
-    kind = ExtractionKind(doc.kind)
-    extract = []
-    for start, stop in documents.chunks(pages, settings.ai_max_pages):
-        block = documents.document_block(
-            documents.pdf_pages(data, start, stop), documents.PDF, citations=True
-        )
-        extract.append((start, extract_request(settings, kind, block)))
+    classify = classify_request_for(settings, data, documents.PDF)
+    extract = extract_requests_for(settings, ExtractionKind(doc.kind), data, documents.PDF)
     return Requests(classify, extract)
 
 
@@ -107,11 +85,11 @@ def replay(recording: dict) -> Replay:
     kind = extraction_kind(classification.type, classification.subtype)
     merged: dict[str, ExtractedValue] = {}
     if kind is not None:
-        for entry in recording["extract"]:
-            values = parse_lines(response_of(entry).blocks, kind, page_offset=entry["page_offset"])
-            merge_values(merged, values)
-        fields = EXTRACTION_MODELS[kind].model_fields
-        merged = {name: merged.get(name, ExtractedValue.missing()) for name in fields}
+        chunks = (
+            chunk_values(kind, response_of(entry), entry["page_offset"])
+            for entry in recording["extract"]
+        )
+        merged = merged_values(kind, chunks)
     return Replay(classification, kind, merged)
 
 

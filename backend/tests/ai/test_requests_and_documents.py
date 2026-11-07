@@ -48,6 +48,32 @@ def _pdf(pages: int) -> bytes:
     return out.getvalue()
 
 
+def _text_pdf(text: str = "Rechnung Nr. 42") -> bytes:
+    """A one-page PDF with a text layer (Helvetica), as a digital invoice has."""
+    stream = f"BT /F1 12 Tf 72 720 Td ({text}) Tj ET".encode()
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R"
+        b" /Resources << /Font << /F1 5 0 R >> >> >>",
+        b"<< /Length %d >>stream\n" % len(stream) + stream + b"\nendstream",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for number, body in enumerate(objects, start=1):
+        offsets.append(len(out))
+        out += b"%d 0 obj\n" % number + body + b"\nendobj\n"
+    xref = len(out)
+    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objects) + 1)
+    out += b"".join(b"%010d 00000 n \n" % offset for offset in offsets)
+    out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (
+        len(objects) + 1,
+        xref,
+    )
+    return bytes(out)
+
+
 def test_prompt_version_is_the_file_hash():
     prompt = load_prompt("classify")
     assert len(prompt.version) == 16
@@ -71,7 +97,7 @@ def test_classify_request_shape_and_no_key():
 
 
 def test_extract_request_has_citations_and_no_structured_output():
-    block = documents.document_block(_pdf(1), documents.PDF, citations=True)
+    block = documents.document_block(_text_pdf(), documents.PDF, citations=True)
     request = extract_request(_settings(), ExtractionKind.INVOICE, block)
     body = request.body()
     assert request.job is AiJob.EXTRACT
@@ -158,6 +184,15 @@ def test_unreadable_and_too_long_pdfs():
     with pytest.raises(documents.DocumentInputError) as info:
         documents.page_count(_pdf(documents.MAX_TOTAL_PAGES + 1))
     assert info.value.code == documents.TOO_MANY_PAGES
+
+
+def test_a_pdf_without_a_text_layer_is_sent_without_citations():
+    """Photos combined into a PDF (D30) or a scan: nothing to cite, sent as a photo is."""
+    assert documents.has_text_layer(_text_pdf())
+    assert not documents.has_text_layer(_pdf(2))
+    block = documents.document_block(_pdf(2), documents.PDF, citations=True)
+    assert block["type"] == "document" and "citations" not in block
+    assert not documents.has_text_layer(b"not a pdf")
 
 
 def test_image_block_has_no_citations():

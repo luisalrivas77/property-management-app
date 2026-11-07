@@ -22,8 +22,14 @@ const NAV = [
   { href: "/settings", label: "Einstellungen" },
 ] as const;
 
+// Pages without an entry of their own, highlighted under the area they belong to: the capture
+// page (phase-2.md §9) is reached from the Posteingang.
+const AREA_OF: Record<string, string> = { "/capture": "/inbox" };
+
 function isCurrent(pathname: string, href: string): boolean {
-  return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
+  if (href === "/") return pathname === "/";
+  const area = AREA_OF[pathname] ?? pathname;
+  return area === href || area.startsWith(`${href}/`);
 }
 
 export function Sidebar() {

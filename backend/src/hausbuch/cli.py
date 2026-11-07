@@ -1,12 +1,18 @@
-"""`hausbuch bootstrap | invite | openapi` (phase 1 step 3, §5, §6.5, §6.7).
+"""`hausbuch bootstrap | invite | openapi | evals` (phase 1 step 3, §5, §6.5, §6.7; phase 2 D41).
 
 bootstrap and invite run as the schema owner (HAUSBUCH_ADMIN_DATABASE_URL), never through the
-API's engine and never as a superuser: on Scaleway they are Serverless Jobs, the only place
-the owner URL is injected (§14). They print one enrollment URL, once; the token is not
-stored, and nothing else they print names a token or an email.
+API's engine and never as a superuser: they run from the operator's computer with `uv`, the
+only place the owner URL lives (ARCHITECTURE Decisions, admin commands, revised 5 Nov 2026).
+They print one enrollment URL, once; the token is not stored, and nothing else they print names
+a token or an email.
 
 openapi prints the API's OpenAPI document (built without a database connection), which is
 committed as frontend/src/api/openapi.json.
+
+`evals report` reads the proposal.applied events with the same owner URL, read-only, and
+prints pre-fill accuracy (hausbuch.evals.report). `evals run` sends the documents in
+HAUSBUCH_EVAL_DIR to the model, live, and compares each reading with its golden file
+(hausbuch.evals.run). Neither prints the connection URL or the API key, also not on an error.
 """
 
 import argparse
@@ -14,13 +20,13 @@ import os
 import sys
 import tempfile
 from collections.abc import Mapping, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from urllib.parse import urlsplit
 from uuid import UUID
 
 from sqlalchemy import Engine, create_engine, pool
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import DBAPIError, SQLAlchemyError
 
 from hausbuch.db.session import UnsafeDatabaseRoleError, create_app_engine
 from hausbuch.settings import SettingsError, load_admin_database_url
@@ -168,6 +174,35 @@ class _NoSessions:
         return None
 
 
+# --- evals ----------------------------------------------------------------------------
+
+
+def evals_report(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
+    from hausbuch.evals.report import format_report, read_report
+
+    since = None if args.since is None else datetime.combine(args.since, datetime.min.time(), UTC)
+    engine = owner_engine(environ)
+    try:
+        report, workspaces = read_report(engine, workspace_id=args.workspace, since=since)
+    except SQLAlchemyError as exc:
+        # Never the message: a connection error names the host and user. The class only.
+        detail = type(getattr(exc, "orig", None) or exc).__name__
+        raise CliError(
+            f"could not read the events ({detail}); check HAUSBUCH_ADMIN_DATABASE_URL and "
+            "that the database accepts this computer's address"
+        ) from None
+    finally:
+        engine.dispose()
+    sys.stdout.write(format_report(report, workspaces=workspaces, since=args.since))
+    return EXIT_OK
+
+
+def evals_run(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
+    from hausbuch.evals import run
+
+    return run.main(args, environ)
+
+
 # --- Helpers --------------------------------------------------------------------------
 
 
@@ -178,7 +213,12 @@ def owner_engine(environ: Mapping[str, str]) -> Engine:
         url = load_admin_database_url(environ)
     except SettingsError as exc:
         raise CliError(str(exc)) from None
-    return create_app_engine(url, poolclass=pool.NullPool)
+    try:
+        return create_app_engine(url, poolclass=pool.NullPool)
+    # Broad on purpose: SQLAlchemy 2.0.57 raises ArgumentError (without the URL) or a plain
+    # ValueError for a bad port, but no driver or future message may reach stderr.
+    except Exception:
+        raise CliError("HAUSBUCH_ADMIN_DATABASE_URL is not a valid database URL") from None
 
 
 def _origin(args: argparse.Namespace, environ: Mapping[str, str]) -> str:
@@ -237,6 +277,39 @@ def _parser() -> argparse.ArgumentParser:
 
     api = commands.add_parser("openapi", help="print the API's OpenAPI document")
     api.set_defaults(command=openapi, command_name="openapi")
+
+    evals = commands.add_parser("evals", help="pre-fill accuracy and real-document evals")
+    evals_commands = evals.add_subparsers(required=True, metavar="evals-command")
+    report = evals_commands.add_parser(
+        "report",
+        help="per kind and field: what was accepted, edited, cleared or skipped (read-only)",
+    )
+    report.add_argument("--workspace", type=UUID, help="one workspace (default: all)")
+    report.add_argument(
+        "--since", type=date.fromisoformat, help="only proposals applied on or after (YYYY-MM-DD)"
+    )
+    report.set_defaults(command=evals_report, command_name="evals report")
+
+    live = evals_commands.add_parser(
+        "run",
+        help="read the documents in HAUSBUCH_EVAL_DIR with the model (live, costs money) "
+        "and compare with their <name>.expected.yaml",
+    )
+    live.add_argument("--dir", type=Path, help="the documents (default: HAUSBUCH_EVAL_DIR)")
+    live.add_argument(
+        "--show-values", action="store_true", help="print the values, not only match/differs"
+    )
+    live.add_argument(
+        "--write-expected",
+        action="store_true",
+        help="write <name>.expected.yaml from this reading (check it first)",
+    )
+    live.add_argument(
+        "--force", action="store_true", help="with --write-expected: overwrite existing files"
+    )
+    live.add_argument("names", nargs="*", help="only these documents (file names)")
+    live.set_defaults(command=evals_run, command_name="evals run")
+
     return parser
 
 
