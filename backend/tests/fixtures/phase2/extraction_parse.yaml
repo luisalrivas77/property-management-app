@@ -16,7 +16,9 @@
 #    into the value is removed first (added 7 Nov 2026): a parenthetical at the very end that
 #    starts with "Seite" or "S." and a number, any case, optionally with more text inside the
 #    brackets ("(Seite 1)", "(S. 2)", "(Seite 1, § 1)"); any other brackets, and a page
-#    reference that is not at the end, stay. Steps 4 and 5 see the value without it.
+#    reference that is not at the end, stay. Steps 4 and 5 see the value without it. A value
+#    that is nothing but a page reference is missing (from the review: "(Seite 2)" as an
+#    amount would read as 2.00).
 #    "unbekannt" (any case) or an empty value -> ExtractedValue.missing() (value null, no
 #    source, no checks, confidence low).
 # 3. Source: the first citation of the first block that contributes a non-newline character to
@@ -218,3 +220,15 @@ cases:
     expect:
       tenant_1_full_name: {value: Lena Müller (geb. Schmidt), source: {page: 1, quote: "Mieterin: Lena Müller (geb. Schmidt)"}, checks: [cited, value_in_quote, validates], confidence: high}
       unit_label: {value: Zimmer 1 (S. 2) links, source: {page: 1, quote: "das Zimmer 1 links"}, checks: [cited, validates], confidence: medium}
+
+  - id: page_reference_only_is_missing
+    description: >-
+      The whole value is a page reference: nothing is left, so the field is missing, never an
+      amount read from the page number.
+    kind: lease
+    blocks:
+      - {text: "cold_rent: "}
+      - text: "(Seite 2)"
+        citations: [{cited_text: "Die Miete steht in § 2", start_page_number: 2, end_page_number: 3}]
+    expect:
+      cold_rent: {value: null, confidence: low}

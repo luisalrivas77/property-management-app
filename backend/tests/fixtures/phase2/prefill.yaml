@@ -73,7 +73,16 @@
 #             zimmer 1). First the units whose key equals the label's: exactly one is the
 #             unit. Else the units whose key occurs as a run of whole tokens inside the
 #             label's key: exactly one is the unit ("Zimmer 1" is never inside "Zimmer 10").
-#             Several candidates, or none: no unit (unit_id null, never a guess). No label
+#             Only a unit key with both a word and a number takes part in this second step
+#             (from the review, 7 Nov 2026): a bare number ("1") is inside any label that
+#             mentions that number for another reason ("Wohnung 1. OG"), and a bare word
+#             ("EG", "Zimmer") says nothing about which one; those match only when equal.
+#             A label that names a room (the word zimmer) never lands on a unit whose key
+#             has no zimmer: a room lease read before the rooms exist must not be booked on
+#             the flat, since a tenancy cannot be moved to another unit. A unit found this
+#             second way is proposed at most at medium confidence (it was not an equal
+#             label; tests/rules/test_prefill.py checks it). Several candidates, or none: no
+#             unit (unit_id null, never a guess); the review then picks it. No label
 #             stated: the property's only unit, else none.
 #   cost      checked in this order:
 #             1. a row whose Beleg is this document (document_id = context.document_id; Luis
@@ -1309,6 +1318,76 @@ cases:
     extraction:
       <<: *LEASE
       unit_label: {v: "Zimmer Nr. 1 (WE 3, Zimmer 1)", p: 1, q: "Vermietet wird das Zimmer Nr. 1 (WE 3, Zimmer 1)"}
+    expect:
+      keys: [typing, tenant:1, tenancy, rent, link:tenancy]
+      records:
+        - key: tenancy
+          entity_type: tenancy
+          mode: create
+          values:
+            unit_id: null
+            start_date: "2026-07-01"
+            signed_on: "2026-06-10"
+            rent_model: fixed
+            deposit_amount: "3450.00"
+            deposit_form: cash_account
+          derived:
+            unit_id: [street, house_number, postal_code, unit_label]
+            rent_model: [rent_clause]
+        - key: link:tenancy
+          entity_type: link
+          mode: create
+          values: {}
+
+  - id: mietvertrag_bare_number_unit_not_inside
+    description: >-
+      Units labelled only "1", "2" and "3": the lease's "Wohnung 1. OG" mentions the floor, not unit 1. A key without a word never matches inside a label, so no unit is proposed.
+    kind: lease
+    context:
+      document_id: *DOC
+      classification: *CL_LEASE
+      properties: [*PROP_LINDEN]
+      units:
+        - {id: *U, property_id: *P, label: "1"}
+        - {id: *U2, property_id: *P, label: "2"}
+        - {id: *U3, property_id: *P, label: "3"}
+    extraction:
+      <<: *LEASE
+      unit_label: {v: "Wohnung 1. OG", p: 1, q: "Vermietet wird die Wohnung 1. OG"}
+    expect:
+      keys: [typing, tenant:1, tenancy, rent, link:tenancy]
+      records:
+        - key: tenancy
+          entity_type: tenancy
+          mode: create
+          values:
+            unit_id: null
+            start_date: "2026-07-01"
+            signed_on: "2026-06-10"
+            rent_model: fixed
+            deposit_amount: "3450.00"
+            deposit_form: cash_account
+          derived:
+            unit_id: [street, house_number, postal_code, unit_label]
+            rent_model: [rent_clause]
+        - key: link:tenancy
+          entity_type: link
+          mode: create
+          values: {}
+
+  - id: mietvertrag_room_lease_not_on_the_flat
+    description: >-
+      Only the flat "WE 3" exists, the rooms are not created yet: "Zimmer 2 (WE 3)" names a room, so it is not booked on the flat (a tenancy cannot move to another unit later). No unit is proposed.
+    kind: lease
+    context:
+      document_id: *DOC
+      classification: *CL_LEASE
+      properties: [*PROP_LINDEN]
+      units:
+        - {id: *U, property_id: *P, label: "WE 3"}
+    extraction:
+      <<: *LEASE
+      unit_label: {v: "Zimmer 2 (WE 3)", p: 1, q: "Vermietet wird das Zimmer 2 (WE 3)"}
     expect:
       keys: [typing, tenant:1, tenancy, rent, link:tenancy]
       records:
