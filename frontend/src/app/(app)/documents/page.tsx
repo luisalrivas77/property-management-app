@@ -20,7 +20,12 @@ export default function DocumentsPage() {
 
   return (
     <section>
-      <h1>Dokumente</h1>
+      <div className="page-head">
+        <h1>Dokumente</h1>
+        <Link className="button-link" href="/capture">
+          Dokument fotografieren
+        </Link>
+      </div>
       <UploadControl
         label="Dokumente hochladen"
         prefill
