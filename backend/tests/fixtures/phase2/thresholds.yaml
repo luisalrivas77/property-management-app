@@ -13,7 +13,8 @@
 #        counterparty: rent and its prepayment, owner transfers, the annuity's two parts,
 #        the three Hausgeld parts, Grundsteuer, insurance, bank fees.
 #   null everything else: one-offs whose treatment needs a person (settlements, deposits,
-#        loan fees, professional fees), repairs, renovation, acquisition costs (capitalized),
+#        loan fees, professional fees), the loan payout and the purchase price (one-offs,
+#        added 7 Nov 2026), repairs, renovation, acquisition costs (capitalized),
 #        other_income, other_expense, uncategorized.
 # Every category appears exactly once (the fixture model checks it).
 
@@ -28,6 +29,7 @@ thresholds:
   - {category: loan_interest, threshold: "0.900"}
   - {category: loan_principal, threshold: "0.900"}
   - {category: loan_fees, threshold: null}
+  - {category: loan_disbursement, threshold: null}
   - {category: hausgeld_umlagefaehig, threshold: "0.900"}
   - {category: hausgeld_verwaltung, threshold: "0.900"}
   - {category: hausgeld_ruecklage, threshold: "0.900"}
@@ -35,6 +37,7 @@ thresholds:
   - {category: insurance, threshold: "0.900"}
   - {category: repairs, threshold: null}
   - {category: renovation, threshold: null}
+  - {category: purchase_price, threshold: null}
   - {category: acquisition_cost, threshold: null}
   - {category: professional_fees, threshold: null}
   - {category: bank_fees, threshold: "0.900"}
