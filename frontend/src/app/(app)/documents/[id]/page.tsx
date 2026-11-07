@@ -94,6 +94,20 @@ function Original({ detail }: { detail: DocumentDetail }) {
   );
 }
 
+// Subtypes whose retention runs from ownership or tenancy end dates, not a tax year
+// (backend rules/retention.py _CLASS_BY_SUBTYPE), and whose checklist items ignore the tax
+// year: the Steuerjahr field is hidden for them while it is empty (Luis, 7 Nov 2026). A
+// stored year stays visible so it can be seen and cleared.
+const NO_TAX_YEAR: ReadonlySet<DocumentSubtype | ""> = new Set<DocumentSubtype | "">([
+  "purchase_contract",
+  "price_split_evidence",
+  "appraisal",
+  "loan_contract",
+  "lease",
+  "handover_protocol",
+  "deposit_record",
+]);
+
 const TYPING_KEYS = [
   "typing",
   "typing.type",
@@ -245,6 +259,7 @@ function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onS
         >
           <input type="date" value={documentDate} onChange={(e) => setDocumentDate(e.target.value)} />
         </Field>
+        {NO_TAX_YEAR.has(subtype) && taxYear === "" ? null : (
         <Field
           id="doc-tax-year"
           label="Steuerjahr (optional)"
@@ -253,6 +268,7 @@ function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onS
         >
           <input type="text" inputMode="numeric" value={taxYear} onChange={(e) => setTaxYear(e.target.value)} maxLength={4} />
         </Field>
+        )}
       </div>
       <fieldset className="stack">
         <legend>Felder (von Hand)</legend>
