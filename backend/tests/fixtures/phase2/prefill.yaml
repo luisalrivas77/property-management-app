@@ -266,6 +266,88 @@ cases:
           target_id: *P
           values: {}
 
+  - id: kaufvertrag_existing_property_street_abbreviated
+    description: >-
+      The flat was typed by hand as "Lindenstraße"; the contract's later pages write "Lindenstr."
+      (added 7 Nov 2026, after Luis's real contract used both). The address still finds the
+      flat, the stored spelling is not proposed for change, and with no unit label stated no
+      unit is proposed for it.
+    kind: purchase_contract
+    context:
+      document_id: *DOC
+      classification: *CL_KV
+      owners: *OWNERS
+      properties: [*PROP_LINDEN, *PROP_KASTANIEN]
+      units:
+        - {id: *U, property_id: *P, label: WE 3, mea: {numerator: 85, denominator: 1000}}
+    extraction:
+      <<: *KV
+      street: {value: Lindenstr., source: {page: 21, quote: "Lindenstr. 12, 10115 Berlin"}, checks: [cited, value_in_quote, validates], confidence: high}
+      unit_label: {value: null, confidence: low}
+    expect:
+      keys: [typing, property, correction:notarized_on, price_split, ownership, link:property]
+      records:
+        - key: property
+          entity_type: property
+          mode: unchanged
+          target_id: *P
+          values:
+            kind: etw
+            address.street: Lindenstr.
+            address.house_number: "12"
+            address.postal_code: "10115"
+            address.city: Berlin
+            purchase_date: "2026-05-01"
+            purchase_price: "289000.00"
+          current:
+            kind: etw
+            address.street: Lindenstraße
+            address.house_number: "12"
+            address.postal_code: "10115"
+            address.city: Berlin
+            purchase_date: "2026-05-01"
+            purchase_price: "289000.00"
+        - key: link:property
+          entity_type: link
+          mode: create
+          target_id: *P
+          values: {}
+
+  - id: kaufvertrag_other_house_number_is_another_property
+    description: >-
+      A contract for Lindenstraße 1-2 is not the flat at Lindenstraße 12 (review of the street
+      fix, 7 Nov 2026): a hyphen or slash in a house number is significant, so a new property
+      is proposed, visibly, instead of a silent match.
+    kind: purchase_contract
+    context:
+      document_id: *DOC
+      classification: *CL_KV
+      owners: *OWNERS
+      properties: [*PROP_LINDEN]
+    extraction:
+      <<: *KV
+      house_number: {value: 1-2, source: {page: 2, quote: "Lindenstraße 1-2, 10115 Berlin"}, checks: [cited, value_in_quote, validates], confidence: high}
+    expect:
+      keys: [typing, property, unit, price_split, ownership, link:property]
+      records:
+        - key: property
+          entity_type: property
+          mode: create
+          values:
+            kind: etw
+            address.street: Lindenstraße
+            address.house_number: 1-2
+            address.postal_code: "10115"
+            address.city: Berlin
+            build_year: null
+            notarized_on: "2026-03-12"
+            purchase_date: "2026-05-01"
+            purchase_price: "289000.00"
+        - key: link:property
+          entity_type: link
+          mode: create
+          values: {}
+
   - id: kaufvertrag_uebergang_by_payment
     description: Besitzübergang on the day the price is paid in full; no date to propose, the clause is quoted.
     kind: purchase_contract
