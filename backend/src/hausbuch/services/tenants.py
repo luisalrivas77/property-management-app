@@ -30,6 +30,7 @@ from hausbuch.schemas.events import (
 from hausbuch.schemas.tenancy import Tenant, TenantCreate
 
 from .context import CommandContext
+from .erasure_scrub import scrub_for_erasure
 from .errors import ConflictError, RetentionHoldError
 from .events import append_event
 from .iban import protect_iban
@@ -130,8 +131,10 @@ def erase_tenant(
       for possible legal claims is allowed but not required, so that choice is the landlord's.
     - A tenant with no tenancy (an applicant, hold "unlinked") may always be erased.
 
-    The tenant.erased event records the basis, never any erased value. Documents linked to the
-    tenant (e.g. the lease) keep their own retention and are not touched here.
+    The tenant.erased event records the basis and the scrub counts, never any erased value.
+    Documents linked to the tenant (e.g. the lease) keep their own retention and are not
+    touched here; what the AI layer derived from them is scrubbed in the same transaction
+    (erasure_scrub, phase-2.md D42 (3)). A refused erasure scrubs nothing.
     """
     current = require_row(ctx.conn, tenant_table, EntityType.TENANT, tenant_id, for_update=True)
     if current.erased_at is not None:
@@ -168,6 +171,9 @@ def erase_tenant(
         raise RetentionHoldError(
             f"tenant {tenant_id}'s data is retained until {result.retain_until}", result=result
         )
+    # The IBAN hash is read from the locked row before it is nulled below.
+    iban_hmac = None if current.iban_hmac is None else bytes(current.iban_hmac)
+    scrubbed = scrub_for_erasure(ctx, tenant_id, sorted(tenancy_ids), iban_hmac)
     row = ctx.conn.execute(
         update(tenant_table)
         .where(tenant_table.c.id == tenant_id)
@@ -182,7 +188,13 @@ def erase_tenant(
         )
         .returning(*_READ_COLUMNS)
     ).one()
-    append_event(ctx, EventType.TENANT_ERASED, tenant_id, TenantErased(basis=basis))
+    erased = TenantErased(
+        basis=basis,
+        proposals_scrubbed=scrubbed.proposals_scrubbed,
+        ai_calls_scrubbed=scrubbed.ai_calls_scrubbed,
+        rules_disabled=scrubbed.rules_disabled,
+    )
+    append_event(ctx, EventType.TENANT_ERASED, tenant_id, erased)
     return _to_tenant(row)
 
 

@@ -45,6 +45,12 @@ ANNA = TenantCreate(
 )
 
 
+def _erased(basis: str) -> dict:
+    """A tenant.erased payload. It carries the erasure scrub's counts (phase-2.md D42 (3));
+    these tests seed nothing for the scrub to find (test_services_erasure_scrub.py does)."""
+    return {"basis": basis, "proposals_scrubbed": 0, "ai_calls_scrubbed": 0, "rules_disabled": 0}
+
+
 def _create(run, ws, data=ANNA):
     return run(ws, create_tenant, data, iban_key=TEST_IBAN_KEY, now=CREATED_AT)
 
@@ -301,7 +307,7 @@ def test_on_request_erasure_inside_the_claims_period_records_its_basis(run, read
     assert erased.erased_at == LATER and erased.full_name is None
     event = _events(read, a, moved_out.id)[-1]
     assert event.type is EventType.TENANT_ERASED
-    assert event.payload == {"basis": "data_subject_request"}
+    assert event.payload == _erased("data_subject_request")
 
 
 @pytest.mark.parametrize(
@@ -337,7 +343,7 @@ def test_a_request_erases_from_the_day_after_move_out(run, read, fresh_workspace
 
     erased = run(a, erase_tenant, anna.id, on_request=True, now=LATER)  # 6 Nov
     assert erased.full_name is None
-    assert _events(read, a, anna.id)[-1].payload == {"basis": "data_subject_request"}
+    assert _events(read, a, anna.id)[-1].payload == _erased("data_subject_request")
 
 
 def test_the_recorded_basis_is_what_permitted_the_erasure(run, read, fresh_workspaces):
@@ -349,8 +355,8 @@ def test_the_recorded_basis_is_what_permitted_the_erasure(run, read, fresh_works
     run(a, erase_tenant, applicant.id, on_request=True, now=LATER)
     run(a, erase_tenant, old.id, on_request=True, now=LATER)
 
-    assert _events(read, a, applicant.id)[-1].payload == {"basis": "no_tenancy"}
-    assert _events(read, a, old.id)[-1].payload == {"basis": "retention_expired"}
+    assert _events(read, a, applicant.id)[-1].payload == _erased("no_tenancy")
+    assert _events(read, a, old.id)[-1].payload == _erased("retention_expired")
 
 
 def test_erasure_basis_without_a_request(run, read, fresh_workspaces):
@@ -361,8 +367,8 @@ def test_erasure_basis_without_a_request(run, read, fresh_workspaces):
     run(a, erase_tenant, applicant.id, now=LATER)
     run(a, erase_tenant, old.id, now=LATER)
 
-    assert _events(read, a, applicant.id)[-1].payload == {"basis": "no_tenancy"}
-    assert _events(read, a, old.id)[-1].payload == {"basis": "retention_expired"}
+    assert _events(read, a, applicant.id)[-1].payload == _erased("no_tenancy")
+    assert _events(read, a, old.id)[-1].payload == _erased("retention_expired")
 
 
 def test_a_tenant_without_any_tenancy_can_be_erased(run, read, fresh_workspaces):
@@ -479,7 +485,7 @@ def test_a_removed_party_is_held_by_the_tenancy_they_left(run, read, fresh_works
 
     erased = run(a, erase_tenant, ben.id, on_request=True, now=LATER)
     assert erased.full_name is None
-    assert _events(read, a, ben.id)[-1].payload == {"basis": "data_subject_request"}
+    assert _events(read, a, ben.id)[-1].payload == _erased("data_subject_request")
 
 
 def test_a_party_who_joined_and_left_is_still_held(run, read, fresh_workspaces):
@@ -508,7 +514,7 @@ def test_a_party_removed_long_ago_is_erased_as_expired_not_as_unlinked(run, read
     _only(run, a, tenancy.id, anna.id)
 
     run(a, erase_tenant, ben.id, on_request=True, now=LATER)
-    assert _events(read, a, ben.id)[-1].payload == {"basis": "retention_expired"}
+    assert _events(read, a, ben.id)[-1].payload == _erased("retention_expired")
 
 
 def test_the_event_log_lookup_stays_in_its_workspace(app_engine, run, fresh_workspaces):
