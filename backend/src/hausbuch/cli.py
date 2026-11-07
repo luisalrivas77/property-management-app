@@ -2,8 +2,9 @@
 
 bootstrap and invite run as the schema owner (HAUSBUCH_ADMIN_DATABASE_URL), never through the
 API's engine and never as a superuser: they run from the operator's computer with `uv`, the
-only place the owner URL lives (ARCHITECTURE Decisions, admin commands, revised 5 Nov 2026). They print one enrollment URL, once; the token is not
-stored, and nothing else they print names a token or an email.
+only place the owner URL lives (ARCHITECTURE Decisions, admin commands, revised 5 Nov 2026).
+They print one enrollment URL, once; the token is not stored, and nothing else they print names
+a token or an email.
 
 openapi prints the API's OpenAPI document (built without a database connection), which is
 committed as frontend/src/api/openapi.json.
