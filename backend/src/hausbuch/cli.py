@@ -215,7 +215,9 @@ def owner_engine(environ: Mapping[str, str]) -> Engine:
         raise CliError(str(exc)) from None
     try:
         return create_app_engine(url, poolclass=pool.NullPool)
-    except Exception:  # SQLAlchemy's ArgumentError quotes the URL, password included
+    # Broad on purpose: SQLAlchemy 2.0.57 raises ArgumentError (without the URL) or a plain
+    # ValueError for a bad port, but no driver or future message may reach stderr.
+    except Exception:
         raise CliError("HAUSBUCH_ADMIN_DATABASE_URL is not a valid database URL") from None
 
 

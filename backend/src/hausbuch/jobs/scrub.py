@@ -42,8 +42,10 @@ FINAL_STATUSES = (
     ProposalStatus.REJECTED,
     ProposalStatus.SUPERSEDED,
     ProposalStatus.FAILED,
-    ProposalStatus.BLOCKED_TENANT_DATA,
 )
+# Not blocked_tenant_data: such a proposal can still be applied or rejected
+# (services.proposals._DECIDABLE), and scrubbing it would leave an inbox item nobody can
+# resolve. It is scrubbed once decided or superseded (D41, amended after review).
 
 logger = logging.getLogger("hausbuch.jobs.scrub")
 

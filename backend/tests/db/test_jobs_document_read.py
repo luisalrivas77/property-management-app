@@ -206,7 +206,9 @@ def test_invoice_is_classified_extracted_and_handed_over(setup, recorder, app_en
     assert classify.model == "claude-haiku-5-5" and extract.model == "claude-sonnet-5-5"
     # Classification sends the first three pages, extraction the whole (short) file.
     assert classify.content[0]["source"]["data"] != extract.content[0]["source"]["data"]
-    assert extract.content[0]["citations"] == {"enabled": True}
+    # These test PDFs are blank pages, with no text layer: sent without citations, as a
+    # photo is (D30); a PDF with text is covered in tests/ai/test_requests_and_documents.py.
+    assert "citations" not in extract.content[0]
 
 
 def test_long_pdf_is_split_and_citations_get_the_page_offset(setup, recorder, app_engine):

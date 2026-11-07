@@ -97,7 +97,7 @@ def test_old_final_proposals_are_scrubbed_and_recent_or_pending_ones_kept(app_en
     ws, doc = next(iter(docs.items()))
     scrubbed = {
         status: _proposal(app_engine, ws, doc, status, 91)
-        for status in ("applied", "rejected", "superseded", "failed", "blocked_tenant_data")
+        for status in ("applied", "rejected", "superseded", "failed")
     }
     kept = {
         "applied at 89 days": _proposal(app_engine, ws, doc, "applied", 89),
@@ -105,6 +105,8 @@ def test_old_final_proposals_are_scrubbed_and_recent_or_pending_ones_kept(app_en
         "ready": _proposal(app_engine, ws, doc, "ready", 400),
         "queued": _proposal(app_engine, ws, doc, "queued", 400),
         "running": _proposal(app_engine, ws, doc, "running", 400),
+        # Still decidable, so not final for the scrub (D41).
+        "blocked_tenant_data": _proposal(app_engine, ws, doc, "blocked_tenant_data", 400),
     }
     # The age is decided_at's, not updated_at's, when the proposal was decided.
     kept["decided recently, updated long ago"] = _proposal(
