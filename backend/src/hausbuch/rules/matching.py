@@ -16,8 +16,9 @@ Matchers (confidence 1.0 when exact):
                   A credit within 10 % of it -> the same split with the prepayment in full,
                   confidence 0.5 and the difference as the question.
   loan            the loan's account HMAC, or its lender in the counterparty name; the
-                  schedule entry due in the booking month and -amount equal to its payment
-                  -> loan_interest / loan_principal.
+                  schedule entry due nearest the booking date within 10 days (none, or a tie
+                  -> no match, D39) and -amount equal to its payment -> loan_interest /
+                  loan_principal, period = the entry's due month.
   document        an invoice or Bescheid payment within 0.01 and 10 days, found by IBAN HMAC or
                   reference -> the document's category, the document as Beleg, its property
                   and loan (a financing invoice is loan_fees on its loan, D35); 0.95.
@@ -160,8 +161,11 @@ def infer_rule(
 ) -> MatchingRuleCreate | None:
     """The rule a confirmed answer becomes ("Künftig immer so zuordnen"): the line's IBAN HMAC
     and amount sign, and a split method read from the confirmed allocations, never their
-    amounts (D25). None when the line has no IBAN (the user then types a pattern) or the
-    split fits no method."""
+    amounts (D25). None when the line has no IBAN (the user then types a pattern), the split
+    fits no method, or a single category is answered for a counterparty a matcher owns (an
+    owner account, a tenant's or a loan account: D38). Rules run before the matchers, so an
+    IBAN-only rule there would pre-empt the exact rent / loan / owner split of every later
+    line."""
     if tx.counterparty_iban_hmac is None or tx.amount == 0:
         return None
     allocs = confirmed.allocations
@@ -196,6 +200,8 @@ def infer_rule(
     (only,) = allocs
     if only.category in _OWNER:
         return rule(SplitMethod.OWNER_TRANSFER)
+    if _matcher_owns(tx.counterparty_iban_hmac, context):
+        return None
     return rule(
         SplitMethod.SINGLE_CATEGORY,
         category=only.category,
@@ -308,12 +314,15 @@ def _rent_split(tx: MatchTransaction, tenancy: TenancyFacts, *, exact_only: bool
 def _loan_split(tx: MatchTransaction, loan: LoanFacts) -> _Split | None:
     if tx.amount >= 0:
         return None
-    entry = _entry_in_month(build_schedule(loan.terms).entries, tx.booking_date)
+    entry = _entry_nearest(build_schedule(loan.terms).entries, tx.booking_date)
     # The entry's payment is terms.monthly_payment for every entry but the final one, whose
     # payment is the remaining balance + interest; matching on it keeps the split exact.
     if entry is None or -tx.amount != entry.payment:
         return None
-    period = service_period(tx.purpose, tx.booking_date, True)
+    # The period is the entry's month, not the booking month: a bank may book on 30 June
+    # for the instalment due 1 July (D39).
+    due = entry.due_on
+    period = ServicePeriod(start=due.replace(day=1), end=_month_end(due))
     scope = {"property_id": loan.property_id, "loan_id": loan.id}
     drafts = [
         _draft(-entry.interest, C.LOAN_INTEREST, period, True, **scope),
@@ -468,9 +477,31 @@ def _plan_in_force(
     return same_day[0] if len(same_day) == 1 else None
 
 
-def _entry_in_month(entries: Sequence[ScheduleEntry], on: date) -> ScheduleEntry | None:
-    found = [e for e in entries if (e.due_on.year, e.due_on.month) == (on.year, on.month)]
-    return _only(found)
+LOAN_WINDOW_DAYS = 10
+
+
+def _entry_nearest(entries: Sequence[ScheduleEntry], on: date) -> ScheduleEntry | None:
+    """The schedule entry whose due date is nearest the booking date, within 10 days either
+    side (D39); None when none is that near or two are equally near."""
+    near = [e for e in entries if abs((e.due_on - on).days) <= LOAN_WINDOW_DAYS]
+    if not near:
+        return None
+    best = min(abs((e.due_on - on).days) for e in near)
+    return _only([e for e in near if abs((e.due_on - on).days) == best])
+
+
+def _month_end(day: date) -> date:
+    following = date(day.year + day.month // 12, day.month % 12 + 1, 1)
+    return date.fromordinal(following.toordinal() - 1)
+
+
+def _matcher_owns(hmac: str, context: MatchContext) -> bool:
+    """Whether a deterministic matcher owns this counterparty (D38)."""
+    return (
+        hmac in context.owner_account_hmacs
+        or any(hmac in t.tenant_iban_hmacs for t in context.tenancies)
+        or any(hmac == loan.account_iban_hmac for loan in context.loans)
+    )
 
 
 def _document_hit(tx: MatchTransaction, doc: DocumentFacts) -> bool:
