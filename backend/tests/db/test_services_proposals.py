@@ -55,7 +55,12 @@ from hausbuch.services.properties import (
     list_price_splits,
     list_properties,
 )
-from hausbuch.services.tenancies import create_tenancy, deposit_receipts
+from hausbuch.services.tenancies import (
+    create_tenancy,
+    deposit_receipts,
+    list_rent_schedule,
+    list_tenancies,
+)
 from hausbuch.services.tenants import create_tenant, erase_tenant
 from hausbuch.services.units import create_unit, list_units
 from hausbuch.services.workspace_settings import update_settings
@@ -940,6 +945,93 @@ def test_a_deposit_record_applies_as_a_kaution_receipt_on_its_tenancy(
     assert (second.mode, second.target_id) == ("unchanged", tenancy.id)
     run(ws, proposals.apply_proposal, again.id, _accept_all(again), iban_key=TEST_IBAN_KEY)
     assert len(read(ws, deposit_receipts, tenancy.id)) == 1
+
+
+# --- Values the proposal did not contain, filled by hand (7 Nov 2026) -------------------------
+
+LEASE = ClassifyOutput(
+    type=DocumentType.CONTRACT,
+    subtype=DocumentSubtype.LEASE,
+    contains_tenant_data=True,
+    language="de",
+    confidence="high",
+)
+LEASE_VALUES = {
+    "title": _v("Mietvertrag Zimmer"),
+    "street": _v("Lindenstraße"),
+    "house_number": _v("12"),
+    "postal_code": _v("10115"),
+    "city": _v("Berlin"),
+    # "WE 3" and "Zimmer 1" both occur in it: no unit is proposed (fixture prefill.yaml).
+    "unit_label": _v("Zimmer Nr. 1 (WE 3, Zimmer 1)"),
+    "tenant_1_full_name": _v("Lena Beispiel"),
+    "start_date": _v("2026-05-01"),
+    "deposit_amount": _v("1000.00"),
+    "cold_rent": _v("450.00"),
+}
+
+
+def test_a_lease_applies_with_a_hand_picked_unit_and_a_hand_typed_prepayment(
+    run, read, job, dbname, fresh_workspaces, blob_store, enqueued
+):
+    """The review fills what the proposal lacks (Luis, 7 Nov 2026): a unit the lease's label
+    did not decide and a Nebenkosten amount the lease does not state. The apply takes both,
+    validated like any value, and records them as edited; a unit of another workspace is not
+    found (RLS) and the apply writes nothing."""
+    ws, other = fresh_workspaces
+    with _admin(dbname) as conn:
+        conn.execute("UPDATE workspace SET ai_tenant_documents = true WHERE id = %s", (ws,))
+    prop = run(ws, create_property, FLAT)
+    run(
+        ws,
+        create_unit,
+        UnitCreate(property_id=prop.id, label="WE 3", floor_area_m2=Decimal("68.40")),
+    )
+    room = run(
+        ws,
+        create_unit,
+        UnitCreate(property_id=prop.id, label="Zimmer 1", floor_area_m2=Decimal("14.00")),
+    )
+    foreign_prop = run(other, create_property, FLAT)
+    foreign = run(
+        other,
+        create_unit,
+        UnitCreate(property_id=foreign_prop.id, label="Zimmer 1", floor_area_m2=Decimal("14.00")),
+    )
+    doc, ready, _ = _read_ready(
+        run, job, ws, blob_store, enqueued, LEASE, LEASE_VALUES, b"%PDF zimmer"
+    )
+    records = {r.key: r for r in ready.records}
+    assert set(records) == {"typing", "tenant:1", "tenancy", "rent", "link:tenancy"}
+    assert records["tenancy"].fields["unit_id"].value is None
+    assert "operating_costs_prepayment" not in records["rent"].fields
+
+    hand = {"operating_costs_prepayment": "150.00"}
+    wrong = _accept_all(ready, tenancy={"unit_id": str(foreign.id)}, rent=hand)
+    with pytest.raises(NotFoundError):
+        run(ws, proposals.apply_proposal, ready.id, wrong, iban_key=TEST_IBAN_KEY)
+    assert read(ws, list_tenancies, room.id) == []
+    assert read(ws, proposals.get_proposal, ready.id).status is ProposalStatus.READY
+
+    body = _accept_all(ready, tenancy={"unit_id": str(room.id)}, rent=hand)
+    result = run(ws, proposals.apply_proposal, ready.id, body, iban_key=TEST_IBAN_KEY)
+
+    [tenancy] = read(ws, list_tenancies, room.id)
+    assert {a.key: a.entity_id for a in result.applied}["tenancy"] == tenancy.id
+    assert tenancy.deposit_form is DepositForm.CASH_ACCOUNT
+    [rent] = read(ws, list_rent_schedule, tenancy.id)
+    assert (rent.cold_rent, rent.operating_costs_prepayment) == (
+        Decimal("450.00"),
+        Decimal("150.00"),
+    )
+    assert rent.document_id == doc.id
+    events = read(ws, list_events)
+    payload = events[-1].payload
+    assert events[-1].type is EventType.PROPOSAL_APPLIED
+    by_key = {r["key"]: r["decisions"] for r in payload["records"]}
+    assert by_key["tenancy"]["unit_id"] == "edited"
+    assert by_key["tenancy"]["start_date"] == "accepted"
+    assert by_key["rent"]["operating_costs_prepayment"] == "edited"
 
 
 # --- An apply that names an erased tenant (D42 (3), review F1) ------------------------------
