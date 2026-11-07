@@ -781,3 +781,247 @@ button.source-badge:not(:disabled):hover {
 .proposal-foot {
   margin-top: 4px;
 }
+
+/* --- Posteingang (phase-2.md §8.3, docs/mockups/03-inbox.png): the queue on the left, the
+   allocation panel on the right; stacked on a narrow screen --- */
+
+.badge.badge-info {
+  background: var(--info-bg);
+  color: var(--info);
+}
+
+.amount-in {
+  color: var(--accent);
+}
+
+.inbox-layout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  align-items: flex-start;
+  margin-top: 24px;
+}
+
+.card.inbox-queue {
+  flex: 3 1 520px;
+  min-width: 0;
+  padding: 20px 0 8px;
+}
+
+.inbox-queue-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 0 20px 12px;
+}
+
+.inbox-queue-head h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.inbox-queue > .muted,
+.inbox-empty {
+  padding: 0 20px 12px;
+}
+
+.card.inbox-panel {
+  flex: 2 1 340px;
+  min-width: 0;
+  border-color: var(--info-border);
+  padding: 24px;
+}
+
+.inbox-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* One item: date | what it is | amount, then the kind, reasoning and question under it. */
+.inbox-entry {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  align-items: baseline;
+  padding: 12px 20px;
+  border-top: 1px solid var(--divider);
+}
+
+button.inbox-entry {
+  width: 100%;
+  min-height: 56px;
+  border: none;
+  border-top: 1px solid var(--divider);
+  border-radius: 0;
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 400;
+  text-align: left;
+  cursor: pointer;
+}
+
+button.inbox-entry:not(:disabled):hover {
+  border-color: var(--divider);
+  background: var(--bg);
+  color: var(--text);
+}
+
+button.inbox-entry[aria-pressed="true"] {
+  background: var(--info-bg);
+}
+
+.inbox-when {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.inbox-main {
+  min-width: 0;
+}
+
+.inbox-main strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.inbox-detail {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.inbox-amount {
+  font-size: 14px;
+  font-weight: 800;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.inbox-why,
+.inbox-actions {
+  grid-column: 2 / -1;
+}
+
+.inbox-why {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.inbox-why .badge {
+  margin-left: 0;
+}
+
+.inbox-question {
+  font-weight: 700;
+}
+
+.inbox-actions {
+  margin-top: 6px;
+  font-size: 14px;
+}
+
+@media (max-width: 559px) {
+  .inbox-entry {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .inbox-when {
+    grid-column: 1 / -1;
+  }
+  .inbox-why,
+  .inbox-actions {
+    grid-column: 1 / -1;
+  }
+}
+
+/* --- the allocation panel (components/allocations.tsx) --- */
+
+.allocation-source {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--info-text);
+}
+
+.ai-badge {
+  padding: 3px 6px;
+  border-radius: 5px;
+  background: var(--info);
+  color: var(--accent-text);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+h2.allocation-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.allocation-purpose {
+  margin: 6px 0 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.allocation-reasoning {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+
+.allocation-question {
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--warn-bg);
+  color: var(--warn);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.allocation-rows {
+  display: grid;
+  gap: 12px;
+}
+
+fieldset.allocation-row {
+  margin: 0;
+  padding: 8px 14px 12px;
+  background: var(--bg);
+  border-color: var(--border);
+}
+
+.allocation-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px 14px;
+}
+
+.allocation-fields .field {
+  min-width: 0;
+}
+
+.allocation-rest {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--accent-strong);
+}
+
+.allocation-rest.open {
+  color: var(--warn);
+}

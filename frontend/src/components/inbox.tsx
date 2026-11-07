@@ -1,0 +1,274 @@
+"use client";
+
+// Posteingang (docs/phases/phase-2.md §8.3, docs/mockups/03-inbox.png): the review queue as one
+// list, newest first, as GET /inbox returns it. Each item shows its kind, the one-line
+// reasoning and the question the API wrote, and acts through its own endpoint:
+//
+// - a bank line (allocation_proposed, unmatched): selecting it opens the allocation panel
+//   (components/allocations.tsx);
+// - a document proposal, a failed or blocked reading: a link to the document page, where the
+//   Vorschlag is reviewed;
+// - an import waiting for its balance: the Konten balance form; one that does not reconcile: a
+//   link to the account's Kontoauszüge, which show both balances;
+// - a possible duplicate: the Konten card with Zusammenführen / Beide behalten.
+//
+// GET /inbox names ids only, so the lines, imports, accounts, duplicates and documents are
+// loaded alongside to show what each item is about. Amounts are shown as the API returns them.
+import Link from "next/link";
+
+import { api, ok } from "@/api/client";
+import type { Account, Document, PossibleDuplicate, StatementImport, Transaction } from "@/api/schemas";
+import type { components } from "@/api/types";
+
+import { BalanceForm, DuplicateCard } from "./accounts";
+import { documentLabel } from "./documents";
+import { formatDate, formatDateTime, formatMoney } from "./format";
+import { INBOX_ITEM_KIND } from "./labels";
+import { ActionDialog } from "./ui";
+
+// Step 4's schemas have no alias in schemas.ts yet.
+export type InboxItem = components["schemas"]["InboxItem"];
+type InboxItemKind = components["schemas"]["InboxItemKind"];
+
+/** The kinds whose item is a bank line to allocate in the panel. */
+const LINE_KINDS: readonly InboxItemKind[] = ["allocation_proposed", "unmatched"];
+
+export function isLineItem(item: InboxItem): boolean {
+  return LINE_KINDS.includes(item.kind) && !!item.transaction_id;
+}
+
+const PILL_CLASS: Record<InboxItemKind, string> = {
+  proposal: "badge badge-info",
+  read_failed: "badge badge-danger",
+  blocked_tenant_data: "badge badge-warn",
+  import_unreconciled: "badge badge-danger",
+  import_pending_balance: "badge badge-warn",
+  possible_duplicate: "badge badge-warn",
+  allocation_proposed: "badge badge-info",
+  unmatched: "badge badge-warn",
+};
+
+export interface InboxData {
+  items: InboxItem[];
+  transactions: Map<string, Transaction>;
+  imports: Map<string, StatementImport>;
+  accounts: Map<string, Account>;
+  duplicates: Map<string, PossibleDuplicate>;
+  documents: Map<string, Document>;
+}
+
+/** GET /inbox plus what its items point at: every statement account's lines and imports, the
+ * possible duplicates and the vault's documents (one household holds few of each). */
+export async function loadInbox(): Promise<InboxData> {
+  const [items, accounts, duplicates, documents] = await Promise.all([
+    ok(api.GET("/api/inbox")),
+    ok(api.GET("/api/accounts")),
+    ok(api.GET("/api/possible-duplicates")),
+    ok(api.GET("/api/documents")),
+  ]);
+  const perAccount = await Promise.all(
+    accounts
+      .filter((account) => !account.is_owner_account)
+      .map(async (account) => {
+        const path = { params: { path: { account_id: account.id } } };
+        const [imports, transactions] = await Promise.all([
+          ok(api.GET("/api/accounts/{account_id}/imports", path)),
+          ok(api.GET("/api/accounts/{account_id}/transactions", path)),
+        ]);
+        return { imports, transactions };
+      }),
+  );
+  return {
+    items,
+    transactions: new Map(perAccount.flatMap((entry) => entry.transactions).map((line) => [line.id, line])),
+    imports: new Map(perAccount.flatMap((entry) => entry.imports).map((imp) => [imp.id, imp])),
+    accounts: new Map(accounts.map((account) => [account.id, account])),
+    duplicates: new Map(duplicates.map((pair) => [pair.id, pair])),
+    documents: new Map(documents.map((document) => [document.id, document])),
+  };
+}
+
+/** "3 Buchungen zuordnen · 2 weitere Punkte". */
+export function inboxSummary(items: InboxItem[]): string {
+  const lines = items.filter(isLineItem).length;
+  const other = items.length - lines;
+  const parts: string[] = [];
+  if (lines > 0) parts.push(lines === 1 ? "1 Buchung zuordnen" : `${lines} Buchungen zuordnen`);
+  if (other > 0) parts.push(other === 1 ? "1 weiterer Punkt" : `${other} weitere Punkte`);
+  return parts.join(" · ");
+}
+
+function isCredit(amount: string): boolean {
+  return !amount.startsWith("-") && !/^0+(\.0+)?$/.test(amount);
+}
+
+function signedMoney(amount: string): string {
+  return `${isCredit(amount) ? "+" : ""}${formatMoney(amount)}`;
+}
+
+export function InboxList({
+  data,
+  selected,
+  onSelect,
+  onChanged,
+}: {
+  data: InboxData;
+  selected: string | null;
+  onSelect: (transactionId: string) => void;
+  onChanged: () => void;
+}) {
+  return (
+    <ul className="inbox-list" aria-label="Offene Punkte">
+      {data.items.map((item) => {
+        const key = `${item.kind}:${item.transaction_id ?? item.proposal_id ?? item.import_id ?? item.possible_duplicate_id ?? item.document_id}`;
+        return (
+          <li key={key}>
+            {isLineItem(item) ? (
+              <LineEntry
+                item={item}
+                line={data.transactions.get(item.transaction_id ?? "")}
+                pressed={selected === item.transaction_id}
+                onSelect={onSelect}
+              />
+            ) : (
+              <OtherEntry item={item} data={data} onChanged={onChanged} />
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function Why({ item }: { item: InboxItem }) {
+  return (
+    <span className="inbox-why">
+      <span className={PILL_CLASS[item.kind]}>{INBOX_ITEM_KIND[item.kind]}</span>
+      {item.reasoning ? <span className="inbox-reasoning">{item.reasoning}</span> : null}
+      {item.question ? <span className="inbox-question">{item.question}</span> : null}
+    </span>
+  );
+}
+
+/** A bank line: the whole row is the button that opens the panel (mockup 03). */
+function LineEntry({
+  item,
+  line,
+  pressed,
+  onSelect,
+}: {
+  item: InboxItem;
+  line: Transaction | undefined;
+  pressed: boolean;
+  onSelect: (transactionId: string) => void;
+}) {
+  const id = item.transaction_id ?? "";
+  return (
+    <button type="button" className="inbox-entry inbox-line" aria-pressed={pressed} onClick={() => onSelect(id)}>
+      <span className="inbox-when">{line ? formatDate(line.booking_date) : formatDateTime(item.created_at)}</span>
+      <span className="inbox-main">
+        <strong>{line?.counterparty_name ?? "Ohne Gegenseite"}</strong>
+        <span className="inbox-detail">{line ? line.purpose || "Kein Verwendungszweck" : "Buchung"}</span>
+      </span>
+      <span className={line && isCredit(line.amount) ? "inbox-amount amount-in" : "inbox-amount"}>
+        {line ? signedMoney(line.amount) : "–"}
+      </span>
+      <Why item={item} />
+    </button>
+  );
+}
+
+/** Everything that is not a bank line: what it is about, then its own action. */
+function OtherEntry({ item, data, onChanged }: { item: InboxItem; data: InboxData; onChanged: () => void }) {
+  return (
+    <div className="inbox-entry">
+      <span className="inbox-when">{formatDateTime(item.created_at)}</span>
+      <span className="inbox-main">
+        <EntryTitle item={item} data={data} />
+      </span>
+      <span />
+      <Why item={item} />
+      <div className="inbox-actions">
+        <EntryAction item={item} data={data} onChanged={onChanged} />
+      </div>
+    </div>
+  );
+}
+
+function importPeriod(imp: StatementImport): string {
+  if (!imp.first_booking_on) return "";
+  return imp.first_booking_on === imp.last_booking_on
+    ? formatDate(imp.first_booking_on)
+    : `${formatDate(imp.first_booking_on)} – ${formatDate(imp.last_booking_on)}`;
+}
+
+function EntryTitle({ item, data }: { item: InboxItem; data: InboxData }) {
+  const document = item.document_id ? data.documents.get(item.document_id) : undefined;
+  if (item.import_id) {
+    const imp = data.imports.get(item.import_id);
+    const account = imp ? data.accounts.get(imp.account_id) : undefined;
+    return (
+      <>
+        <strong>Kontoauszug{account ? ` · ${account.label}` : ""}</strong>
+        <span className="inbox-detail">
+          {[imp ? importPeriod(imp) : "", document ? documentLabel(document) : ""].filter(Boolean).join(" · ")}
+        </span>
+      </>
+    );
+  }
+  if (item.possible_duplicate_id) {
+    const line = item.transaction_id ? data.transactions.get(item.transaction_id) : undefined;
+    return (
+      <>
+        <strong>{line?.counterparty_name ?? "Umsatz"}</strong>
+        <span className="inbox-detail">{line ? `${formatDate(line.booking_date)} · ${signedMoney(line.amount)}` : ""}</span>
+      </>
+    );
+  }
+  return (
+    <>
+      <strong>{document ? documentLabel(document) : "Dokument"}</strong>
+    </>
+  );
+}
+
+function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxData; onChanged: () => void }) {
+  switch (item.kind) {
+    case "proposal":
+    case "read_failed":
+    case "blocked_tenant_data":
+      return item.document_id ? (
+        <Link href={`/documents/${item.document_id}`}>{item.kind === "proposal" ? "Vorschlag prüfen" : "Dokument öffnen"}</Link>
+      ) : null;
+    case "import_pending_balance": {
+      const imp = item.import_id ? data.imports.get(item.import_id) : undefined;
+      if (!imp) return null;
+      return (
+        <ActionDialog label="Endsaldo eingeben" title="Endsaldo laut Online-Banking" buttonClass="">
+          {(close) => (
+            <BalanceForm
+              statementImport={imp}
+              onDone={() => {
+                close();
+                onChanged();
+              }}
+            />
+          )}
+        </ActionDialog>
+      );
+    }
+    case "import_unreconciled": {
+      const imp = item.import_id ? data.imports.get(item.import_id) : undefined;
+      return imp ? <Link href={`/accounts/${imp.account_id}?tab=kontoauszuege`}>Kontoauszug prüfen</Link> : null;
+    }
+    case "possible_duplicate": {
+      const pair = item.possible_duplicate_id ? data.duplicates.get(item.possible_duplicate_id) : undefined;
+      const first = pair ? data.transactions.get(pair.transaction_id) : undefined;
+      const later = pair ? data.transactions.get(pair.other_transaction_id) : undefined;
+      if (!pair || !first || !later) return null;
+      return <DuplicateCard pair={pair} first={first} later={later} imports={data.imports} onDecided={onChanged} />;
+    }
+    default:
+      return null;
+  }
+}
