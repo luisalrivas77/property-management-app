@@ -95,7 +95,7 @@ const PROPERTY_FIELDS: Record<string, FieldSpec> = {
     "Eigentumswohnung, Einfamilien- oder Mehrfamilienhaus, wie im Kaufvertrag beschrieben. Bei einer Eigentumswohnung fragt die Unterlagen-Checkliste zusätzlich nach Wirtschaftsplan und Hausgeldabrechnung.",
   ),
   "address.street": text("Straße", "Die Straße der Immobilie, wie sie im Kaufvertrag steht."),
-  "address.house_number": text("Hausnummer", "Die Hausnummer mit Zusatz, wie im Kaufvertrag, z. B. 12a oder 3-5."),
+  "address.house_number": text("Hausnummer", "Die Hausnummer mit Zusatz, wie im Kaufvertrag, z. B. 12a oder 3-5, ohne die Wohnungsnummer (z. B. WE 03): die gehört in die Bezeichnung der Einheit. Mit Straße und Hausnummer findet Hausbuch die Immobilie in hochgeladenen Dokumenten wieder."),
   "address.postal_code": text("PLZ", "Die fünfstellige Postleitzahl der Immobilie."),
   "address.city": text("Ort", "Die Stadt oder Gemeinde, in der die Immobilie liegt."),
   build_year: {
