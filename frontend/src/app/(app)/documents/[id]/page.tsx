@@ -230,7 +230,7 @@ function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onS
         {extraction && aiReading ? (
           <p className="muted">
             {available.size > 0
-              ? `Die Werte stammen aus der KI-Auslesung (Version ${extraction.version} vom ${formatDateTime(extraction.created_at)}). Eine Änderung legt eine neue Version an; die übrigen gelesenen Felder bleiben erhalten.`
+              ? `Die Werte stammen aus der KI-Auslesung${extraction.source === "ai" ? "" : ", von Hand geändert"} (Version ${extraction.version} vom ${formatDateTime(extraction.created_at)}). Eine Änderung legt eine neue Version an; die übrigen gelesenen Felder bleiben erhalten.`
               : `Für diese Dokumentart gibt es keine Felder von Hand; die KI-Auslesung (Version ${extraction.version}) bleibt unverändert.`}
           </p>
         ) : extraction ? (
