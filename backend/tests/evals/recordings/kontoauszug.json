@@ -1,0 +1,223 @@
+{
+ "format": 1,
+ "doc": "kontoauszug",
+ "synthetic": false,
+ "recorded_on": "2026-11-07",
+ "sdk_version": "2.6.0",
+ "classify": {
+  "prompt_version": "624ea59735496705",
+  "request_sha256": "381e946516d7a81472406c6368b1e0e4aedbdda96f8c9b6f3bfb3624b8a12f00",
+  "message": {
+   "id": "msg_011CgoexxAjAD1vsnMvb3dJz",
+   "container": null,
+   "content": [
+    {
+     "citations": null,
+     "text": "{\"type\":\"statement\",\"subtype\":null,\"contains_tenant_data\":false,\"language\":\"de\",\"confidence\":\"high\"}",
+     "type": "text"
+    }
+   ],
+   "diagnostics": null,
+   "model": "claude-haiku-5-5",
+   "role": "assistant",
+   "stop_details": null,
+   "stop_reason": "end_turn",
+   "stop_sequence": null,
+   "type": "message",
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": "us",
+    "input_tokens": 3675,
+    "output_tokens": 41,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": "standard"
+   }
+  }
+ },
+ "extract": [
+  {
+   "prompt_version": "db37026b509dd7a8",
+   "request_sha256": "c03ef49b8e1ff6f8291b10035f6ea855c9cae5c13a0aee8145744c4e4f1a5a50",
+   "message": {
+    "id": "msg_011CgoexkzWvLgCQbn2FXXww",
+    "container": null,
+    "content": [
+     {
+      "citations": null,
+      "text": "title: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Musterbank AG - Kontoauszug 5/2026\r\nKonto DE89 3704 0044 0532 0130 00\r\nZeitraum 01.05.2026 bis 31.05.2026\r\nAlter Kontostand 2.000,00 EUR\r\n02.05.2026 Miete 05/2026 WE 3 +1.230,00\r\n03.05.2026 Hausgeld WE 3 WEG -310,00\r\n30.05.2026 Darlehen 4711-0815 -1.224,17\r\nNeuer Kontostand 1.695,83 EUR",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Kontoauszug Mai 2026",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ndocument_date: unbekannt\naccount_iban: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Musterbank AG - Kontoauszug 5/2026\r\nKonto DE89 3704 0044 0532 0130 00\r\nZeitraum 01.05.2026 bis 31.05.2026\r\nAlter Kontostand 2.000,00 EUR\r\n02.05.2026 Miete 05/2026 WE 3 +1.230,00\r\n03.05.2026 Hausgeld WE 3 WEG -310,00\r\n30.05.2026 Darlehen 4711-0815 -1.224,17\r\nNeuer Kontostand 1.695,83 EUR",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "DE89 3704 0044 0532 0130 00",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nperiod_start: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Musterbank AG - Kontoauszug 5/2026\r\nKonto DE89 3704 0044 0532 0130 00\r\nZeitraum 01.05.2026 bis 31.05.2026\r\nAlter Kontostand 2.000,00 EUR\r\n02.05.2026 Miete 05/2026 WE 3 +1.230,00\r\n03.05.2026 Hausgeld WE 3 WEG -310,00\r\n30.05.2026 Darlehen 4711-0815 -1.224,17\r\nNeuer Kontostand 1.695,83 EUR",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "01.05.2026",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nperiod_end: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Musterbank AG - Kontoauszug 5/2026\r\nKonto DE89 3704 0044 0532 0130 00\r\nZeitraum 01.05.2026 bis 31.05.2026\r\nAlter Kontostand 2.000,00 EUR\r\n02.05.2026 Miete 05/2026 WE 3 +1.230,00\r\n03.05.2026 Hausgeld WE 3 WEG -310,00\r\n30.05.2026 Darlehen 4711-0815 -1.224,17\r\nNeuer Kontostand 1.695,83 EUR",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "31.05.2026",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nopening_balance: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Musterbank AG - Kontoauszug 5/2026\r\nKonto DE89 3704 0044 0532 0130 00\r\nZeitraum 01.05.2026 bis 31.05.2026\r\nAlter Kontostand 2.000,00 EUR\r\n02.05.2026 Miete 05/2026 WE 3 +1.230,00\r\n03.05.2026 Hausgeld WE 3 WEG -310,00\r\n30.05.2026 Darlehen 4711-0815 -1.224,17\r\nNeuer Kontostand 1.695,83 EUR",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "2.000,00 EUR",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nclosing_balance: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Musterbank AG - Kontoauszug 5/2026\r\nKonto DE89 3704 0044 0532 0130 00\r\nZeitraum 01.05.2026 bis 31.05.2026\r\nAlter Kontostand 2.000,00 EUR\r\n02.05.2026 Miete 05/2026 WE 3 +1.230,00\r\n03.05.2026 Hausgeld WE 3 WEG -310,00\r\n30.05.2026 Darlehen 4711-0815 -1.224,17\r\nNeuer Kontostand 1.695,83 EUR",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "1.695,83 EUR",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nlines: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Musterbank AG - Kontoauszug 5/2026\r\nKonto DE89 3704 0044 0532 0130 00\r\nZeitraum 01.05.2026 bis 31.05.2026\r\nAlter Kontostand 2.000,00 EUR\r\n02.05.2026 Miete 05/2026 WE 3 +1.230,00\r\n03.05.2026 Hausgeld WE 3 WEG -310,00\r\n30.05.2026 Darlehen 4711-0815 -1.224,17\r\nNeuer Kontostand 1.695,83 EUR",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "02.05.2026 Miete 05/2026 WE 3 +1.230,00; 03.05.2026 Hausgeld WE 3 WEG -310,00; 30.05.2026 Darlehen 4711-0815 -1.224,17",
+      "type": "text"
+     }
+    ],
+    "diagnostics": null,
+    "model": "claude-sonnet-5-5",
+    "role": "assistant",
+    "stop_details": null,
+    "stop_reason": "end_turn",
+    "stop_sequence": null,
+    "type": "message",
+    "usage": {
+     "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+     },
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "inference_geo": "us",
+     "input_tokens": 3274,
+     "output_tokens": 322,
+     "output_tokens_details": {
+      "thinking_tokens": 0
+     },
+     "server_tool_use": null,
+     "service_tier": "standard",
+     "speed": "standard"
+    }
+   },
+   "page_offset": 0
+  }
+ ]
+}

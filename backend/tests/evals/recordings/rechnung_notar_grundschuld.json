@@ -1,0 +1,263 @@
+{
+ "format": 1,
+ "doc": "rechnung_notar_grundschuld",
+ "synthetic": false,
+ "recorded_on": "2026-11-07",
+ "sdk_version": "2.6.0",
+ "classify": {
+  "prompt_version": "624ea59735496705",
+  "request_sha256": "0388c89bb6b0e59ad50e826fe5af435478ba1cb4347a3b09bb39ca2a022b3f1c",
+  "message": {
+   "id": "msg_011CgoexBepRTHBq49d7iwWD",
+   "container": null,
+   "content": [
+    {
+     "citations": null,
+     "text": "{\"type\":\"invoice\",\"subtype\":null,\"contains_tenant_data\":false,\"language\":\"de\",\"confidence\":\"high\"}",
+     "type": "text"
+    }
+   ],
+   "diagnostics": null,
+   "model": "claude-haiku-5-5",
+   "role": "assistant",
+   "stop_details": null,
+   "stop_reason": "end_turn",
+   "stop_sequence": null,
+   "type": "message",
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": "us",
+    "input_tokens": 3717,
+    "output_tokens": 42,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": "standard"
+   }
+  }
+ },
+ "extract": [
+  {
+   "prompt_version": "db37026b509dd7a8",
+   "request_sha256": "6e05a5991f5f5ed6a3a52fc310b9faee37d84fdb3aec9177bfc8550b17485648",
+   "message": {
+    "id": "msg_011Cgoex1AHGTfHshPoJRn9J",
+    "container": null,
+    "content": [
+     {
+      "citations": null,
+      "text": "title: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "2026-0457 vom 03.03.2026\r\nzur Urkunde 1235/2026 (Grundschuldbestellung mit ZV-Unterwerfung)\r\nBeurkundungsgebühr 410,00 EUR\r\nAuslagen 40,00 EUR\r\nNetto 450,00 EUR\r\nUmsatzsteuer 19 % 85,50 EUR\r\nGesamtbetrag 535,50 EUR\r\nZahlbar bis 17.03.2026 auf DE02 1203 0000 0000 2020 51.",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Notarrechnung Grundschuldbestellung",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ndocument_date: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "2026-0457 vom 03.03.2026\r\nzur Urkunde 1235/2026 (Grundschuldbestellung mit ZV-Unterwerfung)\r\nBeurkundungsgebühr 410,00 EUR\r\nAuslagen 40,00 EUR\r\nNetto 450,00 EUR\r\nUmsatzsteuer 19 % 85,50 EUR\r\nGesamtbetrag 535,50 EUR\r\nZahlbar bis 17.03.2026 auf DE02 1203 0000 0000 2020 51.",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "03.03.2026",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nsender: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Notar Dr. Max Beispiel, Marktplatz 1, 12345 Musterstadt\r\nKostenrechnung Nr. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Notar Dr. Max Beispiel",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nsubject: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "2026-0457 vom 03.03.2026\r\nzur Urkunde 1235/2026 (Grundschuldbestellung mit ZV-Unterwerfung)\r\nBeurkundungsgebühr 410,00 EUR\r\nAuslagen 40,00 EUR\r\nNetto 450,00 EUR\r\nUmsatzsteuer 19 % 85,50 EUR\r\nGesamtbetrag 535,50 EUR\r\nZahlbar bis 17.03.2026 auf DE02 1203 0000 0000 2020 51.",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Grundschuldbestellung mit ZV-Unterwerfung",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\namount_total: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "2026-0457 vom 03.03.2026\r\nzur Urkunde 1235/2026 (Grundschuldbestellung mit ZV-Unterwerfung)\r\nBeurkundungsgebühr 410,00 EUR\r\nAuslagen 40,00 EUR\r\nNetto 450,00 EUR\r\nUmsatzsteuer 19 % 85,50 EUR\r\nGesamtbetrag 535,50 EUR\r\nZahlbar bis 17.03.2026 auf DE02 1203 0000 0000 2020 51.",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "535,50 EUR",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\namount_net: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "2026-0457 vom 03.03.2026\r\nzur Urkunde 1235/2026 (Grundschuldbestellung mit ZV-Unterwerfung)\r\nBeurkundungsgebühr 410,00 EUR\r\nAuslagen 40,00 EUR\r\nNetto 450,00 EUR\r\nUmsatzsteuer 19 % 85,50 EUR\r\nGesamtbetrag 535,50 EUR\r\nZahlbar bis 17.03.2026 auf DE02 1203 0000 0000 2020 51.",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "450,00 EUR",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nreference: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Notar Dr. Max Beispiel, Marktplatz 1, 12345 Musterstadt\r\nKostenrechnung Nr. 2026-0457 vom 03.03.2026\r\nzur Urkunde 1235/2026 (Grundschuldbestellung mit ZV-Unterwerfung)\r\nBeurkundungsgebühr 410,00 EUR\r\nAuslagen 40,00 EUR\r\nNetto 450,00 EUR\r\nUmsatzsteuer 19 % 85,50 EUR\r\nGesamtbetrag 535,50 EUR\r\nZahlbar bis 17.03.2026 auf DE02 1203 0000 0000 2020 51.",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "2026-0457",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\niban: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "2026-0457 vom 03.03.2026\r\nzur Urkunde 1235/2026 (Grundschuldbestellung mit ZV-Unterwerfung)\r\nBeurkundungsgebühr 410,00 EUR\r\nAuslagen 40,00 EUR\r\nNetto 450,00 EUR\r\nUmsatzsteuer 19 % 85,50 EUR\r\nGesamtbetrag 535,50 EUR\r\nZahlbar bis 17.03.2026 auf DE02 1203 0000 0000 2020 51.",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "DE02 1203 0000 0000 2020 51",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ndue_on: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "2026-0457 vom 03.03.2026\r\nzur Urkunde 1235/2026 (Grundschuldbestellung mit ZV-Unterwerfung)\r\nBeurkundungsgebühr 410,00 EUR\r\nAuslagen 40,00 EUR\r\nNetto 450,00 EUR\r\nUmsatzsteuer 19 % 85,50 EUR\r\nGesamtbetrag 535,50 EUR\r\nZahlbar bis 17.03.2026 auf DE02 1203 0000 0000 2020 51.",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "17.03.2026",
+      "type": "text"
+     }
+    ],
+    "diagnostics": null,
+    "model": "claude-sonnet-5-5",
+    "role": "assistant",
+    "stop_details": null,
+    "stop_reason": "end_turn",
+    "stop_sequence": null,
+    "type": "message",
+    "usage": {
+     "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+     },
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "inference_geo": "us",
+     "input_tokens": 3391,
+     "output_tokens": 319,
+     "output_tokens_details": {
+      "thinking_tokens": 0
+     },
+     "server_tool_use": null,
+     "service_tier": "standard",
+     "speed": "standard"
+    }
+   },
+   "page_offset": 0
+  }
+ ]
+}

@@ -2074,7 +2074,7 @@ export interface components {
             title?: components["schemas"]["ExtractedValue"];
             /** @description the date the document carries */
             document_date?: components["schemas"]["ExtractedValue"];
-            /** @description the authority */
+            /** @description name of the authority, without the address */
             sender?: components["schemas"]["ExtractedValue"];
             /** @description the amount assessed */
             amount_total?: components["schemas"]["ExtractedValue"];
@@ -2886,7 +2886,7 @@ export interface components {
             title?: components["schemas"]["ExtractedValue"];
             /** @description the date the document carries */
             document_date?: components["schemas"]["ExtractedValue"];
-            /** @description who issued it: decides the cost kind */
+            /** @description name of who issued it, without the address: decides the cost kind */
             sender?: components["schemas"]["ExtractedValue"];
             /** @description what it is for, as written (Betreff / Gegenstand) */
             subject?: components["schemas"]["ExtractedValue"];
@@ -2939,7 +2939,7 @@ export interface components {
             tenant_2_iban?: components["schemas"]["ExtractedValue"];
             /** @description Mietbeginn */
             start_date?: components["schemas"]["ExtractedValue"];
-            /** @description Vertragsdatum */
+            /** @description Vertragsdatum: when it was signed, often only as 'Ort, den <Datum>' by the signatures */
             signed_on?: components["schemas"]["ExtractedValue"];
             /** @description Zeitmietvertrag bis, if befristet */
             fixed_term_until?: components["schemas"]["ExtractedValue"];
@@ -3047,7 +3047,7 @@ export interface components {
             first_payment_on?: components["schemas"]["ExtractedValue"];
             /** @description Darlehenskonto */
             account_iban?: components["schemas"]["ExtractedValue"];
-            /** @description Vertragsdatum */
+            /** @description Vertragsdatum: when it was signed, often only as 'Ort, den <Datum>' by the signatures */
             signed_on?: components["schemas"]["ExtractedValue"];
         };
         /**

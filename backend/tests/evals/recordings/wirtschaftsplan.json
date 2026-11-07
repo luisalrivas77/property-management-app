@@ -1,0 +1,303 @@
+{
+ "format": 1,
+ "doc": "wirtschaftsplan",
+ "synthetic": false,
+ "recorded_on": "2026-11-07",
+ "sdk_version": "2.6.0",
+ "classify": {
+  "prompt_version": "624ea59735496705",
+  "request_sha256": "ddf2b37933995fee2c1b1ce5137dbbd5b2ecbe132dc49c02e66b91b03321cb64",
+  "message": {
+   "id": "msg_011CgoexgnGPsY7ehmozFyLe",
+   "container": null,
+   "content": [
+    {
+     "citations": null,
+     "text": "{\"type\":\"wirtschaftsplan\",\"subtype\":null,\"contains_tenant_data\":false,\"language\":\"de\",\"confidence\":\"high\"}",
+     "type": "text"
+    }
+   ],
+   "diagnostics": null,
+   "model": "claude-haiku-5-5",
+   "role": "assistant",
+   "stop_details": null,
+   "stop_reason": "end_turn",
+   "stop_sequence": null,
+   "type": "message",
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": "us",
+    "input_tokens": 3680,
+    "output_tokens": 48,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": "standard"
+   }
+  }
+ },
+ "extract": [
+  {
+   "prompt_version": "db37026b509dd7a8",
+   "request_sha256": "9c0ac0cec97d68110cd972640c137591d018d7ed0daad703742f9cb7711538ac",
+   "message": {
+    "id": "msg_011CgoexWDXSD3tiyxsQWbAd",
+    "container": null,
+    "content": [
+     {
+      "citations": null,
+      "text": "title: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "WEG Lindenstraße 7, 10115 Berlin\r\nWirtschaftsplan 2026 - Einzelplan WE 3\r\ngültig ab 01.01.2026\r\nHausgeld gesamt monatlich: 310,00 EUR\r\ndavon umlagefähige Kosten: 190,00 EUR\r\ndavon nicht umlagefähig (Verwaltung): 45,00 EUR\r\ndavon Erhaltungsrücklage: 75,00 EUR\r\nZahlung an das WEG-Konto DE02 1203 0000 0000 2020 51",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Wirtschaftsplan 2026 Einzelplan",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ndocument_date: unbekannt\nstreet: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "WEG Lindenstraße 7, 10115 Berlin\r\nWirtschaftsplan 2026 - Einzelplan WE 3\r\ngültig ab 01.01.2026\r\nHausgeld gesamt monatlich: 310,00 EUR\r\ndavon umlagefähige Kosten: 190,00 EUR\r\ndavon nicht umlagefähig (Verwaltung): 45,00 EUR\r\ndavon Erhaltungsrücklage: 75,00 EUR\r\nZahlung an das WEG-Konto DE02 1203 0000 0000 2020 51",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Lindenstraße",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nhouse_number: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "WEG Lindenstraße 7, 10115 Berlin\r\nWirtschaftsplan 2026 - Einzelplan WE 3\r\ngültig ab 01.01.2026\r\nHausgeld gesamt monatlich: 310,00 EUR\r\ndavon umlagefähige Kosten: 190,00 EUR\r\ndavon nicht umlagefähig (Verwaltung): 45,00 EUR\r\ndavon Erhaltungsrücklage: 75,00 EUR\r\nZahlung an das WEG-Konto DE02 1203 0000 0000 2020 51",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "7",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\npostal_code: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "WEG Lindenstraße 7, 10115 Berlin\r\nWirtschaftsplan 2026 - Einzelplan WE 3\r\ngültig ab 01.01.2026\r\nHausgeld gesamt monatlich: 310,00 EUR\r\ndavon umlagefähige Kosten: 190,00 EUR\r\ndavon nicht umlagefähig (Verwaltung): 45,00 EUR\r\ndavon Erhaltungsrücklage: 75,00 EUR\r\nZahlung an das WEG-Konto DE02 1203 0000 0000 2020 51",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "10115",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ntax_year: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "WEG Lindenstraße 7, 10115 Berlin\r\nWirtschaftsplan 2026 - Einzelplan WE 3\r\ngültig ab 01.01.2026\r\nHausgeld gesamt monatlich: 310,00 EUR\r\ndavon umlagefähige Kosten: 190,00 EUR\r\ndavon nicht umlagefähig (Verwaltung): 45,00 EUR\r\ndavon Erhaltungsrücklage: 75,00 EUR\r\nZahlung an das WEG-Konto DE02 1203 0000 0000 2020 51",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "2026",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nvalid_from: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "WEG Lindenstraße 7, 10115 Berlin\r\nWirtschaftsplan 2026 - Einzelplan WE 3\r\ngültig ab 01.01.2026\r\nHausgeld gesamt monatlich: 310,00 EUR\r\ndavon umlagefähige Kosten: 190,00 EUR\r\ndavon nicht umlagefähig (Verwaltung): 45,00 EUR\r\ndavon Erhaltungsrücklage: 75,00 EUR\r\nZahlung an das WEG-Konto DE02 1203 0000 0000 2020 51",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "01.01.2026",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nhausgeld_total_monthly: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "WEG Lindenstraße 7, 10115 Berlin\r\nWirtschaftsplan 2026 - Einzelplan WE 3\r\ngültig ab 01.01.2026\r\nHausgeld gesamt monatlich: 310,00 EUR\r\ndavon umlagefähige Kosten: 190,00 EUR\r\ndavon nicht umlagefähig (Verwaltung): 45,00 EUR\r\ndavon Erhaltungsrücklage: 75,00 EUR\r\nZahlung an das WEG-Konto DE02 1203 0000 0000 2020 51",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "310,00 EUR",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nhausgeld_umlagefaehig_monthly: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "WEG Lindenstraße 7, 10115 Berlin\r\nWirtschaftsplan 2026 - Einzelplan WE 3\r\ngültig ab 01.01.2026\r\nHausgeld gesamt monatlich: 310,00 EUR\r\ndavon umlagefähige Kosten: 190,00 EUR\r\ndavon nicht umlagefähig (Verwaltung): 45,00 EUR\r\ndavon Erhaltungsrücklage: 75,00 EUR\r\nZahlung an das WEG-Konto DE02 1203 0000 0000 2020 51",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "190,00 EUR",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nhausgeld_verwaltung_monthly: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "WEG Lindenstraße 7, 10115 Berlin\r\nWirtschaftsplan 2026 - Einzelplan WE 3\r\ngültig ab 01.01.2026\r\nHausgeld gesamt monatlich: 310,00 EUR\r\ndavon umlagefähige Kosten: 190,00 EUR\r\ndavon nicht umlagefähig (Verwaltung): 45,00 EUR\r\ndavon Erhaltungsrücklage: 75,00 EUR\r\nZahlung an das WEG-Konto DE02 1203 0000 0000 2020 51",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "45,00 EUR",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nhausgeld_ruecklage_monthly: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "WEG Lindenstraße 7, 10115 Berlin\r\nWirtschaftsplan 2026 - Einzelplan WE 3\r\ngültig ab 01.01.2026\r\nHausgeld gesamt monatlich: 310,00 EUR\r\ndavon umlagefähige Kosten: 190,00 EUR\r\ndavon nicht umlagefähig (Verwaltung): 45,00 EUR\r\ndavon Erhaltungsrücklage: 75,00 EUR\r\nZahlung an das WEG-Konto DE02 1203 0000 0000 2020 51",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "75,00 EUR",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\niban: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "WEG Lindenstraße 7, 10115 Berlin\r\nWirtschaftsplan 2026 - Einzelplan WE 3\r\ngültig ab 01.01.2026\r\nHausgeld gesamt monatlich: 310,00 EUR\r\ndavon umlagefähige Kosten: 190,00 EUR\r\ndavon nicht umlagefähig (Verwaltung): 45,00 EUR\r\ndavon Erhaltungsrücklage: 75,00 EUR\r\nZahlung an das WEG-Konto DE02 1203 0000 0000 2020 51",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "DE02 1203 0000 0000 2020 51",
+      "type": "text"
+     }
+    ],
+    "diagnostics": null,
+    "model": "claude-sonnet-5-5",
+    "role": "assistant",
+    "stop_details": null,
+    "stop_reason": "end_turn",
+    "stop_sequence": null,
+    "type": "message",
+    "usage": {
+     "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+     },
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "inference_geo": "us",
+     "input_tokens": 3419,
+     "output_tokens": 402,
+     "output_tokens_details": {
+      "thinking_tokens": 0
+     },
+     "server_tool_use": null,
+     "service_tier": "standard",
+     "speed": "standard"
+    }
+   },
+   "page_offset": 0
+  }
+ ]
+}

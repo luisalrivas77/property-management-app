@@ -5882,7 +5882,7 @@
           },
           "sender": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "the authority",
+            "description": "name of the authority, without the address",
             "value_kind": "text"
           },
           "amount_total": {
@@ -7945,7 +7945,7 @@
           },
           "sender": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "who issued it: decides the cost kind",
+            "description": "name of who issued it, without the address: decides the cost kind",
             "value_kind": "text"
           },
           "subject": {
@@ -8069,7 +8069,7 @@
           },
           "signed_on": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "Vertragsdatum",
+            "description": "Vertragsdatum: when it was signed, often only as 'Ort, den <Datum>' by the signatures",
             "value_kind": "date"
           },
           "fixed_term_until": {
@@ -8302,7 +8302,7 @@
           },
           "signed_on": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "Vertragsdatum",
+            "description": "Vertragsdatum: when it was signed, often only as 'Ort, den <Datum>' by the signatures",
             "value_kind": "date"
           }
         },

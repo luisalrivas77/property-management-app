@@ -1,0 +1,403 @@
+{
+ "format": 1,
+ "doc": "kaufvertrag",
+ "synthetic": false,
+ "recorded_on": "2026-11-07",
+ "sdk_version": "2.6.0",
+ "classify": {
+  "prompt_version": "624ea59735496705",
+  "request_sha256": "a20368de6033b11956efad7ebc589cb921953004913fca142f2eb400da1763cb",
+  "message": {
+   "id": "msg_011Cgoew2rhNz6KjAPB1EzEf",
+   "container": null,
+   "content": [
+    {
+     "citations": null,
+     "text": "{\"type\":\"contract\",\"subtype\":\"purchase_contract\",\"contains_tenant_data\":false,\"language\":\"de\",\"confidence\":\"high\"}",
+     "type": "text"
+    }
+   ],
+   "diagnostics": null,
+   "model": "claude-haiku-5-5",
+   "role": "assistant",
+   "stop_details": null,
+   "stop_reason": "end_turn",
+   "stop_sequence": null,
+   "type": "message",
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": "us",
+    "input_tokens": 7051,
+    "output_tokens": 46,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": "standard"
+   }
+  }
+ },
+ "extract": [
+  {
+   "prompt_version": "db37026b509dd7a8",
+   "request_sha256": "aa7dc9078fee0986995183fa834ed06d8cee3d4aec072b6a441b781e8afc72a9",
+   "message": {
+    "id": "msg_011CgoevmA93hYSdEtujjxkW",
+    "container": null,
+    "content": [
+     {
+      "citations": null,
+      "text": "title: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Kaufvertrag über Wohnungseigentum\r\nVerkäufer: Erika Verkauf, Musterweg 9, 12345 Musterstadt\r\nKäufer: Luis Testkauf und Ana Testkauf, je zur Hälfte",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Kaufvertrag Wohnungseigentum",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ndocument_date: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "1234/2026\r\nVerhandelt zu Musterstadt am 12. Februar 2026\r\nvor dem Notar Dr. Max Beispiel.\r\n",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "12. Februar 2026",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nproperty_kind: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Kaufvertrag über Wohnungseigentum\r\nVerkäufer: Erika Verkauf, Musterweg 9, 12345 Musterstadt\r\nKäufer: Luis Testkauf und Ana Testkauf, je zur Hälfte",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Wohnungseigentum",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nstreet: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "§ 1 Kaufgegenstand\r\nMiteigentumsanteil von 85/1000 an dem Grundstück\r\nLindenstraße 7, 10115 Berlin,\r\nverbunden mit dem Sondereigentum an der Wohnung WE 3\r\nlaut Teilungserklärung. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "Lindenstraße",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nhouse_number: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "§ 1 Kaufgegenstand\r\nMiteigentumsanteil von 85/1000 an dem Grundstück\r\nLindenstraße 7, 10115 Berlin,\r\nverbunden mit dem Sondereigentum an der Wohnung WE 3\r\nlaut Teilungserklärung. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "7",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\npostal_code: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "§ 1 Kaufgegenstand\r\nMiteigentumsanteil von 85/1000 an dem Grundstück\r\nLindenstraße 7, 10115 Berlin,\r\nverbunden mit dem Sondereigentum an der Wohnung WE 3\r\nlaut Teilungserklärung. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "10115",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ncity: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "§ 1 Kaufgegenstand\r\nMiteigentumsanteil von 85/1000 an dem Grundstück\r\nLindenstraße 7, 10115 Berlin,\r\nverbunden mit dem Sondereigentum an der Wohnung WE 3\r\nlaut Teilungserklärung. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "Berlin",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nbuild_year: unbekannt\nnotarized_on: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "1234/2026\r\nVerhandelt zu Musterstadt am 12. Februar 2026\r\nvor dem Notar Dr. Max Beispiel.\r\n",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "12. Februar 2026",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\npurchase_date: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "§ 3 Besitzübergang\r\nBesitz, Nutzen und Lasten gehen am 01.04.2026 auf den Käufer über.\r\n",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 4,
+        "file_id": null,
+        "start_page_number": 3,
+        "type": "page_location"
+       }
+      ],
+      "text": "01.04.2026",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\npurchase_price: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "§ 2 Kaufpreis\r\nDer Kaufpreis beträgt 325.000,00 EUR.\r\n",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "325.000,00 EUR",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nland_value: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Davon entfallen auf Grund und Boden 65.000,00 EUR.",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "65.000,00 EUR",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nunit_label: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "§ 1 Kaufgegenstand\r\nMiteigentumsanteil von 85/1000 an dem Grundstück\r\nLindenstraße 7, 10115 Berlin,\r\nverbunden mit dem Sondereigentum an der Wohnung WE 3\r\nlaut Teilungserklärung. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "WE 3",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nmea: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "§ 1 Kaufgegenstand\r\nMiteigentumsanteil von 85/1000 an dem Grundstück\r\nLindenstraße 7, 10115 Berlin,\r\nverbunden mit dem Sondereigentum an der Wohnung WE 3\r\nlaut Teilungserklärung. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "85/1000",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nfloor_area_m2: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Wohnfläche ca. 72,5 m².\r\n",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "72,5",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nbuyers: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Kaufvertrag über Wohnungseigentum\r\nVerkäufer: Erika Verkauf, Musterweg 9, 12345 Musterstadt\r\nKäufer: Luis Testkauf und Ana Testkauf, je zur Hälfte",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Luis Testkauf; Ana Testkauf",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nownership_clause: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Kaufvertrag über Wohnungseigentum\r\nVerkäufer: Erika Verkauf, Musterweg 9, 12345 Musterstadt\r\nKäufer: Luis Testkauf und Ana Testkauf, je zur Hälfte",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "je zur Hälfte",
+      "type": "text"
+     }
+    ],
+    "diagnostics": null,
+    "model": "claude-sonnet-5-5",
+    "role": "assistant",
+    "stop_details": null,
+    "stop_reason": "end_turn",
+    "stop_sequence": null,
+    "type": "message",
+    "usage": {
+     "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+     },
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "inference_geo": "us",
+     "input_tokens": 7030,
+     "output_tokens": 526,
+     "output_tokens_details": {
+      "thinking_tokens": 0
+     },
+     "server_tool_use": null,
+     "service_tier": "standard",
+     "speed": "standard"
+    }
+   },
+   "page_offset": 0
+  }
+ ]
+}

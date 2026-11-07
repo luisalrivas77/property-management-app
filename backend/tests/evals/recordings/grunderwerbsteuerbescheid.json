@@ -1,0 +1,208 @@
+{
+ "format": 1,
+ "doc": "grunderwerbsteuerbescheid",
+ "synthetic": false,
+ "recorded_on": "2026-11-07",
+ "sdk_version": "2.6.0",
+ "classify": {
+  "prompt_version": "624ea59735496705",
+  "request_sha256": "a8e537a0fc4c2f535f9b0ff4ba21607c7ae7450ba5e060558985faa6a31e777e",
+  "message": {
+   "id": "msg_011CgoexSBRmkLPFU8fGgxZx",
+   "container": null,
+   "content": [
+    {
+     "citations": null,
+     "text": "{\"type\":\"bescheid\",\"subtype\":\"cost_basis_evidence\",\"contains_tenant_data\":false,\"language\":\"de\",\"confidence\":\"high\"}",
+     "type": "text"
+    }
+   ],
+   "diagnostics": null,
+   "model": "claude-haiku-5-5",
+   "role": "assistant",
+   "stop_details": null,
+   "stop_reason": "end_turn",
+   "stop_sequence": null,
+   "type": "message",
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": "us",
+    "input_tokens": 3659,
+    "output_tokens": 51,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": "standard"
+   }
+  }
+ },
+ "extract": [
+  {
+   "prompt_version": "db37026b509dd7a8",
+   "request_sha256": "e69523cbfe3ab42b4618f5bbc60928db98d1fa262c9b9c3c927d64160731c0db",
+   "message": {
+    "id": "msg_011CgoexG1kCxwrVpC1TmeVY",
+    "container": null,
+    "content": [
+     {
+      "citations": null,
+      "text": "title: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Finanzamt Musterstadt\r\nBescheid über Grunderwerbsteuer\r\nSteuernummer 12/345/67890, vom 25.03.2026\r\nErwerbsvorgang: Kaufvertrag vom 12.02.2026, Urkunde 1234/2026\r\nGegenleistung 325.000,00 EUR, Steuersatz 6,0 %\r\nFestgesetzte Grunderwerbsteuer: 19.500,00 EUR\r\nfällig am 28.04.2026",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Grunderwerbsteuerbescheid",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ndocument_date: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Finanzamt Musterstadt\r\nBescheid über Grunderwerbsteuer\r\nSteuernummer 12/345/67890, vom 25.03.2026\r\nErwerbsvorgang: Kaufvertrag vom 12.02.2026, Urkunde 1234/2026\r\nGegenleistung 325.000,00 EUR, Steuersatz 6,0 %\r\nFestgesetzte Grunderwerbsteuer: 19.500,00 EUR\r\nfällig am 28.04.2026",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "25.03.2026",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nsender: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Finanzamt Musterstadt\r\nBescheid über Grunderwerbsteuer\r\nSteuernummer 12/345/67890, vom 25.03.2026\r\nErwerbsvorgang: Kaufvertrag vom 12.02.2026, Urkunde 1234/2026\r\nGegenleistung 325.000,00 EUR, Steuersatz 6,0 %\r\nFestgesetzte Grunderwerbsteuer: 19.500,00 EUR\r\nfällig am 28.04.2026",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Finanzamt Musterstadt",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\namount_total: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Finanzamt Musterstadt\r\nBescheid über Grunderwerbsteuer\r\nSteuernummer 12/345/67890, vom 25.03.2026\r\nErwerbsvorgang: Kaufvertrag vom 12.02.2026, Urkunde 1234/2026\r\nGegenleistung 325.000,00 EUR, Steuersatz 6,0 %\r\nFestgesetzte Grunderwerbsteuer: 19.500,00 EUR\r\nfällig am 28.04.2026",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "19.500,00 EUR",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nreference: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Finanzamt Musterstadt\r\nBescheid über Grunderwerbsteuer\r\nSteuernummer 12/345/67890, vom 25.03.2026\r\nErwerbsvorgang: Kaufvertrag vom 12.02.2026, Urkunde 1234/2026\r\nGegenleistung 325.000,00 EUR, Steuersatz 6,0 %\r\nFestgesetzte Grunderwerbsteuer: 19.500,00 EUR\r\nfällig am 28.04.2026",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "12/345/67890",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\niban: unbekannt\ndue_on: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Finanzamt Musterstadt\r\nBescheid über Grunderwerbsteuer\r\nSteuernummer 12/345/67890, vom 25.03.2026\r\nErwerbsvorgang: Kaufvertrag vom 12.02.2026, Urkunde 1234/2026\r\nGegenleistung 325.000,00 EUR, Steuersatz 6,0 %\r\nFestgesetzte Grunderwerbsteuer: 19.500,00 EUR\r\nfällig am 28.04.2026",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "28.04.2026",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ntax_year: unbekannt",
+      "type": "text"
+     }
+    ],
+    "diagnostics": null,
+    "model": "claude-sonnet-5-5",
+    "role": "assistant",
+    "stop_details": null,
+    "stop_reason": "end_turn",
+    "stop_sequence": null,
+    "type": "message",
+    "usage": {
+     "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+     },
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "inference_geo": "us",
+     "input_tokens": 3277,
+     "output_tokens": 216,
+     "output_tokens_details": {
+      "thinking_tokens": 0
+     },
+     "server_tool_use": null,
+     "service_tier": "standard",
+     "speed": "standard"
+    }
+   },
+   "page_offset": 0
+  }
+ ]
+}
