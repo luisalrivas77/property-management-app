@@ -1317,6 +1317,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/inbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Inbox List */
+        get: operations["inbox_list_api_inbox_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/transactions/{transaction_id}/allocations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Transaction Allocations Get */
+        get: operations["transaction_allocations_get_api_transactions__transaction_id__allocations_get"];
+        /** Transaction Allocations Put */
+        put: operations["transaction_allocations_put_api_transactions__transaction_id__allocations_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/properties/{property_id}/history": {
         parameters: {
             query?: never;
@@ -1815,6 +1850,147 @@ export interface components {
             country_code: string;
         };
         /**
+         * Allocation
+         * @description Read shape of one allocation row (migration 0007).
+         */
+        Allocation: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Transaction Id
+             * Format: uuid
+             */
+            transaction_id: string;
+            /** Amount */
+            amount: string;
+            category: components["schemas"]["AllocationCategory"];
+            /** Property Id */
+            property_id: string | null;
+            /** Unit Id */
+            unit_id: string | null;
+            /** Tenancy Id */
+            tenancy_id: string | null;
+            /** Loan Id */
+            loan_id: string | null;
+            /** Service Period Start */
+            service_period_start: string | null;
+            /** Service Period End */
+            service_period_end: string | null;
+            /** Recurring */
+            recurring: boolean;
+            method: components["schemas"]["AllocationMethod"];
+            /** Confidence */
+            confidence: string;
+            status: components["schemas"]["AllocationStatus"];
+            /** Supersedes Id */
+            supersedes_id: string | null;
+            /** Rule Id */
+            rule_id: string | null;
+            /** Ai Call Id */
+            ai_call_id: string | null;
+            /** Document Id */
+            document_id: string | null;
+            /** Reasoning */
+            reasoning: string | null;
+            /** Question */
+            question: string | null;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+            /** Confirmed At */
+            confirmed_at: string | null;
+            /** Confirmed By */
+            confirmed_by: string | null;
+        };
+        /**
+         * AllocationCategory
+         * @description §8.2. Default tax treatment in the comment (rules/categories.py is the source).
+         * @enum {string}
+         */
+        AllocationCategory: "rent_cold" | "operating_costs_prepayment" | "operating_costs_settlement" | "deposit_in" | "deposit_out" | "owner_transfer_in" | "owner_transfer_out" | "loan_interest" | "loan_principal" | "loan_fees" | "hausgeld_umlagefaehig" | "hausgeld_verwaltung" | "hausgeld_ruecklage" | "grundsteuer" | "insurance" | "repairs" | "renovation" | "acquisition_cost" | "professional_fees" | "bank_fees" | "other_income" | "other_expense" | "uncategorized";
+        /**
+         * AllocationDraft
+         * @description What a matcher, a rule, the model or the user proposes for part of a transaction.
+         *     amount is signed like the transaction (a debit's parts are negative).
+         */
+        AllocationDraft: {
+            /** Amount */
+            amount: string;
+            category: components["schemas"]["AllocationCategory"];
+            /** Property Id */
+            property_id?: string | null;
+            /** Unit Id */
+            unit_id?: string | null;
+            /** Tenancy Id */
+            tenancy_id?: string | null;
+            /** Loan Id */
+            loan_id?: string | null;
+            /** Service Period Start */
+            service_period_start?: string | null;
+            /** Service Period End */
+            service_period_end?: string | null;
+            /**
+             * Recurring
+             * @default false
+             */
+            recurring: boolean;
+            /** Document Id */
+            document_id?: string | null;
+        };
+        /**
+         * AllocationMethod
+         * @description allocation.method (migration 0007): who proposed the allocation set.
+         * @enum {string}
+         */
+        AllocationMethod: "rule" | "matcher_rent" | "matcher_loan" | "matcher_owner" | "matcher_hausgeld" | "document_match" | "llm" | "user";
+        /**
+         * AllocationSet
+         * @description One transaction's proposal. Σ amount must equal the transaction amount: checked by
+         *     rules.allocations.check_sum, which knows the transaction (allocation_sum.yaml).
+         */
+        AllocationSet: {
+            /**
+             * Transaction Id
+             * Format: uuid
+             */
+            transaction_id: string;
+            /** Allocations */
+            allocations: components["schemas"]["AllocationDraft"][];
+            method: components["schemas"]["AllocationMethod"];
+            /** Confidence */
+            confidence: string;
+            /** Reasoning */
+            reasoning?: string | null;
+            /** Question */
+            question?: string | null;
+            /** Rule Id */
+            rule_id?: string | null;
+            /** Ai Call Id */
+            ai_call_id?: string | null;
+        };
+        /**
+         * AllocationStatus
+         * @description allocation.status (migration 0007, D23). The only column a trigger lets change, and
+         *     only forward: proposed -> confirmed, proposed -> superseded, confirmed -> superseded.
+         * @enum {string}
+         */
+        AllocationStatus: "proposed" | "confirmed" | "superseded";
+        /**
          * AppUser
          * @description A person who can sign in. Auth credentials (passkey / TOTP) land with the API PR.
          */
@@ -1964,6 +2140,31 @@ export interface components {
          * @enum {string}
          */
         ChecklistStatus: "present" | "missing" | "expected" | "incomplete";
+        /**
+         * ConfirmAllocationsBody
+         * @description PUT /transactions/{id}/allocations: the user's allocation set and the "Künftig immer
+         *     so zuordnen" checkbox.
+         *
+         *     Only the set's allocations are read: the rows are written with method `user` and
+         *     confidence 1, whatever method, confidence, rule_id or ai_call_id the body carries. A set
+         *     equal to the current proposed rows confirms those rows as they are (the proposer's method
+         *     stays); one equal to the current confirmed rows changes nothing.
+         *
+         *     learn_rule: null = the server default (TransactionAllocations.learn_rule_default for this
+         *     set); true for a set no rule can be learned from is refused with rule.not_learnable.
+         *     The patterns (case-insensitive regular expressions, refused with rule.invalid_pattern
+         *     when they do not compile) narrow the rule, and let a line without an IBAN, or a
+         *     counterparty a matcher owns (D38), have one.
+         */
+        ConfirmAllocationsBody: {
+            allocation_set: components["schemas"]["AllocationSet"];
+            /** Learn Rule */
+            learn_rule?: boolean | null;
+            /** Counterparty Name Pattern */
+            counterparty_name_pattern?: string | null;
+            /** Purpose Pattern */
+            purpose_pattern?: string | null;
+        };
         /**
          * Currency
          * @description transaction.currency. v1 is EUR only (one value, kept as a CHECK'd set like
@@ -2576,6 +2777,39 @@ export interface components {
          */
         ImportStatus: "imported" | "reconciled" | "unreconciled" | "failed";
         /**
+         * InboxItem
+         * @description One thing to act on, with a one-line reasoning and one question. Exactly the ids its
+         *     action endpoint needs are set.
+         */
+        InboxItem: {
+            kind: components["schemas"]["InboxItemKind"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Reasoning */
+            reasoning?: string | null;
+            /** Question */
+            question?: string | null;
+            /** Document Id */
+            document_id?: string | null;
+            /** Proposal Id */
+            proposal_id?: string | null;
+            /** Import Id */
+            import_id?: string | null;
+            /** Possible Duplicate Id */
+            possible_duplicate_id?: string | null;
+            /** Transaction Id */
+            transaction_id?: string | null;
+        };
+        /**
+         * InboxItemKind
+         * @description GET /inbox (§8.3): one list, newest first.
+         * @enum {string}
+         */
+        InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched";
+        /**
          * InitialRent
          * @description The first rent row, recorded with the tenancy (reason 'initial').
          */
@@ -2916,6 +3150,55 @@ export interface components {
             reference?: string | null;
             /** Notes */
             notes?: string | null;
+        };
+        /** MatchingRule */
+        MatchingRule: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            matcher: components["schemas"]["RuleMatcher"];
+            split_method: components["schemas"]["SplitMethod"];
+            category?: components["schemas"]["AllocationCategory"] | null;
+            /** Property Id */
+            property_id?: string | null;
+            /** Tenancy Id */
+            tenancy_id?: string | null;
+            /** Loan Id */
+            loan_id?: string | null;
+            /**
+             * Recurring
+             * @default false
+             */
+            recurring: boolean;
+            /** Created From Allocation Id */
+            created_from_allocation_id?: string | null;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Hit Count
+             * @default 0
+             */
+            hit_count: number;
         };
         /**
          * Me
@@ -3581,6 +3864,21 @@ export interface components {
             hold?: components["schemas"]["RetentionHold"] | null;
         };
         /**
+         * RuleMatcher
+         * @description What a rule matches on. No money field, by design: a rule never stores an amount.
+         *     Patterns are case-insensitive regular expressions searched in the normalized text.
+         */
+        RuleMatcher: {
+            /** Counterparty Iban Hmac */
+            counterparty_iban_hmac?: string | null;
+            /** Counterparty Name Pattern */
+            counterparty_name_pattern?: string | null;
+            /** Purpose Pattern */
+            purpose_pattern?: string | null;
+            /** Amount Sign */
+            amount_sign?: ("credit" | "debit") | null;
+        };
+        /**
          * ScheduleEntry
          * @description interest = opening_balance * (nominal * (interest_days - follow_up_days)
          *     + follow_up * follow_up_days) / 360, rounded half-up (principle 2: traceable).
@@ -3654,6 +3952,12 @@ export interface components {
             /** Quote */
             quote: string;
         };
+        /**
+         * SplitMethod
+         * @description matching_rule.split_method (D25): how a rule splits, never how much.
+         * @enum {string}
+         */
+        SplitMethod: "single_category" | "by_rent_schedule" | "by_loan_schedule" | "by_wirtschaftsplan" | "owner_transfer";
         /**
          * StatementExtraction
          * @description PDF Kontoauszug (§7.1): balances and lines. Every amount is a model reading, so the
@@ -4019,6 +4323,32 @@ export interface components {
             end_to_end_ref: string | null;
             /** Excluded As Duplicate Of */
             excluded_as_duplicate_of?: string | null;
+        };
+        /**
+         * TransactionAllocations
+         * @description GET / PUT /transactions/{id}/allocations: the line, its current allocation rows
+         *     (proposed or confirmed; none = not matched) and the rule checkbox.
+         *
+         *     can_learn_rule: whether a single-category answer for this line can become a rule
+         *     without a typed pattern (false without an IBAN, and for a counterparty a matcher owns,
+         *     D38). learn_rule_default: the checkbox's default for the current rows (off when a rule
+         *     cannot be learned from them, or a category never auto-confirms, review F6).
+         *     no_default_rule_categories: the categories that never auto-confirm (threshold None in
+         *     rules.review.THRESHOLDS), in taxonomy order, so the UI can default the checkbox for rows
+         *     the person types (on unless one of these is among them, §8.1).
+         *     rule: the rule this PUT created, if any.
+         */
+        TransactionAllocations: {
+            transaction: components["schemas"]["Transaction"];
+            /** Allocations */
+            allocations: components["schemas"]["Allocation"][];
+            /** Can Learn Rule */
+            can_learn_rule: boolean;
+            /** Learn Rule Default */
+            learn_rule_default: boolean;
+            /** No Default Rule Categories */
+            no_default_rule_categories: components["schemas"]["AllocationCategory"][];
+            rule?: components["schemas"]["MatchingRule"] | null;
         };
         /** Unit */
         Unit: {
@@ -6942,6 +7272,101 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PossibleDuplicate"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    inbox_list_api_inbox_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboxItem"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    transaction_allocations_get_api_transactions__transaction_id__allocations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                transaction_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransactionAllocations"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    transaction_allocations_put_api_transactions__transaction_id__allocations_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                transaction_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmAllocationsBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransactionAllocations"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

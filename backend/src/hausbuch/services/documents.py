@@ -29,6 +29,7 @@ from hausbuch.db.tables import property_acquisition_cost as cost_table
 from hausbuch.db.tables import property_price_split as split_table
 from hausbuch.db.tables import tenancy as tenancy_table
 from hausbuch.db.tables import unit as unit_table
+from hausbuch.jobs import enqueue
 from hausbuch.rules import retention
 from hausbuch.rules.errors import RuleError
 from hausbuch.schemas.ai import ExtractedValue
@@ -66,6 +67,13 @@ from .context import CommandContext
 from .errors import NotFoundError
 from .events import append_event
 from .parties import tenancies_ever_of
+
+# Extraction kinds that are evidence for matching (phase-2.md §8.1 step 3 and the Hausgeld
+# split): a new version of one queues rematch_on_evidence (§5.1) in the same transaction.
+DOCUMENT_EVIDENCE_KINDS = frozenset(
+    {ExtractionKind.INVOICE, ExtractionKind.BESCHEID, ExtractionKind.GRUNDSTEUERBESCHEID}
+)
+EVIDENCE_KINDS = DOCUMENT_EVIDENCE_KINDS | {ExtractionKind.WIRTSCHAFTSPLAN}
 
 # The document_file.media_type CHECK, so a bad value is refused before any SQL.
 _MEDIA_TYPE = re.compile(r"[a-z]+/[a-z0-9.+-]+")
@@ -355,6 +363,10 @@ def _append_extraction(
             created_at=ctx.now,
         )
     )
+    if kind in EVIDENCE_KINDS:
+        enqueue.enqueue_rematch_on_evidence(
+            ctx.conn, workspace_id=ctx.workspace_id, document_id=document_id
+        )
     return version
 
 

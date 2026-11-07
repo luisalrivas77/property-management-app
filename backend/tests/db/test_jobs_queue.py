@@ -74,9 +74,11 @@ def _jobs(engine, ws, doc):
         ).all()
 
 
-def _delete_document_jobs(engine) -> None:
+def _delete_jobs(engine) -> None:
+    """Every task's jobs: since step 4, statement imports and document readings queue
+    matching jobs too, and a worker here would run them against its scripted model."""
     with engine.begin() as conn:
-        conn.execute(text("DELETE FROM procrastinate_jobs WHERE task_name = 'document_read'"))
+        conn.execute(text("DELETE FROM procrastinate_jobs"))
 
 
 @pytest.fixture(autouse=True)
@@ -84,9 +86,9 @@ def _no_leftover_jobs(app_engine):
     """The queue is session-wide and not per workspace: jobs left in it would be fetched
     by any later test that runs a worker or fetches the next job (test_phase2_migrations'
     fetch-as-hausbuch_app test did, in the full suite). Each test starts and ends empty."""
-    _delete_document_jobs(app_engine)
+    _delete_jobs(app_engine)
     yield
-    _delete_document_jobs(app_engine)
+    _delete_jobs(app_engine)
 
 
 def test_job_exists_only_if_the_transaction_commits(app_engine, fresh_workspaces, blob_store):

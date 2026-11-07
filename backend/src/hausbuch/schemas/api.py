@@ -18,7 +18,8 @@ from uuid import UUID
 
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
-from .allocation import AllocationSet
+from .allocation import Allocation, AllocationCategory, AllocationSet, MatchingRule
+from .bank import Transaction
 from .common import (
     Area,
     Fraction,
@@ -413,11 +414,45 @@ class ProposalApplyResult(Schema):
 
 
 class ConfirmAllocationsBody(Schema):
-    """PUT /transactions/{id}/allocations: the user's allocation set (method user, or the
-    proposer's when confirmed unchanged) and the "Künftig immer so zuordnen" checkbox."""
+    """PUT /transactions/{id}/allocations: the user's allocation set and the "Künftig immer
+    so zuordnen" checkbox.
+
+    Only the set's allocations are read: the rows are written with method `user` and
+    confidence 1, whatever method, confidence, rule_id or ai_call_id the body carries. A set
+    equal to the current proposed rows confirms those rows as they are (the proposer's method
+    stays); one equal to the current confirmed rows changes nothing.
+
+    learn_rule: null = the server default (TransactionAllocations.learn_rule_default for this
+    set); true for a set no rule can be learned from is refused with rule.not_learnable.
+    The patterns (case-insensitive regular expressions, refused with rule.invalid_pattern
+    when they do not compile) narrow the rule, and let a line without an IBAN, or a
+    counterparty a matcher owns (D38), have one."""
 
     allocation_set: AllocationSet
-    learn_rule: bool = False
+    learn_rule: bool | None = None
+    counterparty_name_pattern: str | None = Field(default=None, max_length=200)
+    purpose_pattern: str | None = Field(default=None, max_length=200)
+
+
+class TransactionAllocations(Schema):
+    """GET / PUT /transactions/{id}/allocations: the line, its current allocation rows
+    (proposed or confirmed; none = not matched) and the rule checkbox.
+
+    can_learn_rule: whether a single-category answer for this line can become a rule
+    without a typed pattern (false without an IBAN, and for a counterparty a matcher owns,
+    D38). learn_rule_default: the checkbox's default for the current rows (off when a rule
+    cannot be learned from them, or a category never auto-confirms, review F6).
+    no_default_rule_categories: the categories that never auto-confirm (threshold None in
+    rules.review.THRESHOLDS), in taxonomy order, so the UI can default the checkbox for rows
+    the person types (on unless one of these is among them, §8.1).
+    rule: the rule this PUT created, if any."""
+
+    transaction: Transaction
+    allocations: list[Allocation]
+    can_learn_rule: bool
+    learn_rule_default: bool
+    no_default_rule_categories: list[AllocationCategory]
+    rule: MatchingRule | None = None
 
 
 class InboxItemKind(StrEnum):

@@ -295,12 +295,14 @@ class DocumentFacts(Schema):
     """An invoice or Bescheid extraction as the document matcher reads it. payments: an
     invoice's total on its document date; a Grundsteuerbescheid's installments on their
     due dates. category: chosen by the service from the kind and links (a Nebenkosten
-    invoice -> acquisition_cost, a Grundsteuerbescheid -> grundsteuer)."""
+    invoice -> acquisition_cost, a Grundsteuerbescheid -> grundsteuer, a financing invoice
+    (D35) -> loan_fees with the loan it is linked to as loan_id)."""
 
     id: UUID
     kind: ExtractionKind
     category: AllocationCategory
     property_id: UUID | None = None
+    loan_id: UUID | None = None
     payments: list[DuePayment] = Field(min_length=1)
     iban_hmac: HmacHex | None = Field(default=None, pattern=HMAC_PATTERN)
     reference: str | None = None

@@ -592,10 +592,26 @@ class RepeatCase(Lenient):
         return self
 
 
+class NoRuleCase(Lenient):
+    """D38: an answer on a counterparty a matcher owns that must not become a rule."""
+
+    answered: Answered
+
+    @model_validator(mode="after")
+    def _consistent(self) -> Self:
+        a = self.answered
+        if a.confirmed.transaction_id != a.transaction.id:
+            raise ValueError(f"{self.id}: the answer is for another transaction")
+        if sum(x.amount for x in a.confirmed.allocations) != a.transaction.amount:
+            raise ValueError(f"{self.id}: the answer does not sum to its line")
+        return self
+
+
 class RepeatFixture(Schema):
     ids: dict[str, str]
     context: MatchContext
     cases: list[RepeatCase]
+    no_rule: list[NoRuleCase] = Field(default_factory=list)
 
 
 # --- camt.yaml, csv_camt.yaml (step 3) ---------------------------------------------------

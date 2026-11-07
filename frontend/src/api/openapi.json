@@ -3879,6 +3879,126 @@
         }
       }
     },
+    "/api/inbox": {
+      "get": {
+        "summary": "Inbox List",
+        "operationId": "inbox_list_api_inbox_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InboxItem"
+                  },
+                  "type": "array",
+                  "title": "Response Inbox List Api Inbox Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/transactions/{transaction_id}/allocations": {
+      "get": {
+        "summary": "Transaction Allocations Get",
+        "operationId": "transaction_allocations_get_api_transactions__transaction_id__allocations_get",
+        "parameters": [
+          {
+            "name": "transaction_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Transaction Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionAllocations"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Transaction Allocations Put",
+        "operationId": "transaction_allocations_put_api_transactions__transaction_id__allocations_put",
+        "parameters": [
+          {
+            "name": "transaction_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Transaction Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmAllocationsBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionAllocations"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/properties/{property_id}/history": {
       "get": {
         "summary": "History Of Property",
@@ -5075,6 +5195,500 @@
         ],
         "title": "Address"
       },
+      "Allocation": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "transaction_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Transaction Id"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "category": {
+            "$ref": "#/components/schemas/AllocationCategory"
+          },
+          "property_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Property Id"
+          },
+          "unit_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Id"
+          },
+          "tenancy_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenancy Id"
+          },
+          "loan_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loan Id"
+          },
+          "service_period_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Period Start"
+          },
+          "service_period_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Period End"
+          },
+          "recurring": {
+            "type": "boolean",
+            "title": "Recurring"
+          },
+          "method": {
+            "$ref": "#/components/schemas/AllocationMethod"
+          },
+          "confidence": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,3})?$",
+            "title": "Confidence"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AllocationStatus"
+          },
+          "supersedes_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes Id"
+          },
+          "rule_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Id"
+          },
+          "ai_call_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Call Id"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "reasoning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning"
+          },
+          "question": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Recorded At"
+          },
+          "confirmed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmed At"
+          },
+          "confirmed_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmed By"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "workspace_id",
+          "created_at",
+          "transaction_id",
+          "amount",
+          "category",
+          "property_id",
+          "unit_id",
+          "tenancy_id",
+          "loan_id",
+          "service_period_start",
+          "service_period_end",
+          "recurring",
+          "method",
+          "confidence",
+          "status",
+          "supersedes_id",
+          "rule_id",
+          "ai_call_id",
+          "document_id",
+          "reasoning",
+          "question",
+          "recorded_at",
+          "confirmed_at",
+          "confirmed_by"
+        ],
+        "title": "Allocation",
+        "description": "Read shape of one allocation row (migration 0007)."
+      },
+      "AllocationCategory": {
+        "type": "string",
+        "enum": [
+          "rent_cold",
+          "operating_costs_prepayment",
+          "operating_costs_settlement",
+          "deposit_in",
+          "deposit_out",
+          "owner_transfer_in",
+          "owner_transfer_out",
+          "loan_interest",
+          "loan_principal",
+          "loan_fees",
+          "hausgeld_umlagefaehig",
+          "hausgeld_verwaltung",
+          "hausgeld_ruecklage",
+          "grundsteuer",
+          "insurance",
+          "repairs",
+          "renovation",
+          "acquisition_cost",
+          "professional_fees",
+          "bank_fees",
+          "other_income",
+          "other_expense",
+          "uncategorized"
+        ],
+        "title": "AllocationCategory",
+        "description": "§8.2. Default tax treatment in the comment (rules/categories.py is the source)."
+      },
+      "AllocationDraft": {
+        "properties": {
+          "amount": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "category": {
+            "$ref": "#/components/schemas/AllocationCategory"
+          },
+          "property_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Property Id"
+          },
+          "unit_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Id"
+          },
+          "tenancy_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenancy Id"
+          },
+          "loan_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loan Id"
+          },
+          "service_period_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Period Start"
+          },
+          "service_period_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Period End"
+          },
+          "recurring": {
+            "type": "boolean",
+            "title": "Recurring",
+            "default": false
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "amount",
+          "category"
+        ],
+        "title": "AllocationDraft",
+        "description": "What a matcher, a rule, the model or the user proposes for part of a transaction.\namount is signed like the transaction (a debit's parts are negative)."
+      },
+      "AllocationMethod": {
+        "type": "string",
+        "enum": [
+          "rule",
+          "matcher_rent",
+          "matcher_loan",
+          "matcher_owner",
+          "matcher_hausgeld",
+          "document_match",
+          "llm",
+          "user"
+        ],
+        "title": "AllocationMethod",
+        "description": "allocation.method (migration 0007): who proposed the allocation set."
+      },
+      "AllocationSet": {
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Transaction Id"
+          },
+          "allocations": {
+            "items": {
+              "$ref": "#/components/schemas/AllocationDraft"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Allocations"
+          },
+          "method": {
+            "$ref": "#/components/schemas/AllocationMethod"
+          },
+          "confidence": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,3})?$",
+            "title": "Confidence"
+          },
+          "reasoning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning"
+          },
+          "question": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question"
+          },
+          "rule_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Id"
+          },
+          "ai_call_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Call Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "transaction_id",
+          "allocations",
+          "method",
+          "confidence"
+        ],
+        "title": "AllocationSet",
+        "description": "One transaction's proposal. Σ amount must equal the transaction amount: checked by\nrules.allocations.check_sum, which knows the transaction (allocation_sum.yaml)."
+      },
+      "AllocationStatus": {
+        "type": "string",
+        "enum": [
+          "proposed",
+          "confirmed",
+          "superseded"
+        ],
+        "title": "AllocationStatus",
+        "description": "allocation.status (migration 0007, D23). The only column a trigger lets change, and\nonly forward: proposed -> confirmed, proposed -> superseded, confirmed -> superseded."
+      },
       "AppUser": {
         "properties": {
           "id": {
@@ -5452,6 +6066,55 @@
           "incomplete"
         ],
         "title": "ChecklistStatus"
+      },
+      "ConfirmAllocationsBody": {
+        "properties": {
+          "allocation_set": {
+            "$ref": "#/components/schemas/AllocationSet"
+          },
+          "learn_rule": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Learn Rule"
+          },
+          "counterparty_name_pattern": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counterparty Name Pattern"
+          },
+          "purpose_pattern": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purpose Pattern"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "allocation_set"
+        ],
+        "title": "ConfirmAllocationsBody",
+        "description": "PUT /transactions/{id}/allocations: the user's allocation set and the \"Künftig immer\nso zuordnen\" checkbox.\n\nOnly the set's allocations are read: the rows are written with method `user` and\nconfidence 1, whatever method, confidence, rule_id or ai_call_id the body carries. A set\nequal to the current proposed rows confirms those rows as they are (the proposer's method\nstays); one equal to the current confirmed rows changes nothing.\n\nlearn_rule: null = the server default (TransactionAllocations.learn_rule_default for this\nset); true for a set no rule can be learned from is refused with rule.not_learnable.\nThe patterns (case-insensitive regular expressions, refused with rule.invalid_pattern\nwhen they do not compile) narrow the rule, and let a line without an IBAN, or a\ncounterparty a matcher owns (D38), have one."
       },
       "Currency": {
         "type": "string",
@@ -6981,6 +7644,123 @@
         "title": "ImportStatus",
         "description": "statement_import.status. `imported` with no declared closing balance is what the\ninbox shows as \"pending balance\" (reconcile's pending_balance)."
       },
+      "InboxItem": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/InboxItemKind"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "reasoning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning"
+          },
+          "question": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "proposal_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposal Id"
+          },
+          "import_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Import Id"
+          },
+          "possible_duplicate_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Possible Duplicate Id"
+          },
+          "transaction_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transaction Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "created_at"
+        ],
+        "title": "InboxItem",
+        "description": "One thing to act on, with a one-line reasoning and one question. Exactly the ids its\naction endpoint needs are set."
+      },
+      "InboxItemKind": {
+        "type": "string",
+        "enum": [
+          "proposal",
+          "read_failed",
+          "blocked_tenant_data",
+          "import_unreconciled",
+          "import_pending_balance",
+          "possible_duplicate",
+          "allocation_proposed",
+          "unmatched"
+        ],
+        "title": "InboxItemKind",
+        "description": "GET /inbox (§8.3): one list, newest first."
+      },
       "InitialRent": {
         "properties": {
           "cold_rent": {
@@ -7836,6 +8616,121 @@
         "type": "object",
         "title": "ManualDocumentFields",
         "description": "The fields a person types in phase 1. Per-type schemas replace this in phase 2."
+      },
+      "MatchingRule": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "matcher": {
+            "$ref": "#/components/schemas/RuleMatcher"
+          },
+          "split_method": {
+            "$ref": "#/components/schemas/SplitMethod"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AllocationCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "property_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Property Id"
+          },
+          "tenancy_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenancy Id"
+          },
+          "loan_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loan Id"
+          },
+          "recurring": {
+            "type": "boolean",
+            "title": "Recurring",
+            "default": false
+          },
+          "created_from_allocation_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created From Allocation Id"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          },
+          "hit_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Hit Count",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "workspace_id",
+          "created_at",
+          "updated_at",
+          "matcher",
+          "split_method"
+        ],
+        "title": "MatchingRule"
       },
       "Me": {
         "properties": {
@@ -9361,6 +10256,63 @@
         "title": "RetentionResult",
         "description": "Exactly one of retain_until / hold is set. retention_class is null only when untyped."
       },
+      "RuleMatcher": {
+        "properties": {
+          "counterparty_iban_hmac": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counterparty Iban Hmac"
+          },
+          "counterparty_name_pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counterparty Name Pattern"
+          },
+          "purpose_pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purpose Pattern"
+          },
+          "amount_sign": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "credit",
+                  "debit"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Sign"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "RuleMatcher",
+        "description": "What a rule matches on. No money field, by design: a rule never stores an amount.\nPatterns are case-insensitive regular expressions searched in the normalized text."
+      },
       "ScheduleEntry": {
         "properties": {
           "number": {
@@ -9504,6 +10456,18 @@
         ],
         "title": "SourceRef",
         "description": "Where a value came from: the page (1-indexed, page offset of a split PDF already\nadded) and the cited text, verbatim."
+      },
+      "SplitMethod": {
+        "type": "string",
+        "enum": [
+          "single_category",
+          "by_rent_schedule",
+          "by_loan_schedule",
+          "by_wirtschaftsplan",
+          "owner_transfer"
+        ],
+        "title": "SplitMethod",
+        "description": "matching_rule.split_method (D25): how a rule splits, never how much."
       },
       "StatementExtraction": {
         "properties": {
@@ -10510,6 +11474,56 @@
         ],
         "title": "Transaction",
         "description": "Read shape. The counterparty IBAN is shown masked only."
+      },
+      "TransactionAllocations": {
+        "properties": {
+          "transaction": {
+            "$ref": "#/components/schemas/Transaction"
+          },
+          "allocations": {
+            "items": {
+              "$ref": "#/components/schemas/Allocation"
+            },
+            "type": "array",
+            "title": "Allocations"
+          },
+          "can_learn_rule": {
+            "type": "boolean",
+            "title": "Can Learn Rule"
+          },
+          "learn_rule_default": {
+            "type": "boolean",
+            "title": "Learn Rule Default"
+          },
+          "no_default_rule_categories": {
+            "items": {
+              "$ref": "#/components/schemas/AllocationCategory"
+            },
+            "type": "array",
+            "title": "No Default Rule Categories"
+          },
+          "rule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MatchingRule"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "transaction",
+          "allocations",
+          "can_learn_rule",
+          "learn_rule_default",
+          "no_default_rule_categories"
+        ],
+        "title": "TransactionAllocations",
+        "description": "GET / PUT /transactions/{id}/allocations: the line, its current allocation rows\n(proposed or confirmed; none = not matched) and the rule checkbox.\n\ncan_learn_rule: whether a single-category answer for this line can become a rule\nwithout a typed pattern (false without an IBAN, and for a counterparty a matcher owns,\nD38). learn_rule_default: the checkbox's default for the current rows (off when a rule\ncannot be learned from them, or a category never auto-confirms, review F6).\nno_default_rule_categories: the categories that never auto-confirm (threshold None in\nrules.review.THRESHOLDS), in taxonomy order, so the UI can default the checkbox for rows\nthe person types (on unless one of these is among them, §8.1).\nrule: the rule this PUT created, if any."
       },
       "Unit": {
         "properties": {

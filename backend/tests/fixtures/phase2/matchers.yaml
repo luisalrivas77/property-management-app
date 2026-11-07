@@ -35,9 +35,10 @@
 #     not rent, and the line goes on to the document match and the model.
 # loan: counterparty_iban_hmac = a loan's account_iban_hmac (or the counterparty name contains
 #   the lender's name, case-insensitively) and -amount == terms.monthly_payment. Split by the
-#   schedule entry (rules.loan_schedule.build_schedule) whose due_on lies in the booking month:
+#   schedule entry (rules.loan_schedule.build_schedule) whose due_on is nearest the booking date
+#   within 10 days either side (D39; two equally near -> null):
 #   loan_interest = -entry.interest, loan_principal = -entry.principal, with property and loan,
-#   recurring true; method matcher_loan, 1.0. No entry due in that month -> null.
+#   recurring true; method matcher_loan, 1.0. No entry within the window -> null.
 #   The entry due on 1 July 2025 below still carries June's interest at the old 5 % (June
 #   accrued before fixed_until), so a matcher that reads "the rate in force on the booking
 #   date" gets it wrong; the follow-up rate's first entry is August's (rules.yaml).
@@ -45,7 +46,8 @@
 #   booking_date within 10 days of p.due_on (inclusive, either side), and the document's
 #   iban_hmac equal to the counterparty's or its reference found in the purpose
 #   (case-insensitive, whitespace-collapsed) -> one allocation of the document's category, the
-#   document as Beleg (document_id) and its property; recurring true when the document has
+#   document as Beleg (document_id), its property and its loan_id (a financing invoice, D35:
+#   category loan_fees); recurring true when the document has
 #   more than one payment (a Grundsteuerbescheid's installments), else false; method
 #   document_match, confidence 0.95 (auto-confirm per thresholds.yaml).
 
@@ -56,6 +58,7 @@ ids:
   loan: &L 0000000f-0000-4000-8000-000000000001
   doc_grundsteuer: &D_GS 0000000d-0000-4000-8000-000000000001
   doc_notary: &D_NOTARY 0000000d-0000-4000-8000-000000000002
+  doc_grundschuld: &D_GRUNDSCHULD 0000000d-0000-4000-8000-000000000003
   hmac_tenant: &H_TENANT "1111111111111111111111111111111111111111111111111111111111111111"
   hmac_owner: &H_OWNER "2222222222222222222222222222222222222222222222222222222222222222"
   hmac_loan: &H_LOAN "3333333333333333333333333333333333333333333333333333333333333333"
@@ -106,6 +109,15 @@ context:
         - {due_on: 2026-03-10, amount: "1234.56"}
       iban_hmac: *H_NOTARY
       reference: R 8817
+    - id: *D_GRUNDSCHULD
+      kind: invoice
+      category: loan_fees
+      property_id: *P
+      loan_id: *L
+      payments:
+        - {due_on: 2026-03-20, amount: "612.88"}
+      iban_hmac: *H_NOTARY
+      reference: RE26/00001
 
 cases:
   - id: rent_exact
@@ -194,6 +206,24 @@ cases:
         - {amount: "-64.08", category: loan_interest, property_id: *P, loan_id: *L, service_period_start: 2025-07-01, service_period_end: 2025-07-31, recurring: true}
         - {amount: "-935.92", category: loan_principal, property_id: *P, loan_id: *L, service_period_start: 2025-07-01, service_period_end: 2025-07-31, recurring: true}
 
+  - id: annuity_booked_the_day_before_its_due_date
+    description: D39. The bank books the 1 July 2025 instalment on 30 June; it still gets entry 6 (July), not entry 5.
+    matcher: loan
+    transaction:
+      id: 0000002a-0000-4000-8000-00000000000a
+      booking_date: 2025-06-30
+      amount: "-1000.00"
+      counterparty_name: Beispielbank AG
+      counterparty_iban_hmac: *H_LOAN
+      purpose: Darlehen 600123456 Rate
+    expect:
+      method: matcher_loan
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "-64.08", category: loan_interest, property_id: *P, loan_id: *L, service_period_start: 2025-07-01, service_period_end: 2025-07-31, recurring: true}
+        - {amount: "-935.92", category: loan_principal, property_id: *P, loan_id: *L, service_period_start: 2025-07-01, service_period_end: 2025-07-31, recurring: true}
+
   - id: owner_top_up
     matcher: owner_transfer
     transaction:
@@ -253,3 +283,20 @@ cases:
       booking_date: 2026-03-21
       amount: "-1234.56"
     expect: null
+
+  - id: financing_invoice_books_loan_fees
+    description: D35. The notary's Grundschuld bill is a financing cost; its payment is loan_fees on the loan, not an acquisition cost. Found by the notary's IBAN.
+    matcher: document
+    transaction:
+      id: 0000002a-0000-4000-8000-000000000009
+      booking_date: 2026-03-25
+      amount: "-612.88"
+      counterparty_name: Notarin Dr. Beispiel
+      counterparty_iban_hmac: *H_NOTARY
+      purpose: Kostenrechnung
+    expect:
+      method: document_match
+      confidence: "0.950"
+      question: null
+      allocations:
+        - {amount: "-612.88", category: loan_fees, property_id: *P, loan_id: *L, document_id: *D_GRUNDSCHULD, recurring: false}

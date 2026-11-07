@@ -9,10 +9,12 @@ import { BrandMark } from "@/lib/BrandMark";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 // §9.2 navigation, as the mockups' left sidebar (UI style decision, 5 Nov 2026): Hausbuch ·
-// Übersicht · Dokumente · Konten · Eigentümer · Mieter · Einstellungen, then the user's name and
-// Abmelden. On a phone it stacks above the content (globals.css, .shell).
+// Übersicht · Posteingang (phase 2 step 4) · Dokumente · Konten · Eigentümer · Mieter ·
+// Einstellungen, then the user's name and Abmelden. On a phone it stacks above the content
+// (globals.css, .shell).
 const NAV = [
   { href: "/", label: "Übersicht" },
+  { href: "/inbox", label: "Posteingang" },
   { href: "/documents", label: "Dokumente" },
   { href: "/accounts", label: "Konten" },
   { href: "/owners", label: "Eigentümer" },

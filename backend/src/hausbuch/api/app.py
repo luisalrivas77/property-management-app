@@ -33,6 +33,7 @@ from .limits import BodyLimitMiddleware
 from .logging import RequestMiddleware
 from .routes import (
     accounts,
+    allocations,
     auth,
     documents,
     history,
@@ -59,6 +60,7 @@ ROUTE_MODULES = (
     proposals,
     accounts,
     statements,
+    allocations,
     history,
     auth,
 )

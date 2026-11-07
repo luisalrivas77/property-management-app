@@ -87,6 +87,21 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "statement.balance_from_file": "Dieser Auszug bringt seine Salden selbst mit; ein Saldo wird nicht eingegeben.",
   "statement.duplicate_accounts_differ": "Die beiden Umsätze gehören zu verschiedenen Konten.",
   "statement.duplicate_excludes_both": "Zusammenführen würde beide Umsätze aus dem Saldo nehmen; einer muss zählen.",
+  // allocations and learned rules (phase-2.md §8, step 4)
+  "allocation.sum_mismatch": "Die Zeilen ergeben zusammen nicht den Betrag der Buchung.",
+  "allocation.empty": "Eine Zuordnung braucht mindestens eine Zeile.",
+  "allocation.transaction_mismatch": "Die Zuordnung gehört zu einer anderen Buchung. Bitte die Seite neu laden.",
+  "allocation.import_not_reconciled":
+    "Der Kontoauszug dieser Buchung ist nicht abgestimmt. Erst wenn seine Salden stimmen, kann sie zugeordnet werden.",
+  "allocation.line_not_open":
+    "Diese Buchung zählt nicht (zusammengeführte Doppelbuchung) oder wartet noch auf die Entscheidung über eine mögliche Doppelbuchung.",
+  "allocation.scope_mismatch":
+    "Einheit, Mietverhältnis oder Darlehen gehören nicht zur gewählten Immobilie, oder die Immobilie fehlt.",
+  "allocation.excluded_transaction": "Diese Buchung wurde als Doppelbuchung zusammengeführt und zählt nicht.",
+  "rule.not_learnable":
+    "Aus dieser Zuordnung lässt sich keine Regel lernen (zum Beispiel aus einer Aufteilung auf mehrere Kategorien). Ohne Regel bestätigen.",
+  "rule.invalid_pattern":
+    "Das Muster ist kein gültiger Suchausdruck (regulärer Ausdruck, höchstens 200 Zeichen).",
 };
 
 /** German text for a proposal's `error_code`: why reading the document failed or was

@@ -348,6 +348,8 @@ function isCredit(amount: string): boolean {
   return !amount.startsWith("-") && !/^0+(\.0+)?$/.test(amount);
 }
 
+/** Umsätze. Each counting line links to its allocation panel in the Posteingang
+ * (/inbox?umsatz=…), which also corrects an allocation already confirmed. */
 export function TransactionsTable({ transactions }: { transactions: Transaction[] }) {
   if (transactions.length === 0) return <p className="muted">Keine Umsätze in diesem Zeitraum.</p>;
   return (
@@ -359,6 +361,7 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
             <th>Gegenseite</th>
             <th>Verwendungszweck</th>
             <th className="num">Betrag</th>
+            <th>Zuordnung</th>
           </tr>
         </thead>
         <tbody>
@@ -386,6 +389,13 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
               <td className={isCredit(line.amount) ? "num amount-in" : "num"}>
                 {isCredit(line.amount) ? "+" : ""}
                 {formatMoney(line.amount)}
+              </td>
+              <td className="actions">
+                {line.excluded_as_duplicate_of ? null : (
+                  <Link href={`/inbox?umsatz=${line.id}`} aria-label={`Zuordnung: ${line.counterparty_name ?? "Umsatz"} am ${formatDate(line.booking_date)}`}>
+                    Zuordnung
+                  </Link>
+                )}
               </td>
             </tr>
           ))}
@@ -415,7 +425,7 @@ function DuplicateLine({ caption, line, imp }: { caption: string; line: Transact
   );
 }
 
-function DuplicateCard({
+export function DuplicateCard({
   pair,
   first,
   later,

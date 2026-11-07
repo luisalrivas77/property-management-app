@@ -17,7 +17,7 @@
 #                       property / tenancy / loan; recurring = rule.recurring (copied from the
 #                       answer the rule was learned from; a yearly premium is recurring).
 #   by_loan_schedule    as matchers.yaml's loan matcher for rule.loan_id (the schedule entry due
-#                       in the booking month, recurring true); no entry, or -amount !=
+#                       nearest the booking date within ±10 days, D39; recurring true); no entry, or -amount !=
 #                       monthly_payment -> null.
 #   by_wirtschaftsplan  the plan in force for rule.property_id = latest valid_from <= the
 #                       service period's start (recurring true). -amount == plan.total ->
