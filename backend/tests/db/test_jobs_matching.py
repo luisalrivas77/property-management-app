@@ -6,16 +6,18 @@ client would have sent."""
 import json
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from uuid import UUID
 
 import pytest
 from db.db_support import TEST_IBAN_KEY
 from db.matching_support import (
     OTHER_TENANT_IBAN,
     PAINTER_IBAN,
+    STADT_IBAN,
     TENANT_IBAN,
     World,
 )
-from sqlalchemy import select, text
+from sqlalchemy import insert, select, text
 from test_bank_parsers import CAMT, CSV, build
 
 from hausbuch.ai.client import ModelCallError
@@ -26,19 +28,28 @@ from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import ai_call as ai_call_table
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import event as event_table
+from hausbuch.db.tables import matching_rule as rule_table
+from hausbuch.db.tables import statement_import as import_table
 from hausbuch.jobs.document_read import JobDeps, RetryLater
-from hausbuch.jobs.enqueue import import_lock, transaction_lock
+from hausbuch.jobs.enqueue import import_lock, rule_lock, transaction_lock
 from hausbuch.jobs.matching import (
     run_match_import,
     run_match_transaction,
     run_rematch_on_evidence,
+    run_rematch_on_rule,
 )
-from hausbuch.schemas.api import InboxItemKind
+from hausbuch.schemas.allocation import (
+    AllocationCategory,
+    AllocationDraft,
+    AllocationMethod,
+    AllocationSet,
+)
+from hausbuch.schemas.api import ConfirmAllocationsBody, InboxItemKind
 from hausbuch.schemas.bank import AccountCreate
 from hausbuch.schemas.enums import DuplicateStatus, ExtractionKind, ImportStatus
 from hausbuch.schemas.extraction import EXTRACTION_MODELS
 from hausbuch.schemas.property import UnitCreate
-from hausbuch.services import documents, matching, review
+from hausbuch.services import documents, matching, review, rules_learned
 from hausbuch.services.accounts import create_account
 from hausbuch.services.statements import (
     import_statement,
@@ -538,3 +549,209 @@ def test_a_new_reading_queues_a_rematch_that_matches_without_the_model(world, ap
     (row,) = _rows(world, tx)
     assert row.document_id == doc and row.status == "proposed"
     assert deps.model_client.requests == []  # type: ignore[union-attr]
+
+
+# --- rematch_on_rule ------------------------------------------------------------------------
+
+
+def _put(world: World, tx, *parts, learn_rule: bool, **scope):
+    answer = AllocationSet(
+        transaction_id=tx,
+        allocations=[
+            AllocationDraft(amount=Decimal(amount), category=AllocationCategory(category), **scope)
+            for amount, category in parts
+        ],
+        method=AllocationMethod.USER,
+        confidence=Decimal("1.000"),
+    )
+    return world.cmd(
+        review.allocate_transaction,
+        tx,
+        ConfirmAllocationsBody(allocation_set=answer, learn_rule=learn_rule),
+        iban_key=TEST_IBAN_KEY,
+    )
+
+
+def _all_rows(world: World, tx):
+    return world.query(
+        lambda c: c.execute(
+            select(allocation_table)
+            .where(allocation_table.c.transaction_id == tx)
+            .order_by(allocation_table.c.recorded_at, allocation_table.c.id)
+        ).all()
+    )
+
+
+def _hit_count(world: World, rule_id) -> int:
+    return world.query(
+        lambda c: c.execute(
+            select(rule_table.c.hit_count).where(rule_table.c.id == rule_id)
+        ).scalar_one()
+    )
+
+
+def _unreconciled_import(world: World):
+    with workspace_transaction(world.engine, world.ws) as conn:
+        doc = world._document_row(conn, type="statement", subtype=None, title=None)
+        return conn.execute(
+            insert(import_table)
+            .values(
+                workspace_id=world.ws,
+                account_id=world.account_id,
+                document_id=doc,
+                format="camt",
+                status=ImportStatus.UNRECONCILED.value,
+                error_code="statement.unreconciled",
+                balance_source="file",
+                declared_closing=Decimal("0.00"),
+                computed_closing=Decimal("1.00"),
+                created_at=world.now,
+                updated_at=world.now,
+            )
+            .returning(import_table.c.id)
+        ).scalar_one()
+
+
+def _rule_jobs(world: World):
+    return [j for j in _jobs(world) if j.task_name == "rematch_on_rule"]
+
+
+def test_a_learned_rule_books_the_payers_waiting_lines_without_the_model(
+    world, app_engine, tmp_path
+):
+    """Months imported at once, nothing answered yet: answering one Grundsteuer line with
+    "Künftig immer so zuordnen" books the Stadtkasse's other waiting lines, and only those."""
+
+    def stadt(day: date, amount: str = "-120.00", **kw):
+        return world.line(day, amount, iban=STADT_IBAN, purpose="Grundsteuer", **kw)
+
+    first = stadt(date(2026, 2, 16))
+    no_rows = stadt(date(2026, 5, 15))
+    other_proposal = stadt(date(2026, 8, 17))  # the model proposed another category
+    same_proposal = stadt(date(2026, 8, 18))  # the model proposed exactly the rule's split
+    by_person = stadt(date(2026, 11, 16))  # answered earlier, by hand
+    refund = stadt(date(2026, 6, 1), "120.00")  # the other sign
+    painter = world.line(date(2026, 5, 15), "-120.00", iban=PAINTER_IBAN, purpose="Grundsteuer")
+    unreconciled = stadt(date(2026, 9, 15), import_id=_unreconciled_import(world))
+
+    ai = FakeModelClient(
+        [
+            _answer(("other_expense", "-120.00", None, False)),
+            _answer(("grundsteuer", "-120.00", None, False)),
+        ]
+    )
+    ai_deps = _deps(app_engine, tmp_path, ai)
+    _run(ai_deps, world, other_proposal)
+    _run(ai_deps, world, same_proposal)
+    for tx, category in ((other_proposal, "other_expense"), (same_proposal, "grundsteuer")):
+        (row,) = _rows(world, tx)
+        assert (row.method, row.status, row.category) == ("llm", "proposed", category)
+    _put(world, by_person, ("-120.00", "other_expense"), learn_rule=False)
+    assert _rule_jobs(world) == []  # no rule, no job
+
+    rule = _put(
+        world, first, ("-120.00", "grundsteuer"), learn_rule=True, property_id=world.property_id
+    ).rule
+    assert rule is not None and rule.split_method.value == "single_category"
+    (job,) = _rule_jobs(world)
+    assert job.lock == rule_lock(rule.id)
+    assert job.args == {"workspace_id": str(world.ws), "rule_id": str(rule.id)}
+
+    picked = world.query(matching.lines_for_rule, rule.id)
+    assert picked == [no_rows, other_proposal, same_proposal]
+
+    client = FakeModelClient()  # AI on, nothing scripted: any call would fail the test
+    deps = _deps(app_engine, tmp_path, client)
+    plans = run_rematch_on_rule(
+        deps, workspace_id=world.ws, rule_id=UUID(job.args["rule_id"]), attempt=0
+    )
+    assert [(p.outcome, p.reason) for p in plans] == [("written", "routing.auto_confirm")] * 3
+    assert client.requests == []
+
+    for tx in (no_rows, other_proposal, same_proposal):
+        (row,) = _rows(world, tx)
+        assert (row.method, row.status, row.category, row.rule_id) == (
+            "rule",
+            "confirmed",
+            "grundsteuer",
+            rule.id,
+        )
+        assert row.confirmed_by is None and row.amount == Decimal("-120.00")
+    for tx in (other_proposal, same_proposal):  # the proposal is superseded, not edited
+        rows = _all_rows(world, tx)  # one clock here: recorded_at does not order them
+        assert sorted((r.method, r.status) for r in rows) == [
+            ("llm", "superseded"),
+            ("rule", "confirmed"),
+        ]
+        (old,) = [r for r in rows if r.status == "superseded"]
+        (new,) = [r for r in rows if r.status == "confirmed"]
+        assert new.supersedes_id == old.id
+    (kept,) = _rows(world, by_person)
+    assert (kept.method, kept.status, kept.category) == ("user", "confirmed", "other_expense")
+    for tx in (refund, painter, unreconciled):
+        assert _rows(world, tx) == []
+    assert _hit_count(world, rule.id) == 3
+
+    # The booked lines left the inbox; a second run finds nothing waiting.
+    listed = {i.transaction_id for i in world.query(review.inbox)}
+    assert listed.isdisjoint({first, no_rows, other_proposal, same_proposal, by_person})
+    assert {refund, painter} <= listed
+    assert run_rematch_on_rule(deps, workspace_id=world.ws, rule_id=rule.id, attempt=0) == []
+
+
+def test_a_rule_disabled_before_its_job_runs_rematches_nothing(world, app_engine, tmp_path):
+    first = world.line(date(2026, 2, 16), "-120.00", iban=STADT_IBAN, purpose="Grundsteuer")
+    waiting = world.line(date(2026, 5, 15), "-120.00", iban=STADT_IBAN, purpose="Grundsteuer")
+    rule = _put(world, first, ("-120.00", "grundsteuer"), learn_rule=True).rule
+    world.cmd(rules_learned.disable_rule, rule.id)
+    assert world.query(matching.lines_for_rule, rule.id) == []
+    client = FakeModelClient()
+    deps = _deps(app_engine, tmp_path, client)
+    assert run_rematch_on_rule(deps, workspace_id=world.ws, rule_id=rule.id, attempt=0) == []
+    assert _rows(world, waiting) == [] and client.requests == []
+
+
+def test_a_rent_rule_books_the_waiting_rent_that_fits_the_schedule_exactly(
+    world, app_engine, tmp_path
+):
+    """The rent comes from an account the tenancy does not know (the rent matcher misses
+    it), so the lines wait. A two-row answer becomes a by_rent_schedule rule; it books the
+    months paid in full and leaves the one paid 20 € short waiting."""
+    tenancy = world.tenancy()  # 1050.00 + 230.00; the tenant's own IBAN is TENANT_IBAN
+
+    def rent(month: int, amount: str = "1280.00"):
+        return world.line(
+            date(2026, month, 2), amount, iban=OTHER_TENANT_IBAN, purpose=f"Miete {month:02d}/2026"
+        )
+
+    january, february, march, april = rent(1), rent(2), rent(3, "1260.00"), rent(4)
+    rule = _put(
+        world,
+        january,
+        ("1050.00", "rent_cold"),
+        ("230.00", "operating_costs_prepayment"),
+        learn_rule=True,
+        property_id=world.property_id,
+        unit_id=world.unit_id,
+        tenancy_id=tenancy,
+    ).rule
+    assert rule.split_method.value == "by_rent_schedule" and rule.tenancy_id == tenancy
+    assert world.query(matching.lines_for_rule, rule.id) == [february, march, april]
+
+    client = FakeModelClient()
+    deps = _deps(app_engine, tmp_path, client)
+    plans = run_rematch_on_rule(deps, workspace_id=world.ws, rule_id=rule.id, attempt=0)
+    assert [p.outcome for p in plans] == ["written", "skipped", "written"]
+    assert client.requests == []
+    for tx, month in ((february, 2), (april, 4)):
+        rows = _rows(world, tx)
+        assert sorted((r.category, r.amount, r.method, r.status) for r in rows) == [
+            ("operating_costs_prepayment", Decimal("230.00"), "rule", "confirmed"),
+            ("rent_cold", Decimal("1050.00"), "rule", "confirmed"),
+        ]
+        assert {(r.service_period_start, r.tenancy_id) for r in rows} == {
+            (date(2026, month, 1), tenancy)
+        }
+    assert _rows(world, march) == []  # 20 € short: still waiting, nothing asked of the model
+    (item,) = [i for i in world.query(review.inbox) if i.transaction_id == march]
+    assert item.kind is InboxItemKind.UNMATCHED

@@ -148,7 +148,7 @@ def apply_rule(
 ) -> AllocationSet | None:
     """The rule's set for the line, or None when the rule is disabled, misses, or its split
     method does not fit the line exactly (it is then left to the matchers and review)."""
-    if not rule.enabled or not _hits(rule.matcher, tx):
+    if not rule.enabled or not rule_hits(rule.matcher, tx):
         return None
     split = _RULE_SPLITS[rule.split_method](rule, tx, context)
     if split is None or split.confidence != EXACT:
@@ -408,7 +408,9 @@ def _by_id[T: (TenancyFacts, LoanFacts)](items: Sequence[T], id: object) -> T | 
     return next((item for item in items if item.id == id), None) if id is not None else None
 
 
-def _hits(matcher: RuleMatcher, tx: MatchTransaction) -> bool:
+def rule_hits(matcher: RuleMatcher, tx: MatchTransaction) -> bool:
+    """Whether the line is one the matcher names (IBAN hash, sign, patterns); the split is
+    apply_rule's. Also used to pick the waiting lines a new rule may book (rematch_on_rule)."""
     if not matcher.matches_something:  # an erased rule's empty matcher hits nothing
         return False
     wanted = matcher.counterparty_iban_hmac

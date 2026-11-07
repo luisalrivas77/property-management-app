@@ -62,6 +62,7 @@ def enqueue_document_read(
 MATCH_IMPORT_TASK = "match_import"
 MATCH_TRANSACTION_TASK = "match_transaction"
 REMATCH_TASK = "rematch_on_evidence"
+REMATCH_RULE_TASK = "rematch_on_rule"
 
 
 def import_lock(import_id: UUID) -> str:
@@ -112,4 +113,22 @@ def enqueue_rematch_on_evidence(conn: Connection, *, workspace_id: UUID, documen
         document_lock(document_id),
         workspace_id=str(workspace_id),
         document_id=str(document_id),
+    )
+
+
+def rule_lock(rule_id: UUID) -> str:
+    return f"rule:{rule_id}"
+
+
+def enqueue_rematch_on_rule(conn: Connection, *, workspace_id: UUID, rule_id: UUID) -> None:
+    """Queue `rematch_on_rule` for a newly learned rule (in the rule insert's transaction).
+    Locked by `rule:{id}`: the job's input is one rule, and each line it touches is
+    serialised by match_line's row lock (and _guarded's advisory locks), so a wider lock
+    would only make one stuck job hold up other rules' jobs."""
+    _defer(
+        conn,
+        REMATCH_RULE_TASK,
+        rule_lock(rule_id),
+        workspace_id=str(workspace_id),
+        rule_id=str(rule_id),
     )

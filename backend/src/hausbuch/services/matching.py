@@ -15,7 +15,10 @@ A line is matched only when it is *open*:
 - it has no current allocation rows. A re-match on new evidence (`rematch=True`, D23) also
   takes a line whose rows are proposed, or confirmed by a learned rule; it replaces them only
   with a different set, and replaces confirmed rule rows only with a set that auto-confirms.
-  A person's confirmation is never re-matched.
+  A person's confirmation is never re-matched. A proposed set the deterministic order now
+  auto-confirms with the same split is confirmed as a new set (the new rule or matcher's).
+  A newly learned rule re-matches the *waiting* lines it names (`lines_for_rule`,
+  rematch_on_rule): no confirmed rows, so never a line a person, matcher or rule booked.
 
 Service-side guards on a machine set before it is routed (review F3, D39): a rent set whose
 tenancy already has confirmed rent_cold for an overlapping period, and a loan set whose
@@ -45,7 +48,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 from uuid import UUID
 
-from sqlalchemy import Connection, Row, and_, func, or_, select
+from sqlalchemy import Connection, Row, and_, exists, func, or_, select
 
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
@@ -168,6 +171,13 @@ class Line:
         if statuses == {AllocationStatus.PROPOSED}:
             return True
         return all(a.method is AllocationMethod.RULE for a in self.current)
+
+    @property
+    def waiting(self) -> bool:
+        """The line waits for an answer: no current rows, or only proposed ones. A line
+        with confirmed rows (by a person, a matcher or a rule) is not waiting
+        (rematch_on_rule takes waiting lines only)."""
+        return all(a.status is AllocationStatus.PROPOSED for a in self.current)
 
 
 def load_line(conn: Connection, transaction_id: UUID, *, lock: bool = False) -> Line | None:
@@ -769,10 +779,15 @@ def match_line(
 
 def write(ctx: CommandContext, line: Line, found: AllocationSet) -> MatchPlan:
     """Route the set and write it, unless the line already holds the same answer."""
-    if line.current and allocations.same_answer(found.allocations, line.current):
-        return MatchPlan("skipped", "matching.unchanged")
     decision = _route(line, found)
     auto = decision is RoutingDecision.AUTO_CONFIRM
+    # The same split as the current rows changes nothing, except a proposed set the order
+    # now auto-confirms (a new rule or evidence books it): that is written as a confirmed set
+    # superseding the proposal, so it leaves the inbox with the rule's or matcher's
+    # provenance.
+    same = bool(line.current) and allocations.same_answer(found.allocations, line.current)
+    if same and not (auto and line.waiting):
+        return MatchPlan("skipped", "matching.unchanged")
     written = allocations.record_set(ctx, found, confirm=auto, auto=auto)
     if found.rule_id is not None:
         rules_learned.record_hit(ctx, found.rule_id)
@@ -860,6 +875,47 @@ def lines_for_evidence(
         )
         ids.extend(conn.execute(query.order_by(t.booking_date, t.id)).scalars())
     return list(dict.fromkeys(ids))
+
+
+# --- Which lines a new rule may book ------------------------------------------------------
+
+
+def lines_for_rule(conn: Connection, rule_id: UUID) -> list[UUID]:
+    """Waiting lines a newly learned rule names (rematch_on_rule), oldest first: lines of a
+    reconciled import, not excluded as a duplicate, with no confirmed allocation row (none,
+    or only a proposed set), on the rule's IBAN hash and sign, and hit by its patterns
+    (rules.matching.rule_hits). None for a rule that is gone or disabled. Whether the rule's
+    split fits each line, and the open-duplicate check, are match_line's."""
+    row = conn.execute(select(rule_table).where(rule_table.c.id == rule_id)).one_or_none()
+    if row is None:
+        return []
+    rule = rules_learned.to_rule(row)
+    if not rule.enabled or not rule.matcher.matches_something:
+        return []
+    t = transaction_table.c
+    a = allocation_table.c
+    confirmed = exists().where(
+        a.transaction_id == t.id, a.status == AllocationStatus.CONFIRMED.value
+    )
+    query = (
+        select(transaction_table)
+        .join(import_table, import_table.c.id == t.import_id)
+        .where(
+            import_table.c.status == ImportStatus.RECONCILED.value,
+            t.excluded_as_duplicate_of.is_(None),
+            ~confirmed,
+        )
+    )
+    matcher = rule.matcher
+    if matcher.counterparty_iban_hmac is not None:
+        hmac = bytes.fromhex(matcher.counterparty_iban_hmac)
+        query = query.where(t.counterparty_iban_hmac == hmac)
+    if matcher.amount_sign == "credit":
+        query = query.where(t.amount > 0)
+    elif matcher.amount_sign == "debit":
+        query = query.where(t.amount < 0)
+    rows = conn.execute(query.order_by(t.booking_date, t.id)).all()
+    return [r.id for r in rows if matchers.rule_hits(matcher, match_transaction(r))]
 
 
 # --- What the model sees (data minimization, §5.3) -----------------------------------------

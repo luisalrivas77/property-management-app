@@ -116,7 +116,7 @@ def test_only_a_disabled_rule_reads_with_an_empty_matcher():
     from datetime import UTC, date, datetime
     from uuid import uuid4
 
-    from hausbuch.rules.matching import _hits
+    from hausbuch.rules.matching import rule_hits
     from hausbuch.schemas.allocation import MatchTransaction
 
     for matcher in ({}, {"amount_sign": "credit"}):
@@ -138,4 +138,4 @@ def test_only_a_disabled_rule_reads_with_an_empty_matcher():
         with pytest.raises(ValidationError, match="a rule matches on"):
             MatchingRule.model_validate(stored | {"enabled": True})
         tx = MatchTransaction(id=uuid4(), booking_date=date(2026, 11, 2), amount="1400.00")
-        assert _hits(RuleMatcher.model_validate(matcher), tx) is False
+        assert rule_hits(RuleMatcher.model_validate(matcher), tx) is False
