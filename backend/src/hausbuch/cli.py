@@ -196,6 +196,12 @@ def evals_report(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
     return EXIT_OK
 
 
+def evals_run(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
+    from hausbuch.evals import run
+
+    return run.main(args, environ)
+
+
 # --- Helpers --------------------------------------------------------------------------
 
 
@@ -280,6 +286,26 @@ def _parser() -> argparse.ArgumentParser:
         "--since", type=date.fromisoformat, help="only proposals applied on or after (YYYY-MM-DD)"
     )
     report.set_defaults(command=evals_report, command_name="evals report")
+
+    live = evals_commands.add_parser(
+        "run",
+        help="read the documents in HAUSBUCH_EVAL_DIR with the model (live, costs money) "
+        "and compare with their <name>.expected.yaml",
+    )
+    live.add_argument("--dir", type=Path, help="the documents (default: HAUSBUCH_EVAL_DIR)")
+    live.add_argument(
+        "--show-values", action="store_true", help="print the values, not only match/differs"
+    )
+    live.add_argument(
+        "--write-expected",
+        action="store_true",
+        help="write <name>.expected.yaml from this reading (check it first)",
+    )
+    live.add_argument(
+        "--force", action="store_true", help="with --write-expected: overwrite existing files"
+    )
+    live.add_argument("names", nargs="*", help="only these documents (file names)")
+    live.set_defaults(command=evals_run, command_name="evals run")
 
     return parser
 
