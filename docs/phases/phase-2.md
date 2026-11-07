@@ -151,7 +151,7 @@ scrub, as the statement original is; AI extraction rows (`document_extraction`, 
 | `statement.imported` | `account_id`, `document_id`, `format`, `lines_total`, `lines_new`, `lines_skipped`, first/last booking date, `transaction_ids` | optional (last booking date) |
 | `statement.reconciled` / `statement.unreconciled` | `declared_closing`, `computed_closing`, `difference`, `balance_source` | forbidden |
 | `statement.duplicate_resolved` | `possible_duplicate_id`, both transaction ids, `status` | forbidden |
-| `transaction.allocated` | `allocation_ids`, per allocation: category, amount, scope ids, tax year, period, recurring; `method`, `confidence`, `rule_id`, `ai_call_id`, `auto` (bool) | required (booking date) |
+| `transaction.allocated` | `allocation_ids`, per allocation: category, amount, scope ids, period, recurring (no tax year, D31: this row said "tax year" until 7 Nov 2026, after the schema had dropped it); `method`, `confidence`, `rule_id`, `ai_call_id`, `auto` (bool) | required (booking date) |
 | `transaction.reallocated` | same shape, `supersedes` allocation ids | required |
 | `rule.created` / `rule.disabled` | `matcher` (IBAN hash and patterns), `split_method`, `category`, scope ids, `created_from_allocation_id` | forbidden |
 
