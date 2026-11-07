@@ -34,7 +34,8 @@
 #            ownership shares from the clause ("je zur Hälfte" -> 1/2 each, in buyers order);
 #            rent operating_costs_prepayment = Betriebskosten + Heizkosten when both are stated;
 #            tenancy rent_model from rent_clause (Staffel -> staffel, Index -> index, none ->
-#            fixed); tenancy unit_id = the unit matched by address and unit label;
+#            fixed); tenancy unit_id = the unit matched by address and unit label (lease
+#            unit, below; null when none or several match);
 #            tenancy deposit_form = cash_account from [deposit_amount, deposit_clause] when the
 #            amount is above 0 and the clause names no form or is missing (low confidence: the
 #            clause was not understood), missing (value null) from the same inputs when the
@@ -62,6 +63,18 @@
 #             current = the context's values of the record's fields.
 #   unit      label on the matched property: same rule, compared on what ExistingUnit holds
 #             (label, mea); fields the context does not hold are not proposed for a match.
+#             This is the Kaufvertrag's unit record: its label match stays exact (casefold,
+#             whitespace collapsed).
+#   lease unit (a tenancy's unit_id; added 7 Nov 2026) on the property found by address: by
+#             key, not exact text. A label's key is its tokens: runs of letters or runs of
+#             digits, casefolded, a number without leading zeros ("03" -> "3", "0" stays),
+#             the filler words nr, no and nummer dropped; punctuation and brackets only
+#             separate ("WE03" -> we 3; "Zimmer Nr. 1 (WE 3, Zimmer 1)" -> zimmer 1 we 3
+#             zimmer 1). First the units whose key equals the label's: exactly one is the
+#             unit. Else the units whose key occurs as a run of whole tokens inside the
+#             label's key: exactly one is the unit ("Zimmer 1" is never inside "Zimmer 10").
+#             Several candidates, or none: no unit (unit_id null, never a guess). No label
+#             stated: the property's only unit, else none.
 #   cost      checked in this order:
 #             1. a row whose Beleg is this document (document_id = context.document_id; Luis
 #                typed the cost and attached the invoice himself) -> that row is the target,
@@ -104,6 +117,7 @@ ids:
   property_2: &P2 0000000b-0000-4000-8000-000000000002
   unit: &U 0000000c-0000-4000-8000-000000000001
   unit_2: &U2 0000000c-0000-4000-8000-000000000002
+  unit_3: &U3 0000000c-0000-4000-8000-000000000003
   owner_1: &O1 00000010-0000-4000-8000-000000000001
   owner_2: &O2 00000010-0000-4000-8000-000000000002
   cost_grest: &C1 00000011-0000-4000-8000-000000000001
@@ -1114,6 +1128,207 @@ cases:
           mode: create
           values: {cold_rent: "1150.00", operating_costs_prepayment: "250.00", effective_from: "2026-07-01"}
           derived: {operating_costs_prepayment: [operating_costs_prepayment, heating_costs_prepayment]}
+
+  - id: mietvertrag_room_unit_inside_label
+    description: >-
+      A WG-room lease names the room "Zimmer Nr. 1 (WE 3, Zimmer 1)"; the rooms are units
+      "Zimmer 1", "Zimmer 2", "Zimmer 3" (Luis's room lease, 7 Nov 2026). No unit's label
+      equals the lease's, but exactly one unit's tokens occur as a run of whole tokens inside
+      it ("nr" is a filler word), so the tenancy is on Zimmer 1.
+    kind: lease
+    context:
+      document_id: *DOC
+      classification: *CL_LEASE
+      properties: [*PROP_LINDEN]
+      units:
+        - {id: *U, property_id: *P, label: Zimmer 1}
+        - {id: *U2, property_id: *P, label: Zimmer 2}
+        - {id: *U3, property_id: *P, label: Zimmer 3}
+    extraction:
+      <<: *LEASE
+      unit_label: {v: "Zimmer Nr. 1 (WE 3, Zimmer 1)", p: 1, q: "Vermietet wird das Zimmer Nr. 1 (WE 3, Zimmer 1)"}
+    expect:
+      keys: [typing, tenant:1, tenancy, rent, link:tenancy]
+      records:
+        - key: tenancy
+          entity_type: tenancy
+          mode: create
+          values:
+            unit_id: *U
+            start_date: "2026-07-01"
+            signed_on: "2026-06-10"
+            rent_model: fixed
+            deposit_amount: "3450.00"
+            deposit_form: cash_account
+          derived:
+            unit_id: [street, house_number, postal_code, unit_label]
+            rent_model: [rent_clause]
+
+  - id: mietvertrag_unit_label_leading_zero
+    description: >-
+      "WE03" is the unit "WE 3": letters and digits are separate tokens and a number's leading
+      zeros do not count. "WE 30" is another number.
+    kind: lease
+    context:
+      document_id: *DOC
+      classification: *CL_LEASE
+      properties: [*PROP_LINDEN]
+      units:
+        - {id: *U, property_id: *P, label: WE 3}
+        - {id: *U2, property_id: *P, label: WE 30}
+    extraction:
+      <<: *LEASE
+      unit_label: {v: WE03, p: 1, q: "Lindenstraße 12, 10115 Berlin, WE03"}
+    expect:
+      keys: [typing, tenant:1, tenancy, rent, link:tenancy]
+      records:
+        - key: tenancy
+          entity_type: tenancy
+          mode: create
+          values:
+            unit_id: *U
+            start_date: "2026-07-01"
+            signed_on: "2026-06-10"
+            rent_model: fixed
+            deposit_amount: "3450.00"
+            deposit_form: cash_account
+          derived:
+            unit_id: [street, house_number, postal_code, unit_label]
+            rent_model: [rent_clause]
+
+  - id: mietvertrag_room_one_is_not_room_ten
+    description: >-
+      Units "Zimmer 1" and "Zimmer 10": the lease's "Zimmer 1" equals the first; "1" is a whole
+      token, so it is never found inside "10".
+    kind: lease
+    context:
+      document_id: *DOC
+      classification: *CL_LEASE
+      properties: [*PROP_LINDEN]
+      units:
+        - {id: *U, property_id: *P, label: Zimmer 1}
+        - {id: *U2, property_id: *P, label: Zimmer 10}
+    extraction:
+      <<: *LEASE
+      unit_label: {v: Zimmer 1, p: 1, q: "Vermietet wird das Zimmer 1"}
+    expect:
+      keys: [typing, tenant:1, tenancy, rent, link:tenancy]
+      records:
+        - key: tenancy
+          entity_type: tenancy
+          mode: create
+          values:
+            unit_id: *U
+            start_date: "2026-07-01"
+            signed_on: "2026-06-10"
+            rent_model: fixed
+            deposit_amount: "3450.00"
+            deposit_form: cash_account
+          derived:
+            unit_id: [street, house_number, postal_code, unit_label]
+            rent_model: [rent_clause]
+
+  - id: mietvertrag_room_ten
+    description: >-
+      The same units; the lease's "Zimmer Nr. 10" is Zimmer 10 ("nr" is a filler word), and
+      Zimmer 1 is not found inside it.
+    kind: lease
+    context:
+      document_id: *DOC
+      classification: *CL_LEASE
+      properties: [*PROP_LINDEN]
+      units:
+        - {id: *U, property_id: *P, label: Zimmer 1}
+        - {id: *U2, property_id: *P, label: Zimmer 10}
+    extraction:
+      <<: *LEASE
+      unit_label: {v: Zimmer Nr. 10, p: 1, q: "Vermietet wird das Zimmer Nr. 10"}
+    expect:
+      keys: [typing, tenant:1, tenancy, rent, link:tenancy]
+      records:
+        - key: tenancy
+          entity_type: tenancy
+          mode: create
+          values:
+            unit_id: *U2
+            start_date: "2026-07-01"
+            signed_on: "2026-06-10"
+            rent_model: fixed
+            deposit_amount: "3450.00"
+            deposit_form: cash_account
+          derived:
+            unit_id: [street, house_number, postal_code, unit_label]
+            rent_model: [rent_clause]
+
+  - id: mietvertrag_equal_label_before_contained
+    description: >-
+      A unit whose label equals the lease's wins over a unit found inside it: "WE 3, Zimmer 1"
+      is the unit "WE 3 Zimmer 1", although "Zimmer 1" occurs in it too.
+    kind: lease
+    context:
+      document_id: *DOC
+      classification: *CL_LEASE
+      properties: [*PROP_LINDEN]
+      units:
+        - {id: *U, property_id: *P, label: Zimmer 1}
+        - {id: *U2, property_id: *P, label: WE 3 Zimmer 1}
+    extraction:
+      <<: *LEASE
+      unit_label: {v: "WE 3, Zimmer 1", p: 1, q: "Vermietet wird in der WE 3, Zimmer 1"}
+    expect:
+      keys: [typing, tenant:1, tenancy, rent, link:tenancy]
+      records:
+        - key: tenancy
+          entity_type: tenancy
+          mode: create
+          values:
+            unit_id: *U2
+            start_date: "2026-07-01"
+            signed_on: "2026-06-10"
+            rent_model: fixed
+            deposit_amount: "3450.00"
+            deposit_form: cash_account
+          derived:
+            unit_id: [street, house_number, postal_code, unit_label]
+            rent_model: [rent_clause]
+
+  - id: mietvertrag_unit_ambiguous_is_none
+    description: >-
+      Units "WE 3" and "Zimmer 1" both occur inside "Zimmer Nr. 1 (WE 3, Zimmer 1)": two
+      candidates, so no unit is proposed (never a guess). The tenancy is proposed with the
+      unit missing, for the review to pick, and its link waits for the tenancy the apply
+      creates.
+    kind: lease
+    context:
+      document_id: *DOC
+      classification: *CL_LEASE
+      properties: [*PROP_LINDEN]
+      units:
+        - {id: *U, property_id: *P, label: WE 3}
+        - {id: *U2, property_id: *P, label: Zimmer 1}
+    extraction:
+      <<: *LEASE
+      unit_label: {v: "Zimmer Nr. 1 (WE 3, Zimmer 1)", p: 1, q: "Vermietet wird das Zimmer Nr. 1 (WE 3, Zimmer 1)"}
+    expect:
+      keys: [typing, tenant:1, tenancy, rent, link:tenancy]
+      records:
+        - key: tenancy
+          entity_type: tenancy
+          mode: create
+          values:
+            unit_id: null
+            start_date: "2026-07-01"
+            signed_on: "2026-06-10"
+            rent_model: fixed
+            deposit_amount: "3450.00"
+            deposit_form: cash_account
+          derived:
+            unit_id: [street, house_number, postal_code, unit_label]
+            rent_model: [rent_clause]
+        - key: link:tenancy
+          entity_type: link
+          mode: create
+          values: {}
 
   - id: grundsteuer_typing_and_link
     description: The Bescheid is typed and linked to the property by address; the amounts stay in the extraction for the matchers.
