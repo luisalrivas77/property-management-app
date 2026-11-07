@@ -120,7 +120,8 @@ export function InboxList({
   return (
     <ul className="inbox-list" aria-label="Offene Punkte">
       {data.items.map((item) => {
-        const key = `${item.kind}:${item.transaction_id ?? item.proposal_id ?? item.import_id ?? item.possible_duplicate_id ?? item.document_id}`;
+        // A possible duplicate also names its later line, which may sit in two pairs: its own id first.
+        const key = `${item.kind}:${item.possible_duplicate_id ?? item.proposal_id ?? item.import_id ?? item.transaction_id ?? item.document_id}`;
         return (
           <li key={key}>
             {isLineItem(item) ? (
