@@ -504,7 +504,7 @@ class _Builder:
         rent_model = _derived(
             _rent_model(self.ev("rent_clause").value), [("rent_clause", self.ev("rent_clause"))]
         )
-        deposit_form = _mapped(self.ev("deposit_clause"), _deposit_form)
+        deposit_form = self._deposit_form()
         if tenancy is None:
             fields = {"unit_id": unit_value, "start_date": self.ev("start_date")}
             for name in ("signed_on", "fixed_term_until"):
@@ -513,7 +513,7 @@ class _Builder:
             fields["rent_model"] = rent_model
             if self.stated("deposit_amount"):
                 fields["deposit_amount"] = self.ev("deposit_amount")
-            if self.stated("deposit_clause"):
+            if deposit_form is not None:
                 fields["deposit_form"] = deposit_form
             self.add("tenancy", "tenancy", "create", fields)
             self._initial_rent()
@@ -525,7 +525,7 @@ class _Builder:
                 fields["rent_model"] = rent_model
             if self.stated("deposit_amount"):
                 fields["deposit_amount"] = self.ev("deposit_amount")
-            if self.stated("deposit_clause"):
+            if deposit_form is not None:
                 fields["deposit_form"] = deposit_form
             mode = "patch" if fields else "unchanged"
             self.add("tenancy", "tenancy", mode, fields, target_id=tenancy.id)
@@ -549,6 +549,27 @@ class _Builder:
         else:
             mode = "patch" if contact else "unchanged"
             self.add(key, "tenant", mode, contact, target_id=existing.id)
+
+    def _deposit_form(self) -> ExtractedValue | None:
+        """The form the deposit clause names; else, when the lease states a deposit amount
+        above 0, a money deposit (cash_account), derived from the amount and the clause: a
+        lease that names no Bürgschaft asks for money ("eine Kaution in Höhe von 1.000,00 €
+        ... zu überweisen", Luis's room lease, 7 Nov 2026), and a deposit amount with the
+        form "none" is not a valid tenancy. The derived form is low confidence whenever the
+        clause named no form (the code inferred it, review 7 Nov 2026). An amount that is not
+        a number ("drei Nettokaltmieten") proposes the form as missing, so the form asks for
+        it next to the amount. None when neither is stated."""
+        clause, amount = self.ev("deposit_clause"), self.ev("deposit_amount")
+        mapped = _mapped(clause, _deposit_form)
+        if mapped.value is not None:
+            return mapped
+        inputs = [("deposit_amount", amount), ("deposit_clause", mapped)]
+        value = _decimal(amount.value)
+        if value is not None and value > 0:
+            return _derived(DepositForm.CASH_ACCOUNT.value, inputs)
+        if amount.value is not None and value is None:
+            return _derived(None, inputs)
+        return mapped if clause.value is not None else None
 
     def _lease_unit(self) -> ExistingUnit | None:
         prop = _resolve_property(self.x, self.ctx)
@@ -901,12 +922,26 @@ def _cost_kind(sender: Any) -> AcquisitionCostKind:
 
 
 def _deposit_form(clause: Any) -> DepositForm | None:
+    """The form a deposit clause names. "bar" counts only as a word, so "vereinbart" is not
+    a cash deposit (7 Nov 2026)."""
     t = _norm(clause)
     if "bankbürgschaft" in t or "bankburgschaft" in t:
         return DepositForm.BANK_GUARANTEE
     if "bürgschaft" in t or "burgschaft" in t:
         return DepositForm.SURETY
-    if any(w in t for w in ("barkaution", "kautionskonto", "sparbuch", "bar")):
+    if any(
+        w in t
+        for w in (
+            "barkaution",
+            "geldkaution",
+            "kautionskonto",
+            "sparbuch",
+            "barzahlung",
+            "bareinzahlung",
+            "barsicherheit",
+            "bargeld",
+        )
+    ) or re.search(r"\bbar\b", t):
         return DepositForm.CASH_ACCOUNT
     return None
 
