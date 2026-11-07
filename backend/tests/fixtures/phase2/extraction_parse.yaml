@@ -19,7 +19,8 @@
 #    page_offset is the first page of the chunk minus 1, for a PDF split into several requests.
 # 4. Value: the raw value normalized by the field's value kind (money "289.000,00 €" ->
 #    "289000.00"; decimal "68,40 m²" -> "68.40"; rate "3,65 %" -> "0.0365"; date "12.03.2026" ->
-#    "2026-03-12"; year -> integer; fraction "85/1000" -> {numerator, denominator}; iban -> no
+#    "2026-03-12"; year -> integer; fraction "85/1000" -> {numerator, denominator}, a decimal
+#    share kept exact and unreduced ("47,25/1.000" -> 4725/100000; added 7 Nov 2026); iban -> no
 #    spaces, upper case; text -> whitespace collapsed; text_list -> split on ";", stripped).
 #    `validates` when that succeeds and the value passes the target field's type (amount with at
 #    most two places, rate in [0, 1), real calendar date, year 1800-2100, fraction <= 1, IBAN
@@ -143,3 +144,16 @@ cases:
         citations: [{cited_text: "Die Sollzinsbindung endet am 31.03.2036.", start_page_number: 3, end_page_number: 4}]
     expect:
       fixed_until: {value: "2036-03-31", source: {page: 103, quote: "Die Sollzinsbindung endet am 31.03.2036."}, checks: [cited, value_in_quote, validates], confidence: high}
+
+  - id: decimal_share_kept_exact
+    description: >-
+      A Miteigentumsanteil with a decimal comma (added 7 Nov 2026, after Luis's real contract
+      stated one): the whole number counts, not the part after the comma, and the share is
+      scaled to whole numbers without reducing it.
+    kind: purchase_contract
+    blocks:
+      - {text: "mea: "}
+      - text: "47,25/1.000"
+        citations: [{cited_text: "47,25/1.000 Miteigentumsanteil an", start_page_number: 3, end_page_number: 4}]
+    expect:
+      mea: {value: {numerator: 4725, denominator: 100000}, source: {page: 3, quote: "47,25/1.000 Miteigentumsanteil an"}, checks: [cited, value_in_quote, validates], confidence: high}
