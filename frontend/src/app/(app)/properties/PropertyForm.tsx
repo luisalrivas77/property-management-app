@@ -133,7 +133,7 @@ export function PropertyForm({ property }: { property?: Property }) {
         <Field
           id="property-house"
           label="Hausnummer"
-          description="Die Hausnummer mit Zusatz, wie im Kaufvertrag, z. B. 12a oder 3-5."
+          description="Die Hausnummer mit Zusatz, wie im Kaufvertrag, z. B. 12a oder 3-5, ohne die Wohnungsnummer (z. B. WE 03): die gehört in die Bezeichnung der Einheit. Mit Straße und Hausnummer findet Hausbuch die Immobilie in hochgeladenen Dokumenten wieder."
           errors={form.of("address.house_number")}
         >
           <input type="text" value={houseNumber} onChange={(e) => setHouseNumber(e.target.value)} required autoComplete="off" />
