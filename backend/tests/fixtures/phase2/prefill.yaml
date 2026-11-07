@@ -34,7 +34,13 @@
 #            ownership shares from the clause ("je zur Hälfte" -> 1/2 each, in buyers order);
 #            rent operating_costs_prepayment = Betriebskosten + Heizkosten when both are stated;
 #            tenancy rent_model from rent_clause (Staffel -> staffel, Index -> index, none ->
-#            fixed); tenancy unit_id = the unit matched by address and unit label.
+#            fixed); tenancy unit_id = the unit matched by address and unit label;
+#            tenancy deposit_form = cash_account from [deposit_amount, deposit_clause] when the
+#            amount is above 0 and the clause names no form or is missing (low confidence: the
+#            clause was not understood), missing (value null) from the same inputs when the
+#            amount is stated but not a number. A clause that names no form, with no positive
+#            amount, is proposed as missing with its quote. "bar" counts only as a whole word
+#            ("vereinbart" is not cash); Barzahlung, Bareinzahlung, Barsicherheit, Bargeld are.
 #   typing   type and subtype come from context.classification: value, no source, checks
 #            [validates], the classifier's confidence. subtype only when the classifier gave one.
 #            An invoice's tax_year is derived (D36): the year of due_on, else of document_date
@@ -1018,6 +1024,71 @@ cases:
             signed_on: "2026-06-10"
             rent_model: fixed
             deposit_form: null
+          derived:
+            unit_id: [street, house_number, postal_code, unit_label]
+            rent_model: [rent_clause]
+
+  - id: mietvertrag_deposit_amount_not_a_number
+    description: >-
+      The deposit amount is stated in words ("drei Nettokaltmieten"), which is no money value,
+      and no clause names a form: the form is proposed as missing next to the amount, so the
+      review form asks for both instead of applying "none" next to an amount the person types.
+    kind: lease
+    context:
+      document_id: *DOC
+      classification: *CL_LEASE
+      properties: [*PROP_LINDEN]
+      units:
+        - {id: *U, property_id: *P, label: WE 3}
+    extraction:
+      <<: *LEASE
+      deposit_amount: {value: drei Nettokaltmieten, source: {page: 5, quote: "eine Kaution in Höhe von drei Nettokaltmieten"}, checks: [cited, value_in_quote], confidence: low}
+      deposit_clause: {value: null, confidence: low}
+    expect:
+      keys: [typing, tenant:1, tenancy, rent, link:tenancy]
+      records:
+        - key: tenancy
+          entity_type: tenancy
+          mode: create
+          values:
+            unit_id: *U
+            start_date: "2026-07-01"
+            signed_on: "2026-06-10"
+            rent_model: fixed
+            deposit_amount: drei Nettokaltmieten
+            deposit_form: null
+          derived:
+            unit_id: [street, house_number, postal_code, unit_label]
+            rent_model: [rent_clause]
+            deposit_form: [deposit_amount, deposit_clause]
+
+  - id: mietvertrag_cash_compound_word
+    description: >-
+      "Barzahlung" names a cash deposit although "bar" alone counts only as a word: the form is
+      copied from the clause, not derived.
+    kind: lease
+    context:
+      document_id: *DOC
+      classification: *CL_LEASE
+      properties: [*PROP_LINDEN]
+      units:
+        - {id: *U, property_id: *P, label: WE 3}
+    extraction:
+      <<: *LEASE
+      deposit_clause: {v: Barzahlung bei Übergabe, p: 5, q: "Die Kaution ist durch Barzahlung bei Übergabe zu leisten"}
+    expect:
+      keys: [typing, tenant:1, tenancy, rent, link:tenancy]
+      records:
+        - key: tenancy
+          entity_type: tenancy
+          mode: create
+          values:
+            unit_id: *U
+            start_date: "2026-07-01"
+            signed_on: "2026-06-10"
+            rent_model: fixed
+            deposit_amount: "3450.00"
+            deposit_form: cash_account
           derived:
             unit_id: [street, house_number, postal_code, unit_label]
             rent_model: [rent_clause]
