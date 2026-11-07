@@ -1,7 +1,8 @@
 "use client";
 
 // Einstellungen (§9.1, §6.7): the user's passkeys (list, add, rename, remove), the household's
-// members (invite → one-time enrollment link, pending invites) and signing out.
+// members (invite → one-time enrollment link, pending invites), the two AI switches
+// (docs/phases/phase-2.md D42) and signing out.
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
@@ -10,6 +11,7 @@ import { useAuth } from "@/auth/AuthGate";
 import { addPasskey, defaultPasskeyLabel } from "@/auth/passkeys";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
+import { AiSettings } from "./AiSettings";
 import { Members } from "./Members";
 import { RenamePasskey } from "./RenamePasskey";
 
@@ -138,6 +140,9 @@ export default function SettingsPage() {
 
       <h2>Mitglieder</h2>
       <Members />
+
+      <h2>KI</h2>
+      <AiSettings />
 
       <h2>Abmelden</h2>
       <div className="row">

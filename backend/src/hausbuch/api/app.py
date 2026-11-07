@@ -45,6 +45,7 @@ from .routes import (
     tenancies,
     tenants,
     units,
+    workspace,
 )
 
 API_PREFIX = "/api"
@@ -62,6 +63,7 @@ ROUTE_MODULES = (
     statements,
     allocations,
     history,
+    workspace,
     auth,
 )
 REQUEST_POOL_SIZE = 5  # §3.2, §3.7

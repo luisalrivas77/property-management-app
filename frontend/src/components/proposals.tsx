@@ -511,8 +511,8 @@ export function ProposalSection({
       <div className="stack">
         <div className="notice notice-warn" role="status">
           <p>
-            Dieses Dokument enthält Mieterdaten. Solche Dokumente werden erst an die KI geschickt, wenn das für den Haushalt freigegeben ist; diese
-            Einstellung kommt mit dem nächsten Ausbauschritt. Bis dahin bitte von Hand eingeben.
+            Dieses Dokument enthält Mieterdaten. Solche Dokumente werden erst an die KI geschickt, wenn das für den Haushalt freigegeben ist: unter{" "}
+            <Link href="/settings">Einstellungen</Link>, „Mieterdokumente von der KI lesen lassen“. Bis dahin bitte von Hand eingeben.
           </p>
         </div>
         <ManualEntry kind={proposal.kind} directory={directory} />

@@ -1413,6 +1413,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workspace/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Workspace Settings Get */
+        get: operations["workspace_settings_get_api_workspace_settings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Workspace Settings Update
+         * @description Only the settings sent change; a patch that changes nothing writes no event.
+         */
+        patch: operations["workspace_settings_update_api_workspace_settings_patch"];
+        trace?: never;
+    };
     "/api/auth/enroll/options": {
         parameters: {
             query?: never;
@@ -4469,6 +4490,23 @@ export interface components {
             auto_accept_llm: boolean;
         };
         /**
+         * WorkspaceSettings
+         * @description GET /workspace/settings. Both default to false (D16, D26).
+         */
+        WorkspaceSettings: {
+            /** Ai Tenant Documents */
+            ai_tenant_documents: boolean;
+            /** Auto Accept Llm */
+            auto_accept_llm: boolean;
+        };
+        /** WorkspaceSettingsPatch */
+        WorkspaceSettingsPatch: {
+            /** Ai Tenant Documents */
+            ai_tenant_documents?: boolean;
+            /** Auto Accept Llm */
+            auto_accept_llm?: boolean;
+        };
+        /**
          * YearTotals
          * @description Per calendar year of due_on. Interest here is what Anlage V will reconcile against.
          */
@@ -7464,6 +7502,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Event"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    workspace_settings_get_api_workspace_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSettings"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    workspace_settings_update_api_workspace_settings_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceSettingsPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSettings"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
