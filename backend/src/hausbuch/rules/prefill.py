@@ -63,7 +63,6 @@ _PROPERTY_FIELDS = (
 )
 # Milestone dates (D7): never patched, corrected through correct_* (§6.5).
 _MILESTONES = ("notarized_on", "purchase_date")
-_ADDRESS_KEYS = ("street", "house_number", "postal_code")
 # A handover protocol is linked to the tenancy whose move-in is this close to its date.
 _HANDOVER_WINDOW_DAYS = 31
 # An invoice whose subject or title names one of these is a financing cost (D35). Deliberately
@@ -675,33 +674,55 @@ def _first[T](items: Iterable[T]) -> T | None:
     return found[0] if found else None
 
 
-def _address_of(extraction: _Typing) -> tuple[str, ...] | None:
-    parts = []
-    for name in _ADDRESS_KEYS:
-        value = getattr(extraction, name, None)
-        if not isinstance(value, ExtractedValue) or value.value is None:
-            return None
-        parts.append(value.value)
-    return _address_key(*parts)
+def _address_of(extraction: _Typing) -> tuple[str, str, str | None] | None:
+    """The street and house number keys and the postal code, or None when the document
+    states no street or no house number. The postal code counts only when its quote
+    contains it (`value_in_quote`): a contract may name the flat by its land register entry
+    and street alone (Luis's real Kaufvertrag, 7 Nov 2026), and an unverified code must
+    neither find nor block a match."""
+    street, number = (_stated_value(extraction, name) for name in ("street", "house_number"))
+    if street is None or number is None:
+        return None
+    postal = getattr(extraction, "postal_code", None)
+    verified = (
+        isinstance(postal, ExtractedValue)
+        and postal.value is not None
+        and "value_in_quote" in postal.checks
+    )
+    return (
+        _street_key(street),
+        _house_number_key(number),
+        _norm(postal.value) if verified else None,
+    )
 
 
-def _address_key(street: Any, house_number: Any, postal_code: Any) -> tuple[str, ...]:
-    return (_street_key(street), _house_number_key(house_number), _norm(postal_code))
+def _stated_value(extraction: _Typing, name: str) -> Any:
+    value = getattr(extraction, name, None)
+    return value.value if isinstance(value, ExtractedValue) else None
 
 
 def _match_property(
     extraction: _Typing, properties: Sequence[ExistingProperty]
 ) -> ExistingProperty | None:
-    """By street + house number + postal code, compared by `_address_key`, so a contract
-    writing "Lindenstr. 12" finds the flat typed as "Lindenstraße 12"."""
+    """By street + house number (compared by key, so "Lindenstr. 12" finds "Lindenstraße
+    12") and the postal code. Without a verified postal code: the city instead when the
+    document states one, and only when exactly one property fits, so nothing is guessed."""
     address = _address_of(extraction)
     if address is None:
         return None
-    return _first(
+    street, number, postal = address
+    fits = [
         p
         for p in properties
-        if _address_key(p.address.street, p.address.house_number, p.address.postal_code) == address
-    )
+        if (_street_key(p.address.street), _house_number_key(p.address.house_number))
+        == (street, number)
+    ]
+    if postal is not None:
+        return _first(p for p in fits if _norm(p.address.postal_code) == postal)
+    city = _stated_value(extraction, "city")
+    if city is not None:
+        fits = [p for p in fits if _norm(p.address.city) == _norm(city)]
+    return fits[0] if len(fits) == 1 else None
 
 
 def _street_key(value: Any) -> str:
@@ -721,9 +742,14 @@ def _house_number_key(value: Any) -> str:
 def _resolve_property(extraction: _Typing, context: PrefillContext) -> ExistingProperty | None:
     """The property a document belongs to: by its address when it states one, else the only
     property of the workspace."""
-    if _address_of(extraction) is not None:
-        return _match_property(extraction, context.properties)
-    return context.properties[0] if len(context.properties) == 1 else None
+    only = context.properties[0] if len(context.properties) == 1 else None
+    address = _address_of(extraction)
+    if address is None:
+        return only
+    found = _match_property(extraction, context.properties)
+    # Without a verified postal code the address was never decisive: as before, the
+    # workspace's only property when the street does not find it.
+    return found if found is not None or address[2] is not None else only
 
 
 def _match_loan(extraction: _Typing, loans: Sequence[ExistingLoan]) -> ExistingLoan | None:
