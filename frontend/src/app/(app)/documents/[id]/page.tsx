@@ -2,14 +2,16 @@
 
 // Dokument (§9.1): the original (open inline or download; never modified, principle 6), the
 // pre-fill proposal to review ("Vorschlag", phase-2.md §6.4, components/proposals.tsx), the
-// typing form (Typ, Untertyp, Titel, Datum, Steuerjahr, manual fields: a new extraction
-// version when they change), the links (Zieltyp + picker, remove), and the retention result.
+// typing form (Typ, Untertyp, Titel, Datum, Steuerjahr, hand fields: a new extraction
+// version when they change; over an AI reading they show what it read and a change is written
+// into the reading's own kind, phase-2.md D37), the links (Zieltyp + picker, remove), and the
+// retention result.
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
-import type { DocumentDetail, DocumentSubtype, DocumentType, LinkTarget, ManualDocumentFields } from "@/api/schemas";
+import type { DocumentDetail, DocumentSubtype, DocumentType, HandFields, LinkTarget, ManualDocumentFields } from "@/api/schemas";
 import { documentLabel } from "@/components/documents";
 import { loadDirectory, targets, type Target } from "@/components/entities";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "@/components/form";
@@ -108,23 +110,52 @@ const TYPING_KEYS = [
   "fields.notes",
 ] as const;
 
+type HandField = HandFields["available"][number];
+
+/** The hand inputs → the fields to send, from the input texts (undefined: a field is invalid). */
+function handValues(
+  values: ReturnType<typeof collector>,
+  inputs: { amount: string; periodStart: string; periodEnd: string; counterparty: string; reference: string; notes: string },
+): ManualDocumentFields | undefined {
+  const total = values.optional("fields.amount_total", inputs.amount, toSignedMoneyString);
+  if (total === undefined) return undefined;
+  return {
+    amount_total: total,
+    period_start: inputs.periodStart || null,
+    period_end: inputs.periodEnd || null,
+    counterparty: blankToNull(inputs.counterparty),
+    reference: blankToNull(inputs.reference),
+    notes: blankToNull(inputs.notes),
+  };
+}
+
 function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onSubmit: () => void; onSaved: () => void }) {
   const typing = detail.document.typing;
-  // Only a manual extraction holds the typed fields this form edits; an AI extraction (phase 2)
-  // has its own per-kind shape and is reviewed through its proposal instead.
+  // The hand fields as the API reads them from the current extraction (D37): a manual one's own
+  // fields, or what an AI reading holds in the fields its kind has (only those are shown).
   const extraction = detail.extraction;
-  const fields = extraction?.kind === "manual" ? (extraction.fields as ManualDocumentFields) : undefined;
+  const fields = detail.hand_fields.values;
+  const available = new Set<HandField>(detail.hand_fields.available);
+  const aiReading = extraction !== null && extraction.kind !== "manual";
+  const [initialInputs] = useState(() => ({
+    amount: decimalInput(fields.amount_total),
+    periodStart: fields.period_start ?? "",
+    periodEnd: fields.period_end ?? "",
+    counterparty: fields.counterparty ?? "",
+    reference: fields.reference ?? "",
+    notes: fields.notes ?? "",
+  }));
   const [type, setType] = useState<DocumentType | "">(typing?.type ?? "");
   const [subtype, setSubtype] = useState<DocumentSubtype | "">(typing?.subtype ?? "");
   const [title, setTitle] = useState(typing?.title ?? "");
   const [documentDate, setDocumentDate] = useState(typing?.document_date ?? "");
   const [taxYear, setTaxYear] = useState(typing?.tax_year ? String(typing.tax_year) : "");
-  const [amount, setAmount] = useState(decimalInput(fields?.amount_total));
-  const [periodStart, setPeriodStart] = useState(fields?.period_start ?? "");
-  const [periodEnd, setPeriodEnd] = useState(fields?.period_end ?? "");
-  const [counterparty, setCounterparty] = useState(fields?.counterparty ?? "");
-  const [reference, setReference] = useState(fields?.reference ?? "");
-  const [notes, setNotes] = useState(fields?.notes ?? "");
+  const [amount, setAmount] = useState(initialInputs.amount);
+  const [periodStart, setPeriodStart] = useState(initialInputs.periodStart);
+  const [periodEnd, setPeriodEnd] = useState(initialInputs.periodEnd);
+  const [counterparty, setCounterparty] = useState(initialInputs.counterparty);
+  const [reference, setReference] = useState(initialInputs.reference);
+  const [notes, setNotes] = useState(initialInputs.notes);
   const [busy, setBusy] = useState(false);
   const form = useFormErrors(TYPING_KEYS);
 
@@ -133,18 +164,13 @@ function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onS
     const values = collector();
     if (type === "") values.messages["typing.type"] = ["Bitte einen Typ wählen."];
     const year = values.optional("typing.tax_year", taxYear, toYear);
-    const total = values.optional("fields.amount_total", amount, toSignedMoneyString);
-    if (!values.ok || type === "" || year === undefined || total === undefined) return form.invalid(values.messages);
-    const manual: ManualDocumentFields = {
-      amount_total: total,
-      period_start: periodStart || null,
-      period_end: periodEnd || null,
-      counterparty: blankToNull(counterparty),
-      reference: blankToNull(reference),
-      notes: blankToNull(notes),
-    };
-    // No extraction yet and nothing typed: send no fields (no empty version 1).
-    const empty = Object.values(manual).every((value) => value === null);
+    const manual = handValues(values, { amount, periodStart, periodEnd, counterparty, reference, notes });
+    if (!values.ok || type === "" || year === undefined || manual === undefined) return form.invalid(values.messages);
+    // Fields only when the hand section differs from what it showed, compared after the same
+    // conversion: an untouched section writes no version (no empty version 1 either, and never
+    // one over an AI reading, D37).
+    const initial = handValues(collector(), initialInputs);
+    const changed = JSON.stringify(manual) !== JSON.stringify(initial);
     setBusy(true);
     onSubmit();
     form.clear();
@@ -154,7 +180,7 @@ function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onS
           params: { path: { document_id: detail.document.id } },
           body: {
             typing: { type, subtype: subtype || null, title: blankToNull(title), document_date: documentDate || null, tax_year: year },
-            fields: empty && !detail.extraction ? null : manual,
+            fields: changed ? manual : null,
           },
         }),
       );
@@ -201,31 +227,51 @@ function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onS
       </div>
       <fieldset className="stack">
         <legend>Felder (von Hand)</legend>
-        {detail.extraction ? (
+        {extraction && aiReading ? (
           <p className="muted">
-            Version {detail.extraction.version} vom {formatDateTime(detail.extraction.created_at)}. Eine Änderung legt eine neue Version an.
+            {available.size > 0
+              ? `Die Werte stammen aus der KI-Auslesung (Version ${extraction.version} vom ${formatDateTime(extraction.created_at)}). Eine Änderung legt eine neue Version an; die übrigen gelesenen Felder bleiben erhalten.`
+              : `Für diese Dokumentart gibt es keine Felder von Hand; die KI-Auslesung (Version ${extraction.version}) bleibt unverändert.`}
+          </p>
+        ) : extraction ? (
+          <p className="muted">
+            Version {extraction.version} vom {formatDateTime(extraction.created_at)}. Eine Änderung legt eine neue Version an.
           </p>
         ) : null}
-        <div className="grid">
-          <Field id="doc-amount" label="Betrag gesamt (€)" errors={form.of("fields.amount_total")}>
-            <input type="text" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoComplete="off" />
-          </Field>
-          <Field id="doc-counterparty" label="Absender / Gegenpartei" errors={form.of("fields.counterparty")}>
-            <input type="text" value={counterparty} onChange={(e) => setCounterparty(e.target.value)} autoComplete="off" />
-          </Field>
-          <Field id="doc-period-start" label="Zeitraum von" errors={form.of("fields.period_start")}>
-            <input type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />
-          </Field>
-          <Field id="doc-period-end" label="Zeitraum bis" errors={form.of("fields.period_end")}>
-            <input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
-          </Field>
-          <Field id="doc-reference" label="Referenz (Rechnungs-/Aktenzeichen)" errors={form.of("fields.reference")}>
-            <input type="text" value={reference} onChange={(e) => setReference(e.target.value)} autoComplete="off" />
-          </Field>
-          <Field id="doc-notes" label="Notizen" errors={form.of("fields.notes")}>
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
-          </Field>
-        </div>
+        {available.size > 0 ? (
+          <div className="grid">
+            {available.has("amount_total") ? (
+              <Field id="doc-amount" label="Betrag gesamt (€)" errors={form.of("fields.amount_total")}>
+                <input type="text" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoComplete="off" />
+              </Field>
+            ) : null}
+            {available.has("counterparty") ? (
+              <Field id="doc-counterparty" label="Absender / Gegenpartei" errors={form.of("fields.counterparty")}>
+                <input type="text" value={counterparty} onChange={(e) => setCounterparty(e.target.value)} autoComplete="off" />
+              </Field>
+            ) : null}
+            {available.has("period_start") ? (
+              <Field id="doc-period-start" label="Zeitraum von" errors={form.of("fields.period_start")}>
+                <input type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />
+              </Field>
+            ) : null}
+            {available.has("period_end") ? (
+              <Field id="doc-period-end" label="Zeitraum bis" errors={form.of("fields.period_end")}>
+                <input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
+              </Field>
+            ) : null}
+            {available.has("reference") ? (
+              <Field id="doc-reference" label="Referenz (Rechnungs-/Aktenzeichen)" errors={form.of("fields.reference")}>
+                <input type="text" value={reference} onChange={(e) => setReference(e.target.value)} autoComplete="off" />
+              </Field>
+            ) : null}
+            {available.has("notes") ? (
+              <Field id="doc-notes" label="Notizen" errors={form.of("fields.notes")}>
+                <textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
+              </Field>
+            ) : null}
+          </div>
+        ) : null}
       </fieldset>
       <Submit busy={busy}>Typisierung speichern</Submit>
       <FormBanner errors={form.errors} />
