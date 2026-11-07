@@ -8019,7 +8019,7 @@
           },
           "unit_label": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "the flat's label, e.g. WE 3",
+            "description": "the let unit's label: for a single room let on its own the room (e.g. Zimmer 3), not the flat's floor or number; else the flat's label (e.g. WE 3)",
             "value_kind": "text"
           },
           "tenant_1_full_name": {
