@@ -550,8 +550,9 @@ bytes and retention apply unchanged; `POST /accounts/{id}/imports` wraps `upload
 3. **Document match**: an invoice/Bescheid extraction with `amount_total` = |amount| ± 0.01,
    `document_date` within ±10 days, and the IBAN or the reference number found in the
    purpose → category from the document kind (Grundsteuer → `grundsteuer`, Nebenkosten
-   invoice → `acquisition_cost` with the cost row's `paid_on` set on confirm), the document
-   as Beleg; confidence 0.95 (auto-confirm per threshold).
+   invoice → `acquisition_cost` with the cost row's `paid_on` set on confirm; a financing
+   invoice (D35, decided by the same test `rules.prefill` uses, made public for step 4) →
+   `loan_fees` on the property's loan, no cost row), the document as Beleg; confidence 0.95 (auto-confirm per threshold).
 4. **LLM categorization** (§5.3), confidence by the model's `high/medium/low` mapped to
    0.9/0.6/0.3; auto-confirm only when `auto_accept_llm` and ≥ the category threshold
    (`thresholds.yaml`: defaults 0.9 for recurring cost categories, never for `other_*`,
