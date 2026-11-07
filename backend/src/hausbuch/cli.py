@@ -1,8 +1,8 @@
 """`hausbuch bootstrap | invite | openapi | evals` (phase 1 step 3, §5, §6.5, §6.7; phase 2 D41).
 
 bootstrap and invite run as the schema owner (HAUSBUCH_ADMIN_DATABASE_URL), never through the
-API's engine and never as a superuser: on Scaleway they are Serverless Jobs, the only place
-the owner URL is injected (§14). They print one enrollment URL, once; the token is not
+API's engine and never as a superuser: they run from the operator's computer with `uv`, the
+only place the owner URL lives (ARCHITECTURE Decisions, admin commands, revised 5 Nov 2026). They print one enrollment URL, once; the token is not
 stored, and nothing else they print names a token or an email.
 
 openapi prints the API's OpenAPI document (built without a database connection), which is
