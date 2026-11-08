@@ -503,3 +503,26 @@ cases:
       counterparty_name: Andere Gläubiger GmbH
       counterparty_iban_hmac: *H_OTHER
     expect: null
+
+  - id: interest_only_from_another_loans_account
+    description: The flagged loan's lender name, but the account is loan L's (review F1, PR #64). An account that is a loan's decides which loan it is; the lender-name fallback applies only when the account is no loan's, so L_IO does not claim it (L has no flag and no entry near).
+    matcher: loan
+    transaction:
+      <<: *TX_IO
+      id: 0000002b-0000-4000-8000-00000000000f
+      counterparty_iban_hmac: *H_LOAN
+    expect: null
+
+  - id: interest_only_by_lender_name_without_an_account
+    description: No counterparty IBAN, the flagged loan's lender name; the name fallback still finds L_IO.
+    matcher: loan
+    transaction:
+      <<: *TX_IO
+      id: 0000002b-0000-4000-8000-000000000010
+      counterparty_iban_hmac: null
+    expect:
+      method: matcher_loan
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "-787.43", category: loan_interest, property_id: *P, loan_id: *L_IO, service_period_start: 2026-07-01, service_period_end: 2026-07-30, recurring: true}
