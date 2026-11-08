@@ -3076,6 +3076,11 @@ export interface components {
             /** Follow Up Rate */
             follow_up_rate?: string | null;
             /**
+             * Interest Only Before First Payment
+             * @default false
+             */
+            interest_only_before_first_payment: boolean;
+            /**
              * Property Id
              * Format: uuid
              */
@@ -3108,6 +3113,8 @@ export interface components {
             fixed_until?: string | null;
             /** Follow Up Rate */
             follow_up_rate?: string | null;
+            /** Interest Only Before First Payment */
+            interest_only_before_first_payment?: boolean;
             /** Account Iban */
             account_iban?: string | null;
         };
@@ -3143,6 +3150,11 @@ export interface components {
             fixed_until?: string | null;
             /** Follow Up Rate */
             follow_up_rate?: string | null;
+            /**
+             * Interest Only Before First Payment
+             * @default false
+             */
+            interest_only_before_first_payment: boolean;
         };
         /**
          * LoginVerifyRequest

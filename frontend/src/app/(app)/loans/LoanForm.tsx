@@ -1,7 +1,8 @@
 "use client";
 
 // Darlehen form (§9.1): Bank, Vertragsnummer, Darlehenssumme, Nominalzins, Rate, Auszahlung,
-// erste Rate, Zinsbindung bis, Anschlusszins, Konto-IBAN, Vertragsdatum. Rates are entered
+// erste Rate, Zinsbindung bis, Anschlusszins, Konto-IBAN, Vertragsdatum, and "Vor der ersten
+// Rate nur Zinsen" (interest_only_before_first_payment). Rates are entered
 // in percent and sent as fractions. The API builds the Tilgungsplan before it saves, so a rate
 // that never repays the loan comes back as 422 loan.payment_does_not_cover_interest (with
 // the payment number) and is shown under "Rate". Editing (LoanPatch) cannot change the
@@ -9,11 +10,11 @@
 // korrigieren" on the loan page.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useId, useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
 import type { Loan, LoanPatch } from "@/api/schemas";
-import { collector, Field, FormBanner, Submit, useFormErrors } from "@/components/form";
+import { collector, Field, FieldDescription, FormBanner, InfoToggle, Submit, useFormErrors } from "@/components/form";
 import { formatDate, formatMoney } from "@/components/format";
 import { blankToNull, decimalInput, percentInput, toMoneyString, toRate } from "@/components/input";
 import { Facts } from "@/components/ui";
@@ -28,6 +29,7 @@ const KEYS = [
   "first_payment_on",
   "fixed_until",
   "follow_up_rate",
+  "interest_only_before_first_payment",
   "account_iban",
   "signed_on",
 ] as const;
@@ -49,6 +51,9 @@ export function LoanForm({ propertyId, loan }: { propertyId: string; loan?: Loan
   const [firstPaymentOn, setFirstPaymentOn] = useState(loan?.terms.first_payment_on ?? "");
   const [fixedUntil, setFixedUntil] = useState(loan?.terms.fixed_until ?? "");
   const [followUpRate, setFollowUpRate] = useState(percentInput(loan?.terms.follow_up_rate));
+  const [interestOnly, setInterestOnly] = useState(loan?.terms.interest_only_before_first_payment ?? false);
+  const [interestOnlyInfo, setInterestOnlyInfo] = useState(false);
+  const interestOnlyDescription = useId();
   const [iban, setIban] = useState("");
   const [removeIban, setRemoveIban] = useState(false);
   const [signedOn, setSignedOn] = useState("");
@@ -67,6 +72,7 @@ export function LoanForm({ propertyId, loan }: { propertyId: string; loan?: Loan
       contract_number: blankToNull(contractNumber),
       first_payment_on: firstPaymentOn,
       fixed_until: fixedUntil || null,
+      interest_only_before_first_payment: interestOnly,
     };
     setBusy(true);
     form.clear();
@@ -211,6 +217,37 @@ export function LoanForm({ propertyId, loan }: { propertyId: string; loan?: Loan
             <input type="date" value={signedOn} onChange={(e) => setSignedOn(e.target.value)} />
           </Field>
         )}
+      </div>
+      <div>
+        <div className="field-head">
+          <label className="inline">
+            <input
+              type="checkbox"
+              checked={interestOnly}
+              onChange={(e) => setInterestOnly(e.target.checked)}
+              aria-describedby={interestOnlyInfo ? interestOnlyDescription : undefined}
+            />
+            Vor der ersten Rate nur Zinsen
+          </label>
+          <InfoToggle
+            open={interestOnlyInfo}
+            onToggle={() => setInterestOnlyInfo((open) => !open)}
+            controls={interestOnlyDescription}
+            label="Vor der ersten Rate nur Zinsen"
+          />
+        </div>
+        <FieldDescription id={interestOnlyDescription} open={interestOnlyInfo}>
+          Bei einer Auszahlung in Teilen berechnet die Bank bis zur ersten vollen Rate nur Zinsen auf den ausgezahlten Betrag; diese
+          Zahlungen werden ganz als Darlehenszinsen gebucht, wenn der Buchungstext die Zinsen in genau dieser Höhe nennt. Der
+          Tilgungsplan beginnt dann mit der ersten Rate, deren Zinsen nur für den Monat davor berechnet werden.
+        </FieldDescription>
+        {form.of("interest_only_before_first_payment").length > 0 ? (
+          <ul className="field-errors">
+            {form.of("interest_only_before_first_payment").map((message, index) => (
+              <li key={index}>{message}</li>
+            ))}
+          </ul>
+        ) : null}
       </div>
       {loan?.account_iban_masked ? (
         <label className="inline">

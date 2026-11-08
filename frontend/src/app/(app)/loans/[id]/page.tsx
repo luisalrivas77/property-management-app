@@ -92,6 +92,7 @@ export default function LoanPage() {
                     </>,
                   ],
                   ["Erste Rate", formatDate(loan.terms.first_payment_on)],
+                  ["Vor der ersten Rate", loan.terms.interest_only_before_first_payment ? "nur Zinsen (Auszahlung in Teilen)" : "–"],
                   ["Zinsbindung bis", formatDate(loan.terms.fixed_until)],
                   ["Anschlusszins", loan.terms.follow_up_rate ? formatPercent(loan.terms.follow_up_rate) : "– (Nominalzins)"],
                   ["Konto", loan.account_iban_masked ?? "–"],

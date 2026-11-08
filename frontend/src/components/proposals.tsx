@@ -73,8 +73,9 @@ const IN_FLIGHT: readonly ProposalStatus[] = ["queued", "running"];
 
 // --- what each field is -----------------------------------------------------------------
 
-/** "unit" / "tenancy": the id of one of the workspace's units / tenancies, picked from a list. */
-type FieldKind = "text" | "money" | "date" | "year" | "rate" | "area" | "fraction" | "enum" | "fixed" | "unit" | "tenancy";
+/** "unit" / "tenancy": the id of one of the workspace's units / tenancies, picked from a list.
+ * "bool": a checkbox; ticked is sent as true, unticked is left out (the *Create default, false). */
+type FieldKind = "text" | "money" | "date" | "year" | "rate" | "area" | "fraction" | "enum" | "fixed" | "unit" | "tenancy" | "bool";
 
 interface FieldSpec {
   label: string;
@@ -242,6 +243,12 @@ const FIELDS: Record<string, Record<string, FieldSpec>> = {
       "Erste Rate am",
       "Der Tag, an dem die erste Rate fällig ist, laut Darlehensvertrag. Die weiteren Raten folgen monatlich zum selben Tag.",
     ),
+    interest_only_before_first_payment: {
+      label: "Vor der ersten Rate nur Zinsen",
+      kind: "bool",
+      description:
+        "Bei einer Auszahlung in Teilen berechnet die Bank bis zur ersten vollen Rate nur Zinsen auf den ausgezahlten Betrag; diese Zahlungen werden ganz als Darlehenszinsen gebucht, wenn der Buchungstext die Zinsen in genau dieser Höhe nennt. Der Tilgungsplan beginnt dann mit der ersten Rate.",
+    },
     account_iban: text(
       "Darlehenskonto (IBAN)",
       "Die IBAN des Darlehenskontos laut Darlehensvertrag. Gespeichert wird sie nur maskiert und als nicht umkehrbarer Prüfwert; daran erkennt Hausbuch die Raten im Kontoauszug.",
@@ -351,6 +358,7 @@ const CREATE_FIELDS: Readonly<Record<string, readonly string[]>> = {
     "follow_up_rate",
     "disbursed_on",
     "first_payment_on",
+    "interest_only_before_first_payment",
     "account_iban",
     "signed_on",
   ],
@@ -508,6 +516,8 @@ function toRaw(spec: FieldSpec, value: unknown): string {
       return percentInput(scalar(value));
     case "fraction":
       return isFraction(value) ? formatFraction(value) : "";
+    case "bool":
+      return value === true ? "true" : "";
     default:
       return scalar(value);
   }
@@ -527,6 +537,8 @@ function fromRaw(spec: FieldSpec, raw: string): Parsed<unknown> {
       return toYear(raw);
     case "fraction":
       return toFraction(raw);
+    case "bool":
+      return { ok: true, value: raw === "true" ? true : null };
     default:
       return { ok: true, value: raw.trim() };
   }
@@ -548,6 +560,8 @@ function display(spec: FieldSpec, value: unknown, fixed: (value: unknown) => str
       return formatDate(scalar(value));
     case "enum":
       return lookup(spec.choices ?? {}, scalar(value));
+    case "bool":
+      return value === true ? "Ja" : "Nein";
     case "fixed":
     case "unit":
     case "tenancy":
@@ -1372,6 +1386,9 @@ function FieldRow({
           ))}
         </select>
       );
+    } else if (spec.kind === "bool") {
+      const { value: raw, ...rest } = common;
+      input = <input type="checkbox" {...rest} checked={raw === "true"} onChange={(e) => onChange({ raw: e.target.checked ? "true" : "" })} />;
     } else if (spec.kind === "date") {
       input = <input type="date" {...common} onChange={(e) => onChange({ raw: e.target.value })} />;
     } else {
@@ -1456,7 +1473,7 @@ function FieldRow({
 }
 
 function fieldHint(spec: FieldSpec, value: ExtractedValue | null, hasNotes: boolean): string | null {
-  if (!value) return "Nicht im Vorschlag; bei Bedarf von Hand eintragen.";
+  if (!value) return spec.kind === "bool" ? "Nicht im Vorschlag; bei Bedarf von Hand ankreuzen." : "Nicht im Vorschlag; bei Bedarf von Hand eintragen.";
   if (value.value === null) {
     if (spec.kind === "unit") return "Keine Einheit passt eindeutig zum Mietvertrag; bitte wählen.";
     if (spec.kind === "tenancy") return "Kein Mietverhältnis passt eindeutig; bitte wählen.";
