@@ -14,7 +14,11 @@ anyone remembering to bump a number.
 - Categorize (step 4): Sonnet, or the hard model (Opus) for the one retry of an answer marked
   ambiguous (D17); structured output LlmMatchOutput. The line travels as fenced JSON data
   that the job has already minimized (services.matching.categorize_input: no IBAN beyond
-  the last four characters, no tenant name).
+  the last four characters, no tenant name). No `thinking` field (the model's default,
+  adaptive thinking) and effort low, max_tokens 4000 since thinking counts against it (D50):
+  Sonnet 5.5 and Opus 5.5 answer `{"type": "disabled"}` with a 400 (checked against the API
+  on 8 Nov 2026), so every categorize call failed until then. Haiku 5.5 still accepts it,
+  which is why classify and explain keep it.
 - Explain (step 4): Haiku, structured output ExplainOutput, from a template input of
   amounts, dates and categories only; any failure falls back to the template text.
 
@@ -45,7 +49,8 @@ CLASSIFY_MAX_TOKENS = 300
 CLASSIFY_PAGES = 3
 EXTRACT_MAX_TOKENS = 16000
 EXTRACT_EFFORT = "medium"
-MATCH_MAX_TOKENS = 2000
+MATCH_MAX_TOKENS = 4000  # thinking counts against max_tokens (D50)
+MATCH_EFFORT = "low"
 EXPLAIN_MAX_TOKENS = 400
 # §8.1: the model's confidence level as the allocation set's number.
 LLM_CONFIDENCE: dict[ConfidenceLevel, Decimal] = {
@@ -99,6 +104,8 @@ def classify_request(settings: Settings, document: dict) -> ModelRequest:
         content=[document, {"type": "text", "text": "Classify this document."}],
         max_tokens=CLASSIFY_MAX_TOKENS,
         inference_geo=settings.ai_inference_geo,
+        # Valid for Haiku 5.5 only: Sonnet 5.5 and Opus 5.5 answer it with a 400 (checked
+        # 8 Nov 2026, D50). Changing ai_model_classify to one of them needs this removed.
         thinking={"type": "disabled"},
         effort="low",
         output_schema=classify_schema(),
@@ -182,8 +189,8 @@ def categorize_request(settings: Settings, data: dict[str, Any], *, hard: bool) 
         content=[{"type": "text", "text": fenced(data)}],
         max_tokens=MATCH_MAX_TOKENS,
         inference_geo=settings.ai_inference_geo,
-        thinking={"type": "disabled"},
-        effort="medium",
+        # No `thinking`: Sonnet/Opus 5.5 refuse {"type": "disabled"} with a 400 (D50).
+        effort=MATCH_EFFORT,
         output_schema=match_schema(),
     )
 
@@ -198,6 +205,7 @@ def explain_request(settings: Settings, data: dict[str, Any]) -> ModelRequest:
         content=[{"type": "text", "text": fenced(data)}],
         max_tokens=EXPLAIN_MAX_TOKENS,
         inference_geo=settings.ai_inference_geo,
+        # Valid for Haiku 5.5 only; Sonnet/Opus 5.5 refuse it with a 400 (D50).
         thinking={"type": "disabled"},
         effort="low",
         output_schema=explain_schema(),
