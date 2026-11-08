@@ -2,13 +2,13 @@
  "format": 1,
  "doc": "darlehensvertrag",
  "synthetic": false,
- "recorded_on": "2026-11-07",
+ "recorded_on": "2026-11-08",
  "sdk_version": "2.6.0",
  "classify": {
   "prompt_version": "624ea59735496705",
-  "request_sha256": "c48ed45b76eb51a5261822636af961764f73be1eaf427778585a48c8343a529c",
+  "request_sha256": "7b35348833daff8d16fed2a8d93e8f061cf9b5d72e6d91b348a839e42d007c3f",
   "message": {
-   "id": "msg_011CgoewL3ZpaN1nYtXwhYTS",
+   "id": "msg_011CgqToHZVU8eJFX7ySEg1H",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 5290,
+    "input_tokens": 5388,
     "output_tokens": 45,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -46,9 +46,9 @@
  "extract": [
   {
    "prompt_version": "db37026b509dd7a8",
-   "request_sha256": "346f2d88a83a32d83662f4fe8fd9377362da8e0a27cd3bd6aa26376f4f3c028a",
+   "request_sha256": "87febc508eaad6d533c476977dd9e8fe443bcbdab0c6c4a21d7075a0abc41e90",
    "message": {
-    "id": "msg_011Cgoew7Lpv3bAcYD5TEKm6",
+    "id": "msg_011CgqTo1eGvMfaTRDkJfczN",
     "container": null,
     "content": [
      {
@@ -59,7 +59,7 @@
      {
       "citations": [
        {
-        "cited_text": "Musterbank AG - Darlehensvertrag\r\nDarlehensnummer: 4711-0815\r\nDarlehensnehmer: Luis Testkauf, Ana Testkauf\r\nNennbetrag: 260.000,00 EUR\r\nSollzins: 3,65 % p.a., gebunden bis 31.03.2036\r\nAnfängliche Tilgung: 2,00 % p.a.\r\n",
+        "cited_text": "Musterbank AG - Darlehensvertrag\r\nDarlehensnummer: 4711-0815\r\nDarlehensnehmer: Luis Testkauf, Ana Testkauf\r\nNennbetrag: 260.000,00 EUR\r\nSollzins: 3,65 % p.a., gebunden bis 31.03.2036\r\nMindestzins: 0,00 % p.a.\r\n",
         "document_index": 0,
         "document_title": null,
         "end_page_number": 2,
@@ -79,7 +79,7 @@
      {
       "citations": [
        {
-        "cited_text": "Darlehenskonto: DE89 3704 0044 0532 0130 00\r\nMusterstadt, den 20.02.2026",
+        "cited_text": "Darlehenskonto: DE89 3704 0044 0532 0130 00\r\nMusterbank AG, 18.02.2026\r\nMusterstadt, den 20.02.2026",
         "document_index": 0,
         "document_title": null,
         "end_page_number": 3,
@@ -88,7 +88,7 @@
         "type": "page_location"
        }
       ],
-      "text": "20.02.2026",
+      "text": "18.02.2026",
       "type": "text"
      },
      {
@@ -99,7 +99,7 @@
      {
       "citations": [
        {
-        "cited_text": "Musterbank AG - Darlehensvertrag\r\nDarlehensnummer: 4711-0815\r\nDarlehensnehmer: Luis Testkauf, Ana Testkauf\r\nNennbetrag: 260.000,00 EUR\r\nSollzins: 3,65 % p.a., gebunden bis 31.03.2036\r\nAnfängliche Tilgung: 2,00 % p.a.\r\n",
+        "cited_text": "Musterbank AG - Darlehensvertrag\r\nDarlehensnummer: 4711-0815\r\nDarlehensnehmer: Luis Testkauf, Ana Testkauf\r\nNennbetrag: 260.000,00 EUR\r\nSollzins: 3,65 % p.a., gebunden bis 31.03.2036\r\nMindestzins: 0,00 % p.a.\r\n",
         "document_index": 0,
         "document_title": null,
         "end_page_number": 2,
@@ -119,7 +119,7 @@
      {
       "citations": [
        {
-        "cited_text": "Musterbank AG - Darlehensvertrag\r\nDarlehensnummer: 4711-0815\r\nDarlehensnehmer: Luis Testkauf, Ana Testkauf\r\nNennbetrag: 260.000,00 EUR\r\nSollzins: 3,65 % p.a., gebunden bis 31.03.2036\r\nAnfängliche Tilgung: 2,00 % p.a.\r\n",
+        "cited_text": "Musterbank AG - Darlehensvertrag\r\nDarlehensnummer: 4711-0815\r\nDarlehensnehmer: Luis Testkauf, Ana Testkauf\r\nNennbetrag: 260.000,00 EUR\r\nSollzins: 3,65 % p.a., gebunden bis 31.03.2036\r\nMindestzins: 0,00 % p.a.\r\n",
         "document_index": 0,
         "document_title": null,
         "end_page_number": 2,
@@ -139,7 +139,7 @@
      {
       "citations": [
        {
-        "cited_text": "Musterbank AG - Darlehensvertrag\r\nDarlehensnummer: 4711-0815\r\nDarlehensnehmer: Luis Testkauf, Ana Testkauf\r\nNennbetrag: 260.000,00 EUR\r\nSollzins: 3,65 % p.a., gebunden bis 31.03.2036\r\nAnfängliche Tilgung: 2,00 % p.a.\r\n",
+        "cited_text": "Musterbank AG - Darlehensvertrag\r\nDarlehensnummer: 4711-0815\r\nDarlehensnehmer: Luis Testkauf, Ana Testkauf\r\nNennbetrag: 260.000,00 EUR\r\nSollzins: 3,65 % p.a., gebunden bis 31.03.2036\r\nMindestzins: 0,00 % p.a.\r\n",
         "document_index": 0,
         "document_title": null,
         "end_page_number": 2,
@@ -159,7 +159,7 @@
      {
       "citations": [
        {
-        "cited_text": "Musterbank AG - Darlehensvertrag\r\nDarlehensnummer: 4711-0815\r\nDarlehensnehmer: Luis Testkauf, Ana Testkauf\r\nNennbetrag: 260.000,00 EUR\r\nSollzins: 3,65 % p.a., gebunden bis 31.03.2036\r\nAnfängliche Tilgung: 2,00 % p.a.\r\n",
+        "cited_text": "Musterbank AG - Darlehensvertrag\r\nDarlehensnummer: 4711-0815\r\nDarlehensnehmer: Luis Testkauf, Ana Testkauf\r\nNennbetrag: 260.000,00 EUR\r\nSollzins: 3,65 % p.a., gebunden bis 31.03.2036\r\nMindestzins: 0,00 % p.a.\r\n",
         "document_index": 0,
         "document_title": null,
         "end_page_number": 2,
@@ -199,7 +199,7 @@
      {
       "citations": [
        {
-        "cited_text": "Musterbank AG - Darlehensvertrag\r\nDarlehensnummer: 4711-0815\r\nDarlehensnehmer: Luis Testkauf, Ana Testkauf\r\nNennbetrag: 260.000,00 EUR\r\nSollzins: 3,65 % p.a., gebunden bis 31.03.2036\r\nAnfängliche Tilgung: 2,00 % p.a.\r\n",
+        "cited_text": "Anfängliche Tilgung: 2,00 % p.a.\r\n",
         "document_index": 0,
         "document_title": null,
         "end_page_number": 2,
@@ -219,7 +219,7 @@
      {
       "citations": [
        {
-        "cited_text": "Musterbank AG - Darlehensvertrag\r\nDarlehensnummer: 4711-0815\r\nDarlehensnehmer: Luis Testkauf, Ana Testkauf\r\nNennbetrag: 260.000,00 EUR\r\nSollzins: 3,65 % p.a., gebunden bis 31.03.2036\r\nAnfängliche Tilgung: 2,00 % p.a.\r\n",
+        "cited_text": "Musterbank AG - Darlehensvertrag\r\nDarlehensnummer: 4711-0815\r\nDarlehensnehmer: Luis Testkauf, Ana Testkauf\r\nNennbetrag: 260.000,00 EUR\r\nSollzins: 3,65 % p.a., gebunden bis 31.03.2036\r\nMindestzins: 0,00 % p.a.\r\n",
         "document_index": 0,
         "document_title": null,
         "end_page_number": 2,
@@ -229,6 +229,26 @@
        }
       ],
       "text": "31.03.2036",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nfollow_up_rate: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Danach gilt der veränderliche Sollzins, derzeit 4,85 % p.a.\r\n",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "4,85 %",
       "type": "text"
      },
      {
@@ -273,13 +293,33 @@
      },
      {
       "citations": null,
+      "text": "\ninterest_only_clause: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Bis zur ersten Rate sind nur die Sollzinsen zu zahlen.\r\n",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "Bis zur ersten Rate sind nur die Sollzinsen zu zahlen.",
+      "type": "text"
+     },
+     {
+      "citations": null,
       "text": "\naccount_iban: ",
       "type": "text"
      },
      {
       "citations": [
        {
-        "cited_text": "Darlehenskonto: DE89 3704 0044 0532 0130 00\r\nMusterstadt, den 20.02.2026",
+        "cited_text": "Darlehenskonto: DE89 3704 0044 0532 0130 00\r\nMusterbank AG, 18.02.2026\r\nMusterstadt, den 20.02.2026",
         "document_index": 0,
         "document_title": null,
         "end_page_number": 3,
@@ -299,7 +339,7 @@
      {
       "citations": [
        {
-        "cited_text": "Darlehenskonto: DE89 3704 0044 0532 0130 00\r\nMusterstadt, den 20.02.2026",
+        "cited_text": "Darlehenskonto: DE89 3704 0044 0532 0130 00\r\nMusterbank AG, 18.02.2026\r\nMusterstadt, den 20.02.2026",
         "document_index": 0,
         "document_title": null,
         "end_page_number": 3,
@@ -327,8 +367,8 @@
      "cache_creation_input_tokens": 0,
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
-     "input_tokens": 5122,
-     "output_tokens": 428,
+     "input_tokens": 5497,
+     "output_tokens": 519,
      "output_tokens_details": {
       "thinking_tokens": 0
      },
