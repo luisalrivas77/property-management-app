@@ -29,7 +29,10 @@ Matchers (confidence 1.0 when exact):
                   and loan (a financing invoice is loan_fees on its loan, D35); 0.95.
 Learned rules store a matcher and a split method, never an amount (D25): a hit re-splits the
 payment from the current schedule or Wirtschaftsplan, and a split that does not fit exactly
-returns None rather than splitting silently.
+returns None rather than splitting silently. Which hits stand is rule_answer's (D49,
+rule_history.yaml): on a counterparty whose confirmed lines show more than one kind of
+payment, or for a rule learned same_amount_only, a hit whose split method does not check the
+amount itself stands only at the latest amount of its kind, read from the ledger's history.
 """
 
 import re
@@ -45,6 +48,7 @@ from hausbuch.schemas.allocation import (
     AllocationMethod,
     AllocationSet,
     DocumentFacts,
+    HistoryLine,
     LoanFacts,
     MatchContext,
     MatchingRule,
@@ -57,8 +61,10 @@ from hausbuch.schemas.allocation import (
     TenancyFacts,
     WirtschaftsplanFacts,
 )
+from hausbuch.schemas.enums import AllocationStatus
 from hausbuch.schemas.loan import ScheduleEntry
 
+from .categories import CATEGORY_LABEL
 from .loan_schedule import build_schedule
 from .periods import months_in, service_period
 from .statements import norm
@@ -66,6 +72,7 @@ from .statements import norm
 EXACT = Decimal("1.000")
 DOCUMENT_CONFIDENCE = Decimal("0.950")
 INEXACT_RENT_CONFIDENCE = Decimal("0.500")  # below every threshold: always reviewed
+GUARDED_CONFIDENCE = Decimal("0.500")  # below every threshold: the set goes to review
 RENT_BAND = Decimal("0.10")  # a credit this close to the rent is a short or over payment
 DOCUMENT_AMOUNT_TOLERANCE = Decimal("0.01")
 DOCUMENT_WINDOW_DAYS = 10
@@ -168,6 +175,115 @@ def apply_rule(
     if split is None or split.confidence != EXACT:
         return None
     return _as_set(tx, split, AllocationMethod.RULE, rule_id=rule.id)
+
+
+# Split methods that check the amount against a record (apply_rule returns None for any
+# other amount), so their hits stand whatever the history says (D49).
+AMOUNT_CHECKED = frozenset(
+    {SplitMethod.BY_WIRTSCHAFTSPLAN, SplitMethod.BY_LOAN_SCHEDULE, SplitMethod.BY_RENT_SCHEDULE}
+)
+NEAR_MISS_QUESTION = (
+    "Der Betrag weicht von der letzten Buchung ab (zuletzt {amount} als „{label}“ gebucht). "
+    "Stimmt die Zuordnung?"
+)
+
+
+@dataclass(frozen=True)
+class _Booked:
+    """A history line that counts: when, how much, and the categories it was booked as."""
+
+    booking_date: date
+    transaction_id: UUID
+    amount: Decimal
+    kind: frozenset[AllocationCategory]
+
+
+@dataclass(frozen=True)
+class _NearMiss:
+    found: AllocationSet
+    latest: _Booked | None
+    distance: Decimal | None
+
+
+def rule_answer(
+    rules: Sequence[MatchingRule],
+    tx: MatchTransaction,
+    context: MatchContext,
+    history: Sequence[HistoryLine],
+) -> AllocationSet | None:
+    """The learned rules' answer for the line (D49, rule_history.yaml): the hits that stand,
+    when they agree (confidence 1, auto-confirm); else the closest near miss as a proposal
+    (GUARDED_CONFIDENCE and a question; the service uses it only when no matcher answers);
+    else None. `rules` oldest first; `history` may hold any lines, only those of the same
+    IBAN hash and sign whose current rows are all confirmed count."""
+    hits = [(rule, s) for rule in rules if (s := apply_rule(rule, tx, context)) is not None]
+    if not hits:
+        return None
+    booked = _booked(tx, history)
+    standing: list[AllocationSet] = []
+    near: list[_NearMiss] = []
+    for rule, found in hits:
+        kind = frozenset(a.category for a in found.allocations)
+        if rule.split_method in AMOUNT_CHECKED:
+            standing.append(found)
+            continue
+        if not rule.same_amount_only and all(b.kind == kind for b in booked):
+            standing.append(found)  # single-kind: any amount, as before D49
+            continue
+        latest = max(
+            (b for b in booked if b.kind == kind),
+            key=lambda b: (b.booking_date, str(b.transaction_id)),
+            default=None,
+        )
+        if latest is not None and latest.amount == tx.amount:
+            standing.append(found)
+        else:
+            distance = None if latest is None else abs(tx.amount - latest.amount)
+            near.append(_NearMiss(found, latest, distance))
+    if standing:
+        first = standing[0]
+        return first if all(same_split(first, other) for other in standing[1:]) else None
+    measured = [n for n in near if n.distance is not None]
+    if not measured:
+        return None
+    best = min(n.distance for n in measured)  # type: ignore[type-var]
+    closest = [n for n in measured if n.distance == best]
+    if any(not same_split(closest[0].found, n.found) for n in closest[1:]):
+        return None
+    return _proposal(closest[0])
+
+
+def same_split(a: AllocationSet, b: AllocationSet) -> bool:
+    return sorted(d.model_dump_json() for d in a.allocations) == sorted(
+        d.model_dump_json() for d in b.allocations
+    )
+
+
+def _booked(tx: MatchTransaction, history: Sequence[HistoryLine]) -> list[_Booked]:
+    """The history lines that count for this line: same IBAN hash (never none) and sign, not
+    the line itself, current rows (not superseded) present and all confirmed."""
+    if tx.counterparty_iban_hmac is None or tx.amount == 0:
+        return []
+    out = []
+    for line in history:
+        if line.transaction_id == tx.id or line.counterparty_iban_hmac != tx.counterparty_iban_hmac:
+            continue
+        if (line.amount > 0) != (tx.amount > 0) or line.amount == 0:
+            continue
+        current = [r for r in line.rows if r.status is not AllocationStatus.SUPERSEDED]
+        if not current or any(r.status is not AllocationStatus.CONFIRMED for r in current):
+            continue
+        kind = frozenset(r.category for r in current)
+        out.append(_Booked(line.booking_date, line.transaction_id, line.amount, kind))
+    return out
+
+
+def _proposal(miss: _NearMiss) -> AllocationSet:
+    latest = miss.latest
+    assert latest is not None  # only measured near misses are proposed
+    label = " und ".join(sorted(CATEGORY_LABEL[c] for c in latest.kind))
+    question = NEAR_MISS_QUESTION.format(amount=_eur(abs(latest.amount)), label=label)
+    return miss.found.model_copy(update={"confidence": GUARDED_CONFIDENCE, "question": question})
 
 
 def infer_rule(

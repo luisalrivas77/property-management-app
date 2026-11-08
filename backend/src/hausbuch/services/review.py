@@ -105,7 +105,10 @@ def allocate_transaction(
             raise RuleViolationError(
                 [rules_learned.NOT_LEARNABLE], "no rule can be learned from this answer"
             )
-        data = proposed.model_dump() | {"created_from_allocation_id": written[0].id}
+        data = proposed.model_dump() | {
+            "created_from_allocation_id": written[0].id,
+            "same_amount_only": body.same_amount_only and not rules_learned.checks_amount(proposed),
+        }
         rule = rules_learned.create_rule(ctx, MatchingRuleCreate.model_validate(data))
     return _response(ctx.conn, transaction_id, written, line.tx, context, rule=rule)
 
@@ -182,6 +185,7 @@ def _response(
         can_learn_rule=can_learn,
         learn_rule_default=default,
         no_default_rule_categories=[c for c in AllocationCategory if THRESHOLDS[c] is None],
+        waiting_other_amounts=matching.waiting_other_amounts(conn, tx) if can_learn else [],
         rule=rule,
     )
 

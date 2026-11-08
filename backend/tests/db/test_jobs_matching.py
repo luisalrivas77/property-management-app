@@ -717,6 +717,56 @@ def test_a_rule_disabled_before_its_job_runs_rematches_nothing(world, app_engine
     assert _rows(world, waiting) == [] and client.requests == []
 
 
+def test_a_same_amount_only_rule_books_only_the_waiting_lines_of_its_amount(
+    world, app_engine, tmp_path
+):
+    """D49 (8): answered "Nein, nur Zahlungen über 120,00 €", the rule's re-check books the
+    waiting lines of that amount; a line of another amount from the same IBAN gets the rule's
+    proposal with its question and stays in the inbox, never confirmed."""
+    first = world.line(date(2026, 2, 16), "-120.00", iban=STADT_IBAN, purpose="Grundsteuer")
+    same = world.line(date(2026, 5, 15), "-120.00", iban=STADT_IBAN, purpose="Grundsteuer")
+    other = world.line(date(2026, 5, 20), "-45.00", iban=STADT_IBAN, purpose="Gebuehren")
+    answer = AllocationSet(
+        transaction_id=first,
+        allocations=[
+            AllocationDraft(amount=Decimal("-120.00"), category=AllocationCategory("grundsteuer"))
+        ],
+        method=AllocationMethod.USER,
+        confidence=Decimal("1.000"),
+    )
+    rule = world.cmd(
+        review.allocate_transaction,
+        first,
+        ConfirmAllocationsBody(allocation_set=answer, learn_rule=True, same_amount_only=True),
+        iban_key=TEST_IBAN_KEY,
+    ).rule
+    assert rule is not None and rule.same_amount_only is True
+    (job,) = _rematch_jobs(world)
+
+    client = FakeModelClient()  # any model call would fail the test
+    deps = _deps(app_engine, tmp_path, client)
+    plans = run_rematch_waiting(deps, workspace_id=world.ws, trigger=job.args["trigger"], attempt=0)
+    assert sorted((p.outcome, p.reason) for p in plans) == [
+        ("written", "routing.auto_confirm"),
+        ("written", "routing.review"),
+    ]
+    assert client.requests == []
+    (booked,) = _rows(world, same)
+    assert (booked.status, booked.rule_id) == ("confirmed", rule.id)
+    (asked,) = _rows(world, other)
+    assert (asked.status, asked.method, asked.category, asked.rule_id) == (
+        "proposed",
+        "rule",
+        "grundsteuer",
+        rule.id,
+    )
+    assert asked.question.startswith(
+        "Der Betrag weicht von der letzten Buchung ab (zuletzt 120,00 €"
+    )
+    assert _hit_count(world, rule.id) == 1
+    assert other in {i.transaction_id for i in world.query(review.inbox)}
+
+
 def test_a_rent_rule_books_the_waiting_rent_that_fits_the_schedule_exactly(
     world, app_engine, tmp_path
 ):
