@@ -99,9 +99,16 @@ test("an unmatched line is split by hand into two rows; Bestätigen waits until 
     ["600.00", "rent_cold", "confirmed"],
   ]);
 
-  // Konten › Umsätze opens the same panel for the confirmed line, ready for a correction.
+  // Konten › Umsätze says what the line was booked as (the larger amount first), the other
+  // lines are still open, and the status opens the same panel, ready for a correction.
   await page.goto(`/accounts/${accountId}?tab=umsaetze`);
-  await page.getByRole("row").filter({ hasText: "Partei D" }).getByRole("link", { name: /^Zuordnung/ }).click();
+  const booked = page.getByRole("row").filter({ hasText: "Partei D" }).getByRole("link", { name: /^Gebucht: / });
+  await expect(booked).toHaveText("Gebucht: Kaltmiete + Nebenkostenvorauszahlung");
+  await expect(page.getByRole("button", { name: "Gebucht (1)" })).toBeVisible();
+  await page.getByRole("button", { name: "Offen (21)" }).click();
+  await expect(page.getByRole("row").filter({ hasText: "Partei D" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Alle (22)" }).click();
+  await booked.click();
   await expect(page).toHaveURL(`/inbox?umsatz=${transactionId}`);
   await expect(panel.getByText(/^Bestätigt am/)).toBeVisible();
   await expect(panel.getByRole("group", { name: "Zeile 2" })).toBeVisible();
