@@ -120,6 +120,7 @@ export type ImportStatus = Schemas["ImportStatus"];
 export type BalanceSource = Schemas["BalanceSource"];
 export type DeclareBalanceBody = Schemas["DeclareBalanceBody"];
 export type Transaction = Schemas["Transaction"];
+export type TransactionAllocationStatus = Schemas["TransactionAllocationStatus"];
 export type PossibleDuplicate = Schemas["PossibleDuplicate"];
 export type DuplicateStatus = Schemas["DuplicateStatus"];
 export type DuplicateDecisionBody = Schemas["DuplicateDecisionBody"];

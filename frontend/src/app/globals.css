@@ -211,6 +211,24 @@ a.brand:hover {
   font-weight: 700;
 }
 
+/* The number of open items next to "Zu prüfen" (hidden at 0). */
+.nav-count {
+  margin-left: auto;
+  min-width: 22px;
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--warn-bg);
+  color: var(--warn);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.nav-link[aria-current="page"] .nav-count {
+  background: var(--surface);
+}
+
 .sidebar-user {
   display: flex;
   flex-wrap: wrap;

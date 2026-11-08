@@ -13,6 +13,7 @@ from uuid import UUID
 
 from pydantic import ConfigDict, Field, JsonValue, model_validator
 
+from .allocation import AllocationCategory
 from .common import IbanInput, MaskedIban, Money, MutableRecord, Record, Schema, Sha256Hex
 from .enums import AccountSource, BalanceSource, Currency, DuplicateStatus, ImportStatus
 
@@ -118,8 +119,32 @@ class DeclareBalanceBody(Schema):
     opening_balance: Money | None = None
 
 
+class TransactionAllocationStatus(StrEnum):
+    """Where a bank line stands, for Konten › Umsätze (read-only, computed per read from the
+    line, its import, its open possible duplicate and its current allocation rows; first
+    match wins):
+
+    - excluded: merged away as a duplicate (excluded_as_duplicate_of is set);
+    - not_reconciled: its import does not reconcile (yet), so the line cannot be allocated
+      (allocation.import_not_reconciled) and is not in the review queue;
+    - duplicate_open: the later line of an open possible duplicate, decided first;
+    - proposed: at least one current (not superseded, D23) row is proposed;
+    - confirmed: every current row is confirmed;
+    - open: no current row ("Nicht zugeordnet").
+    """
+
+    EXCLUDED = "excluded"
+    NOT_RECONCILED = "not_reconciled"
+    DUPLICATE_OPEN = "duplicate_open"
+    PROPOSED = "proposed"
+    CONFIRMED = "confirmed"
+    OPEN = "open"
+
+
 class Transaction(Record):
-    """Read shape. The counterparty IBAN is shown masked only."""
+    """Read shape. The counterparty IBAN is shown masked only. allocation_status and
+    allocation_categories are computed on read, never stored: the distinct categories of
+    the line's current allocation rows, the largest amount first."""
 
     account_id: UUID
     import_id: UUID
@@ -135,6 +160,8 @@ class Transaction(Record):
     bank_reference: str | None
     end_to_end_ref: str | None
     excluded_as_duplicate_of: UUID | None = None
+    allocation_status: TransactionAllocationStatus
+    allocation_categories: list[AllocationCategory]
 
 
 class PossibleDuplicate(Record):

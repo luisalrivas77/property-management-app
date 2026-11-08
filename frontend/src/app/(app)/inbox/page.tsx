@@ -1,9 +1,11 @@
 "use client";
 
-// Posteingang (docs/phases/phase-2.md §8.3, docs/mockups/03-inbox.png): the upload for
-// documents, the review queue as one list, and the allocation panel beside it. The selected
-// bank line lives in the URL (?umsatz=…), so Konten › Umsätze can link to a line that is not
-// in the queue (one already confirmed) and correct it in the same panel.
+// Zu prüfen, the review page (formerly "Posteingang"; docs/phases/phase-2.md §8.3,
+// docs/mockups/03-inbox.png): the upload for documents, the review queue grouped by what needs
+// deciding, and the allocation panel beside it. The route stays /inbox. The selected bank line
+// lives in the URL (?umsatz=…), so Konten › Umsätze can link to a line that is not in the
+// queue (one already confirmed) and correct it in the same panel. Each fresh load of the
+// queue tells the sidebar its count (lib/inboxCount.ts).
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
@@ -13,6 +15,7 @@ import { documentLabel, UploadControl, type Uploaded } from "@/components/docume
 import { inboxSummary, InboxList, isLineItem, loadInbox } from "@/components/inbox";
 import { Loading, Notice } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
+import { notifyInboxChanged } from "@/lib/inboxCount";
 
 export default function InboxPage() {
   return (
@@ -30,6 +33,12 @@ function Inbox() {
   const [saved, setSaved] = useState<TransactionAllocations | null>(null);
   const [uploads, setUploads] = useState<Uploaded[]>([]);
   const panel = useRef<HTMLElement>(null);
+
+  // The sidebar's count follows what this page lists, after every load and reload.
+  const items = inbox.data?.items;
+  useEffect(() => {
+    if (items) notifyInboxChanged(items.length);
+  }, [items]);
 
   // Stacked layout (a phone): bring the panel into view when a line is chosen.
   useEffect(() => {
@@ -61,7 +70,7 @@ function Inbox() {
 
   return (
     <section>
-      <p className="eyebrow">Posteingang</p>
+      <p className="eyebrow">Zu prüfen</p>
       <div className="page-head">
         <h1>Hochladen, bestätigen, fertig</h1>
         <Link className="button-link" href="/capture">
@@ -109,7 +118,7 @@ function Inbox() {
             {(data) =>
               data.items.length === 0 ? (
                 <p className="muted inbox-empty">
-                  Nichts zu tun. Neue Buchungen und gelesene Dokumente erscheinen hier, sobald etwas zu prüfen ist.
+                  Nichts zu prüfen. Neue Buchungen und gelesene Dokumente erscheinen hier, sobald etwas zu entscheiden ist.
                 </p>
               ) : (
                 <InboxList data={data} selected={selected} onSelect={select} onChanged={inbox.reload} />

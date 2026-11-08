@@ -10,14 +10,14 @@ import { useId, useRef, useState, type ChangeEvent, type FormEvent } from "react
 
 import { api, ok } from "@/api/client";
 import { ruleCodeText } from "@/api/errors";
-import type { Document, ImportBody, PossibleDuplicate, StatementImport, Transaction } from "@/api/schemas";
+import type { Document, ImportBody, PossibleDuplicate, StatementImport, Transaction, TransactionAllocationStatus } from "@/api/schemas";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { documentLabel } from "./documents";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
 import { formatDate, formatDateTime, formatMoney } from "./format";
 import { decimalInput, toSignedMoneyString } from "./input";
-import { BALANCE_SOURCE, DUPLICATE_STATUS, IMPORT_STATUS, STATEMENT_FORMAT } from "./labels";
+import { ALLOCATION_CATEGORY, BALANCE_SOURCE, DUPLICATE_STATUS, IMPORT_STATUS, STATEMENT_FORMAT } from "./labels";
 import { ActionDialog } from "./ui";
 
 // --- upload ---------------------------------------------------------------------------
@@ -349,10 +349,99 @@ function isCredit(amount: string): boolean {
   return !amount.startsWith("-") && !/^0+(\.0+)?$/.test(amount);
 }
 
-/** Umsätze. Each counting line links to its allocation panel in the Posteingang
- * (/inbox?umsatz=…), which also corrects an allocation already confirmed. */
+type LineFilter = "all" | "open" | "booked";
+
+const LINE_FILTERS: { key: LineFilter; label: string }[] = [
+  { key: "all", label: "Alle" },
+  { key: "open", label: "Offen" },
+  { key: "booked", label: "Gebucht" },
+];
+
+/** Offen: everything still waiting for a decision (a merged duplicate is in Alle only). */
+const OPEN_STATUSES: readonly TransactionAllocationStatus[] = ["open", "proposed", "duplicate_open", "not_reconciled"];
+
+function matchesFilter(line: Transaction, filter: LineFilter): boolean {
+  if (filter === "open") return OPEN_STATUSES.includes(line.allocation_status);
+  if (filter === "booked") return line.allocation_status === "confirmed";
+  return true;
+}
+
+/** Where a line stands (Transaction.allocation_status, computed by the API), as a link to
+ * where it is decided: the allocation panel on the review page (/inbox?umsatz=…, which also
+ * corrects a confirmed allocation), the account's possible duplicates, or its Kontoauszüge. A
+ * merged duplicate has no link; its pill sits under the purpose. */
+function LineStatus({ line }: { line: Transaction }) {
+  const subject = `${line.counterparty_name ?? "Umsatz"} am ${formatDate(line.booking_date)}`;
+  const panel = `/inbox?umsatz=${line.id}`;
+  switch (line.allocation_status) {
+    case "excluded":
+      return null;
+    case "confirmed": {
+      const categories = line.allocation_categories.map((category) => ALLOCATION_CATEGORY[category]).join(" + ");
+      const text = categories ? `Gebucht: ${categories}` : "Gebucht";
+      return (
+        <Link href={panel} aria-label={`${text} – ${subject}`}>
+          {text}
+        </Link>
+      );
+    }
+    case "proposed":
+      return (
+        <Link href={panel} className="badge badge-warn" aria-label={`Vorschlag prüfen – ${subject}`}>
+          Vorschlag prüfen
+        </Link>
+      );
+    case "duplicate_open":
+      return (
+        <Link href={`/accounts/${line.account_id}?tab=doppelbuchungen`} className="badge badge-warn" aria-label={`Mögliche Doppelbuchung – ${subject}`}>
+          Mögliche Doppelbuchung
+        </Link>
+      );
+    case "not_reconciled":
+      return (
+        <Link href={`/accounts/${line.account_id}?tab=kontoauszuege`} className="badge badge-muted" aria-label={`Kontoauszug nicht abgestimmt – ${subject}`}>
+          Kontoauszug nicht abgestimmt
+        </Link>
+      );
+    default:
+      return (
+        <Link href={panel} className="badge" aria-label={`Offen – ${subject}`}>
+          Offen
+        </Link>
+      );
+  }
+}
+
+/** Umsätze, with where each line stands and a filter Alle / Offen / Gebucht. */
 export function TransactionsTable({ transactions }: { transactions: Transaction[] }) {
+  const [filter, setFilter] = useState<LineFilter>("all");
   if (transactions.length === 0) return <p className="muted">Keine Umsätze in diesem Zeitraum.</p>;
+  const shown = transactions.filter((line) => matchesFilter(line, filter));
+  return (
+    <div className="stack">
+      <div className="row" role="group" aria-label="Umsätze filtern">
+        {LINE_FILTERS.map(({ key, label }) => (
+          <button
+            key={key}
+            type="button"
+            className={key === filter ? undefined : "secondary"}
+            aria-pressed={key === filter}
+            onClick={() => setFilter(key)}
+          >
+            {label} ({transactions.filter((line) => matchesFilter(line, key)).length})
+          </button>
+        ))}
+      </div>
+      {shown.length === 0 ? (
+        <p className="muted">{filter === "open" ? "Keine offenen Umsätze in diesem Zeitraum." : "Keine gebuchten Umsätze in diesem Zeitraum."}</p>
+      ) : (
+        <TransactionRows transactions={shown} />
+      )}
+    </div>
+  );
+}
+
+function TransactionRows({ transactions }: { transactions: Transaction[] }) {
   return (
     <div className="table-wrap">
       <table>
@@ -392,11 +481,7 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
                 {formatMoney(line.amount)}
               </td>
               <td className="actions">
-                {line.excluded_as_duplicate_of ? null : (
-                  <Link href={`/inbox?umsatz=${line.id}`} aria-label={`Zuordnung: ${line.counterparty_name ?? "Umsatz"} am ${formatDate(line.booking_date)}`}>
-                    Zuordnung
-                  </Link>
-                )}
+                <LineStatus line={line} />
               </td>
             </tr>
           ))}

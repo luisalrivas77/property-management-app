@@ -1,8 +1,9 @@
 "use client";
 
-// Posteingang (docs/phases/phase-2.md §8.3, docs/mockups/03-inbox.png): the review queue as one
-// list, newest first, as GET /inbox returns it. Each item shows its kind, the one-line
-// reasoning and the question the API wrote, and acts through its own endpoint:
+// The review queue of the review page, "Zu prüfen" (docs/phases/phase-2.md §8.3,
+// docs/mockups/03-inbox.png), grouped by what needs deciding (SECTIONS), each group newest
+// first as GET /inbox returns it. Each item shows its kind, the one-line reasoning and the
+// question the API wrote, and acts through its own endpoint:
 //
 // - a bank line (allocation_proposed, unmatched): selecting it opens the allocation panel
 //   (components/allocations.tsx);
@@ -35,6 +36,37 @@ const LINE_KINDS: readonly InboxItemKind[] = ["allocation_proposed", "unmatched"
 
 export function isLineItem(item: InboxItem): boolean {
   return LINE_KINDS.includes(item.kind) && !!item.transaction_id;
+}
+
+/** The groups of the queue, in this order; a group without items is not shown. */
+const SECTIONS = [
+  { key: "lines", title: "Zahlungen zuordnen" },
+  { key: "proposals", title: "KI-Vorschläge zu Dokumenten" },
+  { key: "unread", title: "Dokumente, die nicht gelesen wurden" },
+  { key: "imports", title: "Kontoauszüge" },
+  { key: "duplicates", title: "Mögliche Doppelbuchungen" },
+  { key: "other", title: "Weitere Punkte" },
+] as const;
+
+type SectionKey = (typeof SECTIONS)[number]["key"];
+
+/** Every kind has its group, so the compiler proves none is dropped. */
+const SECTION_OF: Record<InboxItemKind, SectionKey> = {
+  allocation_proposed: "lines",
+  unmatched: "lines",
+  proposal: "proposals",
+  read_failed: "unread",
+  blocked_tenant_data: "unread",
+  import_pending_balance: "imports",
+  import_unreconciled: "imports",
+  possible_duplicate: "duplicates",
+};
+
+/** A line kind without a line id cannot open the panel: it is listed under Weitere Punkte,
+ * with its kind and reasoning, rather than dropped. */
+function sectionOf(item: InboxItem): SectionKey {
+  const section = SECTION_OF[item.kind];
+  return section === "lines" && !isLineItem(item) ? "other" : section;
 }
 
 const PILL_CLASS: Record<InboxItemKind, string> = {
@@ -88,14 +120,9 @@ export async function loadInbox(): Promise<InboxData> {
   };
 }
 
-/** "3 Buchungen zuordnen · 2 weitere Punkte". */
+/** "5 offene Punkte": the total; each section heading carries its own count. */
 export function inboxSummary(items: InboxItem[]): string {
-  const lines = items.filter(isLineItem).length;
-  const other = items.length - lines;
-  const parts: string[] = [];
-  if (lines > 0) parts.push(lines === 1 ? "1 Buchung zuordnen" : `${lines} Buchungen zuordnen`);
-  if (other > 0) parts.push(other === 1 ? "1 weiterer Punkt" : `${other} weitere Punkte`);
-  return parts.join(" · ");
+  return items.length === 1 ? "1 offener Punkt" : `${items.length} offene Punkte`;
 }
 
 function isCredit(amount: string): boolean {
@@ -118,26 +145,41 @@ export function InboxList({
   onChanged: () => void;
 }) {
   return (
-    <ul className="inbox-list" aria-label="Offene Punkte">
-      {data.items.map((item) => {
-        // A possible duplicate also names its later line, which may sit in two pairs: its own id first.
-        const key = `${item.kind}:${item.possible_duplicate_id ?? item.proposal_id ?? item.import_id ?? item.transaction_id ?? item.document_id}`;
+    <div className="inbox-sections">
+      {SECTIONS.map(({ key: section, title }) => {
+        const items = data.items.filter((item) => sectionOf(item) === section);
+        if (items.length === 0) return null;
+        const headingId = `inbox-section-${section}`;
         return (
-          <li key={key}>
-            {isLineItem(item) ? (
-              <LineEntry
-                item={item}
-                line={data.transactions.get(item.transaction_id ?? "")}
-                pressed={selected === item.transaction_id}
-                onSelect={onSelect}
-              />
-            ) : (
-              <OtherEntry item={item} data={data} onChanged={onChanged} />
-            )}
-          </li>
+          <section key={section} className="inbox-section" aria-labelledby={headingId}>
+            <h3 className="inbox-section-head">
+              <span id={headingId}>{title}</span>{" "}
+              <span className="inbox-section-count">{items.length}</span>
+            </h3>
+            <ul className="inbox-list" aria-label={title}>
+              {items.map((item) => {
+                // A possible duplicate also names its later line, which may sit in two pairs: its own id first.
+                const key = `${item.kind}:${item.possible_duplicate_id ?? item.proposal_id ?? item.import_id ?? item.transaction_id ?? item.document_id}`;
+                return (
+                  <li key={key}>
+                    {isLineItem(item) ? (
+                      <LineEntry
+                        item={item}
+                        line={data.transactions.get(item.transaction_id ?? "")}
+                        pressed={selected === item.transaction_id}
+                        onSelect={onSelect}
+                      />
+                    ) : (
+                      <OtherEntry item={item} data={data} onChanged={onChanged} />
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
         );
       })}
-    </ul>
+    </div>
   );
 }
 

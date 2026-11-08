@@ -336,7 +336,7 @@ export const INBOX_ITEM_KIND: Record<InboxItemKind, string> = {
   import_unreconciled: "Nicht abgestimmt",
   import_pending_balance: "Saldo fehlt",
   possible_duplicate: "Mögliche Doppelbuchung",
-  allocation_proposed: "Zu prüfen",
+  allocation_proposed: "Vorschlag prüfen",
   unmatched: "Nicht zugeordnet",
 };
 
