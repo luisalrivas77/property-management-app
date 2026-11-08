@@ -6,6 +6,11 @@
 # - Interest is 30E/360 and accrues over the period it pays for, in arrears: from the previous
 #   due date (disbursed_on for payment 1) up to but not including due_on. Period 1 has
 #   days360(disbursed_on, first_payment_on) days; every later period has 30.
+# - interest_only_before_first_payment (default false; added 2026-11-08): the lender charges
+#   interest only before first_payment_on, outside the schedule (a loan paid out in parts).
+#   Period 1 then runs from one month before first_payment_on and has 30 days, on the full
+#   principal; when disbursed_on is later than that (paid out less than a month before the
+#   first payment) period 1 stays days360(disbursed_on, first_payment_on).
 # - Each day accrues at the rate in force that day: nominal_rate up to and including
 #   fixed_until, follow_up_rate after it (null -> nominal_rate); standard per-day accrual.
 #   Let switch = the day after fixed_until. A period with due_on <= switch is entirely at
@@ -222,3 +227,78 @@ cases:
       first_payment_on: 2025-02-01
     expect:
       error: {code: loan.term_too_long, at_number: 1201}
+
+  # --- interest_only_before_first_payment (added 2026-11-08, Luis) -----------------------
+  # Numbers from the same independent exact-fraction reference (every period 30 days at one
+  # rate); interest_only_partial_first_period reproduces full_first_month to the cent.
+
+  - id: interest_only_before_first_payment
+    description: Paid out 30 June, first annuity 30 December. With the flag, payment 1 accrues 30 days (30 Nov - 30 Dec) on the full principal.
+    terms:
+      principal: "360000.00"
+      nominal_rate: "0.036"
+      monthly_payment: "1600.00"
+      disbursed_on: 2026-06-30
+      first_payment_on: 2026-12-30
+      interest_only_before_first_payment: true
+    expect:
+      entry_count: 376
+      entries:
+      - {number: 1, due_on: 2026-12-30, rate: "0.036", interest_days: 30, follow_up_days: 0, opening_balance: "360000.00", interest: "1080.00", principal: "520.00", payment: "1600.00", closing_balance: "359480.00"}
+      - {number: 2, due_on: 2027-01-30, rate: "0.036", interest_days: 30, follow_up_days: 0, opening_balance: "359480.00", interest: "1078.44", principal: "521.56", payment: "1600.00", closing_balance: "358958.44"}
+      - {number: 3, due_on: 2027-02-28, rate: "0.036", interest_days: 30, follow_up_days: 0, opening_balance: "358958.44", interest: "1076.88", principal: "523.12", payment: "1600.00", closing_balance: "358435.32"}
+      - {number: 376, due_on: 2058-03-30, rate: "0.036", interest_days: 30, follow_up_days: 0, opening_balance: "327.48", interest: "0.98", principal: "327.48", payment: "328.46", closing_balance: "0.00"}
+      years:
+      - {year: 2026, interest: "1080.00", principal: "520.00", payment: "1600.00", closing_balance: "359480.00"}
+      - {year: 2027, interest: "12836.98", principal: "6363.02", payment: "19200.00", closing_balance: "353116.98"}
+
+  - id: interest_only_flag_off_same_terms
+    description: The same loan without the flag. Period 1 is 180 days (30 June - 30 December), 6,480.00 interest, more than the payment.
+    terms:
+      principal: "360000.00"
+      nominal_rate: "0.036"
+      monthly_payment: "1600.00"
+      disbursed_on: 2026-06-30
+      first_payment_on: 2026-12-30
+    expect:
+      error: {code: loan.payment_does_not_cover_interest, at_number: 1}
+
+  - id: interest_only_partial_first_period
+    description: partial_first_period with the flag. Period 1 is 30 days, not 44, so interest, principal and balances are full_first_month's; only the due dates (the 30th) differ.
+    terms:
+      principal: "300000.00"
+      nominal_rate: "0.036"
+      monthly_payment: "1400.00"
+      disbursed_on: 2024-04-16
+      first_payment_on: 2024-05-30
+      fixed_until: 2034-04-30
+      interest_only_before_first_payment: true
+    expect:
+      entry_count: 344
+      entries:
+      - {number: 1, due_on: 2024-05-30, rate: "0.036", interest_days: 30, follow_up_days: 0, opening_balance: "300000.00", interest: "900.00", principal: "500.00", payment: "1400.00", closing_balance: "299500.00"}
+      - {number: 2, due_on: 2024-06-30, rate: "0.036", interest_days: 30, follow_up_days: 0, opening_balance: "299500.00", interest: "898.50", principal: "501.50", payment: "1400.00", closing_balance: "298998.50"}
+      - {number: 3, due_on: 2024-07-30, rate: "0.036", interest_days: 30, follow_up_days: 0, opening_balance: "298998.50", interest: "897.00", principal: "503.00", payment: "1400.00", closing_balance: "298495.50"}
+      - {number: 344, due_on: 2052-12-30, rate: "0.036", interest_days: 30, follow_up_days: 30, opening_balance: "1006.79", interest: "3.02", principal: "1006.79", payment: "1009.81", closing_balance: "0.00"}
+      years:
+      - {year: 2024, interest: "7157.75", principal: "4042.25", payment: "11200.00", closing_balance: "295957.75"}
+      - {year: 2025, interest: "10552.07", principal: "6247.93", payment: "16800.00", closing_balance: "289709.82"}
+
+  - id: interest_only_paid_out_within_the_first_month
+    description: Paid out 10 May, first payment 30 May. No interest-only time, so the flag changes nothing; period 1 is 20 days.
+    terms:
+      principal: "300000.00"
+      nominal_rate: "0.036"
+      monthly_payment: "1400.00"
+      disbursed_on: 2024-05-10
+      first_payment_on: 2024-05-30
+      fixed_until: 2034-04-30
+      interest_only_before_first_payment: true
+    expect:
+      entry_count: 344
+      entries:
+      - {number: 1, due_on: 2024-05-30, rate: "0.036", interest_days: 20, follow_up_days: 0, opening_balance: "300000.00", interest: "600.00", principal: "800.00", payment: "1400.00", closing_balance: "299200.00"}
+      - {number: 2, due_on: 2024-06-30, rate: "0.036", interest_days: 30, follow_up_days: 0, opening_balance: "299200.00", interest: "897.60", principal: "502.40", payment: "1400.00", closing_balance: "298697.60"}
+      - {number: 344, due_on: 2052-12-30, rate: "0.036", interest_days: 30, follow_up_days: 30, opening_balance: "171.14", interest: "0.51", principal: "171.14", payment: "171.65", closing_balance: "0.00"}
+      years:
+      - {year: 2024, interest: "6851.38", principal: "4348.62", payment: "11200.00", closing_balance: "295651.38"}

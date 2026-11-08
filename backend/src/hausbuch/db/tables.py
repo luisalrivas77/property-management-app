@@ -327,6 +327,10 @@ loan = Table(
     Column("account_iban_hmac", LargeBinary, nullable=True),
     _created_at(),
     _updated_at(),
+    # 0010, appended by ADD COLUMN: before first_payment_on the lender charges interest only.
+    Column(
+        "interest_only_before_first_payment", Boolean, nullable=False, server_default=text("false")
+    ),
 )
 
 # --- Document links ----------------------------------------------------------

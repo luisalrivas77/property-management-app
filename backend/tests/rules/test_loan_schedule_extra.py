@@ -219,3 +219,30 @@ def test_term_cap_fires_at_payment_1201():
             terms(principal=D("120000.01"), nominal_rate=D("0"), monthly_payment=D("100.00"))
         )
     assert (excinfo.value.code, excinfo.value.at_number) == (TERM_TOO_LONG, 1201)
+
+
+@pytest.mark.parametrize(
+    ("disbursed_on", "flag", "days"),
+    [
+        # First payment 30 Mar; one month before is 28 Feb (clamped), which days360 counts as
+        # 32 days. Paid out that day with the flag: the period is the usual 30.
+        (date(2027, 2, 28), True, 30),
+        (date(2027, 2, 28), False, 32),
+        # Paid out earlier with the flag: 30, from 28 Feb; without it, from the payout.
+        (date(2026, 12, 30), True, 30),
+        (date(2026, 12, 30), False, 90),
+        # Paid out after 28 Feb: no interest-only time, the flag changes nothing.
+        (date(2027, 3, 10), True, 20),
+    ],
+)
+def test_interest_only_first_period(disbursed_on, flag, days):
+    first = build_schedule(
+        terms(
+            principal=D("1000.00"),
+            disbursed_on=disbursed_on,
+            first_payment_on=date(2027, 3, 30),
+            interest_only_before_first_payment=flag,
+        )
+    ).entries[0]
+    assert first.interest_days == days
+    assert first.interest == (D("1000.00") * D("0.036") * days / 360).quantize(D("0.01"))

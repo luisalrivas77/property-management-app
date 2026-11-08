@@ -20,6 +20,9 @@ class LoanTerms(Schema):
     fixed_until: date | None = None  # end of Zinsbindung
     # Rate after fixed_until. Null = keep nominal_rate (the "today's rate" default).
     follow_up_rate: Rate | None = None
+    # Before first_payment_on the lender charges interest only, outside the schedule (a loan
+    # paid out in parts); the annuity schedule starts at first_payment_on (rules.loan_schedule).
+    interest_only_before_first_payment: bool = False
 
     @model_validator(mode="after")
     def _consistent(self) -> Self:

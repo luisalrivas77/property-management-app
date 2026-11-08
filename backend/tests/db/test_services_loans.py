@@ -113,6 +113,7 @@ def test_create_writes_the_row_and_both_milestones(app_engine, fresh_workspaces,
         "first_payment_on": "2024-05-30",
         "fixed_until": "2034-04-30",
         "follow_up_rate": None,
+        "interest_only_before_first_payment": False,
     }
     assert (disbursed.type, disbursed.effective_date, disbursed.payload) == (
         EventType.LOAN_DISBURSED,
@@ -190,6 +191,37 @@ def test_update_records_changes_and_masks_the_account(
     cleared = run(a, update_loan, loan.id, account_iban=None, now=LATER)
     assert cleared.account_iban_masked is None
     assert len(_events(read, a, loan.id)) == 4
+
+
+def test_the_interest_only_flag_is_stored_shown_and_moves_the_first_period(
+    run, read, fresh_workspaces, prop
+):
+    """A loan paid out in parts: with the flag, payment 1 accrues the month before it only
+    (rules.loan_schedule); the flag is in loan.created and changes through update_loan."""
+    a, _ = fresh_workspaces
+    terms = _terms(
+        prop.id,
+        disbursed_on=date(2024, 1, 30),
+        first_payment_on=date(2024, 5, 30),
+        interest_only_before_first_payment=True,
+    )
+    loan = _create(run, a, terms)
+    assert loan.terms.interest_only_before_first_payment is True
+    assert read(a, get_loan, loan.id) == loan
+    created = _events(read, a, loan.id)[0]
+    assert created.payload["interest_only_before_first_payment"] is True
+    first = read(a, loan_schedule, loan.id).entries[0]
+    # 30 days (30 Apr - 30 May) at 3.65 % on 240,000.00, not the 120 days since the payout.
+    assert (first.interest_days, first.interest) == (30, Decimal("730.00"))
+
+    updated = run(a, update_loan, loan.id, interest_only_before_first_payment=False, now=LATER)
+    assert updated.terms.interest_only_before_first_payment is False
+    assert _events(read, a, loan.id)[-1].payload["changes"] == {
+        "interest_only_before_first_payment": {"old": True, "new": False}
+    }
+    with pytest.raises(RuleError) as raised:  # 120 days of interest in the first payment
+        read(a, loan_schedule, loan.id)
+    assert raised.value.code == PAYMENT_DOES_NOT_COVER_INTEREST
 
 
 def test_domain_errors_write_nothing(run, read, fresh_workspaces, prop):

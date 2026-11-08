@@ -42,6 +42,19 @@
 #   The entry due on 1 July 2025 below still carries June's interest at the old 5 % (June
 #   accrued before fixed_until), so a matcher that reads "the rate in force on the booking
 #   date" gets it wrong; the follow-up rate's first entry is August's (rules.yaml).
+# loan, interest only (added 2026-11-08): when no schedule entry fits, a loan with
+#   terms.interest_only_before_first_payment (paid out in parts; until the first annuity the
+#   bank debits interest only on what it has paid out, a different amount each month) books a
+#   debit from that loan (as above: account HMAC or lender name) with
+#   disbursed_on < booking_date < first_payment_on (both ends excluded) as ONE allocation,
+#   loan_interest = the whole amount, with property and loan, recurring true; method
+#   matcher_loan, 1.0, ONLY when the purpose states the interest and it equals the debit:
+#   "Zinsen" (a whole word, case-insensitive; optional ":" and "EUR"/"€") followed by a
+#   German amount (1.061,82 or 1061,82 or 944,63), exactly one distinct such amount, equal to
+#   -amount; and no "Tilgung" amount above 0,00 in the purpose. Otherwise null (the line goes
+#   on to the document match and the model, whose loan answer always goes to review, D40).
+#   Service period: the range the purpose states as "Für dd.mm.yyyy - dd.mm.yyyy" (valid
+#   dates, start <= end), else the booking month. A flag-off loan never books this way.
 # document: a context document with a payment p where |amount| is within 0.01 of p.amount,
 #   booking_date within 10 days of p.due_on (inclusive, either side), and the document's
 #   iban_hmac equal to the counterparty's or its reference found in the purpose
@@ -56,6 +69,7 @@ ids:
   unit: &U 0000000c-0000-4000-8000-000000000001
   tenancy: &T 0000000e-0000-4000-8000-000000000001
   loan: &L 0000000f-0000-4000-8000-000000000001
+  loan_interest_only: &L_IO 0000000f-0000-4000-8000-000000000002
   doc_grundsteuer: &D_GS 0000000d-0000-4000-8000-000000000001
   doc_notary: &D_NOTARY 0000000d-0000-4000-8000-000000000002
   doc_grundschuld: &D_GRUNDSCHULD 0000000d-0000-4000-8000-000000000003
@@ -64,6 +78,7 @@ ids:
   hmac_loan: &H_LOAN "3333333333333333333333333333333333333333333333333333333333333333"
   hmac_stadtkasse: &H_STADT "4444444444444444444444444444444444444444444444444444444444444444"
   hmac_notary: &H_NOTARY "5555555555555555555555555555555555555555555555555555555555555555"
+  hmac_loan_interest_only: &H_LOAN_IO "6666666666666666666666666666666666666666666666666666666666666666"
   hmac_other: &H_OTHER "9999999999999999999999999999999999999999999999999999999999999999"
 
 context:
@@ -89,6 +104,17 @@ context:
         first_payment_on: 2025-02-01
         fixed_until: 2025-06-30
         follow_up_rate: "0.08"
+    - id: *L_IO
+      property_id: *P
+      lender: Musterkasse eG
+      account_iban_hmac: *H_LOAN_IO
+      terms:   # = loan_schedule.yaml interest_only_before_first_payment (phase 1)
+        principal: "360000.00"
+        nominal_rate: "0.036"
+        monthly_payment: "1600.00"
+        disbursed_on: 2026-06-30
+        first_payment_on: 2026-12-30
+        interest_only_before_first_payment: true
   documents:
     - id: *D_GS
       kind: grundsteuerbescheid
@@ -300,3 +326,203 @@ cases:
       question: null
       allocations:
         - {amount: "-612.88", category: loan_fees, property_id: *P, loan_id: *L, document_id: *D_GRUNDSCHULD, recurring: false}
+
+  # --- interest only before the first annuity (added 2026-11-08) ---------------------------
+  # Loan L_IO: paid out 30 June 2026, first annuity 30 December 2026, flag set. The purpose
+  # texts are synthetic, shaped like the bank's "Rechnung Darl.-Leistung" debits.
+
+  - id: interest_only_states_the_interest
+    description: The debit equals the interest the purpose states; booked whole as loan_interest over the stated range.
+    matcher: loan
+    transaction: &TX_IO
+      id: 0000002b-0000-4000-8000-000000000001
+      booking_date: 2026-07-30
+      amount: "-787.43"
+      counterparty_name: Musterkasse eG
+      counterparty_iban_hmac: *H_LOAN_IO
+      purpose: "Rechnung Darl.-Leistung 7000000001 Für 01.07.2026 - 30.07.2026 Saldo: 262.477,00- Zinsen 787,43 20260730-XX001-00000000001"
+    expect:
+      method: matcher_loan
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "-787.43", category: loan_interest, property_id: *P, loan_id: *L_IO, service_period_start: 2026-07-01, service_period_end: 2026-07-30, recurring: true}
+
+  - id: interest_only_thousands_separator
+    description: After the second payout the stated interest has a thousands separator (1.061,82).
+    matcher: loan
+    transaction:
+      <<: *TX_IO
+      id: 0000002b-0000-4000-8000-000000000002
+      booking_date: 2026-10-30
+      amount: "-1061.82"
+      purpose: "Rechnung Darl.-Leistung 7000000001 Für 01.10.2026 - 30.10.2026 Saldo: 354.000,00- Zinsen 1.061,82 20261030-XX001-00000000002"
+    expect:
+      method: matcher_loan
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "-1061.82", category: loan_interest, property_id: *P, loan_id: *L_IO, service_period_start: 2026-10-01, service_period_end: 2026-10-30, recurring: true}
+
+  - id: interest_only_without_a_stated_range
+    description: No "Für ... - ..." range in the purpose; the service period is the booking month.
+    matcher: loan
+    transaction:
+      <<: *TX_IO
+      id: 0000002b-0000-4000-8000-000000000003
+      booking_date: 2026-08-31
+      amount: "-810.00"
+      purpose: "Darlehen 7000000001 Zinsen: 810,00 EUR"
+    expect:
+      method: matcher_loan
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "-810.00", category: loan_interest, property_id: *P, loan_id: *L_IO, service_period_start: 2026-08-01, service_period_end: 2026-08-31, recurring: true}
+
+  - id: interest_only_tilgung_zero_is_still_interest_only
+    description: A Tilgung of 0,00 stated beside the interest does not block the match.
+    matcher: loan
+    transaction:
+      <<: *TX_IO
+      id: 0000002b-0000-4000-8000-000000000004
+      booking_date: 2026-09-30
+      amount: "-787.43"
+      purpose: "Rechnung Darl.-Leistung 7000000001 Für 31.08.2026 - 29.09.2026 Tilgung 0,00 Zinsen 787,43"
+    expect:
+      method: matcher_loan
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "-787.43", category: loan_interest, property_id: *P, loan_id: *L_IO, service_period_start: 2026-08-31, service_period_end: 2026-09-29, recurring: true}
+
+  - id: interest_only_stated_interest_differs
+    description: The purpose states 787,43 interest but 800.00 was debited; the rest is not explained, so no match.
+    matcher: loan
+    transaction:
+      <<: *TX_IO
+      id: 0000002b-0000-4000-8000-000000000005
+      amount: "-800.00"
+    expect: null
+
+  - id: interest_only_states_a_repayment
+    description: The purpose states a Tilgung above zero; even with the interest equal to the debit, the line is not interest only.
+    matcher: loan
+    transaction:
+      <<: *TX_IO
+      id: 0000002b-0000-4000-8000-000000000006
+      purpose: "Rechnung Darl.-Leistung 7000000001 Für 01.07.2026 - 30.07.2026 Tilgung 500,00 Zinsen 787,43"
+    expect: null
+
+  - id: interest_only_two_stated_interest_amounts
+    description: Two different interest amounts in the purpose; which one is meant is a person's call.
+    matcher: loan
+    transaction:
+      <<: *TX_IO
+      id: 0000002b-0000-4000-8000-000000000007
+      purpose: "Darlehen 7000000001 Zinsen 787,43 Zinsen 12,00"
+    expect: null
+
+  - id: interest_only_purpose_states_no_interest
+    description: A debit from the loan account in the interest-only time without a stated interest amount.
+    matcher: loan
+    transaction:
+      <<: *TX_IO
+      id: 0000002b-0000-4000-8000-000000000008
+      purpose: "Darlehen 7000000001 Lastschrift"
+    expect: null
+
+  - id: interest_only_booked_before_the_payout
+    description: Booked before disbursed_on (30 June 2026); there was no interest to pay yet.
+    matcher: loan
+    transaction:
+      <<: *TX_IO
+      id: 0000002b-0000-4000-8000-000000000009
+      booking_date: 2026-06-15
+      amount: "-100.00"
+      purpose: "Darlehen 7000000001 Für 01.06.2026 - 15.06.2026 Zinsen 100,00"
+    expect: null
+
+  - id: interest_only_booked_on_the_payout_day
+    description: Booked on disbursed_on itself; the window excludes it.
+    matcher: loan
+    transaction:
+      <<: *TX_IO
+      id: 0000002b-0000-4000-8000-00000000000a
+      booking_date: 2026-06-30
+      amount: "-100.00"
+      purpose: "Darlehen 7000000001 Zinsen 100,00"
+    expect: null
+
+  - id: interest_only_booked_on_the_first_payment_day
+    description: From first_payment_on only the schedule applies; a stated-interest debit that is not the annuity is not matched.
+    matcher: loan
+    transaction:
+      <<: *TX_IO
+      id: 0000002b-0000-4000-8000-00000000000b
+      booking_date: 2026-12-30
+      amount: "-1080.00"
+      purpose: "Rechnung Darl.-Leistung 7000000001 Für 30.11.2026 - 29.12.2026 Zinsen 1.080,00"
+    expect: null
+
+  - id: interest_only_loan_first_annuity
+    description: The first full annuity, split by schedule entry 1 (30 days of interest on the full principal, loan_schedule.yaml interest_only_before_first_payment).
+    matcher: loan
+    transaction:
+      <<: *TX_IO
+      id: 0000002b-0000-4000-8000-00000000000c
+      booking_date: 2026-12-30
+      amount: "-1600.00"
+      purpose: "Rechnung Darl.-Leistung 7000000001 Zinsen 1.080,00 Tilgung 520,00"
+    expect:
+      method: matcher_loan
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "-1080.00", category: loan_interest, property_id: *P, loan_id: *L_IO, service_period_start: 2026-12-01, service_period_end: 2026-12-31, recurring: true}
+        - {amount: "-520.00", category: loan_principal, property_id: *P, loan_id: *L_IO, service_period_start: 2026-12-01, service_period_end: 2026-12-31, recurring: true}
+
+  - id: interest_only_flag_off
+    description: Loan L has no flag; a stated-interest debit before its first payment (1 Feb 2025) is not matched.
+    matcher: loan
+    transaction:
+      id: 0000002b-0000-4000-8000-00000000000d
+      booking_date: 2025-01-15
+      amount: "-55.00"
+      counterparty_name: Beispielbank AG
+      counterparty_iban_hmac: *H_LOAN
+      purpose: "Darlehen 600123456 Für 01.01.2025 - 15.01.2025 Zinsen 55,00"
+    expect: null
+
+  - id: interest_only_not_from_the_loan_account
+    description: Same text and amount, but neither the loan's account nor its lender.
+    matcher: loan
+    transaction:
+      <<: *TX_IO
+      id: 0000002b-0000-4000-8000-00000000000e
+      counterparty_name: Andere Gläubiger GmbH
+      counterparty_iban_hmac: *H_OTHER
+    expect: null
+
+  - id: interest_only_from_another_loans_account
+    description: The flagged loan's lender name, but the account is loan L's (review F1, PR #64). An account that is a loan's decides which loan it is; the lender-name fallback applies only when the account is no loan's, so L_IO does not claim it (L has no flag and no entry near).
+    matcher: loan
+    transaction:
+      <<: *TX_IO
+      id: 0000002b-0000-4000-8000-00000000000f
+      counterparty_iban_hmac: *H_LOAN
+    expect: null
+
+  - id: interest_only_by_lender_name_without_an_account
+    description: No counterparty IBAN, the flagged loan's lender name; the name fallback still finds L_IO.
+    matcher: loan
+    transaction:
+      <<: *TX_IO
+      id: 0000002b-0000-4000-8000-000000000010
+      counterparty_iban_hmac: null
+    expect:
+      method: matcher_loan
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "-787.43", category: loan_interest, property_id: *P, loan_id: *L_IO, service_period_start: 2026-07-01, service_period_end: 2026-07-30, recurring: true}

@@ -822,6 +822,76 @@ def test_0009_downgrade_refuses_while_a_row_uses_a_new_category(table):
         drop_database(name)
 
 
+def _loan(conn, ws, **overrides) -> uuid.UUID:
+    row = {
+        "workspace_id": ws,
+        "property_id": _property(conn, ws),
+        "lender": "Musterkasse eG",
+        "principal": "360000.00",
+        "nominal_rate": "0.036",
+        "monthly_payment": "1600.00",
+        "disbursed_on": "2026-06-30",
+        "first_payment_on": "2026-12-30",
+    } | overrides
+    return _insert(conn, "loan", row)
+
+
+def test_a_loan_is_not_interest_only_unless_flagged(connect, workspaces):
+    """0010: the flag defaults to false, so every loan stored before it keeps its schedule;
+    the app role may set it on insert and change it (table-wide UPDATE on loan)."""
+    a, _ = workspaces
+    with connect(APP, a) as conn:
+        plain = _loan(conn, a)
+        flagged = _loan(conn, a, interest_only_before_first_payment=True)
+        read = "SELECT interest_only_before_first_payment FROM loan WHERE id = %s"
+        assert conn.execute(read, (plain,)).fetchone() == (False,)
+        assert conn.execute(read, (flagged,)).fetchone() == (True,)
+        conn.execute(
+            "UPDATE loan SET interest_only_before_first_payment = true WHERE id = %s", (plain,)
+        )
+        assert conn.execute(read, (plain,)).fetchone() == (True,)
+        with pytest.raises(errors.NotNullViolation), conn.transaction():
+            _loan(conn, a, interest_only_before_first_payment=None)
+
+
+def test_0010_downgrade_refuses_while_a_loan_is_interest_only():
+    """0009 has no column for the flag; dropping it would change that loan's schedule, and a
+    downgrade never rewrites data. The owner has no workspace set, where forced RLS hides
+    every row: the guard must still see them."""
+    name = create_database()
+    try:
+        alembic(name, "upgrade", "0010_loan_interest_only")
+        ws = uuid.uuid4()
+        with _admin(name) as conn:
+            conn.execute("INSERT INTO workspace (id, name) VALUES (%s, 'A')", (ws,))
+            conn.execute(f"SET ROLE {OWNER}")
+            conn.execute("SELECT set_config('app.workspace_id', %s, false)", (str(ws),))
+            loan = _loan(conn, ws, interest_only_before_first_payment=True)
+        with pytest.raises(DBAPIError, match="refused: a loan is flagged interest only"):
+            alembic(name, "downgrade", "0009_payout_price_categories")
+        with _admin(name) as conn:
+            assert conn.execute("SELECT version_num FROM alembic_version").fetchall() == [
+                ("0010_loan_interest_only",)
+            ]
+            forced = conn.execute(
+                "SELECT relforcerowsecurity FROM pg_class WHERE oid = 'loan'::regclass"
+            ).fetchone()
+            assert forced == (True,)  # the refused downgrade's NO FORCE was rolled back
+            conn.execute(
+                "UPDATE loan SET interest_only_before_first_payment = false WHERE id = %s",
+                (loan,),
+            )
+        alembic(name, "downgrade", "0009_payout_price_categories")
+        with _admin(name) as conn:
+            columns = conn.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = 'loan'"
+            ).fetchall()
+            assert ("interest_only_before_first_payment",) not in columns
+        alembic(name, "upgrade", "head")
+    finally:
+        drop_database(name)
+
+
 def test_rule_split_methods_need_their_scope(connect, workspaces):
     a, _ = workspaces
     matcher = {"counterparty_iban_hmac": IBAN_HMAC_HEX}

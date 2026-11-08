@@ -6,6 +6,11 @@ Conventions:
 - Interest is 30E/360 and accrues over the period it pays for, in arrears: from the previous
   due date (disbursed_on for payment 1) up to but not including due_on. Period 1 has
   days360(disbursed_on, first_payment_on) days, every later period 30.
+- interest_only_before_first_payment (a loan paid out in parts): before first_payment_on the
+  lender charges interest only, outside this schedule, so period 1 runs from one month before
+  first_payment_on and has 30 days, on the full principal, like every later period. A loan
+  paid out after that day has no interest-only time: period 1 stays days360(disbursed_on,
+  first_payment_on). Flag off: unchanged.
 - Each day accrues at the rate in force that day: nominal_rate up to and including
   fixed_until, follow_up_rate after it (null = keep nominal_rate). A period whose due date is
   on or before the day after fixed_until is entirely at nominal_rate; one starting on or after
@@ -57,7 +62,7 @@ def _entries(terms: LoanTerms) -> Iterator[ScheduleEntry]:
     # First day at the follow-up rate; None when the rate never changes.
     switch_on = None if terms.fixed_until is None else terms.fixed_until + timedelta(days=1)
     follow_up = terms.nominal_rate if terms.follow_up_rate is None else terms.follow_up_rate
-    start = terms.disbursed_on
+    start, first_days = _first_period(terms)
     number = 0
     while balance > 0:
         number += 1
@@ -68,7 +73,7 @@ def _entries(terms: LoanTerms) -> Iterator[ScheduleEntry]:
                 at_number=number,
             )
         due_on = _add_months(terms.first_payment_on, number - 1)
-        days = _days360(terms.disbursed_on, terms.first_payment_on) if number == 1 else 30
+        days = first_days if number == 1 else 30
         old_days = _days_at_old_rate(start, due_on, days, switch_on)
         # Divide last: days/360 is a repeating decimal, and rounding it first can push an
         # exact half cent (e.g. 50.205) just below the tie, so half-up would round it down.
@@ -100,6 +105,15 @@ def _entries(terms: LoanTerms) -> Iterator[ScheduleEntry]:
         )
         balance = closing
         start = due_on
+
+
+def _first_period(terms: LoanTerms) -> tuple[date, int]:
+    """Start and 30E/360 days of period 1."""
+    if terms.interest_only_before_first_payment:
+        month_before = _add_months(terms.first_payment_on, -1)
+        if terms.disbursed_on <= month_before:
+            return month_before, 30
+    return terms.disbursed_on, _days360(terms.disbursed_on, terms.first_payment_on)
 
 
 def _days_at_old_rate(start: date, due_on: date, days: int, switch_on: date | None) -> int:

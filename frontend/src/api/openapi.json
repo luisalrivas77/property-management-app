@@ -8364,6 +8364,11 @@
             ],
             "title": "Follow Up Rate"
           },
+          "interest_only_before_first_payment": {
+            "type": "boolean",
+            "title": "Interest Only Before First Payment",
+            "default": false
+          },
           "property_id": {
             "type": "string",
             "format": "uuid",
@@ -8482,6 +8487,10 @@
             ],
             "title": "Follow Up Rate"
           },
+          "interest_only_before_first_payment": {
+            "type": "boolean",
+            "title": "Interest Only Before First Payment"
+          },
           "account_iban": {
             "anyOf": [
               {
@@ -8575,6 +8584,11 @@
               }
             ],
             "title": "Follow Up Rate"
+          },
+          "interest_only_before_first_payment": {
+            "type": "boolean",
+            "title": "Interest Only Before First Payment",
+            "default": false
           }
         },
         "additionalProperties": false,
