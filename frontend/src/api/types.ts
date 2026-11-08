@@ -1971,7 +1971,7 @@ export interface components {
          * @description §8.2. Default tax treatment in the comment (rules/categories.py is the source).
          * @enum {string}
          */
-        AllocationCategory: "rent_cold" | "operating_costs_prepayment" | "operating_costs_settlement" | "deposit_in" | "deposit_out" | "owner_transfer_in" | "owner_transfer_out" | "loan_interest" | "loan_principal" | "loan_fees" | "loan_disbursement" | "hausgeld_umlagefaehig" | "hausgeld_verwaltung" | "hausgeld_ruecklage" | "grundsteuer" | "insurance" | "repairs" | "renovation" | "purchase_price" | "acquisition_cost" | "professional_fees" | "bank_fees" | "other_income" | "other_expense" | "uncategorized";
+        AllocationCategory: "rent_cold" | "operating_costs_prepayment" | "operating_costs_settlement" | "deposit_in" | "deposit_out" | "owner_transfer_in" | "owner_transfer_out" | "loan_interest" | "loan_principal" | "loan_fees" | "loan_disbursement" | "hausgeld_umlagefaehig" | "hausgeld_verwaltung" | "hausgeld_ruecklage" | "property_management" | "grundsteuer" | "insurance" | "repairs" | "renovation" | "purchase_price" | "acquisition_cost" | "professional_fees" | "bank_fees" | "other_income" | "other_expense" | "uncategorized";
         /**
          * AllocationDraft
          * @description What a matcher, a rule, the model or the user proposes for part of a transaction.
@@ -3256,6 +3256,8 @@ export interface components {
             tenancy_id?: string | null;
             /** Loan Id */
             loan_id?: string | null;
+            /** Categories */
+            categories?: components["schemas"]["AllocationCategory"][] | null;
             /**
              * Recurring
              * @default false
@@ -4036,7 +4038,7 @@ export interface components {
          * @description matching_rule.split_method (D25): how a rule splits, never how much.
          * @enum {string}
          */
-        SplitMethod: "single_category" | "by_rent_schedule" | "by_loan_schedule" | "by_wirtschaftsplan" | "owner_transfer";
+        SplitMethod: "single_category" | "by_rent_schedule" | "by_loan_schedule" | "by_wirtschaftsplan" | "owner_transfer" | "as_last_split";
         /**
          * StatementExtraction
          * @description PDF Kontoauszug (§7.1): balances and lines. Every amount is a model reading, so the
