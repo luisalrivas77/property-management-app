@@ -721,8 +721,8 @@ def test_a_same_amount_only_rule_books_only_the_waiting_lines_of_its_amount(
     world, app_engine, tmp_path
 ):
     """D49 (8): answered "Nein, nur Zahlungen über 120,00 €", the rule's re-check books the
-    waiting lines of that amount; a line of another amount from the same IBAN gets the rule's
-    proposal with its question and stays in the inbox, never confirmed."""
+    waiting lines of that amount; a line of another amount from the same IBAN is left as it
+    was (no proposal on a single-kind history, D49 (5)) and stays in the inbox."""
     first = world.line(date(2026, 2, 16), "-120.00", iban=STADT_IBAN, purpose="Grundsteuer")
     same = world.line(date(2026, 5, 15), "-120.00", iban=STADT_IBAN, purpose="Grundsteuer")
     other = world.line(date(2026, 5, 20), "-45.00", iban=STADT_IBAN, purpose="Gebuehren")
@@ -747,22 +747,13 @@ def test_a_same_amount_only_rule_books_only_the_waiting_lines_of_its_amount(
     deps = _deps(app_engine, tmp_path, client)
     plans = run_rematch_waiting(deps, workspace_id=world.ws, trigger=job.args["trigger"], attempt=0)
     assert sorted((p.outcome, p.reason) for p in plans) == [
+        ("skipped", "routing.no_match"),
         ("written", "routing.auto_confirm"),
-        ("written", "routing.review"),
     ]
     assert client.requests == []
     (booked,) = _rows(world, same)
     assert (booked.status, booked.rule_id) == ("confirmed", rule.id)
-    (asked,) = _rows(world, other)
-    assert (asked.status, asked.method, asked.category, asked.rule_id) == (
-        "proposed",
-        "rule",
-        "grundsteuer",
-        rule.id,
-    )
-    assert asked.question.startswith(
-        "Der Betrag weicht von der letzten Buchung ab (zuletzt 120,00 €"
-    )
+    assert _rows(world, other) == []
     assert _hit_count(world, rule.id) == 1
     assert other in {i.transaction_id for i in world.query(review.inbox)}
 

@@ -550,6 +550,56 @@ def test_a_newer_answer_replaces_the_rule_with_the_same_split(world):
     assert [e.type for e in _events(world, first.id)] == ["rule.created", "rule.disabled"]
 
 
+def test_the_same_category_with_another_scope_replaces_the_rule(world):
+    """Review F4: "same split" is split method + category; a second rule of one category on
+    one matcher (here with a property) replaces the first, so the two never cancel out."""
+    tx = world.line(date(2024, 6, 3), "-312.40", iban=WEG_IBAN)
+    first = _put(world, tx, _answer(tx, ("-312.40", C.INSURANCE)), learn_rule=True).rule
+    tx2 = world.line(date(2025, 6, 3), "-330.10", iban=WEG_IBAN)
+    second = _put(
+        world,
+        tx2,
+        _answer(tx2, ("-330.10", C.INSURANCE), property_id=world.property_id),
+        learn_rule=True,
+    ).rule
+    assert second.property_id == world.property_id
+    assert [r.id for r in world.query(rules_learned.enabled_rules)] == [second.id]
+    assert first.id != second.id
+
+
+def test_correcting_a_line_a_rule_booked_retires_that_rule(world):
+    """Review F2: the rule booked the line and the person answers it with another split and
+    ticks the box: a correction, so the old rule goes, as before D49."""
+    tx = world.line(date(2024, 6, 3), "-312.40", iban=WEG_IBAN)
+    wrong = _put(world, tx, _answer(tx, ("-312.40", C.INSURANCE)), learn_rule=True).rule
+    later = world.line(date(2024, 7, 3), "-50.00", iban=WEG_IBAN)
+    _match(world, later)
+    (row,) = _rows(world, later)
+    assert (row.status, row.rule_id) == ("confirmed", wrong.id)
+    right = _put(world, later, _answer(later, ("-50.00", C.OTHER_EXPENSE)), learn_rule=True).rule
+    assert [r.id for r in world.query(rules_learned.enabled_rules)] == [right.id]
+    assert [e.type for e in _events(world, wrong.id)] == ["rule.created", "rule.disabled"]
+
+
+def test_answering_a_proposal_with_another_kind_keeps_the_rule(world):
+    """Review F2: a line that held only a proposal (here the model's) was not booked by the
+    rule, so an answer with another category is a second kind; both rules stay."""
+    tx = world.line(date(2024, 6, 3), "-312.40", iban=WEG_IBAN)
+    first = _put(world, tx, _answer(tx, ("-312.40", C.INSURANCE)), learn_rule=True).rule
+    other = world.line(date(2024, 7, 3), "-50.00", iban=WEG_IBAN)
+    world.cmd(
+        allocations.record_set,
+        _answer(other, ("-50.00", C.INSURANCE)).model_copy(
+            update={"method": AllocationMethod.LLM, "confidence": Decimal("0.600")}
+        ),
+        confirm=False,
+        auto=False,
+    )
+    second = _put(world, other, _answer(other, ("-50.00", C.OTHER_EXPENSE)), learn_rule=True).rule
+    enabled = world.query(rules_learned.enabled_rules)
+    assert {r.id for r in enabled} == {first.id, second.id} and len(enabled) == 2
+
+
 def test_a_second_kind_on_the_same_matcher_keeps_both_rules(world):
     """D49: another category ticked on the same IBAN and sign is a second kind of payment,
     not a correction: both rules stay. Before D49 the second tick disabled the first rule
@@ -684,7 +734,7 @@ def test_a_rules_near_miss_does_not_preempt_a_matcher(world):
 def test_the_box_asks_about_other_waiting_amounts_and_the_flag_books_only_this_one(world):
     """D49 (8): the panel lists the other amounts waiting from the IBAN; answering "Nein,
     nur Zahlungen über 35,70 €" learns a same_amount_only rule, which books that amount
-    and only proposes any other."""
+    and leaves any other alone (single-kind history: no proposal, D49 (5))."""
     fee = _hv(world, date(2026, 2, 3), "-35.70", "Verwaltergebuehr 02/2026")
     hg = _hv(world, date(2026, 2, 2), "-380.00", "Wohngeld 02/2026")
     _hv(world, date(2026, 3, 2), "-380.00", "Wohngeld 03/2026")
@@ -718,9 +768,9 @@ def test_the_box_asks_about_other_waiting_amounts_and_the_flag_books_only_this_o
     _match(world, fee2)
     (row,) = _rows(world, fee2)
     assert (row.status, row.rule_id) == ("confirmed", result.rule.id)
-    _match(world, hg)
-    (row,) = _rows(world, hg)
-    assert (row.status, row.rule_id, row.question) == ("proposed", result.rule.id, FEE_QUESTION)
+    plan = _match(world, hg)
+    assert (plan.outcome, plan.reason) == ("skipped", "routing.no_match")
+    assert _rows(world, hg) == []
 
 
 def test_no_other_amounts_are_listed_without_a_learnable_rule(world):

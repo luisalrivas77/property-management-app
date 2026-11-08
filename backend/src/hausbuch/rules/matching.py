@@ -201,8 +201,7 @@ class _Booked:
 @dataclass(frozen=True)
 class _NearMiss:
     found: AllocationSet
-    latest: _Booked | None
-    distance: Decimal | None
+    latest: _Booked | None  # the latest history line of the hit's category set, if any
 
 
 def rule_answer(
@@ -212,9 +211,10 @@ def rule_answer(
     history: Sequence[HistoryLine],
 ) -> AllocationSet | None:
     """The learned rules' answer for the line (D49, rule_history.yaml): the hits that stand,
-    when they agree (confidence 1, auto-confirm); else the closest near miss as a proposal
-    (GUARDED_CONFIDENCE and a question; the service uses it only when no matcher answers);
-    else None. `rules` oldest first; `history` may hold any lines, only those of the same
+    when they agree (confidence 1, auto-confirm); else, in a mixed history, the near miss
+    whose category set has the strictly closest latest amount of all the history's sets, as a
+    proposal (GUARDED_CONFIDENCE and a question; the service uses it only when no matcher
+    answers); else None. `rules` oldest first; `history` may hold any lines, only those of the same
     IBAN hash and sign whose current rows are all confirmed count."""
     hits = [(rule, s) for rule in rules if (s := apply_rule(rule, tx, context)) is not None]
     if not hits:
@@ -230,27 +230,46 @@ def rule_answer(
         if not rule.same_amount_only and all(b.kind == kind for b in booked):
             standing.append(found)  # single-kind: any amount, as before D49
             continue
-        latest = max(
-            (b for b in booked if b.kind == kind),
-            key=lambda b: (b.booking_date, str(b.transaction_id)),
-            default=None,
-        )
+        latest = max((b for b in booked if b.kind == kind), key=_order, default=None)
         if latest is not None and latest.amount == tx.amount:
             standing.append(found)
         else:
-            distance = None if latest is None else abs(tx.amount - latest.amount)
-            near.append(_NearMiss(found, latest, distance))
+            near.append(_NearMiss(found, latest))
     if standing:
         first = standing[0]
         return first if all(same_split(first, other) for other in standing[1:]) else None
-    measured = [n for n in near if n.distance is not None]
-    if not measured:
+    closest = _closest_kind(tx, booked)
+    if closest is None:
         return None
-    best = min(n.distance for n in measured)  # type: ignore[type-var]
-    closest = [n for n in measured if n.distance == best]
-    if any(not same_split(closest[0].found, n.found) for n in closest[1:]):
+    of_kind = [n for n in near if n.latest is not None and n.latest.kind == closest]
+    if not of_kind or any(not same_split(of_kind[0].found, n.found) for n in of_kind[1:]):
         return None
-    return _proposal(closest[0])
+    return _proposal(of_kind[0])
+
+
+def _closest_kind(
+    tx: MatchTransaction, booked: Sequence[_Booked]
+) -> frozenset[AllocationCategory] | None:
+    """The category set whose latest line's amount is strictly the closest to the line's,
+    among every set in a mixed history (sets no rule books included); None for a
+    single-kind or empty history, or a tie (D49 (5))."""
+    latest: dict[frozenset[AllocationCategory], _Booked] = {}
+    for b in booked:
+        known = latest.get(b.kind)
+        if known is None or _order(b) > _order(known):
+            latest[b.kind] = b
+    if len(latest) < 2:
+        return None
+    ranked = sorted(latest.items(), key=lambda item: abs(tx.amount - item[1].amount))
+    best, runner_up = ranked[0][1], ranked[1][1]
+    if abs(tx.amount - best.amount) == abs(tx.amount - runner_up.amount):
+        return None
+    return ranked[0][0]
+
+
+def _order(b: _Booked) -> tuple[date, str]:
+    """Which history line is the latest: booking date, then transaction id."""
+    return (b.booking_date, str(b.transaction_id))
 
 
 def same_split(a: AllocationSet, b: AllocationSet) -> bool:
