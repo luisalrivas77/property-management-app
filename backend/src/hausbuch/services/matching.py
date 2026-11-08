@@ -633,14 +633,27 @@ def _any_hit(rules: list[MatchingRule], tx: MatchTransaction) -> bool:
 def rule_history(conn: Connection, tx: MatchTransaction) -> list[HistoryLine]:
     """The other lines from the line's IBAN hash with the same sign, not excluded as a
     duplicate, with their current (not superseded) allocation rows, for rules.matching.
-    rule_answer (D49), which keeps those whose rows are all confirmed. Empty for a line
+    rule_answer (D49), which keeps those whose rows are all confirmed. Each row carries its
+    amount, scope and recurring flag, which an as_last_split rule copies (D51). Empty for a line
     without an IBAN hash or of amount 0."""
     if tx.counterparty_iban_hmac is None or tx.amount == 0:
         return []
     t = transaction_table.c
     a = allocation_table.c
     rows = conn.execute(
-        select(t.id, t.booking_date, t.amount, a.category, a.status)
+        select(
+            t.id,
+            t.booking_date,
+            t.amount,
+            a.category,
+            a.status,
+            a.amount.label("part_amount"),
+            a.property_id,
+            a.unit_id,
+            a.tenancy_id,
+            a.loan_id,
+            a.recurring,
+        )
         .join(allocation_table, a.transaction_id == t.id)
         .where(
             t.counterparty_iban_hmac == bytes.fromhex(tx.counterparty_iban_hmac),
@@ -649,12 +662,23 @@ def rule_history(conn: Connection, tx: MatchTransaction) -> list[HistoryLine]:
             t.excluded_as_duplicate_of.is_(None),
             a.status != AllocationStatus.SUPERSEDED.value,
         )
-        .order_by(t.booking_date, t.id)
+        .order_by(t.booking_date, t.id, a.recorded_at, a.id)
     ).all()
     lines: dict[UUID, tuple[Row, list[HistoryRow]]] = {}
     for row in rows:
         _, parts = lines.setdefault(row.id, (row, []))
-        parts.append(HistoryRow(category=row.category, status=row.status))
+        parts.append(
+            HistoryRow(
+                category=row.category,
+                status=row.status,
+                amount=row.part_amount,
+                property_id=row.property_id,
+                unit_id=row.unit_id,
+                tenancy_id=row.tenancy_id,
+                loan_id=row.loan_id,
+                recurring=row.recurring,
+            )
+        )
     return [
         HistoryLine(
             transaction_id=row.id,
@@ -1182,6 +1206,33 @@ def _similar(conn: Connection, line: Line, limit: int = 5) -> list[SimilarAnswer
 def only_property(conn: Connection) -> UUID | None:
     ids = conn.execute(select(property_table.c.id).limit(2)).scalars().all()
     return ids[0] if len(ids) == 1 else None
+
+
+def only_loan(conn: Connection, property_id: UUID | None) -> tuple[UUID | None, UUID | None]:
+    """D51: the workspace's one loan, when it is of `property_id`, and its Darlehensvertrag
+    when exactly one document of that subtype is linked to it, for a model suggestion of a
+    loan category (jobs.matching). (None, None) with no loan, two or more, or no property;
+    (loan, None) without exactly one contract. Never a choice between records: the model
+    names a category only, code fills the one record it can be."""
+    loans = conn.execute(select(loan_table.c.id, loan_table.c.property_id).limit(2)).all()
+    if property_id is None or len(loans) != 1 or loans[0].property_id != property_id:
+        return None, None
+    loan_id = loans[0].id
+    contracts = (
+        conn.execute(
+            select(document_table.c.id)
+            .join(link_table, link_table.c.document_id == document_table.c.id)
+            .where(
+                link_table.c.loan_id == loan_id,
+                document_table.c.subtype == DocumentSubtype.LOAN_CONTRACT.value,
+            )
+            .distinct()
+            .limit(2)
+        )
+        .scalars()
+        .all()
+    )
+    return loan_id, contracts[0] if len(contracts) == 1 else None
 
 
 def llm_period(text: str | None, tx: MatchTransaction, recurring: bool):  # noqa: ANN201

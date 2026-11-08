@@ -11,7 +11,9 @@ is tested with a fake model client and no queue.
   the line is categorized by the model (Sonnet; one retry on the hard model when the answer
   is marked ambiguous, D17), the set is checked by code (rules.allocations.check_sum) and
   written as an `llm` set, auto-confirmed only when the workspace's auto_accept_llm is on and
-  the category's threshold is met (rules.review.route). When a matcher's set lands in review
+  the category's threshold is met (rules.review.route). Code scopes the model's parts: the
+  one property, and for a loan category the one loan, a payout with that loan's one
+  Darlehensvertrag as its Beleg (D51). When a matcher's set lands in review
   and the AI layer is on, the model words its reasoning and question (Haiku); any failure
   there falls back to the matcher's template text.
 - rematch_on_evidence: a new reading of an invoice, Bescheid, Grundsteuerbescheid or
@@ -62,6 +64,7 @@ from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.rules.allocations import check_sum
 from hausbuch.rules.errors import RuleError
 from hausbuch.schemas.allocation import (
+    AllocationCategory,
     AllocationDraft,
     AllocationMethod,
     AllocationSet,
@@ -164,6 +167,8 @@ class _Prepared:
     amount: Any = None
     tx: Any = None
     property_id: UUID | None = None
+    loan_id: UUID | None = None  # the one loan, for a loan category (D51)
+    loan_contract_id: UUID | None = None  # its one Darlehensvertrag, for a payout (D51)
 
 
 def run_match_transaction(
@@ -211,12 +216,16 @@ def _match(
             line = matching.load_line(conn, transaction_id)
             assert line is not None
             data = matching.categorize_input(conn, line)
+            property_id = matching.only_property(conn)
+            loan_id, contract_id = matching.only_loan(conn, property_id)
             prepared = _Prepared(
                 plan,
                 data=_payload(data),
                 amount=line.tx.amount,
                 tx=line.tx,
-                property_id=matching.only_property(conn),
+                property_id=property_id,
+                loan_id=loan_id,
+                loan_contract_id=contract_id,
             )
     if plan.outcome == "categorize":
         found, model = _categorize(deps, workspace_id, transaction_id, prepared, log)
@@ -288,15 +297,32 @@ def _categorize(
     return found, model
 
 
+_LOAN_CATEGORIES = frozenset(
+    {
+        AllocationCategory.LOAN_INTEREST,
+        AllocationCategory.LOAN_PRINCIPAL,
+        AllocationCategory.LOAN_FEES,
+        AllocationCategory.LOAN_DISBURSEMENT,
+    }
+)
+
+
 def _drafts(out: LlmMatchOutput, prepared: _Prepared) -> list[AllocationDraft]:
+    """The model's parts as drafts, scoped by code: the one property, and for a loan category
+    the one loan, a payout also carrying that loan's one contract as its Beleg (D51). The
+    model never picks a record; with two loans the part has none and the user picks it."""
     drafts = []
     for part in out.allocations:
         period = matching.llm_period(part.service_period, prepared.tx, part.recurring)
+        loan_part = part.category in _LOAN_CATEGORIES
+        payout = part.category is AllocationCategory.LOAN_DISBURSEMENT
         drafts.append(
             AllocationDraft(
                 amount=part.amount,
                 category=part.category,
                 property_id=prepared.property_id,
+                loan_id=prepared.loan_id if loan_part else None,
+                document_id=prepared.loan_contract_id if payout else None,
                 service_period_start=None if period is None else period.start,
                 service_period_end=None if period is None else period.end,
                 recurring=part.recurring,

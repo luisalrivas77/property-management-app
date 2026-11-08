@@ -237,7 +237,7 @@ def record_hit(ctx: CommandContext, rule_id: UUID) -> None:
 
 
 _CREATE = set(MatchingRuleCreate.model_fields)
-_SPLIT = {"split_method", "category"}
+_SPLIT = {"split_method", "category", "categories"}  # categories: as_last_split's kind (D51)
 
 
 def _split(rule: MatchingRuleCreate) -> dict[str, Any]:

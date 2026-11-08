@@ -32,6 +32,7 @@ from hausbuch.schemas.allocation import (
     AllocationDraft,
     AllocationMethod,
     AllocationSet,
+    SplitMethod,
 )
 from hausbuch.schemas.api import ConfirmAllocationsBody, InboxItemKind
 from hausbuch.schemas.enums import AllocationStatus, ImportStatus
@@ -660,6 +661,78 @@ def test_rule_history_reads_the_current_rows_of_the_same_payer_and_sign(world):
         (corrected, Decimal("-35.70"), [(C.HAUSGELD_VERWALTUNG, AllocationStatus.CONFIRMED)]),
         (proposed, Decimal("-380.00"), [(C.HAUSGELD_UMLAGEFAEHIG, AllocationStatus.PROPOSED)]),
     ]
+
+
+def test_rule_history_rows_carry_what_as_last_split_copies(world):
+    """D51: each history row has its amount, scope and recurring flag."""
+    hg = _hv(world, date(2026, 2, 2), "-380.00", "Hausgeld 02/2026")
+    answer = _answer(
+        hg,
+        ("-260.00", C.HAUSGELD_UMLAGEFAEHIG),
+        ("-120.00", C.HAUSGELD_RUECKLAGE),
+        property_id=world.property_id,
+    )
+    answer = answer.model_copy(
+        update={
+            "allocations": [a.model_copy(update={"recurring": True}) for a in answer.allocations]
+        }
+    )
+    _put(world, hg, answer, learn_rule=False)
+    tx = _hv(world, date(2026, 3, 2), "-380.00", "Hausgeld 03/2026")
+    (line,) = world.query(matching.rule_history, _tx(world, tx))
+    got = sorted((r.category, r.amount, r.property_id, r.loan_id, r.recurring) for r in line.rows)
+    assert got == [
+        (C.HAUSGELD_RUECKLAGE, Decimal("-120.00"), world.property_id, None, True),
+        (C.HAUSGELD_UMLAGEFAEHIG, Decimal("-260.00"), world.property_id, None, True),
+    ]
+
+
+MGMT_QUESTION = (
+    "Der Betrag weicht von der letzten Buchung ab (zuletzt 29,75 € als „Mietverwaltung "
+    "(Sondereigentumsverwaltung)“ gebucht). Stimmt die Zuordnung?"
+)
+
+
+def test_a_split_hausgeld_and_the_management_fee_each_learn_their_rule(world):
+    """Luis (8 Nov 2026, D51): the Hausverwaltung debits the Hausgeld, split as its purpose
+    text states into the reserve and the operating costs, and a separate Mietverwaltung fee,
+    both from one IBAN. Both answers learn a rule by default (every category has a
+    threshold), the next month books itself, a raised fee is asked about, and a Hausgeld of
+    another amount is left for review: its parts would have to be computed (D40)."""
+    hg = _hv(world, date(2026, 2, 2), "-380.00", "Hausgeld 02/2026 Ruecklage 120,00")
+    fee = _hv(world, date(2026, 2, 3), "-29.75", "Mietverwaltung 02/2026")
+    parts = (("-260.00", C.HAUSGELD_UMLAGEFAEHIG), ("-120.00", C.HAUSGELD_RUECKLAGE))
+    first = _put(world, hg, _answer(hg, *parts, property_id=world.property_id))
+    split = first.rule  # learn_rule left out: the default decides
+    assert split is not None and split.split_method is SplitMethod.AS_LAST_SPLIT
+    assert split.categories == [C.HAUSGELD_RUECKLAGE, C.HAUSGELD_UMLAGEFAEHIG]
+    mgmt = _put(
+        world, fee, _answer(fee, ("-29.75", C.PROPERTY_MANAGEMENT), property_id=world.property_id)
+    ).rule
+    assert mgmt is not None and mgmt.split_method is SplitMethod.SINGLE_CATEGORY
+
+    hg2 = _hv(world, date(2026, 3, 2), "-380.00", "Hausgeld 03/2026 Ruecklage 120,00")
+    fee2 = _hv(world, date(2026, 3, 3), "-29.75", "Mietverwaltung 03/2026")
+    for tx in (hg2, fee2):
+        _match(world, tx)
+    assert sorted((r.category, r.amount, r.status, r.rule_id) for r in _rows(world, hg2)) == [
+        ("hausgeld_ruecklage", Decimal("-120.00"), "confirmed", split.id),
+        ("hausgeld_umlagefaehig", Decimal("-260.00"), "confirmed", split.id),
+    ]
+    (row,) = _rows(world, fee2)
+    assert (row.category, row.status, row.rule_id) == ("property_management", "confirmed", mgmt.id)
+
+    raised = _hv(world, date(2026, 4, 3), "-31.00", "Mietverwaltung 04/2026")
+    _match(world, raised)
+    (row,) = _rows(world, raised)
+    assert (row.category, row.status, row.question) == (
+        "property_management",
+        "proposed",
+        MGMT_QUESTION,
+    )
+    other = _hv(world, date(2026, 4, 2), "-395.00", "Hausgeld 04/2026 Ruecklage 135,00")
+    _match(world, other)
+    assert _rows(world, other) == []
 
 
 def test_two_kinds_from_one_iban_each_book_their_own_amount(world):
