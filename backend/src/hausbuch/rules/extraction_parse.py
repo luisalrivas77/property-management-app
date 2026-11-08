@@ -35,6 +35,16 @@ _IBAN_IN_TEXT = re.compile(r"[A-Za-z]{2}[0-9]{2}(?:\s?[A-Za-z0-9]){10,32}")
 _DIGITS = re.compile(r"[0-9]")
 # A trailing "(Seite 1)", "(S. 2)", "(Seite 1, § 1)": the model's page reference, not the value.
 _PAGE_REFERENCE = re.compile(r"\s*\((?:seite|s\.)\s*[0-9]+[^()]*\)\s*$", re.IGNORECASE)
+# A loan number's label the model wrote into contract_number ("Kontonummer 1234567890", Luis's
+# Sparkasse contract, 8 Nov 2026): Kontonummer, Konto-Nr., Darlehenskontonummer,
+# Darlehensnummer, Darlehens-Nr., Vertragsnummer, Vertrags-Nr. or Nr.
+_NUMBER_LABEL = r"(?:(?:darlehens)?konto|darlehens|vertrags)\s*-?\s*(?:nummer|nr\b\.?)|nr\b\.?"
+# The label at the start, with an optional colon; it must be followed by a space, a colon, the
+# end, or end in a dot, so "NR-2026-1" keeps its "NR".
+_LEADING_LABEL = re.compile(rf"^(?:{_NUMBER_LABEL})(?:\s*:\s*|\s+|(?<=\.)|$)", re.IGNORECASE)
+_LABEL_INSIDE = re.compile(rf"\b(?:{_NUMBER_LABEL})", re.IGNORECASE)
+_TRAILING_PARENTHETICAL = re.compile(r"\s*\(([^()]*)\)\s*$")
+_LABELLED_FIELDS = frozenset({"contract_number"})
 
 _MONTHS = {
     "januar": 1, "jänner": 1, "februar": 2, "märz": 3, "maerz": 3, "april": 4, "mai": 5,
@@ -71,6 +81,8 @@ def parse_lines(
         if match is None or match.group(1) not in model.model_fields:
             continue
         key, raw = match.group(1), _without_page_reference(match.group(2).strip())
+        if key in _LABELLED_FIELDS:
+            raw = _without_number_label(raw)
         if not raw or raw.casefold() == UNKNOWN:
             result[key] = ExtractedValue.missing()
             continue
@@ -85,6 +97,20 @@ def _without_page_reference(raw: str) -> str:
     S. and a number. The page is the citation's; left in, it would fail value_in_quote. A
     value that is only a page reference becomes empty, so the field is missing."""
     return _PAGE_REFERENCE.sub("", raw)
+
+
+def _without_number_label(raw: str) -> str:
+    """A contract number without the label the model wrote into it: a trailing parenthetical
+    with no digit or naming a label ("1234567890 (Kontonummer)"), then a leading label with an
+    optional colon ("Kontonummer 1234567890", "Darlehens-Nr.: 4711"). The identifier stays as
+    written; a parenthetical with a digit that names no label ("(Teil 2)") stays too. Only for
+    contract_number: elsewhere brackets and words like these are part of the value."""
+    trailing = _TRAILING_PARENTHETICAL.search(raw)
+    if trailing is not None:
+        inside = trailing.group(1)
+        if not _DIGITS.search(inside) or _LABEL_INSIDE.search(inside):
+            raw = raw[: trailing.start()]
+    return _LEADING_LABEL.sub("", raw.strip(), count=1).strip()
 
 
 def _lines(blocks: list[CitedTextBlock]) -> list[tuple[str, list[int]]]:

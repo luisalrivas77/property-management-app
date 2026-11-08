@@ -99,13 +99,20 @@ DOCS: list[Doc] = [
                 "",
                 "Nennbetrag: 260.000,00 EUR",
                 "Sollzins: 3,65 % p.a., gebunden bis 31.03.2036",
+                "Mindestzins: 0,00 % p.a.",
+                "Danach gilt der veränderliche Sollzins, derzeit 4,85 % p.a.",
                 "Anfängliche Tilgung: 2,00 % p.a.",
                 "Monatliche Rate: 1.224,17 EUR",
             ],
             [
+                # 8 Nov 2026, after Luis's Sparkasse contract: an interest-only sentence (no
+                # expected value, it is free text; rules.prefill decides the flag from it) and
+                # two signing dates, of which the later one is the contract date.
                 "Auszahlung am 01.04.2026. Erste Rate am 30.04.2026.",
+                "Bis zur ersten Rate sind nur die Sollzinsen zu zahlen.",
                 f"Darlehenskonto: {IBAN_A}",
                 "",
+                "Musterbank AG, 18.02.2026",
                 "Musterstadt, den 20.02.2026",
             ],
         ],
@@ -117,6 +124,7 @@ DOCS: list[Doc] = [
             "initial_repayment_rate": "0.02",
             "monthly_payment": "1224.17",
             "fixed_until": "2036-03-31",
+            "follow_up_rate": "0.0485",
             "disbursed_on": "2026-04-01",
             "first_payment_on": "2026-04-30",
             "account_iban": "DE89370400440532013000",

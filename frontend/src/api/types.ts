@@ -3029,7 +3029,7 @@ export interface components {
             document_date?: components["schemas"]["ExtractedValue"];
             /** @description Darlehensgeber */
             lender?: components["schemas"]["ExtractedValue"];
-            /** @description Darlehensnummer / Vertragsnummer */
+            /** @description Darlehensnummer / Vertragsnummer; when none is printed, the loan's Kontonummer. The number only, without its label */
             contract_number?: components["schemas"]["ExtractedValue"];
             /** @description Nennbetrag */
             principal?: components["schemas"]["ExtractedValue"];
@@ -3041,13 +3041,17 @@ export interface components {
             initial_repayment_rate?: components["schemas"]["ExtractedValue"];
             /** @description Ende der Sollzinsbindung */
             fixed_until?: components["schemas"]["ExtractedValue"];
+            /** @description Sollzins p.a. after the Sollzinsbindung ends, if stated: an agreed Anschlusszins, or the variable Sollzins the loan continues at (e.g. 'Der veränderliche Sollzinssatz beträgt derzeit ...'); never the Mindestzins, never the effektiver Jahreszins */
+            follow_up_rate?: components["schemas"]["ExtractedValue"];
             /** @description Auszahlung, if stated */
             disbursed_on?: components["schemas"]["ExtractedValue"];
             /** @description erste Rate, if stated */
             first_payment_on?: components["schemas"]["ExtractedValue"];
+            /** @description the sentence saying that until Tilgungsbeginn, or until the first full Rate, only interest (Sollzinsen) is paid, as written, if the contract has one */
+            interest_only_clause?: components["schemas"]["ExtractedValue"];
             /** @description Darlehenskonto */
             account_iban?: components["schemas"]["ExtractedValue"];
-            /** @description Vertragsdatum: when it was signed, often only as 'Ort, den <Datum>' by the signatures */
+            /** @description Vertragsdatum: when it was signed, often only as 'Ort, den <Datum>' by the signatures; when the parties signed on different dates, the latest of them */
             signed_on?: components["schemas"]["ExtractedValue"];
         };
         /**

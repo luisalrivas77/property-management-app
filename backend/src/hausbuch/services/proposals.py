@@ -429,6 +429,7 @@ def prefill_context(
                 property_id=loan.property_id,
                 lender=loan.lender,
                 contract_number=loan.contract_number,
+                interest_only_before_first_payment=loan.terms.interest_only_before_first_payment,
             )
             for p in props
             for loan in loans.list_loans(conn, p.id)

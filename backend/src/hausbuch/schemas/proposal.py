@@ -149,6 +149,8 @@ class ExistingLoan(Schema):
     property_id: UUID
     lender: str
     contract_number: str | None = None
+    # So a loan contract's interest-only clause proposes the flag only when it changes it.
+    interest_only_before_first_payment: bool = False
 
 
 class ExistingDepositReceipt(Schema):

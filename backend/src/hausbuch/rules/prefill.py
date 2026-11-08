@@ -3,8 +3,9 @@
 build_proposal(kind, extraction, context) -> list[ProposalRecord]. Spec:
 docs/phases/phase-2.md §6.2, §6.3, D14, D15. Pure: no I/O, no model. It decides per record
 whether it creates, patches, corrects or leaves an existing record unchanged, computes the
-derived values (building share, the Rate from the Tilgungssatz, ownership shares, the
-prepayment sum, rent model, the tenancy's unit, an invoice's tax year: D36) and writes notes.
+derived values (building share, the Rate from the Tilgungssatz, a loan's interest-only flag,
+ownership shares, the prepayment sum, rent model, the tenancy's unit, an invoice's tax year:
+D36) and writes notes.
 A financing invoice (Grundschuld, Hypothek, Darlehen) is decided here, not by the
 classifier: it proposes no Nebenkosten row (D35). Nothing it returns reaches a
 domain table: only the user's apply does, through the phase 1 services (D14).
@@ -63,6 +64,13 @@ _PROPERTY_FIELDS = (
 )
 # Milestone dates (D7): never patched, corrected through correct_* (§6.5).
 _MILESTONES = ("notarized_on", "purchase_date")
+# A new loan's fields that are proposed only when the contract states them.
+_LOAN_OPTIONAL = ("contract_number", "fixed_until", "follow_up_rate", "account_iban", "signed_on")
+# A loan contract's clause that only interest is paid until repayment starts (Luis's Sparkasse
+# contract, 8 Nov 2026: "Bis zum Tilgungsbeginn sind nur die Sollzinsen zu diesen Terminen zu
+# zahlen"; also "nur Zinsen", "nur Sollzinsen"), searched in the casefolded clause. A clause
+# without "nur" before the interest ("Die Zinsen sind ... zu zahlen") does not tick the box.
+_INTEREST_ONLY = re.compile(r"\bnur (?:die )?(?:soll)?zinsen\b")
 # A handover protocol is linked to the tenancy whose move-in is this close to its date.
 _HANDOVER_WINDOW_DAYS = 31
 # An invoice whose subject or title names one of these is a financing cost (D35). Deliberately
@@ -452,23 +460,39 @@ class _Builder:
             "nominal_rate": self.ev("nominal_rate"),
             "monthly_payment": monthly,
             "fixed_until": self.ev("fixed_until"),
+            "follow_up_rate": self.ev("follow_up_rate"),
             "disbursed_on": self.ev("disbursed_on"),
             "first_payment_on": self.ev("first_payment_on"),
             "account_iban": self.ev("account_iban"),
+            "signed_on": self.ev("signed_on"),
         }
+        interest_only = self._interest_only()
         loan = _match_loan(self.x, self.ctx.loans)
         if loan is None:
-            optional = ("contract_number", "fixed_until", "account_iban")
-            fields = {f: v for f, v in values.items() if f not in optional or v.value is not None}
+            fields = {
+                f: v for f, v in values.items() if f not in _LOAN_OPTIONAL or v.value is not None
+            }
+            if interest_only is not None:
+                fields["interest_only_before_first_payment"] = interest_only
             self.add("loan", "loan", "create", fields)
         else:
-            fields = {
-                f: v
-                for f, v in values.items()
-                if f not in ("lender", "contract_number") and v.value is not None
-            }
+            # LoanPatch has no signed_on: the contract date is set when the loan is created.
+            keys = ("lender", "contract_number", "signed_on")
+            fields = {f: v for f, v in values.items() if f not in keys and v.value is not None}
+            # The one term the context holds: proposed only when it changes false to true.
+            if interest_only is not None and not loan.interest_only_before_first_payment:
+                fields["interest_only_before_first_payment"] = interest_only
             self.add("loan", "loan", "patch" if fields else "unchanged", fields, target_id=loan.id)
         self.link("link:loan", None if loan is None else loan.id)
+
+    def _interest_only(self) -> ExtractedValue | None:
+        """interest_only_before_first_payment = true, derived from the contract's clause, when
+        the clause says only interest is paid until repayment starts; else None (not
+        proposed, the loan keeps false). Code decides, not the model (principle 1)."""
+        clause = self.ev("interest_only_clause")
+        if clause.value is None or not _INTEREST_ONLY.search(_norm(clause.value)):
+            return None
+        return _derived(True, [("interest_only_clause", clause)])
 
     def _derived_rate(self) -> ExtractedValue | None:
         """Rate = principal x (Sollzins + anfängliche Tilgung) / 12, in cents, half up, when

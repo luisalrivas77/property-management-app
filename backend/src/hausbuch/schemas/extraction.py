@@ -89,18 +89,37 @@ class LoanContractExtraction(_Typing):
     """Darlehensvertrag (contract / loan_contract)."""
 
     lender: ExtractedValue = ev("text", "Darlehensgeber")
-    contract_number: ExtractedValue = ev("text", "Darlehensnummer / Vertragsnummer")
+    # Sparkassen print no Darlehensnummer, only the loan's Kontonummer (Luis's contract, 8 Nov
+    # 2026); a label written into the value anyway is removed by rules.extraction_parse.
+    contract_number: ExtractedValue = ev(
+        "text",
+        "Darlehensnummer / Vertragsnummer; when none is printed, the loan's Kontonummer. The"
+        " number only, without its label",
+    )
     principal: ExtractedValue = ev("money", "Nennbetrag")
     nominal_rate: ExtractedValue = ev("rate", "Sollzins p.a.")
     monthly_payment: ExtractedValue = ev("money", "monatliche Rate, if stated")
     initial_repayment_rate: ExtractedValue = ev("rate", "anfängliche Tilgung p.a.")
     fixed_until: ExtractedValue = ev("date", "Ende der Sollzinsbindung")
+    follow_up_rate: ExtractedValue = ev(
+        "rate",
+        "Sollzins p.a. after the Sollzinsbindung ends, if stated: an agreed Anschlusszins, or the"
+        " variable Sollzins the loan continues at (e.g. 'Der veränderliche Sollzinssatz beträgt"
+        " derzeit ...'); never the Mindestzins, never the effektiver Jahreszins",
+    )
     disbursed_on: ExtractedValue = ev("date", "Auszahlung, if stated")
     first_payment_on: ExtractedValue = ev("date", "erste Rate, if stated")
+    # Code, not the model, decides the loan's interest-only flag from this (rules.prefill).
+    interest_only_clause: ExtractedValue = ev(
+        "text",
+        "the sentence saying that until Tilgungsbeginn, or until the first full Rate, only"
+        " interest (Sollzinsen) is paid, as written, if the contract has one",
+    )
     account_iban: ExtractedValue = ev("iban", "Darlehenskonto")
     signed_on: ExtractedValue = ev(
         "date",
-        "Vertragsdatum: when it was signed, often only as 'Ort, den <Datum>' by the signatures",
+        "Vertragsdatum: when it was signed, often only as 'Ort, den <Datum>' by the signatures;"
+        " when the parties signed on different dates, the latest of them",
     )
 
 

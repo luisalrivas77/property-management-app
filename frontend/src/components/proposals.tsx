@@ -390,6 +390,7 @@ const DERIVED_INPUT: Record<string, string> = {
   principal: "Darlehenssumme",
   nominal_rate: "Sollzins",
   initial_repayment_rate: "anfängliche Tilgung",
+  interest_only_clause: "Klausel „bis Tilgungsbeginn nur Zinsen“",
   buyers: "Käufer",
   ownership_clause: "Erwerbsverhältnis (z. B. „je zur Hälfte“)",
   operating_costs_prepayment: "Betriebskosten-Vorauszahlung",
