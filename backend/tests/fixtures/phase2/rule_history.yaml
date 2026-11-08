@@ -39,6 +39,19 @@
 #     hit.
 # The service runs the matchers before using a proposal (a matcher's answer wins over it);
 # that order is not part of this pure fixture.
+#
+# as_last_split (D51): a rule learned from a split answer that no other split method fits
+# (Luis's Hausgeld, split by hand into the parts its purpose text states). Its kind is
+# rule.categories (the answer's category set; the rule stores no amount, D25). apply_rule
+# copies the parts of the LATEST history line (as above: same IBAN hash and sign, current rows
+# all confirmed; booking date, then transaction id) whose category set equals the kind, when
+# the line's amount equals that line's amount: each part's category, amount, property / unit
+# / tenancy / loan and recurring, the service period from rules.periods.service_period for the
+# new line, no Beleg; method rule, confidence 1.000, no question. Its hit therefore checks the
+# amount itself and stands like by_wirtschaftsplan's. Any other amount, or no such line -> no
+# hit, and never a proposal: the parts at another amount would have to be computed, and a
+# split is only ever copied from the person's own answer (D40). History rows carry the parts
+# (amount and scope) for this; the rows of other cases need only category and status.
 
 ids:
   workspace: &W 0000000a-0000-4000-8000-000000000001
@@ -95,6 +108,25 @@ rules:
     matcher: {counterparty_iban_hmac: *H_HV, purpose_pattern: hausgeld, amount_sign: debit}
     split_method: by_wirtschaftsplan
     property_id: *P
+  split:
+    id: 0000002b-0000-4000-8000-000000000106
+    workspace_id: *W
+    created_at: 2026-02-02T11:00:00Z
+    updated_at: 2026-02-02T11:00:00Z
+    matcher: {counterparty_iban_hmac: *H_HV, amount_sign: debit}
+    split_method: as_last_split
+    categories: [hausgeld_ruecklage, hausgeld_umlagefaehig]
+    recurring: true
+  management:
+    id: 0000002b-0000-4000-8000-000000000107
+    workspace_id: *W
+    created_at: 2026-02-03T11:00:00Z
+    updated_at: 2026-02-03T11:00:00Z
+    matcher: {counterparty_iban_hmac: *H_HV, amount_sign: debit}
+    split_method: single_category
+    category: property_management
+    property_id: *P
+    recurring: true
 
 # History lines reused below. Booked in 2026, all from the Hausverwaltung unless named.
 history:
@@ -102,6 +134,12 @@ history:
   fee_feb: &FEE_FEB {transaction_id: 0000002a-0000-4000-8000-000000000802, booking_date: 2026-02-03, amount: "-35.70", counterparty_iban_hmac: *H_HV, rows: [{category: hausgeld_verwaltung, status: confirmed}]}
   hausgeld_mar: &HG_MAR {transaction_id: 0000002a-0000-4000-8000-000000000803, booking_date: 2026-03-02, amount: "-380.00", counterparty_iban_hmac: *H_HV, rows: [{category: hausgeld_umlagefaehig, status: confirmed}]}
   fee_mar: &FEE_MAR {transaction_id: 0000002a-0000-4000-8000-000000000804, booking_date: 2026-03-03, amount: "-35.70", counterparty_iban_hmac: *H_HV, rows: [{category: hausgeld_verwaltung, status: confirmed}]}
+  # D51: the Hausgeld split by hand into the two parts the purpose text states, and the
+  # separate Mietverwaltung fee, both from the Hausverwaltung's IBAN.
+  split_feb: &SPLIT_FEB {transaction_id: 0000002a-0000-4000-8000-000000000901, booking_date: 2026-02-02, amount: "-380.00", counterparty_iban_hmac: *H_HV, rows: [{category: hausgeld_umlagefaehig, status: confirmed, amount: "-260.00", property_id: *P, recurring: true}, {category: hausgeld_ruecklage, status: confirmed, amount: "-120.00", property_id: *P, recurring: true}]}
+  management_feb: &MGMT_FEB {transaction_id: 0000002a-0000-4000-8000-000000000902, booking_date: 2026-02-03, amount: "-29.75", counterparty_iban_hmac: *H_HV, rows: [{category: property_management, status: confirmed, amount: "-29.75", property_id: *P, recurring: true}]}
+  split_mar: &SPLIT_MAR {transaction_id: 0000002a-0000-4000-8000-000000000903, booking_date: 2026-03-02, amount: "-380.00", counterparty_iban_hmac: *H_HV, rows: [{category: hausgeld_umlagefaehig, status: confirmed, amount: "-255.00", property_id: *P, recurring: true}, {category: hausgeld_ruecklage, status: confirmed, amount: "-125.00", property_id: *P, recurring: true}]}
+  management_mar: &MGMT_MAR {transaction_id: 0000002a-0000-4000-8000-000000000904, booking_date: 2026-03-03, amount: "-29.75", counterparty_iban_hmac: *H_HV, rows: [{category: property_management, status: confirmed, amount: "-29.75", property_id: *P, recurring: true}]}
 
 cases:
   - id: single_kind_any_amount_applies
@@ -380,5 +418,124 @@ cases:
     description: Nothing confirmed to compare with; a flagged rule books nothing.
     rules: [fee_same_amount_only]
     transaction: *TX_FEE
+    history: []
+    expect: null
+
+  # --- as_last_split (D51) -------------------------------------------------------------
+
+  - id: split_same_amount_copies_the_latest_split
+    description: April's Hausgeld is 380.00 like March's; the split rule copies March's two parts (the latest of its kind, not February's), the period is April's, booked without a question. The fee rule's near miss changes nothing.
+    rules: [split, management]
+    transaction: &TX_SPLIT
+      id: 0000002a-0000-4000-8000-000000000711
+      booking_date: 2026-04-02
+      amount: "-380.00"
+      counterparty_name: Muster Hausverwaltung GmbH
+      counterparty_iban_hmac: *H_HV
+      purpose: Hausgeld 04/2026 WE 3 Bewirtschaftung 255,00 Ruecklage 125,00
+    history: [*SPLIT_FEB, *MGMT_FEB, *SPLIT_MAR, *MGMT_MAR]
+    expect:
+      method: rule
+      rule_id: 0000002b-0000-4000-8000-000000000106
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "-255.00", category: hausgeld_umlagefaehig, property_id: *P, service_period_start: 2026-04-01, service_period_end: 2026-04-30, recurring: true}
+        - {amount: "-125.00", category: hausgeld_ruecklage, property_id: *P, service_period_start: 2026-04-01, service_period_end: 2026-04-30, recurring: true}
+
+  - id: split_single_kind_same_amount_copies
+    description: Only Hausgeld lines from the counterparty; the same amount is copied as well.
+    rules: [split]
+    transaction: *TX_SPLIT
+    history: [*SPLIT_FEB, *SPLIT_MAR]
+    expect:
+      method: rule
+      rule_id: 0000002b-0000-4000-8000-000000000106
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "-255.00", category: hausgeld_umlagefaehig, property_id: *P, service_period_start: 2026-04-01, service_period_end: 2026-04-30, recurring: true}
+        - {amount: "-125.00", category: hausgeld_ruecklage, property_id: *P, service_period_start: 2026-04-01, service_period_end: 2026-04-30, recurring: true}
+
+  - id: split_other_amount_single_kind_falls_through
+    description: The Hausgeld went up to 395.00; the parts at the new amount are not known, so the rule books nothing and the line goes on through the order (the model, then review).
+    rules: [split]
+    transaction: &TX_SPLIT_NEW
+      <<: *TX_SPLIT
+      id: 0000002a-0000-4000-8000-000000000712
+      amount: "-395.00"
+      purpose: Hausgeld 04/2026 WE 3 Bewirtschaftung 265,00 Ruecklage 130,00
+    history: [*SPLIT_FEB, *SPLIT_MAR]
+    expect: null
+
+  - id: split_other_amount_mixed_is_no_proposal
+    description: The same 395.00 with the fee in the history. The split kind is the closest, but a split is never proposed at another amount (its parts would have to be computed), and the fee rule's kind is not the closest, so it proposes nothing either.
+    rules: [split, management]
+    transaction: *TX_SPLIT_NEW
+    history: [*SPLIT_FEB, *MGMT_FEB, *SPLIT_MAR, *MGMT_MAR]
+    expect: null
+
+  - id: management_fee_beside_a_split_rule
+    description: The fee line from the same IBAN; the split rule does not hit (no split of 29.75 was ever confirmed) and the fee rule stands at its last amount.
+    rules: [split, management]
+    transaction: &TX_MGMT
+      id: 0000002a-0000-4000-8000-000000000713
+      booking_date: 2026-04-03
+      amount: "-29.75"
+      counterparty_name: Muster Hausverwaltung GmbH
+      counterparty_iban_hmac: *H_HV
+      purpose: Verwaltungsgebuehr Sondereigentum 04/2026
+    history: [*SPLIT_FEB, *MGMT_FEB, *SPLIT_MAR, *MGMT_MAR]
+    expect:
+      method: rule
+      rule_id: 0000002b-0000-4000-8000-000000000107
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "-29.75", category: property_management, property_id: *P, service_period_start: 2026-04-01, service_period_end: 2026-04-30, recurring: true}
+
+  - id: management_fee_new_amount_is_proposed
+    description: The fee went up to 31.00; its kind is the closest (1.25 against 349.00), so the fee rule proposes it with the question; the split rule does not hit.
+    rules: [split, management]
+    transaction:
+      <<: *TX_MGMT
+      id: 0000002a-0000-4000-8000-000000000714
+      amount: "-31.00"
+    history: [*SPLIT_FEB, *MGMT_FEB, *SPLIT_MAR, *MGMT_MAR]
+    expect:
+      method: rule
+      rule_id: 0000002b-0000-4000-8000-000000000107
+      confidence: "0.500"
+      question: "Der Betrag weicht von der letzten Buchung ab (zuletzt 29,75 € als „Mietverwaltung (Sondereigentumsverwaltung)“ gebucht). Stimmt die Zuordnung?"
+      allocations:
+        - {amount: "-31.00", category: property_management, property_id: *P, service_period_start: 2026-04-01, service_period_end: 2026-04-30, recurring: true}
+
+  - id: split_proposed_line_is_not_copied
+    description: March's Hausgeld still waits with a proposal, so it is not history; February's confirmed split is the latest and is copied.
+    rules: [split]
+    transaction: *TX_SPLIT
+    history:
+      - *SPLIT_FEB
+      - {transaction_id: 0000002a-0000-4000-8000-000000000905, booking_date: 2026-03-02, amount: "-380.00", counterparty_iban_hmac: *H_HV, rows: [{category: hausgeld_umlagefaehig, status: proposed, amount: "-255.00", property_id: *P, recurring: true}, {category: hausgeld_ruecklage, status: proposed, amount: "-125.00", property_id: *P, recurring: true}]}
+    expect:
+      method: rule
+      rule_id: 0000002b-0000-4000-8000-000000000106
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "-260.00", category: hausgeld_umlagefaehig, property_id: *P, service_period_start: 2026-04-01, service_period_end: 2026-04-30, recurring: true}
+        - {amount: "-120.00", category: hausgeld_ruecklage, property_id: *P, service_period_start: 2026-04-01, service_period_end: 2026-04-30, recurring: true}
+
+  - id: split_needs_a_line_of_its_own_kind
+    description: The only confirmed 380.00 line was split into three parts (another category set); the two-part rule has nothing of its kind to copy.
+    rules: [split]
+    transaction: *TX_SPLIT
+    history:
+      - {transaction_id: 0000002a-0000-4000-8000-000000000906, booking_date: 2026-03-02, amount: "-380.00", counterparty_iban_hmac: *H_HV, rows: [{category: hausgeld_umlagefaehig, status: confirmed, amount: "-210.00", property_id: *P, recurring: true}, {category: hausgeld_verwaltung, status: confirmed, amount: "-50.00", property_id: *P, recurring: true}, {category: hausgeld_ruecklage, status: confirmed, amount: "-120.00", property_id: *P, recurring: true}]}
+    expect: null
+
+  - id: split_without_history_falls_through
+    rules: [split]
+    transaction: *TX_SPLIT
     history: []
     expect: null

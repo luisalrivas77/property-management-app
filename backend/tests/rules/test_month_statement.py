@@ -8,6 +8,8 @@ from fixture_models_phase2 import MonthStatementFixture, RepeatFixture, load
 
 from hausbuch.schemas.allocation import (
     AllocationSet,
+    HistoryLine,
+    HistoryRow,
     MatchContext,
     MatchingRule,
     MatchTransaction,
@@ -15,7 +17,7 @@ from hausbuch.schemas.allocation import (
     RoutingInput,
 )
 from hausbuch.schemas.bank import ReconcileStatus
-from hausbuch.schemas.enums import ImportStatus
+from hausbuch.schemas.enums import AllocationStatus, ImportStatus
 
 matching = pytest.importorskip("hausbuch.rules.matching", reason="phase 2 rule not implemented")
 review = pytest.importorskip("hausbuch.rules.review", reason="phase 2 rule not implemented")
@@ -97,6 +99,30 @@ def test_second_month_with_learned_rules():
     assert auto * 5 >= len(MONTH.lines) * 4  # >= 80 % auto-matched
 
 
+def _confirmed_line(tx: MatchTransaction, confirmed: AllocationSet) -> HistoryLine:
+    """The answered line once confirmed, as the ledger's history reads it (D49): the parts an
+    as_last_split rule copies (D51)."""
+    return HistoryLine(
+        transaction_id=tx.id,
+        booking_date=tx.booking_date,
+        amount=tx.amount,
+        counterparty_iban_hmac=tx.counterparty_iban_hmac,
+        rows=[
+            HistoryRow(
+                category=d.category,
+                status=AllocationStatus.CONFIRMED,
+                amount=d.amount,
+                property_id=d.property_id,
+                unit_id=d.unit_id,
+                tenancy_id=d.tenancy_id,
+                loan_id=d.loan_id,
+                recurring=d.recurring,
+            )
+            for d in confirmed.allocations
+        ],
+    )
+
+
 @pytest.mark.rule
 @pytest.mark.parametrize("case", REPEAT.cases, ids=lambda c: c.id)
 def test_repeat_answer_is_never_asked_twice(case):
@@ -112,7 +138,8 @@ def test_repeat_answer_is_never_asked_twice(case):
             "updated_at": "2024-05-20T10:00:00Z",
         }
     )
-    found = matching.apply_rule(stored, case.next.transaction, REPEAT.context)
+    history = [_confirmed_line(a.transaction, a.confirmed)]
+    found = matching.apply_rule(stored, case.next.transaction, REPEAT.context, history=history)
     case.next.expect.check(found, case.next.transaction)
     routing = review.route(
         RoutingInput(import_status=ImportStatus.RECONCILED, allocation_set=found)

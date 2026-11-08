@@ -27,6 +27,11 @@
 #                       it does not equal).
 #   by_rent_schedule    as matchers.yaml's rent matcher for rule.tenancy_id.
 #   owner_transfer      as matchers.yaml's owner matcher.
+#   as_last_split       (D51) copies the parts of the latest confirmed line from the same
+#                       counterparty whose category set equals rule.categories, only when the
+#                       line's amount equals that line's amount; read from the ledger's history
+#                       (rule_history.yaml), never stored on the rule. apply_rule without that
+#                       history (as here) -> null: nothing to copy, and nothing is computed.
 #
 # rejected: rule bodies that must fail MatchingRuleCreate validation because they try to store
 # an amount (the "rule stores no amount" schema test; checked by tests/test_fixtures_valid.py).
@@ -90,6 +95,15 @@ rules:
     matcher: {counterparty_iban_hmac: *H_WEG, purpose_pattern: hausgeld, amount_sign: debit}
     split_method: by_wirtschaftsplan
     property_id: *P
+  hausgeld_as_last_split:
+    id: 0000002b-0000-4000-8000-000000000005
+    workspace_id: *W
+    created_at: 2026-02-01T10:00:00Z
+    updated_at: 2026-02-01T10:00:00Z
+    matcher: {counterparty_iban_hmac: *H_WEG, amount_sign: debit}
+    split_method: as_last_split
+    categories: [hausgeld_ruecklage, hausgeld_umlagefaehig]
+    recurring: true
 
 cases:
   - id: single_category
@@ -192,6 +206,15 @@ cases:
       purpose: Hausgeld 01/2027 WE 3
     expect: null
 
+  - id: as_last_split_without_history_is_no_split
+    description: D51. The split is copied from the ledger's latest confirmed line of the rule's kind; without that history there is nothing to copy and no part is computed.
+    rule: hausgeld_as_last_split
+    transaction:
+      <<: *TX_WEG
+      id: 0000002a-0000-4000-8000-000000000108
+      amount: "-300.00"
+    expect: null
+
   - id: disabled_rule_ignored
     rule: insurance_disabled
     transaction:
@@ -220,3 +243,12 @@ rejected:
         - {category: hausgeld_umlagefaehig, amount: "210.00"}
         - {category: hausgeld_verwaltung, amount: "50.00"}
         - {category: hausgeld_ruecklage, amount: "120.00"}
+  - id: as_last_split_with_amounts
+    description: D51. An as_last_split rule names its kind (the category set), never the parts' amounts.
+    rule:
+      matcher: {counterparty_iban_hmac: *H_WEG, amount_sign: debit}
+      split_method: as_last_split
+      categories: [hausgeld_ruecklage, hausgeld_umlagefaehig]
+      split:
+        - {category: hausgeld_umlagefaehig, amount: "220.00"}
+        - {category: hausgeld_ruecklage, amount: "80.00"}

@@ -11,7 +11,8 @@
 # Reading taken for this spec PR (the spec names the two ends, not every category):
 #   0.9  the payments that recur month by month or quarter by quarter with a stable
 #        counterparty: rent and its prepayment, owner transfers, the annuity's two parts,
-#        the three Hausgeld parts, Grundsteuer, insurance, bank fees.
+#        the three Hausgeld parts, Grundsteuer, insurance, bank fees, and the landlord's own
+#        property management fee (Mietverwaltung, added 9 Nov 2026, D51).
 #   null everything else: one-offs whose treatment needs a person (settlements, deposits,
 #        loan fees, professional fees), the loan payout and the purchase price (one-offs,
 #        added 7 Nov 2026), repairs, renovation, acquisition costs (capitalized),
@@ -33,6 +34,7 @@ thresholds:
   - {category: hausgeld_umlagefaehig, threshold: "0.900"}
   - {category: hausgeld_verwaltung, threshold: "0.900"}
   - {category: hausgeld_ruecklage, threshold: "0.900"}
+  - {category: property_management, threshold: "0.900"}
   - {category: grundsteuer, threshold: "0.900"}
   - {category: insurance, threshold: "0.900"}
   - {category: repairs, threshold: null}

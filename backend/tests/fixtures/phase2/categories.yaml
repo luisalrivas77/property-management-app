@@ -21,6 +21,7 @@ categories:
   - {category: hausgeld_umlagefaehig, treatment: deductible}
   - {category: hausgeld_verwaltung, treatment: deductible}
   - {category: hausgeld_ruecklage, treatment: undecided}         # until phase 3 reads the Hausgeldabrechnung
+  - {category: property_management, treatment: deductible}       # the landlord's own Mietverwaltung (Sondereigentumsverwaltung) fee, not the WEG administrator's share inside the Hausgeld (D51)
   - {category: grundsteuer, treatment: deductible}
   - {category: insurance, treatment: deductible}
   - {category: repairs, treatment: deductible}                   # Erhaltungsaufwand
