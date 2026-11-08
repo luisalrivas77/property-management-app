@@ -4,11 +4,15 @@
 // phone's camera through a file input, the photos as the pages of one document, and the list
 // of the documents this browser session captured, each with its pre-fill proposal's status.
 //
-// - Photos go into a page strip first ("Seite hinzufügen" adds more; each page can be moved or
-//   removed). Each is drawn upright (its EXIF orientation applied) on a canvas, long edge at
-//   most 2000 px, and re-encoded as JPEG at 0.85, so a 10-page document stays a few MB, inside
-//   the upload limit and Claude's PDF limits. Re-encoding also drops the camera's metadata
-//   (location, device).
+// - Photos go into a page strip first ("Seite hinzufügen" adds more; each page can be moved,
+//   turned or removed). Each is drawn upright (its EXIF orientation applied) on a canvas, long
+//   edge at most 2000 px, and re-encoded as JPEG at 0.85, so a 10-page document stays a few MB,
+//   inside the upload limit and Claude's PDF limits. Re-encoding also drops the camera's
+//   metadata (location, device).
+// - "↻" turns a page a quarter clockwise (8 Nov 2026): over paper lying flat the phone guesses
+//   the orientation, and its EXIF can be wrong. The page's JPEG is drawn rotated onto a canvas
+//   with width and height swapped and re-encoded at the same quality; the old thumbnail URL is
+//   revoked. The strip's buttons wait while it turns.
 // - "Als ein Dokument hochladen" builds one PDF from the strip, a page per photo in strip order
 //   and of its photo's aspect ratio, and uploads it with source = photo. A single photo goes the
 //   same way, as a one-page PDF, so every capture is shaped alike. The PDF carries no dates or
@@ -314,13 +318,38 @@ async function preparePage(file: File): Promise<Omit<StripPage, "key" | "url">> 
     context.fillStyle = "#ffffff";
     context.fillRect(0, 0, width, height);
     context.drawImage(bitmap, 0, 0, width, height);
-    const jpeg = await new Promise<Blob>((resolve, reject) =>
-      canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("canvas.toBlob failed"))), "image/jpeg", JPEG_QUALITY),
-    );
-    return { jpeg, width, height };
+    return { jpeg: await canvasJpeg(canvas), width, height };
   } finally {
     bitmap.close();
   }
+}
+
+/** A page turned 90° clockwise: its JPEG drawn rotated on a canvas with width and height
+ * swapped, re-encoded as JPEG at 0.85 like every page. */
+async function rotatePage(page: Pick<StripPage, "jpeg" | "width" | "height">): Promise<Omit<StripPage, "key" | "url">> {
+  const bitmap = await createImageBitmap(page.jpeg);
+  try {
+    const width = page.height;
+    const height = page.width;
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("no 2d canvas");
+    // A source point (x, y) lands at (width - y, x): a quarter turn clockwise.
+    context.translate(width, 0);
+    context.rotate(Math.PI / 2);
+    context.drawImage(bitmap, 0, 0, page.width, page.height);
+    return { jpeg: await canvasJpeg(canvas), width, height };
+  } finally {
+    bitmap.close();
+  }
+}
+
+function canvasJpeg(canvas: HTMLCanvasElement): Promise<Blob> {
+  return new Promise<Blob>((resolve, reject) =>
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("canvas.toBlob failed"))), "image/jpeg", JPEG_QUALITY),
+  );
 }
 
 /** One PDF, a page per photo in this order, each page of its photo's aspect ratio. */
@@ -354,6 +383,7 @@ export function CaptureScreen() {
   const [pages, setPages] = useState<StripPage[]>([]);
   const [preparing, setPreparing] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [rotating, setRotating] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const properties = useLoad(loadProperties);
   const counter = useRef(0);
@@ -420,6 +450,24 @@ export function CaptureScreen() {
     });
   }
 
+  /** Every strip button is disabled while this runs, so the page cannot leave the strip. */
+  async function rotate(key: string) {
+    const page = pages.find((entry) => entry.key === key);
+    if (!page) return;
+    setNotice(null);
+    setRotating(true);
+    try {
+      const turned = await rotatePage(page);
+      const url = URL.createObjectURL(turned.jpeg);
+      setPages((current) => current.map((entry) => (entry.key === key ? { ...entry, ...turned, url } : entry)));
+      URL.revokeObjectURL(page.url);
+    } catch {
+      setNotice("Die Seite ließ sich nicht drehen; bitte erneut versuchen.");
+    } finally {
+      setRotating(false);
+    }
+  }
+
   function remove(key: string) {
     setNotice(null);
     setPages((current) => {
@@ -464,7 +512,7 @@ export function CaptureScreen() {
     setPending((current) => current.filter((entry) => entry.key !== key));
   }
 
-  const busy = preparing || uploading;
+  const busy = preparing || uploading || rotating;
   const full = pages.length >= MAX_PAGES;
   const empty = captured.length === 0 && pending.length === 0;
   const buttonText = preparing ? "Bereitet vor …" : pages.length === 0 ? "Beleg fotografieren" : "Seite hinzufügen";
@@ -536,6 +584,15 @@ export function CaptureScreen() {
                     onClick={() => move(index, 1)}
                   >
                     →
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary"
+                    aria-label={`Seite ${index + 1} drehen`}
+                    disabled={busy}
+                    onClick={() => void rotate(page.key)}
+                  >
+                    ↻
                   </button>
                   <button
                     type="button"

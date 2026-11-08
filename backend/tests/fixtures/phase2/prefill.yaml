@@ -96,7 +96,19 @@
 #                two notary invoices are real).
 #             current = the row's values of the record's fields (note null when it has none).
 #   loan      contract_number with whitespace removed, and lender -> patch with every stated
-#             field except the two keys; current null (the context does not hold loan terms).
+#             field except the two keys and signed_on (LoanPatch has none: a contract date is
+#             set when the loan is created); current null (the context does not hold loan
+#             terms). The one exception is interest_only_before_first_payment, which the
+#             context does hold (ExistingLoan): proposed on a patch only when it would change
+#             false to true (added 8 Nov 2026).
+# Darlehensvertrag (added 8 Nov 2026, Luis's Sparkasse contract): a create proposes signed_on
+#   and follow_up_rate (the Sollzins after the Zinsbindung) when stated, copied.
+#   interest_only_before_first_payment = true, derived from [interest_only_clause], when the
+#   clause is stated and says only interest is paid until repayment starts: it matches
+#   "nur (die )?(soll)?zinsen", casefolded ("Bis zum Tilgungsbeginn sind nur die Sollzinsen
+#   ... zu zahlen"). A clause that does not say so, or none: the field is not proposed (the
+#   loan keeps its default, false). contract_number arrives without its label: the parser
+#   removes it (extraction_parse.yaml).
 #   tenant    exact full_name -> patch with the stated fields except full_name; current null.
 #   linked property for costs and Bescheide without an address: the only property in the
 #             context (with several, no link:property and no cost scope is proposed: not in
@@ -828,6 +840,7 @@ cases:
             disbursed_on: null
             first_payment_on: null
             account_iban: DE89370400440532013000
+            signed_on: "2026-02-20"
           derived: {monthly_payment: [principal, nominal_rate, initial_repayment_rate]}
         - key: link:loan
           entity_type: link
@@ -865,6 +878,148 @@ cases:
           mode: create
           target_id: *L
           values: {}
+
+  - id: darlehen_sparkasse_follow_up_rate_and_interest_only
+    description: >-
+      Luis's Sparkasse contract (8 Nov 2026), synthetic numbers. The loan is named by its
+      Kontonummer (no Darlehensnummer is printed), the variable rate after the Zinsbindung is
+      the follow-up rate, interest only is paid until repayment starts, and the contract date is
+      the later of the two signatures. A create proposes signed_on, follow_up_rate and the
+      derived interest-only flag.
+    kind: loan_contract
+    context:
+      document_id: *DOC
+      classification: {type: contract, subtype: loan_contract, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+    extraction:
+      title: {v: Immobiliar-Verbraucherdarlehen, p: 1, q: "Vertrag über ein Immobiliar-Verbraucherdarlehen"}
+      lender: {v: Beispielsparkasse, p: 1, q: "Beispielsparkasse (Darlehensgeber)"}
+      contract_number: {v: "1234567890", p: 1, q: "Kontonummer 1234567890"}
+      principal: {v: "180000.00", p: 1, q: "Nettodarlehensbetrag EUR 180.000,00"}
+      nominal_rate: {v: "0.0395", p: 2, q: "Das Darlehen ist mit 3,950 % pro Jahr zu verzinsen."}
+      fixed_until: {v: "2036-03-30", p: 2, q: "Dieser Sollzinssatz ist bis zum 30.03.2036 gebunden."}
+      follow_up_rate: {v: "0.0495", p: 2, q: "Der veränderliche Sollzinssatz beträgt derzeit 4,950 %."}
+      monthly_payment: {v: "1042.50", p: 3, q: "Sie ist in Teilbeträgen von EUR 1.042,50 am 30. eines Monats, erstmals am 30.12.2026 zu zahlen."}
+      first_payment_on: {v: "2026-12-30", p: 3, q: "Sie ist in Teilbeträgen von EUR 1.042,50 am 30. eines Monats, erstmals am 30.12.2026 zu zahlen."}
+      interest_only_clause: {v: "Bis zum Tilgungsbeginn sind nur die Sollzinsen zu diesen Terminen zu zahlen.", p: 3, q: "Bis zum Tilgungsbeginn sind nur die Sollzinsen zu diesen Terminen zu zahlen."}
+      account_iban: {v: DE02120300000000202051, p: 1, q: "IBAN DE02 1203 0000 0000 2020 51"}
+      signed_on: {v: "2026-03-30", p: 9, q: "Beispielstadt, den 30.03.2026"}
+    expect:
+      keys: [typing, loan, link:loan]
+      records:
+        - key: loan
+          entity_type: loan
+          mode: create
+          values:
+            lender: Beispielsparkasse
+            contract_number: "1234567890"
+            principal: "180000.00"
+            nominal_rate: "0.0395"
+            monthly_payment: "1042.50"
+            fixed_until: "2036-03-30"
+            follow_up_rate: "0.0495"
+            disbursed_on: null
+            first_payment_on: "2026-12-30"
+            interest_only_before_first_payment: true
+            account_iban: DE02120300000000202051
+            signed_on: "2026-03-30"
+          derived: {interest_only_before_first_payment: [interest_only_clause]}
+        - key: link:loan
+          entity_type: link
+          mode: create
+          values: {}
+
+  - id: darlehen_clause_without_nur_zinsen_not_proposed
+    description: >-
+      A clause about interest that does not say only interest is paid: the interest-only flag
+      is not proposed (the loan keeps false). No follow-up rate stated: not proposed either.
+    kind: loan_contract
+    context:
+      document_id: *DOC
+      classification: {type: contract, subtype: loan_contract, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+    extraction:
+      <<: *DARLEHEN
+      interest_only_clause: {v: "Die Zinsen sind ab der Auszahlung monatlich zusammen mit der Tilgung zu zahlen.", p: 2, q: "Die Zinsen sind ab der Auszahlung monatlich zusammen mit der Tilgung zu zahlen."}
+    expect:
+      keys: [typing, loan, link:loan]
+      records:
+        - key: loan
+          entity_type: loan
+          mode: create
+          values:
+            lender: Beispielbank AG
+            contract_number: "600123456"
+            principal: "300000.00"
+            nominal_rate: "0.036"
+            monthly_payment: "1400.00"
+            fixed_until: "2036-03-31"
+            disbursed_on: null
+            first_payment_on: null
+            account_iban: DE89370400440532013000
+            signed_on: "2026-02-20"
+          derived: {monthly_payment: [principal, nominal_rate, initial_repayment_rate]}
+
+  - id: darlehen_patch_follow_up_rate_and_interest_only
+    description: >-
+      The loan exists with interest_only_before_first_payment false: a patch proposes the
+      follow-up rate and the flag true, derived from the clause ("nur Zinsen", without "die" and
+      "Soll"); never signed_on.
+    kind: loan_contract
+    context:
+      document_id: *DOC
+      classification: {type: contract, subtype: loan_contract, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      loans:
+        - {id: *L, property_id: *P, lender: Beispielbank AG, contract_number: "600123456", interest_only_before_first_payment: false}
+    extraction: &DARLEHEN_INTEREST_ONLY
+      <<: *DARLEHEN
+      monthly_payment: {v: "1400.00", p: 2, q: "monatliche Rate 1.400,00 EUR"}
+      follow_up_rate: {v: "0.0455", p: 2, q: "danach veränderlicher Sollzins, derzeit 4,55 % p.a."}
+      interest_only_clause: {v: "Bis zur ersten vollen Rate sind NUR ZINSEN zu zahlen.", p: 2, q: "Bis zur ersten vollen Rate sind NUR ZINSEN zu zahlen."}
+    expect:
+      keys: [typing, loan, link:loan]
+      records:
+        - key: loan
+          entity_type: loan
+          mode: patch
+          target_id: *L
+          values:
+            principal: "300000.00"
+            nominal_rate: "0.036"
+            monthly_payment: "1400.00"
+            fixed_until: "2036-03-31"
+            follow_up_rate: "0.0455"
+            interest_only_before_first_payment: true
+            account_iban: DE89370400440532013000
+          derived: {interest_only_before_first_payment: [interest_only_clause]}
+
+  - id: darlehen_patch_interest_only_already_set
+    description: >-
+      The same contract, and the loan already has interest_only_before_first_payment true: the
+      flag is not proposed again; the other stated terms are, as in every loan patch.
+    kind: loan_contract
+    context:
+      document_id: *DOC
+      classification: {type: contract, subtype: loan_contract, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      loans:
+        - {id: *L, property_id: *P, lender: Beispielbank AG, contract_number: "600123456", interest_only_before_first_payment: true}
+    extraction: *DARLEHEN_INTEREST_ONLY
+    expect:
+      keys: [typing, loan, link:loan]
+      records:
+        - key: loan
+          entity_type: loan
+          mode: patch
+          target_id: *L
+          values:
+            principal: "300000.00"
+            nominal_rate: "0.036"
+            monthly_payment: "1400.00"
+            fixed_until: "2036-03-31"
+            follow_up_rate: "0.0455"
+            account_iban: DE89370400440532013000
 
   - id: mietvertrag_two_tenants_one_existing
     description: Lena Schmidt is already a tenant record; Tom Schmidt is new. Prepayment stated as one amount.
