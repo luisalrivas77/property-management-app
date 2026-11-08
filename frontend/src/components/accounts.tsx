@@ -349,7 +349,7 @@ function isCredit(amount: string): boolean {
   return !amount.startsWith("-") && !/^0+(\.0+)?$/.test(amount);
 }
 
-/** Umsätze. Each counting line links to its allocation panel in the Posteingang
+/** Umsätze. Each counting line links to its allocation panel on the review page
  * (/inbox?umsatz=…), which also corrects an allocation already confirmed. */
 export function TransactionsTable({ transactions }: { transactions: Transaction[] }) {
   if (transactions.length === 0) return <p className="muted">Keine Umsätze in diesem Zeitraum.</p>;

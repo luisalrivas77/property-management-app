@@ -19,7 +19,7 @@
 //   producer (updateMetadata: false): the same photos give the same bytes, so the vault's
 //   duplicate check (D9) still recognises a repeated upload. pdf-lib loads only on upload.
 // - The upload leaves the form field `ai` out, so the server's default decides (as the
-//   Posteingang's upload does): with its AI on it queues a read and answers with the proposal.
+//   review page's upload does): with its AI on it queues a read and answers with the proposal.
 // - Each row loads its document's newest proposal (GET /documents/{id}/proposals) and polls
 //   GET /proposals/{id} every 2 s while it is queued or running; polling stops on any other
 //   status and on unmount. The review itself is the document page's (Vorschlag, §6.4).

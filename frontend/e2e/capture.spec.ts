@@ -40,12 +40,12 @@ function documentIdOf(href: string | null): string {
 
 test("one photo becomes a one-page PDF with source photo, listed with its status and linked to its page", async ({ page, signedIn }) => {
   void signedIn;
-  await page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Posteingang" }).click();
+  await page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Zu prüfen" }).click();
   await page.getByRole("link", { name: "Beleg fotografieren" }).click();
   await expect(page).toHaveURL("/capture");
   await expect(page.getByRole("heading", { name: "Beleg fotografieren" })).toBeVisible();
-  // The capture page belongs to the Posteingang in the sidebar.
-  await expect(page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Posteingang" })).toHaveAttribute(
+  // The capture page belongs to "Zu prüfen" in the sidebar.
+  await expect(page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Zu prüfen" })).toHaveAttribute(
     "aria-current",
     "page",
   );

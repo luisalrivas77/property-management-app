@@ -1,4 +1,4 @@
-// Posteingang and the allocation panel (docs/phases/phase-2.md §8.1, §8.3, step 4). The
+// The review page (Zu prüfen) and the allocation panel (docs/phases/phase-2.md §8.1, §8.3, step 4). The
 // anonymised Sparkasse camt sample (backend/tests/fixtures/phase2/bank_samples/) imports
 // reconciled. The e2e API runs without its job worker (playwright.config.ts), so nothing is
 // matched and its 22 lines wait in the inbox as "Nicht zugeordnet": the state a line is in when
@@ -27,7 +27,7 @@ async function importSample(page: Page): Promise<string> {
 }
 
 async function openInbox(page: Page): Promise<void> {
-  await page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Posteingang" }).click();
+  await page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Zu prüfen" }).click();
   await expect(page.getByRole("heading", { name: "Hochladen, bestätigen, fertig" })).toBeVisible();
 }
 
@@ -36,8 +36,12 @@ test("an unmatched line is split by hand into two rows; Bestätigen waits until 
   const accountId = await importSample(page);
   await openInbox(page);
 
-  const queue = page.getByRole("list", { name: "Offene Punkte" });
+  const queue = page.getByRole("list", { name: "Zahlungen zuordnen" });
   await expect(queue.getByRole("button")).toHaveCount(22);
+  // The sidebar counts the same items the page lists.
+  const navEntry = page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Zu prüfen" });
+  await expect(navEntry).toHaveAccessibleName(/22 offen/);
+  await expect(page.getByRole("heading", { name: /^Zahlungen zuordnen/ })).toContainText("22");
   const line = queue.getByRole("button").filter({ hasText: "Partei D" });
   await expect(line).toContainText("Nicht zugeordnet");
   await expect(line).toContainText("+740,18 €");
@@ -83,6 +87,7 @@ test("an unmatched line is split by hand into two rows; Bestätigen waits until 
   await expect(page.getByRole("status").filter({ hasText: "Zuordnung bestätigt." })).toBeVisible();
   await expect(queue.getByRole("button")).toHaveCount(21);
   await expect(queue.getByRole("button").filter({ hasText: "Partei D" })).toHaveCount(0);
+  await expect(navEntry).toHaveAccessibleName(/21 offen/);
 
   const stored = await apiCall<{ allocations: { amount: string; category: string; status: string }[] }>(
     page,
@@ -109,7 +114,7 @@ test("a line without an IBAN offers no rule box, only a purpose pattern", async 
   await openInbox(page);
 
   // The Rechnungsabschluss lines name no counterparty and no IBAN in camt.
-  const queue = page.getByRole("list", { name: "Offene Punkte" });
+  const queue = page.getByRole("list", { name: "Zahlungen zuordnen" });
   const line = queue.getByRole("button").filter({ hasText: /Verwendungszweck 5\b/ });
   await expect(line).toContainText("Ohne Gegenseite");
   await line.click();
@@ -141,7 +146,7 @@ test("the rule box follows the category until it is touched: on for bank fees, o
   await openInbox(page);
 
   // Partei H has an IBAN and no matcher owns it (no tenant, loan or owner account here).
-  await page.getByRole("list", { name: "Offene Punkte" }).getByRole("button").filter({ hasText: "Partei H" }).click();
+  await page.getByRole("list", { name: "Zahlungen zuordnen" }).getByRole("button").filter({ hasText: "Partei H" }).click();
   const panel = page.getByRole("complementary", { name: "Zuordnung" });
   await expect(panel.getByRole("heading", { name: /Partei H/ })).toBeVisible();
   const learn = panel.getByLabel("Künftig immer so zuordnen");

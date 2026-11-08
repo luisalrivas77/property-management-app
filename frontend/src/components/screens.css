@@ -823,8 +823,9 @@ button.source-badge:not(:disabled):hover {
   margin-top: 4px;
 }
 
-/* --- Posteingang (phase-2.md §8.3, docs/mockups/03-inbox.png): the queue on the left, the
-   allocation panel on the right; stacked on a narrow screen --- */
+/* --- the review page, Zu prüfen (phase-2.md §8.3, docs/mockups/03-inbox.png): the queue on
+   the left, grouped into sections, the allocation panel on the right; stacked on a narrow
+   screen --- */
 
 .badge.badge-info {
   background: var(--info-bg);
@@ -879,6 +880,30 @@ button.source-badge:not(:disabled):hover {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+/* One group of the queue ("Zahlungen zuordnen", …): its heading and count, then its items. */
+.inbox-section + .inbox-section {
+  margin-top: 12px;
+}
+
+.inbox-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 20px 8px;
+  border-top: 1px solid var(--divider);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.inbox-section-count {
+  font-weight: 700;
+  color: var(--muted);
 }
 
 /* One item: date | what it is | amount, then the kind, reasoning and question under it. */
