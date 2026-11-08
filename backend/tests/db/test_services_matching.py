@@ -559,7 +559,8 @@ def test_a_second_kind_on_the_same_matcher_keeps_both_rules(world):
     tx2 = world.line(date(2024, 7, 3), "-50.00", iban=WEG_IBAN)
     second = _put(world, tx2, _answer(tx2, ("-50.00", C.OTHER_EXPENSE)), learn_rule=True).rule
     enabled = world.query(rules_learned.enabled_rules)
-    assert [r.id for r in enabled] == [first.id, second.id]
+    # One clock here: created_at ties and the id decides the order, so compare as a set.
+    assert {r.id for r in enabled} == {first.id, second.id} and len(enabled) == 2
 
 
 # --- Rules checked against the payer's history (D49) -----------------------------------------
