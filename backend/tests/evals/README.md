@@ -42,6 +42,28 @@ The requests are built by `hausbuch.evals.reading`, the same code `hausbuch eval
 `tests/db/test_evals_reading_matches_job.py` checks that the `document_read` job sends exactly
 those requests.
 
+## Probing the request shapes (D50; before a deploy that changes a request or a model)
+
+CI talks to a fake model client that accepts any request body, so a body the real API refuses
+is only found in production. That happened on 8 Nov 2026: Sonnet 5.5 and Opus 5.5 answered
+every categorize request with a 400 because it turned thinking off with
+`{"type": "disabled"}`, and every unrecognised bank line stayed "Nicht zugeordnet". The probe
+sends one request of each kind the app makes (categorize on the normal and on the hard model,
+explain, classify of one synthetic PDF), built by the app's own builders from synthetic
+inputs, with the `hausbuch-evals` key:
+
+```bash
+cd backend
+uv run --env-file ~/.hausbuch-evals.env python tests/evals/probe_requests.py
+```
+
+`~/.hausbuch-evals.env` holds one line, `HAUSBUCH_ANTHROPIC_API_KEY=sk-ant-...`. Four small
+calls, about $0.02. Per request it prints the model, the HTTP status of a refusal (with the
+API's own message) or the stop reason, the output tokens and whether the app's parser accepts
+the answer; it exits with 0 only when all four were answered and parsed. The key is never
+printed. Run it after changing a request builder in `hausbuch/ai/requests.py`, a prompt or a
+model setting, before the deploy.
+
 ## Evals (D41): how well the app reads your documents
 
 Two commands, both run from `backend/` on your computer. Neither is part of the app or CI.
