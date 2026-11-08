@@ -19,6 +19,11 @@ Matchers (confidence 1.0 when exact):
                   schedule entry due nearest the booking date within 10 days (none, or a tie
                   -> no match, D39) and -amount equal to its payment -> loan_interest /
                   loan_principal, period = the entry's due month.
+  loan, interest  for a loan with interest_only_before_first_payment, when no entry fits:
+  only            a debit booked after disbursed_on and before first_payment_on whose
+                  purpose states "Zinsen <amount>" equal to it (one distinct amount) and no
+                  Tilgung above zero -> one loan_interest of the whole amount, period = the
+                  stated "Für dd.mm.yyyy - dd.mm.yyyy" range, else the booking month.
   document        an invoice or Bescheid payment within 0.01 and 10 days, found by IBAN HMAC or
                   reference -> the document's category, the document as Beleg, its property
                   and loan (a financing invoice is loan_fees on its loan, D35); 0.95.
@@ -112,7 +117,7 @@ def match_loan(tx: MatchTransaction, context: MatchContext) -> AllocationSet | N
         split
         for loan in context.loans
         if _is_lender(tx, loan)
-        if (split := _loan_split(tx, loan)) is not None
+        if (split := _loan_split(tx, loan) or _interest_only_split(tx, loan)) is not None
     ]
     return _as_set(tx, _only(splits), AllocationMethod.MATCHER_LOAN)
 
@@ -329,6 +334,57 @@ def _loan_split(tx: MatchTransaction, loan: LoanFacts) -> _Split | None:
         _draft(-entry.principal, C.LOAN_PRINCIPAL, period, True, **scope),
     ]
     return _Split(_nonzero(drafts), f"Darlehensrate {entry.number}, laut Tilgungsplan.")
+
+
+# A German amount: 1.061,82 / 1061,82 / 944,63, not part of a longer number.
+_AMOUNT = r"(?<![\d.,])(\d{1,3}(?:\.\d{3})+,\d{2}|\d+,\d{2})(?![\d,])"
+_LABEL = r"\s*:?\s*(?:(?:EUR|€)\s*)?"
+_STATED_INTEREST = re.compile(r"\bZinsen\b" + _LABEL + _AMOUNT, re.IGNORECASE)
+_STATED_REPAYMENT = re.compile(r"\bTilgung\b" + _LABEL + _AMOUNT, re.IGNORECASE)
+_STATED_RANGE = re.compile(
+    r"\bF(?:ü|ue)r\s+(\d{1,2})\.(\d{1,2})\.(\d{4})\s*-\s*(\d{1,2})\.(\d{1,2})\.(\d{4})(?!\d)",
+    re.IGNORECASE,
+)
+
+
+def _interest_only_split(tx: MatchTransaction, loan: LoanFacts) -> _Split | None:
+    """A debit in a flagged loan's interest-only time (after the payout, before the first
+    annuity) whose purpose states the interest, equal to the debit, and no repayment: the
+    bank's own figure, so the whole amount is loan_interest. Anything else -> None (review)."""
+    terms = loan.terms
+    if not terms.interest_only_before_first_payment or tx.amount >= 0:
+        return None
+    if not terms.disbursed_on < tx.booking_date < terms.first_payment_on:
+        return None
+    purpose = " ".join((tx.purpose or "").split())
+    stated = {_german_amount(m.group(1)) for m in _STATED_INTEREST.finditer(purpose)}
+    if stated != {-tx.amount}:
+        return None
+    if any(_german_amount(m.group(1)) > 0 for m in _STATED_REPAYMENT.finditer(purpose)):
+        return None
+    period = _stated_range(purpose) or ServicePeriod(
+        start=tx.booking_date.replace(day=1), end=_month_end(tx.booking_date)
+    )
+    scope = {"property_id": loan.property_id, "loan_id": loan.id}
+    draft = _draft(tx.amount, C.LOAN_INTEREST, period, True, **scope)
+    return _Split([draft], "Nur Zinsen vor der ersten Rate, Betrag laut Buchungstext der Bank.")
+
+
+def _german_amount(text: str) -> Decimal:
+    return Decimal(text.replace(".", "").replace(",", "."))
+
+
+def _stated_range(purpose: str) -> ServicePeriod | None:
+    """The first valid "Für dd.mm.yyyy - dd.mm.yyyy" range (start <= end), else None."""
+    for m in _STATED_RANGE.finditer(purpose):
+        d1, m1, y1, d2, m2, y2 = (int(g) for g in m.groups())
+        try:
+            start, end = date(y1, m1, d1), date(y2, m2, d2)
+        except ValueError:
+            continue
+        if start <= end:
+            return ServicePeriod(start=start, end=end)
+    return None
 
 
 def _hausgeld_drafts(tx: MatchTransaction, plan: WirtschaftsplanFacts) -> list[AllocationDraft]:
