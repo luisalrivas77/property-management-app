@@ -906,6 +906,11 @@ button.source-badge:not(:disabled):hover {
   color: var(--muted);
 }
 
+/* "KI-Vorschläge holen" under the Zahlungen zuordnen heading (D50). */
+.inbox-section-action {
+  padding: 0 20px 12px;
+}
+
 /* One item: date | what it is | amount, then the kind, reasoning and question under it. */
 .inbox-entry {
   display: grid;

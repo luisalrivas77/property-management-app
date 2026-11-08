@@ -1334,6 +1334,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/inbox/ai-retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Inbox Ai Retry
+         * @description Queue the model for every unmatched line; the suggestions arrive as the jobs run.
+         */
+        post: operations["inbox_ai_retry_api_inbox_ai_retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/transactions/{transaction_id}/allocations": {
         parameters: {
             query?: never;
@@ -1869,6 +1889,14 @@ export interface components {
              * @default DE
              */
             country_code: string;
+        };
+        /**
+         * AiRetryResult
+         * @description POST /inbox/ai-retry (D50): how many waiting lines were sent to the model again.
+         */
+        AiRetryResult: {
+            /** Queued */
+            queued: number;
         };
         /**
          * Allocation
@@ -7406,6 +7434,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InboxItem"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    inbox_ai_retry_api_inbox_ai_retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiRetryResult"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

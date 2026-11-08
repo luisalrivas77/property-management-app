@@ -499,3 +499,9 @@ class InboxItem(Schema):
     import_id: UUID | None = None
     possible_duplicate_id: UUID | None = None
     transaction_id: UUID | None = None
+
+
+class AiRetryResult(Schema):
+    """POST /inbox/ai-retry (D50): how many waiting lines were sent to the model again."""
+
+    queued: int

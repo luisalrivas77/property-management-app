@@ -102,6 +102,8 @@ export const RULE_CODE_TEXT: Record<string, string> = {
     "Aus dieser Zuordnung lässt sich keine Regel lernen (zum Beispiel aus einer Aufteilung auf mehrere Kategorien). Ohne Regel bestätigen.",
   "rule.invalid_pattern":
     "Das Muster ist kein gültiger Suchausdruck (regulärer Ausdruck, höchstens 200 Zeichen).",
+  // POST /inbox/ai-retry (D50); a proposal's ai.disabled has its own text in AI_ERROR_TEXT.
+  "ai.disabled": "Die KI ist auf dem Server nicht eingeschaltet. Zahlungen lassen sich nur von Hand zuordnen.",
 };
 
 /** German text for a proposal's `error_code`: why reading the document failed or was

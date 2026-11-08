@@ -10,6 +10,7 @@ from hausbuch.ai.requests import (
     DATA_END,
     DATA_START,
     LLM_CONFIDENCE,
+    MATCH_MAX_TOKENS,
     categorize_request,
     explain_request,
     fenced,
@@ -92,6 +93,17 @@ def test_categorize_uses_sonnet_then_the_hard_model_with_structured_output(setti
     assert first.inference_geo == settings.ai_inference_geo
     (block,) = first.content
     assert block["text"].startswith(DATA_START) and block["text"].endswith(DATA_END)
+
+
+def test_categorize_sends_no_thinking_field_and_effort_low(settings):
+    """D50: Sonnet 5.5 and Opus 5.5 answer thinking {"type": "disabled"} with a 400, so the
+    request leaves thinking at the model's default (adaptive) and asks for effort low, with
+    room for the thinking in max_tokens."""
+    for hard in (False, True):
+        body = categorize_request(settings, {"betrag": "-1.00"}, hard=hard).body()
+        assert "thinking" not in body
+        assert body["output_config"]["effort"] == "low"
+        assert body["max_tokens"] == MATCH_MAX_TOKENS == 4000
 
 
 def test_explain_uses_haiku(settings):

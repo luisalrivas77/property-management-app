@@ -8,9 +8,20 @@ isolation. No worker runs here, so imported lines stay unmatched until answered.
 from uuid import uuid4
 
 import pytest
-from api_support import TOKEN_A, TOKEN_B, auth_for, create, ok
+from api_support import (
+    TOKEN_A,
+    TOKEN_B,
+    FakeResolver,
+    auth_for,
+    client_for,
+    create,
+    make_settings,
+    ok,
+)
 from db.db_support import _admin
 from test_bank_parsers import CAMT, build
+
+from hausbuch.api.app import create_app
 
 pytestmark = pytest.mark.db
 
@@ -141,3 +152,26 @@ def test_an_unknown_property_is_404_and_writes_nothing(client_a, lines):
     body["allocation_set"]["allocations"][0]["property_id"] = str(uuid4())
     assert client_a.put(url, json=body).status_code == 404
     assert ok(client_a.get(url))["allocations"] == []
+
+
+# --- POST /inbox/ai-retry (D50) ---------------------------------------------------------
+
+
+def test_ai_retry_is_refused_while_the_ai_layer_is_off(client_a, lines):
+    body = ok(client_a.post("/api/inbox/ai-retry"), 422)
+    assert body["code"] == "ai.disabled"
+
+
+def test_ai_retry_queues_the_workspaces_own_unmatched_lines(
+    app_engine, sessions, tmp_path, blob_store, client_a, lines
+):
+    settings = make_settings(tmp_path, ai_enabled=True, anthropic_api_key="sk-test")
+    app = create_app(settings, app_engine, blob_store, FakeResolver(sessions), worker=None)
+    line = _debit(lines)
+    url = f"/api/transactions/{line['id']}/allocations"
+    ok(client_a.put(url, json=_body(line, (line["amount"], "bank_fees"), learn_rule=False)))
+    assert ok(client_for(app, TOKEN_A).post("/api/inbox/ai-retry")) == {"queued": len(lines) - 1}
+    assert ok(client_for(app, TOKEN_B).post("/api/inbox/ai-retry")) == {"queued": 0}
+    assert client_for(app, None).post("/api/inbox/ai-retry").status_code == 401
+    no_origin = client_for(app, TOKEN_A, origin=None).post("/api/inbox/ai-retry")
+    assert no_origin.status_code == 403

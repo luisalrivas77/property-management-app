@@ -5,22 +5,31 @@
   (statements.import_inbox_items), and lines of reconciled imports with a proposed
   allocation set or none (excluded lines and the later line of an open possible duplicate
   are not listed: the duplicate is decided first).
+  An unmatched line whose latest categorize call failed says so (D50), so a failing model is
+  visible in the queue rather than looking like "nothing fits".
 - `allocate_transaction`: PUT /transactions/{id}/allocations. The person's answer is written
   through services.allocations (sum check, events, paid_on), optionally followed by a learned
   rule (services.rules_learned).
+- `request_ai_suggestions`: POST /inbox/ai-retry (D50). Queues match_transaction (the normal
+  order, so the model may be called) for every listed line that has no rows. Nothing else
+  re-asks the model: rematch_waiting and rematch_on_evidence never call it.
 """
 
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import Connection, exists, select
+from sqlalchemy import Connection, Select, exists, select
 
+from hausbuch.db.tables import ai_call as ai_call_table
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import possible_duplicate as duplicate_table
 from hausbuch.db.tables import proposal as proposal_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
+from hausbuch.jobs import enqueue
+from hausbuch.rules.errors import AI_DISABLED
 from hausbuch.rules.review import THRESHOLDS
+from hausbuch.schemas.ai import AiJob
 from hausbuch.schemas.allocation import (
     Allocation,
     AllocationCategory,
@@ -32,6 +41,7 @@ from hausbuch.schemas.allocation import (
     MatchTransaction,
 )
 from hausbuch.schemas.api import (
+    AiRetryResult,
     ConfirmAllocationsBody,
     InboxItem,
     InboxItemKind,
@@ -232,6 +242,7 @@ _PROPOSAL_TEXTS = {
     ),
 }
 _UNMATCHED_REASON = "Nicht zugeordnet: keine Regel, kein Abgleich und kein Beleg passen."
+_AI_FAILED_REASON = "Die KI konnte diese Zahlung nicht einordnen (Anfrage fehlgeschlagen)."
 _UNMATCHED_QUESTION = "Wofür war diese Buchung?"
 _PROPOSED_QUESTION = "Stimmt diese Zuordnung?"
 
@@ -264,14 +275,15 @@ def _proposal_items(conn: Connection) -> list[InboxItem]:
     return items
 
 
-def _allocation_items(conn: Connection) -> list[InboxItem]:
+def _listed_lines() -> Select:
+    """The lines the queue may list: a reconciled import, not excluded as a duplicate, not
+    the later line of an open possible duplicate (Line.open_for's conditions)."""
     t = transaction_table.c
-    a = allocation_table.c
     awaiting = exists().where(
         duplicate_table.c.other_transaction_id == t.id,
         duplicate_table.c.status == DuplicateStatus.OPEN.value,
     )
-    lines = conn.execute(
+    return (
         select(t.id, t.created_at)
         .join(import_table, import_table.c.id == t.import_id)
         .where(
@@ -279,7 +291,26 @@ def _allocation_items(conn: Connection) -> list[InboxItem]:
             t.excluded_as_duplicate_of.is_(None),
             ~awaiting,
         )
-    ).all()
+    )
+
+
+def _failed_categorize(conn: Connection) -> set[UUID]:
+    """The lines whose latest categorize call (ai_call, job match) failed: an API error or an
+    unusable answer, both stored with an error_code (D50). One query (DISTINCT ON)."""
+    c = ai_call_table.c
+    latest = (
+        select(c.transaction_id, c.error_code)
+        .where(c.job == AiJob.MATCH.value, c.transaction_id.is_not(None))
+        .distinct(c.transaction_id)
+        .order_by(c.transaction_id, c.created_at.desc(), c.id.desc())
+    )
+    return {row.transaction_id for row in conn.execute(latest) if row.error_code is not None}
+
+
+def _allocation_items(conn: Connection) -> list[InboxItem]:
+    a = allocation_table.c
+    lines = conn.execute(_listed_lines()).all()
+    failed = _failed_categorize(conn)
     current: dict[UUID, list] = {}
     for row in conn.execute(
         select(a.transaction_id, a.status, a.reasoning, a.question, a.recorded_at)
@@ -295,7 +326,7 @@ def _allocation_items(conn: Connection) -> list[InboxItem]:
                 InboxItem(
                     kind=InboxItemKind.UNMATCHED,
                     created_at=line.created_at,
-                    reasoning=_UNMATCHED_REASON,
+                    reasoning=_AI_FAILED_REASON if line.id in failed else _UNMATCHED_REASON,
                     question=_UNMATCHED_QUESTION,
                     transaction_id=line.id,
                 )
@@ -311,3 +342,31 @@ def _allocation_items(conn: Connection) -> list[InboxItem]:
                 )
             )
     return items
+
+
+# --- POST /inbox/ai-retry ----------------------------------------------------------------
+
+
+def request_ai_suggestions(ctx: CommandContext, *, ai_enabled: bool) -> AiRetryResult:
+    """Queue match_transaction for every line the queue lists as unmatched (no current rows),
+    in this transaction; returns how many (D50). The job runs the whole order again, the model
+    last, so a line a rule or matcher now books costs no call. A line already queued gets a
+    second job, which is harmless: the first one's rows close it (Line.open_for). Refused with
+    ai.disabled when HAUSBUCH_AI_ENABLED is off, since the job would then never call the model.
+    Writes no event: nothing is recorded but the jobs, and each model call gets its ai_call
+    row (as _on_reconciled queues match_import without an event)."""
+    if not ai_enabled:
+        raise RuleViolationError([AI_DISABLED], "the AI layer is switched off on the server")
+    a = allocation_table.c
+    t = transaction_table.c
+    has_rows = exists().where(
+        a.transaction_id == t.id, a.status != AllocationStatus.SUPERSEDED.value
+    )
+    ids = list(
+        ctx.conn.execute(_listed_lines().where(~has_rows).order_by(t.booking_date, t.id)).scalars()
+    )
+    for transaction_id in ids:
+        enqueue.enqueue_match_transaction(
+            ctx.conn, workspace_id=ctx.workspace_id, transaction_id=transaction_id
+        )
+    return AiRetryResult(queued=len(ids))

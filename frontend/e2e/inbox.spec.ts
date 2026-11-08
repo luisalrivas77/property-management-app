@@ -42,6 +42,12 @@ test("an unmatched line is split by hand into two rows; Bestätigen waits until 
   const navEntry = page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Zu prüfen" });
   await expect(navEntry).toHaveAccessibleName(/22 offen/);
   await expect(page.getByRole("heading", { name: /^Zahlungen zuordnen/ })).toContainText("22");
+  // D50: unmatched lines can be sent to the model again; this API runs with the AI layer off,
+  // so the request is refused with that reason.
+  const queueCard = page.getByRole("region", { name: "Zu erledigen" });
+  await queueCard.getByRole("button", { name: "KI-Vorschläge holen" }).click();
+  await expect(queueCard.getByRole("alert")).toContainText("Die KI ist auf dem Server nicht eingeschaltet");
+  await expect(queue.getByRole("button")).toHaveCount(22);
   const line = queue.getByRole("button").filter({ hasText: "Partei D" });
   await expect(line).toContainText("Nicht zugeordnet");
   await expect(line).toContainText("+740,18 €");

@@ -15,17 +15,24 @@
 //
 // GET /inbox names ids only, so the lines, imports, accounts, duplicates and documents are
 // loaded alongside to show what each item is about. Amounts are shown as the API returns them.
+//
+// "KI-Vorschläge holen" (D50) sits under the Zahlungen zuordnen heading while a line there has
+// no rows: it sends those lines to the model again (POST /inbox/ai-retry) and reloads the list
+// once the jobs have had time to run; each reload updates the sidebar count (the page's own
+// notifyInboxChanged). It is outside the list, so the list holds only the lines.
 import Link from "next/link";
+import { useEffect, useState } from "react";
 
 import { api, ok } from "@/api/client";
 import type { Account, Document, PossibleDuplicate, StatementImport, Transaction } from "@/api/schemas";
 import type { components } from "@/api/types";
+import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { BalanceForm, DuplicateCard } from "./accounts";
 import { documentLabel } from "./documents";
 import { formatDate, formatDateTime, formatMoney } from "./format";
 import { INBOX_ITEM_KIND } from "./labels";
-import { ActionDialog } from "./ui";
+import { ActionDialog, Notice } from "./ui";
 
 // Step 4's schemas have no alias in schemas.ts yet.
 export type InboxItem = components["schemas"]["InboxItem"];
@@ -156,6 +163,7 @@ export function InboxList({
               <span id={headingId}>{title}</span>{" "}
               <span className="inbox-section-count">{items.length}</span>
             </h3>
+            {section === "lines" && items.some((item) => item.kind === "unmatched") ? <AiSuggestions onChanged={onChanged} /> : null}
             <ul className="inbox-list" aria-label={title}>
               {items.map((item) => {
                 // A possible duplicate also names its later line, which may sit in two pairs: its own id first.
@@ -179,6 +187,53 @@ export function InboxList({
           </section>
         );
       })}
+    </div>
+  );
+}
+
+/** How long the jobs get before the list is reloaded: a categorize call takes a few seconds per
+ * line, and the worker runs several at once. */
+const AI_RELOAD_MS = 30_000;
+
+/** "KI-Vorschläge holen": sends every unmatched line to the model again (D50). */
+function AiSuggestions({ onChanged }: { onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const [queued, setQueued] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (queued === null) return;
+    const timer = window.setTimeout(onChanged, AI_RELOAD_MS);
+    return () => window.clearTimeout(timer);
+  }, [queued, onChanged]);
+
+  async function request() {
+    setBusy(true);
+    setError(null);
+    setQueued(null);
+    try {
+      const result = await ok(api.POST("/api/inbox/ai-retry"));
+      setQueued(result.queued);
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="inbox-section-action stack">
+      <div>
+        <button type="button" className="secondary" disabled={busy} onClick={() => void request()}>
+          KI-Vorschläge holen
+        </button>
+      </div>
+      {queued !== null ? (
+        <Notice>
+          {queued === 1 ? "1 Zahlung" : `${queued} Zahlungen`} an die KI geschickt. Die Vorschläge erscheinen in ein paar Minuten.
+        </Notice>
+      ) : null}
+      <ErrorNotice error={error} />
     </div>
   );
 }

@@ -3911,6 +3911,35 @@
         }
       }
     },
+    "/api/inbox/ai-retry": {
+      "post": {
+        "summary": "Inbox Ai Retry",
+        "description": "Queue the model for every unmatched line; the suggestions arrive as the jobs run.",
+        "operationId": "inbox_ai_retry_api_inbox_ai_retry_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiRetryResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/transactions/{transaction_id}/allocations": {
       "get": {
         "summary": "Transaction Allocations Get",
@@ -5259,6 +5288,21 @@
           "city"
         ],
         "title": "Address"
+      },
+      "AiRetryResult": {
+        "properties": {
+          "queued": {
+            "type": "integer",
+            "title": "Queued"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "queued"
+        ],
+        "title": "AiRetryResult",
+        "description": "POST /inbox/ai-retry (D50): how many waiting lines were sent to the model again."
       },
       "Allocation": {
         "properties": {
