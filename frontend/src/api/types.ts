@@ -2193,7 +2193,7 @@ export interface components {
              * Same Amount Only
              * @default false
              */
-            same_amount_only?: boolean;
+            same_amount_only: boolean;
         };
         /**
          * Currency
