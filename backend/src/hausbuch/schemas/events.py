@@ -239,6 +239,8 @@ class LoanCreated(Schema):
     first_payment_on: date
     fixed_until: date | None = None
     follow_up_rate: Rate | None = None
+    # Added 8 Nov 2026; events stored before it lack the key and read as false.
+    interest_only_before_first_payment: bool = False
 
 
 class LoanDisbursed(Schema):

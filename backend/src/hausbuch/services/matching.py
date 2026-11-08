@@ -314,6 +314,7 @@ def _loans(conn: Connection) -> list[LoanFacts]:
                 first_payment_on=row.first_payment_on,
                 fixed_until=row.fixed_until,
                 follow_up_rate=row.follow_up_rate,
+                interest_only_before_first_payment=row.interest_only_before_first_payment,
             ),
         )
         for row in conn.execute(select(loan_table))

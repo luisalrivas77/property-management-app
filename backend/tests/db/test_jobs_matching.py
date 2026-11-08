@@ -804,6 +804,66 @@ def test_a_loan_entered_after_the_import_books_the_instalments_that_fit(
     assert (kept.method, kept.category) == ("user", "other_expense")
 
 
+def test_an_interest_only_loan_books_the_waiting_interest_its_text_states(
+    world, app_engine, tmp_path
+):
+    """A loan paid out in parts: before the first annuity the bank debits interest only, a
+    different amount each month, and states it in the purpose. Entered after the import with
+    interest_only_before_first_payment, the loan books those debits as loan_interest; a debit
+    whose stated interest is not the amount stays waiting."""
+    july = world.line(
+        date(2026, 7, 30),
+        "-787.43",
+        iban=LOAN_IBAN,
+        purpose="Rechnung Darl.-Leistung 7000000001 Für 01.07.2026 - 30.07.2026 "
+        "Saldo: 262.477,00- Zinsen 787,43 20260730-XX001-00000000001",
+    )
+    october = world.line(
+        date(2026, 10, 30),
+        "-1061.82",
+        iban=LOAN_IBAN,
+        purpose="Rechnung Darl.-Leistung 7000000001 Für 01.10.2026 - 30.10.2026 Zinsen 1.061,82",
+    )
+    differs = world.line(
+        date(2026, 8, 30),
+        "-800.00",
+        iban=LOAN_IBAN,
+        purpose="Rechnung Darl.-Leistung 7000000001 Für 01.08.2026 - 30.08.2026 Zinsen 787,43",
+    )
+
+    loan = world.loan(
+        principal=Decimal("360000.00"),
+        monthly_payment=Decimal("1600.00"),
+        disbursed_on=date(2026, 6, 30),
+        first_payment_on=date(2026, 12, 30),
+        fixed_until=None,
+        interest_only_before_first_payment=True,
+    )
+    assert len(_waiting_jobs(world, f"loan:{loan}")) == 1
+
+    client = FakeModelClient()
+    plans = _rematch(_deps(app_engine, tmp_path, client), world, "loan", loan)
+    # Booking date order: July, August (stated interest differs), October.
+    assert [p.outcome for p in plans] == ["written", "skipped", "written"]
+    assert client.requests == []
+    for tx, amount, start, end in (
+        (july, "-787.43", date(2026, 7, 1), date(2026, 7, 30)),
+        (october, "-1061.82", date(2026, 10, 1), date(2026, 10, 30)),
+    ):
+        (row,) = _rows(world, tx)
+        assert (
+            row.category,
+            row.amount,
+            row.method,
+            row.status,
+            row.loan_id,
+            row.service_period_start,
+            row.service_period_end,
+            row.recurring,
+        ) == ("loan_interest", Decimal(amount), "matcher_loan", "confirmed", loan, start, end, True)
+    assert _rows(world, differs) == []
+
+
 def test_a_burst_of_loan_edits_queues_one_job_and_the_contract_number_none(world):
     loan = world.loan()
     trigger = f"loan:{loan}"

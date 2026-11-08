@@ -68,6 +68,7 @@ def create_loan(
             first_payment_on=terms.first_payment_on,
             fixed_until=terms.fixed_until,
             follow_up_rate=terms.follow_up_rate,
+            interest_only_before_first_payment=terms.interest_only_before_first_payment,
         ),
         effective_date=signed_on,
         **scope,
@@ -95,6 +96,7 @@ def update_loan(
     first_payment_on: date | Unset = UNSET,
     fixed_until: date | None | Unset = UNSET,
     follow_up_rate: Decimal | None | Unset = UNSET,
+    interest_only_before_first_payment: bool | Unset = UNSET,
     account_iban: str | None | Unset = UNSET,
     iban_key: bytes | None = None,
 ) -> Loan:
@@ -110,6 +112,7 @@ def update_loan(
             ("first_payment_on", first_payment_on),
             ("fixed_until", fixed_until),
             ("follow_up_rate", follow_up_rate),
+            ("interest_only_before_first_payment", interest_only_before_first_payment),
         )
         if value is not UNSET
     }

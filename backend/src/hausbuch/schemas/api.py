@@ -185,6 +185,7 @@ class LoanPatch(Patch):
     first_payment_on: date = Field(default=None)
     fixed_until: date | None = None
     follow_up_rate: Rate | None = None
+    interest_only_before_first_payment: bool = Field(default=None)
     account_iban: IbanInput | None = None  # write-only; null removes it
 
 

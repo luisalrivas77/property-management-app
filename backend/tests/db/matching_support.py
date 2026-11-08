@@ -190,22 +190,19 @@ class World:
             iban_key=TEST_IBAN_KEY,
         ).id
 
-    def loan(self, *, iban: str | None = LOAN_IBAN) -> uuid.UUID:
-        return self.cmd(
-            create_loan,
-            LoanCreate(
-                property_id=self.property_id,
-                lender="Beispielbank AG",
-                principal=Decimal("300000.00"),
-                nominal_rate=Decimal("0.036"),
-                monthly_payment=Decimal("1400.00"),
-                disbursed_on=date(2024, 4, 1),
-                first_payment_on=date(2024, 5, 1),
-                fixed_until=date(2034, 4, 30),
-                account_iban=iban,
-            ),
-            iban_key=TEST_IBAN_KEY,
-        ).id
+    def loan(self, *, iban: str | None = LOAN_IBAN, **overrides: Any) -> uuid.UUID:
+        values: dict[str, Any] = {
+            "property_id": self.property_id,
+            "lender": "Beispielbank AG",
+            "principal": Decimal("300000.00"),
+            "nominal_rate": Decimal("0.036"),
+            "monthly_payment": Decimal("1400.00"),
+            "disbursed_on": date(2024, 4, 1),
+            "first_payment_on": date(2024, 5, 1),
+            "fixed_until": date(2034, 4, 30),
+            "account_iban": iban,
+        }
+        return self.cmd(create_loan, LoanCreate(**(values | overrides)), iban_key=TEST_IBAN_KEY).id
 
     def document(
         self,
