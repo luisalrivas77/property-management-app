@@ -172,3 +172,48 @@ test("the rule box follows the category until it is touched: on for bank fees, o
   await category.selectOption({ label: "Erhaltungsaufwand (Reparatur)" });
   await expect(learn).toBeChecked();
 });
+
+test("a payer with other waiting amounts is asked whether the rule covers them (D49)", async ({ page, signedIn }) => {
+  void signedIn;
+  await importSample(page);
+  await openInbox(page);
+
+  // Partei C debits four times from one IBAN: 1.073,89 € twice, 862,15 € and 573,79 €.
+  const queue = page.getByRole("list", { name: "Zahlungen zuordnen" });
+  await queue.getByRole("button").filter({ hasText: "Partei C" }).filter({ hasText: "573,79" }).click();
+  const panel = page.getByRole("complementary", { name: "Zuordnung" });
+  await expect(panel.getByRole("heading", { name: /Partei C/ })).toBeVisible();
+  const transactionId = new URL(page.url()).searchParams.get("umsatz") ?? "";
+  const confirm = panel.getByRole("button", { name: "Bestätigen" });
+  const learn = panel.getByLabel("Künftig immer so zuordnen");
+
+  await panel.getByRole("group", { name: "Zeile 1" }).getByLabel("Kategorie").selectOption({ label: "Kontoführung und Bankgebühren" });
+  await expect(learn).toBeChecked();
+  const question = panel.getByRole("group", { name: /Gehören die auch zu/ });
+  await expect(question).toHaveAccessibleName(
+    "Von dieser Bankverbindung warten auch Zahlungen über 1.073,89 € (2×), 862,15 € (1×). Gehören die auch zu Kontoführung und Bankgebühren?",
+  );
+  const all = question.getByLabel("Ja, alle so zuordnen");
+  const only = question.getByLabel("Nein, nur Zahlungen über 573,79 €");
+  // No answer is preselected, and Bestätigen waits for one.
+  await expect(all).not.toBeChecked();
+  await expect(only).not.toBeChecked();
+  await expect(confirm).toBeDisabled();
+
+  // Without the rule there is nothing to ask.
+  await learn.uncheck();
+  await expect(question).toHaveCount(0);
+  await expect(confirm).toBeEnabled();
+  await learn.check();
+  await expect(confirm).toBeDisabled();
+
+  await only.check();
+  await expect(confirm).toBeEnabled();
+  const saved = page.waitForResponse((r) => r.url().endsWith(`/api/transactions/${transactionId}/allocations`) && r.request().method() === "PUT");
+  await confirm.click();
+  const response = await saved;
+  expect(response.status()).toBe(200);
+  const body = (await response.json()) as { rule: { same_amount_only: boolean } | null };
+  expect(body.rule?.same_amount_only).toBe(true);
+  await expect(page.getByRole("status").filter({ hasText: "Zuordnung bestätigt." })).toContainText("Regel gespeichert");
+});

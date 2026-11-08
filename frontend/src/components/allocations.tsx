@@ -21,6 +21,13 @@
 //   (D38). learn_rule is always
 //   sent explicitly: a typed pattern means "make a rule", whatever the server default for the
 //   category would be.
+// - D49: one IBAN can send two kinds of payment (the Hausverwaltung's Hausgeld and its fee).
+//   When the box is ticked for one row and the server lists other amounts still waiting from
+//   the same IBAN (waiting_other_amounts), the panel asks whether those belong to the same
+//   category: "Ja, alle so zuordnen" learns a rule for any amount, "Nein, nur Zahlungen über
+//   …" one with same_amount_only. Nothing is preselected and Bestätigen stays disabled until
+//   one is chosen; the answer holds for the category it was given for, so changing the
+//   category asks again. Without that list there is no question and same_amount_only is false.
 import Link from "next/link";
 import { useCallback, useId, useMemo, useState, type FormEvent } from "react";
 
@@ -204,6 +211,11 @@ export function AllocationPanel({
   );
 }
 
+/** "-380.00" → "380.00": the question names amounts without their sign ("Zahlungen über 380,00 €"). */
+function unsigned(amount: string): string {
+  return amount.startsWith("-") ? amount.slice(1) : amount;
+}
+
 function isCredit(amount: string): boolean {
   return !amount.startsWith("-") && !/^0+(\.0+)?$/.test(amount);
 }
@@ -233,9 +245,13 @@ function AllocationEditor({
   const [learnChoice, setLearnChoice] = useState<boolean | null>(null);
   const [rowsEdited, setRowsEdited] = useState(false);
   const [pattern, setPattern] = useState("");
+  // D49: the answer to "Gehören die auch zu …?", for the category it was given for.
+  const [sameAmount, setSameAmount] = useState<{ category: AllocationCategory; only: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const learnId = useId();
   const patternId = useId();
+  const allId = useId();
+  const onlyId = useId();
 
   const keys = useMemo(
     () => [
@@ -254,6 +270,12 @@ function AllocationEditor({
   const noDefault = new Set(view.no_default_rule_categories);
   const suggested = rows.length === 1 && rows.every((row) => row.category === "" || !noDefault.has(row.category));
   const learn = learnChoice ?? (current.length === 0 || rowsEdited ? suggested : view.learn_rule_default);
+
+  const others = view.waiting_other_amounts ?? [];
+  const askedCategory = rows.length === 1 ? (rows[0]?.category ?? "") : "";
+  const asked = view.can_learn_rule && learn && others.length > 0 && askedCategory !== "" ? askedCategory : null;
+  const sameAmountOnly = asked !== null && sameAmount !== null && sameAmount.category === asked ? sameAmount.only : null;
+  const unanswered = asked !== null && sameAmountOnly === null;
 
   function update(key: number, patch: Partial<Row>) {
     setRowsEdited(true);
@@ -275,6 +297,7 @@ function AllocationEditor({
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     event.stopPropagation();
+    if (unanswered) return;
     const values = collector();
     const messages: FieldMessages = {};
     const drafts: AllocationDraft[] = [];
@@ -302,6 +325,7 @@ function AllocationEditor({
       allocation_set: { transaction_id: line.id, allocations: drafts, method: "user", confidence: "1" },
       learn_rule: view.can_learn_rule ? learn : typed !== "",
       purpose_pattern: view.can_learn_rule || typed === "" ? null : typed,
+      same_amount_only: asked !== null && sameAmountOnly === true,
     };
     setBusy(true);
     form.clear();
@@ -391,6 +415,37 @@ function AllocationEditor({
           </label>
           <p className="muted hint">Weitere Buchungen dieser Gegenseite werden dann ohne Rückfrage so zugeordnet.</p>
           <FieldErrors messages={form.of("learn_rule")} />
+          {asked !== null ? (
+            <fieldset className="allocation-same-amount">
+              <legend>
+                Von dieser Bankverbindung warten auch Zahlungen über{" "}
+                {others.map((other) => `${formatMoney(unsigned(other.amount))} (${other.count}×)`).join(", ")}. Gehören die
+                auch zu {ALLOCATION_CATEGORY[asked]}?
+              </legend>
+              <div className="row" role="radiogroup">
+                <label className="inline" htmlFor={allId}>
+                  <input
+                    id={allId}
+                    type="radio"
+                    name={allId}
+                    checked={sameAmountOnly === false}
+                    onChange={() => setSameAmount({ category: asked, only: false })}
+                  />
+                  Ja, alle so zuordnen
+                </label>
+                <label className="inline" htmlFor={onlyId}>
+                  <input
+                    id={onlyId}
+                    type="radio"
+                    name={allId}
+                    checked={sameAmountOnly === true}
+                    onChange={() => setSameAmount({ category: asked, only: true })}
+                  />
+                  Nein, nur Zahlungen über {formatMoney(unsigned(line.amount))}
+                </label>
+              </div>
+            </fieldset>
+          ) : null}
         </div>
       ) : (
         <Field
@@ -405,10 +460,11 @@ function AllocationEditor({
       )}
 
       <div className="row">
-        <button type="submit" disabled={busy || !balanced}>
+        <button type="submit" disabled={busy || !balanced || unanswered}>
           {busy ? "Bestätigt …" : "Bestätigen"}
         </button>
         {!balanced ? <span className="muted">Erst wenn der Rest 0,00 € ist.</span> : null}
+        {balanced && unanswered ? <span className="muted">Erst die Frage zu den weiteren Zahlungen beantworten.</span> : null}
       </div>
       <FormBanner errors={form.errors} />
     </form>
