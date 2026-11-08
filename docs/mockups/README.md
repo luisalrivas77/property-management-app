@@ -20,7 +20,7 @@ spacing). Links between the HTML files work, so you can click through them in a 
 Drawn from `docs/design/household-finances.md` §1 (layout and screens) and Luis's answers in its
 §10. Unlike 01–06 these are in German, as the app is, and they show the nine-entry sidebar the
 design agreed: Übersicht, Posteingang, Konten, Anlagen, Haushalt, Immobilien, Steuern, Planung,
-Dokumente. Links to Posteingang, Immobilien and the Anlage V tab open 02–05.
+Dokumente. Links to Posteingang, Immobilien and the Anlage V tab open 02–05. The app renamed Posteingang to "Zu prüfen" on 8 Nov 2026 (phase 2 spec D48); the mockups keep the old label.
 
 | Screen | Files | Phase | What it shows |
 | --- | --- | --- | --- |
