@@ -298,6 +298,8 @@ def test_two_unusable_answers_leave_the_line_unmatched(world, app_engine, tmp_pa
     assert [c.error_code for c in _calls(world, tx)] == ["ai.unparsable", "ai.unparsable"]
     assert _rows(world, tx) == []
     assert [i.kind for i in world.query(review.inbox)] == [InboxItemKind.UNMATCHED]
+    # D50: an answer unusable twice counts as a failed call too.
+    assert world.query(review.inbox)[0].reasoning == AI_FAILED_TEXT
 
 
 def test_a_refusal_is_asked_once_more(world, app_engine, tmp_path):
