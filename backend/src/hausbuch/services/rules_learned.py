@@ -19,9 +19,16 @@ A new rule queues rematch_waiting (§5.1) in the same transaction: the lines alr
 in the inbox that it names are re-matched by the deterministic order, so an answer given
 once books the payer's other open lines too, not only later imports.
 
-A new rule disables any enabled rule with the same matcher (the newer answer wins; two rules
-on one matcher would disagree and match nothing). Events rule.created / rule.disabled carry
-the IBAN hash, the sign and pattern *flags*, never a pattern (D32).
+A new rule disables an enabled rule with the same matcher, split method and category: the
+newer answer wins, with its scope (property, tenancy, loan), recurring and same_amount_only,
+so two rules booking one category on one matcher never coexist and cancel each other out
+(D49, review F4). A rule with the same matcher and another split stays (D49): a counterparty
+that sends two kinds of payment from one IBAN keeps a rule per kind, and
+rules.matching.rule_answer tells them apart by the amounts the ledger already booked. An
+answer that corrects a line rule X had booked (review F2, `corrects`) is not a second kind:
+X is disabled too when it has the same matcher, as before D49.
+Events rule.created / rule.disabled carry the IBAN hash, the sign and pattern *flags*, never
+a pattern (D32).
 """
 
 import re
@@ -147,6 +154,12 @@ def proposed_rule(
     )
 
 
+def checks_amount(rule: MatchingRuleCreate) -> bool:
+    """Whether the rule's split method checks the amount against a record itself (D49), so
+    same_amount_only would change nothing."""
+    return rule.split_method in matchers.AMOUNT_CHECKED
+
+
 def learn_default(rule: MatchingRuleCreate | None, confirmed: AllocationSet) -> bool:
     """The checkbox's default (§8.1, review F6): on when a rule can be learned and no
     confirmed category is one that never auto-confirms."""
@@ -158,14 +171,19 @@ def learn_default(rule: MatchingRuleCreate | None, confirmed: AllocationSet) -> 
 # --- Writes --------------------------------------------------------------------------
 
 
-def create_rule(ctx: CommandContext, data: MatchingRuleCreate) -> MatchingRule:
-    """Store the rule (an enabled rule with the same matcher is disabled first), append
-    rule.created and queue rematch_waiting for the waiting lines it may now book."""
+def create_rule(
+    ctx: CommandContext, data: MatchingRuleCreate, *, corrects: UUID | None = None
+) -> MatchingRule:
+    """Store the rule, append rule.created and queue rematch_waiting for the waiting lines it
+    may now book. Disabled first: an enabled rule with the same matcher and the same split
+    method and category, and `corrects` (the rule whose booking this answer replaced with
+    another split, review.allocate_transaction) when it has the same matcher (D49)."""
     matcher = data.matcher.model_dump(mode="json", exclude_none=True)
     for pattern in (data.matcher.counterparty_name_pattern, data.matcher.purpose_pattern):
         check_pattern(pattern)
     for old in enabled_rules(ctx.conn):
-        if old.matcher.model_dump(mode="json", exclude_none=True) == matcher:
+        same_matcher = old.matcher.model_dump(mode="json", exclude_none=True) == matcher
+        if same_matcher and (old.id == corrects or _split(old) == _split(data)):
             disable_rule(ctx, old.id)
     values = data.model_dump(mode="json", exclude={"matcher"})
     row = ctx.conn.execute(
@@ -219,3 +237,10 @@ def record_hit(ctx: CommandContext, rule_id: UUID) -> None:
 
 
 _CREATE = set(MatchingRuleCreate.model_fields)
+_SPLIT = {"split_method", "category"}
+
+
+def _split(rule: MatchingRuleCreate) -> dict[str, Any]:
+    """What a rule books, apart from its matcher and scope: two rules with the same matcher
+    and this are one answer given twice (the newer replaces the older, review F4)."""
+    return rule.model_dump(include=_SPLIT)

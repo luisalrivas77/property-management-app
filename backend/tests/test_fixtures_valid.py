@@ -77,10 +77,12 @@ def test_types_sees_through_optional_money():
 
 def test_rule_stores_no_amount():
     """D25: no field of a learned rule, its matcher, its read shape or its events can hold
-    money, however the type is wrapped (Money | None, Annotated, a list)."""
+    money, however the type is wrapped (Money | None, Annotated, a list). same_amount_only
+    (D49) is a flag: the amount it compares with is read from the ledger at match time."""
     for model in (RuleMatcher, MatchingRuleCreate, MatchingRule, RuleRecorded):
         for name, field in model.model_fields.items():
-            assert "amount" not in name or name == "amount_sign", (model.__name__, name)
+            flag = name == "same_amount_only" and field.annotation is bool
+            assert "amount" not in name or name == "amount_sign" or flag, (model.__name__, name)
             assert Decimal not in _types(field.annotation), (model.__name__, name)
 
 

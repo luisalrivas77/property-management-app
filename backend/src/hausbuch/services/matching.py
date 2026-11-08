@@ -3,9 +3,11 @@
 The pure rules (rules.matching, rules.review) decide; this module reads their inputs from the
 database and writes their outcome through services.allocations.
 
-Order (§8.1, cheapest first): learned rules (`apply_rule`), the deterministic matchers (owner
+Order (§8.1, cheapest first): learned rules (`rules.matching.rule_answer`, which reads the
+counterparty's confirmed lines from `rule_history`, D49), the deterministic matchers (owner
 transfer, rent, loan), the document match, and only then the model (jobs.matching, which calls
-back into `finish_line`). `rules.review.route` decides auto-confirm or review; the workspace's
+back into `finish_line`). A rules' proposal (a near miss on the amount, D49) is used only when
+no matcher answers. `rules.review.route` decides auto-confirm or review; the workspace's
 `auto_accept_llm` (default false, D26) is passed through.
 
 A line is matched only when it is *open*:
@@ -82,6 +84,8 @@ from hausbuch.schemas.allocation import (
     AllocationSet,
     DocumentFacts,
     DuePayment,
+    HistoryLine,
+    HistoryRow,
     LoanFacts,
     MatchContext,
     MatchingRule,
@@ -92,6 +96,7 @@ from hausbuch.schemas.allocation import (
     TenancyFacts,
     WirtschaftsplanFacts,
 )
+from hausbuch.schemas.api import WaitingAmount
 from hausbuch.schemas.document import DocumentExtraction
 from hausbuch.schemas.enums import (
     AllocationStatus,
@@ -111,7 +116,7 @@ C = AllocationCategory
 
 DOCUMENT_KINDS = DOCUMENT_EVIDENCE_KINDS
 
-GUARDED_CONFIDENCE = Decimal("0.500")  # below every threshold: the set goes to review
+GUARDED_CONFIDENCE = matchers.GUARDED_CONFIDENCE  # below every threshold: review
 RENT_BOOKED_QUESTION = (
     "Für diesen Zeitraum ist schon eine Miete gebucht. Ist das eine Nachzahlung, eine "
     "Vorauszahlung oder die Miete eines anderen Monats?"
@@ -599,39 +604,67 @@ def deterministic_set(
     conn: Connection, tx: MatchTransaction, context: MatchContext
 ) -> AllocationSet | None:
     """Learned rules, then the matchers, then the document match (§8.1), with the
-    service-side guards (F3, D39) applied."""
-    found = _rule_set(rules_learned.enabled_rules(conn), tx, context)
-    if found is None:
+    service-side guards (F3, D39) applied. The rules' answer is either a standing hit
+    (confidence 1, used at once) or a near-miss proposal (D49), which the matchers come
+    before: an exact rent, loan, owner or document match wins over it."""
+    rules = rules_learned.enabled_rules(conn)
+    history = rule_history(conn, tx) if _any_hit(rules, tx) else []
+    found = matchers.rule_answer(rules, tx, context, history)
+    if found is None or found.confidence != matchers.EXACT:
         for matcher in (
             matchers.match_owner_transfer,
             matchers.match_rent,
             matchers.match_loan,
             matchers.match_document,
         ):
-            found = matcher(tx, context)
-            if found is not None:
+            answer = matcher(tx, context)
+            if answer is not None:
+                found = answer
                 break
     return None if found is None else _guarded(conn, found)
 
 
-def _rule_set(
-    rules: list[MatchingRule], tx: MatchTransaction, context: MatchContext
-) -> AllocationSet | None:
-    """The rules' answer: the oldest hit when every hit gives the same split; none when two
-    rules disagree (the line goes on to the matchers and review)."""
-    hits = [s for rule in rules if (s := matchers.apply_rule(rule, tx, context)) is not None]
-    if not hits:
-        return None
-    first = hits[0]
-    if any(not _same(first, other) for other in hits[1:]):
-        return None
-    return first
-
-
-def _same(a: AllocationSet, b: AllocationSet) -> bool:
-    return sorted(d.model_dump_json() for d in a.allocations) == sorted(
-        d.model_dump_json() for d in b.allocations
+def _any_hit(rules: list[MatchingRule], tx: MatchTransaction) -> bool:
+    return tx.counterparty_iban_hmac is not None and any(
+        r.enabled and matchers.rule_hits(r.matcher, tx) for r in rules
     )
+
+
+def rule_history(conn: Connection, tx: MatchTransaction) -> list[HistoryLine]:
+    """The other lines from the line's IBAN hash with the same sign, not excluded as a
+    duplicate, with their current (not superseded) allocation rows, for rules.matching.
+    rule_answer (D49), which keeps those whose rows are all confirmed. Empty for a line
+    without an IBAN hash or of amount 0."""
+    if tx.counterparty_iban_hmac is None or tx.amount == 0:
+        return []
+    t = transaction_table.c
+    a = allocation_table.c
+    rows = conn.execute(
+        select(t.id, t.booking_date, t.amount, a.category, a.status)
+        .join(allocation_table, a.transaction_id == t.id)
+        .where(
+            t.counterparty_iban_hmac == bytes.fromhex(tx.counterparty_iban_hmac),
+            t.amount > 0 if tx.amount > 0 else t.amount < 0,
+            t.id != tx.id,
+            t.excluded_as_duplicate_of.is_(None),
+            a.status != AllocationStatus.SUPERSEDED.value,
+        )
+        .order_by(t.booking_date, t.id)
+    ).all()
+    lines: dict[UUID, tuple[Row, list[HistoryRow]]] = {}
+    for row in rows:
+        _, parts = lines.setdefault(row.id, (row, []))
+        parts.append(HistoryRow(category=row.category, status=row.status))
+    return [
+        HistoryLine(
+            transaction_id=row.id,
+            booking_date=row.booking_date,
+            amount=row.amount,
+            counterparty_iban_hmac=tx.counterparty_iban_hmac,
+            rows=parts,
+        )
+        for row, parts in lines.values()
+    ]
 
 
 def _guarded(conn: Connection, found: AllocationSet) -> AllocationSet:
@@ -793,7 +826,7 @@ def write(ctx: CommandContext, line: Line, found: AllocationSet) -> MatchPlan:
     if same and not (auto and line.waiting):
         return MatchPlan("skipped", "matching.unchanged")
     written = allocations.record_set(ctx, found, confirm=auto, auto=auto)
-    if found.rule_id is not None:
+    if found.rule_id is not None and auto:  # a rule's proposal (D49) is not a booking
         rules_learned.record_hit(ctx, found.rule_id)
     return MatchPlan(
         "written", "routing.auto_confirm" if auto else "routing.review", found, written
@@ -959,6 +992,41 @@ def waiting_lines(conn: Connection, kind: str, entity_id: UUID) -> list[UUID]:
     if rule is None:
         return [r.id for r in rows]
     return [r.id for r in rows if matchers.rule_hits(rule.matcher, match_transaction(r))]
+
+
+WAITING_AMOUNTS_LIMIT = 5
+
+
+def waiting_other_amounts(conn: Connection, tx: MatchTransaction) -> list[WaitingAmount]:
+    """D49: the amounts other than this line's that lines still waiting from its IBAN hash
+    and sign carry (waiting as in waiting_lines: a reconciled import, not excluded, no
+    confirmed row), each with its count, most frequent first (then the larger amount), at
+    most five. Empty for a line without an IBAN hash."""
+    if tx.counterparty_iban_hmac is None or tx.amount == 0:
+        return []
+    t = transaction_table.c
+    a = allocation_table.c
+    confirmed = exists().where(
+        a.transaction_id == t.id, a.status == AllocationStatus.CONFIRMED.value
+    )
+    count = func.count().label("count")
+    rows = conn.execute(
+        select(t.amount, count)
+        .join(import_table, import_table.c.id == t.import_id)
+        .where(
+            import_table.c.status == ImportStatus.RECONCILED.value,
+            t.excluded_as_duplicate_of.is_(None),
+            ~confirmed,
+            t.counterparty_iban_hmac == bytes.fromhex(tx.counterparty_iban_hmac),
+            t.amount > 0 if tx.amount > 0 else t.amount < 0,
+            t.id != tx.id,
+            t.amount != tx.amount,
+        )
+        .group_by(t.amount)
+        .order_by(count.desc(), func.abs(t.amount).desc())
+        .limit(WAITING_AMOUNTS_LIMIT)
+    ).all()
+    return [WaitingAmount(amount=r.amount, count=r.count) for r in rows]
 
 
 # --- What the model sees (data minimization, §5.3) -----------------------------------------

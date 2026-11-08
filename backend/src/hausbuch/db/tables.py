@@ -605,4 +605,6 @@ matching_rule = Table(
     Column("hit_count", Integer, nullable=False, server_default=text("0")),
     _created_at(),
     _updated_at(),
+    # 0011, appended by ADD COLUMN: the rule books only the latest amount of its kind (D49).
+    Column("same_amount_only", Boolean, nullable=False, server_default=text("false")),
 )

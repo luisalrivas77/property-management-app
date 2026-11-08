@@ -427,12 +427,24 @@ class ConfirmAllocationsBody(Schema):
     set); true for a set no rule can be learned from is refused with rule.not_learnable.
     The patterns (case-insensitive regular expressions, refused with rule.invalid_pattern
     when they do not compile) narrow the rule, and let a line without an IBAN, or a
-    counterparty a matcher owns (D38), have one."""
+    counterparty a matcher owns (D38), have one.
+    same_amount_only (D49): the answer to "Gehören die auch zu …?" when other amounts from
+    the same IBAN are waiting: true = the rule books only payments of this line's amount (the
+    latest confirmed one of its category, read from the ledger); ignored without learn_rule
+    and for a rule whose split method checks the amount itself."""
 
     allocation_set: AllocationSet
     learn_rule: bool | None = None
     counterparty_name_pattern: str | None = Field(default=None, max_length=200)
     purpose_pattern: str | None = Field(default=None, max_length=200)
+    same_amount_only: bool = False
+
+
+class WaitingAmount(Schema):
+    """An amount other lines from the same IBAN and sign are waiting with, and how many."""
+
+    amount: Money
+    count: int = Field(ge=1)
 
 
 class TransactionAllocations(Schema):
@@ -446,6 +458,10 @@ class TransactionAllocations(Schema):
     no_default_rule_categories: the categories that never auto-confirm (threshold None in
     rules.review.THRESHOLDS), in taxonomy order, so the UI can default the checkbox for rows
     the person types (on unless one of these is among them, §8.1).
+    waiting_other_amounts (D49): when a rule can be learned, the other amounts of the lines
+    still waiting from the same IBAN hash and sign (reconciled import, not a duplicate, no
+    confirmed row), each with its count, most frequent first, at most five; the panel then
+    asks whether those belong to the same category (same_amount_only).
     rule: the rule this PUT created, if any."""
 
     transaction: Transaction
@@ -453,6 +469,7 @@ class TransactionAllocations(Schema):
     can_learn_rule: bool
     learn_rule_default: bool
     no_default_rule_categories: list[AllocationCategory]
+    waiting_other_amounts: list[WaitingAmount] = Field(default_factory=list)
     rule: MatchingRule | None = None
 
 

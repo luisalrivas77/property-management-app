@@ -2176,6 +2176,10 @@ export interface components {
          *     The patterns (case-insensitive regular expressions, refused with rule.invalid_pattern
          *     when they do not compile) narrow the rule, and let a line without an IBAN, or a
          *     counterparty a matcher owns (D38), have one.
+         *     same_amount_only (D49): the answer to "Gehören die auch zu …?" when other amounts from
+         *     the same IBAN are waiting: true = the rule books only payments of this line's amount (the
+         *     latest confirmed one of its category, read from the ledger); ignored without learn_rule
+         *     and for a rule whose split method checks the amount itself.
          */
         ConfirmAllocationsBody: {
             allocation_set: components["schemas"]["AllocationSet"];
@@ -2185,6 +2189,11 @@ export interface components {
             counterparty_name_pattern?: string | null;
             /** Purpose Pattern */
             purpose_pattern?: string | null;
+            /**
+             * Same Amount Only
+             * @default false
+             */
+            same_amount_only: boolean;
         };
         /**
          * Currency
@@ -3226,6 +3235,11 @@ export interface components {
             recurring: boolean;
             /** Created From Allocation Id */
             created_from_allocation_id?: string | null;
+            /**
+             * Same Amount Only
+             * @default false
+             */
+            same_amount_only: boolean;
             /**
              * Enabled
              * @default true
@@ -4394,6 +4408,10 @@ export interface components {
          *     no_default_rule_categories: the categories that never auto-confirm (threshold None in
          *     rules.review.THRESHOLDS), in taxonomy order, so the UI can default the checkbox for rows
          *     the person types (on unless one of these is among them, §8.1).
+         *     waiting_other_amounts (D49): when a rule can be learned, the other amounts of the lines
+         *     still waiting from the same IBAN hash and sign (reconciled import, not a duplicate, no
+         *     confirmed row), each with its count, most frequent first, at most five; the panel then
+         *     asks whether those belong to the same category (same_amount_only).
          *     rule: the rule this PUT created, if any.
          */
         TransactionAllocations: {
@@ -4406,6 +4424,8 @@ export interface components {
             learn_rule_default: boolean;
             /** No Default Rule Categories */
             no_default_rule_categories: components["schemas"]["AllocationCategory"][];
+            /** Waiting Other Amounts */
+            waiting_other_amounts?: components["schemas"]["WaitingAmount"][];
             rule?: components["schemas"]["MatchingRule"] | null;
         };
         /** Unit */
@@ -4467,6 +4487,16 @@ export interface components {
             /** Rooms */
             rooms?: string | null;
             mea?: components["schemas"]["Fraction"] | null;
+        };
+        /**
+         * WaitingAmount
+         * @description An amount other lines from the same IBAN and sign are waiting with, and how many.
+         */
+        WaitingAmount: {
+            /** Amount */
+            amount: string;
+            /** Count */
+            count: number;
         };
         /**
          * WirtschaftsplanExtraction

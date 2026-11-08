@@ -1064,6 +1064,19 @@ h2.allocation-title {
   gap: 12px;
 }
 
+/* D49: "Gehören die auch zu …?" under the rule checkbox, when other amounts are waiting */
+fieldset.allocation-same-amount {
+  margin: 10px 0 0;
+  padding: 8px 14px 12px;
+  background: var(--bg);
+  border-color: var(--border);
+}
+
+fieldset.allocation-same-amount legend {
+  font-size: 14px;
+  font-weight: 700;
+}
+
 fieldset.allocation-row {
   margin: 0;
   padding: 8px 14px 12px;

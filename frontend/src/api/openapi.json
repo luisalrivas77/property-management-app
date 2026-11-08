@@ -6173,6 +6173,11 @@
               }
             ],
             "title": "Purpose Pattern"
+          },
+          "same_amount_only": {
+            "type": "boolean",
+            "title": "Same Amount Only",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -6181,7 +6186,7 @@
           "allocation_set"
         ],
         "title": "ConfirmAllocationsBody",
-        "description": "PUT /transactions/{id}/allocations: the user's allocation set and the \"Künftig immer\nso zuordnen\" checkbox.\n\nOnly the set's allocations are read: the rows are written with method `user` and\nconfidence 1, whatever method, confidence, rule_id or ai_call_id the body carries. A set\nequal to the current proposed rows confirms those rows as they are (the proposer's method\nstays); one equal to the current confirmed rows changes nothing.\n\nlearn_rule: null = the server default (TransactionAllocations.learn_rule_default for this\nset); true for a set no rule can be learned from is refused with rule.not_learnable.\nThe patterns (case-insensitive regular expressions, refused with rule.invalid_pattern\nwhen they do not compile) narrow the rule, and let a line without an IBAN, or a\ncounterparty a matcher owns (D38), have one."
+        "description": "PUT /transactions/{id}/allocations: the user's allocation set and the \"Künftig immer\nso zuordnen\" checkbox.\n\nOnly the set's allocations are read: the rows are written with method `user` and\nconfidence 1, whatever method, confidence, rule_id or ai_call_id the body carries. A set\nequal to the current proposed rows confirms those rows as they are (the proposer's method\nstays); one equal to the current confirmed rows changes nothing.\n\nlearn_rule: null = the server default (TransactionAllocations.learn_rule_default for this\nset); true for a set no rule can be learned from is refused with rule.not_learnable.\nThe patterns (case-insensitive regular expressions, refused with rule.invalid_pattern\nwhen they do not compile) narrow the rule, and let a line without an IBAN, or a\ncounterparty a matcher owns (D38), have one.\nsame_amount_only (D49): the answer to \"Gehören die auch zu …?\" when other amounts from\nthe same IBAN are waiting: true = the rule books only payments of this line's amount (the\nlatest confirmed one of its category, read from the ledger); ignored without learn_rule\nand for a rule whose split method checks the amount itself."
       },
       "Currency": {
         "type": "string",
@@ -8798,6 +8803,11 @@
               }
             ],
             "title": "Created From Allocation Id"
+          },
+          "same_amount_only": {
+            "type": "boolean",
+            "title": "Same Amount Only",
+            "default": false
           },
           "enabled": {
             "type": "boolean",
@@ -11618,6 +11628,13 @@
             "type": "array",
             "title": "No Default Rule Categories"
           },
+          "waiting_other_amounts": {
+            "items": {
+              "$ref": "#/components/schemas/WaitingAmount"
+            },
+            "type": "array",
+            "title": "Waiting Other Amounts"
+          },
           "rule": {
             "anyOf": [
               {
@@ -11639,7 +11656,7 @@
           "no_default_rule_categories"
         ],
         "title": "TransactionAllocations",
-        "description": "GET / PUT /transactions/{id}/allocations: the line, its current allocation rows\n(proposed or confirmed; none = not matched) and the rule checkbox.\n\ncan_learn_rule: whether a single-category answer for this line can become a rule\nwithout a typed pattern (false without an IBAN, and for a counterparty a matcher owns,\nD38). learn_rule_default: the checkbox's default for the current rows (off when a rule\ncannot be learned from them, or a category never auto-confirms, review F6).\nno_default_rule_categories: the categories that never auto-confirm (threshold None in\nrules.review.THRESHOLDS), in taxonomy order, so the UI can default the checkbox for rows\nthe person types (on unless one of these is among them, §8.1).\nrule: the rule this PUT created, if any."
+        "description": "GET / PUT /transactions/{id}/allocations: the line, its current allocation rows\n(proposed or confirmed; none = not matched) and the rule checkbox.\n\ncan_learn_rule: whether a single-category answer for this line can become a rule\nwithout a typed pattern (false without an IBAN, and for a counterparty a matcher owns,\nD38). learn_rule_default: the checkbox's default for the current rows (off when a rule\ncannot be learned from them, or a category never auto-confirms, review F6).\nno_default_rule_categories: the categories that never auto-confirm (threshold None in\nrules.review.THRESHOLDS), in taxonomy order, so the UI can default the checkbox for rows\nthe person types (on unless one of these is among them, §8.1).\nwaiting_other_amounts (D49): when a rule can be learned, the other amounts of the lines\nstill waiting from the same IBAN hash and sign (reconciled import, not a duplicate, no\nconfirmed row), each with its count, most frequent first, at most five; the panel then\nasks whether those belong to the same category (same_amount_only).\nrule: the rule this PUT created, if any."
       },
       "Unit": {
         "properties": {
@@ -11804,6 +11821,28 @@
         "additionalProperties": false,
         "type": "object",
         "title": "UnitPatch"
+      },
+      "WaitingAmount": {
+        "properties": {
+          "amount": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Count"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "amount",
+          "count"
+        ],
+        "title": "WaitingAmount",
+        "description": "An amount other lines from the same IBAN and sign are waiting with, and how many."
       },
       "WirtschaftsplanExtraction": {
         "properties": {

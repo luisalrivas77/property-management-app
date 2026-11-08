@@ -74,12 +74,14 @@ def allocate_transaction(
     line = _open_line(ctx.conn, transaction_id)
     drafts = body.allocation_set.allocations
     current = line.current
+    corrects = None
     if current and allocations.same_answer(drafts, current):
         if current[0].status is AllocationStatus.PROPOSED:
             written = allocations.confirm_proposed(ctx, transaction_id)
         else:
             written = current
     else:
+        corrects = _booked_by_rule(current)
         answer = AllocationSet(
             transaction_id=transaction_id,
             allocations=drafts,
@@ -105,9 +107,27 @@ def allocate_transaction(
             raise RuleViolationError(
                 [rules_learned.NOT_LEARNABLE], "no rule can be learned from this answer"
             )
-        data = proposed.model_dump() | {"created_from_allocation_id": written[0].id}
-        rule = rules_learned.create_rule(ctx, MatchingRuleCreate.model_validate(data))
+        data = proposed.model_dump() | {
+            "created_from_allocation_id": written[0].id,
+            "same_amount_only": body.same_amount_only and not rules_learned.checks_amount(proposed),
+        }
+        rule = rules_learned.create_rule(
+            ctx, MatchingRuleCreate.model_validate(data), corrects=corrects
+        )
     return _response(ctx.conn, transaction_id, written, line.tx, context, rule=rule)
+
+
+def _booked_by_rule(current: list[Allocation]) -> UUID | None:
+    """The rule whose booking an answer with another split corrects (D49, review F2): the
+    line's current rows are all confirmed and all carry that rule's id. None for an open
+    line or a proposal (the model's, a matcher's, a rule's near miss): an answer there is
+    another kind of payment, not a correction."""
+    rule_ids = {a.rule_id for a in current}
+    if not current or len(rule_ids) != 1:
+        return None
+    if any(a.status is not AllocationStatus.CONFIRMED for a in current):
+        return None
+    return next(iter(rule_ids))
 
 
 def transaction_allocations(
@@ -182,6 +202,7 @@ def _response(
         can_learn_rule=can_learn,
         learn_rule_default=default,
         no_default_rule_categories=[c for c in AllocationCategory if THRESHOLDS[c] is None],
+        waiting_other_amounts=matching.waiting_other_amounts(conn, tx) if can_learn else [],
         rule=rule,
     )
 

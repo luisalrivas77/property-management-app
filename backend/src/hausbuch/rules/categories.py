@@ -52,3 +52,40 @@ if set(TAX_TREATMENT) != set(C):  # pragma: no cover - a new category without a 
 
 def tax_treatment(category: C) -> T:
     return TAX_TREATMENT[category]
+
+
+# The German label of each category, as the UI shows it (frontend components/labels.ts,
+# ALLOCATION_CATEGORY; keep the two equal). Used where the server writes a question that
+# names a category (rules.matching.rule_answer, D49); a label never decides a figure.
+CATEGORY_LABEL = MappingProxyType(
+    {
+        C.RENT_COLD: "Kaltmiete",
+        C.OPERATING_COSTS_PREPAYMENT: "Nebenkostenvorauszahlung",
+        C.OPERATING_COSTS_SETTLEMENT: "Nebenkostenabrechnung (Nachzahlung oder Erstattung)",
+        C.DEPOSIT_IN: "Kaution erhalten",
+        C.DEPOSIT_OUT: "Kaution zurückgezahlt",
+        C.OWNER_TRANSFER_IN: "Einlage von einem Eigentümer",
+        C.OWNER_TRANSFER_OUT: "Entnahme an einen Eigentümer",
+        C.LOAN_INTEREST: "Darlehenszinsen",
+        C.LOAN_PRINCIPAL: "Tilgung",
+        C.LOAN_FEES: "Geldbeschaffungskosten",
+        C.LOAN_DISBURSEMENT: "Darlehensauszahlung",
+        C.HAUSGELD_UMLAGEFAEHIG: "Hausgeld, umlagefähig",
+        C.HAUSGELD_VERWALTUNG: "Hausgeld, nicht umlagefähig (Verwaltung)",
+        C.HAUSGELD_RUECKLAGE: "Hausgeld, Erhaltungsrücklage",
+        C.GRUNDSTEUER: "Grundsteuer",
+        C.INSURANCE: "Versicherung",
+        C.REPAIRS: "Erhaltungsaufwand (Reparatur)",
+        C.RENOVATION: "Renovierung oder Modernisierung",
+        C.PURCHASE_PRICE: "Kaufpreiszahlung",
+        C.ACQUISITION_COST: "Anschaffungsnebenkosten",
+        C.PROFESSIONAL_FEES: "Beratungs- und Rechtskosten",
+        C.BANK_FEES: "Kontoführung und Bankgebühren",
+        C.OTHER_INCOME: "Sonstige Einnahme",
+        C.OTHER_EXPENSE: "Sonstige Ausgabe",
+        C.UNCATEGORIZED: "Noch offen (nicht zugeordnet)",
+    }
+)
+
+if set(CATEGORY_LABEL) != set(C):  # pragma: no cover - a new category without a label
+    raise RuntimeError("every category needs a German label")

@@ -539,13 +539,248 @@ def test_a_disabled_rule_is_not_applied(world):
     assert _rows(world, later) == []
 
 
-def test_a_newer_answer_replaces_the_rule_on_the_same_matcher(world):
+def test_a_newer_answer_replaces_the_rule_with_the_same_split(world):
+    """The same answer ticked again on one matcher replaces the rule (the newer wins)."""
+    tx = world.line(date(2024, 6, 3), "-312.40", iban=WEG_IBAN)
+    first = _put(world, tx, _answer(tx, ("-312.40", C.INSURANCE)), learn_rule=True).rule
+    tx2 = world.line(date(2025, 6, 3), "-330.10", iban=WEG_IBAN)
+    second = _put(world, tx2, _answer(tx2, ("-330.10", C.INSURANCE)), learn_rule=True).rule
+    enabled = world.query(rules_learned.enabled_rules)
+    assert [r.id for r in enabled] == [second.id] and first.id != second.id
+    assert [e.type for e in _events(world, first.id)] == ["rule.created", "rule.disabled"]
+
+
+def test_the_same_category_with_another_scope_replaces_the_rule(world):
+    """Review F4: "same split" is split method + category; a second rule of one category on
+    one matcher (here with a property) replaces the first, so the two never cancel out."""
+    tx = world.line(date(2024, 6, 3), "-312.40", iban=WEG_IBAN)
+    first = _put(world, tx, _answer(tx, ("-312.40", C.INSURANCE)), learn_rule=True).rule
+    tx2 = world.line(date(2025, 6, 3), "-330.10", iban=WEG_IBAN)
+    second = _put(
+        world,
+        tx2,
+        _answer(tx2, ("-330.10", C.INSURANCE), property_id=world.property_id),
+        learn_rule=True,
+    ).rule
+    assert second.property_id == world.property_id
+    assert [r.id for r in world.query(rules_learned.enabled_rules)] == [second.id]
+    assert first.id != second.id
+
+
+def test_correcting_a_line_a_rule_booked_retires_that_rule(world):
+    """Review F2: the rule booked the line and the person answers it with another split and
+    ticks the box: a correction, so the old rule goes, as before D49."""
+    tx = world.line(date(2024, 6, 3), "-312.40", iban=WEG_IBAN)
+    wrong = _put(world, tx, _answer(tx, ("-312.40", C.INSURANCE)), learn_rule=True).rule
+    later = world.line(date(2024, 7, 3), "-50.00", iban=WEG_IBAN)
+    _match(world, later)
+    (row,) = _rows(world, later)
+    assert (row.status, row.rule_id) == ("confirmed", wrong.id)
+    right = _put(world, later, _answer(later, ("-50.00", C.OTHER_EXPENSE)), learn_rule=True).rule
+    assert [r.id for r in world.query(rules_learned.enabled_rules)] == [right.id]
+    assert [e.type for e in _events(world, wrong.id)] == ["rule.created", "rule.disabled"]
+
+
+def test_answering_a_proposal_with_another_kind_keeps_the_rule(world):
+    """Review F2: a line that held only a proposal (here the model's) was not booked by the
+    rule, so an answer with another category is a second kind; both rules stay."""
+    tx = world.line(date(2024, 6, 3), "-312.40", iban=WEG_IBAN)
+    first = _put(world, tx, _answer(tx, ("-312.40", C.INSURANCE)), learn_rule=True).rule
+    other = world.line(date(2024, 7, 3), "-50.00", iban=WEG_IBAN)
+    world.cmd(
+        allocations.record_set,
+        _answer(other, ("-50.00", C.INSURANCE)).model_copy(
+            update={"method": AllocationMethod.LLM, "confidence": Decimal("0.600")}
+        ),
+        confirm=False,
+        auto=False,
+    )
+    second = _put(world, other, _answer(other, ("-50.00", C.OTHER_EXPENSE)), learn_rule=True).rule
+    enabled = world.query(rules_learned.enabled_rules)
+    assert {r.id for r in enabled} == {first.id, second.id} and len(enabled) == 2
+
+
+def test_a_second_kind_on_the_same_matcher_keeps_both_rules(world):
+    """D49: another category ticked on the same IBAN and sign is a second kind of payment,
+    not a correction: both rules stay. Before D49 the second tick disabled the first rule
+    (this test then asserted that), so two kinds could never both have a rule."""
     tx = world.line(date(2024, 6, 3), "-312.40", iban=WEG_IBAN)
     first = _put(world, tx, _answer(tx, ("-312.40", C.INSURANCE)), learn_rule=True).rule
     tx2 = world.line(date(2024, 7, 3), "-50.00", iban=WEG_IBAN)
     second = _put(world, tx2, _answer(tx2, ("-50.00", C.OTHER_EXPENSE)), learn_rule=True).rule
     enabled = world.query(rules_learned.enabled_rules)
-    assert [r.id for r in enabled] == [second.id] and first.id != second.id
+    # One clock here: created_at ties and the id decides the order, so compare as a set.
+    assert {r.id for r in enabled} == {first.id, second.id} and len(enabled) == 2
+
+
+# --- Rules checked against the payer's history (D49) -----------------------------------------
+
+FEE_QUESTION = (
+    "Der Betrag weicht von der letzten Buchung ab (zuletzt 35,70 € als „Hausgeld, nicht "
+    "umlagefähig (Verwaltung)“ gebucht). Stimmt die Zuordnung?"
+)
+
+
+def _hv(world: World, day: date, amount: str, purpose: str = "", **kw):
+    """A line from the Hausverwaltung (WEG_IBAN here), which debits two kinds."""
+    return world.line(day, amount, iban=WEG_IBAN, name="Muster Hausverwaltung", purpose=purpose)
+
+
+def _tx(world: World, tx_id):
+    return world.query(matching.load_line, tx_id).tx
+
+
+def test_rule_history_reads_the_current_rows_of_the_same_payer_and_sign(world):
+    corrected = _hv(world, date(2026, 2, 3), "-35.70")
+    _put(
+        world, corrected, _answer(corrected, ("-35.70", C.HAUSGELD_UMLAGEFAEHIG)), learn_rule=False
+    )
+    _put(world, corrected, _answer(corrected, ("-35.70", C.HAUSGELD_VERWALTUNG)), learn_rule=False)
+    proposed = _hv(world, date(2026, 3, 2), "-380.00")
+    world.cmd(
+        allocations.record_set,
+        _answer(proposed, ("-380.00", C.HAUSGELD_UMLAGEFAEHIG)).model_copy(
+            update={"method": AllocationMethod.LLM, "confidence": Decimal("0.600")}
+        ),
+        confirm=False,
+        auto=False,
+    )
+    refund = _hv(world, date(2026, 3, 5), "20.00")
+    _put(world, refund, _answer(refund, ("20.00", C.OTHER_INCOME)), learn_rule=False)
+    other = world.line(date(2026, 3, 6), "-35.70", iban=PAINTER_IBAN)
+    _put(world, other, _answer(other, ("-35.70", C.OTHER_EXPENSE)), learn_rule=False)
+    _hv(world, date(2026, 3, 7), "-12.00")  # no rows yet
+    tx = _hv(world, date(2026, 4, 3), "-36.90")
+    _put(world, tx, _answer(tx, ("-36.90", C.HAUSGELD_VERWALTUNG)), learn_rule=False)  # itself
+
+    history = world.query(matching.rule_history, _tx(world, tx))
+    assert [
+        (h.transaction_id, h.amount, [(r.category, r.status) for r in h.rows]) for h in history
+    ] == [
+        (corrected, Decimal("-35.70"), [(C.HAUSGELD_VERWALTUNG, AllocationStatus.CONFIRMED)]),
+        (proposed, Decimal("-380.00"), [(C.HAUSGELD_UMLAGEFAEHIG, AllocationStatus.PROPOSED)]),
+    ]
+
+
+def test_two_kinds_from_one_iban_each_book_their_own_amount(world):
+    """Luis's case (D49): the Hausverwaltung debits the Hausgeld and its fee from one IBAN.
+    With a rule per kind, each line goes to the rule whose last amount it has; a raised fee
+    is proposed with a question, and once confirmed the new amount books itself."""
+    hg = _hv(world, date(2026, 2, 2), "-380.00", "Wohngeld 02/2026")
+    fee = _hv(world, date(2026, 2, 3), "-35.70", "Verwaltergebuehr 02/2026")
+    hausgeld = _put(
+        world, hg, _answer(hg, ("-380.00", C.HAUSGELD_UMLAGEFAEHIG)), learn_rule=True
+    ).rule
+    fee_rule = _put(
+        world, fee, _answer(fee, ("-35.70", C.HAUSGELD_VERWALTUNG)), learn_rule=True
+    ).rule
+    assert {r.id for r in world.query(rules_learned.enabled_rules)} == {hausgeld.id, fee_rule.id}
+
+    hg2 = _hv(world, date(2026, 3, 2), "-380.00", "Wohngeld 03/2026")
+    fee2 = _hv(world, date(2026, 3, 3), "-35.70", "Verwaltergebuehr 03/2026")
+    for tx, rule, category in (
+        (hg2, hausgeld, "hausgeld_umlagefaehig"),
+        (fee2, fee_rule, "hausgeld_verwaltung"),
+    ):
+        _match(world, tx)
+        (row,) = _rows(world, tx)
+        assert (row.category, row.status, row.method, row.rule_id) == (
+            category,
+            "confirmed",
+            "rule",
+            rule.id,
+        )
+
+    raised = _hv(world, date(2026, 4, 3), "-36.90", "Verwaltergebuehr 04/2026")
+    plan = _match(world, raised)
+    assert (plan.outcome, plan.reason) == ("written", "routing.review")
+    (row,) = _rows(world, raised)
+    assert (row.category, row.status, row.method, row.rule_id, row.confidence) == (
+        "hausgeld_verwaltung",
+        "proposed",
+        "rule",
+        fee_rule.id,
+        Decimal("0.500"),
+    )
+    assert row.question == FEE_QUESTION
+    hits = world.query(lambda c: c.execute(select(rule_table.c.id, rule_table.c.hit_count)).all())
+    assert dict(hits) == {hausgeld.id: 1, fee_rule.id: 1}  # a proposal is not a booking
+
+    _put(world, raised, _answer(raised, ("-36.90", C.HAUSGELD_VERWALTUNG)), learn_rule=False)
+    may = _hv(world, date(2026, 5, 4), "-36.90", "Verwaltergebuehr 05/2026")
+    _match(world, may)
+    (row,) = _rows(world, may)
+    assert (row.category, row.status, row.rule_id) == (
+        "hausgeld_verwaltung",
+        "confirmed",
+        fee_rule.id,
+    )
+
+
+def test_a_rules_near_miss_does_not_preempt_a_matcher(world):
+    """D49: the order of §8.1 stays; a document match wins over a rule's proposal."""
+    painted = world.line(date(2026, 1, 12), "-450.00", iban=PAINTER_IBAN)
+    rule = _put(world, painted, _answer(painted, ("-450.00", C.REPAIRS)), learn_rule=True).rule
+    other = world.line(date(2026, 2, 12), "-80.00", iban=PAINTER_IBAN)
+    _put(world, other, _answer(other, ("-80.00", C.OTHER_EXPENSE)), learn_rule=False)
+    doc = _invoice(world, subject="Malerarbeiten")
+    tx = world.line(date(2026, 3, 16), "-1234.56", iban=PAINTER_IBAN, purpose="R 8817")
+    _match(world, tx)
+    (row,) = _rows(world, tx)
+    assert (row.method, row.document_id, row.rule_id) == ("document_match", doc, None)
+    assert rule is not None
+
+
+def test_the_box_asks_about_other_waiting_amounts_and_the_flag_books_only_this_one(world):
+    """D49 (8): the panel lists the other amounts waiting from the IBAN; answering "Nein,
+    nur Zahlungen über 35,70 €" learns a same_amount_only rule, which books that amount
+    and leaves any other alone (single-kind history: no proposal, D49 (5))."""
+    fee = _hv(world, date(2026, 2, 3), "-35.70", "Verwaltergebuehr 02/2026")
+    hg = _hv(world, date(2026, 2, 2), "-380.00", "Wohngeld 02/2026")
+    _hv(world, date(2026, 3, 2), "-380.00", "Wohngeld 03/2026")
+    fee2 = _hv(world, date(2026, 3, 3), "-35.70", "Verwaltergebuehr 03/2026")
+    _hv(world, date(2026, 3, 10), "-12.00")
+    _hv(world, date(2026, 3, 11), "50.00")  # the other sign
+    booked = _hv(world, date(2026, 1, 5), "-99.00")  # confirmed: not waiting
+    _put(world, booked, _answer(booked, ("-99.00", C.HAUSGELD_VERWALTUNG)), learn_rule=False)
+    # The history is single-kind (only hausgeld_verwaltung), so without the flag the rule
+    # would book any amount; with it, only the latest one (35,70 €) stands.
+
+    view = world.query(
+        review.transaction_allocations, fee, iban_key=TEST_IBAN_KEY, today=date(2026, 11, 8)
+    )
+    assert view.can_learn_rule
+    assert [(w.amount, w.count) for w in view.waiting_other_amounts] == [
+        (Decimal("-380.00"), 2),
+        (Decimal("-12.00"), 1),
+    ]
+    result = _put(
+        world,
+        fee,
+        _answer(fee, ("-35.70", C.HAUSGELD_VERWALTUNG)),
+        learn_rule=True,
+        same_amount_only=True,
+    )
+    assert result.rule is not None and result.rule.same_amount_only is True
+    (created,) = [e for e in _events(world, result.rule.id) if e.type == "rule.created"]
+    assert created.payload["same_amount_only"] is True
+
+    _match(world, fee2)
+    (row,) = _rows(world, fee2)
+    assert (row.status, row.rule_id) == ("confirmed", result.rule.id)
+    plan = _match(world, hg)
+    assert (plan.outcome, plan.reason) == ("skipped", "routing.no_match")
+    assert _rows(world, hg) == []
+
+
+def test_no_other_amounts_are_listed_without_a_learnable_rule(world):
+    world.tenancy()
+    tx = world.line(date(2024, 1, 2), "3000.00", iban=TENANT_IBAN, purpose="Kaution")
+    world.line(date(2024, 2, 2), "1280.00", iban=TENANT_IBAN, purpose="Miete")
+    view = world.query(
+        review.transaction_allocations, tx, iban_key=TEST_IBAN_KEY, today=date(2026, 11, 8)
+    )
+    assert view.can_learn_rule is False and view.waiting_other_amounts == []
 
 
 # --- Re-match on new evidence ---------------------------------------------------------------
