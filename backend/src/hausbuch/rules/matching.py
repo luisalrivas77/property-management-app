@@ -33,6 +33,9 @@ returns None rather than splitting silently. Which hits stand is rule_answer's (
 rule_history.yaml): on a counterparty whose confirmed lines show more than one kind of
 payment, or for a rule learned same_amount_only, a hit whose split method does not check the
 amount itself stands only at the latest amount of its kind, read from the ledger's history.
+An as_last_split rule (D51) copies the parts of the latest confirmed line of its category set
+from that history when the amount is the same; it never computes a part, so any other amount
+is no hit (and never a near-miss proposal).
 """
 
 import re
@@ -49,6 +52,7 @@ from hausbuch.schemas.allocation import (
     AllocationSet,
     DocumentFacts,
     HistoryLine,
+    HistoryRow,
     LoanFacts,
     MatchContext,
     MatchingRule,
@@ -165,22 +169,35 @@ def match_document(tx: MatchTransaction, context: MatchContext) -> AllocationSet
 
 
 def apply_rule(
-    rule: MatchingRule, tx: MatchTransaction, context: MatchContext
+    rule: MatchingRule,
+    tx: MatchTransaction,
+    context: MatchContext,
+    history: Sequence[HistoryLine] = (),
 ) -> AllocationSet | None:
     """The rule's set for the line, or None when the rule is disabled, misses, or its split
-    method does not fit the line exactly (it is then left to the matchers and review)."""
+    method does not fit the line exactly (it is then left to the matchers and review).
+    `history` (as for rule_answer) is read by as_last_split only, which copies from it."""
     if not rule.enabled or not rule_hits(rule.matcher, tx):
         return None
-    split = _RULE_SPLITS[rule.split_method](rule, tx, context)
+    if rule.split_method is SplitMethod.AS_LAST_SPLIT:
+        split = _as_last_split(rule, tx, history)
+    else:
+        split = _RULE_SPLITS[rule.split_method](rule, tx, context)
     if split is None or split.confidence != EXACT:
         return None
     return _as_set(tx, split, AllocationMethod.RULE, rule_id=rule.id)
 
 
 # Split methods that check the amount against a record (apply_rule returns None for any
-# other amount), so their hits stand whatever the history says (D49).
+# other amount), so their hits stand whatever the history says (D49). as_last_split checks it
+# against the latest confirmed line of its kind (D51).
 AMOUNT_CHECKED = frozenset(
-    {SplitMethod.BY_WIRTSCHAFTSPLAN, SplitMethod.BY_LOAN_SCHEDULE, SplitMethod.BY_RENT_SCHEDULE}
+    {
+        SplitMethod.BY_WIRTSCHAFTSPLAN,
+        SplitMethod.BY_LOAN_SCHEDULE,
+        SplitMethod.BY_RENT_SCHEDULE,
+        SplitMethod.AS_LAST_SPLIT,
+    }
 )
 NEAR_MISS_QUESTION = (
     "Der Betrag weicht von der letzten Buchung ab (zuletzt {amount} als „{label}“ gebucht). "
@@ -196,6 +213,7 @@ class _Booked:
     transaction_id: UUID
     amount: Decimal
     kind: frozenset[AllocationCategory]
+    rows: tuple[HistoryRow, ...] = ()  # its current (confirmed) rows: what as_last_split copies
 
 
 @dataclass(frozen=True)
@@ -216,7 +234,9 @@ def rule_answer(
     proposal (GUARDED_CONFIDENCE and a question; the service uses it only when no matcher
     answers); else None. `rules` oldest first; `history` may hold any lines, only those of the same
     IBAN hash and sign whose current rows are all confirmed count."""
-    hits = [(rule, s) for rule in rules if (s := apply_rule(rule, tx, context)) is not None]
+    hits = [
+        (rule, s) for rule in rules if (s := apply_rule(rule, tx, context, history)) is not None
+    ]
     if not hits:
         return None
     booked = _booked(tx, history)
@@ -293,7 +313,9 @@ def _booked(tx: MatchTransaction, history: Sequence[HistoryLine]) -> list[_Booke
         if not current or any(r.status is not AllocationStatus.CONFIRMED for r in current):
             continue
         kind = frozenset(r.category for r in current)
-        out.append(_Booked(line.booking_date, line.transaction_id, line.amount, kind))
+        out.append(
+            _Booked(line.booking_date, line.transaction_id, line.amount, kind, tuple(current))
+        )
     return out
 
 
@@ -310,11 +332,14 @@ def infer_rule(
 ) -> MatchingRuleCreate | None:
     """The rule a confirmed answer becomes ("Künftig immer so zuordnen"): the line's IBAN HMAC
     and amount sign, and a split method read from the confirmed allocations, never their
-    amounts (D25). None when the line has no IBAN (the user then types a pattern), the split
-    fits no method, or a single category is answered for a counterparty a matcher owns (an
-    owner account, a tenant's or a loan account: D38). Rules run before the matchers, so an
-    IBAN-only rule there would pre-empt the exact rent / loan / owner split of every later
-    line."""
+    amounts (D25). A split that no schedule, plan or tenancy fits becomes as_last_split, its
+    kind the answer's category set (D51). None when the line has no IBAN (the user then types a
+    pattern), the split fits no method (one category over several parts; a part of
+    loan_interest or loan_principal, whose shares the schedule moves every month at the same
+    amount), or a single category or such a split is answered for a counterparty a matcher
+    owns (an owner account, a tenant's or a loan account: D38). Rules run before the matchers,
+    so an IBAN-only rule there would pre-empt the exact rent / loan / owner split of every
+    later line."""
     if tx.counterparty_iban_hmac is None or tx.amount == 0:
         return None
     allocs = confirmed.allocations
@@ -331,21 +356,31 @@ def infer_rule(
     if categories == sorted(_HAUSGELD):
         property_id = _one({a.property_id for a in allocs})
         plan = _plan_in_force(tx, property_id, context) if property_id else None
-        if plan is None or _parts(allocs) != _parts(_hausgeld_drafts(tx, plan)):
-            return None
-        matcher = matcher.model_copy(update={"purpose_pattern": HAUSGELD_PATTERN})
-        return rule(SplitMethod.BY_WIRTSCHAFTSPLAN, property_id=property_id)
+        if plan is not None and _parts(allocs) == _parts(_hausgeld_drafts(tx, plan)):
+            plan_matcher = matcher.model_copy(update={"purpose_pattern": HAUSGELD_PATTERN})
+            return MatchingRuleCreate(
+                matcher=plan_matcher,
+                split_method=SplitMethod.BY_WIRTSCHAFTSPLAN,
+                property_id=property_id,
+                recurring=recurring,
+            )
     if categories == sorted(_LOAN):
         loan = _by_id(context.loans, _one({a.loan_id for a in allocs}))
         split = _loan_split(tx, loan) if loan else None
         if split is None or _parts(allocs) != _parts(split.allocations):
-            return None
+            return None  # never as_last_split: the schedule moves the shares every month
         return rule(SplitMethod.BY_LOAN_SCHEDULE, loan_id=loan.id)  # type: ignore[union-attr]
     if categories == sorted(_RENT):
         tenancy_id = _one({a.tenancy_id for a in allocs})
-        return rule(SplitMethod.BY_RENT_SCHEDULE, tenancy_id=tenancy_id) if tenancy_id else None
+        if tenancy_id:
+            return rule(SplitMethod.BY_RENT_SCHEDULE, tenancy_id=tenancy_id)
     if len(allocs) != 1:
-        return None
+        kind = sorted(set(categories))
+        if len(kind) < 2 or any(c in _LOAN for c in kind):
+            return None
+        if matcher_owns(tx.counterparty_iban_hmac, context):
+            return None
+        return rule(SplitMethod.AS_LAST_SPLIT, categories=kind)
     (only,) = allocs
     if only.category in _OWNER:
         return rule(SplitMethod.OWNER_TRANSFER)
@@ -373,6 +408,37 @@ def _single_category(
         loan_id=rule.loan_id,
     )
     return _Split([draft], "Gelernte Regel.")
+
+
+def _as_last_split(
+    rule: MatchingRule, tx: MatchTransaction, history: Sequence[HistoryLine]
+) -> _Split | None:
+    """D51: the parts of the latest confirmed history line whose category set is the rule's,
+    copied when the line's amount equals that line's (category, amount, scope and recurring;
+    the service period read for the new line, no Beleg). Nothing is computed: any other
+    amount, no such line, or a row without its amount -> None."""
+    kind = frozenset(rule.categories or ())
+    latest = max((b for b in _booked(tx, history) if b.kind == kind), key=_order, default=None)
+    if latest is None or latest.amount != tx.amount:
+        return None
+    if any(r.amount is None for r in latest.rows):
+        return None
+    drafts = [
+        _draft(
+            r.amount,  # type: ignore[arg-type]  # checked above
+            r.category,
+            service_period(tx.purpose, tx.booking_date, r.recurring),
+            r.recurring,
+            property_id=r.property_id,
+            unit_id=r.unit_id,
+            tenancy_id=r.tenancy_id,
+            loan_id=r.loan_id,
+        )
+        for r in latest.rows
+    ]
+    if sum(d.amount for d in drafts) != tx.amount:
+        return None  # a confirmed line always sums; never book a set that does not
+    return _Split(drafts, "Gelernte Regel: aufgeteilt wie die letzte bestätigte Zahlung.")
 
 
 def _by_rent_schedule(

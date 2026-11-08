@@ -607,4 +607,7 @@ matching_rule = Table(
     _updated_at(),
     # 0011, appended by ADD COLUMN: the rule books only the latest amount of its kind (D49).
     Column("same_amount_only", Boolean, nullable=False, server_default=text("false")),
+    # 0012, appended by ADD COLUMN: as_last_split's kind, a category list (D51). None is SQL
+    # NULL, never a JSON null: the CHECK reads NULL as "not as_last_split".
+    Column("categories", JSONB(none_as_null=True), nullable=True),
 )

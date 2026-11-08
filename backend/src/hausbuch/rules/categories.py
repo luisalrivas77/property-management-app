@@ -28,6 +28,9 @@ TAX_TREATMENT = MappingProxyType(
         C.HAUSGELD_UMLAGEFAEHIG: T.DEDUCTIBLE,
         C.HAUSGELD_VERWALTUNG: T.DEDUCTIBLE,
         C.HAUSGELD_RUECKLAGE: T.UNDECIDED,  # until phase 3 reads the Hausgeldabrechnung
+        # The landlord's own Mietverwaltung (Sondereigentumsverwaltung) fee: Werbungskosten
+        # when paid, like the WEG administrator's share inside the Hausgeld (D51).
+        C.PROPERTY_MANAGEMENT: T.DEDUCTIBLE,
         C.GRUNDSTEUER: T.DEDUCTIBLE,
         C.INSURANCE: T.DEDUCTIBLE,
         C.REPAIRS: T.DEDUCTIBLE,  # Erhaltungsaufwand
@@ -73,6 +76,7 @@ CATEGORY_LABEL = MappingProxyType(
         C.HAUSGELD_UMLAGEFAEHIG: "Hausgeld, umlagefähig",
         C.HAUSGELD_VERWALTUNG: "Hausgeld, nicht umlagefähig (Verwaltung)",
         C.HAUSGELD_RUECKLAGE: "Hausgeld, Erhaltungsrücklage",
+        C.PROPERTY_MANAGEMENT: "Mietverwaltung (Sondereigentumsverwaltung)",
         C.GRUNDSTEUER: "Grundsteuer",
         C.INSURANCE: "Versicherung",
         C.REPAIRS: "Erhaltungsaufwand (Reparatur)",

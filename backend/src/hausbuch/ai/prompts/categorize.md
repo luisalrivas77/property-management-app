@@ -29,6 +29,7 @@ quarterly, yearly), false for a one-off payment.
 - `hausgeld_umlagefaehig`: the part of the WEG Hausgeld for operating costs that can be passed on to the tenant
 - `hausgeld_verwaltung`: the part of the WEG Hausgeld for administration (Verwaltervergütung)
 - `hausgeld_ruecklage`: the part of the WEG Hausgeld paid into the reserve (Erhaltungsrücklage)
+- `property_management`: the landlord's own fee to a property manager for managing the rented flat or its letting (Sondereigentumsverwaltung, Mietverwaltung), usually a fixed monthly amount; never the WEG administrator's share inside the Hausgeld, which is `hausgeld_verwaltung`
 - `grundsteuer`: property tax paid to the municipality
 - `insurance`: an insurance premium for the property
 - `repairs`: a repair or maintenance of the property (Erhaltungsaufwand)

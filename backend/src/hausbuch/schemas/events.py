@@ -465,6 +465,8 @@ class RuleRecorded(Schema):
     has_purpose_pattern: bool
     split_method: SplitMethod
     category: AllocationCategory | None = None
+    # D51, as_last_split's kind; default None, so events before it still read
+    categories: list[AllocationCategory] | None = None
     property_id: UUID | None = None
     tenancy_id: UUID | None = None
     loan_id: UUID | None = None
