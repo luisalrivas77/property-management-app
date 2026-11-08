@@ -25,12 +25,18 @@
 #       no distance when history has no line with set K.
 #   Standing hits: all give the same split -> the first (the set apply_rule returned:
 #     confidence 1, auto-confirm); they disagree -> null.
-#   No standing hit: the near miss with the smallest distance (ties between different
-#     splits -> null) as a proposal: confidence 0.500 (below every threshold, so review) and
-#     the question "Der Betrag weicht von der letzten Buchung ab (zuletzt <amount> als
+#   No standing hit: a proposal only when (i) the history is mixed (lines of two or more
+#     category sets) and (ii) the near miss's set K has the latest amount STRICTLY closest to
+#     the line's amount among the latest amounts of EVERY set in the history, sets without a
+#     rule included (each set's latest line as above). Near misses of that set K must give the
+#     same split, else null. The proposal: confidence 0.500 (below every threshold, so review)
+#     and the question "Der Betrag weicht von der letzten Buchung ab (zuletzt <amount> als
 #     „<label>“ gebucht). Stimmt die Zuordnung?" (amount without sign, cents only when not
-#     .00; label = the category's German label, as frontend labels.ts). Near misses without a
-#     distance only, or no hit -> null.
+#     .00; label = the category's German label, as frontend labels.ts).
+#     Otherwise null and the line goes on through the order: a single-kind history (also for
+#     a same_amount_only rule at another amount: the person said those amounts are something
+#     else), a tie, a closer set no rule books, a rule whose set has no history line, or no
+#     hit.
 # The service runs the matchers before using a proposal (a matcher's answer wins over it);
 # that order is not part of this pure fixture.
 
@@ -291,6 +297,19 @@ cases:
       allocations:
         - {amount: "-36.90", category: hausgeld_verwaltung, property_id: *P, service_period_start: 2026-04-01, service_period_end: 2026-04-30, recurring: true}
 
+  - id: mixed_closer_kind_without_a_rule_falls_through
+    description: Three kinds booked, the closest (12.00, other_expense) has no rule; the fee rule is not the closest kind, so no proposal.
+    rules: [hausgeld, fee]
+    transaction:
+      <<: *TX_FEE
+      id: 0000002a-0000-4000-8000-000000000707
+      amount: "-15.00"
+    history:
+      - *HG_MAR
+      - *FEE_MAR
+      - {transaction_id: 0000002a-0000-4000-8000-000000000891, booking_date: 2026-03-20, amount: "-12.00", counterparty_iban_hmac: *H_HV, rows: [{category: other_expense, status: confirmed}]}
+    expect: null
+
   - id: mixed_no_line_of_the_rules_kind_falls_through
     description: History holds Hausgeld only; the fee rule has no amount to compare with, so no answer.
     rules: [fee]
@@ -325,11 +344,18 @@ cases:
         - {amount: "-50.00", category: hausgeld_verwaltung, property_id: *P, document_id: *D_WP26, service_period_start: 2026-04-01, service_period_end: 2026-04-30, recurring: true}
         - {amount: "-120.00", category: hausgeld_ruecklage, property_id: *P, document_id: *D_WP26, service_period_start: 2026-04-01, service_period_end: 2026-04-30, recurring: true}
 
-  - id: same_amount_only_other_amount_is_proposed
-    description: The rule was learned "only payments of 35.70"; history is single-kind, yet 36.90 is a proposal, not booked.
+  - id: same_amount_only_other_amount_falls_through
+    description: The rule was learned "only payments of 35.70" ("Nein, nur Zahlungen über 35,70 €"); history is single-kind, so 36.90 is neither booked nor proposed by the rule.
     rules: [fee_same_amount_only]
     transaction: *TX_FEE_NEW
     history: [*FEE_FEB, *FEE_MAR]
+    expect: null
+
+  - id: same_amount_only_mixed_closest_is_proposed
+    description: The same flagged rule in a mixed history; its kind is the closest (1.20 against 343.10), so 36.90 is a proposal.
+    rules: [fee_same_amount_only]
+    transaction: *TX_FEE_NEW
+    history: [*HG_MAR, *FEE_MAR]
     expect:
       method: rule
       rule_id: 0000002b-0000-4000-8000-000000000104
