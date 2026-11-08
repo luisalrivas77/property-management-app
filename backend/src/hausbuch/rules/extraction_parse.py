@@ -28,6 +28,11 @@ _NUMBER = re.compile(r"[+-]?[0-9][0-9.,]*[0-9]|[+-]?[0-9]")
 _THOUSANDS_ONLY = re.compile(r"[+-]?[0-9]{1,3}(\.[0-9]{3})+")
 _NUMERIC_DATE = re.compile(r"([0-9]{1,2})\.\s?([0-9]{1,2})\.\s?([0-9]{4})")
 _ISO_DATE = re.compile(r"([0-9]{4})-([0-9]{2})-([0-9]{2})")
+# A two-digit year, as handwritten by a signature ("Ort, den 30.3.26", Luis's Darlehensvertrag,
+# 8 Nov 2026, D47): 00-69 -> 20yy, 70-99 -> 19yy (the POSIX strptime pivot). Tried only after
+# the four-digit form, and never inside a longer number.
+_SHORT_DATE = re.compile(r"(?<![0-9])([0-9]{1,2})\.\s?([0-9]{1,2})\.\s?([0-9]{2})(?![0-9])")
+_CENTURY_PIVOT = 70
 _WORD_DATE = re.compile(r"([0-9]{1,2})\.?\s+([A-Za-zÄÖÜäöü]+)\s+([0-9]{4})")
 _YEAR = re.compile(r"(?<![0-9])[0-9]{4}(?![0-9])")
 _FRACTION = re.compile(r"([0-9][0-9.,]*)\s*/\s*([0-9][0-9.,]*)")
@@ -267,6 +272,10 @@ def _date(raw: str) -> date:
             a, b, c = (int(g) for g in match.groups())
             day, month, year = (a, b, c) if order == "dmy" else (c, b, a)
             return _real_date(year, month, day)
+    match = _SHORT_DATE.search(raw)
+    if match is not None:
+        day, month, short = (int(g) for g in match.groups())
+        return _real_date(short + (2000 if short < _CENTURY_PIVOT else 1900), month, day)
     match = _WORD_DATE.search(raw)
     if match is not None and match.group(2).casefold() in _MONTHS:
         return _real_date(

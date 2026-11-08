@@ -100,6 +100,21 @@ cases:
       account_iban: {value: DE89370400440532013000, source: {page: 1, quote: "Darlehenskonto IBAN DE89 3704 0044 0532 0130 00"}, checks: [cited, value_in_quote, validates], confidence: high}
       monthly_payment: {value: "1234.56", source: {page: 2, quote: "Die monatliche Rate beträgt 1.234,56 EUR."}, checks: [cited, value_in_quote, validates], confidence: high}
 
+  # D47: a signature date written by hand with a two-digit year ("30.3.26") is a date;
+  # 00-69 is read as 20yy, 70-99 as 19yy. The four-digit form is unchanged.
+  - id: handwritten_two_digit_year
+    kind: loan_contract
+    blocks:
+      - {text: "signed_on: "}
+      - text: "30.3.26"
+        citations: [{cited_text: "Ort, den 30.3.26", start_page_number: 6, end_page_number: 7}]
+      - {text: "\nfixed_until: "}
+      - text: "1.4.98"
+        citations: [{cited_text: "gebunden bis 1.4.98", start_page_number: 1, end_page_number: 2}]
+    expect:
+      signed_on: {value: "2026-03-30", source: {page: 6, quote: "Ort, den 30.3.26"}, checks: [cited, value_in_quote, validates], confidence: high}
+      fixed_until: {value: "1998-04-01", source: {page: 1, quote: "gebunden bis 1.4.98"}, checks: [cited, value_in_quote, validates], confidence: high}
+
   - id: unbekannt_is_missing
     kind: purchase_contract
     blocks:
