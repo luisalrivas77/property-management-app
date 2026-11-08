@@ -735,6 +735,55 @@ def test_a_split_hausgeld_and_the_management_fee_each_learn_their_rule(world):
     assert _rows(world, other) == []
 
 
+def test_a_split_copy_never_re_books_a_confirmed_line(world):
+    """D51, review F1: the copy comes from the latest line of its kind on or before the line,
+    and a re-match (what rematch_on_evidence runs per line) never replaces confirmed rows
+    with a copy. So neither a later split nor a person's correction of the source line
+    re-books a line the rule already booked; the correction is copied onto later lines."""
+    parts = (("-260.00", C.HAUSGELD_UMLAGEFAEHIG), ("-120.00", C.HAUSGELD_RUECKLAGE))
+    feb = _hv(world, date(2026, 2, 2), "-380.00", "Hausgeld 02/2026")
+    rule = _put(world, feb, _answer(feb, *parts, property_id=world.property_id), learn_rule=True)
+    assert rule.rule is not None and rule.rule.split_method is SplitMethod.AS_LAST_SPLIT
+    mar = _hv(world, date(2026, 3, 2), "-380.00", "Hausgeld 03/2026")
+    _match(world, mar)
+    booked = sorted((r.id, r.category, r.amount, r.status) for r in _rows(world, mar))
+    assert [(c, a, s) for _, c, a, s in booked] == [
+        ("hausgeld_ruecklage", Decimal("-120.00"), "confirmed"),
+        ("hausgeld_umlagefaehig", Decimal("-260.00"), "confirmed"),
+    ]
+
+    new_parts = (("-250.00", C.HAUSGELD_UMLAGEFAEHIG), ("-130.00", C.HAUSGELD_RUECKLAGE))
+    apr = _hv(world, date(2026, 4, 1), "-380.00", "Hausgeld 04/2026")
+    _put(world, apr, _answer(apr, *new_parts, property_id=world.property_id), learn_rule=False)
+    plan = _match(world, mar, rematch=True)  # a later split: not on or before March
+    assert plan.reason == "matching.keeps_confirmed"
+    _put(world, feb, _answer(feb, *new_parts, property_id=world.property_id), learn_rule=False)
+    plan = _match(world, mar, rematch=True)  # the source corrected: still not re-booked
+    assert plan.reason == "matching.keeps_confirmed"
+    assert sorted((r.id, r.category, r.amount, r.status) for r in _rows(world, mar)) == booked
+    assert len(_rows(world, mar, all_rows=True)) == 2  # nothing superseded
+
+    may = _hv(world, date(2026, 5, 4), "-380.00", "Hausgeld 05/2026")
+    _match(world, may)
+    assert sorted((r.category, r.amount, r.status) for r in _rows(world, may)) == [
+        ("hausgeld_ruecklage", Decimal("-130.00"), "confirmed"),
+        ("hausgeld_umlagefaehig", Decimal("-250.00"), "confirmed"),
+    ]
+
+
+def test_a_rent_split_without_a_tenancy_learns_no_rule(world):
+    """D51, review F2: as before D51, rent split from a payer without a tenancy is no rule."""
+    tx = world.line(date(2026, 2, 1), "1400.00", iban=PAINTER_IBAN, purpose="Miete Februar")
+    answer = _answer(
+        tx,
+        ("1150.00", C.RENT_COLD),
+        ("250.00", C.OPERATING_COSTS_PREPAYMENT),
+        property_id=world.property_id,
+    )
+    view = _put(world, tx, answer)  # learn_rule left out: the default is off
+    assert view.rule is None and view.learn_rule_default is False
+
+
 def test_two_kinds_from_one_iban_each_book_their_own_amount(world):
     """Luis's case (D49): the Hausverwaltung debits the Hausgeld and its fee from one IBAN.
     With a rule per kind, each line goes to the rule whose last amount it has; a raised fee

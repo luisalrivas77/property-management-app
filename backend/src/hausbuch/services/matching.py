@@ -16,7 +16,9 @@ A line is matched only when it is *open*:
   pair is decided first; kept_both enqueues it again);
 - it has no current allocation rows. A re-match on new evidence (`rematch=True`, D23) also
   takes a line whose rows are proposed, or confirmed by a learned rule; it replaces them only
-  with a different set, and replaces confirmed rule rows only with a set that auto-confirms.
+  with a different set, and replaces confirmed rule rows only with a set that auto-confirms,
+  never with an as_last_split copy (D51, review F1: the copy reads the ledger, it is no new
+  evidence; a later line's corrected split would otherwise re-book the lines before it).
   A person's confirmation is never re-matched. A proposed set the deterministic order now
   auto-confirms with the same split is confirmed as a new set (the new rule or matcher's).
   A change to what the order reads (a learned rule, a loan, a tenant's IBAN, a tenancy's
@@ -93,6 +95,7 @@ from hausbuch.schemas.allocation import (
     RentInForce,
     RoutingDecision,
     RoutingInput,
+    SplitMethod,
     TenancyFacts,
     WirtschaftsplanFacts,
 )
@@ -825,6 +828,10 @@ def match_line(
         ctx.conn, iban_key=iban_key, today=ctx.now.date(), for_transaction=transaction_id
     )
     found = deterministic_set(ctx.conn, line.tx, context)
+    if rematch and not line.waiting and found is not None and _copies_a_split(ctx.conn, found):
+        # D51, review F1: an as_last_split copy reads the ledger, it is no new evidence, so a
+        # re-match never replaces confirmed rows with it (a waiting line is still booked).
+        return MatchPlan("skipped", "matching.keeps_confirmed")
     if found is None:
         if rematch or not ai_available:
             return MatchPlan("skipped", "routing.no_match")
@@ -836,6 +843,16 @@ def match_line(
         if found.method in _MATCHERS and ai_available and not rematch:
             return MatchPlan("explain", "routing.below_threshold", allocation_set=found)
     return write(ctx, line, found)
+
+
+def _copies_a_split(conn: Connection, found: AllocationSet) -> bool:
+    """Whether the set is an as_last_split rule's copy (D51)."""
+    if found.rule_id is None:
+        return False
+    method = conn.execute(
+        select(rule_table.c.split_method).where(rule_table.c.id == found.rule_id)
+    ).scalar_one_or_none()
+    return method == SplitMethod.AS_LAST_SPLIT.value
 
 
 def write(ctx: CommandContext, line: Line, found: AllocationSet) -> MatchPlan:

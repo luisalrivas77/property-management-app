@@ -17,10 +17,11 @@
 //   off otherwise. Several rows (D51: a split the server learns as as_last_split, "wie
 //   zuletzt aufgeteilt") start on when every category is set and not among those, there are
 //   two or more different ones and none is loan interest or repayment (the loan schedule
-//   learns those, never a copy: rule.not_learnable would refuse the whole answer); off
-//   otherwise, and the person may still tick it. A line that arrives with rows starts from
-//   the server's learn_rule_default and follows the rows once they are edited. Otherwise an optional purpose pattern can still make a rule
-//   (D38). learn_rule is always
+//   learns those) or rent or its prepayment (the tenancy's schedule, or no rule: review F2),
+//   since the server learns no copy of those and rule.not_learnable would refuse the whole
+//   answer; off otherwise, and the person may still tick it. A line that arrives with rows
+//   starts from the server's learn_rule_default and follows the rows once they are edited.
+//   Otherwise an optional purpose pattern can still make a rule (D38). learn_rule is always
 //   sent explicitly: a typed pattern means "make a rule", whatever the server default for the
 //   category would be.
 // - D49: one IBAN can send two kinds of payment (the Hausverwaltung's Hausgeld and its fee).
@@ -139,12 +140,21 @@ function rowCents(row: Row): bigint | null {
 }
 
 /** The line's amount minus the rows, or null while any row's amount does not parse. */
+const NO_SPLIT_COPY: ReadonlySet<AllocationCategory> = new Set<AllocationCategory>([
+  "loan_interest",
+  "loan_principal",
+  "rent_cold",
+  "operating_costs_prepayment",
+]);
+
 /** D51: whether a split starts with the rule box ticked, as the server's learn_rule_default
  * would for an as_last_split answer. */
 function splitSuggested(rows: Row[], noDefault: ReadonlySet<AllocationCategory>): boolean {
   const categories = rows.map((row) => row.category);
   if (categories.some((category) => category === "" || noDefault.has(category))) return false;
-  if (categories.some((category) => category === "loan_interest" || category === "loan_principal")) return false;
+  // Loan interest and repayment move with the schedule; rent is split by its tenancy's schedule
+  // or not learned at all (review F2). The server learns no copy of either.
+  if (categories.some((category) => category !== "" && NO_SPLIT_COPY.has(category))) return false;
   return new Set(categories).size >= 2;
 }
 

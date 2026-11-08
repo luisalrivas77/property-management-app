@@ -81,8 +81,8 @@ test("an unmatched line is split by hand into two rows; Bestätigen waits until 
   await expect(panel.getByText("Rest: 0,00 €")).toBeVisible();
   await expect(confirm).toBeEnabled();
 
-  // Partei D has an IBAN, so the rule box is offered (since D51 a split of two categories with
-  // a threshold starts ticked, learned "wie zuletzt aufgeteilt"); this answer learns none.
+  // Partei D has an IBAN, so the rule box is offered; a rent split without a tenancy cannot
+  // become a rule, so it stays off.
   const learn = panel.getByLabel("Künftig immer so zuordnen");
   await expect(learn).toBeVisible();
   await learn.uncheck();

@@ -336,10 +336,10 @@ def infer_rule(
     kind the answer's category set (D51). None when the line has no IBAN (the user then types a
     pattern), the split fits no method (one category over several parts; a part of
     loan_interest or loan_principal, whose shares the schedule moves every month at the same
-    amount), or a single category or such a split is answered for a counterparty a matcher
-    owns (an owner account, a tenant's or a loan account: D38). Rules run before the matchers,
-    so an IBAN-only rule there would pre-empt the exact rent / loan / owner split of every
-    later line."""
+    amount; a rent part without one shared tenancy, review F2), or a single category or such
+    a split is answered for a counterparty a matcher owns (an owner account, a tenant's or a
+    loan account: D38). Rules run before the matchers, so an IBAN-only rule there would
+    pre-empt the exact rent / loan / owner split of every later line."""
     if tx.counterparty_iban_hmac is None or tx.amount == 0:
         return None
     allocs = confirmed.allocations
@@ -376,8 +376,8 @@ def infer_rule(
             return rule(SplitMethod.BY_RENT_SCHEDULE, tenancy_id=tenancy_id)
     if len(allocs) != 1:
         kind = sorted(set(categories))
-        if len(kind) < 2 or any(c in _LOAN for c in kind):
-            return None
+        if len(kind) < 2 or any(c in _LOAN or c in _RENT for c in kind):
+            return None  # rent: by_rent_schedule of one tenancy or no rule, as before (F2)
         if matcher_owns(tx.counterparty_iban_hmac, context):
             return None
         return rule(SplitMethod.AS_LAST_SPLIT, categories=kind)
@@ -413,12 +413,16 @@ def _single_category(
 def _as_last_split(
     rule: MatchingRule, tx: MatchTransaction, history: Sequence[HistoryLine]
 ) -> _Split | None:
-    """D51: the parts of the latest confirmed history line whose category set is the rule's,
-    copied when the line's amount equals that line's (category, amount, scope and recurring;
-    the service period read for the new line, no Beleg). Nothing is computed: any other
-    amount, no such line, or a row without its amount -> None."""
+    """D51: the parts of the latest confirmed history line whose category set is the rule's and
+    whose booking date is on or before the line's own (a later split is never copied back,
+    review F1), copied when the line's amount equals that line's (category, amount, scope and
+    recurring; the service period read for the new line, no Beleg). Nothing is computed: any
+    other amount, no such line, or a row without its amount -> None."""
     kind = frozenset(rule.categories or ())
-    latest = max((b for b in _booked(tx, history) if b.kind == kind), key=_order, default=None)
+    earlier = (
+        b for b in _booked(tx, history) if b.kind == kind and b.booking_date <= tx.booking_date
+    )
+    latest = max(earlier, key=_order, default=None)
     if latest is None or latest.amount != tx.amount:
         return None
     if any(r.amount is None for r in latest.rows):
