@@ -19,6 +19,14 @@
 #    reference that is not at the end, stay. Steps 4 and 5 see the value without it. A value
 #    that is nothing but a page reference is missing (from the review: "(Seite 2)" as an
 #    amount would read as 2.00).
+#    For contract_number only (added 8 Nov 2026: the model wrote "Kontonummer 1234567890" for
+#    Luis's Sparkasse loan), the label the model wrote into the value is removed next: a
+#    leading Kontonummer, Konto-Nr., Darlehenskontonummer, Darlehensnummer, Darlehens-Nr.,
+#    Vertragsnummer, Vertrags-Nr. or Nr. (any case, "-" or space inside optional, an optional
+#    colon after it), and a trailing parenthetical that contains no digit or names such a label
+#    ("1234567890 (Kontonummer)"). The identifier itself stays as written, its spaces, "/", "-"
+#    and "." included; a parenthetical with a digit that names no label stays too. A value
+#    that is nothing but a label is missing.
 #    "unbekannt" (any case) or an empty value -> ExtractedValue.missing() (value null, no
 #    source, no checks, confidence low).
 # 3. Source: the first citation of the first block that contributes a non-newline character to
@@ -232,3 +240,73 @@ cases:
         citations: [{cited_text: "Die Miete steht in § 2", start_page_number: 2, end_page_number: 3}]
     expect:
       cold_rent: {value: null, confidence: low}
+
+  - id: contract_number_label_removed
+    description: >-
+      Luis's Sparkasse loan contract prints no Darlehensnummer, only the loan's Kontonummer,
+      and the model wrote the label into the value (8 Nov 2026). Only the number is kept, so
+      the quote check and the loan match see the identifier alone.
+    kind: loan_contract
+    blocks:
+      - {text: "contract_number: "}
+      - text: "Kontonummer 1234567890"
+        citations: [{cited_text: "Kontonummer 1234567890", start_page_number: 1, end_page_number: 2}]
+    expect:
+      contract_number: {value: "1234567890", source: {page: 1, quote: "Kontonummer 1234567890"}, checks: [cited, value_in_quote, validates], confidence: high}
+
+  - id: contract_number_trailing_label_removed
+    description: The same label in brackets after the number.
+    kind: loan_contract
+    blocks:
+      - {text: "contract_number: "}
+      - text: "1234567890 (Kontonummer)"
+        citations: [{cited_text: "Kontonummer 1234567890", start_page_number: 1, end_page_number: 2}]
+    expect:
+      contract_number: {value: "1234567890", source: {page: 1, quote: "Kontonummer 1234567890"}, checks: [cited, value_in_quote, validates], confidence: high}
+
+  - id: contract_number_label_with_colon_identifier_kept_as_written
+    description: >-
+      "Darlehens-Nr.:" with a colon is removed; the identifier keeps its spaces and slash.
+    kind: loan_contract
+    blocks:
+      - {text: "contract_number: "}
+      - text: "Darlehens-Nr.: 4711 0815/02"
+        citations: [{cited_text: "Darlehens-Nr.: 4711 0815/02", start_page_number: 1, end_page_number: 2}]
+    expect:
+      contract_number: {value: 4711 0815/02, source: {page: 1, quote: "Darlehens-Nr.: 4711 0815/02"}, checks: [cited, value_in_quote, validates], confidence: high}
+
+  - id: contract_number_without_label_unchanged
+    description: >-
+      An ordinary number with letters, digits and hyphens is unchanged; the rule is for
+      contract_number only, so brackets in another text field stay.
+    kind: loan_contract
+    blocks:
+      - {text: "contract_number: "}
+      - text: "DN-2026-0042"
+        citations: [{cited_text: "Darlehensnummer: DN-2026-0042", start_page_number: 1, end_page_number: 2}]
+      - {text: "\nlender: "}
+      - text: "Beispielbank AG (Darlehensgeber)"
+        citations: [{cited_text: "Beispielbank AG (Darlehensgeber)", start_page_number: 1, end_page_number: 2}]
+    expect:
+      contract_number: {value: DN-2026-0042, source: {page: 1, quote: "Darlehensnummer: DN-2026-0042"}, checks: [cited, value_in_quote, validates], confidence: high}
+      lender: {value: Beispielbank AG (Darlehensgeber), source: {page: 1, quote: "Beispielbank AG (Darlehensgeber)"}, checks: [cited, value_in_quote, validates], confidence: high}
+
+  - id: contract_number_parenthetical_with_digit_kept
+    description: A trailing parenthetical with a digit that names no label is part of the identifier.
+    kind: loan_contract
+    blocks:
+      - {text: "contract_number: "}
+      - text: "4711-0815 (Teil 2)"
+        citations: [{cited_text: "Darlehen 4711-0815 (Teil 2)", start_page_number: 1, end_page_number: 2}]
+    expect:
+      contract_number: {value: 4711-0815 (Teil 2), source: {page: 1, quote: "Darlehen 4711-0815 (Teil 2)"}, checks: [cited, value_in_quote, validates], confidence: high}
+
+  - id: contract_number_label_only_is_missing
+    description: "Nothing but a label is left: missing, never the label as the number."
+    kind: loan_contract
+    blocks:
+      - {text: "contract_number: "}
+      - text: "Kontonummer"
+        citations: [{cited_text: "Kontonummer", start_page_number: 1, end_page_number: 2}]
+    expect:
+      contract_number: {value: null, confidence: low}
