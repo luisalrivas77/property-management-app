@@ -903,7 +903,7 @@ def test_a_split_answer_books_the_next_line_of_the_same_amount_as_it_was_split(
     """D51, Luis (8 Nov 2026): the Hausverwaltung's Hausgeld, split by its purpose text into
     the reserve and the operating costs, could not be learned. Answered once with "Künftig
     immer so zuordnen", the rule (no amounts) copies that split onto the payer's waiting
-    line of the same amount and onto a later import's; another amount stays waiting."""
+    line of the same amount and onto a later line; another amount stays waiting."""
 
     def hv(day: date, amount: str = "-380.00"):
         return world.line(day, amount, iban=WEG_IBAN, name="Hausverwaltung", purpose="Hausgeld")
