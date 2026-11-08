@@ -18,19 +18,20 @@ from db.matching_support import (
     TENANT_IBAN,
     World,
 )
-from sqlalchemy import insert, select, text
+from sqlalchemy import insert, select, text, update
 from test_bank_parsers import CAMT, CSV, build
 
 from hausbuch.ai.client import ModelCallError
 from hausbuch.ai.fake import FakeModelClient, text_response
 from hausbuch.ai.provenance import record_ai_call
-from hausbuch.ai.requests import extract_request
+from hausbuch.ai.requests import categorize_request, explain_request, extract_request
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import ai_call as ai_call_table
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import matching_rule as rule_table
 from hausbuch.db.tables import statement_import as import_table
+from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.jobs.document_read import JobDeps, RetryLater
 from hausbuch.jobs.enqueue import import_lock, transaction_lock, waiting_lock
 from hausbuch.jobs.matching import (
@@ -52,6 +53,7 @@ from hausbuch.schemas.extraction import EXTRACTION_MODELS
 from hausbuch.schemas.property import UnitCreate
 from hausbuch.services import documents, loans, matching, review, rules_learned, tenancies
 from hausbuch.services.accounts import create_account
+from hausbuch.services.errors import RuleViolationError
 from hausbuch.services.statements import (
     import_statement,
     list_possible_duplicates,
@@ -64,6 +66,8 @@ from hausbuch.settings import Settings
 pytestmark = pytest.mark.db
 
 NOW = datetime(2026, 11, 7, 8, 0, tzinfo=UTC)
+UNMATCHED_TEXT = "Nicht zugeordnet: keine Regel, kein Abgleich und kein Beleg passen."
+AI_FAILED_TEXT = "Die KI konnte diese Zahlung nicht einordnen (Anfrage fehlgeschlagen)."
 
 
 @pytest.fixture(autouse=True)
@@ -178,6 +182,7 @@ def test_with_ai_off_nothing_is_sent_and_the_line_stays_unmatched(world, app_eng
     assert client.requests == [] and _rows(world, tx) == [] and _calls(world, tx) == []
     (item,) = world.query(review.inbox)
     assert item.kind is InboxItemKind.UNMATCHED
+    assert item.reasoning == UNMATCHED_TEXT  # no call was made, so none failed
 
 
 def test_an_llm_set_is_only_proposed_while_auto_accept_llm_is_off(world, app_engine, tmp_path):
@@ -360,6 +365,9 @@ def test_a_4xx_is_not_retried(world, app_engine, tmp_path):
     client = FakeModelClient([ModelCallError(retryable=False, status=400)])
     plan = _run(_deps(app_engine, tmp_path, client), world, tx)
     assert (plan.outcome, plan.reason) == ("skipped", "ai.api_error")
+    # D50: the failure is visible in the queue, not the plain no-match text.
+    (item,) = world.query(review.inbox)
+    assert (item.kind, item.reasoning) == (InboxItemKind.UNMATCHED, AI_FAILED_TEXT)
 
 
 # --- Explain ------------------------------------------------------------------------------
@@ -1018,3 +1026,83 @@ def test_an_owner_account_added_later_books_the_waiting_transfers(world, app_eng
     (kept,) = _rows(world, answered)
     assert (kept.method, kept.category) == ("user", "other_income")
     assert _rows(world, painter) == []
+
+
+# --- Asking the model again: POST /inbox/ai-retry (D50) ------------------------------------
+
+
+def _clear_jobs(world: World) -> None:
+    with workspace_transaction(world.engine, world.ws) as conn:
+        conn.execute(text("DELETE FROM procrastinate_jobs"))
+
+
+def test_ai_retry_queues_only_the_listed_lines_without_rows(world, app_engine, tmp_path):
+    bare = world.line(date(2026, 3, 3), "-312.40", name="Allianz", purpose="Beitrag")
+    proposed = world.line(date(2026, 3, 4), "-50.00", name="Stadtwerke")
+    client = FakeModelClient([_answer(("insurance", "-50.00", None, True))])
+    _run(_deps(app_engine, tmp_path, client), world, proposed)
+    assert _rows(world, proposed)[0].status == "proposed"
+    confirmed = world.line(date(2026, 3, 5), "-20.00", name="Sparkasse")
+    _put(world, confirmed, ("-20.00", "bank_fees"), learn_rule=False)
+    excluded = world.line(date(2026, 3, 3), "-312.40", name="Allianz", purpose="Beitrag")
+    with workspace_transaction(world.engine, world.ws) as conn:
+        conn.execute(
+            update(transaction_table)
+            .where(transaction_table.c.id == excluded)
+            .values(excluded_as_duplicate_of=bare)
+        )
+    _clear_jobs(world)
+
+    result = world.cmd(review.request_ai_suggestions, ai_enabled=True)
+    assert result.queued == 1
+    assert [(j.task_name, j.lock) for j in _jobs(world)] == [
+        ("match_transaction", transaction_lock(bare))
+    ]
+    assert _events(world, bare) == []
+
+    # The queued job is the normal one (not a rematch), so the model is asked.
+    (job,) = _jobs(world)
+    client = FakeModelClient([_answer(("insurance", "-312.40", None, True))])
+    _run(_deps(app_engine, tmp_path, client), world, job.args["transaction_id"])
+    assert len(client.requests) == 1
+    (row,) = _rows(world, bare)
+    assert (row.method, row.status) == ("llm", "proposed")
+    _clear_jobs(world)
+    assert world.cmd(review.request_ai_suggestions, ai_enabled=True).queued == 0
+
+
+def test_ai_retry_is_refused_while_the_ai_layer_is_off(world):
+    world.line(date(2026, 3, 3), "-312.40", name="Allianz")
+    _clear_jobs(world)
+    with pytest.raises(RuleViolationError) as info:
+        world.cmd(review.request_ai_suggestions, ai_enabled=False)
+    assert info.value.code == "ai.disabled"
+    assert _jobs(world) == []
+
+
+def test_only_the_latest_categorize_call_decides_the_failure_text(world, app_engine, tmp_path):
+    """A failure followed by a usable call (whose answer was, say, not written) is not shown
+    as a failure; an explain call does not count either way."""
+    tx = world.line(date(2026, 3, 3), "-312.40", name="Allianz")
+    settings = _deps(app_engine, tmp_path, None).settings
+    request = categorize_request(settings, {}, hard=False)
+    explain = explain_request(settings, {})
+    for call, kwargs in (
+        (request, {"failure": ModelCallError(retryable=False, status=400)}),
+        (request, {"response": text_response("{}")}),
+        (explain, {"failure": ModelCallError(retryable=True, status=529)}),
+    ):
+        with workspace_transaction(world.engine, world.ws) as conn:
+            record_ai_call(conn, workspace_id=world.ws, request=call, transaction_id=tx, **kwargs)
+    (item,) = world.query(review.inbox)
+    assert item.reasoning == UNMATCHED_TEXT
+    with workspace_transaction(world.engine, world.ws) as conn:
+        record_ai_call(
+            conn,
+            workspace_id=world.ws,
+            request=request,
+            transaction_id=tx,
+            failure=ModelCallError(retryable=True, status=529),
+        )
+    (item,) = world.query(review.inbox)
+    assert item.reasoning == AI_FAILED_TEXT

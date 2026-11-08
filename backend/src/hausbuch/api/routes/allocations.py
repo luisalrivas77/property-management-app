@@ -4,6 +4,8 @@
 - GET /inbox: every item that needs the person, newest first (proposals, failed or blocked
   readings, imports that do not reconcile, possible duplicates, lines with a proposed set
   or none).
+- POST /inbox/ai-retry: send every line listed as unmatched to the model again (D50). 422
+  ai.disabled when HAUSBUCH_AI_ENABLED is off.
 - GET /transactions/{id}/allocations: the line, its current allocations, and whether the
   answer may become a rule (`can_learn_rule`, false for a counterparty a matcher owns,
   D38) with the checkbox's default (`learn_rule_default`, off for categories that never
@@ -19,7 +21,12 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from hausbuch.schemas.api import ConfirmAllocationsBody, InboxItem, TransactionAllocations
+from hausbuch.schemas.api import (
+    AiRetryResult,
+    ConfirmAllocationsBody,
+    InboxItem,
+    TransactionAllocations,
+)
 from hausbuch.schemas.enums import EntityType
 from hausbuch.services import review
 
@@ -31,6 +38,12 @@ router = domain_router()
 @router.get("/inbox")
 def inbox_list(cmd: Cmd) -> list[InboxItem]:
     return cmd.read(review.inbox)
+
+
+@router.post("/inbox/ai-retry")
+def inbox_ai_retry(cmd: Cmd, settings: SettingsDep) -> AiRetryResult:
+    """Queue the model for every unmatched line; the suggestions arrive as the jobs run."""
+    return cmd.run(review.request_ai_suggestions, ai_enabled=settings.ai_enabled)
 
 
 @router.get("/transactions/{transaction_id}/allocations")
