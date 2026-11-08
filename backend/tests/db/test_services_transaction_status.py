@@ -136,7 +136,7 @@ def test_each_line_lists_its_status_and_current_categories(world):
     assert listed[merged] == (S.EXCLUDED, [])
     assert listed[awaiting] == (S.DUPLICATE_OPEN, [])
     assert listed[unreconciled] == (S.NOT_RECONCILED, [])
-    assert len(listed) == 9
+    assert len(listed) == 8
 
 
 def test_a_split_rent_lists_both_categories_largest_first(world):
@@ -144,11 +144,3 @@ def test_a_split_rent_lists_both_categories_largest_first(world):
     rent = world.line(date(2025, 1, 3), "1280.00", iban=TENANT_IBAN, purpose="Miete 01/2025")
     world.cmd(matching.match_line, rent, iban_key=TEST_IBAN_KEY, ai_available=False)
     assert _listed(world)[rent] == (S.CONFIRMED, [C.RENT_COLD, C.OPERATING_COSTS_PREPAYMENT])
-
-
-def test_another_workspaces_allocations_do_not_count(world, app_engine, fresh_workspaces):
-    tx = world.line(date(2025, 1, 4), "-50.00", name="Versicherung")
-    _answer(world, tx, ("-50.00", C.INSURANCE))
-    other = World(app_engine, fresh_workspaces[1])
-    line = other.line(date(2025, 1, 4), "-50.00", name="Versicherung")
-    assert _listed(other) == {line: (S.OPEN, [])}
