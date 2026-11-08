@@ -19,7 +19,9 @@
 #       hausgeld_* parts that do not equal the plan -> as_last_split with categories = the
 #       answer's distinct categories, sorted, and no scope (the parts carry their own); never
 #       when a part is loan_interest or loan_principal (the schedule's interest and repayment
-#       shares change every month at the same amount, so a copied split would be wrong).
+#       shares change every month at the same amount, so a copied split would be wrong), and
+#       never when a part is rent_cold or operating_costs_prepayment (rent is split by its
+#       tenancy's schedule, by_rent_schedule, or not learned at all: as before D51).
 #   recurring: true when every confirmed allocation is recurring, else false (whatever the
 #   split method; only single_category hits read it).
 #   No single_category rule when the counterparty is an owner account, a tenant's or a loan
@@ -271,3 +273,15 @@ no_rule:
         allocations:
           - {amount: "-80.00", category: loan_interest, property_id: *P, loan_id: *L, service_period_start: 2025-03-01, service_period_end: 2025-03-31, recurring: true}
           - {amount: "-920.00", category: loan_principal, property_id: *P, loan_id: *L, service_period_start: 2025-03-01, service_period_end: 2025-03-31, recurring: true}
+
+  - id: rent_split_without_a_tenancy_is_no_rule
+    description: D51, review F2. Rent and its prepayment from a payer that is no tenant's (yet), without a tenancy; as before D51 no rule is learned, so a rent rule cannot be keyed to an IBAN that may later become a tenant's.
+    answered:
+      transaction: {id: 0000002a-0000-4000-8000-000000000708, booking_date: 2024-02-01, amount: "1400.00", counterparty_name: Partei Beispiel, counterparty_iban_hmac: *H_OTHER, purpose: Miete Februar}
+      confirmed:
+        transaction_id: 0000002a-0000-4000-8000-000000000708
+        method: user
+        confidence: "1.000"
+        allocations:
+          - {amount: "1150.00", category: rent_cold, property_id: *P, service_period_start: 2024-02-01, service_period_end: 2024-02-29, recurring: true}
+          - {amount: "250.00", category: operating_costs_prepayment, property_id: *P, service_period_start: 2024-02-01, service_period_end: 2024-02-29, recurring: true}
