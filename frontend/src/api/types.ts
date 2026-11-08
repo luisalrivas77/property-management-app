@@ -3227,6 +3227,11 @@ export interface components {
             /** Created From Allocation Id */
             created_from_allocation_id?: string | null;
             /**
+             * Same Amount Only
+             * @default false
+             */
+            same_amount_only: boolean;
+            /**
              * Enabled
              * @default true
              */

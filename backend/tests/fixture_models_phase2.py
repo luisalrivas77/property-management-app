@@ -21,6 +21,7 @@ from hausbuch.schemas.allocation import (
     AllocationDraft,
     AllocationMethod,
     AllocationSet,
+    HistoryLine,
     MatchContext,
     MatchingRule,
     MatchingRuleCreate,
@@ -222,6 +223,42 @@ class RulesFixture(Schema):
                 and any(a.recurring != rule.recurring for a in case.expect.allocations)
             ):
                 raise ValueError(f"{case.id}: a single_category hit takes rule.recurring")
+        return self
+
+
+# --- rule_history.yaml (D49) -------------------------------------------------------------
+
+
+class RuleHistoryCase(Lenient):
+    rules: list[str] = Field(min_length=1)
+    transaction: MatchTransaction
+    history: list[HistoryLine]
+    expect: SetExpect | None
+
+    @model_validator(mode="after")
+    def _sum(self) -> Self:
+        _sums(self.expect, self.transaction, self.id)
+        return self
+
+
+class RuleHistoryFixture(Schema):
+    ids: dict[str, str]
+    context: MatchContext
+    rules: dict[str, MatchingRule]
+    history: dict[str, HistoryLine]  # named lines the cases reuse (YAML anchors)
+    cases: list[RuleHistoryCase]
+
+    @model_validator(mode="after")
+    def _known_rules(self) -> Self:
+        for case in self.cases:
+            unknown = [name for name in case.rules if name not in self.rules]
+            if unknown:
+                raise ValueError(f"{case.id}: unknown rules {unknown}")
+            ids = {self.rules[name].id for name in case.rules}
+            if case.expect and case.expect.rule_id not in ids:
+                raise ValueError(f"{case.id}: rule_id is not one of the case's rules")
+            if case.expect and case.expect.confidence < 1 and case.expect.question is None:
+                raise ValueError(f"{case.id}: a proposal carries its question")
         return self
 
 
@@ -729,6 +766,7 @@ MODELS: dict[str, type[Schema]] = {
     "service_period": ServicePeriodFixture,
     "matchers": MatchersFixture,
     "rules": RulesFixture,
+    "rule_history": RuleHistoryFixture,
     "review_routing": RoutingFixture,
     "line_hash": LineHashFixture,
     "duplicates": DuplicatesFixture,

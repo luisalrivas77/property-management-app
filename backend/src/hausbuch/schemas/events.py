@@ -470,6 +470,7 @@ class RuleRecorded(Schema):
     loan_id: UUID | None = None
     recurring: bool = False
     created_from_allocation_id: UUID | None = None
+    same_amount_only: bool = False  # D49; default false, so events before it still read
 
     @model_validator(mode="after")
     def _matches_something(self) -> Self:

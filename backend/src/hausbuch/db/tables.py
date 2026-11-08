@@ -603,6 +603,7 @@ matching_rule = Table(
     _uuid("created_from_allocation_id", nullable=True),
     Column("enabled", Boolean, nullable=False, server_default=text("true")),
     Column("hit_count", Integer, nullable=False, server_default=text("0")),
+    Column("same_amount_only", Boolean, nullable=False, server_default=text("false")),
     _created_at(),
     _updated_at(),
 )

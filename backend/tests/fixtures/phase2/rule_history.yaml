@@ -1,0 +1,358 @@
+# Rule fixture: learned rules checked against the ledger's own history (D49; refines D25).
+#
+# matching.rule_answer(rules: list[MatchingRule], transaction: MatchTransaction,
+#                      context: MatchContext, history: list[HistoryLine])
+#   -> AllocationSet | None
+# Spec: docs/phases/phase-2.md §8.1 step 1, D49. A rule still stores no amount (D25); the
+# reference amount is read from the ledger at match time. Luis's Hausverwaltung debits his
+# rental account twice a month from one IBAN (Hausgeld and its management fee), which an
+# IBAN + sign matcher cannot tell apart.
+#
+# Hits: matching.apply_rule for every rule, in the order given (oldest first). For a hit H
+# with category set K (the distinct categories of its allocations):
+#   history = the lines of `history` with the transaction's IBAN hash (never null) and sign,
+#     other than the transaction itself, whose current rows (status superseded ignored) are
+#     all confirmed; a line with any proposed row, or none, does not count. Each counts with
+#     the set of its confirmed categories.
+#   H stands when its split method checks the amount against a record itself
+#     (by_wirtschaftsplan, by_loan_schedule, by_rent_schedule: apply_rule already returned
+#     None for any other amount), or owner_transfer; otherwise (single_category):
+#     - single-kind (every history line has category set K) and the rule is not
+#       same_amount_only -> stands at any amount (today's behaviour);
+#     - mixed (a history line with another set), or same_amount_only -> stands only when
+#       the amount equals the amount of the LATEST history line with set K (booking date,
+#       then transaction id); else a near miss, distance |amount - that latest amount|, or
+#       no distance when history has no line with set K.
+#   Standing hits: all give the same split -> the first (the set apply_rule returned:
+#     confidence 1, auto-confirm); they disagree -> null.
+#   No standing hit: the near miss with the smallest distance (ties between different
+#     splits -> null) as a proposal: confidence 0.500 (below every threshold, so review) and
+#     the question "Der Betrag weicht von der letzten Buchung ab (zuletzt <amount> als
+#     „<label>“ gebucht). Stimmt die Zuordnung?" (amount without sign, cents only when not
+#     .00; label = the category's German label, as frontend labels.ts). Near misses without a
+#     distance only, or no hit -> null.
+# The service runs the matchers before using a proposal (a matcher's answer wins over it);
+# that order is not part of this pure fixture.
+
+ids:
+  workspace: &W 0000000a-0000-4000-8000-000000000001
+  property: &P 0000000b-0000-4000-8000-000000000001
+  doc_wp_2026: &D_WP26 0000000d-0000-4000-8000-000000000021
+  hmac_hv: &H_HV "8888888888888888888888888888888888888888888888888888888888888888"
+  hmac_insurer: &H_INS "7777777777777777777777777777777777777777777777777777777777777777"
+  hmac_other: &H_OTHER "9999999999999999999999999999999999999999999999999999999999999999"
+
+context:
+  wirtschaftsplaene:
+    - {document_id: *D_WP26, property_id: *P, valid_from: 2026-01-01, total: "380.00", umlagefaehig: "210.00", verwaltung: "50.00", ruecklage: "120.00"}
+
+rules:
+  insurance:
+    id: 0000002b-0000-4000-8000-000000000101
+    workspace_id: *W
+    created_at: 2026-02-01T10:00:00Z
+    updated_at: 2026-02-01T10:00:00Z
+    matcher: {counterparty_iban_hmac: *H_INS, amount_sign: debit}
+    split_method: single_category
+    category: insurance
+    property_id: *P
+    recurring: true
+  hausgeld:
+    id: 0000002b-0000-4000-8000-000000000102
+    workspace_id: *W
+    created_at: 2026-02-01T10:00:00Z
+    updated_at: 2026-02-01T10:00:00Z
+    matcher: {counterparty_iban_hmac: *H_HV, amount_sign: debit}
+    split_method: single_category
+    category: hausgeld_umlagefaehig
+    property_id: *P
+    recurring: true
+  fee: &R_FEE
+    id: 0000002b-0000-4000-8000-000000000103
+    workspace_id: *W
+    created_at: 2026-02-02T10:00:00Z
+    updated_at: 2026-02-02T10:00:00Z
+    matcher: {counterparty_iban_hmac: *H_HV, amount_sign: debit}
+    split_method: single_category
+    category: hausgeld_verwaltung
+    property_id: *P
+    recurring: true
+  fee_same_amount_only:
+    <<: *R_FEE
+    id: 0000002b-0000-4000-8000-000000000104
+    same_amount_only: true
+  wirtschaftsplan:
+    id: 0000002b-0000-4000-8000-000000000105
+    workspace_id: *W
+    created_at: 2026-02-01T09:00:00Z
+    updated_at: 2026-02-01T09:00:00Z
+    matcher: {counterparty_iban_hmac: *H_HV, purpose_pattern: hausgeld, amount_sign: debit}
+    split_method: by_wirtschaftsplan
+    property_id: *P
+
+# History lines reused below. Booked in 2026, all from the Hausverwaltung unless named.
+history:
+  hausgeld_feb: &HG_FEB {transaction_id: 0000002a-0000-4000-8000-000000000801, booking_date: 2026-02-02, amount: "-380.00", counterparty_iban_hmac: *H_HV, rows: [{category: hausgeld_umlagefaehig, status: confirmed}]}
+  fee_feb: &FEE_FEB {transaction_id: 0000002a-0000-4000-8000-000000000802, booking_date: 2026-02-03, amount: "-35.70", counterparty_iban_hmac: *H_HV, rows: [{category: hausgeld_verwaltung, status: confirmed}]}
+  hausgeld_mar: &HG_MAR {transaction_id: 0000002a-0000-4000-8000-000000000803, booking_date: 2026-03-02, amount: "-380.00", counterparty_iban_hmac: *H_HV, rows: [{category: hausgeld_umlagefaehig, status: confirmed}]}
+  fee_mar: &FEE_MAR {transaction_id: 0000002a-0000-4000-8000-000000000804, booking_date: 2026-03-03, amount: "-35.70", counterparty_iban_hmac: *H_HV, rows: [{category: hausgeld_verwaltung, status: confirmed}]}
+
+cases:
+  - id: single_kind_any_amount_applies
+    description: An insurer with one kind of payment; the premium went up and the rule still books it (unchanged behaviour).
+    rules: [insurance]
+    transaction:
+      id: 0000002a-0000-4000-8000-000000000701
+      booking_date: 2027-01-10
+      amount: "-330.10"
+      counterparty_name: Beispiel Versicherung AG
+      counterparty_iban_hmac: *H_INS
+      purpose: Beitrag Wohngebaeude 2027
+    history:
+      - {transaction_id: 0000002a-0000-4000-8000-000000000811, booking_date: 2025-01-10, amount: "-298.00", counterparty_iban_hmac: *H_INS, rows: [{category: insurance, status: confirmed}]}
+      - {transaction_id: 0000002a-0000-4000-8000-000000000812, booking_date: 2026-01-10, amount: "-312.40", counterparty_iban_hmac: *H_INS, rows: [{category: insurance, status: confirmed}]}
+    expect:
+      method: rule
+      rule_id: 0000002b-0000-4000-8000-000000000101
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "-330.10", category: insurance, property_id: *P, service_period_start: 2027-01-01, service_period_end: 2027-12-31, recurring: true}
+
+  - id: no_history_applies
+    description: Nothing booked from the counterparty yet; a rule stands at any amount as before.
+    rules: [fee]
+    transaction: &TX_FEE
+      id: 0000002a-0000-4000-8000-000000000702
+      booking_date: 2026-04-03
+      amount: "-35.70"
+      counterparty_name: Muster Hausverwaltung GmbH
+      counterparty_iban_hmac: *H_HV
+      purpose: Verwaltergebuehr 04/2026
+    history: []
+    expect:
+      method: rule
+      rule_id: 0000002b-0000-4000-8000-000000000103
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "-35.70", category: hausgeld_verwaltung, property_id: *P, service_period_start: 2026-04-01, service_period_end: 2026-04-30, recurring: true}
+
+  - id: mixed_amount_equals_latest_applies
+    description: The Hausverwaltung sends two kinds; the fee rule books the line whose amount is the last fee's.
+    rules: [fee]
+    transaction: *TX_FEE
+    history: [*HG_FEB, *FEE_FEB, *HG_MAR, *FEE_MAR]
+    expect:
+      method: rule
+      rule_id: 0000002b-0000-4000-8000-000000000103
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "-35.70", category: hausgeld_verwaltung, property_id: *P, service_period_start: 2026-04-01, service_period_end: 2026-04-30, recurring: true}
+
+  - id: mixed_two_rules_hausgeld_amount
+    description: Both rules hit; only the Hausgeld rule's last amount is 380.00, so only it stands.
+    rules: [hausgeld, fee]
+    transaction: &TX_HG
+      id: 0000002a-0000-4000-8000-000000000703
+      booking_date: 2026-04-02
+      amount: "-380.00"
+      counterparty_name: Muster Hausverwaltung GmbH
+      counterparty_iban_hmac: *H_HV
+      purpose: Wohngeld 04/2026
+    history: [*HG_FEB, *FEE_FEB, *HG_MAR, *FEE_MAR]
+    expect:
+      method: rule
+      rule_id: 0000002b-0000-4000-8000-000000000102
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "-380.00", category: hausgeld_umlagefaehig, property_id: *P, service_period_start: 2026-04-01, service_period_end: 2026-04-30, recurring: true}
+
+  - id: mixed_two_rules_fee_amount
+    description: The same two rules; the 35.70 line goes to the fee rule.
+    rules: [hausgeld, fee]
+    transaction: *TX_FEE
+    history: [*HG_FEB, *FEE_FEB, *HG_MAR, *FEE_MAR]
+    expect:
+      method: rule
+      rule_id: 0000002b-0000-4000-8000-000000000103
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "-35.70", category: hausgeld_verwaltung, property_id: *P, service_period_start: 2026-04-01, service_period_end: 2026-04-30, recurring: true}
+
+  - id: mixed_new_amount_proposes_the_closer_rule
+    description: The fee went up to 36.90; neither rule stands, the fee rule is closer (1.20 against 343.10) and is proposed with a question, not booked.
+    rules: [hausgeld, fee]
+    transaction: &TX_FEE_NEW
+      <<: *TX_FEE
+      id: 0000002a-0000-4000-8000-000000000704
+      amount: "-36.90"
+    history: [*HG_FEB, *FEE_FEB, *HG_MAR, *FEE_MAR]
+    expect:
+      method: rule
+      rule_id: 0000002b-0000-4000-8000-000000000103
+      confidence: "0.500"
+      question: "Der Betrag weicht von der letzten Buchung ab (zuletzt 35,70 € als „Hausgeld, nicht umlagefähig (Verwaltung)“ gebucht). Stimmt die Zuordnung?"
+      allocations:
+        - {amount: "-36.90", category: hausgeld_verwaltung, property_id: *P, service_period_start: 2026-04-01, service_period_end: 2026-04-30, recurring: true}
+
+  - id: mixed_equal_distances_fall_through
+    description: 75.00 is 25.00 from both last amounts; no answer, the line goes on through the order.
+    rules: [hausgeld, fee]
+    transaction:
+      <<: *TX_FEE
+      id: 0000002a-0000-4000-8000-000000000705
+      amount: "-75.00"
+    history:
+      - {transaction_id: 0000002a-0000-4000-8000-000000000821, booking_date: 2026-03-02, amount: "-100.00", counterparty_iban_hmac: *H_HV, rows: [{category: hausgeld_umlagefaehig, status: confirmed}]}
+      - {transaction_id: 0000002a-0000-4000-8000-000000000822, booking_date: 2026-03-03, amount: "-50.00", counterparty_iban_hmac: *H_HV, rows: [{category: hausgeld_verwaltung, status: confirmed}]}
+    expect: null
+
+  - id: mixed_latest_wins
+    description: An older fee line was 36.90, the newer one 35.70; only the newer counts, so 36.90 is a proposal against 35,70 €.
+    rules: [hausgeld, fee]
+    transaction: *TX_FEE_NEW
+    history:
+      - *HG_MAR
+      - {transaction_id: 0000002a-0000-4000-8000-000000000831, booking_date: 2026-02-03, amount: "-36.90", counterparty_iban_hmac: *H_HV, rows: [{category: hausgeld_verwaltung, status: confirmed}]}
+      - *FEE_MAR
+    expect:
+      method: rule
+      rule_id: 0000002b-0000-4000-8000-000000000103
+      confidence: "0.500"
+      question: "Der Betrag weicht von der letzten Buchung ab (zuletzt 35,70 € als „Hausgeld, nicht umlagefähig (Verwaltung)“ gebucht). Stimmt die Zuordnung?"
+      allocations:
+        - {amount: "-36.90", category: hausgeld_verwaltung, property_id: *P, service_period_start: 2026-04-01, service_period_end: 2026-04-30, recurring: true}
+
+  - id: mixed_latest_same_day_by_transaction_id
+    description: Two fee lines on one day; the higher transaction id is the latest (35.70), so 36.90 is a proposal.
+    rules: [hausgeld, fee]
+    transaction: *TX_FEE_NEW
+    history:
+      - *HG_MAR
+      - {transaction_id: 0000002a-0000-4000-8000-000000000842, booking_date: 2026-03-03, amount: "-35.70", counterparty_iban_hmac: *H_HV, rows: [{category: hausgeld_verwaltung, status: confirmed}]}
+      - {transaction_id: 0000002a-0000-4000-8000-000000000841, booking_date: 2026-03-03, amount: "-36.90", counterparty_iban_hmac: *H_HV, rows: [{category: hausgeld_verwaltung, status: confirmed}]}
+    expect:
+      method: rule
+      rule_id: 0000002b-0000-4000-8000-000000000103
+      confidence: "0.500"
+      question: "Der Betrag weicht von der letzten Buchung ab (zuletzt 35,70 € als „Hausgeld, nicht umlagefähig (Verwaltung)“ gebucht). Stimmt die Zuordnung?"
+      allocations:
+        - {amount: "-36.90", category: hausgeld_verwaltung, property_id: *P, service_period_start: 2026-04-01, service_period_end: 2026-04-30, recurring: true}
+
+  - id: superseded_rows_ignored
+    description: A fee line first booked as Hausgeld and corrected; only its current rows count, so the counterparty is single-kind and the fee rule books 36.90.
+    rules: [fee]
+    transaction: *TX_FEE_NEW
+    history:
+      - {transaction_id: 0000002a-0000-4000-8000-000000000851, booking_date: 2026-02-03, amount: "-35.70", counterparty_iban_hmac: *H_HV, rows: [{category: hausgeld_umlagefaehig, status: superseded}, {category: hausgeld_verwaltung, status: confirmed}]}
+      - *FEE_MAR
+    expect:
+      method: rule
+      rule_id: 0000002b-0000-4000-8000-000000000103
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "-36.90", category: hausgeld_verwaltung, property_id: *P, service_period_start: 2026-04-01, service_period_end: 2026-04-30, recurring: true}
+
+  - id: proposed_rows_are_not_history
+    description: A Hausgeld line still waiting with a proposal is not history; confirmed lines are all fees, so the fee rule books 36.90.
+    rules: [fee]
+    transaction: *TX_FEE_NEW
+    history:
+      - *FEE_MAR
+      - {transaction_id: 0000002a-0000-4000-8000-000000000861, booking_date: 2026-03-02, amount: "-380.00", counterparty_iban_hmac: *H_HV, rows: [{category: hausgeld_umlagefaehig, status: proposed}]}
+      - {transaction_id: 0000002a-0000-4000-8000-000000000862, booking_date: 2026-03-20, amount: "-12.00", counterparty_iban_hmac: *H_HV, rows: []}
+    expect:
+      method: rule
+      rule_id: 0000002b-0000-4000-8000-000000000103
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "-36.90", category: hausgeld_verwaltung, property_id: *P, service_period_start: 2026-04-01, service_period_end: 2026-04-30, recurring: true}
+
+  - id: other_counterparty_sign_and_self_ignored
+    description: A refund from the Hausverwaltung (a credit), a debit from another IBAN and the line itself are not history; single-kind, so the fee rule books 36.90.
+    rules: [fee]
+    transaction: *TX_FEE_NEW
+    history:
+      - *FEE_MAR
+      - {transaction_id: 0000002a-0000-4000-8000-000000000871, booking_date: 2026-03-10, amount: "120.00", counterparty_iban_hmac: *H_HV, rows: [{category: other_income, status: confirmed}]}
+      - {transaction_id: 0000002a-0000-4000-8000-000000000872, booking_date: 2026-03-11, amount: "-36.90", counterparty_iban_hmac: *H_OTHER, rows: [{category: other_expense, status: confirmed}]}
+      - {transaction_id: 0000002a-0000-4000-8000-000000000704, booking_date: 2026-04-03, amount: "-36.90", counterparty_iban_hmac: *H_HV, rows: [{category: hausgeld_umlagefaehig, status: confirmed}]}
+    expect:
+      method: rule
+      rule_id: 0000002b-0000-4000-8000-000000000103
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "-36.90", category: hausgeld_verwaltung, property_id: *P, service_period_start: 2026-04-01, service_period_end: 2026-04-30, recurring: true}
+
+  - id: mixed_no_line_of_the_rules_kind_falls_through
+    description: History holds Hausgeld only; the fee rule has no amount to compare with, so no answer.
+    rules: [fee]
+    transaction: *TX_FEE_NEW
+    history: [*HG_FEB, *HG_MAR]
+    expect: null
+
+  - id: standing_rules_disagree
+    description: No history; both rules stand at any amount and give different splits, so no answer (as before D49).
+    rules: [hausgeld, fee]
+    transaction: *TX_FEE
+    history: []
+    expect: null
+
+  - id: wirtschaftsplan_stands_in_a_mixed_counterparty
+    description: The plan total is 380.00; a by_wirtschaftsplan hit checks the amount itself and stands even though the fee rule's near miss exists.
+    rules: [wirtschaftsplan, fee]
+    transaction:
+      <<: *TX_HG
+      id: 0000002a-0000-4000-8000-000000000706
+      purpose: Hausgeld 04/2026
+    history:
+      - {transaction_id: 0000002a-0000-4000-8000-000000000881, booking_date: 2026-03-02, amount: "-380.00", counterparty_iban_hmac: *H_HV, rows: [{category: hausgeld_umlagefaehig, status: confirmed}, {category: hausgeld_verwaltung, status: confirmed}, {category: hausgeld_ruecklage, status: confirmed}]}
+      - *FEE_MAR
+    expect:
+      method: rule
+      rule_id: 0000002b-0000-4000-8000-000000000105
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "-210.00", category: hausgeld_umlagefaehig, property_id: *P, document_id: *D_WP26, service_period_start: 2026-04-01, service_period_end: 2026-04-30, recurring: true}
+        - {amount: "-50.00", category: hausgeld_verwaltung, property_id: *P, document_id: *D_WP26, service_period_start: 2026-04-01, service_period_end: 2026-04-30, recurring: true}
+        - {amount: "-120.00", category: hausgeld_ruecklage, property_id: *P, document_id: *D_WP26, service_period_start: 2026-04-01, service_period_end: 2026-04-30, recurring: true}
+
+  - id: same_amount_only_other_amount_is_proposed
+    description: The rule was learned "only payments of 35.70"; history is single-kind, yet 36.90 is a proposal, not booked.
+    rules: [fee_same_amount_only]
+    transaction: *TX_FEE_NEW
+    history: [*FEE_FEB, *FEE_MAR]
+    expect:
+      method: rule
+      rule_id: 0000002b-0000-4000-8000-000000000104
+      confidence: "0.500"
+      question: "Der Betrag weicht von der letzten Buchung ab (zuletzt 35,70 € als „Hausgeld, nicht umlagefähig (Verwaltung)“ gebucht). Stimmt die Zuordnung?"
+      allocations:
+        - {amount: "-36.90", category: hausgeld_verwaltung, property_id: *P, service_period_start: 2026-04-01, service_period_end: 2026-04-30, recurring: true}
+
+  - id: same_amount_only_same_amount_applies
+    rules: [fee_same_amount_only]
+    transaction: *TX_FEE
+    history: [*FEE_FEB, *FEE_MAR]
+    expect:
+      method: rule
+      rule_id: 0000002b-0000-4000-8000-000000000104
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "-35.70", category: hausgeld_verwaltung, property_id: *P, service_period_start: 2026-04-01, service_period_end: 2026-04-30, recurring: true}
+
+  - id: same_amount_only_without_history_falls_through
+    description: Nothing confirmed to compare with; a flagged rule books nothing.
+    rules: [fee_same_amount_only]
+    transaction: *TX_FEE
+    history: []
+    expect: null

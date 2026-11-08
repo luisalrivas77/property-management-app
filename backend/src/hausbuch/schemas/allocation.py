@@ -202,6 +202,11 @@ class MatchingRuleCreate(Schema):
     # schedule-based split methods set recurring themselves).
     recurring: bool = False
     created_from_allocation_id: UUID | None = None
+    # D49: "only payments of this amount". A flag, never an amount: a hit stands only when
+    # the line's amount equals the latest confirmed line of the rule's category from the
+    # same counterparty (read from the ledger at match time), else it is a proposal. Inert
+    # on split methods that check the amount themselves (rent, loan, Wirtschaftsplan).
+    same_amount_only: bool = False
 
     @model_validator(mode="after")
     def _matcher(self) -> Self:
@@ -353,6 +358,24 @@ class MatchContext(Schema):
     loans: list[LoanFacts] = Field(default_factory=list)
     documents: list[DocumentFacts] = Field(default_factory=list)
     wirtschaftsplaene: list[WirtschaftsplanFacts] = Field(default_factory=list)
+
+
+class HistoryRow(Schema):
+    category: AllocationCategory
+    status: AllocationStatus
+
+
+class HistoryLine(Schema):
+    """Another bank line and its allocation rows, as the learned-rule check reads it (D49):
+    what the ledger already says this counterparty's payments were. Only a line from the same
+    IBAN hash and of the same sign as the line being matched counts, and only when its
+    current rows (superseded ones ignored, D23) are all confirmed; rules.matching filters."""
+
+    transaction_id: UUID
+    booking_date: date
+    amount: Money
+    counterparty_iban_hmac: HmacHex | None = Field(default=None, pattern=HMAC_PATTERN)
+    rows: list[HistoryRow] = Field(default_factory=list)
 
 
 # --- Review routing (rules.review.route) ----------------------------------------------

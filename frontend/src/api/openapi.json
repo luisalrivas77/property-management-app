@@ -8799,6 +8799,11 @@
             ],
             "title": "Created From Allocation Id"
           },
+          "same_amount_only": {
+            "type": "boolean",
+            "title": "Same Amount Only",
+            "default": false
+          },
           "enabled": {
             "type": "boolean",
             "title": "Enabled",

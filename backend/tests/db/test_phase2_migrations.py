@@ -892,6 +892,57 @@ def test_0010_downgrade_refuses_while_a_loan_is_interest_only():
         drop_database(name)
 
 
+def test_a_rule_books_every_amount_unless_flagged(connect, workspaces):
+    """0011 (D49): the flag defaults to false, so every rule stored before it keeps booking
+    any amount; the app role may set it on insert and change it (table-wide UPDATE)."""
+    a, _ = workspaces
+    with connect(APP, a) as conn:
+        plain = _rule(conn, a, {"counterparty_iban_hmac": IBAN_HMAC_HEX})
+        flagged = _rule(conn, a, {"counterparty_iban_hmac": IBAN_HMAC_HEX}, same_amount_only=True)
+        read = "SELECT same_amount_only FROM matching_rule WHERE id = %s"
+        assert conn.execute(read, (plain,)).fetchone() == (False,)
+        assert conn.execute(read, (flagged,)).fetchone() == (True,)
+        conn.execute("UPDATE matching_rule SET same_amount_only = true WHERE id = %s", (plain,))
+        assert conn.execute(read, (plain,)).fetchone() == (True,)
+        with pytest.raises(errors.NotNullViolation), conn.transaction():
+            _rule(conn, a, {"purpose_pattern": "x"}, same_amount_only=None)
+
+
+def test_0011_downgrade_refuses_while_a_rule_is_same_amount_only():
+    """0010 has no column for the flag; dropping it would let that rule book every amount,
+    and a downgrade never rewrites data. The guard must see rows under forced RLS."""
+    name = create_database()
+    try:
+        alembic(name, "upgrade", "0011_rule_same_amount_only")
+        ws = uuid.uuid4()
+        with _admin(name) as conn:
+            conn.execute("INSERT INTO workspace (id, name) VALUES (%s, 'A')", (ws,))
+            conn.execute(f"SET ROLE {OWNER}")
+            conn.execute("SELECT set_config('app.workspace_id', %s, false)", (str(ws),))
+            rule = _rule(conn, ws, {"purpose_pattern": "verwaltung"}, same_amount_only=True)
+        with pytest.raises(DBAPIError, match="refused: a rule is flagged same amount only"):
+            alembic(name, "downgrade", "0010_loan_interest_only")
+        with _admin(name) as conn:
+            assert conn.execute("SELECT version_num FROM alembic_version").fetchall() == [
+                ("0011_rule_same_amount_only",)
+            ]
+            forced = conn.execute(
+                "SELECT relforcerowsecurity FROM pg_class WHERE oid = 'matching_rule'::regclass"
+            ).fetchone()
+            assert forced == (True,)  # the refused downgrade's NO FORCE was rolled back
+            conn.execute("UPDATE matching_rule SET same_amount_only = false WHERE id = %s", (rule,))
+        alembic(name, "downgrade", "0010_loan_interest_only")
+        with _admin(name) as conn:
+            columns = conn.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = 'matching_rule'"
+            ).fetchall()
+            assert ("same_amount_only",) not in columns
+        alembic(name, "upgrade", "head")
+    finally:
+        drop_database(name)
+
+
 def test_rule_split_methods_need_their_scope(connect, workspaces):
     a, _ = workspaces
     matcher = {"counterparty_iban_hmac": IBAN_HMAC_HEX}
