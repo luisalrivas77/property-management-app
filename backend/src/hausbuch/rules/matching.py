@@ -113,9 +113,18 @@ def match_rent(tx: MatchTransaction, context: MatchContext) -> AllocationSet | N
 
 
 def match_loan(tx: MatchTransaction, context: MatchContext) -> AllocationSet | None:
+    # A line from a loan's own account belongs to that loan: the lender-name fallback only
+    # applies when the account is no loan's, so two loans at one bank never claim each
+    # other's debits (review F1, PR #64).
+    own = [
+        loan
+        for loan in context.loans
+        if tx.counterparty_iban_hmac is not None
+        and tx.counterparty_iban_hmac == loan.account_iban_hmac
+    ]
     splits = [
         split
-        for loan in context.loans
+        for loan in own or context.loans
         if _is_lender(tx, loan)
         if (split := _loan_split(tx, loan) or _interest_only_split(tx, loan)) is not None
     ]
