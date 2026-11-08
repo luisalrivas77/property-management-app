@@ -4306,7 +4306,9 @@ export interface components {
         };
         /**
          * Transaction
-         * @description Read shape. The counterparty IBAN is shown masked only.
+         * @description Read shape. The counterparty IBAN is shown masked only. allocation_status and
+         *     allocation_categories are computed on read, never stored: the distinct categories of
+         *     the line's current allocation rows, the largest amount first.
          */
         Transaction: {
             /**
@@ -4360,7 +4362,26 @@ export interface components {
             end_to_end_ref: string | null;
             /** Excluded As Duplicate Of */
             excluded_as_duplicate_of?: string | null;
+            allocation_status: components["schemas"]["TransactionAllocationStatus"];
+            /** Allocation Categories */
+            allocation_categories: components["schemas"]["AllocationCategory"][];
         };
+        /**
+         * TransactionAllocationStatus
+         * @description Where a bank line stands, for Konten › Umsätze (read-only, computed per read from the
+         *     line, its import, its open possible duplicate and its current allocation rows; first
+         *     match wins):
+         *
+         *     - excluded: merged away as a duplicate (excluded_as_duplicate_of is set);
+         *     - not_reconciled: its import does not reconcile (yet), so the line cannot be allocated
+         *       (allocation.import_not_reconciled) and is not in the review queue;
+         *     - duplicate_open: the later line of an open possible duplicate, decided first;
+         *     - proposed: at least one current (not superseded, D23) row is proposed;
+         *     - confirmed: every current row is confirmed;
+         *     - open: no current row ("Nicht zugeordnet").
+         * @enum {string}
+         */
+        TransactionAllocationStatus: "excluded" | "not_reconciled" | "duplicate_open" | "proposed" | "confirmed" | "open";
         /**
          * TransactionAllocations
          * @description GET / PUT /transactions/{id}/allocations: the line, its current allocation rows

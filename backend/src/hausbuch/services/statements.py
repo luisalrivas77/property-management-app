@@ -31,10 +31,12 @@ from typing import Any
 from uuid import UUID
 
 from pydantic import JsonValue
-from sqlalchemy import Connection, Row, insert, select, update
+from sqlalchemy import Connection, Row, Select, exists, func, insert, select, update
+from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from hausbuch.db.tables import account as account_table
+from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import possible_duplicate as duplicate_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
@@ -53,10 +55,12 @@ from hausbuch.schemas.bank import (
     StatementLine,
     StoredLine,
     Transaction,
+    TransactionAllocationStatus,
 )
 from hausbuch.schemas.common import TAX_YEAR_MIN
 from hausbuch.schemas.document import DocumentTyping
 from hausbuch.schemas.enums import (
+    AllocationStatus,
     BalanceSource,
     DocumentSource,
     DocumentType,
@@ -85,8 +89,12 @@ POSSIBLE_DUPLICATE = "possible_duplicate"  # NotFoundError entity type: it has n
 # Codes that come from the file itself (D34): no anchor or declaration can clear them.
 _FILE_ERRORS = frozenset({rules.REPORT_UNBALANCED, rules.CHAIN_BREAK})
 _IMPORT_COLUMNS = [c for c in import_table.c if c.name != "ai_call_id"]
+# Computed on read (transaction_select), not columns of the transaction table.
+_COMPUTED_TRANSACTION_FIELDS = frozenset({"allocation_status", "allocation_categories"})
 _TRANSACTION_COLUMNS = [
-    transaction_table.c[name] for name in Transaction.model_fields if name != "line_hash"
+    transaction_table.c[name]
+    for name in Transaction.model_fields
+    if name != "line_hash" and name not in _COMPUTED_TRANSACTION_FIELDS
 ] + [transaction_table.c.line_hash]
 _IBAN_LIKE = re.compile(r"[A-Za-z]{2}[0-9]{2}(?: ?[A-Za-z0-9]){11,32}")
 
@@ -483,7 +491,7 @@ def list_transactions(
     """The account's transactions, newest booking day first; optionally only one import's
     new lines, or a booking-date range (both ends inclusive). Excluded duplicates are
     included, flagged by excluded_as_duplicate_of."""
-    query = select(*_TRANSACTION_COLUMNS).where(transaction_table.c.account_id == account_id)
+    query = transaction_select().where(transaction_table.c.account_id == account_id)
     if import_id is not None:
         query = query.where(transaction_table.c.import_id == import_id)
     if booked_from is not None:
@@ -725,9 +733,105 @@ def _to_import(row: Row) -> StatementImport:
     )
 
 
+def transaction_select() -> Select:
+    """The transaction columns plus what allocation_status and allocation_categories are
+    computed from, in one query: the line's import status, whether it is the later line of
+    an open possible duplicate, and one aggregate row per line over its current allocation
+    rows (status != superseded, D23), outer-joined so a line without rows gets NULLs.
+
+    The aggregate is two levels: per (line, category) the summed absolute amount and whether
+    any row is proposed, then per line the categories ordered by that amount (largest
+    first, ties by category) and whether any is proposed. Read with _to_transaction."""
+    a = allocation_table.c
+    t = transaction_table.c
+    per_category = (
+        select(
+            a.transaction_id,
+            a.category,
+            func.sum(func.abs(a.amount)).label("weight"),
+            func.bool_or(a.status == AllocationStatus.PROPOSED.value).label("proposed"),
+        )
+        .where(a.status != AllocationStatus.SUPERSEDED.value)
+        .group_by(a.transaction_id, a.category)
+        .subquery("current_per_category")
+    )
+    c = per_category.c
+    current = (
+        select(
+            c.transaction_id,
+            func.array_agg(aggregate_order_by(c.category, c.weight.desc(), c.category)).label(
+                "categories"
+            ),
+            func.bool_or(c.proposed).label("any_proposed"),
+        )
+        .group_by(c.transaction_id)
+        .subquery("current_allocations")
+    )
+    awaiting_duplicate = (
+        exists()
+        .where(
+            duplicate_table.c.other_transaction_id == t.id,
+            duplicate_table.c.status == DuplicateStatus.OPEN.value,
+        )
+        .correlate(transaction_table)
+    )
+    return select(
+        *_TRANSACTION_COLUMNS,
+        import_table.c.status.label("_import_status"),
+        awaiting_duplicate.label("_awaiting_duplicate"),
+        current.c.categories.label("_categories"),
+        current.c.any_proposed.label("_any_proposed"),
+    ).select_from(
+        transaction_table.join(import_table, import_table.c.id == t.import_id).outerjoin(
+            current, current.c.transaction_id == t.id
+        )
+    )
+
+
+def allocation_status(
+    *,
+    excluded: bool,
+    import_status: ImportStatus,
+    awaiting_duplicate: bool,
+    has_current_rows: bool,
+    any_proposed: bool,
+) -> TransactionAllocationStatus:
+    """The precedence documented on TransactionAllocationStatus; the first that applies."""
+    if excluded:
+        return TransactionAllocationStatus.EXCLUDED
+    if import_status is not ImportStatus.RECONCILED:
+        return TransactionAllocationStatus.NOT_RECONCILED
+    if awaiting_duplicate:
+        return TransactionAllocationStatus.DUPLICATE_OPEN
+    if any_proposed:
+        return TransactionAllocationStatus.PROPOSED
+    if has_current_rows:
+        return TransactionAllocationStatus.CONFIRMED
+    return TransactionAllocationStatus.OPEN
+
+
 def _to_transaction(row: Row) -> Transaction:
+    """A row of transaction_select."""
     values = dict(row._mapping)
-    return Transaction.model_validate(values | {"line_hash": values["line_hash"].hex()})
+    import_status = ImportStatus(values.pop("_import_status"))
+    awaiting_duplicate = bool(values.pop("_awaiting_duplicate"))
+    categories = values.pop("_categories") or []
+    any_proposed = bool(values.pop("_any_proposed"))
+    status = allocation_status(
+        excluded=values["excluded_as_duplicate_of"] is not None,
+        import_status=import_status,
+        awaiting_duplicate=awaiting_duplicate,
+        has_current_rows=bool(categories),
+        any_proposed=any_proposed,
+    )
+    return Transaction.model_validate(
+        values
+        | {
+            "line_hash": values["line_hash"].hex(),
+            "allocation_status": status,
+            "allocation_categories": categories,
+        }
+    )
 
 
 def _to_duplicate(row: Row) -> PossibleDuplicate:

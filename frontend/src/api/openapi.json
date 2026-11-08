@@ -11541,6 +11541,16 @@
               }
             ],
             "title": "Excluded As Duplicate Of"
+          },
+          "allocation_status": {
+            "$ref": "#/components/schemas/TransactionAllocationStatus"
+          },
+          "allocation_categories": {
+            "items": {
+              "$ref": "#/components/schemas/AllocationCategory"
+            },
+            "type": "array",
+            "title": "Allocation Categories"
           }
         },
         "additionalProperties": false,
@@ -11561,10 +11571,25 @@
           "purpose",
           "booking_text",
           "bank_reference",
-          "end_to_end_ref"
+          "end_to_end_ref",
+          "allocation_status",
+          "allocation_categories"
         ],
         "title": "Transaction",
-        "description": "Read shape. The counterparty IBAN is shown masked only."
+        "description": "Read shape. The counterparty IBAN is shown masked only. allocation_status and\nallocation_categories are computed on read, never stored: the distinct categories of\nthe line's current allocation rows, the largest amount first."
+      },
+      "TransactionAllocationStatus": {
+        "type": "string",
+        "enum": [
+          "excluded",
+          "not_reconciled",
+          "duplicate_open",
+          "proposed",
+          "confirmed",
+          "open"
+        ],
+        "title": "TransactionAllocationStatus",
+        "description": "Where a bank line stands, for Konten › Umsätze (read-only, computed per read from the\nline, its import, its open possible duplicate and its current allocation rows; first\nmatch wins):\n\n- excluded: merged away as a duplicate (excluded_as_duplicate_of is set);\n- not_reconciled: its import does not reconcile (yet), so the line cannot be allocated\n  (allocation.import_not_reconciled) and is not in the review queue;\n- duplicate_open: the later line of an open possible duplicate, decided first;\n- proposed: at least one current (not superseded, D23) row is proposed;\n- confirmed: every current row is confirmed;\n- open: no current row (\"Nicht zugeordnet\")."
       },
       "TransactionAllocations": {
         "properties": {

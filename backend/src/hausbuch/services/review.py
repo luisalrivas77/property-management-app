@@ -49,7 +49,7 @@ from hausbuch.schemas.enums import (
 from . import allocations, matching, rules_learned
 from .context import CommandContext
 from .errors import NotFoundError, RuleViolationError
-from .statements import _TRANSACTION_COLUMNS, _to_transaction, import_inbox_items
+from .statements import _to_transaction, import_inbox_items, transaction_select
 
 TRANSACTION_MISMATCH = "allocation.transaction_mismatch"
 IMPORT_NOT_RECONCILED = "allocation.import_not_reconciled"
@@ -187,9 +187,7 @@ def _response(
 
 
 def _transaction(conn: Connection, transaction_id: UUID) -> Transaction:
-    row = conn.execute(
-        select(*_TRANSACTION_COLUMNS).where(transaction_table.c.id == transaction_id)
-    ).one()
+    row = conn.execute(transaction_select().where(transaction_table.c.id == transaction_id)).one()
     return _to_transaction(row)
 
 
