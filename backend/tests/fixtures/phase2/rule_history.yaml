@@ -16,7 +16,7 @@
 #     the set of its confirmed categories.
 #   H stands when its split method checks the amount against a record itself
 #     (by_wirtschaftsplan, by_loan_schedule, by_rent_schedule: apply_rule already returned
-#     None for any other amount), or owner_transfer; otherwise (single_category):
+#     None for any other amount); otherwise (single_category, owner_transfer):
 #     - single-kind (every history line has category set K) and the rule is not
 #       same_amount_only -> stands at any amount (today's behaviour);
 #     - mixed (a history line with another set), or same_amount_only -> stands only when
