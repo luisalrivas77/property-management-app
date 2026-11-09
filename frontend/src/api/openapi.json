@@ -4484,6 +4484,110 @@
         }
       }
     },
+    "/api/properties/{property_id}/scenarios": {
+      "get": {
+        "summary": "Scenarios List",
+        "description": "The scenarios in force (not superseded, not withdrawn), oldest first;\ninclude_history=true adds the rest.",
+        "operationId": "scenarios_list_api_properties__property_id__scenarios_get",
+        "parameters": [
+          {
+            "name": "property_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Property Id"
+            }
+          },
+          {
+            "name": "include_history",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include History"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Scenario"
+                  },
+                  "title": "Response Scenarios List Api Properties  Property Id  Scenarios Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Scenario Create",
+        "description": "One new row and its property.scenario_recorded event. 422 scenario.scope_invalid (the\nbody's property is not the path's, a loan lever names another property's loan, a correction\nsupersedes another property's scenario, or a withdrawal does not repeat the levers),\nscenario.not_current (supersedes_id is not in force, or another default is in force) and\nscenario.sale_year_before_today (the sale year is not after today's year).",
+        "operationId": "scenario_create_api_properties__property_id__scenarios_post",
+        "parameters": [
+          {
+            "name": "property_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Property Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScenarioCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Scenario"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/properties/{property_id}/history": {
       "get": {
         "summary": "History Of Property",
@@ -9607,6 +9711,78 @@
         "title": "LeaseExtraction",
         "description": "Mietvertrag (contract / lease). Step 2, gated by ai_tenant_documents (D16)."
       },
+      "Levers": {
+        "properties": {
+          "value_growth": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,6})?$",
+            "title": "Value Growth",
+            "default": "0.02"
+          },
+          "rent_growth": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,6})?$",
+            "title": "Rent Growth",
+            "default": "0.02"
+          },
+          "cost_inflation": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,6})?$",
+            "title": "Cost Inflation",
+            "default": "0.02"
+          },
+          "sale_year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 2000.0,
+            "title": "Sale Year"
+          },
+          "today_value": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Today Value"
+          },
+          "upkeep_per_year": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Upkeep Per Year",
+            "default": "600.00"
+          },
+          "selling_costs_rate": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,6})?$",
+            "title": "Selling Costs Rate",
+            "default": "0.0357"
+          },
+          "vacancy_months": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,1})?$",
+            "title": "Vacancy Months",
+            "default": "0"
+          },
+          "loans": {
+            "items": {
+              "$ref": "#/components/schemas/LoanLever"
+            },
+            "type": "array",
+            "title": "Loans"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "sale_year"
+        ],
+        "title": "Levers",
+        "description": "What the user sets for a projection (D87). Defaults are the spec's (Q4, Luis)."
+      },
       "LimitStatus": {
         "properties": {
           "tax_year": {
@@ -10043,6 +10219,33 @@
         ],
         "title": "LoanCreateRequest",
         "description": "POST /loans: LoanCreate plus the contract date (create_loan's signed_on)."
+      },
+      "LoanLever": {
+        "properties": {
+          "loan_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Loan Id"
+          },
+          "follow_up_rate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,6})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Follow Up Rate"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "loan_id"
+        ],
+        "title": "LoanLever"
       },
       "LoanPatch": {
         "properties": {
@@ -12616,6 +12819,132 @@
           "form_status"
         ],
         "title": "RuleSetStamp"
+      },
+      "Scenario": {
+        "properties": {
+          "property_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Property Id"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default",
+            "default": false
+          },
+          "levers": {
+            "$ref": "#/components/schemas/Levers"
+          },
+          "supersedes_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes Id"
+          },
+          "withdrawn": {
+            "type": "boolean",
+            "title": "Withdrawn",
+            "default": false
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Recorded At"
+          },
+          "recorded_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded By"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "property_id",
+          "name",
+          "levers",
+          "id",
+          "workspace_id",
+          "recorded_at"
+        ],
+        "title": "Scenario"
+      },
+      "ScenarioCreate": {
+        "properties": {
+          "property_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Property Id"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default",
+            "default": false
+          },
+          "levers": {
+            "$ref": "#/components/schemas/Levers"
+          },
+          "supersedes_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes Id"
+          },
+          "withdrawn": {
+            "type": "boolean",
+            "title": "Withdrawn",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "property_id",
+          "name",
+          "levers"
+        ],
+        "title": "ScenarioCreate"
       },
       "ScheduleEntry": {
         "properties": {
