@@ -372,6 +372,8 @@ export const WARNING_TEXT: Record<WarningCode, (params: Params) => string> = {
     `Die 15 %-Grenze wurde ${p.exceeded_in_year ?? "später"} überschritten: ${money(p)} dieses Jahres werden nachträglich Herstellungskosten; der Bescheid für dieses Jahr wird geändert.`,
   "limit.estimated_net": () =>
     "Für mindestens eine Rechnung fehlt der Nettobetrag; die 15 %-Grenze rechnet dort mit geschätzter Umsatzsteuer.",
+  "anschaffungsnah.performance_date_check": (p) =>
+    `Kosten von ${money(p)}, bezahlt am ${formatDate(p.booking_date)} kurz nach dem Dreijahresfenster: wann wurde die Arbeit ausgeführt? Ein Leistungszeitraum im Fenster zählt zur 15 %-Grenze.`,
   "renovation.undecided": (p) =>
     `Renovierung ${money(p)} einordnen: Erhaltungsaufwand oder Herstellungskosten? Bis dahin nicht abgezogen.`,
   "interest.certificate_mismatch": (p) =>

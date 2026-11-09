@@ -13257,6 +13257,7 @@
           "limit.exceeded",
           "limit.prior_year_amendment",
           "limit.estimated_net",
+          "anschaffungsnah.performance_date_check",
           "renovation.undecided",
           "interest.certificate_mismatch",
           "hausgeld.abrechnung_pending",
