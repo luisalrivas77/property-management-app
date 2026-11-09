@@ -1,6 +1,6 @@
 # Phase 4 spec: Performance — actuals, derived marginal rate, projection to sale, §23 check, IRR
 
-Nov 9, 2026 · spec draft (architect), checked by the orchestrator the same day; step 0 (schemas, migration 0016, tariff 2026, six fixtures) written the same day, every stated figure reproduced, the prose amended where it disagreed with its checkpoints (§5.1 slope, §5.4 rent and upkeep, §10.3 tenancy terms, D91 gap; §10.4) (the §5.5 sale-tax figure corrected to 17,422.56 by recomputation; the D82 example −2,808.00 recomputed and confirmed); Luis's questions in §13 answered 9 Nov 2026 (Q1 changed D91, see there). No implementation. Every tax figure below was checked against gesetze-im-internet.de or an official announcement on 9 Nov 2026 (§3 lists the sources and what stayed unverified).
+Nov 9, 2026 · **Status: spec and step 0 merged in PR #95 and deployed 9 Nov 2026** (migration 0016 applied to production, then the API and web switched to images `6cbb4ed94dd1` within a minute, per the deploy order in `deploy/scaleway.md`; health check 200). Steps 1 and 2 in progress in parallel; steps 3–4 not started; step 5 planned (D91). Spec draft (architect), checked by the orchestrator the same day; step 0 (schemas, migration 0016, tariff 2026, six fixtures) written the same day, every stated figure reproduced, the prose amended where it disagreed with its checkpoints (§5.1 slope, §5.4 rent and upkeep, §10.3 tenancy terms, D91 gap; §10.4) (the §5.5 sale-tax figure corrected to 17,422.56 by recomputation; the D82 example −2,808.00 recomputed and confirmed); Luis's questions in §13 answered 9 Nov 2026 (Q1 changed D91, see there). No implementation. Every tax figure below was checked against gesetze-im-internet.de or an official announcement on 9 Nov 2026 (§3 lists the sources and what stayed unverified).
 
 Phase 4 is arithmetic over phase 3's rules (principle 1: no model touches a euro). Its one new piece of tax law is the income tax tariff (§32a EStG) with Soli and church tax, which turns a rental result into a tax effect; everything else (AfA, Zuflussprinzip, §82b, 15 % tracker, §23 date) is reused from `rules/tax/` by running the phase 3 draft over projected payments.
 
@@ -9,10 +9,10 @@ This is the spec PR ARCHITECTURE.md requires before implementation:
 | Artifact | Where | Status |
 | --- | --- | --- |
 | Pydantic schemas | `backend/src/hausbuch/schemas/performance.py` (new: `Tariff`, `IncomeInput*`, `Scenario*`, `Levers`, `YearFigures`, `Actuals`, `Projection`, `SaleResult`); additions to `property.py` (Owner), `events.py`, `enums.py` (§7) | Written in step 0 (9 Nov 2026) |
-| Migration | `0016_performance` (§6): `owner.church_tax`, `owner.tax_state`, tables `income_input`, `projection_scenario`; `owner.marginal_tax_rate` carried over and dropped | Written in step 0 (9 Nov 2026) |
+| Migration | `0016_performance` (§6): `owner.church_tax`, `owner.tax_state`, tables `income_input`, `projection_scenario`; `owner.marginal_tax_rate` carried over and dropped | Written in step 0; applied to production 9 Nov 2026 |
 | Tariff data | `backend/src/hausbuch/rules/tax/tariffs/2026.yaml`, loaded by `rules/tax/registry.tariff(year)` (§4) | Written in step 0 (9 Nov 2026) |
 | Rule fixtures | `backend/tests/fixtures/phase4/*.yaml`, 6 files (§10), loaded by `tests/fixture_models_phase4.py` | Written in step 0 (9 Nov 2026) |
-| Step 1–3 code | `rules/tax/tariff.py`, `rules/performance/*`, `services/income_inputs.py`, `services/performance.py`, routes, the Planung screen | Not started |
+| Step 1–3 code | `rules/tax/tariff.py`, `rules/performance/*`, `services/income_inputs.py`, `services/performance.py`, routes, the Planung screen | Steps 1 and 2 in progress (9 Nov 2026); step 3 not started |
 
 **Done when** (ARCHITECTURE.md, phase 4): the projection matches a spreadsheet model for three scenarios. §10.3 makes the three scenarios synthetic fixtures (`projection.yaml`); the fixture *is* the spreadsheet. The second half of the phase 4 row, "one settlement generated from real 2026 data", cannot be met with Luis's leases (§13 Q1), so this spec proposes to take it out of the phase.
 
