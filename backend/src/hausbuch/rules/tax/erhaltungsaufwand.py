@@ -136,6 +136,11 @@ def lines(
             refs = refs + input_sources(treatment)
 
         spread = spreads.get(a.allocation_id)
+        if spread is not None and ended is not None and year > ended.year:
+            # Paid after the year ownership ended: §82b spreads only while the property is
+            # owned, so a nachträgliche Werbungskosten is deducted in full in the year paid
+            # (decided in the step 1 review; _spread_parts would return nothing for it).
+            spread = None
         if spread is None:
             if year == tax_year:
                 book.add("wk.maintenance", -a.amount, refs)
