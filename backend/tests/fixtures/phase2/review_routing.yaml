@@ -1,7 +1,7 @@
 # Rule fixture: review routing (hausbuch.rules.review.route)
 #
 # route(item: RoutingInput) -> Routing(decision, reason)
-# Spec: docs/phases/phase-2.md §8.1, §8.3, D21, D26 and principle 3 (auto-accept only above a
+# Spec: docs/phases/phase-2.md §8.1, §8.3, D21, D26, D52 and principle 3 (auto-accept only above a
 # per-category threshold). Thresholds come from thresholds.yaml (rules.review.threshold).
 # The first rule that applies decides:
 #   1. import_status != reconciled -> import_review: the whole import goes to review and no
@@ -14,12 +14,21 @@
 #   4. method matcher_*, confidence 1.0 -> auto_confirm, routing.deterministic
 #   5. method matcher_* below 1.0 (an inexact match, e.g. rent short) -> review,
 #      routing.below_threshold
-#   6. method llm and not auto_accept_llm -> review, routing.llm_not_accepted (D26)
-#   7. document_match and llm: if any allocation's category has threshold null -> review,
+#   6. method llm, a line of 0.00 (D52, 9 Nov 2026): exactly one allocation (its amount is
+#      then 0.00, the sum being the line's amount), with no tenancy_id and no loan_id, and a
+#      category outside ZERO_EXCLUDED -> auto_confirm, routing.zero_amount, whatever the
+#      confidence and whether or not auto_accept_llm is on. ZERO_EXCLUDED = rent_cold,
+#      operating_costs_prepayment, loan_interest, loan_principal, loan_disbursement,
+#      hausgeld_umlagefaehig, hausgeld_verwaltung, hausgeld_ruecklage, owner_transfer_in,
+#      owner_transfer_out, deposit_in, deposit_out, purchase_price, uncategorized (categories
+#      other checks read or that need a person); a 0.00 set in one of them, or with a
+#      tenancy or loan, goes on to rules 7 and 8 as before. Only rule 1 comes first.
+#   7. method llm and not auto_accept_llm -> review, routing.llm_not_accepted (D26)
+#   8. document_match and llm: if any allocation's category has threshold null -> review,
 #      routing.never_auto; else confidence >= the highest threshold among the set's
 #      categories -> auto_confirm, routing.above_threshold; else review,
 #      routing.below_threshold. (A mixed set is as strict as its strictest category.)
-#   8. method user: never routed (a user's set is confirmed by the user); not in this fixture.
+#   9. method user: never routed (a user's set is confirmed by the user); not in this fixture.
 #
 # per_category: an LLM set of one allocation in that category, confidence 0.9, with
 # auto_accept_llm true; the expected decision at that confidence (test_fixtures_valid.py checks
@@ -213,3 +222,95 @@ cases:
       import_status: failed
       allocation_set: null
     expect: {decision: import_review, reason: routing.import_failed}
+
+  # --- Lines of 0.00 (D52) ---------------------------------------------------------------
+
+  - id: zero_bank_fee_llm_auto_confirms_without_the_setting
+    description: The account's monthly 0.00 fee line; a learned rule cannot book a 0.00 line, so the model's answer is taken.
+    item:
+      import_status: reconciled
+      auto_accept_llm: false
+      allocation_set:
+        transaction_id: *TX
+        method: llm
+        confidence: "0.600"
+        allocations:
+          - {amount: "0.00", category: bank_fees, recurring: true}
+    expect: {decision: auto_confirm, reason: routing.zero_amount}
+
+  - id: zero_rent_llm_still_review
+    description: Rent is a category other checks read (the rent already booked for a month); a 0.00 rent answer keeps today's routing.
+    item:
+      import_status: reconciled
+      auto_accept_llm: false
+      allocation_set:
+        transaction_id: *TX
+        method: llm
+        confidence: "0.900"
+        allocations:
+          - {amount: "0.00", category: rent_cold, recurring: true}
+    expect: {decision: review, reason: routing.llm_not_accepted}
+
+  - id: zero_loan_fees_with_a_loan_still_review
+    description: A part scoped to a loan (D51 gives a model's loan part the one loan) is not taken unseen.
+    item:
+      import_status: reconciled
+      auto_accept_llm: false
+      allocation_set:
+        transaction_id: *TX
+        method: llm
+        confidence: "0.900"
+        allocations:
+          - {amount: "0.00", category: loan_fees, loan_id: 0000002c-0000-4000-8000-000000000001}
+    expect: {decision: review, reason: routing.llm_not_accepted}
+
+  - id: zero_with_a_tenancy_still_review
+    item:
+      import_status: reconciled
+      auto_accept_llm: false
+      allocation_set:
+        transaction_id: *TX
+        method: llm
+        confidence: "0.900"
+        allocations:
+          - {amount: "0.00", category: other_income, tenancy_id: 0000002d-0000-4000-8000-000000000001}
+    expect: {decision: review, reason: routing.llm_not_accepted}
+
+  - id: zero_uncategorized_still_review
+    description: The model could not tell what the line is; a person decides.
+    item:
+      import_status: reconciled
+      auto_accept_llm: true
+      allocation_set:
+        transaction_id: *TX
+        method: llm
+        confidence: "0.300"
+        allocations:
+          - {amount: "0.00", category: uncategorized}
+    expect: {decision: review, reason: routing.never_auto}
+
+  - id: zero_line_of_an_unreconciled_import
+    description: Rule 1 still comes first.
+    item:
+      import_status: unreconciled
+      auto_accept_llm: false
+      allocation_set:
+        transaction_id: *TX
+        method: llm
+        confidence: "0.900"
+        allocations:
+          - {amount: "0.00", category: bank_fees, recurring: true}
+    expect: {decision: import_review, reason: routing.import_unreconciled}
+
+  - id: nonzero_bank_fee_llm_without_the_setting_still_review
+    description: D52 is only for 0.00; any other amount keeps D26.
+    item:
+      import_status: reconciled
+      auto_accept_llm: false
+      allocation_set:
+        transaction_id: *TX
+        method: llm
+        confidence: "0.900"
+        allocations:
+          - {amount: "-4.95", category: bank_fees, recurring: true}
+    expect: {decision: review, reason: routing.llm_not_accepted}
