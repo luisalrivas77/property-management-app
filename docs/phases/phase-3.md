@@ -970,14 +970,21 @@ review, and the Decisions row names D74–D76.
     as specced; the forwarded rent share before the handover goes to the rent row instead (D63).
 14. **Exports (orchestrator, 9 Nov 2026): kept out of the `document` table** (D65); they are
     listed on the Steuern screen, not under Dokumente.
-15. **Einbauküche (from the step 0 review, 9 Nov 2026; not decided).** A fitted kitchen is not
+15. **Einbauküche (from the step 0 review, 9 Nov 2026; answered by Luis 9 Nov 2026, not yet built).** A fitted kitchen is not
     part of the building but a separate movable asset (BFH IX R 14/15): it is depreciated over
     10 years on its own, on Z42 (Kz 41, "AfA auf bewegliche Wirtschaftsgüter") rather than in
     the building's AfA, and it is not an Instandsetzung for the 15 % test. Phase 3 has no
     record or input for such an asset, so how a kitchen bought for the flat is handled (a new
     input kind, a category, or a manual line) is open. The step 0 fixture that used a kitchen
     as a building addition was changed to a Balkonanbau.
-16. **Tenant documents in the archive (from step 3, 9 Nov 2026; not decided).** The yearly
+    **Luis, 9 Nov 2026:** the flat came with a fitted kitchen, and the Kaufvertrag names no
+    price for it (its split covers the whole price as land, Altbau and Sanierung). So the
+    kitchen's share has to be estimated and taken out of the building's basis, then
+    depreciated over 10 years on its own. Next: find its value (a renovation invoice may
+    include it; else an estimate from its age and original price), then a small spec
+    decision on the input and how the price split and the Nebenkosten are reduced. Not
+    scheduled until the value is known.
+16. **Tenant documents in the archive (from step 3, 9 Nov 2026; decided by Luis 9 Nov 2026: kept).** The yearly
     archive copies the year's originals, leases included, and is kept with the tax records
     (10 years after the tax year), while a tenant's data is held until the end of the tenancy
     plus 4 years. Open: whether the archive leaves tenant documents out (and lists them by
@@ -985,6 +992,10 @@ review, and the Decisions row names D74–D76.
     or whether the tax-record retention takes precedence for documents the Finanzamt may ask
     for. The `tax_export` row references its file by foreign key, so any removal needs a
     decision on the row too.
+    **Decided (Luis, 9 Nov 2026):** tenant documents stay in the yearly archive; the
+    tax-record retention takes precedence for the archive, and tenant erasure does not
+    touch `tax_export` files or rows. No code change: the erasure services never read the
+    `tax_export` table (checked 9 Nov 2026).
 17. **Shorter useful life and Denkmal-AfA (Luis, 9 Nov 2026; the shorter life is built as D79, PR #88; §7i waits for evidence).**
     Luis's building is a listed monument (Baudenkmal), built 1904, and he has a remaining
     useful life of 21 years. The AfA rule knows only the rate by completion year. Two
