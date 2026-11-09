@@ -29,6 +29,7 @@ import { ChecklistTab } from "@/app/(app)/properties/[id]/ChecklistTab";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { formatDate, formatDateTime, formatDecimal, formatMoney, formatPercent, formatShare, todayIso } from "./format";
+import { TaxEffectLine } from "./income";
 import { ALLOCATION_CATEGORY, TAX_SOURCE_KIND, WARNING_TEXT, taxNote } from "./labels";
 import { ActionDialog, Loading } from "./ui";
 import { MovableAssetSection, UsefulLifeSection } from "./taxInputs";
@@ -344,6 +345,7 @@ function ProgressCard({ draft, owners }: { draft: AnlageVDraft; owners: Owner[] 
           <dd className={draft.totals.result.startsWith("-") ? "tax-negative" : undefined}>{formatMoney(draft.totals.result)}</dd>
         </div>
       </dl>
+      <TaxEffectLine propertyId={draft.property_id} taxYear={draft.tax_year} result={draft.totals.result} />
       {(draft.owners ?? []).length > 0 ? (
         <ul className="tax-owners">
           {(draft.owners ?? []).map((owner) => (

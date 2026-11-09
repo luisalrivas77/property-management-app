@@ -152,3 +152,12 @@ export type AllocationFact = Schemas["AllocationFact"];
 export type TaxExport = Schemas["TaxExport"];
 export type TaxExportKind = Schemas["TaxExportKind"];
 export type TaxExportState = Schemas["TaxExportState"];
+
+// household income and the tax effect (phase 4 step 1, phase-4.md §8)
+export type IncomeInput = Schemas["IncomeInput"];
+export type IncomeInputCreate = Schemas["IncomeInputCreate"];
+export type IncomeInputKind = Schemas["IncomeInputKind"];
+export type TaxRateResult = Schemas["TaxRateResult"];
+export type TaxEffect = Schemas["TaxEffect"];
+export type ZveEstimate = Schemas["ZveEstimate"];
+export type OwnerZve = Schemas["OwnerZve"];
