@@ -31,6 +31,8 @@ EXPECTED_GRANTS = {
     "projection_scenario": {"SELECT", "INSERT"},  # append-only
 }
 PREVIOUS = "0014_useful_life"  # re-pointed to 0015 when D80 merges
+# Built at import, so a schema drift fails collection even where the DB tests skip.
+LEVERS = Levers(sale_year=2036).model_dump(mode="json")
 
 
 @pytest.mark.parametrize("table", sorted(EXPECTED_GRANTS))
@@ -195,7 +197,7 @@ def _scenario(ws, property_id, **overrides) -> dict:
         "property_id": property_id,
         "name": "Basis",
         "is_default": True,
-        "levers": Jsonb(Levers().model_dump(mode="json")),
+        "levers": Jsonb(LEVERS),
     }
     return row | overrides
 
