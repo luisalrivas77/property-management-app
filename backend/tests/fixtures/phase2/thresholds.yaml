@@ -35,6 +35,7 @@ thresholds:
   - {category: hausgeld_verwaltung, threshold: "0.900"}
   - {category: hausgeld_ruecklage, threshold: "0.900"}
   - {category: property_management, threshold: "0.900"}
+  - {category: electricity, threshold: "0.900"}  # a recurring Abschlag from one supplier (phase 4 D92)
   - {category: grundsteuer, threshold: "0.900"}
   - {category: insurance, threshold: "0.900"}
   - {category: repairs, threshold: null}

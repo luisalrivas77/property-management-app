@@ -31,6 +31,8 @@
 #     (source estimate, carried_forward true; flag tax_estimated).
 # (g) value = today_value (None: the purchase price) × (1 + value_growth)^n, half-up;
 #     loan_balance = the schedule year's closing balance; equity = value − loan balance.
+# (h) The Pauschale check (D92): a projected year is a full year with the flat-rate tenancy
+#     in force all year, so flat_rate_months is 12 and the gap is (in − out) ÷ 12.
 # The sale (D88, D89) is on 31 Dec of the sale year, as in sale.yaml; afa_actual and
 # cash_flow_actual are the actual 2026's building AfA and net cash it adds. The sale block is
 # given for the three scenarios and C's control only; the other cases assert their years.
@@ -114,6 +116,7 @@ cases:
       loan_balance: '234779.24'
       equity: '65220.76'
       flat_rate_in: '2160.00'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-20.00'
     - year: 2028
       kind: projected
@@ -145,6 +148,7 @@ cases:
       loan_balance: '230935.24'
       equity: '69064.76'
       flat_rate_in: '2160.00'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-20.00'
     - year: 2029
       kind: projected
@@ -176,6 +180,7 @@ cases:
       loan_balance: '226954.52'
       equity: '73045.48'
       flat_rate_in: '2160.00'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-20.00'
     - year: 2030
       kind: projected
@@ -207,6 +212,7 @@ cases:
       loan_balance: '222832.21'
       equity: '77167.79'
       flat_rate_in: '2160.00'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-20.00'
     - year: 2031
       kind: projected
@@ -238,6 +244,7 @@ cases:
       loan_balance: '218563.31'
       equity: '81436.69'
       flat_rate_in: '2160.00'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-20.00'
     - year: 2032
       kind: projected
@@ -269,6 +276,7 @@ cases:
       loan_balance: '214142.56'
       equity: '85857.44'
       flat_rate_in: '2160.00'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-20.00'
     - year: 2033
       kind: projected
@@ -300,6 +308,7 @@ cases:
       loan_balance: '209564.57'
       equity: '90435.43'
       flat_rate_in: '2160.00'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-20.00'
     - year: 2034
       kind: projected
@@ -331,6 +340,7 @@ cases:
       loan_balance: '204823.76'
       equity: '95176.24'
       flat_rate_in: '2160.00'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-20.00'
     - year: 2035
       kind: projected
@@ -362,6 +372,7 @@ cases:
       loan_balance: '199914.34'
       equity: '100085.66'
       flat_rate_in: '2160.00'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-20.00'
     - year: 2036
       kind: projected
@@ -393,6 +404,7 @@ cases:
       loan_balance: '194830.30'
       equity: '105169.70'
       flat_rate_in: '2160.00'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-20.00'
     sale:
       sale_date: 2036-12-31
@@ -487,6 +499,7 @@ cases:
       loan_balance: '234779.24'
       equity: '71220.76'
       flat_rate_in: '2160.00'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-20.00'
     - year: 2028
       kind: projected
@@ -518,6 +531,7 @@ cases:
       loan_balance: '230935.24'
       equity: '81184.76'
       flat_rate_in: '2203.20'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-20.40'
     - year: 2029
       kind: projected
@@ -549,6 +563,7 @@ cases:
       loan_balance: '226954.52'
       equity: '91407.88'
       flat_rate_in: '2247.26'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-20.81'
     - year: 2030
       kind: projected
@@ -580,6 +595,7 @@ cases:
       loan_balance: '222832.21'
       equity: '101897.44'
       flat_rate_in: '2292.21'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-21.22'
     - year: 2031
       kind: projected
@@ -611,6 +627,7 @@ cases:
       loan_balance: '219298.98'
       equity: '111925.26'
       flat_rate_in: '2338.05'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-21.65'
     - year: 2032
       kind: projected
@@ -642,6 +659,7 @@ cases:
       loan_balance: '217122.95'
       equity: '120725.78'
       flat_rate_in: '2384.81'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-22.08'
     - year: 2033
       kind: projected
@@ -673,6 +691,7 @@ cases:
       loan_balance: '214846.92'
       equity: '129758.78'
       flat_rate_in: '2432.51'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-22.52'
     - year: 2034
       kind: projected
@@ -704,6 +723,7 @@ cases:
       loan_balance: '212466.33'
       equity: '139031.48'
       flat_rate_in: '2481.16'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-22.97'
     - year: 2035
       kind: projected
@@ -735,6 +755,7 @@ cases:
       loan_balance: '209976.38'
       equity: '148551.39'
       flat_rate_in: '2530.78'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-23.43'
     - year: 2036
       kind: projected
@@ -766,6 +787,7 @@ cases:
       loan_balance: '207372.03'
       equity: '158326.30'
       flat_rate_in: '2581.40'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-23.90'
     sale:
       sale_date: 2036-12-31
@@ -867,6 +889,7 @@ cases:
       loan_balance: '234779.24'
       equity: '74220.76'
       flat_rate_in: '2160.00'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-20.00'
     - year: 2028
       kind: projected
@@ -898,6 +921,7 @@ cases:
       loan_balance: '230935.24'
       equity: '87334.76'
       flat_rate_in: '2160.00'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-20.00'
     - year: 2029
       kind: projected
@@ -929,6 +953,7 @@ cases:
       loan_balance: '226954.52'
       equity: '100863.58'
       flat_rate_in: '2160.00'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-20.00'
     - year: 2030
       kind: projected
@@ -960,6 +985,7 @@ cases:
       loan_balance: '222832.21'
       equity: '114820.43'
       flat_rate_in: '2160.00'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-20.00'
     sale:
       sale_date: 2030-12-31
@@ -1049,6 +1075,7 @@ cases:
       loan_balance: '234779.24'
       equity: '74220.76'
       flat_rate_in: '2160.00'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-20.00'
     - year: 2028
       kind: projected
@@ -1080,6 +1107,7 @@ cases:
       loan_balance: '230935.24'
       equity: '87334.76'
       flat_rate_in: '2160.00'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-20.00'
     - year: 2029
       kind: projected
@@ -1111,6 +1139,7 @@ cases:
       loan_balance: '226954.52'
       equity: '100863.58'
       flat_rate_in: '2160.00'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-20.00'
     - year: 2030
       kind: projected
@@ -1142,6 +1171,7 @@ cases:
       loan_balance: '222832.21'
       equity: '114820.43'
       flat_rate_in: '2160.00'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-20.00'
     - year: 2031
       kind: projected
@@ -1173,6 +1203,7 @@ cases:
       loan_balance: '218563.31'
       equity: '129218.91'
       flat_rate_in: '2160.00'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-20.00'
     - year: 2032
       kind: projected
@@ -1204,6 +1235,7 @@ cases:
       loan_balance: '214142.56'
       equity: '144073.13'
       flat_rate_in: '2160.00'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-20.00'
     - year: 2033
       kind: projected
@@ -1235,6 +1267,7 @@ cases:
       loan_balance: '209564.57'
       equity: '159397.59'
       flat_rate_in: '2160.00'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-20.00'
     - year: 2034
       kind: projected
@@ -1266,6 +1299,7 @@ cases:
       loan_balance: '204823.76'
       equity: '175207.26'
       flat_rate_in: '2160.00'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-20.00'
     - year: 2035
       kind: projected
@@ -1297,6 +1331,7 @@ cases:
       loan_balance: '199914.34'
       equity: '191517.62'
       flat_rate_in: '2160.00'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-20.00'
     - year: 2036
       kind: projected
@@ -1328,6 +1363,7 @@ cases:
       loan_balance: '194830.30'
       equity: '208344.61'
       flat_rate_in: '2160.00'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-20.00'
     - year: 2037
       kind: projected
@@ -1359,6 +1395,7 @@ cases:
       loan_balance: '189565.45'
       equity: '225704.71'
       flat_rate_in: '2160.00'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-20.00'
     sale:
       sale_date: 2037-12-31
@@ -1453,6 +1490,7 @@ cases:
       loan_balance: '234779.24'
       equity: '65220.76'
       flat_rate_in: '2160.00'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-20.00'
 - id: rent_growth_from_second_year
   description: 'Rent growth starts in the second projected year: 2027 keeps today''s rent'
@@ -1503,6 +1541,7 @@ cases:
       loan_balance: '234779.24'
       equity: '65220.76'
       flat_rate_in: '2160.00'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-20.00'
     - year: 2028
       kind: projected
@@ -1534,6 +1573,7 @@ cases:
       loan_balance: '230935.24'
       equity: '69064.76'
       flat_rate_in: '2203.20'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-16.40'
 - id: vacancy_two_months
   description: 'Two vacant months a year: rent and NK × 10/12, the vacant months the year''s last'
@@ -1584,4 +1624,5 @@ cases:
       loan_balance: '234779.24'
       equity: '65220.76'
       flat_rate_in: '1800.00'
+      flat_rate_months: 12
       flat_rate_gap_monthly: '-50.00'
