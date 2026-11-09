@@ -132,7 +132,7 @@ def year_figures(
     running = _signed_out(running_rows)
     cash_out = interest + principal + running + umlagen_out
     tax = effect.effect if effect is not None else ZERO
-    net_cash = rent_in + other_income + umlagen_in - cash_out + tax
+    net_cash = rent_in + other_income + umlagen_in - cash_out - tax
 
     invested = None
     if purchase_year is not None and year == purchase_year:

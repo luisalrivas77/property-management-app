@@ -64,5 +64,5 @@ def test_pre_handover_income_moved_to_rent_counts_as_rent():
     got = actual_year(facts, case.year, case.today, case.owners, case.income_inputs)
     assert (got.rent_in, got.other_income) == (Decimal("5950.00"), Decimal("0.00"))
     want = case.expect
-    assert got.net_cash - got.tax_effect.effect == want.net_cash - want.tax_effect.effect
+    assert got.net_cash + got.tax_effect.effect == want.net_cash + want.tax_effect.effect
     assert got.taxable_result == want.taxable_result + Decimal("850.00")
