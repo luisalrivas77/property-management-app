@@ -33,6 +33,7 @@ import yaml
 from fixture_models import Lenient
 from pydantic import Field, model_validator
 
+from hausbuch.rules.tax import registry
 from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.common import (
     Fraction,
@@ -324,7 +325,7 @@ class SaleFacts(Schema):
     cash_flows: list[DatedFlow]  # CF_y on 31 Dec, kind cash_flow
 
 
-def _check_sale(sale: SaleResult, cash_flows: list[DatedFlow], what: str) -> None:
+def _check_sale(sale: SaleResult, cash_flows: list[DatedFlow], what: str, sale_year: int) -> None:
     cf = sum((f.amount for f in cash_flows), Decimal("0"))
     if sale.profit != sale.net_proceeds + cf - sale.initial_equity:
         raise ValueError(f"{what}: profit = net proceeds + Σ CF − E₀")
@@ -345,8 +346,9 @@ def _check_sale(sale: SaleResult, cash_flows: list[DatedFlow], what: str) -> Non
         return
     if sum((o.gain for o in owners), Decimal("0")) != sale.gain:
         raise ValueError(f"{what}: the owners' gains add up to the gain")
-    if any(o.below_freigrenze != (0 < o.gain < 1000) for o in owners):
-        raise ValueError(f"{what}: below the Freigrenze means 0 < the owner's gain < 1,000")
+    limit = registry.rule_set_or_latest(sale_year).speculation_freigrenze  # D93
+    if any(o.below_freigrenze != (0 < o.gain < limit) for o in owners):
+        raise ValueError(f"{what}: below the Freigrenze means 0 < the owner's gain < {limit}")
     if sale.freigrenze_applied != any(o.below_freigrenze for o in owners):
         raise ValueError(f"{what}: freigrenze_applied when an owner's gain is below it")
     if all(o.gain <= 0 or o.below_freigrenze for o in owners) and sale.sale_tax != 0:
@@ -381,7 +383,7 @@ class SaleCase(Lenient):
             f.value - s.selling_costs - (f.purchase_price + f.cost_rows - s.afa_claimed)
         ):
             raise ValueError(f"{self.id}: gain = V − C − (price + cost rows − AfA claimed)")
-        _check_sale(s, f.cash_flows, self.id)
+        _check_sale(s, f.cash_flows, self.id, f.sale_year)
         return self
 
 
@@ -467,7 +469,7 @@ class ProjectionCase(Lenient):
             DatedFlow(on=date(y.year, 12, 31), amount=y.net_cash, kind="cash_flow")
             for y in self.expect.years
         ]
-        _check_sale(sale, flows, self.id)
+        _check_sale(sale, flows, self.id, last.year)
         return self
 
 

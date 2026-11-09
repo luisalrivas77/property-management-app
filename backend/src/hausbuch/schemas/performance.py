@@ -417,7 +417,7 @@ class YearFigures(Schema):
     taxable_result: Money | None
     afa: Money | None  # the building's (wk.afa)
     # The D80 kitchen: the draft's wk.afa_movable line amount (§5.6, Q-O4); None without one.
-    # The §23 add-back takes `afa` (wk.afa) only.
+    # The §23 add-back takes both `afa` and `afa_movable` (D94).
     afa_movable: Money | None = None
     tax_effect: TaxEffect | None
     net_cash: Money
@@ -441,7 +441,8 @@ class YearFigures(Schema):
 
 
 class OwnerGain(Schema):
-    """One spouse's share of a §23 gain, tested against the Freigrenze (< 1,000, a cliff)."""
+    """One spouse's share of a §23 gain, tested against the Freigrenze of the sale year's rule
+    set (`speculation_freigrenze`, D93; a cliff)."""
 
     owner_id: UUID
     share: Fraction
