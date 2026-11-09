@@ -31,6 +31,7 @@ import { ErrorNotice } from "@/lib/ErrorNotice";
 import { formatDate, formatDateTime, formatDecimal, formatMoney, formatPercent, formatShare, todayIso } from "./format";
 import { ALLOCATION_CATEGORY, TAX_SOURCE_KIND, WARNING_TEXT, taxNote } from "./labels";
 import { ActionDialog, Loading } from "./ui";
+import { UsefulLifeSection } from "./taxInputs";
 import { useLoad, type Loaded } from "./useLoad";
 
 import "./tax.css";
@@ -198,7 +199,7 @@ export function AnlageVScreen({ property, properties, year }: { property: Proper
           SO <span className="tab-note">ab Phase 8</span>
         </span>
       </nav>
-      <Loading state={draft}>{(data) => <DraftView draft={data} propertyId={property.id} />}</Loading>
+      <Loading state={draft}>{(data) => <DraftView draft={data} propertyId={property.id} onChanged={draft.reload} />}</Loading>
       <p className="muted tax-footer">{FOOTER}</p>
     </>
   );
@@ -206,7 +207,7 @@ export function AnlageVScreen({ property, properties, year }: { property: Proper
 
 const loadOwners = () => ok(api.GET("/api/owners"));
 
-function DraftView({ draft, propertyId }: { draft: AnlageVDraft; propertyId: string }) {
+function DraftView({ draft, propertyId, onChanged }: { draft: AnlageVDraft; propertyId: string; onChanged: () => void }) {
   const owners = useLoad(loadOwners);
   const lines = draft.lines ?? [];
   const income = lines.filter((line) => line.key.startsWith("income.") && line.key !== "income.total");
@@ -255,6 +256,10 @@ function DraftView({ draft, propertyId }: { draft: AnlageVDraft; propertyId: str
               draft={draft}
               propertyId={propertyId}
             />
+            <section className="card stack" aria-labelledby="tax-useful-life">
+              <h2 id="tax-useful-life">Kürzere Nutzungsdauer (Gutachten)</h2>
+              <UsefulLifeSection propertyId={propertyId} defaultYear={draft.tax_year} onChanged={onChanged} />
+            </section>
             <NotDeductible draft={draft} propertyId={propertyId} />
           </div>
           <aside className="stack tax-side" aria-label="Offene Punkte und Unterlagen">
@@ -361,7 +366,14 @@ function shown(line: DraftLine): boolean {
 function lineSublabel(line: DraftLine, draft: AnlageVDraft): string[] {
   const parts: string[] = [];
   const afa = draft.afa;
-  if (line.key === "wk.afa" && afa && afa.basis != null && afa.rate != null) {
+  if (line.key === "wk.afa" && afa && afa.method === "useful_life" && afa.useful_life_years != null) {
+    // D79: a Gutachten's shorter useful life replaces the statutory rate.
+    parts.push(`${afa.useful_life_years} Jahre ab ${afa.useful_life_from_year ?? "?"} (Gutachten)`);
+    if (afa.book_value_start != null && afa.remaining_months != null) {
+      parts.push(`Restwert ${formatMoney(afa.book_value_start)} × ${afa.months}/${afa.remaining_months} Monate Restnutzungsdauer`);
+    }
+    if (!isZero(afa.additions)) parts.push(`Basis + ${formatMoney(afa.additions)} Herstellungskosten`);
+  } else if (line.key === "wk.afa" && afa && afa.basis != null && afa.rate != null) {
     parts.push(`${formatMoney(afa.basis)} × ${formatPercent(afa.rate)} × ${afa.months}/12`);
     if (!isZero(afa.additions)) parts.push(`Basis + ${formatMoney(afa.additions)} Herstellungskosten`);
   }

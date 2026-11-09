@@ -15,6 +15,9 @@
 // - On the unit page: the ortsübliche Miete. For an ETW or EFH it is the flat's (the property's,
 //   unit_id null, D71); for an MFH each unit's.
 // - On the tenancy form: the rent's due day (D67) and the running-cost terms (D72).
+// - On the Steuern page, beside the AfA: a shorter useful life from a Gutachten (D79), the
+//   years and the first tax year, its document required; the server refuses a life not
+//   shorter than the statutory one (tax_input.useful_life_not_shorter).
 //
 // The labels live here, not in labels.ts (phase 3 step 2 scope).
 import { useCallback, useId, useMemo, useState, type FormEvent } from "react";
@@ -76,6 +79,7 @@ const CODE_MESSAGES: Record<string, string> = {
   "tax_input.allocation_not_confirmed": "Steuerliche Angaben gibt es nur für eine bestätigte Zuordnung.",
   "tax_input.scope_invalid": "Diese Angabe passt nicht zu dieser Zuordnung oder Einheit.",
   "tax_input.extension_needs_herstellung": RULE_CODE_TEXT["tax_input.extension_needs_herstellung"] ?? "",
+  "tax_input.useful_life_not_shorter": RULE_CODE_TEXT["tax_input.useful_life_not_shorter"] ?? "",
 };
 
 const EXTENSION_HINT =
@@ -527,6 +531,238 @@ function MarketRentForm({
       </div>
       {replaces !== null ? (
         <p className="muted hint">Eine Korrektur ersetzt den Wert ab {formatDate(old?.valid_from)}; der bisherige bleibt im Verlauf.</p>
+      ) : null}
+      <div className="row">
+        <Submit busy={busy}>{replaces === null ? "Eintragen" : "Korrektur speichern"}</Submit>
+        <button type="button" className="link" onClick={onCancel}>
+          Abbrechen
+        </button>
+      </div>
+      {banner ? <p className="notice notice-error">{banner}</p> : null}
+      <FormBanner errors={form.errors} />
+    </form>
+  );
+}
+
+// --- on the Steuern page: a shorter useful life from a Gutachten (D79) --------------------------
+
+type UsefulLifeValue = Schemas["UsefulLife"];
+
+const LIFE_KEYS = ["value.years", "tax_year", "document_id"] as const;
+const LIFE_CODE_FIELDS = { "tax_input.useful_life_not_shorter": "value.years" } as const;
+const LIFE_BEFORE_PURCHASE = "Die Nutzungsdauer kann frühestens ab dem Steuerjahr des Kaufs gelten.";
+
+/** A whole number from `min` up, or a message. */
+function wholeNumber(raw: string, min: number, message: string): { ok: true; value: number } | { ok: false; message: string } {
+  const text = raw.trim();
+  if (!/^\d+$/.test(text) || Number(text) < min) return { ok: false, message };
+  return { ok: true, value: Number(text) };
+}
+
+/**
+ * The AfA over a shorter actual useful life (§ 7 Abs. 4 Satz 2 EStG, D79): the years a
+ * Gutachten states and the first tax year they apply to. One value per first year; a later
+ * Gutachten from another year stands beside the earlier one and restarts the count from the
+ * book value of that year. The server refuses a life not shorter than the statutory one
+ * (tax_input.useful_life_not_shorter). `onChanged` reloads the draft.
+ */
+export function UsefulLifeSection({
+  propertyId,
+  defaultYear,
+  onChanged,
+}: {
+  propertyId: string;
+  defaultYear: number;
+  onChanged: () => void;
+}) {
+  const load = useCallback(() => loadInputs(propertyId, "useful_life"), [propertyId]);
+  const state = useLoad(load);
+  const [editing, setEditing] = useState<TaxInput | "new" | null>(null);
+  const [banner, setBanner] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  function changed() {
+    state.reload();
+    onChanged();
+  }
+
+  async function withdraw(row: TaxInput) {
+    setBusy(true);
+    setBanner(null);
+    try {
+      await record(propertyId, {
+        property_id: propertyId,
+        kind: "useful_life",
+        tax_year: row.tax_year,
+        document_id: row.document_id,
+        value: row.value,
+        supersedes_id: row.id,
+        withdrawn: true,
+      });
+    } catch (error) {
+      setBanner(messageOf(error) ?? "Das Zurückziehen hat nicht geklappt. Bitte erneut versuchen.");
+    } finally {
+      setBusy(false);
+      changed();
+    }
+  }
+
+  return (
+    <div className="stack">
+      <Loading state={state}>
+        {(rows) => {
+          const sorted = [...rows].sort((a, b) => (a.tax_year ?? 0) - (b.tax_year ?? 0));
+          return sorted.length === 0 ? (
+            <p className="muted">
+              Die AfA läuft mit dem gesetzlichen Satz. Belegt ein Gutachten eine kürzere tatsächliche Nutzungsdauer des
+              Gebäudes, wird der Restwert stattdessen über die restlichen Jahre verteilt.
+            </p>
+          ) : (
+            <ul className="stack">
+              {sorted.map((row) => (
+                <li key={row.id} className="row">
+                  <span>
+                    {(row.value as UsefulLifeValue).years} Jahre ab {row.tax_year} (Gutachten)
+                  </span>
+                  <span className="spacer" />
+                  <button type="button" className="link" onClick={() => setEditing(row)} disabled={busy}>
+                    Korrigieren
+                  </button>
+                  <button type="button" className="link" onClick={() => void withdraw(row)} disabled={busy}>
+                    Zurückziehen
+                  </button>
+                </li>
+              ))}
+            </ul>
+          );
+        }}
+      </Loading>
+      {banner ? <p className="notice notice-error">{banner}</p> : null}
+      {editing === null ? (
+        <div>
+          <button type="button" className="secondary" onClick={() => setEditing("new")}>
+            Nutzungsdauer laut Gutachten eintragen
+          </button>
+        </div>
+      ) : (
+        <UsefulLifeForm
+          key={editing === "new" ? "new" : editing.id}
+          propertyId={propertyId}
+          defaultYear={defaultYear}
+          replaces={editing === "new" ? null : editing}
+          onDone={() => {
+            setEditing(null);
+            changed();
+          }}
+          onCancel={() => setEditing(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function UsefulLifeForm({
+  propertyId,
+  defaultYear,
+  replaces,
+  onDone,
+  onCancel,
+}: {
+  propertyId: string;
+  defaultYear: number;
+  replaces: TaxInput | null;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const old = replaces?.value as UsefulLifeValue | undefined;
+  const [years, setYears] = useState(old ? String(old.years) : "");
+  const [fromYear, setFromYear] = useState(String(replaces?.tax_year ?? defaultYear));
+  const [documentId, setDocumentId] = useState<string | null>(replaces?.document_id ?? null);
+  const [note, setNote] = useState(replaces?.note ?? "");
+  const [busy, setBusy] = useState(false);
+  const [banner, setBanner] = useState<string | null>(null);
+  const form = useFormErrors(useMemo(() => [...LIFE_KEYS], []), LIFE_CODE_FIELDS);
+  const base = useId();
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    const values = collector();
+    const life = values.take("value.years", wholeNumber(years, 1, "Bitte die Nutzungsdauer in ganzen Jahren eingeben."));
+    const year = values.take("tax_year", wholeNumber(fromYear, 2000, "Bitte ein Steuerjahr eingeben, z. B. 2026."));
+    if (documentId === null) values.messages["document_id"] = ["Bitte das Gutachten auswählen; ohne Nachweis erkennt das Finanzamt die kürzere Nutzungsdauer nicht an."];
+    if (!values.ok || life === undefined || year === undefined || documentId === null) return form.invalid(values.messages);
+    setBusy(true);
+    setBanner(null);
+    form.clear();
+    try {
+      await record(propertyId, {
+        property_id: propertyId,
+        kind: "useful_life",
+        tax_year: year,
+        document_id: documentId,
+        value: { years: life },
+        note: note.trim() || null,
+        supersedes_id: replaces?.id ?? null,
+        withdrawn: false,
+      });
+      onDone();
+    } catch (error) {
+      const codes = codesOf(error);
+      if (codes.includes("tax_input.not_current") && replaces === null) {
+        setBanner("Für dieses Steuerjahr ist schon eine Nutzungsdauer erfasst. Bitte diese korrigieren.");
+      } else if (codes.includes("tax_input.scope_invalid")) {
+        setBanner(LIFE_BEFORE_PURCHASE);
+      } else if (codes.includes("tax_input.not_current")) {
+        setBanner(CODE_MESSAGES["tax_input.not_current"] ?? null);
+      } else {
+        form.fail(error);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="stack" onSubmit={submit} noValidate>
+      <div className="grid">
+        <Field
+          id={`${base}-years`}
+          label="Nutzungsdauer laut Gutachten (Jahre)"
+          description="Die Restnutzungsdauer des Gebäudes, die das Gutachten ab dem Kauf oder ab dem genannten Jahr feststellt. Sie muss kürzer sein als die gesetzliche (40 Jahre bei Baujahr vor 1925, sonst 50 Jahre, ab 2023 fertiggestellt 33⅓ Jahre)."
+          errors={form.of("value.years")}
+        >
+          <input type="text" inputMode="numeric" value={years} onChange={(e) => setYears(e.target.value)} autoComplete="off" />
+        </Field>
+        <Field
+          id={`${base}-from`}
+          label="Ab Steuerjahr"
+          description="Das erste Steuerjahr, für das die kürzere Nutzungsdauer gilt; meist das Jahr des Kaufs. Davor bleibt die gesetzliche AfA."
+          errors={form.of("tax_year")}
+        >
+          <input
+            type="text"
+            inputMode="numeric"
+            value={fromYear}
+            onChange={(e) => setFromYear(e.target.value)}
+            disabled={replaces !== null}
+            autoComplete="off"
+          />
+        </Field>
+        <Field
+          id={`${base}-document`}
+          label="Gutachten"
+          description="Das Gutachten über die Restnutzungsdauer; das Finanzamt fragt danach."
+          errors={form.of("document_id")}
+        >
+          <DocumentPicker value={documentId} onChange={setDocumentId} />
+        </Field>
+        <Field id={`${base}-note`} label="Notiz (optional)" description="Zum Beispiel wer das Gutachten erstellt hat.">
+          <input type="text" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} autoComplete="off" />
+        </Field>
+      </div>
+      {replaces !== null ? (
+        <p className="muted hint">Eine Korrektur ersetzt die Angabe ab {replaces.tax_year}; die bisherige bleibt im Verlauf.</p>
       ) : null}
       <div className="row">
         <Submit busy={busy}>{replaces === null ? "Eintragen" : "Korrektur speichern"}</Submit>
