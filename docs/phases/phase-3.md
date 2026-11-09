@@ -20,7 +20,7 @@ implementation steps code against:
 | Rule sets (data) | `backend/src/hausbuch/rules/tax/rulesets/2025.yaml` (form published, verified), `2026.yaml` (form **provisional**, §4.3), loaded by `rules/tax/registry.py`, pinned by `tests/rules/test_tax_rulesets.py` | Written in step 0 (branch docs/phase-3-step0, `d139528`) |
 | Rule fixtures | `backend/tests/fixtures/phase3/*.yaml`, 12 files (§13), loaded by `tests/fixture_models_phase3.py` and checked by `tests/test_fixtures_valid.py` | Written in step 0 (branch docs/phase-3-step0, `b4390ad`); the form mapping is pinned by the Python test `test_tax_rulesets.py` instead of a `form_mapping.yaml` fixture; no skipped rule-test stubs were added (the rule tests arrive with the rules in steps 1–2) |
 | Eval cases | `backend/tests/evals/recordings/zinsbescheinigung.json`, `hausgeldabrechnung.json` (synthetic, recorded from Luis's computer, D66) | Not recorded (step 2) |
-| Rule tests | `backend/tests/rules/test_tax_*.py` | Not written (steps 1–2) |
+| Rule tests | `backend/tests/rules/test_tax_*.py` | `test_tax_rulesets.py` written in step 0 (`d139528`); the rule tests not written (steps 1–2) |
 | Step 1 (rule set, draft, Steuern screen) | `rules/tax/`, `services/tax.py`, `api/routes/tax.py`, `/tax/[year]` | Not built |
 | Step 2 (inputs, elections, checklist, reading the two certificates) | `services/tax_inputs.py`, `rules/prefill.py` additions, `rules/document_checklist.py` entries | Not built |
 | Step 3 (exports) | `services/tax_export.py`, job `tax_export`, `tax_export` table | Not built |
@@ -414,7 +414,7 @@ provisional + warning.
   the handover goes to the flat's rent row when the property's `pre_handover_income` input
   says `rent`, else to the "Vor dem Übergang" block (D63, §5.10).
 - Mixed terms (D72): warning `umlagen.mixed_terms` with params `tenancies` (the ids of the
-  `included` tenancies). No `living_area_m2` → the row's area is Σ the units' m² and the
+  `included` tenancies, sorted and joined by commas; the fixture has one). No `living_area_m2` → the row's area is Σ the units' m² and the
   draft warns `income.living_area_missing` (D71).
 - Unit rows: an ETW or EFH has one row for the property (`area_source: living_area`, or `units` when the area is missing); an MFH
   one row per unit (`area_source: units`).
