@@ -91,6 +91,7 @@ def test_every_router_is_included_under_api(engine, tmp_path, monkeypatch):
     names = [m.__name__.rsplit(".", 1)[1] for m in ROUTE_MODULES]
     assert names == [
         "owners",
+        "income_inputs",
         "properties",
         "units",
         "tenants",

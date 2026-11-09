@@ -182,11 +182,12 @@ def slope(
         ),
         ZERO,
     )
-    return one_decimal(derivative * (1 + soli_factor + church) * HUNDRED)
+    return _percent(derivative * (1 + soli_factor + church))
 
 
 def _percent(value: Decimal) -> Decimal:
-    return one_decimal(value * HUNDRED)
+    """A fraction in percent, one decimal half-up; a negative zero becomes 0.0."""
+    return one_decimal(value * HUNDRED) + 0
 
 
 def tax_effect(
