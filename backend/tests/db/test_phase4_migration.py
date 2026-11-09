@@ -233,9 +233,11 @@ def test_a_scenario_correction_stays_on_its_property_and_rows_are_append_only(co
         _insert(conn, "projection_scenario", _scenario(a, prop, supersedes_id=first))
         with pytest.raises(errors.UniqueViolation), conn.transaction():
             _insert(conn, "projection_scenario", _scenario(a, prop, supersedes_id=first))
+        # an uncorrected row, so the UNIQUE on supersedes_id cannot fire before the FK
+        open_row = _insert(conn, "projection_scenario", _scenario(a, prop))
         second = insert_property(conn, a, label="Zweite Wohnung")
         with pytest.raises(errors.ForeignKeyViolation), conn.transaction():
-            _insert(conn, "projection_scenario", _scenario(a, second, supersedes_id=first))
+            _insert(conn, "projection_scenario", _scenario(a, second, supersedes_id=open_row))
         for statement in (
             "UPDATE projection_scenario SET is_default = false WHERE id = %s",
             "DELETE FROM projection_scenario WHERE id = %s",
