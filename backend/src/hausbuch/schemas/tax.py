@@ -111,6 +111,7 @@ DRAFT_LINE_KEYS: tuple[str, ...] = (
     "income.other",
     "income.total",
     "wk.afa",
+    "wk.afa_movable",  # D80: AfA on movable assets (the Einbauküche), Z42–45
     "wk.interest",
     "wk.financing_costs",
     "wk.maintenance",
@@ -237,6 +238,7 @@ class TaxInputKind(StrEnum):
     INTEREST_CERTIFIED = "interest_certified"  # the Zinsbescheinigung, per loan and year (D66)
     PRE_HANDOVER_INCOME = "pre_handover_income"  # how income before the handover counts (D63)
     USEFUL_LIFE = "useful_life"  # a shorter actual useful life from a Gutachten, from a year (D79)
+    MOVABLE_ASSET = "movable_asset"  # a movable asset (the Einbauküche), from a year (D80)
 
 
 class Spread82b(Schema):
@@ -279,6 +281,21 @@ class UsefulLife(Schema):
     years: int = Field(ge=1)
 
 
+class MovableAsset(Schema):
+    """A movable asset with its own AfA (D80; BFH IX R 14/15: a fitted kitchen is not part of
+    the building). tax_year on the row is its first year (the purchase year when it came with
+    the flat); document_id is optional (the estimate's evidence, e.g. a planner printout).
+
+    amount is its share of the purchase price, gross (or its own price when bought separately).
+    in_purchase_price: bought with the flat, so its basis (amount plus its share of the
+    Nebenkosten) leaves the building's AfA basis, never the land's."""
+
+    label: Literal["einbaukueche"]  # one asset per label; more labels may follow
+    amount: PositiveMoney
+    useful_life_years: int = Field(default=10, ge=1, le=25)
+    in_purchase_price: bool = True
+
+
 TaxInputValue = (
     Spread82b
     | RenovationTreatment
@@ -288,6 +305,7 @@ TaxInputValue = (
     | InterestCertified
     | PreHandoverIncome
     | UsefulLife
+    | MovableAsset
 )
 
 K = TaxInputKind
@@ -300,11 +318,15 @@ TAX_INPUT_VALUES: dict[TaxInputKind, type[Schema]] = {
     K.INTEREST_CERTIFIED: InterestCertified,
     K.PRE_HANDOVER_INCOME: PreHandoverIncome,
     K.USEFUL_LIFE: UsefulLife,
+    K.MOVABLE_ASSET: MovableAsset,
 }
 # The scope each kind needs; migration 0013's CHECKs say the same.
 ALLOCATION_SCOPED = frozenset({K.SPREAD_82B, K.RENOVATION_TREATMENT, K.EXCLUDE_FROM_15PCT})
-# Also need a document: the certificate, the Abrechnung, the Gutachten (D79).
-YEAR_SCOPED = frozenset({K.RUECKLAGE_SPENT, K.INTEREST_CERTIFIED, K.USEFUL_LIFE})
+# tax_year set: the year, or the first year (useful_life D79, movable_asset D80).
+YEAR_SCOPED = frozenset({K.RUECKLAGE_SPENT, K.INTEREST_CERTIFIED, K.USEFUL_LIFE, K.MOVABLE_ASSET})
+# A document required: the certificate, the Abrechnung, the Gutachten (D79). A movable asset's
+# evidence is optional (D80: its value is often an estimate).
+DOCUMENT_REQUIRED = frozenset({K.RUECKLAGE_SPENT, K.INTEREST_CERTIFIED, K.USEFUL_LIFE})
 del K
 
 
@@ -331,7 +353,8 @@ class TaxInputCreate(Schema):
     unit_id: UUID | None = None  # market_rent of an MFH unit; None = the property's flat
     loan_id: UUID | None = None
     allocation_id: UUID | None = None
-    # evidence: the certificate, the Abrechnung, the Mietspiegel, the Gutachten (useful_life)
+    # evidence: the certificate, the Abrechnung, the Mietspiegel, the Gutachten (useful_life),
+    # an estimate's printout (movable_asset, optional)
     document_id: UUID | None = None
     value: TaxInputValue
     note: str | None = Field(default=None, max_length=500)
@@ -357,9 +380,10 @@ class TaxInputCreate(Schema):
             problems.append("loan_id is set exactly for interest_certified")
         if (self.tax_year is not None) != (k in YEAR_SCOPED):
             problems.append(
-                "tax_year is set exactly for ruecklage_spent, interest_certified and useful_life"
+                "tax_year is set exactly for ruecklage_spent, interest_certified, useful_life"
+                " and movable_asset"
             )
-        if k in YEAR_SCOPED and self.document_id is None:
+        if k in DOCUMENT_REQUIRED and self.document_id is None:
             problems.append("a certificate figure or a useful life needs its document")
         if self.withdrawn and self.supersedes_id is None:
             problems.append("a withdrawal supersedes the row it withdraws")
@@ -393,6 +417,9 @@ class WarningCode(StrEnum):
     AFA_ACQUISITION_COST_WITHOUT_ROW = "afa.acquisition_cost_without_row"
     AFA_PURCHASE_PRICE_MISMATCH = "afa.purchase_price_mismatch"
     AFA_USEFUL_LIFE_REPORT = "afa.useful_life_report"  # D79: Z33 laut Erläuterung, the Gutachten
+    AFA_MOVABLE_ASSET_NO_EVIDENCE = "afa.movable_asset_no_evidence"  # D80: an estimate, no Beleg
+    # D80: a movable asset's basis is not below the building's (a later split changed it)
+    AFA_MOVABLE_ASSET_EXCEEDS_BUILDING = "afa.movable_asset_exceeds_building"
     LIMIT_EXCEEDED = "limit.exceeded"
     LIMIT_PRIOR_YEAR_AMENDMENT = "limit.prior_year_amendment"
     LIMIT_ESTIMATED_NET = "limit.estimated_net"
@@ -424,6 +451,8 @@ WARNING_SEVERITY: dict[WarningCode, Severity] = {
     W.AFA_ACQUISITION_COST_WITHOUT_ROW: "warning",
     W.AFA_PURCHASE_PRICE_MISMATCH: "info",
     W.AFA_USEFUL_LIFE_REPORT: "info",
+    W.AFA_MOVABLE_ASSET_NO_EVIDENCE: "info",
+    W.AFA_MOVABLE_ASSET_EXCEEDS_BUILDING: "warning",
     W.LIMIT_EXCEEDED: "warning",
     W.LIMIT_PRIOR_YEAR_AMENDMENT: "warning",
     W.LIMIT_ESTIMATED_NET: "info",
@@ -587,6 +616,19 @@ class UsefulLifeFact(Schema):
     document_id: UUID | None = None
 
 
+class MovableAssetFact(Schema):
+    """A movable_asset tax input in force (D80): its own linear AfA from from_year; when
+    in_purchase_price, its basis leaves the building's AfA basis."""
+
+    tax_input_id: UUID
+    label: Literal["einbaukueche"]
+    from_year: TaxYear
+    amount: PositiveMoney  # its share of the purchase price, gross (or its own price)
+    useful_life_years: int = Field(ge=1, le=25)
+    in_purchase_price: bool = True
+    document_id: UUID | None = None
+
+
 class AfaFacts(Schema):
     property_id: UUID
     purchase_price: PositiveMoney
@@ -599,6 +641,7 @@ class AfaFacts(Schema):
     # acquisition_cost and purchase_price allocations: evidence only, never summed (D55)
     allocations: list[AllocationFact] = Field(default_factory=list)
     useful_lives: list[UsefulLifeFact] = Field(default_factory=list)  # in force only (D79)
+    movable_assets: list[MovableAssetFact] = Field(default_factory=list)  # in force only (D80)
 
 
 AfaMethod = Literal["statutory", "useful_life"]
@@ -614,7 +657,8 @@ class AfaLine(Schema):
 
     tax_year: TaxYear
     amount: NonNegativeMoney | None
-    basis: NonNegativeMoney | None  # (price + Σ cost rows) × share, before additions
+    # (price + Σ cost rows) × share − the movable assets bought with the flat, before additions
+    basis: NonNegativeMoney | None
     additions: NonNegativeMoney = Decimal("0")  # Σ additions of years ≤ tax_year
     rate: Rate | None
     months: int = Field(ge=0, le=12)
@@ -624,6 +668,34 @@ class AfaLine(Schema):
     useful_life_from_year: TaxYear | None = None  # and its first year
     book_value_start: NonNegativeMoney | None = None  # basis + additions − earlier AfA
     remaining_months: int | None = Field(default=None, ge=0)  # of the useful life, at its start
+    # D80: the movable assets' bases taken out of the building's share (0 without one)
+    movable_deducted: NonNegativeMoney = Decimal("0.00")
+    sources: list[SourceRef] = Field(default_factory=list)
+    warnings: list[DraftWarning] = Field(default_factory=list)
+
+
+class MovableAfaLine(Schema):
+    """wk.afa_movable for one asset and tax year (D80): linear over useful_life_years from the
+    AfA start month of from_year (§7 Abs. 1 EStG), pro rata by the months owned; the last year
+    takes the rest, then 0.00.
+
+    basis = amount × (price + Σ cost rows) ÷ price when in_purchase_price (its share of the
+    Nebenkosten goes with it), else amount. book_value_start is the basis less the AfA of
+    earlier years; remaining_months the months of the life left at the start of the year."""
+
+    tax_input_id: UUID
+    label: Literal["einbaukueche"]
+    tax_year: TaxYear
+    amount: NonNegativeMoney
+    price_amount: PositiveMoney  # the input's amount
+    basis: PositiveMoney
+    in_purchase_price: bool
+    useful_life_years: int = Field(ge=1, le=25)
+    from_year: TaxYear
+    months: int = Field(ge=0, le=12)
+    book_value_start: NonNegativeMoney
+    remaining_months: int = Field(ge=0)
+    method_code: Literal[1, 2] | None  # Z42: 1 wie Vorjahr, 2 laut Erläuterung (first year)
     sources: list[SourceRef] = Field(default_factory=list)
     warnings: list[DraftWarning] = Field(default_factory=list)
 
@@ -905,6 +977,7 @@ class AnlageVDraft(Schema):
     totals: DraftTotals
     owners: list[OwnerResult] = Field(default_factory=list)
     afa: AfaLine | None = None
+    movable_assets: list[MovableAfaLine] = Field(default_factory=list)  # D80, wk.afa_movable
     tracked_not_deductible: list[TrackedAmount] = Field(default_factory=list)
     moved_to_other_year: list[MovedPayment] = Field(default_factory=list)
     pre_handover: list[SourceRef] = Field(default_factory=list)

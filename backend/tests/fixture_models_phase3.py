@@ -23,7 +23,7 @@ from datetime import date
 from decimal import Decimal
 from functools import cache
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, Literal, Self
 from uuid import UUID
 
 import yaml
@@ -151,6 +151,39 @@ class AfaCase(Lenient):
 class AfaFixture(_Fixture):
     rule_set_year: TaxYear
     cases: list[AfaCase]
+
+
+# --- movable_asset.yaml (D80) ---------------------------------------------------------
+
+
+class MovableExpect(Schema):
+    """One tax year of the case's one movable asset (MovableAfaLine's figures)."""
+
+    tax_year: TaxYear
+    amount: NonNegativeMoney
+    basis: NonNegativeMoney
+    months: int = Field(ge=0, le=12)
+    method_code: Literal[1, 2] | None
+    book_value_start: NonNegativeMoney
+    remaining_months: int = Field(ge=0)
+    sources: list[SourceRef] | None = None
+    warnings: list[WarningExpect] = Field(default_factory=list)
+
+
+class MovableCase(Lenient):
+    facts: AfaFacts
+    expect: list[MovableExpect]
+
+    @model_validator(mode="after")
+    def _one_asset(self) -> Self:
+        if len(self.facts.movable_assets) != 1:
+            raise ValueError(f"{self.id}: one movable asset per case")
+        _unique_years(self.expect, self.id)
+        return self
+
+
+class MovableFixture(_Fixture):
+    cases: list[MovableCase]
 
 
 # --- anschaffungsnah.yaml (§5.3) -------------------------------------------------------
@@ -331,6 +364,7 @@ class FieldSheetRow(Schema):
 INCOME_KEYS = ("income.rent_total", "income.umlagen", "income.umlagen_settlement", "income.other")
 COST_KEYS = (
     "wk.afa",
+    "wk.afa_movable",  # D80
     "wk.interest",
     "wk.financing_costs",
     "wk.maintenance",
@@ -423,6 +457,7 @@ class DraftFixture(_Fixture):
 MODELS: dict[str, type[Schema]] = {
     "tax_year": TaxYearFixture,
     "afa": AfaFixture,
+    "movable_asset": MovableFixture,
     "anschaffungsnah": LimitFixture,
     "erhaltungsaufwand": LineRuleFixture,
     "schuldzinsen": LineRuleFixture,

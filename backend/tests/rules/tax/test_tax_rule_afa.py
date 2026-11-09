@@ -21,6 +21,7 @@ def test_afa(case, expect):
     line = afa(case.facts, expect.tax_year, rule_set(AFA.rule_set_year))
     where = f"{case.id} {expect.tax_year}"
     fields = ("amount", "basis", "additions", "rate", "months", "method_code", "method")
+    fields += ("movable_deducted",)  # D80: 0.00 without a movable asset in the price
     fields += ("useful_life_years", "useful_life_from_year")
     for optional in ("book_value_start", "remaining_months"):
         if expect.method == "statutory" or getattr(expect, optional) is not None:
@@ -104,3 +105,27 @@ def test_a_year_without_owned_months_serialises_two_decimals():
     """D79 review F2: the year after a sale under the useful-life method dumps "0.00"."""
     line = afa(_case("useful_life_sale_year").facts, 2029, rule_set(AFA.rule_set_year))
     assert line.model_dump(mode="json")["amount"] == "0.00"
+
+
+@pytest.mark.rule
+def test_a_kitchen_in_the_price_comes_out_of_the_building_only():
+    """D80: the basis plus the kitchen's basis is the building share without the kitchen, so the
+    land's share ((price + costs) − building share) is untouched."""
+    case = _case("movable_in_price_reduces_building")
+    rs = rule_set(AFA.rule_set_year)
+    with_kitchen = afa(case.facts, 2027, rs)
+    without = afa(case.facts.model_copy(update={"movable_assets": []}), 2027, rs)
+    assert without.basis == Decimal("234000.00") and without.movable_deducted == 0
+    assert with_kitchen.basis + with_kitchen.movable_deducted == without.basis
+
+
+@pytest.mark.rule
+def test_a_kitchen_basis_above_the_building_warns_and_stops_at_zero():
+    """D80: a later split can leave a kitchen's basis above the building's; the basis stops at
+    0.00 (never negative) and the draft warns."""
+    case = _case("movable_in_price_reduces_building")
+    kitchen = case.facts.movable_assets[0].model_copy(update={"amount": Decimal("250000.00")})
+    line = afa(case.facts.model_copy(update={"movable_assets": [kitchen]}), 2027, rule_set(2026))
+    assert line.basis == Decimal("0.00") and line.amount == Decimal("0.00")
+    codes = [w.code for w in line.warnings]
+    assert "afa.movable_asset_exceeds_building" in codes

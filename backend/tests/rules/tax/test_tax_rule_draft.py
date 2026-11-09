@@ -1,6 +1,9 @@
 """§5.11 the assembled draft against the hand-calculated Anlage V 2026 (anlage_v_2026.yaml,
 docs/phases/phase-3.md §14). Fields a case leaves out (None) are not asserted."""
 
+from decimal import Decimal
+from uuid import uuid4
+
 import pytest
 import tax_fixture_compare as cmp
 from fixture_models_phase3 import DraftFixture, load
@@ -9,7 +12,7 @@ from hausbuch.rules.tax.draft import draft
 from hausbuch.rules.tax.field_sheet import field_sheet
 from hausbuch.rules.tax.registry import rule_set
 from hausbuch.schemas.checklist import RequirementCode
-from hausbuch.schemas.tax import AnlageVDraft
+from hausbuch.schemas.tax import AnlageVDraft, TaxInputFact
 
 DRAFT = load("anlage_v_2026")
 assert isinstance(DRAFT, DraftFixture)
@@ -100,3 +103,54 @@ def test_draft_missing_documents(case):
     # match; the rest is checked once build_checklist has them.
     assert got == [item for item in want if item.code not in PHASE3_CODES]
     pytest.skip("document_checklist has no cost_receipt/market_rent entries yet (§8, step 2)")
+
+
+@pytest.mark.rule
+def test_a_kitchen_has_its_own_line_and_reduces_the_building_afa():
+    """D80 on case_a: a kitchen estimated at 8,500.00 of the price (no document) leaves the
+    building basis (2,340.00 → 2,247.92 AfA in 2026, the 15 % test's building cost 224,791.67)
+    and is depreciated on its own line, Z42–45 Kz 60, with Z42's Einzelangaben. Both enter
+    wk.total and the result."""
+    case = next(c for c in DRAFT.cases if c.id == "case_a")
+    base = _run(case)
+    kitchen = TaxInputFact.model_validate(
+        {
+            "id": uuid4(),
+            "property_id": case.facts.property.id,
+            "kind": "movable_asset",
+            "tax_year": 2026,
+            "value": {"label": "einbaukueche", "amount": "8500.00"},
+        }
+    )
+    facts = case.facts.model_copy(update={"tax_inputs": [*case.facts.tax_inputs, kitchen]})
+    got = draft(facts, 2026, rule_set(2026))
+    before = {line.key: line for line in base.lines}
+    lines = {line.key: line for line in got.lines}
+    assert "wk.afa_movable" not in before
+    assert before["wk.afa"].amount == Decimal("2340.00")
+    assert lines["wk.afa"].amount == Decimal("2247.92")
+    m = lines["wk.afa_movable"]
+    assert (m.amount, m.amount_rounded, m.zeile_from, m.zeile, m.kennzahl) == (
+        Decimal("460.42"),
+        461,
+        42,
+        45,
+        "60",
+    )
+    assert m.einzelangaben == [
+        "Einbauküche: Anschaffungskosten 9.208,33 €, angeschafft 07/2026, Nutzungsdauer 10 Jahre"
+    ]
+    assert ("tax_input", kitchen.id) in cmp.refs(m.sources)
+    assert ("tax_input", kitchen.id) in cmp.refs(lines["wk.afa"].sources)
+    delta = Decimal("460.42") - (Decimal("2340.00") - Decimal("2247.92"))
+    assert got.totals.costs == base.totals.costs + delta
+    assert got.totals.result == base.totals.result - delta
+    assert lines["wk.total"].amount == got.totals.costs
+    assert got.limit_15.basis_building_cost == Decimal("224791.67")
+    assert [(a.label, a.amount, a.basis) for a in got.movable_assets] == [
+        ("einbaukueche", Decimal("460.42"), Decimal("9208.33"))
+    ]
+    assert "afa.movable_asset_no_evidence" in [w.code for w in got.warnings]
+    sheet = {r.key: r for r in field_sheet(got, rule_set(2026))}
+    assert (sheet["wk.afa_movable"].zeile, sheet["wk.afa_movable"].kennzahl) == (45, "60")
+    assert AnlageVDraft.model_validate_json(got.model_dump_json()) == got

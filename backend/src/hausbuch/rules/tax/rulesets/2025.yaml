@@ -83,6 +83,15 @@ form:
     wk.afa:
       {key: wk.afa, zeile_from: 33, zeile: 35, kennzahl: "30", kind: afa, rounding: up,
        label: "Absetzung für Abnutzung für Gebäude"}
+    # D80: AfA on movable assets (the Einbauküche, BFH IX R 14/15), its own block Z42–45
+    # ("durch direkte Zuordnung ermittelt" Z42 with Einzelangaben and 1 = wie Vorjahr /
+    # 2 = laut Erläuterung; Kz 60 on Z45 "Abzugsfähige Werbungskosten"). Read on 9 Nov 2026
+    # from the 2025 Anlage V, page 2 (page stamp 2025AnlV102NET), same form and version as
+    # above (formulare-bfinv.de). Not Kz 41: that is Z69, the §82b spread of the second prior
+    # year (wk.maintenance_spread_prior_2).
+    wk.afa_movable:
+      {key: wk.afa_movable, zeile_from: 42, zeile: 45, kennzahl: "60", kind: afa, rounding: up,
+       label: "Absetzung für Abnutzung für Wirtschaftsgüter, die keine Gebäude sind (z. B. bewegliche Wirtschaftsgüter)"}
     wk.interest:
       {key: wk.interest, zeile_from: 46, zeile: 48, kennzahl: "33", kind: cost, rounding: up,
        label: "Schuldzinsen (ohne Tilgungsbeträge)"}

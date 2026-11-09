@@ -1,0 +1,123 @@
+# Rule fixture: AfA on a movable asset, the Einbauküche (hausbuch.rules.tax.movable)
+#
+# movable_afa(facts: AfaFacts, tax_year: int) -> list[MovableAfaLine]  (one per asset)
+# Spec: docs/phases/phase-3.md D80 (Q15). BFH IX R 14/15: a fitted kitchen is a movable asset,
+# not part of the building; §7 Abs. 1 S. 1 and S. 4 EStG. Anlage V 2025 Z42–45, Kz 60.
+#   facts.movable_assets lists the movable_asset inputs in force ({tax_input_id, label,
+#     from_year, amount, useful_life_years, in_purchase_price, document_id}); each case has one.
+#   basis     = round(amount × (purchase_price + Σ cost_rows) ÷ purchase_price, 2) when
+#               in_purchase_price (it takes its share of the Nebenkosten), else amount
+#   months    = the months owned in the year (the handover month counts in full; the month the
+#               ownership ends too; 12 in a year after the purchase year)
+#   amount    = round(basis × months ÷ (useful_life_years × 12), 2), half-up, from from_year;
+#               the year in which the life's months run out takes the whole remaining book
+#               value; 0.00 after it and after the ownership ends
+#   book_value_start = basis − Σ AfA of earlier years; remaining_months = the life's months
+#               left at the start of the year
+#   method_code (Z42) = 2 (laut Erläuterung) in from_year, else 1; null without owned months
+# Sources: the tax input, its document (when set), the property.
+# Warnings: afa.movable_asset_no_evidence (info) in each year with an amount, when the input
+#   has no document (the value is an estimate). params: label, amount (the input's amount).
+# The building's side (its basis reduced by the kitchen's, the land untouched) is in afa.yaml
+# (movable_*) and anschaffungsnah.yaml (movable_in_price_reduces_limit). Synthetic figures.
+
+ids:
+  property: &P 0000000b-0000-4000-8000-000000000001
+  split: &S 0000005a-0000-4000-8000-000000000001
+  doc_kaufvertrag: &D_KV 00000d0c-0000-4000-8000-000000000001
+  input_kitchen: &K 00000081-0000-4000-8000-000000000001
+  doc_planner: &D_PLAN 00000d0c-0000-4000-8000-000000000006
+
+bases:
+  # The §14 flat of afa.yaml: price 300,000.00, cost rows 25,000.00, handover 1 Jul 2026.
+  flat: &flat
+    property_id: *P
+    purchase_price: "300000.00"
+    build_year: 1998
+    purchase_date: 2026-07-01
+    split: {id: *S, source: purchase_contract, building_share: "0.720000", evidence_document_id: *D_KV}
+    cost_rows:
+      - {id: 000000ac-0000-4000-8000-000000000001, kind: real_estate_transfer_tax, amount: "19500.00"}
+      - {id: 000000ac-0000-4000-8000-000000000002, kind: notary, amount: "4200.00"}
+      - {id: 000000ac-0000-4000-8000-000000000003, kind: land_registry, amount: "1300.00"}
+  # A kitchen estimated at 8,500.00 of the price, with a planner printout:
+  # basis 8,500.00 × 325,000.00 ÷ 300,000.00 = 9,208.33; 76.736… a month.
+  kitchen: &kitchen {tax_input_id: *K, label: einbaukueche, from_year: 2026, amount: "8500.00",
+                     useful_life_years: 10, in_purchase_price: true, document_id: *D_PLAN}
+  in_price: &in_price {basis: "9208.33"}
+  kitchen_sources: &kitchen_sources
+    - {kind: tax_input, id: *K}
+    - {kind: document, id: *D_PLAN}
+    - {kind: property, id: *P}
+
+cases:
+  - id: kitchen_in_price_from_purchase
+    description: >
+      Bought with the flat, AfA from July 2026: 9,208.33 × 6/120 = 460.42; 9,208.33 × 12/120 =
+      920.83 a year; 120 months run out in June 2036, so 2036 takes the rest, 460.44
+      (not 460.42); nothing from 2037. 2026–2036 sum to exactly 9,208.33 (asserted in
+      test_tax_rule_movable.py).
+    facts: {<<: *flat, movable_assets: [*kitchen]}
+    expect:
+      - {<<: *in_price, tax_year: 2026, amount: "460.42", months: 6, method_code: 2,
+         book_value_start: "9208.33", remaining_months: 120, sources: *kitchen_sources}
+      - {<<: *in_price, tax_year: 2027, amount: "920.83", months: 12, method_code: 1,
+         book_value_start: "8747.91", remaining_months: 114, sources: *kitchen_sources}
+      - {<<: *in_price, tax_year: 2035, amount: "920.83", months: 12, method_code: 1,
+         book_value_start: "1381.27", remaining_months: 18}
+      - {<<: *in_price, tax_year: 2036, amount: "460.44", months: 12, method_code: 1,
+         book_value_start: "460.44", remaining_months: 6}
+      - {<<: *in_price, tax_year: 2037, amount: "0.00", months: 12, method_code: 1,
+         book_value_start: "0.00", remaining_months: 0}
+
+  - id: kitchen_estimate_without_evidence
+    description: >
+      The same estimate with no document: the same figures, and an info warning in each year
+      with an amount; none once it is written off.
+    facts:
+      <<: *flat
+      movable_assets: [{<<: *kitchen, document_id: null}]
+    expect:
+      - {<<: *in_price, tax_year: 2026, amount: "460.42", months: 6, method_code: 2,
+         book_value_start: "9208.33", remaining_months: 120,
+         sources: [{kind: tax_input, id: *K}, {kind: property, id: *P}],
+         warnings: [{code: afa.movable_asset_no_evidence,
+                     params: {label: einbaukueche, amount: "8500.00"}}]}
+      - {<<: *in_price, tax_year: 2037, amount: "0.00", months: 12, method_code: 1,
+         book_value_start: "0.00", remaining_months: 0, warnings: []}
+
+  - id: kitchen_sold_before_ten_years
+    description: >
+      The flat is sold on 31 March 2029: 2029 takes 3 months, 9,208.33 × 3/120 = 230.21; nothing
+      after the sale. The rest of the book value (6,676.04) is never deducted as AfA.
+    facts: {<<: *flat, movable_assets: [*kitchen], ownership_ended_on: 2029-03-31}
+    expect:
+      - {<<: *in_price, tax_year: 2028, amount: "920.83", months: 12, method_code: 1,
+         book_value_start: "7827.08", remaining_months: 102}
+      - {<<: *in_price, tax_year: 2029, amount: "230.21", months: 3, method_code: 1,
+         book_value_start: "6906.25", remaining_months: 90}
+      - {<<: *in_price, tax_year: 2030, amount: "0.00", months: 0, method_code: null,
+         book_value_start: "6676.04", remaining_months: 87}
+
+  - id: kitchen_bought_separately
+    description: >
+      A kitchen bought separately for 6,000.00 in 2027 (in_purchase_price false, no document):
+      no Nebenkosten share, basis 6,000.00; 600.00 a year from January 2027 (a separate
+      purchase has no month on record, so its first year counts from January) through 2036;
+      0.00 from 2037. The building's basis is unchanged (afa.yaml movable_bought_separately).
+    facts:
+      <<: *flat
+      movable_assets:
+        - {tax_input_id: *K, label: einbaukueche, from_year: 2027, amount: "6000.00",
+           useful_life_years: 10, in_purchase_price: false}
+    expect:
+      - {tax_year: 2027, basis: "6000.00", amount: "600.00", months: 12, method_code: 2,
+         book_value_start: "6000.00", remaining_months: 120,
+         sources: [{kind: tax_input, id: *K}, {kind: property, id: *P}],
+         warnings: [{code: afa.movable_asset_no_evidence,
+                     params: {label: einbaukueche, amount: "6000.00"}}]}
+      - {tax_year: 2036, basis: "6000.00", amount: "600.00", months: 12, method_code: 1,
+         book_value_start: "600.00", remaining_months: 12,
+         warnings: [{code: afa.movable_asset_no_evidence}]}
+      - {tax_year: 2037, basis: "6000.00", amount: "0.00", months: 12, method_code: 1,
+         book_value_start: "0.00", remaining_months: 0}

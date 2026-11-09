@@ -32,6 +32,7 @@ FORM_2025 = {
     "income.other": (29, 31, "08"),
     "income.total": (None, 32, None),
     "wk.afa": (33, 35, "30"),
+    "wk.afa_movable": (42, 45, "60"),  # D80, read from page 2 (2025AnlV102NET) on 9 Nov 2026
     "wk.interest": (46, 48, "33"),
     "wk.financing_costs": (49, 51, "34"),
     "wk.maintenance": (None, 55, "36"),

@@ -14,6 +14,7 @@ from hausbuch.schemas.tax import (
     DraftFacts,
     DraftWarning,
     LineAmount,
+    MovableAssetFact,
     RuleSet,
     SourceRef,
     TaxInputFact,
@@ -238,7 +239,8 @@ class LineBook:
 
 
 def afa_facts(facts: DraftFacts, additions=()) -> AfaFacts:
-    """§5.2's facts from the draft's (the AfA basis from the record only, D55)."""
+    """§5.2's facts from the draft's (the AfA basis from the record only, D55), with the
+    useful_life (D79) and movable_asset (D80) inputs in force."""
     prop = facts.property
     evidence = {AllocationCategory.ACQUISITION_COST, AllocationCategory.PURCHASE_PRICE}
     return AfaFacts(
@@ -259,6 +261,19 @@ def afa_facts(facts: DraftFacts, additions=()) -> AfaFacts:
                 document_id=row.document_id,
             )
             for row in in_force(facts.tax_inputs, TaxInputKind.USEFUL_LIFE)
+            if row.tax_year is not None
+        ],
+        movable_assets=[
+            MovableAssetFact(
+                tax_input_id=row.id,
+                label=row.value.label,  # type: ignore[union-attr]
+                from_year=row.tax_year,
+                amount=row.value.amount,  # type: ignore[union-attr]
+                useful_life_years=row.value.useful_life_years,  # type: ignore[union-attr]
+                in_purchase_price=row.value.in_purchase_price,  # type: ignore[union-attr]
+                document_id=row.document_id,
+            )
+            for row in in_force(facts.tax_inputs, TaxInputKind.MOVABLE_ASSET)
             if row.tax_year is not None
         ],
     )
