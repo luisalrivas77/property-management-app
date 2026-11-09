@@ -12,17 +12,30 @@ import type { DepositForm as DepositKind, DepositReceipt, RentModel, Tenancy, Te
 import { collector, Field, FormBanner, Submit, useFormErrors } from "@/components/form";
 import { blankToNull, decimalInput, toMoneyString } from "@/components/input";
 import { DEPOSIT_FORM, NOTICE_GIVEN_BY, options, RENT_MODEL } from "@/components/labels";
+import { RentTermsFields, toDueDay, type OperatingCostsTerms } from "@/components/taxInputs";
 
 const path = (tenancy: Tenancy) => ({ params: { path: { tenancy_id: tenancy.id } } });
 
-const EDIT_KEYS = ["fixed_term_until", "rent_model", "deposit_amount", "deposit_form", "deposit_bank", "deposit_iban"] as const;
+const EDIT_KEYS = [
+  "fixed_term_until",
+  "rent_model",
+  "rent_due_day",
+  "operating_costs_terms",
+  "deposit_amount",
+  "deposit_form",
+  "deposit_bank",
+  "deposit_iban",
+] as const;
 
-/** "Bearbeiten": Befristung, Mietmodell, Kaution. Sends only what changed; the IBAN is
+/** "Bearbeiten": Befristung, Mietmodell, Fälligkeit und Nebenkosten-Regelung (phase 3 D67,
+ * D72), Kaution. Sends only what changed; the IBAN is
  * write-only (empty keeps the stored one). Einzug, Auszug, Kündigung and Vertragsdatum change
  * through their corrections, the Mieter through "Mieter ändern". */
 export function EditTenancyForm({ tenancy, onDone }: { tenancy: Tenancy; onDone: () => void }) {
   const [fixedTermUntil, setFixedTermUntil] = useState(tenancy.fixed_term_until ?? "");
   const [rentModel, setRentModel] = useState<RentModel>(tenancy.rent_model);
+  const [dueDay, setDueDay] = useState(String(tenancy.rent_due_day));
+  const [costTerms, setCostTerms] = useState<OperatingCostsTerms>(tenancy.operating_costs_terms);
   const [depositForm, setDepositForm] = useState<DepositKind>(tenancy.deposit_form);
   const [depositAmount, setDepositAmount] = useState(tenancy.deposit_form === "none" ? "" : decimalInput(tenancy.deposit_amount));
   const [depositBank, setDepositBank] = useState(tenancy.deposit_bank ?? "");
@@ -35,10 +48,13 @@ export function EditTenancyForm({ tenancy, onDone }: { tenancy: Tenancy; onDone:
     event.preventDefault();
     const values = collector();
     const amount = depositAmount.trim() === "" ? "0.00" : values.take("deposit_amount", toMoneyString(depositAmount));
-    if (!values.ok || amount === undefined) return form.invalid(values.messages);
+    const rentDueDay = values.take("rent_due_day", toDueDay(dueDay));
+    if (!values.ok || amount === undefined || rentDueDay === undefined) return form.invalid(values.messages);
     const body: TenancyPatch = {};
     if ((fixedTermUntil || null) !== tenancy.fixed_term_until) body.fixed_term_until = fixedTermUntil || null;
     if (rentModel !== tenancy.rent_model) body.rent_model = rentModel;
+    if (rentDueDay !== tenancy.rent_due_day) body.rent_due_day = rentDueDay;
+    if (costTerms !== tenancy.operating_costs_terms) body.operating_costs_terms = costTerms;
     if (depositForm !== tenancy.deposit_form) body.deposit_form = depositForm;
     if (amount !== tenancy.deposit_amount) body.deposit_amount = amount;
     if (blankToNull(depositBank) !== tenancy.deposit_bank) body.deposit_bank = blankToNull(depositBank);
@@ -81,6 +97,14 @@ export function EditTenancyForm({ tenancy, onDone }: { tenancy: Tenancy; onDone:
           ))}
         </select>
       </Field>
+      <RentTermsFields
+        idPrefix="edit"
+        dueDay={dueDay}
+        onDueDay={setDueDay}
+        terms={costTerms}
+        onTerms={setCostTerms}
+        errors={(key) => form.of(key)}
+      />
       <Field
         id="edit-deposit-form"
         label="Kaution: Art"

@@ -1415,6 +1415,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/properties/{property_id}/tax-inputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tax Inputs List
+         * @description The current rows (not superseded, not withdrawn), oldest first; include_history=true
+         *     adds the rest. tax_year keeps that year's rows plus the rows without a year.
+         */
+        get: operations["tax_inputs_list_api_properties__property_id__tax_inputs_get"];
+        put?: never;
+        /**
+         * Tax Input Create
+         * @description One new row and its property.tax_input_recorded event. 422 tax_input.scope_invalid,
+         *     tax_input.not_current (supersedes_id is not the current row of this kind and scope, or
+         *     another current row already answers it), tax_input.allocation_not_confirmed.
+         */
+        post: operations["tax_input_create_api_properties__property_id__tax_inputs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/properties/{property_id}/history": {
         parameters: {
             query?: never;
@@ -2988,6 +3015,14 @@ export interface components {
          * @enum {string}
          */
         EventType: "owner.created" | "owner.updated" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.classified" | "document.extracted" | "document.read_failed" | "workspace.settings_changed" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "rule.created" | "rule.disabled";
+        /** ExcludeFrom15Pct */
+        ExcludeFrom15Pct: {
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "annual_maintenance" | "extension" | "damage_after_acquisition";
+        };
         /**
          * ExtractedValue
          * @description One field of a per-type extraction, or of a proposal record.
@@ -3204,6 +3239,11 @@ export interface components {
             effective_from?: string | null;
             /** Document Id */
             document_id?: string | null;
+        };
+        /** InterestCertified */
+        InterestCertified: {
+            /** Amount */
+            amount: string;
         };
         /**
          * Invite
@@ -3579,6 +3619,24 @@ export interface components {
             /** Notes */
             notes?: string | null;
         };
+        /**
+         * MarketRent
+         * @description The Mietspiegel's net cold rent per m² (D61); the running costs come from the ledger.
+         */
+        MarketRent: {
+            /**
+             * Valid From
+             * Format: date
+             */
+            valid_from: string;
+            /** Cold Rent Per M2 */
+            cold_rent_per_m2: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "mietspiegel" | "gutachten" | "portal" | "other";
+        };
         /** MatchingRule */
         MatchingRule: {
             /**
@@ -3878,6 +3936,14 @@ export interface components {
             status: components["schemas"]["DuplicateStatus"];
             /** Decided At */
             decided_at?: string | null;
+        };
+        /** PreHandoverIncome */
+        PreHandoverIncome: {
+            /**
+             * Treatment
+             * @constant
+             */
+            treatment: "rent";
         };
         /** PriceSplit */
         PriceSplit: {
@@ -4289,6 +4355,14 @@ export interface components {
             /** Via */
             via: components["schemas"]["LinkTargetRef"][];
         };
+        /** RenovationTreatment */
+        RenovationTreatment: {
+            /**
+             * Treatment
+             * @enum {string}
+             */
+            treatment: "erhaltung" | "herstellung";
+        };
         /**
          * RentChangeReason
          * @enum {string}
@@ -4419,6 +4493,11 @@ export interface components {
             /** Amount */
             amount: string;
         };
+        /** RuecklageSpent */
+        RuecklageSpent: {
+            /** Amount */
+            amount: string;
+        };
         /**
          * RuleMatcher
          * @description What a rule matches on. No money field, by design: a rule never stores an amount.
@@ -4526,6 +4605,11 @@ export interface components {
          * @enum {string}
          */
         SplitMethod: "single_category" | "by_rent_schedule" | "by_loan_schedule" | "by_wirtschaftsplan" | "owner_transfer" | "as_last_split";
+        /** Spread82b */
+        Spread82b: {
+            /** Years */
+            years: number;
+        };
         /**
          * StatementExtraction
          * @description PDF Kontoauszug (§7.1): balances and lines. Every amount is a model reading, so the
@@ -4612,6 +4696,96 @@ export interface components {
             /** Error Code */
             error_code: string | null;
         };
+        /**
+         * TaxInput
+         * @description API read model (the table names its timestamp recorded_at, so not Record).
+         */
+        TaxInput: {
+            /**
+             * Property Id
+             * Format: uuid
+             */
+            property_id: string;
+            kind: components["schemas"]["TaxInputKind"];
+            /** Tax Year */
+            tax_year?: number | null;
+            /** Unit Id */
+            unit_id?: string | null;
+            /** Loan Id */
+            loan_id?: string | null;
+            /** Allocation Id */
+            allocation_id?: string | null;
+            /** Document Id */
+            document_id?: string | null;
+            /** Value */
+            value: components["schemas"]["Spread82b"] | components["schemas"]["RenovationTreatment"] | components["schemas"]["ExcludeFrom15Pct"] | components["schemas"]["MarketRent"] | components["schemas"]["RuecklageSpent"] | components["schemas"]["InterestCertified"] | components["schemas"]["PreHandoverIncome"];
+            /** Note */
+            note?: string | null;
+            /** Supersedes Id */
+            supersedes_id?: string | null;
+            /**
+             * Withdrawn
+             * @default false
+             */
+            withdrawn: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+            /** Recorded By */
+            recorded_by?: string | null;
+        };
+        /**
+         * TaxInputCreate
+         * @description One tax input row as written. A correction is a new row with supersedes_id (the row it
+         *     replaces, a current row of the same kind and scope); withdrawn = true ends a decision
+         *     without replacing it (its value repeats the withdrawn row's). Rows are never changed.
+         */
+        TaxInputCreate: {
+            /**
+             * Property Id
+             * Format: uuid
+             */
+            property_id: string;
+            kind: components["schemas"]["TaxInputKind"];
+            /** Tax Year */
+            tax_year?: number | null;
+            /** Unit Id */
+            unit_id?: string | null;
+            /** Loan Id */
+            loan_id?: string | null;
+            /** Allocation Id */
+            allocation_id?: string | null;
+            /** Document Id */
+            document_id?: string | null;
+            /** Value */
+            value: components["schemas"]["Spread82b"] | components["schemas"]["RenovationTreatment"] | components["schemas"]["ExcludeFrom15Pct"] | components["schemas"]["MarketRent"] | components["schemas"]["RuecklageSpent"] | components["schemas"]["InterestCertified"] | components["schemas"]["PreHandoverIncome"];
+            /** Note */
+            note?: string | null;
+            /** Supersedes Id */
+            supersedes_id?: string | null;
+            /**
+             * Withdrawn
+             * @default false
+             */
+            withdrawn: boolean;
+        };
+        /**
+         * TaxInputKind
+         * @enum {string}
+         */
+        TaxInputKind: "spread_82b" | "renovation_treatment" | "exclude_from_15pct" | "market_rent" | "ruecklage_spent" | "interest_certified" | "pre_handover_income";
         /** Tenancy */
         Tenancy: {
             /**
@@ -8182,6 +8356,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AllocationFact"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    tax_inputs_list_api_properties__property_id__tax_inputs_get: {
+        parameters: {
+            query?: {
+                tax_year?: number | null;
+                kind?: components["schemas"]["TaxInputKind"] | null;
+                include_history?: boolean;
+            };
+            header?: never;
+            path: {
+                property_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaxInput"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    tax_input_create_api_properties__property_id__tax_inputs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                property_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaxInputCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaxInput"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

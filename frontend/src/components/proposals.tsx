@@ -73,9 +73,17 @@ const IN_FLIGHT: readonly ProposalStatus[] = ["queued", "running"];
 
 // --- what each field is -----------------------------------------------------------------
 
-/** "unit" / "tenancy": the id of one of the workspace's units / tenancies, picked from a list.
+/** "unit" / "tenancy" / "loan": the id of one of the workspace's units / tenancies / loans,
+ * picked from a list.
  * "bool": a checkbox; ticked is sent as true, unticked is left out (the *Create default, false). */
-type FieldKind = "text" | "money" | "date" | "year" | "rate" | "area" | "fraction" | "enum" | "fixed" | "unit" | "tenancy" | "bool";
+type FieldKind = "text" | "money" | "date" | "year" | "rate" | "area" | "fraction" | "enum" | "fixed" | "unit" | "tenancy" | "loan" | "bool";
+
+/** The kinds picked from the workspace's records. */
+type PickKind = "unit" | "tenancy" | "loan";
+
+function isPick(kind: FieldKind): kind is PickKind {
+  return kind === "unit" || kind === "tenancy" || kind === "loan";
+}
 
 interface FieldSpec {
   label: string;
@@ -313,6 +321,25 @@ const FIELDS: Record<string, Record<string, FieldSpec>> = {
         "Das Mietverhältnis, zu dem die Kaution gehört. Hausbuch schlägt das vor, dessen vereinbarte Kaution diesem Betrag entspricht, oder das einzige; sonst wählen Sie es hier.",
     },
   },
+  // A certificate's figure for the tax year (phase 3 §9): the record's key names the kind
+  // (tax_input:interest_certified or tax_input:ruecklage_spent); both propose all their fields.
+  tax_input: {
+    tax_year: {
+      label: "Steuerjahr",
+      kind: "year",
+      description: "Das Jahr, für das die Bescheinigung oder Abrechnung den Betrag ausweist.",
+    },
+    loan_id: {
+      label: "Darlehen",
+      kind: "loan",
+      description:
+        "Das Darlehen, für das die Bank die Zinsen bescheinigt. Hausbuch schlägt das vor, dessen Bank und Vertragsnummer passen, oder das einzige; sonst wählen Sie es hier.",
+    },
+    "value.amount": money(
+      "Betrag (€)",
+      "Der Betrag laut Dokument. Er wird erst mit „Übernehmen“ als Steuerangabe gespeichert und ersetzt dann eine frühere Angabe derselben Art für dieses Jahr.",
+    ),
+  },
 };
 
 /**
@@ -381,6 +408,12 @@ const CREATE_FIELDS: Readonly<Record<string, readonly string[]>> = {
   rent: ["cold_rent", "operating_costs_prepayment", "effective_from"],
   // _DepositValues (DepositReceivedBody + tenancy_id)
   deposit_received: ["tenancy_id", "amount", "received_on"],
+};
+
+/** A tax_input record's title, by the kind its key names. */
+const TAX_INPUT_TITLE: Record<string, string> = {
+  interest_certified: "Zinsbescheinigung: gezahlte Zinsen",
+  ruecklage_spent: "Hausgeldabrechnung: Entnahme aus der Rücklage",
 };
 
 /** The extraction fields a derived value names in `derived_from`. */
@@ -482,6 +515,8 @@ function recordTitle(record: ProposalRecord): string {
       return EVENT_TYPE["tenancy.deposit_received"];
     case "link":
       return `Verknüpfung: ${lookup(LINK_TARGET, rest)}`;
+    case "tax_input":
+      return lookup(TAX_INPUT_TITLE, rest);
     default:
       return record.key;
   }
@@ -566,6 +601,7 @@ function display(spec: FieldSpec, value: unknown, fixed: (value: unknown) => str
     case "fixed":
     case "unit":
     case "tenancy":
+    case "loan":
       return fixed(value);
     default:
       return scalar(value) || "–";
@@ -573,7 +609,7 @@ function display(spec: FieldSpec, value: unknown, fixed: (value: unknown) => str
 }
 
 /** Ids and structured values as text: ownership shares (matched by owner names, shown, not
- * edited) and the unit or tenancy an id names (for a stored value, or one the list lacks). */
+ * edited) and the unit, tenancy or loan an id names (for a stored value, or one the list lacks). */
 function fixedText(directory: Directory | null): (value: unknown) => string {
   return (value) => {
     if (typeof value === "string") {
@@ -581,6 +617,8 @@ function fixedText(directory: Directory | null): (value: unknown) => string {
       if (unit) return unit.label;
       const tenancy = directory?.tenancies.find((t) => t.id === value);
       if (tenancy) return `Mietverhältnis ab ${formatDate(tenancy.start_date)}`;
+      const loan = directory?.loans.find((l) => l.id === value);
+      if (loan) return loanLabel(loan);
       return "zugeordneter Eintrag";
     }
     if (Array.isArray(value)) {
@@ -952,6 +990,8 @@ function appliedLabel(entity: AppliedEntity): string {
       return "Anfangsmiete erfasst";
     case "deposit_received":
       return "Kautionseingang erfasst";
+    case "tax_input":
+      return `${lookup(TAX_INPUT_TITLE, rest)} als Steuerangabe erfasst`;
     default:
       return entity.key;
   }
@@ -1345,7 +1385,7 @@ function FieldRow({
         {display(spec, value?.value, fixed)}
       </output>
     );
-  } else if ((spec.kind === "unit" || spec.kind === "tenancy") && directory && pickable(spec.kind, directory).length === 0) {
+  } else if (isPick(spec.kind) && directory && pickable(spec.kind, directory).length === 0) {
     input = (
       <output id={id} className="proposal-fixed" aria-describedby={describedBy}>
         <NothingToPick kind={spec.kind} directory={directory} />
@@ -1373,7 +1413,7 @@ function FieldRow({
           ))}
         </select>
       );
-    } else if (spec.kind === "unit" || spec.kind === "tenancy") {
+    } else if (isPick(spec.kind)) {
       const choices: [string, string][] = directory ? pickable(spec.kind, directory) : [];
       const raw = state?.raw ?? "";
       input = (
@@ -1478,6 +1518,7 @@ function fieldHint(spec: FieldSpec, value: ExtractedValue | null, hasNotes: bool
   if (value.value === null) {
     if (spec.kind === "unit") return "Keine Einheit passt eindeutig zum Mietvertrag; bitte wählen.";
     if (spec.kind === "tenancy") return "Kein Mietverhältnis passt eindeutig; bitte wählen.";
+    if (spec.kind === "loan") return "Kein Darlehen passt eindeutig zur Bescheinigung; bitte wählen.";
     return hasNotes ? "Im Dokument nicht als Wert gefunden; siehe Hinweis oben." : "Im Dokument nicht gefunden.";
   }
   const derived = value.derived_from ?? [];
@@ -1486,8 +1527,17 @@ function fieldHint(spec: FieldSpec, value: ExtractedValue | null, hasNotes: bool
   return null;
 }
 
-/** The units ("<Immobilie> · <Einheit>") or tenancies (the link picker's label) to pick from. */
-function pickable(kind: "unit" | "tenancy", directory: Directory): [string, string][] {
+function loanLabel(loan: Directory["loans"][number]): string {
+  return `${loan.lender}${loan.contract_number ? ` ${loan.contract_number}` : ""}`;
+}
+
+/** The units ("<Immobilie> · <Einheit>"), tenancies (the link picker's label) or loans
+ * ("<Immobilie> · <Bank> <Vertragsnummer>") to pick from. */
+function pickable(kind: PickKind, directory: Directory): [string, string][] {
+  if (kind === "loan") {
+    const byId = new Map(directory.properties.map((property) => [property.id, property]));
+    return directory.loans.map((loan): [string, string] => [loan.id, `${byId.get(loan.property_id)?.label ?? "?"} · ${loanLabel(loan)}`]);
+  }
   if (kind === "tenancy") {
     return targets(directory)
       .filter((target) => target.type === "tenancy")
@@ -1498,7 +1548,16 @@ function pickable(kind: "unit" | "tenancy", directory: Directory): [string, stri
 }
 
 /** Nothing to pick yet: where to create it first (nothing here is saved before then). */
-function NothingToPick({ kind, directory }: { kind: "unit" | "tenancy"; directory: Directory }) {
+function NothingToPick({ kind, directory }: { kind: PickKind; directory: Directory }) {
+  if (kind === "loan") {
+    const single = directory.properties.length === 1 ? directory.properties[0] : undefined;
+    return (
+      <>
+        Noch kein Darlehen angelegt. Bitte zuerst <Link href={single ? `/loans/new?property=${single.id}` : "/"}>das Darlehen anlegen</Link>;
+        danach steht es hier zur Wahl.
+      </>
+    );
+  }
   if (kind === "tenancy") {
     return (
       <>
