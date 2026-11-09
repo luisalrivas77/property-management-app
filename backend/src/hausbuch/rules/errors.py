@@ -93,4 +93,7 @@ INCOME_INPUT_NOT_CURRENT = "income_input.not_current"  # supersedes a superseded
 INCOME_ASSESSED_RESULT_NEEDED = "income.assessed_result_needed"
 SCENARIO_NOT_CURRENT = "scenario.not_current"  # supersedes a superseded or withdrawn scenario
 SCENARIO_SALE_YEAR_BEFORE_TODAY = "scenario.sale_year_before_today"
+# The body's property is not the path's, a loan lever names another property's loan, or a
+# correction supersedes another property's scenario (step 2).
+SCENARIO_SCOPE_INVALID = "scenario.scope_invalid"
 PROJECTION_NO_RULE_SET = "projection.no_rule_set"  # no rule set file for the year or earlier
