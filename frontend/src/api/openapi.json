@@ -5816,6 +5816,51 @@
             ],
             "title": "Method Code"
           },
+          "method": {
+            "type": "string",
+            "enum": [
+              "statutory",
+              "useful_life"
+            ],
+            "title": "Method",
+            "default": "statutory"
+          },
+          "useful_life_years": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Useful Life Years"
+          },
+          "useful_life_from_year": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2100.0,
+                "minimum": 2000.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Useful Life From Year"
+          },
+          "book_value_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Book Value Start"
+          },
           "sources": {
             "items": {
               "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
@@ -5842,7 +5887,7 @@
           "method_code"
         ],
         "title": "AfaLine",
-        "description": "wk.afa for one tax year. amount, basis and rate are None without a selected split."
+        "description": "wk.afa for one tax year. amount, basis and rate are None without a selected split.\n\nmethod (D79): `statutory` is the rate by completion year (rate set, book_value_start and\nuseful_life_years None); `useful_life` is the shorter actual useful life of a Gutachten,\nthe book value at the start of the year spread over the remaining months (rate None)."
       },
       "AiRetryResult": {
         "properties": {
@@ -13078,6 +13123,9 @@
               },
               {
                 "$ref": "#/components/schemas/PreHandoverIncome"
+              },
+              {
+                "$ref": "#/components/schemas/UsefulLife"
               }
             ],
             "title": "Value"
@@ -13245,6 +13293,9 @@
               },
               {
                 "$ref": "#/components/schemas/PreHandoverIncome"
+              },
+              {
+                "$ref": "#/components/schemas/UsefulLife"
               }
             ],
             "title": "Value"
@@ -13298,7 +13349,8 @@
           "market_rent",
           "ruecklage_spent",
           "interest_certified",
-          "pre_handover_income"
+          "pre_handover_income",
+          "useful_life"
         ],
         "title": "TaxInputKind"
       },
@@ -14466,6 +14518,22 @@
         "title": "UnitRow",
         "description": "One Z13 row per Wohnung (D71): the flat (wohnung = property) with its rooms listed, or an\nMFH unit (wohnung = unit). pre_handover: the part booked before the handover (D63)."
       },
+      "UsefulLife": {
+        "properties": {
+          "years": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Years"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "years"
+        ],
+        "title": "UsefulLife",
+        "description": "§7 Abs. 4 S. 2 EStG (D79): the building's shorter actual useful life in whole years, as\nthe Gutachten (document_id on the row) states it; tax_year on the row is the first tax year\nit applies to. The service refuses a life not shorter than the statutory one."
+      },
       "WaitingAmount": {
         "properties": {
           "amount": {
@@ -14496,6 +14564,7 @@
           "afa.cost_row_unpaid",
           "afa.acquisition_cost_without_row",
           "afa.purchase_price_mismatch",
+          "afa.useful_life_report",
           "limit.exceeded",
           "limit.prior_year_amendment",
           "limit.estimated_net",
