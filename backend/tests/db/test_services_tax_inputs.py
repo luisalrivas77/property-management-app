@@ -318,6 +318,94 @@ def test_the_kind_must_fit_the_category(world):
     assert _codes(exc) == (TAX_INPUT_SCOPE_INVALID,)
 
 
+@pytest.mark.parametrize(
+    "category",
+    [
+        "repairs",
+        "insurance",
+        "grundsteuer",
+        "professional_fees",
+        "property_management",
+        "hausgeld_ruecklage",
+        "other_expense",
+    ],
+)
+def test_renovation_treatment_only_on_a_renovation(world, category):
+    """The rules read renovation_treatment only on a renovation; a stray row elsewhere could
+    keep a cost deductible that the 15 % limit should capitalise, so it is refused and
+    nothing is written."""
+    other = _allocation(world, category)
+    with pytest.raises(RuleViolationError) as exc:
+        _create(
+            world,
+            _input(world, K.RENOVATION_TREATMENT, {"treatment": "erhaltung"}, allocation_id=other),
+        )
+    assert _codes(exc) == (TAX_INPUT_SCOPE_INVALID,)
+    assert world.query(list_tax_inputs, world.property_id, include_history=True) == []
+    assert _events(world) == []
+    renovation = _allocation(world, "renovation")
+    row = _create(
+        world,
+        _input(world, K.RENOVATION_TREATMENT, {"treatment": "erhaltung"}, allocation_id=renovation),
+    )
+    assert world.query(list_tax_inputs, world.property_id) == [row]
+
+
+@pytest.mark.parametrize(
+    ("kind", "category", "first", "second"),
+    [
+        (K.SPREAD_82B, "repairs", {"years": 3}, {"years": 4}),
+        (
+            K.RENOVATION_TREATMENT,
+            "renovation",
+            {"treatment": "erhaltung"},
+            {"treatment": "herstellung"},
+        ),
+        (
+            K.EXCLUDE_FROM_15PCT,
+            "renovation",
+            {"reason": "extension"},
+            {"reason": "damage_after_acquisition"},
+        ),
+    ],
+)
+def test_one_scope_never_has_two_current_rows(world, kind, category, first, second):
+    """A new answer for a scope that has a current row must supersede that row: without
+    supersedes_id, or superseding a row that is no longer current, it is refused with
+    not_current. Through every step exactly one row is current."""
+    allocation = _allocation(world, category)
+
+    def current():
+        return world.query(find_current, world.property_id, kind, allocation_id=allocation)
+
+    original = _create(world, _input(world, kind, first, allocation_id=allocation))
+    with pytest.raises(RuleViolationError) as exc:
+        _create(world, _input(world, kind, second, allocation_id=allocation))
+    assert _codes(exc) == (TAX_INPUT_NOT_CURRENT,)
+    # The same value again is a second row of the same question too.
+    with pytest.raises(RuleViolationError) as exc:
+        _create(world, _input(world, kind, first, allocation_id=allocation))
+    assert _codes(exc) == (TAX_INPUT_NOT_CURRENT,)
+    assert current() == [original]
+
+    corrected = _create(
+        world, _input(world, kind, second, allocation_id=allocation, supersedes_id=original.id)
+    )
+    assert current() == [corrected]
+    # Superseding the replaced row again would fork the history into two current rows.
+    with pytest.raises(RuleViolationError) as exc:
+        _create(
+            world, _input(world, kind, first, allocation_id=allocation, supersedes_id=original.id)
+        )
+    assert _codes(exc) == (TAX_INPUT_NOT_CURRENT,)
+    assert current() == [corrected]
+    # Another allocation is another scope: its answer stands beside this one.
+    elsewhere = _allocation(world, category)
+    _create(world, _input(world, kind, first, allocation_id=elsewhere))
+    assert current() == [corrected]
+    assert len(world.query(list_tax_inputs, world.property_id)) == 2
+
+
 def test_the_path_property_must_be_the_body_property(world):
     other = world.cmd(
         create_property,
