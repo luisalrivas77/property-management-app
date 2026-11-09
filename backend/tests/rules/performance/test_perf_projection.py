@@ -3,6 +3,7 @@
 
 from datetime import date
 from decimal import Decimal
+from uuid import UUID
 
 import pytest
 from fixture_models_phase4 import ProjectionFixture, load
@@ -12,7 +13,8 @@ from test_perf_sale import assert_sale
 from hausbuch.rules.performance.projection import project
 from hausbuch.rules.performance.synthesize import snap_cadence, synthesize
 from hausbuch.schemas.allocation import AllocationCategory as C
-from hausbuch.schemas.tax import TaxInputKind
+from hausbuch.schemas.allocation import ServicePeriod
+from hausbuch.schemas.tax import AllocationFact, TaxInputKind
 
 PROJECTION = load("projection")
 assert isinstance(PROJECTION, ProjectionFixture)
@@ -112,6 +114,46 @@ def test_a_sale_year_not_after_today_is_refused():
             case.today,
             {loan.loan_id: loan.terms for loan in case.loans},
         )
+
+
+def _with_hausgeld_paid_early(booked: date):
+    """Baseline case A plus a Hausgeld (umlagefähig) line for January 2027 paid in December."""
+    case = _case("baseline_no_growth_tax_free_sale")
+    facts = case.facts.resolve()
+    early = AllocationFact(
+        allocation_id=UUID("000000f2-0000-4000-8000-000000000001"),
+        booking_date=booked,
+        amount=Decimal("-180.00"),
+        category=C.HAUSGELD_UMLAGEFAEHIG,
+        property_id=facts.property.id,
+        recurring=True,
+        service_period=ServicePeriod(start=date(2027, 1, 1), end=date(2027, 1, 31)),
+        due_on=date(2027, 1, 1),
+    )
+    facts = facts.model_copy(update={"allocations": [*facts.allocations, early]})
+    loans = {loan.loan_id: loan.terms for loan in case.loans}
+    synthetic = synthesize(facts, case.levers, loans, case.today).rows[2027]
+    rows = [r for r in synthetic if r.category is C.HAUSGELD_UMLAGEFAEHIG]
+    got = project(facts, case.levers, case.owners, case.income_inputs, case.today, loans)
+    return rows, got.years[0]
+
+
+def test_a_cost_paid_early_but_counted_in_its_paid_year_leaves_no_gap():
+    """Review F2: paid 15 Dec 2026, outside the ten days, so §11 books it in 2026. The
+    synthetic Hausgeld rows are dated by the booking pattern (the 15th), not by the service
+    month, so January 2027 must still get its row: 12 rows, 2,160.00 + 240.00 Grundsteuer."""
+    rows, y2027 = _with_hausgeld_paid_early(date(2026, 12, 15))
+    assert len(rows) == 12
+    assert y2027.year == 2027 and y2027.umlagen_out == Decimal("2400.00")
+
+
+def test_a_cost_paid_early_and_counted_in_the_next_year_replaces_one_row():
+    """Paid 28 Dec 2026 and due 1 Jan 2027: inside the ten days, so §11 books it in 2027 and
+    the year's earliest synthetic row is left out: 11 rows + the real one, still 2,400.00."""
+    rows, y2027 = _with_hausgeld_paid_early(date(2026, 12, 28))
+    assert len(rows) == 11
+    assert min(r.booking_date for r in rows) == date(2027, 2, 28)
+    assert y2027.umlagen_out == Decimal("2400.00")
 
 
 @pytest.mark.parametrize(

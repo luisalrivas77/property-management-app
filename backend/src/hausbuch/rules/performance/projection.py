@@ -200,7 +200,9 @@ def project(
         for y in range(prop.purchase_date.year, today.year + 1)
     ]
 
-    synthesis = synthesize(facts, levers, loans, today, scenario_id=scenario_id)
+    synthesis = synthesize(
+        facts, levers, loans, today, scenario_id=scenario_id, rule_sets=rule_sets
+    )
     projected_facts = _projected_facts(facts, synthesis.all_rows(), synthesis.tax_inputs)
     scenario_refs = [SourceRef(kind="scenario", id=scenario_id)] if scenario_id else []
     assumptions: list[Assumption] = [
