@@ -4028,6 +4028,144 @@
         }
       }
     },
+    "/api/properties/{property_id}/tax-inputs": {
+      "get": {
+        "summary": "Tax Inputs List",
+        "description": "The current rows (not superseded, not withdrawn), oldest first; include_history=true\nadds the rest. tax_year keeps that year's rows plus the rows without a year.",
+        "operationId": "tax_inputs_list_api_properties__property_id__tax_inputs_get",
+        "parameters": [
+          {
+            "name": "property_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Property Id"
+            }
+          },
+          {
+            "name": "tax_year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 2100,
+                  "minimum": 2000
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tax Year"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TaxInputKind"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "name": "include_history",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include History"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaxInput"
+                  },
+                  "title": "Response Tax Inputs List Api Properties  Property Id  Tax Inputs Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Tax Input Create",
+        "description": "One new row and its property.tax_input_recorded event. 422 tax_input.scope_invalid,\ntax_input.not_current (supersedes_id is not the current row of this kind and scope, or\nanother current row already answers it), tax_input.allocation_not_confirmed.",
+        "operationId": "tax_input_create_api_properties__property_id__tax_inputs_post",
+        "parameters": [
+          {
+            "name": "property_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Property Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaxInputCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaxInput"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/properties/{property_id}/history": {
       "get": {
         "summary": "History Of Property",
@@ -7426,6 +7564,25 @@
         ],
         "title": "EventType"
       },
+      "ExcludeFrom15Pct": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "enum": [
+              "annual_maintenance",
+              "extension",
+              "damage_after_acquisition"
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "title": "ExcludeFrom15Pct"
+      },
       "ExtractedValue": {
         "properties": {
           "value": {
@@ -7950,6 +8107,21 @@
         ],
         "title": "InitialRent",
         "description": "The first rent row, recorded with the tenancy (reason 'initial')."
+      },
+      "InterestCertified": {
+        "properties": {
+          "amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "amount"
+        ],
+        "title": "InterestCertified"
       },
       "Invite": {
         "properties": {
@@ -8785,6 +8957,39 @@
         "title": "ManualDocumentFields",
         "description": "The fields a person types in phase 1. Per-type schemas replace this in phase 2."
       },
+      "MarketRent": {
+        "properties": {
+          "valid_from": {
+            "type": "string",
+            "format": "date",
+            "title": "Valid From"
+          },
+          "cold_rent_per_m2": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Cold Rent Per M2"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "mietspiegel",
+              "gutachten",
+              "portal",
+              "other"
+            ],
+            "title": "Source"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "valid_from",
+          "cold_rent_per_m2",
+          "source"
+        ],
+        "title": "MarketRent",
+        "description": "The Mietspiegel's net cold rent per m² (D61); the running costs come from the ledger."
+      },
       "MatchingRule": {
         "properties": {
           "id": {
@@ -9368,6 +9573,21 @@
         ],
         "title": "PossibleDuplicate",
         "description": "transaction_id was stored first; other_transaction_id is the later-imported line,\nthe one `merged` excludes."
+      },
+      "PreHandoverIncome": {
+        "properties": {
+          "treatment": {
+            "type": "string",
+            "const": "rent",
+            "title": "Treatment"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "treatment"
+        ],
+        "title": "PreHandoverIncome"
       },
       "PriceSplit": {
         "properties": {
@@ -10209,6 +10429,24 @@
         "title": "RelatedDocument",
         "description": "GET /properties/{id}/documents and GET /units/{id}/documents: a document linked to the\ntarget or to one of its children (units, tenancies, loans), with every such link."
       },
+      "RenovationTreatment": {
+        "properties": {
+          "treatment": {
+            "type": "string",
+            "enum": [
+              "erhaltung",
+              "herstellung"
+            ],
+            "title": "Treatment"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "treatment"
+        ],
+        "title": "RenovationTreatment"
+      },
       "RentChangeReason": {
         "type": "string",
         "enum": [
@@ -10492,6 +10730,21 @@
         "title": "RetentionResult",
         "description": "Exactly one of retain_until / hold is set. retention_class is null only when untyped."
       },
+      "RuecklageSpent": {
+        "properties": {
+          "amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "amount"
+        ],
+        "title": "RuecklageSpent"
+      },
       "RuleMatcher": {
         "properties": {
           "counterparty_iban_hmac": {
@@ -10705,6 +10958,22 @@
         ],
         "title": "SplitMethod",
         "description": "matching_rule.split_method (D25): how a rule splits, never how much."
+      },
+      "Spread82b": {
+        "properties": {
+          "years": {
+            "type": "integer",
+            "maximum": 5.0,
+            "minimum": 2.0,
+            "title": "Years"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "years"
+        ],
+        "title": "Spread82b"
       },
       "StatementExtraction": {
         "properties": {
@@ -10928,6 +11197,323 @@
           "error_code"
         ],
         "title": "StatementImport"
+      },
+      "TaxInput": {
+        "properties": {
+          "property_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Property Id"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TaxInputKind"
+          },
+          "tax_year": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2100.0,
+                "minimum": 2000.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Year"
+          },
+          "unit_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Id"
+          },
+          "loan_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loan Id"
+          },
+          "allocation_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allocation Id"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Spread82b"
+              },
+              {
+                "$ref": "#/components/schemas/RenovationTreatment"
+              },
+              {
+                "$ref": "#/components/schemas/ExcludeFrom15Pct"
+              },
+              {
+                "$ref": "#/components/schemas/MarketRent"
+              },
+              {
+                "$ref": "#/components/schemas/RuecklageSpent"
+              },
+              {
+                "$ref": "#/components/schemas/InterestCertified"
+              },
+              {
+                "$ref": "#/components/schemas/PreHandoverIncome"
+              }
+            ],
+            "title": "Value"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "supersedes_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes Id"
+          },
+          "withdrawn": {
+            "type": "boolean",
+            "title": "Withdrawn",
+            "default": false
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Recorded At"
+          },
+          "recorded_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded By"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "property_id",
+          "kind",
+          "value",
+          "id",
+          "workspace_id",
+          "recorded_at"
+        ],
+        "title": "TaxInput",
+        "description": "API read model (the table names its timestamp recorded_at, so not Record)."
+      },
+      "TaxInputCreate": {
+        "properties": {
+          "property_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Property Id"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TaxInputKind"
+          },
+          "tax_year": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2100.0,
+                "minimum": 2000.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Year"
+          },
+          "unit_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Id"
+          },
+          "loan_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loan Id"
+          },
+          "allocation_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allocation Id"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Spread82b"
+              },
+              {
+                "$ref": "#/components/schemas/RenovationTreatment"
+              },
+              {
+                "$ref": "#/components/schemas/ExcludeFrom15Pct"
+              },
+              {
+                "$ref": "#/components/schemas/MarketRent"
+              },
+              {
+                "$ref": "#/components/schemas/RuecklageSpent"
+              },
+              {
+                "$ref": "#/components/schemas/InterestCertified"
+              },
+              {
+                "$ref": "#/components/schemas/PreHandoverIncome"
+              }
+            ],
+            "title": "Value"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "supersedes_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes Id"
+          },
+          "withdrawn": {
+            "type": "boolean",
+            "title": "Withdrawn",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "property_id",
+          "kind",
+          "value"
+        ],
+        "title": "TaxInputCreate",
+        "description": "One tax input row as written. A correction is a new row with supersedes_id (the row it\nreplaces, a current row of the same kind and scope); withdrawn = true ends a decision\nwithout replacing it (its value repeats the withdrawn row's). Rows are never changed."
+      },
+      "TaxInputKind": {
+        "type": "string",
+        "enum": [
+          "spread_82b",
+          "renovation_treatment",
+          "exclude_from_15pct",
+          "market_rent",
+          "ruecklage_spent",
+          "interest_certified",
+          "pre_handover_income"
+        ],
+        "title": "TaxInputKind"
       },
       "Tenancy": {
         "properties": {
