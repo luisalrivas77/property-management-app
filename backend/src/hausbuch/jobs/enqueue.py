@@ -177,3 +177,42 @@ def enqueue_rematch_waiting(
     if queued is not None:
         return
     _defer(conn, REMATCH_WAITING_TASK, lock, workspace_id=str(workspace_id), trigger=trigger)
+
+
+# --- Phase 3 step 3: tax exports (§10, §12, D65) ------------------------------------------
+#
+# Same pattern: inserted in the request's transaction, a lock and no queueing lock. The export
+# row does not exist until the job writes it (tax_export is immutable and needs the file), so
+# the job's arguments carry what to build; GET /tax-exports/{id} reads the job's status by its
+# lock while no row exists. A duplicate job finds the row and writes nothing.
+
+TAX_EXPORT_TASK = "tax_export"
+
+
+def export_lock(export_id: UUID) -> str:
+    return f"export:{export_id}"
+
+
+def enqueue_tax_export(
+    conn: Connection,
+    *,
+    workspace_id: UUID,
+    export_id: UUID,
+    property_id: UUID,
+    tax_year: int,
+    kind: str,
+    created_by: UUID | None,
+) -> None:
+    """Queue `tax_export` for one export, in the caller's transaction. Locked by
+    `export:{id}`. created_by is "" for an export no person asked for."""
+    _defer(
+        conn,
+        TAX_EXPORT_TASK,
+        export_lock(export_id),
+        workspace_id=str(workspace_id),
+        export_id=str(export_id),
+        property_id=str(property_id),
+        tax_year=str(tax_year),
+        kind=kind,
+        created_by="" if created_by is None else str(created_by),
+    )
