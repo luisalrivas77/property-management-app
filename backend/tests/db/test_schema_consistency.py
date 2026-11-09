@@ -10,6 +10,7 @@ from hausbuch.schemas import enums as E
 from hausbuch.schemas.ai import AiJob
 from hausbuch.schemas.allocation import AllocationCategory, AllocationMethod, SplitMethod
 from hausbuch.schemas.bank import StatementFormat
+from hausbuch.schemas.tax import FormStatus, TaxExportKind, TaxInputKind
 
 COLUMNS: dict[tuple[str, str], type[StrEnum]] = {
     ("property", "kind"): E.PropertyKind,
@@ -42,6 +43,11 @@ COLUMNS: dict[tuple[str, str], type[StrEnum]] = {
     ("allocation", "status"): E.AllocationStatus,
     ("matching_rule", "split_method"): SplitMethod,
     ("matching_rule", "category"): AllocationCategory,
+    # Phase 3
+    ("tenancy", "operating_costs_terms"): E.OperatingCostsTerms,
+    ("tax_input", "kind"): TaxInputKind,
+    ("tax_export", "kind"): TaxExportKind,
+    ("tax_export", "form_status"): FormStatus,
 }
 
 

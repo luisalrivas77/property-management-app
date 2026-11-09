@@ -1,4 +1,4 @@
-"""SQLAlchemy Core tables for migrations 0001-0009.
+"""SQLAlchemy Core tables for migrations 0001-0013.
 
 The migration is the source of truth. This module mirrors its columns (name, type, nullability,
 whether a server default exists) and primary keys, so services can build typed queries; it
@@ -182,6 +182,8 @@ property_ = Table(
     _date("ownership_ended_on", nullable=True),
     _created_at(),
     _updated_at(),
+    # 0013, appended by ADD COLUMN: the flat's Wohnfläche (D71).
+    Column("living_area_m2", Numeric(7, 2), nullable=True),
 )
 
 property_ownership = Table(
@@ -279,6 +281,9 @@ tenancy = Table(
     _date("notice_given_on", nullable=True),
     _created_at(),
     _updated_at(),
+    # 0013, appended by ADD COLUMN: the rent's due day (D67) and the running-cost terms (D72).
+    Column("rent_due_day", SmallInteger, nullable=False, server_default=text("3")),
+    _text("operating_costs_terms", server_default=text("'prepayment'")),
 )
 
 tenancy_tenant = Table(
@@ -610,4 +615,43 @@ matching_rule = Table(
     # 0012, appended by ADD COLUMN: as_last_split's kind, a category list (D51). None is SQL
     # NULL, never a JSON null: the CHECK reads NULL as "not as_last_split".
     Column("categories", JSONB(none_as_null=True), nullable=True),
+)
+
+
+# --- Phase 3: the tax year (0013) --------------------------------------------
+tax_input = Table(
+    "tax_input",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("property_id"),
+    _text("kind"),
+    Column("tax_year", SmallInteger, nullable=True),
+    _uuid("unit_id", nullable=True),
+    _uuid("loan_id", nullable=True),
+    _uuid("allocation_id", nullable=True),
+    _uuid("document_id", nullable=True),
+    Column("value", JSONB, nullable=False),
+    _text("note", nullable=True),
+    _uuid("supersedes_id", nullable=True),
+    Column("withdrawn", Boolean, nullable=False, server_default=text("false")),
+    _timestamp("recorded_at"),
+    _uuid("recorded_by", nullable=True),
+)
+tax_export = Table(
+    "tax_export",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("property_id"),
+    Column("tax_year", SmallInteger, nullable=False),
+    _text("kind"),
+    _text("rule_set_version"),
+    Column("form_year", SmallInteger, nullable=False),
+    _text("form_status"),
+    Column("draft", JSONB, nullable=False),
+    Column("file_sha256", LargeBinary, nullable=False),
+    Column("size_bytes", BigInteger, nullable=False),
+    _created_at(),
+    _uuid("created_by", nullable=True),
 )

@@ -18,7 +18,7 @@ Rules every event obeys (checked by Event's validator and by the DB):
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Literal, Self
+from typing import Any, Literal, Self
 from uuid import UUID
 
 from pydantic import Field, JsonValue, model_validator
@@ -68,6 +68,14 @@ from .enums import (
 )
 from .property import OwnerShare
 from .proposal import FieldDecision, RecordEntity
+from .tax import (
+    TAX_INPUT_VALUES,
+    FormStatus,
+    TaxExportKind,
+    TaxInputKind,
+    TaxInputValue,
+    value_by_kind,
+)
 from .tenancy import TenancyParty
 
 # --- Payloads ----------------------------------------------------------------
@@ -493,6 +501,51 @@ class RuleRecorded(Schema):
         )
 
 
+# Phase 3 (docs/phases/phase-3.md §6). Amounts and codes only: never a note (free text).
+
+
+class TaxInputRecorded(Schema):
+    """property.tax_input_recorded: one tax_input row as written (a correction or withdrawal
+    is a new row, so a new event with supersedes_id; D58)."""
+
+    tax_input_id: UUID
+    kind: TaxInputKind
+    tax_year: TaxYear | None = None
+    unit_id: UUID | None = None
+    loan_id: UUID | None = None
+    allocation_id: UUID | None = None
+    document_id: UUID | None = None
+    value: TaxInputValue
+    supersedes_id: UUID | None = None
+    withdrawn: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def _value_by_kind(cls, data: Any) -> Any:
+        return value_by_kind(data)
+
+    @model_validator(mode="after")
+    def _value_matches_kind(self) -> Self:
+        if type(self.value) is not TAX_INPUT_VALUES[self.kind]:
+            raise ValueError("value does not match the kind")
+        return self
+
+
+class AnlageVExported(Schema):
+    """property.anlage_v_exported: what was handed over (D65, D68)."""
+
+    tax_export_id: UUID
+    tax_year: TaxYear
+    kind: TaxExportKind
+    rule_set_version: str
+    form_year: TaxYear
+    form_status: FormStatus
+    file_sha256: Sha256Hex
+    size_bytes: int = Field(gt=0)
+    result: Money  # the cent result (Z85)
+    document_count: int | None = Field(default=None, ge=0)  # archive: the originals inside
+
+
 # --- Catalog -----------------------------------------------------------------
 
 EffectiveDate = Literal["required", "optional", "forbidden"]
@@ -519,6 +572,9 @@ class EventType(StrEnum):
     PROPERTY_ACQUISITION_COST_REMOVED = "property.acquisition_cost_removed"
     PROPERTY_PRICE_SPLIT_RECORDED = "property.price_split_recorded"
     PROPERTY_PRICE_SPLIT_SELECTED = "property.price_split_selected"
+    # Phase 3
+    PROPERTY_TAX_INPUT_RECORDED = "property.tax_input_recorded"
+    PROPERTY_ANLAGE_V_EXPORTED = "property.anlage_v_exported"
 
     UNIT_CREATED = "unit.created"
     UNIT_UPDATED = "unit.updated"
@@ -607,6 +663,12 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     ),
     E.PROPERTY_PRICE_SPLIT_SELECTED: EventSpec(
         PriceSplitSelected, "forbidden", "Split chosen as the AfA basis"
+    ),
+    E.PROPERTY_TAX_INPUT_RECORDED: EventSpec(
+        TaxInputRecorded, "forbidden", "Tax decision or certificate figure recorded"
+    ),
+    E.PROPERTY_ANLAGE_V_EXPORTED: EventSpec(
+        AnlageVExported, "forbidden", "Anlage V draft exported"
     ),
     E.UNIT_CREATED: EventSpec(UnitCreated, "forbidden", "Unit recorded"),
     E.UNIT_UPDATED: EventSpec(Updated, "forbidden", "Unit fields changed"),

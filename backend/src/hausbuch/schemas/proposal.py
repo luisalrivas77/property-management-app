@@ -36,6 +36,7 @@ RecordEntity = (
         "link",
         "ownership",
         "deposit_received",  # Kautionsnachweis (step 2): tenancy.deposit_received via the service
+        "tax_input",  # phase 3 §9: ruecklage_spent / interest_certified via services/tax_inputs
     ]
 )
 

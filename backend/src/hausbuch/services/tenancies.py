@@ -11,7 +11,8 @@ in the same transaction (D4).
   date, so there is nothing to say "it never happened" with.
 - The parties change through set_parties (the whole list, exactly one primary), which
   appends tenancy.parties_set with tenant ids and roles only (D5).
-- The other fields (Befristung, Mietmodell, Kaution) change through update_tenancy, which
+- The other fields (Befristung, Mietmodell, Kaution, and phase 3's rent due day and running-cost
+  terms, D67/D72) change through update_tenancy, which
   appends tenancy.updated with old and new values (the deposit account is the landlord's, D5,
   and appears masked only).
 - Rent rows are never edited: a wrong row is superseded by a correction row (D12), and its
@@ -37,7 +38,14 @@ from hausbuch.db.tables import unit as unit_table
 from hausbuch.jobs import enqueue
 from hausbuch.rules.rent import rent_at
 from hausbuch.rules.validation import RENT_OUTSIDE_TENANCY, check_rent_row, check_tenancy_parties
-from hausbuch.schemas.enums import DepositForm, EntityType, RentChangeReason, RentModel, TenancyRole
+from hausbuch.schemas.enums import (
+    DepositForm,
+    EntityType,
+    OperatingCostsTerms,
+    RentChangeReason,
+    RentModel,
+    TenancyRole,
+)
 from hausbuch.schemas.events import (
     DepositReceived,
     Empty,
@@ -244,6 +252,8 @@ def update_tenancy(
     deposit_form: DepositForm | Unset = UNSET,
     deposit_bank: str | None | Unset = UNSET,
     deposit_iban: str | None | Unset = UNSET,
+    rent_due_day: int | Unset = UNSET,
+    operating_costs_terms: OperatingCostsTerms | Unset = UNSET,
     iban_key: bytes | None = None,
 ) -> Tenancy:
     """Change the non-milestone fields. The tenancy as a whole must still pass create's rules
@@ -258,6 +268,8 @@ def update_tenancy(
             ("deposit_amount", deposit_amount),
             ("deposit_form", deposit_form),
             ("deposit_bank", deposit_bank),
+            ("rent_due_day", rent_due_day),
+            ("operating_costs_terms", operating_costs_terms),
         )
         if value is not UNSET
     }

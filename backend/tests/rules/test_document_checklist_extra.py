@@ -46,8 +46,14 @@ def test_only_the_purchase_year_while_it_lies_ahead():
     assert available_years(_facts(), date(2023, 12, 31)) == [2024]
 
 
+# Phase 3 §8 (D64): the codes exist since the spec PR (step 0); their catalogue entries and
+# satisfiers come in step 2, which empties this set.
+PENDING_STEP_2 = {RequirementCode.COST_RECEIPT, RequirementCode.MARKET_RENT}
+
+
 def test_the_catalogue_has_one_entry_per_code_in_code_order():
-    assert [r.code for r in CATALOGUE] == list(RequirementCode)
+    codes = [r.code for r in CATALOGUE]
+    assert codes == [c for c in RequirementCode if c not in PENDING_STEP_2 or c in codes]
 
 
 def test_a_tenancy_must_be_on_one_of_the_units():

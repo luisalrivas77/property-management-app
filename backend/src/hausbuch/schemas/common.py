@@ -76,6 +76,14 @@ Confidence = Annotated[
 Area = Annotated[
     Decimal, Field(gt=0, max_digits=8, decimal_places=2), _STRING_ONLY, _string_schema(2)
 ]
+# numeric(7,2): a flat's Wohnfläche (property.living_area_m2, migration 0013, phase 3 D71).
+LivingArea = Annotated[
+    Decimal, Field(gt=0, max_digits=7, decimal_places=2), _STRING_ONLY, _string_schema(2)
+]
+# A share shown to one decimal, e.g. the 15 % tracker's 14.2 (phase 3 §5.3); not stored.
+Percent = Annotated[
+    Decimal, Field(ge=0, max_digits=7, decimal_places=1), _STRING_ONLY, _string_schema(1)
+]
 Rooms = Annotated[
     Decimal, Field(gt=0, max_digits=4, decimal_places=1), _STRING_ONLY, _string_schema(1)
 ]

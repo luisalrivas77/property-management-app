@@ -50,3 +50,16 @@ AI_ERROR_CODES = frozenset(
         DOCUMENT_ADOBE_FORM,
     }
 )
+
+
+# --- Phase 3 codes (docs/phases/phase-3.md §10, §13) -----------------------------------
+
+TAX_NO_RULE_SET = "tax.no_rule_set"  # no rulesets/<year>.yaml
+TAX_YEAR_NOT_AVAILABLE = "tax.year_not_available"  # outside the checklist's available_years
+TAX_DUE_DATE_UNRESOLVED = "tax.due_date_unresolved"  # a loan line without a schedule entry
+FORM_MAPPING_INCOMPLETE = "form_mapping.incomplete"  # a category or draft line unmapped
+TAX_INPUT_SCOPE_INVALID = "tax_input.scope_invalid"  # the kind's scope is not met
+TAX_INPUT_NOT_CURRENT = "tax_input.not_current"  # supersedes a superseded or withdrawn row
+TAX_INPUT_ALLOCATION_NOT_CONFIRMED = "tax_input.allocation_not_confirmed"
+TAX_EXPORT_FAILED = "tax_export.failed"
+TAX_EXPORT_TOO_LARGE = "tax_export.too_large"  # an archive over 1 GiB

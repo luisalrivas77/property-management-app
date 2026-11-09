@@ -2,7 +2,7 @@
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Self
+from typing import Annotated, Self
 from uuid import UUID
 
 from pydantic import ConfigDict, Field, model_validator
@@ -14,7 +14,7 @@ from .common import (
     NonNegativeMoney,
     Schema,
 )
-from .enums import DepositForm, RentChangeReason, RentModel, TenancyRole
+from .enums import DepositForm, OperatingCostsTerms, RentChangeReason, RentModel, TenancyRole
 
 # --- Tenant (personal data) --------------------------------------------------
 
@@ -41,6 +41,10 @@ class Tenant(MutableRecord):
 
 # --- Tenancy -----------------------------------------------------------------
 
+# Phase 3 D67: the day of the month the rent is due (§556b Abs. 1 BGB's default is the third
+# working day; the lease may say otherwise). The ten-day rule of §11 EStG needs it (D54).
+RentDueDay = Annotated[int, Field(ge=1, le=28)]
+
 
 class TenancyParty(Schema):
     tenant_id: UUID
@@ -62,6 +66,8 @@ class TenancyCreate(Schema):
     deposit_form: DepositForm = DepositForm.NONE
     deposit_bank: str | None = None
     deposit_iban: IbanInput | None = None
+    rent_due_day: RentDueDay = 3  # phase 3 D67
+    operating_costs_terms: OperatingCostsTerms = OperatingCostsTerms.PREPAYMENT  # phase 3 D72
 
     @model_validator(mode="after")
     def _consistent(self) -> Self:
@@ -89,6 +95,8 @@ class Tenancy(MutableRecord):
     deposit_bank: str | None
     deposit_iban_masked: MaskedIban | None
     notice_given_on: date | None = None
+    rent_due_day: RentDueDay = 3  # phase 3 D67 (migration 0013)
+    operating_costs_terms: OperatingCostsTerms = OperatingCostsTerms.PREPAYMENT  # D72
 
 
 # --- Rent schedule (append-only) ---------------------------------------------

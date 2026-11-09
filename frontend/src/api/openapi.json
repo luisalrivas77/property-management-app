@@ -5861,7 +5861,8 @@
                   "typing",
                   "link",
                   "ownership",
-                  "deposit_received"
+                  "deposit_received",
+                  "tax_input"
                 ]
               }
             ],
@@ -6147,6 +6148,28 @@
               }
             ],
             "title": "Cost Amount"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AllocationCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "booking_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Booking Date"
           }
         },
         "additionalProperties": false,
@@ -6164,10 +6187,12 @@
           "property",
           "acquisition_cost",
           "loan",
-          "tenancy"
+          "tenancy",
+          "allocation",
+          "unit"
         ],
         "title": "ChecklistScopeType",
-        "description": "What one item is about: the property, one cost row, one loan or one tenancy."
+        "description": "What one item is about: property, cost row, loan, tenancy, allocation or unit."
       },
       "ChecklistStatus": {
         "type": "string",
@@ -7350,6 +7375,8 @@
           "property.acquisition_cost_removed",
           "property.price_split_recorded",
           "property.price_split_selected",
+          "property.tax_input_recorded",
+          "property.anlage_v_exported",
           "unit.created",
           "unit.updated",
           "tenant.created",
@@ -8990,6 +9017,16 @@
         ],
         "title": "NoticeBody"
       },
+      "OperatingCostsTerms": {
+        "type": "string",
+        "enum": [
+          "prepayment",
+          "flat_rate",
+          "included"
+        ],
+        "title": "OperatingCostsTerms",
+        "description": "How a lease agrees the running costs (tenancy.operating_costs_terms, 0013; phase 3 D72)."
+      },
       "Owner": {
         "properties": {
           "id": {
@@ -9540,6 +9577,18 @@
             "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
             "title": "Purchase Price"
           },
+          "living_area_m2": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Living Area M2"
+          },
           "selected_price_split_id": {
             "anyOf": [
               {
@@ -9616,6 +9665,18 @@
             "type": "string",
             "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
             "title": "Purchase Price"
+          },
+          "living_area_m2": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Living Area M2"
           }
         },
         "additionalProperties": false,
@@ -9684,6 +9745,18 @@
             "maximum": 2100.0,
             "minimum": 1800.0,
             "title": "Build Year"
+          },
+          "living_area_m2": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Living Area M2"
           }
         },
         "additionalProperties": false,
@@ -9916,7 +9989,8 @@
                   "typing",
                   "link",
                   "ownership",
-                  "deposit_received"
+                  "deposit_received",
+                  "tax_input"
                 ]
               }
             ],
@@ -10347,7 +10421,9 @@
           "handover_protocol",
           "deposit_record",
           "wirtschaftsplan",
-          "hausgeldabrechnung"
+          "hausgeldabrechnung",
+          "cost_receipt",
+          "market_rent"
         ],
         "title": "RequirementCode",
         "description": "One kind of paperwork the return needs. German labels and hints live in the frontend."
@@ -10973,6 +11049,17 @@
               }
             ],
             "title": "Notice Given On"
+          },
+          "rent_due_day": {
+            "type": "integer",
+            "maximum": 28.0,
+            "minimum": 1.0,
+            "title": "Rent Due Day",
+            "default": 3
+          },
+          "operating_costs_terms": {
+            "$ref": "#/components/schemas/OperatingCostsTerms",
+            "default": "prepayment"
           }
         },
         "additionalProperties": false,
@@ -11088,6 +11175,17 @@
               }
             ],
             "title": "Deposit Iban"
+          },
+          "rent_due_day": {
+            "type": "integer",
+            "maximum": 28.0,
+            "minimum": 1.0,
+            "title": "Rent Due Day",
+            "default": 3
+          },
+          "operating_costs_terms": {
+            "$ref": "#/components/schemas/OperatingCostsTerms",
+            "default": "prepayment"
           },
           "initial_rent": {
             "anyOf": [
@@ -11209,6 +11307,15 @@
               }
             ],
             "title": "Deposit Iban"
+          },
+          "rent_due_day": {
+            "type": "integer",
+            "maximum": 28.0,
+            "minimum": 1.0,
+            "title": "Rent Due Day"
+          },
+          "operating_costs_terms": {
+            "$ref": "#/components/schemas/OperatingCostsTerms"
           }
         },
         "additionalProperties": false,

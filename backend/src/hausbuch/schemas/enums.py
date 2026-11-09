@@ -1,5 +1,5 @@
 """Closed value sets. Each mirrors a CHECK constraint in a migration (phase 1: 0001-0004,
-phase 2: 0005-0007); tests/db/test_schema_consistency.py keeps them in sync.
+phase 2: 0005-0012, phase 3: 0013); tests/db/test_schema_consistency.py keeps them in sync.
 
 Phase 2 sets that belong to one module live there instead (AiJob in ai.py, StatementFormat in
 bank.py, the allocation sets in allocation.py), as docs/phases/phase-2.md §4 places them."""
@@ -44,6 +44,14 @@ class DepositForm(StrEnum):
     CASH_ACCOUNT = "cash_account"  # Barkaution auf Mietkautionskonto
     BANK_GUARANTEE = "bank_guarantee"  # Bankbürgschaft
     SURETY = "surety"  # Bürgschaft
+
+
+class OperatingCostsTerms(StrEnum):
+    """How a lease agrees the running costs (tenancy.operating_costs_terms, 0013; phase 3 D72)."""
+
+    PREPAYMENT = "prepayment"  # Vorauszahlung with a yearly settlement (default)
+    FLAT_RATE = "flat_rate"  # Nebenkostenpauschale, no settlement
+    INCLUDED = "included"  # one all-in rent; Nebenkosten not agreed separately (Z24)
 
 
 class TenancyRole(StrEnum):

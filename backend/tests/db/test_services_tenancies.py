@@ -16,6 +16,7 @@ from hausbuch.rules.validation import EXACTLY_ONE_PRIMARY, RENT_OUTSIDE_TENANCY
 from hausbuch.schemas.enums import (
     ActorType,
     DepositForm,
+    OperatingCostsTerms,
     PropertyKind,
     RentChangeReason,
     RentModel,
@@ -798,6 +799,35 @@ def test_update_records_old_and_new_values_and_masks_the_deposit_account(
     assert _events(read, a, tenancy.id)[-1].payload["changes"]["deposit_iban_masked"] == {
         "old": "DE02 **** 2051",
         "new": None,
+    }
+
+
+def test_due_day_and_cost_terms_default_and_update_like_any_field(run, read, flat):
+    """Phase 3 (0013, D67, D72): a tenancy starts with rent due on the 3rd and prepaid
+    running costs; both change through update_tenancy and are traced in tenancy.updated."""
+    a, _, unit, tenants = flat
+    tenancy = _create(run, a, _lease(unit, tenants), initial_rent=None)
+    assert (tenancy.rent_due_day, tenancy.operating_costs_terms) == (
+        3,
+        OperatingCostsTerms.PREPAYMENT,
+    )
+    updated = run(
+        a,
+        update_tenancy,
+        tenancy.id,
+        rent_due_day=1,
+        operating_costs_terms=OperatingCostsTerms.INCLUDED,
+        iban_key=TEST_IBAN_KEY,
+        now=LATER,
+    )
+    assert (updated.rent_due_day, updated.operating_costs_terms) == (
+        1,
+        OperatingCostsTerms.INCLUDED,
+    )
+    assert read(a, get_tenancy, tenancy.id) == updated
+    assert _events(read, a, tenancy.id)[-1].payload["changes"] == {
+        "rent_due_day": {"old": 3, "new": 1},
+        "operating_costs_terms": {"old": "prepayment", "new": "included"},
     }
 
 

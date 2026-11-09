@@ -11,6 +11,7 @@ from .common import (
     Area,
     BuildingShare,
     Fraction,
+    LivingArea,
     MutableRecord,
     PositiveMoney,
     Rooms,
@@ -73,6 +74,10 @@ class PropertyCreate(Schema):
     # Übergang von Besitz, Nutzen und Lasten. AfA starts in this month.
     purchase_date: date
     purchase_price: PositiveMoney
+    # Phase 3 D71: the flat's Wohnfläche (purchase contract or Wohnflächenberechnung) for the
+    # Anlage V's Z11 and its one Z13 row per Wohnung. Null: the draft sums the units' m² and
+    # warns, since rooms let separately leave out kitchen, bath and hall.
+    living_area_m2: LivingArea | None = None
 
     @model_validator(mode="after")
     def _dates_in_order(self) -> Self:
