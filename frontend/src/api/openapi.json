@@ -5861,6 +5861,18 @@
             ],
             "title": "Book Value Start"
           },
+          "remaining_months": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining Months"
+          },
           "sources": {
             "items": {
               "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
@@ -5887,7 +5899,7 @@
           "method_code"
         ],
         "title": "AfaLine",
-        "description": "wk.afa for one tax year. amount, basis and rate are None without a selected split.\n\nmethod (D79): `statutory` is the rate by completion year (rate set, book_value_start and\nuseful_life_years None); `useful_life` is the shorter actual useful life of a Gutachten,\nthe book value at the start of the year spread over the remaining months (rate None)."
+        "description": "wk.afa for one tax year. amount, basis and rate are None without a selected split.\n\nmethod (D79): `statutory` is the rate by completion year (rate set; the useful-life fields,\nbook_value_start and remaining_months None); `useful_life` is the shorter actual useful\nlife of a Gutachten, the book value at the start of the year spread over the months of that\nlife remaining at its start (rate None)."
       },
       "AiRetryResult": {
         "properties": {
