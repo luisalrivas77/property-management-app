@@ -413,6 +413,8 @@ cases:
       value: '300000.00'
       selling_costs: '10710.00'
       afa_claimed: '49140.00'
+      afa_claimed_building: '49140.00'
+      afa_claimed_movable: '0.00'
       gain: null
       gain_per_owner: []
       freigrenze_applied: false
@@ -796,6 +798,8 @@ cases:
       value: '365698.33'
       selling_costs: '13055.43'
       afa_claimed: '49140.00'
+      afa_claimed_building: '49140.00'
+      afa_claimed_movable: '0.00'
       gain: null
       gain_per_owner: []
       freigrenze_applied: false
@@ -994,6 +998,8 @@ cases:
       value: '337652.64'
       selling_costs: '12054.20'
       afa_claimed: '46465.72'
+      afa_claimed_building: '46465.72'
+      afa_claimed_movable: '0.00'
       gain: '47064.16'
       gain_per_owner:
       - {owner_id: 0000000a-0000-4000-8000-000000000001, share: {numerator: 1, denominator: 2}, gain: '23532.08',
@@ -1404,6 +1410,8 @@ cases:
       value: '415270.16'
       selling_costs: '14825.14'
       afa_claimed: '53820.00'
+      afa_claimed_building: '53820.00'
+      afa_claimed_movable: '0.00'
       gain: null
       gain_per_owner: []
       freigrenze_applied: false
