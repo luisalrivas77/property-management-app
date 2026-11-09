@@ -4675,7 +4675,7 @@
     "/api/properties/{property_id}/performance/actuals": {
       "get": {
         "summary": "Property Actuals",
-        "description": "Every owned year from the purchase year through today's, from confirmed allocations\nonly (D85); the current year is marked so_far. 422 tariff.no_file for a year before the\nfirst tariff file.",
+        "description": "Every owned year from the purchase year through today's, from confirmed allocations\nonly (D85); the current year is marked so_far. 422 projection.no_rule_set for a purchase\nyear before the first rule set, tariff.no_file for one before the first tariff file (the\nprojection answers the same).",
         "operationId": "property_actuals_api_properties__property_id__performance_actuals_get",
         "parameters": [
           {

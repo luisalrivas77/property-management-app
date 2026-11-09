@@ -26,8 +26,9 @@ router = domain_router()
 @router.get("/properties/{property_id}/performance/actuals")
 def property_actuals(property_id: UUID, cmd: Cmd) -> Actuals:
     """Every owned year from the purchase year through today's, from confirmed allocations
-    only (D85); the current year is marked so_far. 422 tariff.no_file for a year before the
-    first tariff file."""
+    only (D85); the current year is marked so_far. 422 projection.no_rule_set for a purchase
+    year before the first rule set, tariff.no_file for one before the first tariff file (the
+    projection answers the same)."""
     today = datetime.now(LOCAL_TIME_ZONE).date()
     return cmd.read(performance_actuals, property_id, today=today)
 

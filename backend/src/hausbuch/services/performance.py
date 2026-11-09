@@ -44,8 +44,10 @@ def _facts(conn: Connection, property_id: UUID, today: date) -> DraftFacts:
 
 def performance_actuals(conn: Connection, property_id: UUID, *, today: date) -> Actuals:
     """GET /properties/{id}/performance/actuals: every owned year from the purchase year through
-    today's, the last one partial before 31 Dec. A year before the first tariff file (2026)
-    has no tax effect to compute: RuleError tariff.no_file (§8 error codes)."""
+    today's, the last one partial before 31 Dec. Every owned year is needed (the projection's
+    §23 add-back and profit sum them all), so none is skipped: a purchase year before the
+    first rule set raises RuleError projection.no_rule_set, one before the first tariff file
+    tariff.no_file (§8 error codes); the projection raises the same."""
     facts = _facts(conn, property_id, today)
     years = actual_years(facts, today, owner_profiles(conn), income_facts(conn))
     return Actuals(property_id=property_id, years=years)
