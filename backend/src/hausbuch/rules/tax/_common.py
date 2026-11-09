@@ -20,6 +20,7 @@ from hausbuch.schemas.tax import (
     TaxInputKind,
     TaxProperty,
     TaxYearResult,
+    TrackedAmount,
     WarningCode,
 )
 
@@ -154,6 +155,85 @@ def warning(code: WarningCode, refs: list[SourceRef] | None = None, **params: st
     return DraftWarning.model_validate(
         {"code": code, "params": params, "refs": [r.model_dump() for r in refs or []]}
     )
+
+
+def tracked_amount(category, allocations: list[AllocationFact]) -> TrackedAmount | None:
+    """Booked, not deductible (Tilgung, Rücklage): the magnitude of the signed sum."""
+    if not allocations:
+        return None
+    return TrackedAmount(
+        category=category,
+        amount=abs(sum((a.amount for a in allocations), ZERO)),
+        count=len(allocations),
+        sources=unique(r for a in allocations for r in sources_of(a)),
+    )
+
+
+class LineBook:
+    """Collects line contributions by key: amounts summed, sources united (first occurrence
+    kept), the provisional flag OR-ed, Einzelangaben united and sorted, a flag line ticked when
+    any contribution ticks it. The draft merges the rules' lines the same way."""
+
+    def __init__(self) -> None:
+        self._lines: dict[str, dict] = {}
+
+    def add(
+        self,
+        key: str,
+        amount: Decimal | None,
+        sources: Iterable[SourceRef] = (),
+        *,
+        provisional: bool = False,
+        einzelangaben: Iterable[str] = (),
+        ticked: bool | None = None,
+    ) -> None:
+        line = self._lines.setdefault(
+            key,
+            {"amount": None, "sources": [], "provisional": False, "names": set(), "ticked": None},
+        )
+        if amount is not None:
+            line["amount"] = (line["amount"] or ZERO) + amount
+        line["sources"].extend(sources)
+        line["provisional"] = line["provisional"] or provisional
+        line["names"].update(einzelangaben)
+        if ticked is not None:
+            line["ticked"] = bool(line["ticked"]) or ticked
+
+    def merge(self, lines: Iterable[LineAmount]) -> None:
+        for line in lines:
+            self.add(
+                line.key,
+                line.amount,
+                line.sources,
+                provisional=line.provisional,
+                einzelangaben=line.einzelangaben,
+                ticked=line.ticked,
+            )
+
+    def __contains__(self, key: str) -> bool:
+        return key in self._lines
+
+    def amount(self, key: str) -> Decimal:
+        line = self._lines.get(key)
+        return ZERO if line is None or line["amount"] is None else line["amount"]
+
+    def lines(self) -> list[LineAmount]:
+        out = []
+        for key, v in self._lines.items():
+            amount = v["amount"]
+            if amount is None and v["ticked"] is None:
+                amount = Decimal("0.00")  # a provisional line with nothing on it yet
+            out.append(
+                LineAmount(
+                    key=key,
+                    amount=amount,
+                    ticked=v["ticked"],
+                    sources=unique(v["sources"]),
+                    provisional=v["provisional"],
+                    einzelangaben=sorted(v["names"]),
+                )
+            )
+        return out
 
 
 def afa_facts(facts: DraftFacts, additions=()) -> AfaFacts:
