@@ -184,6 +184,11 @@ WARNING_TEXT: dict[WarningCode, Callable[[dict[str, str]], str]] = {
     WarningCode.AFA_PURCHASE_PRICE_MISMATCH: lambda p: (
         f"Vom Konto bezahlter Kaufpreis {_p(p, 'paid')} weicht vom Kaufpreis {_p(p, 'price')} ab."
     ),
+    WarningCode.AFA_USEFUL_LIFE_REPORT: lambda p: (
+        f"AfA nach kürzerer tatsächlicher Nutzungsdauer ({p.get('years', '?')} Jahre ab "
+        f"{p.get('from_year', '?')}): in Zeile 33 „laut Erläuterung“ angeben; das Finanzamt "
+        "fragt meist nach dem Gutachten."
+    ),
     WarningCode.LIMIT_EXCEEDED: lambda p: (
         f"Die 15 %-Grenze ist {p.get('exceeded_in_year', '')} überschritten: die "
         "Renovierungskosten des Dreijahresfensters werden Herstellungskosten und laufen über "
@@ -353,7 +358,13 @@ def _row_notes(line: DraftLine | None, draft: AnlageVDraft) -> list[str]:
         notes.append("Einzelangaben: " + ", ".join(line.einzelangaben))
     if line.key == "wk.afa" and draft.afa is not None and draft.afa.method_code is not None:
         method = "2 = laut Erläuterung (Anlage)" if draft.afa.method_code == 2 else "1 = linear"
-        rate = f", Satz {_percent(draft.afa.rate)}" if draft.afa.rate is not None else ""
+        if draft.afa.method == "useful_life":  # D79: no rate, the remaining useful life
+            rate = (
+                f", kürzere Nutzungsdauer {draft.afa.useful_life_years} Jahre"
+                f" ab {draft.afa.useful_life_from_year}"
+            )
+        else:
+            rate = f", Satz {_percent(draft.afa.rate)}" if draft.afa.rate is not None else ""
         notes.append(f"Zeile 33: Methode {method}{rate}")
     if line.provisional:
         notes.append("vorläufig: ein Beleg fehlt noch")
@@ -480,14 +491,37 @@ def _afa_annex(draft: AnlageVDraft, facts: DraftFacts) -> list:
                     ]
                 )
         rows.append(["+ nachträgliche Herstellungskosten gesamt", _money(afa.additions)])
-    rate = "–" if afa.rate is None else _percent(afa.rate)
-    rows.append(
-        [
-            f"× AfA-Satz {rate} (fertig gestellt {prop.build_year}, § 7 Abs. 4 EStG) "
-            f"× {afa.months}/12 Monate",
-            "",
-        ]
-    )
+    if afa.method == "useful_life":  # D79: the book value over the remaining useful life
+        rows.append(
+            [
+                "AfA nach kürzerer tatsächlicher Nutzungsdauer (§ 7 Abs. 4 S. 2 EStG): "
+                f"{afa.useful_life_years} Jahre ab {afa.useful_life_from_year} laut Gutachten",
+                "",
+            ]
+        )
+        rows.append(
+            [
+                f"Restwert zu Jahresbeginn {draft.tax_year} (Bemessungsgrundlage abzüglich "
+                "bisheriger AfA)",
+                _money(afa.book_value_start),
+            ]
+        )
+        rows.append(
+            [
+                f"× {afa.months} Monate / {afa.remaining_months} Monate Restnutzungsdauer "
+                "zu Jahresbeginn (im letzten Jahr der ganze Restwert)",
+                "",
+            ]
+        )
+    else:
+        rate = "–" if afa.rate is None else _percent(afa.rate)
+        rows.append(
+            [
+                f"× AfA-Satz {rate} (fertig gestellt {prop.build_year}, § 7 Abs. 4 EStG) "
+                f"× {afa.months}/12 Monate",
+                "",
+            ]
+        )
     rows.append([f"= AfA {draft.tax_year}", _money(afa.amount)])
     table = Table(
         [[_para(str(c), _CELL) if i == 0 else c for i, c in enumerate(r)] for r in rows],

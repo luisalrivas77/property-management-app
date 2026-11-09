@@ -35,10 +35,10 @@
 # the statutory one above (method statutory). Under a governing row (method useful_life, rate
 # null), walking the years from the purchase year:
 #   book_value_start = basis + Σ additions of years ≤ the year − Σ AfA of earlier years
-#   remaining months  = years × 12, reset in a governing row's from_year (counted from the AfA
+#   remaining_months  = years × 12, reset in a governing row's from_year (counted from the AfA
 #                       start month in the purchase year, else from January), then − the
 #                       months owned each year
-#   amount            = round(book_value_start × months ÷ remaining, 2), half-up; the whole
+#   amount            = round(book_value_start × months ÷ remaining_months, 2), half-up; the whole
 #                       book value once months ≥ remaining; 0 once written off
 #   Years before the first governing row keep the statutory amount.
 #   method_code = 2 also in a governing row's from_year. Sources add the input and its
@@ -295,18 +295,18 @@ cases:
     facts: {<<: *old_building, useful_lives: [*life_21]}
     expect:
       - {<<: *ul21, tax_year: 2026, amount: "3571.43", months: 3, method_code: 2,
-         book_value_start: "300000.00",
+         book_value_start: "300000.00", remaining_months: 252,
          sources: [{kind: property, id: *P}, {kind: price_split, id: *S},
                    {kind: tax_input, id: *UL21}, {kind: document, id: *D_GUT}]}
       - {<<: *ul21, tax_year: 2027, amount: "14285.71", months: 12, method_code: 1,
-         book_value_start: "296428.57"}
+         book_value_start: "296428.57", remaining_months: 249}
       - {<<: *ul21, tax_year: 2028, amount: "14285.71", months: 12, method_code: 1,
          book_value_start: "282142.86"}
       - {<<: *ul21, tax_year: 2046, amount: "14285.71", months: 12, method_code: 1}
       - {<<: *ul21, tax_year: 2047, amount: "10714.29", months: 12, method_code: 1,
-         book_value_start: "10714.29"}
+         book_value_start: "10714.29", remaining_months: 9}
       - {<<: *ul21, tax_year: 2048, amount: "0.00", months: 12, method_code: 1,
-         book_value_start: "0.00"}
+         book_value_start: "0.00", remaining_months: 0}
 
   - id: useful_life_with_addition
     description: >
@@ -322,7 +322,7 @@ cases:
       - {<<: *ul21, tax_year: 2027, amount: "14285.71", additions: "0", months: 12,
          method_code: 1, book_value_start: "296428.57"}
       - {<<: *ul21, tax_year: 2028, amount: "15349.01", additions: "21000.00", months: 12,
-         method_code: 2, book_value_start: "303142.86",
+         method_code: 2, book_value_start: "303142.86", remaining_months: 237,
          sources: [{kind: property, id: *P}, {kind: price_split, id: *S},
                    {kind: allocation, id: *A_DORMER},
                    {kind: tax_input, id: *UL21}, {kind: document, id: *D_GUT}]}
@@ -343,7 +343,7 @@ cases:
       - {tax_year: 2027, amount: "7500.00", basis: "300000.00", rate: "0.025", months: 12,
          method_code: 1}
       - {<<: *ul19, tax_year: 2028, amount: "15296.05", months: 12, method_code: 2,
-         book_value_start: "290625.00",
+         book_value_start: "290625.00", remaining_months: 228,
          sources: [{kind: property, id: *P}, {kind: price_split, id: *S},
                    {kind: tax_input, id: *UL19}, {kind: document, id: *D_GUT}]}
       - {<<: *ul19, tax_year: 2029, amount: "15296.05", months: 12, method_code: 1,

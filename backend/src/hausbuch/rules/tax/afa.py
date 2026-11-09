@@ -124,8 +124,9 @@ def governing(facts: AfaFacts, tax_year: int) -> UsefulLifeFact | None:
 
 def _remaining_value(
     base: Decimal, facts: AfaFacts, tax_year: int, rate: Decimal
-) -> tuple[Decimal, Decimal]:
-    """(book value at the start of `tax_year`, AfA of `tax_year`), walking the years from the
+) -> tuple[Decimal, Decimal, int]:
+    """(book value at the start of `tax_year`, AfA of `tax_year`, months of the useful life
+    remaining at its start), walking the years from the
     purchase year. Statutory until the first governing row; from each governing row's first
     year, the remaining life restarts at years × 12 months."""
     book = base
@@ -138,6 +139,7 @@ def _remaining_value(
     # additions dated before the purchase year count from its start (as the statutory sum)
     book += sum((v for y, v in added.items() if y < facts.purchase_date.year), ZERO)
     amount = ZERO
+    start = 0
     for year in range(facts.purchase_date.year, tax_year + 1):
         book += added.get(year, ZERO)
         months = owned_months(facts.purchase_date, facts.ownership_ended_on, year)
@@ -147,6 +149,7 @@ def _remaining_value(
         else:
             if row is not current:
                 current, remaining = row, row.years * 12
+            start = remaining
             if months == 0:
                 amount = ZERO
             elif months >= remaining:  # the last months take the rest (0 once written off)
@@ -156,7 +159,7 @@ def _remaining_value(
             remaining = max(remaining - months, 0)
         amount = max(amount, ZERO)
         if year == tax_year:
-            return book, amount
+            return book, amount, start
         book -= amount
     raise AssertionError("tax_year is not before the purchase year here")
 
@@ -199,7 +202,7 @@ def afa(facts: AfaFacts, tax_year: int, rule_set: RuleSet) -> AfaLine:
             sources=sources,
             warnings=warnings,
         )
-    book, amount = _remaining_value(base, facts, tax_year, rate)
+    book, amount, remaining = _remaining_value(base, facts, tax_year, rate)
     refs = [SourceRef(kind="tax_input", id=row.tax_input_id)]
     if row.document_id is not None:
         refs.append(SourceRef(kind="document", id=row.document_id))
@@ -221,6 +224,7 @@ def afa(facts: AfaFacts, tax_year: int, rule_set: RuleSet) -> AfaLine:
         useful_life_years=row.years,
         useful_life_from_year=row.from_year,
         book_value_start=book,
+        remaining_months=remaining,
         sources=unique(sources + refs),
         warnings=[*warnings, report],
     )

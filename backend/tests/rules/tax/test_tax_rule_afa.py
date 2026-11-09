@@ -22,8 +22,9 @@ def test_afa(case, expect):
     where = f"{case.id} {expect.tax_year}"
     fields = ("amount", "basis", "additions", "rate", "months", "method_code", "method")
     fields += ("useful_life_years", "useful_life_from_year")
-    if expect.method == "statutory" or expect.book_value_start is not None:
-        fields += ("book_value_start",)
+    for optional in ("book_value_start", "remaining_months"):
+        if expect.method == "statutory" or getattr(expect, optional) is not None:
+            fields += (optional,)
     for field in fields:
         assert getattr(line, field) == getattr(expect, field), (
             f"{where}: {field} {getattr(line, field)} != {getattr(expect, field)}"

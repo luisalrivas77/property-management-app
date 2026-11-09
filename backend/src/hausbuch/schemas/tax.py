@@ -607,9 +607,10 @@ AfaMethod = Literal["statutory", "useful_life"]
 class AfaLine(Schema):
     """wk.afa for one tax year. amount, basis and rate are None without a selected split.
 
-    method (D79): `statutory` is the rate by completion year (rate set, book_value_start and
-    useful_life_years None); `useful_life` is the shorter actual useful life of a Gutachten,
-    the book value at the start of the year spread over the remaining months (rate None)."""
+    method (D79): `statutory` is the rate by completion year (rate set; the useful-life fields,
+    book_value_start and remaining_months None); `useful_life` is the shorter actual useful
+    life of a Gutachten, the book value at the start of the year spread over the months of that
+    life remaining at its start (rate None)."""
 
     tax_year: TaxYear
     amount: NonNegativeMoney | None
@@ -622,6 +623,7 @@ class AfaLine(Schema):
     useful_life_years: int | None = None  # the governing useful_life row's years
     useful_life_from_year: TaxYear | None = None  # and its first year
     book_value_start: NonNegativeMoney | None = None  # basis + additions − earlier AfA
+    remaining_months: int | None = Field(default=None, ge=0)  # of the useful life, at its start
     sources: list[SourceRef] = Field(default_factory=list)
     warnings: list[DraftWarning] = Field(default_factory=list)
 
