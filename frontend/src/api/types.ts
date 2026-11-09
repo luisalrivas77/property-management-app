@@ -1372,6 +1372,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/properties/{property_id}/anlage-v": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Property Anlage V
+         * @description The draft Anlage V of the property for tax_year: every line with its sources, the
+         *     warnings, the open documents, the 15 % tracker and the statement coverage.
+         */
+        get: operations["property_anlage_v_api_properties__property_id__anlage_v_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/properties/{property_id}/history": {
         parameters: {
             query?: never;
@@ -1891,6 +1912,33 @@ export interface components {
             country_code: string;
         };
         /**
+         * AfaLine
+         * @description wk.afa for one tax year. amount, basis and rate are None without a selected split.
+         */
+        AfaLine: {
+            /** Tax Year */
+            tax_year: number;
+            /** Amount */
+            amount: string | null;
+            /** Basis */
+            basis: string | null;
+            /**
+             * Additions
+             * @default 0
+             */
+            additions: string;
+            /** Rate */
+            rate: string | null;
+            /** Months */
+            months: number;
+            /** Method Code */
+            method_code: (1 | 2) | null;
+            /** Sources */
+            sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+            /** Warnings */
+            warnings?: components["schemas"]["DraftWarning"][];
+        };
+        /**
          * AiRetryResult
          * @description POST /inbox/ai-retry (D50): how many waiting lines were sent to the model again.
          */
@@ -2039,6 +2087,48 @@ export interface components {
          * @enum {string}
          */
         AllocationStatus: "proposed" | "confirmed" | "superseded";
+        /** AnlageVDraft */
+        AnlageVDraft: {
+            /**
+             * Property Id
+             * Format: uuid
+             */
+            property_id: string;
+            /** Tax Year */
+            tax_year: number;
+            rule_set: components["schemas"]["RuleSetStamp"];
+            header: components["schemas"]["DraftHeader"];
+            /** Lines */
+            lines?: components["schemas"]["DraftLine"][];
+            /** Unit Rows */
+            unit_rows?: components["schemas"]["UnitRow"][];
+            totals: components["schemas"]["DraftTotals"];
+            /** Owners */
+            owners?: components["schemas"]["OwnerResult"][];
+            afa?: components["schemas"]["AfaLine"] | null;
+            /** Tracked Not Deductible */
+            tracked_not_deductible?: components["schemas"]["TrackedAmount"][];
+            /** Moved To Other Year */
+            moved_to_other_year?: components["schemas"]["MovedPayment"][];
+            /** Pre Handover */
+            pre_handover?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+            /**
+             * @default {
+             *       "count": 0,
+             *       "sum": "0"
+             *     }
+             */
+            excluded_open: components["schemas"]["OpenLines"];
+            /** Warnings */
+            warnings?: components["schemas"]["DraftWarning"][];
+            /** Missing Documents */
+            missing_documents?: components["schemas"]["ChecklistItem"][];
+            limit_15?: components["schemas"]["LimitStatus"] | null;
+            reduced_rent?: components["schemas"]["ReducedRentResult"] | null;
+            coverage: components["schemas"]["Coverage"];
+            /** Tax Free From */
+            tax_free_from?: string | null;
+        };
         /**
          * AppUser
          * @description A person who can sign in. Auth credentials (passkey / TOTP) land with the API PR.
@@ -2093,6 +2183,28 @@ export interface components {
          * @enum {string}
          */
         BalanceSource: "file" | "user" | "none";
+        /**
+         * BasisAddition
+         * @description Herstellungskosten added to the AfA basis in the year paid, accruing from 1 January of
+         *     that year (§5.2). The amount is gross: input VAT a VAT-exempt landlord cannot deduct is part
+         *     of the Herstellungskosten (§9b Abs. 1 EStG); only the 15 % test itself is net (§5.3).
+         */
+        BasisAddition: {
+            /**
+             * Allocation Id
+             * Format: uuid
+             */
+            allocation_id: string;
+            /** Tax Year */
+            tax_year: number;
+            /** Amount */
+            amount: string;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "herstellung" | "limit_exceeded";
+        };
         /**
          * BescheidExtraction
          * @description A Bescheid other than Grundsteuer, e.g. the Grunderwerbsteuerbescheid.
@@ -2156,6 +2268,20 @@ export interface components {
              * Format: date-time
              */
             received_at: string;
+        };
+        /**
+         * ChecklistItem
+         * @description build_checklist's output. documents: the satisfying documents (present) or the ones
+         *     lacking a tax year (incomplete), oldest first; empty otherwise.
+         */
+        ChecklistItem: {
+            code: components["schemas"]["RequirementCode"];
+            status: components["schemas"]["ChecklistStatus"];
+            scope: components["schemas"]["ChecklistScope"];
+            /** Due On */
+            due_on?: string | null;
+            /** Documents */
+            documents?: string[];
         };
         /**
          * ChecklistScope
@@ -2225,6 +2351,39 @@ export interface components {
              * @default false
              */
             same_amount_only: boolean;
+        };
+        /** CountedCost */
+        CountedCost: {
+            /**
+             * Allocation Id
+             * Format: uuid
+             */
+            allocation_id: string;
+            /**
+             * Booking Date
+             * Format: date
+             */
+            booking_date: string;
+            /** Tax Year */
+            tax_year: number;
+            /** Gross */
+            gross: string;
+            /** Net */
+            net: string;
+            /**
+             * Net Source
+             * @enum {string}
+             */
+            net_source: "invoice" | "estimated";
+        };
+        /** Coverage */
+        Coverage: {
+            /** Months Owned */
+            months_owned: number;
+            /** Months Covered */
+            months_covered: number;
+            /** Covered Through */
+            covered_through?: string | null;
         };
         /**
          * Currency
@@ -2530,6 +2689,90 @@ export interface components {
             proposal_id?: string | null;
             proposal_status?: components["schemas"]["ProposalStatus"] | null;
         };
+        /** DraftHeader */
+        DraftHeader: {
+            address?: components["schemas"]["Address"] | null;
+            /** Aktenzeichen */
+            aktenzeichen?: string | null;
+            /** Contract Date */
+            contract_date?: string | null;
+            /**
+             * Transfer Date
+             * Format: date
+             */
+            transfer_date: string;
+            /** Completed */
+            completed: number;
+            /** Sold */
+            sold?: string | null;
+            /** Living Area M2 */
+            living_area_m2?: string | null;
+        };
+        /** DraftLine */
+        DraftLine: {
+            /** Key */
+            key: string;
+            /** Amount */
+            amount?: string | null;
+            /** Ticked */
+            ticked?: boolean | null;
+            /** Sources */
+            sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+            /**
+             * Provisional
+             * @default false
+             */
+            provisional: boolean;
+            /** Einzelangaben */
+            einzelangaben?: string[];
+            /** Zeile From */
+            zeile_from?: number | null;
+            /** Zeile */
+            zeile?: number | null;
+            /** Kennzahl */
+            kennzahl?: string | null;
+            /** Label */
+            label: string;
+            /** Amount Rounded */
+            amount_rounded?: number | null;
+            /** Notes */
+            notes?: string[];
+        };
+        /** DraftTotals */
+        DraftTotals: {
+            /** Income */
+            income: string;
+            /** Costs */
+            costs: string;
+            /** Result */
+            result: string;
+            /** Income Rounded */
+            income_rounded: number;
+            /** Costs Rounded */
+            costs_rounded: number;
+            /** Result Rounded */
+            result_rounded: number;
+        };
+        /**
+         * DraftWarning
+         * @description A warning as data; the frontend holds the German text. params are strings (amounts as
+         *     decimal strings, dates ISO) so the draft's JSON is the same before and after a round trip.
+         *     severity defaults from WARNING_SEVERITY and must agree with it.
+         */
+        DraftWarning: {
+            code: components["schemas"]["WarningCode"];
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "info" | "warning";
+            /** Params */
+            params?: {
+                [key: string]: string;
+            };
+            /** Refs */
+            refs?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+        };
         /**
          * DuplicateDecisionBody
          * @description POST /possible-duplicates/{id}.
@@ -2689,7 +2932,7 @@ export interface components {
          */
         ExtractedValue: {
             value: components["schemas"]["JsonValue"] | null;
-            source?: components["schemas"]["SourceRef"] | null;
+            source?: components["schemas"]["hausbuch__schemas__ai__SourceRef"] | null;
             /** Derived From */
             derived_from?: string[];
             /** Checks */
@@ -2732,6 +2975,12 @@ export interface components {
             /** Type */
             type: string;
         };
+        /**
+         * FormStatus
+         * @description Whether a form mapping is the year's published form or a copy of an earlier one (§4.3).
+         * @enum {string}
+         */
+        FormStatus: "published" | "provisional";
         /**
          * Fraction
          * @description An exact share: ownership (1/2) or Miteigentumsanteil (85/1000).
@@ -2995,6 +3244,39 @@ export interface components {
             operating_costs_prepayment?: components["schemas"]["ExtractedValue"];
             /** @description Heizkostenvorauszahlung, only when the lease states it as its own amount */
             heating_costs_prepayment?: components["schemas"]["ExtractedValue"];
+        };
+        /** LimitStatus */
+        LimitStatus: {
+            /** Tax Year */
+            tax_year: number;
+            /** Basis Building Cost */
+            basis_building_cost: string | null;
+            /** Limit */
+            limit: string | null;
+            /**
+             * Window Start
+             * Format: date
+             */
+            window_start: string;
+            /**
+             * Window End
+             * Format: date
+             */
+            window_end: string;
+            /** Counted */
+            counted?: components["schemas"]["CountedCost"][];
+            /** Used Net */
+            used_net: string;
+            /** Ratio Percent */
+            ratio_percent: string | null;
+            /** Exceeded */
+            exceeded: boolean;
+            /** Exceeded In Year */
+            exceeded_in_year?: number | null;
+            /** Basis Additions */
+            basis_additions?: components["schemas"]["BasisAddition"][];
+            /** Warnings */
+            warnings?: components["schemas"]["DraftWarning"][];
         };
         /** LinkBody */
         LinkBody: {
@@ -3303,6 +3585,32 @@ export interface components {
             /** Has Passkey */
             has_passkey: boolean;
         };
+        /**
+         * MovedPayment
+         * @description A payment booked in the draft's year that §5.1 counts in another year (or vice versa).
+         */
+        MovedPayment: {
+            /**
+             * Allocation Id
+             * Format: uuid
+             */
+            allocation_id: string;
+            /**
+             * Booking Date
+             * Format: date
+             */
+            booking_date: string;
+            category: components["schemas"]["AllocationCategory"];
+            /** Amount */
+            amount: string;
+            /** Tax Year */
+            tax_year: number;
+            /**
+             * Rule
+             * @enum {string}
+             */
+            rule: "paid" | "short_period_shift";
+        };
         /** NotarizedOnCorrection */
         NotarizedOnCorrection: {
             /**
@@ -3330,6 +3638,16 @@ export interface components {
              * Format: date
              */
             ends_on: string;
+        };
+        /** OpenLines */
+        OpenLines: {
+            /** Count */
+            count: number;
+            /**
+             * Sum
+             * @default 0
+             */
+            sum: string;
         };
         /**
          * OperatingCostsTerms
@@ -3383,6 +3701,19 @@ export interface components {
             tax_id_ref?: string | null;
             /** Marginal Tax Rate */
             marginal_tax_rate?: string | null;
+        };
+        /** OwnerResult */
+        OwnerResult: {
+            /**
+             * Owner Id
+             * Format: uuid
+             */
+            owner_id: string;
+            share: components["schemas"]["Fraction"];
+            /** Amount */
+            amount: string;
+            /** Amount Rounded */
+            amount_rounded: number;
         };
         /** OwnerShare */
         OwnerShare: {
@@ -3832,6 +4163,54 @@ export interface components {
             ownership_clause?: components["schemas"]["ExtractedValue"];
         };
         /**
+         * ReducedRentCheck
+         * @description §5.8 per Wohnung, monthly figures. market_warm = cold_rent_per_m2 × area + the year's
+         *     umlagefähige costs ÷ months owned. ratio_percent: agreed ÷ market_warm, one decimal; the
+         *     thresholds compare the exact ratio. cut_percent only below 50 %.
+         */
+        ReducedRentCheck: {
+            /**
+             * Wohnung
+             * @enum {string}
+             */
+            wohnung: "property" | "unit";
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Agreed Warm */
+            agreed_warm: string;
+            /** Area M2 */
+            area_m2: string;
+            /** Market Cold Per M2 */
+            market_cold_per_m2?: string | null;
+            /** Umlagefaehig Monthly */
+            umlagefaehig_monthly?: string | null;
+            /** Market Warm */
+            market_warm?: string | null;
+            /** Ratio Percent */
+            ratio_percent?: string | null;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "full" | "prognosis_needed" | "partial" | "no_market_rent";
+            /** Cut Percent */
+            cut_percent?: number | null;
+            /** Sources */
+            sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+        };
+        /** ReducedRentResult */
+        ReducedRentResult: {
+            /** Tax Year */
+            tax_year: number;
+            /** Checks */
+            checks?: components["schemas"]["ReducedRentCheck"][];
+            /** Warnings */
+            warnings?: components["schemas"]["DraftWarning"][];
+        };
+        /**
          * RelatedDocument
          * @description GET /properties/{id}/documents and GET /units/{id}/documents: a document linked to the
          *     target or to one of its children (units, tenancies, loans), with every such link.
@@ -3959,6 +4338,18 @@ export interface components {
             retain_until?: string | null;
             hold?: components["schemas"]["RetentionHold"] | null;
         };
+        /** RoomRent */
+        RoomRent: {
+            /**
+             * Unit Id
+             * Format: uuid
+             */
+            unit_id: string;
+            /** Label */
+            label: string;
+            /** Amount */
+            amount: string;
+        };
         /**
          * RuleMatcher
          * @description What a rule matches on. No money field, by design: a rule never stores an amount.
@@ -3973,6 +4364,16 @@ export interface components {
             purpose_pattern?: string | null;
             /** Amount Sign */
             amount_sign?: ("credit" | "debit") | null;
+        };
+        /** RuleSetStamp */
+        RuleSetStamp: {
+            /** Tax Year */
+            tax_year: number;
+            /** Version */
+            version: string;
+            /** Form Year */
+            form_year: number;
+            form_status: components["schemas"]["FormStatus"];
         };
         /**
          * ScheduleEntry
@@ -4036,17 +4437,6 @@ export interface components {
              * Format: date-time
              */
             idle_expires_at: string;
-        };
-        /**
-         * SourceRef
-         * @description Where a value came from: the page (1-indexed, page offset of a split PDF already
-         *     added) and the cited text, verbatim.
-         */
-        SourceRef: {
-            /** Page */
-            page: number;
-            /** Quote */
-            quote: string;
         };
         /**
          * SplitMethod
@@ -4381,6 +4771,19 @@ export interface components {
             };
         };
         /**
+         * TrackedAmount
+         * @description Booked, not deductible this year (Tilgung, Erhaltungsrücklage).
+         */
+        TrackedAmount: {
+            category: components["schemas"]["AllocationCategory"];
+            /** Amount */
+            amount: string;
+            /** Count */
+            count: number;
+            /** Sources */
+            sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+        };
+        /**
          * Transaction
          * @description Read shape. The counterparty IBAN is shown masked only. allocation_status and
          *     allocation_categories are computed on read, never stored: the distinct categories of
@@ -4551,6 +4954,43 @@ export interface components {
             mea?: components["schemas"]["Fraction"] | null;
         };
         /**
+         * UnitRow
+         * @description One Z13 row per Wohnung (D71): the flat (wohnung = property) with its rooms listed, or an
+         *     MFH unit (wohnung = unit). pre_handover: the part booked before the handover (D63).
+         */
+        UnitRow: {
+            /**
+             * Wohnung
+             * @enum {string}
+             */
+            wohnung: "property" | "unit";
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Label */
+            label: string;
+            /** Area M2 */
+            area_m2: string;
+            /**
+             * Area Source
+             * @enum {string}
+             */
+            area_source: "living_area" | "units";
+            /** Amount */
+            amount: string;
+            /**
+             * Pre Handover
+             * @default 0
+             */
+            pre_handover: string;
+            /** Rooms */
+            rooms?: components["schemas"]["RoomRent"][];
+            /** Sources */
+            sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+        };
+        /**
          * WaitingAmount
          * @description An amount other lines from the same IBAN and sign are waiting with, and how many.
          */
@@ -4560,6 +5000,11 @@ export interface components {
             /** Count */
             count: number;
         };
+        /**
+         * WarningCode
+         * @enum {string}
+         */
+        WarningCode: "year_end_straddle" | "afa.no_split" | "afa.cost_row_unpaid" | "afa.acquisition_cost_without_row" | "afa.purchase_price_mismatch" | "limit.exceeded" | "limit.prior_year_amendment" | "limit.estimated_net" | "renovation.undecided" | "interest.certificate_mismatch" | "hausgeld.abrechnung_pending" | "income.other_review" | "income.pre_handover" | "income.living_area_missing" | "umlagen.mixed_terms" | "reduced_rent.no_market_rent" | "reduced_rent.prognosis_needed" | "reduced_rent.partial" | "draft.open_lines_excluded" | "draft.form_provisional" | "draft.allocation_without_property" | "archive.finanzamt_copy_needed";
         /**
          * WirtschaftsplanExtraction
          * @description Wirtschaftsplan: the monthly Hausgeld split the by_wirtschaftsplan rule reads (§8.1).
@@ -4668,6 +5113,32 @@ export interface components {
             tax_year?: components["schemas"]["ExtractedValue"];
             /** @description gezahlte Zinsen */
             interest_paid?: components["schemas"]["ExtractedValue"];
+        };
+        /**
+         * SourceRef
+         * @description Where a value came from: the page (1-indexed, page offset of a split PDF already
+         *     added) and the cited text, verbatim.
+         */
+        hausbuch__schemas__ai__SourceRef: {
+            /** Page */
+            page: number;
+            /** Quote */
+            quote: string;
+        };
+        /**
+         * SourceRef
+         * @description What a figure came from (principle 2). `rule` is the rule set itself (no id).
+         */
+        hausbuch__schemas__tax__SourceRef: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "allocation" | "transaction" | "document" | "property" | "price_split" | "acquisition_cost" | "loan" | "tax_input" | "rule";
+            /** Id */
+            id?: string | null;
+            /** Amount */
+            amount?: string | null;
         };
     };
     responses: never;
@@ -7563,6 +8034,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TransactionAllocations"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    property_anlage_v_api_properties__property_id__anlage_v_get: {
+        parameters: {
+            query: {
+                tax_year: number;
+            };
+            header?: never;
+            path: {
+                property_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnlageVDraft"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

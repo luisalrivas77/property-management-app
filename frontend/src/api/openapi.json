@@ -4028,6 +4028,58 @@
         }
       }
     },
+    "/api/properties/{property_id}/anlage-v": {
+      "get": {
+        "summary": "Property Anlage V",
+        "description": "The draft Anlage V of the property for tax_year: every line with its sources, the\nwarnings, the open documents, the 15 % tracker and the statement coverage.",
+        "operationId": "property_anlage_v_api_properties__property_id__anlage_v_get",
+        "parameters": [
+          {
+            "name": "property_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Property Id"
+            }
+          },
+          {
+            "name": "tax_year",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 2100,
+              "minimum": 2000,
+              "title": "Tax Year"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnlageVDraft"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/properties/{property_id}/history": {
       "get": {
         "summary": "History Of Property",
@@ -5289,6 +5341,105 @@
         ],
         "title": "Address"
       },
+      "AfaLine": {
+        "properties": {
+          "tax_year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 2000.0,
+            "title": "Tax Year"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "basis": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Basis"
+          },
+          "additions": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Additions",
+            "default": "0"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,6})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          },
+          "months": {
+            "type": "integer",
+            "maximum": 12.0,
+            "minimum": 0.0,
+            "title": "Months"
+          },
+          "method_code": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "enum": [
+                  1,
+                  2
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method Code"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Sources"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/DraftWarning"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "tax_year",
+          "amount",
+          "basis",
+          "rate",
+          "months",
+          "method_code"
+        ],
+        "title": "AfaLine",
+        "description": "wk.afa for one tax year. amount, basis and rate are None without a selected split."
+      },
       "AiRetryResult": {
         "properties": {
           "queued": {
@@ -5801,6 +5952,149 @@
         "title": "AllocationStatus",
         "description": "allocation.status (migration 0007, D23). The only column a trigger lets change, and\nonly forward: proposed -> confirmed, proposed -> superseded, confirmed -> superseded."
       },
+      "AnlageVDraft": {
+        "properties": {
+          "property_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Property Id"
+          },
+          "tax_year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 2000.0,
+            "title": "Tax Year"
+          },
+          "rule_set": {
+            "$ref": "#/components/schemas/RuleSetStamp"
+          },
+          "header": {
+            "$ref": "#/components/schemas/DraftHeader"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/DraftLine"
+            },
+            "type": "array",
+            "title": "Lines"
+          },
+          "unit_rows": {
+            "items": {
+              "$ref": "#/components/schemas/UnitRow"
+            },
+            "type": "array",
+            "title": "Unit Rows"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/DraftTotals"
+          },
+          "owners": {
+            "items": {
+              "$ref": "#/components/schemas/OwnerResult"
+            },
+            "type": "array",
+            "title": "Owners"
+          },
+          "afa": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AfaLine"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tracked_not_deductible": {
+            "items": {
+              "$ref": "#/components/schemas/TrackedAmount"
+            },
+            "type": "array",
+            "title": "Tracked Not Deductible"
+          },
+          "moved_to_other_year": {
+            "items": {
+              "$ref": "#/components/schemas/MovedPayment"
+            },
+            "type": "array",
+            "title": "Moved To Other Year"
+          },
+          "pre_handover": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Pre Handover"
+          },
+          "excluded_open": {
+            "$ref": "#/components/schemas/OpenLines",
+            "default": {
+              "count": 0,
+              "sum": "0"
+            }
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/DraftWarning"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "missing_documents": {
+            "items": {
+              "$ref": "#/components/schemas/ChecklistItem"
+            },
+            "type": "array",
+            "title": "Missing Documents"
+          },
+          "limit_15": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LimitStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reduced_rent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReducedRentResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/Coverage"
+          },
+          "tax_free_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Free From"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "property_id",
+          "tax_year",
+          "rule_set",
+          "header",
+          "totals",
+          "coverage"
+        ],
+        "title": "AnlageVDraft"
+      },
       "AppUser": {
         "properties": {
           "id": {
@@ -5915,6 +6209,44 @@
         ],
         "title": "BalanceSource",
         "description": "statement_import.balance_source: where the declared balances came from (D21)."
+      },
+      "BasisAddition": {
+        "properties": {
+          "allocation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Allocation Id"
+          },
+          "tax_year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 2000.0,
+            "title": "Tax Year"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "herstellung",
+              "limit_exceeded"
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "allocation_id",
+          "tax_year",
+          "amount",
+          "reason"
+        ],
+        "title": "BasisAddition",
+        "description": "Herstellungskosten added to the AfA basis in the year paid, accruing from 1 January of\nthat year (§5.2). The amount is gross: input VAT a VAT-exempt landlord cannot deduct is part\nof the Herstellungskosten (§9b Abs. 1 EStG); only the 15 % test itself is net (§5.3)."
       },
       "BescheidExtraction": {
         "properties": {
@@ -6082,6 +6414,48 @@
         ],
         "title": "ChecklistDocumentRef",
         "description": "A satisfying document, without its title or filename (either can name a tenant, D5):\nthe frontend labels it by type and date and links to the document."
+      },
+      "ChecklistItem": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/RequirementCode"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ChecklistStatus"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ChecklistScope"
+          },
+          "due_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due On"
+          },
+          "documents": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Documents"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "status",
+          "scope"
+        ],
+        "title": "ChecklistItem",
+        "description": "build_checklist's output. documents: the satisfying documents (present) or the ones\nlacking a tax year (incomplete), oldest first; empty otherwise."
       },
       "ChecklistScope": {
         "properties": {
@@ -6257,6 +6631,90 @@
         ],
         "title": "ConfirmAllocationsBody",
         "description": "PUT /transactions/{id}/allocations: the user's allocation set and the \"Künftig immer\nso zuordnen\" checkbox.\n\nOnly the set's allocations are read: the rows are written with method `user` and\nconfidence 1, whatever method, confidence, rule_id or ai_call_id the body carries. A set\nequal to the current proposed rows confirms those rows as they are (the proposer's method\nstays); one equal to the current confirmed rows changes nothing.\n\nlearn_rule: null = the server default (TransactionAllocations.learn_rule_default for this\nset); true for a set no rule can be learned from is refused with rule.not_learnable.\nThe patterns (case-insensitive regular expressions, refused with rule.invalid_pattern\nwhen they do not compile) narrow the rule, and let a line without an IBAN, or a\ncounterparty a matcher owns (D38), have one.\nsame_amount_only (D49): the answer to \"Gehören die auch zu …?\" when other amounts from\nthe same IBAN are waiting: true = the rule books only payments of this line's amount (the\nlatest confirmed one of its category, read from the ledger); ignored without learn_rule\nand for a rule whose split method checks the amount itself."
+      },
+      "CountedCost": {
+        "properties": {
+          "allocation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Allocation Id"
+          },
+          "booking_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Booking Date"
+          },
+          "tax_year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 2000.0,
+            "title": "Tax Year"
+          },
+          "gross": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Gross"
+          },
+          "net": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Net"
+          },
+          "net_source": {
+            "type": "string",
+            "enum": [
+              "invoice",
+              "estimated"
+            ],
+            "title": "Net Source"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "allocation_id",
+          "booking_date",
+          "tax_year",
+          "gross",
+          "net",
+          "net_source"
+        ],
+        "title": "CountedCost"
+      },
+      "Coverage": {
+        "properties": {
+          "months_owned": {
+            "type": "integer",
+            "maximum": 12.0,
+            "minimum": 0.0,
+            "title": "Months Owned"
+          },
+          "months_covered": {
+            "type": "integer",
+            "maximum": 12.0,
+            "minimum": 0.0,
+            "title": "Months Covered"
+          },
+          "covered_through": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Covered Through"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "months_owned",
+          "months_covered"
+        ],
+        "title": "Coverage"
       },
       "Currency": {
         "type": "string",
@@ -6968,6 +7426,276 @@
         "title": "DocumentUploadResult",
         "description": "POST /documents with ai = true (§6.1): the document plus the queued proposal to\npoll. proposal_id is null when the upload did not ask for a proposal."
       },
+      "DraftHeader": {
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Address"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "aktenzeichen": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aktenzeichen"
+          },
+          "contract_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contract Date"
+          },
+          "transfer_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Transfer Date"
+          },
+          "completed": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 1800.0,
+            "title": "Completed"
+          },
+          "sold": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sold"
+          },
+          "living_area_m2": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Living Area M2"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "transfer_date",
+          "completed"
+        ],
+        "title": "DraftHeader"
+      },
+      "DraftLine": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "ticked": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticked"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Sources"
+          },
+          "provisional": {
+            "type": "boolean",
+            "title": "Provisional",
+            "default": false
+          },
+          "einzelangaben": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Einzelangaben"
+          },
+          "zeile_from": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zeile From"
+          },
+          "zeile": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zeile"
+          },
+          "kennzahl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kennzahl"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "amount_rounded": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Rounded"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "label"
+        ],
+        "title": "DraftLine"
+      },
+      "DraftTotals": {
+        "properties": {
+          "income": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Income"
+          },
+          "costs": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Costs"
+          },
+          "result": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Result"
+          },
+          "income_rounded": {
+            "type": "integer",
+            "title": "Income Rounded"
+          },
+          "costs_rounded": {
+            "type": "integer",
+            "title": "Costs Rounded"
+          },
+          "result_rounded": {
+            "type": "integer",
+            "title": "Result Rounded"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "income",
+          "costs",
+          "result",
+          "income_rounded",
+          "costs_rounded",
+          "result_rounded"
+        ],
+        "title": "DraftTotals"
+      },
+      "DraftWarning": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/WarningCode"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "info",
+              "warning"
+            ],
+            "title": "Severity"
+          },
+          "params": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Params"
+          },
+          "refs": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Refs"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "severity"
+        ],
+        "title": "DraftWarning",
+        "description": "A warning as data; the frontend holds the German text. params are strings (amounts as\ndecimal strings, dates ISO) so the draft's JSON is the same before and after a round trip.\nseverity defaults from WARNING_SEVERITY and must agree with it."
+      },
       "DuplicateDecisionBody": {
         "properties": {
           "status": {
@@ -7441,7 +8169,7 @@
           "source": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/SourceRef"
+                "$ref": "#/components/schemas/hausbuch__schemas__ai__SourceRef"
               },
               {
                 "type": "null"
@@ -7560,6 +8288,15 @@
         ],
         "title": "FieldError",
         "description": "One validation error, whitelisted to these three keys: never input, ctx or url (§3.6)."
+      },
+      "FormStatus": {
+        "type": "string",
+        "enum": [
+          "published",
+          "provisional"
+        ],
+        "title": "FormStatus",
+        "description": "Whether a form mapping is the year's published form or a copy of an earlier one (§4.3)."
       },
       "Fraction": {
         "properties": {
@@ -8191,6 +8928,118 @@
         "type": "object",
         "title": "LeaseExtraction",
         "description": "Mietvertrag (contract / lease). Step 2, gated by ai_tenant_documents (D16)."
+      },
+      "LimitStatus": {
+        "properties": {
+          "tax_year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 2000.0,
+            "title": "Tax Year"
+          },
+          "basis_building_cost": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Basis Building Cost"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit"
+          },
+          "window_start": {
+            "type": "string",
+            "format": "date",
+            "title": "Window Start"
+          },
+          "window_end": {
+            "type": "string",
+            "format": "date",
+            "title": "Window End"
+          },
+          "counted": {
+            "items": {
+              "$ref": "#/components/schemas/CountedCost"
+            },
+            "type": "array",
+            "title": "Counted"
+          },
+          "used_net": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Used Net"
+          },
+          "ratio_percent": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ratio Percent"
+          },
+          "exceeded": {
+            "type": "boolean",
+            "title": "Exceeded"
+          },
+          "exceeded_in_year": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2100.0,
+                "minimum": 2000.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exceeded In Year"
+          },
+          "basis_additions": {
+            "items": {
+              "$ref": "#/components/schemas/BasisAddition"
+            },
+            "type": "array",
+            "title": "Basis Additions"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/DraftWarning"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "tax_year",
+          "basis_building_cost",
+          "limit",
+          "window_start",
+          "window_end",
+          "used_net",
+          "ratio_percent",
+          "exceeded"
+        ],
+        "title": "LimitStatus"
       },
       "LinkBody": {
         "properties": {
@@ -8960,6 +9809,54 @@
         "title": "Member",
         "description": "GET /auth/members: one household member (an app_user of the workspace). has_passkey\nis false while an invited member has not enrolled yet. Never a passkey or a session."
       },
+      "MovedPayment": {
+        "properties": {
+          "allocation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Allocation Id"
+          },
+          "booking_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Booking Date"
+          },
+          "category": {
+            "$ref": "#/components/schemas/AllocationCategory"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "tax_year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 2000.0,
+            "title": "Tax Year"
+          },
+          "rule": {
+            "type": "string",
+            "enum": [
+              "paid",
+              "short_period_shift"
+            ],
+            "title": "Rule"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "allocation_id",
+          "booking_date",
+          "category",
+          "amount",
+          "tax_year",
+          "rule"
+        ],
+        "title": "MovedPayment",
+        "description": "A payment booked in the draft's year that §5.1 counts in another year (or vice versa)."
+      },
       "NotarizedOnCorrection": {
         "properties": {
           "new_date": {
@@ -9016,6 +9913,27 @@
           "ends_on"
         ],
         "title": "NoticeBody"
+      },
+      "OpenLines": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Count"
+          },
+          "sum": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Sum",
+            "default": "0"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "count"
+        ],
+        "title": "OpenLines"
       },
       "OperatingCostsTerms": {
         "type": "string",
@@ -9161,6 +10079,36 @@
         "additionalProperties": false,
         "type": "object",
         "title": "OwnerPatch"
+      },
+      "OwnerResult": {
+        "properties": {
+          "owner_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Owner Id"
+          },
+          "share": {
+            "$ref": "#/components/schemas/Fraction"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "amount_rounded": {
+            "type": "integer",
+            "title": "Amount Rounded"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "owner_id",
+          "share",
+          "amount",
+          "amount_rounded"
+        ],
+        "title": "OwnerResult"
       },
       "OwnerShare": {
         "properties": {
@@ -10187,6 +11135,152 @@
         "title": "PurchaseContractExtraction",
         "description": "Kaufvertrag (contract / purchase_contract)."
       },
+      "ReducedRentCheck": {
+        "properties": {
+          "wohnung": {
+            "type": "string",
+            "enum": [
+              "property",
+              "unit"
+            ],
+            "title": "Wohnung"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "agreed_warm": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Agreed Warm"
+          },
+          "area_m2": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Area M2"
+          },
+          "market_cold_per_m2": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market Cold Per M2"
+          },
+          "umlagefaehig_monthly": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Umlagefaehig Monthly"
+          },
+          "market_warm": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market Warm"
+          },
+          "ratio_percent": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ratio Percent"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "full",
+              "prognosis_needed",
+              "partial",
+              "no_market_rent"
+            ],
+            "title": "Outcome"
+          },
+          "cut_percent": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cut Percent"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Sources"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "wohnung",
+          "id",
+          "agreed_warm",
+          "area_m2",
+          "outcome"
+        ],
+        "title": "ReducedRentCheck",
+        "description": "§5.8 per Wohnung, monthly figures. market_warm = cold_rent_per_m2 × area + the year's\numlagefähige costs ÷ months owned. ratio_percent: agreed ÷ market_warm, one decimal; the\nthresholds compare the exact ratio. cut_percent only below 50 %."
+      },
+      "ReducedRentResult": {
+        "properties": {
+          "tax_year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 2000.0,
+            "title": "Tax Year"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/ReducedRentCheck"
+            },
+            "type": "array",
+            "title": "Checks"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/DraftWarning"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "tax_year"
+        ],
+        "title": "ReducedRentResult"
+      },
       "RelatedDocument": {
         "properties": {
           "document": {
@@ -10492,6 +11586,32 @@
         "title": "RetentionResult",
         "description": "Exactly one of retain_until / hold is set. retention_class is null only when untyped."
       },
+      "RoomRent": {
+        "properties": {
+          "unit_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Unit Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "unit_id",
+          "label",
+          "amount"
+        ],
+        "title": "RoomRent"
+      },
       "RuleMatcher": {
         "properties": {
           "counterparty_iban_hmac": {
@@ -10548,6 +11668,38 @@
         "type": "object",
         "title": "RuleMatcher",
         "description": "What a rule matches on. No money field, by design: a rule never stores an amount.\nPatterns are case-insensitive regular expressions searched in the normalized text."
+      },
+      "RuleSetStamp": {
+        "properties": {
+          "tax_year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 2000.0,
+            "title": "Tax Year"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "form_year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 2000.0,
+            "title": "Form Year"
+          },
+          "form_status": {
+            "$ref": "#/components/schemas/FormStatus"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "tax_year",
+          "version",
+          "form_year",
+          "form_status"
+        ],
+        "title": "RuleSetStamp"
       },
       "ScheduleEntry": {
         "properties": {
@@ -10671,27 +11823,6 @@
         ],
         "title": "Session",
         "description": "The current session (Me.session). The cookie token is never part of any response."
-      },
-      "SourceRef": {
-        "properties": {
-          "page": {
-            "type": "integer",
-            "minimum": 1.0,
-            "title": "Page"
-          },
-          "quote": {
-            "type": "string",
-            "title": "Quote"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "page",
-          "quote"
-        ],
-        "title": "SourceRef",
-        "description": "Where a value came from: the page (1-indexed, page offset of a split PDF already\nadded) and the cited text, verbatim."
       },
       "SplitMethod": {
         "type": "string",
@@ -11590,6 +12721,39 @@
         "title": "TimelineEntry",
         "description": "One milestone. For a correction chain A → B → C only one entry appears, showing C."
       },
+      "TrackedAmount": {
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/AllocationCategory"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Count"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Sources"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "category",
+          "amount",
+          "count"
+        ],
+        "title": "TrackedAmount",
+        "description": "Booked, not deductible this year (Tilgung, Erhaltungsrücklage)."
+      },
       "Transaction": {
         "properties": {
           "id": {
@@ -11989,6 +13153,77 @@
         "type": "object",
         "title": "UnitPatch"
       },
+      "UnitRow": {
+        "properties": {
+          "wohnung": {
+            "type": "string",
+            "enum": [
+              "property",
+              "unit"
+            ],
+            "title": "Wohnung"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "area_m2": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Area M2"
+          },
+          "area_source": {
+            "type": "string",
+            "enum": [
+              "living_area",
+              "units"
+            ],
+            "title": "Area Source"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "pre_handover": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Pre Handover",
+            "default": "0"
+          },
+          "rooms": {
+            "items": {
+              "$ref": "#/components/schemas/RoomRent"
+            },
+            "type": "array",
+            "title": "Rooms"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Sources"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "wohnung",
+          "id",
+          "label",
+          "area_m2",
+          "area_source",
+          "amount"
+        ],
+        "title": "UnitRow",
+        "description": "One Z13 row per Wohnung (D71): the flat (wohnung = property) with its rooms listed, or an\nMFH unit (wohnung = unit). pre_handover: the part booked before the handover (D63)."
+      },
       "WaitingAmount": {
         "properties": {
           "amount": {
@@ -12010,6 +13245,34 @@
         ],
         "title": "WaitingAmount",
         "description": "An amount other lines from the same IBAN and sign are waiting with, and how many."
+      },
+      "WarningCode": {
+        "type": "string",
+        "enum": [
+          "year_end_straddle",
+          "afa.no_split",
+          "afa.cost_row_unpaid",
+          "afa.acquisition_cost_without_row",
+          "afa.purchase_price_mismatch",
+          "limit.exceeded",
+          "limit.prior_year_amendment",
+          "limit.estimated_net",
+          "renovation.undecided",
+          "interest.certificate_mismatch",
+          "hausgeld.abrechnung_pending",
+          "income.other_review",
+          "income.pre_handover",
+          "income.living_area_missing",
+          "umlagen.mixed_terms",
+          "reduced_rent.no_market_rent",
+          "reduced_rent.prognosis_needed",
+          "reduced_rent.partial",
+          "draft.open_lines_excluded",
+          "draft.form_provisional",
+          "draft.allocation_without_property",
+          "archive.finanzamt_copy_needed"
+        ],
+        "title": "WarningCode"
       },
       "WirtschaftsplanExtraction": {
         "properties": {
@@ -12229,6 +13492,77 @@
         "type": "object",
         "title": "ZinsbescheinigungExtraction",
         "description": "Zinsbescheinigung: the year's interest, reconciled against the loan schedule."
+      },
+      "hausbuch__schemas__ai__SourceRef": {
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Page"
+          },
+          "quote": {
+            "type": "string",
+            "title": "Quote"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "page",
+          "quote"
+        ],
+        "title": "SourceRef",
+        "description": "Where a value came from: the page (1-indexed, page offset of a split PDF already\nadded) and the cited text, verbatim."
+      },
+      "hausbuch__schemas__tax__SourceRef": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "allocation",
+              "transaction",
+              "document",
+              "property",
+              "price_split",
+              "acquisition_cost",
+              "loan",
+              "tax_input",
+              "rule"
+            ],
+            "title": "Kind"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "SourceRef",
+        "description": "What a figure came from (principle 2). `rule` is the rule set itself (no id)."
       }
     }
   }
