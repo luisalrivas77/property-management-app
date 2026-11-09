@@ -7,9 +7,10 @@
 // category and amount, a counterparty only its masked IBAN.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { createContext, useCallback, useContext, useId, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useId, useState, type ReactNode } from "react";
 
 import { api, ok } from "@/api/client";
+import { RULE_CODE_TEXT } from "@/api/errors";
 import type {
   AllocationFact,
   AnlageVDraft,
@@ -18,13 +19,16 @@ import type {
   LimitStatus,
   Owner,
   Property,
+  TaxExport,
+  TaxExportKind,
+  TaxExportState,
   TaxSourceRef,
   WarningCode,
 } from "@/api/schemas";
 import { ChecklistTab } from "@/app/(app)/properties/[id]/ChecklistTab";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
-import { formatDate, formatDecimal, formatMoney, formatPercent, formatShare } from "./format";
+import { formatDate, formatDateTime, formatDecimal, formatMoney, formatPercent, formatShare, todayIso } from "./format";
 import { ALLOCATION_CATEGORY, TAX_SOURCE_KIND, WARNING_TEXT, taxNote } from "./labels";
 import { ActionDialog, Loading } from "./ui";
 import { useLoad, type Loaded } from "./useLoad";
@@ -257,7 +261,7 @@ function DraftView({ draft, propertyId }: { draft: AnlageVDraft; propertyId: str
             <OpenPoints warnings={warnings} propertyId={propertyId} />
             <ChecklistTab propertyId={propertyId} year={draft.tax_year} />
             <LimitCard limit={draft.limit_15 ?? null} />
-            <HandOverCard />
+            <HandOverCard key={draft.tax_year} propertyId={propertyId} taxYear={draft.tax_year} />
           </aside>
       </div>
     </div>
@@ -340,7 +344,7 @@ function ProgressCard({ draft, owners }: { draft: AnlageVDraft; owners: Owner[] 
         </ul>
       ) : null}
       {draft.tax_free_from ? (
-        <p className="muted tax-subline">§ 23: ein Verkauf ist steuerfrei ab {formatDate(draft.tax_free_from)}</p>
+        <p className="muted tax-subline">§ 23: steuerfrei ab {formatDate(draft.tax_free_from)}</p>
       ) : null}
     </section>
   );
@@ -696,19 +700,174 @@ function LimitCard({ limit }: { limit: LimitStatus | null }) {
   );
 }
 
-function HandOverCard() {
+// --- § 23 in the property header (phase-3.md §11, D68) -------------------------------------
+// The date comes from the draft (rules/tax/spekulation.py), never computed here: the current
+// (Berlin) year's draft, or last year's when this year has no rule set yet. Nothing is shown
+// when neither draft can be computed or the property has no notarized date.
+
+async function taxFreeFrom(propertyId: string): Promise<string | null> {
+  const year = Number(todayIso().slice(0, 4));
+  for (const taxYear of [year, year - 1]) {
+    try {
+      const draft = await ok(
+        api.GET("/api/properties/{property_id}/anlage-v", {
+          params: { path: { property_id: propertyId }, query: { tax_year: taxYear } },
+        }),
+      );
+      return draft.tax_free_from ?? null;
+    } catch {
+      // a year without a draft (before the purchase, no rule set yet): try the one before
+    }
+  }
+  return null;
+}
+
+export function TaxFreeLine({ propertyId }: { propertyId: string }) {
+  const load = useCallback(() => taxFreeFrom(propertyId), [propertyId]);
+  const date = useLoad(load).data;
+  return date ? <span className="muted">§ 23: steuerfrei ab {formatDate(date)}</span> : null;
+}
+
+// --- Übergabe: the exports (phase-3.md §10, §12) -------------------------------------------
+// POST queues the export; the card polls GET /tax-exports/{id} until it is ready or failed,
+// then starts the download. A download URL is signed and expires after a few minutes, so it
+// is fetched right before each download, never kept.
+
+const EXPORT_KIND: Record<TaxExportKind, string> = {
+  field_sheet: "Ausfüllhilfe (PDF)",
+  archive: "Jahresarchiv (ZIP)",
+};
+const EXPORT_POLL_MS = 2000;
+
+async function downloadExport(exportId: string): Promise<void> {
+  const state = await ok(api.GET("/api/tax-exports/{export_id}", { params: { path: { export_id: exportId } } }));
+  if (state.download_url) window.location.assign(state.download_url);
+}
+
+function exportVersion(item: TaxExport): string {
+  const form = item.form_status === "published" ? `Formular ${item.form_year}` : `Formular ${item.form_year}, vorläufig`;
+  return `Regelwerk ${item.rule_set_version} · ${form}`;
+}
+
+function HandOverCard({ propertyId, taxYear }: { propertyId: string; taxYear: number }) {
+  const loadHistory = useCallback(
+    () =>
+      ok(
+        api.GET("/api/properties/{property_id}/anlage-v/exports", {
+          params: { path: { property_id: propertyId }, query: { tax_year: taxYear } },
+        }),
+      ),
+    [propertyId, taxYear],
+  );
+  const history = useLoad(loadHistory);
+  const reloadHistory = history.reload;
+  const [pending, setPending] = useState<TaxExportState | null>(null);
+  const [failedCode, setFailedCode] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
+
+  async function start(kind: TaxExportKind) {
+    setError(null);
+    setFailedCode(null);
+    try {
+      const queued = await ok(
+        api.POST("/api/properties/{property_id}/anlage-v/exports", {
+          params: { path: { property_id: propertyId } },
+          body: { tax_year: taxYear, kind },
+        }),
+      );
+      setPending({ id: queued.export_id, property_id: propertyId, tax_year: taxYear, kind, status: "queued" });
+    } catch (caught) {
+      setError(caught);
+    }
+  }
+
+  // Each answer is a new object, so the effect re-arms after every poll while queued.
+  useEffect(() => {
+    if (!pending || pending.status !== "queued") return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      ok(api.GET("/api/tax-exports/{export_id}", { params: { path: { export_id: pending.id } } })).then(
+        (next) => {
+          if (cancelled) return;
+          if (next.status === "queued") {
+            setPending(next);
+            return;
+          }
+          setPending(null);
+          reloadHistory();
+          if (next.status === "failed") setFailedCode(next.error_code ?? "tax_export.failed");
+          else if (next.download_url) window.location.assign(next.download_url);
+        },
+        (caught: unknown) => {
+          if (cancelled) return;
+          setPending(null);
+          setError(caught);
+        },
+      );
+    }, EXPORT_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [pending, reloadHistory]);
+
+  async function download(exportId: string) {
+    setError(null);
+    try {
+      await downloadExport(exportId);
+    } catch (caught) {
+      setError(caught);
+    }
+  }
+
+  const busy = pending !== null;
+  const items = history.data ?? [];
   return (
     <section className="card tax-handover" aria-labelledby="tax-handover-title">
       <h2 id="tax-handover-title">Übergabe</h2>
       <div className="row">
-        <button type="button" disabled>
-          Feldübersicht für ELSTER
+        <button type="button" disabled={busy} onClick={() => void start("field_sheet")}>
+          Ausfüllhilfe PDF
         </button>
-        <button type="button" className="secondary" disabled>
-          Jahresarchiv (CSV + PDF)
+        <button type="button" className="secondary" disabled={busy} onClick={() => void start("archive")}>
+          Archiv ZIP
         </button>
       </div>
-      <p className="muted">Kommt mit den Exporten.</p>
+      <p className="muted tax-handover-note">
+        Die Ausfüllhilfe sagt, was in welche Zeile in ELSTER gehört. Das Archiv enthält sie, die Zeilen und Zahlungen
+        als CSV und die Belege des Jahres im Original.
+      </p>
+      {pending ? (
+        <p className="tax-handover-status" role="status">
+          {EXPORT_KIND[pending.kind]} wird erstellt …
+        </p>
+      ) : null}
+      {failedCode ? (
+        <div className="notice notice-error" role="alert">
+          <p>{RULE_CODE_TEXT[failedCode] ?? RULE_CODE_TEXT["tax_export.failed"]}</p>
+        </div>
+      ) : null}
+      <ErrorNotice error={error ?? history.error} />
+      {items.length > 0 ? (
+        <>
+          <h3 className="tax-handover-history-title">Bisherige Exporte</h3>
+          <ul className="tax-handover-list">
+            {items.map((item) => (
+              <li key={item.id} className="tax-handover-item">
+                <div>
+                  <p>
+                    {EXPORT_KIND[item.kind]} · {formatDateTime(item.created_at)}
+                  </p>
+                  <p className="muted">{exportVersion(item)}</p>
+                </div>
+                <button type="button" className="link" onClick={() => void download(item.id)}>
+                  Herunterladen
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
     </section>
   );
 }

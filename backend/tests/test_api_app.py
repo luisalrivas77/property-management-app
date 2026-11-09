@@ -103,6 +103,7 @@ def test_every_router_is_included_under_api(engine, tmp_path, monkeypatch):
         "allocations",
         "tax",
         "tax_inputs",
+        "tax_exports",
         "history",
         "workspace",
         "auth",

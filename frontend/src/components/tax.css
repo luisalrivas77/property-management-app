@@ -310,6 +310,41 @@ button.link.tax-sources-button {
   gap: 8px;
 }
 
+.tax-handover-note,
+.tax-handover-status {
+  margin: 8px 0 0;
+  font-size: 14px;
+}
+
+.tax-handover-history-title {
+  margin: 16px 0 0;
+  font-size: 14px;
+}
+
+.tax-handover-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+
+.tax-handover-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--divider);
+  font-size: 14px;
+}
+
+.tax-handover-item:first-child {
+  border-top: 0;
+}
+
+.tax-handover-item p {
+  margin: 0;
+}
+
 .tax-footer {
   margin-top: 24px;
   font-size: 13px;

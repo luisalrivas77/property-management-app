@@ -62,4 +62,4 @@ TAX_INPUT_SCOPE_INVALID = "tax_input.scope_invalid"  # the kind's scope is not m
 TAX_INPUT_NOT_CURRENT = "tax_input.not_current"  # supersedes a superseded or withdrawn row
 TAX_INPUT_ALLOCATION_NOT_CONFIRMED = "tax_input.allocation_not_confirmed"
 TAX_EXPORT_FAILED = "tax_export.failed"
-TAX_EXPORT_TOO_LARGE = "tax_export.too_large"  # an archive over 1 GiB
+TAX_EXPORT_TOO_LARGE = "tax_export.too_large"  # an archive over 100 MiB

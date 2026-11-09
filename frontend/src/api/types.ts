@@ -1442,6 +1442,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/properties/{property_id}/anlage-v/exports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tax Exports List
+         * @description The property's stored exports (ready ones only), newest first.
+         */
+        get: operations["tax_exports_list_api_properties__property_id__anlage_v_exports_get"];
+        put?: never;
+        /**
+         * Tax Export Create
+         * @description Queue a field sheet or an archive of the draft as it is now; poll
+         *     GET /tax-exports/{export_id}. Writes nothing but the job: the export row, its file and
+         *     its event appear together when the job has run.
+         */
+        post: operations["tax_export_create_api_properties__property_id__anlage_v_exports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tax-exports/{export_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tax Export Get
+         * @description queued while the job waits or runs; ready with `export` and a signed `download_url`
+         *     (fetch it right before downloading: it expires); failed with `error_code`
+         *     (`tax_export.failed`, or `tax_export.too_large` when the archive outgrew 100 MiB).
+         */
+        get: operations["tax_export_get_api_tax_exports__export_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tax-exports/{export_id}/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tax Export File
+         * @description The export's bytes, SHA-256 verified, as an attachment.
+         */
+        get: operations["tax_export_file_api_tax_exports__export_id__file_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/properties/{property_id}/history": {
         parameters: {
             query?: never;
@@ -4695,6 +4763,99 @@ export interface components {
             status: components["schemas"]["ImportStatus"];
             /** Error Code */
             error_code: string | null;
+        };
+        /**
+         * TaxExport
+         * @description A stored export (immutable). The draft it was built from is in the row's `draft`
+         *     column; the API returns it with the file's signed download URL, not inline.
+         */
+        TaxExport: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Property Id
+             * Format: uuid
+             */
+            property_id: string;
+            /** Tax Year */
+            tax_year: number;
+            kind: components["schemas"]["TaxExportKind"];
+            /** Rule Set Version */
+            rule_set_version: string;
+            /** Form Year */
+            form_year: number;
+            form_status: components["schemas"]["FormStatus"];
+            /** File Sha256 */
+            file_sha256: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Created By */
+            created_by?: string | null;
+        };
+        /** TaxExportCreate */
+        TaxExportCreate: {
+            /** Tax Year */
+            tax_year: number;
+            kind: components["schemas"]["TaxExportKind"];
+        };
+        /**
+         * TaxExportKind
+         * @enum {string}
+         */
+        TaxExportKind: "field_sheet" | "archive";
+        /**
+         * TaxExportQueued
+         * @description POST /properties/{id}/anlage-v/exports: the id to poll GET /tax-exports/{id} with.
+         */
+        TaxExportQueued: {
+            /**
+             * Export Id
+             * Format: uuid
+             */
+            export_id: string;
+        };
+        /**
+         * TaxExportState
+         * @description GET /tax-exports/{id}. `export` and `download_url` once ready; the URL is signed and
+         *     valid DOWNLOAD_TTL_S seconds, so a client fetches it right before downloading.
+         */
+        TaxExportState: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Property Id
+             * Format: uuid
+             */
+            property_id: string;
+            /** Tax Year */
+            tax_year: number;
+            kind: components["schemas"]["TaxExportKind"];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "ready" | "failed";
+            /** Error Code */
+            error_code?: string | null;
+            /** Download Url */
+            download_url?: string | null;
+            export?: components["schemas"]["TaxExport"] | null;
         };
         /**
          * TaxInput
@@ -8426,6 +8587,140 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaxInput"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    tax_exports_list_api_properties__property_id__anlage_v_exports_get: {
+        parameters: {
+            query?: {
+                tax_year?: number | null;
+            };
+            header?: never;
+            path: {
+                property_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaxExport"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    tax_export_create_api_properties__property_id__anlage_v_exports_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                property_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaxExportCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaxExportQueued"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    tax_export_get_api_tax_exports__export_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                export_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaxExportState"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    tax_export_file_api_tax_exports__export_id__file_get: {
+        parameters: {
+            query: {
+                expires: number;
+                signature: string;
+            };
+            header?: never;
+            path: {
+                export_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The export's bytes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": unknown;
+                    "application/zip": unknown;
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

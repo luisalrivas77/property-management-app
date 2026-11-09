@@ -16,12 +16,15 @@ from procrastinate.job_context import JobContext
 from procrastinate.jobs import Job
 from procrastinate.retry import BaseRetryStrategy, RetryDecision
 
+from hausbuch.schemas.tax import TaxExportKind
+
 from .document_read import TASK_NAME, JobDeps, RetryLater, run_document_read
 from .enqueue import (
     MATCH_IMPORT_TASK,
     MATCH_TRANSACTION_TASK,
     REMATCH_TASK,
     REMATCH_WAITING_TASK,
+    TAX_EXPORT_TASK,
 )
 from .matching import (
     run_match_import,
@@ -30,6 +33,7 @@ from .matching import (
     run_rematch_waiting,
 )
 from .scrub import SCRUB_CRON, SCRUB_TASK, run_scrub_proposals
+from .tax_export import run_tax_export
 
 DEPS_KEY = "hausbuch_deps"
 
@@ -105,6 +109,30 @@ def rematch_waiting(context: JobContext, *, workspace_id: str, trigger: str) -> 
     )
 
 
+def tax_export(
+    context: JobContext,
+    *,
+    workspace_id: str,
+    export_id: str,
+    property_id: str,
+    tax_year: str,
+    kind: str,
+    created_by: str,
+) -> None:
+    deps: JobDeps = context.additional_context[DEPS_KEY]
+    assert context.job is not None
+    run_tax_export(
+        deps,
+        workspace_id=UUID(workspace_id),
+        export_id=UUID(export_id),
+        property_id=UUID(property_id),
+        tax_year=int(tax_year),
+        kind=TaxExportKind(kind),
+        created_by=UUID(created_by) if created_by else None,
+        attempt=context.job.attempts,
+    )
+
+
 def scrub_proposals(context: JobContext, *, timestamp: int) -> None:
     """D19/D41, daily. `timestamp` is the scheduled time Procrastinate's periodic deferrer
     passes; the cutoff uses the process clock (deps.clock) instead."""
@@ -123,6 +151,7 @@ def register_tasks(app: procrastinate.App) -> procrastinate.App:
     app.task(name=MATCH_TRANSACTION_TASK, pass_context=True, retry=retry)(match_transaction)
     app.task(name=REMATCH_TASK, pass_context=True, retry=retry)(rematch_on_evidence)
     app.task(name=REMATCH_WAITING_TASK, pass_context=True, retry=retry)(rematch_waiting)
+    app.task(name=TAX_EXPORT_TASK, pass_context=True, retry=retry)(tax_export)
     # No retry: a failed scrub runs again the next day. No queueing lock (jobs/enqueue.py
     # says why); Procrastinate's periodic_defers table already defers one job per schedule
     # however many instances run a deferrer, and a duplicate run would scrub nothing.
