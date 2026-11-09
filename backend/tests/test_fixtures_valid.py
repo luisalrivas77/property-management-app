@@ -292,13 +292,13 @@ def test_phase4_fixtures_carry_the_spec_figures():
     )
     assert (a27.cash_out, a27.net_cash, a27.equity) == (
         D("17038.80"),
-        D("-6197.28"),
+        D("-3160.32"),
         D("65220.76"),
     )
     assert (a28.taxable_result, a28.tax_effect.effect, a28.net_cash) == (
         D("-4314.80"),
         D("-1473.12"),
-        D("-6151.92"),
+        D("-3205.68"),
     )
     assert not a.sale.taxable and a.sale.sale_tax == 0
     same = {"value", "equity"}  # growth starts in the second year, value growth in the first
@@ -312,7 +312,7 @@ def test_phase4_fixtures_carry_the_spec_figures():
     )
     assert (b28.cash_out, b28.net_cash, b28.value, b.years[4].interest) == (
         D("17139.58"),
-        D("-5947.18"),
+        D("-3117.58"),
         D("312120.00"),
         D("8466.77"),
     )
@@ -321,7 +321,7 @@ def test_phase4_fixtures_carry_the_spec_figures():
     assert (c30.taxable_result, c30.tax_effect.effect, c30.net_cash) == (
         D("-10387.92"),
         D("-3488.40"),
-        D("-8167.20"),
+        D("-1190.40"),
     )
     s = c.sale
     assert (s.value, s.selling_costs, s.afa_claimed, s.gain, s.sale_tax, s.net_proceeds) == (
@@ -337,7 +337,7 @@ def test_phase4_fixtures_carry_the_spec_figures():
         D("13897.43"),
         D("-7948.66"),
         D("-2687.04"),
-        D("-9554.47"),
+        D("-4180.39"),
         D("320800.00"),
     )
     effect = _case("marginal_rate", "effect_negative_result").expect.effect

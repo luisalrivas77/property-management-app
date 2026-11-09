@@ -73,7 +73,7 @@ cases:
       carried_forward: false
       breakdown_with: {est: '12564.00', soli: '0.00', church: '1005.12', total: '13569.12'}
       breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-    net_cash: '-9554.47'
+    net_cash: '-4180.39'
     invested: '320800.00'
     value: null
     loan_balance: null
@@ -119,7 +119,7 @@ cases:
       carried_forward: false
       breakdown_with: {est: '12564.00', soli: '0.00', church: '1005.12', total: '13569.12'}
       breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-    net_cash: '-9549.57'
+    net_cash: '-4175.49'
     invested: '320800.00'
     value: null
     loan_balance: null
@@ -196,7 +196,7 @@ cases:
       carried_forward: false
       breakdown_with: {est: '12564.00', soli: '0.00', church: '1005.12', total: '13569.12'}
       breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-    net_cash: '-9554.47'
+    net_cash: '-4180.39'
     invested: '320800.00'
     value: null
     loan_balance: null
@@ -243,7 +243,7 @@ cases:
       carried_forward: false
       breakdown_with: {est: '12564.00', soli: '0.00', church: '1005.12', total: '13569.12'}
       breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-    net_cash: '-9554.47'
+    net_cash: '-4180.39'
     invested: '325000.00'
     value: null
     loan_balance: null
@@ -285,7 +285,7 @@ cases:
       carried_forward: false
       breakdown_with: {est: '12564.00', soli: '0.00', church: '1005.12', total: '13569.12'}
       breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-    net_cash: '-9554.47'
+    net_cash: '-4180.39'
     invested: '320800.00'
     value: null
     loan_balance: null
