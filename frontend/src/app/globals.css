@@ -586,3 +586,338 @@ th {
 td button.link {
   margin: -10px 0;
 }
+
+/* Planung › Immobilie (phase-4.md §9, docs/mockups/05-performance.png): the actuals card, the
+   lever row, the sale KPIs, equity bars beside the profit bridge, the year table and the
+   scenarios. One column on a phone; the year table scrolls sideways inside its card. */
+
+.planning > * + * {
+  margin-top: 20px;
+}
+
+.planning-head .muted {
+  display: block;
+  margin-top: 2px;
+  font-size: 15px;
+}
+
+.planning-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-bottom: 14px;
+}
+
+.planning-card-head h2 {
+  margin: 0;
+}
+
+.planning-card-head .spacer {
+  flex: 1;
+}
+
+.planning-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 16px;
+}
+
+.planning-figure p,
+.planning-kpi p,
+.planning-lever p {
+  margin: 0;
+}
+
+.planning-figure-label,
+.planning-kpi-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.planning-figure p.planning-figure-value {
+  margin-top: 4px;
+  font-size: 22px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.planning-figure p.planning-figure-sub,
+.planning-kpi p.planning-kpi-sub,
+.planning-lever p.planning-lever-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.planning-subline {
+  margin: 14px 0 0;
+  font-size: 13px;
+}
+
+.planning-flat-rate {
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  background: var(--tag-bg);
+}
+
+.planning-good {
+  color: var(--accent-strong);
+}
+
+.planning-bad {
+  color: var(--warn);
+}
+
+.planning-projection > * + * {
+  margin-top: 20px;
+}
+
+.planning-levers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.planning-lever {
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--tag-bg);
+}
+
+.planning-lever p.planning-lever-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.planning-lever-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  min-height: 44px;
+}
+
+.planning-lever-control button {
+  width: 44px;
+  padding: 0;
+  font-size: 20px;
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.planning-lever-control button:not(:disabled):hover {
+  background: var(--bg);
+  border-color: var(--muted);
+  color: var(--text);
+}
+
+.planning-lever-value {
+  font-size: 22px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+a.planning-lever-edit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 18px;
+  text-decoration: none;
+}
+
+a.planning-lever-edit:hover {
+  background: var(--bg);
+}
+
+.planning-lever-sub .badge {
+  margin-left: 0;
+  white-space: normal;
+}
+
+.planning-banner p + p {
+  margin-top: 6px;
+}
+
+.planning-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 16px;
+}
+
+.planning-kpi {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+
+.planning-kpi p.planning-kpi-value {
+  margin-top: 6px;
+  font-size: 24px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.planning-kpi.planning-kpi-main {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.planning-kpi-main p.planning-kpi-label,
+.planning-kpi-main p.planning-kpi-sub {
+  color: var(--accent-text);
+  opacity: 0.85;
+}
+
+.planning-split {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  align-items: stretch;
+}
+
+.planning-section-title {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.planning-equity {
+  flex: 3 1 400px;
+  min-width: 0;
+  margin: 0;
+}
+
+.planning-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 220px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.planning-bars li {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  padding-bottom: 20px;
+  box-sizing: border-box;
+}
+
+.planning-bar {
+  display: block;
+  width: 100%;
+  max-width: 44px;
+  border: 1px solid var(--accent);
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  background: var(--accent-tint);
+}
+
+.planning-bar.planning-bar-sale {
+  background: var(--accent);
+}
+
+.planning-bar-year {
+  position: absolute;
+  bottom: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.planning-equity figcaption {
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+.planning-bridge {
+  flex: 2 1 300px;
+  min-width: 0;
+  padding: 16px 18px;
+  border-radius: var(--radius-card);
+  background: var(--tag-bg);
+}
+
+.planning-bridge ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.planning-bridge li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  min-height: 36px;
+  border-bottom: 1px solid var(--border);
+}
+
+.planning-bridge li .num {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.planning-bridge li .num button.link {
+  color: inherit;
+  font-weight: 800;
+}
+
+.planning-bridge li.planning-bridge-total {
+  border-bottom: none;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.planning-table table {
+  min-width: 52rem;
+}
+
+tr.planning-actual-row td {
+  background: var(--tag-bg);
+}
+
+button.link.planning-cell {
+  color: inherit;
+  font-weight: inherit;
+  text-decoration-style: dotted;
+}
+
+td.planning-strong {
+  font-weight: 800;
+}
+
+.planning-assumptions {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.planning-assumptions ul {
+  margin: 0 0 8px;
+  padding-left: 1.1rem;
+}
+
+.planning-footer {
+  font-size: 13px;
+}

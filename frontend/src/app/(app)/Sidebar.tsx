@@ -12,7 +12,7 @@ import { INBOX_CHANGED } from "@/lib/inboxCount";
 
 // §9.2 navigation, as the mockups' left sidebar (UI style decision, 5 Nov 2026): Hausbuch ·
 // Übersicht · Zu prüfen (the review page, phase 2 step 4) · Dokumente · Konten · Steuern
-// (phase 3) · Eigentümer · Mieter · Einstellungen, then the user's name and Abmelden. On a phone it stacks above the
+// (phase 3) · Planung (phase 4) · Eigentümer · Mieter · Einstellungen, then the user's name and Abmelden. On a phone it stacks above the
 // content (globals.css, .shell). "Zu prüfen" carries the number of open items.
 const NAV = [
   { href: "/", label: "Übersicht" },
@@ -20,6 +20,7 @@ const NAV = [
   { href: "/documents", label: "Dokumente" },
   { href: "/accounts", label: "Konten" },
   { href: "/tax", label: "Steuern" },
+  { href: "/planning", label: "Planung" },
   { href: "/owners", label: "Eigentümer" },
   { href: "/tenants", label: "Mieter" },
   { href: "/settings", label: "Einstellungen" },

@@ -161,3 +161,16 @@ export type TaxRateResult = Schemas["TaxRateResult"];
 export type TaxEffect = Schemas["TaxEffect"];
 export type ZveEstimate = Schemas["ZveEstimate"];
 export type OwnerZve = Schemas["OwnerZve"];
+
+// performance: actuals, the projection to a sale and its scenarios (phase 4 step 2, §7, §8)
+export type Actuals = Schemas["Actuals"];
+export type Projection = Schemas["Projection"];
+export type YearFigures = Schemas["YearFigures"];
+export type YearKind = Schemas["YearKind"];
+export type YearFlag = Schemas["YearFlag"];
+export type SaleResult = Schemas["SaleResult"];
+export type BridgeRow = Schemas["BridgeRow"];
+export type Assumption = Schemas["Assumption"];
+export type Levers = Schemas["Levers"];
+export type Scenario = Schemas["Scenario"];
+export type ScenarioCreate = Schemas["ScenarioCreate"];
