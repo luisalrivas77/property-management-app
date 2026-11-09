@@ -1,0 +1,286 @@
+# marginal_rate.yaml: rules/tax/tariff.py tax_effect and rules/performance/income.py zve_base
+# (docs/phases/phase-4.md §5.1, §5.2, D82–D84).
+
+# Synthetic numbers only (the repo is public). Loaded through tests/fixture_models_phase4.py:
+# every figure here is checked against the §7 schemas, and each expectation's own arithmetic
+# is checked on load. Decimals are quoted strings (the schemas accept decimal strings only).
+# The step 0 coder filled every row by the spec's §5 arithmetic in Decimal, with the taxable
+# results and AfA from phase 3's real draft() (9 Nov 2026); each figure the spec states
+# (§5, §10.3) was reproduced exactly. Every field of an expectation compares exactly, None
+# included, except `sources` (left empty here; a test compares with them excluded).
+#
+# A case gives the year, the owners and the income inputs. `expect` names what it checks; one
+# it leaves out (zve, effect, tariff) is not asserted.
+# - zve: zve_base(tax_year, inputs, owners, tariff). per_owner lists the owners' estimates when
+#   the source is an estimate, and is empty under a Bescheid. Under a Bescheid,
+#   base = the Bescheid's zvE − assessed_result (the property's result in that zvE).
+# - effect: tax_effect(base, result, tariff, owners), where base is the case's `zve_base`
+#   when stated (then the source is estimate) and zve's amount otherwise. The effect is
+#   T(base + R) − T(base) with both breakdowns; the effective rate is effect ÷ R in percent to
+#   one decimal, half-up. With R = 0 the effect is 0.00 and `slope` is shown instead: the
+#   §32a zone's derivative at the floored half of the base, × (1 + the Soli factor at the base
+#   (0, 0.055 or 0.119) + the owners' church rates ÷ 2), in percent to one decimal. Under an
+#   override the effect is R × rate, half-up to the cent, without breakdowns.
+# - tariff: registry.tariff(tax_year)'s stamp.
+# - missing: no row for the year or an earlier one: zve_base and the effect are None.
+# Deductions (D84): 1,230 + 36 + min(gross, 101,400) × 0.093 + min(gross, 69,750) ×
+# (0.073 + 0.0145) × 0.96 + min(gross, 69,750) × 0.018, half-up to the cent.
+
+bases:
+  owners: &owners
+  - {owner_id: 0000000a-0000-4000-8000-000000000001, church_tax: true, tax_state: BY}
+  - {owner_id: 0000000a-0000-4000-8000-000000000002, church_tax: true, tax_state: BY}
+  income_2026: &income_2026
+  - id: 0000004d-0000-4000-8000-000000000001
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    kind: expected_gross_pay
+    tax_year: 2026
+    value: {amount: '60000.00'}
+  - id: 0000004d-0000-4000-8000-000000000002
+    owner_id: 0000000a-0000-4000-8000-000000000002
+    kind: expected_gross_pay
+    tax_year: 2026
+    value: {amount: '45000.00'}
+cases:
+- id: deductions_default_60k
+  description: D84 default deductions on a gross pay of 60,000
+  tax_year: 2026
+  owners: *owners
+  inputs:
+  - id: 0000004d-0000-4000-8000-000000000001
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    kind: expected_gross_pay
+    tax_year: 2026
+    value: {amount: '60000.00'}
+  expect:
+    zve:
+      amount: '47034.00'
+      source: estimate
+      carried_forward: false
+      tax_year: 2026
+      per_owner:
+      - {owner_id: 0000000a-0000-4000-8000-000000000001, gross: '60000.00', deductions: '12966.00', deductions_source: default,
+        amount: '47034.00'}
+- id: deductions_default_45k
+  description: D84 default deductions on a gross pay of 45,000
+  tax_year: 2026
+  owners: *owners
+  inputs:
+  - id: 0000004d-0000-4000-8000-000000000002
+    owner_id: 0000000a-0000-4000-8000-000000000002
+    kind: expected_gross_pay
+    tax_year: 2026
+    value: {amount: '45000.00'}
+  expect:
+    zve:
+      amount: '34959.00'
+      source: estimate
+      carried_forward: false
+      tax_year: 2026
+      per_owner:
+      - {owner_id: 0000000a-0000-4000-8000-000000000002, gross: '45000.00', deductions: '10041.00', deductions_source: default,
+        amount: '34959.00'}
+- id: deductions_capped_at_bbg
+  description: Pension above 101,400 and health and care above 69,750 are capped (Beitragsbemessungsgrenzen
+    2026)
+  tax_year: 2026
+  owners: *owners
+  inputs:
+  - id: 0000004d-0000-4000-8000-000000000003
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    kind: expected_gross_pay
+    tax_year: 2026
+    value: {amount: '120000.00'}
+  expect:
+    zve:
+      amount: '102189.30'
+      source: estimate
+      carried_forward: false
+      tax_year: 2026
+      per_owner:
+      - {owner_id: 0000000a-0000-4000-8000-000000000001, gross: '120000.00', deductions: '17810.70', deductions_source: default,
+        amount: '102189.30'}
+- id: household_81993
+  description: The household base is the owners' sum; case A's result on it
+  tax_year: 2026
+  owners: *owners
+  inputs: *income_2026
+  result: '-7948.66'
+  expect:
+    zve:
+      amount: '81993.00'
+      source: estimate
+      carried_forward: false
+      tax_year: 2026
+      per_owner:
+      - {owner_id: 0000000a-0000-4000-8000-000000000001, gross: '60000.00', deductions: '12966.00', deductions_source: default,
+        amount: '47034.00'}
+      - {owner_id: 0000000a-0000-4000-8000-000000000002, gross: '45000.00', deductions: '10041.00', deductions_source: default,
+        amount: '34959.00'}
+    effect:
+      effect: '-2687.04'
+      effective_rate: '33.8'
+      slope: null
+      source: estimate
+      carried_forward: false
+      breakdown_with: {est: '12564.00', soli: '0.00', church: '1005.12', total: '13569.12'}
+      breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+- id: effect_negative_result
+  description: 'D82 on a stated base of 90,000: T(90,000 − 7,948.66) − T(90,000)'
+  tax_year: 2026
+  owners: *owners
+  zve_base: '90000.00'
+  result: '-7948.66'
+  expect:
+    effect:
+      effect: '-2808.00'
+      effective_rate: '35.3'
+      slope: null
+      source: estimate
+      carried_forward: false
+      breakdown_with: {est: '15070.00', soli: '0.00', church: '1205.60', total: '16275.60'}
+      breakdown_without: {est: '17670.00', soli: '0.00', church: '1413.60', total: '19083.60'}
+- id: effect_positive_result
+  description: A positive result costs tax
+  tax_year: 2026
+  owners: *owners
+  zve_base: '90000.00'
+  result: '2787.00'
+  expect:
+    effect:
+      effect: '1013.04'
+      effective_rate: '36.3'
+      slope: null
+      source: estimate
+      carried_forward: false
+      breakdown_with: {est: '18608.00', soli: '0.00', church: '1488.64', total: '20096.64'}
+      breakdown_without: {est: '17670.00', soli: '0.00', church: '1413.60', total: '19083.60'}
+- id: effect_zero_shows_slope
+  description: 'R = 0: no effect and no effective rate; the slope at the base instead'
+  tax_year: 2026
+  owners: *owners
+  zve_base: '90000.00'
+  result: '0.00'
+  expect:
+    effect:
+      effect: '0.00'
+      effective_rate: null
+      slope: '36.1'
+      source: estimate
+      carried_forward: false
+      breakdown_with: {est: '17670.00', soli: '0.00', church: '1413.60', total: '19083.60'}
+      breakdown_without: {est: '17670.00', soli: '0.00', church: '1413.60', total: '19083.60'}
+- id: bescheid_replaces_estimate
+  description: 'A Bescheid''s zvE of 80,000 (which contains the assessed result −7,948.66) replaces the
+    estimate: base = 80,000 + 7,948.66'
+  tax_year: 2026
+  owners: *owners
+  inputs:
+  - id: 0000004d-0000-4000-8000-000000000001
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    kind: expected_gross_pay
+    tax_year: 2026
+    value: {amount: '60000.00'}
+  - id: 0000004d-0000-4000-8000-000000000002
+    owner_id: 0000000a-0000-4000-8000-000000000002
+    kind: expected_gross_pay
+    tax_year: 2026
+    value: {amount: '45000.00'}
+  - id: 0000004d-0000-4000-8000-000000000004
+    kind: bescheid_zve
+    tax_year: 2026
+    document_id: 00000d4d-0000-4000-8000-000000000001
+    value: {amount: '80000.00'}
+  assessed_result: '-7948.66'
+  result: '-7948.66'
+  expect:
+    zve:
+      amount: '87948.66'
+      source: bescheid
+      carried_forward: false
+      tax_year: 2026
+      per_owner: []
+    effect:
+      effect: '-2775.60'
+      effective_rate: '34.9'
+      slope: null
+      source: bescheid
+      carried_forward: false
+      breakdown_with: {est: '14418.00', soli: '0.00', church: '1153.44', total: '15571.44'}
+      breakdown_without: {est: '16988.00', soli: '0.00', church: '1359.04', total: '18347.04'}
+- id: override_rate
+  description: 'A typed rate wins: effect = R × 0.42, half-up to the cent'
+  tax_year: 2026
+  owners: *owners
+  inputs:
+  - id: 0000004d-0000-4000-8000-000000000001
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    kind: expected_gross_pay
+    tax_year: 2026
+    value: {amount: '60000.00'}
+  - id: 0000004d-0000-4000-8000-000000000002
+    owner_id: 0000000a-0000-4000-8000-000000000002
+    kind: expected_gross_pay
+    tax_year: 2026
+    value: {amount: '45000.00'}
+  - id: 0000004d-0000-4000-8000-000000000005
+    kind: marginal_rate_override
+    tax_year: 2026
+    value: {rate: '0.4200'}
+    note: übernommen aus Eigentümer
+  result: '-7948.66'
+  expect:
+    effect:
+      effect: '-3338.44'
+      effective_rate: '42.0'
+      slope: null
+      source: override
+      carried_forward: false
+      breakdown_with: null
+      breakdown_without: null
+- id: carried_forward_2028
+  description: 'No rows for 2028: the 2026 rows carry forward, marked; the 2026 tariff is reused'
+  tax_year: 2028
+  owners: *owners
+  inputs: *income_2026
+  result: '-7948.66'
+  expect:
+    zve:
+      amount: '81993.00'
+      source: estimate
+      carried_forward: true
+      tax_year: 2026
+      per_owner:
+      - {owner_id: 0000000a-0000-4000-8000-000000000001, gross: '60000.00', deductions: '12966.00', deductions_source: default,
+        amount: '47034.00'}
+      - {owner_id: 0000000a-0000-4000-8000-000000000002, gross: '45000.00', deductions: '10041.00', deductions_source: default,
+        amount: '34959.00'}
+    effect:
+      effect: '-2687.04'
+      effective_rate: '33.8'
+      slope: null
+      source: estimate
+      carried_forward: true
+      breakdown_with: {est: '12564.00', soli: '0.00', church: '1005.12', total: '13569.12'}
+      breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+    tariff: {tax_year: 2028, version: '2026.1', reused_from: 2026}
+- id: no_inputs_none
+  description: 'No row for the year or an earlier one (a later year''s row does not count back): no estimate
+    and no effect (income.missing)'
+  tax_year: 2026
+  owners: *owners
+  inputs:
+  - id: 0000004d-0000-4000-8000-000000000006
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    kind: expected_gross_pay
+    tax_year: 2027
+    value: {amount: '60000.00'}
+  result: '-7948.66'
+  expect:
+    missing: true
+- id: tariff_reused_for_2030
+  description: 'D81: 2030 has no file and reuses 2026''s'
+  tax_year: 2030
+  owners: *owners
+  expect:
+    tariff: {tax_year: 2030, version: '2026.1', reused_from: 2026}

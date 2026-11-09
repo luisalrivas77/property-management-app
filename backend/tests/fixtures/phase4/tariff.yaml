@@ -1,0 +1,95 @@
+# tariff.yaml: rules/tax/tariff.py income_tax / soli / church_tax / total_tax
+# (docs/phases/phase-4.md §5.1, D81), on the 2026 tariff file.
+
+# Synthetic numbers only (the repo is public). Loaded through tests/fixture_models_phase4.py:
+# every figure here is checked against the §7 schemas, and each expectation's own arithmetic
+# is checked on load. Decimals are quoted strings (the schemas accept decimal strings only).
+# The step 0 coder filled every row by the spec's §5 arithmetic in Decimal, with the taxable
+# results and AfA from phase 3's real draft() (9 Nov 2026); each figure the spec states
+# (§5, §10.3) was reproduced exactly. Every field of an expectation compares exactly, None
+# included, except `sources` (left empty here; a test compares with them excluded).
+#
+# Each check is one call: income_tax(zve, joint) and total_tax(zve, owners) take a zvE;
+# soli(est, joint) and church_tax(est, owners) take a joint Einkommensteuer. `joint` is the
+# case's (default true: Splittingtarif). Conventions (§5.1):
+# - income_tax: the zvE is floored to whole euros, under splitting its half too (Q-O1,
+#   provisional until step 4), and the tax per zone is floored to whole euros.
+# - soli: 0 up to the Freigrenze (40,700 joint); else min(5.5 % × est, 11.9 % × (est − 40,700)),
+#   floored to the cent.
+# - church_tax: per owner with church_tax, est ÷ 2 × the owner's state rate, half-up to the
+#   cent; the halves are summed.
+
+cases:
+- id: single_zone_boundaries
+  description: §32a Abs. 1 at each zone's edges, Grundtabelle (§5.1's seven figures)
+  joint: false
+  checks:
+  - {op: income_tax, zve: '12348.00', expect: '0.00'}
+  - {op: income_tax, zve: '17799.00', expect: '1034.00'}
+  - {op: income_tax, zve: '17800.00', expect: '1035.00'}
+  - {op: income_tax, zve: '30000.00', expect: '4217.00'}
+  - {op: income_tax, zve: '69878.00', expect: '18213.00'}
+  - {op: income_tax, zve: '100000.00', expect: '30864.00'}
+  - {op: income_tax, zve: '277826.00', expect: '105551.00'}
+- id: joint_60k_90k_200k
+  description: 'Splittingtarif: twice the tax on half the joint zvE'
+  checks:
+  - {op: income_tax, zve: '60000.00', expect: '8434.00'}
+  - {op: income_tax, zve: '90000.00', expect: '17670.00'}
+  - {op: income_tax, zve: '200000.00', expect: '61728.00'}
+- id: splitting_floors_the_half
+  description: The zvE and its half are floored to whole euros (Q-O1, provisional)
+  checks:
+  - {op: income_tax, zve: '90000.00', expect: '17670.00'}
+  - {op: income_tax, zve: '90001.00', expect: '17670.00'}
+  - {op: income_tax, zve: '90001.99', expect: '17670.00'}
+- id: soli_below_limit_zero
+  description: '§3 Abs. 3 SolZG: no Soli up to the joint Freigrenze of 40,700'
+  checks:
+  - {op: soli, est: '17670.00', expect: '0.00'}
+  - {op: soli, est: '40700.00', expect: '0.00'}
+- id: soli_mitigation_42000
+  description: '§4 S. 2 SolZG Milderungszone: 11.9 % of the ESt above the Freigrenze'
+  checks:
+  - {op: soli, est: '42000.00', expect: '154.70'}
+  - {op: soli, est: '48000.00', expect: '868.70'}
+- id: soli_full_50000
+  description: The spec's name; at 50,000 the Milderungszone still applies (11.9 % × 9,300 = 1,106.70
+    < 5.5 % × 50,000), the full 5.5 % (§4 S. 1 SolZG) from about 75,677, e.g. 80,000
+  checks:
+  - {op: soli, est: '50000.00', expect: '1106.70'}
+  - {op: soli, est: '80000.00', expect: '4400.00'}
+- id: soli_floors_cents
+  description: '§4 S. 3 SolZG: fractions of a cent are dropped (0.119 → 0.11, 0.595 → 0.59, 4,400.055
+    → 4,400.05)'
+  checks:
+  - {op: soli, est: '40701.00', expect: '0.11'}
+  - {op: soli, est: '40705.00', expect: '0.59'}
+  - {op: soli, est: '80001.00', expect: '4400.05'}
+- id: church_8pct_on_17670
+  description: 'Both owners in church in Bayern: 8 % of the joint ESt, as two halves'
+  owners:
+  - {owner_id: 0000000a-0000-4000-8000-000000000001, church_tax: true, tax_state: BY}
+  - {owner_id: 0000000a-0000-4000-8000-000000000002, church_tax: true, tax_state: BY}
+  checks:
+  - {op: church_tax, est: '17670.00', expect: '1413.60'}
+  - op: total_tax
+    zve: '90000.00'
+    breakdown: {est: '17670.00', soli: '0.00', church: '1413.60', total: '19083.60'}
+- id: church_one_member_half
+  description: 'Only one owner in church: 8 % on half the joint ESt'
+  owners:
+  - {owner_id: 0000000a-0000-4000-8000-000000000001, church_tax: true, tax_state: BY}
+  - {owner_id: 0000000a-0000-4000-8000-000000000002, church_tax: false, tax_state: null}
+  checks:
+  - {op: church_tax, est: '17670.00', expect: '706.80'}
+- id: church_two_states
+  description: Owners in different states each pay their state's rate on their half
+  owners:
+  - {owner_id: 0000000a-0000-4000-8000-000000000001, church_tax: true, tax_state: BY}
+  - {owner_id: 0000000a-0000-4000-8000-000000000002, church_tax: true, tax_state: HE}
+  checks:
+  - {op: church_tax, est: '17670.00', expect: '1501.95'}
+  - op: total_tax
+    zve: '200000.00'
+    breakdown: {est: '61728.00', soli: '2502.33', church: '5246.88', total: '69477.21'}
