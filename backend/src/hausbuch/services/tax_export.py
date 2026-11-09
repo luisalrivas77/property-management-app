@@ -266,8 +266,9 @@ def write_export(
     digest = hashlib.sha256(data)
     sha_bytes, sha_hex = digest.digest(), digest.hexdigest()
     key = blob_key(ctx.workspace_id, sha_hex)
-    # Blob first, rows second (as upload_document): a rollback leaves an unreferenced blob,
-    # which is harmless, since the key is content-addressed and a retry reuses it.
+    # Blob first, rows second (as upload_document), so every committed row points at a blob.
+    # A rollback leaves an unreferenced blob that a retry does not reuse (the bytes carry the
+    # creation time); accepted as rare and harmless, the retention sweeper's business.
     store.put(key, data, media_type)
     conn.execute(
         pg_insert(file_table)
@@ -471,6 +472,8 @@ def signature_valid(
     now: datetime,
 ) -> bool:
     if expires < int(now.timestamp()) or expires > int(now.timestamp()) + DOWNLOAD_TTL_S:
+        return False
+    if not signature.isascii():  # compare_digest raises on non-ASCII text: a 404, not a 500
         return False
     expected = _signature(key, workspace_id, export_id, expires)
     return hmac.compare_digest(expected, signature)
