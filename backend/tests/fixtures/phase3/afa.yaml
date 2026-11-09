@@ -45,7 +45,7 @@ ids:
   alloc_price: &A_PP 000000a1-0000-4000-8000-000000000004
   alloc_broker: &A_BROKER 000000a1-0000-4000-8000-000000000005
   alloc_zero: &A_ZERO 000000a1-0000-4000-8000-000000000006
-  alloc_kitchen: &A_KITCHEN 000000a1-0000-4000-8000-000000000007
+  alloc_balcony: &A_BALCONY 000000a1-0000-4000-8000-000000000007
   alloc_painter: &A_PAINTER 000000a1-0000-4000-8000-000000000008
   alloc_tiles: &A_TILES 000000a1-0000-4000-8000-000000000009
   alloc_roof: &A_ROOF 000000a1-0000-4000-8000-00000000000a
@@ -157,12 +157,13 @@ cases:
 
   - id: herstellung_addition_2027
     description: >
-      a kitchen elected `herstellung`, 12,000.00 paid in 2027, accrues from 1 Jan 2027:
+      a Balkonanbau (an Erweiterung, so Herstellungskosten, §255 Abs. 2 S. 1 HGB) elected
+      `herstellung`, 12,000.00 paid in 2027, accrues from 1 Jan 2027:
       (234,000.00 + 12,000.00) × 2 % = 4,920.00; method code 2 again in 2027
     facts:
       <<: *flat
       additions:
-        - {allocation_id: *A_KITCHEN, tax_year: 2027, amount: "12000.00", reason: herstellung}
+        - {allocation_id: *A_BALCONY, tax_year: 2027, amount: "12000.00", reason: herstellung}
     expect:
       - {tax_year: 2026, amount: "2340.00", basis: "234000.00", additions: "0", rate: "0.02",
          months: 6, method_code: 2}
@@ -172,7 +173,7 @@ cases:
                    {kind: acquisition_cost, id: *C1}, {kind: acquisition_cost, id: *C2},
                    {kind: acquisition_cost, id: *C3}, {kind: document, id: *D_GREST},
                    {kind: document, id: *D_NOTAR}, {kind: document, id: *D_GB},
-                   {kind: allocation, id: *A_KITCHEN}]}
+                   {kind: allocation, id: *A_BALCONY}]}
 
   - id: limit_crossing_additions_gross
     description: >

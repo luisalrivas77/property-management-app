@@ -426,7 +426,7 @@ bases:
     basis_building_cost: "234000.00"
     limit: "35100.00"
     window_start: 2026-07-01
-    window_end: 2029-06-30
+    window_end: 2029-07-01
     counted: [*PA, *TL]
     used_net: "5000.00"
     ratio_percent: "14.2"
@@ -589,7 +589,8 @@ cases:
     description: >
       case A serialised to JSON and loaded again equals itself; the field sheet rows (key,
       Zeile of the amount, Kennzahl, cents, whole euros) under rule set 2026.1, form 2025
-      provisional
+      provisional. The flat's one unit row prints on Z13 ("Bezeichnung der Wohneinheit"): the
+      income.rent_units block puts row 1 on zeile_from (13) and rows 2..n on zeile (14)
     tax_year: 2026
     rule_set_year: 2026
     facts: *facts
@@ -597,7 +598,7 @@ cases:
       <<: *expect_a
       roundtrip: true
       field_sheet:
-        - {key: income.rent_units, zeile: 14, kennzahl: null, amount: "5100.00", amount_rounded: 5100}
+        - {key: income.rent_units, zeile: 13, kennzahl: null, amount: "5100.00", amount_rounded: 5100}
         - {key: income.rent_total, zeile: 15, kennzahl: "01", amount: "5100.00", amount_rounded: 5100}
         - {key: income.umlagen, zeile: 20, kennzahl: "04", amount: "1080.00", amount_rounded: 1080}
         - {key: income.total, zeile: 32, kennzahl: null, amount: "6180.00", amount_rounded: 6180}
