@@ -10,10 +10,14 @@ from fixture_models_phase4 import ProjectionFixture, load
 from test_perf_actuals import assert_year
 from test_perf_sale import assert_sale
 
-from hausbuch.rules.performance.projection import project
+from hausbuch.rules.performance.projection import actual_year, project
 from hausbuch.rules.performance.synthesize import snap_cadence, synthesize
+from hausbuch.rules.tax import registry
+from hausbuch.rules.tax.tariff import total_tax
 from hausbuch.schemas.allocation import AllocationCategory as C
 from hausbuch.schemas.allocation import ServicePeriod
+from hausbuch.schemas.enums import IncomeInputKind
+from hausbuch.schemas.performance import IncomeInputFact
 from hausbuch.schemas.tax import AllocationFact, TaxInputKind
 
 PROJECTION = load("projection")
@@ -154,6 +158,34 @@ def test_a_cost_paid_early_and_counted_in_the_next_year_replaces_one_row():
     assert len(rows) == 11
     assert min(r.booking_date for r in rows) == date(2027, 2, 28)
     assert y2027.umlagen_out == Decimal("2400.00")
+
+
+@pytest.mark.parametrize("bescheid_year", [2025, 2024])
+def test_a_bescheid_of_a_year_before_the_purchase_is_carried_forward(bescheid_year):
+    """A Bescheid of a year before the purchase (the flat was bought in 2026) contains nothing
+    of the property, so its zvE is the base as it stands: nothing is drafted for that year
+    (for 2024 no rule set reaches back, so drafting it raised projection.no_rule_set).
+    2026 and the projected years carry it forward."""
+    case = _case("baseline_no_growth_tax_free_sale")
+    bescheid = IncomeInputFact(
+        id=UUID("000000f3-0000-4000-8000-000000000001"),
+        kind=IncomeInputKind.BESCHEID_ZVE,
+        tax_year=bescheid_year,
+        document_id=UUID("000000f3-0000-4000-8000-000000000002"),
+        value={"amount": "80000.00"},
+    )
+    facts = case.facts.resolve()
+    loans = {loan.loan_id: loan.terms for loan in case.loans}
+    actual = actual_year(facts, 2026, case.today, case.owners, [bescheid])
+    got = project(facts, case.levers, case.owners, [bescheid], case.today, loans)
+    for year in (actual, *got.years):
+        effect = year.tax_effect
+        assert effect is not None, year.year
+        assert effect.carried_forward and effect.source == "bescheid"
+        # T(zvE_base) is the tax on 80,000.00 itself: nothing subtracted for 2025.
+        base_tax = total_tax(Decimal("80000.00"), registry.tariff(year.year), case.owners)
+        assert effect.breakdown_without == base_tax, year.year
+    assert got.sale is not None
 
 
 @pytest.mark.parametrize(
