@@ -761,7 +761,10 @@ def _llm_guarded(line: Line, found: AllocationSet) -> AllocationSet:
 
     Inert while the workspace's auto_accept_llm is off (the default, D26): rules.review.route
     then sends every LLM set to review anyway, so the set keeps the model's own confidence
-    and question."""
+    and question. The one exception is a line of 0.00 (D52): route auto-confirms a set of
+    one part, with no tenancy or loan, outside rules.review.ZERO_EXCLUDED, which holds every
+    _MATCHER_CATEGORIES category; so route itself enforces this guard's exclusions there,
+    with the setting on or off (tests/rules/test_review.py checks the subset)."""
     if found.method is not AllocationMethod.LLM or not line.auto_accept_llm:
         return found
     if any(a.category in _MATCHER_CATEGORIES for a in found.allocations):
