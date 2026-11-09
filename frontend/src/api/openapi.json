@@ -4672,6 +4672,242 @@
         }
       }
     },
+    "/api/properties/{property_id}/performance/actuals": {
+      "get": {
+        "summary": "Property Actuals",
+        "description": "Every owned year from the purchase year through today's, from confirmed allocations\nonly (D85); the current year is marked so_far. 422 tariff.no_file for a year before the\nfirst tariff file.",
+        "operationId": "property_actuals_api_properties__property_id__performance_actuals_get",
+        "parameters": [
+          {
+            "name": "property_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Property Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Actuals"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/properties/{property_id}/performance/projection": {
+      "get": {
+        "summary": "Property Projection",
+        "description": "Next January through the sale year, with the sale at 31 Dec of that year. The levers\nare scenario_id's (a scenario of this property, else 404), else the default scenario in\nforce, else the defaults with the sale year = the first year on or after the §23 date;\neach lever given here overrides it for this read only (nothing is written). 422\nscenario.sale_year_before_today (the sale year is not after today's year).",
+        "operationId": "property_projection_api_properties__property_id__performance_projection_get",
+        "parameters": [
+          {
+            "name": "property_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Property Id"
+            }
+          },
+          {
+            "name": "scenario_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scenario Id"
+            }
+          },
+          {
+            "name": "value_growth",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9]+(\\.[0-9]{1,6})?$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Value Growth"
+            }
+          },
+          {
+            "name": "rent_growth",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9]+(\\.[0-9]{1,6})?$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Rent Growth"
+            }
+          },
+          {
+            "name": "cost_inflation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9]+(\\.[0-9]{1,6})?$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cost Inflation"
+            }
+          },
+          {
+            "name": "sale_year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 2100,
+                  "minimum": 2000
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sale Year"
+            }
+          },
+          {
+            "name": "today_value",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Today Value"
+            }
+          },
+          {
+            "name": "upkeep_per_year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Upkeep Per Year"
+            }
+          },
+          {
+            "name": "selling_costs_rate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9]+(\\.[0-9]{1,6})?$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Selling Costs Rate"
+            }
+          },
+          {
+            "name": "vacancy_months",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Vacancy Months"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Projection"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/properties/{property_id}/scenarios": {
       "get": {
         "summary": "Scenarios List",
@@ -5998,6 +6234,29 @@
         ],
         "title": "ActorType"
       },
+      "Actuals": {
+        "properties": {
+          "property_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Property Id"
+          },
+          "years": {
+            "items": {
+              "$ref": "#/components/schemas/YearFigures"
+            },
+            "type": "array",
+            "title": "Years"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "property_id",
+          "years"
+        ],
+        "title": "Actuals"
+      },
       "Address": {
         "properties": {
           "street": {
@@ -7133,6 +7392,29 @@
         "title": "AppliedEntity",
         "description": "One record of an applied proposal and the entity it created or patched (for a link,\nthe entity the document was linked to). entity_id is null for a skipped record."
       },
+      "Assumption": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Code"
+          },
+          "params": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Params"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "Assumption",
+        "description": "A stated assumption of the projection, as data; the frontend holds the German text."
+      },
       "BalanceSource": {
         "type": "string",
         "enum": [
@@ -7291,6 +7573,41 @@
           "file"
         ],
         "title": "Body_document_upload_api_documents_post"
+      },
+      "BridgeRow": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "enum": [
+              "appreciation",
+              "loan_paid_down",
+              "cash_flow",
+              "buying_costs",
+              "selling_costs",
+              "sale_tax"
+            ],
+            "title": "Key"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Sources"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "amount"
+        ],
+        "title": "BridgeRow"
       },
       "ChecklistDocumentRef": {
         "properties": {
@@ -7687,6 +8004,45 @@
         ],
         "title": "DateCorrection",
         "description": "Corrects a milestone date: purchase date (Übergang) or move-in."
+      },
+      "DatedFlow": {
+        "properties": {
+          "on": {
+            "type": "string",
+            "format": "date",
+            "title": "On"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "initial_equity",
+              "cash_flow",
+              "net_proceeds"
+            ],
+            "title": "Kind"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Sources"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "on",
+          "amount",
+          "kind"
+        ],
+        "title": "DatedFlow",
+        "description": "One flow of the IRR (D89): −E₀ on the purchase date, each year's net cash on 31 Dec,\nthe net sale proceeds on the sale date."
       },
       "DeclareBalanceBody": {
         "properties": {
@@ -11587,6 +11943,37 @@
         ],
         "title": "OwnerCreate"
       },
+      "OwnerGain": {
+        "properties": {
+          "owner_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Owner Id"
+          },
+          "share": {
+            "$ref": "#/components/schemas/Fraction"
+          },
+          "gain": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Gain"
+          },
+          "below_freigrenze": {
+            "type": "boolean",
+            "title": "Below Freigrenze"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "owner_id",
+          "share",
+          "gain",
+          "below_freigrenze"
+        ],
+        "title": "OwnerGain",
+        "description": "One spouse's share of a §23 gain, tested against the Freigrenze (< 1,000, a cliff)."
+      },
       "OwnerPatch": {
         "properties": {
           "full_name": {
@@ -12071,6 +12458,64 @@
         ],
         "title": "PriceSplitSource",
         "description": "Where the building/land split of the purchase price comes from."
+      },
+      "Projection": {
+        "properties": {
+          "property_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Property Id"
+          },
+          "scenario": {
+            "$ref": "#/components/schemas/Levers"
+          },
+          "scenario_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scenario Id"
+          },
+          "tariff": {
+            "$ref": "#/components/schemas/TariffStamp"
+          },
+          "rule_set": {
+            "$ref": "#/components/schemas/RuleSetStamp"
+          },
+          "years": {
+            "items": {
+              "$ref": "#/components/schemas/YearFigures"
+            },
+            "type": "array",
+            "title": "Years"
+          },
+          "sale": {
+            "$ref": "#/components/schemas/SaleResult"
+          },
+          "assumptions": {
+            "items": {
+              "$ref": "#/components/schemas/Assumption"
+            },
+            "type": "array",
+            "title": "Assumptions"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "property_id",
+          "scenario",
+          "tariff",
+          "rule_set",
+          "years",
+          "sale"
+        ],
+        "title": "Projection"
       },
       "Property": {
         "properties": {
@@ -13335,6 +13780,151 @@
           "form_status"
         ],
         "title": "RuleSetStamp"
+      },
+      "SaleResult": {
+        "properties": {
+          "sale_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Sale Date"
+          },
+          "tax_free_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Free From"
+          },
+          "taxable": {
+            "type": "boolean",
+            "title": "Taxable"
+          },
+          "value": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Value"
+          },
+          "selling_costs": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Selling Costs"
+          },
+          "afa_claimed": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Afa Claimed"
+          },
+          "gain": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gain"
+          },
+          "gain_per_owner": {
+            "items": {
+              "$ref": "#/components/schemas/OwnerGain"
+            },
+            "type": "array",
+            "title": "Gain Per Owner"
+          },
+          "freigrenze_applied": {
+            "type": "boolean",
+            "title": "Freigrenze Applied"
+          },
+          "sale_tax": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Sale Tax"
+          },
+          "loan_balance": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Loan Balance"
+          },
+          "net_proceeds": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Net Proceeds"
+          },
+          "initial_equity": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Initial Equity"
+          },
+          "profit": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Profit"
+          },
+          "bridge": {
+            "items": {
+              "$ref": "#/components/schemas/BridgeRow"
+            },
+            "type": "array",
+            "title": "Bridge"
+          },
+          "cagr": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,6})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cagr"
+          },
+          "irr": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,6})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Irr"
+          },
+          "flows": {
+            "items": {
+              "$ref": "#/components/schemas/DatedFlow"
+            },
+            "type": "array",
+            "title": "Flows"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "sale_date",
+          "tax_free_from",
+          "taxable",
+          "value",
+          "selling_costs",
+          "afa_claimed",
+          "gain",
+          "freigrenze_applied",
+          "sale_tax",
+          "loan_balance",
+          "net_proceeds",
+          "initial_equity",
+          "profit"
+        ],
+        "title": "SaleResult",
+        "description": "D88, D89. gain is None when the sale is outside §23 (taxable False); a negative gain is\na loss that is not offset (\"nicht verrechenbar\", sale_tax 0.00)."
       },
       "Scenario": {
         "properties": {
@@ -16000,6 +16590,234 @@
         "additionalProperties": false,
         "type": "object",
         "title": "WorkspaceSettingsPatch"
+      },
+      "YearFigures": {
+        "properties": {
+          "year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 2000.0,
+            "title": "Year"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/YearKind"
+          },
+          "flags": {
+            "items": {
+              "$ref": "#/components/schemas/YearFlag"
+            },
+            "type": "array",
+            "title": "Flags"
+          },
+          "rent_in": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Rent In"
+          },
+          "other_income": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Other Income"
+          },
+          "umlagen_in": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Umlagen In"
+          },
+          "umlagen_out": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Umlagen Out"
+          },
+          "umlagen_net": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Umlagen Net"
+          },
+          "interest": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Interest"
+          },
+          "principal_repaid": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Principal Repaid"
+          },
+          "running_costs": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Running Costs"
+          },
+          "cash_out": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Cash Out"
+          },
+          "taxable_result": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taxable Result"
+          },
+          "afa": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Afa"
+          },
+          "afa_movable": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Afa Movable"
+          },
+          "tax_effect": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaxEffect"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "net_cash": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Net Cash"
+          },
+          "invested": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invested"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "loan_balance": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loan Balance"
+          },
+          "equity": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Equity"
+          },
+          "flat_rate_in": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Flat Rate In",
+            "default": "0"
+          },
+          "flat_rate_gap_monthly": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flat Rate Gap Monthly"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Sources"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "year",
+          "kind",
+          "rent_in",
+          "other_income",
+          "umlagen_in",
+          "umlagen_out",
+          "umlagen_net",
+          "interest",
+          "principal_repaid",
+          "running_costs",
+          "cash_out",
+          "taxable_result",
+          "afa",
+          "tax_effect",
+          "net_cash"
+        ],
+        "title": "YearFigures",
+        "description": "One year of the actuals card and the projection table (§5.3). The figures are sums of\nconfirmed, non-zero allocations of the year by §11 (projected years: of the synthesized\nrows and the real lines §11 puts into that year)."
+      },
+      "YearFlag": {
+        "type": "string",
+        "enum": [
+          "so_far",
+          "income.missing",
+          "tax_estimated"
+        ],
+        "title": "YearFlag"
+      },
+      "YearKind": {
+        "type": "string",
+        "enum": [
+          "actual",
+          "actual_partial",
+          "projected"
+        ],
+        "title": "YearKind"
       },
       "YearTotals": {
         "properties": {
