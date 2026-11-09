@@ -163,7 +163,7 @@ Performance = actuals from confirmed allocations, plus a year-by-year projection
 1. Rent = current Kaltmiete × (1 + rent growth)^n
 2. Interest and Tilgung from the loan schedule (after the fixed period, a user-set follow-up rate, defaulting to today's rate)
 3. Taxable result = rent − interest − AfA − deductible costs; tax effect = T(zvE + result) − T(zvE) (phase 4 spec D82)
-4. Cash after tax = rent − annuity − costs paid + tax effect
+4. Cash after tax = rent − annuity − costs paid − tax effect (a saving, which is a negative tax effect, adds cash; corrected 9 Nov 2026, phase 4 spec §10.4)
 5. Value = purchase price × (1 + value growth)^n; equity = value − loan balance
 
 **Marginal rate (decided 6 Nov 2026)**
