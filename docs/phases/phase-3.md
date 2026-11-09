@@ -980,8 +980,9 @@ review, and the Decisions row names D74–D76.
     **Luis, 9 Nov 2026:** the flat came with a fitted kitchen, and the Kaufvertrag names no
     price for it (its split covers the whole price as land, Altbau and Sanierung). So the
     kitchen's share has to be estimated and taken out of the building's basis, then
-    depreciated over 10 years on its own. Next: find its value (a renovation invoice may
-    include it; else an estimate from its age and original price), then a small spec
+    depreciated over 10 years on its own. Next: find its value (no renovation invoices exist
+    and none are expected, Luis 9 Nov 2026, so an estimate from its age and original price),
+    then a small spec
     decision on the input and how the price split and the Nebenkosten are reduced. Not
     scheduled until the value is known.
 16. **Tenant documents in the archive (from step 3, 9 Nov 2026; decided by Luis 9 Nov 2026: kept).** The yearly
@@ -1015,6 +1016,9 @@ review, and the Decisions row names D74–D76.
     handover, which suggests the renovation was finished before the contract; if so, §7i
     cannot apply and the renovation share simply stays in the AfA basis under the shorter
     life. Luis's consultant is asked when the work was done and whether a certificate
-    exists; the feature is built only if both answers allow it. Both may apply to one
+    exists; the feature is built only if both answers allow it. Luis received no renovation
+    invoices and expects none (9 Nov 2026); a buyer's certificate is usually applied for by
+    the seller with its own invoices, so this alone does not rule §7i out, but the seller
+    would have to obtain it. Both may apply to one
     building (BFH IX R 14/20: the §7i costs form their own depreciation volume, the rest
     follows §7 Abs. 4).
