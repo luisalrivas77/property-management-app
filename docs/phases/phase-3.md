@@ -793,11 +793,12 @@ Conflicts, stated plainly, and the edits (made in the spec PR):
    touches only `rounding.py` and the rounded column of `anlage_v_2026.yaml`.
 5. **The 2026 form.** Not published as of 9 Nov 2026; re-check in ELSTER in January 2027
    (step 4). Until then the 2026 rule set is `provisional` (D53, §4.3).
-6. **Decided 9 Nov 2026 (Luis): rent is due by the 3rd of the month** (the leases say "spätestens
-   am dritten" of the month), which is `rent_due_day`'s default 3 (D67), so nothing is typed.
-   Consequence for the ten-day rule: a January rent paid in the last days of December is due on
-   3 January, inside the window, and counts for the new year; a December rent is due on
-   3 December, outside it, so a late one paid in January counts in the year it arrives.
+6. **Decided 9 Nov 2026 (Luis): the due day differs per lease**, so `rent_due_day` stays a
+   tenancy field (D67): the earlier room leases make rent due on the 1st, the later lease by the
+   3rd (the default). Any due day from the 1st to the 10th gives the same result under the
+   ten-day rule: a January rent paid in the last days of December is due inside the window and
+   counts for the new year; a December rent is due outside it, so a late one paid in January
+   counts in the year it arrives. Setting 1 on the earlier tenancies is for accuracy only.
 7. **Luis: the ortsübliche Miete.** Which Mietspiegel applies and which value (the warm figure
    per m², D61) to enter; and whether the 50–66 % Totalüberschussprognose should ever be
    computed by the app (phase 4's projection could) or stays a warning.
