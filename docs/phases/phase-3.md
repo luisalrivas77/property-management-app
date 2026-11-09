@@ -807,10 +807,10 @@ Conflicts, stated plainly, and the edits (made in the spec PR):
    Luis enters its net cold rent per m² for the flat (the low end of the range is allowed) once
    phase 3 is built; the app adds the running costs from the ledger. The 50–66 %
    Totalüberschussprognose stays a warning; phase 4's projection may compute it later.
-8. **Finanzamt copies** (ARCHITECTURE's phase 3 input). The archive lists the documents that
-   need one (D65). Making them needs a PDF renderer (pypdf cannot draw annotations into the
-   page; a renderer such as pdfium or a headless browser is a new dependency); an XFA form
-   needs Adobe Reader by hand either way. Proposal: by hand for 2026, revisit in phase 5.
+8. **Decided 9 Nov 2026 (Luis): Finanzamt copies by hand for 2026, with a warning.** The
+   draft and the archive warn `archive.finanzamt_copy_needed` for each document that needs one
+   (an XFA form, or ink or stamp annotations not drawn into the page), saying how: open it in
+   Adobe Reader and print it to PDF. No renderer is added; automation is revisited in phase 5.
 9. **Orchestrator: build the §82b controls in step 2** even though no large repair exists yet
    (cheap, and the first big invoice will need it), or defer to a later step.
 10. **Hausgeld due day and the Disagio.** The spec takes the first of the service month as
