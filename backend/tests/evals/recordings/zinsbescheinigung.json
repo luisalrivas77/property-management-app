@@ -1,0 +1,183 @@
+{
+ "format": 1,
+ "doc": "zinsbescheinigung",
+ "synthetic": false,
+ "recorded_on": "2026-11-09",
+ "sdk_version": "2.6.0",
+ "classify": {
+  "prompt_version": "624ea59735496705",
+  "request_sha256": "8a08082a7a1aa22777069f14b31a0ce422e5acf31130d78f1209b83a5d00fd5b",
+  "message": {
+   "id": "msg_011CgsPGcXBm3pMXt7WUuvCo",
+   "container": null,
+   "content": [
+    {
+     "citations": null,
+     "text": "{\"type\": \"zinsbescheinigung\", \"subtype\": null, \"contains_tenant_data\": false, \"language\": \"de\", \"confidence\": \"high\"}",
+     "type": "text"
+    }
+   ],
+   "diagnostics": null,
+   "model": "claude-haiku-5-5",
+   "role": "assistant",
+   "stop_details": null,
+   "stop_reason": "end_turn",
+   "stop_sequence": null,
+   "type": "message",
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": "us",
+    "input_tokens": 3736,
+    "output_tokens": 50,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": "standard"
+   }
+  }
+ },
+ "extract": [
+  {
+   "prompt_version": "db37026b509dd7a8",
+   "request_sha256": "4d7560c4d436fa716f3dc27b55b852166325be204b1486d68ac4f5f17a252557",
+   "message": {
+    "id": "msg_011CgsPGSEZqxpHakLrLUuGT",
+    "container": null,
+    "content": [
+     {
+      "citations": null,
+      "text": "title: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Musterbank AG, Bankplatz 1, 60311 Frankfurt am Main\r\nLuis Testkauf und Ana Testkauf\r\nMusterweg 9, 12345 Musterstadt\r\nJahreszinsbescheinigung 2026\r\nfür Ihr Darlehen Nr. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Jahreszinsbescheinigung 2026",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": " → Jahreszinsbescheinigung Darlehen\ndocument_date: unbekannt\nlender: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Musterbank AG, Bankplatz 1, 60311 Frankfurt am Main\r\nLuis Testkauf und Ana Testkauf\r\nMusterweg 9, 12345 Musterstadt\r\nJahreszinsbescheinigung 2026\r\nfür Ihr Darlehen Nr. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Musterbank AG",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ncontract_number: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "4711-0815\r\nDarlehensstand am 01.01.2026: 243.410,12 EUR\r\nIm Jahr 2026 gezahlte Zinsen: 8.123,45 EUR\r\nIm Jahr 2026 geleistete Tilgung: 6.566,59 EUR\r\nDarlehensstand am 31.12.2026: 236.843,53 EUR\r\nDiese Bescheinigung wurde maschinell erstellt.",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "4711-0815",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ntax_year: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Musterbank AG, Bankplatz 1, 60311 Frankfurt am Main\r\nLuis Testkauf und Ana Testkauf\r\nMusterweg 9, 12345 Musterstadt\r\nJahreszinsbescheinigung 2026\r\nfür Ihr Darlehen Nr. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "2026",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ninterest_paid: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "4711-0815\r\nDarlehensstand am 01.01.2026: 243.410,12 EUR\r\nIm Jahr 2026 gezahlte Zinsen: 8.123,45 EUR\r\nIm Jahr 2026 geleistete Tilgung: 6.566,59 EUR\r\nDarlehensstand am 31.12.2026: 236.843,53 EUR\r\nDiese Bescheinigung wurde maschinell erstellt.",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "8.123,45 EUR",
+      "type": "text"
+     }
+    ],
+    "diagnostics": null,
+    "model": "claude-sonnet-5-5",
+    "role": "assistant",
+    "stop_details": null,
+    "stop_reason": "end_turn",
+    "stop_sequence": null,
+    "type": "message",
+    "usage": {
+     "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+     },
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "inference_geo": "us",
+     "input_tokens": 3319,
+     "output_tokens": 190,
+     "output_tokens_details": {
+      "thinking_tokens": 0
+     },
+     "server_tool_use": null,
+     "service_tier": "standard",
+     "speed": "standard"
+    }
+   },
+   "page_offset": 0
+  }
+ ]
+}
