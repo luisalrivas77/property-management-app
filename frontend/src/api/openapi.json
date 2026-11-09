@@ -161,6 +161,194 @@
         }
       }
     },
+    "/api/income-inputs": {
+      "get": {
+        "summary": "Income Inputs List",
+        "description": "The current rows (not superseded, not withdrawn), oldest first; include_history=true\nadds the rest. tax_year and owner_id narrow the list.",
+        "operationId": "income_inputs_list_api_income_inputs_get",
+        "parameters": [
+          {
+            "name": "tax_year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 2100,
+                  "minimum": 2000
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tax Year"
+            }
+          },
+          {
+            "name": "owner_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Owner Id"
+            }
+          },
+          {
+            "name": "include_history",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include History"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/IncomeInput"
+                  },
+                  "title": "Response Income Inputs List Api Income Inputs Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Income Input Create",
+        "description": "One new row and its event (owner.income_input_recorded for expected_gross_pay and\ndeductions_override, workspace.income_input_recorded for bescheid_zve and\nmarginal_rate_override). 422 income_input.scope_invalid (a correction of a row of another\nkind, year or owner, or a withdrawal with another value; the body's own scope check is a\nvalidation error), income_input.not_current (supersedes_id is not the current row, or\nanother current row already answers it: supersede it); 404 for an unknown owner, document\nor superseded row.",
+        "operationId": "income_input_create_api_income_inputs_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IncomeInputCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncomeInput"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tax-rate": {
+      "get": {
+        "summary": "Tax Rate Get",
+        "description": "The tax effect of `result` (a property's taxable result of tax_year) on the household's\nincome (D82): T(zvE + result) − T(zvE) on the estimated or assessed zvE, or result × rate\nunder a typed rate; the effective rate, or the tariff's slope when result is 0; and the\nsource (estimate, bescheid, override). missing = true when no income input applies.\nproperty_id is needed only when a Bescheid of an earlier year is carried forward (its\nyear's result is taken out of the assessed zvE): 422 income.assessed_result_needed\nwithout it. 422 tariff.no_file for a year before every tariff.",
+        "operationId": "tax_rate_get_api_tax_rate_get",
+        "parameters": [
+          {
+            "name": "tax_year",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 2100,
+              "minimum": 2000,
+              "title": "Tax Year"
+            }
+          },
+          {
+            "name": "result",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^-?[0-9]{1,12}(\\.[0-9]{1,2})?$",
+              "description": "The property's result, euros",
+              "title": "Result"
+            },
+            "description": "The property's result, euros"
+          },
+          {
+            "name": "property_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Property Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaxRateResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/properties": {
       "get": {
         "summary": "Properties List",
@@ -7041,6 +7229,21 @@
         "title": "BescheidExtraction",
         "description": "A Bescheid other than Grundsteuer, e.g. the Grunderwerbsteuerbescheid."
       },
+      "BescheidZve": {
+        "properties": {
+          "amount": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "amount"
+        ],
+        "title": "BescheidZve"
+      },
       "Body_account_import_api_accounts__account_id__imports_post": {
         "properties": {
           "file": {
@@ -7512,6 +7715,21 @@
         ],
         "title": "DeclareBalanceBody",
         "description": "POST /imports/{id}/balances: the closing balance Luis reads in online banking."
+      },
+      "DeductionsOverride": {
+        "properties": {
+          "amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "amount"
+        ],
+        "title": "DeductionsOverride"
       },
       "DepositForm": {
         "type": "string",
@@ -8921,6 +9139,21 @@
         ],
         "title": "ExcludeFrom15Pct"
       },
+      "ExpectedGrossPay": {
+        "properties": {
+          "amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "amount"
+        ],
+        "title": "ExpectedGrossPay"
+      },
       "ExtractedValue": {
         "properties": {
           "value": {
@@ -9408,6 +9641,231 @@
         ],
         "title": "InboxItemKind",
         "description": "GET /inbox (§8.3): one list, newest first."
+      },
+      "IncomeInput": {
+        "properties": {
+          "owner_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Id"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/IncomeInputKind"
+          },
+          "tax_year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 2000.0,
+            "title": "Tax Year"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExpectedGrossPay"
+              },
+              {
+                "$ref": "#/components/schemas/DeductionsOverride"
+              },
+              {
+                "$ref": "#/components/schemas/BescheidZve"
+              },
+              {
+                "$ref": "#/components/schemas/MarginalRateOverride"
+              }
+            ],
+            "title": "Value"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "supersedes_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes Id"
+          },
+          "withdrawn": {
+            "type": "boolean",
+            "title": "Withdrawn",
+            "default": false
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Recorded At"
+          },
+          "recorded_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded By"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "tax_year",
+          "value",
+          "id",
+          "workspace_id",
+          "recorded_at"
+        ],
+        "title": "IncomeInput",
+        "description": "API read model (the table names its timestamp recorded_at, so not Record)."
+      },
+      "IncomeInputCreate": {
+        "properties": {
+          "owner_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Id"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/IncomeInputKind"
+          },
+          "tax_year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 2000.0,
+            "title": "Tax Year"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExpectedGrossPay"
+              },
+              {
+                "$ref": "#/components/schemas/DeductionsOverride"
+              },
+              {
+                "$ref": "#/components/schemas/BescheidZve"
+              },
+              {
+                "$ref": "#/components/schemas/MarginalRateOverride"
+              }
+            ],
+            "title": "Value"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "supersedes_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes Id"
+          },
+          "withdrawn": {
+            "type": "boolean",
+            "title": "Withdrawn",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "tax_year",
+          "value"
+        ],
+        "title": "IncomeInputCreate",
+        "description": "One income input row as written. A correction is a new row with supersedes_id (a\ncurrent row of the same kind, year and owner); withdrawn = true ends a row without\nreplacing it (its value repeats the withdrawn row's). Rows are never changed."
+      },
+      "IncomeInputKind": {
+        "type": "string",
+        "enum": [
+          "expected_gross_pay",
+          "deductions_override",
+          "bescheid_zve",
+          "marginal_rate_override"
+        ],
+        "title": "IncomeInputKind",
+        "description": "income_input.kind (migration 0016, phase 4 D83)."
       },
       "InitialRent": {
         "properties": {
@@ -10515,6 +10973,21 @@
         "title": "ManualDocumentFields",
         "description": "The fields a person types in phase 1. Per-type schemas replace this in phase 2."
       },
+      "MarginalRateOverride": {
+        "properties": {
+          "rate": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,4})?$",
+            "title": "Rate"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rate"
+        ],
+        "title": "MarginalRateOverride"
+      },
       "MarketRent": {
         "properties": {
           "valid_from": {
@@ -11199,6 +11672,49 @@
           "share"
         ],
         "title": "OwnerShare"
+      },
+      "OwnerZve": {
+        "properties": {
+          "owner_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Owner Id"
+          },
+          "gross": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Gross"
+          },
+          "deductions": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Deductions"
+          },
+          "deductions_source": {
+            "type": "string",
+            "enum": [
+              "default",
+              "override"
+            ],
+            "title": "Deductions Source"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "owner_id",
+          "gross",
+          "deductions",
+          "deductions_source",
+          "amount"
+        ],
+        "title": "OwnerZve",
+        "description": "One owner's part of the estimate (D84). deductions = the default or the override."
       },
       "OwnershipBody": {
         "properties": {
@@ -13365,6 +13881,157 @@
         ],
         "title": "StatementImport"
       },
+      "TariffStamp": {
+        "properties": {
+          "tax_year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 2000.0,
+            "title": "Tax Year"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "reused_from": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2100.0,
+                "minimum": 2000.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reused From"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "tax_year",
+          "version"
+        ],
+        "title": "TariffStamp",
+        "description": "Which tariff a figure was computed with (shown with every projection)."
+      },
+      "TaxBreakdown": {
+        "properties": {
+          "est": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Est"
+          },
+          "soli": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Soli"
+          },
+          "church": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Church"
+          },
+          "total": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Total"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "est",
+          "soli",
+          "church",
+          "total"
+        ],
+        "title": "TaxBreakdown",
+        "description": "T(zvE) of D82: Einkommensteuer (splitting, whole euros), Soli and church tax (cents)."
+      },
+      "TaxEffect": {
+        "properties": {
+          "effect": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Effect"
+          },
+          "effective_rate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Rate"
+          },
+          "slope": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slope"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "estimate",
+              "bescheid",
+              "override"
+            ],
+            "title": "Source"
+          },
+          "carried_forward": {
+            "type": "boolean",
+            "title": "Carried Forward",
+            "default": false
+          },
+          "breakdown_with": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaxBreakdown"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "breakdown_without": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaxBreakdown"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Sources"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "effect",
+          "source"
+        ],
+        "title": "TaxEffect",
+        "description": "D82: effect = T(zvE_base + R) − T(zvE_base), or R × rate under an override (then the\ntwo breakdowns are None). effective_rate = effect ÷ R in percent, one decimal half-up,\nNone for R = 0; slope (display only) is the tariff's slope at zvE_base including Soli and\nchurch tax, shown when R = 0."
+      },
       "TaxExport": {
         "properties": {
           "id": {
@@ -13897,6 +14564,66 @@
           "movable_asset"
         ],
         "title": "TaxInputKind"
+      },
+      "TaxRateResult": {
+        "properties": {
+          "tax_year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 2000.0,
+            "title": "Tax Year"
+          },
+          "result": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Result"
+          },
+          "tariff": {
+            "$ref": "#/components/schemas/TariffStamp"
+          },
+          "missing": {
+            "type": "boolean",
+            "title": "Missing"
+          },
+          "zve": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ZveEstimate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effect": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaxEffect"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "owner_estimates": {
+            "items": {
+              "$ref": "#/components/schemas/OwnerZve"
+            },
+            "type": "array",
+            "title": "Owner Estimates"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "tax_year",
+          "result",
+          "tariff",
+          "missing",
+          "owner_estimates"
+        ],
+        "title": "TaxRateResult",
+        "description": "GET /api/tax-rate: the Steuern screen's \"Steuerwirkung\" line (§8, §9).\n\nzve and effect are None together when no income input applies to the year or an earlier\none (`missing`, the flag income.missing: the screen shows \"— · Einkommen eintragen\").\nowner_estimates lists each owner's gross pay, deductions (the D84 default or the typed\noverride) and estimate from the rows that apply, whatever the year's source, so the\nEigentümer page can show the computed default deductions under a Bescheid or an override\ntoo."
       },
       "Tenancy": {
         "properties": {
@@ -15350,6 +16077,65 @@
         "type": "object",
         "title": "ZinsbescheinigungExtraction",
         "description": "Zinsbescheinigung: the year's interest, reconciled against the loan schedule."
+      },
+      "ZveEstimate": {
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "estimate",
+              "bescheid",
+              "override"
+            ],
+            "title": "Source"
+          },
+          "carried_forward": {
+            "type": "boolean",
+            "title": "Carried Forward",
+            "default": false
+          },
+          "tax_year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 2000.0,
+            "title": "Tax Year"
+          },
+          "per_owner": {
+            "items": {
+              "$ref": "#/components/schemas/OwnerZve"
+            },
+            "type": "array",
+            "title": "Per Owner"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Sources"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "amount",
+          "source",
+          "tax_year"
+        ],
+        "title": "ZveEstimate",
+        "description": "zvE_base (D83, D84): the household's taxable income without this property. amount is\nNone only under a rate override with nothing else entered for the year."
       },
       "hausbuch__schemas__ai__SourceRef": {
         "properties": {

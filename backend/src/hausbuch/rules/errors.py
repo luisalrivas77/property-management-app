@@ -88,6 +88,9 @@ TARIFF_INVALID = "tariff.invalid"  # a tariff file that does not validate (schem
 INCOME_MISSING = "income.missing"  # a flag on a year's figures, not an error (§5.2)
 INCOME_INPUT_SCOPE_INVALID = "income_input.scope_invalid"  # the kind's scope is not met
 INCOME_INPUT_NOT_CURRENT = "income_input.not_current"  # supersedes a superseded/withdrawn row
+# GET /api/tax-rate: a Bescheid of an earlier year applies, and its own year's result (which
+# the assessed zvE contains) needs the property to compute (phase 4 step 1).
+INCOME_ASSESSED_RESULT_NEEDED = "income.assessed_result_needed"
 SCENARIO_NOT_CURRENT = "scenario.not_current"  # supersedes a superseded or withdrawn scenario
 SCENARIO_SALE_YEAR_BEFORE_TODAY = "scenario.sale_year_before_today"
 # The body's property is not the path's, a loan lever names another property's loan, or a

@@ -34,6 +34,7 @@ Public signatures (phase 4 step 2 imports these; keep them stable):
     in_force(inputs) -> list[IncomeInputFact]
     default_deductions(gross, tariff) -> Decimal
     zve_base(year, inputs, owners, tariff, *, assessed_result=None) -> ZveEstimate | None
+    owner_estimates(year, inputs, owners, tariff) -> list[OwnerZve]
     year_tax_effect(year, result, inputs, owners, tariff, *, assessed_result=None)
         -> tuple[ZveEstimate | None, TaxEffect | None]
 
@@ -239,6 +240,22 @@ def zve_base(
     if rows is None:
         return None
     return _estimate(rows, owners, tariff, assessed_result)
+
+
+def owner_estimates(
+    year: int,
+    inputs: Iterable[IncomeInputFact],
+    owners: Sequence[OwnerTaxProfile],
+    tariff: Tariff,
+) -> list[OwnerZve]:
+    """Each owner's gross pay, deductions (default or override) and estimate from the rows
+    that apply to `year`, whatever the year's source (for the Eigentümer page, which shows the
+    computed default deductions under a Bescheid or an override too); [] when none apply."""
+    rows = _year_rows(year, inputs)
+    if rows is None:
+        return []
+    estimates, _ = _owner_estimates(rows, owners, tariff)
+    return estimates
 
 
 def year_tax_effect(

@@ -37,6 +37,7 @@ from .routes import (
     auth,
     documents,
     history,
+    income_inputs,
     loans,
     owners,
     performance,
@@ -56,6 +57,7 @@ API_PREFIX = "/api"
 # Each module exposes `router`; it is looked up when the app is built.
 ROUTE_MODULES = (
     owners,
+    income_inputs,
     properties,
     units,
     tenants,
