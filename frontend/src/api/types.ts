@@ -40,6 +40,63 @@ export interface paths {
         patch: operations["owner_update_api_owners__owner_id__patch"];
         trace?: never;
     };
+    "/api/income-inputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Income Inputs List
+         * @description The current rows (not superseded, not withdrawn), oldest first; include_history=true
+         *     adds the rest. tax_year and owner_id narrow the list.
+         */
+        get: operations["income_inputs_list_api_income_inputs_get"];
+        put?: never;
+        /**
+         * Income Input Create
+         * @description One new row and its event (owner.income_input_recorded for expected_gross_pay and
+         *     deductions_override, workspace.income_input_recorded for bescheid_zve and
+         *     marginal_rate_override). 422 income_input.scope_invalid (a correction of a row of another
+         *     kind, year or owner, or a withdrawal with another value; the body's own scope check is a
+         *     validation error), income_input.not_current (supersedes_id is not the current row, or
+         *     another current row already answers it: supersede it); 404 for an unknown owner, document
+         *     or superseded row.
+         */
+        post: operations["income_input_create_api_income_inputs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tax-rate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tax Rate Get
+         * @description The tax effect of `result` (a property's taxable result of tax_year) on the household's
+         *     income (D82): T(zvE + result) − T(zvE) on the estimated or assessed zvE, or result × rate
+         *     under a typed rate; the effective rate, or the tariff's slope when result is 0; and the
+         *     source (estimate, bescheid, override). missing = true when no income input applies.
+         *     property_id is needed only when a Bescheid of an earlier year is carried forward (its
+         *     year's result is taken out of the assessed zvE): 422 income.assessed_result_needed
+         *     without it. 422 tariff.no_file for a year before every tariff.
+         */
+        get: operations["tax_rate_get_api_tax_rate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/properties": {
         parameters: {
             query?: never;
@@ -2427,6 +2484,11 @@ export interface components {
             /** @description the year it concerns, if stated */
             tax_year?: components["schemas"]["ExtractedValue"];
         };
+        /** BescheidZve */
+        BescheidZve: {
+            /** Amount */
+            amount: string;
+        };
         /** Body_account_import_api_accounts__account_id__imports_post */
         Body_account_import_api_accounts__account_id__imports_post: {
             /** File */
@@ -2612,6 +2674,11 @@ export interface components {
             closing_balance: string;
             /** Opening Balance */
             opening_balance?: string | null;
+        };
+        /** DeductionsOverride */
+        DeductionsOverride: {
+            /** Amount */
+            amount: string;
         };
         /**
          * DepositForm
@@ -3127,6 +3194,11 @@ export interface components {
              */
             reason: "annual_maintenance" | "extension" | "damage_after_acquisition";
         };
+        /** ExpectedGrossPay */
+        ExpectedGrossPay: {
+            /** Amount */
+            amount: string;
+        };
         /**
          * ExtractedValue
          * @description One field of a per-type extraction, or of a proposal record.
@@ -3327,6 +3399,79 @@ export interface components {
          * @enum {string}
          */
         InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched";
+        /**
+         * IncomeInput
+         * @description API read model (the table names its timestamp recorded_at, so not Record).
+         */
+        IncomeInput: {
+            /** Owner Id */
+            owner_id?: string | null;
+            kind: components["schemas"]["IncomeInputKind"];
+            /** Tax Year */
+            tax_year: number;
+            /** Document Id */
+            document_id?: string | null;
+            /** Value */
+            value: components["schemas"]["ExpectedGrossPay"] | components["schemas"]["DeductionsOverride"] | components["schemas"]["BescheidZve"] | components["schemas"]["MarginalRateOverride"];
+            /** Note */
+            note?: string | null;
+            /** Supersedes Id */
+            supersedes_id?: string | null;
+            /**
+             * Withdrawn
+             * @default false
+             */
+            withdrawn: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+            /** Recorded By */
+            recorded_by?: string | null;
+        };
+        /**
+         * IncomeInputCreate
+         * @description One income input row as written. A correction is a new row with supersedes_id (a
+         *     current row of the same kind, year and owner); withdrawn = true ends a row without
+         *     replacing it (its value repeats the withdrawn row's). Rows are never changed.
+         */
+        IncomeInputCreate: {
+            /** Owner Id */
+            owner_id?: string | null;
+            kind: components["schemas"]["IncomeInputKind"];
+            /** Tax Year */
+            tax_year: number;
+            /** Document Id */
+            document_id?: string | null;
+            /** Value */
+            value: components["schemas"]["ExpectedGrossPay"] | components["schemas"]["DeductionsOverride"] | components["schemas"]["BescheidZve"] | components["schemas"]["MarginalRateOverride"];
+            /** Note */
+            note?: string | null;
+            /** Supersedes Id */
+            supersedes_id?: string | null;
+            /**
+             * Withdrawn
+             * @default false
+             */
+            withdrawn: boolean;
+        };
+        /**
+         * IncomeInputKind
+         * @description income_input.kind (migration 0016, phase 4 D83).
+         * @enum {string}
+         */
+        IncomeInputKind: "expected_gross_pay" | "deductions_override" | "bescheid_zve" | "marginal_rate_override";
         /**
          * InitialRent
          * @description The first rent row, recorded with the tenancy (reason 'initial').
@@ -3723,6 +3868,11 @@ export interface components {
             /** Notes */
             notes?: string | null;
         };
+        /** MarginalRateOverride */
+        MarginalRateOverride: {
+            /** Rate */
+            rate: string;
+        };
         /**
          * MarketRent
          * @description The Mietspiegel's net cold rent per m² (D61); the running costs come from the ledger.
@@ -4040,6 +4190,28 @@ export interface components {
              */
             owner_id: string;
             share: components["schemas"]["Fraction"];
+        };
+        /**
+         * OwnerZve
+         * @description One owner's part of the estimate (D84). deductions = the default or the override.
+         */
+        OwnerZve: {
+            /**
+             * Owner Id
+             * Format: uuid
+             */
+            owner_id: string;
+            /** Gross */
+            gross: string;
+            /** Deductions */
+            deductions: string;
+            /**
+             * Deductions Source
+             * @enum {string}
+             */
+            deductions_source: "default" | "override";
+            /** Amount */
+            amount: string;
         };
         /** OwnershipBody */
         OwnershipBody: {
@@ -4894,6 +5066,61 @@ export interface components {
             error_code: string | null;
         };
         /**
+         * TariffStamp
+         * @description Which tariff a figure was computed with (shown with every projection).
+         */
+        TariffStamp: {
+            /** Tax Year */
+            tax_year: number;
+            /** Version */
+            version: string;
+            /** Reused From */
+            reused_from?: number | null;
+        };
+        /**
+         * TaxBreakdown
+         * @description T(zvE) of D82: Einkommensteuer (splitting, whole euros), Soli and church tax (cents).
+         */
+        TaxBreakdown: {
+            /** Est */
+            est: string;
+            /** Soli */
+            soli: string;
+            /** Church */
+            church: string;
+            /** Total */
+            total: string;
+        };
+        /**
+         * TaxEffect
+         * @description D82: effect = T(zvE_base + R) − T(zvE_base), or R × rate under an override (then the
+         *     two breakdowns are None). effective_rate = effect ÷ R in percent, one decimal half-up,
+         *     None for R = 0; slope (display only) is the tariff's slope at zvE_base including Soli and
+         *     church tax, shown when R = 0.
+         */
+        TaxEffect: {
+            /** Effect */
+            effect: string;
+            /** Effective Rate */
+            effective_rate?: string | null;
+            /** Slope */
+            slope?: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "estimate" | "bescheid" | "override";
+            /**
+             * Carried Forward
+             * @default false
+             */
+            carried_forward: boolean;
+            breakdown_with?: components["schemas"]["TaxBreakdown"] | null;
+            breakdown_without?: components["schemas"]["TaxBreakdown"] | null;
+            /** Sources */
+            sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+        };
+        /**
          * TaxExport
          * @description A stored export (immutable). The draft it was built from is in the row's `draft`
          *     column; the API returns it with the file's signed download URL, not inline.
@@ -5076,6 +5303,30 @@ export interface components {
          * @enum {string}
          */
         TaxInputKind: "spread_82b" | "renovation_treatment" | "exclude_from_15pct" | "market_rent" | "ruecklage_spent" | "interest_certified" | "pre_handover_income" | "useful_life" | "movable_asset";
+        /**
+         * TaxRateResult
+         * @description GET /api/tax-rate: the Steuern screen's "Steuerwirkung" line (§8, §9).
+         *
+         *     zve and effect are None together when no income input applies to the year or an earlier
+         *     one (`missing`, the flag income.missing: the screen shows "— · Einkommen eintragen").
+         *     owner_estimates lists each owner's gross pay, deductions (the D84 default or the typed
+         *     override) and estimate from the rows that apply, whatever the year's source, so the
+         *     Eigentümer page can show the computed default deductions under a Bescheid or an override
+         *     too.
+         */
+        TaxRateResult: {
+            /** Tax Year */
+            tax_year: number;
+            /** Result */
+            result: string;
+            tariff: components["schemas"]["TariffStamp"];
+            /** Missing */
+            missing: boolean;
+            zve?: components["schemas"]["ZveEstimate"] | null;
+            effect?: components["schemas"]["TaxEffect"] | null;
+            /** Owner Estimates */
+            owner_estimates: components["schemas"]["OwnerZve"][];
+        };
         /** Tenancy */
         Tenancy: {
             /**
@@ -5671,6 +5922,31 @@ export interface components {
             interest_paid?: components["schemas"]["ExtractedValue"];
         };
         /**
+         * ZveEstimate
+         * @description zvE_base (D83, D84): the household's taxable income without this property. amount is
+         *     None only under a rate override with nothing else entered for the year.
+         */
+        ZveEstimate: {
+            /** Amount */
+            amount: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "estimate" | "bescheid" | "override";
+            /**
+             * Carried Forward
+             * @default false
+             */
+            carried_forward: boolean;
+            /** Tax Year */
+            tax_year: number;
+            /** Per Owner */
+            per_owner?: components["schemas"]["OwnerZve"][];
+            /** Sources */
+            sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+        };
+        /**
          * SourceRef
          * @description Where a value came from: the page (1-indexed, page offset of a split PDF already
          *     added) and the cited text, verbatim.
@@ -5821,6 +6097,106 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Owner"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    income_inputs_list_api_income_inputs_get: {
+        parameters: {
+            query?: {
+                tax_year?: number | null;
+                owner_id?: string | null;
+                include_history?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IncomeInput"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    income_input_create_api_income_inputs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IncomeInputCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IncomeInput"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    tax_rate_get_api_tax_rate_get: {
+        parameters: {
+            query: {
+                tax_year: number;
+                /** @description The property's result, euros */
+                result: string;
+                property_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaxRateResult"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

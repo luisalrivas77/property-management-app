@@ -122,6 +122,14 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "tax_input.movable_asset_separate_unsupported":
     "Eine gesondert gekaufte Küche wird noch nicht unterstützt; sie braucht ihr Anschaffungsdatum.",
   "tax_input.movable_asset_no_purchase_date": "Zuerst das Übergabedatum der Immobilie eintragen.",
+  // household income and the tax effect (phase-4.md §8, D83)
+  "income_input.scope_invalid":
+    "Diese Angabe passt nicht zu ihrem Eintrag: eine Korrektur gilt für dieselbe Art, dasselbe Jahr und dieselbe Person, eine Rücknahme wiederholt den Wert.",
+  "income_input.not_current":
+    "Für dieses Jahr gibt es schon einen gültigen Eintrag dieser Art, oder der korrigierte Eintrag ist nicht mehr aktuell. Bitte die Seite neu laden und den aktuellen Eintrag ändern.",
+  "income.assessed_result_needed":
+    "Der Bescheid eines früheren Jahres gilt weiter; für die Steuerwirkung braucht es die Immobilie, deren Ergebnis im Bescheid steckt.",
+  "tariff.no_file": "Für dieses Jahr gibt es keinen Einkommensteuertarif.",
   // exports of the draft (phase-3.md §10, §12)
   "tax_export.too_large":
     "Die Belege des Jahres sind zusammen größer als 100 MiB. Das Archiv bitte von Hand aufteilen; die Ausfüllhilfe geht weiterhin.",
