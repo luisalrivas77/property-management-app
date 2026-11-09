@@ -31,7 +31,7 @@ import { ErrorNotice } from "@/lib/ErrorNotice";
 import { formatDate, formatDateTime, formatDecimal, formatMoney, formatPercent, formatShare, todayIso } from "./format";
 import { ALLOCATION_CATEGORY, TAX_SOURCE_KIND, WARNING_TEXT, taxNote } from "./labels";
 import { ActionDialog, Loading } from "./ui";
-import { UsefulLifeSection } from "./taxInputs";
+import { MovableAssetSection, UsefulLifeSection } from "./taxInputs";
 import { useLoad, type Loaded } from "./useLoad";
 
 import "./tax.css";
@@ -260,6 +260,14 @@ function DraftView({ draft, propertyId, onChanged }: { draft: AnlageVDraft; prop
               <h2 id="tax-useful-life">Kürzere Nutzungsdauer (Gutachten)</h2>
               <UsefulLifeSection propertyId={propertyId} defaultYear={draft.tax_year} onChanged={onChanged} />
             </section>
+            <section className="card stack" aria-labelledby="tax-movable-asset">
+              <h2 id="tax-movable-asset">Einbauküche / bewegliche Wirtschaftsgüter</h2>
+              <MovableAssetSection
+                propertyId={propertyId}
+                purchaseYear={Number(draft.header.transfer_date.slice(0, 4)) || draft.tax_year}
+                onChanged={onChanged}
+              />
+            </section>
             <NotDeductible draft={draft} propertyId={propertyId} />
           </div>
           <aside className="stack tax-side" aria-label="Offene Punkte und Unterlagen">
@@ -381,6 +389,19 @@ function lineSublabel(line: DraftLine, draft: AnlageVDraft): string[] {
   } else if (line.key === "wk.afa" && afa && afa.basis != null && afa.rate != null) {
     parts.push(`${formatMoney(afa.basis)} × ${formatPercent(afa.rate)} × ${afa.months}/12`);
     if (!isZero(afa.additions)) parts.push(`Basis + ${formatMoney(afa.additions)} Herstellungskosten`);
+  }
+  if (line.key === "wk.afa" && afa && !isZero(afa.movable_deducted ?? "0")) {
+    // D80: the kitchen bought with the flat left the building's basis
+    parts.push(`Basis ohne Einbauküche (− ${formatMoney(afa.movable_deducted ?? "0")} mit Nebenkosten)`);
+  }
+  if (line.key === "wk.afa_movable") {
+    for (const asset of draft.movable_assets ?? []) {
+      parts.push(
+        asset.months >= asset.remaining_months
+          ? `Einbauküche: Restwert ${formatMoney(asset.book_value_start)} ganz abgeschrieben (letztes Jahr)`
+          : `Einbauküche: ${formatMoney(asset.basis)} ÷ ${asset.useful_life_years} Jahre × ${asset.months}/12`,
+      );
+    }
   }
   if ((line.einzelangaben ?? []).length > 0) parts.push((line.einzelangaben ?? []).join(", "));
   for (const note of line.notes ?? []) parts.push(taxNote(note));

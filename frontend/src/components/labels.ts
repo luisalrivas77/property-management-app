@@ -368,6 +368,10 @@ export const WARNING_TEXT: Record<WarningCode, (params: Params) => string> = {
     `Vom Konto bezahlter Kaufpreis ${money(p, "paid")} weicht vom Kaufpreis ${money(p, "price")} ab.`,
   "afa.useful_life_report": (p) =>
     `AfA nach kürzerer tatsächlicher Nutzungsdauer (${p.years ?? "?"} Jahre ab ${p.from_year ?? "?"}): in Zeile 33 „laut Erläuterung“ angeben; das Finanzamt fragt meist nach dem Gutachten.`,
+  "afa.movable_asset_no_evidence": (p) =>
+    `Der Wert der Einbauküche (${money(p)}) ist ohne Beleg erfasst. Eine Schätzung ist zulässig; bitte die Grundlage (z. B. einen Ausdruck des Küchenplaners) aufbewahren und als Beleg hinterlegen.`,
+  "afa.movable_asset_exceeds_building": (p) =>
+    `Die Einbauküche (${money(p, "deducted")} mit Nebenkosten) ist nicht kleiner als der Gebäudeanteil (${money(p, "building")}): die Gebäude-AfA fällt auf 0. Bitte Wert der Küche oder Kaufpreisaufteilung prüfen.`,
   "limit.exceeded": (p) =>
     `Die 15 %-Grenze ist${p.exceeded_in_year ? ` ${p.exceeded_in_year}` : ""} überschritten: die Renovierungskosten des Dreijahresfensters werden Herstellungskosten und laufen über die AfA.`,
   "limit.prior_year_amendment": (p) =>

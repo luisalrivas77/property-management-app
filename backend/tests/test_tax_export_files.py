@@ -20,8 +20,9 @@ from pypdf.generic import BooleanObject, NameObject
 
 from hausbuch.rules.tax.draft import draft
 from hausbuch.rules.tax.registry import rule_set
-from hausbuch.schemas.tax import AnlageVDraft, TaxInputFact
+from hausbuch.schemas.tax import AnlageVDraft, TaxInputFact, WarningCode
 from hausbuch.services.tax_export_files import (
+    WARNING_TEXT,
     ArchiveDocument,
     ExportStamp,
     archive_document_ids,
@@ -130,6 +131,38 @@ def test_field_sheet_explains_a_shorter_useful_life():
     assert f"20 Jahre ab {CASE.tax_year} laut Gutachten" in flat
     assert "Restwert zu Jahresbeginn" in flat
     assert "Zeile 33" in flat  # the afa.useful_life_report warning text
+
+
+def test_every_warning_code_has_a_sheet_text():
+    """A draft warning without a text would fail the export at render time."""
+    assert set(WARNING_TEXT) == set(WarningCode)
+
+
+def test_field_sheet_shows_a_kitchen_line_and_takes_it_out_of_the_building():
+    """D80: a kitchen in the price has its own row (Z42–45, Kz 60) with Z42's method, the
+    building annex subtracts its basis, a kitchen annex explains its AfA, and its missing
+    Beleg is a warning (the warning text must exist, or rendering fails)."""
+    kitchen = TaxInputFact(
+        id=UUID("00000080-0000-4000-8000-000000000001"),
+        property_id=CASE.facts.property.id,
+        kind="movable_asset",
+        tax_year=CASE.facts.property.purchase_date.year,
+        value={"label": "einbaukueche", "amount": "8500.00"},
+    )
+    facts = CASE.facts.model_copy(update={"tax_inputs": [*CASE.facts.tax_inputs, kitchen]})
+    drafted = draft(facts, CASE.tax_year, RULES)
+    (asset,) = drafted.movable_assets
+    assert drafted.afa is not None and drafted.afa.movable_deducted == asset.basis
+    sheet = render_field_sheet(drafted, RULES, facts, STAMP)
+    assert sheet == render_field_sheet(drafted, RULES, facts, STAMP)
+    flat = " ".join(_pdf_text(sheet).split())
+    assert "Zeile 42: Methode" in flat
+    assert "Einbauküche mit ihrem Anteil an den Nebenkosten" in flat
+    assert "Erläuterung zur AfA Einbauküche (Zeile 42–45)" in flat
+    assert f"Nutzungsdauer 10 Jahre ab {kitchen.tax_year}" in flat
+    assert "ohne Beleg erfasst" in flat
+    rows = {r[0]: r for r in _rows(lines_csv(drafted, RULES))[1:]}
+    assert rows["wk.afa_movable"][1:3] == ["45", "60"]
 
 
 def test_archive_is_reproducible():

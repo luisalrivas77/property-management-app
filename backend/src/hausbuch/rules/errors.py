@@ -65,5 +65,17 @@ TAX_INPUT_ALLOCATION_NOT_CONFIRMED = "tax_input.allocation_not_confirmed"
 TAX_INPUT_EXTENSION_NEEDS_HERSTELLUNG = "tax_input.extension_needs_herstellung"
 # D79: a useful_life must be shorter than the statutory life for the build year.
 TAX_INPUT_USEFUL_LIFE_NOT_SHORTER = "tax_input.useful_life_not_shorter"
+# D80: a movable asset's first year: not before the purchase year; the purchase year itself
+# when it came with the flat (in_purchase_price).
+TAX_INPUT_MOVABLE_ASSET_YEAR = "tax_input.movable_asset_year"
+# D80: a movable asset bought with the flat must stay below the building's basis (its basis,
+# with its Nebenkosten share, comes out of the building's); that needs a selected price split.
+TAX_INPUT_MOVABLE_ASSET_EXCEEDS_BUILDING = "tax_input.movable_asset_exceeds_building"
+TAX_INPUT_MOVABLE_ASSET_NO_SPLIT = "tax_input.movable_asset_no_split"
+# D80 review: a kitchen bought separately needs its own acquisition date, which the
+# value does not carry yet (its first year would count from the handover month).
+TAX_INPUT_MOVABLE_ASSET_SEPARATE_UNSUPPORTED = "tax_input.movable_asset_separate_unsupported"
+# D80 review: without the handover date there is no first year and no AfA start.
+TAX_INPUT_MOVABLE_ASSET_NO_PURCHASE_DATE = "tax_input.movable_asset_no_purchase_date"
 TAX_EXPORT_FAILED = "tax_export.failed"
 TAX_EXPORT_TOO_LARGE = "tax_export.too_large"  # an archive over 100 MiB

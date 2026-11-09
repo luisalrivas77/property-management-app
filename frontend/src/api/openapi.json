@@ -4226,7 +4226,7 @@
       },
       "post": {
         "summary": "Tax Input Create",
-        "description": "One new row and its property.tax_input_recorded event. 422 tax_input.scope_invalid,\ntax_input.not_current (supersedes_id is not the current row of this kind and scope, or\nanother current row already answers it), tax_input.allocation_not_confirmed,\ntax_input.extension_needs_herstellung (an Erweiterung excluded from the 15 % test needs a\nrenovation elected herstellung, and that election stays while the exclusion is current),\ntax_input.useful_life_not_shorter (a useful_life must be shorter than the statutory life\nfor the build year, D79).",
+        "description": "One new row and its property.tax_input_recorded event. 422 tax_input.scope_invalid,\ntax_input.not_current (supersedes_id is not the current row of this kind and scope, or\nanother current row already answers it), tax_input.allocation_not_confirmed,\ntax_input.extension_needs_herstellung (an Erweiterung excluded from the 15 % test needs a\nrenovation elected herstellung, and that election stays while the exclusion is current),\ntax_input.useful_life_not_shorter (a useful_life must be shorter than the statutory life\nfor the build year, D79), tax_input.movable_asset_year (a movable asset starts in the\npurchase year when bought with the flat, else not before it, D80),\ntax_input.movable_asset_exceeds_building (its basis with its Nebenkosten share is not below\nthe building's), tax_input.movable_asset_no_split (no price split selected yet),\ntax_input.movable_asset_separate_unsupported (a movable asset bought separately, not yet\nsupported: it needs its own acquisition date) and tax_input.movable_asset_no_purchase_date\n(the property has no handover date yet).",
         "operationId": "tax_input_create_api_properties__property_id__tax_inputs_post",
         "parameters": [
           {
@@ -5873,6 +5873,12 @@
             ],
             "title": "Remaining Months"
           },
+          "movable_deducted": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Movable Deducted",
+            "default": "0.00"
+          },
           "sources": {
             "items": {
               "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
@@ -6632,6 +6638,13 @@
                 "type": "null"
               }
             ]
+          },
+          "movable_assets": {
+            "items": {
+              "$ref": "#/components/schemas/MovableAfaLine"
+            },
+            "type": "array",
+            "title": "Movable Assets"
           },
           "tracked_not_deductible": {
             "items": {
@@ -10504,6 +10517,155 @@
         "title": "Member",
         "description": "GET /auth/members: one household member (an app_user of the workspace). has_passkey\nis false while an invited member has not enrolled yet. Never a passkey or a session."
       },
+      "MovableAfaLine": {
+        "properties": {
+          "tax_input_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Tax Input Id"
+          },
+          "label": {
+            "type": "string",
+            "const": "einbaukueche",
+            "title": "Label"
+          },
+          "tax_year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 2000.0,
+            "title": "Tax Year"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "price_amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Price Amount"
+          },
+          "basis": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Basis"
+          },
+          "in_purchase_price": {
+            "type": "boolean",
+            "title": "In Purchase Price"
+          },
+          "useful_life_years": {
+            "type": "integer",
+            "maximum": 25.0,
+            "minimum": 1.0,
+            "title": "Useful Life Years"
+          },
+          "from_year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 2000.0,
+            "title": "From Year"
+          },
+          "months": {
+            "type": "integer",
+            "maximum": 12.0,
+            "minimum": 0.0,
+            "title": "Months"
+          },
+          "book_value_start": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Book Value Start"
+          },
+          "remaining_months": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Remaining Months"
+          },
+          "method_code": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "enum": [
+                  1,
+                  2
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method Code"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Sources"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/DraftWarning"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "tax_input_id",
+          "label",
+          "tax_year",
+          "amount",
+          "price_amount",
+          "basis",
+          "in_purchase_price",
+          "useful_life_years",
+          "from_year",
+          "months",
+          "book_value_start",
+          "remaining_months",
+          "method_code"
+        ],
+        "title": "MovableAfaLine",
+        "description": "wk.afa_movable for one asset and tax year (D80): linear over useful_life_years from the\nAfA start month of from_year (§7 Abs. 1 EStG), pro rata by the months owned; the last year\ntakes the rest, then 0.00.\n\nbasis = amount × (price + Σ cost rows) ÷ price when in_purchase_price (its share of the\nNebenkosten goes with it), else amount. book_value_start is the basis less the AfA of\nearlier years; remaining_months the months of the life left at the start of the year."
+      },
+      "MovableAsset": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "const": "einbaukueche",
+            "title": "Label"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "useful_life_years": {
+            "type": "integer",
+            "maximum": 25.0,
+            "minimum": 1.0,
+            "title": "Useful Life Years",
+            "default": 10
+          },
+          "in_purchase_price": {
+            "type": "boolean",
+            "title": "In Purchase Price",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "label",
+          "amount"
+        ],
+        "title": "MovableAsset",
+        "description": "A movable asset with its own AfA (D80; BFH IX R 14/15: a fitted kitchen is not part of\nthe building). tax_year on the row is its first year (the purchase year when it came with\nthe flat); document_id is optional (the estimate's evidence, e.g. a planner printout).\n\namount is its share of the purchase price, gross (or its own price when bought separately).\nin_purchase_price: bought with the flat, so its basis (amount plus its share of the\nNebenkosten) leaves the building's AfA basis, never the land's."
+      },
       "MovedPayment": {
         "properties": {
           "allocation_id": {
@@ -13138,6 +13300,9 @@
               },
               {
                 "$ref": "#/components/schemas/UsefulLife"
+              },
+              {
+                "$ref": "#/components/schemas/MovableAsset"
               }
             ],
             "title": "Value"
@@ -13308,6 +13473,9 @@
               },
               {
                 "$ref": "#/components/schemas/UsefulLife"
+              },
+              {
+                "$ref": "#/components/schemas/MovableAsset"
               }
             ],
             "title": "Value"
@@ -13362,7 +13530,8 @@
           "ruecklage_spent",
           "interest_certified",
           "pre_handover_income",
-          "useful_life"
+          "useful_life",
+          "movable_asset"
         ],
         "title": "TaxInputKind"
       },
@@ -14577,6 +14746,8 @@
           "afa.acquisition_cost_without_row",
           "afa.purchase_price_mismatch",
           "afa.useful_life_report",
+          "afa.movable_asset_no_evidence",
+          "afa.movable_asset_exceeds_building",
           "limit.exceeded",
           "limit.prior_year_amendment",
           "limit.estimated_net",

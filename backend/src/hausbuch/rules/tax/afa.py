@@ -13,6 +13,12 @@ input in force, the AfA is the book value at the start of the year (basis + addi
 The life's months are counted from the AfA start month when it applies from the purchase year,
 else from January of its first year; a later input restarts the count. Years before the first
 input keep the statutory amount; without any input the line is exactly the statutory one.
+
+A movable asset bought with the flat (D80, the Einbauküche): its basis (its share of the price
+plus its share of the Nebenkosten, movable.asset_basis) leaves the building's share, never the
+land's, so basis() is reduced by it everywhere the building basis is read: the statutory AfA,
+the D79 book value and the 15 % test's building cost (anschaffungsnah.limit_status). The asset
+has its own line (movable.py, wk.afa_movable). Without one, every figure is unchanged.
 """
 
 from datetime import date
@@ -30,15 +36,31 @@ from hausbuch.schemas.tax import (
 )
 
 from ._common import ZERO, nonzero, owned_months, unique, warning
+from .movable import asset_basis, current_assets
 from .rounding import cents, money_str
 
 
-def basis(facts: AfaFacts) -> Decimal | None:
+def building_share(facts: AfaFacts) -> Decimal | None:
     """(price + Σ cost rows) × building share, to the cent; None without a split."""
     if facts.split is None:
         return None
     total = facts.purchase_price + sum((r.amount for r in facts.cost_rows), ZERO)
     return cents(total * facts.split.building_share)
+
+
+def movable_deducted(facts: AfaFacts) -> Decimal:
+    """D80: the bases of the movable assets bought with the flat (0.00 without one)."""
+    in_price = [a for a in current_assets(facts) if a.in_purchase_price]
+    return cents(sum((asset_basis(facts, a) for a in in_price), ZERO))
+
+
+def basis(facts: AfaFacts) -> Decimal | None:
+    """The building's AfA basis: its share less the movable assets bought with the flat (D80),
+    never below 0.00; None without a split."""
+    share = building_share(facts)
+    if share is None:
+        return None
+    return max(share - movable_deducted(facts), cents(ZERO))
 
 
 def _sources(facts: AfaFacts, tax_year: int) -> list[SourceRef]:
@@ -58,6 +80,9 @@ def _sources(facts: AfaFacts, tax_year: int) -> list[SourceRef]:
         for a in facts.additions
         if a.tax_year <= tax_year
     ]
+    for asset in current_assets(facts):  # D80: a kitchen in the price reduced the basis
+        if asset.in_purchase_price:
+            refs.append(SourceRef(kind="tax_input", id=asset.tax_input_id))
     return unique(refs)
 
 
@@ -78,6 +103,21 @@ def _warnings(facts: AfaFacts) -> list[DraftWarning]:
                     amount=money_str(row.amount),
                 )
             )
+    share = building_share(facts)
+    deducted = movable_deducted(facts)
+    if share is not None and deducted and deducted >= share:
+        out.append(
+            warning(
+                WarningCode.AFA_MOVABLE_ASSET_EXCEEDS_BUILDING,
+                [
+                    SourceRef(kind="tax_input", id=a.tax_input_id)
+                    for a in current_assets(facts)
+                    if a.in_purchase_price
+                ],
+                deducted=money_str(deducted),
+                building=money_str(share),
+            )
+        )
     paired = {a for row in facts.cost_rows for a in row.paid_by}
     evidence = nonzero(facts.allocations)  # D70: a 0.00 line is not evidence
     for a in evidence:
@@ -202,6 +242,7 @@ def afa(facts: AfaFacts, tax_year: int, rule_set: RuleSet) -> AfaLine:
         or (row is not None and row.from_year == tax_year)
     )
     method_code = (2 if changed else 1) if months else None
+    deducted = movable_deducted(facts)
     if row is None:
         return AfaLine(
             tax_year=tax_year,
@@ -211,6 +252,7 @@ def afa(facts: AfaFacts, tax_year: int, rule_set: RuleSet) -> AfaLine:
             rate=rate,
             months=months,
             method_code=method_code,
+            movable_deducted=deducted,
             sources=sources,
             warnings=warnings,
         )
@@ -237,6 +279,7 @@ def afa(facts: AfaFacts, tax_year: int, rule_set: RuleSet) -> AfaLine:
         useful_life_from_year=row.from_year,
         book_value_start=book,
         remaining_months=remaining,
+        movable_deducted=deducted,
         sources=unique(sources + refs),
         warnings=[*warnings, report],
     )

@@ -157,6 +157,8 @@ VALID = {
     "interest_certified": ({"loan", "document"}, 2026, {"amount": "3724.56"}),
     "pre_handover_income": (set(), None, {"treatment": "rent"}),
     "useful_life": ({"document"}, 2027, {"years": 30}),  # 0014, D79
+    # 0015, D80: year-scoped, the document optional (the value may be an estimate)
+    "movable_asset": (set(), 2026, {"label": "einbaukueche", "amount": "8500.00"}),
 }
 
 
@@ -192,6 +194,7 @@ def test_each_kind_with_its_scope_is_accepted_by_the_table_and_the_schema(scope,
         ("interest_certified", {"tax_year": 1999}),
         ("useful_life", {"tax_year": None}),  # 0014: year-scoped
         ("useful_life", {"document_id": None}),  # 0014: the Gutachten is required
+        ("movable_asset", {"tax_year": None}),  # 0015: year-scoped
         ("pre_handover_income", {"withdrawn": True}),  # withdrawn without supersedes_id
         ("market_rent", {"value": Jsonb(["not", "an", "object"])}),
         ("market_rent", {"kind": "rent_guarantee"}),
@@ -421,7 +424,8 @@ def test_0014_downgrade_refuses_a_useful_life_row_and_else_restores_0013():
         alembic(name, "downgrade", "0013_tax_year")
         with _admin(name) as conn:
             assert sorted(_tax_input_checks(conn).values()) == definitions_0013
-        alembic(name, "upgrade", "head")
+        # 0014's own revision, not head: a refused run rolls back to where it started
+        alembic(name, "upgrade", "0014_useful_life")
 
         ws = uuid.uuid4()
         with _admin(name) as conn:
@@ -435,6 +439,67 @@ def test_0014_downgrade_refuses_a_useful_life_row_and_else_restores_0013():
         with _admin(name) as conn:
             assert conn.execute("SELECT version_num FROM alembic_version").fetchall() == [
                 ("0014_useful_life",)
+            ]
+            forced = conn.execute(
+                "SELECT relforcerowsecurity FROM pg_class WHERE oid = 'tax_input'::regclass"
+            ).fetchone()
+            assert forced == (True,)  # the refused downgrade's NO FORCE was rolled back
+    finally:
+        drop_database(name)
+
+
+# --- 0015: movable_asset (D80) -----------------------------------------------------------
+
+
+def test_0015_adds_movable_asset_to_kind_and_year_scope_but_not_to_the_document_check():
+    """0015 recreates 0014's three named CHECKs: the kind list and the year scope gain
+    movable_asset, the document CHECK does not (its document is optional); every other CHECK
+    of tax_input stays as it was."""
+    name = create_database()
+    try:
+        alembic(name, "upgrade", "0014_useful_life")
+        with _admin(name) as conn:
+            before = _tax_input_checks(conn)
+        alembic(name, "upgrade", "0015_movable_asset")
+        with _admin(name) as conn:
+            after = _tax_input_checks(conn)
+        assert set(after) == set(before)
+        assert "movable_asset" in after["tax_input_kind_check"]
+        assert "movable_asset" in after["tax_input_year_scope_check"]
+        assert after["tax_input_year_document_check"] == before["tax_input_year_document_check"]
+        untouched = {k: d for k, d in before.items() if k not in NAMED_0014}
+        assert untouched == {k: d for k, d in after.items() if k not in NAMED_0014}
+    finally:
+        drop_database(name)
+
+
+def test_0015_downgrade_refuses_a_movable_asset_row_and_else_restores_0014():
+    """A movable_asset row is a record the old CHECK would refuse and the table never
+    deletes, so the downgrade is refused while one exists; on a table without one it restores
+    0014's three CHECKs. The guard must see rows under forced RLS."""
+    name = create_database()
+    try:
+        alembic(name, "upgrade", "0014_useful_life")
+        with _admin(name) as conn:
+            checks_0014 = _tax_input_checks(conn)
+        alembic(name, "upgrade", "0015_movable_asset")
+        alembic(name, "downgrade", "0014_useful_life")
+        with _admin(name) as conn:
+            assert _tax_input_checks(conn) == checks_0014
+        alembic(name, "upgrade", "0015_movable_asset")
+
+        ws = uuid.uuid4()
+        with _admin(name) as conn:
+            conn.execute("INSERT INTO workspace (id, name) VALUES (%s, 'A')", (ws,))
+            conn.execute(f"SET ROLE {OWNER}")
+            conn.execute("SELECT set_config('app.workspace_id', %s, false)", (str(ws),))
+            ids = {"property": insert_property(conn, ws)}
+            _insert(conn, "tax_input", _valid(ws, ids, "movable_asset"))
+        with pytest.raises(DBAPIError, match="downgrade of 0015_movable_asset refused"):
+            alembic(name, "downgrade", "0014_useful_life")
+        with _admin(name) as conn:
+            assert conn.execute("SELECT version_num FROM alembic_version").fetchall() == [
+                ("0015_movable_asset",)
             ]
             forced = conn.execute(
                 "SELECT relforcerowsecurity FROM pg_class WHERE oid = 'tax_input'::regclass"

@@ -43,6 +43,16 @@
 #   Years before the first governing row keep the statutory amount.
 #   method_code = 2 also in a governing row's from_year. Sources add the input and its
 #   Gutachten in every year the row governs.
+#
+# A movable asset bought with the flat (D80; cases movable_*). facts.movable_assets lists the
+# movable_asset inputs in force (see movable_asset.yaml). For one with in_purchase_price:
+#   movable_deducted = round(amount × (purchase_price + Σ cost_rows) ÷ purchase_price, 2)
+#   basis            = the basis above − movable_deducted: the kitchen takes its share of the
+#                      Nebenkosten with it, and all of it leaves the building's share, never
+#                      the land's. Every figure built on the basis follows (the statutory
+#                      amount, the useful-life book value, the 15 % limit).
+#   Sources add the movable_asset input. (A kitchen bought separately is refused by the
+#   service for now, D80 review F1: it needs its own acquisition date.)
 
 rule_set_year: 2026
 
@@ -70,6 +80,9 @@ ids:
   input_life_21: &UL21 00000071-0000-4000-8000-000000000001
   input_life_19: &UL19 00000071-0000-4000-8000-000000000002
   doc_gutachten: &D_GUT 00000d0c-0000-4000-8000-000000000005
+  input_kitchen: &K 00000081-0000-4000-8000-000000000001
+  doc_planner: &D_PLAN 00000d0c-0000-4000-8000-000000000006
+  input_life_30: &UL30 00000071-0000-4000-8000-000000000003
 
 bases:
   # The §14 flat: ETW completed 1998, handover 1 Jul 2026, price 300,000.00, three cost rows
@@ -359,3 +372,46 @@ cases:
          book_value_start: "282142.86"}
       - {<<: *ul21, tax_year: 2029, amount: "0.00", months: 0, method_code: null,
          book_value_start: "278571.43"}
+
+  - id: movable_in_price_reduces_building
+    description: >
+      D80: a kitchen estimated at 8,500.00 of the price takes its Nebenkosten share with it:
+      8,500.00 × 325,000.00 ÷ 300,000.00 = 9,208.33 leaves the building's 234,000.00, so the
+      basis is 224,791.67 (the land's 91,000.00 stays as it was). 2 % × 6/12 = 2,247.92 in
+      2026; 4,495.83 a year after it. The kitchen's own AfA is in movable_asset.yaml.
+    facts:
+      <<: *flat
+      movable_assets:
+        - {tax_input_id: *K, label: einbaukueche, from_year: 2026, amount: "8500.00",
+           useful_life_years: 10, in_purchase_price: true, document_id: *D_PLAN}
+    expect:
+      - {tax_year: 2026, amount: "2247.92", basis: "224791.67", rate: "0.02", months: 6,
+         method_code: 2, movable_deducted: "9208.33",
+         sources: [{kind: property, id: *P}, {kind: price_split, id: *S}, {kind: document, id: *D_KV},
+                   {kind: acquisition_cost, id: *C1}, {kind: acquisition_cost, id: *C2},
+                   {kind: acquisition_cost, id: *C3}, {kind: document, id: *D_GREST},
+                   {kind: document, id: *D_NOTAR}, {kind: document, id: *D_GB},
+                   {kind: tax_input, id: *K}]}
+      - {tax_year: 2027, amount: "4495.83", basis: "224791.67", rate: "0.02", months: 12,
+         method_code: 1, movable_deducted: "9208.33"}
+
+  - id: movable_in_price_with_useful_life
+    description: >
+      D80 with D79: the reduced basis 224,791.67 is what a shorter useful life (here 30 years
+      from the purchase year, synthetic) spreads over its remaining months: 2026: 224,791.67 ×
+      6/360 = 3,746.53; 2027: 221,045.14 × 12/354 = 7,493.06.
+    facts:
+      <<: *flat
+      useful_lives: [{tax_input_id: *UL30, from_year: 2026, years: 30, document_id: *D_GUT}]
+      movable_assets:
+        - {tax_input_id: *K, label: einbaukueche, from_year: 2026, amount: "8500.00",
+           useful_life_years: 10, in_purchase_price: true, document_id: *D_PLAN}
+    expect:
+      - {tax_year: 2026, amount: "3746.53", basis: "224791.67", rate: null, months: 6,
+         method_code: 2, method: useful_life, useful_life_years: 30, useful_life_from_year: 2026,
+         book_value_start: "224791.67", remaining_months: 360, movable_deducted: "9208.33",
+         warnings: [{code: afa.useful_life_report, params: {years: "30", from_year: "2026"}}]}
+      - {tax_year: 2027, amount: "7493.06", basis: "224791.67", rate: null, months: 12,
+         method_code: 1, method: useful_life, useful_life_years: 30, useful_life_from_year: 2026,
+         book_value_start: "221045.14", remaining_months: 354, movable_deducted: "9208.33",
+         warnings: [{code: afa.useful_life_report, params: {years: "30", from_year: "2026"}}]}

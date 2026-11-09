@@ -1437,7 +1437,13 @@ export interface paths {
          *     tax_input.extension_needs_herstellung (an Erweiterung excluded from the 15 % test needs a
          *     renovation elected herstellung, and that election stays while the exclusion is current),
          *     tax_input.useful_life_not_shorter (a useful_life must be shorter than the statutory life
-         *     for the build year, D79).
+         *     for the build year, D79), tax_input.movable_asset_year (a movable asset starts in the
+         *     purchase year when bought with the flat, else not before it, D80),
+         *     tax_input.movable_asset_exceeds_building (its basis with its Nebenkosten share is not below
+         *     the building's), tax_input.movable_asset_no_split (no price split selected yet),
+         *     tax_input.movable_asset_separate_unsupported (a movable asset bought separately, not yet
+         *     supported: it needs its own acquisition date) and tax_input.movable_asset_no_purchase_date
+         *     (the property has no handover date yet).
          */
         post: operations["tax_input_create_api_properties__property_id__tax_inputs_post"];
         delete?: never;
@@ -2073,6 +2079,11 @@ export interface components {
             book_value_start?: string | null;
             /** Remaining Months */
             remaining_months?: number | null;
+            /**
+             * Movable Deducted
+             * @default 0.00
+             */
+            movable_deducted: string;
             /** Sources */
             sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
             /** Warnings */
@@ -2293,6 +2304,8 @@ export interface components {
             /** Owners */
             owners?: components["schemas"]["OwnerResult"][];
             afa?: components["schemas"]["AfaLine"] | null;
+            /** Movable Assets */
+            movable_assets?: components["schemas"]["MovableAfaLine"][];
             /** Tracked Not Deductible */
             tracked_not_deductible?: components["schemas"]["TrackedAmount"][];
             /** Moved To Other Year */
@@ -3804,6 +3817,83 @@ export interface components {
             has_passkey: boolean;
         };
         /**
+         * MovableAfaLine
+         * @description wk.afa_movable for one asset and tax year (D80): linear over useful_life_years from the
+         *     AfA start month of from_year (§7 Abs. 1 EStG), pro rata by the months owned; the last year
+         *     takes the rest, then 0.00.
+         *
+         *     basis = amount × (price + Σ cost rows) ÷ price when in_purchase_price (its share of the
+         *     Nebenkosten goes with it), else amount. book_value_start is the basis less the AfA of
+         *     earlier years; remaining_months the months of the life left at the start of the year.
+         */
+        MovableAfaLine: {
+            /**
+             * Tax Input Id
+             * Format: uuid
+             */
+            tax_input_id: string;
+            /**
+             * Label
+             * @constant
+             */
+            label: "einbaukueche";
+            /** Tax Year */
+            tax_year: number;
+            /** Amount */
+            amount: string;
+            /** Price Amount */
+            price_amount: string;
+            /** Basis */
+            basis: string;
+            /** In Purchase Price */
+            in_purchase_price: boolean;
+            /** Useful Life Years */
+            useful_life_years: number;
+            /** From Year */
+            from_year: number;
+            /** Months */
+            months: number;
+            /** Book Value Start */
+            book_value_start: string;
+            /** Remaining Months */
+            remaining_months: number;
+            /** Method Code */
+            method_code: (1 | 2) | null;
+            /** Sources */
+            sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+            /** Warnings */
+            warnings?: components["schemas"]["DraftWarning"][];
+        };
+        /**
+         * MovableAsset
+         * @description A movable asset with its own AfA (D80; BFH IX R 14/15: a fitted kitchen is not part of
+         *     the building). tax_year on the row is its first year (the purchase year when it came with
+         *     the flat); document_id is optional (the estimate's evidence, e.g. a planner printout).
+         *
+         *     amount is its share of the purchase price, gross (or its own price when bought separately).
+         *     in_purchase_price: bought with the flat, so its basis (amount plus its share of the
+         *     Nebenkosten) leaves the building's AfA basis, never the land's.
+         */
+        MovableAsset: {
+            /**
+             * Label
+             * @constant
+             */
+            label: "einbaukueche";
+            /** Amount */
+            amount: string;
+            /**
+             * Useful Life Years
+             * @default 10
+             */
+            useful_life_years: number;
+            /**
+             * In Purchase Price
+             * @default true
+             */
+            in_purchase_price: boolean;
+        };
+        /**
          * MovedPayment
          * @description A payment booked in the draft's year that §5.1 counts in another year (or vice versa).
          */
@@ -4902,7 +4992,7 @@ export interface components {
             /** Document Id */
             document_id?: string | null;
             /** Value */
-            value: components["schemas"]["Spread82b"] | components["schemas"]["RenovationTreatment"] | components["schemas"]["ExcludeFrom15Pct"] | components["schemas"]["MarketRent"] | components["schemas"]["RuecklageSpent"] | components["schemas"]["InterestCertified"] | components["schemas"]["PreHandoverIncome"] | components["schemas"]["UsefulLife"];
+            value: components["schemas"]["Spread82b"] | components["schemas"]["RenovationTreatment"] | components["schemas"]["ExcludeFrom15Pct"] | components["schemas"]["MarketRent"] | components["schemas"]["RuecklageSpent"] | components["schemas"]["InterestCertified"] | components["schemas"]["PreHandoverIncome"] | components["schemas"]["UsefulLife"] | components["schemas"]["MovableAsset"];
             /** Note */
             note?: string | null;
             /** Supersedes Id */
@@ -4954,7 +5044,7 @@ export interface components {
             /** Document Id */
             document_id?: string | null;
             /** Value */
-            value: components["schemas"]["Spread82b"] | components["schemas"]["RenovationTreatment"] | components["schemas"]["ExcludeFrom15Pct"] | components["schemas"]["MarketRent"] | components["schemas"]["RuecklageSpent"] | components["schemas"]["InterestCertified"] | components["schemas"]["PreHandoverIncome"] | components["schemas"]["UsefulLife"];
+            value: components["schemas"]["Spread82b"] | components["schemas"]["RenovationTreatment"] | components["schemas"]["ExcludeFrom15Pct"] | components["schemas"]["MarketRent"] | components["schemas"]["RuecklageSpent"] | components["schemas"]["InterestCertified"] | components["schemas"]["PreHandoverIncome"] | components["schemas"]["UsefulLife"] | components["schemas"]["MovableAsset"];
             /** Note */
             note?: string | null;
             /** Supersedes Id */
@@ -4969,7 +5059,7 @@ export interface components {
          * TaxInputKind
          * @enum {string}
          */
-        TaxInputKind: "spread_82b" | "renovation_treatment" | "exclude_from_15pct" | "market_rent" | "ruecklage_spent" | "interest_certified" | "pre_handover_income" | "useful_life";
+        TaxInputKind: "spread_82b" | "renovation_treatment" | "exclude_from_15pct" | "market_rent" | "ruecklage_spent" | "interest_certified" | "pre_handover_income" | "useful_life" | "movable_asset";
         /** Tenancy */
         Tenancy: {
             /**
@@ -5454,7 +5544,7 @@ export interface components {
          * WarningCode
          * @enum {string}
          */
-        WarningCode: "year_end_straddle" | "afa.no_split" | "afa.cost_row_unpaid" | "afa.acquisition_cost_without_row" | "afa.purchase_price_mismatch" | "afa.useful_life_report" | "limit.exceeded" | "limit.prior_year_amendment" | "limit.estimated_net" | "anschaffungsnah.performance_date_check" | "renovation.undecided" | "interest.certificate_mismatch" | "hausgeld.abrechnung_pending" | "income.other_review" | "income.pre_handover" | "income.living_area_missing" | "umlagen.mixed_terms" | "reduced_rent.no_market_rent" | "reduced_rent.prognosis_needed" | "reduced_rent.partial" | "draft.open_lines_excluded" | "draft.form_provisional" | "draft.allocation_without_property" | "archive.finanzamt_copy_needed";
+        WarningCode: "year_end_straddle" | "afa.no_split" | "afa.cost_row_unpaid" | "afa.acquisition_cost_without_row" | "afa.purchase_price_mismatch" | "afa.useful_life_report" | "afa.movable_asset_no_evidence" | "afa.movable_asset_exceeds_building" | "limit.exceeded" | "limit.prior_year_amendment" | "limit.estimated_net" | "anschaffungsnah.performance_date_check" | "renovation.undecided" | "interest.certificate_mismatch" | "hausgeld.abrechnung_pending" | "income.other_review" | "income.pre_handover" | "income.living_area_missing" | "umlagen.mixed_terms" | "reduced_rent.no_market_rent" | "reduced_rent.prognosis_needed" | "reduced_rent.partial" | "draft.open_lines_excluded" | "draft.form_provisional" | "draft.allocation_without_property" | "archive.finanzamt_copy_needed";
         /**
          * WirtschaftsplanExtraction
          * @description Wirtschaftsplan: the monthly Hausgeld split the by_wirtschaftsplan rule reads (§8.1).

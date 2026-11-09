@@ -6,7 +6,9 @@ allocations and tax inputs and returns the draft with every line's sources:
 1. The 15 % status first (§5.3), because a crossing moves costs from wk.maintenance into the
    AfA basis. The AfA additions are the herstellung elections (§5.4, all years) plus the
    limit_exceeded rows; each allocation is added once (D74).
-2. AfA (§5.2), the line rules (§5.4–5.7, 5.10), then the categories no rule owns, routed by
+2. AfA (§5.2) and the AfA on movable assets (D80, wk.afa_movable, from the same facts, so a
+   kitchen bought with the flat leaves the building basis of both the AfA and the 15 % test),
+   the line rules (§5.4–5.7, 5.10), then the categories no rule owns, routed by
    the rule set's category_lines (Grundsteuer, insurance, management and bank fees,
    professional fees).
 3. Lines are merged by key (amounts summed, sources united). income.rent_total is the sum of
@@ -38,6 +40,7 @@ from hausbuch.schemas.tax import (
     DraftWarning,
     FormStatus,
     LimitFacts,
+    MovableAfaLine,
     MovedPayment,
     OpenLines,
     OwnerResult,
@@ -67,6 +70,7 @@ from ._common import (
 from .afa import afa
 from .anschaffungsnah import CATEGORIES as LIMIT_CATEGORIES
 from .anschaffungsnah import limit_status
+from .movable import movable_afa
 from .rounding import cents, money_str, split_cents, split_euros, whole_euros
 from .spekulation import tax_free_from
 from .tax_year import tax_year_of
@@ -77,6 +81,7 @@ from .verbilligt import check as reduced_rent_check
 INCOME_KEYS = ("income.rent_total", "income.umlagen", "income.umlagen_settlement", "income.other")
 COST_KEYS = (
     "wk.afa",
+    "wk.afa_movable",
     "wk.interest",
     "wk.financing_costs",
     "wk.maintenance",
@@ -116,6 +121,27 @@ def _additions(facts: DraftFacts, rule_set: RuleSet, limit) -> list[BasisAdditio
     for b in erhaltungsaufwand.herstellung_additions(facts, rule_set) + list(limit.basis_additions):
         out.setdefault(b.allocation_id, b)
     return list(out.values())
+
+
+MOVABLE_LABELS = {"einbaukueche": "Einbauküche"}
+
+
+def _euro_de(amount: Decimal) -> str:
+    """12345.6 → "12.345,60 €" (Z42's Einzelangaben are typed as they read)."""
+    return f"{cents(amount):,.2f} €".replace(",", "_").replace(".", ",").replace("_", ".")
+
+
+def _movable_einzelangabe(line: MovableAfaLine, prop) -> str:
+    """Z42 asks for Bezeichnung, Anschaffungskosten und -datum, Nutzungsdauer."""
+    if line.in_purchase_price and line.from_year == prop.purchase_date.year:
+        acquired = f"{prop.purchase_date.month:02d}/{prop.purchase_date.year}"
+    else:
+        acquired = str(line.from_year)
+    return (
+        f"{MOVABLE_LABELS.get(line.label, line.label)}: Anschaffungskosten "
+        f"{_euro_de(line.basis)}, angeschafft {acquired}, Nutzungsdauer "
+        f"{line.useful_life_years} Jahre"
+    )
 
 
 def _merge_rows(rows: list[UnitRow]) -> list[UnitRow]:
@@ -266,11 +292,22 @@ def draft(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> AnlageVDraft:
         tax_year,
         rule_set,
     )
-    afa_line = afa(afa_facts(facts, _additions(facts, rule_set, limit)), tax_year, rule_set)
+    building = afa_facts(facts, _additions(facts, rule_set, limit))
+    afa_line = afa(building, tax_year, rule_set)
     book = LineBook()
     if afa_line.amount:
         book.add("wk.afa", afa_line.amount, afa_line.sources)
     warnings += afa_line.warnings + limit.warnings
+    movable = [m for m in movable_afa(building, tax_year) if m.months]
+    for m in movable:  # D80: Z42–45, one Einzelangabe per asset
+        if m.amount:
+            book.add(
+                "wk.afa_movable",
+                m.amount,
+                m.sources,
+                einzelangaben=[_movable_einzelangabe(m, prop)],
+            )
+        warnings += m.warnings
 
     # 2. The line rules.
     results: list[RuleLines] = [
@@ -427,6 +464,7 @@ def draft(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> AnlageVDraft:
         totals=totals,
         owners=owners,
         afa=afa_line,
+        movable_assets=movable,
         tracked_not_deductible=tracked,
         moved_to_other_year=_moved(facts, tax_year, rule_set),
         pre_handover=pre_handover,

@@ -17,6 +17,10 @@ from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import tax_input as tax_input_table
 from hausbuch.rules.errors import (
     TAX_INPUT_EXTENSION_NEEDS_HERSTELLUNG,
+    TAX_INPUT_MOVABLE_ASSET_EXCEEDS_BUILDING,
+    TAX_INPUT_MOVABLE_ASSET_NO_SPLIT,
+    TAX_INPUT_MOVABLE_ASSET_SEPARATE_UNSUPPORTED,
+    TAX_INPUT_MOVABLE_ASSET_YEAR,
     TAX_INPUT_USEFUL_LIFE_NOT_SHORTER,
 )
 from hausbuch.schemas.allocation import (
@@ -25,12 +29,24 @@ from hausbuch.schemas.allocation import (
     AllocationMethod,
     AllocationSet,
 )
+from hausbuch.schemas.enums import AcquisitionCostKind, PriceSplitSource
 from hausbuch.schemas.events import EventType
-from hausbuch.schemas.property import Address, PropertyCreate, UnitCreate
+from hausbuch.schemas.property import (
+    AcquisitionCostCreate,
+    Address,
+    PriceSplitCreate,
+    PropertyCreate,
+    UnitCreate,
+)
 from hausbuch.schemas.tax import TAX_INPUT_SCOPE_INVALID, TaxInputCreate, TaxInputKind
 from hausbuch.services.allocations import record_set
 from hausbuch.services.errors import NotFoundError, RuleViolationError
-from hausbuch.services.properties import create_property
+from hausbuch.services.properties import (
+    add_acquisition_cost,
+    create_property,
+    record_price_split,
+    select_price_split,
+)
 from hausbuch.services.tax_inputs import (
     TAX_INPUT_ALLOCATION_NOT_CONFIRMED,
     TAX_INPUT_NOT_CURRENT,
@@ -911,3 +927,111 @@ def test_one_useful_life_per_year_superseded_and_withdrawn_as_usual(world):
         _life(world.property_id, 28, 2026, doc, supersedes_id=corrected.id, withdrawn=True),
     )
     assert world.query(list_tax_inputs, world.property_id, kind=K.USEFUL_LIFE) == [later]
+
+
+# --- a movable asset, the Einbauküche (D80) --------------------------------------------
+# The world's flat: price 289,000.00, handed over 1 May 2024. With 11,000.00 of Nebenkosten
+# and a 72 % building share the building's basis is 300,000.00 × 0.72 = 216,000.00; a kitchen
+# of A in the price has the basis A × 300,000 ÷ 289,000.
+
+
+def _split(world: World) -> None:
+    world.cmd(
+        add_acquisition_cost,
+        AcquisitionCostCreate(
+            property_id=world.property_id,
+            kind=AcquisitionCostKind.REAL_ESTATE_TRANSFER_TAX,
+            amount=Decimal("11000.00"),
+        ),
+    )
+    split = world.cmd(
+        record_price_split,
+        PriceSplitCreate(
+            property_id=world.property_id,
+            source=PriceSplitSource.PURCHASE_CONTRACT,
+            building_share=Decimal("0.720000"),
+        ),
+    )
+    world.cmd(select_price_split, world.property_id, split.id)
+
+
+def _kitchen(world: World, amount: str, tax_year: int, **extra) -> TaxInputCreate:
+    value = {"label": "einbaukueche", "amount": amount}
+    value |= extra.pop("value", {})
+    return _input(world, K.MOVABLE_ASSET, value, tax_year=tax_year, **extra)
+
+
+def _refused(world: World, data: TaxInputCreate) -> tuple[str, ...]:
+    with pytest.raises(RuleViolationError) as exc:
+        _create(world, data)
+    return _codes(exc)
+
+
+def test_a_kitchen_in_the_price_needs_a_split_and_stays_below_the_building(world):
+    assert _refused(world, _kitchen(world, "8500.00", 2024)) == (TAX_INPUT_MOVABLE_ASSET_NO_SPLIT,)
+    _split(world)
+    # 208,080.00 × 300,000 ÷ 289,000 = 216,000.00: not below the building's basis.
+    assert _refused(world, _kitchen(world, "208080.00", 2024)) == (
+        TAX_INPUT_MOVABLE_ASSET_EXCEEDS_BUILDING,
+    )
+    assert world.query(list_tax_inputs, world.property_id, include_history=True) == []
+    assert _events(world) == []
+    # No document needed: the value may be an estimate (the draft warns, D80).
+    row = _create(world, _kitchen(world, "8500.00", 2024))
+    assert (row.kind, row.tax_year, row.document_id) == (K.MOVABLE_ASSET, 2024, None)
+    assert (row.value.amount, row.value.useful_life_years, row.value.in_purchase_price) == (
+        Decimal("8500.00"),
+        10,
+        True,
+    )
+    (event,) = _events(world)
+    assert event.payload["kind"] == "movable_asset"
+    assert event.payload["tax_year"] == 2024
+
+
+def test_a_kitchen_starts_in_the_purchase_year_and_one_bought_later_is_refused(world):
+    _split(world)
+    for year in (2023, 2025):  # in the price: the purchase year (2024) only
+        assert _refused(world, _kitchen(world, "8500.00", year)) == (TAX_INPUT_MOVABLE_ASSET_YEAR,)
+    # D80 review F1: a kitchen bought separately needs its own acquisition date; refused for
+    # now, whatever its year.
+    separate = {"value": {"in_purchase_price": False}}
+    for year in (2023, 2024, 2026):
+        assert _refused(world, _kitchen(world, "6000.00", year, **separate)) == (
+            TAX_INPUT_MOVABLE_ASSET_SEPARATE_UNSUPPORTED,
+        )
+    assert world.query(list_tax_inputs, world.property_id, include_history=True) == []
+    assert _events(world) == []
+
+
+def test_a_kitchen_bought_separately_is_refused_even_without_a_split(world):
+    separate = _kitchen(world, "6000.00", 2025, value={"in_purchase_price": False})
+    assert _refused(world, separate) == (TAX_INPUT_MOVABLE_ASSET_SEPARATE_UNSUPPORTED,)
+
+
+def test_one_kitchen_per_flat_corrected_in_its_year_and_withdrawn_as_usual(world):
+    _split(world)
+    doc = world.document("invoice", {}, type="other")
+    first = _create(world, _kitchen(world, "8500.00", 2024))
+    # The label is the question: a second kitchen must supersede the first.
+    second = _kitchen(world, "6000.00", 2024)
+    assert _refused(world, second) == (TAX_INPUT_NOT_CURRENT,)
+    # A correction keeps the purchase year ...
+    moved = _kitchen(world, "6000.00", 2026, supersedes_id=first.id)
+    assert _refused(world, moved) == (TAX_INPUT_MOVABLE_ASSET_YEAR,)
+    # ... and is checked against the building without the row it replaces.
+    corrected = _create(
+        world,
+        _kitchen(world, "208000.00", 2024, supersedes_id=first.id, document_id=doc),
+    )
+    assert world.query(find_current, world.property_id, K.MOVABLE_ASSET, tax_year=2024) == [
+        corrected
+    ]
+    _create(
+        world,
+        _kitchen(world, "208000.00", 2024, supersedes_id=corrected.id, withdrawn=True),
+    )
+    assert world.query(list_tax_inputs, world.property_id, kind=K.MOVABLE_ASSET) == []
+    # Withdrawn, the kitchen can be recorded anew.
+    again = _create(world, second)
+    assert world.query(list_tax_inputs, world.property_id, kind=K.MOVABLE_ASSET) == [again]

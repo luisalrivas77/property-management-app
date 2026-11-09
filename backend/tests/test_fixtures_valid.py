@@ -64,6 +64,14 @@ PHASE3_CASES = {
         "useful_life_with_addition",
         "useful_life_from_later_year",
         "useful_life_sale_year",
+        # D80: a movable asset (the Einbauküche) bought with the flat
+        "movable_in_price_reduces_building",
+        "movable_in_price_with_useful_life",
+    },
+    "movable_asset": {
+        "kitchen_in_price_from_purchase",
+        "kitchen_estimate_without_evidence",
+        "kitchen_sold_before_ten_years",
     },
     "anschaffungsnah": {
         "under_limit_14_percent",
@@ -79,6 +87,7 @@ PHASE3_CASES = {
         "zero_amount_is_not_evidence",
         "performed_in_window_paid_after",
         "no_period_booked_after_window_warns",
+        "movable_in_price_reduces_limit",  # D80
     },
     "erhaltungsaufwand": {
         "repairs_full_deduction",

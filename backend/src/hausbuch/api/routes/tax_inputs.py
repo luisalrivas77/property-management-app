@@ -46,5 +46,11 @@ def tax_input_create(property_id: UUID, body: TaxInputCreate, cmd: Cmd) -> TaxIn
     tax_input.extension_needs_herstellung (an Erweiterung excluded from the 15 % test needs a
     renovation elected herstellung, and that election stays while the exclusion is current),
     tax_input.useful_life_not_shorter (a useful_life must be shorter than the statutory life
-    for the build year, D79)."""
+    for the build year, D79), tax_input.movable_asset_year (a movable asset starts in the
+    purchase year when bought with the flat, else not before it, D80),
+    tax_input.movable_asset_exceeds_building (its basis with its Nebenkosten share is not below
+    the building's), tax_input.movable_asset_no_split (no price split selected yet),
+    tax_input.movable_asset_separate_unsupported (a movable asset bought separately, not yet
+    supported: it needs its own acquisition date) and tax_input.movable_asset_no_purchase_date
+    (the property has no handover date yet)."""
     return cmd.run(create_tax_input, property_id, body)

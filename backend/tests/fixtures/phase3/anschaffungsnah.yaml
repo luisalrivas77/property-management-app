@@ -330,3 +330,37 @@ cases:
         warnings:
           - {code: anschaffungsnah.performance_date_check,
              params: {booking_date: "2029-07-31", amount: "2380.00"}}
+
+  - id: movable_in_price_reduces_limit
+    description: >
+      D80: a kitchen bought with the flat (8,500.00 of the price, basis with its Nebenkosten
+      share 9,208.33) is not part of the building, so the building cost the 15 % test reads is
+      234,000.00 − 9,208.33 = 224,791.67 and the limit 33,718.75. A repair of 34,000.00 net
+      (40,460.00 gross) in 2027 stays under the 35,100.00 the flat would have without the
+      kitchen, but crosses this limit: exceeded, and it joins the basis gross.
+    facts:
+      afa:
+        <<: *afa
+        movable_assets:
+          - {tax_input_id: 00000081-0000-4000-8000-000000000001, label: einbaukueche,
+             from_year: 2026, amount: "8500.00", useful_life_years: 10, in_purchase_price: true}
+      allocations:
+        - {allocation_id: *A_R1, booking_date: 2027-03-10, amount: "-40460.00", category: repairs,
+           invoice_net: "34000.00"}
+    expect:
+      - tax_year: 2027
+        basis_building_cost: "224791.67"
+        limit: "33718.75"
+        window_start: 2026-07-01
+        window_end: 2029-07-01
+        counted:
+          - {allocation_id: *A_R1, booking_date: 2027-03-10, tax_year: 2027, gross: "40460.00",
+             net: "34000.00", net_source: invoice}
+        used_net: "34000.00"
+        ratio_percent: "100.8"
+        exceeded: true
+        exceeded_in_year: 2027
+        basis_additions:
+          - {allocation_id: *A_R1, tax_year: 2027, amount: "40460.00", reason: limit_exceeded}
+        warnings:
+          - {code: limit.exceeded, params: {exceeded_in_year: "2027"}}
