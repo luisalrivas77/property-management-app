@@ -1,9 +1,11 @@
 # Recorded evals (phase 2, D29)
 
-Seven synthetic German documents (a Kaufvertrag, Darlehensvertrag, Mietvertrag, notary
-invoice, Grunderwerbsteuerbescheid, Wirtschaftsplan and PDF Kontoauszug) with fictional
-parties, generated deterministically by `make_docs.py`. Each document's expected
-classification and field values sit next to its text there.
+Synthetic German documents (a Kaufvertrag, Darlehensvertrag, Mietvertrag, notary
+invoice, Grunderwerbsteuerbescheid, Wirtschaftsplan and PDF Kontoauszug, and since phase 3
+§9 a Zinsbescheinigung and a Hausgeldabrechnung) with fictional parties, generated
+deterministically by `make_docs.py`. Each document's expected classification and field
+values sit next to its text there. The two phase 3 documents have no live recording until
+Luis runs `record.py zinsbescheinigung hausgeldabrechnung` (D66).
 
 - `test_recorded_evals.py` runs in CI on every push. It replays every recording in
   `recordings/` through the same code the `document_read` job uses (SDK message conversion,
