@@ -130,6 +130,13 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "income.assessed_result_needed":
     "Der Bescheid eines früheren Jahres gilt weiter; für die Steuerwirkung braucht es die Immobilie, deren Ergebnis im Bescheid steckt.",
   "tariff.no_file": "Für dieses Jahr gibt es keinen Einkommensteuertarif.",
+  // the projection and its scenarios (phase-4.md §8, D87)
+  "projection.no_rule_set":
+    "Für das Kaufjahr dieser Immobilie gibt es noch kein Regelwerk, also weder Ist-Zahlen noch eine Prognose.",
+  "scenario.sale_year_before_today": "Das Verkaufsjahr muss nach dem laufenden Jahr liegen: die Prognose beginnt im nächsten Januar.",
+  "scenario.not_current":
+    "Das Szenario ist nicht mehr aktuell, oder es gibt schon ein Standard-Szenario. Bitte die Seite neu laden.",
+  "scenario.scope_invalid": "Das Szenario passt nicht zu dieser Immobilie oder ihren Darlehen.",
   // exports of the draft (phase-3.md §10, §12)
   "tax_export.too_large":
     "Die Belege des Jahres sind zusammen größer als 100 MiB. Das Archiv bitte von Hand aufteilen; die Ausfüllhilfe geht weiterhin.",
