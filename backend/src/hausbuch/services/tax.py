@@ -297,10 +297,13 @@ def _cost_rows(
 
 
 def _tax_inputs(conn: Connection, property_id: UUID) -> list[TaxInputFact]:
-    """Every tax_input row of the property, in the order they were recorded."""
+    """Every tax_input row of the property, in the order they were recorded. Rows written in
+    one transaction share recorded_at, so ties are broken by the supersedes chain (a row always
+    after the row it supersedes), then by id."""
     ti = tax_input_table.c
     rows = conn.execute(
         select(
+            ti.recorded_at,
             ti.id,
             ti.property_id,
             ti.kind,
@@ -313,11 +316,21 @@ def _tax_inputs(conn: Connection, property_id: UUID) -> list[TaxInputFact]:
             ti.note,
             ti.supersedes_id,
             ti.withdrawn,
-        )
-        .where(ti.property_id == property_id)
-        .order_by(ti.recorded_at, ti.id)
+        ).where(ti.property_id == property_id)
     ).all()
-    return [TaxInputFact.model_validate(dict(r._mapping)) for r in rows]
+    supersedes = {r.id: r.supersedes_id for r in rows}
+
+    def depth(row_id: UUID) -> int:
+        n = 0
+        while (row_id := supersedes.get(row_id)) is not None:
+            n += 1
+        return n
+
+    ordered = sorted(rows, key=lambda r: (r.recorded_at, depth(r.id), r.id))
+    return [
+        TaxInputFact.model_validate({k: v for k, v in r._mapping.items() if k != "recorded_at"})
+        for r in ordered
+    ]
 
 
 def _grundsteuer_reference(
