@@ -54,6 +54,7 @@ from reportlab.platypus import (
 
 from hausbuch.rules.categories import CATEGORY_LABEL
 from hausbuch.rules.tax.field_sheet import UNIT_ROWS, FieldSheetRow, field_sheet
+from hausbuch.rules.tax.rounding import cents
 from hausbuch.schemas.checklist import ChecklistStatus, RequirementCode
 from hausbuch.schemas.enums import AcquisitionCostKind, PriceSplitSource
 from hausbuch.schemas.tax import (
@@ -188,6 +189,16 @@ WARNING_TEXT: dict[WarningCode, Callable[[dict[str, str]], str]] = {
         f"AfA nach kürzerer tatsächlicher Nutzungsdauer ({p.get('years', '?')} Jahre ab "
         f"{p.get('from_year', '?')}): in Zeile 33 „laut Erläuterung“ angeben; das Finanzamt "
         "fragt meist nach dem Gutachten."
+    ),
+    WarningCode.AFA_MOVABLE_ASSET_NO_EVIDENCE: lambda p: (
+        f"Der Wert der Einbauküche ({_p(p)}) ist ohne Beleg erfasst. Eine Schätzung ist "
+        "zulässig; bitte die Grundlage (z. B. einen Ausdruck des Küchenplaners) aufbewahren "
+        "und als Beleg hinterlegen."
+    ),
+    WarningCode.AFA_MOVABLE_ASSET_EXCEEDS_BUILDING: lambda p: (
+        f"Die Einbauküche ({_p(p, 'deducted')} mit Nebenkosten) ist nicht kleiner als der "
+        f"Gebäudeanteil ({_p(p, 'building')}): die Gebäude-AfA fällt auf 0. Bitte Wert der "
+        "Küche oder Kaufpreisaufteilung prüfen."
     ),
     WarningCode.LIMIT_EXCEEDED: lambda p: (
         f"Die 15 %-Grenze ist {p.get('exceeded_in_year', '')} überschritten: die "
@@ -366,6 +377,14 @@ def _row_notes(line: DraftLine | None, draft: AnlageVDraft) -> list[str]:
         else:
             rate = f", Satz {_percent(draft.afa.rate)}" if draft.afa.rate is not None else ""
         notes.append(f"Zeile 33: Methode {method}{rate}")
+    if line.key == "wk.afa_movable":  # D80: Z42's method box, one entry per asset
+        for asset in draft.movable_assets:
+            if asset.method_code is not None:
+                method = (
+                    "2 = laut Erläuterung (Anlage)" if asset.method_code == 2 else "1 = wie Vorjahr"
+                )
+                notes.append(f"Zeile 42: Methode {method}")
+                break
     if line.provisional:
         notes.append("vorläufig: ein Beleg fehlt noch")
     return notes
@@ -479,6 +498,15 @@ def _afa_annex(draft: AnlageVDraft, facts: DraftFacts) -> list:
             "",
         ]
     )
+    if afa.movable_deducted:  # D80: the kitchen bought with the flat leaves the building
+        building = cents((prop.purchase_price + cost_total) * share)
+        rows.append(["= Anteil Gebäude", _money(building)])
+        rows.append(
+            [
+                "− Einbauküche mit ihrem Anteil an den Nebenkosten (eigene AfA, Zeile 42–45)",
+                _money(afa.movable_deducted),
+            ]
+        )
     rows.append(["= AfA-Bemessungsgrundlage Gebäude", _money(afa.basis)])
     if afa.additions:
         additions = {r.id for r in afa.sources if r.kind == "allocation"}
@@ -542,6 +570,63 @@ def _afa_annex(draft: AnlageVDraft, facts: DraftFacts) -> list:
     return [KeepTogether(out + keep)]
 
 
+MOVABLE_LABEL = {"einbaukueche": "Einbauküche"}
+
+
+def _movable_annex(draft: AnlageVDraft, facts: DraftFacts) -> list:
+    """D80: one table per movable asset with AfA this year: its basis, life and months."""
+    out: list = []
+    prop = facts.property
+    cost_total = sum((c.amount for c in facts.cost_rows), Decimal("0"))
+    for asset in draft.movable_assets:
+        name = MOVABLE_LABEL.get(asset.label, asset.label)
+        rows: list[list] = [["Posten", "Betrag"]]
+        if asset.in_purchase_price:
+            rows.append([f"{name}, Wert im Kaufpreis", _money(asset.price_amount)])
+            rows.append(
+                [
+                    f"× (Kaufpreis {_money(prop.purchase_price)} + Nebenkosten "
+                    f"{_money(cost_total)}) / Kaufpreis",
+                    "",
+                ]
+            )
+        else:
+            rows.append([f"{name}, Anschaffungskosten", _money(asset.price_amount)])
+        rows.append(["= AfA-Bemessungsgrundlage", _money(asset.basis)])
+        rows.append(
+            [
+                f"Nutzungsdauer {asset.useful_life_years} Jahre ab {asset.from_year}; "
+                f"Restwert zu Jahresbeginn {draft.tax_year}",
+                _money(asset.book_value_start),
+            ]
+        )
+        rows.append(
+            [
+                f"linear, {asset.months} Monate in {draft.tax_year} (im letzten Jahr der ganze "
+                "Restwert)",
+                "",
+            ]
+        )
+        rows.append([f"= AfA {draft.tax_year}", _money(asset.amount)])
+        table = Table(
+            [[_para(str(c), _CELL) if i == 0 else c for i, c in enumerate(r)] for r in rows],
+            colWidths=[130 * mm, 40 * mm],
+            repeatRows=1,
+        )
+        table.setStyle(_GRID)
+        table.setStyle(TableStyle([("ALIGN", (1, 0), (1, -1), "RIGHT")]))
+        title = f"Anlage: Erläuterung zur AfA {name} (Zeile 42–45)"
+        note = (
+            "Bewegliches Wirtschaftsgut mit eigener AfA (§ 7 Abs. 1 EStG); im Kaufpreis "
+            "enthalten, daher aus der Bemessungsgrundlage des Gebäudes herausgerechnet."
+            if asset.in_purchase_price
+            else "Bewegliches Wirtschaftsgut mit eigener AfA (§ 7 Abs. 1 EStG), gesondert "
+            "angeschafft."
+        )
+        out.append(KeepTogether([_para(title, _H2), table, _para(note, _SMALL)]))
+    return out
+
+
 def _open_items(draft: AnlageVDraft) -> list[str]:
     out = []
     for item in draft.missing_documents:
@@ -602,6 +687,7 @@ def render_field_sheet(
         story += [_para(t) for t in ticked]
 
     story += _afa_annex(draft, facts)
+    story += _movable_annex(draft, facts)
 
     warnings = [warning_text(w) for w in draft.warnings]
     if finanzamt_copies:
