@@ -1,5 +1,5 @@
 """One year's figures, for actual and projected years alike (docs/phases/phase-4.md §5.3, D85,
-D86, D91). Pure, Decimal.
+D86, D91, D92). Pure, Decimal.
 
 The caller hands over the year's confirmed, non-zero allocations as phase 3's §11 rule assigns
 them (`rules.tax._common.of_year` under the year's rule set), the year's draft (its taxable
@@ -14,7 +14,9 @@ cash; the purchase year shows the first two as `invested` (evidence beside E₀)
 outside the table below (e.g. `uncategorized`) counts nowhere.
 """
 
+import calendar
 from collections.abc import Callable, Iterable, Sequence
+from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
@@ -30,7 +32,9 @@ MOVABLE_LINE = "wk.afa_movable"  # D80's kitchen line (§5.6)
 RENT = frozenset({C.RENT_COLD})
 OTHER_INCOME = frozenset({C.OTHER_INCOME})
 UMLAGEN_IN = frozenset({C.OPERATING_COSTS_PREPAYMENT, C.OPERATING_COSTS_SETTLEMENT})
-UMLAGEN_OUT = frozenset({C.HAUSGELD_UMLAGEFAEHIG, C.GRUNDSTEUER, C.INSURANCE})
+# The flat's own electricity (D92) is paid for by the tenants' Pauschale like the operating
+# costs, so the Pauschale check sees it; verbilligt.UMLAGEFAEHIG leaves it out (Q-O9).
+UMLAGEN_OUT = frozenset({C.HAUSGELD_UMLAGEFAEHIG, C.GRUNDSTEUER, C.INSURANCE, C.ELECTRICITY})
 INTEREST = frozenset({C.LOAN_INTEREST})
 PRINCIPAL = frozenset({C.LOAN_PRINCIPAL})
 RUNNING = frozenset(
@@ -93,6 +97,36 @@ def _movable(draft: AnlageVDraft | None) -> Decimal | None:
     return sum(amounts, ZERO) if amounts else None
 
 
+def flat_rate_months(
+    year: int, tenancies: Sequence[TaxTenancy], handover: date | None
+) -> int | None:
+    """D92: the calendar months of `year` in which at least one flat_rate tenancy was in force
+    (start to end date, any day of the month counts) and that are not before the month of the
+    handover (no restriction when it is None). None when there are none: before the handover
+    the seller paid the costs and forwarded the rent, so those months have neither side."""
+    flat = [t for t in tenancies if t.operating_costs_terms is OperatingCostsTerms.FLAT_RATE]
+    first = 1
+    if handover is not None:
+        if handover.year > year:
+            return None
+        if handover.year == year:
+            first = handover.month
+    months = sum(
+        1
+        for m in range(first, 13)
+        if any(
+            t.start_date <= _month_end(year, m)
+            and (t.end_date is None or t.end_date >= date(year, m, 1))
+            for t in flat
+        )
+    )
+    return months or None
+
+
+def _month_end(year: int, month: int) -> date:
+    return date(year, month, calendar.monthrange(year, month)[1])
+
+
 def year_figures(
     year: int,
     kind: YearKind,
@@ -102,6 +136,7 @@ def year_figures(
     *,
     tenancies: Sequence[TaxTenancy] = (),
     purchase_year: int | None = None,
+    handover: date | None = None,
     value: Decimal | None = None,
     loan_balance: Decimal | None = None,
     extra_sources: Iterable[SourceRef] = (),
@@ -111,7 +146,8 @@ def year_figures(
     (zero rows are ignored here as well); `draft` is None only when no rule set applies, and
     then the result and AfA are None. `value` and `loan_balance` are given for projected
     years (§5.4 step 6); equity is their difference. `tenancies` tell the flat-rate ones apart
-    for the Pauschale check (D91); `purchase_year` puts `invested` on that year only."""
+    for the Pauschale check (D91) and, with the `handover` (the property's purchase_date),
+    give the months it divides by (D92); `purchase_year` puts `invested` on that year only."""
     rows = [a for a in allocations if a.amount != 0]
 
     def of(categories: frozenset[C]) -> list[AllocationFact]:
@@ -140,7 +176,8 @@ def year_figures(
 
     flat = {t.id for t in tenancies if t.operating_costs_terms is OperatingCostsTerms.FLAT_RATE}
     flat_rate_in = _signed_in([a for a in in_rows if a.tenancy_id in flat])
-    gap = cents((flat_rate_in - umlagen_out) / 12) if flat else None
+    months = flat_rate_months(year, tenancies, handover)
+    gap = cents((flat_rate_in - umlagen_out) / months) if months is not None else None
 
     ref = ref_of or _ref
     counted = [*rent_rows, *other_rows, *in_rows, *out_rows, *interest_rows]
@@ -176,6 +213,7 @@ def year_figures(
         loan_balance=loan_balance,
         equity=value - loan_balance if value is not None and loan_balance is not None else None,
         flat_rate_in=flat_rate_in,
+        flat_rate_months=months,
         flat_rate_gap_monthly=gap,
         sources=sources,
     )

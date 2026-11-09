@@ -11,9 +11,10 @@ AllocationFact rows the property would book, so phase 3's draft() can run over t
   Vacant months are the year's last (whole months; a part month is rent spread thinner).
   Rows are dated the tenancy's rent due day, recurring, service period the month, due_on the
   row's date. An `included` tenancy has no NK; `flat_rate` and `prepayment` do.
-- Each recurring cost category (Hausgeld parts, Grundsteuer, insurance, management, bank
-  fees): its latest confirmed line on or before today, annualised as amount × 12 ÷ cadence
-  and grown by (1 + cost_inflation)^(n−1), half-up once, then spread in equal cents over the
+- Each recurring cost category (Hausgeld parts, Grundsteuer, insurance, electricity (D92),
+  management, bank fees): its latest confirmed line on or before today, annualised as
+  amount × 12 ÷ cadence and grown by (1 + cost_inflation)^(n−1), half-up once, then spread
+  in equal cents over the
   rows of the year, which repeat the line's date every `cadence` months (the day clamped to the
   month's end). cadence = the months of the line's service period, else the gap between the
   category's two latest dates ÷ 30.4, else 12; snapped to {1, 2, 3, 6, 12}, ties to the
@@ -75,6 +76,7 @@ COST_CATEGORIES = (
     C.HAUSGELD_RUECKLAGE,
     C.GRUNDSTEUER,
     C.INSURANCE,
+    C.ELECTRICITY,  # D92: the flat's own supply, projected like Grundsteuer
     C.PROPERTY_MANAGEMENT,
     C.BANK_FEES,
 )
