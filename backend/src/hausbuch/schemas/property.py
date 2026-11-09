@@ -16,10 +16,9 @@ from .common import (
     PositiveMoney,
     Rooms,
     Schema,
-    TaxRate,
     Year,
 )
-from .enums import AcquisitionCostKind, PriceSplitSource, PropertyKind
+from .enums import AcquisitionCostKind, PriceSplitSource, PropertyKind, StateCode
 
 # --- Owner -------------------------------------------------------------------
 
@@ -41,12 +40,21 @@ class OwnerCreate(Schema):
     full_name: str = Field(min_length=1)
     # Reference into the secrets manager. The raw Steuer-ID is never stored in Postgres.
     tax_id_ref: str | None = None
-    marginal_tax_rate: TaxRate | None = None  # user-set
+    # Phase 4 D90: church tax and its Bundesland replace the typed marginal_tax_rate (dropped
+    # by migration 0016; a typed rate is now a per-year income_input row).
+    church_tax: bool = False
+    tax_state: StateCode | None = None
 
     @field_validator("tax_id_ref")
     @classmethod
     def _not_a_raw_tax_number(cls, value: str | None) -> str | None:
         return reject_raw_tax_number(value)
+
+    @model_validator(mode="after")
+    def _state_with_church(self) -> Self:
+        if self.church_tax and self.tax_state is None:
+            raise ValueError("church tax needs the Bundesland (tax_state)")
+        return self
 
 
 class Owner(OwnerCreate, MutableRecord):

@@ -1,0 +1,1587 @@
+# projection.yaml: rules/performance/synthesize.py + projection.py
+# (docs/phases/phase-4.md §5.4, §10.3, D86, D87).
+
+# Synthetic numbers only (the repo is public). Loaded through tests/fixture_models_phase4.py:
+# every figure here is checked against the §7 schemas, and each expectation's own arithmetic
+# is checked on load. Decimals are quoted strings (the schemas accept decimal strings only).
+# The step 0 coder filled every row by the spec's §5 arithmetic in Decimal, with the taxable
+# results and AfA from phase 3's real draft() (9 Nov 2026); each figure the spec states
+# (§5, §10.3) was reproduced exactly. Every field of an expectation compares exactly, None
+# included, except `sources` (left empty here; a test compares with them excluded).
+#
+# Inputs (§10.3): case A's facts with its tenancy flat_rate, today 31 Dec 2026 (2026 is the
+# last actual year, n = 1 in 2027), owners A and B in church in Bayern, gross pay 60,000 and
+# 45,000 for 2026 only (carried forward to every projected year), the loan's terms for
+# build_schedule, and the levers. Years are asserted as year totals, not as monthly rows; the
+# synthesized rows' ids are not asserted. How the rows were synthesized (§5.4):
+# (a) Rent and NK: the year's total, rent × 12 × (1 + rent_growth)^(n−1) × (12 − vacancy) ÷ 12,
+#     half-up, minus what real recurring lines already pay for months of that year (the
+#     29 Dec 2026 rent and NK for January 2027, §11), spread over the open months in equal
+#     cents with the last month taking the remainder; dated the rent due day, recurring,
+#     service period the month. Vacant months are the year's last.
+# (b) A loan entry's interest and principal are dated its due_on, recurring, service period
+#     the month of due_on.
+# (c) A recurring cost's annual figure grows by (1 + cost_inflation)^(n−1), is rounded half-up
+#     once per year, then spread over its cadence (equal cents, the last row the remainder):
+#     Hausgeld parts and management and bank fees monthly, Grundsteuer quarterly.
+# (d) Upkeep grows with cost inflation too and is one `repairs` row on 30 June with a
+#     synthetic exclude_from_15pct input (reason annual_maintenance).
+# (e) Taxable result and AfA come from draft(facts + rows, year, rule_set_or_latest(year)).
+# (f) Tax effect per marginal_rate.yaml on the carried-forward base 81,993.00
+#     (source estimate, carried_forward true; flag tax_estimated).
+# (g) value = today_value (None: the purchase price) × (1 + value_growth)^n, half-up;
+#     loan_balance = the schedule year's closing balance; equity = value − loan balance.
+# The sale (D88, D89) is on 31 Dec of the sale year, as in sale.yaml; afa_actual and
+# cash_flow_actual are the actual 2026's building AfA and net cash it adds. The sale block is
+# given for the three scenarios and C's control only; the other cases assert their years.
+
+bases:
+  owners: &owners
+  - {owner_id: 0000000a-0000-4000-8000-000000000001, church_tax: true, tax_state: BY}
+  - {owner_id: 0000000a-0000-4000-8000-000000000002, church_tax: true, tax_state: BY}
+  income_2026: &income_2026
+  - id: 0000004d-0000-4000-8000-000000000001
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    kind: expected_gross_pay
+    tax_year: 2026
+    value: {amount: '60000.00'}
+  - id: 0000004d-0000-4000-8000-000000000002
+    owner_id: 0000000a-0000-4000-8000-000000000002
+    kind: expected_gross_pay
+    tax_year: 2026
+    value: {amount: '45000.00'}
+  loans: &loans
+  - loan_id: 0000000f-0000-4000-8000-000000000001
+    terms:
+      principal: '240000.00'
+      nominal_rate: '0.035'
+      monthly_payment: '1000.00'
+      disbursed_on: '2026-06-29'
+      first_payment_on: '2026-08-01'
+      fixed_until: '2031-07-31'
+      follow_up_rate: null
+      interest_only_before_first_payment: true
+  facts_flat_rate: &facts_flat_rate
+    case: case_a
+    operating_costs_terms: flat_rate
+cases:
+- id: baseline_no_growth_tax_free_sale
+  description: '§10.3 A: no growth, sale 31 Dec 2036 ≥ 11 Mar 2036 → tax-free'
+  facts: *facts_flat_rate
+  today: 2026-12-31
+  owners: *owners
+  income_inputs: *income_2026
+  loans: *loans
+  levers:
+    value_growth: '0'
+    rent_growth: '0'
+    cost_inflation: '0'
+    sale_year: 2036
+    today_value: null
+    upkeep_per_year: '600.00'
+    selling_costs_rate: '0.0357'
+    vacancy_months: '0'
+    loans: []
+  expect:
+    years:
+    - year: 2027
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10200.00'
+      other_income: '0.00'
+      umlagen_in: '2160.00'
+      umlagen_out: '2400.00'
+      umlagen_net: '-240.00'
+      interest: '8288.01'
+      principal_repaid: '3711.99'
+      running_costs: '2638.80'
+      cash_out: '17038.80'
+      taxable_result: '-4446.81'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1518.48'
+        effective_rate: '34.1'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '13646.00', soli: '0.00', church: '1091.68', total: '14737.68'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-6197.28'
+      invested: null
+      value: '300000.00'
+      loan_balance: '234779.24'
+      equity: '65220.76'
+      flat_rate_in: '2160.00'
+      flat_rate_gap_monthly: '-20.00'
+    - year: 2028
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10200.00'
+      other_income: '0.00'
+      umlagen_in: '2160.00'
+      umlagen_out: '2400.00'
+      umlagen_net: '-240.00'
+      interest: '8156.00'
+      principal_repaid: '3844.00'
+      running_costs: '2638.80'
+      cash_out: '17038.80'
+      taxable_result: '-4314.80'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1473.12'
+        effective_rate: '34.1'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '13688.00', soli: '0.00', church: '1095.04', total: '14783.04'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-6151.92'
+      invested: null
+      value: '300000.00'
+      loan_balance: '230935.24'
+      equity: '69064.76'
+      flat_rate_in: '2160.00'
+      flat_rate_gap_monthly: '-20.00'
+    - year: 2029
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10200.00'
+      other_income: '0.00'
+      umlagen_in: '2160.00'
+      umlagen_out: '2400.00'
+      umlagen_net: '-240.00'
+      interest: '8019.28'
+      principal_repaid: '3980.72'
+      running_costs: '2638.80'
+      cash_out: '17038.80'
+      taxable_result: '-4178.08'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1427.76'
+        effective_rate: '34.2'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '13730.00', soli: '0.00', church: '1098.40', total: '14828.40'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-6106.56'
+      invested: null
+      value: '300000.00'
+      loan_balance: '226954.52'
+      equity: '73045.48'
+      flat_rate_in: '2160.00'
+      flat_rate_gap_monthly: '-20.00'
+    - year: 2030
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10200.00'
+      other_income: '0.00'
+      umlagen_in: '2160.00'
+      umlagen_out: '2400.00'
+      umlagen_net: '-240.00'
+      interest: '7877.69'
+      principal_repaid: '4122.31'
+      running_costs: '2638.80'
+      cash_out: '17038.80'
+      taxable_result: '-4036.49'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1380.24'
+        effective_rate: '34.2'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '13774.00', soli: '0.00', church: '1101.92', total: '14875.92'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-6059.04'
+      invested: null
+      value: '300000.00'
+      loan_balance: '222832.21'
+      equity: '77167.79'
+      flat_rate_in: '2160.00'
+      flat_rate_gap_monthly: '-20.00'
+    - year: 2031
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10200.00'
+      other_income: '0.00'
+      umlagen_in: '2160.00'
+      umlagen_out: '2400.00'
+      umlagen_net: '-240.00'
+      interest: '7731.10'
+      principal_repaid: '4268.90'
+      running_costs: '2638.80'
+      cash_out: '17038.80'
+      taxable_result: '-3889.90'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1330.56'
+        effective_rate: '34.2'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '13820.00', soli: '0.00', church: '1105.60', total: '14925.60'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-6009.36'
+      invested: null
+      value: '300000.00'
+      loan_balance: '218563.31'
+      equity: '81436.69'
+      flat_rate_in: '2160.00'
+      flat_rate_gap_monthly: '-20.00'
+    - year: 2032
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10200.00'
+      other_income: '0.00'
+      umlagen_in: '2160.00'
+      umlagen_out: '2400.00'
+      umlagen_net: '-240.00'
+      interest: '7579.25'
+      principal_repaid: '4420.75'
+      running_costs: '2638.80'
+      cash_out: '17038.80'
+      taxable_result: '-3738.05'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1278.72'
+        effective_rate: '34.2'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '13868.00', soli: '0.00', church: '1109.44', total: '14977.44'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-5957.52'
+      invested: null
+      value: '300000.00'
+      loan_balance: '214142.56'
+      equity: '85857.44'
+      flat_rate_in: '2160.00'
+      flat_rate_gap_monthly: '-20.00'
+    - year: 2033
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10200.00'
+      other_income: '0.00'
+      umlagen_in: '2160.00'
+      umlagen_out: '2400.00'
+      umlagen_net: '-240.00'
+      interest: '7422.01'
+      principal_repaid: '4577.99'
+      running_costs: '2638.80'
+      cash_out: '17038.80'
+      taxable_result: '-3580.81'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1224.72'
+        effective_rate: '34.2'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '13918.00', soli: '0.00', church: '1113.44', total: '15031.44'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-5903.52'
+      invested: null
+      value: '300000.00'
+      loan_balance: '209564.57'
+      equity: '90435.43'
+      flat_rate_in: '2160.00'
+      flat_rate_gap_monthly: '-20.00'
+    - year: 2034
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10200.00'
+      other_income: '0.00'
+      umlagen_in: '2160.00'
+      umlagen_out: '2400.00'
+      umlagen_net: '-240.00'
+      interest: '7259.19'
+      principal_repaid: '4740.81'
+      running_costs: '2638.80'
+      cash_out: '17038.80'
+      taxable_result: '-3417.99'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1170.72'
+        effective_rate: '34.3'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '13968.00', soli: '0.00', church: '1117.44', total: '15085.44'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-5849.52'
+      invested: null
+      value: '300000.00'
+      loan_balance: '204823.76'
+      equity: '95176.24'
+      flat_rate_in: '2160.00'
+      flat_rate_gap_monthly: '-20.00'
+    - year: 2035
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10200.00'
+      other_income: '0.00'
+      umlagen_in: '2160.00'
+      umlagen_out: '2400.00'
+      umlagen_net: '-240.00'
+      interest: '7090.58'
+      principal_repaid: '4909.42'
+      running_costs: '2638.80'
+      cash_out: '17038.80'
+      taxable_result: '-3249.38'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1112.40'
+        effective_rate: '34.2'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '14022.00', soli: '0.00', church: '1121.76', total: '15143.76'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-5791.20'
+      invested: null
+      value: '300000.00'
+      loan_balance: '199914.34'
+      equity: '100085.66'
+      flat_rate_in: '2160.00'
+      flat_rate_gap_monthly: '-20.00'
+    - year: 2036
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10200.00'
+      other_income: '0.00'
+      umlagen_in: '2160.00'
+      umlagen_out: '2400.00'
+      umlagen_net: '-240.00'
+      interest: '6915.96'
+      principal_repaid: '5084.04'
+      running_costs: '2638.80'
+      cash_out: '17038.80'
+      taxable_result: '-3074.76'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1054.08'
+        effective_rate: '34.3'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '14076.00', soli: '0.00', church: '1126.08', total: '15202.08'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-5732.88'
+      invested: null
+      value: '300000.00'
+      loan_balance: '194830.30'
+      equity: '105169.70'
+      flat_rate_in: '2160.00'
+      flat_rate_gap_monthly: '-20.00'
+    sale:
+      sale_date: 2036-12-31
+      tax_free_from: 2036-03-11
+      taxable: false
+      value: '300000.00'
+      selling_costs: '10710.00'
+      afa_claimed: '49140.00'
+      gain: null
+      gain_per_owner: []
+      freigrenze_applied: false
+      sale_tax: '0.00'
+      loan_balance: '194830.30'
+      net_proceeds: '94459.70'
+      initial_equity: '85000.00'
+      profit: '-59853.57'
+      bridge:
+      - {key: appreciation, amount: '0.00'}
+      - {key: loan_paid_down, amount: '45169.70'}
+      - {key: cash_flow, amount: '-69313.27'}
+      - {key: buying_costs, amount: '-25000.00'}
+      - {key: selling_costs, amount: '-10710.00'}
+      - {key: sale_tax, amount: '0.00'}
+      cagr: '-0.109496'
+      irr: '-0.061054'
+      flows:
+      - {'on': 2026-07-01, amount: '-85000.00', kind: initial_equity}
+      - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
+      - {'on': 2027-12-31, amount: '-6197.28', kind: cash_flow}
+      - {'on': 2028-12-31, amount: '-6151.92', kind: cash_flow}
+      - {'on': 2029-12-31, amount: '-6106.56', kind: cash_flow}
+      - {'on': 2030-12-31, amount: '-6059.04', kind: cash_flow}
+      - {'on': 2031-12-31, amount: '-6009.36', kind: cash_flow}
+      - {'on': 2032-12-31, amount: '-5957.52', kind: cash_flow}
+      - {'on': 2033-12-31, amount: '-5903.52', kind: cash_flow}
+      - {'on': 2034-12-31, amount: '-5849.52', kind: cash_flow}
+      - {'on': 2035-12-31, amount: '-5791.20', kind: cash_flow}
+      - {'on': 2036-12-31, amount: '-5732.88', kind: cash_flow}
+      - {'on': 2036-12-31, amount: '94459.70', kind: net_proceeds}
+    afa_actual: '2340.00'
+    cash_flow_actual:
+    - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
+- id: growth_and_rate_switch
+  description: '§10.3 B: 2 % value, rent and cost growth from the second year; a 4.5 % follow-up rate
+    from 1 Aug 2031'
+  facts: *facts_flat_rate
+  today: 2026-12-31
+  owners: *owners
+  income_inputs: *income_2026
+  loans: *loans
+  levers:
+    value_growth: '0.02'
+    rent_growth: '0.02'
+    cost_inflation: '0.02'
+    sale_year: 2036
+    today_value: null
+    upkeep_per_year: '600.00'
+    selling_costs_rate: '0.0357'
+    vacancy_months: '0'
+    loans:
+    - loan_id: 0000000f-0000-4000-8000-000000000001
+      follow_up_rate: '0.045'
+  expect:
+    years:
+    - year: 2027
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10200.00'
+      other_income: '0.00'
+      umlagen_in: '2160.00'
+      umlagen_out: '2400.00'
+      umlagen_net: '-240.00'
+      interest: '8288.01'
+      principal_repaid: '3711.99'
+      running_costs: '2638.80'
+      cash_out: '17038.80'
+      taxable_result: '-4446.81'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1518.48'
+        effective_rate: '34.1'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '13646.00', soli: '0.00', church: '1091.68', total: '14737.68'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-6197.28'
+      invested: null
+      value: '306000.00'
+      loan_balance: '234779.24'
+      equity: '71220.76'
+      flat_rate_in: '2160.00'
+      flat_rate_gap_monthly: '-20.00'
+    - year: 2028
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10404.00'
+      other_income: '0.00'
+      umlagen_in: '2203.20'
+      umlagen_out: '2448.00'
+      umlagen_net: '-244.80'
+      interest: '8156.00'
+      principal_repaid: '3844.00'
+      running_costs: '2691.58'
+      cash_out: '17139.58'
+      taxable_result: '-4144.38'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1414.80'
+        effective_rate: '34.1'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '13742.00', soli: '0.00', church: '1099.36', total: '14841.36'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-5947.18'
+      invested: null
+      value: '312120.00'
+      loan_balance: '230935.24'
+      equity: '81184.76'
+      flat_rate_in: '2203.20'
+      flat_rate_gap_monthly: '-20.40'
+    - year: 2029
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10612.08'
+      other_income: '0.00'
+      umlagen_in: '2247.26'
+      umlagen_out: '2496.96'
+      umlagen_net: '-249.70'
+      interest: '8019.28'
+      principal_repaid: '3980.72'
+      running_costs: '2745.41'
+      cash_out: '17242.37'
+      taxable_result: '-3833.83'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1311.12'
+        effective_rate: '34.2'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '13838.00', soli: '0.00', church: '1107.04', total: '14945.04'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-5694.15'
+      invested: null
+      value: '318362.40'
+      loan_balance: '226954.52'
+      equity: '91407.88'
+      flat_rate_in: '2247.26'
+      flat_rate_gap_monthly: '-20.81'
+    - year: 2030
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10824.32'
+      other_income: '0.00'
+      umlagen_in: '2292.21'
+      umlagen_out: '2546.90'
+      umlagen_net: '-254.69'
+      interest: '7877.69'
+      principal_repaid: '4122.31'
+      running_costs: '2800.31'
+      cash_out: '17347.21'
+      taxable_result: '-3514.92'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1203.12'
+        effective_rate: '34.2'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '13938.00', soli: '0.00', church: '1115.04', total: '15053.04'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-5433.80'
+      invested: null
+      value: '324729.65'
+      loan_balance: '222832.21'
+      equity: '101897.44'
+      flat_rate_in: '2292.21'
+      flat_rate_gap_monthly: '-21.22'
+    - year: 2031
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '11040.81'
+      other_income: '0.00'
+      umlagen_in: '2338.05'
+      umlagen_out: '2597.83'
+      umlagen_net: '-259.78'
+      interest: '8466.77'
+      principal_repaid: '3533.23'
+      running_costs: '2856.33'
+      cash_out: '17454.16'
+      taxable_result: '-3923.15'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1341.36'
+        effective_rate: '34.2'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '13810.00', soli: '0.00', church: '1104.80', total: '14914.80'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-5416.66'
+      invested: null
+      value: '331224.24'
+      loan_balance: '219298.98'
+      equity: '111925.26'
+      flat_rate_in: '2338.05'
+      flat_rate_gap_monthly: '-21.65'
+    - year: 2032
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '11261.62'
+      other_income: '0.00'
+      umlagen_in: '2384.81'
+      umlagen_out: '2649.79'
+      umlagen_net: '-264.98'
+      interest: '9823.97'
+      principal_repaid: '2176.03'
+      running_costs: '2913.45'
+      cash_out: '17563.24'
+      taxable_result: '-5095.88'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1736.64'
+        effective_rate: '34.1'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '13444.00', soli: '0.00', church: '1075.52', total: '14519.52'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-5653.45'
+      invested: null
+      value: '337848.73'
+      loan_balance: '217122.95'
+      equity: '120725.78'
+      flat_rate_in: '2384.81'
+      flat_rate_gap_monthly: '-22.08'
+    - year: 2033
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '11486.86'
+      other_income: '0.00'
+      umlagen_in: '2432.51'
+      umlagen_out: '2702.79'
+      umlagen_net: '-270.28'
+      interest: '9723.97'
+      principal_repaid: '2276.03'
+      running_costs: '2971.72'
+      cash_out: '17674.51'
+      taxable_result: '-4807.72'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1639.44'
+        effective_rate: '34.1'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '13534.00', soli: '0.00', church: '1082.72', total: '14616.72'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-5394.58'
+      invested: null
+      value: '344605.70'
+      loan_balance: '214846.92'
+      equity: '129758.78'
+      flat_rate_in: '2432.51'
+      flat_rate_gap_monthly: '-22.52'
+    - year: 2034
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '11716.59'
+      other_income: '0.00'
+      umlagen_in: '2481.16'
+      umlagen_out: '2756.84'
+      umlagen_net: '-275.68'
+      interest: '9619.41'
+      principal_repaid: '2380.59'
+      running_costs: '3031.15'
+      cash_out: '17787.99'
+      taxable_result: '-4511.23'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1540.08'
+        effective_rate: '34.1'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '13626.00', soli: '0.00', church: '1090.08', total: '14716.08'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-5130.32'
+      invested: null
+      value: '351497.81'
+      loan_balance: '212466.33'
+      equity: '139031.48'
+      flat_rate_in: '2481.16'
+      flat_rate_gap_monthly: '-22.97'
+    - year: 2035
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '11950.93'
+      other_income: '0.00'
+      umlagen_in: '2530.78'
+      umlagen_out: '2811.98'
+      umlagen_net: '-281.20'
+      interest: '9510.05'
+      principal_repaid: '2489.95'
+      running_costs: '3091.78'
+      cash_out: '17903.76'
+      taxable_result: '-4206.11'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1436.40'
+        effective_rate: '34.2'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '13722.00', soli: '0.00', church: '1097.76', total: '14819.76'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-4858.45'
+      invested: null
+      value: '358527.77'
+      loan_balance: '209976.38'
+      equity: '148551.39'
+      flat_rate_in: '2530.78'
+      flat_rate_gap_monthly: '-23.43'
+    - year: 2036
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '12189.94'
+      other_income: '0.00'
+      umlagen_in: '2581.40'
+      umlagen_out: '2868.22'
+      umlagen_net: '-286.82'
+      interest: '9395.65'
+      principal_repaid: '2604.35'
+      running_costs: '3153.61'
+      cash_out: '18021.83'
+      taxable_result: '-3892.03'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1330.56'
+        effective_rate: '34.2'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '13820.00', soli: '0.00', church: '1105.60', total: '14925.60'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-4581.05'
+      invested: null
+      value: '365698.33'
+      loan_balance: '207372.03'
+      equity: '158326.30'
+      flat_rate_in: '2581.40'
+      flat_rate_gap_monthly: '-23.90'
+    sale:
+      sale_date: 2036-12-31
+      tax_free_from: 2036-03-11
+      taxable: false
+      value: '365698.33'
+      selling_costs: '13055.43'
+      afa_claimed: '49140.00'
+      gain: null
+      gain_per_owner: []
+      freigrenze_applied: false
+      sale_tax: '0.00'
+      loan_balance: '207372.03'
+      net_proceeds: '145270.87'
+      initial_equity: '85000.00'
+      profit: '-3590.52'
+      bridge:
+      - {key: appreciation, amount: '65698.33'}
+      - {key: loan_paid_down, amount: '32627.97'}
+      - {key: cash_flow, amount: '-63861.39'}
+      - {key: buying_costs, amount: '-25000.00'}
+      - {key: selling_costs, amount: '-13055.43'}
+      - {key: sale_tax, amount: '0.00'}
+      cagr: '-0.004101'
+      irr: '-0.002918'
+      flows:
+      - {'on': 2026-07-01, amount: '-85000.00', kind: initial_equity}
+      - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
+      - {'on': 2027-12-31, amount: '-6197.28', kind: cash_flow}
+      - {'on': 2028-12-31, amount: '-5947.18', kind: cash_flow}
+      - {'on': 2029-12-31, amount: '-5694.15', kind: cash_flow}
+      - {'on': 2030-12-31, amount: '-5433.80', kind: cash_flow}
+      - {'on': 2031-12-31, amount: '-5416.66', kind: cash_flow}
+      - {'on': 2032-12-31, amount: '-5653.45', kind: cash_flow}
+      - {'on': 2033-12-31, amount: '-5394.58', kind: cash_flow}
+      - {'on': 2034-12-31, amount: '-5130.32', kind: cash_flow}
+      - {'on': 2035-12-31, amount: '-4858.45', kind: cash_flow}
+      - {'on': 2036-12-31, amount: '-4581.05', kind: cash_flow}
+      - {'on': 2036-12-31, amount: '145270.87', kind: net_proceeds}
+    afa_actual: '2340.00'
+    cash_flow_actual:
+    - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
+- id: useful_life_and_sale_inside_ten_years
+  description: '§10.3 C: a 21-year useful life from 2027 (Gutachten, D79), 3 % value growth, sale 2030
+    inside §23'
+  facts:
+    case: case_a
+    operating_costs_terms: flat_rate
+    add_tax_inputs:
+    - id: 000000d6-0000-4000-8000-000000000001
+      property_id: 0000000b-0000-4000-8000-000000000001
+      kind: useful_life
+      tax_year: 2027
+      document_id: 00000d4d-0000-4000-8000-000000000002
+      value: {years: 21}
+  today: 2026-12-31
+  owners: *owners
+  income_inputs: *income_2026
+  loans: *loans
+  levers:
+    value_growth: '0.03'
+    rent_growth: '0'
+    cost_inflation: '0'
+    sale_year: 2030
+    today_value: null
+    upkeep_per_year: '600.00'
+    selling_costs_rate: '0.0357'
+    vacancy_months: '0'
+    loans: []
+  expect:
+    years:
+    - year: 2027
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10200.00'
+      other_income: '0.00'
+      umlagen_in: '2160.00'
+      umlagen_out: '2400.00'
+      umlagen_net: '-240.00'
+      interest: '8288.01'
+      principal_repaid: '3711.99'
+      running_costs: '2638.80'
+      cash_out: '17038.80'
+      taxable_result: '-10798.24'
+      afa: '11031.43'
+      afa_movable: null
+      tax_effect:
+        effect: '-3622.32'
+        effective_rate: '33.5'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '11698.00', soli: '0.00', church: '935.84', total: '12633.84'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-8301.12'
+      invested: null
+      value: '309000.00'
+      loan_balance: '234779.24'
+      equity: '74220.76'
+      flat_rate_in: '2160.00'
+      flat_rate_gap_monthly: '-20.00'
+    - year: 2028
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10200.00'
+      other_income: '0.00'
+      umlagen_in: '2160.00'
+      umlagen_out: '2400.00'
+      umlagen_net: '-240.00'
+      interest: '8156.00'
+      principal_repaid: '3844.00'
+      running_costs: '2638.80'
+      cash_out: '17038.80'
+      taxable_result: '-10666.23'
+      afa: '11031.43'
+      afa_movable: null
+      tax_effect:
+        effect: '-3579.12'
+        effective_rate: '33.6'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '11738.00', soli: '0.00', church: '939.04', total: '12677.04'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-8257.92'
+      invested: null
+      value: '318270.00'
+      loan_balance: '230935.24'
+      equity: '87334.76'
+      flat_rate_in: '2160.00'
+      flat_rate_gap_monthly: '-20.00'
+    - year: 2029
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10200.00'
+      other_income: '0.00'
+      umlagen_in: '2160.00'
+      umlagen_out: '2400.00'
+      umlagen_net: '-240.00'
+      interest: '8019.28'
+      principal_repaid: '3980.72'
+      running_costs: '2638.80'
+      cash_out: '17038.80'
+      taxable_result: '-10529.51'
+      afa: '11031.43'
+      afa_movable: null
+      tax_effect:
+        effect: '-3535.92'
+        effective_rate: '33.6'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '11778.00', soli: '0.00', church: '942.24', total: '12720.24'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-8214.72'
+      invested: null
+      value: '327818.10'
+      loan_balance: '226954.52'
+      equity: '100863.58'
+      flat_rate_in: '2160.00'
+      flat_rate_gap_monthly: '-20.00'
+    - year: 2030
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10200.00'
+      other_income: '0.00'
+      umlagen_in: '2160.00'
+      umlagen_out: '2400.00'
+      umlagen_net: '-240.00'
+      interest: '7877.69'
+      principal_repaid: '4122.31'
+      running_costs: '2638.80'
+      cash_out: '17038.80'
+      taxable_result: '-10387.92'
+      afa: '11031.43'
+      afa_movable: null
+      tax_effect:
+        effect: '-3488.40'
+        effective_rate: '33.6'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '11822.00', soli: '0.00', church: '945.76', total: '12767.76'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-8167.20'
+      invested: null
+      value: '337652.64'
+      loan_balance: '222832.21'
+      equity: '114820.43'
+      flat_rate_in: '2160.00'
+      flat_rate_gap_monthly: '-20.00'
+    sale:
+      sale_date: 2030-12-31
+      tax_free_from: 2036-03-11
+      taxable: true
+      value: '337652.64'
+      selling_costs: '12054.20'
+      afa_claimed: '46465.72'
+      gain: '47064.16'
+      gain_per_owner:
+      - {owner_id: 0000000a-0000-4000-8000-000000000001, share: {numerator: 1, denominator: 2}, gain: '23532.08',
+        below_freigrenze: false}
+      - {owner_id: 0000000a-0000-4000-8000-000000000002, share: {numerator: 1, denominator: 2}, gain: '23532.08',
+        below_freigrenze: false}
+      freigrenze_applied: false
+      sale_tax: '17422.56'
+      loan_balance: '222832.21'
+      net_proceeds: '85343.67'
+      initial_equity: '85000.00'
+      profit: '-42151.76'
+      bridge:
+      - {key: appreciation, amount: '37652.64'}
+      - {key: loan_paid_down, amount: '17167.79'}
+      - {key: cash_flow, amount: '-42495.43'}
+      - {key: buying_costs, amount: '-25000.00'}
+      - {key: selling_costs, amount: '-12054.20'}
+      - {key: sale_tax, amount: '-17422.56'}
+      cagr: '-0.141170'
+      irr: '-0.106343'
+      flows:
+      - {'on': 2026-07-01, amount: '-85000.00', kind: initial_equity}
+      - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
+      - {'on': 2027-12-31, amount: '-8301.12', kind: cash_flow}
+      - {'on': 2028-12-31, amount: '-8257.92', kind: cash_flow}
+      - {'on': 2029-12-31, amount: '-8214.72', kind: cash_flow}
+      - {'on': 2030-12-31, amount: '-8167.20', kind: cash_flow}
+      - {'on': 2030-12-31, amount: '85343.67', kind: net_proceeds}
+    afa_actual: '2340.00'
+    cash_flow_actual:
+    - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
+- id: useful_life_control_sale_2037
+  description: '§10.3 C''s control: no useful-life row (statutory AfA), sale 2037, tax-free'
+  facts: *facts_flat_rate
+  today: 2026-12-31
+  owners: *owners
+  income_inputs: *income_2026
+  loans: *loans
+  levers:
+    value_growth: '0.03'
+    rent_growth: '0'
+    cost_inflation: '0'
+    sale_year: 2037
+    today_value: null
+    upkeep_per_year: '600.00'
+    selling_costs_rate: '0.0357'
+    vacancy_months: '0'
+    loans: []
+  expect:
+    years:
+    - year: 2027
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10200.00'
+      other_income: '0.00'
+      umlagen_in: '2160.00'
+      umlagen_out: '2400.00'
+      umlagen_net: '-240.00'
+      interest: '8288.01'
+      principal_repaid: '3711.99'
+      running_costs: '2638.80'
+      cash_out: '17038.80'
+      taxable_result: '-4446.81'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1518.48'
+        effective_rate: '34.1'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '13646.00', soli: '0.00', church: '1091.68', total: '14737.68'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-6197.28'
+      invested: null
+      value: '309000.00'
+      loan_balance: '234779.24'
+      equity: '74220.76'
+      flat_rate_in: '2160.00'
+      flat_rate_gap_monthly: '-20.00'
+    - year: 2028
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10200.00'
+      other_income: '0.00'
+      umlagen_in: '2160.00'
+      umlagen_out: '2400.00'
+      umlagen_net: '-240.00'
+      interest: '8156.00'
+      principal_repaid: '3844.00'
+      running_costs: '2638.80'
+      cash_out: '17038.80'
+      taxable_result: '-4314.80'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1473.12'
+        effective_rate: '34.1'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '13688.00', soli: '0.00', church: '1095.04', total: '14783.04'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-6151.92'
+      invested: null
+      value: '318270.00'
+      loan_balance: '230935.24'
+      equity: '87334.76'
+      flat_rate_in: '2160.00'
+      flat_rate_gap_monthly: '-20.00'
+    - year: 2029
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10200.00'
+      other_income: '0.00'
+      umlagen_in: '2160.00'
+      umlagen_out: '2400.00'
+      umlagen_net: '-240.00'
+      interest: '8019.28'
+      principal_repaid: '3980.72'
+      running_costs: '2638.80'
+      cash_out: '17038.80'
+      taxable_result: '-4178.08'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1427.76'
+        effective_rate: '34.2'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '13730.00', soli: '0.00', church: '1098.40', total: '14828.40'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-6106.56'
+      invested: null
+      value: '327818.10'
+      loan_balance: '226954.52'
+      equity: '100863.58'
+      flat_rate_in: '2160.00'
+      flat_rate_gap_monthly: '-20.00'
+    - year: 2030
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10200.00'
+      other_income: '0.00'
+      umlagen_in: '2160.00'
+      umlagen_out: '2400.00'
+      umlagen_net: '-240.00'
+      interest: '7877.69'
+      principal_repaid: '4122.31'
+      running_costs: '2638.80'
+      cash_out: '17038.80'
+      taxable_result: '-4036.49'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1380.24'
+        effective_rate: '34.2'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '13774.00', soli: '0.00', church: '1101.92', total: '14875.92'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-6059.04'
+      invested: null
+      value: '337652.64'
+      loan_balance: '222832.21'
+      equity: '114820.43'
+      flat_rate_in: '2160.00'
+      flat_rate_gap_monthly: '-20.00'
+    - year: 2031
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10200.00'
+      other_income: '0.00'
+      umlagen_in: '2160.00'
+      umlagen_out: '2400.00'
+      umlagen_net: '-240.00'
+      interest: '7731.10'
+      principal_repaid: '4268.90'
+      running_costs: '2638.80'
+      cash_out: '17038.80'
+      taxable_result: '-3889.90'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1330.56'
+        effective_rate: '34.2'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '13820.00', soli: '0.00', church: '1105.60', total: '14925.60'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-6009.36'
+      invested: null
+      value: '347782.22'
+      loan_balance: '218563.31'
+      equity: '129218.91'
+      flat_rate_in: '2160.00'
+      flat_rate_gap_monthly: '-20.00'
+    - year: 2032
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10200.00'
+      other_income: '0.00'
+      umlagen_in: '2160.00'
+      umlagen_out: '2400.00'
+      umlagen_net: '-240.00'
+      interest: '7579.25'
+      principal_repaid: '4420.75'
+      running_costs: '2638.80'
+      cash_out: '17038.80'
+      taxable_result: '-3738.05'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1278.72'
+        effective_rate: '34.2'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '13868.00', soli: '0.00', church: '1109.44', total: '14977.44'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-5957.52'
+      invested: null
+      value: '358215.69'
+      loan_balance: '214142.56'
+      equity: '144073.13'
+      flat_rate_in: '2160.00'
+      flat_rate_gap_monthly: '-20.00'
+    - year: 2033
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10200.00'
+      other_income: '0.00'
+      umlagen_in: '2160.00'
+      umlagen_out: '2400.00'
+      umlagen_net: '-240.00'
+      interest: '7422.01'
+      principal_repaid: '4577.99'
+      running_costs: '2638.80'
+      cash_out: '17038.80'
+      taxable_result: '-3580.81'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1224.72'
+        effective_rate: '34.2'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '13918.00', soli: '0.00', church: '1113.44', total: '15031.44'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-5903.52'
+      invested: null
+      value: '368962.16'
+      loan_balance: '209564.57'
+      equity: '159397.59'
+      flat_rate_in: '2160.00'
+      flat_rate_gap_monthly: '-20.00'
+    - year: 2034
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10200.00'
+      other_income: '0.00'
+      umlagen_in: '2160.00'
+      umlagen_out: '2400.00'
+      umlagen_net: '-240.00'
+      interest: '7259.19'
+      principal_repaid: '4740.81'
+      running_costs: '2638.80'
+      cash_out: '17038.80'
+      taxable_result: '-3417.99'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1170.72'
+        effective_rate: '34.3'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '13968.00', soli: '0.00', church: '1117.44', total: '15085.44'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-5849.52'
+      invested: null
+      value: '380031.02'
+      loan_balance: '204823.76'
+      equity: '175207.26'
+      flat_rate_in: '2160.00'
+      flat_rate_gap_monthly: '-20.00'
+    - year: 2035
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10200.00'
+      other_income: '0.00'
+      umlagen_in: '2160.00'
+      umlagen_out: '2400.00'
+      umlagen_net: '-240.00'
+      interest: '7090.58'
+      principal_repaid: '4909.42'
+      running_costs: '2638.80'
+      cash_out: '17038.80'
+      taxable_result: '-3249.38'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1112.40'
+        effective_rate: '34.2'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '14022.00', soli: '0.00', church: '1121.76', total: '15143.76'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-5791.20'
+      invested: null
+      value: '391431.96'
+      loan_balance: '199914.34'
+      equity: '191517.62'
+      flat_rate_in: '2160.00'
+      flat_rate_gap_monthly: '-20.00'
+    - year: 2036
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10200.00'
+      other_income: '0.00'
+      umlagen_in: '2160.00'
+      umlagen_out: '2400.00'
+      umlagen_net: '-240.00'
+      interest: '6915.96'
+      principal_repaid: '5084.04'
+      running_costs: '2638.80'
+      cash_out: '17038.80'
+      taxable_result: '-3074.76'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1054.08'
+        effective_rate: '34.3'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '14076.00', soli: '0.00', church: '1126.08', total: '15202.08'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-5732.88'
+      invested: null
+      value: '403174.91'
+      loan_balance: '194830.30'
+      equity: '208344.61'
+      flat_rate_in: '2160.00'
+      flat_rate_gap_monthly: '-20.00'
+    - year: 2037
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10200.00'
+      other_income: '0.00'
+      umlagen_in: '2160.00'
+      umlagen_out: '2400.00'
+      umlagen_net: '-240.00'
+      interest: '6735.15'
+      principal_repaid: '5264.85'
+      running_costs: '2638.80'
+      cash_out: '17038.80'
+      taxable_result: '-2893.95'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-991.44'
+        effective_rate: '34.3'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '14134.00', soli: '0.00', church: '1130.72', total: '15264.72'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-5670.24'
+      invested: null
+      value: '415270.16'
+      loan_balance: '189565.45'
+      equity: '225704.71'
+      flat_rate_in: '2160.00'
+      flat_rate_gap_monthly: '-20.00'
+    sale:
+      sale_date: 2037-12-31
+      tax_free_from: 2036-03-11
+      taxable: false
+      value: '415270.16'
+      selling_costs: '14825.14'
+      afa_claimed: '53820.00'
+      gain: null
+      gain_per_owner: []
+      freigrenze_applied: false
+      sale_tax: '0.00'
+      loan_balance: '189565.45'
+      net_proceeds: '210879.57'
+      initial_equity: '85000.00'
+      profit: '50896.06'
+      bridge:
+      - {key: appreciation, amount: '115270.16'}
+      - {key: loan_paid_down, amount: '50434.55'}
+      - {key: cash_flow, amount: '-74983.51'}
+      - {key: buying_costs, amount: '-25000.00'}
+      - {key: selling_costs, amount: '-14825.14'}
+      - {key: sale_tax, amount: '0.00'}
+      cagr: '0.041641'
+      irr: '0.030964'
+      flows:
+      - {'on': 2026-07-01, amount: '-85000.00', kind: initial_equity}
+      - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
+      - {'on': 2027-12-31, amount: '-6197.28', kind: cash_flow}
+      - {'on': 2028-12-31, amount: '-6151.92', kind: cash_flow}
+      - {'on': 2029-12-31, amount: '-6106.56', kind: cash_flow}
+      - {'on': 2030-12-31, amount: '-6059.04', kind: cash_flow}
+      - {'on': 2031-12-31, amount: '-6009.36', kind: cash_flow}
+      - {'on': 2032-12-31, amount: '-5957.52', kind: cash_flow}
+      - {'on': 2033-12-31, amount: '-5903.52', kind: cash_flow}
+      - {'on': 2034-12-31, amount: '-5849.52', kind: cash_flow}
+      - {'on': 2035-12-31, amount: '-5791.20', kind: cash_flow}
+      - {'on': 2036-12-31, amount: '-5732.88', kind: cash_flow}
+      - {'on': 2037-12-31, amount: '-5670.24', kind: cash_flow}
+      - {'on': 2037-12-31, amount: '210879.57', kind: net_proceeds}
+    afa_actual: '2340.00'
+    cash_flow_actual:
+    - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
+- id: upkeep_excluded_from_15pct
+  description: 'Upkeep of 40,000.00 in 2027 (above 15 % of the building cost, inside the three years)
+    is routine upkeep (exclude_from_15pct): deducted, not capitalised; the AfA stays 4,680.00 (without
+    the exclusion the limit is crossed and it is 5,599.00)'
+  facts: *facts_flat_rate
+  today: 2026-12-31
+  owners: *owners
+  income_inputs: *income_2026
+  loans: *loans
+  levers:
+    value_growth: '0'
+    rent_growth: '0'
+    cost_inflation: '0'
+    sale_year: 2027
+    today_value: null
+    upkeep_per_year: '40000.00'
+    selling_costs_rate: '0.0357'
+    vacancy_months: '0'
+    loans: []
+  expect:
+    years:
+    - year: 2027
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10200.00'
+      other_income: '0.00'
+      umlagen_in: '2160.00'
+      umlagen_out: '2400.00'
+      umlagen_net: '-240.00'
+      interest: '8288.01'
+      principal_repaid: '3711.99'
+      running_costs: '42038.80'
+      cash_out: '56438.80'
+      taxable_result: '-43846.81'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-13355.28'
+        effective_rate: '30.5'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '2686.00', soli: '0.00', church: '214.88', total: '2900.88'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-57434.08'
+      invested: null
+      value: '300000.00'
+      loan_balance: '234779.24'
+      equity: '65220.76'
+      flat_rate_in: '2160.00'
+      flat_rate_gap_monthly: '-20.00'
+- id: rent_growth_from_second_year
+  description: 'Rent growth starts in the second projected year: 2027 keeps today''s rent'
+  facts: *facts_flat_rate
+  today: 2026-12-31
+  owners: *owners
+  income_inputs: *income_2026
+  loans: *loans
+  levers:
+    value_growth: '0'
+    rent_growth: '0.02'
+    cost_inflation: '0'
+    sale_year: 2028
+    today_value: null
+    upkeep_per_year: '600.00'
+    selling_costs_rate: '0.0357'
+    vacancy_months: '0'
+    loans: []
+  expect:
+    years:
+    - year: 2027
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10200.00'
+      other_income: '0.00'
+      umlagen_in: '2160.00'
+      umlagen_out: '2400.00'
+      umlagen_net: '-240.00'
+      interest: '8288.01'
+      principal_repaid: '3711.99'
+      running_costs: '2638.80'
+      cash_out: '17038.80'
+      taxable_result: '-4446.81'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1518.48'
+        effective_rate: '34.1'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '13646.00', soli: '0.00', church: '1091.68', total: '14737.68'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-6197.28'
+      invested: null
+      value: '300000.00'
+      loan_balance: '234779.24'
+      equity: '65220.76'
+      flat_rate_in: '2160.00'
+      flat_rate_gap_monthly: '-20.00'
+    - year: 2028
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '10404.00'
+      other_income: '0.00'
+      umlagen_in: '2203.20'
+      umlagen_out: '2400.00'
+      umlagen_net: '-196.80'
+      interest: '8156.00'
+      principal_repaid: '3844.00'
+      running_costs: '2638.80'
+      cash_out: '17038.80'
+      taxable_result: '-4067.60'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-1391.04'
+        effective_rate: '34.2'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '13764.00', soli: '0.00', church: '1101.12', total: '14865.12'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-5822.64'
+      invested: null
+      value: '300000.00'
+      loan_balance: '230935.24'
+      equity: '69064.76'
+      flat_rate_in: '2203.20'
+      flat_rate_gap_monthly: '-16.40'
+- id: vacancy_two_months
+  description: 'Two vacant months a year: rent and NK × 10/12, the vacant months the year''s last'
+  facts: *facts_flat_rate
+  today: 2026-12-31
+  owners: *owners
+  income_inputs: *income_2026
+  loans: *loans
+  levers:
+    value_growth: '0'
+    rent_growth: '0'
+    cost_inflation: '0'
+    sale_year: 2027
+    today_value: null
+    upkeep_per_year: '600.00'
+    selling_costs_rate: '0.0357'
+    vacancy_months: '2'
+    loans: []
+  expect:
+    years:
+    - year: 2027
+      kind: projected
+      flags:
+      - tax_estimated
+      rent_in: '8500.00'
+      other_income: '0.00'
+      umlagen_in: '1800.00'
+      umlagen_out: '2400.00'
+      umlagen_net: '-600.00'
+      interest: '8288.01'
+      principal_repaid: '3711.99'
+      running_costs: '2638.80'
+      cash_out: '17038.80'
+      taxable_result: '-6506.81'
+      afa: '4680.00'
+      afa_movable: null
+      tax_effect:
+        effect: '-2209.68'
+        effective_rate: '34.0'
+        slope: null
+        source: estimate
+        carried_forward: true
+        breakdown_with: {est: '13006.00', soli: '0.00', church: '1040.48', total: '14046.48'}
+        breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
+      net_cash: '-8948.48'
+      invested: null
+      value: '300000.00'
+      loan_balance: '234779.24'
+      equity: '65220.76'
+      flat_rate_in: '1800.00'
+      flat_rate_gap_monthly: '-50.00'

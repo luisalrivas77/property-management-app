@@ -21,6 +21,7 @@ import type {
   RentModel,
   RetentionClass,
   RetentionHold,
+  StateCode,
   StatementFormat,
   TaxSourceKind,
   TenancyRole,
@@ -43,6 +44,26 @@ export const PROPERTY_KIND: Record<PropertyKind, string> = {
   etw: "Eigentumswohnung (ETW)",
   efh: "Einfamilienhaus (EFH)",
   mfh: "Mehrfamilienhaus (MFH)",
+};
+
+/** Bundesland of an owner, for the church tax rate (phase 4 D90). */
+export const STATE_CODE: Record<StateCode, string> = {
+  BW: "Baden-Württemberg",
+  BY: "Bayern",
+  BE: "Berlin",
+  BB: "Brandenburg",
+  HB: "Bremen",
+  HH: "Hamburg",
+  HE: "Hessen",
+  MV: "Mecklenburg-Vorpommern",
+  NI: "Niedersachsen",
+  NW: "Nordrhein-Westfalen",
+  RP: "Rheinland-Pfalz",
+  SL: "Saarland",
+  SN: "Sachsen",
+  ST: "Sachsen-Anhalt",
+  SH: "Schleswig-Holstein",
+  TH: "Thüringen",
 };
 
 export const ACQUISITION_COST_KIND: Record<AcquisitionCostKind, string> = {
@@ -143,6 +164,7 @@ export const RETENTION_HOLD: Record<RetentionHold, string> = {
 export const EVENT_TYPE: Record<EventType, string> = {
   "owner.created": "Eigentümer angelegt",
   "owner.updated": "Eigentümer geändert",
+  "owner.income_input_recorded": "Einkommensangabe erfasst",
   "property.created": "Immobilie angelegt",
   "property.updated": "Immobilie geändert",
   "property.purchase_notarized": "Kaufvertrag beurkundet",
@@ -155,6 +177,7 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "property.price_split_selected": "Kaufpreisaufteilung als AfA-Basis gewählt",
   "property.tax_input_recorded": "Steuerliche Angabe erfasst",
   "property.anlage_v_exported": "Anlage V exportiert",
+  "property.scenario_recorded": "Prognose-Szenario erfasst",
   "unit.created": "Einheit angelegt",
   "unit.updated": "Einheit geändert",
   "tenant.created": "Mieter angelegt",
@@ -179,6 +202,7 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "document.extracted": "Felder ausgelesen",
   "document.read_failed": "Dokument konnte nicht gelesen werden",
   "workspace.settings_changed": "Einstellungen geändert",
+  "workspace.income_input_recorded": "Einkommensangabe des Haushalts erfasst",
   "proposal.created": "Vorschlag erstellt",
   "proposal.superseded": "Vorschlag ersetzt",
   "proposal.rejected": "Vorschlag abgelehnt",
@@ -421,6 +445,10 @@ export const TAX_SOURCE_KIND: Record<TaxSourceKind, string> = {
   loan: "Darlehen",
   tax_input: "Steuerliche Angabe",
   rule: "Regelwerk des Steuerjahres",
+  scenario: "Prognose-Szenario",
+  schedule_entry: "Tilgungsplan",
+  income_input: "Einkommensangabe",
+  tariff: "Einkommensteuertarif",
 };
 
 /** A line note of the draft (the §5.1 notes); an unknown note is shown as sent. */

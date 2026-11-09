@@ -3118,7 +3118,7 @@ export interface components {
          * EventType
          * @enum {string}
          */
-        EventType: "owner.created" | "owner.updated" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.classified" | "document.extracted" | "document.read_failed" | "workspace.settings_changed" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "rule.created" | "rule.disabled";
+        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.classified" | "document.extracted" | "document.read_failed" | "workspace.settings_changed" | "workspace.income_input_recorded" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "rule.created" | "rule.disabled";
         /** ExcludeFrom15Pct */
         ExcludeFrom15Pct: {
             /**
@@ -3989,8 +3989,12 @@ export interface components {
             full_name: string;
             /** Tax Id Ref */
             tax_id_ref?: string | null;
-            /** Marginal Tax Rate */
-            marginal_tax_rate?: string | null;
+            /**
+             * Church Tax
+             * @default false
+             */
+            church_tax: boolean;
+            tax_state?: components["schemas"]["StateCode"] | null;
         };
         /** OwnerCreate */
         OwnerCreate: {
@@ -3998,8 +4002,12 @@ export interface components {
             full_name: string;
             /** Tax Id Ref */
             tax_id_ref?: string | null;
-            /** Marginal Tax Rate */
-            marginal_tax_rate?: string | null;
+            /**
+             * Church Tax
+             * @default false
+             */
+            church_tax: boolean;
+            tax_state?: components["schemas"]["StateCode"] | null;
         };
         /** OwnerPatch */
         OwnerPatch: {
@@ -4007,8 +4015,9 @@ export interface components {
             full_name?: string;
             /** Tax Id Ref */
             tax_id_ref?: string | null;
-            /** Marginal Tax Rate */
-            marginal_tax_rate?: string | null;
+            /** Church Tax */
+            church_tax?: boolean;
+            tax_state?: components["schemas"]["StateCode"] | null;
         };
         /** OwnerResult */
         OwnerResult: {
@@ -4791,6 +4800,13 @@ export interface components {
             /** Years */
             years: number;
         };
+        /**
+         * StateCode
+         * @description owner.tax_state (migration 0016, phase 4 D90): the Bundesland whose church tax rate
+         *     applies (rules/tax/tariffs/<year>.yaml, church_tax_rates).
+         * @enum {string}
+         */
+        StateCode: "BW" | "BY" | "BE" | "BB" | "HB" | "HH" | "HE" | "MV" | "NI" | "NW" | "RP" | "SL" | "SN" | "ST" | "SH" | "TH";
         /**
          * StatementExtraction
          * @description PDF Kontoauszug (§7.1): balances and lines. Every amount is a model reading, so the
@@ -5667,14 +5683,15 @@ export interface components {
         };
         /**
          * SourceRef
-         * @description What a figure came from (principle 2). `rule` is the rule set itself (no id).
+         * @description What a figure came from (principle 2). `rule` is the rule set and `tariff` the income
+         *     tax tariff file (no id); every other kind names its record.
          */
         hausbuch__schemas__tax__SourceRef: {
             /**
              * Kind
              * @enum {string}
              */
-            kind: "allocation" | "transaction" | "document" | "property" | "price_split" | "acquisition_cost" | "loan" | "tax_input" | "rule";
+            kind: "allocation" | "transaction" | "document" | "property" | "price_split" | "acquisition_cost" | "loan" | "tax_input" | "rule" | "scenario" | "schedule_entry" | "income_input" | "tariff";
             /** Id */
             id?: string | null;
             /** Amount */

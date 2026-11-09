@@ -6,6 +6,7 @@ from typing import get_args
 import fixture_models as phase1
 import fixture_models_phase2 as phase2
 import fixture_models_phase3 as phase3
+import fixture_models_phase4 as phase4
 import pytest
 from fixture_models import RentFixture
 from pydantic import ValidationError
@@ -19,7 +20,7 @@ from hausbuch.schemas.allocation import (
 from hausbuch.schemas.common import Money
 from hausbuch.schemas.events import EVENT_CATALOG, EventType, RuleRecorded
 
-PHASES = {"phase1": phase1, "phase2": phase2, "phase3": phase3}
+PHASES = {"phase1": phase1, "phase2": phase2, "phase3": phase3, "phase4": phase4}
 FIXTURE_FILES = [(p, name) for p, mod in PHASES.items() for name in sorted(mod.MODELS)]
 
 
@@ -164,6 +165,191 @@ def test_phase3_cases_cover_the_spec():
     for name, required in PHASE3_CASES.items():
         ids = {c.id for c in phase3.load(name).cases}
         assert required <= ids, (name, required - ids)
+
+
+# docs/phases/phase-4.md §5 and §10: the cases each phase 4 fixture must carry (the names the
+# spec gives; a file may carry more). A case renamed or dropped here is a spec change.
+PHASE4_CASES = {
+    "tariff": {
+        "single_zone_boundaries",
+        "joint_60k_90k_200k",
+        "splitting_floors_the_half",
+        "soli_below_limit_zero",
+        "soli_mitigation_42000",
+        "soli_full_50000",
+        "soli_floors_cents",
+        "church_8pct_on_17670",
+        "church_one_member_half",
+        "church_two_states",
+    },
+    "marginal_rate": {
+        "deductions_default_60k",
+        "deductions_default_45k",
+        "deductions_capped_at_bbg",
+        "household_81993",
+        "effect_negative_result",
+        "effect_positive_result",
+        "effect_zero_shows_slope",
+        "bescheid_replaces_estimate",
+        "override_rate",
+        "carried_forward_2028",
+        "no_inputs_none",
+        "tariff_reused_for_2030",
+    },
+    "actuals": {
+        "anlage_v_2026_case_a",
+        "current_year_partial",
+        "no_income_inputs",
+        "included_tenancy_no_umlagen",
+        "purchase_flows_not_cash",
+        "flat_rate_costs_above_pauschale",  # D91, amended 9 Nov 2026
+    },
+    "projection": {
+        "baseline_no_growth_tax_free_sale",
+        "growth_and_rate_switch",
+        "useful_life_and_sale_inside_ten_years",
+        "useful_life_control_sale_2037",  # §10.3: C's control
+        "upkeep_excluded_from_15pct",
+        "rent_growth_from_second_year",
+        "vacancy_two_months",
+    },
+    "sale": {
+        "scenario_c_sale",  # §5.5: the §10.3 scenario C sale
+        "gain_below_freigrenze",
+        "gain_at_freigrenze",
+        "loss_not_refunded",
+        "tax_free_after_ten_years",
+    },
+    "irr": {
+        "two_flows_10pct",
+        "three_flows",
+        "property_like",
+        "no_sign_change",
+        "cagr_ten_and_a_half_years",  # §5.5: E₀ 85,000, profit 20,000, 10.5 years
+    },
+}
+
+
+def test_phase4_cases_cover_the_spec():
+    assert set(PHASE4_CASES) == set(phase4.MODELS)
+    for name, required in PHASE4_CASES.items():
+        ids = {c.id for c in phase4.load(name).cases}
+        assert required <= ids, (name, required - ids)
+
+
+@pytest.mark.parametrize(
+    ("name", "path", "slip"),
+    [
+        ("actuals", ("expect", "net_cash"), "-9554.48"),
+        ("actuals", ("expect", "flat_rate_in"), "1080.00"),  # a prepayment tenancy's gap is None
+        ("marginal_rate", ("expect", "effect", "effect"), "-2687.05"),
+        ("projection", ("expect", "years", 0, "equity"), "65220.77"),
+        ("projection", ("expect", "sale", "afa_claimed"), "49140.01"),
+        ("sale", ("expect", "profit"), "-42151.77"),
+    ],
+)
+def test_phase4_fixtures_check_their_arithmetic(name, path, slip):
+    """A one-cent slip in a hand-filled figure fails on load, not in a rule test later."""
+    import copy
+
+    data = copy.deepcopy(phase4.raw(name))
+    case = next(c for c in data["cases"] if "expect" in c and _has(c, path))
+    node = case
+    for key in path[:-1]:
+        node = node[key]
+    node[path[-1]] = slip
+    with pytest.raises(ValidationError):
+        phase4.MODELS[name].model_validate(data)
+
+
+def _has(case: dict, path: tuple) -> bool:
+    node = case
+    for key in path:
+        try:
+            node = node[key]
+        except (KeyError, IndexError, TypeError):
+            return False
+    return node is not None
+
+
+def _case(name: str, case_id: str):
+    return next(c for c in phase4.load(name).cases if c.id == case_id)
+
+
+def test_phase4_fixtures_carry_the_spec_figures():
+    """The figures docs/phases/phase-4.md states (§5.1–§5.5, §10.3), read off the fixtures. The
+    rest of each table was filled by the same arithmetic; these pin the spec's own numbers."""
+    D = Decimal
+    a = _case("projection", "baseline_no_growth_tax_free_sale").expect
+    b = _case("projection", "growth_and_rate_switch").expect
+    c = _case("projection", "useful_life_and_sale_inside_ten_years").expect
+    a27, a28 = a.years[0], a.years[1]
+    assert a27.rent_in + a27.umlagen_in == D("12360.00")
+    assert (a27.taxable_result, a27.tax_effect.effect, a27.tax_effect.effective_rate) == (
+        D("-4446.81"),
+        D("-1518.48"),
+        D("34.1"),
+    )
+    assert (a27.cash_out, a27.net_cash, a27.equity) == (
+        D("17038.80"),
+        D("-6197.28"),
+        D("65220.76"),
+    )
+    assert (a28.taxable_result, a28.tax_effect.effect, a28.net_cash) == (
+        D("-4314.80"),
+        D("-1473.12"),
+        D("-6151.92"),
+    )
+    assert not a.sale.taxable and a.sale.sale_tax == 0
+    same = {"value", "equity"}  # growth starts in the second year, value growth in the first
+    assert b.years[0].model_dump(exclude=same) == a27.model_dump(exclude=same)
+    b28 = b.years[1]
+    assert (b28.rent_in, b28.umlagen_in, b28.taxable_result, b28.tax_effect.effect) == (
+        D("10404.00"),
+        D("2203.20"),
+        D("-4144.38"),
+        D("-1414.80"),
+    )
+    assert (b28.cash_out, b28.net_cash, b28.value, b.years[4].interest) == (
+        D("17139.58"),
+        D("-5947.18"),
+        D("312120.00"),
+        D("8466.77"),
+    )
+    assert {y.afa for y in c.years} == {D("11031.43")}
+    c30 = c.years[-1]
+    assert (c30.taxable_result, c30.tax_effect.effect, c30.net_cash) == (
+        D("-10387.92"),
+        D("-3488.40"),
+        D("-8167.20"),
+    )
+    s = c.sale
+    assert (s.value, s.selling_costs, s.afa_claimed, s.gain, s.sale_tax, s.net_proceeds) == (
+        D("337652.64"),
+        D("12054.20"),
+        D("46465.72"),
+        D("47064.16"),
+        D("17422.56"),
+        D("85343.67"),
+    )
+    e = _case("actuals", "anlage_v_2026_case_a").expect
+    assert (e.cash_out, e.taxable_result, e.tax_effect.effect, e.net_cash, e.invested) == (
+        D("13897.43"),
+        D("-7948.66"),
+        D("-2687.04"),
+        D("-9554.47"),
+        D("320800.00"),
+    )
+    effect = _case("marginal_rate", "effect_negative_result").expect.effect
+    assert (effect.effect, effect.effective_rate) == (D("-2808.00"), D("35.3"))
+    irr = {x.id: x.expect for x in phase4.load("irr").cases}
+    assert (irr["two_flows_10pct"], irr["three_flows"], irr["property_like"]) == (
+        D("0.100000"),
+        D("0.132326"),
+        D("0.052471"),
+    )
+    assert irr["no_sign_change"] is None
+    assert irr["cagr_ten_and_a_half_years"] == D("0.020329")
 
 
 def test_rent_rows_validate():

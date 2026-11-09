@@ -60,6 +60,29 @@ Rate = Annotated[
 TaxRate = Annotated[
     Decimal, Field(ge=0, lt=1, max_digits=5, decimal_places=4), _STRING_ONLY, _string_schema(4)
 ]
+# A yearly return as a signed fraction, 6 places, above −100 %: a CAGR or an IRR (phase 4
+# D89). Not stored; a projection may lose money, so unlike Rate it may be negative.
+ReturnRate = Annotated[
+    Decimal,
+    Field(gt=-1, max_digits=9, decimal_places=6),
+    _STRING_ONLY,
+    _string_schema(6, signed=True),
+]
+# Vacancy months per year in a projection's levers: 0–12, one decimal (phase 4 D87).
+VacancyMonths = Annotated[
+    Decimal,
+    Field(ge=0, le=12, max_digits=3, decimal_places=1),
+    _STRING_ONLY,
+    _string_schema(1),
+]
+# A coefficient of the §32a EStG formula (rules/tax/tariffs/<year>.yaml, phase 4 D81), e.g.
+# 914.51 or 11135.63: two places, as the law prints them. Not stored.
+TariffCoefficient = Annotated[
+    Decimal,
+    Field(max_digits=9, decimal_places=2),
+    _STRING_ONLY,
+    _string_schema(2, signed=True),
+]
 # numeric(7,6), open interval: building share of the purchase price.
 BuildingShare = Annotated[
     Decimal, Field(gt=0, lt=1, max_digits=7, decimal_places=6), _STRING_ONLY, _string_schema(6)

@@ -1,0 +1,328 @@
+# sale.yaml: rules/performance/sale.py (docs/phases/phase-4.md §5.5, D88, D89).
+
+# Synthetic numbers only (the repo is public). Loaded through tests/fixture_models_phase4.py:
+# every figure here is checked against the §7 schemas, and each expectation's own arithmetic
+# is checked on load. Decimals are quoted strings (the schemas accept decimal strings only).
+# The step 0 coder filled every row by the spec's §5 arithmetic in Decimal, with the taxable
+# results and AfA from phase 3's real draft() (9 Nov 2026); each figure the spec states
+# (§5, §10.3) was reproduced exactly. Every field of an expectation compares exactly, None
+# included, except `sources` (left empty here; a test compares with them excluded).
+#
+# `facts` flattens what sale() reads: the property record, the sale year's projected value,
+# balance and result, the AfA claimed and every year's net cash.
+# - The sale and the price's Zufluss are on 31 Dec of the sale year; §23 applies when that is
+#   before tax_free_from (11 Mar 2036 here).
+# - selling_costs = value × rate, half-up. gain = value − selling costs − (purchase price +
+#   cost rows − building AfA claimed). Each owner's share of the gain is half-up, the last
+#   owner taking the remainder; below_freigrenze when 0 < the owner's gain < 1,000 (a cliff).
+#   sale_tax = T(base + R + taxed gain) − T(base + R), the taxed gain being the owners' gains
+#   that are positive and not below the Freigrenze. A loss is taxed at 0.00 and not refunded.
+# - E₀ = purchase price + cost rows − loan principal. profit = net proceeds + Σ CF − E₀, and
+#   the bridge rows sum to it. flows: −E₀ on the purchase date, each CF on 31 Dec, the net
+#   proceeds on the sale date.
+# - cagr: years = days from the purchase date to the sale ÷ 365.25. irr: XIRR, Actual/365.
+#   Both are rounded half-up to six decimals (the generator bisected to 1e-9; D89's 1e-6
+#   bisection may differ by one in the last place, so a test compares to ±0.000001).
+
+cases:
+- id: scenario_c_sale
+  description: §10.3 C's sale, flattened (gain 47,064.16, sale tax 17,422.56)
+  facts:
+    sale_year: 2030
+    purchase_date: 2026-07-01
+    tax_free_from: 2036-03-11
+    purchase_price: '300000.00'
+    cost_rows: '25000.00'
+    loan_principal: '240000.00'
+    value: '337652.64'
+    selling_costs_rate: '0.0357'
+    afa_claimed: '46465.72'
+    loan_balance: '222832.21'
+    zve_base: '81993.00'
+    result_sale_year: '-10387.92'
+    owners:
+    - {owner_id: 0000000a-0000-4000-8000-000000000001, church_tax: true, tax_state: BY, share: {numerator: 1,
+        denominator: 2}}
+    - {owner_id: 0000000a-0000-4000-8000-000000000002, church_tax: true, tax_state: BY, share: {numerator: 1,
+        denominator: 2}}
+    cash_flows:
+    - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
+    - {'on': 2027-12-31, amount: '-8301.12', kind: cash_flow}
+    - {'on': 2028-12-31, amount: '-8257.92', kind: cash_flow}
+    - {'on': 2029-12-31, amount: '-8214.72', kind: cash_flow}
+    - {'on': 2030-12-31, amount: '-8167.20', kind: cash_flow}
+  expect:
+    sale_date: 2030-12-31
+    tax_free_from: 2036-03-11
+    taxable: true
+    value: '337652.64'
+    selling_costs: '12054.20'
+    afa_claimed: '46465.72'
+    gain: '47064.16'
+    gain_per_owner:
+    - {owner_id: 0000000a-0000-4000-8000-000000000001, share: {numerator: 1, denominator: 2}, gain: '23532.08',
+      below_freigrenze: false}
+    - {owner_id: 0000000a-0000-4000-8000-000000000002, share: {numerator: 1, denominator: 2}, gain: '23532.08',
+      below_freigrenze: false}
+    freigrenze_applied: false
+    sale_tax: '17422.56'
+    loan_balance: '222832.21'
+    net_proceeds: '85343.67'
+    initial_equity: '85000.00'
+    profit: '-42151.76'
+    bridge:
+    - {key: appreciation, amount: '37652.64'}
+    - {key: loan_paid_down, amount: '17167.79'}
+    - {key: cash_flow, amount: '-42495.43'}
+    - {key: buying_costs, amount: '-25000.00'}
+    - {key: selling_costs, amount: '-12054.20'}
+    - {key: sale_tax, amount: '-17422.56'}
+    cagr: '-0.141170'
+    irr: '-0.106343'
+    flows:
+    - {'on': 2026-07-01, amount: '-85000.00', kind: initial_equity}
+    - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
+    - {'on': 2027-12-31, amount: '-8301.12', kind: cash_flow}
+    - {'on': 2028-12-31, amount: '-8257.92', kind: cash_flow}
+    - {'on': 2029-12-31, amount: '-8214.72', kind: cash_flow}
+    - {'on': 2030-12-31, amount: '-8167.20', kind: cash_flow}
+    - {'on': 2030-12-31, amount: '85343.67', kind: net_proceeds}
+- id: tax_free_after_ten_years
+  description: '§10.3 A''s sale: 31 Dec 2036 ≥ 11 Mar 2036, not taxable'
+  facts:
+    sale_year: 2036
+    purchase_date: 2026-07-01
+    tax_free_from: 2036-03-11
+    purchase_price: '300000.00'
+    cost_rows: '25000.00'
+    loan_principal: '240000.00'
+    value: '300000.00'
+    selling_costs_rate: '0.0357'
+    afa_claimed: '49140.00'
+    loan_balance: '194830.30'
+    zve_base: '81993.00'
+    result_sale_year: '-3074.76'
+    owners:
+    - {owner_id: 0000000a-0000-4000-8000-000000000001, church_tax: true, tax_state: BY, share: {numerator: 1,
+        denominator: 2}}
+    - {owner_id: 0000000a-0000-4000-8000-000000000002, church_tax: true, tax_state: BY, share: {numerator: 1,
+        denominator: 2}}
+    cash_flows:
+    - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
+    - {'on': 2027-12-31, amount: '-6197.28', kind: cash_flow}
+    - {'on': 2028-12-31, amount: '-6151.92', kind: cash_flow}
+    - {'on': 2029-12-31, amount: '-6106.56', kind: cash_flow}
+    - {'on': 2030-12-31, amount: '-6059.04', kind: cash_flow}
+    - {'on': 2031-12-31, amount: '-6009.36', kind: cash_flow}
+    - {'on': 2032-12-31, amount: '-5957.52', kind: cash_flow}
+    - {'on': 2033-12-31, amount: '-5903.52', kind: cash_flow}
+    - {'on': 2034-12-31, amount: '-5849.52', kind: cash_flow}
+    - {'on': 2035-12-31, amount: '-5791.20', kind: cash_flow}
+    - {'on': 2036-12-31, amount: '-5732.88', kind: cash_flow}
+  expect:
+    sale_date: 2036-12-31
+    tax_free_from: 2036-03-11
+    taxable: false
+    value: '300000.00'
+    selling_costs: '10710.00'
+    afa_claimed: '49140.00'
+    gain: null
+    gain_per_owner: []
+    freigrenze_applied: false
+    sale_tax: '0.00'
+    loan_balance: '194830.30'
+    net_proceeds: '94459.70'
+    initial_equity: '85000.00'
+    profit: '-59853.57'
+    bridge:
+    - {key: appreciation, amount: '0.00'}
+    - {key: loan_paid_down, amount: '45169.70'}
+    - {key: cash_flow, amount: '-69313.27'}
+    - {key: buying_costs, amount: '-25000.00'}
+    - {key: selling_costs, amount: '-10710.00'}
+    - {key: sale_tax, amount: '0.00'}
+    cagr: '-0.109496'
+    irr: '-0.061054'
+    flows:
+    - {'on': 2026-07-01, amount: '-85000.00', kind: initial_equity}
+    - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
+    - {'on': 2027-12-31, amount: '-6197.28', kind: cash_flow}
+    - {'on': 2028-12-31, amount: '-6151.92', kind: cash_flow}
+    - {'on': 2029-12-31, amount: '-6106.56', kind: cash_flow}
+    - {'on': 2030-12-31, amount: '-6059.04', kind: cash_flow}
+    - {'on': 2031-12-31, amount: '-6009.36', kind: cash_flow}
+    - {'on': 2032-12-31, amount: '-5957.52', kind: cash_flow}
+    - {'on': 2033-12-31, amount: '-5903.52', kind: cash_flow}
+    - {'on': 2034-12-31, amount: '-5849.52', kind: cash_flow}
+    - {'on': 2035-12-31, amount: '-5791.20', kind: cash_flow}
+    - {'on': 2036-12-31, amount: '-5732.88', kind: cash_flow}
+    - {'on': 2036-12-31, amount: '94459.70', kind: net_proceeds}
+- id: gain_below_freigrenze
+  description: '§10.3 A sold in 2027 at 319,780.00 without selling costs: gain 1,800.00, 900.00 per spouse
+    < 1,000 → tax 0.00'
+  facts:
+    sale_year: 2027
+    purchase_date: 2026-07-01
+    tax_free_from: 2036-03-11
+    purchase_price: '300000.00'
+    cost_rows: '25000.00'
+    loan_principal: '240000.00'
+    value: '319780.00'
+    selling_costs_rate: '0'
+    afa_claimed: '7020.00'
+    loan_balance: '234779.24'
+    zve_base: '81993.00'
+    result_sale_year: '-4446.81'
+    owners:
+    - {owner_id: 0000000a-0000-4000-8000-000000000001, church_tax: true, tax_state: BY, share: {numerator: 1,
+        denominator: 2}}
+    - {owner_id: 0000000a-0000-4000-8000-000000000002, church_tax: true, tax_state: BY, share: {numerator: 1,
+        denominator: 2}}
+    cash_flows:
+    - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
+    - {'on': 2027-12-31, amount: '-6197.28', kind: cash_flow}
+  expect:
+    sale_date: 2027-12-31
+    tax_free_from: 2036-03-11
+    taxable: true
+    value: '319780.00'
+    selling_costs: '0.00'
+    afa_claimed: '7020.00'
+    gain: '1800.00'
+    gain_per_owner:
+    - {owner_id: 0000000a-0000-4000-8000-000000000001, share: {numerator: 1, denominator: 2}, gain: '900.00',
+      below_freigrenze: true}
+    - {owner_id: 0000000a-0000-4000-8000-000000000002, share: {numerator: 1, denominator: 2}, gain: '900.00',
+      below_freigrenze: true}
+    freigrenze_applied: true
+    sale_tax: '0.00'
+    loan_balance: '234779.24'
+    net_proceeds: '85000.76'
+    initial_equity: '85000.00'
+    profit: '-15750.99'
+    bridge:
+    - {key: appreciation, amount: '19780.00'}
+    - {key: loan_paid_down, amount: '5220.76'}
+    - {key: cash_flow, amount: '-15751.75'}
+    - {key: buying_costs, amount: '-25000.00'}
+    - {key: selling_costs, amount: '0.00'}
+    - {key: sale_tax, amount: '0.00'}
+    cagr: '-0.127678'
+    irr: '-0.118150'
+    flows:
+    - {'on': 2026-07-01, amount: '-85000.00', kind: initial_equity}
+    - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
+    - {'on': 2027-12-31, amount: '-6197.28', kind: cash_flow}
+    - {'on': 2027-12-31, amount: '85000.76', kind: net_proceeds}
+- id: gain_at_freigrenze
+  description: 'Gain 2,000.00, 1,000.00 per spouse: not below the Freigrenze, the whole gain is taxed'
+  facts:
+    sale_year: 2027
+    purchase_date: 2026-07-01
+    tax_free_from: 2036-03-11
+    purchase_price: '300000.00'
+    cost_rows: '25000.00'
+    loan_principal: '240000.00'
+    value: '319980.00'
+    selling_costs_rate: '0'
+    afa_claimed: '7020.00'
+    loan_balance: '234779.24'
+    zve_base: '81993.00'
+    result_sale_year: '-4446.81'
+    owners:
+    - {owner_id: 0000000a-0000-4000-8000-000000000001, church_tax: true, tax_state: BY, share: {numerator: 1,
+        denominator: 2}}
+    - {owner_id: 0000000a-0000-4000-8000-000000000002, church_tax: true, tax_state: BY, share: {numerator: 1,
+        denominator: 2}}
+    cash_flows:
+    - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
+    - {'on': 2027-12-31, amount: '-6197.28', kind: cash_flow}
+  expect:
+    sale_date: 2027-12-31
+    tax_free_from: 2036-03-11
+    taxable: true
+    value: '319980.00'
+    selling_costs: '0.00'
+    afa_claimed: '7020.00'
+    gain: '2000.00'
+    gain_per_owner:
+    - {owner_id: 0000000a-0000-4000-8000-000000000001, share: {numerator: 1, denominator: 2}, gain: '1000.00',
+      below_freigrenze: false}
+    - {owner_id: 0000000a-0000-4000-8000-000000000002, share: {numerator: 1, denominator: 2}, gain: '1000.00',
+      below_freigrenze: false}
+    freigrenze_applied: false
+    sale_tax: '678.24'
+    loan_balance: '234779.24'
+    net_proceeds: '84522.52'
+    initial_equity: '85000.00'
+    profit: '-16229.23'
+    bridge:
+    - {key: appreciation, amount: '19980.00'}
+    - {key: loan_paid_down, amount: '5220.76'}
+    - {key: cash_flow, amount: '-15751.75'}
+    - {key: buying_costs, amount: '-25000.00'}
+    - {key: selling_costs, amount: '0.00'}
+    - {key: sale_tax, amount: '-678.24'}
+    cagr: '-0.131698'
+    irr: '-0.121850'
+    flows:
+    - {'on': 2026-07-01, amount: '-85000.00', kind: initial_equity}
+    - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
+    - {'on': 2027-12-31, amount: '-6197.28', kind: cash_flow}
+    - {'on': 2027-12-31, amount: '84522.52', kind: net_proceeds}
+- id: loss_not_refunded
+  description: 'Sold at the purchase price: a §23 loss, no tax and no refund (nicht verrechenbar)'
+  facts:
+    sale_year: 2027
+    purchase_date: 2026-07-01
+    tax_free_from: 2036-03-11
+    purchase_price: '300000.00'
+    cost_rows: '25000.00'
+    loan_principal: '240000.00'
+    value: '300000.00'
+    selling_costs_rate: '0'
+    afa_claimed: '7020.00'
+    loan_balance: '234779.24'
+    zve_base: '81993.00'
+    result_sale_year: '-4446.81'
+    owners:
+    - {owner_id: 0000000a-0000-4000-8000-000000000001, church_tax: true, tax_state: BY, share: {numerator: 1,
+        denominator: 2}}
+    - {owner_id: 0000000a-0000-4000-8000-000000000002, church_tax: true, tax_state: BY, share: {numerator: 1,
+        denominator: 2}}
+    cash_flows:
+    - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
+    - {'on': 2027-12-31, amount: '-6197.28', kind: cash_flow}
+  expect:
+    sale_date: 2027-12-31
+    tax_free_from: 2036-03-11
+    taxable: true
+    value: '300000.00'
+    selling_costs: '0.00'
+    afa_claimed: '7020.00'
+    gain: '-17980.00'
+    gain_per_owner:
+    - {owner_id: 0000000a-0000-4000-8000-000000000001, share: {numerator: 1, denominator: 2}, gain: '-8990.00',
+      below_freigrenze: false}
+    - {owner_id: 0000000a-0000-4000-8000-000000000002, share: {numerator: 1, denominator: 2}, gain: '-8990.00',
+      below_freigrenze: false}
+    freigrenze_applied: false
+    sale_tax: '0.00'
+    loan_balance: '234779.24'
+    net_proceeds: '65220.76'
+    initial_equity: '85000.00'
+    profit: '-35530.99'
+    bridge:
+    - {key: appreciation, amount: '0.00'}
+    - {key: loan_paid_down, amount: '5220.76'}
+    - {key: cash_flow, amount: '-15751.75'}
+    - {key: buying_costs, amount: '-25000.00'}
+    - {key: selling_costs, amount: '0.00'}
+    - {key: sale_tax, amount: '0.00'}
+    cagr: '-0.302873'
+    irr: '-0.277983'
+    flows:
+    - {'on': 2026-07-01, amount: '-85000.00', kind: initial_equity}
+    - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
+    - {'on': 2027-12-31, amount: '-6197.28', kind: cash_flow}
+    - {'on': 2027-12-31, amount: '65220.76', kind: net_proceeds}

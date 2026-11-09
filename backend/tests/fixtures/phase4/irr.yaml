@@ -1,0 +1,51 @@
+# irr.yaml: rules/performance/irr.py xirr and cagr (docs/phases/phase-4.md §5.5, D89).
+
+# Synthetic numbers only (the repo is public). Loaded through tests/fixture_models_phase4.py:
+# every figure here is checked against the §7 schemas, and each expectation's own arithmetic
+# is checked on load. Decimals are quoted strings (the schemas accept decimal strings only).
+# The step 0 coder filled every row by the spec's §5 arithmetic in Decimal, with the taxable
+# results and AfA from phase 3's real draft() (9 Nov 2026); each figure the spec states
+# (§5, §10.3) was reproduced exactly. Every field of an expectation compares exactly, None
+# included, except `sources` (left empty here; a test compares with them excluded).
+#
+# xirr: Actual/365 from the first flow, bisection; None when the flows do not change sign.
+# cagr: ((E₀ + profit) ÷ E₀)^(1 ÷ years) − 1; None when E₀ + profit ≤ 0. Both rounded half-up to
+# six decimals; a test compares to ±0.000001 (D89 bisects to 1e-6).
+
+cases:
+- id: two_flows_10pct
+  description: One year of 365 days, +10 %
+  flows:
+  - {'on': 2026-01-01, amount: '-1000.00', kind: initial_equity}
+  - {'on': 2027-01-01, amount: '1100.00', kind: net_proceeds}
+  expect: '0.100000'
+- id: three_flows
+  description: A flow in mid-year
+  flows:
+  - {'on': 2026-01-01, amount: '-1000.00', kind: initial_equity}
+  - {'on': 2026-07-01, amount: '500.00', kind: cash_flow}
+  - {'on': 2027-01-01, amount: '600.00', kind: net_proceeds}
+  expect: '0.132326'
+- id: property_like
+  description: −E₀, a small negative first year, two positive years, then the proceeds
+  flows:
+  - {'on': 2026-07-01, amount: '-85000.00', kind: initial_equity}
+  - {'on': 2026-12-31, amount: '-410.00', kind: cash_flow}
+  - {'on': 2027-12-31, amount: '1000.00', kind: cash_flow}
+  - {'on': 2028-12-31, amount: '1000.00', kind: cash_flow}
+  - {'on': 2029-12-31, amount: '100000.00', kind: net_proceeds}
+  expect: '0.052471'
+- id: no_sign_change
+  description: 'Only outflows: no rate'
+  flows:
+  - {'on': 2026-01-01, amount: '-1000.00', kind: initial_equity}
+  - {'on': 2027-01-01, amount: '-100.00', kind: net_proceeds}
+  expect: null
+- id: cagr_ten_and_a_half_years
+  description: 'D89: ((E₀ + profit) ÷ E₀)^(1 ÷ years) − 1'
+  cagr: {initial_equity: '85000.00', profit: '20000.00', years: '10.5'}
+  expect: '0.020329'
+- id: cagr_total_loss
+  description: 'Nothing left (E₀ + profit ≤ 0): no rate'
+  cagr: {initial_equity: '85000.00', profit: '-85000.00', years: '10.5'}
+  expect: null

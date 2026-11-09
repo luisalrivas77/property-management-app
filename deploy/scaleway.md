@@ -741,10 +741,16 @@ image. Keep the order: grace < uvicorn's timeout < the platform's kill timeout.
 1. Merge the change to `main`, then run `publish-images` (step 7) with `api`, `web` or
    `both`. The web image only needs a rebuild when `frontend/` changed or the API URL
    changed.
-2. If the commit adds migrations, run them first, from your computer with the **new**
-   commit checked out (step 9; check the allow-list holds your current IP). Migrations are
-   append-only and additive, so the old API keeps working against the new schema while the
-   new one rolls out.
+2. If the commit adds migrations, wait until `publish-images` has finished, then run them,
+   from your computer with the **new** commit checked out (step 9; check the allow-list holds
+   your current IP), and go straight on to step 3 in the same sitting. Most migrations are
+   additive, so the old API keeps working against the new schema while the new one rolls
+   out. **A migration that removes or renames a column the previous image reads breaks the
+   old image until the new one serves.** The first is 0016 (phase 4): it drops
+   `owner.marginal_tax_rate`, so every screen that loads owners (overview, Eigentümer,
+   Steuern, Immobilien tabs, Mieter, Mietverhältnisse, Einheiten, document detail) fails
+   from the migration until the new API tag is live. The reverse order fails too (the new
+   image reads `owner.church_tax`), so keep migration-first and keep the gap to minutes.
 3. Point `hausbuch-api` at the new tag (console, or `scw container container update <id>
    region=fr-par image=rg.fr-par.scw.cloud/hausbuch/api:<tag>`; the field is `image`, and the
    older `registry-image` is accepted but silently changes nothing). Scaleway starts the new instance and switches
@@ -762,7 +768,8 @@ image. Keep the order: grace < uvicorn's timeout < the platform's kill timeout.
   day.
 - **Migrations are not rolled back.** There is no `alembic downgrade` in production: a
   downgrade can drop data. Roll the app back to an image that works with the newer schema;
-  additive migrations make that the normal case. If a migration itself damaged data,
+  additive migrations make that the normal case. After a migration that removed a column the
+  older images read (0016 onwards), no older image works, so fix forward instead. If a migration itself damaged data,
   restore the database from a backup (below), after checking with yourself what the restore
   loses.
 

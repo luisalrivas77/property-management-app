@@ -1,6 +1,5 @@
 """Owner commands: current-state row plus owner.* events in the same transaction (D4)."""
 
-from decimal import Decimal
 from enum import Enum
 from typing import Literal
 from uuid import UUID
@@ -8,7 +7,7 @@ from uuid import UUID
 from sqlalchemy import Connection, insert, select, update
 
 from hausbuch.db.tables import owner as owner_table
-from hausbuch.schemas.enums import EntityType
+from hausbuch.schemas.enums import EntityType, StateCode
 from hausbuch.schemas.events import EventType, OwnerCreated, Updated
 from hausbuch.schemas.property import Owner, OwnerCreate
 
@@ -21,7 +20,7 @@ class _Unset(Enum):
     UNSET = "UNSET"
 
 
-# "Not passed". None is a real value for tax_id_ref and marginal_tax_rate (clears it).
+# "Not passed". None is a real value for tax_id_ref and tax_state (clears it).
 UNSET = _Unset.UNSET
 Unset = Literal[_Unset.UNSET]
 
@@ -42,7 +41,7 @@ def create_owner(ctx: CommandContext, data: OwnerCreate) -> Owner:
         ctx,
         EventType.OWNER_CREATED,
         created.id,
-        OwnerCreated(marginal_tax_rate=created.marginal_tax_rate),
+        OwnerCreated(church_tax=created.church_tax, tax_state=created.tax_state),
     )
     return created
 
@@ -53,7 +52,8 @@ def update_owner(
     *,
     full_name: str | Unset = UNSET,
     tax_id_ref: str | None | Unset = UNSET,
-    marginal_tax_rate: Decimal | None | Unset = UNSET,
+    church_tax: bool | Unset = UNSET,
+    tax_state: StateCode | None | Unset = UNSET,
 ) -> Owner:
     """Change only the fields passed. Writes nothing and appends no event if nothing changes."""
     requested = {
@@ -61,7 +61,8 @@ def update_owner(
         for name, value in (
             ("full_name", full_name),
             ("tax_id_ref", tax_id_ref),
-            ("marginal_tax_rate", marginal_tax_rate),
+            ("church_tax", church_tax),
+            ("tax_state", tax_state),
         )
         if value is not UNSET
     }

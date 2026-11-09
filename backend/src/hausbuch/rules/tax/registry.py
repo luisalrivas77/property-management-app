@@ -5,6 +5,12 @@ RuleSet (a category without a line or an explicit null, a line key the draft wri
 AfA rates with a gap) fails to load with the Pydantic error, whose message carries
 `form_mapping.incomplete` for the mapping checks. The files ship inside the package, so the
 API image reads them with importlib.resources.
+
+Phase 4 (docs/phases/phase-4.md D81, §4): the income tax tariff of a year, from
+`tariffs/<year>.yaml`. Unlike the rule set, a year without its own file reuses the latest
+earlier one, marked `reused_from`, so a projected year always has a tariff; only a year before
+every file raises `tariff.no_file`. `rule_set_or_latest` does the same fallback for the rule set
+and is for the projection only (the Steuern screen keeps raising `tax.no_rule_set`).
 """
 
 from functools import cache
@@ -12,20 +18,31 @@ from importlib.resources import files
 
 import yaml
 
-from hausbuch.rules.errors import TAX_NO_RULE_SET, RuleError
+from hausbuch.rules.errors import PROJECTION_NO_RULE_SET, TARIFF_NO_FILE, TAX_NO_RULE_SET, RuleError
+from hausbuch.schemas.performance import Tariff
 from hausbuch.schemas.tax import RuleSet
 
 _RULESETS = files("hausbuch.rules.tax") / "rulesets"
+_TARIFFS = files("hausbuch.rules.tax") / "tariffs"
 
 
-def available_years() -> tuple[int, ...]:
-    """The tax years that have a rule set file, ascending."""
+def _years(directory) -> tuple[int, ...]:
     years = []
-    for entry in _RULESETS.iterdir():
+    for entry in directory.iterdir():
         stem, dot, ext = entry.name.partition(".")
         if dot and ext == "yaml" and stem.isdigit():
             years.append(int(stem))
     return tuple(sorted(years))
+
+
+def available_years() -> tuple[int, ...]:
+    """The tax years that have a rule set file, ascending."""
+    return _years(_RULESETS)
+
+
+def tariff_years() -> tuple[int, ...]:
+    """The tax years that have a tariff file, ascending."""
+    return _years(_TARIFFS)
 
 
 @cache
@@ -38,4 +55,37 @@ def rule_set(tax_year: int) -> RuleSet:
     loaded = RuleSet.model_validate(data)
     if loaded.tax_year != tax_year:
         raise ValueError(f"rulesets/{tax_year}.yaml declares tax_year {loaded.tax_year}")
+    return loaded
+
+
+@cache
+def rule_set_or_latest(tax_year: int) -> RuleSet:
+    """The rule set of `tax_year`, or the latest earlier one unchanged (its own tax_year) for a
+    projected year without a file (D86). Before every file: RuleError projection.no_rule_set."""
+    earlier = [y for y in available_years() if y <= tax_year]
+    if not earlier:
+        raise RuleError(PROJECTION_NO_RULE_SET, f"no rule set for {tax_year} or any earlier year")
+    return rule_set(earlier[-1])
+
+
+@cache
+def tariff(tax_year: int) -> Tariff:
+    """The validated tariff of `tax_year`; for a year without a file, the latest earlier file
+    with tax_year set to the year asked for and reused_from to the file's year (D81). Before
+    every file: RuleError tariff.no_file. Cached: the files are immutable at runtime."""
+    earlier = [y for y in tariff_years() if y <= tax_year]
+    if not earlier:
+        raise RuleError(TARIFF_NO_FILE, f"no tariff for {tax_year} or any earlier year")
+    own = _tariff_file(earlier[-1])
+    if own.tax_year == tax_year:
+        return own
+    reused = {"tax_year": tax_year, "reused_from": own.tax_year}
+    return Tariff.model_validate(own.model_dump() | reused)
+
+
+def _tariff_file(year: int) -> Tariff:
+    data = yaml.safe_load((_TARIFFS / f"{year}.yaml").read_text(encoding="utf-8"))
+    loaded = Tariff.model_validate(data)
+    if loaded.tax_year != year or loaded.reused_from is not None:
+        raise ValueError(f"tariffs/{year}.yaml declares tax_year {loaded.tax_year}")
     return loaded

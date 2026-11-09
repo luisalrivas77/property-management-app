@@ -2,13 +2,12 @@
 
 import uuid
 from datetime import UTC, datetime
-from decimal import Decimal
 
 import pytest
 from pydantic import ValidationError
 
 from hausbuch.db.session import workspace_transaction
-from hausbuch.schemas.enums import ActorType, EntityType
+from hausbuch.schemas.enums import ActorType, EntityType, StateCode
 from hausbuch.schemas.events import EventType
 from hausbuch.schemas.property import OwnerCreate
 from hausbuch.services.context import Actor, new_command
@@ -19,7 +18,7 @@ from hausbuch.services.owners import create_owner, get_owner, update_owner
 CREATED_AT = datetime(2026, 11, 5, 9, 30, tzinfo=UTC)
 UPDATED_AT = datetime(2026, 11, 6, 18, 0, tzinfo=UTC)
 ACTOR = Actor(ActorType.USER, "user:test")
-ERIKA = OwnerCreate(full_name="Erika Muster", marginal_tax_rate=Decimal("0.42"))
+ERIKA = OwnerCreate(full_name="Erika Muster", church_tax=True, tax_state=StateCode.BY)
 
 
 def _create(engine, ws, data=ERIKA):
@@ -48,14 +47,14 @@ def test_create_writes_the_row_and_exactly_one_event(app_engine, workspaces):
 
     assert owner.workspace_id == a
     assert (owner.full_name, owner.tax_id_ref) == ("Erika Muster", None)
-    assert owner.marginal_tax_rate == Decimal("0.4200")
+    assert (owner.church_tax, owner.tax_state) == (True, StateCode.BY)
     assert owner.created_at == owner.updated_at == CREATED_AT
 
     with workspace_transaction(app_engine, a) as conn:
         assert get_owner(conn, owner.id) == owner
     [created] = _events(app_engine, a, owner.id)
     assert created.type is EventType.OWNER_CREATED
-    assert created.payload == {"marginal_tax_rate": "0.4200"}
+    assert created.payload == {"church_tax": True, "tax_state": "BY"}
     assert created.correlation_id == ctx.correlation_id
     assert created.recorded_at == CREATED_AT
     assert (created.actor_type, created.actor_id) == (ActorType.USER, "user:test")
@@ -111,12 +110,12 @@ def test_update_records_exactly_the_changed_fields(app_engine, workspaces):
         owner.id,
         full_name="Erika Muster",  # passed but unchanged: not in the event
         tax_id_ref="secrets:owner/erika/steuer-id",
-        marginal_tax_rate=Decimal("0.35"),
+        tax_state=StateCode.NW,
     )
 
     assert updated.full_name == "Erika Muster"
     assert updated.tax_id_ref == "secrets:owner/erika/steuer-id"
-    assert updated.marginal_tax_rate == Decimal("0.3500")
+    assert updated.tax_state is StateCode.NW
     assert updated.created_at == CREATED_AT and updated.updated_at == UPDATED_AT
 
     created, changed = _events(app_engine, a, owner.id)
@@ -127,7 +126,7 @@ def test_update_records_exactly_the_changed_fields(app_engine, workspaces):
     assert changed.payload == {
         "changes": {
             "tax_id_ref": {"old": None, "new": "secrets:owner/erika/steuer-id"},
-            "marginal_tax_rate": {"old": "0.4200", "new": "0.3500"},
+            "tax_state": {"old": "BY", "new": "NW"},
         },
         "reason": None,
     }
@@ -139,11 +138,12 @@ def test_none_clears_a_field(app_engine, workspaces):
     a, _ = workspaces
     owner = _create(app_engine, a)
 
-    updated = _update(app_engine, a, owner.id, marginal_tax_rate=None)
+    updated = _update(app_engine, a, owner.id, church_tax=False, tax_state=None)
 
-    assert updated.marginal_tax_rate is None
+    assert (updated.church_tax, updated.tax_state) == (False, None)
     assert _events(app_engine, a, owner.id)[-1].payload["changes"] == {
-        "marginal_tax_rate": {"old": "0.4200", "new": None}
+        "church_tax": {"old": True, "new": False},
+        "tax_state": {"old": "BY", "new": None},
     }
 
 
@@ -153,10 +153,10 @@ def test_none_clears_a_field(app_engine, workspaces):
         {},
         {"full_name": "Erika Muster"},
         {"tax_id_ref": None},
-        {"marginal_tax_rate": Decimal("0.4200")},
-        {"marginal_tax_rate": Decimal("0.42"), "full_name": "Erika Muster"},
+        {"tax_state": StateCode.BY},
+        {"church_tax": True, "full_name": "Erika Muster"},
     ],
-    ids=["nothing-passed", "same-name", "same-none", "same-rate", "same-rate-other-scale"],
+    ids=["nothing-passed", "same-name", "same-none", "same-state", "same-church-and-name"],
 )
 def test_noop_update_writes_nothing(app_engine, workspaces, fields):
     a, _ = workspaces
@@ -173,8 +173,8 @@ def test_noop_update_writes_nothing(app_engine, workspaces, fields):
 
 @pytest.mark.parametrize(
     "fields",
-    [{"full_name": ""}, {"full_name": None}, {"marginal_tax_rate": Decimal("1")}],
-    ids=["empty-name", "null-name", "rate-out-of-range"],
+    [{"full_name": ""}, {"full_name": None}, {"tax_state": None}, {"tax_state": "XX"}],
+    ids=["empty-name", "null-name", "church-without-state", "unknown-state"],
 )
 def test_invalid_update_is_rejected_and_writes_nothing(app_engine, workspaces, fields):
     a, _ = workspaces

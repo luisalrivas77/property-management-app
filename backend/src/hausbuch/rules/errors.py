@@ -79,3 +79,15 @@ TAX_INPUT_MOVABLE_ASSET_SEPARATE_UNSUPPORTED = "tax_input.movable_asset_separate
 TAX_INPUT_MOVABLE_ASSET_NO_PURCHASE_DATE = "tax_input.movable_asset_no_purchase_date"
 TAX_EXPORT_FAILED = "tax_export.failed"
 TAX_EXPORT_TOO_LARGE = "tax_export.too_large"  # an archive over 100 MiB
+
+
+# --- Phase 4 codes (docs/phases/phase-4.md §8) -----------------------------------------
+
+TARIFF_NO_FILE = "tariff.no_file"  # no tariffs/<year>.yaml for the year or any earlier year
+TARIFF_INVALID = "tariff.invalid"  # a tariff file that does not validate (schemas/performance)
+INCOME_MISSING = "income.missing"  # a flag on a year's figures, not an error (§5.2)
+INCOME_INPUT_SCOPE_INVALID = "income_input.scope_invalid"  # the kind's scope is not met
+INCOME_INPUT_NOT_CURRENT = "income_input.not_current"  # supersedes a superseded/withdrawn row
+SCENARIO_NOT_CURRENT = "scenario.not_current"  # supersedes a superseded or withdrawn scenario
+SCENARIO_SALE_YEAR_BEFORE_TODAY = "scenario.sale_year_before_today"
+PROJECTION_NO_RULE_SET = "projection.no_rule_set"  # no rule set file for the year or earlier

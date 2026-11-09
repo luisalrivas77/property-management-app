@@ -484,11 +484,20 @@ SourceKind = Literal[
     "loan",
     "tax_input",
     "rule",
+    # Phase 4 (docs/phases/phase-4.md §7): a projection's lever row, a loan schedule entry
+    # (id = the synthetic row's UUID5), an income input row, and the tariff file (no id).
+    "scenario",
+    "schedule_entry",
+    "income_input",
+    "tariff",
 ]
+# The sources that are a rule file rather than a record: they carry no id.
+_FILE_SOURCES = frozenset({"rule", "tariff"})
 
 
 class SourceRef(Schema):
-    """What a figure came from (principle 2). `rule` is the rule set itself (no id)."""
+    """What a figure came from (principle 2). `rule` is the rule set and `tariff` the income
+    tax tariff file (no id); every other kind names its record."""
 
     kind: SourceKind
     id: UUID | None = None
@@ -496,8 +505,8 @@ class SourceRef(Schema):
 
     @model_validator(mode="after")
     def _id_unless_rule(self) -> Self:
-        if (self.id is None) != (self.kind == "rule"):
-            raise ValueError("every source but the rule set names its record")
+        if (self.id is None) != (self.kind in _FILE_SOURCES):
+            raise ValueError("every source but the rule set and the tariff names its record")
         return self
 
 

@@ -31,7 +31,6 @@ from .common import (
     Rate,
     Rooms,
     Schema,
-    TaxRate,
     Year,
 )
 from .document import (
@@ -51,6 +50,7 @@ from .enums import (
     PropertyKind,
     ProposalStatus,
     RentModel,
+    StateCode,
 )
 from .loan import LoanCreate
 from .property import Address, OwnerShare, reject_raw_tax_number
@@ -121,7 +121,8 @@ class OwnerPatch(Patch):
 
     full_name: str = Field(default=None, min_length=1)
     tax_id_ref: str | None = None
-    marginal_tax_rate: TaxRate | None = None
+    church_tax: bool = Field(default=None)  # phase 4 D90; not nullable
+    tax_state: StateCode | None = None  # null clears it (only without church tax)
 
     @field_validator("tax_id_ref")
     @classmethod
