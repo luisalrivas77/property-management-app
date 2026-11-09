@@ -9,6 +9,7 @@ import { Suspense, useCallback } from "react";
 
 import { api, ok } from "@/api/client";
 import { LinkedDocuments } from "@/components/documents";
+import { TaxFreeLine } from "@/components/tax";
 import { Breadcrumbs, Loading, TabBar, type Tab } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 
@@ -75,6 +76,7 @@ function PropertyDetail() {
               <span className="muted">
                 {data.address.street} {data.address.house_number}, {data.address.postal_code} {data.address.city}
               </span>
+              <TaxFreeLine propertyId={id} />
             </div>
             <TabBar tabs={TABS} current={tab} href={(key) => `/properties/${id}?tab=${key}`} />
             {tab === "stammdaten" ? <MasterDataTab property={data} onChanged={property.reload} /> : null}

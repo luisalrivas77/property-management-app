@@ -148,3 +148,6 @@ export type MovedPayment = Schemas["MovedPayment"];
 export type LimitStatus = Schemas["LimitStatus"];
 export type AfaLine = Schemas["AfaLine"];
 export type AllocationFact = Schemas["AllocationFact"];
+export type TaxExport = Schemas["TaxExport"];
+export type TaxExportKind = Schemas["TaxExportKind"];
+export type TaxExportState = Schemas["TaxExportState"];

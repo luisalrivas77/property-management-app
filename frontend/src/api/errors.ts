@@ -107,6 +107,10 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   // the Anlage V draft (phase-3.md §10)
   "tax.year_not_available": "Für dieses Jahr gibt es zu dieser Immobilie keinen Entwurf (vor dem Kauf oder in der Zukunft).",
   "tax.no_rule_set": "Für dieses Steuerjahr gibt es noch kein Regelwerk, also keinen Entwurf.",
+  // exports of the draft (phase-3.md §10, §12)
+  "tax_export.too_large":
+    "Die Belege des Jahres sind zusammen größer als 1 GiB. Das Archiv bitte von Hand aufteilen; die Ausfüllhilfe geht weiterhin.",
+  "tax_export.failed": "Der Export ist fehlgeschlagen. Bitte noch einmal versuchen.",
 };
 
 /** German text for a proposal's `error_code`: why reading the document failed or was
