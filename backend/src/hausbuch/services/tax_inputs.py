@@ -37,13 +37,25 @@ beyond TaxInputCreate's own scope validator:
   33⅓ from 2023): years × rate < 1, else `tax_input.useful_life_not_shorter`; and its first
   year is not before the purchase (Übergang) year when a purchase date is set
   (`tax_input.scope_invalid`). A withdrawal is not re-checked. Its question is the year, as for
-  `ruecklage_spent`: one current row per (property, tax_year).
+  `ruecklage_spent`: one current row per (property, tax_year);
+- a `movable_asset` (D80, the Einbauküche) starts no earlier than the purchase year, and
+  exactly in it when it came with the flat (`in_purchase_price`), since its basis leaves the
+  building's from the handover on (`tax_input.movable_asset_year`). Bought with the flat, its
+  basis (amount × (price + Σ cost rows) ÷ price) must stay below the building's share of the
+  selected price split, less any other current asset bought with the flat
+  (`tax_input.movable_asset_exceeds_building`); without a selected split that cannot be
+  checked and the row is refused (`tax_input.movable_asset_no_split`). A withdrawal is not
+  re-checked. Its question is the label, whatever the year: one current row per
+  (property, label), so a second kitchen is refused (`tax_input.not_current`: supersede it); a
+  correction keeps the row's first year and label (withdraw it and record a new one to move
+  the year).
 
 Writes for one property are serialised by locking the property row (FOR NO KEY UPDATE), so
 the "no other current row" and the Erweiterung checks cannot race; `supersedes_id` is UNIQUE
 in the table as well. The event carries amounts and codes only, never the note (free text).
 """
 
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -53,19 +65,29 @@ from sqlalchemy.exc import IntegrityError
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import loan as loan_table
 from hausbuch.db.tables import property_ as property_table
+from hausbuch.db.tables import property_price_split as split_table
 from hausbuch.db.tables import tax_input as tax_input_table
 from hausbuch.db.tables import unit as unit_table
 from hausbuch.rules.errors import (
     TAX_INPUT_EXTENSION_NEEDS_HERSTELLUNG,
+    TAX_INPUT_MOVABLE_ASSET_EXCEEDS_BUILDING,
+    TAX_INPUT_MOVABLE_ASSET_NO_SPLIT,
+    TAX_INPUT_MOVABLE_ASSET_YEAR,
     TAX_INPUT_USEFUL_LIFE_NOT_SHORTER,
 )
 from hausbuch.rules.tax import registry
-from hausbuch.rules.tax.afa import statutory_months_left
+from hausbuch.rules.tax.afa import building_share, statutory_months_left
+from hausbuch.rules.tax.movable import asset_basis
 from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.enums import AllocationStatus, EntityType, PropertyKind
 from hausbuch.schemas.events import EventType, TaxInputRecorded
 from hausbuch.schemas.tax import (
     TAX_INPUT_SCOPE_INVALID,
+    AfaCostRow,
+    AfaFacts,
+    AfaSplit,
+    MovableAsset,
+    MovableAssetFact,
     TaxInput,
     TaxInputCreate,
     TaxInputKind,
@@ -77,6 +99,7 @@ from .context import CommandContext
 from .errors import ConflictError, NotFoundError, RuleViolationError, violated_constraint
 from .events import append_event
 from .lookup import require_document, require_row
+from .properties import list_acquisition_costs
 
 TAX_INPUT_NOT_CURRENT = "tax_input.not_current"
 TAX_INPUT_ALLOCATION_NOT_CONFIRMED = "tax_input.allocation_not_confirmed"
@@ -187,6 +210,7 @@ def create_tax_input(ctx: CommandContext, property_id: UUID, data: TaxInputCreat
     prop = _lock_property(ctx.conn, property_id)
     allocation = _check_scope(ctx.conn, prop, data)
     _check_useful_life(prop, data)
+    _check_movable_asset(ctx.conn, prop, data)
     require_document(ctx.conn, data.document_id)
     if data.supersedes_id is not None:
         _check_supersedes(ctx.conn, data)
@@ -323,6 +347,105 @@ def _check_useful_life(prop: Row, data: TaxInputCreate) -> None:
         )
 
 
+def _check_movable_asset(conn: Connection, prop: Row, data: TaxInputCreate) -> None:
+    """D80: the first year, and for an asset bought with the flat its basis against the
+    building's. A withdrawal repeats an accepted row and is not re-checked."""
+    if data.kind is not TaxInputKind.MOVABLE_ASSET or data.withdrawn:
+        return
+    assert data.tax_year is not None and isinstance(data.value, MovableAsset)
+    value = data.value
+    purchase_year = None if prop.purchase_date is None else prop.purchase_date.year
+    if purchase_year is not None:
+        if data.tax_year < purchase_year:
+            raise RuleViolationError(
+                [TAX_INPUT_MOVABLE_ASSET_YEAR],
+                f"a movable asset starts in the purchase year {purchase_year} at the earliest",
+            )
+        if value.in_purchase_price and data.tax_year != purchase_year:
+            raise RuleViolationError(
+                [TAX_INPUT_MOVABLE_ASSET_YEAR],
+                "a movable asset bought with the flat starts in the purchase year"
+                f" {purchase_year}: its basis leaves the building's from the handover on",
+            )
+    if not value.in_purchase_price:
+        return
+    facts = _basis_facts(conn, prop)
+    if facts is None:
+        raise RuleViolationError(
+            [TAX_INPUT_MOVABLE_ASSET_NO_SPLIT],
+            "select a price split first: an asset bought with the flat comes out of the"
+            " building's share",
+        )
+    building = building_share(facts)
+    assert building is not None
+    others = [
+        r
+        for r in _current_movable(conn, data.property_id)
+        if r.id != data.supersedes_id
+        and r.value.label != value.label  # type: ignore[union-attr]
+        and r.value.in_purchase_price  # type: ignore[union-attr]
+    ]
+    taken = sum(
+        (asset_basis(facts, _asset_fact(r.id, r.tax_year, r.value)) for r in others),  # type: ignore[arg-type]
+        Decimal("0"),
+    )
+    own = asset_basis(facts, _asset_fact(None, data.tax_year, value))
+    if own >= building - taken:
+        raise RuleViolationError(
+            [TAX_INPUT_MOVABLE_ASSET_EXCEEDS_BUILDING],
+            f"the asset's basis {own} (with its share of the Nebenkosten) is not below the"
+            f" building's basis {building - taken}",
+        )
+
+
+def _asset_fact(row_id: UUID | None, tax_year: int, value: MovableAsset) -> MovableAssetFact:
+    return MovableAssetFact(
+        tax_input_id=row_id or UUID(int=0),
+        label=value.label,
+        from_year=tax_year,
+        amount=value.amount,
+        useful_life_years=value.useful_life_years,
+        in_purchase_price=value.in_purchase_price,
+    )
+
+
+def _basis_facts(conn: Connection, prop: Row) -> AfaFacts | None:
+    """The property's price, cost rows and selected split, as the AfA rule reads them; None
+    without a selected split (or a price or purchase date)."""
+    if prop.selected_price_split_id is None or prop.purchase_price is None:
+        return None
+    if prop.purchase_date is None:
+        return None
+    s = split_table.c
+    split = conn.execute(
+        select(s.id, s.source, s.building_share, s.evidence_document_id).where(
+            s.id == prop.selected_price_split_id
+        )
+    ).one()
+    return AfaFacts(
+        property_id=prop.id,
+        purchase_price=prop.purchase_price,
+        build_year=prop.build_year,
+        purchase_date=prop.purchase_date,
+        cost_rows=[
+            AfaCostRow(id=c.id, kind=c.kind, amount=c.amount)
+            for c in list_acquisition_costs(conn, prop.id)
+        ],
+        split=AfaSplit.model_validate(dict(split._mapping)),
+    )
+
+
+def _current_movable(conn: Connection, property_id: UUID) -> list[TaxInput]:
+    """The current movable_asset rows of the property, whatever their first year."""
+    query = select(tax_input_table).where(
+        tax_input_table.c.property_id == property_id,
+        tax_input_table.c.kind == TaxInputKind.MOVABLE_ASSET.value,
+        _is_current(),
+    )
+    rows = conn.execute(query.order_by(tax_input_table.c.recorded_at, tax_input_table.c.id))
+    return [_to_tax_input(r) for r in rows]
+
+
 def _check_supersedes(conn: Connection, data: TaxInputCreate) -> None:
     assert data.supersedes_id is not None
     old = get_tax_input(conn, data.supersedes_id)
@@ -340,16 +463,18 @@ def _check_supersedes(conn: Connection, data: TaxInputCreate) -> None:
         )
     if data.withdrawn and old.value != data.value:
         raise _scope_invalid("a withdrawal repeats the withdrawn row's value")
+    if data.kind is TaxInputKind.MOVABLE_ASSET and old.value.label != data.value.label:  # type: ignore[union-attr]
+        raise _scope_invalid("a correction keeps the movable asset's label")
 
 
 def _check_no_other_current(conn: Connection, data: TaxInputCreate) -> None:
     if data.withdrawn:
         return  # ends a decision; adds no answer
-    others = [
-        r
-        for r in find_current(conn, data.property_id, data.kind, **_scope(data))
-        if r.id != data.supersedes_id and _same_question(r, data)
-    ]
+    if data.kind is TaxInputKind.MOVABLE_ASSET:  # D80: one per label, whatever the year
+        candidates = _current_movable(conn, data.property_id)
+    else:
+        candidates = find_current(conn, data.property_id, data.kind, **_scope(data))
+    others = [r for r in candidates if r.id != data.supersedes_id and _same_question(r, data)]
     if others:
         raise RuleViolationError(
             [TAX_INPUT_NOT_CURRENT],
@@ -409,6 +534,8 @@ def _same_question(row: TaxInput, data: TaxInputCreate) -> bool:
     valid from different dates (D61: the value in force is chosen by date)."""
     if data.kind is TaxInputKind.MARKET_RENT:
         return row.value.valid_from == data.value.valid_from  # type: ignore[union-attr]
+    if data.kind is TaxInputKind.MOVABLE_ASSET:
+        return row.value.label == data.value.label  # type: ignore[union-attr]
     return True
 
 
