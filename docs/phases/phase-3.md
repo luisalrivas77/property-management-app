@@ -1,7 +1,7 @@
 # Phase 3 spec: Steuerjahr — rule set 2026, Anlage V draft, checklist, 15 % tracker, exports
 
-Nov 9, 2026 · spec draft (architect), not merged; awaiting the orchestrator's check and Luis's
-decisions in §17. No implementation. Every tax rule below was checked against the law, the
+Nov 9, 2026 · spec draft (architect), checked by the orchestrator; Luis's questions in §17 all answered 9 Nov 2026 (Q1, Q2, Q3, Q6, Q7, Q8), the orchestrator's settled the same day; step 0 (schemas, migration, rule sets, fixtures) being written; not merged.
+No implementation. Every tax rule below was checked against the law, the
 official Anlage V 2025 form or a BFH decision on 9 Nov 2026 (§3 lists the sources); where a
 point could not be verified from an official source it is an open question, not a decision.
 
@@ -790,12 +790,12 @@ Conflicts, stated plainly, and the edits (made in the spec PR):
    whole rent on Z13. The later lease states an all-in Warmmiete, so that tenancy is
    `included` and the terms are mixed (Z24 unticked, warning `umlagen.mixed_terms`); Luis sets
    the field when phase 3 is built.
-4. **Orchestrator: the rounding convention** (D60). The Anleitung zur Anlage V 2025 was not
-   reachable programmatically; read it in ELSTER (or the FFW catalogue) and confirm "volle
-   Euro, zu Ihren Gunsten" and whether ELSTER accepts cents in these fields. A change here
-   touches only `rounding.py` and the rounded column of `anlage_v_2026.yaml`.
-5. **The 2026 form.** Not published as of 9 Nov 2026; re-check in ELSTER in January 2027
-   (step 4). Until then the 2026 rule set is `provisional` (D53, §4.3).
+4. **Rounding (orchestrator, 9 Nov 2026): D60 stands as provisional.** The Anleitung zur
+   Anlage V is read in ELSTER in step 4 together with the 2026 form; a different convention
+   changes only `rounding.py` and the rounded column of `anlage_v_2026.yaml`, in a spec
+   amendment.
+5. **The 2026 form (orchestrator, 9 Nov 2026):** re-checked in ELSTER in January 2027 (step 4);
+   until then `2026.yaml` is `provisional` (D53, §4.3).
 6. **Decided 9 Nov 2026 (Luis): the due day differs per lease**, so `rent_due_day` stays a
    tenancy field (D67): the earlier room leases make rent due on the 1st, the later lease by the
    3rd (the default). Any due day from the 1st to the 10th gives the same result under the
@@ -811,21 +811,16 @@ Conflicts, stated plainly, and the edits (made in the spec PR):
    draft and the archive warn `archive.finanzamt_copy_needed` for each document that needs one
    (an XFA form, or ink or stamp annotations not drawn into the page), saying how: open it in
    Adobe Reader and print it to PDF. No renderer is added; automation is revisited in phase 5.
-9. **Orchestrator: build the §82b controls in step 2** even though no large repair exists yet
-   (cheap, and the first big invoice will need it), or defer to a later step.
-10. **Hausgeld due day and the Disagio.** The spec takes the first of the service month as
-    the Hausgeld's Fälligkeit (§5.1) and does not check a Disagio against the 5 % rule; both
-    matter only for lines in the ten-day window or a loan with a Disagio.
-11. **To confirm against the EStR/EStH when reachable**: AfA in the year of a sale (phase 4),
-    nachträgliche HK accruing from 1 January of their year (R 7.4 Abs. 9), the three-year
-    window's start being the handover for §6 Abs. 1 Nr. 1a (§3), and the Nebenkosten split in
-    the BMF Arbeitshilfe's Anleitung. The fixtures encode the readings in §5; a different
-    official reading changes a fixture in a spec amendment, never in an implementation PR.
-12. **Orchestrator: PDF library.** reportlab (BSD, pure Python) is proposed; fpdf2 (LGPL) or
-    browser printing are the alternatives (§12).
-13. **`other_income` on Z29.** The spec puts every `other_income` allocation on Z29 with a
-    warning (§5.7). The alternative is to treat the category as open until each line is
-    confirmed as rental income; cheap to change (one entry in `category_lines`).
-14. **Whether `tax_export` files join the vault list.** The spec keeps them out of the
-    `document` table (D65); if Luis wants them under Dokumente, a `generated` source and a
-    subtype would widen two CHECKs in a later migration.
+9. **§82b controls (orchestrator, 9 Nov 2026): built in step 2**, as specced; cheap, and the
+   first large repair invoice needs them.
+10. **Hausgeld due day and the Disagio (orchestrator, 9 Nov 2026):** as specced (first of the
+    service month; no Disagio check). Revisit only for a loan with a Disagio.
+11. **EStR/EStH confirmations:** still open; read in step 4 with the Anleitung. The fixtures
+    encode the readings in §5; a different official reading changes a fixture in a spec
+    amendment, never in an implementation PR.
+12. **PDF library (orchestrator, 9 Nov 2026): reportlab** (BSD, pure Python, no system
+    libraries, fits the small API container).
+13. **`other_income` (orchestrator, 9 Nov 2026): on Z29 with the `income.other_review` warning**,
+    as specced; the forwarded rent share before the handover goes to the rent row instead (D63).
+14. **Exports (orchestrator, 9 Nov 2026): kept out of the `document` table** (D65); they are
+    listed on the Steuern screen, not under Dokumente.
