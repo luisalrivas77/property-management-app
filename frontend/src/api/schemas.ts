@@ -147,3 +147,4 @@ export type TrackedAmount = Schemas["TrackedAmount"];
 export type MovedPayment = Schemas["MovedPayment"];
 export type LimitStatus = Schemas["LimitStatus"];
 export type AfaLine = Schemas["AfaLine"];
+export type AllocationFact = Schemas["AllocationFact"];

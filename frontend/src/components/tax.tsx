@@ -7,10 +7,11 @@
 // category and amount, a counterparty only its masked IBAN.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useId, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useId, type ReactNode } from "react";
 
 import { api, ok } from "@/api/client";
 import type {
+  AllocationFact,
   AnlageVDraft,
   DraftLine,
   DraftWarning,
@@ -21,11 +22,12 @@ import type {
   WarningCode,
 } from "@/api/schemas";
 import { ChecklistTab } from "@/app/(app)/properties/[id]/ChecklistTab";
+import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { formatDate, formatDecimal, formatMoney, formatPercent, formatShare } from "./format";
 import { ALLOCATION_CATEGORY, TAX_SOURCE_KIND, WARNING_TEXT, taxNote } from "./labels";
 import { ActionDialog, Loading } from "./ui";
-import { useLoad } from "./useLoad";
+import { useLoad, type Loaded } from "./useLoad";
 
 import "./tax.css";
 
@@ -208,46 +210,58 @@ function DraftView({ draft, propertyId }: { draft: AnlageVDraft; propertyId: str
   const incomeTotal = lines.find((line) => line.key === "income.total");
   const costsTotal = lines.find((line) => line.key === "wk.total");
   const warnings = (draft.warnings ?? []).filter((w) => w.code !== "draft.form_provisional");
+  const loadPayments = useCallback(
+    () =>
+      ok(
+        api.GET("/api/properties/{property_id}/anlage-v/sources", {
+          params: { path: { property_id: propertyId }, query: { tax_year: draft.tax_year } },
+        }),
+      ).then((rows) => new Map(rows.map((row) => [row.allocation_id, row]))),
+    [propertyId, draft.tax_year],
+  );
+  const payments = useLoad(loadPayments);
 
   return (
-    <div className="stack">
-      {draft.rule_set.form_status === "provisional" ? (
-        <div className="notice notice-info" role="status">
-          <p>
-            Das Formular für {draft.tax_year} ist noch nicht veröffentlicht: Zeilen und Kennzahlen sind vorläufig
-            (Regelwerk {draft.rule_set.version}). Die Beträge rechnet der Entwurf trotzdem nach den Regeln des Jahres.
-          </p>
-        </div>
-      ) : null}
-      <div className="tax-layout">
-        <div className="stack tax-main">
-          <ProgressCard draft={draft} owners={owners.data} />
-          <LinesCard
-            title="Einnahmen"
-            lines={income}
-            total={incomeTotal}
-            totalAmount={draft.totals.income}
-            draft={draft}
-            propertyId={propertyId}
-          />
-          <LinesCard
-            title="Werbungskosten"
-            lines={costs}
-            total={costsTotal}
-            totalAmount={draft.totals.costs}
-            draft={draft}
-            propertyId={propertyId}
-          />
-          <NotDeductible draft={draft} propertyId={propertyId} />
-        </div>
-        <aside className="stack tax-side" aria-label="Offene Punkte und Unterlagen">
-          <OpenPoints warnings={warnings} propertyId={propertyId} />
-          <ChecklistTab propertyId={propertyId} year={draft.tax_year} />
-          <LimitCard limit={draft.limit_15 ?? null} />
-          <HandOverCard />
-        </aside>
+    <PaymentsContext.Provider value={payments}>
+      <div className="stack">
+        {draft.rule_set.form_status === "provisional" ? (
+          <div className="notice notice-info" role="status">
+            <p>
+              Das Formular für {draft.tax_year} ist noch nicht veröffentlicht: Zeilen und Kennzahlen sind vorläufig
+              (Regelwerk {draft.rule_set.version}). Die Beträge rechnet der Entwurf trotzdem nach den Regeln des Jahres.
+            </p>
+          </div>
+        ) : null}
+        <div className="tax-layout">
+          <div className="stack tax-main">
+            <ProgressCard draft={draft} owners={owners.data} />
+            <LinesCard
+              title="Einnahmen"
+              lines={income}
+              total={incomeTotal}
+              totalAmount={draft.totals.income}
+              draft={draft}
+              propertyId={propertyId}
+            />
+            <LinesCard
+              title="Werbungskosten"
+              lines={costs}
+              total={costsTotal}
+              totalAmount={draft.totals.costs}
+              draft={draft}
+              propertyId={propertyId}
+            />
+            <NotDeductible draft={draft} propertyId={propertyId} />
+          </div>
+          <aside className="stack tax-side" aria-label="Offene Punkte und Unterlagen">
+            <OpenPoints warnings={warnings} propertyId={propertyId} />
+            <ChecklistTab propertyId={propertyId} year={draft.tax_year} />
+            <LimitCard limit={draft.limit_15 ?? null} />
+            <HandOverCard />
+          </aside>
       </div>
     </div>
+    </PaymentsContext.Provider>
   );
 }
 
@@ -513,26 +527,79 @@ function sourcesLabel(refs: TaxSourceRef[]): string {
   return refs.length === 1 && only ? TAX_SOURCE_KIND[only.kind] : `${refs.length} Quellen`;
 }
 
-/** "n Zahlungen": opens the line's sources (principle 2). Each source shows its kind and,
- * where the rule stated one, its amount; documents, loans and the purchase records link to
- * their pages. */
+/** The payments the draft's lines cite (GET …/anlage-v/sources), by allocation id. */
+const PaymentsContext = createContext<Loaded<Map<string, AllocationFact>> | null>(null);
+
+/** "01.01.2027 – 31.01.2027" for a service period. */
+function periodLabel(fact: AllocationFact): string | null {
+  const period = fact.service_period;
+  return period ? `Zeitraum ${formatDate(period.start)} – ${formatDate(period.end)}` : null;
+}
+
+/** One cited payment: date, amount, category, masked counterparty and period, with links to
+ * its bank line (the allocation panel, as Konten › Umsätze links it) and its Beleg. No name
+ * or purpose text: the API sends none (D5). */
+function PaymentSource({ source, fact }: { source: TaxSourceRef; fact: AllocationFact | undefined }) {
+  if (!fact) {
+    return (
+      <>
+        <span>{TAX_SOURCE_KIND[source.kind]}</span>
+        {source.amount != null ? <span className="num">{formatMoney(source.amount)}</span> : null}
+      </>
+    );
+  }
+  const details = [fact.counterparty_iban_masked, periodLabel(fact)].filter(Boolean).join(" · ");
+  return (
+    <div className="tax-payment">
+      <p className="tax-payment-head">
+        <span>{formatDate(fact.booking_date)}</span>
+        <span>{ALLOCATION_CATEGORY[fact.category]}</span>
+        <span className="num">{formatMoney(source.amount ?? fact.amount)}</span>
+      </p>
+      {details ? <p className="tax-line-sub">{details}</p> : null}
+      <p className="tax-payment-links">
+        {fact.transaction_id ? <Link href={`/inbox?umsatz=${fact.transaction_id}`}>Bankzeile öffnen</Link> : null}
+        {fact.document_id ? <Link href={`/documents/${fact.document_id}`}>Beleg öffnen</Link> : null}
+      </p>
+    </div>
+  );
+}
+
+/** "n Zahlungen": opens the line's sources (principle 2). A payment shows its date, amount,
+ * category, masked counterparty and period with links to its bank line and Beleg; documents,
+ * loans and the purchase records link to their pages; the rest show their kind and the amount
+ * the rule stated. */
 export function SourcesButton({ refs, title, propertyId }: { refs: TaxSourceRef[]; title: string; propertyId: string }) {
+  const payments = useContext(PaymentsContext);
   if (refs.length === 0) return null;
+  const hasPayments = refs.some((ref) => ref.kind === "allocation");
   return (
     <ActionDialog label={sourcesLabel(refs)} title={`Quellen: ${title}`} buttonClass="link tax-sources-button">
       {() => (
-        <ul className="tax-sources">
-          {refs.map((ref, index) => {
-            const link = linkFor(ref, propertyId);
-            return (
-              <li key={`${ref.kind}-${ref.id ?? "rule"}-${index}`}>
-                <span>{TAX_SOURCE_KIND[ref.kind]}</span>
-                {ref.amount != null ? <span className="num">{formatMoney(ref.amount)}</span> : null}
-                {link ? <Link href={link.href}>{link.label}</Link> : null}
-              </li>
-            );
-          })}
-        </ul>
+        <>
+          {hasPayments && payments?.error != null ? <ErrorNotice error={payments.error} /> : null}
+          {hasPayments && payments?.data === undefined && payments?.loading ? <p className="muted">Lädt …</p> : null}
+          <ul className="tax-sources">
+            {refs.map((ref, index) => {
+              const key = `${ref.kind}-${ref.id ?? "rule"}-${index}`;
+              if (ref.kind === "allocation") {
+                return (
+                  <li key={key}>
+                    <PaymentSource source={ref} fact={ref.id ? payments?.data?.get(ref.id) : undefined} />
+                  </li>
+                );
+              }
+              const link = linkFor(ref, propertyId);
+              return (
+                <li key={key}>
+                  <span>{TAX_SOURCE_KIND[ref.kind]}</span>
+                  {ref.amount != null ? <span className="num">{formatMoney(ref.amount)}</span> : null}
+                  {link ? <Link href={link.href}>{link.label}</Link> : null}
+                </li>
+              );
+            })}
+          </ul>
+        </>
       )}
     </ActionDialog>
   );

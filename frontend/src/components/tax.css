@@ -219,6 +219,32 @@ button.link.tax-sources-button {
   border-top: 0;
 }
 
+.tax-payment {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+}
+
+.tax-payment p {
+  margin: 0;
+}
+
+.tax-payment-head,
+.tax-payment-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.tax-payment-head .num {
+  margin-left: auto;
+}
+
+.tax-payment-links {
+  font-size: 13px;
+}
+
 /* the grey footer: tracked, moved, before the handover */
 
 .card.tax-tracked {
