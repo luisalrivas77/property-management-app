@@ -1,6 +1,6 @@
 # Phase 3 spec: Steuerjahr — rule set 2026, Anlage V draft, checklist, 15 % tracker, exports
 
-Nov 9, 2026 · spec draft (architect), checked by the orchestrator; Luis's questions in §17 all answered 9 Nov 2026 (Q1, Q2, Q3, Q6, Q7, Q8), the orchestrator's settled the same day; step 0 (schemas, migration, rule sets, fixtures) written 9 Nov 2026 (commits `e16002b`, `d139528`, `b4390ad`, review fixes `a1613cb`), merged with this spec the same day in PR #79 and deployed (migration 0013 applied to production; its tables stay empty until step 2). Steps 1 (rules, draft, Steuern screen) and 2 (inputs, certificate pre-fill, checklist entries) were built in parallel the same day, each reviewed once, and merged and deployed together in PR #81 (no migration; images `c19ed7bce5d9`, API and web, health check 200, the new route answers 401 without a login). Step 3 (exports: the ELSTER field sheet PDF, the yearly ZIP archive, the export job and history, the §23 date on screen) was built the same day, reviewed once (two minor findings fixed in `8d51fbb`), and merged and deployed in PR #84 (no migration; images `05c1239bf7d1`); its archive limit is 100 MiB, not 1 GiB (D77). The Erweiterung guard (D78) followed in PR #85, deployed the same day (images `ead41981fc40`). Step 4 (closing against Luis's hand calculation) is not started. Writing the fixtures corrected several worked examples below; the biggest is that a cost the 15 % test moves into the AfA basis enters it **gross** (D73, confirmed in review 9 Nov 2026). The review round of the same day added D74–D76 (a `herstellung` election counts toward the 15 %, the window ends on the same calendar day three years later, and the date tested is when the work was done) and put the flat's unit row on Z13.
+Nov 9, 2026 · spec draft (architect), checked by the orchestrator; Luis's questions in §17 all answered 9 Nov 2026 (Q1, Q2, Q3, Q6, Q7, Q8), the orchestrator's settled the same day; step 0 (schemas, migration, rule sets, fixtures) written 9 Nov 2026 (commits `e16002b`, `d139528`, `b4390ad`, review fixes `a1613cb`), merged with this spec the same day in PR #79 and deployed (migration 0013 applied to production; its tables stay empty until step 2). Steps 1 (rules, draft, Steuern screen) and 2 (inputs, certificate pre-fill, checklist entries) were built in parallel the same day, each reviewed once, and merged and deployed together in PR #81 (no migration; images `c19ed7bce5d9`, API and web, health check 200, the new route answers 401 without a login). Step 3 (exports: the ELSTER field sheet PDF, the yearly ZIP archive, the export job and history, the §23 date on screen) was built the same day, reviewed once (two minor findings fixed in `8d51fbb`), and merged and deployed in PR #84 (no migration; images `05c1239bf7d1`); its archive limit is 100 MiB, not 1 GiB (D77). The Erweiterung guard (D78) followed in PR #85, deployed the same day (images `ead41981fc40`). The shorter useful life from a Gutachten (D79) followed in PR #88, reviewed once (three findings fixed in `db27546`), merged and deployed the same day (migration 0014 applied to production; images `e49b147f006e`, health check 200). Step 4 (closing against Luis's hand calculation) is not started. Writing the fixtures corrected several worked examples below; the biggest is that a cost the 15 % test moves into the AfA basis enters it **gross** (D73, confirmed in review 9 Nov 2026). The review round of the same day added D74–D76 (a `herstellung` election counts toward the 15 %, the window ends on the same calendar day three years later, and the date tested is when the work was done) and put the flat's unit row on Z13.
 No implementation. Every tax rule below was checked against the law, the
 official Anlage V 2025 form or a BFH decision on 9 Nov 2026 (§3 lists the sources); where a
 point could not be verified from an official source it is an open question, not a decision.
@@ -985,7 +985,7 @@ review, and the Decisions row names D74–D76.
     or whether the tax-record retention takes precedence for documents the Finanzamt may ask
     for. The `tax_export` row references its file by foreign key, so any removal needs a
     decision on the row too.
-17. **Shorter useful life and Denkmal-AfA (Luis, 9 Nov 2026; not decided, waits for evidence).**
+17. **Shorter useful life and Denkmal-AfA (Luis, 9 Nov 2026; the shorter life is built as D79, PR #88; §7i waits for evidence).**
     Luis's building is a listed monument (Baudenkmal), built 1904, and he has a remaining
     useful life of 21 years. The AfA rule knows only the rate by completion year. Two
     optional property inputs would cover it, each with its evidence document required:
@@ -997,3 +997,13 @@ review, and the Decisions row names D74–D76.
     a figure taken from a valuation, which does not suffice alone), whether a §7i certificate
     exists for the flat (the Kaufvertrag does not mention one), and whether both can apply
     to the one building (the renovation share under §7i, the rest over the shorter life).
+    **Update 9 Nov 2026.** The shorter life is settled and live (D79). §7i is on hold, not
+    scheduled: §7i Abs. 1 S. 5 gives a buyer the allowance only for work carried out after
+    the binding purchase contract was signed, and S. 6 only for work agreed with the
+    Denkmalbehörde, proven by its certificate (Abs. 2). The rooms were let before the
+    handover, which suggests the renovation was finished before the contract; if so, §7i
+    cannot apply and the renovation share simply stays in the AfA basis under the shorter
+    life. Luis's consultant is asked when the work was done and whether a certificate
+    exists; the feature is built only if both answers allow it. Both may apply to one
+    building (BFH IX R 14/20: the §7i costs form their own depreciation volume, the rest
+    follows §7 Abs. 4).
