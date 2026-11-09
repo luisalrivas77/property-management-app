@@ -6742,6 +6742,7 @@
           "property_management",
           "grundsteuer",
           "insurance",
+          "electricity",
           "repairs",
           "renovation",
           "purchase_price",
@@ -16758,6 +16759,19 @@
             "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
             "title": "Flat Rate In",
             "default": "0"
+          },
+          "flat_rate_months": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 12.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flat Rate Months"
           },
           "flat_rate_gap_monthly": {
             "anyOf": [

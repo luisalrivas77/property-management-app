@@ -456,14 +456,17 @@ function ActualsCard({ years, propertyId }: { years: YearFigures[]; propertyId: 
         {signedMoney(year.umlagen_net)} (im Netto-Cash enthalten)
         {isZero(year.other_income) ? null : <> · sonstige Einnahmen {formatMoney(year.other_income)}</>}
       </p>
-      {year.flat_rate_gap_monthly != null ? <FlatRateCheck year={year} gap={year.flat_rate_gap_monthly} /> : null}
+      {year.flat_rate_gap_monthly != null && year.flat_rate_months != null ? (
+        <FlatRateCheck year={year} gap={year.flat_rate_gap_monthly} months={year.flat_rate_months} />
+      ) : null}
     </section>
   );
 }
 
-/** The Pauschale check (D91): flat-rate charges received against the umlagefähige costs paid,
- * per month. Information only; nothing is drafted. */
-function FlatRateCheck({ year, gap }: { year: YearFigures; gap: string }) {
+/** The Pauschale check (D91, D92): flat-rate charges received against the umlagefähige costs
+ * paid (the flat's electricity included), per month the Pauschalen were in force. Information
+ * only; nothing is drafted. The lease's rise clause needs a second year to compare with. */
+function FlatRateCheck({ year, gap, months }: { year: YearFigures; gap: string; months: number }) {
   const verdict = isNegative(gap)
     ? "Die Kosten liegen über den Pauschalen."
     : isZero(gap)
@@ -473,7 +476,14 @@ function FlatRateCheck({ year, gap }: { year: YearFigures; gap: string }) {
     <p className="planning-subline planning-flat-rate">
       <strong>Pauschalen-Check:</strong> {formatMoney(year.flat_rate_in)} Nebenkostenpauschalen erhalten,{" "}
       {formatMoney(year.umlagen_out)} umlagefähige Kosten bezahlt, Differenz{" "}
-      <span className={tone(gap)}>{signedMoney(gap)} pro Monat</span>. {verdict}
+      <span className={tone(gap)}>
+        {signedMoney(gap)} pro Monat, über {months === 1 ? "1 Monat" : `${months} Monate`}
+      </span>
+      . {verdict}{" "}
+      <span className="muted">
+        Ob der Mietvertrag eine Erhöhung erlaubt (Kosten mehr als 10 € im Monat gestiegen), lässt sich erst mit
+        einem zweiten Jahr vergleichen.
+      </span>
     </p>
   );
 }

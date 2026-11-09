@@ -638,7 +638,7 @@ latest confirmed split of its category set, any other amount goes on through the
 (not_deductible), `loan_fees` (deductible), `loan_disbursement` (pass_through; D44),
 `hausgeld_umlagefaehig` (deductible),
 `hausgeld_verwaltung` (deductible), `hausgeld_ruecklage` (undecided),
-`property_management` (deductible; the landlord's own Mietverwaltung, D51), `grundsteuer`
+`property_management` (deductible; the landlord's own Mietverwaltung, D51), `electricity` (deductible; the flat's own electricity, phase 4 D92), `grundsteuer`
 (deductible), `insurance` (deductible), `repairs` (deductible; Erhaltungsaufwand),
 `renovation` (undecided; 15 % rule in phase 3), `purchase_price` (capitalized; D44),
 `acquisition_cost` (capitalized),

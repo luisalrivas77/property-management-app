@@ -425,10 +425,14 @@ class YearFigures(Schema):
     value: Money | None = None  # projected years (§5.4 step 6)
     loan_balance: Money | None = None
     equity: Money | None = None
-    # The Pauschale check (D91, amended 9 Nov 2026): the flat-rate charges received
-    # (umlagen_in of flat_rate tenancies) and (flat_rate_in − umlagen_out) ÷ 12 to the cent,
-    # half-up; None without a flat_rate tenancy. Negative = costs above the Pauschalen.
+    # The Pauschale check (D91, amended 9 Nov 2026; D92): the flat-rate charges received
+    # (umlagen_in of flat_rate tenancies); the months they were in force (the calendar months
+    # of the year in which at least one flat_rate tenancy was in force, any day of the month,
+    # not before the month of the handover); and (flat_rate_in − umlagen_out) ÷ those months
+    # to the cent, half-up. Both None without a flat_rate tenancy or with 0 months. Negative =
+    # costs above the Pauschalen.
     flat_rate_in: Money = Decimal("0")
+    flat_rate_months: int | None = Field(default=None, ge=1, le=12)
     flat_rate_gap_monthly: Money | None = None
     sources: list[SourceRef] = Field(default_factory=list)
 

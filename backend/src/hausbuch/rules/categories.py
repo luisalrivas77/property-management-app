@@ -33,6 +33,9 @@ TAX_TREATMENT = MappingProxyType(
         C.PROPERTY_MANAGEMENT: T.DEDUCTIBLE,
         C.GRUNDSTEUER: T.DEDUCTIBLE,
         C.INSURANCE: T.DEDUCTIBLE,
+        # The flat's own electricity, paid by the landlord because the rent's Pauschale covers
+        # it: Werbungskosten when paid (phase 4 D92).
+        C.ELECTRICITY: T.DEDUCTIBLE,
         C.REPAIRS: T.DEDUCTIBLE,  # Erhaltungsaufwand
         C.RENOVATION: T.UNDECIDED,  # the 15 % rule, phase 3
         # The price paid to the seller (or a notary escrow account). It enters the AfA basis
@@ -79,6 +82,7 @@ CATEGORY_LABEL = MappingProxyType(
         C.PROPERTY_MANAGEMENT: "Mietverwaltung (Sondereigentumsverwaltung)",
         C.GRUNDSTEUER: "Grundsteuer",
         C.INSURANCE: "Versicherung",
+        C.ELECTRICITY: "Strom",
         C.REPAIRS: "Erhaltungsaufwand (Reparatur)",
         C.RENOVATION: "Renovierung oder Modernisierung",
         C.PURCHASE_PRICE: "Kaufpreiszahlung",

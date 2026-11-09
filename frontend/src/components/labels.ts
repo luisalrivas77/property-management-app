@@ -336,6 +336,7 @@ export const ALLOCATION_CATEGORY: Record<AllocationCategory, string> = {
   property_management: "Mietverwaltung (Sondereigentumsverwaltung)",
   grundsteuer: "Grundsteuer",
   insurance: "Versicherung",
+  electricity: "Strom",
   repairs: "Erhaltungsaufwand (Reparatur)",
   renovation: "Renovierung oder Modernisierung",
   purchase_price: "Kaufpreiszahlung",

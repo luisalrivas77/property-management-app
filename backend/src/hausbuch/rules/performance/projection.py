@@ -127,6 +127,8 @@ def actual_year(
         effect,
         tenancies=facts.tenancies,
         purchase_year=facts.property.purchase_date.year,
+        handover=facts.property.purchase_date,
+        until=today,
     )
 
 
@@ -251,6 +253,7 @@ def project(
             effect,
             tenancies=facts.tenancies,
             purchase_year=prop.purchase_date.year,
+            handover=prop.purchase_date,
             value=value,
             loan_balance=synthesis.balances.get(year, ZERO),
             extra_sources=scenario_refs,

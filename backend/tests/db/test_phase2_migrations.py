@@ -1029,6 +1029,86 @@ def test_0012_downgrade_refuses_while_a_row_uses_the_new_category_or_split(row):
         drop_database(name)
 
 
+def test_the_electricity_category_is_accepted(tx):
+    """0017 (phase 4 D92): electricity on an allocation, on a rule and inside an as_last_split
+    rule's kind (0012's element CHECK widened too)."""
+    conn, a, t = tx
+    matcher = {"counterparty_iban_hmac": IBAN_HMAC_HEX, "amount_sign": "debit"}
+    _allocation(conn, a, t, category="electricity", method="user")
+    _rule(conn, a, matcher, category="electricity")
+    split = {"split_method": "as_last_split", "category": None}
+    _rule(conn, a, matcher, **split, categories=Jsonb([*KIND, "electricity"]))
+    with pytest.raises(errors.CheckViolation), conn.transaction():
+        _allocation(conn, a, t, category="strom", method="user")
+    with pytest.raises(errors.CheckViolation), conn.transaction():
+        _rule(conn, a, matcher, **split, categories=Jsonb([*KIND, "strom"]))
+
+
+@pytest.mark.parametrize("row", ["allocation", "category_rule", "split_rule"])
+def test_0017_downgrade_refuses_while_a_row_uses_electricity(row):
+    """0016's CHECKs cannot hold electricity, as a category or inside a rule's kind, and a
+    downgrade never rewrites data. The guard must see rows under forced RLS."""
+    name = create_database()
+    try:
+        alembic(name, "upgrade", "0017_electricity_category")
+        ws = uuid.uuid4()
+        with _admin(name) as conn:
+            conn.execute("INSERT INTO workspace (id, name) VALUES (%s, 'A')", (ws,))
+            conn.execute(f"SET ROLE {OWNER}")
+            conn.execute("SELECT set_config('app.workspace_id', %s, false)", (str(ws),))
+            matcher = {"counterparty_iban_hmac": IBAN_HMAC_HEX}
+            if row == "allocation":
+                acc = _account(conn, ws)
+                t = _transaction(conn, ws, acc, _import(conn, ws, acc))
+                _allocation(conn, ws, t, category="electricity", method="user")
+            elif row == "category_rule":
+                _rule(conn, ws, matcher, category="electricity")
+            else:
+                _rule(
+                    conn,
+                    ws,
+                    matcher,
+                    split_method="as_last_split",
+                    category=None,
+                    categories=Jsonb([*KIND, "electricity"]),
+                )
+        with pytest.raises(DBAPIError, match="refused: a row uses the new category"):
+            alembic(name, "downgrade", "0016_performance")
+        with _admin(name) as conn:
+            assert conn.execute("SELECT version_num FROM alembic_version").fetchall() == [
+                ("0017_electricity_category",)
+            ]
+            for forced_table in ("allocation", "matching_rule"):
+                forced = conn.execute(
+                    "SELECT relforcerowsecurity FROM pg_class WHERE oid = %s::regclass",
+                    (forced_table,),
+                ).fetchone()
+                assert forced == (True,)  # the refused downgrade's NO FORCE was rolled back
+            if row != "allocation":  # allocations are append-only, even for the owner
+                conn.execute("DELETE FROM matching_rule")
+        if row != "allocation":
+            alembic(name, "downgrade", "0016_performance")
+            with _admin(name) as conn:
+                conn.execute(f"SET ROLE {OWNER}")
+                conn.execute("SELECT set_config('app.workspace_id', %s, false)", (str(ws),))
+                with pytest.raises(errors.CheckViolation), conn.transaction():
+                    _rule(conn, ws, matcher, category="electricity")
+                with pytest.raises(errors.CheckViolation), conn.transaction():
+                    _rule(
+                        conn,
+                        ws,
+                        matcher,
+                        split_method="as_last_split",
+                        category=None,
+                        categories=Jsonb([*KIND, "electricity"]),
+                    )
+                _rule(conn, ws, matcher, category="property_management")  # 0016's list holds
+                conn.execute("DELETE FROM matching_rule")
+            alembic(name, "upgrade", "head")
+    finally:
+        drop_database(name)
+
+
 def test_rule_split_methods_need_their_scope(connect, workspaces):
     a, _ = workspaces
     matcher = {"counterparty_iban_hmac": IBAN_HMAC_HEX}

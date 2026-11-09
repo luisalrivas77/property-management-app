@@ -203,6 +203,7 @@ PHASE4_CASES = {
         "included_tenancy_no_umlagen",
         "purchase_flows_not_cash",
         "flat_rate_costs_above_pauschale",  # D91, amended 9 Nov 2026
+        "flat_rate_electricity_from_handover",  # D92: electricity and the Pauschale months
     },
     "projection": {
         "baseline_no_growth_tax_free_sale",
@@ -242,6 +243,7 @@ def test_phase4_cases_cover_the_spec():
     [
         ("actuals", ("expect", "net_cash"), "-9554.48"),
         ("actuals", ("expect", "flat_rate_in"), "1080.00"),  # a prepayment tenancy's gap is None
+        ("actuals", ("expect", "flat_rate_months"), 12),  # D92: ÷ 12, not the months in force
         ("marginal_rate", ("expect", "effect", "effect"), "-2687.05"),
         ("projection", ("expect", "years", 0, "equity"), "65220.77"),
         ("projection", ("expect", "sale", "afa_claimed"), "49140.01"),

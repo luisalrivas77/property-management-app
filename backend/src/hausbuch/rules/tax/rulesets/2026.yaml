@@ -163,6 +163,7 @@ form:
     hausgeld_umlagefaehig: wk.allocable_costs
     grundsteuer: wk.allocable_costs
     insurance: wk.allocable_costs
+    electricity: wk.allocable_costs  # the flat's own supply, paid through the Pauschale (phase 4 D92)
     hausgeld_verwaltung: wk.non_allocable_costs
     property_management: wk.non_allocable_costs
     bank_fees: wk.non_allocable_costs

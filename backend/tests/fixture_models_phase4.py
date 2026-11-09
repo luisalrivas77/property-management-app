@@ -146,8 +146,8 @@ def _check_effect(e: TaxEffect, what: str) -> None:
         raise ValueError(f"{what}: the effective rate, or the slope when R = 0")
 
 
-def _monthly(amount: Decimal) -> Decimal:
-    return (amount / 12).quantize(CENT, ROUND_HALF_UP)
+def _monthly(amount: Decimal, months: int) -> Decimal:
+    return (amount / months).quantize(CENT, ROUND_HALF_UP)
 
 
 class YearExpect(YearFigures):
@@ -167,9 +167,14 @@ class YearExpect(YearFigures):
             raise ValueError(f"{y}: net_cash {self.net_cash} != {net}")
         if self.value is not None and self.equity != self.value - self.loan_balance:
             raise ValueError(f"{y}: equity = value − loan balance")
-        if self.flat_rate_gap_monthly is not None:
-            if self.flat_rate_gap_monthly != _monthly(self.flat_rate_in - self.umlagen_out):
-                raise ValueError(f"{y}: the Pauschale gap is (flat_rate_in − umlagen_out) ÷ 12")
+        if (self.flat_rate_gap_monthly is None) != (self.flat_rate_months is None):
+            raise ValueError(f"{y}: the Pauschale gap exactly with its months (D92)")
+        if self.flat_rate_gap_monthly is not None and self.flat_rate_months is not None:
+            if not 1 <= self.flat_rate_months <= 12:
+                raise ValueError(f"{y}: flat_rate_months is 1 to 12")
+            gap = _monthly(self.flat_rate_in - self.umlagen_out, self.flat_rate_months)
+            if self.flat_rate_gap_monthly != gap:
+                raise ValueError(f"{y}: the Pauschale gap is (flat_rate_in − umlagen_out) ÷ months")
         elif self.flat_rate_in != 0:
             raise ValueError(f"{y}: flat-rate charges without a gap")
         if (self.tax_effect is None) != (YearFlag.INCOME_MISSING in self.flags):
