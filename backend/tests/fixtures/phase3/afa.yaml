@@ -51,8 +51,8 @@
 #                      Nebenkosten with it, and all of it leaves the building's share, never
 #                      the land's. Every figure built on the basis follows (the statutory
 #                      amount, the useful-life book value, the 15 % limit).
-#   Sources add the movable_asset input. A kitchen bought separately leaves the basis as is
-#   (movable_deducted 0.00).
+#   Sources add the movable_asset input. (A kitchen bought separately is refused by the
+#   service for now, D80 review F1: it needs its own acquisition date.)
 
 rule_set_year: 2026
 
@@ -394,19 +394,6 @@ cases:
                    {kind: tax_input, id: *K}]}
       - {tax_year: 2027, amount: "4495.83", basis: "224791.67", rate: "0.02", months: 12,
          method_code: 1, movable_deducted: "9208.33"}
-
-  - id: movable_bought_separately
-    description: >
-      D80: a kitchen bought separately in 2027 (in_purchase_price false) is not in the price,
-      so the building's basis and AfA stay exactly as in etw_1998_handover_july.
-    facts:
-      <<: *flat
-      movable_assets:
-        - {tax_input_id: *K, label: einbaukueche, from_year: 2027, amount: "6000.00",
-           useful_life_years: 10, in_purchase_price: false}
-    expect:
-      - {tax_year: 2027, amount: "4680.00", basis: "234000.00", rate: "0.02", months: 12,
-         method_code: 1, movable_deducted: "0.00", sources: *flat_sources}
 
   - id: movable_in_price_with_useful_life
     description: >

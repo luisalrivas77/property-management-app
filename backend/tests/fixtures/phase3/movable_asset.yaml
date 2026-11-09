@@ -98,26 +98,3 @@ cases:
          book_value_start: "6906.25", remaining_months: 90}
       - {<<: *in_price, tax_year: 2030, amount: "0.00", months: 0, method_code: null,
          book_value_start: "6676.04", remaining_months: 87}
-
-  - id: kitchen_bought_separately
-    description: >
-      A kitchen bought separately for 6,000.00 in 2027 (in_purchase_price false, no document):
-      no Nebenkosten share, basis 6,000.00; 600.00 a year from January 2027 (a separate
-      purchase has no month on record, so its first year counts from January) through 2036;
-      0.00 from 2037. The building's basis is unchanged (afa.yaml movable_bought_separately).
-    facts:
-      <<: *flat
-      movable_assets:
-        - {tax_input_id: *K, label: einbaukueche, from_year: 2027, amount: "6000.00",
-           useful_life_years: 10, in_purchase_price: false}
-    expect:
-      - {tax_year: 2027, basis: "6000.00", amount: "600.00", months: 12, method_code: 2,
-         book_value_start: "6000.00", remaining_months: 120,
-         sources: [{kind: tax_input, id: *K}, {kind: property, id: *P}],
-         warnings: [{code: afa.movable_asset_no_evidence,
-                     params: {label: einbaukueche, amount: "6000.00"}}]}
-      - {tax_year: 2036, basis: "6000.00", amount: "600.00", months: 12, method_code: 1,
-         book_value_start: "600.00", remaining_months: 12,
-         warnings: [{code: afa.movable_asset_no_evidence}]}
-      - {tax_year: 2037, basis: "6000.00", amount: "0.00", months: 12, method_code: 1,
-         book_value_start: "0.00", remaining_months: 0}

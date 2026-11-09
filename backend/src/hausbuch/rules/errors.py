@@ -72,5 +72,10 @@ TAX_INPUT_MOVABLE_ASSET_YEAR = "tax_input.movable_asset_year"
 # with its Nebenkosten share, comes out of the building's); that needs a selected price split.
 TAX_INPUT_MOVABLE_ASSET_EXCEEDS_BUILDING = "tax_input.movable_asset_exceeds_building"
 TAX_INPUT_MOVABLE_ASSET_NO_SPLIT = "tax_input.movable_asset_no_split"
+# D80 review: a kitchen bought separately needs its own acquisition date, which the
+# value does not carry yet (its first year would count from the handover month).
+TAX_INPUT_MOVABLE_ASSET_SEPARATE_UNSUPPORTED = "tax_input.movable_asset_separate_unsupported"
+# D80 review: without the handover date there is no first year and no AfA start.
+TAX_INPUT_MOVABLE_ASSET_NO_PURCHASE_DATE = "tax_input.movable_asset_no_purchase_date"
 TAX_EXPORT_FAILED = "tax_export.failed"
 TAX_EXPORT_TOO_LARGE = "tax_export.too_large"  # an archive over 100 MiB

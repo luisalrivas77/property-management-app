@@ -1440,7 +1440,10 @@ export interface paths {
          *     for the build year, D79), tax_input.movable_asset_year (a movable asset starts in the
          *     purchase year when bought with the flat, else not before it, D80),
          *     tax_input.movable_asset_exceeds_building (its basis with its Nebenkosten share is not below
-         *     the building's) and tax_input.movable_asset_no_split (no price split selected yet).
+         *     the building's), tax_input.movable_asset_no_split (no price split selected yet),
+         *     tax_input.movable_asset_separate_unsupported (a movable asset bought separately, not yet
+         *     supported: it needs its own acquisition date) and tax_input.movable_asset_no_purchase_date
+         *     (the property has no handover date yet).
          */
         post: operations["tax_input_create_api_properties__property_id__tax_inputs_post"];
         delete?: never;

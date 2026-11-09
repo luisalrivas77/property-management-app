@@ -46,7 +46,6 @@ def _case(case_id: str):
     ("case_id", "years", "basis"),
     [
         ("kitchen_in_price_from_purchase", range(2026, 2037), Decimal("9208.33")),
-        ("kitchen_bought_separately", range(2027, 2037), Decimal("6000.00")),
     ],
 )
 def test_the_ten_years_sum_to_the_basis(case_id, years, basis):
@@ -62,7 +61,7 @@ def test_the_ten_years_sum_to_the_basis(case_id, years, basis):
 
 @pytest.mark.rule
 def test_no_line_before_the_first_year():
-    assert movable_afa(_case("kitchen_bought_separately").facts, 2026) == []
+    assert movable_afa(_case("kitchen_in_price_from_purchase").facts, 2025) == []
 
 
 @pytest.mark.rule

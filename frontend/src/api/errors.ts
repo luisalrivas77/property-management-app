@@ -119,6 +119,9 @@ export const RULE_CODE_TEXT: Record<string, string> = {
     "Der Wert der Küche (mit ihrem Anteil an den Nebenkosten) muss kleiner sein als der Gebäudeanteil des Kaufpreises. Bitte den Wert oder die Kaufpreisaufteilung prüfen.",
   "tax_input.movable_asset_no_split":
     "Zuerst eine Kaufpreisaufteilung wählen: eine mitgekaufte Küche wird aus dem Gebäudeanteil herausgerechnet.",
+  "tax_input.movable_asset_separate_unsupported":
+    "Eine gesondert gekaufte Küche wird noch nicht unterstützt; sie braucht ihr Anschaffungsdatum.",
+  "tax_input.movable_asset_no_purchase_date": "Zuerst das Übergabedatum der Immobilie eintragen.",
   // exports of the draft (phase-3.md §10, §12)
   "tax_export.too_large":
     "Die Belege des Jahres sind zusammen größer als 100 MiB. Das Archiv bitte von Hand aufteilen; die Ausfüllhilfe geht weiterhin.",

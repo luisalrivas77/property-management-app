@@ -38,9 +38,12 @@ beyond TaxInputCreate's own scope validator:
   year is not before the purchase (Übergang) year when a purchase date is set
   (`tax_input.scope_invalid`). A withdrawal is not re-checked. Its question is the year, as for
   `ruecklage_spent`: one current row per (property, tax_year);
-- a `movable_asset` (D80, the Einbauküche) starts no earlier than the purchase year, and
-  exactly in it when it came with the flat (`in_purchase_price`), since its basis leaves the
-  building's from the handover on (`tax_input.movable_asset_year`). Bought with the flat, its
+- a `movable_asset` (D80, the Einbauküche) needs the property's handover date
+  (`tax_input.movable_asset_no_purchase_date`) and, for now, must have come with the flat:
+  one bought separately would need its own acquisition date, which the value does not carry
+  (`tax_input.movable_asset_separate_unsupported`, D80 review F1). It starts exactly in the
+  purchase year, since its basis leaves the building's from the handover on
+  (`tax_input.movable_asset_year`). Bought with the flat, its
   basis (amount × (price + Σ cost rows) ÷ price) must stay below the building's share of the
   selected price split, less any other current asset bought with the flat
   (`tax_input.movable_asset_exceeds_building`); without a selected split that cannot be
@@ -71,7 +74,9 @@ from hausbuch.db.tables import unit as unit_table
 from hausbuch.rules.errors import (
     TAX_INPUT_EXTENSION_NEEDS_HERSTELLUNG,
     TAX_INPUT_MOVABLE_ASSET_EXCEEDS_BUILDING,
+    TAX_INPUT_MOVABLE_ASSET_NO_PURCHASE_DATE,
     TAX_INPUT_MOVABLE_ASSET_NO_SPLIT,
+    TAX_INPUT_MOVABLE_ASSET_SEPARATE_UNSUPPORTED,
     TAX_INPUT_MOVABLE_ASSET_YEAR,
     TAX_INPUT_USEFUL_LIFE_NOT_SHORTER,
 )
@@ -354,21 +359,26 @@ def _check_movable_asset(conn: Connection, prop: Row, data: TaxInputCreate) -> N
         return
     assert data.tax_year is not None and isinstance(data.value, MovableAsset)
     value = data.value
-    purchase_year = None if prop.purchase_date is None else prop.purchase_date.year
-    if purchase_year is not None:
-        if data.tax_year < purchase_year:
-            raise RuleViolationError(
-                [TAX_INPUT_MOVABLE_ASSET_YEAR],
-                f"a movable asset starts in the purchase year {purchase_year} at the earliest",
-            )
-        if value.in_purchase_price and data.tax_year != purchase_year:
-            raise RuleViolationError(
-                [TAX_INPUT_MOVABLE_ASSET_YEAR],
-                "a movable asset bought with the flat starts in the purchase year"
-                f" {purchase_year}: its basis leaves the building's from the handover on",
-            )
+    if prop.purchase_date is None:
+        raise RuleViolationError(
+            [TAX_INPUT_MOVABLE_ASSET_NO_PURCHASE_DATE],
+            "enter the property's handover date first: a movable asset's AfA starts from it",
+        )
     if not value.in_purchase_price:
-        return
+        # D80 review F1: its own acquisition month is not recorded yet, so its first year
+        # would count from the flat's handover month; refused until the value carries it.
+        raise RuleViolationError(
+            [TAX_INPUT_MOVABLE_ASSET_SEPARATE_UNSUPPORTED],
+            "a movable asset bought separately is not supported yet: it needs its own"
+            " acquisition date",
+        )
+    purchase_year = prop.purchase_date.year
+    if data.tax_year != purchase_year:
+        raise RuleViolationError(
+            [TAX_INPUT_MOVABLE_ASSET_YEAR],
+            "a movable asset bought with the flat starts in the purchase year"
+            f" {purchase_year}: its basis leaves the building's from the handover on",
+        )
     facts = _basis_facts(conn, prop)
     if facts is None:
         raise RuleViolationError(

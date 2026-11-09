@@ -66,14 +66,12 @@ PHASE3_CASES = {
         "useful_life_sale_year",
         # D80: a movable asset (the Einbauküche) bought with the flat
         "movable_in_price_reduces_building",
-        "movable_bought_separately",
         "movable_in_price_with_useful_life",
     },
     "movable_asset": {
         "kitchen_in_price_from_purchase",
         "kitchen_estimate_without_evidence",
         "kitchen_sold_before_ten_years",
-        "kitchen_bought_separately",
     },
     "anschaffungsnah": {
         "under_limit_14_percent",

@@ -19,10 +19,13 @@
 //   years and the first tax year, its document required; the server refuses a life not
 //   shorter than the statutory one (tax_input.useful_life_not_shorter).
 // - On the Steuern page: the Einbauküche (D80), its value, useful life (default 10 years),
-//   whether it was in the purchase price (default yes) and an optional Beleg; the server
-//   refuses a first year that does not fit (tax_input.movable_asset_year), a value not below
-//   the building's share (tax_input.movable_asset_exceeds_building) and a kitchen in the price
-//   without a selected split (tax_input.movable_asset_no_split).
+//   "im Kaufpreis enthalten" (checked and locked: a kitchen bought separately needs its own
+//   acquisition date and is refused, tax_input.movable_asset_separate_unsupported) and an
+//   optional Beleg; the server refuses a first year other than the purchase year
+//   (tax_input.movable_asset_year), a value not below the building's share
+//   (tax_input.movable_asset_exceeds_building), a missing price split
+//   (tax_input.movable_asset_no_split) and a missing handover date
+//   (tax_input.movable_asset_no_purchase_date).
 //
 // The labels live here, not in labels.ts (phase 3 step 2 scope).
 import { useCallback, useId, useMemo, useState, type FormEvent } from "react";
@@ -919,17 +922,16 @@ function MovableAssetForm({
   const old = replaces?.value as MovableAssetValue | undefined;
   const [amount, setAmount] = useState(old ? decimalInput(old.amount) : "");
   const [life, setLife] = useState(String(old?.useful_life_years ?? 10));
-  const [inPrice, setInPrice] = useState(old?.in_purchase_price ?? true);
-  const [fromYear, setFromYear] = useState(String(replaces?.tax_year ?? purchaseYear));
   const [documentId, setDocumentId] = useState<string | null>(replaces?.document_id ?? null);
   const [note, setNote] = useState(replaces?.note ?? "");
   const [busy, setBusy] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
   const form = useFormErrors(useMemo(() => [...MOVABLE_KEYS], []), MOVABLE_CODE_FIELDS);
   const base = useId();
-  // Bought with the flat, the first year is the purchase year; a correction keeps its year.
-  const yearFixed = replaces !== null || inPrice;
-  const shownYear = replaces !== null ? String(replaces.tax_year) : inPrice ? String(purchaseYear) : fromYear;
+  // Only a kitchen bought with the flat is supported (D80 review F1: one bought separately
+  // needs its own acquisition date, which the value does not carry yet), so its first year is
+  // the purchase year; a correction keeps its year.
+  const shownYear = String(replaces?.tax_year ?? purchaseYear);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -950,7 +952,7 @@ function MovableAssetForm({
         kind: "movable_asset",
         tax_year: year,
         document_id: documentId,
-        value: { label: "einbaukueche", amount: money, useful_life_years: years, in_purchase_price: inPrice },
+        value: { label: "einbaukueche", amount: money, useful_life_years: years, in_purchase_price: true },
         note: note.trim() || null,
         supersedes_id: replaces?.id ?? null,
         withdrawn: false,
@@ -979,7 +981,7 @@ function MovableAssetForm({
         <Field
           id={`${base}-amount`}
           label="Wert der Küche (€)"
-          description="Im Kaufpreis enthalten: ihr Anteil am Kaufpreis (brutto). Gesondert gekauft: ihr Kaufpreis (brutto)."
+          description="Ihr Anteil am Kaufpreis (brutto)."
           errors={form.of("value.amount")}
         >
           <input type="text" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoComplete="off" />
@@ -994,26 +996,27 @@ function MovableAssetForm({
         </Field>
         <div className="field">
           <label className="inline" htmlFor={`${base}-in-price`}>
-            <input id={`${base}-in-price`} type="checkbox" checked={inPrice} onChange={(e) => setInPrice(e.target.checked)} />
+            <input id={`${base}-in-price`} type="checkbox" checked disabled readOnly />
             Im Kaufpreis enthalten
           </label>
           <p className="muted hint">
             Mit der Wohnung gekauft: ihr Wert und ihr Anteil an den Nebenkosten kommen aus der AfA des Gebäudes heraus;
-            die AfA beginnt mit dem Übergang.
+            die AfA beginnt mit dem Übergang. Eine gesondert gekaufte Küche wird noch nicht unterstützt; sie braucht ihr
+            Anschaffungsdatum.
           </p>
         </div>
         <Field
           id={`${base}-from`}
           label="Ab Steuerjahr"
-          description="Das Jahr, in dem die Küche angeschafft wurde. Im Kaufpreis enthalten: das Jahr des Kaufs."
+          description="Das Jahr des Kaufs der Wohnung."
           errors={form.of("tax_year")}
         >
           <input
             type="text"
             inputMode="numeric"
             value={shownYear}
-            onChange={(e) => setFromYear(e.target.value)}
-            disabled={yearFixed}
+            readOnly
+            disabled
             autoComplete="off"
           />
         </Field>

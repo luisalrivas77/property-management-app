@@ -19,6 +19,7 @@ from hausbuch.rules.errors import (
     TAX_INPUT_EXTENSION_NEEDS_HERSTELLUNG,
     TAX_INPUT_MOVABLE_ASSET_EXCEEDS_BUILDING,
     TAX_INPUT_MOVABLE_ASSET_NO_SPLIT,
+    TAX_INPUT_MOVABLE_ASSET_SEPARATE_UNSUPPORTED,
     TAX_INPUT_MOVABLE_ASSET_YEAR,
     TAX_INPUT_USEFUL_LIFE_NOT_SHORTER,
 )
@@ -988,34 +989,36 @@ def test_a_kitchen_in_the_price_needs_a_split_and_stays_below_the_building(world
     assert event.payload["tax_year"] == 2024
 
 
-def test_a_kitchen_starts_in_the_purchase_year_and_one_bought_later_not_before_it(world):
+def test_a_kitchen_starts_in_the_purchase_year_and_one_bought_later_is_refused(world):
     _split(world)
     for year in (2023, 2025):  # in the price: the purchase year (2024) only
         assert _refused(world, _kitchen(world, "8500.00", year)) == (TAX_INPUT_MOVABLE_ASSET_YEAR,)
+    # D80 review F1: a kitchen bought separately needs its own acquisition date; refused for
+    # now, whatever its year.
     separate = {"value": {"in_purchase_price": False}}
-    assert _refused(world, _kitchen(world, "6000.00", 2023, **separate)) == (
-        TAX_INPUT_MOVABLE_ASSET_YEAR,
-    )
+    for year in (2023, 2024, 2026):
+        assert _refused(world, _kitchen(world, "6000.00", year, **separate)) == (
+            TAX_INPUT_MOVABLE_ASSET_SEPARATE_UNSUPPORTED,
+        )
     assert world.query(list_tax_inputs, world.property_id, include_history=True) == []
-    row = _create(world, _kitchen(world, "6000.00", 2026, **separate))
-    assert (row.tax_year, row.value.in_purchase_price) == (2026, False)
+    assert _events(world) == []
 
 
-def test_a_kitchen_bought_separately_needs_no_split(world):
-    row = _create(world, _kitchen(world, "6000.00", 2025, value={"in_purchase_price": False}))
-    assert row.tax_year == 2025
+def test_a_kitchen_bought_separately_is_refused_even_without_a_split(world):
+    separate = _kitchen(world, "6000.00", 2025, value={"in_purchase_price": False})
+    assert _refused(world, separate) == (TAX_INPUT_MOVABLE_ASSET_SEPARATE_UNSUPPORTED,)
 
 
 def test_one_kitchen_per_flat_corrected_in_its_year_and_withdrawn_as_usual(world):
     _split(world)
     doc = world.document("invoice", {}, type="other")
     first = _create(world, _kitchen(world, "8500.00", 2024))
-    # The label is the question, whatever the year: a second kitchen must supersede the first.
-    later = _kitchen(world, "6000.00", 2026, value={"in_purchase_price": False})
-    assert _refused(world, later) == (TAX_INPUT_NOT_CURRENT,)
-    # A correction keeps the first year (withdraw and record anew to move it) ...
-    moved = _kitchen(world, "6000.00", 2026, supersedes_id=first.id, value=later.value.model_dump())
-    assert _refused(world, moved) == (TAX_INPUT_SCOPE_INVALID,)
+    # The label is the question: a second kitchen must supersede the first.
+    second = _kitchen(world, "6000.00", 2024)
+    assert _refused(world, second) == (TAX_INPUT_NOT_CURRENT,)
+    # A correction keeps the purchase year ...
+    moved = _kitchen(world, "6000.00", 2026, supersedes_id=first.id)
+    assert _refused(world, moved) == (TAX_INPUT_MOVABLE_ASSET_YEAR,)
     # ... and is checked against the building without the row it replaces.
     corrected = _create(
         world,
@@ -1029,6 +1032,6 @@ def test_one_kitchen_per_flat_corrected_in_its_year_and_withdrawn_as_usual(world
         _kitchen(world, "208000.00", 2024, supersedes_id=corrected.id, withdrawn=True),
     )
     assert world.query(list_tax_inputs, world.property_id, kind=K.MOVABLE_ASSET) == []
-    # Withdrawn, the kitchen can be recorded anew, from another year.
-    again = _create(world, later)
+    # Withdrawn, the kitchen can be recorded anew.
+    again = _create(world, second)
     assert world.query(list_tax_inputs, world.property_id, kind=K.MOVABLE_ASSET) == [again]
