@@ -16,7 +16,7 @@ implementation steps code against:
 | Artifact | Where | Status |
 | --- | --- | --- |
 | Pydantic schemas | `backend/src/hausbuch/schemas/tax.py` (new: `RuleSet`, `FormMapping`, `DraftFacts`, `AnlageVDraft`, `TaxInput*`, `TaxExport`); additions to `enums.py`, `checklist.py`, `events.py`, `proposal.py`, `tenancy.py` (§7) | Not written (step 0) |
-| Migration | `0013_tax_year` (§6): `tenancy.rent_due_day`, `property.living_area_m2`, tables `tax_input` and `tax_export` | Not written (step 0); applied with step 1's deploy, tables empty until step 2 |
+| Migration | `0013_tax_year` (§6): `tenancy.rent_due_day`, `tenancy.operating_costs_terms`, `property.living_area_m2`, tables `tax_input` and `tax_export` | Not written (step 0); applied with step 1's deploy, tables empty until step 2 |
 | Rule sets (data) | `backend/src/hausbuch/rules/tax/rulesets/2025.yaml` (form published, verified), `2026.yaml` (form **provisional**, §4.3) | Not written (step 0) |
 | Rule fixtures | `backend/tests/fixtures/phase3/*.yaml`, 12 files (§13), loaded by `tests/fixture_models_phase3.py` | Not written (step 0); rule tests skipped until step 1 |
 | Eval cases | `backend/tests/evals/recordings/zinsbescheinigung.json`, `hausgeldabrechnung.json` (synthetic, recorded from Luis's computer, D66) | Not recorded (step 2) |
@@ -94,6 +94,7 @@ Numbering continues from phase 2's D52 (the 0.00 € auto-confirm, merged 9 Nov 
 | D69 | **Everything is "direkte Zuordnung"**: the whole object is let and the rental account is dedicated, so the draft fills the direct columns and leaves the "verhältnismäßige Zuordnung" columns (Z34, 37, 40, 43–44, 47, 50, 53, 56, 59, 62, 65, 68, 71, 74, 77, 81) empty. A partly self-used object is out of scope for v1. | ARCHITECTURE's Account note (dedicated account, no private lines). |
 | D70 | **A 0.00 € allocation is not evidence.** Phase 2's D52 lets a model answer for a bank line of exactly 0.00 € be confirmed without review in categories such as `repairs`, `renovation`, `acquisition_cost`, `professional_fees`, `loan_fees`, `other_income`, `other_expense`. Such a row changes no sum, but every phase 3 rule that reads the *presence* of a category must ignore it: it creates no `cost_receipt` checklist item (§8), is not counted in and does not open the 15 % tracker's list (§5.3), raises no `renovation.undecided`, `income.other_review`, `income.pre_handover`, `afa.acquisition_cost_without_row` or `afa.purchase_price_mismatch` warning, needs no `renovation_treatment` input and is not an "open line" in `excluded_open` (§5.11). `DraftFacts` is built from confirmed allocations with `amount <> 0`, so a zero row is never a line's source either; it stays visible on the transaction and in History only. Fixture cases `zero_amount_is_not_evidence` in `checklist_phase3.yaml`, `anschaffungsnah.yaml` and `anlage_v_2026.yaml`. | A confirmation nobody looked at (D52) must not become a document requirement, a tracker entry or a warning a person then has to clear; the sums are unaffected either way. |
 | D71 | **One Z13 row per Wohnung, not per room** (Luis, 9 Nov 2026, Q2). Units let as rooms of one flat are summed into one `income.rent_units` row: the flat's rents (and, per D63, the forwarded share before the handover) next to the flat's Wohnfläche. The flat's area is a new nullable `property.living_area_m2` (the Wohnfläche of the purchase contract or the Wohnflächenberechnung, typed or pre-filled later); when it is empty the row uses the sum of the units' m² and the draft warns `income.living_area_missing`, because rooms' areas leave out kitchen, bath and hall. A property whose units are separate flats (an MFH) keeps one row per unit. The Steuern screen still shows each room's rent under the row. | The Finanzamt knows one Wohnung under one Aktenzeichen; rows per room would read as several flats. |
+| D72 | **How each lease agrees the running costs is a tenancy field** `operating_costs_terms`: `prepayment` (Vorauszahlung with a yearly settlement, the default), `flat_rate` (Pauschale, no settlement) or `included` (one all-in rent, Nebenkosten not agreed separately). Luis's earlier room leases charge a separately named Pauschale; a later lease may state one all-in rent (Luis, 9 Nov 2026, to check against that lease). `prepayment` and `flat_rate` amounts go on Z20; an `included` tenancy's whole rent is booked as `rent_cold` and stays on Z13. The Z24 box ("nicht gesondert vereinbart") is ticked when every tenancy let in the year is `included`; when the terms are mixed it stays unticked and the draft warns `umlagen.mixed_terms`, naming the all-in tenancies, until the Anleitung is read (Q4). Typed on the tenancy form; the lease pre-fill can read it later. Phase 4's Betriebskostenabrechnung reads the same field (no settlement for `flat_rate` or `included`), which settles ARCHITECTURE's phase 4 input on the Pauschale. | The terms differ per lease, so they belong on the tenancy, not the property; the tax is the same whichever line carries the amount, only the form's presentation changes. |
 
 ## 3. Sources checked (9 Nov 2026)
 
@@ -166,10 +167,11 @@ Header and income lines:
 | `header.aktenzeichen` | 6 | — | the Grundsteuerbescheid extraction's `reference`, else empty with a checklist pointer |
 | `header.contract_date` / `header.transfer_date` / `header.completed` | 7 | — | `notarized_on` / `purchase_date` / `build_year` |
 | `header.sold` | 8 | 53 | `ownership_ended_on` (empty while owned) |
-| `header.living_area` | 11 | 54 | Σ `unit.floor_area_m2` |
+| `header.living_area` | 11 | 54 | `property.living_area_m2`, else Σ `unit.floor_area_m2` with warning `income.living_area_missing` (D71) |
 | `income.rent_units` | 13–14 | — | one row per Wohnung: for an ETW let by rooms, the flat (`property.living_area_m2`, Σ `rent_cold` of its units); for an MFH, one row per unit (D71) |
 | `income.rent_total` | 15 | 01 | Σ of the unit rows |
-| `income.umlagen` | 20 | 04 | Σ `operating_costs_prepayment` (a Pauschale too, Q3) |
+| `income.umlagen` | 20 | 04 | Σ `operating_costs_prepayment` of `prepayment` and `flat_rate` tenancies (D72) |
+| `income.umlagen_not_agreed` | 24 | — | box, ticked when every tenancy let in the year is `included` (D72) |
 | `income.umlagen_settlement` | 21 | 11 | Σ `operating_costs_settlement`, signed (refund negative) |
 | `income.other` | 29 → 31 | 08 | Σ `other_income`, each with warning `income.other_review` |
 | `income.total` | 32 | — | Z15 + Z20 + Z21 + Z31 (+ the unused lines) |
@@ -369,8 +371,8 @@ provisional + warning.
 
 - `rent_cold` → one `income.rent_units` row per Wohnung (D71: the flat for an ETW let by rooms, with its rooms listed under it; one per unit for an MFH), total on
   `income.rent_total`.
-- `operating_costs_prepayment` → `income.umlagen`; a Nebenkostenpauschale is income all the
-  same (Q3 on Z24).
+- `operating_costs_prepayment` → `income.umlagen`; a Nebenkostenpauschale (`flat_rate`) is
+  income all the same; an `included` tenancy has its whole rent on Z13 (D72, Z24 box).
 - `operating_costs_settlement` → `income.umlagen_settlement`, sign kept (a refund to the
   tenant is negative).
 - `other_income` → `income.other` with warning `income.other_review` per allocation naming
@@ -445,14 +447,15 @@ the draft.
 | Table / column | Holds | Mutability |
 | --- | --- | --- |
 | `tenancy.rent_due_day smallint NOT NULL DEFAULT 3 CHECK (1..28)` | D67 | Update + `tenancy.updated` |
-| `property.living_area_m2 numeric(7,2) NULL CHECK (> 0)` | D71, the flat's Wohnfläche for Z13 | Update + `property.updated` |
+| `property.living_area_m2 numeric(7,2) NULL CHECK (> 0)` | D71, the flat's Wohnfläche for Z11 and Z13 | Update + `property.updated` |
+| `tenancy.operating_costs_terms text NOT NULL DEFAULT 'prepayment' CHECK in (`prepayment`, `flat_rate`, `included`)` | D72 | Update + `tenancy.updated` |
 | `tax_input` | `property_id` NOT NULL, `kind` CHECK in (`spread_82b`, `renovation_treatment`, `exclude_from_15pct`, `market_rent`, `ruecklage_spent`, `interest_certified`, `pre_handover_income`), `tax_year smallint` (CHECK ≥ 2000), `unit_id`, `loan_id`, `allocation_id`, `document_id` (all nullable FKs with `workspace_id`), `value jsonb NOT NULL` (typed per kind, §7), `note text`, `supersedes_id` (FK self), `withdrawn boolean NOT NULL DEFAULT false`, `recorded_at`, `recorded_by` | **Append-only** (`forbid_mutation` trigger like `transaction`); per-kind scope CHECKs: `spread_82b`, `renovation_treatment`, `exclude_from_15pct` need `allocation_id`; `market_rent` needs `unit_id`; `ruecklage_spent` needs `tax_year` and `document_id`; `interest_certified` needs `loan_id`, `tax_year` and `document_id`; `pre_handover_income` needs the property only (value `rent`, D63); `withdrawn` needs `supersedes_id` |
 | `tax_export` | `property_id`, `tax_year`, `kind` CHECK in (`field_sheet`, `archive`), `rule_set_version text`, `form_year smallint`, `form_status text`, `draft jsonb NOT NULL` (the `AnlageVDraft`), `file_sha256` (FK `document_file (workspace_id, sha256)`), `size_bytes`, `created_at`, `created_by` | **Immutable** (`forbid_mutation`); deleted by the retention sweeper with the year's tax records (10 years after `tax_year`) |
 
 RLS, `workspace_id`, grants and the `tables.py` mirror as every table since 0001. No change to
 `event.entity_type`: the new events sit on `property` (and `tenancy`). No change to
 `allocation.category` or any CHECK of 0012 (D56 chose an input over a category). Downgrade:
-drops the two tables and the two columns; refused while any `tax_export` row exists (an export is
+drops the two tables and the three columns; refused while any `tax_export` row exists (an export is
 a record of what was handed over and is never rewritten).
 
 **Events added**
@@ -461,7 +464,7 @@ a record of what was handed over and is never rewritten).
 | --- | --- | --- |
 | `property.tax_input_recorded` | `tax_input_id`, `kind`, `tax_year`, scope ids, `value` (amounts and codes only), `supersedes_id`, `withdrawn` | forbidden |
 | `property.anlage_v_exported` | `tax_export_id`, `tax_year`, `kind`, `rule_set_version`, `form_year`, `form_status`, `file_sha256`, `size_bytes`, `result` (the cent result), `document_count` (archive) | forbidden |
-| `tenancy.updated` (existing `Updated` shape) | gains field `rent_due_day` | forbidden |
+| `tenancy.updated` (existing `Updated` shape) | gains fields `rent_due_day`, `operating_costs_terms` | forbidden |
 | `property.updated` (existing `Updated` shape) | gains field `living_area_m2` | forbidden |
 
 **Invariants (new) and where they are enforced**
@@ -623,7 +626,7 @@ schemas (a fixture that does not match the schemas fails before any rule is impl
 | `erhaltungsaufwand.lines(...)` | `erhaltungsaufwand.yaml` | `repairs_full_deduction`, `renovation_elected_erhaltung`, `renovation_elected_herstellung`, `renovation_undecided_excluded`, `spread_three_years` (2,333.33 / 2,333.33 / 2,333.34), `spread_sale_in_second_year`, `spread_withdrawn_back_to_full` |
 | `schuldzinsen.lines(...)` | `schuldzinsen.yaml` | `interest_only_phase_plus_annuities` (3,724.56 / 1,508.77), `certificate_matches`, `certificate_mismatch_0_56`, `january_annuity_moved` (debited 30 Dec, certificate counts it in the new year), `financing_costs_before_handover`, `two_loans_two_einzelangaben` |
 | `hausgeld.lines(...)` | `hausgeld.yaml` | `six_months_split`, `ruecklage_tracked_not_deducted`, `ruecklage_spent_confirmed_350`, `abrechnung_pending_provisional`, `settlement_backpayment_next_year` |
-| `einnahmen.lines(...)` | `umlagen.yaml` | `rent_and_prepayments_six_months`, `settlement_backpayment_positive`, `refund_negative`, `pauschale_is_umlagen`, `two_rooms_one_flat_row`, `mfh_two_units_two_rows`, `living_area_missing_falls_back`, `other_income_with_review_warning`, `deposit_not_income` |
+| `einnahmen.lines(...)` | `umlagen.yaml` | `rent_and_prepayments_six_months`, `settlement_backpayment_positive`, `refund_negative`, `pauschale_is_umlagen`, `included_rent_on_z13`, `all_included_ticks_z24`, `mixed_terms_warns`, `two_rooms_one_flat_row`, `mfh_two_units_two_rows`, `living_area_missing_falls_back`, `other_income_with_review_warning`, `deposit_not_income` |
 | `verbilligt.check(...)` | `verbilligte_vermietung.yaml` | `ratio_103_nothing`, `ratio_62_prognosis`, `ratio_45_cut_55`, `no_market_rent_info`, `market_rent_valid_from_mid_year` |
 | `vorab.split(...)` | `vorab.yaml` | `seller_forwarded_rent_excluded` (2 × 425.00 → block 850.00), `interest_before_handover_deducted`, `purchase_date_corrected_later` |
 | `spekulation.tax_free_from(...)` | `spekulation.yaml` | `ten_years_plus_one_day`, `leap_day_contract` (29 Feb 2024 → 1 Mar 2034) |
@@ -779,10 +782,10 @@ Conflicts, stated plainly, and the edits (made in the spec PR):
    payment as damages, for VAT); the draft lists it under `income.other` with its warning until
    then.
 2. **Decided 9 Nov 2026 (Luis): one Z13 row for the whole flat**, not one per room (D71).
-3. **Luis: Nebenkostenpauschale and Z24.** The leases charge a Pauschale without a
-   settlement. The spec books it on Z20 as Umlagen; Z24 ("Neben-/Betriebskosten wurden nicht
-   gesondert vereinbart") stays unset because the Pauschale *is* separately agreed. Phase 4's
-   Pauschale flag (ARCHITECTURE input) can later drive Z24 if the Anleitung says otherwise.
+3. **Decided 9 Nov 2026 (Luis): the running-cost terms per lease** (D72). A separately named
+   Pauschale goes on Z20 with the Z24 box unticked; a lease with one all-in rent keeps its
+   whole rent on Z13. Luis checks the later lease, which may state an all-in rent, and sets the
+   tenancy's `operating_costs_terms` when phase 3 is built.
 4. **Orchestrator: the rounding convention** (D60). The Anleitung zur Anlage V 2025 was not
    reachable programmatically; read it in ELSTER (or the FFW catalogue) and confirm "volle
    Euro, zu Ihren Gunsten" and whether ELSTER accepts cents in these fields. A change here
