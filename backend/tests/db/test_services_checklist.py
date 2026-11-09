@@ -290,6 +290,8 @@ def test_the_checklist_of_a_let_and_financed_flat(read, flat):
             ChecklistScopeType.PROPERTY,
             [],
         ),
+        # Phase 3 (§8): the flat is let in the year and no ortsübliche Miete is recorded.
+        (RequirementCode.MARKET_RENT, ChecklistStatus.MISSING, ChecklistScopeType.PROPERTY, []),
     ]
     by_code = {i.code: i for i in got.items}
     assert by_code[RequirementCode.LOAN_CONTRACT].scope.lender == "Sparkasse Musterstadt"

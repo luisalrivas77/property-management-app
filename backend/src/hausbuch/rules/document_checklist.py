@@ -2,7 +2,9 @@
 
 Spec amendment 3 (docs/phases/phase-1.md, 6 Nov 2026). The requirement catalogue below is
 data: each entry names its scope, the document type or subtype that satisfies it, the link
-targets that count, its tax-year rule and its due date. Phase 3 adds entries, not code paths.
+targets that count, its tax-year rule and its due date. Phase 3 adds entries, not code paths
+(docs/phases/phase-3.md §8, D64): `cost_receipt` per confirmed allocation of the year that
+needs a Beleg, and `market_rent` per Wohnung let in the year.
 
 Matching: an entry with a subtype matches on the subtype, one with only a type on the type;
 an untyped document matches nothing. A match must be linked to one of the entry's accepted
@@ -19,8 +21,11 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import date
 from enum import Enum, auto
+from uuid import UUID
 
+from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.checklist import (
+    ChecklistAllocation,
     ChecklistCost,
     ChecklistDocument,
     ChecklistFacts,
@@ -56,6 +61,8 @@ class Satisfier(Enum):
     LINK = auto()  # a matching document linked to an accepted target
     COST_DOCUMENT = auto()  # the cost row's document_id
     PRICE_SPLIT = auto()  # by the selected split's source
+    ALLOCATION_DOCUMENT = auto()  # the allocation's document_id (phase 3, D64)
+    TAX_INPUT = auto()  # a market_rent tax input in force for the Wohnung (phase 3, D64)
 
 
 # Y -> due date. None = "always": due as soon as the item exists.
@@ -89,6 +96,23 @@ def _started_after_purchase(facts: ChecklistFacts, tenancy: object) -> bool:
 def _has_deposit(_: ChecklistFacts, tenancy: object) -> bool:
     assert isinstance(tenancy, ChecklistTenancy)
     return tenancy.deposit_form is not DepositForm.NONE
+
+
+# The categories whose payments need a Beleg in the return's paperwork (§8).
+RECEIPT_CATEGORIES = frozenset(
+    {
+        AllocationCategory.REPAIRS,
+        AllocationCategory.RENOVATION,
+        AllocationCategory.LOAN_FEES,
+        AllocationCategory.PROFESSIONAL_FEES,
+    }
+)
+
+
+def _needs_receipt(_: ChecklistFacts, allocation: object) -> bool:
+    """A cost of a named category; a 0.00 row is never evidence (D70)."""
+    assert isinstance(allocation, ChecklistAllocation)
+    return allocation.category in RECEIPT_CATEGORIES and allocation.amount != 0
 
 
 _PROPERTY = frozenset({LinkTarget.PROPERTY})
@@ -170,6 +194,19 @@ CATALOGUE: tuple[Requirement, ...] = (
         tax_year=TaxYearRule.EQUALS,
         due=lambda y: date(y + 1, 6, 30),
         applies=_etw_only,
+    ),
+    # Phase 3 (§8, D64)
+    Requirement(
+        RequirementCode.COST_RECEIPT,
+        ChecklistScopeType.ALLOCATION,
+        satisfier=Satisfier.ALLOCATION_DOCUMENT,
+        applies=_needs_receipt,
+    ),
+    Requirement(
+        # Per Wohnung (D71): scopes() yields the property for an ETW or EFH, units for an MFH.
+        RequirementCode.MARKET_RENT,
+        ChecklistScopeType.UNIT,
+        satisfier=Satisfier.TAX_INPUT,
     ),
 )
 
@@ -259,6 +296,46 @@ class _Context:
                                 tenancy_start=tenancy.start_date,
                             ),
                         )
+            case ChecklistScopeType.ALLOCATION:
+                # The allocations the §5.1 rule counts in this year (resolved beforehand).
+                for allocation in sorted(facts.allocations, key=lambda a: (a.booking_date, a.id)):
+                    if allocation.tax_year == year:
+                        yield (
+                            allocation,
+                            ChecklistScope(
+                                type=kind,
+                                id=allocation.id,
+                                category=allocation.category,
+                                booking_date=allocation.booking_date,
+                            ),
+                        )
+            case ChecklistScopeType.UNIT:
+                yield from self._wohnungen()
+
+    def _wohnungen(self) -> Iterable[tuple[object, ChecklistScope]]:
+        """The Wohnungen let in the year (D71): the property itself for an ETW or EFH (one
+        flat, however many rooms are let), each unit with a tenancy for an MFH. None for a
+        phase 1 caller (market_rents is None)."""
+        facts = self.facts
+        if facts.market_rents is None:
+            return
+        year_start, year_end = date(self.tax_year, 1, 1), date(self.tax_year, 12, 31)
+        let_units = {
+            t.unit_id
+            for t in facts.tenancies
+            if t.start_date <= year_end and (t.end_date is None or t.end_date >= year_start)
+        }
+        if not let_units:
+            return
+        if facts.kind is not PropertyKind.MFH:
+            yield None, ChecklistScope(type=ChecklistScopeType.PROPERTY, id=facts.property_id)
+            return
+        for unit in sorted(facts.units, key=lambda u: (u.label, u.id)):
+            if unit.id in let_units:
+                yield (
+                    unit.id,
+                    ChecklistScope(type=ChecklistScopeType.UNIT, id=unit.id, unit_label=unit.label),
+                )
 
     def _target_ids(self, requirement: Requirement, entity: object) -> dict[LinkTarget, frozenset]:
         """For each accepted link target type, the ids that count for this scope."""
@@ -293,6 +370,12 @@ class _Context:
                 status, documents = self._by_reference(entity.document_id, due_on)
             case Satisfier.PRICE_SPLIT:
                 status, documents = self._by_price_split(due_on)
+            case Satisfier.ALLOCATION_DOCUMENT:
+                assert isinstance(entity, ChecklistAllocation)
+                status, documents = self._by_reference(entity.document_id, due_on)
+            case Satisfier.TAX_INPUT:
+                assert entity is None or isinstance(entity, UUID)
+                status, documents = self._by_market_rent(entity, due_on)
         return ChecklistItem(
             code=requirement.code, status=status, scope=scope, due_on=due_on, documents=documents
         )
@@ -334,6 +417,25 @@ class _Context:
                 return self._by_reference(split.evidence_document_id, due_on)
             case PriceSplitSource.BMF_TOOL:
                 return ChecklistStatus.PRESENT, []
+
+    def _by_market_rent(
+        self, unit_id: UUID | None, due_on: date | None
+    ) -> tuple[ChecklistStatus, list]:
+        """Present when a market_rent input of this Wohnung (unit_id None = the property's
+        flat) is in force: not withdrawn, not superseded by another row, and valid from a
+        day of the year or earlier. The input is the evidence, so no documents are listed."""
+        rows = self.facts.market_rents or []
+        superseded = {r.supersedes_id for r in rows if r.supersedes_id is not None}
+        year_end = date(self.tax_year, 12, 31)
+        if any(
+            r.unit_id == unit_id
+            and not r.withdrawn
+            and r.id not in superseded
+            and r.valid_from <= year_end
+            for r in rows
+        ):
+            return ChecklistStatus.PRESENT, []
+        return self._absent(due_on), []
 
     def _year_counts(self, requirement: Requirement, document: ChecklistDocument) -> bool:
         match requirement.tax_year:

@@ -3,23 +3,33 @@
 Loads the facts rules.document_checklist reads, inside the caller's workspace transaction,
 and calls the rule. Read only: no events, no writes. Tenancies are loaded without their
 parties, so no tenant personal data reaches the facts or the response (D5).
+
+Phase 3 (docs/phases/phase-3.md §8) adds the property's confirmed allocations of the
+categories that need a Beleg, each with the tax year it counts in, and every `market_rent`
+tax input row (history included: the rule decides which row is in force).
 """
 
+from collections.abc import Callable
 from datetime import date
 from uuid import UUID
 
 from sqlalchemy import Connection, select
 
+from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import property_price_split as split_table
 from hausbuch.db.tables import tenancy as tenancy_table
+from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.rules import document_checklist as rule
+from hausbuch.schemas.allocation import AllocationStatus
 from hausbuch.schemas.checklist import (
+    ChecklistAllocation,
     ChecklistCost,
     ChecklistDocument,
     ChecklistDocumentRef,
     ChecklistFacts,
     ChecklistLink,
     ChecklistLoan,
+    ChecklistMarketRent,
     ChecklistPriceSplit,
     ChecklistTenancy,
     ChecklistUnit,
@@ -28,12 +38,23 @@ from hausbuch.schemas.checklist import (
 )
 from hausbuch.schemas.document import Document
 from hausbuch.schemas.enums import EntityType, LinkTarget
+from hausbuch.schemas.tax import MarketRent, TaxInputKind
 
 from .documents import get_document, list_related_documents
 from .errors import NotFoundError
 from .loans import list_loans
 from .properties import get_property, list_acquisition_costs
+from .tax_inputs import list_tax_inputs
 from .units import list_units
+
+# The tax year a confirmed allocation counts in (§5.1), from its row joined with its
+# transaction's booking_date. The receipt categories are not recurring payments, for which
+# §5.1 gives the booking year; a caller holding the full §5.1 rule passes it instead.
+AllocationYear = Callable[[dict], int]
+
+
+def booking_year(row: dict) -> int:
+    return row["booking_date"].year
 
 
 def document_checklist(
@@ -66,9 +87,10 @@ def document_checklist(
 
 
 def checklist_facts(
-    conn: Connection, property_id: UUID
+    conn: Connection, property_id: UUID, *, allocation_year: AllocationYear = booking_year
 ) -> tuple[ChecklistFacts, dict[UUID, Document]]:
-    """The facts of one property, and every document they mention by id."""
+    """The facts of one property, and every document they mention by id. allocation_year
+    resolves each allocation's §5.1 tax year (default: the booking year)."""
     prop = get_property(conn, property_id)
     if prop is None:
         raise NotFoundError(EntityType.PROPERTY, property_id)
@@ -105,7 +127,18 @@ def checklist_facts(
         links[related.document.id] = [
             ChecklistLink(target_type=v.target_type, target_id=v.target_id) for v in related.via
         ]
-    referenced = [c.document_id for c in costs]
+    allocations = [
+        ChecklistAllocation(
+            id=row["id"],
+            category=row["category"],
+            amount=row["amount"],
+            booking_date=row["booking_date"],
+            tax_year=allocation_year(row),
+            document_id=row["document_id"],
+        )
+        for row in _receipt_allocations(conn, property_id)
+    ]
+    referenced = [c.document_id for c in costs] + [a.document_id for a in allocations]
     if split is not None:
         referenced.append(split.evidence_document_id)
     for document_id in referenced:
@@ -133,8 +166,48 @@ def checklist_facts(
         units=[ChecklistUnit(id=u.id, label=u.label) for u in units],
         tenancies=[ChecklistTenancy.model_validate(dict(r._mapping)) for r in tenancies],
         documents=[_checklist_document(d, links[d.id]) for d in documents.values()],
+        allocations=allocations,
+        market_rents=[
+            ChecklistMarketRent(
+                id=row.id,
+                unit_id=row.unit_id,
+                valid_from=row.value.valid_from,
+                supersedes_id=row.supersedes_id,
+                withdrawn=row.withdrawn,
+            )
+            for row in list_tax_inputs(
+                conn, property_id, kind=TaxInputKind.MARKET_RENT, include_history=True
+            )
+            if isinstance(row.value, MarketRent)
+        ],
     )
     return facts, documents
+
+
+def _receipt_allocations(conn: Connection, property_id: UUID) -> list[dict]:
+    """The property's confirmed allocations of the categories that need a Beleg, with their
+    transaction's booking date. 0.00 rows are left to the rule, which skips them (D70)."""
+    rows = conn.execute(
+        select(
+            allocation_table.c.id,
+            allocation_table.c.category,
+            allocation_table.c.amount,
+            allocation_table.c.recurring,
+            allocation_table.c.service_period_start,
+            allocation_table.c.service_period_end,
+            allocation_table.c.document_id,
+            transaction_table.c.booking_date,
+            transaction_table.c.value_date,
+        )
+        .join(transaction_table, transaction_table.c.id == allocation_table.c.transaction_id)
+        .where(
+            allocation_table.c.property_id == property_id,
+            allocation_table.c.status == AllocationStatus.CONFIRMED.value,
+            allocation_table.c.category.in_([c.value for c in rule.RECEIPT_CATEGORIES]),
+        )
+        .order_by(transaction_table.c.booking_date, allocation_table.c.id)
+    )
+    return [dict(r._mapping) for r in rows]
 
 
 def _checklist_document(document: Document, links: list[ChecklistLink]) -> ChecklistDocument:
