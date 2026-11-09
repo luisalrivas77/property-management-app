@@ -109,7 +109,7 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "tax.no_rule_set": "Für dieses Steuerjahr gibt es noch kein Regelwerk, also keinen Entwurf.",
   // exports of the draft (phase-3.md §10, §12)
   "tax_export.too_large":
-    "Die Belege des Jahres sind zusammen größer als 1 GiB. Das Archiv bitte von Hand aufteilen; die Ausfüllhilfe geht weiterhin.",
+    "Die Belege des Jahres sind zusammen größer als 100 MiB. Das Archiv bitte von Hand aufteilen; die Ausfüllhilfe geht weiterhin.",
   "tax_export.failed": "Der Export ist fehlgeschlagen. Bitte noch einmal versuchen.",
 };
 

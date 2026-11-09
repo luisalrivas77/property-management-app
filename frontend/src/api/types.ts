@@ -1479,7 +1479,7 @@ export interface paths {
          * Tax Export Get
          * @description queued while the job waits or runs; ready with `export` and a signed `download_url`
          *     (fetch it right before downloading: it expires); failed with `error_code`
-         *     (`tax_export.failed`, or `tax_export.too_large` when the archive outgrew 1 GiB).
+         *     (`tax_export.failed`, or `tax_export.too_large` when the archive outgrew 100 MiB).
          */
         get: operations["tax_export_get_api_tax_exports__export_id__get"];
         put?: never;

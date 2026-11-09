@@ -5,7 +5,7 @@ POST queues the job and answers 202 with the export id; GET /tax-exports/{id} re
 queued / ready / failed and, once ready, a signed download URL valid for a few minutes; the
 list shows the property's stored exports, newest first. services/tax_export.py holds the
 logic. Error codes, all 422 with `code`: the draft's `tax.year_not_available` and
-`tax.no_rule_set`, and `tax_export.too_large` for an archive whose originals exceed 1 GiB.
+`tax.no_rule_set`, and `tax_export.too_large` for an archive whose originals exceed 100 MiB.
 
 The download is an ordinary domain route (the session is required as everywhere), plus the
 signature: a link copied out of the page stops working after DOWNLOAD_TTL_S. A wrong or
@@ -59,7 +59,7 @@ def tax_exports_list(
 def tax_export_get(export_id: UUID, cmd: Cmd, settings: SettingsDep) -> TaxExportState:
     """queued while the job waits or runs; ready with `export` and a signed `download_url`
     (fetch it right before downloading: it expires); failed with `error_code`
-    (`tax_export.failed`, or `tax_export.too_large` when the archive outgrew 1 GiB)."""
+    (`tax_export.failed`, or `tax_export.too_large` when the archive outgrew 100 MiB)."""
     return cmd.read(
         export_state,
         export_id,

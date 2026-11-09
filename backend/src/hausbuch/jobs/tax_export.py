@@ -8,7 +8,7 @@ tax_export row and the event.
 Outcomes, read back by GET /tax-exports/{id} (services.tax_export.export_state):
 - written: the row exists, so the export is `ready`;
 - exists: a second run for the same id; nothing written;
-- too_large: the archive outgrew 1 GiB after the request checked it; the job succeeds without
+- too_large: the archive outgrew 100 MiB after the request checked it; the job succeeds without
   a row, which the state reads as `failed` with `tax_export.too_large`;
 - a RuleError or NotFoundError (the property was deleted, the year no longer has a rule set):
   re-raised at once, so the job fails (`tax_export.failed`); a retry would not change it;

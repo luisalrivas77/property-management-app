@@ -12,7 +12,7 @@ The flow:
 1. POST /properties/{id}/anlage-v/exports (request_export): computes the draft now, so an
    unknown property is 404 and a year outside the property's years or without a rule set is
    422, exactly as the draft's own route; for an archive it sums the sizes of the originals it
-   will carry and refuses one over 1 GiB (`tax_export.too_large`: split by hand). Then it
+   will carry and refuses one over 100 MiB (`tax_export.too_large`: split by hand). Then it
    queues the job `tax_export` (lock `export:{id}`) with a new export id and returns it.
 2. The job (jobs/tax_export.py → write_export) computes the draft again, renders the bytes
    (services/tax_export_files.py), stores the blob, then writes document_file, the tax_export
@@ -89,7 +89,8 @@ from .tax_export_files import (
     safe_filename,
 )
 
-MAX_ARCHIVE_BYTES = 1 << 30  # §10: an archive over 1 GiB is split by hand
+# An archive over 100 MiB is split by hand (D77): it is built in memory in a 512 MB container.
+MAX_ARCHIVE_BYTES = 100 << 20
 DOWNLOAD_TTL_S = 300
 TAX_EXPORT = "tax_export"  # NotFoundError's entity name: the row's events sit on the property
 _DOMAIN = b"hausbuch.tax_export.download.v1\x00"  # domain separation under the session key
