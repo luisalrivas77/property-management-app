@@ -17,6 +17,7 @@ from api_support import (
     upload,
 )
 from db.db_support import _admin
+from test_tax import SAMPLE_IBAN, ZIP, _confirm
 
 pytestmark = pytest.mark.db
 
@@ -111,6 +112,71 @@ def test_the_error_codes(client_a):
     assert ok(client_a.get(_path(pid))) == []
     response = client_a.get(_path(str(uuid4())))
     assert (response.status_code, response.json()["entity_type"]) == (404, "property")
+
+
+def test_an_extension_needs_a_renovation_elected_herstellung(client_a):
+    """D78 over HTTP: an Erweiterung excluded from the 15 % test is a 422
+    tax_input.extension_needs_herstellung on a repair, and on a renovation the herstellung
+    election cannot be given up while the exclusion is current."""
+    pid = flat(client_a)["property"]["id"]
+    account = create(
+        client_a,
+        "/api/accounts",
+        {
+            "label": "Mietkonto",
+            "bank": "Sparkasse",
+            "iban": SAMPLE_IBAN,
+            "opening_balance": "0.00",
+            "opening_balance_on": "2026-03-31",
+        },
+    )
+    imported = client_a.post(
+        f"/api/accounts/{account['id']}/imports",
+        files={"file": ("umsaetze.zip", ZIP, "application/zip")},
+    )
+    assert ok(imported, 201)["status"] == "reconciled"
+    lines = ok(client_a.get(f"/api/accounts/{account['id']}/transactions"))
+    repair_line = next(x for x in lines if x["amount"] == "-360.18")
+    other_line = next(x for x in lines if x["amount"] == "-724.70")
+    repair = _confirm(client_a, repair_line, "repairs", pid)
+    renovation = _confirm(client_a, other_line, "renovation", pid)
+
+    def body(kind: str, allocation: str, value: dict, **extra) -> dict:
+        return {
+            "property_id": pid,
+            "kind": kind,
+            "allocation_id": allocation,
+            "value": value,
+        } | extra
+
+    code = "tax_input.extension_needs_herstellung"
+    extension = {"reason": "extension"}
+    response = client_a.post(_path(pid), json=body("exclude_from_15pct", repair, extension))
+    assert (response.status_code, response.json()["code"]) == (422, code)
+    create(
+        client_a,
+        _path(pid),
+        body("exclude_from_15pct", repair, {"reason": "annual_maintenance"}),
+    )
+
+    response = client_a.post(_path(pid), json=body("exclude_from_15pct", renovation, extension))
+    assert (response.status_code, response.json()["code"]) == (422, code)
+    herstellung = create(
+        client_a,
+        _path(pid),
+        body("renovation_treatment", renovation, {"treatment": "herstellung"}),
+    )
+    create(client_a, _path(pid), body("exclude_from_15pct", renovation, extension))
+    response = client_a.post(
+        _path(pid),
+        json=body(
+            "renovation_treatment",
+            renovation,
+            {"treatment": "erhaltung"},
+            supersedes_id=herstellung["id"],
+        ),
+    )
+    assert (response.status_code, response.json()["code"]) == (422, code)
 
 
 def test_a_certificate_figure_needs_its_document_and_loan(client_a):

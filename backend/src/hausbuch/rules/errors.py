@@ -61,5 +61,7 @@ FORM_MAPPING_INCOMPLETE = "form_mapping.incomplete"  # a category or draft line 
 TAX_INPUT_SCOPE_INVALID = "tax_input.scope_invalid"  # the kind's scope is not met
 TAX_INPUT_NOT_CURRENT = "tax_input.not_current"  # supersedes a superseded or withdrawn row
 TAX_INPUT_ALLOCATION_NOT_CONFIRMED = "tax_input.allocation_not_confirmed"
+# D78: an Erweiterung is excluded from the 15 % test only on a renovation elected herstellung.
+TAX_INPUT_EXTENSION_NEEDS_HERSTELLUNG = "tax_input.extension_needs_herstellung"
 TAX_EXPORT_FAILED = "tax_export.failed"
 TAX_EXPORT_TOO_LARGE = "tax_export.too_large"  # an archive over 100 MiB

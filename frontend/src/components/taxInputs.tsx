@@ -8,7 +8,10 @@
 //   The server refuses a write against a row that is no longer current (tax_input.not_current),
 //   e.g. after a change in another tab; the form then says so and reloads.
 // - On a confirmed allocation (Erhaltung / Renovierung): the §82b spread, the treatment of a
-//   renovation and the exclusion from the 15 % test.
+//   renovation and the exclusion from the 15 % test. The reason "Erweiterung" is offered only
+//   on a renovation treated as Herstellungskosten, and while it is saved the treatment cannot
+//   leave Herstellungskosten (D78; the server refuses both with
+//   tax_input.extension_needs_herstellung).
 // - On the unit page: the ortsübliche Miete. For an ETW or EFH it is the flat's (the property's,
 //   unit_id null, D71); for an MFH each unit's.
 // - On the tenancy form: the rent's due day (D67) and the running-cost terms (D72).
@@ -17,7 +20,7 @@
 import { useCallback, useId, useMemo, useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
-import { ApiError, ruleCodes } from "@/api/errors";
+import { ApiError, RULE_CODE_TEXT, ruleCodes } from "@/api/errors";
 import type { components } from "@/api/types";
 
 import { DocumentPicker } from "./documents";
@@ -72,7 +75,12 @@ const CODE_MESSAGES: Record<string, string> = {
     "Diese Angabe wurde inzwischen geändert (z. B. in einem anderen Fenster). Bitte die Seite neu laden und erneut prüfen.",
   "tax_input.allocation_not_confirmed": "Steuerliche Angaben gibt es nur für eine bestätigte Zuordnung.",
   "tax_input.scope_invalid": "Diese Angabe passt nicht zu dieser Zuordnung oder Einheit.",
+  "tax_input.extension_needs_herstellung": RULE_CODE_TEXT["tax_input.extension_needs_herstellung"] ?? "",
 };
+
+const EXTENSION_HINT =
+  "Eine Erweiterung (Anbau, Aufstockung) ist immer Herstellungskosten: die Zahlung als Renovierung buchen und „Herstellungskosten“ wählen.";
+const EXTENSION_LOCKS_TREATMENT = "Erst die Ausnahme „Erweiterung“ zurücknehmen.";
 
 function entries<K extends string>(labels: Record<K, string>): [K, string][] {
   return Object.entries(labels) as [K, string][];
@@ -196,6 +204,19 @@ function AllocationQuestionsForm({
   const [banner, setBanner] = useState<string | null>(null);
   const base = useId();
   const renovation = allocation.category === "renovation";
+  // D78: an Erweiterung leaves the 15 % count only as Herstellungskosten. The saved exclusion
+  // locks the treatment (the server refuses giving it up), so it is withdrawn first.
+  const extensionSaved = (exclusionRow?.value as Schemas["ExcludeFrom15Pct"] | undefined)?.reason === "extension";
+  const extensionAllowed = renovation && treatment === "herstellung";
+  const exclusionReasons = entries(EXCLUSION_REASON).filter(
+    ([value]) => value !== "extension" || extensionAllowed || exclusion === "extension",
+  );
+
+  function changeTreatment(value: RenovationChoice | "") {
+    setTreatment(value);
+    // An unsaved Erweiterung choice goes with Herstellungskosten.
+    if (value !== "herstellung" && exclusion === "extension" && !extensionSaved) setExclusion("");
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -257,12 +278,15 @@ function AllocationQuestionsForm({
           <Field
             id={`${base}-treatment`}
             label="Renovierung ist"
+            hint={extensionSaved ? EXTENSION_LOCKS_TREATMENT : undefined}
             description="Erhaltungsaufwand erhält oder erneuert, was schon da ist, und ist sofort abziehbar. Herstellungskosten schaffen etwas Neues oder heben den Standard deutlich; sie gehen in die AfA ein."
           >
-            <select value={treatment} onChange={(e) => setTreatment(e.target.value as RenovationChoice | "")}>
-              <option value="">Noch nicht eingeordnet</option>
+            <select value={treatment} onChange={(e) => changeTreatment(e.target.value as RenovationChoice | "")}>
+              <option value="" disabled={extensionSaved}>
+                Noch nicht eingeordnet
+              </option>
               {entries(RENOVATION_TREATMENT).map(([value, text]) => (
-                <option key={value} value={value}>
+                <option key={value} value={value} disabled={extensionSaved && value !== "herstellung"}>
                   {text}
                 </option>
               ))}
@@ -272,11 +296,12 @@ function AllocationQuestionsForm({
         <Field
           id={`${base}-exclusion`}
           label="Zählt nicht zur 15 %-Grenze (Grund)"
+          hint={extensionAllowed ? undefined : EXTENSION_HINT}
           description="In den ersten drei Jahren nach dem Kauf zählen Renovierungen zur 15 %-Grenze der anschaffungsnahen Herstellungskosten. Ausgenommen sind jährlich übliche Erhaltungsarbeiten, Erweiterungen (die ohnehin Herstellungskosten sind) und Schäden, die erst nach dem Kauf entstanden."
         >
           <select value={exclusion} onChange={(e) => setExclusion(e.target.value as ExclusionReason | "")}>
             <option value="">Zählt zur Grenze</option>
-            {entries(EXCLUSION_REASON).map(([value, text]) => (
+            {exclusionReasons.map(([value, text]) => (
               <option key={value} value={value}>
                 {text}
               </option>

@@ -15,6 +15,7 @@ from sqlalchemy.exc import DBAPIError
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import tax_input as tax_input_table
+from hausbuch.rules.errors import TAX_INPUT_EXTENSION_NEEDS_HERSTELLUNG
 from hausbuch.schemas.allocation import (
     AllocationCategory,
     AllocationDraft,
@@ -216,7 +217,9 @@ def test_a_withdrawal_ends_the_decision_and_repeats_its_value(world):
     allocation = _allocation(world, "renovation")
     first = _create(
         world,
-        _input(world, K.EXCLUDE_FROM_15PCT, {"reason": "extension"}, allocation_id=allocation),
+        _input(
+            world, K.EXCLUDE_FROM_15PCT, {"reason": "annual_maintenance"}, allocation_id=allocation
+        ),
     )
     with pytest.raises(RuleViolationError) as exc:
         _create(
@@ -224,7 +227,7 @@ def test_a_withdrawal_ends_the_decision_and_repeats_its_value(world):
             _input(
                 world,
                 K.EXCLUDE_FROM_15PCT,
-                {"reason": "annual_maintenance"},
+                {"reason": "extension"},
                 allocation_id=allocation,
                 supersedes_id=first.id,
                 withdrawn=True,
@@ -236,7 +239,7 @@ def test_a_withdrawal_ends_the_decision_and_repeats_its_value(world):
         _input(
             world,
             K.EXCLUDE_FROM_15PCT,
-            {"reason": "extension"},
+            {"reason": "annual_maintenance"},
             allocation_id=allocation,
             supersedes_id=first.id,
             withdrawn=True,
@@ -250,7 +253,7 @@ def test_a_withdrawal_ends_the_decision_and_repeats_its_value(world):
             _input(
                 world,
                 K.EXCLUDE_FROM_15PCT,
-                {"reason": "extension"},
+                {"reason": "annual_maintenance"},
                 allocation_id=allocation,
                 supersedes_id=first.id,
             ),
@@ -364,7 +367,7 @@ def test_renovation_treatment_only_on_a_renovation(world, category):
         (
             K.EXCLUDE_FROM_15PCT,
             "renovation",
-            {"reason": "extension"},
+            {"reason": "annual_maintenance"},
             {"reason": "damage_after_acquisition"},
         ),
     ],
@@ -546,6 +549,212 @@ def test_list_filters_by_year_and_kind(world):
     assert world.query(list_tax_inputs, world.property_id, kind=K.RUECKLAGE_SPENT) == [spent]
     with pytest.raises(NotFoundError):
         world.query(list_tax_inputs, uuid.uuid4())
+
+
+# --- an Erweiterung needs a herstellung election (D78) -----------------------------------
+
+EXTENSION = {"reason": "extension"}
+HERSTELLUNG = {"treatment": "herstellung"}
+ERHALTUNG = {"treatment": "erhaltung"}
+
+
+def _refused_extension(world: World, data: TaxInputCreate) -> None:
+    """The write is refused with extension_needs_herstellung and leaves no row or event."""
+    rows_before = world.query(list_tax_inputs, world.property_id, include_history=True)
+    events_before = len(_events(world))
+    with pytest.raises(RuleViolationError) as exc:
+        _create(world, data)
+    assert _codes(exc) == (TAX_INPUT_EXTENSION_NEEDS_HERSTELLUNG,)
+    assert world.query(list_tax_inputs, world.property_id, include_history=True) == rows_before
+    assert len(_events(world)) == events_before
+
+
+def test_an_extension_is_refused_on_a_repair(world):
+    """A repair is always deducted at once; excluding it as an Erweiterung would take it out
+    of the 15 % count while it stays deductible."""
+    repair = _allocation(world, "repairs")
+    _refused_extension(world, _input(world, K.EXCLUDE_FROM_15PCT, EXTENSION, allocation_id=repair))
+
+
+def test_an_extension_is_refused_on_a_renovation_without_an_election(world):
+    renovation = _allocation(world, "renovation")
+    _refused_extension(
+        world, _input(world, K.EXCLUDE_FROM_15PCT, EXTENSION, allocation_id=renovation)
+    )
+
+
+def test_an_extension_is_refused_on_a_renovation_elected_erhaltung(world):
+    renovation = _allocation(world, "renovation")
+    _create(world, _input(world, K.RENOVATION_TREATMENT, ERHALTUNG, allocation_id=renovation))
+    _refused_extension(
+        world, _input(world, K.EXCLUDE_FROM_15PCT, EXTENSION, allocation_id=renovation)
+    )
+
+
+def test_an_extension_is_refused_once_its_herstellung_election_was_withdrawn(world):
+    renovation = _allocation(world, "renovation")
+    herstellung = _create(
+        world, _input(world, K.RENOVATION_TREATMENT, HERSTELLUNG, allocation_id=renovation)
+    )
+    _create(
+        world,
+        _input(
+            world,
+            K.RENOVATION_TREATMENT,
+            HERSTELLUNG,
+            allocation_id=renovation,
+            supersedes_id=herstellung.id,
+            withdrawn=True,
+        ),
+    )
+    _refused_extension(
+        world, _input(world, K.EXCLUDE_FROM_15PCT, EXTENSION, allocation_id=renovation)
+    )
+
+
+def test_an_extension_is_accepted_on_a_renovation_elected_herstellung(world):
+    renovation = _allocation(world, "renovation")
+    treatment = _create(
+        world, _input(world, K.RENOVATION_TREATMENT, HERSTELLUNG, allocation_id=renovation)
+    )
+    exclusion = _create(
+        world, _input(world, K.EXCLUDE_FROM_15PCT, EXTENSION, allocation_id=renovation)
+    )
+    assert world.query(list_tax_inputs, world.property_id) == [treatment, exclusion]
+    # Another reason superseding the extension needs no election.
+    corrected = _create(
+        world,
+        _input(
+            world,
+            K.EXCLUDE_FROM_15PCT,
+            {"reason": "damage_after_acquisition"},
+            allocation_id=renovation,
+            supersedes_id=exclusion.id,
+        ),
+    )
+    assert world.query(list_tax_inputs, world.property_id) == [treatment, corrected]
+
+
+@pytest.mark.parametrize("reason", ["annual_maintenance", "damage_after_acquisition"])
+@pytest.mark.parametrize("category", ["repairs", "renovation"])
+def test_the_other_reasons_need_no_election(world, category, reason):
+    allocation = _allocation(world, category)
+    row = _create(
+        world, _input(world, K.EXCLUDE_FROM_15PCT, {"reason": reason}, allocation_id=allocation)
+    )
+    assert world.query(list_tax_inputs, world.property_id) == [row]
+
+
+def test_the_herstellung_election_stays_while_an_extension_is_current(world):
+    """While the Erweiterung is excluded, neither an erhaltung answer nor a withdrawal may end
+    the herstellung election; once the exclusion is withdrawn, both are allowed again."""
+    renovation = _allocation(world, "renovation")
+    herstellung = _create(
+        world, _input(world, K.RENOVATION_TREATMENT, HERSTELLUNG, allocation_id=renovation)
+    )
+    exclusion = _create(
+        world, _input(world, K.EXCLUDE_FROM_15PCT, EXTENSION, allocation_id=renovation)
+    )
+    to_erhaltung = _input(
+        world,
+        K.RENOVATION_TREATMENT,
+        ERHALTUNG,
+        allocation_id=renovation,
+        supersedes_id=herstellung.id,
+    )
+    withdrawal = _input(
+        world,
+        K.RENOVATION_TREATMENT,
+        HERSTELLUNG,
+        allocation_id=renovation,
+        supersedes_id=herstellung.id,
+        withdrawn=True,
+    )
+    _refused_extension(world, to_erhaltung)
+    _refused_extension(world, withdrawal)
+    # Herstellung again (a correction of the same answer, e.g. a new note) stays allowed.
+    again = _create(
+        world,
+        _input(
+            world,
+            K.RENOVATION_TREATMENT,
+            HERSTELLUNG,
+            allocation_id=renovation,
+            supersedes_id=herstellung.id,
+            note="Anbau Wintergarten",
+        ),
+    )
+    assert world.query(list_tax_inputs, world.property_id) == [exclusion, again]
+
+    # Withdraw the exclusion first; then the election can change and be withdrawn.
+    _create(
+        world,
+        _input(
+            world,
+            K.EXCLUDE_FROM_15PCT,
+            EXTENSION,
+            allocation_id=renovation,
+            supersedes_id=exclusion.id,
+            withdrawn=True,
+        ),
+    )
+    erhaltung = _create(
+        world,
+        _input(
+            world,
+            K.RENOVATION_TREATMENT,
+            ERHALTUNG,
+            allocation_id=renovation,
+            supersedes_id=again.id,
+        ),
+    )
+    assert world.query(list_tax_inputs, world.property_id) == [erhaltung]
+    _create(
+        world,
+        _input(
+            world,
+            K.RENOVATION_TREATMENT,
+            ERHALTUNG,
+            allocation_id=renovation,
+            supersedes_id=erhaltung.id,
+            withdrawn=True,
+        ),
+    )
+    assert world.query(list_tax_inputs, world.property_id) == []
+
+
+def test_the_herstellung_election_can_be_withdrawn_once_the_extension_is(world):
+    """Herstellung + Erweiterung: withdrawing the election is refused until the exclusion is
+    withdrawn, then the same withdrawal goes through."""
+    renovation = _allocation(world, "renovation")
+    herstellung = _create(
+        world, _input(world, K.RENOVATION_TREATMENT, HERSTELLUNG, allocation_id=renovation)
+    )
+    exclusion = _create(
+        world, _input(world, K.EXCLUDE_FROM_15PCT, EXTENSION, allocation_id=renovation)
+    )
+    withdrawal = _input(
+        world,
+        K.RENOVATION_TREATMENT,
+        HERSTELLUNG,
+        allocation_id=renovation,
+        supersedes_id=herstellung.id,
+        withdrawn=True,
+    )
+    _refused_extension(world, withdrawal)
+    _create(
+        world,
+        _input(
+            world,
+            K.EXCLUDE_FROM_15PCT,
+            EXTENSION,
+            allocation_id=renovation,
+            supersedes_id=exclusion.id,
+            withdrawn=True,
+        ),
+    )
+    _create(world, withdrawal)
+    assert world.query(list_tax_inputs, world.property_id) == []
 
 
 # --- workspace isolation -------------------------------------------------------------

@@ -24,11 +24,18 @@ beyond TaxInputCreate's own scope validator:
   question (`tax_input.not_current`: supersede it instead). The scope is the allocation for
   the per-allocation kinds, (loan, year) for `interest_certified`, the year for
   `ruecklage_spent`, the property for `pre_handover_income`, and (unit, valid_from) for
-  `market_rent`, whose values from different dates stand side by side (a new Mietspiegel).
+  `market_rent`, whose values from different dates stand side by side (a new Mietspiegel);
+- an Erweiterung is Herstellungskosten by nature (D78): an `exclude_from_15pct` with reason
+  `extension` needs a `renovation` allocation with a current `renovation_treatment` of
+  `herstellung`, and while such an exclusion is current, a `renovation_treatment` row that
+  would leave the allocation without a current `herstellung` (an `erhaltung` answer or a
+  withdrawal) is refused; the user withdraws the exclusion first
+  (`tax_input.extension_needs_herstellung`). Otherwise the cost would leave the 15 % count
+  and still be deducted at once on Z55.
 
 Writes for one property are serialised by locking the property row (FOR NO KEY UPDATE), so
-the "no other current row" check cannot race; `supersedes_id` is UNIQUE in the table as well.
-The event carries amounts and codes only, never the note (free text).
+the "no other current row" and the Erweiterung checks cannot race; `supersedes_id` is UNIQUE
+in the table as well. The event carries amounts and codes only, never the note (free text).
 """
 
 from typing import Any
@@ -42,6 +49,7 @@ from hausbuch.db.tables import loan as loan_table
 from hausbuch.db.tables import property_ as property_table
 from hausbuch.db.tables import tax_input as tax_input_table
 from hausbuch.db.tables import unit as unit_table
+from hausbuch.rules.errors import TAX_INPUT_EXTENSION_NEEDS_HERSTELLUNG
 from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.enums import AllocationStatus, EntityType, PropertyKind
 from hausbuch.schemas.events import EventType, TaxInputRecorded
@@ -157,17 +165,19 @@ def create_tax_input(ctx: CommandContext, property_id: UUID, data: TaxInputCreat
     """POST /properties/{id}/tax-inputs: one new row and its event (see the module doc for
     the checks). Raises NotFoundError for an unknown property, unit, loan, allocation,
     document or superseded row; RuleViolationError tax_input.scope_invalid,
-    tax_input.not_current or tax_input.allocation_not_confirmed. Nothing is written then."""
+    tax_input.not_current, tax_input.allocation_not_confirmed or
+    tax_input.extension_needs_herstellung. Nothing is written then."""
     if data.property_id != property_id:
         raise RuleViolationError(
             [TAX_INPUT_SCOPE_INVALID], "the body names another property than the path"
         )
     prop = _lock_property(ctx.conn, property_id)
-    _check_scope(ctx.conn, prop, data)
+    allocation = _check_scope(ctx.conn, prop, data)
     require_document(ctx.conn, data.document_id)
     if data.supersedes_id is not None:
         _check_supersedes(ctx.conn, data)
     _check_no_other_current(ctx.conn, data)
+    _check_extension(ctx.conn, data, allocation)
 
     try:
         row = ctx.conn.execute(
@@ -232,7 +242,8 @@ def _scope_invalid(message: str) -> RuleViolationError:
     return RuleViolationError([TAX_INPUT_SCOPE_INVALID], message)
 
 
-def _check_scope(conn: Connection, prop: Row, data: TaxInputCreate) -> None:
+def _check_scope(conn: Connection, prop: Row, data: TaxInputCreate) -> Row | None:
+    """The scope checks; returns the allocation row of a per-allocation kind, else None."""
     kind = data.kind
     if data.unit_id is not None:
         unit = require_row(conn, unit_table, EntityType.UNIT, data.unit_id)
@@ -253,7 +264,7 @@ def _check_scope(conn: Connection, prop: Row, data: TaxInputCreate) -> None:
         if allocation.property_id != prop.id:
             raise _scope_invalid("the allocation belongs to another property")
         if data.withdrawn:
-            return  # ends a decision on a row that may since have been reallocated
+            return allocation  # ends a decision on a row that may since have been reallocated
         if AllocationStatus(allocation.status) is not AllocationStatus.CONFIRMED:
             raise RuleViolationError(
                 [TAX_INPUT_ALLOCATION_NOT_CONFIRMED],
@@ -262,6 +273,8 @@ def _check_scope(conn: Connection, prop: Row, data: TaxInputCreate) -> None:
         category = AllocationCategory(allocation.category)
         if category not in _KIND_CATEGORIES[kind]:
             raise _scope_invalid(f"a {kind} input does not apply to a {category} allocation")
+        return allocation
+    return None
 
 
 def _check_supersedes(conn: Connection, data: TaxInputCreate) -> None:
@@ -296,6 +309,49 @@ def _check_no_other_current(conn: Connection, data: TaxInputCreate) -> None:
             [TAX_INPUT_NOT_CURRENT],
             f"tax input {others[0].id} already answers this; supersede it (supersedes_id)",
         )
+
+
+def _check_extension(conn: Connection, data: TaxInputCreate, allocation: Row | None) -> None:
+    """D78: an Erweiterung leaves the 15 % count only as Herstellungskosten. Runs under the
+    property lock, after the other checks, so the current rows it reads cannot change."""
+    if allocation is None:
+        return
+    if data.kind is TaxInputKind.EXCLUDE_FROM_15PCT:
+        if data.withdrawn or data.value.reason != "extension":  # type: ignore[union-attr]
+            return  # withdrawing the exclusion is how the treatment is unlocked
+        renovation = AllocationCategory(allocation.category) is AllocationCategory.RENOVATION
+        if not renovation or not _has_herstellung(conn, data.property_id, allocation.id):
+            raise RuleViolationError(
+                [TAX_INPUT_EXTENSION_NEEDS_HERSTELLUNG],
+                f"an Erweiterung on allocation {allocation.id} is excluded from the 15 % test"
+                " only on a renovation elected herstellung",
+            )
+    elif data.kind is TaxInputKind.RENOVATION_TREATMENT:
+        if not data.withdrawn and data.value.treatment == "herstellung":  # type: ignore[union-attr]
+            return
+        extension = [
+            r
+            for r in find_current(
+                conn,
+                data.property_id,
+                TaxInputKind.EXCLUDE_FROM_15PCT,
+                allocation_id=allocation.id,
+            )
+            if r.value.reason == "extension"  # type: ignore[union-attr]
+        ]
+        if extension:
+            raise RuleViolationError(
+                [TAX_INPUT_EXTENSION_NEEDS_HERSTELLUNG],
+                f"tax input {extension[0].id} excludes allocation {allocation.id} as an"
+                " Erweiterung; withdraw it before giving up the herstellung election",
+            )
+
+
+def _has_herstellung(conn: Connection, property_id: UUID, allocation_id: UUID) -> bool:
+    current = find_current(
+        conn, property_id, TaxInputKind.RENOVATION_TREATMENT, allocation_id=allocation_id
+    )
+    return any(r.value.treatment == "herstellung" for r in current)  # type: ignore[union-attr]
 
 
 def _scope(data: TaxInputCreate | TaxInput) -> dict[str, Any]:

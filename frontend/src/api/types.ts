@@ -1433,7 +1433,9 @@ export interface paths {
          * Tax Input Create
          * @description One new row and its property.tax_input_recorded event. 422 tax_input.scope_invalid,
          *     tax_input.not_current (supersedes_id is not the current row of this kind and scope, or
-         *     another current row already answers it), tax_input.allocation_not_confirmed.
+         *     another current row already answers it), tax_input.allocation_not_confirmed,
+         *     tax_input.extension_needs_herstellung (an Erweiterung excluded from the 15 % test needs a
+         *     renovation elected herstellung, and that election stays while the exclusion is current).
          */
         post: operations["tax_input_create_api_properties__property_id__tax_inputs_post"];
         delete?: never;
