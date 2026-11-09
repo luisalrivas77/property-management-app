@@ -1577,6 +1577,82 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/properties/{property_id}/performance/actuals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Property Actuals
+         * @description Every owned year from the purchase year through today's, from confirmed allocations
+         *     only (D85); the current year is marked so_far. 422 projection.no_rule_set for a purchase
+         *     year before the first rule set, tariff.no_file for one before the first tariff file (the
+         *     projection answers the same).
+         */
+        get: operations["property_actuals_api_properties__property_id__performance_actuals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/properties/{property_id}/performance/projection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Property Projection
+         * @description Next January through the sale year, with the sale at 31 Dec of that year. The levers
+         *     are scenario_id's (a scenario of this property, else 404), else the default scenario in
+         *     force, else the defaults with the sale year = the first year on or after the §23 date;
+         *     each lever given here overrides it for this read only (nothing is written). 422
+         *     scenario.sale_year_before_today (the sale year is not after today's year).
+         */
+        get: operations["property_projection_api_properties__property_id__performance_projection_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/properties/{property_id}/scenarios": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Scenarios List
+         * @description The scenarios in force (not superseded, not withdrawn), oldest first;
+         *     include_history=true adds the rest.
+         */
+        get: operations["scenarios_list_api_properties__property_id__scenarios_get"];
+        put?: never;
+        /**
+         * Scenario Create
+         * @description One new row and its property.scenario_recorded event. 422 scenario.scope_invalid (the
+         *     body's property is not the path's, a loan lever names another property's loan, a correction
+         *     supersedes another property's scenario, or a withdrawal does not repeat the levers),
+         *     scenario.not_current (supersedes_id is not in force, or another default is in force) and
+         *     scenario.sale_year_before_today (the sale year is not after today's year).
+         */
+        post: operations["scenario_create_api_properties__property_id__scenarios_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/properties/{property_id}/history": {
         parameters: {
             query?: never;
@@ -2079,6 +2155,16 @@ export interface components {
          * @enum {string}
          */
         ActorType: "user" | "system" | "ai";
+        /** Actuals */
+        Actuals: {
+            /**
+             * Property Id
+             * Format: uuid
+             */
+            property_id: string;
+            /** Years */
+            years: components["schemas"]["YearFigures"][];
+        };
         /** Address */
         Address: {
             /** Street */
@@ -2435,6 +2521,18 @@ export interface components {
             entity_id?: string | null;
         };
         /**
+         * Assumption
+         * @description A stated assumption of the projection, as data; the frontend holds the German text.
+         */
+        Assumption: {
+            /** Code */
+            code: string;
+            /** Params */
+            params?: {
+                [key: string]: string;
+            };
+        };
+        /**
          * BalanceSource
          * @description statement_import.balance_source: where the declared balances came from (D21).
          * @enum {string}
@@ -2507,6 +2605,18 @@ export interface components {
              * @default false
              */
             contains_tenant_data: boolean;
+        };
+        /** BridgeRow */
+        BridgeRow: {
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "appreciation" | "loan_paid_down" | "cash_flow" | "buying_costs" | "selling_costs" | "sale_tax";
+            /** Amount */
+            amount: string;
+            /** Sources */
+            sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
         };
         /**
          * ChecklistDocumentRef
@@ -2664,6 +2774,27 @@ export interface components {
              * Format: date
              */
             new_date: string;
+        };
+        /**
+         * DatedFlow
+         * @description One flow of the IRR (D89): −E₀ on the purchase date, each year's net cash on 31 Dec,
+         *     the net sale proceeds on the sale date.
+         */
+        DatedFlow: {
+            /**
+             * On
+             * Format: date
+             */
+            on: string;
+            /** Amount */
+            amount: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "initial_equity" | "cash_flow" | "net_proceeds";
+            /** Sources */
+            sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
         };
         /**
          * DeclareBalanceBody
@@ -3603,6 +3734,48 @@ export interface components {
             /** @description Heizkostenvorauszahlung, only when the lease states it as its own amount */
             heating_costs_prepayment?: components["schemas"]["ExtractedValue"];
         };
+        /**
+         * Levers
+         * @description What the user sets for a projection (D87). Defaults are the spec's (Q4, Luis).
+         */
+        Levers: {
+            /**
+             * Value Growth
+             * @default 0.02
+             */
+            value_growth: string;
+            /**
+             * Rent Growth
+             * @default 0.02
+             */
+            rent_growth: string;
+            /**
+             * Cost Inflation
+             * @default 0.02
+             */
+            cost_inflation: string;
+            /** Sale Year */
+            sale_year: number;
+            /** Today Value */
+            today_value?: string | null;
+            /**
+             * Upkeep Per Year
+             * @default 600.00
+             */
+            upkeep_per_year: string;
+            /**
+             * Selling Costs Rate
+             * @default 0.0357
+             */
+            selling_costs_rate: string;
+            /**
+             * Vacancy Months
+             * @default 0
+             */
+            vacancy_months: string;
+            /** Loans */
+            loans?: components["schemas"]["LoanLever"][];
+        };
         /** LimitStatus */
         LimitStatus: {
             /** Tax Year */
@@ -3777,6 +3950,16 @@ export interface components {
             account_iban?: string | null;
             /** Signed On */
             signed_on?: string | null;
+        };
+        /** LoanLever */
+        LoanLever: {
+            /**
+             * Loan Id
+             * Format: uuid
+             */
+            loan_id: string;
+            /** Follow Up Rate */
+            follow_up_rate?: string | null;
         };
         /** LoanPatch */
         LoanPatch: {
@@ -4159,6 +4342,22 @@ export interface components {
             church_tax: boolean;
             tax_state?: components["schemas"]["StateCode"] | null;
         };
+        /**
+         * OwnerGain
+         * @description One spouse's share of a §23 gain, tested against the Freigrenze (< 1,000, a cliff).
+         */
+        OwnerGain: {
+            /**
+             * Owner Id
+             * Format: uuid
+             */
+            owner_id: string;
+            share: components["schemas"]["Fraction"];
+            /** Gain */
+            gain: string;
+            /** Below Freigrenze */
+            below_freigrenze: boolean;
+        };
         /** OwnerPatch */
         OwnerPatch: {
             /** Full Name */
@@ -4369,6 +4568,24 @@ export interface components {
          * @enum {string}
          */
         PriceSplitSource: "purchase_contract" | "bmf_tool" | "appraisal";
+        /** Projection */
+        Projection: {
+            /**
+             * Property Id
+             * Format: uuid
+             */
+            property_id: string;
+            scenario: components["schemas"]["Levers"];
+            /** Scenario Id */
+            scenario_id?: string | null;
+            tariff: components["schemas"]["TariffStamp"];
+            rule_set: components["schemas"]["RuleSetStamp"];
+            /** Years */
+            years: components["schemas"]["YearFigures"][];
+            sale: components["schemas"]["SaleResult"];
+            /** Assumptions */
+            assumptions?: components["schemas"]["Assumption"][];
+        };
         /** Property */
         Property: {
             /**
@@ -4884,6 +5101,115 @@ export interface components {
             /** Form Year */
             form_year: number;
             form_status: components["schemas"]["FormStatus"];
+        };
+        /**
+         * SaleResult
+         * @description D88, D89. gain is None when the sale is outside §23 (taxable False); a negative gain is
+         *     a loss that is not offset ("nicht verrechenbar", sale_tax 0.00).
+         */
+        SaleResult: {
+            /**
+             * Sale Date
+             * Format: date
+             */
+            sale_date: string;
+            /** Tax Free From */
+            tax_free_from: string | null;
+            /** Taxable */
+            taxable: boolean;
+            /** Value */
+            value: string;
+            /** Selling Costs */
+            selling_costs: string;
+            /** Afa Claimed */
+            afa_claimed: string;
+            /** Gain */
+            gain: string | null;
+            /** Gain Per Owner */
+            gain_per_owner?: components["schemas"]["OwnerGain"][];
+            /** Freigrenze Applied */
+            freigrenze_applied: boolean;
+            /** Sale Tax */
+            sale_tax: string;
+            /** Loan Balance */
+            loan_balance: string;
+            /** Net Proceeds */
+            net_proceeds: string;
+            /** Initial Equity */
+            initial_equity: string;
+            /** Profit */
+            profit: string;
+            /** Bridge */
+            bridge?: components["schemas"]["BridgeRow"][];
+            /** Cagr */
+            cagr?: string | null;
+            /** Irr */
+            irr?: string | null;
+            /** Flows */
+            flows?: components["schemas"]["DatedFlow"][];
+        };
+        /** Scenario */
+        Scenario: {
+            /**
+             * Property Id
+             * Format: uuid
+             */
+            property_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Is Default
+             * @default false
+             */
+            is_default: boolean;
+            levers: components["schemas"]["Levers"];
+            /** Supersedes Id */
+            supersedes_id?: string | null;
+            /**
+             * Withdrawn
+             * @default false
+             */
+            withdrawn: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+            /** Recorded By */
+            recorded_by?: string | null;
+        };
+        /** ScenarioCreate */
+        ScenarioCreate: {
+            /**
+             * Property Id
+             * Format: uuid
+             */
+            property_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Is Default
+             * @default false
+             */
+            is_default: boolean;
+            levers: components["schemas"]["Levers"];
+            /** Supersedes Id */
+            supersedes_id?: string | null;
+            /**
+             * Withdrawn
+             * @default false
+             */
+            withdrawn: boolean;
         };
         /**
          * ScheduleEntry
@@ -5887,6 +6213,73 @@ export interface components {
             /** Auto Accept Llm */
             auto_accept_llm?: boolean;
         };
+        /**
+         * YearFigures
+         * @description One year of the actuals card and the projection table (§5.3). The figures are sums of
+         *     confirmed, non-zero allocations of the year by §11 (projected years: of the synthesized
+         *     rows and the real lines §11 puts into that year).
+         */
+        YearFigures: {
+            /** Year */
+            year: number;
+            kind: components["schemas"]["YearKind"];
+            /** Flags */
+            flags?: components["schemas"]["YearFlag"][];
+            /** Rent In */
+            rent_in: string;
+            /** Other Income */
+            other_income: string;
+            /** Umlagen In */
+            umlagen_in: string;
+            /** Umlagen Out */
+            umlagen_out: string;
+            /** Umlagen Net */
+            umlagen_net: string;
+            /** Interest */
+            interest: string;
+            /** Principal Repaid */
+            principal_repaid: string;
+            /** Running Costs */
+            running_costs: string;
+            /** Cash Out */
+            cash_out: string;
+            /** Taxable Result */
+            taxable_result: string | null;
+            /** Afa */
+            afa: string | null;
+            /** Afa Movable */
+            afa_movable?: string | null;
+            tax_effect: components["schemas"]["TaxEffect"] | null;
+            /** Net Cash */
+            net_cash: string;
+            /** Invested */
+            invested?: string | null;
+            /** Value */
+            value?: string | null;
+            /** Loan Balance */
+            loan_balance?: string | null;
+            /** Equity */
+            equity?: string | null;
+            /**
+             * Flat Rate In
+             * @default 0
+             */
+            flat_rate_in: string;
+            /** Flat Rate Gap Monthly */
+            flat_rate_gap_monthly?: string | null;
+            /** Sources */
+            sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+        };
+        /**
+         * YearFlag
+         * @enum {string}
+         */
+        YearFlag: "so_far" | "income.missing" | "tax_estimated";
+        /**
+         * YearKind
+         * @enum {string}
+         */
+        YearKind: "actual" | "actual_partial" | "projected";
         /**
          * YearTotals
          * @description Per calendar year of due_on. Interest here is what Anlage V will reconcile against.
@@ -9237,6 +9630,146 @@ export interface operations {
                 content: {
                     "application/pdf": unknown;
                     "application/zip": unknown;
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    property_actuals_api_properties__property_id__performance_actuals_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                property_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Actuals"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    property_projection_api_properties__property_id__performance_projection_get: {
+        parameters: {
+            query?: {
+                scenario_id?: string | null;
+                value_growth?: string | null;
+                rent_growth?: string | null;
+                cost_inflation?: string | null;
+                sale_year?: number | null;
+                today_value?: string | null;
+                upkeep_per_year?: string | null;
+                selling_costs_rate?: string | null;
+                vacancy_months?: string | null;
+            };
+            header?: never;
+            path: {
+                property_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Projection"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    scenarios_list_api_properties__property_id__scenarios_get: {
+        parameters: {
+            query?: {
+                include_history?: boolean;
+            };
+            header?: never;
+            path: {
+                property_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Scenario"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    scenario_create_api_properties__property_id__scenarios_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                property_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScenarioCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Scenario"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
