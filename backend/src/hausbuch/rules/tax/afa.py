@@ -15,6 +15,7 @@ else from January of its first year; a later input restarts the count. Years bef
 input keep the statutory amount; without any input the line is exactly the statutory one.
 """
 
+from datetime import date
 from decimal import Decimal
 
 from hausbuch.schemas.allocation import AllocationCategory
@@ -112,6 +113,17 @@ def _statutory(base: Decimal, facts: AfaFacts, tax_year: int, rate: Decimal) -> 
     return cents((base + _additions_through(facts, tax_year)) * rate * months / 12)
 
 
+def statutory_months_left(rate: Decimal, purchase_date: date | None, from_year: int) -> Decimal:
+    """Months of the statutory life (12 / rate: 480, 600 or 400) left on 1 January of
+    `from_year`, after the months owned since the handover (D79: a Gutachten counts as shorter
+    only against what remains). Without a handover date, the whole statutory life."""
+    total = Decimal(12) / rate
+    if purchase_date is None:
+        return total
+    used = sum(owned_months(purchase_date, None, y) for y in range(purchase_date.year, from_year))
+    return total - used
+
+
 def governing(facts: AfaFacts, tax_year: int) -> UsefulLifeFact | None:
     """The useful_life input that governs `tax_year`: the one with the greatest from_year at or
     before it (the service keeps one per year; with two, the later in the list wins)."""
@@ -151,7 +163,7 @@ def _remaining_value(
                 current, remaining = row, row.years * 12
             start = remaining
             if months == 0:
-                amount = ZERO
+                amount = cents(ZERO)
             elif months >= remaining:  # the last months take the rest (0 once written off)
                 amount = book
             else:

@@ -370,7 +370,12 @@ function lineSublabel(line: DraftLine, draft: AnlageVDraft): string[] {
     // D79: a Gutachten's shorter useful life replaces the statutory rate.
     parts.push(`${afa.useful_life_years} Jahre ab ${afa.useful_life_from_year ?? "?"} (Gutachten)`);
     if (afa.book_value_start != null && afa.remaining_months != null) {
-      parts.push(`Restwert ${formatMoney(afa.book_value_start)} × ${afa.months}/${afa.remaining_months} Monate Restnutzungsdauer`);
+      if (afa.months >= afa.remaining_months) {
+        // the last year of the life takes the whole rest; after it nothing is left
+        parts.push(`Restwert ${formatMoney(afa.book_value_start)} ganz abgeschrieben (letztes Jahr der Nutzungsdauer)`);
+      } else {
+        parts.push(`Restwert ${formatMoney(afa.book_value_start)} × ${afa.months}/${afa.remaining_months} Monate Restnutzungsdauer`);
+      }
     }
     if (!isZero(afa.additions)) parts.push(`Basis + ${formatMoney(afa.additions)} Herstellungskosten`);
   } else if (line.key === "wk.afa" && afa && afa.basis != null && afa.rate != null) {

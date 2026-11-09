@@ -85,3 +85,22 @@ def test_a_later_useful_life_restarts_the_count():
     refs = cmp.refs(line.sources)
     assert ("tax_input", later.tax_input_id) in refs
     assert ("tax_input", first.tax_input_id) not in refs
+
+
+def test_statutory_months_left_counts_the_months_owned_before():
+    from datetime import date
+    from decimal import Decimal
+
+    from hausbuch.rules.tax.afa import statutory_months_left
+
+    handover = date(2026, 10, 15)
+    assert statutory_months_left(Decimal("0.025"), handover, 2026) == 480
+    assert statutory_months_left(Decimal("0.025"), handover, 2028) == 465  # 3 + 12 owned
+    assert statutory_months_left(Decimal("0.03"), None, 2030) == 400
+
+
+@pytest.mark.rule
+def test_a_year_without_owned_months_serialises_two_decimals():
+    """D79 review F2: the year after a sale under the useful-life method dumps "0.00"."""
+    line = afa(_case("useful_life_sale_year").facts, 2029, rule_set(AFA.rule_set_year))
+    assert line.model_dump(mode="json")["amount"] == "0.00"

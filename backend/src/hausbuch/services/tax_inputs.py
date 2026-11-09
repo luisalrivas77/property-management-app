@@ -60,6 +60,7 @@ from hausbuch.rules.errors import (
     TAX_INPUT_USEFUL_LIFE_NOT_SHORTER,
 )
 from hausbuch.rules.tax import registry
+from hausbuch.rules.tax.afa import statutory_months_left
 from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.enums import AllocationStatus, EntityType, PropertyKind
 from hausbuch.schemas.events import EventType, TaxInputRecorded
@@ -300,8 +301,9 @@ def _rule_set_for(tax_year: int):
 
 
 def _check_useful_life(prop: Row, data: TaxInputCreate) -> None:
-    """D79: a useful life shorter than the statutory one, from the purchase year at the
-    earliest. A withdrawal repeats an accepted row and is not re-checked."""
+    """D79: a useful life shorter than what is left of the statutory one on 1 January of its
+    first year (statutory_months_left), from the purchase year at the earliest. A withdrawal
+    repeats an accepted row and is not re-checked."""
     if data.kind is not TaxInputKind.USEFUL_LIFE or data.withdrawn:
         return
     assert data.tax_year is not None and isinstance(data.value, UsefulLife)
@@ -310,12 +312,14 @@ def _check_useful_life(prop: Row, data: TaxInputCreate) -> None:
             f"a useful life applies from the purchase year {prop.purchase_date.year} on"
         )
     rate = _rule_set_for(data.tax_year).afa_rate(prop.build_year)
-    if data.value.years * rate >= 1:
-        statutory = f"{1 / rate:.2f}".rstrip("0").rstrip(".")  # 40, 50, 33.33
+    left = statutory_months_left(rate, prop.purchase_date, data.tax_year)
+    if data.value.years * 12 >= left:
+        statutory = f"{left / 12:.2f}".rstrip("0").rstrip(".")  # 40, 50, 33.33 from purchase
         raise RuleViolationError(
             [TAX_INPUT_USEFUL_LIFE_NOT_SHORTER],
-            f"{data.value.years} years is not shorter than the statutory {statutory} years"
-            f" for a building completed in {prop.build_year}",
+            f"{data.value.years} years is not shorter than the {statutory} years left of the"
+            f" statutory life on 1 January {data.tax_year} for a building completed in"
+            f" {prop.build_year}",
         )
 
 

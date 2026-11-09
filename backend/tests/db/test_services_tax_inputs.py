@@ -863,6 +863,17 @@ def test_a_useful_life_must_be_shorter_than_the_statutory_life(
     assert event.payload["tax_year"] == 2026
 
 
+def test_a_later_useful_life_must_be_shorter_than_what_is_left_of_the_statutory_life(world):
+    # D79 review F1: 1904 (480 months), handed over 15 Oct 2026; on 1 Jan 2028 465 are left.
+    prop = _building(world, 1904, date(2026, 10, 15))
+    doc = _gutachten(world)
+    with pytest.raises(RuleViolationError) as exc:
+        world.cmd(create_tax_input, prop, _life(prop, 39, 2028, doc))  # 468 months
+    assert _codes(exc) == (TAX_INPUT_USEFUL_LIFE_NOT_SHORTER,)
+    row = world.cmd(create_tax_input, prop, _life(prop, 38, 2028, doc))  # 456 months
+    assert (row.tax_year, row.value.years) == (2028, 38)
+
+
 def test_a_useful_life_needs_its_gutachten_and_starts_no_earlier_than_the_purchase(world):
     # The world's flat: completed 1994 (50 years), handed over 1 May 2024.
     with pytest.raises(ValueError, match="tax_input.scope_invalid"):
