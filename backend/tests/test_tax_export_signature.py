@@ -53,3 +53,8 @@ def test_the_worker_registers_the_export_job():
     app = tasks.register_tasks(procrastinate.App(connector=procrastinate.SyncPsycopgConnector()))
     assert TAX_EXPORT_TASK == "tax_export" and TAX_EXPORT_TASK in app.tasks
     assert export_lock(EXPORT) == f"export:{EXPORT}"
+
+
+def test_non_ascii_signature_is_invalid_not_an_error():
+    expires = int(NOW.timestamp()) + 100
+    assert not signature_valid(KEY, WS, EXPORT, expires=expires, signature="ü", now=NOW)
