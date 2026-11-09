@@ -746,7 +746,10 @@ def test_a_split_copy_never_re_books_a_confirmed_line(world):
     assert rule.rule is not None and rule.rule.split_method is SplitMethod.AS_LAST_SPLIT
     mar = _hv(world, date(2026, 3, 2), "-380.00", "Hausgeld 03/2026")
     _match(world, mar)
-    booked = sorted((r.id, r.category, r.amount, r.status) for r in _rows(world, mar))
+    booked = sorted(
+        ((r.id, r.category, r.amount, r.status) for r in _rows(world, mar)),
+        key=lambda row: row[1],  # by category: ids are random, so their order is not fixed
+    )
     assert [(c, a, s) for _, c, a, s in booked] == [
         ("hausgeld_ruecklage", Decimal("-120.00"), "confirmed"),
         ("hausgeld_umlagefaehig", Decimal("-260.00"), "confirmed"),
@@ -760,7 +763,8 @@ def test_a_split_copy_never_re_books_a_confirmed_line(world):
     _put(world, feb, _answer(feb, *new_parts, property_id=world.property_id), learn_rule=False)
     plan = _match(world, mar, rematch=True)  # the source corrected: still not re-booked
     assert plan.reason == "matching.keeps_confirmed"
-    assert sorted((r.id, r.category, r.amount, r.status) for r in _rows(world, mar)) == booked
+    again = ((r.id, r.category, r.amount, r.status) for r in _rows(world, mar))
+    assert sorted(again, key=lambda row: row[1]) == booked  # the same rows, ids included
     assert len(_rows(world, mar, all_rows=True)) == 2  # nothing superseded
 
     may = _hv(world, date(2026, 5, 4), "-380.00", "Hausgeld 05/2026")
