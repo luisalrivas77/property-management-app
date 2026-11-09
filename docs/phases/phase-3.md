@@ -80,12 +80,12 @@ Numbering continues from phase 2's D52 (the 0.00 € auto-confirm, merged 9 Nov 
 | D55 | **The AfA basis comes from the property record only**: (purchase price + Σ acquisition cost rows) × selected building share. `purchase_price` and `acquisition_cost` allocations are payment evidence and never summed (settles the open part of D44). The draft warns when a cost row has no paying allocation, an `acquisition_cost` allocation has no cost row, or Σ `purchase_price` allocations ≠ the recorded price. `loan_fees` (D35) never enter the basis. | Principle 2 with one source per figure; nothing counts twice. |
 | D56 | **The 15 % tracker** counts confirmed `repairs` and `renovation` allocations booked in the three years from the handover, net of VAT (the linked invoice's `amount_net`, else gross ÷ 1.19 marked *estimated*), against 15 % of the building share of the acquisition costs. Exclusions the law names (Erweiterungen, jährlich anfallende Erhaltungsarbeiten; Schadensbeseitigung per BFH IX R 6/16) are a per-allocation input `exclude_from_15pct` with a reason, not a new category. When the limit is crossed, every counted cost since the handover becomes Herstellungskosten: the draft of each earlier year changes and says so (`limit.prior_year_amendment`). | §6 Abs. 1 Nr. 1a EStG; the taxonomy stays fixed (D24); a flag with a reason is auditable in History. |
 | D57 | **Contributions to the Erhaltungsrücklage are not Werbungskosten; the WEG's spending from it is**, in the year the WEG spends it, on the Erhaltungsaufwand line (the 2025 form's Z55 reads "einschließlich Entnahmen aus der Erhaltungsrücklage"). The amount is the Hausgeldabrechnung's `ruecklage_spent` (owner's share), proposed by pre-fill with page and quote and confirmed by Luis as a `tax_input` of kind `ruecklage_spent`. Until it exists the line is provisional and the checklist shows the Abrechnung as expected. Closes phase 2 open question 7. | BFH IX R 19/24 of 14 Jan 2025 (BStBl II 2025, 291), confirming IX R 119/83. Principle 1: the model reads, Luis verifies, code sums. |
-| D58 | **User tax decisions and verified certificate figures live in one append-only table `tax_input`** (kinds `spread_82b`, `renovation_treatment`, `exclude_from_15pct`, `market_rent`, `ruecklage_spent`, `interest_certified`), each row with its scope (allocation, unit, loan, year), a typed `value`, `supersedes_id` and `withdrawn`; event `property.tax_input_recorded`. | Principle 4; a draft is reproducible from the ledger plus these rows plus the rule set. |
+| D58 | **User tax decisions and verified certificate figures live in one append-only table `tax_input`** (kinds `spread_82b`, `renovation_treatment`, `exclude_from_15pct`, `market_rent`, `ruecklage_spent`, `interest_certified`, `pre_handover_income` (D63)), each row with its scope (allocation, unit, loan, year), a typed `value`, `supersedes_id` and `withdrawn`; event `property.tax_input_recorded`. | Principle 4; a draft is reproducible from the ledger plus these rows plus the rule set. |
 | D59 | **The draft sums confirmed allocations only.** Proposed sets, unmatched lines and allocations in an `undecided` category (`uncategorized`, `other_expense`, an unelected `renovation`) are excluded and reported as a count and a euro total ("n Zeilen in Zu prüfen nicht enthalten"). A line whose source document is still expected (Zinsbescheinigung, Hausgeldabrechnung) is flagged `provisional`. Drafts are computed on read and never stored; **exports are snapshots** (`tax_export` row + content-addressed file, D65). | "Only confirmed allocations reach the ledger" (ARCHITECTURE pipeline); what was handed to the Finanzamt stays reproducible. |
 | D60 | **Cents everywhere; whole euros only on the field sheet**: income lines rounded down, cost lines rounded up, totals from the rounded lines, the owners' Zurechnung (Z86) by largest remainder with the odd euro to the first owner. Provisional until the Anleitung zur Anlage V 2025 confirms the rounding convention (open question 4). | The form's amount fields are whole euros ("EUR ,–"); "zu Ihren Gunsten" is the common guidance, found in secondary sources only. |
 | D61 | **Verbilligte Vermietung** compares the agreed Warmmiete (Kaltmiete + Nebenkostenvorauszahlung) with the ortsübliche Warmmiete per m² entered by Luis (`market_rent` input per unit, dated, with the Mietspiegel as evidence): ≥ 66 % nothing; 50–66 % warning "Totalüberschussprognose nötig"; < 50 % warning with the Kürzung percentage proposed for Z87. The draft never cuts Werbungskosten itself: the form says the Finanzamt does, from Z87. | §21 Abs. 2 EStG as amended 2021 (the 50 % threshold); R 21.3 EStR compares Warmmieten. ARCHITECTURE's row knew only the 66 % threshold (§16). |
 | D62 | **§82b spread** is an input per allocation (`spread_82b`, 2–5 years): the year paid takes amount ÷ years (half-up to the cent, the last year the remainder), later years take their share on the "aus Jahr Y−k" lines; the remainder is deducted in full in the year ownership or the letting ends (§82b Abs. 2 EStDV). Changeable by a superseding row while the assessment is open; the app records, it does not judge finality. | §82b EStDV; one property has one owner group, so Abs. 3 (same spread for all co-owners) holds by construction. |
-| D63 | **Income booked before the handover** (`booking_date < property.purchase_date`) is excluded from the form and listed in a "Vor dem Übergang" block with its sum until Luis decides how the forwarded rent share counts (open question 1). Costs before the handover count as vorab entstandene Werbungskosten (loan interest, Geldbeschaffungskosten, bank fees). | ARCHITECTURE's phase 3 input: the treatment is a tax question with evidence, not an assumption. |
+| D63 | **Income booked before the handover** (`booking_date < property.purchase_date`) is listed in a "Vor dem Übergang" block with its sum. Where the owner has recorded how it counts (a `pre_handover_income` tax input per property, value `rent`), those lines go on the rent line instead: added to the flat's Z13 row, each line a source of it, and the block is empty. Without that input they stay off the form with warning `income.pre_handover`. **Luis decided on 9 Nov 2026 (Q1): `rent`.** The rent share the seller forwarded was paid only for months in which the leases already named Luis as landlord (it began the month after the first instalment), so it is his rental income; only the share he received counts, not the part the seller kept under the contract. Costs before the handover count as vorab entstandene Werbungskosten (loan interest, Geldbeschaffungskosten, bank fees). | ARCHITECTURE's phase 3 input: the treatment was a tax question to settle with evidence. Whoever lets in their own name earns the rent; the readings "price reduction" and "interest for paying early" fit only months in which the seller was still the landlord, and there were none with a forwarded share. Declaring it as income is also the reading the Finanzamt has no reason to dispute. |
 | D64 | **The checklist catalogue gains two data entries** (§8): `cost_receipt` per confirmed `repairs`, `renovation`, `loan_fees` or `professional_fees` allocation of the year (satisfied by its `document_id`), and `market_rent` per unit let in the year (satisfied by a `market_rent` input in force). Two new scope types (`allocation`, `unit`), two new satisfiers; no new code paths in the catalogue walk. | Phase 1 amendment 3 built the catalogue so "phase 3 adds entries, not code paths". |
 | D65 | **Exports are built by a job and stored content-addressed**: a `tax_export` row (property, year, kind `field_sheet` or `archive`, rule set version, form status, the draft JSON) plus a `document_file` row for the bytes, served by the existing signed URL; event `property.anlage_v_exported`. The archive carries originals untouched (principle 6) and a `README` naming the documents known to need a Finanzamt copy (XFA, ink or stamp annotations). | Jobs, not requests (a ZIP of a year's documents is large); the vault's `document` table stays for originals, so no new document source or subtype. |
 | D66 | **Evals: none for the rules, two new recordings for reading**: synthetic `zinsbescheinigung` and `hausgeldabrechnung` documents join `tests/evals/recordings/` (the extraction kinds exist since phase 2 but were never recorded), because step 2 reads `interest_paid` and `ruecklage_spent` from them into `tax_input` proposals. Luis's real Zinsbescheinigung is evaluated from his computer when it arrives (D29). | Principle 1: the rules are deterministic and fixtured; only the reading of the two certificates involves a model. |
@@ -374,7 +374,8 @@ provisional + warning.
   tenant is negative).
 - `other_income` → `income.other` with warning `income.other_review` per allocation naming
   the counterparty's masked IBAN and amount; income booked before the handover goes to the
-  "Vor dem Übergang" block instead (D63).
+  flat's rent row when the property's `pre_handover_income` input says `rent`, else to the
+  "Vor dem Übergang" block (D63).
 - `deposit_in` / `deposit_out`: nothing (a kept deposit, Z25, is out of scope).
 
 ### 5.8 Verbilligte Vermietung (`verbilligt.py`)
@@ -399,8 +400,12 @@ with the AfA claimed that year (D68). The gain and the lever are phase 4.
 
 ### 5.10 Lines before the handover (`vorab.py`)
 
-Income allocations with `booking_date < purchase_date` → `pre_handover` block: list, sum,
-warning `income.pre_handover` (D63, Q1). Cost allocations before the handover stay in their
+Income allocations with `booking_date < purchase_date`: with the property's
+`pre_handover_income` input = `rent` → added to the flat's `income.rent_units` row (each a
+source of it, listed under "davon vor dem Übergang"); without it → `pre_handover` block: list,
+sum, warning `income.pre_handover` (D63, Q1 decided 9 Nov 2026). `anlage_v_2026.yaml` carries
+both: case A without the input (the block as below), and a case with it, where the 850.00 move
+onto the rent row and the warning is gone. Cost allocations before the handover stay in their
 lines. A property whose `purchase_date` was corrected after lines were booked is handled by
 the same test on the current value (append-only history keeps the old one).
 
@@ -762,18 +767,14 @@ Conflicts, stated plainly, and the edits (made in the spec PR):
 
 ## 17. Open questions
 
-1. **Luis: the forwarded rent share before the handover** (ARCHITECTURE's note). Until
-   decided the lines stay in the "Vor dem Übergang" block (D63). Options and what each moves:
-   (a) **Vermietung income** — the seller forwarded Luis's share of rent under leases that
-   name Luis as landlord from May: the amounts go to `income.rent_units` (Z13) if they are
-   rent, or `income.other` (Z29) if they are the seller's payment under the contract; the
-   deduction of costs from May follows either way; open sub-question whether the full rent or
-   only the forwarded share is Luis's income, and how the seller's part counts for the
-   seller; (b) **reduction of the purchase price** — nothing on the Anlage V; the AfA basis
-   (§5.2) falls by the amount, and so does the 15 % limit; (c) **capital income** for paying
-   early — Anlage KAP, not V. A Steuerberater's one-line answer, or the Finanzamt's view on
-   enquiry, decides; the spec builds none of the three until then. The same block will hold
-   any payment under the seller's 24-month rent guarantee.
+1. **Decided 9 Nov 2026 (Luis): the forwarded rent share before the handover is rental
+   income** (D63). The seller forwarded Luis's share only for months in which the leases
+   already named him as landlord, so the readings "reduction of the purchase price" and
+   "capital income for paying early" (which fit only while the seller was the landlord) do not
+   arise; only the share he received counts. Still open, and only if it ever happens: how a
+   payment under the seller's 24-month rent guarantee counts (BFH V R 2/09 treats such a
+   payment as damages, for VAT); the draft lists it under `income.other` with its warning until
+   then.
 2. **Luis / orchestrator: rooms let separately on Z13–14.** The form asks for a row per
    Wohneinheit with its Wohnfläche. The app models one unit per room. Proposal: one row per
    *flat* (the units' rents summed, the flat's m²) because the Finanzamt knows one Wohnung
