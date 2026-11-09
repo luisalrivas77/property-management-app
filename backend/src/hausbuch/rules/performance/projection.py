@@ -128,6 +128,7 @@ def actual_year(
         tenancies=facts.tenancies,
         purchase_year=facts.property.purchase_date.year,
         handover=facts.property.purchase_date,
+        until=today,
     )
 
 

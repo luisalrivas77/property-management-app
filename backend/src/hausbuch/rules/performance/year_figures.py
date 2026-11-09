@@ -98,12 +98,18 @@ def _movable(draft: AnlageVDraft | None) -> Decimal | None:
 
 
 def flat_rate_months(
-    year: int, tenancies: Sequence[TaxTenancy], handover: date | None
+    year: int,
+    tenancies: Sequence[TaxTenancy],
+    handover: date | None,
+    until: date | None = None,
 ) -> int | None:
     """D92: the calendar months of `year` in which at least one flat_rate tenancy was in force
     (start to end date, any day of the month counts) and that are not before the month of the
-    handover (no restriction when it is None). None when there are none: before the handover
-    the seller paid the costs and forwarded the rent, so those months have neither side."""
+    handover (no restriction when it is None) and, for the year that contains `until` (today,
+    for an actual year still being booked), not after its month: the year's sums hold only
+    what is booked so far, so the later months would shrink the gap per month. None when there
+    are none: before the handover the seller paid the costs and forwarded the rent, so those
+    months have neither side."""
     flat = [t for t in tenancies if t.operating_costs_terms is OperatingCostsTerms.FLAT_RATE]
     first = 1
     if handover is not None:
@@ -111,9 +117,15 @@ def flat_rate_months(
             return None
         if handover.year == year:
             first = handover.month
+    last = 12
+    if until is not None:
+        if until.year < year:
+            return None
+        if until.year == year:
+            last = until.month
     months = sum(
         1
-        for m in range(first, 13)
+        for m in range(first, last + 1)
         if any(
             t.start_date <= _month_end(year, m)
             and (t.end_date is None or t.end_date >= date(year, m, 1))
@@ -137,6 +149,7 @@ def year_figures(
     tenancies: Sequence[TaxTenancy] = (),
     purchase_year: int | None = None,
     handover: date | None = None,
+    until: date | None = None,
     value: Decimal | None = None,
     loan_balance: Decimal | None = None,
     extra_sources: Iterable[SourceRef] = (),
@@ -147,7 +160,9 @@ def year_figures(
     then the result and AfA are None. `value` and `loan_balance` are given for projected
     years (§5.4 step 6); equity is their difference. `tenancies` tell the flat-rate ones apart
     for the Pauschale check (D91) and, with the `handover` (the property's purchase_date),
-    give the months it divides by (D92); `purchase_year` puts `invested` on that year only."""
+    give the months it divides by (D92), up to the month of `until` (today, given for actual
+    years only) in the year that contains it; `purchase_year` puts `invested` on that year
+    only."""
     rows = [a for a in allocations if a.amount != 0]
 
     def of(categories: frozenset[C]) -> list[AllocationFact]:
@@ -176,7 +191,7 @@ def year_figures(
 
     flat = {t.id for t in tenancies if t.operating_costs_terms is OperatingCostsTerms.FLAT_RATE}
     flat_rate_in = _signed_in([a for a in in_rows if a.tenancy_id in flat])
-    months = flat_rate_months(year, tenancies, handover)
+    months = flat_rate_months(year, tenancies, handover, until)
     gap = cents((flat_rate_in - umlagen_out) / months) if months is not None else None
 
     ref = ref_of or _ref

@@ -127,6 +127,27 @@ def test_flat_rate_months(tenancies, handover, months):
     assert flat_rate_months(2026, tenancies, handover) == months
 
 
+@pytest.mark.parametrize(
+    ("until", "months"),
+    [
+        # The year still being booked: July (the handover) to today's month only.
+        (date(2026, 11, 9), 5),
+        (date(2026, 7, 1), 1),
+        (date(2026, 12, 31), 6),
+        # A later today leaves a past year whole.
+        (date(2027, 1, 15), 6),
+        # Today before the handover month, or before the year: no month yet.
+        (date(2026, 6, 30), None),
+        (date(2025, 12, 31), None),
+    ],
+)
+def test_flat_rate_months_stop_at_today_in_the_current_year(until, months):
+    """Review F1 of D92: in the year being booked the sums hold only the months so far, so the
+    months divided by stop at today's month; past and projected years are not capped."""
+    tenancies = [_tenancy(1, date(2026, 7, 1))]
+    assert flat_rate_months(2026, tenancies, date(2026, 7, 1), until) == months
+
+
 def test_the_gap_divides_by_the_months_from_the_handover():
     """Case A's flat_rate tenancy moved to 1 Mar: the seller had the flat until the handover on
     1 Jul, so the gap still divides by July to December (6), not by 10 or 12."""
