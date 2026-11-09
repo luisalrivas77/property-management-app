@@ -533,7 +533,7 @@ def test_the_draft_gets_the_facts_the_year_and_its_rule_set(world, monkeypatch):
         calls.append((facts, tax_year, rule_set))
         return "the draft"
 
-    monkeypatch.setattr(tax_service, "_draft", fake)
+    monkeypatch.setattr(tax_service, "draft", fake)
     result = world.query(tax_service.anlage_v_draft, world.property_id, tax_year=2026, today=TODAY)
     assert result == "the draft"
     ((facts, year, rule_set),) = calls
@@ -543,7 +543,7 @@ def test_the_draft_gets_the_facts_the_year_and_its_rule_set(world, monkeypatch):
 
 
 def test_years_outside_or_without_a_rule_set_are_refused(world, monkeypatch):
-    monkeypatch.setattr(tax_service, "_draft", lambda *a: pytest.fail("not called"))
+    monkeypatch.setattr(tax_service, "draft", lambda *a: pytest.fail("not called"))
     with pytest.raises(RuleError) as err:  # before the purchase year (2024)
         world.query(tax_service.anlage_v_draft, world.property_id, tax_year=2023, today=TODAY)
     assert err.value.code == "tax.year_not_available"
@@ -556,7 +556,7 @@ def test_years_outside_or_without_a_rule_set_are_refused(world, monkeypatch):
 
 
 def test_another_workspace_sees_no_property(world, app_engine, fresh_workspaces, monkeypatch):
-    monkeypatch.setattr(tax_service, "_draft", lambda *a: pytest.fail("not called"))
+    monkeypatch.setattr(tax_service, "draft", lambda *a: pytest.fail("not called"))
     _book(
         world,
         world.line(date(2026, 3, 2), "-50.00"),

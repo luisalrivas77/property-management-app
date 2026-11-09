@@ -47,6 +47,7 @@ from hausbuch.rules.errors import TAX_YEAR_NOT_AVAILABLE, RuleError
 from hausbuch.rules.loan_schedule import build_schedule
 from hausbuch.rules.matching import LOAN_WINDOW_DAYS
 from hausbuch.rules.tax import registry
+from hausbuch.rules.tax.draft import draft
 from hausbuch.schemas.allocation import AllocationCategory, ServicePeriod
 from hausbuch.schemas.checklist import ChecklistFacts
 from hausbuch.schemas.document import Document
@@ -66,7 +67,6 @@ from hausbuch.schemas.tax import (
     AnlageVDraft,
     DraftFacts,
     OpenLines,
-    RuleSet,
     TaxInputFact,
     TaxLoan,
     TaxOwner,
@@ -92,15 +92,6 @@ _LOAN_CATEGORIES = frozenset({C.LOAN_INTEREST, C.LOAN_PRINCIPAL})
 _RENT_CATEGORIES = frozenset({C.RENT_COLD, C.OPERATING_COSTS_PREPAYMENT})
 
 
-def _draft(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> AnlageVDraft:
-    """The pure rule. Imported on call so this module (and the API) loads while the rule
-    module is being written; tests replace this function to test the service and the route
-    on their own."""
-    from hausbuch.rules.tax.draft import draft
-
-    return draft(facts, tax_year, rule_set)
-
-
 def anlage_v_draft(
     conn: Connection, property_id: UUID, *, tax_year: int, today: date
 ) -> AnlageVDraft:
@@ -124,7 +115,7 @@ def anlage_v_draft(
         checklist=checklist,
         documents=documents,
     )
-    return _draft(facts, tax_year, rule_set)
+    return draft(facts, tax_year, rule_set)
 
 
 def draft_facts(

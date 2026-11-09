@@ -1,13 +1,16 @@
 """GET /api/properties/{id}/anlage-v (docs/phases/phase-3.md §10): the draft over HTTP, its
-years and its error codes. draft() itself is replaced by a stub returning a minimal draft;
-the rule's own fixtures test what it computes."""
+years and its error codes. Most tests replace draft() by a stub returning a minimal draft (the
+rule's own fixtures test what it computes); one runs the real rule end to end over a
+reconciled statement and two confirmed answers."""
 
 from datetime import date
 from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
-from api_support import flat, ok
+from api_support import TOKEN_A, TOKEN_B, auth_for, create, flat, ok
+from db.db_support import _admin
+from test_bank_parsers import CAMT, build
 
 from hausbuch.schemas.tax import (
     AnlageVDraft,
@@ -54,7 +57,7 @@ def stub_draft(monkeypatch) -> list:
         calls.append((facts, tax_year, rule_set))
         return _minimal(facts, tax_year, rule_set)
 
-    monkeypatch.setattr(tax_service, "_draft", fake)
+    monkeypatch.setattr(tax_service, "draft", fake)
     return calls
 
 
@@ -117,3 +120,98 @@ def test_today_bounds_the_years(client_a, stub_draft):
     response = _draft(client_a, pid, tax_year=next_year)
     assert response.status_code == 422
     assert response.json()["code"] == "tax.year_not_available"
+
+
+# --- End to end: the real rule over a statement and two answers ---------------------------
+
+SAMPLE_IBAN = "DE50100000000000000001"
+ZIP = build(next(c for c in CAMT.cases if c.id == "sparkasse_zip_of_daily_reports").input)
+
+
+@pytest.fixture
+def sessions(fresh_workspaces, dbname):
+    """Sessions whose users exist, so a confirmation's confirmed_by (FK to app_user) is real."""
+    a, b = fresh_workspaces
+    auths = {TOKEN_A: auth_for(a), TOKEN_B: auth_for(b)}
+    with _admin(dbname) as conn:
+        for auth in auths.values():
+            conn.execute(
+                "INSERT INTO app_user (id, workspace_id, email, display_name)"
+                " VALUES (%s, %s, %s, 'Test')",
+                (auth.user_id, auth.workspace_id, f"{auth.user_id}@example.test"),
+            )
+    return auths
+
+
+def _confirm(client, line, category, property_id) -> str:
+    body = {
+        "allocation_set": {
+            "transaction_id": line["id"],
+            "allocations": [
+                {"amount": line["amount"], "category": category, "property_id": property_id}
+            ],
+            "method": "user",
+            "confidence": "1.000",
+        },
+        "learn_rule": False,
+    }
+    answered = ok(client.put(f"/api/transactions/{line['id']}/allocations", json=body))
+    (allocation,) = answered["allocations"]
+    assert allocation["status"] == "confirmed"
+    return allocation["id"]
+
+
+def _ids(line) -> list[tuple[str, str | None]]:
+    return [(s["kind"], s["id"]) for s in line["sources"]]
+
+
+def test_the_real_draft_shows_confirmed_lines_with_their_sources(client_a):
+    setup = flat(client_a)  # bought 1 May 2024, no price split
+    pid = setup["property"]["id"]
+    account = create(
+        client_a,
+        "/api/accounts",
+        {
+            "label": "Mietkonto",
+            "bank": "Sparkasse",
+            "iban": SAMPLE_IBAN,
+            "opening_balance": "0.00",
+            "opening_balance_on": "2026-03-31",
+        },
+    )
+    imported = client_a.post(
+        f"/api/accounts/{account['id']}/imports",
+        files={"file": ("umsaetze.zip", ZIP, "application/zip")},
+    )
+    assert ok(imported, 201)["status"] == "reconciled"
+    lines = ok(client_a.get(f"/api/accounts/{account['id']}/transactions"))
+    assert len(lines) == 22  # the fixture's lines, all booked in 2026
+    repair = next(x for x in lines if x["amount"] == "-360.18")  # 30 Jun 2026
+    income = next(x for x in lines if x["amount"] == "241.58")  # 30 Jun 2026, Partei A
+    repair_id = _confirm(client_a, repair, "repairs", pid)
+    income_id = _confirm(client_a, income, "other_income", pid)
+
+    response = _draft(client_a, pid, tax_year=2026)
+    body = ok(response)
+    by_key = {line["key"]: line for line in body["lines"]}
+    assert by_key["wk.maintenance"]["amount"] == "360.18"
+    assert ("allocation", repair_id) in _ids(by_key["wk.maintenance"])
+    assert by_key["income.other"]["amount"] == "241.58"
+    assert ("allocation", income_id) in _ids(by_key["income.other"])
+    assert (body["totals"]["income"], body["totals"]["costs"]) == ("241.58", "360.18")
+    assert body["totals"]["result"] == "-118.60"
+    codes = {w["code"] for w in body["warnings"]}
+    assert {"income.other_review", "afa.no_split", "draft.open_lines_excluded"} <= codes
+    # The 20 lines nobody answered are left out and counted, not booked.
+    assert body["excluded_open"]["count"] == 20
+    # Statements reconciled through 6 Nov 2026: January to October of twelve months owned.
+    assert (body["coverage"]["months_owned"], body["coverage"]["months_covered"]) == (12, 10)
+    # A counterparty is at most its masked IBAN (D5): no name, full IBAN or purpose text.
+    text = response.text
+    assert "Partei A" not in text and "DE16100000000000001001" not in text
+    assert "Verwendungszweck" not in text and SAMPLE_IBAN not in text
+    # The year before has none of 2026's payments (its Hausgeld line may still be provisional).
+    earlier = ok(_draft(client_a, pid, tax_year=2025))
+    sourced = {ref for line in earlier["lines"] for ref in _ids(line)}
+    assert not sourced & {("allocation", repair_id), ("allocation", income_id)}
+    assert earlier["totals"]["income"] == "0.00"
