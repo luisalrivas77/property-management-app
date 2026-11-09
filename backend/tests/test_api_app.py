@@ -101,6 +101,7 @@ def test_every_router_is_included_under_api(engine, tmp_path, monkeypatch):
         "accounts",
         "statements",
         "allocations",
+        "tax_inputs",
         "history",
         "workspace",
         "auth",
