@@ -271,6 +271,41 @@ def test_an_llm_set_naming_a_matcher_category_or_splitting_is_never_auto_confirm
         assert _events(world, tx) == []  # proposed rows are review items, no event
 
 
+def test_a_model_answer_for_a_zero_line_books_itself_without_the_setting(
+    world, app_engine, tmp_path
+):
+    """D52: the account's 0.00 fee line, read as bank_fees, is confirmed with auto_accept_llm
+    off and at any confidence; a 0.00 rent answer still goes to review."""
+    client = FakeModelClient(
+        [
+            _answer(("bank_fees", "0.00", None, True), confidence="medium"),
+            _answer(("rent_cold", "0.00", None, True)),
+        ]
+    )
+    deps = _deps(app_engine, tmp_path, client)
+    fee = world.line(date(2026, 3, 31), "0.00", name="Sparkasse", purpose="Kontoführung")
+    rent = world.line(date(2026, 3, 31), "0.00", name="Unbekannt", purpose="Miete")
+    for tx in (fee, rent):
+        _run(deps, world, tx)
+    (row,) = _rows(world, fee)
+    assert (row.category, row.amount, row.method, row.status) == (
+        "bank_fees",
+        Decimal("0.00"),
+        "llm",
+        "confirmed",
+    )
+    (event,) = _events(world, fee)
+    assert (event.type, event.actor_type, event.actor_id) == (
+        "transaction.allocated",
+        "ai",
+        "fake-sonnet",
+    )
+    assert event.payload["auto"] is True and event.payload["method"] == "llm"
+    (row,) = _rows(world, rent)
+    assert (row.category, row.method, row.status) == ("rent_cold", "llm", "proposed")
+    assert _events(world, rent) == []
+
+
 # --- The one loan on a model suggestion (D51) -------------------------------------------------
 
 

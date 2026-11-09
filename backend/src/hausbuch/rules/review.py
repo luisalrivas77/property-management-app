@@ -1,4 +1,4 @@
-"""Auto-confirm thresholds and review routing (§8.1, §8.3, D21, D26, principle 3;
+"""Auto-confirm thresholds and review routing (§8.1, §8.3, D21, D26, D52, principle 3;
 tests/fixtures/phase2/thresholds.yaml and review_routing.yaml).
 
 THRESHOLDS is rule data: the auto-confirm threshold per category, None = never auto-confirmed
@@ -12,8 +12,11 @@ route(item), first rule that applies:
   3. a learned rule at 1.0 -> auto_confirm, routing.rule_hit;
   4. a deterministic matcher at 1.0 -> auto_confirm, routing.deterministic;
   5. a rule or matcher below 1.0 (an inexact match) -> review, routing.below_threshold;
-  6. llm without auto_accept_llm -> review, routing.llm_not_accepted (D26);
-  7. document_match and llm: any category without a threshold -> review, routing.never_auto;
+  6. llm for a line of 0.00: one allocation (its amount is then 0.00, check_sum having made
+     the set sum to the line), no tenancy and no loan, a category outside ZERO_EXCLUDED ->
+     auto_confirm, routing.zero_amount, whatever the confidence or auto_accept_llm (D52);
+  7. llm without auto_accept_llm -> review, routing.llm_not_accepted (D26);
+  8. document_match and llm: any category without a threshold -> review, routing.never_auto;
      confidence >= the strictest threshold of the set -> auto_confirm, routing.above_threshold;
      else review, routing.below_threshold.
 A user's set is confirmed by the user and never routed: route refuses it.
@@ -25,6 +28,7 @@ from types import MappingProxyType
 from hausbuch.schemas.allocation import AllocationCategory as C
 from hausbuch.schemas.allocation import (
     AllocationMethod,
+    AllocationSet,
     Routing,
     RoutingDecision,
     RoutingInput,
@@ -37,6 +41,7 @@ ABOVE_THRESHOLD = "routing.above_threshold"
 BELOW_THRESHOLD = "routing.below_threshold"
 NEVER_AUTO = "routing.never_auto"
 LLM_NOT_ACCEPTED = "routing.llm_not_accepted"
+ZERO_AMOUNT = "routing.zero_amount"
 NO_MATCH = "routing.no_match"
 IMPORT_UNRECONCILED = "routing.import_unreconciled"
 IMPORT_PENDING_BALANCE = "routing.import_pending_balance"
@@ -83,6 +88,28 @@ THRESHOLDS = MappingProxyType(
 if set(THRESHOLDS) != set(C):  # pragma: no cover - a new category without a threshold
     raise RuntimeError("every category needs a threshold (None = never auto-confirmed)")
 
+# D52: a model's 0.00 answer in one of these categories keeps the usual routing: other checks
+# read them (the rent or instalment already booked for a period, the matchers' categories,
+# D40), or they need a person (deposits, the purchase, the payout, an uncategorized line).
+ZERO_EXCLUDED = frozenset(
+    {
+        C.RENT_COLD,
+        C.OPERATING_COSTS_PREPAYMENT,
+        C.LOAN_INTEREST,
+        C.LOAN_PRINCIPAL,
+        C.LOAN_DISBURSEMENT,
+        C.HAUSGELD_UMLAGEFAEHIG,
+        C.HAUSGELD_VERWALTUNG,
+        C.HAUSGELD_RUECKLAGE,
+        C.OWNER_TRANSFER_IN,
+        C.OWNER_TRANSFER_OUT,
+        C.DEPOSIT_IN,
+        C.DEPOSIT_OUT,
+        C.PURCHASE_PRICE,
+        C.UNCATEGORIZED,
+    }
+)
+
 _IMPORT_REASONS = {
     ImportStatus.UNRECONCILED: IMPORT_UNRECONCILED,
     ImportStatus.IMPORTED: IMPORT_PENDING_BALANCE,
@@ -119,6 +146,8 @@ def route(item: RoutingInput) -> Routing:
             reason = RULE_HIT if method is AllocationMethod.RULE else DETERMINISTIC
             return Routing(decision=RoutingDecision.AUTO_CONFIRM, reason=reason)
         return _review(BELOW_THRESHOLD)
+    if method is AllocationMethod.LLM and _zero_line(found):
+        return Routing(decision=RoutingDecision.AUTO_CONFIRM, reason=ZERO_AMOUNT)
     if method is AllocationMethod.LLM and not item.auto_accept_llm:
         return _review(LLM_NOT_ACCEPTED)
     # document_match, and llm with auto_accept_llm: as strict as the strictest category.
@@ -128,6 +157,19 @@ def route(item: RoutingInput) -> Routing:
     if found.confidence >= max(limits):  # type: ignore[type-var]
         return Routing(decision=RoutingDecision.AUTO_CONFIRM, reason=ABOVE_THRESHOLD)
     return _review(BELOW_THRESHOLD)
+
+
+def _zero_line(found: AllocationSet) -> bool:
+    """A set of one 0.00 part, unscoped to a tenancy or loan, outside ZERO_EXCLUDED (D52)."""
+    if len(found.allocations) != 1:
+        return False
+    (part,) = found.allocations
+    return (
+        part.amount == 0
+        and part.tenancy_id is None
+        and part.loan_id is None
+        and part.category not in ZERO_EXCLUDED
+    )
 
 
 def _review(reason: str) -> Routing:
