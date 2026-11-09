@@ -1,0 +1,166 @@
+# Rule fixture: Schuldzinsen, Geldbeschaffungskosten, Zinsbescheinigung
+# (hausbuch.rules.tax.schuldzinsen)
+#
+# lines(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> RuleLines
+# Spec: docs/phases/phase-3.md §5.5, D63, D66.
+#   wk.interest = Σ loan_interest of the tax year (§5.1 first); einzelangaben = the lenders of
+#     the loans with interest that year, sorted. Interest before the handover counts.
+#   wk.financing_costs = Σ loan_fees of the tax year (before the handover too).
+#   loan_principal → tracked (amount, count), never a line.
+#   interest_certified in force for (loan, year): compared with Σ loan_interest of that loan in
+#     the year; a difference → warning interest.certificate_mismatch with params certified,
+#     booked and difference (the magnitude). The line keeps the ledger's figure.
+#   Sources of wk.interest: its allocations (the certificate's input is not a source: it is
+#     compared, never summed).
+
+rule_set_year: 2026
+
+ids:
+  property: &P 0000000b-0000-4000-8000-000000000001
+  loan: &L1 0000000f-0000-4000-8000-000000000001
+  loan_2: &L2 0000000f-0000-4000-8000-000000000002
+  interest_jul: &I07 000000a1-0000-4000-8000-000000000101
+  interest_aug: &I08 000000a1-0000-4000-8000-000000000102
+  interest_sep: &I09 000000a1-0000-4000-8000-000000000103
+  interest_oct: &I10 000000a1-0000-4000-8000-000000000104
+  interest_nov: &I11 000000a1-0000-4000-8000-000000000105
+  interest_dec: &I12 000000a1-0000-4000-8000-000000000106
+  principal_aug: &T08 000000a1-0000-4000-8000-000000000112
+  principal_sep: &T09 000000a1-0000-4000-8000-000000000113
+  principal_oct: &T10 000000a1-0000-4000-8000-000000000114
+  principal_nov: &T11 000000a1-0000-4000-8000-000000000115
+  principal_dec: &T12 000000a1-0000-4000-8000-000000000116
+  interest_jan_early: &I01 000000a1-0000-4000-8000-000000000121
+  principal_jan_early: &T01 000000a1-0000-4000-8000-000000000122
+  fees: &F1 000000a1-0000-4000-8000-000000000131
+  interest_loan_2: &J1 000000a1-0000-4000-8000-000000000141
+  certificate: &D_Z 00000d0c-0000-4000-8000-000000000005
+  notary_invoice: &D_N 00000d0c-0000-4000-8000-000000000006
+  input_cert: &IC 000000f1-0000-4000-8000-000000000001
+
+bases:
+  property: &property {id: *P, label: Wohnung Beispielweg, kind: etw, build_year: 1998,
+                       purchase_date: 2026-07-01, purchase_price: "300000.00"}
+  loans: &loans [{id: *L1, lender: Beispielbank}]
+  # Interest-only debit in July, then five annuities of 1,000.00 (interest + Tilgung).
+  year_2026: &year_2026
+    - {allocation_id: *I07, booking_date: 2026-07-30, amount: "-233.33", category: loan_interest, loan_id: *L1}
+    - {allocation_id: *I08, booking_date: 2026-08-01, amount: "-700.00", category: loan_interest, loan_id: *L1}
+    - {allocation_id: *T08, booking_date: 2026-08-01, amount: "-300.00", category: loan_principal, loan_id: *L1}
+    - {allocation_id: *I09, booking_date: 2026-09-01, amount: "-699.13", category: loan_interest, loan_id: *L1}
+    - {allocation_id: *T09, booking_date: 2026-09-01, amount: "-300.87", category: loan_principal, loan_id: *L1}
+    - {allocation_id: *I10, booking_date: 2026-10-01, amount: "-698.25", category: loan_interest, loan_id: *L1}
+    - {allocation_id: *T10, booking_date: 2026-10-01, amount: "-301.75", category: loan_principal, loan_id: *L1}
+    - {allocation_id: *I11, booking_date: 2026-11-01, amount: "-697.37", category: loan_interest, loan_id: *L1}
+    - {allocation_id: *T11, booking_date: 2026-11-01, amount: "-302.63", category: loan_principal, loan_id: *L1}
+    - {allocation_id: *I12, booking_date: 2026-12-01, amount: "-696.48", category: loan_interest, loan_id: *L1}
+    - {allocation_id: *T12, booking_date: 2026-12-01, amount: "-303.52", category: loan_principal, loan_id: *L1}
+  interest_sources: &interest_sources
+    - {kind: allocation, id: *I07}
+    - {kind: allocation, id: *I08}
+    - {kind: allocation, id: *I09}
+    - {kind: allocation, id: *I10}
+    - {kind: allocation, id: *I11}
+    - {kind: allocation, id: *I12}
+  expect_2026: &expect_2026
+    tax_year: 2026
+    lines:
+      - {key: wk.interest, amount: "3724.56", einzelangaben: [Beispielbank], sources: *interest_sources}
+    tracked:
+      - {category: loan_principal, amount: "1508.77", count: 5}
+
+cases:
+  - id: interest_only_phase_plus_annuities
+    description: 233.33 + 700.00 + 699.13 + 698.25 + 697.37 + 696.48 = 3,724.56; Tilgung 1,508.77 tracked
+    facts: {property: *property, loans: *loans, allocations: *year_2026}
+    expect: [*expect_2026]
+
+  - id: certificate_matches
+    description: the Zinsbescheinigung 2026 states 3,724.56 → no warning
+    facts:
+      property: *property
+      loans: *loans
+      allocations: *year_2026
+      tax_inputs:
+        - {id: *IC, property_id: *P, kind: interest_certified, tax_year: 2026, loan_id: *L1,
+           document_id: *D_Z, value: {amount: "3724.56"}}
+    expect: [*expect_2026]
+
+  - id: certificate_mismatch_0_56
+    description: the certificate states 3,724.00 → warning with the difference 0.56; the line keeps 3,724.56
+    facts:
+      property: *property
+      loans: *loans
+      allocations: *year_2026
+      tax_inputs:
+        - {id: *IC, property_id: *P, kind: interest_certified, tax_year: 2026, loan_id: *L1,
+           document_id: *D_Z, value: {amount: "3724.00"}}
+    expect:
+      - <<: *expect_2026
+        warnings:
+          - code: interest.certificate_mismatch
+            params: {certified: "3724.00", booked: "3724.56", difference: "0.56"}
+
+  - id: january_annuity_moved
+    description: >
+      the January 2027 annuity debited on 30 Dec 2026, due 1 Jan 2027 (schedule entry 01/2027):
+      it counts in 2027 (§5.1), and the bank's certificate for 2026 leaves it out too, so 2026
+      matches; 2027 has its interest and its Tilgung
+    facts:
+      property: *property
+      loans: *loans
+      allocations:
+        - {allocation_id: *I12, booking_date: 2026-12-01, amount: "-696.48", category: loan_interest,
+           loan_id: *L1, recurring: true, service_period: {start: 2026-12-01, end: 2026-12-31},
+           due_on: 2026-12-01}
+        - {allocation_id: *I01, booking_date: 2026-12-30, amount: "-695.60", category: loan_interest,
+           loan_id: *L1, recurring: true, service_period: {start: 2027-01-01, end: 2027-01-31},
+           due_on: 2027-01-01}
+        - {allocation_id: *T01, booking_date: 2026-12-30, amount: "-304.40", category: loan_principal,
+           loan_id: *L1, recurring: true, service_period: {start: 2027-01-01, end: 2027-01-31},
+           due_on: 2027-01-01}
+      tax_inputs:
+        - {id: *IC, property_id: *P, kind: interest_certified, tax_year: 2026, loan_id: *L1,
+           document_id: *D_Z, value: {amount: "696.48"}}
+    expect:
+      - tax_year: 2026
+        lines:
+          - {key: wk.interest, amount: "696.48", einzelangaben: [Beispielbank],
+             sources: [{kind: allocation, id: *I12}]}
+      - tax_year: 2027
+        lines:
+          - {key: wk.interest, amount: "695.60", einzelangaben: [Beispielbank],
+             sources: [{kind: allocation, id: *I01}]}
+        tracked:
+          - {category: loan_principal, amount: "304.40", count: 1}
+
+  - id: financing_costs_before_handover
+    description: the notary's fee for the Grundschuld, paid 15 Jun before the 1 Jul handover, counts
+    facts:
+      property: *property
+      loans: *loans
+      allocations:
+        - {allocation_id: *F1, booking_date: 2026-06-15, amount: "-480.00", category: loan_fees,
+           loan_id: *L1, document_id: *D_N}
+    expect:
+      - tax_year: 2026
+        lines:
+          - key: wk.financing_costs
+            amount: "480.00"
+            sources: [{kind: allocation, id: *F1}, {kind: document, id: *D_N}]
+
+  - id: two_loans_two_einzelangaben
+    description: interest to two lenders → one line 420.50 with both lenders, sorted
+    facts:
+      property: *property
+      loans: [{id: *L2, lender: Musterkasse}, {id: *L1, lender: Beispielbank}]
+      allocations:
+        - {allocation_id: *J1, booking_date: 2026-09-30, amount: "-120.50", category: loan_interest, loan_id: *L2}
+        - {allocation_id: *I09, booking_date: 2026-09-01, amount: "-300.00", category: loan_interest, loan_id: *L1}
+    expect:
+      - tax_year: 2026
+        lines:
+          - key: wk.interest
+            amount: "420.50"
+            einzelangaben: [Beispielbank, Musterkasse]
+            sources: [{kind: allocation, id: *I09}, {kind: allocation, id: *J1}]

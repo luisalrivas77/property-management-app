@@ -605,7 +605,9 @@ class LimitStatus(Schema):
     window_end: date
     counted: list[CountedCost] = Field(default_factory=list)
     used_net: NonNegativeMoney
-    ratio_percent: Percent | None  # used ÷ limit's base, one decimal, half-up
+    # used_net ÷ limit × 100, one decimal, half-up: how much of the 15 % allowance is used
+    # ("bisher 14,2 %"); above 100.0 once exceeded. None without a split.
+    ratio_percent: Percent | None
     exceeded: bool
     exceeded_in_year: TaxYear | None = None
     basis_additions: list[BasisAddition] = Field(default_factory=list)

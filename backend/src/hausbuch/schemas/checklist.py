@@ -6,7 +6,7 @@ holds no tenant personal data (D5): a tenancy is its unit, dates and deposit for
 
 Phase 3 (docs/phases/phase-3.md §8, D64) adds two data entries: `cost_receipt` per confirmed
 allocation that needs a Beleg, and `market_rent` per Wohnung let in the year; their facts are
-`allocations` and `market_rents`, both empty for a phase 1 caller.
+`allocations` and `market_rents` (empty and None for a phase 1 caller).
 """
 
 from datetime import date, datetime
@@ -172,14 +172,18 @@ class ChecklistFacts(Schema):
     tenancies: list[ChecklistTenancy] = Field(default_factory=list)  # of these units
     documents: list[ChecklistDocument] = Field(default_factory=list)
     allocations: list[ChecklistAllocation] = Field(default_factory=list)  # phase 3
-    market_rents: list[ChecklistMarketRent] = Field(default_factory=list)  # phase 3
+    # Phase 3. None = a phase 1 caller: the market_rent entry does not apply (otherwise every
+    # let unit would gain an item and phase 1's outcomes would change); [] = none recorded.
+    market_rents: list[ChecklistMarketRent] | None = None
 
     @model_validator(mode="after")
     def _tenancies_on_units(self) -> Self:
         unit_ids = {u.id for u in self.units}
         if any(t.unit_id not in unit_ids for t in self.tenancies):
             raise ValueError("every tenancy must be on one of the units")
-        if any(m.unit_id is not None and m.unit_id not in unit_ids for m in self.market_rents):
+        if any(
+            m.unit_id is not None and m.unit_id not in unit_ids for m in self.market_rents or []
+        ):
             raise ValueError("a unit's market rent must be on one of the units")
         return self
 

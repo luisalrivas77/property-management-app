@@ -1,0 +1,613 @@
+# Done-criterion fixture: the hand-calculated Anlage V 2026 (hausbuch.rules.tax.draft.draft)
+#
+# draft(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> AnlageVDraft
+# Spec: docs/phases/phase-3.md §14 (the facts and the expected draft), §5.11, D59, D60, D70.
+# All synthetic: the flat, the bank, the IBANs and every amount are invented (public repo).
+#
+# Expectations are a projection of AnlageVDraft (tests/fixture_models_phase3.py DraftExpect):
+#   lines        exactly the lines with a non-zero amount, a ticked box or the provisional flag;
+#                the Z13 rows are `unit_rows`, not lines. Header fields are in `header`.
+#   sources      the exact set per line, None = not asserted; every line but the totals and
+#                results opens its sources (checked on load).
+#   warnings     the exact multiset of codes; listed params must match.
+#   totals, owners: checked on load against the lines (cents and the rounded euros of D60:
+#                income down, costs up, totals from the rounded lines, owners by largest
+#                remainder).
+#
+# Hand calculation, case A (cents → rounded euros):
+#   income.rent_total   6 × 850.00                                   5,100.00 →  5,100
+#   income.umlagen      6 × 180.00                                   1,080.00 →  1,080
+#   income.total                                                     6,180.00 →  6,180
+#   wk.afa              (300,000 + 25,000) × 0.72 × 2 % × 6/12       2,340.00 →  2,340
+#   wk.interest         233.33 + 700.00 + 699.13 + 698.25 + 697.37
+#                       + 696.48                                     3,724.56 →  3,725
+#   wk.financing_costs  Notar Grundschuld                              480.00 →    480
+#   wk.maintenance      painter 1,190.00 + tiles 4,760.00 (gross,
+#                       elected erhaltung); provisional (Rücklage)   5,950.00 →  5,950
+#   wk.allocable_costs  6 × 180.00 Hausgeld + 2 × 60.00 Grundsteuer  1,200.00 →  1,200
+#   wk.non_allocable    6 × 40.00 + 6 × 25.00 + 9 × 4.90               434.10 →    435
+#   wk.total                                                        14,128.66 → 14,130
+#   result.surplus      6,180.00 − 14,128.66                        −7,948.66 → −7,950
+#   owners A / B        ½ each                             −3,974.33 / −3,974.33 → −3,975 each
+# Not on the form: the January 2027 rent booked 29 Dec (850.00 + 180.00, moved to 2027 by the
+#   ten-day rule, D54); the seller's forwarded 2 × 425.00 before the handover (block, D63);
+#   the deposit; owner transfer, loan payout, purchase price and the two acquisition_cost
+#   payments (pass-through or capitalised via the property record, D55); Rücklage 600.00 and
+#   Tilgung 1,508.77 (tracked); the two 0.00 rows (D70); two proposed lines (−89.90, open).
+# Coverage: the December lines are confirmed, so their statements reconciled; the last
+#   reconciled day is 30 Dec (the last bank-fee line), which leaves December not fully
+#   covered: 5 of 6 months.
+
+ids:
+  property: &P 0000000b-0000-4000-8000-000000000001
+  unit: &U1 0000000c-0000-4000-8000-000000000001
+  tenancy: &T1 0000000e-0000-4000-8000-000000000001
+  loan: &L1 0000000f-0000-4000-8000-000000000001
+  split: &S 0000005a-0000-4000-8000-000000000001
+  owner_a: &OA 0000000a-0000-4000-8000-000000000001
+  owner_b: &OB 0000000a-0000-4000-8000-000000000002
+  account: &ACC 0000acc0-0000-4000-8000-000000000001
+  cost_grest: &C1 000000ac-0000-4000-8000-000000000001
+  cost_notar: &C2 000000ac-0000-4000-8000-000000000002
+  cost_grundbuch: &C3 000000ac-0000-4000-8000-000000000003
+  doc_kaufvertrag: &D_KV 00000d0c-0000-4000-8000-000000000001
+  doc_grest: &D_GREST 00000d0c-0000-4000-8000-000000000002
+  doc_notar: &D_NOTAR 00000d0c-0000-4000-8000-000000000003
+  doc_grundbuch: &D_GB 00000d0c-0000-4000-8000-000000000004
+  doc_grundsteuer: &D_GSB 00000d0c-0000-4000-8000-000000000005
+  doc_loan_contract: &D_LV 00000d0c-0000-4000-8000-000000000006
+  doc_zinsbescheinigung: &D_ZB 00000d0c-0000-4000-8000-000000000007
+  doc_lease: &D_MV 00000d0c-0000-4000-8000-000000000008
+  doc_handover: &D_UP 00000d0c-0000-4000-8000-000000000009
+  doc_deposit: &D_KN 00000d0c-0000-4000-8000-00000000000a
+  doc_wirtschaftsplan: &D_WP 00000d0c-0000-4000-8000-00000000000b
+  doc_notar_grundschuld: &D_LF 00000d0c-0000-4000-8000-00000000000c
+  doc_painter: &D_P 00000d0c-0000-4000-8000-00000000000d
+  doc_tiles: &D_T 00000d0c-0000-4000-8000-00000000000e
+  rent_jul: &R07 000000a1-0000-4000-8000-000000000701
+  rent_aug: &R08 000000a1-0000-4000-8000-000000000702
+  rent_sep: &R09 000000a1-0000-4000-8000-000000000703
+  rent_oct: &R10 000000a1-0000-4000-8000-000000000704
+  rent_nov: &R11 000000a1-0000-4000-8000-000000000705
+  rent_dec: &R12 000000a1-0000-4000-8000-000000000706
+  nk_jul: &N07 000000a1-0000-4000-8000-000000000711
+  nk_aug: &N08 000000a1-0000-4000-8000-000000000712
+  nk_sep: &N09 000000a1-0000-4000-8000-000000000713
+  nk_oct: &N10 000000a1-0000-4000-8000-000000000714
+  nk_nov: &N11 000000a1-0000-4000-8000-000000000715
+  nk_dec: &N12 000000a1-0000-4000-8000-000000000716
+  rent_jan_2027: &R01 000000a1-0000-4000-8000-000000000721
+  nk_jan_2027: &N01 000000a1-0000-4000-8000-000000000722
+  forwarded_may: &F1 000000a1-0000-4000-8000-000000000731
+  forwarded_jun: &F2 000000a1-0000-4000-8000-000000000732
+  deposit: &K1 000000a1-0000-4000-8000-000000000741
+  hg_umlf_jul: &U07 000000a1-0000-4000-8000-000000000751
+  hg_umlf_aug: &U08 000000a1-0000-4000-8000-000000000752
+  hg_umlf_sep: &U09 000000a1-0000-4000-8000-000000000753
+  hg_umlf_oct: &U10 000000a1-0000-4000-8000-000000000754
+  hg_umlf_nov: &U11 000000a1-0000-4000-8000-000000000755
+  hg_umlf_dec: &U12 000000a1-0000-4000-8000-000000000756
+  hg_verw_jul: &V07 000000a1-0000-4000-8000-000000000761
+  hg_verw_aug: &V08 000000a1-0000-4000-8000-000000000762
+  hg_verw_sep: &V09 000000a1-0000-4000-8000-000000000763
+  hg_verw_oct: &V10 000000a1-0000-4000-8000-000000000764
+  hg_verw_nov: &V11 000000a1-0000-4000-8000-000000000765
+  hg_verw_dec: &V12 000000a1-0000-4000-8000-000000000766
+  hg_rl_jul: &RL07 000000a1-0000-4000-8000-000000000771
+  hg_rl_aug: &RL08 000000a1-0000-4000-8000-000000000772
+  hg_rl_sep: &RL09 000000a1-0000-4000-8000-000000000773
+  hg_rl_oct: &RL10 000000a1-0000-4000-8000-000000000774
+  hg_rl_nov: &RL11 000000a1-0000-4000-8000-000000000775
+  hg_rl_dec: &RL12 000000a1-0000-4000-8000-000000000776
+  interest_jul: &I07 000000a1-0000-4000-8000-000000000781
+  interest_aug: &I08 000000a1-0000-4000-8000-000000000782
+  interest_sep: &I09 000000a1-0000-4000-8000-000000000783
+  interest_oct: &I10 000000a1-0000-4000-8000-000000000784
+  interest_nov: &I11 000000a1-0000-4000-8000-000000000785
+  interest_dec: &I12 000000a1-0000-4000-8000-000000000786
+  principal_aug: &T08 000000a1-0000-4000-8000-000000000792
+  principal_sep: &T09 000000a1-0000-4000-8000-000000000793
+  principal_oct: &T10 000000a1-0000-4000-8000-000000000794
+  principal_nov: &T11 000000a1-0000-4000-8000-000000000795
+  principal_dec: &T12 000000a1-0000-4000-8000-000000000796
+  loan_fees: &LF 000000a1-0000-4000-8000-0000000007a1
+  grundsteuer_aug: &G1 000000a1-0000-4000-8000-0000000007b1
+  grundsteuer_nov: &G2 000000a1-0000-4000-8000-0000000007b2
+  painter: &PA 000000a1-0000-4000-8000-0000000007c1
+  tiles: &TL 000000a1-0000-4000-8000-0000000007c2
+  sev_jul: &SV07 000000a1-0000-4000-8000-0000000007d1
+  sev_aug: &SV08 000000a1-0000-4000-8000-0000000007d2
+  sev_sep: &SV09 000000a1-0000-4000-8000-0000000007d3
+  sev_oct: &SV10 000000a1-0000-4000-8000-0000000007d4
+  sev_nov: &SV11 000000a1-0000-4000-8000-0000000007d5
+  sev_dec: &SV12 000000a1-0000-4000-8000-0000000007d6
+  fee_apr: &BF04 000000a1-0000-4000-8000-0000000007e4
+  fee_may: &BF05 000000a1-0000-4000-8000-0000000007e5
+  fee_jun: &BF06 000000a1-0000-4000-8000-0000000007e6
+  fee_jul: &BF07 000000a1-0000-4000-8000-0000000007e7
+  fee_aug: &BF08 000000a1-0000-4000-8000-0000000007e8
+  fee_sep: &BF09 000000a1-0000-4000-8000-0000000007e9
+  fee_oct: &BF10 000000a1-0000-4000-8000-0000000007ea
+  fee_nov: &BF11 000000a1-0000-4000-8000-0000000007eb
+  fee_dec: &BF12 000000a1-0000-4000-8000-0000000007ec
+  owner_transfer: &OT 000000a1-0000-4000-8000-0000000007f1
+  purchase_price: &PP 000000a1-0000-4000-8000-0000000007f2
+  loan_payout: &LD 000000a1-0000-4000-8000-0000000007f3
+  acq_grest: &AQ1 000000a1-0000-4000-8000-0000000007f4
+  acq_grundbuch: &AQ3 000000a1-0000-4000-8000-0000000007f5
+  zero_other_expense: &Z1 000000a1-0000-4000-8000-0000000007f8
+  zero_repairs: &Z2 000000a1-0000-4000-8000-0000000007f9
+  input_tiles_erhaltung: &TI1 000000f1-0000-4000-8000-000000000001
+  input_interest_certified: &TI2 000000f1-0000-4000-8000-000000000002
+  input_pre_handover_rent: &TI3 000000f1-0000-4000-8000-000000000003
+
+bases:
+  property: &property
+    id: *P
+    label: Wohnung Beispielweg
+    kind: etw
+    address: {street: Beispielweg, house_number: "7", postal_code: "12345", city: Musterstadt}
+    build_year: 1998
+    notarized_on: 2026-03-10
+    purchase_date: 2026-07-01
+    purchase_price: "300000.00"
+    living_area_m2: "62.50"
+    grundsteuer_reference: "999/123/45678"
+
+  allocations: &allocations
+    # Before the handover: owner top-up, acquisition costs, the seller's forwarded rent share,
+    # the Grundschuld notary, the loan payout and the purchase price (none is income or cost on
+    # the form except the notary's 480.00 and the bank fees).
+    - {allocation_id: *OT, booking_date: 2026-04-15, amount: "85000.00", category: owner_transfer_in}
+    - {allocation_id: *AQ1, booking_date: 2026-04-20, amount: "-19500.00", category: acquisition_cost}
+    - {allocation_id: *AQ3, booking_date: 2026-05-12, amount: "-1300.00", category: acquisition_cost}
+    - {allocation_id: *F1, booking_date: 2026-05-05, amount: "425.00", category: other_income,
+       counterparty_iban_masked: "DE12 **** 0002"}
+    - {allocation_id: *F2, booking_date: 2026-06-05, amount: "425.00", category: other_income,
+       counterparty_iban_masked: "DE12 **** 0002"}
+    - {allocation_id: *LF, booking_date: 2026-06-15, amount: "-480.00", category: loan_fees,
+       loan_id: *L1, document_id: *D_LF}
+    - {allocation_id: *LD, booking_date: 2026-06-29, amount: "240000.00", category: loan_disbursement,
+       loan_id: *L1}
+    - {allocation_id: *PP, booking_date: 2026-06-30, amount: "-300000.00", category: purchase_price}
+    # Rent 850.00 + Nebenkostenvorauszahlung 180.00, July to December.
+    - {allocation_id: *R07, booking_date: 2026-07-02, amount: "850.00", category: rent_cold, tenancy_id: *T1, unit_id: *U1}
+    - {allocation_id: *N07, booking_date: 2026-07-02, amount: "180.00", category: operating_costs_prepayment, tenancy_id: *T1, unit_id: *U1}
+    - {allocation_id: *R08, booking_date: 2026-08-03, amount: "850.00", category: rent_cold, tenancy_id: *T1, unit_id: *U1}
+    - {allocation_id: *N08, booking_date: 2026-08-03, amount: "180.00", category: operating_costs_prepayment, tenancy_id: *T1, unit_id: *U1}
+    - {allocation_id: *R09, booking_date: 2026-09-02, amount: "850.00", category: rent_cold, tenancy_id: *T1, unit_id: *U1}
+    - {allocation_id: *N09, booking_date: 2026-09-02, amount: "180.00", category: operating_costs_prepayment, tenancy_id: *T1, unit_id: *U1}
+    - {allocation_id: *R10, booking_date: 2026-10-02, amount: "850.00", category: rent_cold, tenancy_id: *T1, unit_id: *U1}
+    - {allocation_id: *N10, booking_date: 2026-10-02, amount: "180.00", category: operating_costs_prepayment, tenancy_id: *T1, unit_id: *U1}
+    - {allocation_id: *R11, booking_date: 2026-11-02, amount: "850.00", category: rent_cold, tenancy_id: *T1, unit_id: *U1}
+    - {allocation_id: *N11, booking_date: 2026-11-02, amount: "180.00", category: operating_costs_prepayment, tenancy_id: *T1, unit_id: *U1}
+    - {allocation_id: *R12, booking_date: 2026-12-02, amount: "850.00", category: rent_cold, tenancy_id: *T1, unit_id: *U1}
+    - {allocation_id: *N12, booking_date: 2026-12-02, amount: "180.00", category: operating_costs_prepayment, tenancy_id: *T1, unit_id: *U1}
+    # January 2027's rent, paid 29 Dec, due 3 Jan (rent_due_day 3): counts in 2027 (D54).
+    - {allocation_id: *R01, booking_date: 2026-12-29, amount: "850.00", category: rent_cold, tenancy_id: *T1,
+       unit_id: *U1, recurring: true, service_period: {start: 2027-01-01, end: 2027-01-31}, due_on: 2027-01-03}
+    - {allocation_id: *N01, booking_date: 2026-12-29, amount: "180.00", category: operating_costs_prepayment,
+       tenancy_id: *T1, unit_id: *U1, recurring: true, service_period: {start: 2027-01-01, end: 2027-01-31},
+       due_on: 2027-01-03}
+    - {allocation_id: *K1, booking_date: 2026-07-02, amount: "1700.00", category: deposit_in, tenancy_id: *T1}
+    # Hausgeld 320.00 a month: 180.00 umlagefähig, 40.00 Verwaltung, 100.00 Rücklage.
+    - {allocation_id: *U07, booking_date: 2026-07-01, amount: "-180.00", category: hausgeld_umlagefaehig}
+    - {allocation_id: *V07, booking_date: 2026-07-01, amount: "-40.00", category: hausgeld_verwaltung}
+    - {allocation_id: *RL07, booking_date: 2026-07-01, amount: "-100.00", category: hausgeld_ruecklage}
+    - {allocation_id: *U08, booking_date: 2026-08-01, amount: "-180.00", category: hausgeld_umlagefaehig}
+    - {allocation_id: *V08, booking_date: 2026-08-01, amount: "-40.00", category: hausgeld_verwaltung}
+    - {allocation_id: *RL08, booking_date: 2026-08-01, amount: "-100.00", category: hausgeld_ruecklage}
+    - {allocation_id: *U09, booking_date: 2026-09-01, amount: "-180.00", category: hausgeld_umlagefaehig}
+    - {allocation_id: *V09, booking_date: 2026-09-01, amount: "-40.00", category: hausgeld_verwaltung}
+    - {allocation_id: *RL09, booking_date: 2026-09-01, amount: "-100.00", category: hausgeld_ruecklage}
+    - {allocation_id: *U10, booking_date: 2026-10-01, amount: "-180.00", category: hausgeld_umlagefaehig}
+    - {allocation_id: *V10, booking_date: 2026-10-01, amount: "-40.00", category: hausgeld_verwaltung}
+    - {allocation_id: *RL10, booking_date: 2026-10-01, amount: "-100.00", category: hausgeld_ruecklage}
+    - {allocation_id: *U11, booking_date: 2026-11-01, amount: "-180.00", category: hausgeld_umlagefaehig}
+    - {allocation_id: *V11, booking_date: 2026-11-01, amount: "-40.00", category: hausgeld_verwaltung}
+    - {allocation_id: *RL11, booking_date: 2026-11-01, amount: "-100.00", category: hausgeld_ruecklage}
+    - {allocation_id: *U12, booking_date: 2026-12-01, amount: "-180.00", category: hausgeld_umlagefaehig}
+    - {allocation_id: *V12, booking_date: 2026-12-01, amount: "-40.00", category: hausgeld_verwaltung}
+    - {allocation_id: *RL12, booking_date: 2026-12-01, amount: "-100.00", category: hausgeld_ruecklage}
+    # The loan: interest only on 30 Jul, then annuities of 1,000.00 from 1 Aug.
+    - {allocation_id: *I07, booking_date: 2026-07-30, amount: "-233.33", category: loan_interest, loan_id: *L1}
+    - {allocation_id: *I08, booking_date: 2026-08-01, amount: "-700.00", category: loan_interest, loan_id: *L1}
+    - {allocation_id: *T08, booking_date: 2026-08-01, amount: "-300.00", category: loan_principal, loan_id: *L1}
+    - {allocation_id: *I09, booking_date: 2026-09-01, amount: "-699.13", category: loan_interest, loan_id: *L1}
+    - {allocation_id: *T09, booking_date: 2026-09-01, amount: "-300.87", category: loan_principal, loan_id: *L1}
+    - {allocation_id: *I10, booking_date: 2026-10-01, amount: "-698.25", category: loan_interest, loan_id: *L1}
+    - {allocation_id: *T10, booking_date: 2026-10-01, amount: "-301.75", category: loan_principal, loan_id: *L1}
+    - {allocation_id: *I11, booking_date: 2026-11-01, amount: "-697.37", category: loan_interest, loan_id: *L1}
+    - {allocation_id: *T11, booking_date: 2026-11-01, amount: "-302.63", category: loan_principal, loan_id: *L1}
+    - {allocation_id: *I12, booking_date: 2026-12-01, amount: "-696.48", category: loan_interest, loan_id: *L1}
+    - {allocation_id: *T12, booking_date: 2026-12-01, amount: "-303.52", category: loan_principal, loan_id: *L1}
+    # Grundsteuer, the two renovation costs, Sondereigentumsverwaltung, bank fees.
+    - {allocation_id: *G1, booking_date: 2026-08-17, amount: "-60.00", category: grundsteuer}
+    - {allocation_id: *G2, booking_date: 2026-11-16, amount: "-60.00", category: grundsteuer}
+    - {allocation_id: *PA, booking_date: 2026-09-21, amount: "-1190.00", category: repairs,
+       document_id: *D_P, invoice_net: "1000.00"}
+    - {allocation_id: *TL, booking_date: 2026-10-06, amount: "-4760.00", category: renovation,
+       document_id: *D_T, invoice_net: "4000.00"}
+    - {allocation_id: *SV07, booking_date: 2026-07-15, amount: "-25.00", category: property_management}
+    - {allocation_id: *SV08, booking_date: 2026-08-14, amount: "-25.00", category: property_management}
+    - {allocation_id: *SV09, booking_date: 2026-09-15, amount: "-25.00", category: property_management}
+    - {allocation_id: *SV10, booking_date: 2026-10-15, amount: "-25.00", category: property_management}
+    - {allocation_id: *SV11, booking_date: 2026-11-16, amount: "-25.00", category: property_management}
+    - {allocation_id: *SV12, booking_date: 2026-12-15, amount: "-25.00", category: property_management}
+    - {allocation_id: *BF04, booking_date: 2026-04-30, amount: "-4.90", category: bank_fees}
+    - {allocation_id: *BF05, booking_date: 2026-05-29, amount: "-4.90", category: bank_fees}
+    - {allocation_id: *BF06, booking_date: 2026-06-30, amount: "-4.90", category: bank_fees}
+    - {allocation_id: *BF07, booking_date: 2026-07-31, amount: "-4.90", category: bank_fees}
+    - {allocation_id: *BF08, booking_date: 2026-08-31, amount: "-4.90", category: bank_fees}
+    - {allocation_id: *BF09, booking_date: 2026-09-30, amount: "-4.90", category: bank_fees}
+    - {allocation_id: *BF10, booking_date: 2026-10-30, amount: "-4.90", category: bank_fees}
+    - {allocation_id: *BF11, booking_date: 2026-11-30, amount: "-4.90", category: bank_fees}
+    - {allocation_id: *BF12, booking_date: 2026-12-30, amount: "-4.90", category: bank_fees}
+    # Two lines of 0.00 the model booked without review (D52): no line, no item, no warning.
+    - {allocation_id: *Z1, booking_date: 2026-06-30, amount: "0.00", category: other_expense}
+    - {allocation_id: *Z2, booking_date: 2026-10-31, amount: "0.00", category: repairs}
+
+  checklist: &checklist
+    property_id: *P
+    kind: etw
+    purchase_date: 2026-07-01
+    selected_price_split: {id: *S, source: purchase_contract, evidence_document_id: *D_KV}
+    acquisition_costs:
+      - {id: *C1, kind: real_estate_transfer_tax, amount: "19500.00", document_id: *D_GREST}
+      - {id: *C2, kind: notary, amount: "4200.00", document_id: *D_NOTAR}
+      - {id: *C3, kind: land_registry, amount: "1300.00", document_id: *D_GB}
+    loans: [{id: *L1, lender: Beispielbank, disbursed_on: 2026-06-29}]
+    units: [{id: *U1, label: WE 7}]
+    tenancies: [{id: *T1, unit_id: *U1, start_date: 2026-07-01, deposit_form: cash_account}]
+    documents:
+      - {id: *D_KV, type: contract, subtype: purchase_contract, received_at: 2026-11-01T09:00:00Z,
+         links: [{target_type: property, target_id: *P}]}
+      - {id: *D_GREST, type: bescheid, received_at: 2026-11-01T09:01:00Z}
+      - {id: *D_NOTAR, type: invoice, received_at: 2026-11-01T09:02:00Z}
+      - {id: *D_GB, type: invoice, received_at: 2026-11-01T09:03:00Z}
+      - {id: *D_GSB, type: bescheid, subtype: grundsteuerbescheid, received_at: 2026-11-01T09:04:00Z,
+         links: [{target_type: property, target_id: *P}]}
+      - {id: *D_LV, type: contract, subtype: loan_contract, received_at: 2026-11-01T09:05:00Z,
+         links: [{target_type: loan, target_id: *L1}]}
+      - {id: *D_ZB, type: zinsbescheinigung, tax_year: 2026, received_at: 2027-01-12T09:00:00Z,
+         links: [{target_type: loan, target_id: *L1}]}
+      - {id: *D_MV, type: contract, subtype: lease, received_at: 2026-11-01T09:06:00Z,
+         links: [{target_type: tenancy, target_id: *T1}]}
+      - {id: *D_UP, type: other, subtype: handover_protocol, received_at: 2026-11-01T09:07:00Z,
+         links: [{target_type: tenancy, target_id: *T1}]}
+      - {id: *D_KN, type: statement, subtype: deposit_record, received_at: 2026-11-01T09:08:00Z,
+         links: [{target_type: tenancy, target_id: *T1}]}
+      - {id: *D_WP, type: wirtschaftsplan, tax_year: 2026, received_at: 2026-11-01T09:09:00Z,
+         links: [{target_type: property, target_id: *P}]}
+      - {id: *D_LF, type: invoice, received_at: 2026-11-01T09:10:00Z}
+      - {id: *D_P, type: invoice, received_at: 2026-11-01T09:11:00Z}
+      - {id: *D_T, type: invoice, received_at: 2026-11-01T09:12:00Z}
+
+  facts: &facts
+    property: *property
+    owners:
+      - {owner_id: *OA, share: {numerator: 1, denominator: 2}}
+      - {owner_id: *OB, share: {numerator: 1, denominator: 2}}
+    units: [{id: *U1, label: WE 7, floor_area_m2: "62.50"}]
+    tenancies:
+      - {id: *T1, unit_id: *U1, start_date: 2026-07-01, rent_due_day: 3,
+         rents: [{effective_from: 2026-07-01, cold_rent: "850.00", operating_costs_prepayment: "180.00"}]}
+    split: {id: *S, source: purchase_contract, building_share: "0.720000", evidence_document_id: *D_KV}
+    cost_rows:
+      - {id: *C1, kind: real_estate_transfer_tax, amount: "19500.00", paid_on: 2026-04-20,
+         document_id: *D_GREST, paid_by: [*AQ1]}
+      - {id: *C2, kind: notary, amount: "4200.00", paid_on: 2026-03-25, document_id: *D_NOTAR}
+      - {id: *C3, kind: land_registry, amount: "1300.00", paid_on: 2026-05-12,
+         document_id: *D_GB, paid_by: [*AQ3]}
+    loans: [{id: *L1, lender: Beispielbank}]
+    allocations: *allocations
+    tax_inputs: &inputs_a
+      - {id: *TI1, property_id: *P, kind: renovation_treatment, allocation_id: *TL,
+         value: {treatment: erhaltung}}
+      - &input_certified
+        {id: *TI2, property_id: *P, kind: interest_certified, tax_year: 2026, loan_id: *L1,
+         document_id: *D_ZB, value: {amount: "3724.56"}}
+    checklist: *checklist
+    today: 2027-01-15
+    coverage: [{account_id: *ACC, covered_through: 2026-12-30}]
+    pending: {count: 2, sum: "-89.90"}
+
+  # --- Expected pieces ------------------------------------------------------------------
+  rule_set: &rule_set {tax_year: 2026, version: "2026.1", form_year: 2025, form_status: provisional}
+  header: &header
+    address: {street: Beispielweg, house_number: "7", postal_code: "12345", city: Musterstadt}
+    aktenzeichen: "999/123/45678"
+    contract_date: 2026-03-10
+    transfer_date: 2026-07-01
+    completed: 1998
+    living_area_m2: "62.50"
+  rent_sources: &rent_sources
+    - {kind: allocation, id: *R07}
+    - {kind: allocation, id: *R08}
+    - {kind: allocation, id: *R09}
+    - {kind: allocation, id: *R10}
+    - {kind: allocation, id: *R11}
+    - {kind: allocation, id: *R12}
+  line_rent: &line_rent {key: income.rent_total, amount: "5100.00", amount_rounded: 5100,
+                         sources: *rent_sources}
+  line_umlagen: &line_umlagen
+    key: income.umlagen
+    amount: "1080.00"
+    amount_rounded: 1080
+    sources: [{kind: allocation, id: *N07}, {kind: allocation, id: *N08}, {kind: allocation, id: *N09},
+              {kind: allocation, id: *N10}, {kind: allocation, id: *N11}, {kind: allocation, id: *N12}]
+  line_afa: &line_afa
+    key: wk.afa
+    amount: "2340.00"
+    amount_rounded: 2340
+    sources:
+      - {kind: property, id: *P}
+      - {kind: price_split, id: *S}
+      - {kind: document, id: *D_KV}
+      - {kind: acquisition_cost, id: *C1}
+      - {kind: acquisition_cost, id: *C2}
+      - {kind: acquisition_cost, id: *C3}
+      - {kind: document, id: *D_GREST}
+      - {kind: document, id: *D_NOTAR}
+      - {kind: document, id: *D_GB}
+  line_interest: &line_interest
+    key: wk.interest
+    amount: "3724.56"
+    amount_rounded: 3725
+    einzelangaben: [Beispielbank]
+    sources: [{kind: allocation, id: *I07}, {kind: allocation, id: *I08}, {kind: allocation, id: *I09},
+              {kind: allocation, id: *I10}, {kind: allocation, id: *I11}, {kind: allocation, id: *I12}]
+  line_financing: &line_financing
+    key: wk.financing_costs
+    amount: "480.00"
+    amount_rounded: 480
+    sources: [{kind: allocation, id: *LF}, {kind: document, id: *D_LF}]
+  line_allocable: &line_allocable
+    key: wk.allocable_costs
+    amount: "1200.00"
+    amount_rounded: 1200
+    sources: [{kind: allocation, id: *U07}, {kind: allocation, id: *U08}, {kind: allocation, id: *U09},
+              {kind: allocation, id: *U10}, {kind: allocation, id: *U11}, {kind: allocation, id: *U12},
+              {kind: allocation, id: *G1}, {kind: allocation, id: *G2}]
+  line_non_allocable: &line_non_allocable
+    key: wk.non_allocable_costs
+    amount: "434.10"
+    amount_rounded: 435
+    sources: [{kind: allocation, id: *V07}, {kind: allocation, id: *V08}, {kind: allocation, id: *V09},
+              {kind: allocation, id: *V10}, {kind: allocation, id: *V11}, {kind: allocation, id: *V12},
+              {kind: allocation, id: *SV07}, {kind: allocation, id: *SV08}, {kind: allocation, id: *SV09},
+              {kind: allocation, id: *SV10}, {kind: allocation, id: *SV11}, {kind: allocation, id: *SV12},
+              {kind: allocation, id: *BF04}, {kind: allocation, id: *BF05}, {kind: allocation, id: *BF06},
+              {kind: allocation, id: *BF07}, {kind: allocation, id: *BF08}, {kind: allocation, id: *BF09},
+              {kind: allocation, id: *BF10}, {kind: allocation, id: *BF11}, {kind: allocation, id: *BF12}]
+  unit_row: &unit_row {wohnung: property, id: *P, label: Wohnung Beispielweg, area_m2: "62.50",
+                       area_source: living_area, amount: "5100.00", sources: *rent_sources}
+  tracked: &tracked
+    - {category: hausgeld_ruecklage, amount: "600.00", count: 6}
+    - {category: loan_principal, amount: "1508.77", count: 5}
+  moved: &moved
+    - {allocation_id: *R01, booking_date: 2026-12-29, category: rent_cold, amount: "850.00",
+       tax_year: 2027, rule: short_period_shift}
+    - {allocation_id: *N01, booking_date: 2026-12-29, category: operating_costs_prepayment,
+       amount: "180.00", tax_year: 2027, rule: short_period_shift}
+  w_unpaid: &w_unpaid {code: afa.cost_row_unpaid, params: {kind: notary, amount: "4200.00"}}
+  w_other: &w_other {code: income.other_review, params: {amount: "425.00", counterparty_iban: "DE12 **** 0002"}}
+  missing_documents: &missing_documents
+    - {code: purchase_contract, status: present, scope: {type: property, id: *P}, documents: [*D_KV]}
+    - {code: price_split, status: present, scope: {type: property, id: *P}, documents: [*D_KV]}
+    - {code: acquisition_cost_evidence, status: present, documents: [*D_GREST],
+       scope: {type: acquisition_cost, id: *C1, cost_kind: real_estate_transfer_tax, cost_amount: "19500.00"}}
+    - {code: acquisition_cost_evidence, status: present, documents: [*D_NOTAR],
+       scope: {type: acquisition_cost, id: *C2, cost_kind: notary, cost_amount: "4200.00"}}
+    - {code: acquisition_cost_evidence, status: present, documents: [*D_GB],
+       scope: {type: acquisition_cost, id: *C3, cost_kind: land_registry, cost_amount: "1300.00"}}
+    - {code: grundsteuerbescheid, status: present, scope: {type: property, id: *P}, documents: [*D_GSB]}
+    - {code: loan_contract, status: present, scope: {type: loan, id: *L1, lender: Beispielbank},
+       documents: [*D_LV]}
+    - {code: zinsbescheinigung, status: present, due_on: 2027-02-28,
+       scope: {type: loan, id: *L1, lender: Beispielbank}, documents: [*D_ZB]}
+    - {code: lease, status: present, documents: [*D_MV],
+       scope: {type: tenancy, id: *T1, unit_label: WE 7, tenancy_start: 2026-07-01}}
+    - {code: handover_protocol, status: present, documents: [*D_UP],
+       scope: {type: tenancy, id: *T1, unit_label: WE 7, tenancy_start: 2026-07-01}}
+    - {code: deposit_record, status: present, documents: [*D_KN],
+       scope: {type: tenancy, id: *T1, unit_label: WE 7, tenancy_start: 2026-07-01}}
+    - {code: wirtschaftsplan, status: present, due_on: 2026-01-01, scope: {type: property, id: *P},
+       documents: [*D_WP]}
+    - {code: hausgeldabrechnung, status: expected, due_on: 2027-06-30, scope: {type: property, id: *P}}
+    - {code: cost_receipt, status: present, documents: [*D_LF],
+       scope: {type: allocation, id: *LF, category: loan_fees, booking_date: 2026-06-15}}
+    - {code: cost_receipt, status: present, documents: [*D_P],
+       scope: {type: allocation, id: *PA, category: repairs, booking_date: 2026-09-21}}
+    - {code: cost_receipt, status: present, documents: [*D_T],
+       scope: {type: allocation, id: *TL, category: renovation, booking_date: 2026-10-06}}
+    - {code: market_rent, status: missing, scope: {type: property, id: *P}}
+  limit_15: &limit_15
+    basis_building_cost: "234000.00"
+    limit: "35100.00"
+    window_start: 2026-07-01
+    window_end: 2029-06-30
+    counted: [*PA, *TL]
+    used_net: "5000.00"
+    ratio_percent: "14.2"
+    exceeded: false
+
+cases:
+  - id: case_a
+    description: >
+      the hand-calculated return: tiles elected Erhaltungsaufwand, certificate matches, no
+      Hausgeldabrechnung and no Mietspiegel value yet, the seller's forwarded rent undecided
+    tax_year: 2026
+    rule_set_year: 2026
+    facts: *facts
+    expect: &expect_a
+      rule_set: *rule_set
+      header: *header
+      lines:
+        - *line_rent
+        - *line_umlagen
+        - {key: income.total, amount: "6180.00", amount_rounded: 6180}
+        - *line_afa
+        - *line_interest
+        - *line_financing
+        - key: wk.maintenance
+          amount: "5950.00"
+          amount_rounded: 5950
+          provisional: true
+          sources: [{kind: allocation, id: *PA}, {kind: document, id: *D_P},
+                    {kind: allocation, id: *TL}, {kind: document, id: *D_T},
+                    {kind: tax_input, id: *TI1}]
+        - *line_allocable
+        - *line_non_allocable
+        - {key: wk.total, amount: "14128.66", amount_rounded: 14130}
+        - {key: result.surplus, amount: "-7948.66", amount_rounded: -7950}
+        - {key: result.owner_a, amount: "-3974.33", amount_rounded: -3975}
+        - {key: result.owner_b, amount: "-3974.33", amount_rounded: -3975}
+      unit_rows: [*unit_row]
+      totals: {income: "6180.00", costs: "14128.66", result: "-7948.66", income_rounded: 6180,
+               costs_rounded: 14130, result_rounded: -7950}
+      owners:
+        - {owner_id: *OA, amount: "-3974.33", amount_rounded: -3975}
+        - {owner_id: *OB, amount: "-3974.33", amount_rounded: -3975}
+      afa: {amount: "2340.00", basis: "234000.00", months: 6, method_code: 2}
+      tracked_not_deductible: *tracked
+      moved_to_other_year: *moved
+      pre_handover: [*F1, *F2]
+      excluded_open: {count: 2, sum: "-89.90"}
+      warnings:
+        - *w_unpaid
+        - {code: hausgeld.abrechnung_pending}
+        - *w_other
+        - *w_other
+        - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
+        - {code: reduced_rent.no_market_rent}
+        - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
+        - {code: draft.form_provisional}
+      missing_documents: *missing_documents
+      limit_15: *limit_15
+      reduced_rent: [{id: *P, agreed_warm: "1030.00", area_m2: "62.50", outcome: no_market_rent}]
+      coverage: {months_owned: 6, months_covered: 5, covered_through: 2026-12-30}
+      tax_free_from: 2036-03-11
+
+  - id: case_b_renovation_undecided
+    description: >
+      the same without the tiles' election: Z55 holds the painter only (1,190.00), the tiles
+      are an open line with a warning, and the 15 % tracker still counts their 4,000.00 net
+    tax_year: 2026
+    rule_set_year: 2026
+    facts: {<<: *facts, tax_inputs: [*input_certified]}
+    expect:
+      lines:
+        - *line_rent
+        - *line_umlagen
+        - {key: income.total, amount: "6180.00", amount_rounded: 6180}
+        - *line_afa
+        - *line_interest
+        - *line_financing
+        - key: wk.maintenance
+          amount: "1190.00"
+          amount_rounded: 1190
+          provisional: true
+          sources: [{kind: allocation, id: *PA}, {kind: document, id: *D_P}]
+        - *line_allocable
+        - *line_non_allocable
+        - {key: wk.total, amount: "9368.66", amount_rounded: 9370}
+        - {key: result.surplus, amount: "-3188.66", amount_rounded: -3190}
+        - {key: result.owner_a, amount: "-1594.33", amount_rounded: -1595}
+        - {key: result.owner_b, amount: "-1594.33", amount_rounded: -1595}
+      totals: {income: "6180.00", costs: "9368.66", result: "-3188.66", income_rounded: 6180,
+               costs_rounded: 9370, result_rounded: -3190}
+      owners:
+        - {owner_id: *OA, amount: "-1594.33", amount_rounded: -1595}
+        - {owner_id: *OB, amount: "-1594.33", amount_rounded: -1595}
+      excluded_open: {count: 3, sum: "-4849.90"}
+      warnings:
+        - *w_unpaid
+        - {code: hausgeld.abrechnung_pending}
+        - *w_other
+        - *w_other
+        - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
+        - {code: renovation.undecided, params: {amount: "4760.00"}}
+        - {code: reduced_rent.no_market_rent}
+        - {code: draft.open_lines_excluded, params: {count: "3", sum: "-4849.90"}}
+        - {code: draft.form_provisional}
+      limit_15: *limit_15
+
+  - id: pre_handover_as_rent
+    description: >
+      case A with pre_handover_income = rent (Luis, Q1): the 850.00 the seller forwarded join
+      the flat's rent row (5,950.00, of which 850.00 before the handover), the block is empty
+      and its warning gone; the two other_income warnings stay (they are per allocation)
+    tax_year: 2026
+    rule_set_year: 2026
+    facts:
+      <<: *facts
+      tax_inputs:
+        - {id: *TI1, property_id: *P, kind: renovation_treatment, allocation_id: *TL,
+           value: {treatment: erhaltung}}
+        - *input_certified
+        - {id: *TI3, property_id: *P, kind: pre_handover_income, value: {treatment: rent}}
+    expect:
+      lines:
+        - key: income.rent_total
+          amount: "5950.00"
+          amount_rounded: 5950
+          sources: [{kind: allocation, id: *R07}, {kind: allocation, id: *R08}, {kind: allocation, id: *R09},
+                    {kind: allocation, id: *R10}, {kind: allocation, id: *R11}, {kind: allocation, id: *R12},
+                    {kind: allocation, id: *F1}, {kind: allocation, id: *F2}, {kind: tax_input, id: *TI3}]
+        - *line_umlagen
+        - {key: income.total, amount: "7030.00", amount_rounded: 7030}
+        - *line_afa
+        - *line_interest
+        - *line_financing
+        - {key: wk.maintenance, amount: "5950.00", amount_rounded: 5950, provisional: true}
+        - *line_allocable
+        - *line_non_allocable
+        - {key: wk.total, amount: "14128.66", amount_rounded: 14130}
+        - {key: result.surplus, amount: "-7098.66", amount_rounded: -7100}
+        - {key: result.owner_a, amount: "-3549.33", amount_rounded: -3550}
+        - {key: result.owner_b, amount: "-3549.33", amount_rounded: -3550}
+      unit_rows:
+        - {wohnung: property, id: *P, label: Wohnung Beispielweg, area_m2: "62.50",
+           area_source: living_area, amount: "5950.00", pre_handover: "850.00"}
+      totals: {income: "7030.00", costs: "14128.66", result: "-7098.66", income_rounded: 7030,
+               costs_rounded: 14130, result_rounded: -7100}
+      owners:
+        - {owner_id: *OA, amount: "-3549.33", amount_rounded: -3550}
+        - {owner_id: *OB, amount: "-3549.33", amount_rounded: -3550}
+      pre_handover: []
+      warnings:
+        - *w_unpaid
+        - {code: hausgeld.abrechnung_pending}
+        - *w_other
+        - *w_other
+        - {code: reduced_rent.no_market_rent}
+        - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
+        - {code: draft.form_provisional}
+
+  - id: export_roundtrip
+    description: >
+      case A serialised to JSON and loaded again equals itself; the field sheet rows (key,
+      Zeile of the amount, Kennzahl, cents, whole euros) under rule set 2026.1, form 2025
+      provisional
+    tax_year: 2026
+    rule_set_year: 2026
+    facts: *facts
+    expect:
+      <<: *expect_a
+      roundtrip: true
+      field_sheet:
+        - {key: income.rent_units, zeile: 14, kennzahl: null, amount: "5100.00", amount_rounded: 5100}
+        - {key: income.rent_total, zeile: 15, kennzahl: "01", amount: "5100.00", amount_rounded: 5100}
+        - {key: income.umlagen, zeile: 20, kennzahl: "04", amount: "1080.00", amount_rounded: 1080}
+        - {key: income.total, zeile: 32, kennzahl: null, amount: "6180.00", amount_rounded: 6180}
+        - {key: wk.afa, zeile: 35, kennzahl: "30", amount: "2340.00", amount_rounded: 2340}
+        - {key: wk.interest, zeile: 48, kennzahl: "33", amount: "3724.56", amount_rounded: 3725}
+        - {key: wk.financing_costs, zeile: 51, kennzahl: "34", amount: "480.00", amount_rounded: 480}
+        - {key: wk.maintenance, zeile: 55, kennzahl: "36", amount: "5950.00", amount_rounded: 5950}
+        - {key: wk.allocable_costs, zeile: 75, kennzahl: "52", amount: "1200.00", amount_rounded: 1200}
+        - {key: wk.non_allocable_costs, zeile: 78, kennzahl: "48", amount: "434.10", amount_rounded: 435}
+        - {key: wk.total, zeile: 83, kennzahl: null, amount: "14128.66", amount_rounded: 14130}
+        - {key: result.surplus, zeile: 85, kennzahl: null, amount: "-7948.66", amount_rounded: -7950}
+        - {key: result.owner_a, zeile: 86, kennzahl: "20", amount: "-3974.33", amount_rounded: -3975}
+        - {key: result.owner_b, zeile: 86, kennzahl: "21", amount: "-3974.33", amount_rounded: -3975}

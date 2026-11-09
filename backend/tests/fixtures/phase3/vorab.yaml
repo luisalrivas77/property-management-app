@@ -1,0 +1,91 @@
+# Rule fixture: lines before the handover (hausbuch.rules.tax.vorab.split)
+#
+# split(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> RuleLines
+# Spec: docs/phases/phase-3.md §5.10, D63 (Q1 decided 9 Nov 2026: rent).
+#   Income allocations (rent_cold, operating_costs_prepayment, operating_costs_settlement,
+#   other_income) of the tax year with booking_date < property.purchase_date (its current
+#   value):
+#   - with a pre_handover_income input in force (value rent): one unit row for the flat
+#     (wohnung property, §5.7's area) with amount = pre_handover = their sum, sources = the
+#     allocations and the input; nothing in the block, no warning;
+#   - without it: pre_handover = their ids, warning income.pre_handover with params amount
+#     (the sum) and count.
+#   Costs before the handover are not touched here: they stay in their lines (vorab entstandene
+#   Werbungskosten; schuldzinsen.yaml financing_costs_before_handover has the line).
+#   income.other_review for an other_income line comes from einnahmen (§5.7), whatever its
+#   date, not from here.
+
+rule_set_year: 2026
+
+ids:
+  property: &P 0000000b-0000-4000-8000-000000000001
+  unit: &U1 0000000c-0000-4000-8000-000000000001
+  forwarded_may: &A1 000000a1-0000-4000-8000-000000000501
+  forwarded_jun: &A2 000000a1-0000-4000-8000-000000000502
+  interest: &A3 000000a1-0000-4000-8000-000000000503
+  input: &I1 000000f1-0000-4000-8000-000000000001
+
+bases:
+  etw: &etw {id: *P, label: Wohnung Beispielweg, kind: etw, build_year: 1998,
+             purchase_date: 2026-07-01, purchase_price: "300000.00", living_area_m2: "62.50"}
+  units: &units [{id: *U1, label: WE 7, floor_area_m2: "62.50"}]
+  forwarded_may: &fwd_may {allocation_id: *A1, booking_date: 2026-05-05, amount: "425.00",
+                           category: other_income, counterparty_iban_masked: "DE12 **** 0002"}
+  forwarded_jun: &fwd_jun {allocation_id: *A2, booking_date: 2026-06-05, amount: "425.00",
+                           category: other_income, counterparty_iban_masked: "DE12 **** 0002"}
+  interest: &interest {allocation_id: *A3, booking_date: 2026-06-30, amount: "-233.33",
+                       category: loan_interest}
+
+cases:
+  - id: seller_forwarded_rent_excluded
+    description: >
+      the seller forwarded 425.00 on 5 May and 5 Jun, before the 1 Jul handover; no input →
+      the block holds both (850.00) and the draft warns
+    facts: {property: *etw, units: *units, allocations: [*fwd_may, *fwd_jun]}
+    expect:
+      - tax_year: 2026
+        pre_handover: [*A1, *A2]
+        warnings: [{code: income.pre_handover, params: {amount: "850.00", count: "2"}}]
+
+  - id: interest_before_handover_deducted
+    description: interest debited before the handover is a cost, not part of the block
+    facts: {property: *etw, units: *units, allocations: [*fwd_may, *interest]}
+    expect:
+      - tax_year: 2026
+        pre_handover: [*A1]
+        warnings: [{code: income.pre_handover, params: {amount: "425.00", count: "1"}}]
+
+  - id: purchase_date_corrected_later
+    description: >
+      the handover date is corrected to 1 Jun: only the May line is before it; the June line
+      is ordinary income (einnahmen)
+    facts:
+      property: {<<: *etw, purchase_date: 2026-06-01}
+      units: *units
+      allocations: [*fwd_may, *fwd_jun]
+    expect:
+      - tax_year: 2026
+        pre_handover: [*A1]
+        warnings: [{code: income.pre_handover, params: {amount: "425.00", count: "1"}}]
+
+  - id: rent_input_moves_to_rent_row
+    description: >
+      with pre_handover_income = rent (Luis's decision, Q1) the 850.00 go on the flat's rent
+      row as its part before the handover; the block is empty and there is no warning
+    facts:
+      property: *etw
+      units: *units
+      allocations: [*fwd_may, *fwd_jun]
+      tax_inputs:
+        - {id: *I1, property_id: *P, kind: pre_handover_income, value: {treatment: rent}}
+    expect:
+      - tax_year: 2026
+        unit_rows:
+          - wohnung: property
+            id: *P
+            label: Wohnung Beispielweg
+            area_m2: "62.50"
+            area_source: living_area
+            amount: "850.00"
+            pre_handover: "850.00"
+            sources: [{kind: allocation, id: *A1}, {kind: allocation, id: *A2}, {kind: tax_input, id: *I1}]

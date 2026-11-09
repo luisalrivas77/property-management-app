@@ -1,0 +1,20 @@
+# Rule fixture: the §23 date (hausbuch.rules.tax.spekulation.tax_free_from)
+#
+# tax_free_from(notarized_on: date, rule_set: RuleSet) -> date
+# Spec: docs/phases/phase-3.md §5.9, D68. §23 Abs. 1 S. 1 Nr. 1 EStG: the ten years run between
+# the two obligatory contracts (purchase and sale), so a sale contract signed on or after
+# notarized_on + speculation_years + 1 day is tax-free. A 29 Feb contract date falls on
+# 28 Feb ten years on (no 29 Feb), so the day after is 1 Mar.
+
+rule_set_year: 2026
+
+cases:
+  - id: ten_years_plus_one_day
+    description: Kaufvertrag 10 Mar 2026 → a sale contract from 11 Mar 2036 is tax-free
+    notarized_on: 2026-03-10
+    expect: 2036-03-11
+
+  - id: leap_day_contract
+    description: Kaufvertrag 29 Feb 2024 → 1 Mar 2034
+    notarized_on: 2024-02-29
+    expect: 2034-03-01

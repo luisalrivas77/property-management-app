@@ -5,6 +5,7 @@ from typing import get_args
 
 import fixture_models as phase1
 import fixture_models_phase2 as phase2
+import fixture_models_phase3 as phase3
 import pytest
 from fixture_models import RentFixture
 from pydantic import ValidationError
@@ -18,7 +19,7 @@ from hausbuch.schemas.allocation import (
 from hausbuch.schemas.common import Money
 from hausbuch.schemas.events import EVENT_CATALOG, EventType, RuleRecorded
 
-PHASES = {"phase1": phase1, "phase2": phase2}
+PHASES = {"phase1": phase1, "phase2": phase2, "phase3": phase3}
 FIXTURE_FILES = [(p, name) for p, mod in PHASES.items() for name in sorted(mod.MODELS)]
 
 
@@ -40,6 +41,111 @@ def test_case_ids_unique(phase, name):
         if isinstance(value, list) and value and isinstance(value[0], dict) and "id" in value[0]:
             ids = [c["id"] for c in value if "seq" not in c]
             assert len(ids) == len(set(ids)), f"duplicate case id in {name}.{key}"
+
+
+# docs/phases/phase-3.md §13 and §14: the cases each phase 3 fixture must carry (a file may
+# carry more). A case renamed or dropped here is a spec change.
+PHASE3_CASES = {
+    "tax_year": {"due_missing_no_shift"},
+    "afa": {
+        "etw_1998_handover_july",
+        "build_1920_rate_2_5",
+        "build_2023_rate_3",
+        "handover_january_full_year",
+        "handover_december_one_twelfth",
+        "nebenkosten_in_basis",
+        "herstellung_addition_2027",
+        "no_split_empty_line",
+        "cost_row_unpaid_warning",
+        "acquisition_cost_without_row_not_added",
+        "purchase_price_mismatch_warning",
+    },
+    "anschaffungsnah": {
+        "under_limit_14_percent",
+        "crossing_in_second_year",
+        "equal_is_not_exceeded",
+        "outside_window_not_counted",
+        "estimated_net_without_invoice",
+        "excluded_annual_maintenance",
+        "herstellung_not_counted",
+        "window_dates",
+        "zero_amount_is_not_evidence",
+    },
+    "erhaltungsaufwand": {
+        "repairs_full_deduction",
+        "renovation_elected_erhaltung",
+        "renovation_elected_herstellung",
+        "renovation_undecided_excluded",
+        "spread_three_years",
+        "spread_sale_in_second_year",
+        "spread_withdrawn_back_to_full",
+    },
+    "schuldzinsen": {
+        "interest_only_phase_plus_annuities",
+        "certificate_matches",
+        "certificate_mismatch_0_56",
+        "january_annuity_moved",
+        "financing_costs_before_handover",
+        "two_loans_two_einzelangaben",
+    },
+    "hausgeld": {
+        "six_months_split",
+        "ruecklage_tracked_not_deducted",
+        "ruecklage_spent_confirmed_350",
+        "abrechnung_pending_provisional",
+        "settlement_backpayment_next_year",
+    },
+    "umlagen": {
+        "rent_and_prepayments_six_months",
+        "settlement_backpayment_positive",
+        "refund_negative",
+        "pauschale_is_umlagen",
+        "included_rent_on_z13",
+        "all_included_ticks_z24",
+        "mixed_terms_warns",
+        "two_rooms_one_flat_row",
+        "mfh_two_units_two_rows",
+        "living_area_missing_falls_back",
+        "other_income_with_review_warning",
+        "deposit_not_income",
+    },
+    "verbilligte_vermietung": {
+        "ratio_103_nothing",
+        "ratio_62_prognosis",
+        "ratio_45_cut_55",
+        "no_market_rent_info",
+        "market_rent_valid_from_mid_year",
+    },
+    "vorab": {
+        "seller_forwarded_rent_excluded",
+        "interest_before_handover_deducted",
+        "purchase_date_corrected_later",
+    },
+    "spekulation": {"ten_years_plus_one_day", "leap_day_contract"},
+    "checklist_phase3": {
+        "cost_receipt_missing_for_repair",
+        "cost_receipt_present",
+        "cost_receipt_only_for_named_categories",
+        "market_rent_missing_for_let_unit",
+        "market_rent_present",
+        "market_rent_withdrawn_is_missing",
+        "zero_amount_is_not_evidence",
+        "phase1_facts_unchanged",
+    },
+    "anlage_v_2026": {
+        "case_a",
+        "case_b_renovation_undecided",
+        "pre_handover_as_rent",
+        "export_roundtrip",
+    },
+}
+
+
+def test_phase3_cases_cover_the_spec():
+    assert set(PHASE3_CASES) == set(phase3.MODELS)
+    for name, required in PHASE3_CASES.items():
+        ids = {c.id for c in phase3.load(name).cases}
+        assert required <= ids, (name, required - ids)
 
 
 def test_rent_rows_validate():

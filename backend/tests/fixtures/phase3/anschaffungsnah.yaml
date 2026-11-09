@@ -1,0 +1,215 @@
+# Rule fixture: anschaffungsnahe Herstellungskosten, the 15 % tracker
+# (hausbuch.rules.tax.anschaffungsnah.limit_status)
+#
+# limit_status(facts: LimitFacts, tax_year: int, rule_set: RuleSet) -> LimitStatus
+# Spec: docs/phases/phase-3.md §5.3, D56, D70. §6 Abs. 1 Nr. 1a EStG.
+#   basis_building_cost = the AfA basis of §5.2 before additions; limit = 15 % of it.
+#   window = purchase_date .. purchase_date + 3 years − 1 day.
+#   Counted: confirmed repairs and renovation allocations with a non-zero amount, booked in the
+#     window, whose treatment is erhaltung or undecided (a herstellung election is capitalised
+#     on its own), without an exclude_from_15pct input in force. Net = invoice_net when
+#     present (net_source invoice), else round(|gross| ÷ (1 + default_vat_rate), 2) (estimated,
+#     warning limit.estimated_net). gross is the magnitude. Listed by booking_date, then id.
+#   used_net = Σ net; ratio_percent = used_net ÷ limit × 100, one decimal, half-up (the share
+#     of the allowance used); exceeded = used_net > limit (strict).
+#   The status describes the whole window as known today, so it is the same for every year;
+#     exceeded_in_year = the tax year in which the running sum first passes the limit.
+#   When exceeded: every counted cost becomes a basis addition (reason limit_exceeded) in the
+#     tax year it was paid, at its GROSS amount (§9b Abs. 1 EStG; see afa.yaml), and leaves
+#     wk.maintenance. Warnings: limit.exceeded on years ≥ exceeded_in_year inside the window,
+#     limit.prior_year_amendment (params exceeded_in_year, amount = the year's gross moved)
+#     on the earlier years.
+
+rule_set_year: 2026
+
+ids:
+  property: &P 0000000b-0000-4000-8000-000000000001
+  split: &S 0000005a-0000-4000-8000-000000000001
+  doc_kaufvertrag: &D_KV 00000d0c-0000-4000-8000-000000000001
+  painter: &A_PAINTER 000000a1-0000-4000-8000-000000000008
+  tiles: &A_TILES 000000a1-0000-4000-8000-000000000009
+  roof: &A_ROOF 000000a1-0000-4000-8000-00000000000a
+  repair_a: &A_R1 000000a1-0000-4000-8000-000000000011
+  repair_b: &A_R2 000000a1-0000-4000-8000-000000000012
+  repair_c: &A_R3 000000a1-0000-4000-8000-000000000013
+  input_roof: &I_ROOF 000000f1-0000-4000-8000-000000000001
+  input_exclude: &I_EXCL 000000f1-0000-4000-8000-000000000002
+  input_herstellung: &I_HERST 000000f1-0000-4000-8000-000000000003
+
+bases:
+  # The §14 flat without its cost rows' evidence: basis 234,000.00 → limit 35,100.00.
+  afa: &afa
+    property_id: *P
+    purchase_price: "300000.00"
+    build_year: 1998
+    purchase_date: 2026-07-01
+    split: {id: *S, source: purchase_contract, building_share: "0.720000", evidence_document_id: *D_KV}
+    cost_rows:
+      - {id: 000000ac-0000-4000-8000-000000000001, kind: real_estate_transfer_tax, amount: "19500.00"}
+      - {id: 000000ac-0000-4000-8000-000000000002, kind: notary, amount: "4200.00"}
+      - {id: 000000ac-0000-4000-8000-000000000003, kind: land_registry, amount: "1300.00"}
+  painter: &painter {allocation_id: *A_PAINTER, booking_date: 2026-09-21, amount: "-1190.00",
+                     category: repairs, invoice_net: "1000.00"}
+  tiles: &tiles {allocation_id: *A_TILES, booking_date: 2026-10-06, amount: "-4760.00",
+                 category: renovation, invoice_net: "4000.00"}
+  window: &window {basis_building_cost: "234000.00", limit: "35100.00", window_start: 2026-07-01,
+                   window_end: 2029-06-30}
+  counted_painter: &c_painter {allocation_id: *A_PAINTER, booking_date: 2026-09-21, tax_year: 2026,
+                               gross: "1190.00", net: "1000.00", net_source: invoice}
+  counted_tiles: &c_tiles {allocation_id: *A_TILES, booking_date: 2026-10-06, tax_year: 2026,
+                           gross: "4760.00", net: "4000.00", net_source: invoice}
+
+cases:
+  - id: under_limit_14_percent
+    description: >
+      painter 1,190.00 gross (invoice net 1,000.00) and the tiles 4,760.00 (net 4,000.00, no
+      election yet: undecided counts) → 5,000.00 of 35,100.00 = 14.2 % of the allowance
+    facts: {afa: *afa, allocations: [*painter, *tiles]}
+    expect:
+      - {<<: *window, tax_year: 2026, counted: [*c_painter, *c_tiles], used_net: "5000.00",
+         ratio_percent: "14.2", exceeded: false}
+
+  - id: crossing_in_second_year
+    description: >
+      2027 adds a roof share of 42,840.00 gross (36,000.00 net, elected erhaltung) → 41,000.00 >
+      35,100.00: exceeded in 2027. All three costs join the basis gross in the year paid (2026:
+      5,950.00, 2027: 42,840.00); the 2026 draft must be amended (afa.yaml
+      limit_crossing_additions_gross has the AfA)
+    facts:
+      afa: *afa
+      allocations:
+        - *painter
+        - *tiles
+        - {allocation_id: *A_ROOF, booking_date: 2027-05-10, amount: "-42840.00", category: renovation,
+           invoice_net: "36000.00"}
+      tax_inputs:
+        - {id: *I_ROOF, property_id: *P, kind: renovation_treatment, allocation_id: *A_ROOF,
+           value: {treatment: erhaltung}}
+    expect:
+      - &crossing
+        <<: *window
+        tax_year: 2026
+        counted:
+          - *c_painter
+          - *c_tiles
+          - {allocation_id: *A_ROOF, booking_date: 2027-05-10, tax_year: 2027, gross: "42840.00",
+             net: "36000.00", net_source: invoice}
+        used_net: "41000.00"
+        ratio_percent: "116.8"
+        exceeded: true
+        exceeded_in_year: 2027
+        basis_additions:
+          - {allocation_id: *A_PAINTER, tax_year: 2026, amount: "1190.00", reason: limit_exceeded}
+          - {allocation_id: *A_TILES, tax_year: 2026, amount: "4760.00", reason: limit_exceeded}
+          - {allocation_id: *A_ROOF, tax_year: 2027, amount: "42840.00", reason: limit_exceeded}
+        warnings:
+          - {code: limit.prior_year_amendment, params: {exceeded_in_year: "2027", amount: "5950.00"}}
+      - <<: *crossing
+        tax_year: 2027
+        warnings: [{code: limit.exceeded}]
+
+  - id: equal_is_not_exceeded
+    description: exactly 35,100.00 net uses 100.0 % of the allowance and is not above it
+    facts:
+      afa: *afa
+      allocations:
+        - {allocation_id: *A_R1, booking_date: 2027-02-01, amount: "-41769.00", category: renovation,
+           invoice_net: "35100.00"}
+    expect:
+      - <<: *window
+        tax_year: 2027
+        counted:
+          - {allocation_id: *A_R1, booking_date: 2027-02-01, tax_year: 2027, gross: "41769.00",
+             net: "35100.00", net_source: invoice}
+        used_net: "35100.00"
+        ratio_percent: "100.0"
+        exceeded: false
+
+  - id: outside_window_not_counted
+    description: paid on 1 Jul 2029, the day after the window closes
+    facts:
+      afa: *afa
+      allocations:
+        - {allocation_id: *A_R1, booking_date: 2029-07-01, amount: "-47600.00", category: repairs,
+           invoice_net: "40000.00"}
+    expect:
+      - {<<: *window, tax_year: 2029, used_net: "0.00", ratio_percent: "0.0", exceeded: false}
+
+  - id: estimated_net_without_invoice
+    description: no invoice net → 2,500.00 ÷ 1.19 = 2,100.84 (estimated, flagged)
+    facts:
+      afa: *afa
+      allocations:
+        - {allocation_id: *A_R1, booking_date: 2026-11-12, amount: "-2500.00", category: repairs}
+    expect:
+      - <<: *window
+        tax_year: 2026
+        counted:
+          - {allocation_id: *A_R1, booking_date: 2026-11-12, tax_year: 2026, gross: "2500.00",
+             net: "2100.84", net_source: estimated}
+        used_net: "2100.84"
+        ratio_percent: "6.0"
+        exceeded: false
+        warnings: [{code: limit.estimated_net}]
+
+  - id: excluded_annual_maintenance
+    description: the yearly boiler service is excluded by input (jährlich üblich); the painter counts
+    facts:
+      afa: *afa
+      allocations:
+        - *painter
+        - {allocation_id: *A_R1, booking_date: 2026-12-01, amount: "-600.00", category: repairs,
+           invoice_net: "504.20"}
+      tax_inputs:
+        - {id: *I_EXCL, property_id: *P, kind: exclude_from_15pct, allocation_id: *A_R1,
+           value: {reason: annual_maintenance}}
+    expect:
+      - {<<: *window, tax_year: 2026, counted: [*c_painter], used_net: "1000.00", ratio_percent: "2.8",
+         exceeded: false}
+
+  - id: herstellung_not_counted
+    description: a renovation elected herstellung is capitalised on its own (§5.4), not counted
+    facts:
+      afa: *afa
+      allocations:
+        - {allocation_id: *A_R1, booking_date: 2026-11-02, amount: "-11900.00", category: renovation,
+           invoice_net: "10000.00"}
+      tax_inputs:
+        - {id: *I_HERST, property_id: *P, kind: renovation_treatment, allocation_id: *A_R1,
+           value: {treatment: herstellung}}
+    expect:
+      - {<<: *window, tax_year: 2026, used_net: "0.00", ratio_percent: "0.0", exceeded: false}
+
+  - id: window_dates
+    description: >
+      handover 1 Jul 2026 → window 2026-07-01 .. 2029-06-30, both ends inside; a repair on
+      30 Jun 2026 (before the handover) is outside
+    facts:
+      afa: *afa
+      allocations:
+        - {allocation_id: *A_R1, booking_date: 2026-06-30, amount: "-119.00", category: repairs,
+           invoice_net: "100.00"}
+        - {allocation_id: *A_R2, booking_date: 2026-07-01, amount: "-238.00", category: repairs,
+           invoice_net: "200.00"}
+        - {allocation_id: *A_R3, booking_date: 2029-06-30, amount: "-357.00", category: repairs,
+           invoice_net: "300.00"}
+    expect:
+      - <<: *window
+        tax_year: 2029
+        counted:
+          - {allocation_id: *A_R2, booking_date: 2026-07-01, tax_year: 2026, gross: "238.00",
+             net: "200.00", net_source: invoice}
+          - {allocation_id: *A_R3, booking_date: 2029-06-30, tax_year: 2029, gross: "357.00",
+             net: "300.00", net_source: invoice}
+        used_net: "500.00"
+        ratio_percent: "1.4"
+        exceeded: false
+
+  - id: zero_amount_is_not_evidence
+    description: a confirmed 0.00 repairs line (D52) is neither listed nor counted (D70)
+    facts:
+      afa: *afa
+      allocations:
+        - {allocation_id: *A_R1, booking_date: 2026-10-31, amount: "0.00", category: repairs}
+    expect:
+      - {<<: *window, tax_year: 2026, used_net: "0.00", ratio_percent: "0.0", exceeded: false}

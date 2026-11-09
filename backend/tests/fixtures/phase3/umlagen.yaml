@@ -1,0 +1,348 @@
+# Rule fixture: the income lines and the Umlagen (hausbuch.rules.tax.einnahmen)
+#
+# lines(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> RuleLines
+# Spec: docs/phases/phase-3.md §5.7, D63, D71, D72. Income booked on or after the handover
+# only (before it: vorab.yaml).
+#   rent_cold → one unit row per Wohnung (D71): an ETW or EFH has one row for the property
+#     (wohnung property, its label, area = living_area_m2 with area_source living_area, or the
+#     sum of the units' m² with area_source units and warning income.living_area_missing),
+#     its rooms listed under it with their rents; an MFH has one row per unit (wohnung unit,
+#     the unit's m², area_source units). income.rent_total = Σ rows, sources = the allocations.
+#   operating_costs_prepayment → income.umlagen, whatever the terms (a flat_rate Pauschale is
+#     income all the same). An included tenancy has its whole rent as rent_cold.
+#   income.umlagen_not_agreed (Z24) is ticked when every tenancy let in the year is included;
+#     mixed terms → not ticked, warning umlagen.mixed_terms naming the included tenancies.
+#   operating_costs_settlement → income.umlagen_settlement, sign kept (a refund is negative).
+#   other_income → income.other, warning income.other_review per allocation with params
+#     amount and counterparty_iban (masked). The warning is per allocation whatever its date:
+#     a line before the handover is raised here too (anlage_v_2026.yaml), its amount goes to
+#     vorab.
+#   deposit_in / deposit_out → nothing.
+# unit_rows compare like lines: exactly the rows with a non-zero amount; rooms and sources
+# are asserted only where listed.
+
+rule_set_year: 2026
+
+ids:
+  property: &P 0000000b-0000-4000-8000-000000000001
+  unit: &U1 0000000c-0000-4000-8000-000000000001
+  room_2: &U2 0000000c-0000-4000-8000-000000000002
+  tenancy: &T1 0000000e-0000-4000-8000-000000000001
+  tenancy_2: &T2 0000000e-0000-4000-8000-000000000002
+  rent_jul: &R07 000000a1-0000-4000-8000-000000000301
+  rent_aug: &R08 000000a1-0000-4000-8000-000000000302
+  rent_sep: &R09 000000a1-0000-4000-8000-000000000303
+  rent_oct: &R10 000000a1-0000-4000-8000-000000000304
+  rent_nov: &R11 000000a1-0000-4000-8000-000000000305
+  rent_dec: &R12 000000a1-0000-4000-8000-000000000306
+  nk_jul: &N07 000000a1-0000-4000-8000-000000000311
+  nk_aug: &N08 000000a1-0000-4000-8000-000000000312
+  nk_sep: &N09 000000a1-0000-4000-8000-000000000313
+  nk_oct: &N10 000000a1-0000-4000-8000-000000000314
+  nk_nov: &N11 000000a1-0000-4000-8000-000000000315
+  nk_dec: &N12 000000a1-0000-4000-8000-000000000316
+  rent_2_nov: &Q11 000000a1-0000-4000-8000-000000000321
+  rent_2_dec: &Q12 000000a1-0000-4000-8000-000000000322
+  nk_2_nov: &M11 000000a1-0000-4000-8000-000000000331
+  nk_2_dec: &M12 000000a1-0000-4000-8000-000000000332
+  settlement: &S1 000000a1-0000-4000-8000-000000000341
+  other: &O1 000000a1-0000-4000-8000-000000000351
+  deposit_in: &K1 000000a1-0000-4000-8000-000000000361
+  deposit_out: &K2 000000a1-0000-4000-8000-000000000362
+
+bases:
+  etw: &etw {id: *P, label: Wohnung Beispielweg, kind: etw, build_year: 1998,
+             purchase_date: 2026-07-01, purchase_price: "300000.00", living_area_m2: "62.50"}
+  one_unit: &one_unit [{id: *U1, label: WE 7, floor_area_m2: "62.50"}]
+  two_rooms: &two_rooms [{id: *U1, label: Zimmer 1, floor_area_m2: "14.00"},
+                         {id: *U2, label: Zimmer 2, floor_area_m2: "16.50"}]
+  tenancy: &tenancy {id: *T1, unit_id: *U1, start_date: 2026-07-01,
+                     rents: [{effective_from: 2026-07-01, cold_rent: "850.00",
+                              operating_costs_prepayment: "180.00"}]}
+  room_1: &room_1 {id: *T1, unit_id: *U1, start_date: 2026-07-01,
+                   rents: [{effective_from: 2026-07-01, cold_rent: "450.00",
+                            operating_costs_prepayment: "120.00"}]}
+  room_2: &room_2 {id: *T2, unit_id: *U2, start_date: 2026-07-01,
+                   rents: [{effective_from: 2026-07-01, cold_rent: "480.00",
+                            operating_costs_prepayment: "120.00"}]}
+  # Two rooms, Dec: 450.00 + 480.00 rent, 120.00 + 120.00 prepayments.
+  rooms_december: &rooms_december
+    - {allocation_id: *R12, booking_date: 2026-12-02, amount: "450.00", category: rent_cold, tenancy_id: *T1, unit_id: *U1}
+    - {allocation_id: *N12, booking_date: 2026-12-02, amount: "120.00", category: operating_costs_prepayment, tenancy_id: *T1, unit_id: *U1}
+    - {allocation_id: *Q12, booking_date: 2026-12-03, amount: "480.00", category: rent_cold, tenancy_id: *T2, unit_id: *U2}
+    - {allocation_id: *M12, booking_date: 2026-12-03, amount: "120.00", category: operating_costs_prepayment, tenancy_id: *T2, unit_id: *U2}
+
+cases:
+  - id: rent_and_prepayments_six_months
+    description: 6 × 850.00 rent and 6 × 180.00 prepayments, July to December → 5,100.00 / 1,080.00
+    facts:
+      property: *etw
+      units: *one_unit
+      tenancies: [*tenancy]
+      allocations:
+        - {allocation_id: *R07, booking_date: 2026-07-02, amount: "850.00", category: rent_cold, tenancy_id: *T1, unit_id: *U1}
+        - {allocation_id: *N07, booking_date: 2026-07-02, amount: "180.00", category: operating_costs_prepayment, tenancy_id: *T1, unit_id: *U1}
+        - {allocation_id: *R08, booking_date: 2026-08-03, amount: "850.00", category: rent_cold, tenancy_id: *T1, unit_id: *U1}
+        - {allocation_id: *N08, booking_date: 2026-08-03, amount: "180.00", category: operating_costs_prepayment, tenancy_id: *T1, unit_id: *U1}
+        - {allocation_id: *R09, booking_date: 2026-09-02, amount: "850.00", category: rent_cold, tenancy_id: *T1, unit_id: *U1}
+        - {allocation_id: *N09, booking_date: 2026-09-02, amount: "180.00", category: operating_costs_prepayment, tenancy_id: *T1, unit_id: *U1}
+        - {allocation_id: *R10, booking_date: 2026-10-02, amount: "850.00", category: rent_cold, tenancy_id: *T1, unit_id: *U1}
+        - {allocation_id: *N10, booking_date: 2026-10-02, amount: "180.00", category: operating_costs_prepayment, tenancy_id: *T1, unit_id: *U1}
+        - {allocation_id: *R11, booking_date: 2026-11-02, amount: "850.00", category: rent_cold, tenancy_id: *T1, unit_id: *U1}
+        - {allocation_id: *N11, booking_date: 2026-11-02, amount: "180.00", category: operating_costs_prepayment, tenancy_id: *T1, unit_id: *U1}
+        - {allocation_id: *R12, booking_date: 2026-12-02, amount: "850.00", category: rent_cold, tenancy_id: *T1, unit_id: *U1}
+        - {allocation_id: *N12, booking_date: 2026-12-02, amount: "180.00", category: operating_costs_prepayment, tenancy_id: *T1, unit_id: *U1}
+    expect:
+      - tax_year: 2026
+        lines:
+          - key: income.rent_total
+            amount: "5100.00"
+            sources: [{kind: allocation, id: *R07}, {kind: allocation, id: *R08}, {kind: allocation, id: *R09},
+                      {kind: allocation, id: *R10}, {kind: allocation, id: *R11}, {kind: allocation, id: *R12}]
+          - key: income.umlagen
+            amount: "1080.00"
+            sources: [{kind: allocation, id: *N07}, {kind: allocation, id: *N08}, {kind: allocation, id: *N09},
+                      {kind: allocation, id: *N10}, {kind: allocation, id: *N11}, {kind: allocation, id: *N12}]
+        unit_rows:
+          - {wohnung: property, id: *P, label: Wohnung Beispielweg, area_m2: "62.50",
+             area_source: living_area, amount: "5100.00"}
+
+  - id: settlement_backpayment_positive
+    description: the tenant's back-payment for 2026, paid 10 Mar 2027, is income of 2027
+    facts:
+      property: *etw
+      units: *one_unit
+      tenancies: [*tenancy]
+      allocations:
+        - {allocation_id: *S1, booking_date: 2027-03-10, amount: "120.00",
+           category: operating_costs_settlement, tenancy_id: *T1, unit_id: *U1}
+    expect:
+      - tax_year: 2026
+      - tax_year: 2027
+        lines:
+          - {key: income.umlagen_settlement, amount: "120.00", sources: [{kind: allocation, id: *S1}]}
+
+  - id: refund_negative
+    description: a refund of 95.40 to the tenant reduces the income (sign kept)
+    facts:
+      property: *etw
+      units: *one_unit
+      tenancies: [*tenancy]
+      allocations:
+        - {allocation_id: *S1, booking_date: 2027-04-12, amount: "-95.40",
+           category: operating_costs_settlement, tenancy_id: *T1, unit_id: *U1}
+    expect:
+      - tax_year: 2027
+        lines:
+          - {key: income.umlagen_settlement, amount: "-95.40", sources: [{kind: allocation, id: *S1}]}
+
+  - id: pauschale_is_umlagen
+    description: a Nebenkostenpauschale of 150.00 (flat_rate) is income on Z20 like a prepayment
+    facts:
+      property: *etw
+      units: *one_unit
+      tenancies:
+        - {id: *T1, unit_id: *U1, start_date: 2026-07-01, operating_costs_terms: flat_rate,
+           rents: [{effective_from: 2026-07-01, cold_rent: "850.00", operating_costs_prepayment: "150.00"}]}
+      allocations:
+        - {allocation_id: *R11, booking_date: 2026-11-02, amount: "850.00", category: rent_cold, tenancy_id: *T1, unit_id: *U1}
+        - {allocation_id: *N11, booking_date: 2026-11-02, amount: "150.00", category: operating_costs_prepayment, tenancy_id: *T1, unit_id: *U1}
+        - {allocation_id: *R12, booking_date: 2026-12-02, amount: "850.00", category: rent_cold, tenancy_id: *T1, unit_id: *U1}
+        - {allocation_id: *N12, booking_date: 2026-12-02, amount: "150.00", category: operating_costs_prepayment, tenancy_id: *T1, unit_id: *U1}
+    expect:
+      - tax_year: 2026
+        lines:
+          - {key: income.rent_total, amount: "1700.00"}
+          - {key: income.umlagen, amount: "300.00",
+             sources: [{kind: allocation, id: *N11}, {kind: allocation, id: *N12}]}
+        unit_rows:
+          - {wohnung: property, id: *P, label: Wohnung Beispielweg, area_m2: "62.50",
+             area_source: living_area, amount: "1700.00"}
+
+  - id: included_rent_on_z13
+    description: >
+      one all-in rent of 1,050.00 (included): the whole rent is on Z13, nothing on Z20, and the
+      Z24 box is ticked since the only tenancy is included
+    facts:
+      property: *etw
+      units: *one_unit
+      tenancies:
+        - {id: *T1, unit_id: *U1, start_date: 2026-07-01, operating_costs_terms: included,
+           rents: [{effective_from: 2026-07-01, cold_rent: "1050.00"}]}
+      allocations:
+        - {allocation_id: *R11, booking_date: 2026-11-02, amount: "1050.00", category: rent_cold, tenancy_id: *T1, unit_id: *U1}
+        - {allocation_id: *R12, booking_date: 2026-12-02, amount: "1050.00", category: rent_cold, tenancy_id: *T1, unit_id: *U1}
+    expect:
+      - tax_year: 2026
+        lines:
+          - {key: income.rent_total, amount: "2100.00",
+             sources: [{kind: allocation, id: *R11}, {kind: allocation, id: *R12}]}
+          - {key: income.umlagen_not_agreed, ticked: true}
+        unit_rows:
+          - {wohnung: property, id: *P, label: Wohnung Beispielweg, area_m2: "62.50",
+             area_source: living_area, amount: "2100.00"}
+
+  - id: all_included_ticks_z24
+    description: two rooms, both let all-in (520.00 and 540.00) → one row 1,060.00, Z24 ticked
+    facts:
+      property: *etw
+      units: *two_rooms
+      tenancies:
+        - {id: *T1, unit_id: *U1, start_date: 2026-07-01, operating_costs_terms: included,
+           rents: [{effective_from: 2026-07-01, cold_rent: "520.00"}]}
+        - {id: *T2, unit_id: *U2, start_date: 2026-07-01, operating_costs_terms: included,
+           rents: [{effective_from: 2026-07-01, cold_rent: "540.00"}]}
+      allocations:
+        - {allocation_id: *R12, booking_date: 2026-12-02, amount: "520.00", category: rent_cold, tenancy_id: *T1, unit_id: *U1}
+        - {allocation_id: *Q12, booking_date: 2026-12-03, amount: "540.00", category: rent_cold, tenancy_id: *T2, unit_id: *U2}
+    expect:
+      - tax_year: 2026
+        lines:
+          - {key: income.rent_total, amount: "1060.00"}
+          - {key: income.umlagen_not_agreed, ticked: true}
+        unit_rows:
+          - wohnung: property
+            id: *P
+            label: Wohnung Beispielweg
+            area_m2: "62.50"
+            area_source: living_area
+            amount: "1060.00"
+            rooms: [{unit_id: *U1, label: Zimmer 1, amount: "520.00"},
+                    {unit_id: *U2, label: Zimmer 2, amount: "540.00"}]
+
+  - id: mixed_terms_warns
+    description: >
+      room 1 with a Pauschale (flat_rate), room 2 all-in (included): Z24 stays unticked and the
+      draft warns, naming the included tenancy, until the Anleitung settles it (Q4)
+    facts:
+      property: *etw
+      units: *two_rooms
+      tenancies:
+        - {id: *T1, unit_id: *U1, start_date: 2026-07-01, operating_costs_terms: flat_rate,
+           rents: [{effective_from: 2026-07-01, cold_rent: "450.00", operating_costs_prepayment: "120.00"}]}
+        - {id: *T2, unit_id: *U2, start_date: 2026-07-01, operating_costs_terms: included,
+           rents: [{effective_from: 2026-07-01, cold_rent: "600.00"}]}
+      allocations:
+        - {allocation_id: *R12, booking_date: 2026-12-02, amount: "450.00", category: rent_cold, tenancy_id: *T1, unit_id: *U1}
+        - {allocation_id: *N12, booking_date: 2026-12-02, amount: "120.00", category: operating_costs_prepayment, tenancy_id: *T1, unit_id: *U1}
+        - {allocation_id: *Q12, booking_date: 2026-12-03, amount: "600.00", category: rent_cold, tenancy_id: *T2, unit_id: *U2}
+    expect:
+      - tax_year: 2026
+        lines:
+          - {key: income.rent_total, amount: "1050.00"}
+          - {key: income.umlagen, amount: "120.00"}
+        unit_rows:
+          - {wohnung: property, id: *P, label: Wohnung Beispielweg, area_m2: "62.50",
+             area_source: living_area, amount: "1050.00"}
+        warnings:
+          - {code: umlagen.mixed_terms, params: {tenancies: 0000000e-0000-4000-8000-000000000002}}
+
+  - id: two_rooms_one_flat_row
+    description: >
+      two rooms of one flat, November and December: 2 × 450.00 + 2 × 480.00 = 1,860.00 on one
+      row with the flat's 62.50 m², the rooms listed under it
+    facts:
+      property: *etw
+      units: *two_rooms
+      tenancies: [*room_1, *room_2]
+      allocations:
+        - {allocation_id: *R11, booking_date: 2026-11-02, amount: "450.00", category: rent_cold, tenancy_id: *T1, unit_id: *U1}
+        - {allocation_id: *N11, booking_date: 2026-11-02, amount: "120.00", category: operating_costs_prepayment, tenancy_id: *T1, unit_id: *U1}
+        - {allocation_id: *Q11, booking_date: 2026-11-03, amount: "480.00", category: rent_cold, tenancy_id: *T2, unit_id: *U2}
+        - {allocation_id: *M11, booking_date: 2026-11-03, amount: "120.00", category: operating_costs_prepayment, tenancy_id: *T2, unit_id: *U2}
+        - {allocation_id: *R12, booking_date: 2026-12-02, amount: "450.00", category: rent_cold, tenancy_id: *T1, unit_id: *U1}
+        - {allocation_id: *N12, booking_date: 2026-12-02, amount: "120.00", category: operating_costs_prepayment, tenancy_id: *T1, unit_id: *U1}
+        - {allocation_id: *Q12, booking_date: 2026-12-03, amount: "480.00", category: rent_cold, tenancy_id: *T2, unit_id: *U2}
+        - {allocation_id: *M12, booking_date: 2026-12-03, amount: "120.00", category: operating_costs_prepayment, tenancy_id: *T2, unit_id: *U2}
+    expect:
+      - tax_year: 2026
+        lines:
+          - key: income.rent_total
+            amount: "1860.00"
+            sources: [{kind: allocation, id: *R11}, {kind: allocation, id: *Q11},
+                      {kind: allocation, id: *R12}, {kind: allocation, id: *Q12}]
+          - {key: income.umlagen, amount: "480.00"}
+        unit_rows:
+          - wohnung: property
+            id: *P
+            label: Wohnung Beispielweg
+            area_m2: "62.50"
+            area_source: living_area
+            amount: "1860.00"
+            rooms: [{unit_id: *U1, label: Zimmer 1, amount: "900.00"},
+                    {unit_id: *U2, label: Zimmer 2, amount: "960.00"}]
+            sources: [{kind: allocation, id: *R11}, {kind: allocation, id: *Q11},
+                      {kind: allocation, id: *R12}, {kind: allocation, id: *Q12}]
+
+  - id: mfh_two_units_two_rows
+    description: an MFH's two flats, bought 1 Dec → one row each with the unit's m²
+    facts:
+      property: {id: *P, label: Haus Musterallee, kind: mfh, build_year: 1972,
+                 purchase_date: 2026-12-01, purchase_price: "480000.00"}
+      units: [{id: *U1, label: WE 1, floor_area_m2: "55.00"}, {id: *U2, label: WE 2, floor_area_m2: "70.00"}]
+      tenancies:
+        - {id: *T1, unit_id: *U1, start_date: 2019-04-01,
+           rents: [{effective_from: 2024-04-01, cold_rent: "600.00", operating_costs_prepayment: "150.00"}]}
+        - {id: *T2, unit_id: *U2, start_date: 2021-09-01,
+           rents: [{effective_from: 2024-09-01, cold_rent: "750.00", operating_costs_prepayment: "180.00"}]}
+      allocations:
+        - {allocation_id: *R12, booking_date: 2026-12-02, amount: "600.00", category: rent_cold, tenancy_id: *T1, unit_id: *U1}
+        - {allocation_id: *N12, booking_date: 2026-12-02, amount: "150.00", category: operating_costs_prepayment, tenancy_id: *T1, unit_id: *U1}
+        - {allocation_id: *Q12, booking_date: 2026-12-03, amount: "750.00", category: rent_cold, tenancy_id: *T2, unit_id: *U2}
+        - {allocation_id: *M12, booking_date: 2026-12-03, amount: "180.00", category: operating_costs_prepayment, tenancy_id: *T2, unit_id: *U2}
+    expect:
+      - tax_year: 2026
+        lines:
+          - {key: income.rent_total, amount: "1350.00"}
+          - {key: income.umlagen, amount: "330.00"}
+        unit_rows:
+          - {wohnung: unit, id: *U1, label: WE 1, area_m2: "55.00", area_source: units, amount: "600.00",
+             sources: [{kind: allocation, id: *R12}]}
+          - {wohnung: unit, id: *U2, label: WE 2, area_m2: "70.00", area_source: units, amount: "750.00",
+             sources: [{kind: allocation, id: *Q12}]}
+
+  - id: living_area_missing_falls_back
+    description: >
+      no Wohnfläche on the property: the row uses the rooms' 14.00 + 16.50 = 30.50 m² and warns
+      (the rooms leave out kitchen, bath and hall)
+    facts:
+      property: {<<: *etw, living_area_m2: null}
+      units: *two_rooms
+      tenancies: [*room_1, *room_2]
+      allocations: *rooms_december
+    expect:
+      - tax_year: 2026
+        lines:
+          - {key: income.rent_total, amount: "930.00"}
+          - {key: income.umlagen, amount: "240.00"}
+        unit_rows:
+          - {wohnung: property, id: *P, label: Wohnung Beispielweg, area_m2: "30.50",
+             area_source: units, amount: "930.00"}
+        warnings: [{code: income.living_area_missing}]
+
+  - id: other_income_with_review_warning
+    description: 75.00 from an unknown payer → income.other, and a warning to look at it
+    facts:
+      property: *etw
+      units: *one_unit
+      allocations:
+        - {allocation_id: *O1, booking_date: 2026-09-15, amount: "75.00", category: other_income,
+           counterparty_iban_masked: "DE89 **** 0001"}
+    expect:
+      - tax_year: 2026
+        lines:
+          - {key: income.other, amount: "75.00", sources: [{kind: allocation, id: *O1}]}
+        warnings:
+          - {code: income.other_review, params: {amount: "75.00", counterparty_iban: "DE89 **** 0001"}}
+
+  - id: deposit_not_income
+    description: the Kaution paid in and paid back is neither income nor cost
+    facts:
+      property: *etw
+      units: *one_unit
+      tenancies: [*tenancy]
+      allocations:
+        - {allocation_id: *K1, booking_date: 2026-07-02, amount: "1700.00", category: deposit_in, tenancy_id: *T1}
+        - {allocation_id: *K2, booking_date: 2026-12-15, amount: "-1700.00", category: deposit_out, tenancy_id: *T1}
+    expect:
+      - tax_year: 2026

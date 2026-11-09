@@ -1,0 +1,169 @@
+# Rule fixture: Erhaltungsaufwand and the §82b spread (hausbuch.rules.tax.erhaltungsaufwand)
+#
+# lines(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> RuleLines
+# Spec: docs/phases/phase-3.md §5.4, D59, D62. §82b EStDV.
+#   repairs → wk.maintenance in its tax year (§5.1).
+#   renovation: renovation_treatment in force = erhaltung → wk.maintenance (the input is a
+#     source of the line); = herstellung → a basis addition (reason herstellung, the gross
+#     magnitude, in the year paid), no line; no input → excluded: excluded_open {count, sum}
+#     and warning renovation.undecided with params amount (the magnitude).
+#   spread_82b in force (years n): the year paid writes wk.maintenance_spread_total (the whole
+#     amount, Z57) and wk.maintenance_spread_current (round_half_up(amount ÷ n)); year paid + k
+#     writes wk.maintenance_spread_prior_k (the same share; the last year the remainder). The
+#     year ownership ends takes the whole remainder. A withdrawn spread puts the amount back on
+#     wk.maintenance in the year paid. Sources: the allocation and the input.
+# The property was bought in 2020, so the 15 % window (2020–2022) is long closed and the
+# tracker plays no part here (anschaffungsnah.yaml covers it).
+
+rule_set_year: 2026
+
+ids:
+  property: &P 0000000b-0000-4000-8000-000000000001
+  split: &S 0000005a-0000-4000-8000-000000000001
+  repair: &A1 000000a1-0000-4000-8000-000000000001
+  renovation: &A2 000000a1-0000-4000-8000-000000000002
+  repair_2: &A3 000000a1-0000-4000-8000-000000000003
+  invoice: &D1 00000d0c-0000-4000-8000-000000000001
+  input_1: &I1 000000f1-0000-4000-8000-000000000001
+  input_2: &I2 000000f1-0000-4000-8000-000000000002
+
+bases:
+  property: &property {id: *P, label: Beispielhaus, kind: efh, build_year: 1985,
+                       purchase_date: 2020-01-01, purchase_price: "250000.00"}
+  split: &split {id: *S, source: bmf_tool, building_share: "0.650000"}
+  roof_7000: &roof {allocation_id: *A2, booking_date: 2026-05-12, amount: "-7000.00",
+                    category: repairs, document_id: *D1}
+
+cases:
+  - id: repairs_full_deduction
+    description: two repairs in 2026, deducted in full in the year paid
+    facts:
+      property: *property
+      split: *split
+      allocations:
+        - {allocation_id: *A1, booking_date: 2026-03-02, amount: "-1190.00", category: repairs,
+           document_id: *D1}
+        - {allocation_id: *A3, booking_date: 2026-10-20, amount: "-238.00", category: repairs}
+    expect:
+      - tax_year: 2026
+        lines:
+          - key: wk.maintenance
+            amount: "1428.00"
+            sources:
+              - {kind: allocation, id: *A1}
+              - {kind: document, id: *D1}
+              - {kind: allocation, id: *A3}
+
+  - id: renovation_elected_erhaltung
+    description: the tiles 4,760.00 elected Erhaltungsaufwand; the input is a source
+    facts:
+      property: *property
+      split: *split
+      allocations:
+        - {allocation_id: *A2, booking_date: 2026-10-06, amount: "-4760.00", category: renovation,
+           document_id: *D1, invoice_net: "4000.00"}
+      tax_inputs:
+        - {id: *I1, property_id: *P, kind: renovation_treatment, allocation_id: *A2,
+           value: {treatment: erhaltung}}
+    expect:
+      - tax_year: 2026
+        lines:
+          - key: wk.maintenance
+            amount: "4760.00"
+            sources:
+              - {kind: allocation, id: *A2}
+              - {kind: document, id: *D1}
+              - {kind: tax_input, id: *I1}
+
+  - id: renovation_elected_herstellung
+    description: elected Herstellungskosten → a basis addition of the gross amount, no line
+    facts:
+      property: *property
+      split: *split
+      allocations:
+        - {allocation_id: *A2, booking_date: 2026-10-06, amount: "-11900.00", category: renovation,
+           invoice_net: "10000.00"}
+      tax_inputs:
+        - {id: *I1, property_id: *P, kind: renovation_treatment, allocation_id: *A2,
+           value: {treatment: herstellung}}
+    expect:
+      - tax_year: 2026
+        basis_additions:
+          - {allocation_id: *A2, tax_year: 2026, amount: "11900.00", reason: herstellung}
+
+  - id: renovation_undecided_excluded
+    description: no election → not deducted, reported as an open line with a warning
+    facts:
+      property: *property
+      split: *split
+      allocations:
+        - {allocation_id: *A2, booking_date: 2026-10-06, amount: "-4760.00", category: renovation}
+    expect:
+      - tax_year: 2026
+        excluded_open: {count: 1, sum: "-4760.00"}
+        warnings:
+          - {code: renovation.undecided, params: {amount: "4760.00"}}
+
+  - id: spread_three_years
+    description: >
+      7,000.00 paid 2026 spread over 3 years: 2026 Z57 total 7,000.00 and 2,333.33 deducted;
+      2027 2,333.33 "aus 2026"; 2028 the remainder 2,333.34
+    facts:
+      property: *property
+      split: *split
+      allocations: [*roof]
+      tax_inputs:
+        - {id: *I1, property_id: *P, kind: spread_82b, allocation_id: *A2, value: {years: 3}}
+    expect:
+      - tax_year: 2026
+        lines:
+          - key: wk.maintenance_spread_total
+            amount: "7000.00"
+            sources: [{kind: allocation, id: *A2}, {kind: document, id: *D1}, {kind: tax_input, id: *I1}]
+          - key: wk.maintenance_spread_current
+            amount: "2333.33"
+            sources: [{kind: allocation, id: *A2}, {kind: document, id: *D1}, {kind: tax_input, id: *I1}]
+      - tax_year: 2027
+        lines:
+          - key: wk.maintenance_spread_prior_1
+            amount: "2333.33"
+            sources: [{kind: allocation, id: *A2}, {kind: document, id: *D1}, {kind: tax_input, id: *I1}]
+      - tax_year: 2028
+        lines:
+          - key: wk.maintenance_spread_prior_2
+            amount: "2333.34"
+            sources: [{kind: allocation, id: *A2}, {kind: document, id: *D1}, {kind: tax_input, id: *I1}]
+      - tax_year: 2029
+
+  - id: spread_sale_in_second_year
+    description: sold in 2027 → 2027 takes the remainder 7,000.00 − 2,333.33 = 4,666.67 (§82b Abs. 2)
+    facts:
+      property: {<<: *property, ownership_ended_on: 2027-08-31}
+      split: *split
+      allocations: [*roof]
+      tax_inputs:
+        - {id: *I1, property_id: *P, kind: spread_82b, allocation_id: *A2, value: {years: 3}}
+    expect:
+      - tax_year: 2026
+        lines:
+          - {key: wk.maintenance_spread_total, amount: "7000.00"}
+          - {key: wk.maintenance_spread_current, amount: "2333.33"}
+      - tax_year: 2027
+        lines:
+          - {key: wk.maintenance_spread_prior_1, amount: "4666.67"}
+
+  - id: spread_withdrawn_back_to_full
+    description: the spread is withdrawn by a later row → the whole 7,000.00 in 2026, nothing after
+    facts:
+      property: *property
+      split: *split
+      allocations: [*roof]
+      tax_inputs:
+        - {id: *I1, property_id: *P, kind: spread_82b, allocation_id: *A2, value: {years: 3}}
+        - {id: *I2, property_id: *P, kind: spread_82b, allocation_id: *A2, value: {years: 3},
+           supersedes_id: *I1, withdrawn: true}
+    expect:
+      - tax_year: 2026
+        lines:
+          - {key: wk.maintenance, amount: "7000.00"}
+      - tax_year: 2027
