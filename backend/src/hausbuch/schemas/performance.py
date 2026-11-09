@@ -416,7 +416,9 @@ class YearFigures(Schema):
     cash_out: Money
     taxable_result: Money | None
     afa: Money | None  # the building's (wk.afa)
-    afa_movable: Money | None = None  # the D80 kitchen line, its own key (§5.6)
+    # The D80 kitchen: the draft's wk.afa_movable line amount (§5.6, Q-O4); None without one.
+    # The §23 add-back takes `afa` (wk.afa) only.
+    afa_movable: Money | None = None
     tax_effect: TaxEffect | None
     net_cash: Money
     invested: Money | None = None  # purchase year: Σ purchase_price + acquisition_cost

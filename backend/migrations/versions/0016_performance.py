@@ -32,14 +32,14 @@ owner.marginal_tax_rate empty, with its 0001 CHECK (at the end of the table, not
 put it).
 
 Revision ID: 0016_performance
-Revises: 0014_useful_life
+Revises: 0015_movable_asset
 Create Date: 2026-11-09
 """
 
 from alembic import op
 
 revision = "0016_performance"
-down_revision = "0014_useful_life"  # re-pointed to 0015 when D80 merges
+down_revision = "0015_movable_asset"
 branch_labels = None
 depends_on = None
 

@@ -30,7 +30,7 @@ EXPECTED_GRANTS = {
     "income_input": {"SELECT", "INSERT"},  # append-only
     "projection_scenario": {"SELECT", "INSERT"},  # append-only
 }
-PREVIOUS = "0014_useful_life"  # re-pointed to 0015 when D80 merges
+PREVIOUS = "0015_movable_asset"
 # Built at import, so a schema drift fails collection even where the DB tests skip.
 LEVERS = Levers(sale_year=2036).model_dump(mode="json")
 
