@@ -1,6 +1,6 @@
 # Phase 3 spec: Steuerjahr — rule set 2026, Anlage V draft, checklist, 15 % tracker, exports
 
-Nov 9, 2026 · spec draft (architect), checked by the orchestrator; Luis's questions in §17 all answered 9 Nov 2026 (Q1, Q2, Q3, Q6, Q7, Q8), the orchestrator's settled the same day; step 0 (schemas, migration, rule sets, fixtures) being written; not merged.
+Nov 9, 2026 · spec draft (architect), checked by the orchestrator; Luis's questions in §17 all answered 9 Nov 2026 (Q1, Q2, Q3, Q6, Q7, Q8), the orchestrator's settled the same day; step 0 (schemas, migration, rule sets, fixtures) written 9 Nov 2026 on branch `docs/phase-3-step0` (commits `e16002b`, `d139528`, `b4390ad` and this doc update), not merged. Writing the fixtures corrected several worked examples below; the biggest is that a cost the 15 % test moves into the AfA basis enters it **gross** (D73, needs sign-off).
 No implementation. Every tax rule below was checked against the law, the
 official Anlage V 2025 form or a BFH decision on 9 Nov 2026 (§3 lists the sources); where a
 point could not be verified from an official source it is an open question, not a decision.
@@ -15,10 +15,10 @@ implementation steps code against:
 
 | Artifact | Where | Status |
 | --- | --- | --- |
-| Pydantic schemas | `backend/src/hausbuch/schemas/tax.py` (new: `RuleSet`, `FormMapping`, `DraftFacts`, `AnlageVDraft`, `TaxInput*`, `TaxExport`); additions to `enums.py`, `checklist.py`, `events.py`, `proposal.py`, `tenancy.py` (§7) | Not written (step 0) |
-| Migration | `0013_tax_year` (§6): `tenancy.rent_due_day`, `tenancy.operating_costs_terms`, `property.living_area_m2`, tables `tax_input` and `tax_export` | Not written (step 0); applied with step 1's deploy, tables empty until step 2 |
-| Rule sets (data) | `backend/src/hausbuch/rules/tax/rulesets/2025.yaml` (form published, verified), `2026.yaml` (form **provisional**, §4.3) | Not written (step 0) |
-| Rule fixtures | `backend/tests/fixtures/phase3/*.yaml`, 12 files (§13), loaded by `tests/fixture_models_phase3.py` | Not written (step 0); rule tests skipped until step 1 |
+| Pydantic schemas | `backend/src/hausbuch/schemas/tax.py` (new: `RuleSet`, `FormMapping`, `DraftFacts`, `AnlageVDraft`, `TaxInput*`, `TaxExport`); additions to `enums.py`, `checklist.py`, `events.py`, `proposal.py`, `tenancy.py`, `property.py` (§7) | Written in step 0 (branch docs/phase-3-step0, `e16002b`) |
+| Migration | `0013_tax_year` (§6): `tenancy.rent_due_day`, `tenancy.operating_costs_terms`, `property.living_area_m2`, tables `tax_input` and `tax_export` | Written in step 0 (branch docs/phase-3-step0, `e16002b`), tested up and down against Postgres 16; not deployed; applied with step 1's deploy, tables empty until step 2 |
+| Rule sets (data) | `backend/src/hausbuch/rules/tax/rulesets/2025.yaml` (form published, verified), `2026.yaml` (form **provisional**, §4.3), loaded by `rules/tax/registry.py`, pinned by `tests/rules/test_tax_rulesets.py` | Written in step 0 (branch docs/phase-3-step0, `d139528`) |
+| Rule fixtures | `backend/tests/fixtures/phase3/*.yaml`, 12 files (§13), loaded by `tests/fixture_models_phase3.py` and checked by `tests/test_fixtures_valid.py` | Written in step 0 (branch docs/phase-3-step0, `b4390ad`); the form mapping is pinned by the Python test `test_tax_rulesets.py` instead of a `form_mapping.yaml` fixture; no skipped rule-test stubs were added (the rule tests arrive with the rules in steps 1–2) |
 | Eval cases | `backend/tests/evals/recordings/zinsbescheinigung.json`, `hausgeldabrechnung.json` (synthetic, recorded from Luis's computer, D66) | Not recorded (step 2) |
 | Rule tests | `backend/tests/rules/test_tax_*.py` | Not written (steps 1–2) |
 | Step 1 (rule set, draft, Steuern screen) | `rules/tax/`, `services/tax.py`, `api/routes/tax.py`, `/tax/[year]` | Not built |
@@ -95,6 +95,7 @@ Numbering continues from phase 2's D52 (the 0.00 € auto-confirm, merged 9 Nov 
 | D70 | **A 0.00 € allocation is not evidence.** Phase 2's D52 lets a model answer for a bank line of exactly 0.00 € be confirmed without review in categories such as `repairs`, `renovation`, `acquisition_cost`, `professional_fees`, `loan_fees`, `other_income`, `other_expense`. Such a row changes no sum, but every phase 3 rule that reads the *presence* of a category must ignore it: it creates no `cost_receipt` checklist item (§8), is not counted in and does not open the 15 % tracker's list (§5.3), raises no `renovation.undecided`, `income.other_review`, `income.pre_handover`, `afa.acquisition_cost_without_row` or `afa.purchase_price_mismatch` warning, needs no `renovation_treatment` input and is not an "open line" in `excluded_open` (§5.11). `DraftFacts` is built from confirmed allocations with `amount <> 0`, so a zero row is never a line's source either; it stays visible on the transaction and in History only. Fixture cases `zero_amount_is_not_evidence` in `checklist_phase3.yaml`, `anschaffungsnah.yaml` and `anlage_v_2026.yaml`. | A confirmation nobody looked at (D52) must not become a document requirement, a tracker entry or a warning a person then has to clear; the sums are unaffected either way. |
 | D71 | **One Z13 row per Wohnung, not per room** (Luis, 9 Nov 2026, Q2). Units let as rooms of one flat are summed into one `income.rent_units` row: the flat's rents (and, per D63, the forwarded share before the handover) next to the flat's Wohnfläche. The flat's area is a new nullable `property.living_area_m2` (the Wohnfläche of the purchase contract or the Wohnflächenberechnung, typed or pre-filled later); when it is empty the row uses the sum of the units' m² and the draft warns `income.living_area_missing`, because rooms' areas leave out kitchen, bath and hall. A property whose units are separate flats (an MFH) keeps one row per unit. The Steuern screen still shows each room's rent under the row. | The Finanzamt knows one Wohnung under one Aktenzeichen; rows per room would read as several flats. |
 | D72 | **How each lease agrees the running costs is a tenancy field** `operating_costs_terms`: `prepayment` (Vorauszahlung with a yearly settlement, the default), `flat_rate` (Pauschale, no settlement) or `included` (one all-in rent, Nebenkosten not agreed separately). Luis's earlier room leases charge a separately named Pauschale; the later lease states one all-in Warmmiete with the Betriebs- und Nebenkosten "abgegolten" (Luis, 9 Nov 2026), so it is `included` and the terms are mixed. `prepayment` and `flat_rate` amounts go on Z20; an `included` tenancy's whole rent is booked as `rent_cold` and stays on Z13. The Z24 box ("nicht gesondert vereinbart") is ticked when every tenancy let in the year is `included`; when the terms are mixed it stays unticked and the draft warns `umlagen.mixed_terms`, naming the all-in tenancies, until the Anleitung is read (Q4). Typed on the tenancy form; the lease pre-fill can read it later. Phase 4's Betriebskostenabrechnung reads the same field (no settlement for `flat_rate` or `included`), which settles ARCHITECTURE's phase 4 input on the Pauschale. | The terms differ per lease, so they belong on the tenancy, not the property; the tax is the same whichever line carries the amount, only the form's presentation changes. |
+| D73 | **Basis additions are gross** (step 0, 9 Nov 2026; **needs the orchestrator's and Luis's sign-off**). A cost that becomes Herstellungskosten (a `renovation` elected `herstellung`, or every counted cost once the 15 % limit is crossed) enters the AfA basis at its gross amount, VAT included. Only the 15 % *test* is net (§6 Abs. 1 Nr. 1a EStG says so); the cost that is then capitalised is what was paid. The spec's §5.3 example had added the net figures (5,000.00 and 36,000.00); the fixtures add 5,950.00 and 42,840.00 (`anschaffungsnah.yaml` `crossing_in_second_year`, `afa.yaml` `limit_crossing_additions_gross`). | §9b Abs. 1 EStG: input VAT is part of the Anschaffungs- or Herstellungskosten unless it can be deducted, and a residential landlord's lettings are VAT-exempt (§4 Nr. 12 UStG), so it cannot. Adding net would understate the AfA by 19 % of the additions every year. |
 
 ## 3. Sources checked (9 Nov 2026)
 
@@ -106,6 +107,7 @@ What each rule rests on, and what could not be verified from an official source.
 | AfA linear | §7 Abs. 4 S. 1 Nr. 2: a) completed after 31 Dec 2022 → 3 %; b) 1925–2022 → 2 %; c) before 1 Jan 1925 → 2.5 %. §7 Abs. 1 S. 4: in the acquisition year the annual AfA is reduced by 1/12 for each full month *preceding* the acquisition month. §9a EStDV: year of acquisition = year of delivery (Übergang). Degressive §7 Abs. 5a: 5 %, window 1 Oct 2023 – 30 Sep 2029 (out of scope) | [§7 EStG](https://www.gesetze-im-internet.de/estg/__7.html); [§9a EStDV](https://www.gesetze-im-internet.de/estdv_1955/__9a.html) | AfA in the year of a sale and nachträgliche HK accruing from 1 Jan of their year (R 7.4 Abs. 9 EStR, not fetched; Q11) |
 | AfA basis, Nebenkosten split | Anschaffungsnebenkosten (Grunderwerbsteuer, Notar, Grundbuch, Makler) are split between land and building in the same ratio as the price; only the building part enters the AfA basis | secondary sources agree ([steuerschroeder](https://www.steuerschroeder.de/aufteilung_kaufpreises_immobilien.html)); the BMF Arbeitshilfe page was unreachable (HTTP 503) | Confirm in the Arbeitshilfe's Anleitung when reachable (Q11); the BMF Arbeitshilfe itself was updated Jan 2025 and again early 2026 ([KPMG](https://kpmg.com/de/de/themen/2026/03/bmf-kaufpreisaufteilung.html)) |
 | Anschaffungsnahe Herstellungskosten | §6 Abs. 1 Nr. 1a EStG: Instandsetzung and Modernisierung within three years after the Anschaffung, net of VAT, above 15 % of the building's Anschaffungskosten → Herstellungskosten; excluded: Erweiterungen (§255 Abs. 2 S. 1 HGB) and jährlich üblicherweise anfallende Erhaltungsarbeiten. Schönheitsreparaturen count (BFH IX R 25/14, IX R 15/15, IX R 22/15 of 14 Jun 2016; BMF 20 Oct 2017); damage caused after acquisition does not (IX R 6/16); the test is per selbständiger Gebäudeteil | [§6 EStG](https://www.gesetze-im-internet.de/estg/__6.html); [Haufe on BMF 20 Oct 2017](https://www.haufe.de/steuern/finanzverwaltung/bmf-anschaffungsnahe-herstellungskosten-bei-gebaeuden_164_429956.html); [BFH IX R 25/14](https://rewis.io/urteile/urteil/eck-14-06-2016-ix-r-2514/) | The start of the three years: "Anschaffung" is the Übergang (§9a EStDV's delivery); H 6.4 EStH's "obligatorisches Rechtsgeschäft" rule belongs to Abbruchkosten, not to this test ([H 6.4](https://www.steuerschroeder.de/steuergesetze/esth/6.4)), but no Hinweis states it for §6 Abs. 1 Nr. 1a explicitly (Q11) |
+| Herstellungskosten gross (D73, added in step 0) | §9b Abs. 1 EStG: the Vorsteuer belongs to the Anschaffungs- or Herstellungskosten unless it can be deducted; a residential landlord cannot (VAT-exempt lettings, §4 Nr. 12 UStG), so capitalised costs are gross | [§9b EStG](https://www.gesetze-im-internet.de/estg/__9b.html) | Sign-off by the orchestrator and Luis (the step 0 coder changed the §5.3 example on this reading) |
 | §82b EStDV | Größerer Erhaltungsaufwand on a building mostly used for living may be spread evenly over 2–5 years; on sale or end of letting the rest is deducted in that year; co-owners spread alike | [§82b EStDV](https://www.gesetze-im-internet.de/estdv_1955/__82b.html) | — |
 | Schuldzinsen, Geldbeschaffungskosten | Interest deductible, Tilgung not (§9 Abs. 1 S. 3 Nr. 1 EStG); financing costs are Werbungskosten (D35); a marktübliches Disagio is deductible when paid (§11 Abs. 2 S. 4 EStG; BMF 20 Oct 2003: ≤ 5 % at ≥ 5 years Zinsbindung) | [§11 EStG](https://www.gesetze-im-internet.de/estg/__11.html) | No Disagio field exists; the 5 % check is not built (Q10) |
 | Hausgeld, Erhaltungsrücklage | Payments into the Rücklage are not Werbungskosten when paid; they are when the WEG spends them on Erhaltung (BFH IX R 19/24, 14 Jan 2025, BStBl II 2025, 291, confirming IX R 119/83 of 26 Jan 1988). The 2025 form puts the Entnahmen on Z55 | [KPMG on IX R 19/24](https://kpmg.com/de/de/home/themen/2025/02/bfh-steuerabzug-hausgeld-erhaltungsruecklage.html); [Deubner](https://www.deubner-steuern.de/themen/einkommensteuer/werbungskosten/zahlungen-erhaltungsruecklage.html); the form text (below) | — |
@@ -122,7 +124,8 @@ What each rule rests on, and what could not be verified from an official source.
 ```python
 class FormLine(Schema):
     key: str                      # Hausbuch line code, stable across years ("wk.interest")
-    zeile: int | None             # the printed line of that year's form; None = no own line
+    zeile_from: int | None        # first line of a block (46 for Schuldzinsen Z46–48), else None
+    zeile: int | None             # the printed line carrying the amount and Kennzahl (48); None = no own line
     kennzahl: str | None          # ELSTER Kennzahl printed in the box ("33"); None = none
     label: str                    # German label as on the form
     kind: Literal["header", "income", "cost", "afa", "total", "result", "flag"]
@@ -135,7 +138,9 @@ class FormMapping(Schema):
     source_url: str
     lines: dict[str, FormLine]    # by key
     category_lines: dict[AllocationCategory, str | None]   # None = not on the form (§4.2)
-    spread_prior_years: int = 4   # Z61–72: "aus Y−1" … "aus Y−4"
+    tracked: list[AllocationCategory]   # None categories shown as "erfasst, nicht abziehbar"
+    open: list[AllocationCategory]      # None categories excluded and counted (D59)
+    spread_prior_years: int = 4   # Z61–72: keys wk.maintenance_spread_prior_1 ("aus Y−1") … _4
 
 class AfaRateRule(Schema):
     completed_from: Year | None; completed_to: Year | None; rate: Rate  # inclusive bounds
@@ -155,7 +160,10 @@ class RuleSet(Schema):
 
 `rules/tax/registry.py: rule_set(tax_year) -> RuleSet` loads `rulesets/<year>.yaml`; a year
 without a file raises `tax.no_rule_set`. A rule set whose `category_lines` misses a category,
-or whose `lines` lack a key the draft writes, fails to load (`form_mapping.yaml` checks both).
+or whose `lines` lack a key the draft writes, fails to load with `form_mapping.incomplete`
+(`tests/rules/test_tax_rulesets.py` checks both, and pins the 2025 Zeilen and Kennzahlen; the
+planned `form_mapping.yaml` fixture became that Python test in step 0, because a mapping is
+data checked against itself rather than a rule's input and output).
 
 ### 4.2 Form mapping 2025 (verified from the form) and 2026 (provisional copy)
 
@@ -171,7 +179,7 @@ Header and income lines:
 | `income.rent_units` | 13–14 | — | one row per Wohnung: for an ETW let by rooms, the flat (`property.living_area_m2`, Σ `rent_cold` of its units); for an MFH, one row per unit (D71) |
 | `income.rent_total` | 15 | 01 | Σ of the unit rows |
 | `income.umlagen` | 20 | 04 | Σ `operating_costs_prepayment` of `prepayment` and `flat_rate` tenancies (D72) |
-| `income.umlagen_not_agreed` | 24 | — | box, ticked when every tenancy let in the year is `included` (D72) |
+| `income.umlagen_not_agreed` | 24 | 13 | box, ticked when every tenancy let in the year is `included` (D72); the box carries Kz 13 on the 2025 form (corrected in step 0: this row said none) |
 | `income.umlagen_settlement` | 21 | 11 | Σ `operating_costs_settlement`, signed (refund negative) |
 | `income.other` | 29 → 31 | 08 | Σ `other_income`, each with warning `income.other_review` |
 | `income.total` | 32 | — | Z15 + Z20 + Z21 + Z31 (+ the unused lines) |
@@ -185,7 +193,7 @@ Werbungskosten lines (direct column, D69):
 | `wk.financing_costs` | 49 → 51 | 34 | Σ `loan_fees` |
 | `wk.maintenance` | 55 | 36 | `repairs` and `renovation` elected `erhaltung` without a spread, plus `ruecklage_spent` (D57) |
 | `wk.maintenance_spread_total` / `wk.maintenance_spread_current` | 57 / 58 → 60 | 57 / 38 | §82b: this year's total and its share (D62) |
-| `wk.maintenance_spread_prior` | 61–72 (Y−4 … Y−1) → 63, 66, 69, 72 | 39–42 | shares of earlier years' spreads |
+| `wk.maintenance_spread_prior_4` … `_1` | 61–72 (Y−4 … Y−1) → 63, 66, 69, 72 | 39–42 | shares of earlier years' spreads; one key per prior year (`_1` = aus Y−1 on Z70–72, Kz 42; `_4` = aus Y−4 on Z61–63, Kz 39) |
 | `wk.allocable_costs` | 73 → 75 | 52 | `hausgeld_umlagefaehig`, `grundsteuer`, `insurance` ("Umgelegte Kosten": Grundsteuer, Wasser, Heizung, Hausversicherungen, Hauswart …) |
 | `wk.non_allocable_costs` | 76 → 78 | 48 | `hausgeld_verwaltung`, `property_management`, `bank_fees` ("Verwaltungskosten, Bank- und Kontoführungsgebühren – ohne Erhaltungsrücklage –") |
 | `wk.other` | 80 → 82 | 49 | `professional_fees` |
@@ -211,8 +219,8 @@ Not published as of 9 Nov 2026 (§3). `2026.yaml` starts as a copy of 2025's map
 `status: provisional`, `form_year: 2025`, and the §82b prior-year lines relative to the tax
 year. The screen shows "Formular 2026 noch nicht veröffentlicht; Zeilen nach dem Formular
 2025" and every export prints the same. When ELSTER publishes the 2026 Anlage V, a data PR
-(step 4) updates the Zeilen and Kennzahlen, sets `published`, and `form_mapping.yaml` gains the
-2026 rows. The `anlage_v_2026.yaml` fixture asserts on line **keys** and amounts, never on
+(step 4) updates the Zeilen and Kennzahlen, sets `published`, and `test_tax_rulesets.py` gains
+the 2026 rows. The `anlage_v_2026.yaml` fixture asserts on line **keys** and amounts, never on
 Zeilen, so the data PR changes no fixture outcome.
 
 ## 5. Rules (`rules/tax/`)
@@ -252,7 +260,7 @@ Worked examples (fixture `tax_year.yaml`):
 | `rent_december_paid_late` | 2027-01-05 | 12/2026 | 2026-12-03 | 2027 | paid in the period, but due long before it (X R 2/21) |
 | `rent_january_paid_too_early` | 2026-12-20 | 01/2027 | 2027-01-03 | 2026 | 20 Dec is 12 days before the year end |
 | `hausgeld_january_debited_december` | 2026-12-28 | 01/2027 | 2027-01-01 | 2027 | shift |
-| `annuity_january_debited_december` | 2026-12-30 | — | 2027-01-01 (schedule) | 2027 | shift; the period comes from the schedule entry |
+| `annuity_january_debited_december` | 2026-12-30 | 01/2027 (from the schedule entry) | 2027-01-01 (schedule) | 2027 | shift; the service sets the period from the schedule entry the matcher used, so the rule sees a recurring payment for January (step 0: this row showed no period, which by rule 2 would mean no shift) |
 | `repair_paid_after_year_end` | 2027-01-02 | 11/2026 | — | 2027 | not recurring |
 | `settlement_backpayment_january` | 2027-01-08 | 2026 | — | 2027 | not recurring |
 | `period_across_year_end` | 2026-12-28 | 12/2026–02/2027 | 2026-12-01 | 2026 | no single economic year |
@@ -271,29 +279,36 @@ purchase date, ownership end, and basis additions per year (§5.3, renovation `h
   full, §7 Abs. 1 S. 4); 12 in every later year; the year ownership ends: months through
   `ownership_ended_on.month` (Q11, phase 4 confirms).
 - `amount = round((basis + Σ additions of years ≤ tax_year) × rate × months ÷ 12, 2)`, the
-  additions accruing from 1 January of their year (R 7.4 Abs. 9 EStR, Q11).
+  additions accruing from 1 January of their year (R 7.4 Abs. 9 EStR, Q11). Additions are
+  **gross** amounts (D73, §9b Abs. 1 EStG); only the 15 % test of §5.3 is net.
 - Sources: the property (price), every cost row and its document, the selected split and its
   evidence, the addition allocations. Method code for Z33: `2` (laut Erläuterung) in the first
   year and in any year the basis changed, else `1`.
 - Warnings: `afa.no_split` (no selected split: line empty, checklist points to
-  Kaufpreisaufteilung); `afa.cost_row_unpaid` (a cost row without a confirmed
-  `acquisition_cost` allocation or `paid_on`: information, it may have been paid privately);
-  `afa.acquisition_cost_without_row` (an `acquisition_cost` allocation no row explains: the
-  amount is **not** added); `afa.purchase_price_mismatch` (Σ `purchase_price` allocations ≠
-  price; information).
+  Kaufpreisaufteilung); `afa.cost_row_unpaid` (a cost row whose `paid_by` list of confirmed
+  `acquisition_cost` allocations is empty: information, it may have been paid privately;
+  params `kind`, `amount`); `afa.acquisition_cost_without_row` (a non-zero `acquisition_cost`
+  allocation in no row's `paid_by`: the amount is **not** added; params `amount`);
+  `afa.purchase_price_mismatch` (only when at least one non-zero `purchase_price` allocation
+  exists and Σ of their magnitudes ≠ price, so a price paid privately raises nothing;
+  information; params `price`, `paid`).
 
 Worked example (`afa.yaml`, case `etw_1998_handover_july`): price 300,000.00, cost rows
 19,500.00 + 4,200.00 + 1,300.00, share 0.720000 → basis 234,000.00; 2 % → 4,680.00 a year;
 handover 1 Jul 2026 → 6/12 → **2,340.00** for 2026, 4,680.00 for 2027. Other cases: build
 year 1920 (2.5 %), 2023 (3 %); handover 31 Jan (12/12), 15 Dec (1/12); a `herstellung`
-addition of 12,000.00 in 2027 → 2027 AfA 4,920.00; no split → empty line + warning.
+addition of 12,000.00 in 2027 → 2027 AfA 4,920.00; the 15 % crossing of §5.3 with gross
+additions (`limit_crossing_additions_gross`); no split → empty line + warning.
 
 ### 5.3 Anschaffungsnahe Herstellungskosten, the 15 % tracker (`anschaffungsnah.py`)
 
 `limit_status(facts, tax_year, rule_set) -> LimitStatus` with `basis_building_cost` (the AfA
 basis of §5.2 before additions), `limit = 15 %` of it, `window_start = purchase_date`,
 `window_end = purchase_date + 3 years − 1 day`, the counted allocations with gross, net,
-`net_source` (`invoice` | `estimated`), `used_net`, `ratio`, `exceeded`, `exceeded_in_year`.
+`net_source` (`invoice` | `estimated`), `used_net`, `ratio_percent` (= `used_net ÷ limit ×
+100`, one decimal, half-up: the share of the 15 % allowance used, not of the building cost),
+`exceeded`, `exceeded_in_year`, `basis_additions`. The status describes the whole window as
+known today, so it is the same whichever year is drafted.
 
 - Counted: confirmed `repairs` and `renovation` with a non-zero amount (D70; treatment
   `erhaltung` or undecided; a `herstellung` election is capitalised on its own and not counted)
@@ -301,16 +316,21 @@ basis of §5.2 before additions), `limit = 15 %` of it, `window_start = purchase
   `amount_net` when present, else `gross ÷ (1 + default_vat_rate)` rounded, flagged.
 - The test is strict: `used_net > limit`. Equal does not trigger.
 - When exceeded in year X: every counted allocation of the window becomes a basis addition in
-  the year it was paid (§5.2) and leaves `wk.maintenance`; the draft of X carries warning
-  `limit.exceeded`, the drafts of years before X carry `limit.prior_year_amendment` with the
-  amounts moved. While the window is open and the limit not reached, the status shows the
+  the year it was paid (§5.2), at its **gross** amount (D73), and leaves `wk.maintenance`; the
+  drafts of X and later window years carry warning `limit.exceeded`, the drafts of years
+  before X carry `limit.prior_year_amendment` (params `exceeded_in_year`, `amount` = that
+  year's gross moved). While the window is open and the limit not reached, the status shows the
   risk ("Fenster bis 30.06.2029 offen; bisher 14,2 %").
 
 Worked example (`anschaffungsnah.yaml`): limit 35,100.00; 2026: painter 1,190.00 gross
 (invoice net 1,000.00) + bathroom tiles 4,760.00 (net 4,000.00) → used 5,000.00, 14.2 %, not
-exceeded. Case `crossing_in_second_year`: 2027 adds a roof share of 36,000.00 net → 41,000.00
-> 35,100.00 → 2027 exceeded; 2026's 5,000.00 moves to the basis (2026 amendment warning), the
-2027 AfA is computed on 234,000.00 + 5,000.00 + 36,000.00. Cases `equal_is_not_exceeded`,
+exceeded. Case `crossing_in_second_year`: 2027 adds a roof of 42,840.00 gross (36,000.00 net)
+→ 41,000.00 net > 35,100.00 → 2027 exceeded (116.8 % of the allowance); 2026's two costs move
+to the basis at 5,950.00 gross (2026 amendment warning with that amount), the roof at
+42,840.00. The 2027 AfA is computed on 234,000.00 + 5,950.00 + 42,840.00 = 282,790.00 × 2 % =
+**5,655.80**, and the amended 2026 AfA on (234,000.00 + 5,950.00) × 2 % × 6/12 = **2,399.50**
+(`afa.yaml` `limit_crossing_additions_gross`). Corrected in step 0: this example added the net
+figures (5,000.00 and 36,000.00), which §9b Abs. 1 EStG does not allow (D73). Cases `equal_is_not_exceeded`,
 `outside_window_not_counted` (paid 2029-07-01), `estimated_net_without_invoice`,
 `excluded_annual_maintenance`, `herstellung_not_counted`.
 
@@ -319,16 +339,20 @@ exceeded. Case `crossing_in_second_year`: 2027 adds a roof share of 36,000.00 ne
 - `repairs` → `wk.maintenance` in its tax year; `renovation` with `renovation_treatment =
   erhaltung` the same; `herstellung` → basis addition; no input → open (D59, warning
   `renovation.undecided` with the amount).
+- The sources of `wk.maintenance` are the allocations, their invoices and, for an elected
+  `renovation`, its `renovation_treatment` input (an input that decides a line is a source).
 - `spread_82b(allocation, years)` (D62): year paid gets `round_half_up(amount ÷ years)`, each
-  later year the same, the last year the remainder; lines `wk.maintenance_spread_total` (Z57
-  total and "davon abzuziehen") in the year paid, `wk.maintenance_spread_prior` keyed by the
-  origin year afterwards. Ownership end → the remainder in that year. A withdrawn input moves
+  later year the same, the last year the remainder; lines `wk.maintenance_spread_total` (Z57,
+  the total) and `wk.maintenance_spread_current` (Z58–60, "davon abzuziehen") in the year
+  paid, then `wk.maintenance_spread_prior_k` with k = years since the payment. Ownership end → the remainder in that year. A withdrawn input moves
   the amount back to `wk.maintenance` in the year paid (the app records the change; whether
   the assessment is still open is Luis's call).
 
 Worked example (`erhaltungsaufwand.yaml`): 7,000.00 spread over 3 years paid 2026 → 2026:
-2,333.33 (Z57 total 7,000.00, davon 2,333.33); 2027: 2,333.33 ("aus 2026"); 2028: 2,333.34.
-Case `sale_in_second_year` → 2027 takes 4,666.67.
+2,333.33 (Z57 total 7,000.00, davon 2,333.33); 2027: 2,333.33 ("aus 2026", `_prior_1`); 2028:
+2,333.34 (`_prior_2`). Case `spread_sale_in_second_year` → 2027 takes 4,666.67 on `_prior_1`.
+Case `spread_withdrawn_back_to_full` → `wk.maintenance` 7,000.00 in 2026. The fixture's
+property was bought in 2020, so the 15 % window is closed and does not interfere.
 
 ### 5.5 Schuldzinsen, Geldbeschaffungskosten, Zinsbescheinigung (`schuldzinsen.py`)
 
@@ -341,13 +365,20 @@ Case `sale_in_second_year` → 2027 takes 4,666.67.
 - Reconciliation: for every loan with an `interest_certified` input for the year (D66, read
   from the Zinsbescheinigung and confirmed), the certified amount is compared with Σ
   `loan_interest` of that loan in the year; a difference → warning `interest.certificate_mismatch`
-  with both figures and the lines the ten-day rule moved (the usual cause). The ledger stays the
-  source; the figure is never replaced by the certificate.
+  (params `certified`, `booked`, `difference` as a magnitude; the screen lists the lines the
+  ten-day rule moved, the usual cause). The ledger stays the source; the figure is never
+  replaced by the certificate, and the certificate's input is compared, not summed, so it is
+  not a source of `wk.interest`. Einzelangaben list the lenders of the loans with interest in
+  the year, sorted.
 
 Worked example (`schuldzinsen.yaml`): interest-only debit 233.33 in July, then five annuities
 with interest 700.00, 699.13, 698.25, 697.37, 696.48 → **3,724.56**; Tilgung 300.00, 300.87,
 301.75, 302.63, 303.52 → 1,508.77 tracked; certificate 3,724.56 → no warning; certificate
-3,724.00 → warning with difference 0.56.
+3,724.00 → warning with difference 0.56. Case `january_annuity_moved`: the January 2027
+annuity debited on 30 Dec 2026 counts in 2027 (§5.1); a bank certifies interest by its own
+interest period, so the fixture's 2026 certificate (696.48 for December alone) leaves it out
+too and matches, and 2027 carries its 695.60 interest and 304.40 Tilgung. Should a real
+certificate count it in 2026 instead, the mismatch warning shows the moved line.
 
 ### 5.6 Hausgeld and the Erhaltungsrücklage (`hausgeld.py`)
 
@@ -355,9 +386,11 @@ with interest 700.00, 699.13, 698.25, 697.37, 696.48 → **3,724.56**; Tilgung 3
   `wk.non_allocable_costs`; both in the year paid (§5.1).
 - `hausgeld_ruecklage` → tracked, not deductible (D57).
 - `ruecklage_spent` input for year Y (the Hausgeldabrechnung Y, which arrives in Y+1) →
-  `wk.maintenance` of Y with the Abrechnung as source. Missing → the line is `provisional`,
-  warning `hausgeld.abrechnung_pending`, checklist item `hausgeldabrechnung` expected until
-  30 Jun Y+1.
+  `wk.maintenance` of Y with the Abrechnung as source; it counts for its own year only.
+  Missing for an ETW year → the line is `provisional` (shown as 0.00 when nothing else is on
+  it), warning `hausgeld.abrechnung_pending`, checklist item `hausgeldabrechnung` expected
+  until 30 Jun Y+1. An input of 0.00 (the WEG spent nothing) is an answer: no provisional
+  flag.
 - The owner's settlement with the WEG (Nachzahlung or Guthaben in Y+1) is a bank line
   allocated to `hausgeld_*` by a rule or by hand (D51's `as_last_split` fits) and counts in
   Y+1; the Abrechnung's `settlement_result` is shown for comparison only.
@@ -375,10 +408,16 @@ provisional + warning.
   income all the same; an `included` tenancy has its whole rent on Z13 (D72, Z24 box).
 - `operating_costs_settlement` → `income.umlagen_settlement`, sign kept (a refund to the
   tenant is negative).
-- `other_income` → `income.other` with warning `income.other_review` per allocation naming
-  the counterparty's masked IBAN and amount; income booked before the handover goes to the
-  flat's rent row when the property's `pre_handover_income` input says `rent`, else to the
-  "Vor dem Übergang" block (D63).
+- `other_income` → `income.other` with warning `income.other_review` per allocation (params
+  `amount`, `counterparty_iban` masked), whatever its date: an `other_income` line before the
+  handover keeps its warning even when §5.10 moves it to the rent row; income booked before
+  the handover goes to the flat's rent row when the property's `pre_handover_income` input
+  says `rent`, else to the "Vor dem Übergang" block (D63, §5.10).
+- Mixed terms (D72): warning `umlagen.mixed_terms` with params `tenancies` (the ids of the
+  `included` tenancies). No `living_area_m2` → the row's area is Σ the units' m² and the
+  draft warns `income.living_area_missing` (D71).
+- Unit rows: an ETW or EFH has one row for the property (`area_source: living_area`, or `units` when the area is missing); an MFH
+  one row per unit (`area_source: units`).
 - `deposit_in` / `deposit_out`: nothing (a kept deposit, Z25, is out of scope).
 
 ### 5.8 Verbilligte Vermietung (`verbilligt.py`)
@@ -387,16 +426,20 @@ Per Wohnung (D71: the flat for an ETW let by rooms, each unit for an MFH): agree
 = Σ `cold_rent + operating_costs_prepayment` of its tenancies in force on 1 January (or each
 tenancy's start); an `included` tenancy's whole rent is warm already (D72). Ortsübliche
 Warmmiete = the `market_rent` input in force (`cold_rent_per_m2`, the Mietspiegel's net cold
-rent) × the Wohnung's area + the year's umlagefähige costs from the ledger (Σ confirmed
-`hausgeld_umlagefaehig`, `grundsteuer`, `insurance`, scaled to 12 months for a part year);
+rent; "in force" = not superseded or withdrawn, with `valid_from` ≤ 31 Dec of the year, the
+same test as the checklist's §8, so a value valid from mid-year counts for that year) × the
+Wohnung's area + the year's umlagefähige costs from the ledger as a monthly figure (Σ confirmed
+`hausgeld_umlagefaehig`, `grundsteuer`, `insurance` ÷ months owned);
 `ratio` = agreed ÷ ortsüblich. ≥ 66 %: nothing. 50 % ≤ ratio < 66 %: warning `reduced_rent.prognosis_needed`.
-< 50 %: warning `reduced_rent.partial` and `reduced_rent.cut_percent` = round((1 − ratio) ×
+< 50 %: warning `reduced_rent.partial` (params `cut_percent`) and `reduced_rent.cut_percent` = round((1 − ratio) ×
 100) proposed for Z87 (the Finanzamt cuts, the draft does not, D61). No input: warning
 `reduced_rent.no_market_rent` (information) and the checklist item `market_rent` missing.
 
 Worked example (`verbilligte_vermietung.yaml`): 62.50 m² at 12.80 €/m² cold → 800.00, plus 200.00 umlagefähige costs a month → 1,000.00;
 agreed 1,030.00 → 103 %, nothing; agreed 620.00 → 62 %, prognosis; agreed 450.00 → 45 %,
-cut 55 %.
+cut 55 %. The 200.00 are the §14 flat's 1,200.00 of umlagefähige costs over its 6 months owned.
+Case `market_rent_valid_from_mid_year`: a value of 11.20 €/m² valid from 1 Sep → 700.00 +
+200.00 = 900.00; agreed 1,030.00 → 114.4 %, nothing.
 
 ### 5.9 §23 date (`spekulation.py`)
 
@@ -406,12 +449,17 @@ with the AfA claimed that year (D68). The gain and the lever are phase 4.
 
 ### 5.10 Lines before the handover (`vorab.py`)
 
-Income allocations with `booking_date < purchase_date`: with the property's
-`pre_handover_income` input = `rent` → added to the flat's `income.rent_units` row (each a
-source of it, listed under "davon vor dem Übergang"); without it → `pre_handover` block: list,
-sum, warning `income.pre_handover` (D63, Q1 decided 9 Nov 2026). `anlage_v_2026.yaml` carries
-both: case A without the input (the block as below), and a case with it, where the 850.00 move
-onto the rent row and the warning is gone. Cost allocations before the handover stay in their
+`split(facts: DraftFacts, tax_year, rule_set) -> RuleLines`, like the other line rules (§7).
+Income allocations (`rent_cold`, `operating_costs_prepayment`, `operating_costs_settlement`,
+`other_income`) with `booking_date < purchase_date`: with the property's
+`pre_handover_income` input = `rent` → one unit row for the flat with `amount` =
+`pre_handover` = their sum (each allocation and the input are its sources, listed under
+"davon vor dem Übergang"); `draft` merges it into the flat's `income.rent_units` row. Without
+the input → `pre_handover` block: their ids, and warning `income.pre_handover` (params
+`amount`, `count`) (D63, Q1 decided 9 Nov 2026). `vorab.yaml` `rent_input_moves_to_rent_row`
+and `anlage_v_2026.yaml` carry both: case A without the input (the block as below), and case
+`pre_handover_as_rent` with it, where the 850.00 move onto the rent row and the warning is
+gone (the two `income.other_review` warnings stay, §5.7). Cost allocations before the handover stay in their
 lines. A property whose `purchase_date` was corrected after lines were booked is handled by
 the same test on the current value (append-only history keeps the old one).
 
@@ -459,7 +507,15 @@ RLS, `workspace_id`, grants and the `tables.py` mirror as every table since 0001
 `event.entity_type`: the new events sit on `property` (and `tenancy`). No change to
 `allocation.category` or any CHECK of 0012 (D56 chose an input over a category). Downgrade:
 drops the two tables and the three columns; refused while any `tax_export` row exists (an export is
-a record of what was handed over and is never rewritten).
+a record of what was handed over and is never rewritten). As built in step 0 the guard is
+stricter: it also refuses while any `tax_input` row exists, any `property.living_area_m2` is
+set, or any tenancy has a `rent_due_day` other than 3 or `operating_costs_terms` other than
+`prepayment`, because dropping them would lose what a person typed.
+
+`tax_input.document_id` references `document` like `allocation.document_id` does (no
+`ON DELETE`), so a future retention sweep that deletes a Zinsbescheinigung or
+Hausgeldabrechnung must first handle the inputs that cite it (the year's inputs share the
+document's 10-year hold, so in practice they expire together).
 
 **Events added**
 
@@ -478,7 +534,7 @@ a record of what was handed over and is never rewritten).
 | Each kind has its scope | CHECKs above + `TaxInputCreate` validator |
 | An export's draft equals what `draft()` returned at that moment, under the version it names | the service stores the draft it just computed in the same transaction as the file; `anlage_v_2026.yaml` `export_roundtrip` case |
 | The field sheet never contains a tenant's name, IBAN or the counterparty text | `services/tax_export.py` builds it from `AnlageVDraft` only, which has none (D5); `tests/test_tax_export_privacy.py` |
-| A rule set names a line for every category | `form_mapping.yaml` + load-time check |
+| A rule set names a line for every category | load-time check (`FormMapping` validator) + `tests/rules/test_tax_rulesets.py` |
 
 ## 7. Schemas (new and changed modules; the spec PR writes them)
 
@@ -486,17 +542,20 @@ Money stays a decimal string on the wire (phase 1 amendment 2); all models exten
 
 ```python
 # schemas/tax.py (besides §4.1)
-class TaxInputKind(StrEnum): SPREAD_82B, RENOVATION_TREATMENT, EXCLUDE_FROM_15PCT, MARKET_RENT, RUECKLAGE_SPENT, INTEREST_CERTIFIED
+class TaxInputKind(StrEnum): SPREAD_82B, RENOVATION_TREATMENT, EXCLUDE_FROM_15PCT, MARKET_RENT, RUECKLAGE_SPENT, INTEREST_CERTIFIED, PRE_HANDOVER_INCOME
 class Spread82b(Schema): years: int = Field(ge=2, le=5)
 class RenovationTreatment(Schema): treatment: Literal["erhaltung", "herstellung"]
 class ExcludeFrom15Pct(Schema): reason: Literal["annual_maintenance", "extension", "damage_after_acquisition"]
-class MarketRent(Schema): valid_from: date; warm_rent_per_m2: PositiveMoney; source: Literal["mietspiegel", "gutachten", "portal", "other"]
+class MarketRent(Schema): valid_from: date; cold_rent_per_m2: PositiveMoney; source: Literal["mietspiegel", "gutachten", "portal", "other"]
 class RuecklageSpent(Schema): amount: NonNegativeMoney            # tax_year + document_id on the row
 class InterestCertified(Schema): amount: NonNegativeMoney         # loan_id + tax_year + document_id on the row
+class PreHandoverIncome(Schema): treatment: Literal["rent"]       # D63
 class TaxInputCreate(Schema): property_id; kind; tax_year | None; unit_id | None; loan_id | None; allocation_id | None;
-    document_id | None; value: Spread82b | RenovationTreatment | ExcludeFrom15Pct | MarketRent | RuecklageSpent | InterestCertified;
+    document_id | None; value: Spread82b | … | PreHandoverIncome;
     note | None; supersedes_id | None; withdrawn: bool = False      # validator: value type and scope by kind
-class TaxInput(TaxInputCreate, Record): recorded_at; recorded_by
+class TaxInput(TaxInputFact): recorded_at; recorded_by            # not Record: the table names its timestamp recorded_at
+# The warning codes are a StrEnum WarningCode with a fixed WARNING_SEVERITY map (info | warning),
+# decided in step 0; a DraftWarning whose severity differs from the map fails validation.
 
 class PaymentFacts(Schema): allocation_id; booking_date; value_date | None; amount; category; recurring; service_period | None; due_on | None
 class TaxYearResult(Schema): year: TaxYear; rule: Literal["paid", "short_period_shift"]; notes: list[str]
@@ -509,9 +568,17 @@ class TaxExport(Record): property_id; tax_year; kind; rule_set_version; form_yea
 Changed: `tenancy.py` (`TenancyCreate.rent_due_day: int = 3`, `Tenancy`, the API patch);
 `checklist.py` (`RequirementCode` + `COST_RECEIPT`, `MARKET_RENT`; `ChecklistScopeType` +
 `ALLOCATION`, `UNIT`; `ChecklistFacts` + `allocations: list[ChecklistAllocation]`,
-`market_rents: list[ChecklistMarketRent]`; `ChecklistScope` + `category`, `booking_date`);
+`market_rents: list[ChecklistMarketRent] | None = None`, where None means a phase 1 caller
+that yields no `market_rent` item; `ChecklistScope` + `category`, `booking_date`);
 `events.py` (the two payloads, `tenancy.updated` field); `proposal.py` (`ProposalRecord.
-entity_type` + `"tax_input"`); `enums.py` only if a CHECK'd set is added (none planned).
+entity_type` + `"tax_input"`); `property.py` (`living_area_m2`); `enums.py` gains
+`OperatingCostsTerms` (D72; this line said "none planned", written before D72 added the
+CHECK'd set).
+
+The line rules share one signature, `<module>.lines(facts: DraftFacts, tax_year, rule_set) ->
+RuleLines` (`vorab.split` too; `verbilligt.check` takes the same arguments and returns a
+`ReducedRentResult`); `RuleLines` holds lines, unit rows, tracked amounts, basis additions,
+pre-handover ids, warnings and `excluded_open`, which `draft` merges.
 
 ## 8. Document checklist extension (`rules/document_checklist.py`, data entries)
 
@@ -521,9 +588,11 @@ entity_type` + `"tax_input"`); `enums.py` only if a CHECK'd set is added (none p
 | `market_rent` | one per Wohnung (D71) with a tenancy overlapping the year | a `market_rent` input of that Wohnung (property, or unit for an MFH) with `valid_from` ≤ 31 Dec of the year, not withdrawn (new satisfier `TAX_INPUT`) | always | — |
 
 Existing entries keep their rules; `zinsbescheinigung` and `hausgeldabrechnung` now also feed
-§5.5 and §5.6. Statuses, order and the "owned in the year" test are unchanged. Fixture
+§5.5 and §5.6. Statuses, order and the "owned in the year" test are unchanged; the two new
+entries follow `hausgeldabrechnung`, `cost_receipt` ordered by booking date. Fixture
 `checklist_phase3.yaml` (§13); the phase 1 fixture's outcomes do not change (its facts carry
-no allocations or inputs, so the new entries yield no items).
+no allocations, and `market_rents` is None for a phase 1 caller, so the new entries yield no
+items even for a let unit).
 
 ## 9. Reading the two certificates (the one model touchpoint)
 
@@ -584,7 +653,7 @@ Error codes: `tax.no_rule_set`, `tax.year_not_available`, `tax_input.scope_inval
   and the split with its evidence; for a certificate figure the document and its quote.
 - **Inputs**: on an allocation in the review panel (`components/allocations.tsx`): "Auf 2–5
   Jahre verteilen (§ 82b EStDV)", "Renovierung ist: Erhaltungsaufwand / Herstellungskosten",
-  "Zählt nicht zur 15 %-Grenze (Grund)"; on the unit page: "Ortsübliche Miete (warm, €/m²),
+  "Zählt nicht zur 15 %-Grenze (Grund)"; on the unit page: "Ortsübliche Miete (kalt, €/m², netto laut Mietspiegel),
   gültig ab, Quelle, Beleg"; on the tenancy form: "Miete fällig am Tag" (default 3). The
   Offene Punkte card links to each.
 - **Property page**: the Unterlagen tab shows the new entries automatically; the property
@@ -608,7 +677,9 @@ Error codes: `tax.no_rule_set`, `tax.year_not_available`, `tax_input.scope_inval
   and PDFs whose pages carry `Ink`, `FreeText` or `Stamp` annotations (pypdf reads the
   annotation subtypes). Making the copies is open question 8.
 - PDF writing needs a library the backend lacks (pypdf only reads and merges). Choice for
-  the spec PR: **reportlab** (BSD, pure Python, no system packages in the container);
+  the spec PR: **reportlab** (BSD, no system packages in the container; added in step 0. It
+  pulls in pillow, which installs as a prebuilt binary wheel, so "pure Python" holds for
+  reportlab itself only);
   the alternative is an HTML sheet printed by the browser, which saves the dependency but
   cannot be stored as the snapshot's bytes (Q12).
 - Both exports write the `tax_export` row and the file in one transaction with the event;
@@ -624,16 +695,16 @@ schemas (a fixture that does not match the schemas fails before any rule is impl
 | Function | Fixture | Cases |
 | --- | --- | --- |
 | `tax_year.tax_year_of(payment, rule_set) -> TaxYearResult` | `tax_year.yaml` | the nine cases of §5.1, plus `due_missing_no_shift` (recurring, no due date → year paid, note) |
-| `afa.afa(facts, tax_year, rule_set) -> AfaLine` | `afa.yaml` | `etw_1998_handover_july` (2,340.00 / 4,680.00), `build_1920_rate_2_5`, `build_2023_rate_3`, `handover_january_full_year`, `handover_december_one_twelfth`, `nebenkosten_in_basis` (basis with and without the three cost rows), `herstellung_addition_2027`, `no_split_empty_line`, `cost_row_unpaid_warning`, `acquisition_cost_without_row_not_added`, `purchase_price_mismatch_warning` |
+| `afa.afa(facts, tax_year, rule_set) -> AfaLine` | `afa.yaml` | `etw_1998_handover_july` (2,340.00 / 4,680.00), `build_1920_rate_2_5`, `build_2023_rate_3`, `handover_january_full_year`, `handover_december_one_twelfth`, `nebenkosten_in_basis` and `nebenkosten_in_basis_none` (basis with and without the three cost rows, two cases), `herstellung_addition_2027`, `limit_crossing_additions_gross` (2026 2,399.50, 2027 5,655.80, D73), `no_split_empty_line`, `cost_row_unpaid_warning`, `acquisition_cost_without_row_not_added`, `purchase_price_mismatch_warning` |
 | `anschaffungsnah.limit_status(facts, tax_year, rule_set) -> LimitStatus` | `anschaffungsnah.yaml` | `under_limit_14_percent`, `crossing_in_second_year` (prior-year amendment, basis additions by year paid), `equal_is_not_exceeded`, `outside_window_not_counted`, `estimated_net_without_invoice`, `excluded_annual_maintenance`, `herstellung_not_counted`, `window_dates` (2026-07-01 → 2029-06-30), `zero_amount_is_not_evidence` (a confirmed 0.00 `repairs` row: not listed, not counted) |
 | `erhaltungsaufwand.lines(...)` | `erhaltungsaufwand.yaml` | `repairs_full_deduction`, `renovation_elected_erhaltung`, `renovation_elected_herstellung`, `renovation_undecided_excluded`, `spread_three_years` (2,333.33 / 2,333.33 / 2,333.34), `spread_sale_in_second_year`, `spread_withdrawn_back_to_full` |
 | `schuldzinsen.lines(...)` | `schuldzinsen.yaml` | `interest_only_phase_plus_annuities` (3,724.56 / 1,508.77), `certificate_matches`, `certificate_mismatch_0_56`, `january_annuity_moved` (debited 30 Dec, certificate counts it in the new year), `financing_costs_before_handover`, `two_loans_two_einzelangaben` |
 | `hausgeld.lines(...)` | `hausgeld.yaml` | `six_months_split`, `ruecklage_tracked_not_deducted`, `ruecklage_spent_confirmed_350`, `abrechnung_pending_provisional`, `settlement_backpayment_next_year` |
 | `einnahmen.lines(...)` | `umlagen.yaml` | `rent_and_prepayments_six_months`, `settlement_backpayment_positive`, `refund_negative`, `pauschale_is_umlagen`, `included_rent_on_z13`, `all_included_ticks_z24`, `mixed_terms_warns`, `two_rooms_one_flat_row`, `mfh_two_units_two_rows`, `living_area_missing_falls_back`, `other_income_with_review_warning`, `deposit_not_income` |
 | `verbilligt.check(...)` | `verbilligte_vermietung.yaml` | `ratio_103_nothing`, `ratio_62_prognosis`, `ratio_45_cut_55`, `no_market_rent_info`, `market_rent_valid_from_mid_year` |
-| `vorab.split(...)` | `vorab.yaml` | `seller_forwarded_rent_excluded` (2 × 425.00 → block 850.00), `interest_before_handover_deducted`, `purchase_date_corrected_later` |
+| `vorab.split(...) -> RuleLines` | `vorab.yaml` | `seller_forwarded_rent_excluded` (2 × 425.00 → block 850.00), `interest_before_handover_deducted`, `purchase_date_corrected_later`, `rent_input_moves_to_rent_row` (with the `pre_handover_income` input: a unit row of 850.00) |
 | `spekulation.tax_free_from(...)` | `spekulation.yaml` | `ten_years_plus_one_day`, `leap_day_contract` (29 Feb 2024 → 1 Mar 2034) |
-| `registry.rule_set(year)` and `FormMapping` | `form_mapping.yaml` | every category once per form year (2025 published, 2026 provisional); every line key the draft writes exists; Zeilen and Kennzahlen of 2025 as in §4.2; a mapping missing a category fails with `form_mapping.incomplete`; `spread_prior_years` relative to the tax year |
+| `registry.rule_set(year)` and `FormMapping` | `tests/rules/test_tax_rulesets.py` (a Python test, not a YAML fixture; step 0) | every category once per form year (2025 published, 2026 provisional); every line key the draft writes exists; Zeilen and Kennzahlen of 2025 as in §4.2; a mapping missing a category fails with `form_mapping.incomplete`; `spread_prior_years` relative to the tax year |
 | `document_checklist.build_checklist` (extended) | `checklist_phase3.yaml` | `cost_receipt_missing_for_repair`, `cost_receipt_present`, `cost_receipt_only_for_named_categories`, `market_rent_missing_for_let_unit`, `market_rent_present`, `market_rent_withdrawn_is_missing`, `zero_amount_is_not_evidence` (a confirmed 0.00 `repairs` row without a document → no item), `phase1_facts_unchanged` (phase 1 facts → the same items as before) |
 | `draft.draft(facts, tax_year, rule_set) -> AnlageVDraft` | `anlage_v_2026.yaml` | §14 |
 
@@ -647,22 +718,37 @@ Warning codes (data in the draft, German text in the frontend): `year_end_stradd
 `afa.purchase_price_mismatch`, `limit.exceeded`, `limit.prior_year_amendment`,
 `limit.estimated_net`, `renovation.undecided`, `interest.certificate_mismatch`,
 `hausgeld.abrechnung_pending`, `income.other_review`, `income.pre_handover`,
+`income.living_area_missing` (D71), `umlagen.mixed_terms` (D72),
 `reduced_rent.no_market_rent`, `reduced_rent.prognosis_needed`, `reduced_rent.partial`,
-`draft.open_lines_excluded`, `draft.form_provisional`, `draft.allocation_without_property`.
+`draft.open_lines_excluded`, `draft.form_provisional`, `draft.allocation_without_property`,
+`archive.finanzamt_copy_needed` (Q8). Severity per code is fixed in `WARNING_SEVERITY`
+(step 0): **info** for `year_end_straddle`, `afa.cost_row_unpaid`,
+`afa.purchase_price_mismatch`, `limit.estimated_net`, `hausgeld.abrechnung_pending`,
+`reduced_rent.no_market_rent`, `draft.form_provisional`, `archive.finanzamt_copy_needed`;
+**warning** for the rest.
 
 ## 14. Done criterion as fixtures
 
 **`anlage_v_2026.yaml`** is the hand-calculated return. Its facts (all synthetic; the mockup's
 figures are sample data and are not used, per `docs/mockups/README.md`):
 
-- Property "Wohnung Beispielweg", ETW, completed 1998, Kaufvertrag 10 Mar 2026, handover
-  1 Jul 2026, price 300,000.00; cost rows Grunderwerbsteuer 19,500.00 (paid from the rental
-  account 20 Apr), Notar 4,200.00 (paid privately 25 Mar: no allocation), Grundbuch 1,300.00
-  (paid 12 May); split from the contract 0.720000; one unit "WE 7", 62.50 m²; owners A and B
-  1/2 each.
+- Property "Wohnung Beispielweg", Beispielweg 7, 12345 Musterstadt, Grundsteuer Aktenzeichen
+  999/123/45678, ETW, completed 1998, Kaufvertrag 10 Mar 2026, handover 1 Jul 2026, price
+  300,000.00, `living_area_m2` 62.50; cost rows Grunderwerbsteuer 19,500.00 (paid from the
+  rental account 20 Apr), Notar 4,200.00 (paid privately 25 Mar: no allocation), Grundbuch
+  1,300.00 (paid 12 May); split from the contract 0.720000; one unit "WE 7", 62.50 m²; owners
+  A and B 1/2 each; every phase 1 document present (the checklist's phase 1 part is the
+  existing `build_checklist`'s output for these facts); drafted on 15 Jan 2027, after the
+  Zinsbescheinigung arrived on 12 Jan.
 - Tenancy from 1 Jul 2026, Kaltmiete 850.00, Nebenkostenvorauszahlung 180.00, due day 3.
 - Loan "Beispielbank" 240,000.00 at 3.5 %, 1,000.00 a month, paid out 29 Jun, first annuity
   1 Aug, interest-only before.
+- Confirmed allocations of 2026 that reach no form line (added in step 0 so the draft is
+  tested against a realistic purchase year): owner top-up 85,000.00 on 15 Apr
+  (`owner_transfer_in`); Grunderwerbsteuer −19,500.00 on 20 Apr and Grundbuch −1,300.00 on
+  12 May (`acquisition_cost`, each in its cost row's `paid_by`); loan payout +240,000.00 on
+  29 Jun (`loan_disbursement`); purchase price −300,000.00 on 30 Jun (`purchase_price`, equal
+  to the price, so no mismatch warning).
 - Confirmed allocations of 2026: rent 2 Jul – 2 Dec 6 × (850.00 + 180.00); rent for 01/2027
   booked 29 Dec (850.00 + 180.00); seller's forwarded rent share 425.00 on 5 May and 5 Jun
   (`other_income`); deposit 1,700.00 on 2 Jul; Hausgeld 1 Jul – 1 Dec 6 × 320.00 split
@@ -671,13 +757,17 @@ figures are sample data and are not used, per `docs/mockups/README.md`):
   303.52; Notar Grundschuld 480.00 on 15 Jun (`loan_fees`); Grundsteuer 60.00 on 17 Aug and
   16 Nov; painter 1,190.00 on 21 Sep (`repairs`, invoice net 1,000.00); bathroom tiles
   4,760.00 on 6 Oct (`renovation`, invoice net 4,000.00); Sondereigentumsverwaltung 6 × 25.00;
-  bank fees 9 × 4.90 from 30 Apr; a confirmed 0.00 line on 30 Jun booked `other_expense` by
+  bank fees 9 × 4.90 on the last banking day of each month from 30 Apr (the last on 30 Dec); a confirmed 0.00 line on 30 Jun booked `other_expense` by
   the model (D52) and one on 31 Oct booked `repairs`, both without a document; two proposed
   lines in December summing −89.90 (not confirmed).
 - Inputs: `renovation_treatment = erhaltung` for the tiles (case A; case B has none);
   `interest_certified` 3,724.56 for 2026; no `ruecklage_spent` yet (the Abrechnung arrives in
   2027); no `market_rent`.
-- Coverage: reconciled imports through 30 Nov 2026.
+- Coverage: reconciled imports through 30 Dec 2026, the last bank line. Corrected in step 0:
+  this said 30 Nov, but the facts confirm December lines (the rent of 29 Dec, the bank fee of
+  30 Dec), and a line reaches confirmation only from a reconciled statement (phase 2), so the
+  statements must cover them. December is still not fully covered (its last day, 31 Dec, is
+  after `covered_through`), so the result stays 5 of 6 months.
 
 Expected draft 2026, case A (cents):
 
@@ -686,10 +776,10 @@ Expected draft 2026, case A (cents):
 | Z13/15 (Kz 01) | `income.rent_total` | 5,100.00 | 6 allocations |
 | Z20 (Kz 04) | `income.umlagen` | 1,080.00 | 6 allocations |
 | Z32 | `income.total` | **6,180.00** | |
-| Z33/35 (Kz 30) | `wk.afa` | 2,340.00 | property, 3 cost rows, split (234,000.00 × 2 % × 6/12), method code 2 |
+| Z33/35 (Kz 30) | `wk.afa` | 2,340.00 | 9: property, split and its Kaufvertrag, 3 cost rows and their 3 documents (234,000.00 × 2 % × 6/12), method code 2 |
 | Z46/48 (Kz 33) | `wk.interest` | 3,724.56 | 6 allocations; Einzelangaben "Beispielbank"; certificate matches |
 | Z49/51 (Kz 34) | `wk.financing_costs` | 480.00 | 1 allocation + invoice |
-| Z55 (Kz 36) | `wk.maintenance` | 5,950.00 | 2 allocations + 2 invoices; `provisional` (Rücklage-Entnahme pending) |
+| Z55 (Kz 36) | `wk.maintenance` | 5,950.00 | 2 allocations + 2 invoices + the tiles' `renovation_treatment` input; `provisional` (Rücklage-Entnahme pending) |
 | Z73/75 (Kz 52) | `wk.allocable_costs` | 1,200.00 | 6 Hausgeld parts + 2 Grundsteuer |
 | Z76/78 (Kz 48) | `wk.non_allocable_costs` | 434.10 | 6 Hausgeld parts + 6 Verwaltung + 9 bank fees |
 | Z83 | `wk.total` | **14,128.66** | |
@@ -699,8 +789,10 @@ Expected draft 2026, case A (cents):
 Rounded for the field sheet (D60): income 6,180; costs 2,340 + 3,725 + 480 + 5,950 + 1,200 +
 435 = 14,130; result **−7,950**; owners −3,975 each.
 
-Also asserted: tracked not deductible Rücklage 600.00 and Tilgung 1,508.77; moved to 2027:
-1,030.00 (one line, rule `short_period_shift`); pre-handover block 850.00 (two lines);
+Also asserted: the Z13 unit row for the flat (62.50 m², from `living_area_m2`, 5,100.00);
+tracked not deductible Rücklage 600.00 and Tilgung 1,508.77; moved to 2027: 1,030.00 (one
+bank line, two allocations of 850.00 and 180.00, rule `short_period_shift`); pre-handover
+block 850.00 (two lines);
 excluded open: 2 lines, −89.90; coverage 5 of 6 months; limit 15 %: 5,000.00 of 35,100.00
 (14.2 %), window to 30 Jun 2029, not estimated; `tax_free_from` 11 Mar 2036; warnings exactly
 `afa.cost_row_unpaid` (Notar), `hausgeld.abrechnung_pending`, `income.other_review` ×2,
@@ -710,13 +802,24 @@ excluded open: 2 lines, −89.90; coverage 5 of 6 months; limit 15 %: 5,000.00 o
 Notar Grundschuld) and none for the two 0.00 rows (D70), which also count nowhere, raise no
 warning and are not among the excluded open lines.
 
-Case B (no renovation input): Z55 1,190.00; Z83 9,368.66; Z85 −3,188.66; warning
-`renovation.undecided` with 4,760.00; the 15 % tracker still counts 4,000.00 net (undecided
-counts).
+The fixture's case ids are `case_a`, `case_b_renovation_undecided`, `pre_handover_as_rent`
+and `export_roundtrip`.
+
+Case B (`case_b_renovation_undecided`, no renovation input): Z55 1,190.00; Z83 9,368.66
+(rounded 9,370); Z85 −3,188.66 (−3,190); owners −1,594.33 each (−1,595); warning
+`renovation.undecided` with 4,760.00; excluded open 3 lines, −4,849.90 (the tiles join the
+two proposed lines; step 0 added this figure); the 15 % tracker still counts 4,000.00 net
+(undecided counts).
+
+Case `pre_handover_as_rent` (added in step 0, D63 with Luis's answer to Q1): case A plus the
+`pre_handover_income` input. The flat's row and Z15 become 5,950.00 (of which 850.00 before
+the handover; sources the eight rent allocations and the input); income 7,030.00; result
+−7,098.66 (rounded −7,100); owners −3,549.33 each (−3,550); the block and its warning are
+gone, the two `income.other_review` warnings stay.
 
 Case `export_roundtrip`: the draft serialised and loaded again equals itself, and the field
-sheet rows (key, Zeile, Kennzahl, cents, rounded) match the table above under rule set
-`2026.1`, form 2025 provisional.
+sheet rows (key, Zeile of the amount, Kennzahl, cents, rounded; 14 rows, the flat's row on
+Z14) match the table above under rule set `2026.1`, form 2025 provisional.
 
 "Every line opens its sources" is asserted by the fixture (each line's `sources` non-empty
 except `income.total`, `wk.total`, `result.*`) and by the sources drawer (step 1's done
@@ -729,11 +832,11 @@ migrations, events, fixtures).
 
 | Step | Delivers | Migration | Done when | Size | Review |
 | --- | --- | --- | --- | --- | --- |
-| 0 **Spec PR** | this doc; `schemas/tax.py` and the §7 changes; migration 0013 written and tested against Postgres 16; `rulesets/2025.yaml`, `2026.yaml`; the 12 fixtures and `fixture_models_phase3.py` (rule tests skipped); `tables.py` mirror; reportlab dependency; ARCHITECTURE edits §16 | written, not deployed | schema tests green (table count + exclusion list), fixtures validate, `uv run pytest` green | M: 1 coder | **Yes**: FOCUS the 2025 Zeilen/Kennzahlen against the form, the worked examples' arithmetic, the migration's CHECKs and trigger |
-| 1 **Rule set, draft, Steuern screen** | `rules/tax/*` (§5), `services/tax.py` (facts, due dates, coverage), `GET …/anlage-v`, sidebar entry, `/tax/[year]` with lines, sources drawer, tracked/moved/pre-handover blocks, Offene Punkte, 15 % card, checklist card | **0013** applied (tables empty) | `tax_year`, `afa`, `anschaffungsnah`, `schuldzinsen`, `hausgeld`, `umlagen`, `vorab`, `spekulation`, `form_mapping`, `anlage_v_2026` fixtures pass; Luis's real 2026 draft shows every confirmed line and each opens its sources | L: 2 coders (rules + service; screen) | **Yes** (money): FOCUS the ten-day rule's boundaries, the AfA months, nothing counted twice (D55) |
+| 0 **Spec PR** | this doc; `schemas/tax.py` and the §7 changes; migration 0013 written and tested against Postgres 16; `rulesets/2025.yaml`, `2026.yaml`; the 12 fixtures and `fixture_models_phase3.py` (no skipped rule-test stubs: the rule tests come with the rules); the form mapping pinned by `tests/rules/test_tax_rulesets.py`; `tables.py` mirror; reportlab dependency; ARCHITECTURE edits §16 | written, not deployed | schema tests green (table count + exclusion list), fixtures validate, `uv run pytest` green. **Written 9 Nov 2026 on branch `docs/phase-3-step0`** (`e16002b` schemas and migration, `d139528` rule sets, `b4390ad` fixtures, then this doc update); review pending | M: 1 coder | **Yes**: FOCUS the 2025 Zeilen/Kennzahlen against the form, the worked examples' arithmetic, the migration's CHECKs and trigger |
+| 1 **Rule set, draft, Steuern screen** | `rules/tax/*` (§5), `services/tax.py` (facts, due dates, coverage), `GET …/anlage-v`, sidebar entry, `/tax/[year]` with lines, sources drawer, tracked/moved/pre-handover blocks, Offene Punkte, 15 % card, checklist card | **0013** applied (tables empty) | `tax_year`, `afa`, `anschaffungsnah`, `schuldzinsen`, `hausgeld`, `umlagen`, `vorab`, `spekulation`, `anlage_v_2026` fixtures pass (the form mapping is already pinned in step 0); Luis's real 2026 draft shows every confirmed line and each opens its sources | L: 2 coders (rules + service; screen) | **Yes** (money): FOCUS the ten-day rule's boundaries, the AfA months, nothing counted twice (D55) |
 | 2 **Inputs and reading** | `services/tax_inputs.py` + routes + events; the input controls (§11); `rent_due_day`; §82b, renovation, exclusion, market rent; pre-fill of Zinsbescheinigung and Hausgeldabrechnung into `tax_input` proposals; the two recordings; checklist extension; verbilligte Vermietung | — | `erhaltungsaufwand`, `verbilligte_vermietung`, `checklist_phase3` fixtures pass; the two recordings check in CI; a Hausgeldabrechnung upload proposes `ruecklage_spent` with its quote | M: 1–2 coders | **Yes** (persisted state, events): FOCUS append-only inputs, the proposal apply path, no value reaches `tax_input` without apply |
 | 3 **Exports** | field sheet PDF, archive ZIP, `tax_export` rows, job, signed download, export history, `README` with the Finanzamt-copy list, §23 date on the screen | — | `export_roundtrip` passes; a ZIP opens with every linked document; the sheet carries no name or IBAN (privacy test) | M: 1 coder | Small (persisted files, privacy of the sheet) |
-| 4 **Closing** | Luis's hand calculation of the 2026 return compared with the draft to the euro (outside the repo); the 2026 form mapping confirmed when ELSTER publishes it (data PR: `2026.yaml` → `published`, `form_mapping.yaml` rows) | — | the two numbers agree; the form status is `published` | S | No |
+| 4 **Closing** | Luis's hand calculation of the 2026 return compared with the draft to the euro (outside the repo); the 2026 form mapping confirmed when ELSTER publishes it (data PR: `2026.yaml` → `published`, the 2026 rows in `test_tax_rulesets.py`) | — | the two numbers agree; the form status is `published` | S | No |
 
 Phase 3 is done after step 4's comparison; steps 2 and 3 can ship in either order after 1.
 
@@ -773,6 +876,12 @@ Conflicts, stated plainly, and the edits (made in the spec PR):
     per-year form mapping (D53); §11 with Fälligkeit and `rent_due_day` (D54, D67); AfA basis
     from the record only (D55); Rücklage per BFH IX R 19/24 (D57); `tax_input` and `tax_export`
     tables (D58, D65); drafts computed, exports snapshotted (D59).
+
+All ten were made in step 0's doc commit on `docs/phase-3-step0`. The delivery table has no
+status column, so item 8's status ("spec drafted 9 Nov 2026, step 0 written the same day, not
+merged") opens the row's Delivers cell; the "Done when" cell keeps the phase's goal. Item 5's
+row and item 10's Decisions row also record D73 (gross basis additions), marked as awaiting
+sign-off.
 
 ## 17. Open questions
 
@@ -818,8 +927,8 @@ Conflicts, stated plainly, and the edits (made in the spec PR):
 11. **EStR/EStH confirmations:** still open; read in step 4 with the Anleitung. The fixtures
     encode the readings in §5; a different official reading changes a fixture in a spec
     amendment, never in an implementation PR.
-12. **PDF library (orchestrator, 9 Nov 2026): reportlab** (BSD, pure Python, no system
-    libraries, fits the small API container).
+12. **PDF library (orchestrator, 9 Nov 2026): reportlab** (BSD, no system libraries, fits
+    the small API container; its dependency pillow comes as a binary wheel, found in step 0).
 13. **`other_income` (orchestrator, 9 Nov 2026): on Z29 with the `income.other_review` warning**,
     as specced; the forwarded rent share before the handover goes to the rent row instead (D63).
 14. **Exports (orchestrator, 9 Nov 2026): kept out of the `document` table** (D65); they are
