@@ -423,6 +423,10 @@ def _set_import(world: World, import_id, **values) -> None:
 
 
 def _new_import(world: World, status: ImportStatus, last: date):
+    """An import row the statement_import CHECKs accept: a file balance declares a closing
+    one, a reconciled import's computed closing equals it, and an unreconciled or failed one
+    carries its error code (as World's own import and set_import_status do)."""
+    failed = status in (ImportStatus.UNRECONCILED, ImportStatus.FAILED)
     with workspace_transaction(world.engine, world.ws) as conn:
         doc = world._document_row(conn, type="statement", subtype=None, title=None)
         return conn.execute(
@@ -434,6 +438,9 @@ def _new_import(world: World, status: ImportStatus, last: date):
                 format="camt",
                 status=status.value,
                 balance_source="file",
+                declared_closing=Decimal("0.00"),
+                computed_closing=Decimal("0.00"),
+                error_code="statement.unreconciled" if failed else None,
                 first_booking_on=last.replace(day=1),
                 last_booking_on=last,
                 created_at=world.now,
@@ -444,8 +451,13 @@ def _new_import(world: World, status: ImportStatus, last: date):
 
 
 def test_coverage_is_the_last_reconciled_day_per_account(world):
-    _set_import(world, world.import_id, first_booking_on=date(2026, 1, 1))
-    _set_import(world, world.import_id, last_booking_on=date(2026, 11, 30))
+    # Both dates in one update: the CHECK wants them set (or empty) together.
+    _set_import(
+        world,
+        world.import_id,
+        first_booking_on=date(2026, 1, 1),
+        last_booking_on=date(2026, 11, 30),
+    )
     _new_import(world, ImportStatus.UNRECONCILED, date(2026, 12, 30))
     _book(
         world,
@@ -567,3 +579,35 @@ def test_another_workspace_sees_no_property(world, app_engine, fresh_workspaces,
         tax_service.anlage_v_draft(conn, world.property_id, tax_year=2026, today=TODAY)
     with workspace_transaction(app_engine, b) as conn, pytest.raises(NotFoundError):
         tax_service.draft_facts(conn, world.property_id, tax_year=2026, today=TODAY)
+    with workspace_transaction(app_engine, b) as conn, pytest.raises(NotFoundError):
+        tax_service.anlage_v_sources(conn, world.property_id, tax_year=2026, today=TODAY)
+
+
+# --- The sources drawer ------------------------------------------------------------------
+
+
+def test_the_sources_are_the_drafts_allocations(world):
+    insured = world.line(date(2026, 3, 2), "-50.00")
+    (insured_row,) = _book(
+        world, insured, _scope(world, amount=Decimal("-50.00"), category=C.INSURANCE)
+    )
+    earlier = world.line(date(2025, 6, 2), "-80.00")
+    (earlier_row,) = _book(
+        world, earlier, _scope(world, amount=Decimal("-80.00"), category=C.REPAIRS)
+    )
+    sources = world.query(
+        tax_service.anlage_v_sources, world.property_id, tax_year=2026, today=TODAY
+    )
+    # The same rows the draft reads, every year (a line can cite another year's payment).
+    assert sources == _facts(world).allocations
+    rows = {a.allocation_id: a for a in sources}
+    assert set(rows) == {insured_row.id, earlier_row.id}
+    assert rows[insured_row.id].transaction_id == insured
+    assert rows[insured_row.id].booking_date == date(2026, 3, 2)
+
+
+def test_the_sources_refuse_the_years_the_draft_refuses(world):
+    for year, code in ((2023, "tax.year_not_available"), (2024, "tax.no_rule_set")):
+        with pytest.raises(RuleError) as err:
+            world.query(tax_service.anlage_v_sources, world.property_id, tax_year=year, today=TODAY)
+        assert err.value.code == code

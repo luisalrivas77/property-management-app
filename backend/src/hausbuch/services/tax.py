@@ -67,6 +67,7 @@ from hausbuch.schemas.tax import (
     AnlageVDraft,
     DraftFacts,
     OpenLines,
+    RuleSet,
     TaxInputFact,
     TaxLoan,
     TaxOwner,
@@ -99,14 +100,7 @@ def anlage_v_draft(
     unknown property (or one of another workspace); RuleError `tax.year_not_available` for a
     year outside the checklist's available_years; RuleError `tax.no_rule_set` for a year
     without a rule set."""
-    checklist, documents = checklist_facts(conn, property_id)
-    years = checklist_rule.available_years(checklist, today)
-    if tax_year not in years:
-        raise RuleError(
-            TAX_YEAR_NOT_AVAILABLE,
-            f"tax_year {tax_year} is outside this property's years {years[0]}-{years[-1]}",
-        )
-    rule_set = registry.rule_set(tax_year)
+    checklist, documents, rule_set = _year_checked(conn, property_id, tax_year, today)
     facts = draft_facts(
         conn,
         property_id,
@@ -116,6 +110,43 @@ def anlage_v_draft(
         documents=documents,
     )
     return draft(facts, tax_year, rule_set)
+
+
+def anlage_v_sources(
+    conn: Connection, property_id: UUID, *, tax_year: int, today: date
+) -> list[AllocationFact]:
+    """The payments a draft line can cite, for the sources drawer (§11): the same confirmed
+    allocations the draft reads (every year of the property, since the 15 % window, §82b and
+    the ten-day rule reach across years), as AllocationFact: date, amount, category, period,
+    transaction and Beleg ids and the masked counterparty IBAN only, never a name or purpose
+    text (D5). The same checks and errors as anlage_v_draft."""
+    _year_checked(conn, property_id, tax_year, today)
+    units = list_units(conn, property_id)
+    tenancies = _tenancies(conn, [u.id for u in units])
+    loans = list_loans(conn, property_id)
+    return _allocations(
+        conn,
+        property_id,
+        _accounts(conn, property_id),
+        due_day={t.id: t.rent_due_day for t in tenancies},
+        loans={lo.id: lo for lo in loans},
+    )
+
+
+def _year_checked(
+    conn: Connection, property_id: UUID, tax_year: int, today: date
+) -> tuple[ChecklistFacts, dict[UUID, Document], RuleSet]:
+    """NotFoundError for an unknown property (or one of another workspace); RuleError
+    `tax.year_not_available` outside the checklist's available_years; `tax.no_rule_set`
+    without a rule set. Returns the checklist facts and the year's rule set."""
+    checklist, documents = checklist_facts(conn, property_id)
+    years = checklist_rule.available_years(checklist, today)
+    if tax_year not in years:
+        raise RuleError(
+            TAX_YEAR_NOT_AVAILABLE,
+            f"tax_year {tax_year} is outside this property's years {years[0]}-{years[-1]}",
+        )
+    return checklist, documents, registry.rule_set(tax_year)
 
 
 def draft_facts(

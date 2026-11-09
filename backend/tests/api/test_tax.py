@@ -165,8 +165,11 @@ def _ids(line) -> list[tuple[str, str | None]]:
     return [(s["kind"], s["id"]) for s in line["sources"]]
 
 
-def test_the_real_draft_shows_confirmed_lines_with_their_sources(client_a):
-    setup = flat(client_a)  # bought 1 May 2024, no price split
+@pytest.fixture
+def booked(client_a) -> dict:
+    """The flat (bought 1 May 2024, no price split), the camt fixture imported on its rental
+    account, and two lines confirmed for it: a repair and an other income."""
+    setup = flat(client_a)
     pid = setup["property"]["id"]
     account = create(
         client_a,
@@ -188,9 +191,17 @@ def test_the_real_draft_shows_confirmed_lines_with_their_sources(client_a):
     assert len(lines) == 22  # the fixture's lines, all booked in 2026
     repair = next(x for x in lines if x["amount"] == "-360.18")  # 30 Jun 2026
     income = next(x for x in lines if x["amount"] == "241.58")  # 30 Jun 2026, Partei A
-    repair_id = _confirm(client_a, repair, "repairs", pid)
-    income_id = _confirm(client_a, income, "other_income", pid)
+    return {
+        "pid": pid,
+        "repair": repair,
+        "income": income,
+        "repair_id": _confirm(client_a, repair, "repairs", pid),
+        "income_id": _confirm(client_a, income, "other_income", pid),
+    }
 
+
+def test_the_real_draft_shows_confirmed_lines_with_their_sources(client_a, booked):
+    pid, repair_id, income_id = booked["pid"], booked["repair_id"], booked["income_id"]
     response = _draft(client_a, pid, tax_year=2026)
     body = ok(response)
     by_key = {line["key"]: line for line in body["lines"]}
@@ -215,3 +226,66 @@ def test_the_real_draft_shows_confirmed_lines_with_their_sources(client_a):
     sourced = {ref for line in earlier["lines"] for ref in _ids(line)}
     assert not sourced & {("allocation", repair_id), ("allocation", income_id)}
     assert earlier["totals"]["income"] == "0.00"
+
+
+# --- GET …/anlage-v/sources: what the sources drawer shows --------------------------------
+
+
+def _sources(client, property_id, **params):
+    return client.get(f"/api/properties/{property_id}/anlage-v/sources", params=params)
+
+
+def test_the_sources_give_each_cited_payment_its_details(client_a, booked):
+    pid = booked["pid"]
+    response = _sources(client_a, pid, tax_year=2026)
+    rows = {row["allocation_id"]: row for row in ok(response)}
+    assert set(rows) == {booked["repair_id"], booked["income_id"]}
+    repair = rows[booked["repair_id"]]
+    assert (repair["booking_date"], repair["amount"], repair["category"]) == (
+        "2026-06-30",
+        "-360.18",
+        "repairs",
+    )
+    assert repair["transaction_id"] == booked["repair"]["id"]
+    assert repair["property_id"] == pid
+    income = rows[booked["income_id"]]
+    assert (income["amount"], income["category"]) == ("241.58", "other_income")
+    assert income["counterparty_iban_masked"] is not None
+    # Every payment a draft line cites is in the list.
+    cited = {
+        s["id"]
+        for line in ok(_draft(client_a, pid, tax_year=2026))["lines"]
+        for s in line["sources"]
+        if s["kind"] == "allocation"
+    }
+    assert cited <= set(rows)
+
+
+def test_the_sources_carry_no_name_iban_or_purpose_text(client_a, booked):
+    response = _sources(client_a, booked["pid"], tax_year=2026)
+    text = response.text
+    assert "Partei" not in text  # the counterparty names
+    assert "DE16100000000000001001" not in text and "DE86100000000000001002" not in text
+    assert SAMPLE_IBAN not in text
+    assert "Verwendungszweck" not in text  # the purpose texts
+    assert "hmac" not in text
+    for row in ok(response):
+        assert {"booking_date", "amount", "category", "counterparty_iban_masked"} <= set(row)
+        assert not {"counterparty_name", "purpose", "counterparty_iban"} & set(row)
+
+
+def test_the_sources_refuse_the_years_the_draft_refuses(client_a):
+    pid = flat(client_a)["property"]["id"]
+    for year, code in ((2023, "tax.year_not_available"), (2024, "tax.no_rule_set")):
+        response = _sources(client_a, pid, tax_year=year)
+        assert response.status_code == 422
+        assert response.json()["code"] == code
+    assert _sources(client_a, pid).status_code == 422  # the year is required
+
+
+def test_another_workspaces_property_has_no_sources(client_a, client_b, booked):
+    for client, property_id in ((client_b, booked["pid"]), (client_a, str(uuid4()))):
+        response = _sources(client, property_id, tax_year=2026)
+        assert response.status_code == 404
+        assert response.json()["error"] == "not_found"
+        assert booked["repair_id"] not in response.text
