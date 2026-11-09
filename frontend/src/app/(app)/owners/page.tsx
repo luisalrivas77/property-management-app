@@ -1,19 +1,20 @@
 "use client";
 
 // Eigentümer (§9.1): list with inline create and edit (Name, Steuer-ID-Referenz,
-// Grenzsteuersatz). The marginal rate is entered in percent and stored as a fraction.
+// Kirchensteuer, Bundesland). The typed Grenzsteuersatz is gone (phase 4 D90, migration 0016):
+// the rate is derived per year from income inputs, which phase 4 step 1 adds to this page.
 import { useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
-import type { Owner } from "@/api/schemas";
+import type { Owner, StateCode } from "@/api/schemas";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "@/components/form";
-import { formatPercent } from "@/components/format";
-import { blankToNull, percentInput, toRate } from "@/components/input";
+import { blankToNull } from "@/components/input";
+import { options, STATE_CODE } from "@/components/labels";
 import { Loading, Notice } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 
 const loadOwners = () => ok(api.GET("/api/owners"));
-const KEYS = ["full_name", "tax_id_ref", "marginal_tax_rate"] as const;
+const KEYS = ["full_name", "tax_id_ref", "church_tax", "tax_state"] as const;
 
 export default function OwnersPage() {
   const owners = useLoad(loadOwners);
@@ -38,7 +39,7 @@ export default function OwnersPage() {
                   <tr>
                     <th>Name</th>
                     <th>Steuer-ID-Referenz</th>
-                    <th>Grenzsteuersatz</th>
+                    <th>Kirchensteuer</th>
                     <th />
                   </tr>
                 </thead>
@@ -62,7 +63,7 @@ export default function OwnersPage() {
                       <tr key={owner.id}>
                         <td>{owner.full_name}</td>
                         <td>{owner.tax_id_ref ?? "–"}</td>
-                        <td>{formatPercent(owner.marginal_tax_rate)}</td>
+                        <td>{owner.church_tax && owner.tax_state ? `ja (${STATE_CODE[owner.tax_state]})` : "nein"}</td>
                         <td>
                           <button
                             type="button"
@@ -102,16 +103,24 @@ function OwnerForm({ owner, onDone, onCancel }: { owner?: Owner; onDone: (messag
   const prefix = owner ? `owner-${owner.id}` : "owner-new";
   const [fullName, setFullName] = useState(owner?.full_name ?? "");
   const [taxIdRef, setTaxIdRef] = useState(owner?.tax_id_ref ?? "");
-  const [rate, setRate] = useState(percentInput(owner?.marginal_tax_rate));
+  const [churchTax, setChurchTax] = useState(owner?.church_tax ?? false);
+  const [taxState, setTaxState] = useState<StateCode | "">(owner?.tax_state ?? "");
   const [busy, setBusy] = useState(false);
   const form = useFormErrors(KEYS);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const values = collector();
-    const marginalTaxRate = values.optional("marginal_tax_rate", rate, (raw) => toRate(raw, 4));
-    if (!values.ok || marginalTaxRate === undefined) return form.invalid(values.messages);
-    const body = { full_name: fullName.trim(), tax_id_ref: blankToNull(taxIdRef), marginal_tax_rate: marginalTaxRate };
+    if (churchTax && taxState === "") {
+      values.take("tax_state", { ok: false, message: "Für die Kirchensteuer bitte das Bundesland wählen." });
+    }
+    if (!values.ok) return form.invalid(values.messages);
+    const body = {
+      full_name: fullName.trim(),
+      tax_id_ref: blankToNull(taxIdRef),
+      church_tax: churchTax,
+      tax_state: taxState === "" ? null : taxState,
+    };
     setBusy(true);
     form.clear();
     try {
@@ -150,15 +159,25 @@ function OwnerForm({ owner, onDone, onCancel }: { owner?: Owner; onDone: (messag
           <input type="text" value={taxIdRef} onChange={(e) => setTaxIdRef(e.target.value)} autoComplete="off" />
         </Field>
         <Field
-          id={`${prefix}-rate`}
-          label="Grenzsteuersatz (%)"
-          hint="Für die Steuerwirkung, z. B. 42."
-          description="Der Steuersatz, mit dem ein zusätzlicher Euro Einkommen besteuert wird, z. B. aus einem Steuerrechner. Hausbuch speichert ihn bisher nur. Später rechnet Hausbuch ihn aus dem erwarteten Bruttogehalt selbst aus; ein hier eingetragener Wert geht dann für sein Jahr vor."
-          errors={form.of("marginal_tax_rate")}
+          id={`${prefix}-state`}
+          label="Bundesland"
+          description="Das Bundesland des Wohnsitzes. Es bestimmt den Kirchensteuersatz: 8 % in Bayern und Baden-Württemberg, sonst 9 %."
+          errors={form.of("tax_state")}
         >
-          <input type="text" inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} autoComplete="off" />
+          <select value={taxState} onChange={(e) => setTaxState(e.target.value as StateCode | "")}>
+            <option value="">–</option>
+            {options(STATE_CODE).map(([value, text]) => (
+              <option key={value} value={value}>
+                {text}
+              </option>
+            ))}
+          </select>
         </Field>
       </div>
+      <label className="inline">
+        <input type="checkbox" checked={churchTax} onChange={(e) => setChurchTax(e.target.checked)} />
+        Zahlt Kirchensteuer
+      </label>
       <div className="row">
         <Submit busy={busy}>{owner ? "Speichern" : "Anlegen"}</Submit>
         {onCancel ? (

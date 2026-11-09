@@ -107,9 +107,11 @@ owner = Table(
     _workspace_id(),
     _text("full_name"),
     _text("tax_id_ref", nullable=True),
-    Column("marginal_tax_rate", Numeric(5, 4), nullable=True),
     _created_at(),
     _updated_at(),
+    # 0016 (phase 4 D90): appended; marginal_tax_rate dropped.
+    Column("church_tax", Boolean, nullable=False, server_default=text("false")),
+    _text("tax_state", nullable=True),
 )
 
 # --- Documents ---------------------------------------------------------------
@@ -654,4 +656,37 @@ tax_export = Table(
     Column("size_bytes", BigInteger, nullable=False),
     _created_at(),
     _uuid("created_by", nullable=True),
+)
+
+# --- Phase 4: performance (0016) ---------------------------------------------
+
+income_input = Table(
+    "income_input",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("owner_id", nullable=True),
+    _text("kind"),
+    Column("tax_year", SmallInteger, nullable=False),
+    _uuid("document_id", nullable=True),
+    Column("value", JSONB, nullable=False),
+    _text("note", nullable=True),
+    _uuid("supersedes_id", nullable=True),
+    Column("withdrawn", Boolean, nullable=False, server_default=text("false")),
+    _timestamp("recorded_at"),
+    _uuid("recorded_by", nullable=True),
+)
+projection_scenario = Table(
+    "projection_scenario",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("property_id"),
+    _text("name"),
+    Column("is_default", Boolean, nullable=False, server_default=text("false")),
+    Column("levers", JSONB, nullable=False),
+    _uuid("supersedes_id", nullable=True),
+    Column("withdrawn", Boolean, nullable=False, server_default=text("false")),
+    _timestamp("recorded_at"),
+    _uuid("recorded_by", nullable=True),
 )

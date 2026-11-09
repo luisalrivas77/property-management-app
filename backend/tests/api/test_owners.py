@@ -16,16 +16,20 @@ def test_create_read_list_patch_round_trip(client_a):
         {
             "full_name": "Luis Rivas",
             "tax_id_ref": "secret:owner/luis",
-            "marginal_tax_rate": "0.4200",
+            "church_tax": True,
+            "tax_state": "BY",
         },
     )
     assert owner["full_name"] == "Luis Rivas"
-    assert owner["marginal_tax_rate"] == "0.4200"  # a JSON string, never a number
+    assert (owner["church_tax"], owner["tax_state"]) == (True, "BY")
+    assert "marginal_tax_rate" not in owner  # dropped by migration 0016 (phase 4 D90)
     assert ok(client_a.get(f"/api/owners/{owner['id']}")) == owner
     assert ok(client_a.get("/api/owners")) == [owner]
 
-    patched = ok(client_a.patch(f"/api/owners/{owner['id']}", json={"marginal_tax_rate": None}))
-    assert patched["marginal_tax_rate"] is None  # null clears
+    patched = ok(
+        client_a.patch(f"/api/owners/{owner['id']}", json={"church_tax": False, "tax_state": None})
+    )
+    assert patched["tax_state"] is None  # null clears
     assert patched["tax_id_ref"] == "secret:owner/luis"  # absent = unchanged
     assert patched["full_name"] == "Luis Rivas"
 
@@ -37,8 +41,18 @@ def test_patch_cannot_null_a_required_field(client_a):
     assert response.json()["error"] == "validation"
 
 
-def test_money_must_be_a_string(client_a):
-    response = client_a.post("/api/owners", json={"full_name": "x", "marginal_tax_rate": 0.42})
+def test_church_tax_needs_the_state(client_a):
+    response = client_a.post("/api/owners", json={"full_name": "x", "church_tax": True})
+    assert response.status_code == 422
+    assert response.json()["error"] == "validation"
+    body = {"full_name": "x", "church_tax": True, "tax_state": "NW"}
+    owner = create(client_a, "/api/owners", body)
+    response = client_a.patch(f"/api/owners/{owner['id']}", json={"tax_state": None})
+    assert response.status_code == 422  # the patched result is validated as a whole owner
+
+
+def test_the_typed_marginal_rate_is_gone(client_a):
+    response = client_a.post("/api/owners", json={"full_name": "x", "marginal_tax_rate": "0.42"})
     assert response.status_code == 422
     body = response.json()
     assert body["error"] == "validation"

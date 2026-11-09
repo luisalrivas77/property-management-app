@@ -22,6 +22,7 @@ export type WorkspaceSettingsPatch = Schemas["WorkspaceSettingsPatch"];
 export type Owner = Schemas["Owner"];
 export type OwnerCreate = Schemas["OwnerCreate"];
 export type OwnerPatch = Schemas["OwnerPatch"];
+export type StateCode = Schemas["StateCode"];
 export type Property = Schemas["Property"];
 export type PropertyCreate = Schemas["PropertyCreate"];
 export type PropertyPatch = Schemas["PropertyPatch"];

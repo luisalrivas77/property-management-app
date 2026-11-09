@@ -60,12 +60,15 @@ from .enums import (
     DuplicateStatus,
     EntityType,
     ExtractionKind,
+    IncomeInputKind,
     LinkTarget,
     PriceSplitSource,
     PropertyKind,
     RentChangeReason,
     RentModel,
+    StateCode,
 )
+from .performance import INCOME_INPUT_VALUES, IncomeInputValue, Levers, income_value_by_kind
 from .property import OwnerShare
 from .proposal import FieldDecision, RecordEntity
 from .tax import (
@@ -98,7 +101,14 @@ class Updated(Schema):
 
 
 class OwnerCreated(Schema):
-    marginal_tax_rate: TaxRate | None = None
+    """owner.created. church_tax and tax_state since migration 0016 (phase 4 D90).
+    marginal_tax_rate is legacy: events written before 0016 carry the typed rate, and the event
+    log keeps it (the rate moved to an income_input row). exclude=True keeps it out of every
+    new payload, while an old payload still validates."""
+
+    church_tax: bool = False
+    tax_state: StateCode | None = None
+    marginal_tax_rate: TaxRate | None = Field(default=None, exclude=True)
 
 
 class PropertyCreated(Schema):
@@ -546,6 +556,47 @@ class AnlageVExported(Schema):
     document_count: int | None = Field(default=None, ge=0)  # archive: the originals inside
 
 
+# Phase 4 (docs/phases/phase-4.md §6). Amounts, codes and ids only: never a note (free text)
+# and never a scenario's name.
+
+
+class IncomeInputRecorded(Schema):
+    """owner.income_input_recorded (expected_gross_pay, deductions_override; entity = the
+    owner) and workspace.income_input_recorded (bescheid_zve, marginal_rate_override; entity =
+    the workspace): one income_input row as written (D83)."""
+
+    income_input_id: UUID
+    kind: IncomeInputKind
+    tax_year: TaxYear
+    owner_id: UUID | None = None
+    document_id: UUID | None = None
+    value: IncomeInputValue
+    supersedes_id: UUID | None = None
+    withdrawn: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def _value_by_kind(cls, data: Any) -> Any:
+        return income_value_by_kind(data)
+
+    @model_validator(mode="after")
+    def _value_matches_kind(self) -> Self:
+        if type(self.value) is not INCOME_INPUT_VALUES[self.kind]:
+            raise ValueError("value does not match the kind")
+        return self
+
+
+class ScenarioRecorded(Schema):
+    """property.scenario_recorded: one projection_scenario row as written (D87). The name is
+    the user's free text and stays in the row, not in the log."""
+
+    scenario_id: UUID
+    is_default: bool
+    levers: Levers
+    supersedes_id: UUID | None = None
+    withdrawn: bool = False
+
+
 # --- Catalog -----------------------------------------------------------------
 
 EffectiveDate = Literal["required", "optional", "forbidden"]
@@ -561,6 +612,7 @@ class EventSpec:
 class EventType(StrEnum):
     OWNER_CREATED = "owner.created"
     OWNER_UPDATED = "owner.updated"
+    OWNER_INCOME_INPUT_RECORDED = "owner.income_input_recorded"  # phase 4
 
     PROPERTY_CREATED = "property.created"
     PROPERTY_UPDATED = "property.updated"
@@ -575,6 +627,8 @@ class EventType(StrEnum):
     # Phase 3
     PROPERTY_TAX_INPUT_RECORDED = "property.tax_input_recorded"
     PROPERTY_ANLAGE_V_EXPORTED = "property.anlage_v_exported"
+    # Phase 4
+    PROPERTY_SCENARIO_RECORDED = "property.scenario_recorded"
 
     UNIT_CREATED = "unit.created"
     UNIT_UPDATED = "unit.updated"
@@ -606,6 +660,7 @@ class EventType(StrEnum):
     DOCUMENT_READ_FAILED = "document.read_failed"
 
     WORKSPACE_SETTINGS_CHANGED = "workspace.settings_changed"
+    WORKSPACE_INCOME_INPUT_RECORDED = "workspace.income_input_recorded"  # phase 4
 
     PROPOSAL_CREATED = "proposal.created"
     PROPOSAL_SUPERSEDED = "proposal.superseded"
@@ -640,6 +695,9 @@ E = EventType
 EVENT_CATALOG: dict[EventType, EventSpec] = {
     E.OWNER_CREATED: EventSpec(OwnerCreated, "forbidden", "Owner recorded"),
     E.OWNER_UPDATED: EventSpec(Updated, "forbidden", "Owner fields changed"),
+    E.OWNER_INCOME_INPUT_RECORDED: EventSpec(
+        IncomeInputRecorded, "forbidden", "Expected gross pay or deductions recorded"
+    ),
     E.PROPERTY_CREATED: EventSpec(PropertyCreated, "forbidden", "Property record created"),
     E.PROPERTY_UPDATED: EventSpec(Updated, "forbidden", "Property fields changed"),
     E.PROPERTY_PURCHASE_NOTARIZED: EventSpec(
@@ -669,6 +727,9 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     ),
     E.PROPERTY_ANLAGE_V_EXPORTED: EventSpec(
         AnlageVExported, "forbidden", "Anlage V draft exported"
+    ),
+    E.PROPERTY_SCENARIO_RECORDED: EventSpec(
+        ScenarioRecorded, "forbidden", "Projection scenario recorded"
     ),
     E.UNIT_CREATED: EventSpec(UnitCreated, "forbidden", "Unit recorded"),
     E.UNIT_UPDATED: EventSpec(Updated, "forbidden", "Unit fields changed"),
@@ -700,6 +761,9 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     E.DOCUMENT_READ_FAILED: EventSpec(DocumentReadFailed, "forbidden", "Could not be read"),
     E.WORKSPACE_SETTINGS_CHANGED: EventSpec(
         WorkspaceSettingsChanged, "forbidden", "Workspace settings changed"
+    ),
+    E.WORKSPACE_INCOME_INPUT_RECORDED: EventSpec(
+        IncomeInputRecorded, "forbidden", "Bescheid zvE or typed tax rate recorded"
     ),
     E.PROPOSAL_CREATED: EventSpec(ProposalNoted, "forbidden", "Pre-fill proposal created"),
     E.PROPOSAL_SUPERSEDED: EventSpec(ProposalNoted, "forbidden", "Proposal replaced by a re-run"),

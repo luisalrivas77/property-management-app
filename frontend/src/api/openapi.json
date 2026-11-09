@@ -8734,6 +8734,7 @@
         "enum": [
           "owner.created",
           "owner.updated",
+          "owner.income_input_recorded",
           "property.created",
           "property.updated",
           "property.purchase_notarized",
@@ -8746,6 +8747,7 @@
           "property.price_split_selected",
           "property.tax_input_recorded",
           "property.anlage_v_exported",
+          "property.scenario_recorded",
           "unit.created",
           "unit.updated",
           "tenant.created",
@@ -8770,6 +8772,7 @@
           "document.extracted",
           "document.read_failed",
           "workspace.settings_changed",
+          "workspace.income_input_recorded",
           "proposal.created",
           "proposal.superseded",
           "proposal.rejected",
@@ -10840,17 +10843,20 @@
             ],
             "title": "Tax Id Ref"
           },
-          "marginal_tax_rate": {
+          "church_tax": {
+            "type": "boolean",
+            "title": "Church Tax",
+            "default": false
+          },
+          "tax_state": {
             "anyOf": [
               {
-                "type": "string",
-                "pattern": "^[0-9]+(\\.[0-9]{1,4})?$"
+                "$ref": "#/components/schemas/StateCode"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Marginal Tax Rate"
+            ]
           }
         },
         "additionalProperties": false,
@@ -10882,17 +10888,20 @@
             ],
             "title": "Tax Id Ref"
           },
-          "marginal_tax_rate": {
+          "church_tax": {
+            "type": "boolean",
+            "title": "Church Tax",
+            "default": false
+          },
+          "tax_state": {
             "anyOf": [
               {
-                "type": "string",
-                "pattern": "^[0-9]+(\\.[0-9]{1,4})?$"
+                "$ref": "#/components/schemas/StateCode"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Marginal Tax Rate"
+            ]
           }
         },
         "additionalProperties": false,
@@ -10920,17 +10929,19 @@
             ],
             "title": "Tax Id Ref"
           },
-          "marginal_tax_rate": {
+          "church_tax": {
+            "type": "boolean",
+            "title": "Church Tax"
+          },
+          "tax_state": {
             "anyOf": [
               {
-                "type": "string",
-                "pattern": "^[0-9]+(\\.[0-9]{1,4})?$"
+                "$ref": "#/components/schemas/StateCode"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Marginal Tax Rate"
+            ]
           }
         },
         "additionalProperties": false,
@@ -12778,6 +12789,29 @@
           "years"
         ],
         "title": "Spread82b"
+      },
+      "StateCode": {
+        "type": "string",
+        "enum": [
+          "BW",
+          "BY",
+          "BE",
+          "BB",
+          "HB",
+          "HH",
+          "HE",
+          "MV",
+          "NI",
+          "NW",
+          "RP",
+          "SL",
+          "SN",
+          "ST",
+          "SH",
+          "TH"
+        ],
+        "title": "StateCode",
+        "description": "owner.tax_state (migration 0016, phase 4 D90): the Bundesland whose church tax rate\napplies (rules/tax/tariffs/<year>.yaml, church_tax_rates)."
       },
       "StatementExtraction": {
         "properties": {
@@ -15022,7 +15056,11 @@
               "acquisition_cost",
               "loan",
               "tax_input",
-              "rule"
+              "rule",
+              "scenario",
+              "schedule_entry",
+              "income_input",
+              "tariff"
             ],
             "title": "Kind"
           },
@@ -15057,7 +15095,7 @@
           "kind"
         ],
         "title": "SourceRef",
-        "description": "What a figure came from (principle 2). `rule` is the rule set itself (no id)."
+        "description": "What a figure came from (principle 2). `rule` is the rule set and `tariff` the income\ntax tariff file (no id); every other kind names its record."
       }
     }
   }

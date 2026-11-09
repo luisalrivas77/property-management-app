@@ -97,8 +97,8 @@ def test_a_float_inside_a_model_is_refused_without_echoing_it():
         PropertyCreate.model_validate_json(json.dumps(body))
     assert [e["loc"] for e in excinfo.value.errors()] == [("purchase_price",)]
     with pytest.raises(ValidationError) as excinfo:
-        OwnerCreate.model_validate({"full_name": "Luis", "marginal_tax_rate": 0.4431})
-    assert "4431" not in str(excinfo.value)  # hide_input_in_errors still holds
+        OwnerCreate.model_validate({"full_name": "Luis", "tax_id_ref": "IdNr. 12345678901"})
+    assert "12345678901" not in str(excinfo.value)  # hide_input_in_errors still holds
 
 
 def _schema_models() -> list[type[BaseModel]]:

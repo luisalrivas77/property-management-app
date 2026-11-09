@@ -1,5 +1,6 @@
 """Closed value sets. Each mirrors a CHECK constraint in a migration (phase 1: 0001-0004,
-phase 2: 0005-0012, phase 3: 0013); tests/db/test_schema_consistency.py keeps them in sync.
+phase 2: 0005-0012, phase 3: 0013, phase 4: 0016); tests/db/test_schema_consistency.py keeps
+them in sync.
 
 Phase 2 sets that belong to one module live there instead (AiJob in ai.py, StatementFormat in
 bank.py, the allocation sets in allocation.py), as docs/phases/phase-2.md §4 places them."""
@@ -262,3 +263,37 @@ class AllocationStatus(StrEnum):
     PROPOSED = "proposed"
     CONFIRMED = "confirmed"
     SUPERSEDED = "superseded"
+
+
+# --- Phase 4 -------------------------------------------------------------------
+
+
+class StateCode(StrEnum):
+    """owner.tax_state (migration 0016, phase 4 D90): the Bundesland whose church tax rate
+    applies (rules/tax/tariffs/<year>.yaml, church_tax_rates)."""
+
+    BW = "BW"  # Baden-Württemberg
+    BY = "BY"  # Bayern
+    BE = "BE"  # Berlin
+    BB = "BB"  # Brandenburg
+    HB = "HB"  # Bremen
+    HH = "HH"  # Hamburg
+    HE = "HE"  # Hessen
+    MV = "MV"  # Mecklenburg-Vorpommern
+    NI = "NI"  # Niedersachsen
+    NW = "NW"  # Nordrhein-Westfalen
+    RP = "RP"  # Rheinland-Pfalz
+    SL = "SL"  # Saarland
+    SN = "SN"  # Sachsen
+    ST = "ST"  # Sachsen-Anhalt
+    SH = "SH"  # Schleswig-Holstein
+    TH = "TH"  # Thüringen
+
+
+class IncomeInputKind(StrEnum):
+    """income_input.kind (migration 0016, phase 4 D83)."""
+
+    EXPECTED_GROSS_PAY = "expected_gross_pay"  # per owner and year
+    DEDUCTIONS_OVERRIDE = "deductions_override"  # per owner and year; replaces the default
+    BESCHEID_ZVE = "bescheid_zve"  # per year, household; the Bescheid as its document
+    MARGINAL_RATE_OVERRIDE = "marginal_rate_override"  # per year, household; incl. Soli, church

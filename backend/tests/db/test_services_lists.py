@@ -71,7 +71,7 @@ def test_list_owners_by_name_and_only_the_workspaces_own(run, read, fresh_worksp
     luis = run(
         a,
         create_owner,
-        OwnerCreate(full_name="Luis Rivas", marginal_tax_rate=Decimal("0.4431")),
+        OwnerCreate(full_name="Luis Rivas", church_tax=True, tax_state="BY"),
         now=NOW,
     )
     run(b, create_owner, OwnerCreate(full_name="Anna Other"), now=NOW)
