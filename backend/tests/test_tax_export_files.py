@@ -20,7 +20,7 @@ from pypdf.generic import BooleanObject, NameObject
 
 from hausbuch.rules.tax.draft import draft
 from hausbuch.rules.tax.registry import rule_set
-from hausbuch.schemas.tax import AnlageVDraft
+from hausbuch.schemas.tax import AnlageVDraft, TaxInputFact
 from hausbuch.services.tax_export_files import (
     ArchiveDocument,
     ExportStamp,
@@ -108,6 +108,28 @@ def test_field_sheet_pdf_is_reproducible_and_complete():
     assert str(STAMP.export_id) in text
     assert "AfA" in text
     assert "Planungshilfe" in text or "keine Steuerberatung" in text
+
+
+def test_field_sheet_explains_a_shorter_useful_life():
+    """D79: under a Gutachten's useful life the AfA annex states the years, the first year and
+    the book value at the start of the year instead of the statutory rate."""
+    life = TaxInputFact(
+        id=UUID("00000071-0000-4000-8000-000000000009"),
+        property_id=CASE.facts.property.id,
+        kind="useful_life",
+        tax_year=CASE.tax_year,
+        document_id=UUID("00000d0c-0000-4000-8000-000000000009"),
+        value={"years": 20},
+    )
+    facts = CASE.facts.model_copy(update={"tax_inputs": [*CASE.facts.tax_inputs, life]})
+    drafted = draft(facts, CASE.tax_year, RULES)
+    assert drafted.afa is not None and drafted.afa.method == "useful_life"
+    text = _pdf_text(render_field_sheet(drafted, RULES, facts, STAMP))
+    flat = " ".join(text.split())
+    assert "kürzerer tatsächlicher Nutzungsdauer" in flat
+    assert f"20 Jahre ab {CASE.tax_year} laut Gutachten" in flat
+    assert "Restwert zu Jahresbeginn" in flat
+    assert "Zeile 33" in flat  # the afa.useful_life_report warning text
 
 
 def test_archive_is_reproducible():

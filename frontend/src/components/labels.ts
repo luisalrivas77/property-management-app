@@ -366,6 +366,8 @@ export const WARNING_TEXT: Record<WarningCode, (params: Params) => string> = {
     `Zahlung von Anschaffungsnebenkosten über ${money(p)} ohne passenden Eintrag unter Nebenkosten: sie zählt erst zur AfA-Basis, wenn sie dort erfasst ist.`,
   "afa.purchase_price_mismatch": (p) =>
     `Vom Konto bezahlter Kaufpreis ${money(p, "paid")} weicht vom Kaufpreis ${money(p, "price")} ab.`,
+  "afa.useful_life_report": (p) =>
+    `AfA nach kürzerer tatsächlicher Nutzungsdauer (${p.years ?? "?"} Jahre ab ${p.from_year ?? "?"}): in Zeile 33 „laut Erläuterung“ angeben; das Finanzamt fragt meist nach dem Gutachten.`,
   "limit.exceeded": (p) =>
     `Die 15 %-Grenze ist${p.exceeded_in_year ? ` ${p.exceeded_in_year}` : ""} überschritten: die Renovierungskosten des Dreijahresfensters werden Herstellungskosten und laufen über die AfA.`,
   "limit.prior_year_amendment": (p) =>

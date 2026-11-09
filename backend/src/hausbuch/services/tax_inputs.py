@@ -31,7 +31,13 @@ beyond TaxInputCreate's own scope validator:
   would leave the allocation without a current `herstellung` (an `erhaltung` answer or a
   withdrawal) is refused; the user withdraws the exclusion first
   (`tax_input.extension_needs_herstellung`). Otherwise the cost would leave the 15 % count
-  and still be deducted at once on Z55.
+  and still be deducted at once on Z55;
+- a `useful_life` (D79, §7 Abs. 4 S. 2 EStG) is shorter than the statutory life for the
+  property's build year, 1 ÷ the rule set's AfA rate (40 years before 1925, 50 for 1925–2022,
+  33⅓ from 2023): years × rate < 1, else `tax_input.useful_life_not_shorter`; and its first
+  year is not before the purchase (Übergang) year when a purchase date is set
+  (`tax_input.scope_invalid`). A withdrawal is not re-checked. Its question is the year, as for
+  `ruecklage_spent`: one current row per (property, tax_year).
 
 Writes for one property are serialised by locking the property row (FOR NO KEY UPDATE), so
 the "no other current row" and the Erweiterung checks cannot race; `supersedes_id` is UNIQUE
@@ -49,7 +55,12 @@ from hausbuch.db.tables import loan as loan_table
 from hausbuch.db.tables import property_ as property_table
 from hausbuch.db.tables import tax_input as tax_input_table
 from hausbuch.db.tables import unit as unit_table
-from hausbuch.rules.errors import TAX_INPUT_EXTENSION_NEEDS_HERSTELLUNG
+from hausbuch.rules.errors import (
+    TAX_INPUT_EXTENSION_NEEDS_HERSTELLUNG,
+    TAX_INPUT_USEFUL_LIFE_NOT_SHORTER,
+)
+from hausbuch.rules.tax import registry
+from hausbuch.rules.tax.afa import statutory_months_left
 from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.enums import AllocationStatus, EntityType, PropertyKind
 from hausbuch.schemas.events import EventType, TaxInputRecorded
@@ -58,6 +69,7 @@ from hausbuch.schemas.tax import (
     TaxInput,
     TaxInputCreate,
     TaxInputKind,
+    UsefulLife,
 )
 
 from .allocations import user_id
@@ -165,14 +177,16 @@ def create_tax_input(ctx: CommandContext, property_id: UUID, data: TaxInputCreat
     """POST /properties/{id}/tax-inputs: one new row and its event (see the module doc for
     the checks). Raises NotFoundError for an unknown property, unit, loan, allocation,
     document or superseded row; RuleViolationError tax_input.scope_invalid,
-    tax_input.not_current, tax_input.allocation_not_confirmed or
-    tax_input.extension_needs_herstellung. Nothing is written then."""
+    tax_input.not_current, tax_input.allocation_not_confirmed,
+    tax_input.extension_needs_herstellung or tax_input.useful_life_not_shorter. Nothing is
+    written then."""
     if data.property_id != property_id:
         raise RuleViolationError(
             [TAX_INPUT_SCOPE_INVALID], "the body names another property than the path"
         )
     prop = _lock_property(ctx.conn, property_id)
     allocation = _check_scope(ctx.conn, prop, data)
+    _check_useful_life(prop, data)
     require_document(ctx.conn, data.document_id)
     if data.supersedes_id is not None:
         _check_supersedes(ctx.conn, data)
@@ -275,6 +289,38 @@ def _check_scope(conn: Connection, prop: Row, data: TaxInputCreate) -> Row | Non
             raise _scope_invalid(f"a {kind} input does not apply to a {category} allocation")
         return allocation
     return None
+
+
+def _rule_set_for(tax_year: int):
+    """The rule set whose AfA rates judge a useful life from `tax_year`: that year's, else the
+    latest earlier one, else the earliest there is (the rates by build year are the same in
+    every rule set so far)."""
+    years = registry.available_years()
+    earlier = [y for y in years if y <= tax_year]
+    return registry.rule_set(max(earlier) if earlier else min(years))
+
+
+def _check_useful_life(prop: Row, data: TaxInputCreate) -> None:
+    """D79: a useful life shorter than what is left of the statutory one on 1 January of its
+    first year (statutory_months_left), from the purchase year at the earliest. A withdrawal
+    repeats an accepted row and is not re-checked."""
+    if data.kind is not TaxInputKind.USEFUL_LIFE or data.withdrawn:
+        return
+    assert data.tax_year is not None and isinstance(data.value, UsefulLife)
+    if prop.purchase_date is not None and data.tax_year < prop.purchase_date.year:
+        raise _scope_invalid(
+            f"a useful life applies from the purchase year {prop.purchase_date.year} on"
+        )
+    rate = _rule_set_for(data.tax_year).afa_rate(prop.build_year)
+    left = statutory_months_left(rate, prop.purchase_date, data.tax_year)
+    if data.value.years * 12 >= left:
+        statutory = f"{left / 12:.2f}".rstrip("0").rstrip(".")  # 40, 50, 33.33 from purchase
+        raise RuleViolationError(
+            [TAX_INPUT_USEFUL_LIFE_NOT_SHORTER],
+            f"{data.value.years} years is not shorter than the {statutory} years left of the"
+            f" statutory life on 1 January {data.tax_year} for a building completed in"
+            f" {prop.build_year}",
+        )
 
 
 def _check_supersedes(conn: Connection, data: TaxInputCreate) -> None:

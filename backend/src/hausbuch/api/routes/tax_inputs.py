@@ -44,5 +44,7 @@ def tax_input_create(property_id: UUID, body: TaxInputCreate, cmd: Cmd) -> TaxIn
     tax_input.not_current (supersedes_id is not the current row of this kind and scope, or
     another current row already answers it), tax_input.allocation_not_confirmed,
     tax_input.extension_needs_herstellung (an Erweiterung excluded from the 15 % test needs a
-    renovation elected herstellung, and that election stays while the exclusion is current)."""
+    renovation elected herstellung, and that election stays while the exclusion is current),
+    tax_input.useful_life_not_shorter (a useful_life must be shorter than the statutory life
+    for the build year, D79)."""
     return cmd.run(create_tax_input, property_id, body)

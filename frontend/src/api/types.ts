@@ -1435,7 +1435,9 @@ export interface paths {
          *     tax_input.not_current (supersedes_id is not the current row of this kind and scope, or
          *     another current row already answers it), tax_input.allocation_not_confirmed,
          *     tax_input.extension_needs_herstellung (an Erweiterung excluded from the 15 % test needs a
-         *     renovation elected herstellung, and that election stays while the exclusion is current).
+         *     renovation elected herstellung, and that election stays while the exclusion is current),
+         *     tax_input.useful_life_not_shorter (a useful_life must be shorter than the statutory life
+         *     for the build year, D79).
          */
         post: operations["tax_input_create_api_properties__property_id__tax_inputs_post"];
         delete?: never;
@@ -2033,6 +2035,11 @@ export interface components {
         /**
          * AfaLine
          * @description wk.afa for one tax year. amount, basis and rate are None without a selected split.
+         *
+         *     method (D79): `statutory` is the rate by completion year (rate set; the useful-life fields,
+         *     book_value_start and remaining_months None); `useful_life` is the shorter actual useful
+         *     life of a Gutachten, the book value at the start of the year spread over the months of that
+         *     life remaining at its start (rate None).
          */
         AfaLine: {
             /** Tax Year */
@@ -2052,6 +2059,20 @@ export interface components {
             months: number;
             /** Method Code */
             method_code: (1 | 2) | null;
+            /**
+             * Method
+             * @default statutory
+             * @enum {string}
+             */
+            method: "statutory" | "useful_life";
+            /** Useful Life Years */
+            useful_life_years?: number | null;
+            /** Useful Life From Year */
+            useful_life_from_year?: number | null;
+            /** Book Value Start */
+            book_value_start?: string | null;
+            /** Remaining Months */
+            remaining_months?: number | null;
             /** Sources */
             sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
             /** Warnings */
@@ -4881,7 +4902,7 @@ export interface components {
             /** Document Id */
             document_id?: string | null;
             /** Value */
-            value: components["schemas"]["Spread82b"] | components["schemas"]["RenovationTreatment"] | components["schemas"]["ExcludeFrom15Pct"] | components["schemas"]["MarketRent"] | components["schemas"]["RuecklageSpent"] | components["schemas"]["InterestCertified"] | components["schemas"]["PreHandoverIncome"];
+            value: components["schemas"]["Spread82b"] | components["schemas"]["RenovationTreatment"] | components["schemas"]["ExcludeFrom15Pct"] | components["schemas"]["MarketRent"] | components["schemas"]["RuecklageSpent"] | components["schemas"]["InterestCertified"] | components["schemas"]["PreHandoverIncome"] | components["schemas"]["UsefulLife"];
             /** Note */
             note?: string | null;
             /** Supersedes Id */
@@ -4933,7 +4954,7 @@ export interface components {
             /** Document Id */
             document_id?: string | null;
             /** Value */
-            value: components["schemas"]["Spread82b"] | components["schemas"]["RenovationTreatment"] | components["schemas"]["ExcludeFrom15Pct"] | components["schemas"]["MarketRent"] | components["schemas"]["RuecklageSpent"] | components["schemas"]["InterestCertified"] | components["schemas"]["PreHandoverIncome"];
+            value: components["schemas"]["Spread82b"] | components["schemas"]["RenovationTreatment"] | components["schemas"]["ExcludeFrom15Pct"] | components["schemas"]["MarketRent"] | components["schemas"]["RuecklageSpent"] | components["schemas"]["InterestCertified"] | components["schemas"]["PreHandoverIncome"] | components["schemas"]["UsefulLife"];
             /** Note */
             note?: string | null;
             /** Supersedes Id */
@@ -4948,7 +4969,7 @@ export interface components {
          * TaxInputKind
          * @enum {string}
          */
-        TaxInputKind: "spread_82b" | "renovation_treatment" | "exclude_from_15pct" | "market_rent" | "ruecklage_spent" | "interest_certified" | "pre_handover_income";
+        TaxInputKind: "spread_82b" | "renovation_treatment" | "exclude_from_15pct" | "market_rent" | "ruecklage_spent" | "interest_certified" | "pre_handover_income" | "useful_life";
         /** Tenancy */
         Tenancy: {
             /**
@@ -5410,6 +5431,16 @@ export interface components {
             sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
         };
         /**
+         * UsefulLife
+         * @description §7 Abs. 4 S. 2 EStG (D79): the building's shorter actual useful life in whole years, as
+         *     the Gutachten (document_id on the row) states it; tax_year on the row is the first tax year
+         *     it applies to. The service refuses a life not shorter than the statutory one.
+         */
+        UsefulLife: {
+            /** Years */
+            years: number;
+        };
+        /**
          * WaitingAmount
          * @description An amount other lines from the same IBAN and sign are waiting with, and how many.
          */
@@ -5423,7 +5454,7 @@ export interface components {
          * WarningCode
          * @enum {string}
          */
-        WarningCode: "year_end_straddle" | "afa.no_split" | "afa.cost_row_unpaid" | "afa.acquisition_cost_without_row" | "afa.purchase_price_mismatch" | "limit.exceeded" | "limit.prior_year_amendment" | "limit.estimated_net" | "anschaffungsnah.performance_date_check" | "renovation.undecided" | "interest.certificate_mismatch" | "hausgeld.abrechnung_pending" | "income.other_review" | "income.pre_handover" | "income.living_area_missing" | "umlagen.mixed_terms" | "reduced_rent.no_market_rent" | "reduced_rent.prognosis_needed" | "reduced_rent.partial" | "draft.open_lines_excluded" | "draft.form_provisional" | "draft.allocation_without_property" | "archive.finanzamt_copy_needed";
+        WarningCode: "year_end_straddle" | "afa.no_split" | "afa.cost_row_unpaid" | "afa.acquisition_cost_without_row" | "afa.purchase_price_mismatch" | "afa.useful_life_report" | "limit.exceeded" | "limit.prior_year_amendment" | "limit.estimated_net" | "anschaffungsnah.performance_date_check" | "renovation.undecided" | "interest.certificate_mismatch" | "hausgeld.abrechnung_pending" | "income.other_review" | "income.pre_handover" | "income.living_area_missing" | "umlagen.mixed_terms" | "reduced_rent.no_market_rent" | "reduced_rent.prognosis_needed" | "reduced_rent.partial" | "draft.open_lines_excluded" | "draft.form_provisional" | "draft.allocation_without_property" | "archive.finanzamt_copy_needed";
         /**
          * WirtschaftsplanExtraction
          * @description Wirtschaftsplan: the monthly Hausgeld split the by_wirtschaftsplan rule reads (§8.1).

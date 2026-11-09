@@ -26,6 +26,23 @@
 #                                     exists and Σ |amount| ≠ purchase_price (info).
 #                                     params: price, paid.
 #   A 0.00 allocation raises neither of the last two (D70).
+#   afa.useful_life_report            info, in every year a useful_life input governs (D79).
+#                                     params: years, from_year.
+#
+# Shorter actual useful life (§7 Abs. 4 S. 2 EStG, D79; cases useful_life_*). facts.useful_lives
+# lists the useful_life inputs in force ({tax_input_id, from_year, years, document_id}). The row
+# governing a year is the one with the greatest from_year ≤ that year; without one the line is
+# the statutory one above (method statutory). Under a governing row (method useful_life, rate
+# null), walking the years from the purchase year:
+#   book_value_start = basis + Σ additions of years ≤ the year − Σ AfA of earlier years
+#   remaining_months  = years × 12, reset in a governing row's from_year (counted from the AfA
+#                       start month in the purchase year, else from January), then − the
+#                       months owned each year
+#   amount            = round(book_value_start × months ÷ remaining_months, 2), half-up; the whole
+#                       book value once months ≥ remaining; 0 once written off
+#   Years before the first governing row keep the statutory amount.
+#   method_code = 2 also in a governing row's from_year. Sources add the input and its
+#   Gutachten in every year the row governs.
 
 rule_set_year: 2026
 
@@ -49,6 +66,10 @@ ids:
   alloc_painter: &A_PAINTER 000000a1-0000-4000-8000-000000000008
   alloc_tiles: &A_TILES 000000a1-0000-4000-8000-000000000009
   alloc_roof: &A_ROOF 000000a1-0000-4000-8000-00000000000a
+  alloc_dormer: &A_DORMER 000000a1-0000-4000-8000-00000000000b
+  input_life_21: &UL21 00000071-0000-4000-8000-000000000001
+  input_life_19: &UL19 00000071-0000-4000-8000-000000000002
+  doc_gutachten: &D_GUT 00000d0c-0000-4000-8000-000000000005
 
 bases:
   # The §14 flat: ETW completed 1998, handover 1 Jul 2026, price 300,000.00, three cost rows
@@ -81,6 +102,21 @@ bases:
     - {kind: document, id: *D_GREST}
     - {kind: document, id: *D_NOTAR}
     - {kind: document, id: *D_GB}
+  # An old building: completed 1904 (statutory 2.5 %, a 40-year life), handover 15 Oct 2026
+  # (3 months in 2026); 375,000.00 × 0.8 = 300,000.00, no cost rows. Synthetic figures.
+  old_building: &old_building
+    property_id: *P
+    purchase_price: "375000.00"
+    build_year: 1904
+    purchase_date: 2026-10-15
+    split: {id: *S, source: bmf_tool, building_share: "0.800000"}
+  life_21: &life_21 {tax_input_id: *UL21, from_year: 2026, years: 21, document_id: *D_GUT}
+  ul21: &ul21 {basis: "300000.00", rate: null, method: useful_life, useful_life_years: 21,
+               useful_life_from_year: 2026,
+               warnings: [{code: afa.useful_life_report, params: {years: "21", from_year: "2026"}}]}
+  ul19: &ul19 {basis: "300000.00", rate: null, method: useful_life, useful_life_years: 19,
+               useful_life_from_year: 2028,
+               warnings: [{code: afa.useful_life_report, params: {years: "19", from_year: "2028"}}]}
 
 cases:
   - id: etw_1998_handover_july
@@ -249,3 +285,77 @@ cases:
     expect:
       - {tax_year: 2026, amount: "2340.00", basis: "234000.00", rate: "0.02", months: 6, method_code: 2,
          warnings: [{code: afa.purchase_price_mismatch, params: {price: "300000.00", paid: "290000.00"}}]}
+
+  - id: useful_life_from_purchase
+    description: >
+      A Gutachten gives 21 years from the purchase year: 252 months from October 2026.
+      2026: 300,000.00 × 3/252 = 3,571.43; 2027: 296,428.57 × 12/249 = 14,285.71; the
+      remaining 9 months of 2047 take the rest (10,714.29); nothing from 2048. The years
+      2026–2048 sum to exactly 300,000.00 (asserted in test_tax_rule_afa.py).
+    facts: {<<: *old_building, useful_lives: [*life_21]}
+    expect:
+      - {<<: *ul21, tax_year: 2026, amount: "3571.43", months: 3, method_code: 2,
+         book_value_start: "300000.00", remaining_months: 252,
+         sources: [{kind: property, id: *P}, {kind: price_split, id: *S},
+                   {kind: tax_input, id: *UL21}, {kind: document, id: *D_GUT}]}
+      - {<<: *ul21, tax_year: 2027, amount: "14285.71", months: 12, method_code: 1,
+         book_value_start: "296428.57", remaining_months: 249}
+      - {<<: *ul21, tax_year: 2028, amount: "14285.71", months: 12, method_code: 1,
+         book_value_start: "282142.86"}
+      - {<<: *ul21, tax_year: 2046, amount: "14285.71", months: 12, method_code: 1}
+      - {<<: *ul21, tax_year: 2047, amount: "10714.29", months: 12, method_code: 1,
+         book_value_start: "10714.29", remaining_months: 9}
+      - {<<: *ul21, tax_year: 2048, amount: "0.00", months: 12, method_code: 1,
+         book_value_start: "0.00", remaining_months: 0}
+
+  - id: useful_life_with_addition
+    description: >
+      As useful_life_from_purchase, plus a dormer (Gaube) elected herstellung, 21,000.00 paid
+      in 2028: it joins the book value from 1 January 2028. 2028: (282,142.86 + 21,000.00) ×
+      12/237 = 303,142.86 × 12/237 = 15,349.01; 2029: 287,793.85 × 12/225 = 15,349.01.
+    facts:
+      <<: *old_building
+      useful_lives: [*life_21]
+      additions:
+        - {allocation_id: *A_DORMER, tax_year: 2028, amount: "21000.00", reason: herstellung}
+    expect:
+      - {<<: *ul21, tax_year: 2027, amount: "14285.71", additions: "0", months: 12,
+         method_code: 1, book_value_start: "296428.57"}
+      - {<<: *ul21, tax_year: 2028, amount: "15349.01", additions: "21000.00", months: 12,
+         method_code: 2, book_value_start: "303142.86", remaining_months: 237,
+         sources: [{kind: property, id: *P}, {kind: price_split, id: *S},
+                   {kind: allocation, id: *A_DORMER},
+                   {kind: tax_input, id: *UL21}, {kind: document, id: *D_GUT}]}
+      - {<<: *ul21, tax_year: 2029, amount: "15349.01", additions: "21000.00", months: 12,
+         method_code: 1, book_value_start: "287793.85"}
+
+  - id: useful_life_from_later_year
+    description: >
+      A Gutachten from 2028 gives 19 years: 2026 and 2027 stay statutory (300,000.00 × 2.5 %
+      × 3/12 = 1,875.00; 7,500.00); 2028 starts from the book value 290,625.00 over 228 months:
+      × 12/228 = 15,296.05; 2029: 275,328.95 × 12/216 = 15,296.05.
+    facts:
+      <<: *old_building
+      useful_lives: [{tax_input_id: *UL19, from_year: 2028, years: 19, document_id: *D_GUT}]
+    expect:
+      - {tax_year: 2026, amount: "1875.00", basis: "300000.00", rate: "0.025", months: 3,
+         method_code: 2, sources: [{kind: property, id: *P}, {kind: price_split, id: *S}]}
+      - {tax_year: 2027, amount: "7500.00", basis: "300000.00", rate: "0.025", months: 12,
+         method_code: 1}
+      - {<<: *ul19, tax_year: 2028, amount: "15296.05", months: 12, method_code: 2,
+         book_value_start: "290625.00", remaining_months: 228,
+         sources: [{kind: property, id: *P}, {kind: price_split, id: *S},
+                   {kind: tax_input, id: *UL19}, {kind: document, id: *D_GUT}]}
+      - {<<: *ul19, tax_year: 2029, amount: "15296.05", months: 12, method_code: 1,
+         book_value_start: "275328.95"}
+
+  - id: useful_life_sale_year
+    description: >
+      As useful_life_from_purchase, sold on 31 March 2028: the sale year takes its 3 owned
+      months only, 282,142.86 × 3/237 = 3,571.43; nothing after the sale.
+    facts: {<<: *old_building, useful_lives: [*life_21], ownership_ended_on: 2028-03-31}
+    expect:
+      - {<<: *ul21, tax_year: 2028, amount: "3571.43", months: 3, method_code: 1,
+         book_value_start: "282142.86"}
+      - {<<: *ul21, tax_year: 2029, amount: "0.00", months: 0, method_code: null,
+         book_value_start: "278571.43"}

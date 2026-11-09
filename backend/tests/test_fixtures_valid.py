@@ -59,6 +59,11 @@ PHASE3_CASES = {
         "cost_row_unpaid_warning",
         "acquisition_cost_without_row_not_added",
         "purchase_price_mismatch_warning",
+        # D79: a shorter actual useful life (§7 Abs. 4 S. 2 EStG)
+        "useful_life_from_purchase",
+        "useful_life_with_addition",
+        "useful_life_from_later_year",
+        "useful_life_sale_year",
     },
     "anschaffungsnah": {
         "under_limit_14_percent",

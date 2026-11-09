@@ -15,7 +15,10 @@ from sqlalchemy.exc import DBAPIError
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import tax_input as tax_input_table
-from hausbuch.rules.errors import TAX_INPUT_EXTENSION_NEEDS_HERSTELLUNG
+from hausbuch.rules.errors import (
+    TAX_INPUT_EXTENSION_NEEDS_HERSTELLUNG,
+    TAX_INPUT_USEFUL_LIFE_NOT_SHORTER,
+)
 from hausbuch.schemas.allocation import (
     AllocationCategory,
     AllocationDraft,
@@ -796,3 +799,115 @@ def test_another_workspace_sees_nothing_and_cannot_reference_rows(
             ),
         )
     assert other.query(list_tax_inputs, other.property_id, include_history=True) == []
+
+
+# --- a shorter actual useful life (D79) ------------------------------------------------
+
+
+def _building(world: World, build_year: int, purchase_date: date) -> uuid.UUID:
+    return world.cmd(
+        create_property,
+        PropertyCreate(
+            label=f"Altbau {build_year}",
+            kind="etw",
+            address=Address(street="Ring", house_number="7", postal_code="10115", city="Berlin"),
+            build_year=build_year,
+            notarized_on=purchase_date - timedelta(days=60),
+            purchase_date=purchase_date,
+            purchase_price=Decimal("375000.00"),
+        ),
+    ).id
+
+
+def _gutachten(world: World) -> uuid.UUID:
+    return world.document("manual", {}, type="contract", subtype="appraisal")
+
+
+def _life(property_id, years: int, tax_year: int, document_id, **extra) -> TaxInputCreate:
+    return TaxInputCreate.model_validate(
+        {
+            "property_id": property_id,
+            "kind": K.USEFUL_LIFE,
+            "tax_year": tax_year,
+            "document_id": document_id,
+            "value": {"years": years},
+        }
+        | extra
+    )
+
+
+@pytest.mark.parametrize(
+    ("build_year", "too_long", "shorter"),
+    [(1904, 40, 39), (1994, 50, 49), (2023, 34, 33)],  # 2.5 %, 2 %, 3 % (33⅓ years)
+)
+def test_a_useful_life_must_be_shorter_than_the_statutory_life(
+    world, build_year, too_long, shorter
+):
+    prop = _building(world, build_year, date(2026, 10, 15))
+    doc = _gutachten(world)
+    with pytest.raises(RuleViolationError) as exc:
+        world.cmd(create_tax_input, prop, _life(prop, too_long, 2026, doc))
+    assert _codes(exc) == (TAX_INPUT_USEFUL_LIFE_NOT_SHORTER,)
+    assert world.query(list_tax_inputs, prop, include_history=True) == []
+    assert _events(world) == []
+    row = world.cmd(create_tax_input, prop, _life(prop, shorter, 2026, doc))
+    assert (row.kind, row.tax_year, row.document_id, row.value.years) == (
+        K.USEFUL_LIFE,
+        2026,
+        doc,
+        shorter,
+    )
+    (event,) = _events(world)
+    assert event.payload["kind"] == "useful_life"
+    assert event.payload["value"] == {"years": shorter}
+    assert event.payload["tax_year"] == 2026
+
+
+def test_a_later_useful_life_must_be_shorter_than_what_is_left_of_the_statutory_life(world):
+    # D79 review F1: 1904 (480 months), handed over 15 Oct 2026; on 1 Jan 2028 465 are left.
+    prop = _building(world, 1904, date(2026, 10, 15))
+    doc = _gutachten(world)
+    with pytest.raises(RuleViolationError) as exc:
+        world.cmd(create_tax_input, prop, _life(prop, 39, 2028, doc))  # 468 months
+    assert _codes(exc) == (TAX_INPUT_USEFUL_LIFE_NOT_SHORTER,)
+    row = world.cmd(create_tax_input, prop, _life(prop, 38, 2028, doc))  # 456 months
+    assert (row.tax_year, row.value.years) == (2028, 38)
+
+
+def test_a_useful_life_needs_its_gutachten_and_starts_no_earlier_than_the_purchase(world):
+    # The world's flat: completed 1994 (50 years), handed over 1 May 2024.
+    with pytest.raises(ValueError, match="tax_input.scope_invalid"):
+        _input(world, K.USEFUL_LIFE, {"years": 30}, tax_year=2026)  # no document
+    with pytest.raises(NotFoundError):
+        _create(world, _life(world.property_id, 30, 2026, uuid.uuid4()))
+    doc = _gutachten(world)
+    with pytest.raises(RuleViolationError) as exc:
+        _create(world, _life(world.property_id, 30, 2023, doc))
+    assert _codes(exc) == (TAX_INPUT_SCOPE_INVALID,)
+    assert world.query(list_tax_inputs, world.property_id, include_history=True) == []
+    row = _create(world, _life(world.property_id, 30, 2024, doc))
+    assert row.tax_year == 2024
+
+
+def test_one_useful_life_per_year_superseded_and_withdrawn_as_usual(world):
+    doc = _gutachten(world)
+    first = _create(world, _life(world.property_id, 30, 2026, doc))
+    # The same year is the same question: a second answer must supersede the first.
+    with pytest.raises(RuleViolationError) as exc:
+        _create(world, _life(world.property_id, 28, 2026, doc))
+    assert _codes(exc) == (TAX_INPUT_NOT_CURRENT,)
+    corrected = _create(world, _life(world.property_id, 28, 2026, doc, supersedes_id=first.id))
+    # A later Gutachten from another year stands beside it.
+    later = _create(world, _life(world.property_id, 20, 2030, doc))
+    current = world.query(find_current, world.property_id, K.USEFUL_LIFE, tax_year=2026)
+    assert current == [corrected]
+    assert world.query(list_tax_inputs, world.property_id, kind=K.USEFUL_LIFE) == [
+        corrected,
+        later,
+    ]
+    # A withdrawal repeats the value and is not re-checked.
+    _create(
+        world,
+        _life(world.property_id, 28, 2026, doc, supersedes_id=corrected.id, withdrawn=True),
+    )
+    assert world.query(list_tax_inputs, world.property_id, kind=K.USEFUL_LIFE) == [later]

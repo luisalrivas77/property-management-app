@@ -199,6 +199,59 @@ def test_a_certificate_figure_needs_its_document_and_loan(client_a):
     assert response.status_code == 422
 
 
+def test_a_shorter_useful_life_changes_the_afa_of_the_draft(client_a):
+    """D79: a 1904 building (statutory 40 years) bought 15 Oct 2025, basis 375,000.00 × 0.8 =
+    300,000.00, a Gutachten giving 21 years from 2025. 2025: 300,000.00 × 3/252 = 3,571.43;
+    2026: 296,428.57 × 12/249 = 14,285.71 (the rule's own fixtures cover the arithmetic)."""
+    prop = new_property(
+        client_a,
+        build_year=1904,
+        notarized_on="2025-08-01",
+        purchase_date="2025-10-15",
+        purchase_price="375000.00",
+    )
+    pid = prop["id"]
+    new_unit(client_a, pid)
+    split = create(
+        client_a,
+        "/api/price-splits",
+        {"property_id": pid, "source": "purchase_contract", "building_share": "0.8"},
+    )
+    ok(client_a.post(f"/api/properties/{pid}/price-splits/{split['id']}/select"))
+    doc = ok(upload(client_a, b"%PDF-1.7 Gutachten Nutzungsdauer", filename="gutachten.pdf"), 201)
+    body = {
+        "property_id": pid,
+        "kind": "useful_life",
+        "tax_year": 2025,
+        "document_id": doc["id"],
+        "value": {"years": 40},
+    }
+    response = client_a.post(_path(pid), json=body)
+    assert (response.status_code, response.json()["code"]) == (
+        422,
+        "tax_input.useful_life_not_shorter",
+    )
+    row = create(client_a, _path(pid), body | {"value": {"years": 21}})
+
+    draft = ok(client_a.get(f"/api/properties/{pid}/anlage-v", params={"tax_year": 2026}))
+    afa = draft["afa"]
+    assert (afa["method"], afa["useful_life_years"], afa["useful_life_from_year"]) == (
+        "useful_life",
+        21,
+        2025,
+    )
+    assert (afa["amount"], afa["book_value_start"], afa["rate"]) == ("14285.71", "296428.57", None)
+    assert {"kind": "tax_input", "id": row["id"]} in [
+        {"kind": s["kind"], "id": s["id"]} for s in afa["sources"]
+    ]
+    (line,) = [line for line in draft["lines"] if line["key"] == "wk.afa"]
+    assert line["amount"] == "14285.71"
+    codes = {w["code"] for w in draft["warnings"]}
+    assert "afa.useful_life_report" in codes
+    first = ok(client_a.get(f"/api/properties/{pid}/anlage-v", params={"tax_year": 2025}))
+    assert (first["afa"]["amount"], first["afa"]["method_code"]) == ("3571.43", 2)
+
+
 def test_another_workspace_cannot_read_or_write(client_a, client_b):
     pid = flat(client_a)["property"]["id"]
     create(client_a, _path(pid), {"property_id": pid, "kind": "market_rent", "value": MIETSPIEGEL})

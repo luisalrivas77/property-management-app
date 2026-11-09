@@ -156,6 +156,7 @@ VALID = {
     "ruecklage_spent": ({"document"}, 2026, {"amount": "350.00"}),
     "interest_certified": ({"loan", "document"}, 2026, {"amount": "3724.56"}),
     "pre_handover_income": (set(), None, {"treatment": "rent"}),
+    "useful_life": ({"document"}, 2027, {"years": 30}),  # 0014, D79
 }
 
 
@@ -189,6 +190,8 @@ def test_each_kind_with_its_scope_is_accepted_by_the_table_and_the_schema(scope,
         ("ruecklage_spent", {"document_id": None}),
         ("interest_certified", {"document_id": None}),
         ("interest_certified", {"tax_year": 1999}),
+        ("useful_life", {"tax_year": None}),  # 0014: year-scoped
+        ("useful_life", {"document_id": None}),  # 0014: the Gutachten is required
         ("pre_handover_income", {"withdrawn": True}),  # withdrawn without supersedes_id
         ("market_rent", {"value": Jsonb(["not", "an", "object"])}),
         ("market_rent", {"kind": "rent_guarantee"}),
@@ -368,5 +371,74 @@ def test_0013_downgrade_refuses_while_it_would_drop_data(data):
                 ).fetchone()
                 assert tables == (0,)
             alembic(name, "upgrade", "head")
+    finally:
+        drop_database(name)
+
+
+# --- 0014: useful_life (D79) -------------------------------------------------------------
+
+NAMED_0014 = {"tax_input_kind_check", "tax_input_year_scope_check", "tax_input_year_document_check"}
+
+
+def _tax_input_checks(conn) -> dict[str, str]:
+    rows = conn.execute(
+        "SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint"
+        " WHERE conrelid = 'tax_input'::regclass AND contype = 'c'"
+    ).fetchall()
+    return dict(rows)
+
+
+def test_0014_replaces_only_the_kind_and_year_scope_checks():
+    """0013's unnamed kind list and year-scope CHECKs become three named ones that know
+    useful_life; every other CHECK of tax_input stays as it was."""
+    name = create_database()
+    try:
+        alembic(name, "upgrade", "0013_tax_year")
+        with _admin(name) as conn:
+            before = _tax_input_checks(conn)
+        alembic(name, "upgrade", "0014_useful_life")
+        with _admin(name) as conn:
+            after = _tax_input_checks(conn)
+        assert len(after) == len(before)
+        assert {k for k, d in after.items() if "ruecklage_spent" in d} == NAMED_0014
+        assert all("useful_life" in after[k] for k in NAMED_0014)
+        untouched = {k: d for k, d in before.items() if "ruecklage_spent" not in d}
+        assert untouched == {k: d for k, d in after.items() if k not in NAMED_0014}
+    finally:
+        drop_database(name)
+
+
+def test_0014_downgrade_refuses_a_useful_life_row_and_else_restores_0013():
+    """A useful_life row is a record the old CHECK would refuse and the table never deletes,
+    so the downgrade is refused while one exists; on a table without one it restores 0013's
+    lists (definitions equal, under 0014's names). The guard must see rows under forced RLS."""
+    name = create_database()
+    try:
+        alembic(name, "upgrade", "0013_tax_year")
+        with _admin(name) as conn:
+            definitions_0013 = sorted(_tax_input_checks(conn).values())
+        alembic(name, "upgrade", "head")
+        alembic(name, "downgrade", "0013_tax_year")
+        with _admin(name) as conn:
+            assert sorted(_tax_input_checks(conn).values()) == definitions_0013
+        alembic(name, "upgrade", "head")
+
+        ws = uuid.uuid4()
+        with _admin(name) as conn:
+            conn.execute("INSERT INTO workspace (id, name) VALUES (%s, 'A')", (ws,))
+            conn.execute(f"SET ROLE {OWNER}")
+            conn.execute("SELECT set_config('app.workspace_id', %s, false)", (str(ws),))
+            ids = {"property": insert_property(conn, ws), "document": _document(conn, ws)[0]}
+            _insert(conn, "tax_input", _valid(ws, ids, "useful_life"))
+        with pytest.raises(DBAPIError, match="downgrade of 0014_useful_life refused"):
+            alembic(name, "downgrade", "0013_tax_year")
+        with _admin(name) as conn:
+            assert conn.execute("SELECT version_num FROM alembic_version").fetchall() == [
+                ("0014_useful_life",)
+            ]
+            forced = conn.execute(
+                "SELECT relforcerowsecurity FROM pg_class WHERE oid = 'tax_input'::regclass"
+            ).fetchone()
+            assert forced == (True,)  # the refused downgrade's NO FORCE was rolled back
     finally:
         drop_database(name)
