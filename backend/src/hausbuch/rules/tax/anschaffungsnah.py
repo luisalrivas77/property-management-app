@@ -108,9 +108,17 @@ def limit_status(facts: LimitFacts, tax_year: int, rule_set: RuleSet) -> LimitSt
             if running > limit:
                 exceeded_in_year = c.tax_year
                 break
+        # Only a renovation follows its treatment input (erhaltungsaufwand._costs); a stray
+        # herstellung input on a repairs line changes nothing, so that line still moves.
+        herstellung = {
+            a.allocation_id
+            for a in facts.allocations
+            if a.category is C.RENOVATION
+            and (t := treatments.get(a.allocation_id)) is not None
+            and t.value.treatment == "herstellung"
+        }
         for c in counted:
-            treatment = treatments.get(c.allocation_id)
-            if treatment is not None and treatment.value.treatment == "herstellung":
+            if c.allocation_id in herstellung:
                 continue  # its own herstellung addition already (D74)
             additions.append(
                 BasisAddition(
@@ -120,7 +128,11 @@ def limit_status(facts: LimitFacts, tax_year: int, rule_set: RuleSet) -> LimitSt
                     reason="limit_exceeded",
                 )
             )
-        if exceeded_in_year <= tax_year <= end.year:
+        # The crossing year always warns, even after the window's end year: work done inside
+        # the window and invoiced later (D76) can cross the limit in a later tax year.
+        if exceeded_in_year <= tax_year and (
+            tax_year <= end.year or any(b.tax_year == tax_year for b in additions)
+        ):
             warnings.append(
                 warning(
                     WarningCode.LIMIT_EXCEEDED,
