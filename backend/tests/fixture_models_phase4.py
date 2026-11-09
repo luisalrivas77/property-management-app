@@ -162,7 +162,7 @@ class YearExpect(YearFigures):
         if self.cash_out != cash_out:
             raise ValueError(f"{y}: cash_out = interest + principal + running + umlagen_out")
         effect = self.tax_effect.effect if self.tax_effect is not None else Decimal("0")
-        net = self.rent_in + self.other_income + self.umlagen_in - self.cash_out + effect
+        net = self.rent_in + self.other_income + self.umlagen_in - self.cash_out - effect
         if self.net_cash != net:
             raise ValueError(f"{y}: net_cash {self.net_cash} != {net}")
         if self.value is not None and self.equity != self.value - self.loan_balance:
