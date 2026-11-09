@@ -119,7 +119,9 @@ def income_facts(conn: Connection) -> list[IncomeInputFact]:
     take them (rules/performance/income.zve_base and year_tax_effect). Phase 4 step 2's
     services/performance.py calls this; keep the name and shape."""
     return [
-        IncomeInputFact.model_validate(r.model_dump(exclude={"workspace_id", "recorded_at"}))
+        IncomeInputFact.model_validate(
+            r.model_dump(exclude={"workspace_id", "recorded_at", "recorded_by"})
+        )
         for r in list_income_inputs(conn)
     ]
 
