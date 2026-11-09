@@ -49,6 +49,10 @@ class AllocationCategory(StrEnum):
     PROPERTY_MANAGEMENT = "property_management"
     GRUNDSTEUER = "grundsteuer"  # deductible
     INSURANCE = "insurance"  # deductible
+    # deductible: the flat's own electricity bill or Abschlag, paid by the landlord because the
+    # rent's Pauschale covers it; the Hausgeld's Allgemeinstrom stays hausgeld_umlagefaehig
+    # (phase 4 D92)
+    ELECTRICITY = "electricity"
     REPAIRS = "repairs"  # deductible (Erhaltungsaufwand)
     RENOVATION = "renovation"  # undecided (15 % rule, phase 3)
     PURCHASE_PRICE = "purchase_price"  # capitalized (via the property record, not summed)

@@ -32,6 +32,7 @@ quarterly, yearly), false for a one-off payment.
 - `property_management`: the landlord's own fee to a property manager for managing the rented flat or its letting (Sondereigentumsverwaltung, Mietverwaltung), usually a fixed monthly amount; never the WEG administrator's share inside the Hausgeld, which is `hausgeld_verwaltung`
 - `grundsteuer`: property tax paid to the municipality
 - `insurance`: an insurance premium for the property
+- `electricity`: the electricity supplier's bill or monthly instalment (Abschlag) for the rented flat's own supply, which the landlord pays because the rent includes it; never the building's common electricity (Allgemeinstrom) inside the WEG Hausgeld, which is `hausgeld_umlagefaehig`
 - `repairs`: a repair or maintenance of the property (Erhaltungsaufwand)
 - `renovation`: a larger renovation or modernization
 - `purchase_price`: payment of the purchase price (Kaufpreis) for the property to the seller or to a notary escrow account (Notaranderkonto)

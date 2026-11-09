@@ -66,6 +66,7 @@ THRESHOLDS = MappingProxyType(
         C.PROPERTY_MANAGEMENT: _RECURRING,  # a fixed monthly fee (D51)
         C.GRUNDSTEUER: _RECURRING,
         C.INSURANCE: _RECURRING,
+        C.ELECTRICITY: _RECURRING,  # a monthly Abschlag from one supplier (phase 4 D92)
         C.BANK_FEES: _RECURRING,
         # One-offs whose treatment needs a person, repairs, renovation, anything capitalized
         # and the catch-alls: never auto-confirmed.

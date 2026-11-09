@@ -65,6 +65,7 @@ CATEGORY_LINES = {
     C.HAUSGELD_UMLAGEFAEHIG: "wk.allocable_costs",
     C.GRUNDSTEUER: "wk.allocable_costs",
     C.INSURANCE: "wk.allocable_costs",
+    C.ELECTRICITY: "wk.allocable_costs",  # phase 4 D92
     C.HAUSGELD_VERWALTUNG: "wk.non_allocable_costs",
     C.PROPERTY_MANAGEMENT: "wk.non_allocable_costs",
     C.BANK_FEES: "wk.non_allocable_costs",
