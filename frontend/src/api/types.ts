@@ -1393,6 +1393,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/properties/{property_id}/anlage-v/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Property Anlage V Sources
+         * @description The payments the draft's lines cite (the sources drawer): every confirmed allocation
+         *     the draft reads, with its date, amount, category, period, transaction and Beleg, and the
+         *     counterparty as a masked IBAN only (D5). Same checks and error codes as the draft.
+         */
+        get: operations["property_anlage_v_sources_api_properties__property_id__anlage_v_sources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/properties/{property_id}/history": {
         parameters: {
             query?: never;
@@ -2048,6 +2070,53 @@ export interface components {
             recurring: boolean;
             /** Document Id */
             document_id?: string | null;
+        };
+        /**
+         * AllocationFact
+         * @description A confirmed allocation as the draft sees it. Amount signed (income +, costs −); a 0.00
+         *     row may be present and is ignored by every rule (D70). invoice_net is the linked invoice
+         *     extraction's amount_net (a magnitude), for the 15 % tracker (D56).
+         */
+        AllocationFact: {
+            /**
+             * Allocation Id
+             * Format: uuid
+             */
+            allocation_id: string;
+            /**
+             * Booking Date
+             * Format: date
+             */
+            booking_date: string;
+            /** Value Date */
+            value_date?: string | null;
+            /** Amount */
+            amount: string;
+            category: components["schemas"]["AllocationCategory"];
+            /**
+             * Recurring
+             * @default false
+             */
+            recurring: boolean;
+            service_period?: components["schemas"]["ServicePeriod"] | null;
+            /** Due On */
+            due_on?: string | null;
+            /** Transaction Id */
+            transaction_id?: string | null;
+            /** Property Id */
+            property_id?: string | null;
+            /** Unit Id */
+            unit_id?: string | null;
+            /** Tenancy Id */
+            tenancy_id?: string | null;
+            /** Loan Id */
+            loan_id?: string | null;
+            /** Document Id */
+            document_id?: string | null;
+            /** Invoice Net */
+            invoice_net?: string | null;
+            /** Counterparty Iban Masked */
+            counterparty_iban_masked?: string | null;
         };
         /**
          * AllocationMethod
@@ -4404,6 +4473,19 @@ export interface components {
             payment: string;
             /** Closing Balance */
             closing_balance: string;
+        };
+        /** ServicePeriod */
+        ServicePeriod: {
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+            /**
+             * End
+             * Format: date
+             */
+            end: string;
         };
         /**
          * Session
@@ -8067,6 +8149,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AnlageVDraft"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    property_anlage_v_sources_api_properties__property_id__anlage_v_sources_get: {
+        parameters: {
+            query: {
+                tax_year: number;
+            };
+            header?: never;
+            path: {
+                property_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AllocationFact"][];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
