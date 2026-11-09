@@ -19,6 +19,7 @@ import { tenantName } from "@/components/entities";
 import { formatDate, formatMoney, todayIso } from "@/components/format";
 import { correctedFrom, findMilestone } from "@/components/history";
 import { DEPOSIT_FORM, RENT_MODEL, TENANCY_ROLE } from "@/components/labels";
+import { OPERATING_COSTS_TERMS } from "@/components/taxInputs";
 import { ActionDialog, Breadcrumbs, CorrectedNote, Facts, Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 
@@ -128,6 +129,8 @@ function TenancyDetail({ tenancy, unit, property, tenants, onChanged }: TenancyD
           ],
           ["Befristet bis", tenancy.fixed_term_until ? formatDate(tenancy.fixed_term_until) : "unbefristet"],
           ["Mietmodell", RENT_MODEL[tenancy.rent_model]],
+          ["Miete fällig am", `${tenancy.rent_due_day}. des Monats`],
+          ["Nebenkosten", OPERATING_COSTS_TERMS[tenancy.operating_costs_terms]],
           ["Kündigung erhalten/ausgesprochen am", formatDate(tenancy.notice_given_on)],
           [
             "Auszug",

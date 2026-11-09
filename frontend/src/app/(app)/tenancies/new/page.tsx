@@ -15,6 +15,7 @@ import { tenantName } from "@/components/entities";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "@/components/form";
 import { blankToNull, toMoneyString } from "@/components/input";
 import { DEPOSIT_FORM, options, RENT_MODEL, TENANCY_ROLE } from "@/components/labels";
+import { RentTermsFields, toDueDay, type OperatingCostsTerms } from "@/components/taxInputs";
 import { ActionDialog, Breadcrumbs, Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 
@@ -30,6 +31,8 @@ const KEYS = [
   "deposit_form",
   "deposit_bank",
   "deposit_iban",
+  "rent_due_day",
+  "operating_costs_terms",
   "initial_rent",
   "initial_rent.cold_rent",
   "initial_rent.operating_costs_prepayment",
@@ -109,6 +112,8 @@ function TenancyForm({ unit }: { unit: Unit; property: Property }) {
   const [fixedTermUntil, setFixedTermUntil] = useState("");
   const [endDate, setEndDate] = useState("");
   const [rentModel, setRentModel] = useState<RentModel>("fixed");
+  const [dueDay, setDueDay] = useState("3");
+  const [costTerms, setCostTerms] = useState<OperatingCostsTerms>("prepayment");
   const [depositAmount, setDepositAmount] = useState("");
   const [depositForm, setDepositForm] = useState<DepositForm>("none");
   const [depositBank, setDepositBank] = useState("");
@@ -142,6 +147,7 @@ function TenancyForm({ unit }: { unit: Unit; property: Property }) {
     if (chosen.length === 0) values.messages.parties = ["Bitte mindestens einen Mieter wählen oder anlegen."];
     if (!startDate) values.messages.start_date = ["Bitte das Einzugsdatum eingeben."];
     const deposit = depositAmount.trim() === "" ? "0.00" : values.take("deposit_amount", toMoneyString(depositAmount));
+    const rentDueDay = values.take("rent_due_day", toDueDay(dueDay));
     let initialRent: InitialRent | null = null;
     if (withRent) {
       const cold = values.take("initial_rent.cold_rent", toMoneyString(coldRent));
@@ -151,7 +157,7 @@ function TenancyForm({ unit }: { unit: Unit; property: Property }) {
         initialRent = { cold_rent: cold, operating_costs_prepayment: prepaid, effective_from: rentFrom || null, document_id: rentDocument };
       }
     }
-    if (!values.ok || deposit === undefined) return form.invalid(values.messages);
+    if (!values.ok || deposit === undefined || rentDueDay === undefined) return form.invalid(values.messages);
     setBusy(true);
     form.clear();
     try {
@@ -169,9 +175,8 @@ function TenancyForm({ unit }: { unit: Unit; property: Property }) {
             deposit_form: depositForm,
             deposit_bank: blankToNull(depositBank),
             deposit_iban: blankToNull(depositIban),
-            // Phase 3 (D67, D72): the form gains these fields in step 2; until then the defaults.
-            rent_due_day: 3,
-            operating_costs_terms: "prepayment",
+            rent_due_day: rentDueDay,
+            operating_costs_terms: costTerms,
             initial_rent: initialRent,
           },
         }),
@@ -316,6 +321,14 @@ function TenancyForm({ unit }: { unit: Unit; property: Property }) {
             >
               <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
             </Field>
+            <RentTermsFields
+              idPrefix="tenancy"
+              dueDay={dueDay}
+              onDueDay={setDueDay}
+              terms={costTerms}
+              onTerms={setCostTerms}
+              errors={(key) => form.of(key)}
+            />
           </div>
         </fieldset>
 
