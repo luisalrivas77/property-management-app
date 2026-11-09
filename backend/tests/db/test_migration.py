@@ -51,6 +51,9 @@ MIGRATION_TABLES = {
     "possible_duplicate",
     "allocation",
     "matching_rule",
+    # Phase 3 (docs/phases/phase-3.md §6)
+    "tax_input",
+    "tax_export",
 }
 # Procrastinate's own tables (0005): not RLS'd, no workspace_id (D20). The one exclusion.
 QUEUE_TABLE_PREFIX = "procrastinate_"

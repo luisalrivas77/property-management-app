@@ -58,6 +58,8 @@ def test_present_and_missing_items_for_a_year(client_a, let_flat):
         "tenancy_start": None,
         "cost_kind": None,
         "cost_amount": None,
+        "category": None,  # phase 3: cost_receipt items
+        "booking_date": None,
     }
     [ref] = contract["documents"]
     assert ref["id"] == let_flat["contract"]["id"]

@@ -10,7 +10,7 @@ import { useCallback, useId, useState } from "react";
 import { api, ok } from "@/api/client";
 import type { ChecklistDocumentRef, ChecklistStatus, DocumentChecklistItem, RequirementCode } from "@/api/schemas";
 import { formatDate, formatMoney } from "@/components/format";
-import { ACQUISITION_COST_KIND, DOCUMENT_SUBTYPE, DOCUMENT_TYPE } from "@/components/labels";
+import { ACQUISITION_COST_KIND, ALLOCATION_CATEGORY, DOCUMENT_SUBTYPE, DOCUMENT_TYPE } from "@/components/labels";
 import { Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 
@@ -109,6 +109,18 @@ const REQUIREMENTS: Record<RequirementCode, Requirement> = {
     title: (_, year) => `Hausgeldabrechnung ${year} (WEG)`,
     hint: "Kommt meist im Frühjahr des Folgejahres",
     fix: propertyTab("dokumente", "Unter Dokumente verknüpfen"),
+  },
+  // Phase 3 (§8, D64); the Steuern screen and its inputs come in steps 1 and 2.
+  cost_receipt: {
+    title: (item) =>
+      `Beleg ${item.scope.category ? ALLOCATION_CATEGORY[item.scope.category] : "Zahlung"} ${formatDate(item.scope.booking_date)}`,
+    hint: "Rechnung zur Zahlung, falls das Finanzamt fragt",
+    fix: propertyTab("dokumente", "Unter Dokumente verknüpfen"),
+  },
+  market_rent: {
+    title: (item) => `Ortsübliche Miete${item.scope.type === "unit" ? ` · ${item.scope.unit_label ?? "Einheit"}` : ""}`,
+    hint: "Mietspiegel-Wert für den Vergleich mit der vereinbarten Miete",
+    fix: propertyTab("dokumente", "Mietspiegel unter Dokumente ablegen"),
   },
 };
 

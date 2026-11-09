@@ -3,6 +3,10 @@
 ChecklistFacts is what rules.document_checklist reads: the property, its selected split, its
 cost rows, loans, units and tenancies, and the documents that could satisfy a requirement. It
 holds no tenant personal data (D5): a tenancy is its unit, dates and deposit form only.
+
+Phase 3 (docs/phases/phase-3.md §8, D64) adds two data entries: `cost_receipt` per confirmed
+allocation that needs a Beleg, and `market_rent` per Wohnung let in the year; their facts are
+`allocations` and `market_rents` (empty and None for a phase 1 caller).
 """
 
 from datetime import date, datetime
@@ -12,7 +16,8 @@ from uuid import UUID
 
 from pydantic import Field, model_validator
 
-from .common import PositiveMoney, Schema, TaxYear
+from .allocation import AllocationCategory
+from .common import Money, PositiveMoney, Schema, TaxYear
 from .enums import (
     AcquisitionCostKind,
     DepositForm,
@@ -40,6 +45,9 @@ class RequirementCode(StrEnum):
     DEPOSIT_RECORD = "deposit_record"
     WIRTSCHAFTSPLAN = "wirtschaftsplan"
     HAUSGELDABRECHNUNG = "hausgeldabrechnung"
+    # Phase 3 (§8, D64)
+    COST_RECEIPT = "cost_receipt"  # the Beleg of a repairs/renovation/fees allocation
+    MARKET_RENT = "market_rent"  # the ortsübliche Miete for §21 Abs. 2 EStG (D61)
 
 
 class ChecklistStatus(StrEnum):
@@ -50,12 +58,14 @@ class ChecklistStatus(StrEnum):
 
 
 class ChecklistScopeType(StrEnum):
-    """What one item is about: the property, one cost row, one loan or one tenancy."""
+    """What one item is about: property, cost row, loan, tenancy, allocation or unit."""
 
     PROPERTY = "property"
     ACQUISITION_COST = "acquisition_cost"
     LOAN = "loan"
     TENANCY = "tenancy"
+    ALLOCATION = "allocation"
+    UNIT = "unit"
 
 
 # --- Facts (rule input) ---------------------------------------------------------------
@@ -117,6 +127,37 @@ class ChecklistTenancy(Schema):
     deposit_form: DepositForm = DepositForm.NONE
 
 
+class ChecklistAllocation(Schema):
+    """A confirmed allocation of the property (phase 3 §8). tax_year is the year §5.1 assigns
+    it (the ten-day rule), resolved before the rule runs (by the checklist service, or by draft
+    when it builds the checklist facts from DraftFacts); a 0.00 row is passed
+    through and never creates an item (D70)."""
+
+    id: UUID
+    category: AllocationCategory
+    amount: Money
+    booking_date: date
+    tax_year: TaxYear
+    document_id: UUID | None = None
+
+
+class ChecklistMarketRent(Schema):
+    """A `market_rent` tax input (D61), every row of its history: a row another row
+    supersedes, and a withdrawn row, are not in force."""
+
+    id: UUID
+    unit_id: UUID | None = None  # null = the property's flat (ETW, EFH); set = an MFH's unit
+    valid_from: date
+    supersedes_id: UUID | None = None
+    withdrawn: bool = False
+
+    @model_validator(mode="after")
+    def _withdrawn_supersedes(self) -> Self:
+        if self.withdrawn and self.supersedes_id is None:
+            raise ValueError("a withdrawn row supersedes the row it withdraws")
+        return self
+
+
 class ChecklistFacts(Schema):
     """Everything build_checklist reads for one property."""
 
@@ -130,12 +171,20 @@ class ChecklistFacts(Schema):
     units: list[ChecklistUnit] = Field(default_factory=list)
     tenancies: list[ChecklistTenancy] = Field(default_factory=list)  # of these units
     documents: list[ChecklistDocument] = Field(default_factory=list)
+    allocations: list[ChecklistAllocation] = Field(default_factory=list)  # phase 3
+    # Phase 3. None = a phase 1 caller: the market_rent entry does not apply (otherwise every
+    # let unit would gain an item and phase 1's outcomes would change); [] = none recorded.
+    market_rents: list[ChecklistMarketRent] | None = None
 
     @model_validator(mode="after")
     def _tenancies_on_units(self) -> Self:
         unit_ids = {u.id for u in self.units}
         if any(t.unit_id not in unit_ids for t in self.tenancies):
             raise ValueError("every tenancy must be on one of the units")
+        if any(
+            m.unit_id is not None and m.unit_id not in unit_ids for m in self.market_rents or []
+        ):
+            raise ValueError("a unit's market rent must be on one of the units")
         return self
 
 
@@ -146,12 +195,14 @@ class ChecklistScope(Schema):
     """The item's subject and its non-personal context (no tenant names, D5)."""
 
     type: ChecklistScopeType
-    id: UUID  # the property, cost row, loan or tenancy
+    id: UUID  # the property, cost row, loan, tenancy, allocation or unit
     lender: str | None = None  # loan
-    unit_label: str | None = None  # tenancy
+    unit_label: str | None = None  # tenancy, unit
     tenancy_start: date | None = None  # tenancy
     cost_kind: AcquisitionCostKind | None = None  # acquisition_cost
     cost_amount: PositiveMoney | None = None  # acquisition_cost
+    category: AllocationCategory | None = None  # allocation (phase 3)
+    booking_date: date | None = None  # allocation (phase 3)
 
 
 class _ChecklistItemBase(Schema):

@@ -24,6 +24,7 @@ from .common import (
     Area,
     Fraction,
     IbanInput,
+    LivingArea,
     Money,
     NonNegativeMoney,
     PositiveMoney,
@@ -46,6 +47,7 @@ from .enums import (
     AcquisitionCostKind,
     DepositForm,
     LinkTarget,
+    OperatingCostsTerms,
     PropertyKind,
     ProposalStatus,
     RentModel,
@@ -53,7 +55,7 @@ from .enums import (
 from .loan import LoanCreate
 from .property import Address, OwnerShare, reject_raw_tax_number
 from .proposal import Proposal, RecordEntity
-from .tenancy import InitialRent, TenancyCreate, TenancyParty
+from .tenancy import InitialRent, RentDueDay, TenancyCreate, TenancyParty
 
 # Validation errors never echo input (spec amendment 1): bodies that carry a tax reference or
 # an IBAN hide it from the error's text, like their Create models.
@@ -134,6 +136,7 @@ class PropertyPatch(Patch):
     kind: PropertyKind = Field(default=None)
     address: Address = Field(default=None)
     build_year: Year = Field(default=None)
+    living_area_m2: LivingArea | None = None  # phase 3 D71; null clears it
 
 
 class AcquisitionCostPatch(Patch):
@@ -201,6 +204,8 @@ class TenancyPatch(Patch):
     deposit_form: DepositForm = Field(default=None)
     deposit_bank: str | None = None
     deposit_iban: IbanInput | None = None  # write-only; null removes it
+    rent_due_day: RentDueDay = Field(default=None)  # phase 3 D67
+    operating_costs_terms: OperatingCostsTerms = Field(default=None)  # phase 3 D72
 
 
 class RentRowCorrection(Patch):

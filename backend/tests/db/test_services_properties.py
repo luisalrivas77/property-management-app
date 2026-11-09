@@ -170,6 +170,19 @@ def test_update_records_the_changed_fields(run, read, fresh_workspaces):
     }
 
 
+def test_living_area_is_empty_until_set(run, read, fresh_workspaces):
+    """Phase 3 (0013, D71): the flat's Wohnfläche is optional and traced like any field."""
+    a, _ = fresh_workspaces
+    flat = run(a, create_property, FLAT, now=CREATED_AT)
+    assert flat.living_area_m2 is None
+    updated = run(a, update_property, flat.id, living_area_m2=Decimal("62.50"), now=LATER)
+    assert updated.living_area_m2 == Decimal("62.50")
+    assert read(a, get_property, flat.id) == updated
+    assert _events(read, a, flat.id)[-1].payload["changes"] == {
+        "living_area_m2": {"old": None, "new": "62.50"}
+    }
+
+
 def test_noop_and_invalid_updates_write_nothing(run, read, fresh_workspaces):
     a, _ = fresh_workspaces
     flat = run(a, create_property, FLAT, now=CREATED_AT)

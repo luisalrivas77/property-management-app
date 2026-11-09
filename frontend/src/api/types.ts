@@ -2073,7 +2073,7 @@ export interface components {
             /** Key */
             key: string;
             /** Entity Type */
-            entity_type: components["schemas"]["EntityType"] | ("acquisition_cost" | "price_split" | "rent_schedule" | "typing" | "link" | "ownership" | "deposit_received");
+            entity_type: components["schemas"]["EntityType"] | ("acquisition_cost" | "price_split" | "rent_schedule" | "typing" | "link" | "ownership" | "deposit_received" | "tax_input");
             /**
              * Mode
              * @enum {string}
@@ -2177,13 +2177,16 @@ export interface components {
             cost_kind?: components["schemas"]["AcquisitionCostKind"] | null;
             /** Cost Amount */
             cost_amount?: string | null;
+            category?: components["schemas"]["AllocationCategory"] | null;
+            /** Booking Date */
+            booking_date?: string | null;
         };
         /**
          * ChecklistScopeType
-         * @description What one item is about: the property, one cost row, one loan or one tenancy.
+         * @description What one item is about: property, cost row, loan, tenancy, allocation or unit.
          * @enum {string}
          */
-        ChecklistScopeType: "property" | "acquisition_cost" | "loan" | "tenancy";
+        ChecklistScopeType: "property" | "acquisition_cost" | "loan" | "tenancy" | "allocation" | "unit";
         /**
          * ChecklistStatus
          * @enum {string}
@@ -2672,7 +2675,7 @@ export interface components {
          * EventType
          * @enum {string}
          */
-        EventType: "owner.created" | "owner.updated" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.classified" | "document.extracted" | "document.read_failed" | "workspace.settings_changed" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "rule.created" | "rule.disabled";
+        EventType: "owner.created" | "owner.updated" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.classified" | "document.extracted" | "document.read_failed" | "workspace.settings_changed" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "rule.created" | "rule.disabled";
         /**
          * ExtractedValue
          * @description One field of a per-type extraction, or of a proposal record.
@@ -3328,6 +3331,12 @@ export interface components {
              */
             ends_on: string;
         };
+        /**
+         * OperatingCostsTerms
+         * @description How a lease agrees the running costs (tenancy.operating_costs_terms, 0013; phase 3 D72).
+         * @enum {string}
+         */
+        OperatingCostsTerms: "prepayment" | "flat_rate" | "included";
         /** Owner */
         Owner: {
             /**
@@ -3572,6 +3581,8 @@ export interface components {
             purchase_date: string;
             /** Purchase Price */
             purchase_price: string;
+            /** Living Area M2 */
+            living_area_m2?: string | null;
             /** Selected Price Split Id */
             selected_price_split_id?: string | null;
             /** Ownership Ended On */
@@ -3597,6 +3608,8 @@ export interface components {
             purchase_date: string;
             /** Purchase Price */
             purchase_price: string;
+            /** Living Area M2 */
+            living_area_m2?: string | null;
         };
         /**
          * PropertyKind
@@ -3627,6 +3640,8 @@ export interface components {
             address?: components["schemas"]["Address"];
             /** Build Year */
             build_year?: number;
+            /** Living Area M2 */
+            living_area_m2?: string | null;
         };
         /**
          * Proposal
@@ -3732,7 +3747,7 @@ export interface components {
             /** Key */
             key: string;
             /** Entity Type */
-            entity_type: components["schemas"]["EntityType"] | ("acquisition_cost" | "price_split" | "rent_schedule" | "typing" | "link" | "ownership" | "deposit_received");
+            entity_type: components["schemas"]["EntityType"] | ("acquisition_cost" | "price_split" | "rent_schedule" | "typing" | "link" | "ownership" | "deposit_received" | "tax_input");
             /**
              * Mode
              * @enum {string}
@@ -3922,7 +3937,7 @@ export interface components {
          * @description One kind of paperwork the return needs. German labels and hints live in the frontend.
          * @enum {string}
          */
-        RequirementCode: "purchase_contract" | "price_split" | "acquisition_cost_evidence" | "grundsteuerbescheid" | "loan_contract" | "zinsbescheinigung" | "lease" | "handover_protocol" | "deposit_record" | "wirtschaftsplan" | "hausgeldabrechnung";
+        RequirementCode: "purchase_contract" | "price_split" | "acquisition_cost_evidence" | "grundsteuerbescheid" | "loan_contract" | "zinsbescheinigung" | "lease" | "handover_protocol" | "deposit_record" | "wirtschaftsplan" | "hausgeldabrechnung" | "cost_receipt" | "market_rent";
         /**
          * RetentionClass
          * @enum {string}
@@ -4175,6 +4190,13 @@ export interface components {
             deposit_iban_masked: string | null;
             /** Notice Given On */
             notice_given_on?: string | null;
+            /**
+             * Rent Due Day
+             * @default 3
+             */
+            rent_due_day: number;
+            /** @default prepayment */
+            operating_costs_terms: components["schemas"]["OperatingCostsTerms"];
         };
         /**
          * TenancyCreateRequest
@@ -4211,6 +4233,13 @@ export interface components {
             deposit_bank?: string | null;
             /** Deposit Iban */
             deposit_iban?: string | null;
+            /**
+             * Rent Due Day
+             * @default 3
+             */
+            rent_due_day: number;
+            /** @default prepayment */
+            operating_costs_terms: components["schemas"]["OperatingCostsTerms"];
             initial_rent?: components["schemas"]["InitialRent"] | null;
         };
         /**
@@ -4248,6 +4277,9 @@ export interface components {
             deposit_bank?: string | null;
             /** Deposit Iban */
             deposit_iban?: string | null;
+            /** Rent Due Day */
+            rent_due_day?: number;
+            operating_costs_terms?: components["schemas"]["OperatingCostsTerms"];
         };
         /**
          * TenancyRole

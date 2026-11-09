@@ -169,6 +169,9 @@ function TenancyForm({ unit }: { unit: Unit; property: Property }) {
             deposit_form: depositForm,
             deposit_bank: blankToNull(depositBank),
             deposit_iban: blankToNull(depositIban),
+            // Phase 3 (D67, D72): the form gains these fields in step 2; until then the defaults.
+            rent_due_day: 3,
+            operating_costs_terms: "prepayment",
             initial_rent: initialRent,
           },
         }),

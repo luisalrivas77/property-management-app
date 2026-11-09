@@ -112,6 +112,7 @@ def update_property(
     kind: PropertyKind | Unset = UNSET,
     address: Address | Unset = UNSET,
     build_year: int | Unset = UNSET,
+    living_area_m2: Decimal | None | Unset = UNSET,
 ) -> Property:
     """Change non-milestone fields. The purchase dates and price change only through
     correct_notarized_on / correct_purchase_date. No-op (no write, no event) if nothing changes.
@@ -123,6 +124,7 @@ def update_property(
             ("kind", kind),
             ("address", address),
             ("build_year", build_year),
+            ("living_area_m2", living_area_m2),
         )
         if value is not UNSET
     }

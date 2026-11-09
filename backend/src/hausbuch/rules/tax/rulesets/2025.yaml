@@ -1,0 +1,173 @@
+# Rule set for tax year 2025 (docs/phases/phase-3.md §4). Validated by
+# hausbuch.schemas.tax.RuleSet on load; tests/rules/test_tax_rulesets.py pins it.
+#
+# Form mapping verified on 9 Nov 2026 against the official form "080 – Anlage V (2025)",
+# version 2025AnlV101NET – September 2025 (BMF Vordruckkommission ESt), pages 1-4:
+# every Zeile and Kennzahl below was read from the printed form. `zeile` is the line that
+# carries the amount and the Kennzahl (for a "direkte / verhältnismäßige Zuordnung" block,
+# its "Abzugsfähige Werbungskosten" line); `zeile_from` is the block's first line.
+#
+# Rates and decimals are quoted strings: the schema accepts decimal strings only.
+
+tax_year: 2025
+version: "2025.1"
+short_period_days: 10               # §11 Abs. 1 S. 2, Abs. 2 S. 2 EStG; H 11 EStH
+afa_rates:                          # §7 Abs. 4 S. 1 Nr. 2 EStG, by completion year
+  - {completed_to: 1924, rate: "0.025"}
+  - {completed_from: 1925, completed_to: 2022, rate: "0.02"}
+  - {completed_from: 2023, rate: "0.03"}
+anschaffungsnah_share: "0.15"       # §6 Abs. 1 Nr. 1a EStG
+anschaffungsnah_years: 3
+default_vat_rate: "0.19"            # net estimate when an invoice has no net amount (D56)
+spread_82b_min_years: 2             # §82b EStDV
+spread_82b_max_years: 5
+reduced_rent_full: "0.66"           # §21 Abs. 2 EStG
+reduced_rent_split: "0.50"
+speculation_years: 10               # §23 Abs. 1 S. 1 Nr. 1 EStG
+
+form:
+  form_year: 2025
+  status: published
+  version_stamp: "2025AnlV101NET – September 2025"
+  source_url: "https://www.formulare-bfinv.de/"
+  spread_prior_years: 4
+
+  lines:
+    # --- Allgemeine Angaben ------------------------------------------------------------
+    header.address:
+      {key: header.address, zeile_from: 4, zeile: 5, kind: header, rounding: none,
+       label: "Lage des Grundstücks / der Eigentumswohnung"}
+    header.aktenzeichen:
+      {key: header.aktenzeichen, zeile: 6, kind: header, rounding: none,
+       label: "Aktenzeichen laut Grundsteuermessbescheid"}
+    header.contract_date:
+      {key: header.contract_date, zeile: 7, kind: header, rounding: none,
+       label: "Notar- / Kaufvertrag vom"}
+    header.transfer_date:
+      {key: header.transfer_date, zeile: 7, kind: header, rounding: none,
+       label: "Eigentumsübergang am"}
+    header.completed:
+      {key: header.completed, zeile: 7, kind: header, rounding: none,
+       label: "Fertig gestellt am"}
+    header.sold:
+      {key: header.sold, zeile: 8, kennzahl: "53", kind: header, rounding: none,
+       label: "Veräußert / Übertragen am"}
+    header.living_area:
+      {key: header.living_area, zeile: 11, kennzahl: "54", kind: header, rounding: none,
+       label: "Gesamtwohnfläche (in m²)"}
+
+    # --- Einnahmen ---------------------------------------------------------------------
+    income.rent_units:
+      {key: income.rent_units, zeile_from: 13, zeile: 14, kind: income, rounding: down,
+       label: "Mieteinnahmen für Wohnungen (ohne Umlagen / ohne Umsatzsteuer)"}
+    income.rent_total:
+      {key: income.rent_total, zeile: 15, kennzahl: "01", kind: total, rounding: none,
+       label: "Mieteinnahmen für Wohnungen: Summe"}
+    income.umlagen:
+      {key: income.umlagen, zeile: 20, kennzahl: "04", kind: income, rounding: down,
+       label: "auf die Zeilen 15 und 18 entfallende laufende Neben- / Betriebskosten"}
+    income.umlagen_settlement:
+      {key: income.umlagen_settlement, zeile: 21, kennzahl: "11", kind: income, rounding: down,
+       label: "auf die Zeilen 15 und 18 entfallende erhaltene Nachzahlungen / geleistete Erstattungen"}
+    income.umlagen_not_agreed:
+      {key: income.umlagen_not_agreed, zeile: 24, kennzahl: "13", kind: flag, rounding: none,
+       label: "Neben- / Betriebskosten wurden nicht gesondert vereinbart"}
+    income.other:
+      {key: income.other, zeile_from: 29, zeile: 31, kennzahl: "08", kind: income, rounding: down,
+       label: "Öffentliche Zuschüsse, Guthabenzinsen aus Bausparverträgen und sonstige Einnahmen"}
+    income.total:
+      {key: income.total, zeile: 32, kind: total, rounding: none,
+       label: "Summe der Einnahmen"}
+
+    # --- Werbungskosten (direkte Zuordnung, D69) ----------------------------------------
+    wk.afa:
+      {key: wk.afa, zeile_from: 33, zeile: 35, kennzahl: "30", kind: afa, rounding: up,
+       label: "Absetzung für Abnutzung für Gebäude"}
+    wk.interest:
+      {key: wk.interest, zeile_from: 46, zeile: 48, kennzahl: "33", kind: cost, rounding: up,
+       label: "Schuldzinsen (ohne Tilgungsbeträge)"}
+    wk.financing_costs:
+      {key: wk.financing_costs, zeile_from: 49, zeile: 51, kennzahl: "34", kind: cost,
+       rounding: up, label: "Geldbeschaffungskosten (z. B. Schätz-, Notar-, Grundbuchgebühren)"}
+    wk.maintenance:
+      {key: wk.maintenance, zeile: 55, kennzahl: "36", kind: cost, rounding: up,
+       label: "voll abzuziehende Erhaltungsaufwendungen (einschließlich Entnahmen aus der Erhaltungsrücklage)"}
+    wk.maintenance_spread_total:
+      {key: wk.maintenance_spread_total, zeile: 57, kennzahl: "57", kind: cost, rounding: up,
+       label: "Auf bis zu 5 Jahre zu verteilende Erhaltungsaufwendungen: Gesamtaufwand des Jahres"}
+    wk.maintenance_spread_current:
+      {key: wk.maintenance_spread_current, zeile_from: 58, zeile: 60, kennzahl: "38", kind: cost,
+       rounding: up, label: "Auf bis zu 5 Jahre zu verteilende Erhaltungsaufwendungen: davon im Jahr abzuziehen"}
+    # Earlier years' §82b spreads; _k = the spread that started k years before the tax year.
+    wk.maintenance_spread_prior_4:
+      {key: wk.maintenance_spread_prior_4, zeile_from: 61, zeile: 63, kennzahl: "39", kind: cost,
+       rounding: up, label: "zu berücksichtigender Anteil der Erhaltungsaufwendungen aus dem vierten Vorjahr"}
+    wk.maintenance_spread_prior_3:
+      {key: wk.maintenance_spread_prior_3, zeile_from: 64, zeile: 66, kennzahl: "40", kind: cost,
+       rounding: up, label: "zu berücksichtigender Anteil der Erhaltungsaufwendungen aus dem dritten Vorjahr"}
+    wk.maintenance_spread_prior_2:
+      {key: wk.maintenance_spread_prior_2, zeile_from: 67, zeile: 69, kennzahl: "41", kind: cost,
+       rounding: up, label: "zu berücksichtigender Anteil der Erhaltungsaufwendungen aus dem zweiten Vorjahr"}
+    wk.maintenance_spread_prior_1:
+      {key: wk.maintenance_spread_prior_1, zeile_from: 70, zeile: 72, kennzahl: "42", kind: cost,
+       rounding: up, label: "zu berücksichtigender Anteil der Erhaltungsaufwendungen aus dem Vorjahr"}
+    wk.allocable_costs:
+      {key: wk.allocable_costs, zeile_from: 73, zeile: 75, kennzahl: "52", kind: cost, rounding: up,
+       label: "Umgelegte Kosten (z. B. Grundsteuer, Wasserversorgung, Heizung, Hausversicherungen, Hauswart)"}
+    wk.non_allocable_costs:
+      {key: wk.non_allocable_costs, zeile_from: 76, zeile: 78, kennzahl: "48", kind: cost,
+       rounding: up, label: "Nicht umgelegte Kosten (z. B. Verwaltungskosten, Bank- und Kontoführungsgebühren – ohne Erhaltungsrücklage –)"}
+    wk.other:
+      {key: wk.other, zeile_from: 80, zeile: 82, kennzahl: "49", kind: cost, rounding: up,
+       label: "Sonstige Kosten"}
+    wk.total:
+      {key: wk.total, zeile: 83, kind: total, rounding: none,
+       label: "Summe der Werbungskosten"}
+
+    # --- Ermittlung und Zuordnung der Einkünfte ------------------------------------------
+    result.surplus:
+      {key: result.surplus, zeile: 85, kind: result, rounding: none,
+       label: "Überschuss (Einnahmen laut Zeile 32 abzüglich Werbungskosten laut Zeile 83)"}
+    result.owner_a:
+      {key: result.owner_a, zeile: 86, kennzahl: "20", kind: result, rounding: none,
+       label: "Zurechnung: Steuerpflichtige Person / Ehemann / Person A"}
+    result.owner_b:
+      {key: result.owner_b, zeile: 86, kennzahl: "21", kind: result, rounding: none,
+       label: "Zurechnung: Ehefrau / Person B"}
+    reduced_rent.cut_percent:
+      {key: reduced_rent.cut_percent, zeile: 87, kennzahl: "50", kind: flag, rounding: none,
+       label: "Kürzung der Werbungskosten wegen verbilligter Vermietung (in %)"}
+
+  # Every AllocationCategory: the line it is summed into, or null when it is not on the form
+  # (§4.2). `renovation` lands on the maintenance line only with a renovation_treatment
+  # input; without one the rules exclude and count it (D59). The 15 % rule may move it into
+  # the AfA basis instead (§5.3). Spread elections (§82b) move a repair to the spread lines.
+  category_lines:
+    rent_cold: income.rent_units
+    operating_costs_prepayment: income.umlagen
+    operating_costs_settlement: income.umlagen_settlement
+    other_income: income.other
+    loan_interest: wk.interest
+    loan_fees: wk.financing_costs
+    repairs: wk.maintenance
+    renovation: wk.maintenance
+    hausgeld_umlagefaehig: wk.allocable_costs
+    grundsteuer: wk.allocable_costs
+    insurance: wk.allocable_costs
+    hausgeld_verwaltung: wk.non_allocable_costs
+    property_management: wk.non_allocable_costs
+    bank_fees: wk.non_allocable_costs
+    professional_fees: wk.other
+    loan_principal: null          # Tilgung: shown as "erfasst, nicht abziehbar"
+    hausgeld_ruecklage: null      # deductible only when the WEG spends it (ruecklage_spent, D57)
+    deposit_in: null
+    deposit_out: null
+    owner_transfer_in: null
+    owner_transfer_out: null
+    loan_disbursement: null
+    purchase_price: null          # the AfA basis comes from the property record (D55)
+    acquisition_cost: null        # likewise
+    other_expense: null           # open until categorized (D59)
+    uncategorized: null           # open until categorized (D59)
+  tracked: [loan_principal, hausgeld_ruecklage]
+  open: [other_expense, uncategorized]

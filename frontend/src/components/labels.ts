@@ -149,6 +149,8 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "property.acquisition_cost_removed": "Anschaffungsnebenkosten entfernt",
   "property.price_split_recorded": "Kaufpreisaufteilung erfasst",
   "property.price_split_selected": "Kaufpreisaufteilung als AfA-Basis gewählt",
+  "property.tax_input_recorded": "Steuerliche Angabe erfasst",
+  "property.anlage_v_exported": "Anlage V exportiert",
   "unit.created": "Einheit angelegt",
   "unit.updated": "Einheit geändert",
   "tenant.created": "Mieter angelegt",

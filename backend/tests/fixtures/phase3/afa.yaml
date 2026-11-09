@@ -1,0 +1,251 @@
+# Rule fixture: AfA linear (hausbuch.rules.tax.afa.afa)
+#
+# afa(facts: AfaFacts, tax_year: int, rule_set: RuleSet) -> AfaLine
+# Spec: docs/phases/phase-3.md §5.2, D55. §7 Abs. 4 S. 1 Nr. 2 and Abs. 1 S. 4 EStG, §9a EStDV.
+#   basis    = round((purchase_price + Σ cost_rows.amount) × split.building_share, 2)
+#              (the Nebenkosten are split by the same share as the price)
+#   rate     = rule_set.afa_rate(build_year): ≤ 1924 2.5 %, 1925–2022 2 %, ≥ 2023 3 %
+#   months   = 12 − (purchase_date.month − 1) in the purchase year (the handover month counts
+#              in full); 12 in every later year. (The year ownership ends: phase 4, Q11.)
+#   additions = Σ additions with tax_year ≤ the tax year; each accrues from 1 January of its
+#              year (R 7.4 Abs. 9 EStR, Q11). Additions are GROSS amounts: input VAT a
+#              VAT-exempt landlord cannot deduct is part of the Herstellungskosten (§9b Abs. 1
+#              EStG); only the 15 % test itself is net (§5.3). See limit_crossing_additions_gross.
+#   amount   = round((basis + additions) × rate × months ÷ 12, 2), half-up
+#   method_code (Z33) = 2 (laut Erläuterung) in the purchase year and in any year an addition
+#              starts; else 1.
+#   Without a selected split: amount, basis and rate null, method_code null, warning afa.no_split.
+# Sources (asserted where listed): the property (price), the split and its evidence document,
+#   every cost row and its document, the allocation of every addition counted.
+# Warnings:
+#   afa.cost_row_unpaid               a cost row whose paid_by is empty (info; it may have been
+#                                     paid privately). params: kind, amount.
+#   afa.acquisition_cost_without_row  a non-zero acquisition_cost allocation in no row's
+#                                     paid_by; NOT added to the basis. params: amount.
+#   afa.purchase_price_mismatch       only when at least one non-zero purchase_price allocation
+#                                     exists and Σ |amount| ≠ purchase_price (info).
+#                                     params: price, paid.
+#   A 0.00 allocation raises neither of the last two (D70).
+
+rule_set_year: 2026
+
+ids:
+  property: &P 0000000b-0000-4000-8000-000000000001
+  split: &S 0000005a-0000-4000-8000-000000000001
+  cost_grest: &C1 000000ac-0000-4000-8000-000000000001
+  cost_notar: &C2 000000ac-0000-4000-8000-000000000002
+  cost_grundbuch: &C3 000000ac-0000-4000-8000-000000000003
+  doc_kaufvertrag: &D_KV 00000d0c-0000-4000-8000-000000000001
+  doc_grest: &D_GREST 00000d0c-0000-4000-8000-000000000002
+  doc_notar: &D_NOTAR 00000d0c-0000-4000-8000-000000000003
+  doc_grundbuch: &D_GB 00000d0c-0000-4000-8000-000000000004
+  alloc_grest: &A_GREST 000000a1-0000-4000-8000-000000000001
+  alloc_notar: &A_NOTAR 000000a1-0000-4000-8000-000000000002
+  alloc_grundbuch: &A_GB 000000a1-0000-4000-8000-000000000003
+  alloc_price: &A_PP 000000a1-0000-4000-8000-000000000004
+  alloc_broker: &A_BROKER 000000a1-0000-4000-8000-000000000005
+  alloc_zero: &A_ZERO 000000a1-0000-4000-8000-000000000006
+  alloc_balcony: &A_BALCONY 000000a1-0000-4000-8000-000000000007
+  alloc_painter: &A_PAINTER 000000a1-0000-4000-8000-000000000008
+  alloc_tiles: &A_TILES 000000a1-0000-4000-8000-000000000009
+  alloc_roof: &A_ROOF 000000a1-0000-4000-8000-00000000000a
+
+bases:
+  # The §14 flat: ETW completed 1998, handover 1 Jul 2026, price 300,000.00, three cost rows
+  # (25,000.00), contract split 0.720000 → basis 234,000.00. Everything paid from the account.
+  flat: &flat
+    property_id: *P
+    purchase_price: "300000.00"
+    build_year: 1998
+    purchase_date: 2026-07-01
+    split: &split {id: *S, source: purchase_contract, building_share: "0.720000", evidence_document_id: *D_KV}
+    cost_rows: &rows
+      - {id: *C1, kind: real_estate_transfer_tax, amount: "19500.00", paid_on: 2026-04-20,
+         document_id: *D_GREST, paid_by: [*A_GREST]}
+      - {id: *C2, kind: notary, amount: "4200.00", paid_on: 2026-03-25, document_id: *D_NOTAR,
+         paid_by: [*A_NOTAR]}
+      - {id: *C3, kind: land_registry, amount: "1300.00", paid_on: 2026-05-12,
+         document_id: *D_GB, paid_by: [*A_GB]}
+    allocations: &evidence
+      - {allocation_id: *A_GREST, booking_date: 2026-04-20, amount: "-19500.00", category: acquisition_cost}
+      - {allocation_id: *A_NOTAR, booking_date: 2026-03-25, amount: "-4200.00", category: acquisition_cost}
+      - {allocation_id: *A_GB, booking_date: 2026-05-12, amount: "-1300.00", category: acquisition_cost}
+      - {allocation_id: *A_PP, booking_date: 2026-06-30, amount: "-300000.00", category: purchase_price}
+  flat_sources: &flat_sources
+    - {kind: property, id: *P}
+    - {kind: price_split, id: *S}
+    - {kind: document, id: *D_KV}
+    - {kind: acquisition_cost, id: *C1}
+    - {kind: acquisition_cost, id: *C2}
+    - {kind: acquisition_cost, id: *C3}
+    - {kind: document, id: *D_GREST}
+    - {kind: document, id: *D_NOTAR}
+    - {kind: document, id: *D_GB}
+
+cases:
+  - id: etw_1998_handover_july
+    description: 325,000.00 × 0.72 = 234,000.00; 2 % = 4,680.00 a year; 6/12 in 2026
+    facts: *flat
+    expect:
+      - {tax_year: 2026, amount: "2340.00", basis: "234000.00", rate: "0.02", months: 6,
+         method_code: 2, sources: *flat_sources}
+      - {tax_year: 2027, amount: "4680.00", basis: "234000.00", rate: "0.02", months: 12,
+         method_code: 1, sources: *flat_sources}
+
+  - id: build_1920_rate_2_5
+    description: completed before 1925 → 2.5 %; 200,000.00 × 0.8 = 160,000.00
+    facts:
+      property_id: *P
+      purchase_price: "200000.00"
+      build_year: 1920
+      purchase_date: 2025-01-15
+      split: {id: *S, source: bmf_tool, building_share: "0.800000"}
+    expect:
+      - {tax_year: 2025, amount: "4000.00", basis: "160000.00", rate: "0.025", months: 12, method_code: 2}
+      - {tax_year: 2026, amount: "4000.00", basis: "160000.00", rate: "0.025", months: 12, method_code: 1}
+
+  - id: build_2023_rate_3
+    description: completed after 2022 → 3 %; 400,000.00 × 0.75 = 300,000.00
+    facts:
+      property_id: *P
+      purchase_price: "400000.00"
+      build_year: 2023
+      purchase_date: 2026-01-01
+      split: {id: *S, source: bmf_tool, building_share: "0.750000"}
+    expect:
+      - {tax_year: 2026, amount: "9000.00", basis: "300000.00", rate: "0.03", months: 12, method_code: 2}
+
+  - id: handover_january_full_year
+    description: a handover on 31 January still counts January in full → 12/12
+    facts: {<<: *flat, purchase_date: 2026-01-31}
+    expect:
+      - {tax_year: 2026, amount: "4680.00", basis: "234000.00", rate: "0.02", months: 12, method_code: 2}
+
+  - id: handover_december_one_twelfth
+    description: a handover on 15 December → 1/12; 4,680.00 ÷ 12 = 390.00
+    facts: {<<: *flat, purchase_date: 2026-12-15}
+    expect:
+      - {tax_year: 2026, amount: "390.00", basis: "234000.00", rate: "0.02", months: 1, method_code: 2}
+
+  - id: nebenkosten_in_basis
+    description: >
+      the Nebenkosten join the basis at the building share: (250,000.00 + 8,750.00 + 3,750.00
+      + 1,250.00) × 0.8 = 211,000.00 → 4,220.00 (without them 200,000.00 → 4,000.00, next case)
+    facts:
+      property_id: *P
+      purchase_price: "250000.00"
+      build_year: 1975
+      purchase_date: 2025-03-01
+      split: {id: *S, source: purchase_contract, building_share: "0.800000", evidence_document_id: *D_KV}
+      cost_rows:
+        - {id: *C1, kind: real_estate_transfer_tax, amount: "8750.00", document_id: *D_GREST, paid_by: [*A_GREST]}
+        - {id: *C2, kind: notary, amount: "3750.00", document_id: *D_NOTAR, paid_by: [*A_NOTAR]}
+        - {id: *C3, kind: land_registry, amount: "1250.00", document_id: *D_GB, paid_by: [*A_GB]}
+    expect:
+      - {tax_year: 2026, amount: "4220.00", basis: "211000.00", rate: "0.02", months: 12, method_code: 1}
+
+  - id: nebenkosten_in_basis_none
+    description: the same purchase without cost rows
+    facts:
+      property_id: *P
+      purchase_price: "250000.00"
+      build_year: 1975
+      purchase_date: 2025-03-01
+      split: {id: *S, source: purchase_contract, building_share: "0.800000", evidence_document_id: *D_KV}
+    expect:
+      - {tax_year: 2026, amount: "4000.00", basis: "200000.00", rate: "0.02", months: 12, method_code: 1}
+
+  - id: herstellung_addition_2027
+    description: >
+      a Balkonanbau (an Erweiterung, so Herstellungskosten, §255 Abs. 2 S. 1 HGB) elected
+      `herstellung`, 12,000.00 paid in 2027, accrues from 1 Jan 2027:
+      (234,000.00 + 12,000.00) × 2 % = 4,920.00; method code 2 again in 2027
+    facts:
+      <<: *flat
+      additions:
+        - {allocation_id: *A_BALCONY, tax_year: 2027, amount: "12000.00", reason: herstellung}
+    expect:
+      - {tax_year: 2026, amount: "2340.00", basis: "234000.00", additions: "0", rate: "0.02",
+         months: 6, method_code: 2}
+      - {tax_year: 2027, amount: "4920.00", basis: "234000.00", additions: "12000.00", rate: "0.02",
+         months: 12, method_code: 2,
+         sources: [{kind: property, id: *P}, {kind: price_split, id: *S}, {kind: document, id: *D_KV},
+                   {kind: acquisition_cost, id: *C1}, {kind: acquisition_cost, id: *C2},
+                   {kind: acquisition_cost, id: *C3}, {kind: document, id: *D_GREST},
+                   {kind: document, id: *D_NOTAR}, {kind: document, id: *D_GB},
+                   {kind: allocation, id: *A_BALCONY}]}
+
+  - id: limit_crossing_additions_gross
+    description: >
+      The 15 % limit is crossed in 2027 (anschaffungsnah.yaml crossing_in_second_year), so the
+      counted costs join the basis GROSS in the year each was paid: 2026 painter 1,190.00 +
+      tiles 4,760.00 = 5,950.00; 2027 roof 42,840.00 (net 36,000.00). Amended 2026:
+      (234,000.00 + 5,950.00) × 2 % × 6/12 = 2,399.50. 2027: (234,000.00 + 5,950.00 +
+      42,840.00) × 2 % = 282,790.00 × 2 % = 5,655.80. (The spec draft computed 2027 on the net
+      amounts; §9b Abs. 1 EStG puts the non-deductible input VAT into the cost.)
+    facts:
+      <<: *flat
+      additions:
+        - {allocation_id: *A_PAINTER, tax_year: 2026, amount: "1190.00", reason: limit_exceeded}
+        - {allocation_id: *A_TILES, tax_year: 2026, amount: "4760.00", reason: limit_exceeded}
+        - {allocation_id: *A_ROOF, tax_year: 2027, amount: "42840.00", reason: limit_exceeded}
+    expect:
+      - {tax_year: 2026, amount: "2399.50", basis: "234000.00", additions: "5950.00", rate: "0.02",
+         months: 6, method_code: 2}
+      - {tax_year: 2027, amount: "5655.80", basis: "234000.00", additions: "48790.00", rate: "0.02",
+         months: 12, method_code: 2}
+
+  - id: no_split_empty_line
+    description: without a selected split there is no basis; the line stays empty
+    facts: {<<: *flat, split: null}
+    expect:
+      - {tax_year: 2026, amount: null, basis: null, rate: null, months: 6, method_code: null,
+         warnings: [{code: afa.no_split}]}
+
+  - id: cost_row_unpaid_warning
+    description: the notary bill was paid privately, so no allocation pairs with its row
+    facts:
+      <<: *flat
+      cost_rows:
+        - {id: *C1, kind: real_estate_transfer_tax, amount: "19500.00", paid_on: 2026-04-20,
+           document_id: *D_GREST, paid_by: [*A_GREST]}
+        - {id: *C2, kind: notary, amount: "4200.00", paid_on: 2026-03-25, document_id: *D_NOTAR}
+        - {id: *C3, kind: land_registry, amount: "1300.00", paid_on: 2026-05-12,
+           document_id: *D_GB, paid_by: [*A_GB]}
+      allocations:
+        - {allocation_id: *A_GREST, booking_date: 2026-04-20, amount: "-19500.00", category: acquisition_cost}
+        - {allocation_id: *A_GB, booking_date: 2026-05-12, amount: "-1300.00", category: acquisition_cost}
+        - {allocation_id: *A_PP, booking_date: 2026-06-30, amount: "-300000.00", category: purchase_price}
+    expect:
+      - {tax_year: 2026, amount: "2340.00", basis: "234000.00", rate: "0.02", months: 6, method_code: 2,
+         warnings: [{code: afa.cost_row_unpaid, params: {kind: notary, amount: "4200.00"}}]}
+
+  - id: acquisition_cost_without_row_not_added
+    description: >
+      a broker fee booked as acquisition_cost but with no cost row is not added to the basis
+      (the record is the one source, D55); a 0.00 acquisition_cost line raises nothing (D70)
+    facts:
+      <<: *flat
+      allocations:
+        - {allocation_id: *A_GREST, booking_date: 2026-04-20, amount: "-19500.00", category: acquisition_cost}
+        - {allocation_id: *A_NOTAR, booking_date: 2026-03-25, amount: "-4200.00", category: acquisition_cost}
+        - {allocation_id: *A_GB, booking_date: 2026-05-12, amount: "-1300.00", category: acquisition_cost}
+        - {allocation_id: *A_PP, booking_date: 2026-06-30, amount: "-300000.00", category: purchase_price}
+        - {allocation_id: *A_BROKER, booking_date: 2026-07-10, amount: "-2975.00", category: acquisition_cost}
+        - {allocation_id: *A_ZERO, booking_date: 2026-07-31, amount: "0.00", category: acquisition_cost}
+    expect:
+      - {tax_year: 2026, amount: "2340.00", basis: "234000.00", rate: "0.02", months: 6, method_code: 2,
+         warnings: [{code: afa.acquisition_cost_without_row, params: {amount: "2975.00"}}]}
+
+  - id: purchase_price_mismatch_warning
+    description: the account paid 290,000.00 of the 300,000.00 price (information only)
+    facts:
+      <<: *flat
+      allocations:
+        - {allocation_id: *A_GREST, booking_date: 2026-04-20, amount: "-19500.00", category: acquisition_cost}
+        - {allocation_id: *A_NOTAR, booking_date: 2026-03-25, amount: "-4200.00", category: acquisition_cost}
+        - {allocation_id: *A_GB, booking_date: 2026-05-12, amount: "-1300.00", category: acquisition_cost}
+        - {allocation_id: *A_PP, booking_date: 2026-06-30, amount: "-290000.00", category: purchase_price}
+    expect:
+      - {tax_year: 2026, amount: "2340.00", basis: "234000.00", rate: "0.02", months: 6, method_code: 2,
+         warnings: [{code: afa.purchase_price_mismatch, params: {price: "300000.00", paid: "290000.00"}}]}

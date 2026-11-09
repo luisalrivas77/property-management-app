@@ -1,0 +1,127 @@
+# Rule fixture: verbilligte Vermietung (hausbuch.rules.tax.verbilligt.check)
+#
+# check(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> ReducedRentResult
+# Spec: docs/phases/phase-3.md §5.8, D61, D71, D72. §21 Abs. 2 EStG, R 21.3 EStR.
+#   Per Wohnung (the flat of an ETW or EFH, each unit of an MFH), monthly figures:
+#   agreed_warm = Σ cold_rent + operating_costs_prepayment of the rent rows in force on 1 Jan of
+#     the year, or on each tenancy's start when it starts later (an included tenancy's rent is
+#     warm already).
+#   market_warm = round(cold_rent_per_m2 × area, 2) + umlagefaehig_monthly, with
+#     cold_rent_per_m2 from the market_rent input in force with valid_from ≤ 31 Dec of the year
+#     (the checklist's test, §8), area the row's area (§5.7), and umlagefaehig_monthly = Σ the
+#     year's confirmed hausgeld_umlagefaehig, grundsteuer and insurance ÷ months owned.
+#   ratio = agreed ÷ market (ratio_percent one decimal; the thresholds compare the exact ratio):
+#     ≥ 0.66 full; 0.50 ≤ ratio < 0.66 prognosis_needed (warning); < 0.50 partial (warning,
+#     cut_percent = round((1 − ratio) × 100), proposed for Z87). No input: no_market_rent (info).
+
+rule_set_year: 2026
+
+ids:
+  property: &P 0000000b-0000-4000-8000-000000000001
+  unit: &U1 0000000c-0000-4000-8000-000000000001
+  tenancy: &T1 0000000e-0000-4000-8000-000000000001
+  mietspiegel: &D_M 00000d0c-0000-4000-8000-000000000009
+  input_market: &IM 000000f1-0000-4000-8000-000000000001
+
+bases:
+  etw: &etw {id: *P, label: Wohnung Beispielweg, kind: etw, build_year: 1998,
+             purchase_date: 2026-07-01, purchase_price: "300000.00", living_area_m2: "62.50"}
+  units: &units [{id: *U1, label: WE 7, floor_area_m2: "62.50"}]
+  # 6 × 180.00 Hausgeld (umlagefähig) + 2 × 60.00 Grundsteuer = 1,200.00 over 6 months → 200.00.
+  costs: &costs
+    - {allocation_id: 000000a1-0000-4000-8000-000000000401, booking_date: 2026-07-01, amount: "-180.00", category: hausgeld_umlagefaehig}
+    - {allocation_id: 000000a1-0000-4000-8000-000000000402, booking_date: 2026-08-01, amount: "-180.00", category: hausgeld_umlagefaehig}
+    - {allocation_id: 000000a1-0000-4000-8000-000000000403, booking_date: 2026-08-17, amount: "-60.00", category: grundsteuer}
+    - {allocation_id: 000000a1-0000-4000-8000-000000000404, booking_date: 2026-09-01, amount: "-180.00", category: hausgeld_umlagefaehig}
+    - {allocation_id: 000000a1-0000-4000-8000-000000000405, booking_date: 2026-10-01, amount: "-180.00", category: hausgeld_umlagefaehig}
+    - {allocation_id: 000000a1-0000-4000-8000-000000000406, booking_date: 2026-11-01, amount: "-180.00", category: hausgeld_umlagefaehig}
+    - {allocation_id: 000000a1-0000-4000-8000-000000000407, booking_date: 2026-11-16, amount: "-60.00", category: grundsteuer}
+    - {allocation_id: 000000a1-0000-4000-8000-000000000408, booking_date: 2026-12-01, amount: "-180.00", category: hausgeld_umlagefaehig}
+  market_12_80: &market_12_80
+    - {id: *IM, property_id: *P, kind: market_rent, document_id: *D_M,
+       value: {valid_from: 2025-08-01, cold_rent_per_m2: "12.80", source: mietspiegel}}
+  check: &check {wohnung: property, id: *P, area_m2: "62.50", market_cold_per_m2: "12.80",
+                 umlagefaehig_monthly: "200.00", market_warm: "1000.00"}
+
+cases:
+  - id: ratio_103_nothing
+    description: 62.50 m² × 12.80 = 800.00 + 200.00 = 1,000.00; agreed 850.00 + 180.00 = 1,030.00 → 103.0 %
+    facts:
+      property: *etw
+      units: *units
+      tenancies:
+        - {id: *T1, unit_id: *U1, start_date: 2026-07-01,
+           rents: [{effective_from: 2026-07-01, cold_rent: "850.00", operating_costs_prepayment: "180.00"}]}
+      allocations: *costs
+      tax_inputs: *market_12_80
+    expect:
+      tax_year: 2026
+      checks:
+        - {<<: *check, agreed_warm: "1030.00", ratio_percent: "103.0", outcome: full}
+
+  - id: ratio_62_prognosis
+    description: agreed 500.00 + 120.00 = 620.00 → 62.0 %, a Totalüberschussprognose is needed
+    facts:
+      property: *etw
+      units: *units
+      tenancies:
+        - {id: *T1, unit_id: *U1, start_date: 2026-07-01,
+           rents: [{effective_from: 2026-07-01, cold_rent: "500.00", operating_costs_prepayment: "120.00"}]}
+      allocations: *costs
+      tax_inputs: *market_12_80
+    expect:
+      tax_year: 2026
+      checks:
+        - {<<: *check, agreed_warm: "620.00", ratio_percent: "62.0", outcome: prognosis_needed}
+      warnings: [{code: reduced_rent.prognosis_needed}]
+
+  - id: ratio_45_cut_55
+    description: agreed 350.00 + 100.00 = 450.00 → 45.0 %; 55 % proposed for Z87
+    facts:
+      property: *etw
+      units: *units
+      tenancies:
+        - {id: *T1, unit_id: *U1, start_date: 2026-07-01,
+           rents: [{effective_from: 2026-07-01, cold_rent: "350.00", operating_costs_prepayment: "100.00"}]}
+      allocations: *costs
+      tax_inputs: *market_12_80
+    expect:
+      tax_year: 2026
+      checks:
+        - {<<: *check, agreed_warm: "450.00", ratio_percent: "45.0", outcome: partial, cut_percent: 55}
+      warnings: [{code: reduced_rent.partial, params: {cut_percent: "55"}}]
+
+  - id: no_market_rent_info
+    description: no market_rent input → the check cannot run; information only
+    facts:
+      property: *etw
+      units: *units
+      tenancies:
+        - {id: *T1, unit_id: *U1, start_date: 2026-07-01,
+           rents: [{effective_from: 2026-07-01, cold_rent: "850.00", operating_costs_prepayment: "180.00"}]}
+      allocations: *costs
+    expect:
+      tax_year: 2026
+      checks:
+        - {wohnung: property, id: *P, agreed_warm: "1030.00", area_m2: "62.50", outcome: no_market_rent}
+      warnings: [{code: reduced_rent.no_market_rent}]
+
+  - id: market_rent_valid_from_mid_year
+    description: >
+      a Mietspiegel value valid from 1 Sep 2026 (11.20 €/m²) counts for 2026: 700.00 + 200.00 =
+      900.00; 1,030.00 ÷ 900.00 → 114.4 %
+    facts:
+      property: *etw
+      units: *units
+      tenancies:
+        - {id: *T1, unit_id: *U1, start_date: 2026-07-01,
+           rents: [{effective_from: 2026-07-01, cold_rent: "850.00", operating_costs_prepayment: "180.00"}]}
+      allocations: *costs
+      tax_inputs:
+        - {id: *IM, property_id: *P, kind: market_rent, document_id: *D_M,
+           value: {valid_from: 2026-09-01, cold_rent_per_m2: "11.20", source: mietspiegel}}
+    expect:
+      tax_year: 2026
+      checks:
+        - {<<: *check, market_cold_per_m2: "11.20", market_warm: "900.00", agreed_warm: "1030.00",
+           ratio_percent: "114.4", outcome: full}

@@ -1,0 +1,216 @@
+# Rule fixture: the document checklist's phase 3 entries
+# (hausbuch.rules.document_checklist.build_checklist, extended)
+#
+# build_checklist(facts, tax_year, today) -> list[ChecklistItem]
+# Spec: docs/phases/phase-3.md §8, D64, D70, D71. Everything in
+# tests/fixtures/phase1/document_checklist.yaml still holds; two entries follow
+# hausgeldabrechnung, in this order:
+#   cost_receipt  per allocation  one per confirmed allocation with tax_year = Y (the §5.1
+#                                 year, resolved before the rule runs), category repairs,
+#                                 renovation, loan_fees or professional_fees and a non-zero
+#                                 amount; satisfied by its document_id (whatever its typing).
+#                                 Scope context: category and booking_date. Order: booking_date,
+#                                 then id.                                              always
+#   market_rent   per Wohnung     one per Wohnung with a tenancy overlapping Y: the property for
+#                                 an ETW or EFH (scope property), each unit with such a tenancy
+#                                 for an MFH (scope unit, unit_label); satisfied by a
+#                                 market_rent input of that Wohnung in force (not superseded,
+#                                 not withdrawn) with valid_from ≤ 31 Dec Y. No documents
+#                                 listed (the input is the evidence). Only when market_rents is
+#                                 a list: None is a phase 1 caller and yields no item.  always
+# The base is an EFH bought (Übergang) 1 May 2024 whose phase 1 paperwork is all present:
+# Kaufvertrag, the BMF-tool split, the Grundsteuerbescheid; its tenancy started before the
+# purchase (no Übergabeprotokoll) without a deposit, and its lease is linked.
+
+ids:
+  property: &P 0000000b-0000-4000-8000-000000000001
+  unit: &U1 0000000c-0000-4000-8000-000000000001
+  tenancy: &T1 0000000e-0000-4000-8000-000000000001
+  split: &S1 0000005a-0000-4000-8000-000000000001
+  doc_kaufvertrag: &D1 00000d0c-0000-4000-8000-000000000001
+  doc_grundsteuer: &D2 00000d0c-0000-4000-8000-000000000002
+  doc_lease: &D3 00000d0c-0000-4000-8000-000000000003
+  doc_invoice: &D4 00000d0c-0000-4000-8000-000000000004
+  doc_invoice_2: &D5 00000d0c-0000-4000-8000-000000000005
+  repair: &A1 000000a1-0000-4000-8000-000000000601
+  renovation: &A2 000000a1-0000-4000-8000-000000000602
+  loan_fees: &A3 000000a1-0000-4000-8000-000000000603
+  professional_fees: &A4 000000a1-0000-4000-8000-000000000604
+  insurance: &A5 000000a1-0000-4000-8000-000000000605
+  bank_fees: &A6 000000a1-0000-4000-8000-000000000606
+  repair_moved: &A7 000000a1-0000-4000-8000-000000000607
+  repair_zero: &A8 000000a1-0000-4000-8000-000000000608
+  market_1: &M1 000000f1-0000-4000-8000-000000000001
+  market_2: &M2 000000f1-0000-4000-8000-000000000002
+
+bases:
+  docs: &docs
+    - {id: *D1, type: contract, subtype: purchase_contract, received_at: 2026-11-01T09:00:00Z,
+       links: [{target_type: property, target_id: *P}]}
+    - {id: *D2, type: bescheid, subtype: grundsteuerbescheid, received_at: 2026-11-02T09:00:00Z,
+       links: [{target_type: property, target_id: *P}]}
+  docs_lease_invoice: &docs_lease_invoice
+    - {id: *D1, type: contract, subtype: purchase_contract, received_at: 2026-11-01T09:00:00Z,
+       links: [{target_type: property, target_id: *P}]}
+    - {id: *D2, type: bescheid, subtype: grundsteuerbescheid, received_at: 2026-11-02T09:00:00Z,
+       links: [{target_type: property, target_id: *P}]}
+    - {id: *D3, type: contract, subtype: lease, received_at: 2026-11-03T09:00:00Z,
+       links: [{target_type: tenancy, target_id: *T1}]}
+    - {id: *D4, type: invoice, received_at: 2026-11-04T09:00:00Z}
+    - {id: *D5, type: invoice, received_at: 2026-11-05T09:00:00Z}
+  efh: &efh
+    property_id: *P
+    kind: efh
+    purchase_date: 2024-05-01
+    selected_price_split: {id: *S1, source: bmf_tool}
+    documents: *docs
+  efh_let: &efh_let
+    property_id: *P
+    kind: efh
+    purchase_date: 2024-05-01
+    selected_price_split: {id: *S1, source: bmf_tool}
+    units: [{id: *U1, label: Haus}]
+    tenancies: [{id: *T1, unit_id: *U1, start_date: 2023-01-01}]
+    documents: *docs_lease_invoice
+  base_items:
+    - &i_kv {code: purchase_contract, status: present, scope: {type: property, id: *P}, documents: [*D1]}
+    - &i_split {code: price_split, status: present, scope: {type: property, id: *P}}
+    - &i_gst {code: grundsteuerbescheid, status: present, scope: {type: property, id: *P}, documents: [*D2]}
+    - &i_lease {code: lease, status: present, scope: {type: tenancy, id: *T1, unit_label: Haus,
+                tenancy_start: 2023-01-01}, documents: [*D3]}
+
+cases:
+  - id: cost_receipt_missing_for_repair
+    description: a repair of 2026 without a linked invoice → its Beleg is missing
+    tax_year: 2026
+    today: 2026-11-09
+    facts:
+      <<: *efh
+      allocations:
+        - {id: *A1, category: repairs, amount: "-1190.00", booking_date: 2026-09-21, tax_year: 2026}
+    expect:
+      - *i_kv
+      - *i_split
+      - *i_gst
+      - {code: cost_receipt, status: missing,
+         scope: {type: allocation, id: *A1, category: repairs, booking_date: 2026-09-21}}
+
+  - id: cost_receipt_present
+    description: the repair's document_id is its Beleg
+    tax_year: 2026
+    today: 2026-11-09
+    facts:
+      <<: *efh
+      documents: *docs_lease_invoice
+      allocations:
+        - {id: *A1, category: repairs, amount: "-1190.00", booking_date: 2026-09-21, tax_year: 2026,
+           document_id: *D4}
+    expect:
+      - *i_kv
+      - *i_split
+      - *i_gst
+      - {code: cost_receipt, status: present,
+         scope: {type: allocation, id: *A1, category: repairs, booking_date: 2026-09-21},
+         documents: [*D4]}
+
+  - id: cost_receipt_only_for_named_categories
+    description: >
+      repairs, renovation, loan_fees and professional_fees need a Beleg; insurance and bank
+      fees do not; a repair the ten-day rule counts in 2027 is not an item of 2026
+    tax_year: 2026
+    today: 2026-11-09
+    facts:
+      <<: *efh
+      documents: *docs_lease_invoice
+      allocations:
+        - {id: *A5, category: insurance, amount: "-310.00", booking_date: 2026-02-01, tax_year: 2026}
+        - {id: *A3, category: loan_fees, amount: "-480.00", booking_date: 2026-06-15, tax_year: 2026,
+           document_id: *D5}
+        - {id: *A2, category: renovation, amount: "-4760.00", booking_date: 2026-10-06, tax_year: 2026,
+           document_id: *D4}
+        - {id: *A1, category: repairs, amount: "-1190.00", booking_date: 2026-09-21, tax_year: 2026}
+        - {id: *A4, category: professional_fees, amount: "-200.00", booking_date: 2026-03-15, tax_year: 2026}
+        - {id: *A6, category: bank_fees, amount: "-4.90", booking_date: 2026-04-30, tax_year: 2026}
+        - {id: *A7, category: repairs, amount: "-238.00", booking_date: 2026-12-28, tax_year: 2027}
+    expect:
+      - *i_kv
+      - *i_split
+      - *i_gst
+      - {code: cost_receipt, status: missing,
+         scope: {type: allocation, id: *A4, category: professional_fees, booking_date: 2026-03-15}}
+      - {code: cost_receipt, status: present,
+         scope: {type: allocation, id: *A3, category: loan_fees, booking_date: 2026-06-15},
+         documents: [*D5]}
+      - {code: cost_receipt, status: missing,
+         scope: {type: allocation, id: *A1, category: repairs, booking_date: 2026-09-21}}
+      - {code: cost_receipt, status: present,
+         scope: {type: allocation, id: *A2, category: renovation, booking_date: 2026-10-06},
+         documents: [*D4]}
+
+  - id: market_rent_missing_for_let_unit
+    description: the house is let in 2026 and no ortsübliche Miete is recorded → missing
+    tax_year: 2026
+    today: 2026-11-09
+    facts: {<<: *efh_let, market_rents: []}
+    expect:
+      - *i_kv
+      - *i_split
+      - *i_gst
+      - *i_lease
+      - {code: market_rent, status: missing, scope: {type: property, id: *P}}
+
+  - id: market_rent_present
+    description: a Mietspiegel value valid from 1 Aug 2025 is in force for 2026
+    tax_year: 2026
+    today: 2026-11-09
+    facts:
+      <<: *efh_let
+      market_rents: [{id: *M1, valid_from: 2025-08-01}]
+    expect:
+      - *i_kv
+      - *i_split
+      - *i_gst
+      - *i_lease
+      - {code: market_rent, status: present, scope: {type: property, id: *P}}
+
+  - id: market_rent_withdrawn_is_missing
+    description: the only value was withdrawn by a later row → missing again
+    tax_year: 2026
+    today: 2026-11-09
+    facts:
+      <<: *efh_let
+      market_rents:
+        - {id: *M1, valid_from: 2025-08-01}
+        - {id: *M2, valid_from: 2025-08-01, supersedes_id: *M1, withdrawn: true}
+    expect:
+      - *i_kv
+      - *i_split
+      - *i_gst
+      - *i_lease
+      - {code: market_rent, status: missing, scope: {type: property, id: *P}}
+
+  - id: zero_amount_is_not_evidence
+    description: a confirmed 0.00 repairs row without a document creates no item (D70)
+    tax_year: 2026
+    today: 2026-11-09
+    facts:
+      <<: *efh
+      allocations:
+        - {id: *A8, category: repairs, amount: "0.00", booking_date: 2026-10-31, tax_year: 2026}
+    expect:
+      - *i_kv
+      - *i_split
+      - *i_gst
+
+  - id: phase1_facts_unchanged
+    description: >
+      phase 1 facts (no allocations, market_rents None) give phase 1's items: the let house
+      gets no market_rent item
+    tax_year: 2026
+    today: 2026-11-09
+    facts: *efh_let
+    expect:
+      - *i_kv
+      - *i_split
+      - *i_gst
+      - *i_lease

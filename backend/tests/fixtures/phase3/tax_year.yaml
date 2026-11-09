@@ -1,0 +1,131 @@
+# Rule fixture: the tax year of a payment (hausbuch.rules.tax.tax_year.tax_year_of)
+#
+# tax_year_of(payment: PaymentFacts, rule_set: RuleSet) -> TaxYearResult
+# Spec: docs/phases/phase-3.md §5.1, D54, D67. §11 Abs. 1 S. 2, Abs. 2 S. 2 EStG with the
+# Fälligkeit requirement (BFH X R 2/21, 16 Feb 2022).
+#   1. year = booking_date.year (the bank's booking date; the value date is an interest
+#      convention). rule = paid.
+#   2. The economic year E exists only when `recurring` and the service period lies within
+#      one calendar year; E is that year. No period, or a period across the year end: no shift.
+#   3. The short period is rule_set.short_period_days (10): 22-31 Dec and 1-10 Jan.
+#      Booked 22-31 Dec of E-1 → counts in E when due_on lies in 22 Dec E-1 .. 10 Jan E.
+#      Booked 1-10 Jan of E+1 → counts in E when due_on lies in 22 Dec E .. 10 Jan E+1.
+#      Then rule = short_period_shift. Otherwise the year paid.
+#   4. due_on is resolved by the service before the rule runs (the rule never guesses). A
+#      recurring payment with one economic year E ≠ the booking year, booked inside the short
+#      period, but without due_on keeps the year paid with note due_date_missing.
+#   5. value_date in another calendar year than booking_date → note year_end_straddle
+#      (information; the year does not change).
+# For a loan line the service takes both the service period and due_on from the schedule
+# entry the matcher used (D39): the annuity case below carries the schedule's period 01/2027.
+
+rule_set_year: 2026
+
+cases:
+  - id: rent_january_paid_december
+    description: both inside the short period; January's rent belongs to 2027
+    payment:
+      booking_date: 2026-12-29
+      amount: "850.00"
+      category: rent_cold
+      recurring: true
+      service_period: {start: 2027-01-01, end: 2027-01-31}
+      due_on: 2027-01-03
+    expect: {year: 2027, rule: short_period_shift}
+
+  - id: rent_december_paid_late
+    description: paid inside the short period, but due on 3 Dec, long before it (X R 2/21)
+    payment:
+      booking_date: 2027-01-05
+      amount: "850.00"
+      category: rent_cold
+      recurring: true
+      service_period: {start: 2026-12-01, end: 2026-12-31}
+      due_on: 2026-12-03
+    expect: {year: 2027, rule: paid}
+
+  - id: rent_january_paid_too_early
+    description: 20 Dec is 12 days before the year end, outside the short period
+    payment:
+      booking_date: 2026-12-20
+      amount: "850.00"
+      category: rent_cold
+      recurring: true
+      service_period: {start: 2027-01-01, end: 2027-01-31}
+      due_on: 2027-01-03
+    expect: {year: 2026, rule: paid}
+
+  - id: hausgeld_january_debited_december
+    description: the Hausgeld for January debited on 28 Dec, due on 1 Jan (the period's first day)
+    payment:
+      booking_date: 2026-12-28
+      amount: "-180.00"
+      category: hausgeld_umlagefaehig
+      recurring: true
+      service_period: {start: 2027-01-01, end: 2027-01-31}
+      due_on: 2027-01-01
+    expect: {year: 2027, rule: short_period_shift}
+
+  - id: annuity_january_debited_december
+    description: >
+      the January annuity's interest debited on 30 Dec; period and due date come from the
+      schedule entry (due 1 Jan 2027)
+    payment:
+      booking_date: 2026-12-30
+      amount: "-695.60"
+      category: loan_interest
+      recurring: true
+      service_period: {start: 2027-01-01, end: 2027-01-31}
+      due_on: 2027-01-01
+    expect: {year: 2027, rule: short_period_shift}
+
+  - id: repair_paid_after_year_end
+    description: a repair is not recurring; the year paid, whatever period it was for
+    payment:
+      booking_date: 2027-01-02
+      amount: "-1190.00"
+      category: repairs
+      recurring: false
+      service_period: {start: 2026-11-01, end: 2026-11-30}
+    expect: {year: 2027, rule: paid}
+
+  - id: settlement_backpayment_january
+    description: a Nebenkosten back-payment for 2026 is not recurring
+    payment:
+      booking_date: 2027-01-08
+      amount: "120.00"
+      category: operating_costs_settlement
+      recurring: false
+      service_period: {start: 2026-01-01, end: 2026-12-31}
+    expect: {year: 2027, rule: paid}
+
+  - id: period_across_year_end
+    description: Hausgeld for Dec–Feb in one debit has no single economic year
+    payment:
+      booking_date: 2026-12-28
+      amount: "-540.00"
+      category: hausgeld_umlagefaehig
+      recurring: true
+      service_period: {start: 2026-12-01, end: 2027-02-28}
+      due_on: 2026-12-01
+    expect: {year: 2026, rule: paid}
+
+  - id: straddle_warning
+    description: booked 31 Dec with value date 2 Jan; the booking date decides, with a note
+    payment:
+      booking_date: 2026-12-31
+      value_date: 2027-01-02
+      amount: "-4.90"
+      category: bank_fees
+      recurring: false
+    expect: {year: 2026, rule: paid, notes: [year_end_straddle]}
+
+  - id: due_missing_no_shift
+    description: recurring, January's period, booked 29 Dec, but no due date known
+    payment:
+      booking_date: 2026-12-29
+      amount: "850.00"
+      category: rent_cold
+      recurring: true
+      service_period: {start: 2027-01-01, end: 2027-01-31}
+    expect: {year: 2026, rule: paid, notes: [due_date_missing]}

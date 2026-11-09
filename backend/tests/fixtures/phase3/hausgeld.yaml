@@ -1,0 +1,163 @@
+# Rule fixture: Hausgeld and the Erhaltungsrücklage (hausbuch.rules.tax.hausgeld)
+#
+# lines(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> RuleLines
+# Spec: docs/phases/phase-3.md §5.6, D57. BFH IX R 19/24.
+#   hausgeld_umlagefaehig → wk.allocable_costs; hausgeld_verwaltung → wk.non_allocable_costs;
+#     both in their tax year (§5.1).
+#   hausgeld_ruecklage → tracked (amount, count), never deducted.
+#   ruecklage_spent in force for year Y (the Hausgeldabrechnung Y) → wk.maintenance of Y, its
+#     sources the input and its document. No input for Y (an ETW owned in Y) → wk.maintenance
+#     of Y is provisional (0.00 from this rule) and warning hausgeld.abrechnung_pending.
+#   The owner's settlement with the WEG in Y+1 is ordinary hausgeld_* lines of Y+1.
+
+rule_set_year: 2026
+
+ids:
+  property: &P 0000000b-0000-4000-8000-000000000001
+  umlf_jul: &U07 000000a1-0000-4000-8000-000000000201
+  umlf_aug: &U08 000000a1-0000-4000-8000-000000000202
+  umlf_sep: &U09 000000a1-0000-4000-8000-000000000203
+  umlf_oct: &U10 000000a1-0000-4000-8000-000000000204
+  umlf_nov: &U11 000000a1-0000-4000-8000-000000000205
+  umlf_dec: &U12 000000a1-0000-4000-8000-000000000206
+  verw_jul: &V07 000000a1-0000-4000-8000-000000000211
+  verw_aug: &V08 000000a1-0000-4000-8000-000000000212
+  verw_sep: &V09 000000a1-0000-4000-8000-000000000213
+  verw_oct: &V10 000000a1-0000-4000-8000-000000000214
+  verw_nov: &V11 000000a1-0000-4000-8000-000000000215
+  verw_dec: &V12 000000a1-0000-4000-8000-000000000216
+  rl_jul: &R07 000000a1-0000-4000-8000-000000000221
+  rl_aug: &R08 000000a1-0000-4000-8000-000000000222
+  rl_sep: &R09 000000a1-0000-4000-8000-000000000223
+  rl_oct: &R10 000000a1-0000-4000-8000-000000000224
+  rl_nov: &R11 000000a1-0000-4000-8000-000000000225
+  rl_dec: &R12 000000a1-0000-4000-8000-000000000226
+  settle_umlf: &SU 000000a1-0000-4000-8000-000000000231
+  settle_verw: &SV 000000a1-0000-4000-8000-000000000232
+  abrechnung_2026: &D26 00000d0c-0000-4000-8000-000000000007
+  abrechnung_2025: &D25 00000d0c-0000-4000-8000-000000000008
+  input_2026: &I26 000000f1-0000-4000-8000-000000000001
+  input_2025: &I25 000000f1-0000-4000-8000-000000000002
+
+bases:
+  property: &property {id: *P, label: Wohnung Beispielweg, kind: etw, build_year: 1998,
+                       purchase_date: 2026-07-01, purchase_price: "300000.00"}
+  # Six debits of 320.00 (1 Jul – 1 Dec), split 180.00 / 40.00 / 100.00 by the Wirtschaftsplan.
+  six_months: &six_months
+    - {allocation_id: *U07, booking_date: 2026-07-01, amount: "-180.00", category: hausgeld_umlagefaehig}
+    - {allocation_id: *V07, booking_date: 2026-07-01, amount: "-40.00", category: hausgeld_verwaltung}
+    - {allocation_id: *R07, booking_date: 2026-07-01, amount: "-100.00", category: hausgeld_ruecklage}
+    - {allocation_id: *U08, booking_date: 2026-08-01, amount: "-180.00", category: hausgeld_umlagefaehig}
+    - {allocation_id: *V08, booking_date: 2026-08-01, amount: "-40.00", category: hausgeld_verwaltung}
+    - {allocation_id: *R08, booking_date: 2026-08-01, amount: "-100.00", category: hausgeld_ruecklage}
+    - {allocation_id: *U09, booking_date: 2026-09-01, amount: "-180.00", category: hausgeld_umlagefaehig}
+    - {allocation_id: *V09, booking_date: 2026-09-01, amount: "-40.00", category: hausgeld_verwaltung}
+    - {allocation_id: *R09, booking_date: 2026-09-01, amount: "-100.00", category: hausgeld_ruecklage}
+    - {allocation_id: *U10, booking_date: 2026-10-01, amount: "-180.00", category: hausgeld_umlagefaehig}
+    - {allocation_id: *V10, booking_date: 2026-10-01, amount: "-40.00", category: hausgeld_verwaltung}
+    - {allocation_id: *R10, booking_date: 2026-10-01, amount: "-100.00", category: hausgeld_ruecklage}
+    - {allocation_id: *U11, booking_date: 2026-11-01, amount: "-180.00", category: hausgeld_umlagefaehig}
+    - {allocation_id: *V11, booking_date: 2026-11-01, amount: "-40.00", category: hausgeld_verwaltung}
+    - {allocation_id: *R11, booking_date: 2026-11-01, amount: "-100.00", category: hausgeld_ruecklage}
+    - {allocation_id: *U12, booking_date: 2026-12-01, amount: "-180.00", category: hausgeld_umlagefaehig}
+    - {allocation_id: *V12, booking_date: 2026-12-01, amount: "-40.00", category: hausgeld_verwaltung}
+    - {allocation_id: *R12, booking_date: 2026-12-01, amount: "-100.00", category: hausgeld_ruecklage}
+  allocable: &allocable
+    key: wk.allocable_costs
+    amount: "1080.00"
+    sources: [{kind: allocation, id: *U07}, {kind: allocation, id: *U08}, {kind: allocation, id: *U09},
+              {kind: allocation, id: *U10}, {kind: allocation, id: *U11}, {kind: allocation, id: *U12}]
+  non_allocable: &non_allocable
+    key: wk.non_allocable_costs
+    amount: "240.00"
+    sources: [{kind: allocation, id: *V07}, {kind: allocation, id: *V08}, {kind: allocation, id: *V09},
+              {kind: allocation, id: *V10}, {kind: allocation, id: *V11}, {kind: allocation, id: *V12}]
+  ruecklage: &ruecklage {category: hausgeld_ruecklage, amount: "600.00", count: 6}
+  pending: &pending {key: wk.maintenance, amount: "0.00", provisional: true}
+  input_2026: &input_2026 {id: *I26, property_id: *P, kind: ruecklage_spent, tax_year: 2026,
+                           document_id: *D26, value: {amount: "350.00"}}
+
+cases:
+  - id: six_months_split
+    description: >
+      1,080.00 allocable, 240.00 non-allocable, 600.00 Rücklage tracked; no Abrechnung 2026 yet,
+      so Erhaltungsaufwand is provisional and the Abrechnung pending
+    facts: {property: *property, allocations: *six_months}
+    expect:
+      - tax_year: 2026
+        lines: [*allocable, *non_allocable, *pending]
+        tracked: [*ruecklage]
+        warnings: [{code: hausgeld.abrechnung_pending}]
+
+  - id: ruecklage_tracked_not_deducted
+    description: >
+      the Abrechnung 2026 is in and the WEG spent nothing from the Rücklage (0.00): the 600.00
+      paid in stays tracked, nothing is deducted for it and nothing is provisional
+    facts:
+      property: *property
+      allocations: *six_months
+      tax_inputs: [{<<: *input_2026, value: {amount: "0.00"}}]
+    expect:
+      - tax_year: 2026
+        lines: [*allocable, *non_allocable]
+        tracked: [*ruecklage]
+
+  - id: ruecklage_spent_confirmed_350
+    description: the Abrechnung 2026 says the WEG spent 350.00 (owner's share) → wk.maintenance 350.00
+    facts:
+      property: *property
+      allocations: *six_months
+      tax_inputs: [*input_2026]
+    expect:
+      - tax_year: 2026
+        lines:
+          - *allocable
+          - *non_allocable
+          - key: wk.maintenance
+            amount: "350.00"
+            sources: [{kind: tax_input, id: *I26}, {kind: document, id: *D26}]
+        tracked: [*ruecklage]
+
+  - id: abrechnung_pending_provisional
+    description: >
+      owned since 2025; the Abrechnung 2025 (250.00 spent) counts in 2025 only, so 2026 is
+      provisional until the Abrechnung 2026 arrives
+    facts:
+      property: {<<: *property, purchase_date: 2025-01-01}
+      allocations: *six_months
+      tax_inputs:
+        - {id: *I25, property_id: *P, kind: ruecklage_spent, tax_year: 2025, document_id: *D25,
+           value: {amount: "250.00"}}
+    expect:
+      - tax_year: 2025
+        lines:
+          - key: wk.maintenance
+            amount: "250.00"
+            sources: [{kind: tax_input, id: *I25}, {kind: document, id: *D25}]
+      - tax_year: 2026
+        lines: [*allocable, *non_allocable, *pending]
+        tracked: [*ruecklage]
+        warnings: [{code: hausgeld.abrechnung_pending}]
+
+  - id: settlement_backpayment_next_year
+    description: >
+      the owner's Nachzahlung for 2026 to the WEG, paid 15 Mar 2027 and split 110.00 / 40.00,
+      counts in 2027; the Abrechnung 2026 input does not change it
+    facts:
+      property: *property
+      allocations:
+        - {allocation_id: *SU, booking_date: 2027-03-15, amount: "-110.00", category: hausgeld_umlagefaehig}
+        - {allocation_id: *SV, booking_date: 2027-03-15, amount: "-40.00", category: hausgeld_verwaltung}
+      tax_inputs: [*input_2026]
+    expect:
+      - tax_year: 2026
+        lines:
+          - key: wk.maintenance
+            amount: "350.00"
+            sources: [{kind: tax_input, id: *I26}, {kind: document, id: *D26}]
+      - tax_year: 2027
+        lines:
+          - {key: wk.allocable_costs, amount: "110.00", sources: [{kind: allocation, id: *SU}]}
+          - {key: wk.non_allocable_costs, amount: "40.00", sources: [{kind: allocation, id: *SV}]}
+          - *pending
+        warnings: [{code: hausgeld.abrechnung_pending}]
