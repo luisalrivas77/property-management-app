@@ -112,6 +112,13 @@ export const RULE_CODE_TEXT: Record<string, string> = {
     "Eine Erweiterung zählt nur bei einer Renovierung mit „Herstellungskosten“ nicht zur 15 %-Grenze. Solange diese Ausnahme gilt, bleibt die Renovierung Herstellungskosten; dafür erst die Ausnahme „Erweiterung“ zurücknehmen.",
   "tax_input.useful_life_not_shorter":
     "Die Nutzungsdauer laut Gutachten muss kürzer sein als der Rest der gesetzlichen (40 Jahre vor 1925, 50 Jahre bis 2022, 33⅓ Jahre ab 2023 fertiggestellt, abzüglich der Jahre seit der Übergabe). Sonst gilt der gesetzliche AfA-Satz.",
+  // a movable asset, the Einbauküche (D80)
+  "tax_input.movable_asset_year":
+    "Eine mit der Wohnung gekaufte Einbauküche beginnt im Steuerjahr des Kaufs; eine später gekaufte frühestens in diesem Jahr.",
+  "tax_input.movable_asset_exceeds_building":
+    "Der Wert der Küche (mit ihrem Anteil an den Nebenkosten) muss kleiner sein als der Gebäudeanteil des Kaufpreises. Bitte den Wert oder die Kaufpreisaufteilung prüfen.",
+  "tax_input.movable_asset_no_split":
+    "Zuerst eine Kaufpreisaufteilung wählen: eine mitgekaufte Küche wird aus dem Gebäudeanteil herausgerechnet.",
   // exports of the draft (phase-3.md §10, §12)
   "tax_export.too_large":
     "Die Belege des Jahres sind zusammen größer als 100 MiB. Das Archiv bitte von Hand aufteilen; die Ausfüllhilfe geht weiterhin.",

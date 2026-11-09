@@ -18,6 +18,11 @@
 // - On the Steuern page, beside the AfA: a shorter useful life from a Gutachten (D79), the
 //   years and the first tax year, its document required; the server refuses a life not
 //   shorter than the statutory one (tax_input.useful_life_not_shorter).
+// - On the Steuern page: the Einbauküche (D80), its value, useful life (default 10 years),
+//   whether it was in the purchase price (default yes) and an optional Beleg; the server
+//   refuses a first year that does not fit (tax_input.movable_asset_year), a value not below
+//   the building's share (tax_input.movable_asset_exceeds_building) and a kitchen in the price
+//   without a selected split (tax_input.movable_asset_no_split).
 //
 // The labels live here, not in labels.ts (phase 3 step 2 scope).
 import { useCallback, useId, useMemo, useState, type FormEvent } from "react";
@@ -758,6 +763,269 @@ function UsefulLifeForm({
           <DocumentPicker value={documentId} onChange={setDocumentId} />
         </Field>
         <Field id={`${base}-note`} label="Notiz (optional)" description="Zum Beispiel wer das Gutachten erstellt hat.">
+          <input type="text" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} autoComplete="off" />
+        </Field>
+      </div>
+      {replaces !== null ? (
+        <p className="muted hint">Eine Korrektur ersetzt die Angabe ab {replaces.tax_year}; die bisherige bleibt im Verlauf.</p>
+      ) : null}
+      <div className="row">
+        <Submit busy={busy}>{replaces === null ? "Eintragen" : "Korrektur speichern"}</Submit>
+        <button type="button" className="link" onClick={onCancel}>
+          Abbrechen
+        </button>
+      </div>
+      {banner ? <p className="notice notice-error">{banner}</p> : null}
+      <FormBanner errors={form.errors} />
+    </form>
+  );
+}
+
+// --- on the Steuern page: the Einbauküche, a movable asset with its own AfA (D80) -------------
+
+type MovableAssetValue = Schemas["MovableAsset"];
+
+const MOVABLE_KEYS = ["value.amount", "value.useful_life_years", "tax_year", "document_id"] as const;
+const MOVABLE_CODE_FIELDS = {
+  "tax_input.movable_asset_exceeds_building": "value.amount",
+  "tax_input.movable_asset_year": "tax_year",
+} as const;
+const MOVABLE_ESTIMATE_HINT =
+  "Nennt der Kaufvertrag keinen Preis für die Küche, einen angemessenen Wert zum Zeitpunkt des Kaufs schätzen und die Grundlage der Schätzung (z. B. einen Ausdruck des Küchenplaners) als Beleg aufbewahren.";
+
+/**
+ * The Einbauküche (D80; BFH IX R 14/15): a movable asset with its own AfA over its useful life
+ * (default 10 years), on its own Anlage V line. Bought with the flat, its value (plus its share
+ * of the Nebenkosten) leaves the building's AfA basis and its first year is the purchase year;
+ * bought later, it starts in the year it was bought. The document is optional (an estimate is
+ * allowed; the draft warns without one). One kitchen per flat: a change supersedes it and keeps
+ * its first year. `onChanged` reloads the draft.
+ */
+export function MovableAssetSection({
+  propertyId,
+  purchaseYear,
+  onChanged,
+}: {
+  propertyId: string;
+  purchaseYear: number;
+  onChanged: () => void;
+}) {
+  const load = useCallback(() => loadInputs(propertyId, "movable_asset"), [propertyId]);
+  const state = useLoad(load);
+  const [editing, setEditing] = useState<TaxInput | "new" | null>(null);
+  const [banner, setBanner] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  function changed() {
+    state.reload();
+    onChanged();
+  }
+
+  async function withdraw(row: TaxInput) {
+    setBusy(true);
+    setBanner(null);
+    try {
+      await record(propertyId, {
+        property_id: propertyId,
+        kind: "movable_asset",
+        tax_year: row.tax_year,
+        document_id: row.document_id,
+        value: row.value,
+        supersedes_id: row.id,
+        withdrawn: true,
+      });
+    } catch (error) {
+      setBanner(messageOf(error) ?? "Das Zurückziehen hat nicht geklappt. Bitte erneut versuchen.");
+    } finally {
+      setBusy(false);
+      changed();
+    }
+  }
+
+  return (
+    <div className="stack">
+      <Loading state={state}>
+        {(rows) =>
+          rows.length === 0 ? (
+            <p className="muted">
+              Eine Einbauküche ist kein Teil des Gebäudes: sie wird über ihre eigene Nutzungsdauer (meist 10 Jahre)
+              abgeschrieben, in einer eigenen Zeile der Anlage V. War sie im Kaufpreis enthalten, kommt ihr Wert aus der
+              AfA des Gebäudes heraus.
+            </p>
+          ) : (
+            <ul className="stack">
+              {rows.map((row) => {
+                const value = row.value as MovableAssetValue;
+                return (
+                  <li key={row.id} className="row">
+                    <span>
+                      Einbauküche {formatMoney(value.amount)}, {value.useful_life_years} Jahre ab {row.tax_year}
+                      {value.in_purchase_price ? " (im Kaufpreis enthalten)" : " (gesondert gekauft)"}
+                      {row.document_id ? "" : ", ohne Beleg"}
+                    </span>
+                    <span className="spacer" />
+                    <button type="button" className="link" onClick={() => setEditing(row)} disabled={busy}>
+                      Korrigieren
+                    </button>
+                    <button type="button" className="link" onClick={() => void withdraw(row)} disabled={busy}>
+                      Zurückziehen
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )
+        }
+      </Loading>
+      {banner ? <p className="notice notice-error">{banner}</p> : null}
+      {editing === null ? (
+        state.data !== undefined && state.data.length === 0 ? (
+          <div>
+            <button type="button" className="secondary" onClick={() => setEditing("new")}>
+              Einbauküche eintragen
+            </button>
+          </div>
+        ) : null
+      ) : (
+        <MovableAssetForm
+          key={editing === "new" ? "new" : editing.id}
+          propertyId={propertyId}
+          purchaseYear={purchaseYear}
+          replaces={editing === "new" ? null : editing}
+          onDone={() => {
+            setEditing(null);
+            changed();
+          }}
+          onCancel={() => setEditing(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function MovableAssetForm({
+  propertyId,
+  purchaseYear,
+  replaces,
+  onDone,
+  onCancel,
+}: {
+  propertyId: string;
+  purchaseYear: number;
+  replaces: TaxInput | null;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const old = replaces?.value as MovableAssetValue | undefined;
+  const [amount, setAmount] = useState(old ? decimalInput(old.amount) : "");
+  const [life, setLife] = useState(String(old?.useful_life_years ?? 10));
+  const [inPrice, setInPrice] = useState(old?.in_purchase_price ?? true);
+  const [fromYear, setFromYear] = useState(String(replaces?.tax_year ?? purchaseYear));
+  const [documentId, setDocumentId] = useState<string | null>(replaces?.document_id ?? null);
+  const [note, setNote] = useState(replaces?.note ?? "");
+  const [busy, setBusy] = useState(false);
+  const [banner, setBanner] = useState<string | null>(null);
+  const form = useFormErrors(useMemo(() => [...MOVABLE_KEYS], []), MOVABLE_CODE_FIELDS);
+  const base = useId();
+  // Bought with the flat, the first year is the purchase year; a correction keeps its year.
+  const yearFixed = replaces !== null || inPrice;
+  const shownYear = replaces !== null ? String(replaces.tax_year) : inPrice ? String(purchaseYear) : fromYear;
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    const values = collector();
+    const money = values.take("value.amount", toMoneyString(amount));
+    const years = values.take("value.useful_life_years", wholeNumber(life, 1, "Bitte die Nutzungsdauer in ganzen Jahren eingeben (1 bis 25)."));
+    if (years !== undefined && years > 25) values.messages["value.useful_life_years"] = ["Höchstens 25 Jahre."];
+    const year = values.take("tax_year", wholeNumber(shownYear, 2000, "Bitte ein Steuerjahr eingeben, z. B. 2026."));
+    if (money !== undefined && Number(money) <= 0) values.messages["value.amount"] = ["Bitte einen Betrag über 0 € eingeben."];
+    if (!values.ok || money === undefined || years === undefined || year === undefined) return form.invalid(values.messages);
+    setBusy(true);
+    setBanner(null);
+    form.clear();
+    try {
+      await record(propertyId, {
+        property_id: propertyId,
+        kind: "movable_asset",
+        tax_year: year,
+        document_id: documentId,
+        value: { label: "einbaukueche", amount: money, useful_life_years: years, in_purchase_price: inPrice },
+        note: note.trim() || null,
+        supersedes_id: replaces?.id ?? null,
+        withdrawn: false,
+      });
+      onDone();
+    } catch (error) {
+      const codes = codesOf(error);
+      if (codes.includes("tax_input.not_current") && replaces === null) {
+        setBanner("Eine Einbauküche ist schon erfasst. Bitte diese korrigieren.");
+      } else if (codes.includes("tax_input.not_current")) {
+        setBanner(CODE_MESSAGES["tax_input.not_current"] ?? null);
+      } else if (codes.includes("tax_input.scope_invalid")) {
+        setBanner("Eine Korrektur behält das erste Jahr. Um es zu ändern, die Küche zurückziehen und neu eintragen.");
+      } else {
+        form.fail(error);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="stack" onSubmit={submit} noValidate>
+      <p className="muted hint">{MOVABLE_ESTIMATE_HINT}</p>
+      <div className="grid">
+        <Field
+          id={`${base}-amount`}
+          label="Wert der Küche (€)"
+          description="Im Kaufpreis enthalten: ihr Anteil am Kaufpreis (brutto). Gesondert gekauft: ihr Kaufpreis (brutto)."
+          errors={form.of("value.amount")}
+        >
+          <input type="text" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoComplete="off" />
+        </Field>
+        <Field
+          id={`${base}-life`}
+          label="Nutzungsdauer (Jahre)"
+          description="Für eine Einbauküche meist 10 Jahre."
+          errors={form.of("value.useful_life_years")}
+        >
+          <input type="text" inputMode="numeric" value={life} onChange={(e) => setLife(e.target.value)} autoComplete="off" />
+        </Field>
+        <div className="field">
+          <label className="inline" htmlFor={`${base}-in-price`}>
+            <input id={`${base}-in-price`} type="checkbox" checked={inPrice} onChange={(e) => setInPrice(e.target.checked)} />
+            Im Kaufpreis enthalten
+          </label>
+          <p className="muted hint">
+            Mit der Wohnung gekauft: ihr Wert und ihr Anteil an den Nebenkosten kommen aus der AfA des Gebäudes heraus;
+            die AfA beginnt mit dem Übergang.
+          </p>
+        </div>
+        <Field
+          id={`${base}-from`}
+          label="Ab Steuerjahr"
+          description="Das Jahr, in dem die Küche angeschafft wurde. Im Kaufpreis enthalten: das Jahr des Kaufs."
+          errors={form.of("tax_year")}
+        >
+          <input
+            type="text"
+            inputMode="numeric"
+            value={shownYear}
+            onChange={(e) => setFromYear(e.target.value)}
+            disabled={yearFixed}
+            autoComplete="off"
+          />
+        </Field>
+        <Field
+          id={`${base}-document`}
+          label="Beleg (optional)"
+          description="Kaufvertrag, Rechnung oder die Grundlage der Schätzung, z. B. ein Ausdruck des Küchenplaners."
+          errors={form.of("document_id")}
+        >
+          <DocumentPicker value={documentId} onChange={setDocumentId} />
+        </Field>
+        <Field id={`${base}-note`} label="Notiz (optional)" description="Zum Beispiel wie der Wert geschätzt wurde.">
           <input type="text" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} autoComplete="off" />
         </Field>
       </div>
