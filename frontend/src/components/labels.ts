@@ -22,9 +22,13 @@ import type {
   RetentionClass,
   RetentionHold,
   StatementFormat,
+  TaxSourceKind,
   TenancyRole,
+  WarningCode,
 } from "@/api/schemas";
 import type { components } from "@/api/types";
+
+import { formatDate, formatMoney } from "./format";
 
 // Step 4's enums have no alias in schemas.ts yet.
 type AllocationCategory = components["schemas"]["AllocationCategory"];
@@ -342,6 +346,89 @@ export const INBOX_ITEM_KIND: Record<InboxItemKind, string> = {
   allocation_proposed: "Vorschlag prüfen",
   unmatched: "Nicht zugeordnet",
 };
+
+// --- The Anlage V draft (phase-3.md §11) ----------------------------------------------
+
+type Params = Record<string, string>;
+
+/** An amount param ("4760.00") as "4.760,00 €"; "–" when the rule sent none. */
+const money = (params: Params, key = "amount") => formatMoney(params[key]);
+
+/** The German sentence of a draft warning, its params filled in (amounts as decimal strings,
+ * dates ISO, phase-3.md §5). The rules send codes and params only; the text lives here. */
+export const WARNING_TEXT: Record<WarningCode, (params: Params) => string> = {
+  year_end_straddle: (p) =>
+    `Eine Zahlung${p.amount ? ` über ${money(p)}` : ""} ist im einen Jahr gebucht und im anderen wertgestellt; sie zählt im Jahr der Buchung.`,
+  "afa.no_split": () => "Keine Kaufpreisaufteilung gewählt: ohne Gebäudeanteil bleibt die AfA leer.",
+  "afa.cost_row_unpaid": (p) =>
+    `${p.kind ? (ACQUISITION_COST_KIND[p.kind as AcquisitionCostKind] ?? p.kind) : "Nebenkosten"} ${money(p)}: keine Zahlung vom Mietkonto gefunden (vielleicht privat bezahlt). Sie zählt trotzdem zur AfA-Basis.`,
+  "afa.acquisition_cost_without_row": (p) =>
+    `Zahlung von Anschaffungsnebenkosten über ${money(p)} ohne passenden Eintrag unter Nebenkosten: sie zählt erst zur AfA-Basis, wenn sie dort erfasst ist.`,
+  "afa.purchase_price_mismatch": (p) =>
+    `Vom Konto bezahlter Kaufpreis ${money(p, "paid")} weicht vom Kaufpreis ${money(p, "price")} ab.`,
+  "limit.exceeded": (p) =>
+    `Die 15 %-Grenze ist${p.exceeded_in_year ? ` ${p.exceeded_in_year}` : ""} überschritten: die Renovierungskosten des Dreijahresfensters werden Herstellungskosten und laufen über die AfA.`,
+  "limit.prior_year_amendment": (p) =>
+    `Die 15 %-Grenze wurde ${p.exceeded_in_year ?? "später"} überschritten: ${money(p)} dieses Jahres werden nachträglich Herstellungskosten; der Bescheid für dieses Jahr wird geändert.`,
+  "limit.estimated_net": () =>
+    "Für mindestens eine Rechnung fehlt der Nettobetrag; die 15 %-Grenze rechnet dort mit geschätzter Umsatzsteuer.",
+  "renovation.undecided": (p) =>
+    `Renovierung ${money(p)} einordnen: Erhaltungsaufwand oder Herstellungskosten? Bis dahin nicht abgezogen.`,
+  "interest.certificate_mismatch": (p) =>
+    `Zinsbescheinigung ${money(p, "certified")}, gebucht ${money(p, "booked")}: Unterschied ${money(p, "difference")}. Meist eine Rate, die die Zehn-Tage-Regel ins andere Jahr verschiebt.`,
+  "hausgeld.abrechnung_pending": () =>
+    "Die Hausgeldabrechnung fehlt noch: was die WEG aus der Rücklage ausgegeben hat, ist vorläufig nicht enthalten.",
+  "income.other_review": (p) =>
+    `Sonstige Einnahme ${money(p)}${p.counterparty_iban ? ` von ${p.counterparty_iban}` : ""} prüfen.`,
+  "income.pre_handover": (p) =>
+    `${p.count ?? "Einige"} ${p.count === "1" ? "Einnahme" : "Einnahmen"} vor dem Übergang (${money(p)}): noch nicht festgelegt, wie sie zählen.`,
+  "income.living_area_missing": () =>
+    "Die Wohnfläche der Immobilie fehlt; Zeile 13 nimmt die Summe der Flächen der Einheiten.",
+  "umlagen.mixed_terms": () =>
+    "Mietverhältnisse mit Nebenkosten inklusive und mit Vorauszahlung gemischt: das Kreuz in Zeile 24 bleibt leer.",
+  "reduced_rent.no_market_rent": () =>
+    "Ortsübliche Miete eintragen, um die verbilligte Vermietung (66 %-Grenze) zu prüfen.",
+  "reduced_rent.prognosis_needed": () =>
+    "Die Miete liegt zwischen 50 % und 66 % der ortsüblichen: das Finanzamt kann eine Überschussprognose verlangen.",
+  "reduced_rent.partial": (p) =>
+    `Die Miete liegt unter 50 % der ortsüblichen: die Werbungskosten sind nur anteilig abziehbar${p.cut_percent ? ` (Kürzung um ${p.cut_percent} %)` : ""}.`,
+  "draft.open_lines_excluded": (p) =>
+    `${p.count ?? "Einige"} ${p.count === "1" ? "Zeile" : "Zeilen"} in Zu prüfen (${money(p, "sum")}) ${p.count === "1" ? "ist" : "sind"} im Entwurf noch nicht enthalten.`,
+  "draft.form_provisional": () =>
+    "Das Formular für dieses Jahr ist noch nicht veröffentlicht; Zeilen und Kennzahlen sind vorläufig.",
+  "draft.allocation_without_property": (p) =>
+    `Eine Zahlung des Kontos${p.amount ? ` über ${money(p)}` : ""} ist keiner Immobilie zugeordnet.`,
+  "archive.finanzamt_copy_needed": () =>
+    "Ein Dokument öffnet nicht in jedem Programm (Adobe-Formular oder Anmerkungen): für das Finanzamt eine Kopie drucken.",
+};
+
+/** What a line's source is, in the sources drawer. */
+export const TAX_SOURCE_KIND: Record<TaxSourceKind, string> = {
+  allocation: "Zahlung",
+  transaction: "Kontoumsatz",
+  document: "Dokument",
+  property: "Kaufpreis der Immobilie",
+  price_split: "Kaufpreisaufteilung",
+  acquisition_cost: "Anschaffungsnebenkosten",
+  loan: "Darlehen",
+  tax_input: "Steuerliche Angabe",
+  rule: "Regelwerk des Steuerjahres",
+};
+
+/** A line note of the draft (the §5.1 notes); an unknown note is shown as sent. */
+const TAX_NOTE: Record<string, string> = {
+  due_date_missing: "Fälligkeit unbekannt: zählt im Jahr der Zahlung",
+  year_end_straddle: "Wertstellung im anderen Jahr",
+};
+
+export function taxNote(note: string): string {
+  return TAX_NOTE[note] ?? note;
+}
+
+/** "29.12.2026 → 2027" for a payment the ten-day rule moved. */
+export function movedLabel(bookingDate: string, taxYear: number): string {
+  return `${formatDate(bookingDate)} → ${taxYear}`;
+}
 
 /** The options of a <select> over an enum label map, in declaration order. */
 export function options<K extends string>(labels: Record<K, string>): [K, string][] {

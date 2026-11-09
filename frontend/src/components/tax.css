@@ -1,0 +1,290 @@
+/* Steuern › Anlage V (phase-3.md §11, docs/mockups/04-tax-year.png): the lines on the left,
+   Offene Punkte, Unterlagen, the 15 % card and Übergabe on the right; one column on a phone. */
+
+.tax-head .muted {
+  display: block;
+  margin-top: 2px;
+  font-size: 15px;
+}
+
+.tax-pickers {
+  gap: 12px;
+}
+
+.tabs .tab-disabled {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.tab-note {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.tax-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+@media (min-width: 960px) {
+  .tax-layout {
+    grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+  }
+}
+
+.tax-main,
+.tax-side {
+  min-width: 0;
+}
+
+/* progress and the three figures */
+
+.tax-bar {
+  height: 8px;
+  margin: 10px 0 8px;
+  border-radius: var(--radius-pill);
+  background: var(--divider);
+  overflow: hidden;
+}
+
+.tax-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.tax-bar.tax-bar-over > span {
+  background: var(--warn);
+}
+
+.tax-subline {
+  margin: 0;
+  font-size: 14px;
+}
+
+.tax-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin: 16px 0 0;
+}
+
+.tax-figures div {
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--tag-bg);
+}
+
+.tax-figures dt {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.tax-figures dd {
+  margin: 4px 0 0;
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.tax-negative {
+  color: var(--danger);
+}
+
+.tax-owners {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  font-size: 14px;
+}
+
+.tax-owners li,
+.tax-tracked li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding: 6px 0;
+}
+
+.tax-owners li > .num,
+.tax-tracked li > .num {
+  margin-left: auto;
+}
+
+.tax-layout .num,
+.tax-sources .num {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* the Einnahmen and Werbungskosten cards */
+
+.tax-line-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.tax-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding: 12px 0;
+  border-top: 1px solid var(--divider);
+}
+
+.tax-line-list .tax-line:first-child {
+  border-top: 0;
+}
+
+.tax-line-main {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.tax-line p {
+  margin: 0;
+}
+
+.tax-line-label {
+  font-weight: 600;
+}
+
+.tax-line-sub,
+.tax-line-ref {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.tax-line-amount {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  margin-left: auto;
+  font-weight: 600;
+}
+
+.tax-total {
+  align-items: baseline;
+  justify-content: space-between;
+  border-top: 2px solid var(--border);
+  font-weight: 700;
+}
+
+.tax-unit-rows {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0 0 0 12px;
+  border-left: 2px solid var(--divider);
+  font-size: 14px;
+}
+
+.tax-unit-rows li + li {
+  margin-top: 6px;
+}
+
+button.link.tax-sources-button {
+  font-size: 13px;
+}
+
+.tax-sources {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tax-sources li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--divider);
+}
+
+.tax-sources li:first-child {
+  border-top: 0;
+}
+
+/* the grey footer: tracked, moved, before the handover */
+
+.card.tax-tracked {
+  background: var(--tag-bg);
+  font-size: 14px;
+}
+
+.tax-tracked ul {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+}
+
+.tax-tracked-head {
+  margin: 0;
+  font-weight: 700;
+  color: var(--text-2);
+}
+
+/* the right column */
+
+.tax-open-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.tax-open-item {
+  padding: 10px 0;
+  border-top: 1px solid var(--divider);
+}
+
+.tax-open-item:first-child {
+  border-top: 0;
+}
+
+.tax-open-item .badge {
+  margin-left: 0;
+}
+
+.tax-open-item p {
+  margin: 6px 0 0;
+  font-size: 14px;
+}
+
+.tax-open-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+
+.tax-limit-facts {
+  margin-top: 8px;
+}
+
+.tax-limit-note {
+  margin: 8px 0 0;
+  font-size: 14px;
+}
+
+.tax-handover .row {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tax-footer {
+  margin-top: 24px;
+  font-size: 13px;
+}
