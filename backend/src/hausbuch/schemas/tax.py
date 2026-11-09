@@ -196,6 +196,7 @@ class RuleSet(Schema):
     reduced_rent_full: Rate = Decimal("0.66")
     reduced_rent_split: Rate = Decimal("0.50")
     speculation_years: int = Field(default=10, ge=1)
+    speculation_freigrenze: PositiveMoney = Decimal("1000")  # §23 Abs. 3 S. 5, per spouse (D93)
     form: FormMapping
 
     @model_validator(mode="after")

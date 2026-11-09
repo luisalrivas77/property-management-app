@@ -417,7 +417,7 @@ class YearFigures(Schema):
     taxable_result: Money | None
     afa: Money | None  # the building's (wk.afa)
     # The D80 kitchen: the draft's wk.afa_movable line amount (§5.6, Q-O4); None without one.
-    # The §23 add-back takes `afa` (wk.afa) only.
+    # The §23 add-back takes both `afa` and `afa_movable` (D94).
     afa_movable: Money | None = None
     tax_effect: TaxEffect | None
     net_cash: Money
@@ -441,7 +441,8 @@ class YearFigures(Schema):
 
 
 class OwnerGain(Schema):
-    """One spouse's share of a §23 gain, tested against the Freigrenze (< 1,000, a cliff)."""
+    """One spouse's share of a §23 gain, tested against the Freigrenze of the sale year's rule
+    set (`speculation_freigrenze`, D93; a cliff)."""
 
     owner_id: UUID
     share: Fraction
@@ -476,7 +477,11 @@ class SaleResult(Schema):
     taxable: bool
     value: Money
     selling_costs: Money
-    afa_claimed: Money  # the building's AfA of every year owned through the sale year
+    # D94: the AfA added back, building (wk.afa) and the D80 kitchen (wk.afa_movable), of
+    # every year owned through the sale year; afa_claimed is their sum.
+    afa_claimed: Money
+    afa_claimed_building: Money
+    afa_claimed_movable: Money
     gain: Money | None
     gain_per_owner: list[OwnerGain] = Field(default_factory=list)
     freigrenze_applied: bool
@@ -496,6 +501,8 @@ class SaleResult(Schema):
             self.value - self.selling_costs - self.sale_tax - self.loan_balance
         ):
             raise ValueError("net_proceeds = value − selling costs − sale tax − loan balance")
+        if self.afa_claimed != self.afa_claimed_building + self.afa_claimed_movable:
+            raise ValueError("afa_claimed = the building's AfA + the kitchen's (D94)")
         if self.bridge and sum((r.amount for r in self.bridge), Decimal("0")) != self.profit:
             raise ValueError("the bridge rows sum to the profit")
         if not self.taxable and (self.gain is not None or self.sale_tax != 0):

@@ -11973,7 +11973,7 @@
           "below_freigrenze"
         ],
         "title": "OwnerGain",
-        "description": "One spouse's share of a §23 gain, tested against the Freigrenze (< 1,000, a cliff)."
+        "description": "One spouse's share of a §23 gain, tested against the Freigrenze of the sale year's rule\nset (`speculation_freigrenze`, D93; a cliff)."
       },
       "OwnerPatch": {
         "properties": {
@@ -13820,6 +13820,16 @@
             "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
             "title": "Afa Claimed"
           },
+          "afa_claimed_building": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Afa Claimed Building"
+          },
+          "afa_claimed_movable": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Afa Claimed Movable"
+          },
           "gain": {
             "anyOf": [
               {
@@ -13916,6 +13926,8 @@
           "value",
           "selling_costs",
           "afa_claimed",
+          "afa_claimed_building",
+          "afa_claimed_movable",
           "gain",
           "freigrenze_applied",
           "sale_tax",

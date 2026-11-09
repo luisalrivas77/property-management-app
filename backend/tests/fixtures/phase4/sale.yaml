@@ -12,9 +12,14 @@
 # balance and result, the AfA claimed and every year's net cash.
 # - The sale and the price's Zufluss are on 31 Dec of the sale year; §23 applies when that is
 #   before tax_free_from (11 Mar 2036 here).
+# - AfA claimed (D94): facts.afa_claimed is Σ the building AfA (wk.afa) of every year owned
+#   through the sale year, facts.afa_claimed_movable Σ the D80 kitchen's (wk.afa_movable;
+#   0.00 when left out, no kitchen). expect.afa_claimed = afa_claimed_building +
+#   afa_claimed_movable, the two parts stated.
 # - selling_costs = value × rate, half-up. gain = value − selling costs − (purchase price +
-#   cost rows − building AfA claimed). Each owner's share of the gain is half-up, the last
-#   owner taking the remainder; below_freigrenze when 0 < the owner's gain < 1,000 (a cliff).
+#   cost rows − AfA claimed, building and kitchen). Each owner's share of the gain is half-up,
+#   the last owner taking the remainder; below_freigrenze when 0 < the owner's gain < the
+#   sale year's rule set speculation_freigrenze (1,000 in 2025 and 2026, D93; a cliff).
 #   sale_tax = T(base + R + taxed gain) − T(base + R), the taxed gain being the owners' gains
 #   that are positive and not below the Freigrenze. A loss is taxed at 0.00 and not refunded.
 # - E₀ = purchase price + cost rows − loan principal. profit = net proceeds + Σ CF − E₀, and
@@ -58,6 +63,8 @@ cases:
     value: '337652.64'
     selling_costs: '12054.20'
     afa_claimed: '46465.72'
+    afa_claimed_building: '46465.72'
+    afa_claimed_movable: '0.00'
     gain: '47064.16'
     gain_per_owner:
     - {owner_id: 0000000a-0000-4000-8000-000000000001, share: {numerator: 1, denominator: 2}, gain: '23532.08',
@@ -126,6 +133,8 @@ cases:
     value: '300000.00'
     selling_costs: '10710.00'
     afa_claimed: '49140.00'
+    afa_claimed_building: '49140.00'
+    afa_claimed_movable: '0.00'
     gain: null
     gain_per_owner: []
     freigrenze_applied: false
@@ -160,7 +169,7 @@ cases:
 - id: gain_below_freigrenze
   description: '§10.3 A sold in 2027 at 319,780.00 without selling costs: gain 1,800.00, 900.00 per spouse
     < 1,000 → tax 0.00'
-  facts:
+  facts: &below_freigrenze_facts
     sale_year: 2027
     purchase_date: 2026-07-01
     tax_free_from: 2036-03-11
@@ -188,6 +197,8 @@ cases:
     value: '319780.00'
     selling_costs: '0.00'
     afa_claimed: '7020.00'
+    afa_claimed_building: '7020.00'
+    afa_claimed_movable: '0.00'
     gain: '1800.00'
     gain_per_owner:
     - {owner_id: 0000000a-0000-4000-8000-000000000001, share: {numerator: 1, denominator: 2}, gain: '900.00',
@@ -244,6 +255,8 @@ cases:
     value: '319980.00'
     selling_costs: '0.00'
     afa_claimed: '7020.00'
+    afa_claimed_building: '7020.00'
+    afa_claimed_movable: '0.00'
     gain: '2000.00'
     gain_per_owner:
     - {owner_id: 0000000a-0000-4000-8000-000000000001, share: {numerator: 1, denominator: 2}, gain: '1000.00',
@@ -300,6 +313,8 @@ cases:
     value: '300000.00'
     selling_costs: '0.00'
     afa_claimed: '7020.00'
+    afa_claimed_building: '7020.00'
+    afa_claimed_movable: '0.00'
     gain: '-17980.00'
     gain_per_owner:
     - {owner_id: 0000000a-0000-4000-8000-000000000001, share: {numerator: 1, denominator: 2}, gain: '-8990.00',
@@ -326,3 +341,65 @@ cases:
     - {'on': 2026-12-31, amount: '-4180.39', kind: cash_flow}
     - {'on': 2027-12-31, amount: '-3160.32', kind: cash_flow}
     - {'on': 2027-12-31, amount: '65220.76', kind: net_proceeds}
+# D94: gain_below_freigrenze's sale with a fitted kitchen bought with the flat (D80). Hand
+# calculation (synthetic figures):
+# - Kitchen: 8,000.00 of the 300,000.00 price; with its share of the 25,000.00 Nebenkosten
+#   (phase 3 movable.py) its basis is 8,000.00 × 325,000.00 ÷ 300,000.00 = 8,666.67, over
+#   10 years. 2026 from the July handover: 8,666.67 × 6 ÷ 120 = 433.33; 2027: 8,666.67 × 12
+#   ÷ 120 = 866.67. afa_claimed_movable = 433.33 + 866.67 = 1,300.00.
+# - The building AfA is the base case's 7,020.00, held as given so that the two cases differ
+#   by the kitchen's AfA alone (sale() takes the AfA as a fact; in a real draft the kitchen's
+#   basis would also have left the building's, D80). afa_claimed = 7,020.00 + 1,300.00 =
+#   8,320.00.
+# - gain = 319,780.00 − 0.00 − (300,000.00 + 25,000.00 − 8,320.00) = 3,100.00, which is the
+#   base case's 1,800.00 + 1,300.00: before D94 the kitchen's cost stayed in the basis while
+#   its AfA was not added back. 1,550.00 per spouse, not below 1,000: fully taxed (without
+#   the add-back each spouse's 900.00 was below it and the tax 0.00).
+# - sale_tax under the 2027 tariff (2026's, reused): base zvE 81,993.00 − 4,446.81 =
+#   77,546.19. Without the gain: x 77,546, half 38,773, z = (38,773 − 17,799) ÷ 10,000 =
+#   2.0974, (173.10·z + 2,397)·z + 1,034.87 = 6,823.82 → 6,823 × 2 = 13,646 ESt. With it:
+#   80,646.19, half 40,323, z = 2.2524 → 7,312.06 → 7,312 × 2 = 14,624. Soli 0 (ESt below
+#   40,700), church tax 8 % (BY). T = (14,624 − 13,646) × 1.08 = 978 × 1.08 = 1,056.24.
+# - net proceeds = 319,780.00 − 0.00 − 1,056.24 − 234,779.24 = 83,944.52; profit =
+#   83,944.52 + (−4,180.39 − 3,160.32) − 85,000.00 = −8,396.19 (the bridge: 19,780.00 +
+#   5,220.76 − 7,340.71 − 25,000.00 − 0.00 − 1,056.24). CAGR over 548 ÷ 365.25 years and the
+#   IRR by XIRR on the four flows below.
+- id: kitchen_afa_added_back
+  description: 'D94: gain_below_freigrenze with a kitchen: its AfA 1,300.00 is added back, gain 3,100.00,
+    1,550.00 per spouse ≥ 1,000 → taxed 1,056.24'
+  facts: {<<: *below_freigrenze_facts, afa_claimed_movable: '1300.00'}
+  expect:
+    sale_date: 2027-12-31
+    tax_free_from: 2036-03-11
+    taxable: true
+    value: '319780.00'
+    selling_costs: '0.00'
+    afa_claimed: '8320.00'
+    afa_claimed_building: '7020.00'
+    afa_claimed_movable: '1300.00'
+    gain: '3100.00'
+    gain_per_owner:
+    - {owner_id: 0000000a-0000-4000-8000-000000000001, share: {numerator: 1, denominator: 2}, gain: '1550.00',
+      below_freigrenze: false}
+    - {owner_id: 0000000a-0000-4000-8000-000000000002, share: {numerator: 1, denominator: 2}, gain: '1550.00',
+      below_freigrenze: false}
+    freigrenze_applied: false
+    sale_tax: '1056.24'
+    loan_balance: '234779.24'
+    net_proceeds: '83944.52'
+    initial_equity: '85000.00'
+    profit: '-8396.19'
+    bridge:
+    - {key: appreciation, amount: '19780.00'}
+    - {key: loan_paid_down, amount: '5220.76'}
+    - {key: cash_flow, amount: '-7340.71'}
+    - {key: buying_costs, amount: '-25000.00'}
+    - {key: selling_costs, amount: '0.00'}
+    - {key: sale_tax, amount: '-1056.24'}
+    cagr: '-0.066972'
+    irr: '-0.064734'
+    flows:
+    - {'on': 2026-07-01, amount: '-85000.00', kind: initial_equity}
+    - {'on': 2026-12-31, amount: '-4180.39', kind: cash_flow}
+    - {'on': 2027-12-31, amount: '-3160.32', kind: cash_flow}
+    - {'on': 2027-12-31, amount: '83944.52', kind: net_proceeds}

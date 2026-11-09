@@ -4344,7 +4344,8 @@ export interface components {
         };
         /**
          * OwnerGain
-         * @description One spouse's share of a §23 gain, tested against the Freigrenze (< 1,000, a cliff).
+         * @description One spouse's share of a §23 gain, tested against the Freigrenze of the sale year's rule
+         *     set (`speculation_freigrenze`, D93; a cliff).
          */
         OwnerGain: {
             /**
@@ -5123,6 +5124,10 @@ export interface components {
             selling_costs: string;
             /** Afa Claimed */
             afa_claimed: string;
+            /** Afa Claimed Building */
+            afa_claimed_building: string;
+            /** Afa Claimed Movable */
+            afa_claimed_movable: string;
             /** Gain */
             gain: string | null;
             /** Gain Per Owner */

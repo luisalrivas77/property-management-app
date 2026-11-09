@@ -147,6 +147,7 @@ def test_the_rates_and_thresholds(year):
     assert (rs.spread_82b_min_years, rs.spread_82b_max_years) == (2, 5)
     assert (rs.reduced_rent_split, rs.reduced_rent_full) == (Decimal("0.50"), Decimal("0.66"))
     assert rs.speculation_years == 10
+    assert rs.speculation_freigrenze == Decimal("1000")  # §23 Abs. 3 S. 5 from VZ 2024 (D93)
 
 
 def test_income_rounds_down_and_costs_round_up():

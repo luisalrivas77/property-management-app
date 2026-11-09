@@ -33,6 +33,7 @@ import yaml
 from fixture_models import Lenient
 from pydantic import Field, model_validator
 
+from hausbuch.rules.tax import registry
 from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.common import (
     Fraction,
@@ -316,6 +317,7 @@ class SaleFacts(Schema):
     value: PositiveMoney  # V at the sale (the projection's value of the sale year)
     selling_costs_rate: Rate
     afa_claimed: NonNegativeMoney  # Σ building AfA of every year owned through the sale year
+    afa_claimed_movable: NonNegativeMoney = Decimal("0.00")  # Σ the D80 kitchen's AfA (D94)
     loan_balance: NonNegativeMoney  # L at the sale
     zve_base: NonNegativeMoney  # the sale year's household zvE without the property
     result_sale_year: Money  # the property's taxable result of the sale year
@@ -323,7 +325,7 @@ class SaleFacts(Schema):
     cash_flows: list[DatedFlow]  # CF_y on 31 Dec, kind cash_flow
 
 
-def _check_sale(sale: SaleResult, cash_flows: list[DatedFlow], what: str) -> None:
+def _check_sale(sale: SaleResult, cash_flows: list[DatedFlow], what: str, sale_year: int) -> None:
     cf = sum((f.amount for f in cash_flows), Decimal("0"))
     if sale.profit != sale.net_proceeds + cf - sale.initial_equity:
         raise ValueError(f"{what}: profit = net proceeds + Σ CF − E₀")
@@ -344,8 +346,9 @@ def _check_sale(sale: SaleResult, cash_flows: list[DatedFlow], what: str) -> Non
         return
     if sum((o.gain for o in owners), Decimal("0")) != sale.gain:
         raise ValueError(f"{what}: the owners' gains add up to the gain")
-    if any(o.below_freigrenze != (0 < o.gain < 1000) for o in owners):
-        raise ValueError(f"{what}: below the Freigrenze means 0 < the owner's gain < 1,000")
+    limit = registry.rule_set_or_latest(sale_year).speculation_freigrenze  # D93
+    if any(o.below_freigrenze != (0 < o.gain < limit) for o in owners):
+        raise ValueError(f"{what}: below the Freigrenze means 0 < the owner's gain < {limit}")
     if sale.freigrenze_applied != any(o.below_freigrenze for o in owners):
         raise ValueError(f"{what}: freigrenze_applied when an owner's gain is below it")
     if all(o.gain <= 0 or o.below_freigrenze for o in owners) and sale.sale_tax != 0:
@@ -359,7 +362,12 @@ class SaleCase(Lenient):
     @model_validator(mode="after")
     def _arithmetic(self) -> Self:
         f, s = self.facts, self.expect
-        if (s.value, s.afa_claimed, s.loan_balance) != (f.value, f.afa_claimed, f.loan_balance):
+        if (s.value, s.afa_claimed_building, s.afa_claimed_movable, s.loan_balance) != (
+            f.value,
+            f.afa_claimed,
+            f.afa_claimed_movable,
+            f.loan_balance,
+        ):
             raise ValueError(f"{self.id}: the sale takes the facts' value, AfA and balance")
         if s.sale_date != date(f.sale_year, 12, 31) or s.tax_free_from != f.tax_free_from:
             raise ValueError(f"{self.id}: the sale is on 31 Dec of the sale year (D88)")
@@ -372,10 +380,10 @@ class SaleCase(Lenient):
         if s.selling_costs != (s.value * f.selling_costs_rate).quantize(CENT, ROUND_HALF_UP):
             raise ValueError(f"{self.id}: selling costs = value × rate, half-up")
         if s.taxable and s.gain != (
-            f.value - s.selling_costs - (f.purchase_price + f.cost_rows - f.afa_claimed)
+            f.value - s.selling_costs - (f.purchase_price + f.cost_rows - s.afa_claimed)
         ):
             raise ValueError(f"{self.id}: gain = V − C − (price + cost rows − AfA claimed)")
-        _check_sale(s, f.cash_flows, self.id)
+        _check_sale(s, f.cash_flows, self.id, f.sale_year)
         return self
 
 
@@ -415,6 +423,7 @@ class ProjectionExpect(Schema):
     years: list[YearExpect]
     sale: SaleResult | None = None
     afa_actual: NonNegativeMoney | None = None  # Σ building AfA of the actual years
+    afa_movable_actual: NonNegativeMoney | None = None  # Σ kitchen AfA of them (D94); None: 0
     cash_flow_actual: list[DatedFlow] | None = None  # CF of the actual years, for the sale
 
     @model_validator(mode="after")
@@ -451,13 +460,16 @@ class ProjectionCase(Lenient):
         afa = (self.expect.afa_actual or Decimal("0")) + sum(
             (y.afa or Decimal("0") for y in self.expect.years), Decimal("0")
         )
-        if sale.afa_claimed != afa:
+        movable = (self.expect.afa_movable_actual or Decimal("0")) + sum(
+            (y.afa_movable or Decimal("0") for y in self.expect.years), Decimal("0")
+        )
+        if (sale.afa_claimed_building, sale.afa_claimed_movable) != (afa, movable):
             raise ValueError(f"{self.id}: AfA claimed = actual years + projected years")
         flows = list(self.expect.cash_flow_actual or []) + [
             DatedFlow(on=date(y.year, 12, 31), amount=y.net_cash, kind="cash_flow")
             for y in self.expect.years
         ]
-        _check_sale(sale, flows, self.id)
+        _check_sale(sale, flows, self.id, last.year)
         return self
 
 
