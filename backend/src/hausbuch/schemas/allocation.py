@@ -44,6 +44,9 @@ class AllocationCategory(StrEnum):
     HAUSGELD_UMLAGEFAEHIG = "hausgeld_umlagefaehig"  # deductible
     HAUSGELD_VERWALTUNG = "hausgeld_verwaltung"  # deductible
     HAUSGELD_RUECKLAGE = "hausgeld_ruecklage"  # undecided until phase 3
+    # deductible: the landlord's own Mietverwaltung (Sondereigentumsverwaltung) fee, not the
+    # WEG administrator's share inside the Hausgeld (D51)
+    PROPERTY_MANAGEMENT = "property_management"
     GRUNDSTEUER = "grundsteuer"  # deductible
     INSURANCE = "insurance"  # deductible
     REPAIRS = "repairs"  # deductible (Erhaltungsaufwand)
@@ -87,6 +90,9 @@ class SplitMethod(StrEnum):
     BY_LOAN_SCHEDULE = "by_loan_schedule"
     BY_WIRTSCHAFTSPLAN = "by_wirtschaftsplan"
     OWNER_TRANSFER = "owner_transfer"
+    # D51: the parts of the latest confirmed line of the rule's category set, copied when the
+    # amount is the same (read from the ledger; the rule stores the set, never an amount).
+    AS_LAST_SPLIT = "as_last_split"
 
 
 # --- Allocations ---------------------------------------------------------------------
@@ -198,8 +204,11 @@ class MatchingRuleCreate(Schema):
     property_id: UUID | None = None
     tenancy_id: UUID | None = None
     loan_id: UUID | None = None
+    # as_last_split only (D51): the answer's distinct categories, sorted, two or more; the
+    # rule's kind, never an amount.
+    categories: list[AllocationCategory] | None = None
     # Copied from the confirmed answer; a single_category hit's allocation gets it (the
-    # schedule-based split methods set recurring themselves).
+    # schedule-based split methods set recurring themselves, as_last_split copies each part's).
     recurring: bool = False
     created_from_allocation_id: UUID | None = None
     # D49: "only payments of this amount". A flag, never an amount: a hit stands only when
@@ -225,6 +234,12 @@ class MatchingRuleCreate(Schema):
             raise ValueError("by_loan_schedule needs loan_id")
         if m is SplitMethod.BY_WIRTSCHAFTSPLAN and self.property_id is None:
             raise ValueError("by_wirtschaftsplan needs property_id")
+        if (m is SplitMethod.AS_LAST_SPLIT) != (self.categories is not None):
+            raise ValueError("categories exactly for split_method as_last_split")
+        if self.categories is not None and (
+            len(self.categories) < 2 or self.categories != sorted(set(self.categories))
+        ):
+            raise ValueError("categories: two or more distinct categories, sorted")
         return self
 
 
@@ -361,8 +376,17 @@ class MatchContext(Schema):
 
 
 class HistoryRow(Schema):
+    """One allocation row of a history line. The parts (amount and scope) are what an
+    as_last_split rule copies (D51); the D49 check reads only category and status."""
+
     category: AllocationCategory
     status: AllocationStatus
+    amount: Money | None = None  # signed like the line
+    property_id: UUID | None = None
+    unit_id: UUID | None = None
+    tenancy_id: UUID | None = None
+    loan_id: UUID | None = None
+    recurring: bool = False
 
 
 class HistoryLine(Schema):

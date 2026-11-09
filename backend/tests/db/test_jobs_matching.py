@@ -16,6 +16,7 @@ from db.matching_support import (
     PAINTER_IBAN,
     STADT_IBAN,
     TENANT_IBAN,
+    WEG_IBAN,
     World,
 )
 from sqlalchemy import insert, select, text, update
@@ -28,6 +29,7 @@ from hausbuch.ai.requests import categorize_request, explain_request, extract_re
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import ai_call as ai_call_table
 from hausbuch.db.tables import allocation as allocation_table
+from hausbuch.db.tables import document_link as link_table
 from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import matching_rule as rule_table
 from hausbuch.db.tables import statement_import as import_table
@@ -267,6 +269,87 @@ def test_an_llm_set_naming_a_matcher_category_or_splitting_is_never_auto_confirm
         assert {r.question for r in rows} == {question}
         assert {r.method for r in rows} == {"llm"}
         assert _events(world, tx) == []  # proposed rows are review items, no event
+
+
+# --- The one loan on a model suggestion (D51) -------------------------------------------------
+
+
+def _contract(world: World, *, loan_ids=(), subtype: str = "loan_contract"):
+    """A Darlehensvertrag linked to the given loans (and the property), with no reading."""
+    with workspace_transaction(world.engine, world.ws) as conn:
+        doc = world._document_row(conn, type="contract", subtype=subtype, title=None)
+        for link in [{"property_id": world.property_id}] + [{"loan_id": i} for i in loan_ids]:
+            conn.execute(
+                insert(link_table).values(
+                    workspace_id=world.ws, document_id=doc, created_at=world.now, **link
+                )
+            )
+    return doc
+
+
+def _payout_and_fee(world: World, app_engine, tmp_path):
+    """The model names a loan payout and a loan fee; returns their rows."""
+    client = FakeModelClient(
+        [
+            _answer(("loan_disbursement", "300000.00", None, False)),
+            _answer(("loan_fees", "-250.00", None, False)),
+        ]
+    )
+    deps = _deps(app_engine, tmp_path, client)
+    payout = world.line(date(2024, 4, 2), "300000.00", purpose="Darlehensauszahlung")
+    fee = world.line(date(2024, 4, 3), "-250.00", name="Notar", purpose="Grundschuld")
+    for tx in (payout, fee):
+        _run(deps, world, tx)
+    ((p,), (f,)) = (_rows(world, payout), _rows(world, fee))
+    assert (p.method, p.category, f.method, f.category) == (
+        "llm",
+        "loan_disbursement",
+        "llm",
+        "loan_fees",
+    )
+    return p, f
+
+
+def test_a_model_loan_suggestion_carries_the_one_loan_and_its_contract(world, app_engine, tmp_path):
+    """Luis (8 Nov 2026): the payout was suggested without the Darlehen and its contract."""
+    loan = world.loan()
+    contract = _contract(world, loan_ids=[loan])
+    _contract(world, subtype="purchase_contract", loan_ids=[loan])  # not a Darlehensvertrag
+    _contract(world)  # a Darlehensvertrag of no loan
+    payout, fee = _payout_and_fee(world, app_engine, tmp_path)
+    assert (payout.property_id, payout.loan_id, payout.document_id) == (
+        world.property_id,
+        loan,
+        contract,
+    )
+    assert (fee.loan_id, fee.document_id) == (loan, None)  # the Beleg only on the payout
+
+
+def test_a_loan_with_two_contracts_gets_no_beleg(world, app_engine, tmp_path):
+    loan = world.loan()
+    _contract(world, loan_ids=[loan])
+    _contract(world, loan_ids=[loan])
+    payout, _ = _payout_and_fee(world, app_engine, tmp_path)
+    assert (payout.loan_id, payout.document_id) == (loan, None)
+
+
+def test_with_two_loans_the_model_suggestion_names_none(world, app_engine, tmp_path):
+    first = world.loan()
+    second = world.loan(iban=None, lender="Zweite Bank eG")
+    _contract(world, loan_ids=[first])
+    _contract(world, loan_ids=[second])
+    payout, fee = _payout_and_fee(world, app_engine, tmp_path)
+    for row in (payout, fee):
+        assert (row.property_id, row.loan_id, row.document_id) == (world.property_id, None, None)
+
+
+def test_only_a_loan_category_gets_the_loan(world, app_engine, tmp_path):
+    world.loan()
+    client = FakeModelClient([_answer(("insurance", "-312.40", None, True))])
+    tx = world.line(date(2026, 3, 3), "-312.40", name="Allianz", purpose="Beitrag")
+    _run(_deps(app_engine, tmp_path, client), world, tx)
+    (row,) = _rows(world, tx)
+    assert (row.category, row.loan_id, row.document_id) == ("insurance", None, None)
 
 
 # --- Validation and retries ------------------------------------------------------------------
@@ -812,6 +895,71 @@ def test_a_rent_rule_books_the_waiting_rent_that_fits_the_schedule_exactly(
     assert _rows(world, march) == []  # 20 € short: still waiting, nothing asked of the model
     (item,) = [i for i in world.query(review.inbox) if i.transaction_id == march]
     assert item.kind is InboxItemKind.UNMATCHED
+
+
+def test_a_split_answer_books_the_next_line_of_the_same_amount_as_it_was_split(
+    world, app_engine, tmp_path
+):
+    """D51, Luis (8 Nov 2026): the Hausverwaltung's Hausgeld, split by its purpose text into
+    the reserve and the operating costs, could not be learned. Answered once with "Künftig
+    immer so zuordnen", the rule (no amounts) copies that split onto the payer's waiting
+    line of the same amount and onto a later line; another amount stays waiting."""
+
+    def hv(day: date, amount: str = "-380.00"):
+        return world.line(day, amount, iban=WEG_IBAN, name="Hausverwaltung", purpose="Hausgeld")
+
+    first = hv(date(2026, 2, 1))
+    same = hv(date(2026, 3, 2))
+    other = hv(date(2026, 4, 1), "-395.00")
+    fee = world.line(date(2026, 3, 3), "-29.75", iban=WEG_IBAN, purpose="Mietverwaltung")
+
+    result = _put(
+        world,
+        first,
+        ("-260.00", "hausgeld_umlagefaehig"),
+        ("-120.00", "hausgeld_ruecklage"),
+        learn_rule=True,
+        property_id=world.property_id,
+    )
+    rule = result.rule
+    assert rule is not None and rule.split_method.value == "as_last_split"
+    assert rule.categories == [
+        AllocationCategory.HAUSGELD_RUECKLAGE,
+        AllocationCategory.HAUSGELD_UMLAGEFAEHIG,
+    ]
+    stored = world.query(
+        lambda c: c.execute(select(rule_table).where(rule_table.c.id == rule.id)).one()
+    )
+    assert stored.categories == ["hausgeld_ruecklage", "hausgeld_umlagefaehig"]
+    assert [c for c in stored._fields if "amount" in c] == ["same_amount_only"]  # D25
+
+    client = FakeModelClient()  # AI on, nothing scripted: any call would fail the test
+    deps = _deps(app_engine, tmp_path, client)
+    plans = _rematch(deps, world, "rule", rule.id)
+    assert sorted(p.outcome for p in plans) == ["skipped", "skipped", "written"]
+    assert client.requests == []
+
+    def copied(tx):
+        rows = _rows(world, tx)
+        assert {(r.method, r.status, r.rule_id, r.confirmed_by) for r in rows} == {
+            ("rule", "confirmed", rule.id, None)
+        }
+        assert {(r.property_id, r.document_id) for r in rows} == {(world.property_id, None)}
+        return sorted((r.category, r.amount) for r in rows)
+
+    expected = [
+        ("hausgeld_ruecklage", Decimal("-120.00")),
+        ("hausgeld_umlagefaehig", Decimal("-260.00")),
+    ]
+    assert copied(same) == expected
+    assert _rows(world, other) == [] and _rows(world, fee) == []
+
+    later = hv(date(2026, 5, 4))
+    assert _run(_deps(app_engine, tmp_path, client, ai_enabled=False), world, later).outcome == (
+        "written"
+    )
+    assert copied(later) == expected
+    assert _hit_count(world, rule.id) == 2
 
 
 # --- rematch_waiting on master data entered after the import ------------------------------

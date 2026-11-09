@@ -303,6 +303,7 @@ export const ALLOCATION_CATEGORY: Record<AllocationCategory, string> = {
   hausgeld_umlagefaehig: "Hausgeld, umlagefähig",
   hausgeld_verwaltung: "Hausgeld, nicht umlagefähig (Verwaltung)",
   hausgeld_ruecklage: "Hausgeld, Erhaltungsrücklage",
+  property_management: "Mietverwaltung (Sondereigentumsverwaltung)",
   grundsteuer: "Grundsteuer",
   insurance: "Versicherung",
   repairs: "Erhaltungsaufwand (Reparatur)",

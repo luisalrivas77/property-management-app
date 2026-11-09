@@ -43,6 +43,7 @@ per_category:
   - {category: hausgeld_umlagefaehig, decision: auto_confirm}
   - {category: hausgeld_verwaltung, decision: auto_confirm}
   - {category: hausgeld_ruecklage, decision: auto_confirm}
+  - {category: property_management, decision: auto_confirm}
   - {category: grundsteuer, decision: auto_confirm}
   - {category: insurance, decision: auto_confirm}
   - {category: repairs, decision: review}

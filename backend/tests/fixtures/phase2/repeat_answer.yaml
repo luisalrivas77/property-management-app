@@ -14,15 +14,26 @@
 #     loan_interest + loan_principal equal to the schedule entry -> by_loan_schedule, loan_id;
 #     rent_cold + operating_costs_prepayment of one tenancy -> by_rent_schedule, tenancy_id;
 #     owner_transfer_in / _out -> owner_transfer;
-#     one allocation -> single_category with its category and its property / tenancy / loan.
+#     one allocation -> single_category with its category and its property / tenancy / loan;
+#     (D51) any other answer of two or more parts with at least two categories, including
+#       hausgeld_* parts that do not equal the plan -> as_last_split with categories = the
+#       answer's distinct categories, sorted, and no scope (the parts carry their own); never
+#       when a part is loan_interest or loan_principal (the schedule's interest and repayment
+#       shares change every month at the same amount, so a copied split would be wrong), and
+#       never when a part is rent_cold or operating_costs_prepayment (rent is split by its
+#       tenancy's schedule, by_rent_schedule, or not learned at all: as before D51).
 #   recurring: true when every confirmed allocation is recurring, else false (whatever the
 #   split method; only single_category hits read it).
 #   No single_category rule when the counterparty is an owner account, a tenant's or a loan
 #   account (D38): apply_rule runs before the matchers, so an IBAN-only rule there would
 #   pre-empt the exact rent / loan / owner split for every later line. -> null (no_rule below).
+#   The same holds for an as_last_split rule there (D51).
 # Then the next line from the same counterparty goes through matching.apply_rule with the
-# stored rule (id below) and must come back as a rule set with confidence 1, no question, and
-# review.route must auto-confirm it (routing.rule_hit): nothing is asked.
+# stored rule (id below) and the answered line as the ledger's history (its confirmed rows,
+# which as_last_split copies, rule_history.yaml) and must come back as a rule set with
+# confidence 1, no question, and review.route must auto-confirm it (routing.rule_hit): nothing
+# is asked. A split that fits by_wirtschaftsplan still learns by_wirtschaftsplan
+# (hausgeld_by_wirtschaftsplan).
 
 ids:
   workspace: &W 0000000a-0000-4000-8000-000000000001
@@ -33,6 +44,8 @@ ids:
   hmac_tenant: &H_TENANT "1111111111111111111111111111111111111111111111111111111111111111"
   hmac_owner: &H_OWNER "2222222222222222222222222222222222222222222222222222222222222222"
   hmac_loan: &H_LOAN "3333333333333333333333333333333333333333333333333333333333333333"
+  hmac_hv: &H_HV "8888888888888888888888888888888888888888888888888888888888888888"
+  hmac_other: &H_OTHER "9999999999999999999999999999999999999999999999999999999999999999"
   unit: &U 0000000c-0000-4000-8000-000000000001
   tenancy: &T 0000000e-0000-4000-8000-000000000001
   loan: &L 0000000f-0000-4000-8000-000000000001
@@ -121,6 +134,64 @@ cases:
           - {amount: "-50.00", category: hausgeld_verwaltung, property_id: *P, document_id: *D_WP24, service_period_start: 2024-06-01, service_period_end: 2024-06-30, recurring: true}
           - {amount: "-120.00", category: hausgeld_ruecklage, property_id: *P, document_id: *D_WP24, service_period_start: 2024-06-01, service_period_end: 2024-06-30, recurring: true}
 
+  - id: hausgeld_two_parts_as_last_split
+    description: D51. The Hausverwaltung's Hausgeld split by hand into the two parts its purpose text states becomes an as_last_split rule; June's payment of the same amount gets the same two parts without a question.
+    answered:
+      transaction: {id: 0000002a-0000-4000-8000-000000000605, booking_date: 2024-05-02, amount: "-380.00", counterparty_name: Muster Hausverwaltung GmbH, counterparty_iban_hmac: *H_HV, purpose: "Hausgeld 05/2024 WE 3 Bewirtschaftung 260,00 Ruecklage 120,00"}
+      confirmed:
+        transaction_id: 0000002a-0000-4000-8000-000000000605
+        method: user
+        confidence: "1.000"
+        allocations:
+          - {amount: "-260.00", category: hausgeld_umlagefaehig, property_id: *P, service_period_start: 2024-05-01, service_period_end: 2024-05-31, recurring: true}
+          - {amount: "-120.00", category: hausgeld_ruecklage, property_id: *P, service_period_start: 2024-05-01, service_period_end: 2024-05-31, recurring: true}
+    expect_rule:
+      matcher: {counterparty_iban_hmac: *H_HV, amount_sign: debit}
+      split_method: as_last_split
+      categories: [hausgeld_ruecklage, hausgeld_umlagefaehig]
+      recurring: true
+    rule_id: 0000002b-0000-4000-8000-000000000603
+    next:
+      transaction: {id: 0000002a-0000-4000-8000-000000000606, booking_date: 2024-06-03, amount: "-380.00", counterparty_name: Muster Hausverwaltung GmbH, counterparty_iban_hmac: *H_HV, purpose: "Hausgeld 06/2024 WE 3 Bewirtschaftung 260,00 Ruecklage 120,00"}
+      expect:
+        method: rule
+        rule_id: 0000002b-0000-4000-8000-000000000603
+        confidence: "1.000"
+        question: null
+        allocations:
+          - {amount: "-260.00", category: hausgeld_umlagefaehig, property_id: *P, service_period_start: 2024-06-01, service_period_end: 2024-06-30, recurring: true}
+          - {amount: "-120.00", category: hausgeld_ruecklage, property_id: *P, service_period_start: 2024-06-01, service_period_end: 2024-06-30, recurring: true}
+
+  - id: hausgeld_three_parts_off_the_plan
+    description: D51. Three Hausgeld parts that do not equal the plan in force (380.00) fit no Wirtschaftsplan rule; they become as_last_split, and the next 400.00 gets the same parts.
+    answered:
+      transaction: {id: 0000002a-0000-4000-8000-000000000607, booking_date: 2024-05-02, amount: "-400.00", counterparty_name: WEG Lindenstrasse 12, counterparty_iban_hmac: *H_WEG, purpose: Hausgeld 05/2024 WE 3}
+      confirmed:
+        transaction_id: 0000002a-0000-4000-8000-000000000607
+        method: user
+        confidence: "1.000"
+        allocations:
+          - {amount: "-230.00", category: hausgeld_umlagefaehig, property_id: *P, service_period_start: 2024-05-01, service_period_end: 2024-05-31, recurring: true}
+          - {amount: "-50.00", category: hausgeld_verwaltung, property_id: *P, service_period_start: 2024-05-01, service_period_end: 2024-05-31, recurring: true}
+          - {amount: "-120.00", category: hausgeld_ruecklage, property_id: *P, service_period_start: 2024-05-01, service_period_end: 2024-05-31, recurring: true}
+    expect_rule:
+      matcher: {counterparty_iban_hmac: *H_WEG, amount_sign: debit}
+      split_method: as_last_split
+      categories: [hausgeld_ruecklage, hausgeld_umlagefaehig, hausgeld_verwaltung]
+      recurring: true
+    rule_id: 0000002b-0000-4000-8000-000000000604
+    next:
+      transaction: {id: 0000002a-0000-4000-8000-000000000608, booking_date: 2024-06-03, amount: "-400.00", counterparty_name: WEG Lindenstrasse 12, counterparty_iban_hmac: *H_WEG, purpose: Hausgeld 06/2024 WE 3}
+      expect:
+        method: rule
+        rule_id: 0000002b-0000-4000-8000-000000000604
+        confidence: "1.000"
+        question: null
+        allocations:
+          - {amount: "-230.00", category: hausgeld_umlagefaehig, property_id: *P, service_period_start: 2024-06-01, service_period_end: 2024-06-30, recurring: true}
+          - {amount: "-50.00", category: hausgeld_verwaltung, property_id: *P, service_period_start: 2024-06-01, service_period_end: 2024-06-30, recurring: true}
+          - {amount: "-120.00", category: hausgeld_ruecklage, property_id: *P, service_period_start: 2024-06-01, service_period_end: 2024-06-30, recurring: true}
+
 no_rule:
   - id: loan_account_bank_fee_is_no_rule
     description: D38. A one-off fee debited by the loan account, answered as bank_fees; a rule would book the next annuity, principal included, as bank_fees.
@@ -154,3 +225,63 @@ no_rule:
         confidence: "1.000"
         allocations:
           - {amount: "500.00", category: other_income, property_id: *P, recurring: false}
+
+  - id: tenant_split_is_no_rule
+    description: D38, D51. A tenant's transfer split into rent and part of the Kaution; an as_last_split rule on the tenant's IBAN would run before the rent matcher on every later rent.
+    answered:
+      transaction: {id: 0000002a-0000-4000-8000-000000000704, booking_date: 2024-01-02, amount: "1900.00", counterparty_name: Mieterin Beispiel, counterparty_iban_hmac: *H_TENANT, purpose: Miete Januar und Kaution}
+      confirmed:
+        transaction_id: 0000002a-0000-4000-8000-000000000704
+        method: user
+        confidence: "1.000"
+        allocations:
+          - {amount: "1150.00", category: rent_cold, property_id: *P, unit_id: *U, tenancy_id: *T, service_period_start: 2024-01-01, service_period_end: 2024-01-31, recurring: true}
+          - {amount: "750.00", category: deposit_in, property_id: *P, tenancy_id: *T, recurring: false}
+
+  - id: loan_account_split_is_no_rule
+    description: D38, D51. Two fees debited together by the loan account; a split rule there would run before the annuity matcher.
+    answered:
+      transaction: {id: 0000002a-0000-4000-8000-000000000705, booking_date: 2025-03-10, amount: "-50.00", counterparty_name: Beispielbank AG, counterparty_iban_hmac: *H_LOAN, purpose: Entgelte}
+      confirmed:
+        transaction_id: 0000002a-0000-4000-8000-000000000705
+        method: user
+        confidence: "1.000"
+        allocations:
+          - {amount: "-25.00", category: bank_fees, property_id: *P, recurring: false}
+          - {amount: "-25.00", category: loan_fees, property_id: *P, loan_id: *L, recurring: false}
+
+  - id: owner_account_split_is_no_rule
+    description: D38, D51. A line from an owner's account split into a top-up and another income.
+    answered:
+      transaction: {id: 0000002a-0000-4000-8000-000000000706, booking_date: 2024-02-01, amount: "700.00", counterparty_name: Max Beispiel, counterparty_iban_hmac: *H_OWNER, purpose: Einlage}
+      confirmed:
+        transaction_id: 0000002a-0000-4000-8000-000000000706
+        method: user
+        confidence: "1.000"
+        allocations:
+          - {amount: "500.00", category: owner_transfer_in, recurring: false}
+          - {amount: "200.00", category: other_income, property_id: *P, recurring: false}
+
+  - id: loan_split_off_the_schedule_is_no_rule
+    description: D51. Interest and repayment from an account that is no loan's, not equal to a schedule entry; copying the split would book next month's equal payment with this month's interest share, which the schedule changes every month.
+    answered:
+      transaction: {id: 0000002a-0000-4000-8000-000000000707, booking_date: 2025-03-15, amount: "-1000.00", counterparty_name: Beispiel Treuhand GmbH, counterparty_iban_hmac: *H_OTHER, purpose: Darlehen Rate Maerz}
+      confirmed:
+        transaction_id: 0000002a-0000-4000-8000-000000000707
+        method: user
+        confidence: "1.000"
+        allocations:
+          - {amount: "-80.00", category: loan_interest, property_id: *P, loan_id: *L, service_period_start: 2025-03-01, service_period_end: 2025-03-31, recurring: true}
+          - {amount: "-920.00", category: loan_principal, property_id: *P, loan_id: *L, service_period_start: 2025-03-01, service_period_end: 2025-03-31, recurring: true}
+
+  - id: rent_split_without_a_tenancy_is_no_rule
+    description: D51, review F2. Rent and its prepayment from a payer that is no tenant's (yet), without a tenancy; as before D51 no rule is learned, so a rent rule cannot be keyed to an IBAN that may later become a tenant's.
+    answered:
+      transaction: {id: 0000002a-0000-4000-8000-000000000708, booking_date: 2024-02-01, amount: "1400.00", counterparty_name: Partei Beispiel, counterparty_iban_hmac: *H_OTHER, purpose: Miete Februar}
+      confirmed:
+        transaction_id: 0000002a-0000-4000-8000-000000000708
+        method: user
+        confidence: "1.000"
+        allocations:
+          - {amount: "1150.00", category: rent_cold, property_id: *P, service_period_start: 2024-02-01, service_period_end: 2024-02-29, recurring: true}
+          - {amount: "250.00", category: operating_costs_prepayment, property_id: *P, service_period_start: 2024-02-01, service_period_end: 2024-02-29, recurring: true}

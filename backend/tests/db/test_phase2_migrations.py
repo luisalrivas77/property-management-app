@@ -943,6 +943,92 @@ def test_0011_downgrade_refuses_while_a_rule_is_same_amount_only():
         drop_database(name)
 
 
+KIND = ["hausgeld_ruecklage", "hausgeld_umlagefaehig"]
+
+
+def test_the_management_category_and_the_last_split_rule_are_accepted(tx):
+    """0012 (D51): property_management on an allocation and on a rule; an as_last_split rule
+    stores its kind (two or more known categories), exactly that split method has one, and
+    it is never an amount."""
+    conn, a, t = tx
+    matcher = {"counterparty_iban_hmac": IBAN_HMAC_HEX, "amount_sign": "debit"}
+    _allocation(conn, a, t, category="property_management", method="user")
+    _rule(conn, a, matcher, category="property_management")
+    split = {"split_method": "as_last_split", "category": None}
+    _rule(conn, a, matcher, **split, categories=Jsonb(KIND))
+    _rule(conn, a, matcher, **split, categories=Jsonb([*KIND, "property_management"]))
+    bad = [
+        split,  # as_last_split without its kind
+        split | {"categories": Jsonb(["hausgeld_ruecklage"])},  # one category is no split
+        split | {"categories": Jsonb(["hausgeld_ruecklage", "kaution"])},  # not a category
+        split | {"categories": Jsonb([{"hausgeld_ruecklage": "-120.00"}, "repairs"])},  # amount
+        split | {"categories": Jsonb({"hausgeld_ruecklage": 1, "repairs": 2})},  # not a list
+        split | {"categories": Jsonb(None)},  # a JSON null is not SQL NULL
+        {"categories": Jsonb(KIND)},  # a kind on single_category
+        {"split_method": "as_last_split"},  # with a category instead of a kind
+    ]
+    for overrides in bad:
+        with pytest.raises(errors.CheckViolation), conn.transaction():
+            _rule(conn, a, matcher, **overrides)
+    with pytest.raises(errors.CheckViolation), conn.transaction():
+        _allocation(conn, a, t, category="mietverwaltung", method="user")
+
+
+@pytest.mark.parametrize("row", ["allocation", "category_rule", "split_rule"])
+def test_0012_downgrade_refuses_while_a_row_uses_the_new_category_or_split(row):
+    """0011's CHECKs cannot hold property_management or as_last_split, and a downgrade never
+    rewrites data. The guard must see rows under forced RLS."""
+    name = create_database()
+    try:
+        alembic(name, "upgrade", "0012_mgmt_category_last_split")
+        ws = uuid.uuid4()
+        with _admin(name) as conn:
+            conn.execute("INSERT INTO workspace (id, name) VALUES (%s, 'A')", (ws,))
+            conn.execute(f"SET ROLE {OWNER}")
+            conn.execute("SELECT set_config('app.workspace_id', %s, false)", (str(ws),))
+            matcher = {"counterparty_iban_hmac": IBAN_HMAC_HEX}
+            if row == "allocation":
+                acc = _account(conn, ws)
+                t = _transaction(conn, ws, acc, _import(conn, ws, acc))
+                _allocation(conn, ws, t, category="property_management", method="user")
+            elif row == "category_rule":
+                _rule(conn, ws, matcher, category="property_management")
+            else:
+                _rule(
+                    conn,
+                    ws,
+                    matcher,
+                    split_method="as_last_split",
+                    category=None,
+                    categories=Jsonb(KIND),
+                )
+        with pytest.raises(DBAPIError, match="refused: a row uses a new category or split"):
+            alembic(name, "downgrade", "0011_rule_same_amount_only")
+        with _admin(name) as conn:
+            assert conn.execute("SELECT version_num FROM alembic_version").fetchall() == [
+                ("0012_mgmt_category_last_split",)
+            ]
+            for forced_table in ("allocation", "matching_rule"):
+                forced = conn.execute(
+                    "SELECT relforcerowsecurity FROM pg_class WHERE oid = %s::regclass",
+                    (forced_table,),
+                ).fetchone()
+                assert forced == (True,)  # the refused downgrade's NO FORCE was rolled back
+            if row != "allocation":  # allocations are append-only, even for the owner
+                conn.execute("DELETE FROM matching_rule")
+        if row != "allocation":
+            alembic(name, "downgrade", "0011_rule_same_amount_only")
+            with _admin(name) as conn:
+                columns = conn.execute(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = 'matching_rule'"
+                ).fetchall()
+                assert ("categories",) not in columns
+            alembic(name, "upgrade", "head")
+    finally:
+        drop_database(name)
+
+
 def test_rule_split_methods_need_their_scope(connect, workspaces):
     a, _ = workspaces
     matcher = {"counterparty_iban_hmac": IBAN_HMAC_HEX}

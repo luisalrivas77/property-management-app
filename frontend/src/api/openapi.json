@@ -5570,6 +5570,7 @@
           "hausgeld_umlagefaehig",
           "hausgeld_verwaltung",
           "hausgeld_ruecklage",
+          "property_management",
           "grundsteuer",
           "insurance",
           "repairs",
@@ -8831,6 +8832,20 @@
             ],
             "title": "Loan Id"
           },
+          "categories": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AllocationCategory"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Categories"
+          },
           "recurring": {
             "type": "boolean",
             "title": "Recurring",
@@ -10609,7 +10624,8 @@
           "by_rent_schedule",
           "by_loan_schedule",
           "by_wirtschaftsplan",
-          "owner_transfer"
+          "owner_transfer",
+          "as_last_split"
         ],
         "title": "SplitMethod",
         "description": "matching_rule.split_method (D25): how a rule splits, never how much."

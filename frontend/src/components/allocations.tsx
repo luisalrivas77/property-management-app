@@ -14,11 +14,14 @@
 // - "Künftig immer so zuordnen" only when can_learn_rule. Until the person ticks or unticks it,
 //   it follows the rows (§8.1): on for one row whose category is not among
 //   no_default_rule_categories (repairs, renovation, anything capitalized, the catch-alls),
-//   off otherwise. Several rows start off, since a split becomes a rule only by a split
-//   method the UI cannot check (rule.not_learnable would refuse the whole answer). A line
-//   that arrives with rows starts from the server's learn_rule_default and follows the rows
-//   once they are edited. Otherwise an optional purpose pattern can still make a rule
-//   (D38). learn_rule is always
+//   off otherwise. Several rows (D51: a split the server learns as as_last_split, "wie
+//   zuletzt aufgeteilt") start on when every category is set and not among those, there are
+//   two or more different ones and none is loan interest or repayment (the loan schedule
+//   learns those) or rent or its prepayment (the tenancy's schedule, or no rule: review F2),
+//   since the server learns no copy of those and rule.not_learnable would refuse the whole
+//   answer; off otherwise, and the person may still tick it. A line that arrives with rows
+//   starts from the server's learn_rule_default and follows the rows once they are edited.
+//   Otherwise an optional purpose pattern can still make a rule (D38). learn_rule is always
 //   sent explicitly: a typed pattern means "make a rule", whatever the server default for the
 //   category would be.
 // - D49: one IBAN can send two kinds of payment (the Hausverwaltung's Hausgeld and its fee).
@@ -137,6 +140,24 @@ function rowCents(row: Row): bigint | null {
 }
 
 /** The line's amount minus the rows, or null while any row's amount does not parse. */
+const NO_SPLIT_COPY: ReadonlySet<AllocationCategory> = new Set<AllocationCategory>([
+  "loan_interest",
+  "loan_principal",
+  "rent_cold",
+  "operating_costs_prepayment",
+]);
+
+/** D51: whether a split starts with the rule box ticked, as the server's learn_rule_default
+ * would for an as_last_split answer. */
+function splitSuggested(rows: Row[], noDefault: ReadonlySet<AllocationCategory>): boolean {
+  const categories = rows.map((row) => row.category);
+  if (categories.some((category) => category === "" || noDefault.has(category))) return false;
+  // Loan interest and repayment move with the schedule; rent is split by its tenancy's schedule
+  // or not learned at all (review F2). The server learns no copy of either.
+  if (categories.some((category) => category !== "" && NO_SPLIT_COPY.has(category))) return false;
+  return new Set(categories).size >= 2;
+}
+
 function restOf(lineAmount: string, rows: Row[]): bigint | null {
   let rest = toCents(lineAmount);
   if (rest === null) return null;
@@ -268,7 +289,8 @@ function AllocationEditor({
   const balanced = rest === 0n;
 
   const noDefault = new Set(view.no_default_rule_categories);
-  const suggested = rows.length === 1 && rows.every((row) => row.category === "" || !noDefault.has(row.category));
+  const suggested =
+    rows.length === 1 ? rows.every((row) => row.category === "" || !noDefault.has(row.category)) : splitSuggested(rows, noDefault);
   const learn = learnChoice ?? (current.length === 0 || rowsEdited ? suggested : view.learn_rule_default);
 
   const others = view.waiting_other_amounts ?? [];
