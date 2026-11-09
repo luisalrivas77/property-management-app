@@ -83,7 +83,7 @@ Numbering continues from phase 2's D52 (the 0.00 € auto-confirm, merged 9 Nov 
 | D58 | **User tax decisions and verified certificate figures live in one append-only table `tax_input`** (kinds `spread_82b`, `renovation_treatment`, `exclude_from_15pct`, `market_rent`, `ruecklage_spent`, `interest_certified`, `pre_handover_income` (D63)), each row with its scope (allocation, unit, loan, year), a typed `value`, `supersedes_id` and `withdrawn`; event `property.tax_input_recorded`. | Principle 4; a draft is reproducible from the ledger plus these rows plus the rule set. |
 | D59 | **The draft sums confirmed allocations only.** Proposed sets, unmatched lines and allocations in an `undecided` category (`uncategorized`, `other_expense`, an unelected `renovation`) are excluded and reported as a count and a euro total ("n Zeilen in Zu prüfen nicht enthalten"). A line whose source document is still expected (Zinsbescheinigung, Hausgeldabrechnung) is flagged `provisional`. Drafts are computed on read and never stored; **exports are snapshots** (`tax_export` row + content-addressed file, D65). | "Only confirmed allocations reach the ledger" (ARCHITECTURE pipeline); what was handed to the Finanzamt stays reproducible. |
 | D60 | **Cents everywhere; whole euros only on the field sheet**: income lines rounded down, cost lines rounded up, totals from the rounded lines, the owners' Zurechnung (Z86) by largest remainder with the odd euro to the first owner. Provisional until the Anleitung zur Anlage V 2025 confirms the rounding convention (open question 4). | The form's amount fields are whole euros ("EUR ,–"); "zu Ihren Gunsten" is the common guidance, found in secondary sources only. |
-| D61 | **Verbilligte Vermietung** compares the agreed Warmmiete (Kaltmiete + Nebenkostenvorauszahlung) with the ortsübliche Warmmiete per m² entered by Luis (`market_rent` input per unit, dated, with the Mietspiegel as evidence): ≥ 66 % nothing; 50–66 % warning "Totalüberschussprognose nötig"; < 50 % warning with the Kürzung percentage proposed for Z87. The draft never cuts Werbungskosten itself: the form says the Finanzamt does, from Z87. | §21 Abs. 2 EStG as amended 2021 (the 50 % threshold); R 21.3 EStR compares Warmmieten. ARCHITECTURE's row knew only the 66 % threshold (§16). |
+| D61 | **Verbilligte Vermietung** compares the agreed Warmmiete (Kaltmiete + Nebenkostenvorauszahlung) with the ortsübliche Warmmiete: the Mietspiegel's net cold rent per m² entered by Luis (`market_rent` input, dated, the Mietspiegel stored as evidence; the lowest value of the applicable range is allowed, since every value inside the range counts as ortsüblich) times the area, plus the year's umlagefähige costs from the ledger (`hausgeld_umlagefaehig`, `grundsteuer`, `insurance`), as R 21.3 EStR builds it. For a flat let by rooms the comparison is made once for the flat (Σ the rooms' agreed Warmmiete against the flat's `living_area_m2`, D71), for an MFH per unit. Luis's flat is in a city with a qualified Mietspiegel (Fürth, 2025 edition valid from 1 Aug 2025; checked 9 Nov 2026, Q7): ≥ 66 % nothing; 50–66 % warning "Totalüberschussprognose nötig"; < 50 % warning with the Kürzung percentage proposed for Z87. The draft never cuts Werbungskosten itself: the form says the Finanzamt does, from Z87. | §21 Abs. 2 EStG as amended 2021 (the 50 % threshold); R 21.3 EStR compares Warmmieten. ARCHITECTURE's row knew only the 66 % threshold (§16). |
 | D62 | **§82b spread** is an input per allocation (`spread_82b`, 2–5 years): the year paid takes amount ÷ years (half-up to the cent, the last year the remainder), later years take their share on the "aus Jahr Y−k" lines; the remainder is deducted in full in the year ownership or the letting ends (§82b Abs. 2 EStDV). Changeable by a superseding row while the assessment is open; the app records, it does not judge finality. | §82b EStDV; one property has one owner group, so Abs. 3 (same spread for all co-owners) holds by construction. |
 | D63 | **Income booked before the handover** (`booking_date < property.purchase_date`) is listed in a "Vor dem Übergang" block with its sum. Where the owner has recorded how it counts (a `pre_handover_income` tax input per property, value `rent`), those lines go on the rent line instead: added to the flat's Z13 row, each line a source of it, and the block is empty. Without that input they stay off the form with warning `income.pre_handover`. **Luis decided on 9 Nov 2026 (Q1): `rent`.** The rent share the seller forwarded was paid only for months in which the leases already named Luis as landlord (it began the month after the first instalment), so it is his rental income; only the share he received counts, not the part the seller kept under the contract. Costs before the handover count as vorab entstandene Werbungskosten (loan interest, Geldbeschaffungskosten, bank fees). | ARCHITECTURE's phase 3 input: the treatment was a tax question to settle with evidence. Whoever lets in their own name earns the rent; the readings "price reduction" and "interest for paying early" fit only months in which the seller was still the landlord, and there were none with a forwarded share. Declaring it as income is also the reading the Finanzamt has no reason to dispute. |
 | D64 | **The checklist catalogue gains two data entries** (§8): `cost_receipt` per confirmed `repairs`, `renovation`, `loan_fees` or `professional_fees` allocation of the year (satisfied by its `document_id`), and `market_rent` per unit let in the year (satisfied by a `market_rent` input in force). Two new scope types (`allocation`, `unit`), two new satisfiers; no new code paths in the catalogue walk. | Phase 1 amendment 3 built the catalogue so "phase 3 adds entries, not code paths". |
@@ -383,15 +383,18 @@ provisional + warning.
 
 ### 5.8 Verbilligte Vermietung (`verbilligt.py`)
 
-Per tenancy active in the year: agreed Warmmiete = `cold_rent + operating_costs_prepayment`
-in force on 1 January (or the tenancy start); ortsübliche Warmmiete = the unit's
-`market_rent` input in force (`warm_rent_per_m2 × floor_area_m2`); `ratio` = agreed ÷
-ortsüblich. ≥ 66 %: nothing. 50 % ≤ ratio < 66 %: warning `reduced_rent.prognosis_needed`.
+Per Wohnung (D71: the flat for an ETW let by rooms, each unit for an MFH): agreed Warmmiete
+= Σ `cold_rent + operating_costs_prepayment` of its tenancies in force on 1 January (or each
+tenancy's start); an `included` tenancy's whole rent is warm already (D72). Ortsübliche
+Warmmiete = the `market_rent` input in force (`cold_rent_per_m2`, the Mietspiegel's net cold
+rent) × the Wohnung's area + the year's umlagefähige costs from the ledger (Σ confirmed
+`hausgeld_umlagefaehig`, `grundsteuer`, `insurance`, scaled to 12 months for a part year);
+`ratio` = agreed ÷ ortsüblich. ≥ 66 %: nothing. 50 % ≤ ratio < 66 %: warning `reduced_rent.prognosis_needed`.
 < 50 %: warning `reduced_rent.partial` and `reduced_rent.cut_percent` = round((1 − ratio) ×
 100) proposed for Z87 (the Finanzamt cuts, the draft does not, D61). No input: warning
 `reduced_rent.no_market_rent` (information) and the checklist item `market_rent` missing.
 
-Worked example (`verbilligte_vermietung.yaml`): 62.50 m² at 16.00 €/m² warm → 1,000.00;
+Worked example (`verbilligte_vermietung.yaml`): 62.50 m² at 12.80 €/m² cold → 800.00, plus 200.00 umlagefähige costs a month → 1,000.00;
 agreed 1,030.00 → 103 %, nothing; agreed 620.00 → 62 %, prognosis; agreed 450.00 → 45 %,
 cut 55 %.
 
@@ -449,7 +452,7 @@ the draft.
 | `tenancy.rent_due_day smallint NOT NULL DEFAULT 3 CHECK (1..28)` | D67 | Update + `tenancy.updated` |
 | `property.living_area_m2 numeric(7,2) NULL CHECK (> 0)` | D71, the flat's Wohnfläche for Z11 and Z13 | Update + `property.updated` |
 | `tenancy.operating_costs_terms text NOT NULL DEFAULT 'prepayment' CHECK in (`prepayment`, `flat_rate`, `included`)` | D72 | Update + `tenancy.updated` |
-| `tax_input` | `property_id` NOT NULL, `kind` CHECK in (`spread_82b`, `renovation_treatment`, `exclude_from_15pct`, `market_rent`, `ruecklage_spent`, `interest_certified`, `pre_handover_income`), `tax_year smallint` (CHECK ≥ 2000), `unit_id`, `loan_id`, `allocation_id`, `document_id` (all nullable FKs with `workspace_id`), `value jsonb NOT NULL` (typed per kind, §7), `note text`, `supersedes_id` (FK self), `withdrawn boolean NOT NULL DEFAULT false`, `recorded_at`, `recorded_by` | **Append-only** (`forbid_mutation` trigger like `transaction`); per-kind scope CHECKs: `spread_82b`, `renovation_treatment`, `exclude_from_15pct` need `allocation_id`; `market_rent` needs `unit_id`; `ruecklage_spent` needs `tax_year` and `document_id`; `interest_certified` needs `loan_id`, `tax_year` and `document_id`; `pre_handover_income` needs the property only (value `rent`, D63); `withdrawn` needs `supersedes_id` |
+| `tax_input` | `property_id` NOT NULL, `kind` CHECK in (`spread_82b`, `renovation_treatment`, `exclude_from_15pct`, `market_rent`, `ruecklage_spent`, `interest_certified`, `pre_handover_income`), `tax_year smallint` (CHECK ≥ 2000), `unit_id`, `loan_id`, `allocation_id`, `document_id` (all nullable FKs with `workspace_id`), `value jsonb NOT NULL` (typed per kind, §7), `note text`, `supersedes_id` (FK self), `withdrawn boolean NOT NULL DEFAULT false`, `recorded_at`, `recorded_by` | **Append-only** (`forbid_mutation` trigger like `transaction`); per-kind scope CHECKs: `spread_82b`, `renovation_treatment`, `exclude_from_15pct` need `allocation_id`; `market_rent` needs the property (the flat, D71) or a `unit_id` (an MFH unit); `ruecklage_spent` needs `tax_year` and `document_id`; `interest_certified` needs `loan_id`, `tax_year` and `document_id`; `pre_handover_income` needs the property only (value `rent`, D63); `withdrawn` needs `supersedes_id` |
 | `tax_export` | `property_id`, `tax_year`, `kind` CHECK in (`field_sheet`, `archive`), `rule_set_version text`, `form_year smallint`, `form_status text`, `draft jsonb NOT NULL` (the `AnlageVDraft`), `file_sha256` (FK `document_file (workspace_id, sha256)`), `size_bytes`, `created_at`, `created_by` | **Immutable** (`forbid_mutation`); deleted by the retention sweeper with the year's tax records (10 years after `tax_year`) |
 
 RLS, `workspace_id`, grants and the `tables.py` mirror as every table since 0001. No change to
@@ -515,7 +518,7 @@ entity_type` + `"tax_input"`); `enums.py` only if a CHECK'd set is added (none p
 | Code | Scope | Satisfied by | Due | Applies |
 | --- | --- | --- | --- | --- |
 | `cost_receipt` | one per confirmed allocation of the year (by the §5.1 year) with category `repairs`, `renovation`, `loan_fees` or `professional_fees` and a non-zero amount (D70) | the allocation's `document_id` (new satisfier `ALLOCATION_DOCUMENT`) | always | — |
-| `market_rent` | one per unit with a tenancy overlapping the year | a `market_rent` input of that unit with `valid_from` ≤ 31 Dec of the year, not withdrawn (new satisfier `TAX_INPUT`) | always | — |
+| `market_rent` | one per Wohnung (D71) with a tenancy overlapping the year | a `market_rent` input of that Wohnung (property, or unit for an MFH) with `valid_from` ≤ 31 Dec of the year, not withdrawn (new satisfier `TAX_INPUT`) | always | — |
 
 Existing entries keep their rules; `zinsbescheinigung` and `hausgeldabrechnung` now also feed
 §5.5 and §5.6. Statuses, order and the "owned in the year" test are unchanged. Fixture
@@ -799,9 +802,11 @@ Conflicts, stated plainly, and the edits (made in the spec PR):
    ten-day rule: a January rent paid in the last days of December is due inside the window and
    counts for the new year; a December rent is due outside it, so a late one paid in January
    counts in the year it arrives. Setting 1 on the earlier tenancies is for accuracy only.
-7. **Luis: the ortsübliche Miete.** Which Mietspiegel applies and which value (the warm figure
-   per m², D61) to enter; and whether the 50–66 % Totalüberschussprognose should ever be
-   computed by the app (phase 4's projection could) or stays a warning.
+7. **Decided 9 Nov 2026: the ortsübliche Miete** (D61). The flat is in Fürth, which has a
+   qualified Mietspiegel (2025 edition, valid from 1 Aug 2025, [fuerth.de](https://www.fuerth.de/fileadmin/redaktion/02-Bauen-Mobilitaet/02-Dokumente-Allgemein/Mietspiegel-Stadt-Fuerth-2025.pdf)).
+   Luis enters its net cold rent per m² for the flat (the low end of the range is allowed) once
+   phase 3 is built; the app adds the running costs from the ledger. The 50–66 %
+   Totalüberschussprognose stays a warning; phase 4's projection may compute it later.
 8. **Finanzamt copies** (ARCHITECTURE's phase 3 input). The archive lists the documents that
    need one (D65). Making them needs a PDF renderer (pypdf cannot draw annotations into the
    page; a renderer such as pdfium or a headless browser is a new dependency); an XFA form
