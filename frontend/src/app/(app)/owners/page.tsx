@@ -2,12 +2,15 @@
 
 // Eigentümer (§9.1): list with inline create and edit (Name, Steuer-ID-Referenz,
 // Kirchensteuer, Bundesland). The typed Grenzsteuersatz is gone (phase 4 D90, migration 0016):
-// the rate is derived per year from income inputs, which phase 4 step 1 adds to this page.
+// the rate is derived per year from income inputs (phase-4.md §9): the Einkommen section, per
+// owner the expected gross pay and the deductions, for the household a Bescheid's zvE and a
+// typed tax rate (components/income.tsx).
 import { useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
 import type { Owner, StateCode } from "@/api/schemas";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "@/components/form";
+import { IncomeSection } from "@/components/income";
 import { blankToNull } from "@/components/input";
 import { options, STATE_CODE } from "@/components/labels";
 import { Loading, Notice } from "@/components/ui";
@@ -85,6 +88,18 @@ export default function OwnersPage() {
           )
         }
       </Loading>
+      <h2>Einkommen</h2>
+      <div className="card">
+        <Loading state={owners}>
+          {(list) =>
+            list.length === 0 ? (
+              <p className="muted">Zuerst die Eigentümer anlegen, dann ihr Einkommen eintragen.</p>
+            ) : (
+              <IncomeSection owners={list} />
+            )
+          }
+        </Loading>
+      </div>
       <h2>Eigentümer anlegen</h2>
       <div className="card">
         <OwnerForm
