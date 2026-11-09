@@ -4274,6 +4274,216 @@
         }
       }
     },
+    "/api/properties/{property_id}/anlage-v/exports": {
+      "post": {
+        "summary": "Tax Export Create",
+        "description": "Queue a field sheet or an archive of the draft as it is now; poll\nGET /tax-exports/{export_id}. Writes nothing but the job: the export row, its file and\nits event appear together when the job has run.",
+        "operationId": "tax_export_create_api_properties__property_id__anlage_v_exports_post",
+        "parameters": [
+          {
+            "name": "property_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Property Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaxExportCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaxExportQueued"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Tax Exports List",
+        "description": "The property's stored exports (ready ones only), newest first.",
+        "operationId": "tax_exports_list_api_properties__property_id__anlage_v_exports_get",
+        "parameters": [
+          {
+            "name": "property_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Property Id"
+            }
+          },
+          {
+            "name": "tax_year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 2100,
+                  "minimum": 2000
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tax Year"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaxExport"
+                  },
+                  "title": "Response Tax Exports List Api Properties  Property Id  Anlage V Exports Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tax-exports/{export_id}": {
+      "get": {
+        "summary": "Tax Export Get",
+        "description": "queued while the job waits or runs; ready with `export` and a signed `download_url`\n(fetch it right before downloading: it expires); failed with `error_code`\n(`tax_export.failed`, or `tax_export.too_large` when the archive outgrew 1 GiB).",
+        "operationId": "tax_export_get_api_tax_exports__export_id__get",
+        "parameters": [
+          {
+            "name": "export_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Export Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaxExportState"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tax-exports/{export_id}/file": {
+      "get": {
+        "summary": "Tax Export File",
+        "description": "The export's bytes, SHA-256 verified, as an attachment.",
+        "operationId": "tax_export_file_api_tax_exports__export_id__file_get",
+        "parameters": [
+          {
+            "name": "export_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Export Id"
+            }
+          },
+          {
+            "name": "expires",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Expires"
+            }
+          },
+          {
+            "name": "signature",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 128,
+              "title": "Signature"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The export's bytes",
+            "content": {
+              "application/pdf": {},
+              "application/zip": {}
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/properties/{property_id}/history": {
       "get": {
         "summary": "History Of Property",
@@ -12572,6 +12782,208 @@
           "error_code"
         ],
         "title": "StatementImport"
+      },
+      "TaxExport": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "property_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Property Id"
+          },
+          "tax_year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 2000.0,
+            "title": "Tax Year"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TaxExportKind"
+          },
+          "rule_set_version": {
+            "type": "string",
+            "title": "Rule Set Version"
+          },
+          "form_year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 2000.0,
+            "title": "Form Year"
+          },
+          "form_status": {
+            "$ref": "#/components/schemas/FormStatus"
+          },
+          "file_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "File Sha256"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Size Bytes"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "workspace_id",
+          "created_at",
+          "property_id",
+          "tax_year",
+          "kind",
+          "rule_set_version",
+          "form_year",
+          "form_status",
+          "file_sha256",
+          "size_bytes"
+        ],
+        "title": "TaxExport",
+        "description": "A stored export (immutable). The draft it was built from is in the row's `draft`\ncolumn; the API returns it with the file's signed download URL, not inline."
+      },
+      "TaxExportCreate": {
+        "properties": {
+          "tax_year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 2000.0,
+            "title": "Tax Year"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TaxExportKind"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "tax_year",
+          "kind"
+        ],
+        "title": "TaxExportCreate"
+      },
+      "TaxExportKind": {
+        "type": "string",
+        "enum": [
+          "field_sheet",
+          "archive"
+        ],
+        "title": "TaxExportKind"
+      },
+      "TaxExportQueued": {
+        "properties": {
+          "export_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Export Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "export_id"
+        ],
+        "title": "TaxExportQueued",
+        "description": "POST /properties/{id}/anlage-v/exports: the id to poll GET /tax-exports/{id} with."
+      },
+      "TaxExportState": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "property_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Property Id"
+          },
+          "tax_year": {
+            "type": "integer",
+            "title": "Tax Year"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TaxExportKind"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "ready",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "download_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Download Url"
+          },
+          "export": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaxExport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "property_id",
+          "tax_year",
+          "kind",
+          "status"
+        ],
+        "title": "TaxExportState",
+        "description": "GET /tax-exports/{id}. `export` and `download_url` once ready; the URL is signed and\nvalid DOWNLOAD_TTL_S seconds, so a client fetches it right before downloading."
       },
       "TaxInput": {
         "properties": {
