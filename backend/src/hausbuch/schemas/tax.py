@@ -73,7 +73,9 @@ class FormLine(Schema):
     zeile is the printed line that carries the Kennzahl and the amount (for a block such as
     "Schuldzinsen" Z46–48 that is the "abzugsfähig" line 48); zeile_from is the block's first
     line when it spans several (46), else None. A line the form does not print (a total the
-    form leaves to ELSTER) has zeile None.
+    form leaves to ELSTER) has zeile None. The one block of repeated rows, income.rent_units
+    (Z13 "Bezeichnung der Wohneinheit", Z14 "weiterer Wohneinheiten"), prints its first row on
+    zeile_from (13) and rows 2..n on zeile (14).
     """
 
     key: str = Field(min_length=1)  # Hausbuch line code, stable across years ("wk.interest")
@@ -378,6 +380,8 @@ class WarningCode(StrEnum):
     LIMIT_EXCEEDED = "limit.exceeded"
     LIMIT_PRIOR_YEAR_AMENDMENT = "limit.prior_year_amendment"
     LIMIT_ESTIMATED_NET = "limit.estimated_net"
+    # A cost booked soon after the window with no service period: when was the work done? (D76)
+    ANSCHAFFUNGSNAH_PERFORMANCE_DATE_CHECK = "anschaffungsnah.performance_date_check"
     RENOVATION_UNDECIDED = "renovation.undecided"
     INTEREST_CERTIFICATE_MISMATCH = "interest.certificate_mismatch"
     HAUSGELD_ABRECHNUNG_PENDING = "hausgeld.abrechnung_pending"
@@ -406,6 +410,7 @@ WARNING_SEVERITY: dict[WarningCode, Severity] = {
     W.LIMIT_EXCEEDED: "warning",
     W.LIMIT_PRIOR_YEAR_AMENDMENT: "warning",
     W.LIMIT_ESTIMATED_NET: "info",
+    W.ANSCHAFFUNGSNAH_PERFORMANCE_DATE_CHECK: "warning",
     W.RENOVATION_UNDECIDED: "warning",
     W.INTEREST_CERTIFICATE_MISMATCH: "warning",
     W.HAUSGELD_ABRECHNUNG_PENDING: "info",

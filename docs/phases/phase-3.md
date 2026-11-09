@@ -1,6 +1,6 @@
 # Phase 3 spec: Steuerjahr — rule set 2026, Anlage V draft, checklist, 15 % tracker, exports
 
-Nov 9, 2026 · spec draft (architect), checked by the orchestrator; Luis's questions in §17 all answered 9 Nov 2026 (Q1, Q2, Q3, Q6, Q7, Q8), the orchestrator's settled the same day; step 0 (schemas, migration, rule sets, fixtures) written 9 Nov 2026 on branch `docs/phase-3-step0` (commits `e16002b`, `d139528`, `b4390ad` and this doc update), not merged. Writing the fixtures corrected several worked examples below; the biggest is that a cost the 15 % test moves into the AfA basis enters it **gross** (D73, needs sign-off).
+Nov 9, 2026 · spec draft (architect), checked by the orchestrator; Luis's questions in §17 all answered 9 Nov 2026 (Q1, Q2, Q3, Q6, Q7, Q8), the orchestrator's settled the same day; step 0 (schemas, migration, rule sets, fixtures) written 9 Nov 2026 on branch `docs/phase-3-step0` (commits `e16002b`, `d139528`, `b4390ad` and this doc update), not merged. Writing the fixtures corrected several worked examples below; the biggest is that a cost the 15 % test moves into the AfA basis enters it **gross** (D73, confirmed in review 9 Nov 2026). The review round of the same day added D74–D76 (a `herstellung` election counts toward the 15 %, the window ends on the same calendar day three years later, and the date tested is when the work was done) and put the flat's unit row on Z13.
 No implementation. Every tax rule below was checked against the law, the
 official Anlage V 2025 form or a BFH decision on 9 Nov 2026 (§3 lists the sources); where a
 point could not be verified from an official source it is an open question, not a decision.
@@ -78,7 +78,7 @@ Numbering continues from phase 2's D52 (the 0.00 € auto-confirm, merged 9 Nov 
 | D53 | **Rule sets are YAML data files per tax year** under `rules/tax/rulesets/`, loaded into a frozen `RuleSet` (§4). The form mapping is keyed by a Hausbuch line code (`income.rent_total`, `wk.interest`, …) with the Zeile and the ELSTER Kennzahl per form year. A tax year whose form is not published yet gets a copy of the latest published mapping marked `provisional`; the screen and every export say so. | Principle 5. The 2026 Anlage V is not published as of 9 Nov 2026 (§4.3); line numbers moved in 2023 and again in 2025, Kennzahlen are the stable part. |
 | D54 | **The tax year of a payment is derived by §11 EStG with the Fälligkeit requirement** (§5.1): the year the bank booked it, unless the payment is recurring, belongs economically to the adjacent year, and was *both* booked *and* due within the ten days around the year end (BFH X R 2/21, 16 Feb 2022). The payment date is the bank's booking date; the due date comes from the loan schedule, the tenancy's new `rent_due_day` (D67), or the first day of the service period. | ARCHITECTURE's rule row knew the ten days but not the Fälligkeit condition; D31 said the needed data was "all stored", which was true except for the due date. |
 | D55 | **The AfA basis comes from the property record only**: (purchase price + Σ acquisition cost rows) × selected building share. `purchase_price` and `acquisition_cost` allocations are payment evidence and never summed (settles the open part of D44). The draft warns when a cost row has no paying allocation, an `acquisition_cost` allocation has no cost row, or Σ `purchase_price` allocations ≠ the recorded price. `loan_fees` (D35) never enter the basis. | Principle 2 with one source per figure; nothing counts twice. |
-| D56 | **The 15 % tracker** counts confirmed `repairs` and `renovation` allocations booked in the three years from the handover, net of VAT (the linked invoice's `amount_net`, else gross ÷ 1.19 marked *estimated*), against 15 % of the building share of the acquisition costs. Exclusions the law names (Erweiterungen, jährlich anfallende Erhaltungsarbeiten; Schadensbeseitigung per BFH IX R 6/16) are a per-allocation input `exclude_from_15pct` with a reason, not a new category. When the limit is crossed, every counted cost since the handover becomes Herstellungskosten: the draft of each earlier year changes and says so (`limit.prior_year_amendment`). | §6 Abs. 1 Nr. 1a EStG; the taxonomy stays fixed (D24); a flag with a reason is auditable in History. |
+| D56 | **The 15 % tracker** counts confirmed `repairs` and `renovation` allocations performed in the three years from the handover (the work's date, D76; whatever their treatment, D74; the window per D75), net of VAT (the linked invoice's `amount_net`, else gross ÷ 1.19 marked *estimated*), against 15 % of the building share of the acquisition costs. Exclusions the law names (Erweiterungen, jährlich anfallende Erhaltungsarbeiten; Schadensbeseitigung per BFH IX R 6/16) are a per-allocation input `exclude_from_15pct` with a reason, not a new category. When the limit is crossed, every counted cost since the handover becomes Herstellungskosten: the draft of each earlier year changes and says so (`limit.prior_year_amendment`). | §6 Abs. 1 Nr. 1a EStG; the taxonomy stays fixed (D24); a flag with a reason is auditable in History. |
 | D57 | **Contributions to the Erhaltungsrücklage are not Werbungskosten; the WEG's spending from it is**, in the year the WEG spends it, on the Erhaltungsaufwand line (the 2025 form's Z55 reads "einschließlich Entnahmen aus der Erhaltungsrücklage"). The amount is the Hausgeldabrechnung's `ruecklage_spent` (owner's share), proposed by pre-fill with page and quote and confirmed by Luis as a `tax_input` of kind `ruecklage_spent`. Until it exists the line is provisional and the checklist shows the Abrechnung as expected. Closes phase 2 open question 7. | BFH IX R 19/24 of 14 Jan 2025 (BStBl II 2025, 291), confirming IX R 119/83. Principle 1: the model reads, Luis verifies, code sums. |
 | D58 | **User tax decisions and verified certificate figures live in one append-only table `tax_input`** (kinds `spread_82b`, `renovation_treatment`, `exclude_from_15pct`, `market_rent`, `ruecklage_spent`, `interest_certified`, `pre_handover_income` (D63)), each row with its scope (allocation, unit, loan, year), a typed `value`, `supersedes_id` and `withdrawn`; event `property.tax_input_recorded`. | Principle 4; a draft is reproducible from the ledger plus these rows plus the rule set. |
 | D59 | **The draft sums confirmed allocations only.** Proposed sets, unmatched lines and allocations in an `undecided` category (`uncategorized`, `other_expense`, an unelected `renovation`) are excluded and reported as a count and a euro total ("n Zeilen in Zu prüfen nicht enthalten"). A line whose source document is still expected (Zinsbescheinigung, Hausgeldabrechnung) is flagged `provisional`. Drafts are computed on read and never stored; **exports are snapshots** (`tax_export` row + content-addressed file, D65). | "Only confirmed allocations reach the ledger" (ARCHITECTURE pipeline); what was handed to the Finanzamt stays reproducible. |
@@ -95,7 +95,10 @@ Numbering continues from phase 2's D52 (the 0.00 € auto-confirm, merged 9 Nov 
 | D70 | **A 0.00 € allocation is not evidence.** Phase 2's D52 lets a model answer for a bank line of exactly 0.00 € be confirmed without review in categories such as `repairs`, `renovation`, `acquisition_cost`, `professional_fees`, `loan_fees`, `other_income`, `other_expense`. Such a row changes no sum, but every phase 3 rule that reads the *presence* of a category must ignore it: it creates no `cost_receipt` checklist item (§8), is not counted in and does not open the 15 % tracker's list (§5.3), raises no `renovation.undecided`, `income.other_review`, `income.pre_handover`, `afa.acquisition_cost_without_row` or `afa.purchase_price_mismatch` warning, needs no `renovation_treatment` input and is not an "open line" in `excluded_open` (§5.11). `DraftFacts` is built from confirmed allocations with `amount <> 0`, so a zero row is never a line's source either; it stays visible on the transaction and in History only. Fixture cases `zero_amount_is_not_evidence` in `checklist_phase3.yaml`, `anschaffungsnah.yaml` and `anlage_v_2026.yaml`. | A confirmation nobody looked at (D52) must not become a document requirement, a tracker entry or a warning a person then has to clear; the sums are unaffected either way. |
 | D71 | **One Z13 row per Wohnung, not per room** (Luis, 9 Nov 2026, Q2). Units let as rooms of one flat are summed into one `income.rent_units` row: the flat's rents (and, per D63, the forwarded share before the handover) next to the flat's Wohnfläche. The flat's area is a new nullable `property.living_area_m2` (the Wohnfläche of the purchase contract or the Wohnflächenberechnung, typed or pre-filled later); when it is empty the row uses the sum of the units' m² and the draft warns `income.living_area_missing`, because rooms' areas leave out kitchen, bath and hall. A property whose units are separate flats (an MFH) keeps one row per unit. The Steuern screen still shows each room's rent under the row. | The Finanzamt knows one Wohnung under one Aktenzeichen; rows per room would read as several flats. |
 | D72 | **How each lease agrees the running costs is a tenancy field** `operating_costs_terms`: `prepayment` (Vorauszahlung with a yearly settlement, the default), `flat_rate` (Pauschale, no settlement) or `included` (one all-in rent, Nebenkosten not agreed separately). Luis's earlier room leases charge a separately named Pauschale; the later lease states one all-in Warmmiete with the Betriebs- und Nebenkosten "abgegolten" (Luis, 9 Nov 2026), so it is `included` and the terms are mixed. `prepayment` and `flat_rate` amounts go on Z20; an `included` tenancy's whole rent is booked as `rent_cold` and stays on Z13. The Z24 box ("nicht gesondert vereinbart") is ticked when every tenancy let in the year is `included`; when the terms are mixed it stays unticked and the draft warns `umlagen.mixed_terms`, naming the all-in tenancies, until the Anleitung is read (Q4). Typed on the tenancy form; the lease pre-fill can read it later. Phase 4's Betriebskostenabrechnung reads the same field (no settlement for `flat_rate` or `included`), which settles ARCHITECTURE's phase 4 input on the Pauschale. | The terms differ per lease, so they belong on the tenancy, not the property; the tax is the same whichever line carries the amount, only the form's presentation changes. |
-| D73 | **Basis additions are gross** (step 0, 9 Nov 2026; **needs the orchestrator's and Luis's sign-off**). A cost that becomes Herstellungskosten (a `renovation` elected `herstellung`, or every counted cost once the 15 % limit is crossed) enters the AfA basis at its gross amount, VAT included. Only the 15 % *test* is net (§6 Abs. 1 Nr. 1a EStG says so); the cost that is then capitalised is what was paid. The spec's §5.3 example had added the net figures (5,000.00 and 36,000.00); the fixtures add 5,950.00 and 42,840.00 (`anschaffungsnah.yaml` `crossing_in_second_year`, `afa.yaml` `limit_crossing_additions_gross`). | §9b Abs. 1 EStG: input VAT is part of the Anschaffungs- or Herstellungskosten unless it can be deducted, and a residential landlord's lettings are VAT-exempt (§4 Nr. 12 UStG), so it cannot. Adding net would understate the AfA by 19 % of the additions every year. |
+| D73 | **Basis additions are gross** (step 0, 9 Nov 2026; confirmed by the review the same day, BMF 26 Jan 2026 Rn. 54, 68). A cost that becomes Herstellungskosten (a `renovation` elected `herstellung`, or every counted cost once the 15 % limit is crossed) enters the AfA basis at its gross amount, VAT included. Only the 15 % *test* is net (§6 Abs. 1 Nr. 1a EStG says so); the cost that is then capitalised is what was paid. The spec's §5.3 example had added the net figures (5,000.00 and 36,000.00); the fixtures add 5,950.00 and 42,840.00 (`anschaffungsnah.yaml` `crossing_in_second_year`, `afa.yaml` `limit_crossing_additions_gross`). | §9b Abs. 1 EStG: input VAT is part of the Anschaffungs- or Herstellungskosten unless it can be deducted, and a residential landlord's lettings are VAT-exempt (§4 Nr. 12 UStG), so it cannot. Adding net would understate the AfA by 19 % of the additions every year. BMF letter of 26 Jan 2026 on anschaffungsnahe Herstellungskosten, Rn. 54 and 68. |
+| D74 | **A `herstellung` election counts toward the 15 % test** (9 Nov 2026, from the step 0 review). The test covers Instandsetzung and Modernisierung, including a wesentliche Verbesserung; only Erweiterungen (§255 Abs. 2 S. 1 HGB, input `exclude_from_15pct` with reason `extension`) and jährlich übliche Erhaltungsarbeiten (reason `annual_maintenance`) are outside it. A `herstellung`-elected cost keeps its one basis addition (reason `herstellung`, gross, year paid, §5.4) and is never added a second time as `limit_exceeded` when the limit is crossed. Fixture cases `herstellung_counted`, `herstellung_extension_excluded`, `herstellung_counted_not_re_added`. | BMF 26 Jan 2026 Rn. 55, 60; BFH IX R 25/14 (14 Jun 2016). The spec had excluded the election from the count, which would let a capitalised Modernisierung hide how close the other costs are to the limit. |
+| D75 | **The three-year window ends on the same calendar day three years after the handover, inclusive** (9 Nov 2026, from the step 0 review): handover 1 Jul 2026 → last day 1 Jul 2029. The handover is an event during the day, so the period starts the next day (§187 Abs. 1 BGB) and ends with the expiry of the day whose number matches (§188 Abs. 2 BGB); a day missing in the end month moves the end to its last day (§188 Abs. 3). A Kaufvertrag fixing the Übergang to the start of a day ("0:00 Uhr") would be the §187 Abs. 2 case and end one day earlier; Hausbuch uses the Abs. 1 reading because its handover is the event of full payment. | §108 AO with §§187, 188 BGB; BMF 26 Jan 2026 Rn. 62. The spec had `purchase_date + 3 years − 1 day`, one day short. |
+| D76 | **The date tested against the window is when the work was done** (9 Nov 2026, from the step 0 review): the allocation's `service_period` end when set, else its booking date. Work performed by the end of the window counts even when paid after it. A `repairs` or `renovation` cost without a service period, booked within 90 days after the window's last day and so not counted, raises warning `anschaffungsnah.performance_date_check` (severity warning, params `booking_date`, `amount`) on the draft of the year paid, asking Luis to check when the work was done and set the period. | BMF 26 Jan 2026 Rn. 63: costs for work performed within the three years count, whether paid or not. A late invoice is common; 90 days covers the usual invoicing and payment terms. |
 
 ## 3. Sources checked (9 Nov 2026)
 
@@ -107,7 +110,8 @@ What each rule rests on, and what could not be verified from an official source.
 | AfA linear | §7 Abs. 4 S. 1 Nr. 2: a) completed after 31 Dec 2022 → 3 %; b) 1925–2022 → 2 %; c) before 1 Jan 1925 → 2.5 %. §7 Abs. 1 S. 4: in the acquisition year the annual AfA is reduced by 1/12 for each full month *preceding* the acquisition month. §9a EStDV: year of acquisition = year of delivery (Übergang). Degressive §7 Abs. 5a: 5 %, window 1 Oct 2023 – 30 Sep 2029 (out of scope) | [§7 EStG](https://www.gesetze-im-internet.de/estg/__7.html); [§9a EStDV](https://www.gesetze-im-internet.de/estdv_1955/__9a.html) | AfA in the year of a sale and nachträgliche HK accruing from 1 Jan of their year (R 7.4 Abs. 9 EStR, not fetched; Q11) |
 | AfA basis, Nebenkosten split | Anschaffungsnebenkosten (Grunderwerbsteuer, Notar, Grundbuch, Makler) are split between land and building in the same ratio as the price; only the building part enters the AfA basis | secondary sources agree ([steuerschroeder](https://www.steuerschroeder.de/aufteilung_kaufpreises_immobilien.html)); the BMF Arbeitshilfe page was unreachable (HTTP 503) | Confirm in the Arbeitshilfe's Anleitung when reachable (Q11); the BMF Arbeitshilfe itself was updated Jan 2025 and again early 2026 ([KPMG](https://kpmg.com/de/de/themen/2026/03/bmf-kaufpreisaufteilung.html)) |
 | Anschaffungsnahe Herstellungskosten | §6 Abs. 1 Nr. 1a EStG: Instandsetzung and Modernisierung within three years after the Anschaffung, net of VAT, above 15 % of the building's Anschaffungskosten → Herstellungskosten; excluded: Erweiterungen (§255 Abs. 2 S. 1 HGB) and jährlich üblicherweise anfallende Erhaltungsarbeiten. Schönheitsreparaturen count (BFH IX R 25/14, IX R 15/15, IX R 22/15 of 14 Jun 2016; BMF 20 Oct 2017); damage caused after acquisition does not (IX R 6/16); the test is per selbständiger Gebäudeteil | [§6 EStG](https://www.gesetze-im-internet.de/estg/__6.html); [Haufe on BMF 20 Oct 2017](https://www.haufe.de/steuern/finanzverwaltung/bmf-anschaffungsnahe-herstellungskosten-bei-gebaeuden_164_429956.html); [BFH IX R 25/14](https://rewis.io/urteile/urteil/eck-14-06-2016-ix-r-2514/) | The start of the three years: "Anschaffung" is the Übergang (§9a EStDV's delivery); H 6.4 EStH's "obligatorisches Rechtsgeschäft" rule belongs to Abbruchkosten, not to this test ([H 6.4](https://www.steuerschroeder.de/steuergesetze/esth/6.4)), but no Hinweis states it for §6 Abs. 1 Nr. 1a explicitly (Q11) |
-| Herstellungskosten gross (D73, added in step 0) | §9b Abs. 1 EStG: the Vorsteuer belongs to the Anschaffungs- or Herstellungskosten unless it can be deducted; a residential landlord cannot (VAT-exempt lettings, §4 Nr. 12 UStG), so capitalised costs are gross | [§9b EStG](https://www.gesetze-im-internet.de/estg/__9b.html) | Sign-off by the orchestrator and Luis (the step 0 coder changed the §5.3 example on this reading) |
+| Herstellungskosten gross (D73, added in step 0) | §9b Abs. 1 EStG: the Vorsteuer belongs to the Anschaffungs- or Herstellungskosten unless it can be deducted; a residential landlord cannot (VAT-exempt lettings, §4 Nr. 12 UStG), so capitalised costs are gross | [§9b EStG](https://www.gesetze-im-internet.de/estg/__9b.html); BMF 26 Jan 2026 Rn. 54, 68 (checked in the step 0 review) | — (confirmed 9 Nov 2026) |
+| 15 % test: what counts, the window, the date tested (D74–D76, from the step 0 review) | A wesentliche Verbesserung counts, only Erweiterungen and yearly routine maintenance are out (Rn. 55, 60; BFH IX R 25/14); the window is computed by §108 AO with §§187 Abs. 1, 188 Abs. 2 BGB (Rn. 62); work performed within it counts, paid or not (Rn. 63) | BMF letter of 26 Jan 2026 on anschaffungsnahe Herstellungskosten, as cited by the reviewer | — |
 | §82b EStDV | Größerer Erhaltungsaufwand on a building mostly used for living may be spread evenly over 2–5 years; on sale or end of letting the rest is deducted in that year; co-owners spread alike | [§82b EStDV](https://www.gesetze-im-internet.de/estdv_1955/__82b.html) | — |
 | Schuldzinsen, Geldbeschaffungskosten | Interest deductible, Tilgung not (§9 Abs. 1 S. 3 Nr. 1 EStG); financing costs are Werbungskosten (D35); a marktübliches Disagio is deductible when paid (§11 Abs. 2 S. 4 EStG; BMF 20 Oct 2003: ≤ 5 % at ≥ 5 years Zinsbindung) | [§11 EStG](https://www.gesetze-im-internet.de/estg/__11.html) | No Disagio field exists; the 5 % check is not built (Q10) |
 | Hausgeld, Erhaltungsrücklage | Payments into the Rücklage are not Werbungskosten when paid; they are when the WEG spends them on Erhaltung (BFH IX R 19/24, 14 Jan 2025, BStBl II 2025, 291, confirming IX R 119/83 of 26 Jan 1988). The 2025 form puts the Entnahmen on Z55 | [KPMG on IX R 19/24](https://kpmg.com/de/de/home/themen/2025/02/bfh-steuerabzug-hausgeld-erhaltungsruecklage.html); [Deubner](https://www.deubner-steuern.de/themen/einkommensteuer/werbungskosten/zahlungen-erhaltungsruecklage.html); the form text (below) | — |
@@ -176,7 +180,7 @@ Header and income lines:
 | `header.contract_date` / `header.transfer_date` / `header.completed` | 7 | — | `notarized_on` / `purchase_date` / `build_year` |
 | `header.sold` | 8 | 53 | `ownership_ended_on` (empty while owned) |
 | `header.living_area` | 11 | 54 | `property.living_area_m2`, else Σ `unit.floor_area_m2` with warning `income.living_area_missing` (D71) |
-| `income.rent_units` | 13–14 | — | one row per Wohnung: for an ETW let by rooms, the flat (`property.living_area_m2`, Σ `rent_cold` of its units); for an MFH, one row per unit (D71) |
+| `income.rent_units` | 13–14 | — | one row per Wohnung: for an ETW let by rooms, the flat (`property.living_area_m2`, Σ `rent_cold` of its units); for an MFH, one row per unit (D71). The first row prints on Z13 (`zeile_from`, "Bezeichnung der Wohneinheit"), rows 2..n on Z14 (`zeile`, "weiterer Wohneinheiten"), so the flat's single row is on Z13 |
 | `income.rent_total` | 15 | 01 | Σ of the unit rows |
 | `income.umlagen` | 20 | 04 | Σ `operating_costs_prepayment` of `prepayment` and `flat_rate` tenancies (D72) |
 | `income.umlagen_not_agreed` | 24 | 13 | box, ticked when every tenancy let in the year is `included` (D72); the box carries Kz 13 on the 2025 form (corrected in step 0: this row said none) |
@@ -296,31 +300,39 @@ purchase date, ownership end, and basis additions per year (§5.3, renovation `h
 Worked example (`afa.yaml`, case `etw_1998_handover_july`): price 300,000.00, cost rows
 19,500.00 + 4,200.00 + 1,300.00, share 0.720000 → basis 234,000.00; 2 % → 4,680.00 a year;
 handover 1 Jul 2026 → 6/12 → **2,340.00** for 2026, 4,680.00 for 2027. Other cases: build
-year 1920 (2.5 %), 2023 (3 %); handover 31 Jan (12/12), 15 Dec (1/12); a `herstellung`
-addition of 12,000.00 in 2027 → 2027 AfA 4,920.00; the 15 % crossing of §5.3 with gross
+year 1920 (2.5 %), 2023 (3 %); handover 31 Jan (12/12), 15 Dec (1/12); a Balkonanbau (an
+Erweiterung) elected `herstellung`, 12,000.00 in 2027 → 2027 AfA 4,920.00 (the step 0
+fixture had a kitchen, which is a separate movable asset, Q15); the 15 % crossing of §5.3 with gross
 additions (`limit_crossing_additions_gross`); no split → empty line + warning.
 
 ### 5.3 Anschaffungsnahe Herstellungskosten, the 15 % tracker (`anschaffungsnah.py`)
 
 `limit_status(facts, tax_year, rule_set) -> LimitStatus` with `basis_building_cost` (the AfA
 basis of §5.2 before additions), `limit = 15 %` of it, `window_start = purchase_date`,
-`window_end = purchase_date + 3 years − 1 day`, the counted allocations with gross, net,
+`window_end` = the same calendar day three years after `purchase_date`, inclusive (D75:
+handover 1 Jul 2026 → 1 Jul 2029), the counted allocations with gross, net,
 `net_source` (`invoice` | `estimated`), `used_net`, `ratio_percent` (= `used_net ÷ limit ×
 100`, one decimal, half-up: the share of the 15 % allowance used, not of the building cost),
 `exceeded`, `exceeded_in_year`, `basis_additions`. The status describes the whole window as
 known today, so it is the same whichever year is drafted.
 
-- Counted: confirmed `repairs` and `renovation` with a non-zero amount (D70; treatment
-  `erhaltung` or undecided; a `herstellung` election is capitalised on its own and not counted)
-  with `booking_date` in the window and no `exclude_from_15pct` input. Net = the linked invoice extraction's
+- Counted: confirmed `repairs` and `renovation` with a non-zero amount (D70), whatever the
+  treatment (`erhaltung`, undecided or `herstellung`, D74), whose tested date is in the window
+  and with no `exclude_from_15pct` input in force. The tested date is when the work was done
+  (D76): the `service_period` end when set, else the `booking_date`. Net = the linked invoice extraction's
   `amount_net` when present, else `gross ÷ (1 + default_vat_rate)` rounded, flagged.
 - The test is strict: `used_net > limit`. Equal does not trigger.
-- When exceeded in year X: every counted allocation of the window becomes a basis addition in
-  the year it was paid (§5.2), at its **gross** amount (D73), and leaves `wk.maintenance`; the
+- When exceeded in year X: every counted allocation of the window not elected `herstellung`
+  becomes a basis addition (reason `limit_exceeded`) in the year it was paid (§5.2), at its
+  **gross** amount (D73), and leaves `wk.maintenance`; a `herstellung`-elected cost already has
+  its own addition (§5.4) and is not added again (D74); the
   drafts of X and later window years carry warning `limit.exceeded`, the drafts of years
-  before X carry `limit.prior_year_amendment` (params `exceeded_in_year`, `amount` = that
-  year's gross moved). While the window is open and the limit not reached, the status shows the
-  risk ("Fenster bis 30.06.2029 offen; bisher 14,2 %").
+  before X that had a cost moved carry `limit.prior_year_amendment` (params
+  `exceeded_in_year`, `amount` = that year's gross moved). While the window is open and the
+  limit not reached, the status shows the risk ("Fenster bis 01.07.2029 offen; bisher 14,2 %").
+- A `repairs` or `renovation` cost without a service period, not counted, booked within 90 days
+  after `window_end` → warning `anschaffungsnah.performance_date_check` on the draft of the year
+  paid (D76).
 
 Worked example (`anschaffungsnah.yaml`): limit 35,100.00; 2026: painter 1,190.00 gross
 (invoice net 1,000.00) + bathroom tiles 4,760.00 (net 4,000.00) → used 5,000.00, 14.2 %, not
@@ -331,8 +343,12 @@ to the basis at 5,950.00 gross (2026 amendment warning with that amount), the ro
 **5,655.80**, and the amended 2026 AfA on (234,000.00 + 5,950.00) × 2 % × 6/12 = **2,399.50**
 (`afa.yaml` `limit_crossing_additions_gross`). Corrected in step 0: this example added the net
 figures (5,000.00 and 36,000.00), which §9b Abs. 1 EStG does not allow (D73). Cases `equal_is_not_exceeded`,
-`outside_window_not_counted` (paid 2029-07-01), `estimated_net_without_invoice`,
-`excluded_annual_maintenance`, `herstellung_not_counted`.
+`outside_window_not_counted` (paid 2029-07-02), `estimated_net_without_invoice`,
+`excluded_annual_maintenance`, `herstellung_counted` (10,000.00 net → 28.5 %),
+`herstellung_extension_excluded`, `herstellung_counted_not_re_added` (46,000.00 net, 131.1 %,
+only the roof becomes a `limit_exceeded` addition), `window_dates` (a cost on 1 Jul 2029 is
+inside), `performed_in_window_paid_after` (service period to 30 Jun 2029, paid 20 Aug →
+counted), `no_period_booked_after_window_warns` (booked 31 Jul 2029 → not counted, warning).
 
 ### 5.4 Erhaltungsaufwand and the §82b spread (`erhaltungsaufwand.py`)
 
@@ -663,7 +679,7 @@ Error codes: `tax.no_rule_set`, `tax.year_not_available`, `tax_input.scope_inval
 
 - **Field sheet** ("ELSTER-Ausfüllhilfe Anlage V 2026", PDF): the header lines; a table
   Zeile | Kennzahl | Bezeichnung | Betrag (Cent) | Eintrag (volle Euro) | Quellen (count); the
-  unit rows; the AfA-Erläuterung as an annex (price, cost rows, split and its source,
+  unit rows (the first on Z13, further ones on Z14, §4.2); the AfA-Erläuterung as an annex (price, cost rows, split and its source,
   rate, months, additions) because Z33 asks for it in the first year; warnings and open
   items; "Formularstand" (form year and status); rule set version, export id and SHA-256;
   the disclaimer. No names, no IBANs, no purpose texts (§6 invariant).
@@ -696,7 +712,7 @@ schemas (a fixture that does not match the schemas fails before any rule is impl
 | --- | --- | --- |
 | `tax_year.tax_year_of(payment, rule_set) -> TaxYearResult` | `tax_year.yaml` | the nine cases of §5.1, plus `due_missing_no_shift` (recurring, no due date → year paid, note) |
 | `afa.afa(facts, tax_year, rule_set) -> AfaLine` | `afa.yaml` | `etw_1998_handover_july` (2,340.00 / 4,680.00), `build_1920_rate_2_5`, `build_2023_rate_3`, `handover_january_full_year`, `handover_december_one_twelfth`, `nebenkosten_in_basis` and `nebenkosten_in_basis_none` (basis with and without the three cost rows, two cases), `herstellung_addition_2027`, `limit_crossing_additions_gross` (2026 2,399.50, 2027 5,655.80, D73), `no_split_empty_line`, `cost_row_unpaid_warning`, `acquisition_cost_without_row_not_added`, `purchase_price_mismatch_warning` |
-| `anschaffungsnah.limit_status(facts, tax_year, rule_set) -> LimitStatus` | `anschaffungsnah.yaml` | `under_limit_14_percent`, `crossing_in_second_year` (prior-year amendment, basis additions by year paid), `equal_is_not_exceeded`, `outside_window_not_counted`, `estimated_net_without_invoice`, `excluded_annual_maintenance`, `herstellung_not_counted`, `window_dates` (2026-07-01 → 2029-06-30), `zero_amount_is_not_evidence` (a confirmed 0.00 `repairs` row: not listed, not counted) |
+| `anschaffungsnah.limit_status(facts, tax_year, rule_set) -> LimitStatus` | `anschaffungsnah.yaml` | `under_limit_14_percent`, `crossing_in_second_year` (prior-year amendment, basis additions by year paid), `equal_is_not_exceeded`, `outside_window_not_counted`, `estimated_net_without_invoice`, `excluded_annual_maintenance`, `herstellung_counted`, `herstellung_extension_excluded`, `herstellung_counted_not_re_added` (D74), `window_dates` (2026-07-01 → 2029-07-01, D75), `zero_amount_is_not_evidence` (a confirmed 0.00 `repairs` row: not listed, not counted), `performed_in_window_paid_after`, `no_period_booked_after_window_warns` (D76) |
 | `erhaltungsaufwand.lines(...)` | `erhaltungsaufwand.yaml` | `repairs_full_deduction`, `renovation_elected_erhaltung`, `renovation_elected_herstellung`, `renovation_undecided_excluded`, `spread_three_years` (2,333.33 / 2,333.33 / 2,333.34), `spread_sale_in_second_year`, `spread_withdrawn_back_to_full` |
 | `schuldzinsen.lines(...)` | `schuldzinsen.yaml` | `interest_only_phase_plus_annuities` (3,724.56 / 1,508.77), `certificate_matches`, `certificate_mismatch_0_56`, `january_annuity_moved` (debited 30 Dec, certificate counts it in the new year), `financing_costs_before_handover`, `two_loans_two_einzelangaben` |
 | `hausgeld.lines(...)` | `hausgeld.yaml` | `six_months_split`, `ruecklage_tracked_not_deducted`, `ruecklage_spent_confirmed_350`, `abrechnung_pending_provisional`, `settlement_backpayment_next_year` |
@@ -716,7 +732,7 @@ note), `form_mapping.incomplete`, `tax_input.scope_invalid`, `tax_input.not_curr
 Warning codes (data in the draft, German text in the frontend): `year_end_straddle`,
 `afa.no_split`, `afa.cost_row_unpaid`, `afa.acquisition_cost_without_row`,
 `afa.purchase_price_mismatch`, `limit.exceeded`, `limit.prior_year_amendment`,
-`limit.estimated_net`, `renovation.undecided`, `interest.certificate_mismatch`,
+`limit.estimated_net`, `anschaffungsnah.performance_date_check` (D76), `renovation.undecided`, `interest.certificate_mismatch`,
 `hausgeld.abrechnung_pending`, `income.other_review`, `income.pre_handover`,
 `income.living_area_missing` (D71), `umlagen.mixed_terms` (D72),
 `reduced_rent.no_market_rent`, `reduced_rent.prognosis_needed`, `reduced_rent.partial`,
@@ -794,7 +810,7 @@ tracked not deductible Rücklage 600.00 and Tilgung 1,508.77; moved to 2027: 1,0
 bank line, two allocations of 850.00 and 180.00, rule `short_period_shift`); pre-handover
 block 850.00 (two lines);
 excluded open: 2 lines, −89.90; coverage 5 of 6 months; limit 15 %: 5,000.00 of 35,100.00
-(14.2 %), window to 30 Jun 2029, not estimated; `tax_free_from` 11 Mar 2036; warnings exactly
+(14.2 %), window to 1 Jul 2029 (D75), not estimated; `tax_free_from` 11 Mar 2036; warnings exactly
 `afa.cost_row_unpaid` (Notar), `hausgeld.abrechnung_pending`, `income.other_review` ×2,
 `income.pre_handover`, `reduced_rent.no_market_rent`, `draft.open_lines_excluded`,
 `draft.form_provisional`; missing documents: `hausgeldabrechnung` expected (due 30 Jun 2027),
@@ -818,8 +834,8 @@ the handover; sources the eight rent allocations and the input); income 7,030.00
 gone, the two `income.other_review` warnings stay.
 
 Case `export_roundtrip`: the draft serialised and loaded again equals itself, and the field
-sheet rows (key, Zeile of the amount, Kennzahl, cents, rounded; 14 rows, the flat's row on
-Z14) match the table above under rule set `2026.1`, form 2025 provisional.
+sheet rows (key, Zeile of the amount, Kennzahl, cents, rounded; 14 rows, the flat's single
+unit row on Z13, the block's first line, §4.2) match the table above under rule set `2026.1`, form 2025 provisional.
 
 "Every line opens its sources" is asserted by the fixture (each line's `sources` non-empty
 except `income.total`, `wk.total`, `result.*`) and by the sources drawer (step 1's done
@@ -880,8 +896,8 @@ Conflicts, stated plainly, and the edits (made in the spec PR):
 All ten were made in step 0's doc commit on `docs/phase-3-step0`. The delivery table has no
 status column, so item 8's status ("spec drafted 9 Nov 2026, step 0 written the same day, not
 merged") opens the row's Delivers cell; the "Done when" cell keeps the phase's goal. Item 5's
-row and item 10's Decisions row also record D73 (gross basis additions), marked as awaiting
-sign-off.
+row and item 10's Decisions row also record D73 (gross basis additions), confirmed in the
+review, and the Decisions row names D74–D76.
 
 ## 17. Open questions
 
@@ -933,3 +949,10 @@ sign-off.
     as specced; the forwarded rent share before the handover goes to the rent row instead (D63).
 14. **Exports (orchestrator, 9 Nov 2026): kept out of the `document` table** (D65); they are
     listed on the Steuern screen, not under Dokumente.
+15. **Einbauküche (from the step 0 review, 9 Nov 2026; not decided).** A fitted kitchen is not
+    part of the building but a separate movable asset (BFH IX R 14/15): it is depreciated over
+    10 years on its own, on Z42 (Kz 41, "AfA auf bewegliche Wirtschaftsgüter") rather than in
+    the building's AfA, and it is not an Instandsetzung for the 15 % test. Phase 3 has no
+    record or input for such an asset, so how a kitchen bought for the flat is handled (a new
+    input kind, a category, or a manual line) is open. The step 0 fixture that used a kitchen
+    as a building addition was changed to a Balkonanbau.
