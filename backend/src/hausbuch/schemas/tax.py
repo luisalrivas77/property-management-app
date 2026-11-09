@@ -236,6 +236,7 @@ class TaxInputKind(StrEnum):
     RUECKLAGE_SPENT = "ruecklage_spent"  # the Hausgeldabrechnung's Entnahme, per year (D57)
     INTEREST_CERTIFIED = "interest_certified"  # the Zinsbescheinigung, per loan and year (D66)
     PRE_HANDOVER_INCOME = "pre_handover_income"  # how income before the handover counts (D63)
+    USEFUL_LIFE = "useful_life"  # a shorter actual useful life from a Gutachten, from a year (D79)
 
 
 class Spread82b(Schema):
@@ -270,6 +271,14 @@ class PreHandoverIncome(Schema):
     treatment: Literal["rent"]  # D63; the only reading decided (Q1)
 
 
+class UsefulLife(Schema):
+    """§7 Abs. 4 S. 2 EStG (D79): the building's shorter actual useful life in whole years, as
+    the Gutachten (document_id on the row) states it; tax_year on the row is the first tax year
+    it applies to. The service refuses a life not shorter than the statutory one."""
+
+    years: int = Field(ge=1)
+
+
 TaxInputValue = (
     Spread82b
     | RenovationTreatment
@@ -278,6 +287,7 @@ TaxInputValue = (
     | RuecklageSpent
     | InterestCertified
     | PreHandoverIncome
+    | UsefulLife
 )
 
 K = TaxInputKind
@@ -289,10 +299,12 @@ TAX_INPUT_VALUES: dict[TaxInputKind, type[Schema]] = {
     K.RUECKLAGE_SPENT: RuecklageSpent,
     K.INTEREST_CERTIFIED: InterestCertified,
     K.PRE_HANDOVER_INCOME: PreHandoverIncome,
+    K.USEFUL_LIFE: UsefulLife,
 }
 # The scope each kind needs; migration 0013's CHECKs say the same.
 ALLOCATION_SCOPED = frozenset({K.SPREAD_82B, K.RENOVATION_TREATMENT, K.EXCLUDE_FROM_15PCT})
-YEAR_SCOPED = frozenset({K.RUECKLAGE_SPENT, K.INTEREST_CERTIFIED})  # also need a document
+# Also need a document: the certificate, the Abrechnung, the Gutachten (D79).
+YEAR_SCOPED = frozenset({K.RUECKLAGE_SPENT, K.INTEREST_CERTIFIED, K.USEFUL_LIFE})
 del K
 
 
@@ -319,7 +331,8 @@ class TaxInputCreate(Schema):
     unit_id: UUID | None = None  # market_rent of an MFH unit; None = the property's flat
     loan_id: UUID | None = None
     allocation_id: UUID | None = None
-    document_id: UUID | None = None  # evidence: the certificate, the Abrechnung, the Mietspiegel
+    # evidence: the certificate, the Abrechnung, the Mietspiegel, the Gutachten (useful_life)
+    document_id: UUID | None = None
     value: TaxInputValue
     note: str | None = Field(default=None, max_length=500)
     supersedes_id: UUID | None = None
@@ -343,9 +356,11 @@ class TaxInputCreate(Schema):
         if (self.loan_id is not None) != (k is TaxInputKind.INTEREST_CERTIFIED):
             problems.append("loan_id is set exactly for interest_certified")
         if (self.tax_year is not None) != (k in YEAR_SCOPED):
-            problems.append("tax_year is set exactly for ruecklage_spent and interest_certified")
+            problems.append(
+                "tax_year is set exactly for ruecklage_spent, interest_certified and useful_life"
+            )
         if k in YEAR_SCOPED and self.document_id is None:
-            problems.append("a certificate figure needs its document")
+            problems.append("a certificate figure or a useful life needs its document")
         if self.withdrawn and self.supersedes_id is None:
             problems.append("a withdrawal supersedes the row it withdraws")
         if problems:
@@ -377,6 +392,7 @@ class WarningCode(StrEnum):
     AFA_COST_ROW_UNPAID = "afa.cost_row_unpaid"
     AFA_ACQUISITION_COST_WITHOUT_ROW = "afa.acquisition_cost_without_row"
     AFA_PURCHASE_PRICE_MISMATCH = "afa.purchase_price_mismatch"
+    AFA_USEFUL_LIFE_REPORT = "afa.useful_life_report"  # D79: Z33 laut Erläuterung, the Gutachten
     LIMIT_EXCEEDED = "limit.exceeded"
     LIMIT_PRIOR_YEAR_AMENDMENT = "limit.prior_year_amendment"
     LIMIT_ESTIMATED_NET = "limit.estimated_net"
@@ -407,6 +423,7 @@ WARNING_SEVERITY: dict[WarningCode, Severity] = {
     W.AFA_COST_ROW_UNPAID: "info",
     W.AFA_ACQUISITION_COST_WITHOUT_ROW: "warning",
     W.AFA_PURCHASE_PRICE_MISMATCH: "info",
+    W.AFA_USEFUL_LIFE_REPORT: "info",
     W.LIMIT_EXCEEDED: "warning",
     W.LIMIT_PRIOR_YEAR_AMENDMENT: "warning",
     W.LIMIT_ESTIMATED_NET: "info",
@@ -560,6 +577,16 @@ class BasisAddition(Schema):
     reason: Literal["herstellung", "limit_exceeded"]
 
 
+class UsefulLifeFact(Schema):
+    """A useful_life tax input in force (D79): from from_year on, the AfA runs over `years`
+    from that year's book value (R 7.4 Abs. 9 EStR), until a later row takes over."""
+
+    tax_input_id: UUID
+    from_year: TaxYear
+    years: int = Field(ge=1)
+    document_id: UUID | None = None
+
+
 class AfaFacts(Schema):
     property_id: UUID
     purchase_price: PositiveMoney
@@ -571,10 +598,18 @@ class AfaFacts(Schema):
     additions: list[BasisAddition] = Field(default_factory=list)
     # acquisition_cost and purchase_price allocations: evidence only, never summed (D55)
     allocations: list[AllocationFact] = Field(default_factory=list)
+    useful_lives: list[UsefulLifeFact] = Field(default_factory=list)  # in force only (D79)
+
+
+AfaMethod = Literal["statutory", "useful_life"]
 
 
 class AfaLine(Schema):
-    """wk.afa for one tax year. amount, basis and rate are None without a selected split."""
+    """wk.afa for one tax year. amount, basis and rate are None without a selected split.
+
+    method (D79): `statutory` is the rate by completion year (rate set, book_value_start and
+    useful_life_years None); `useful_life` is the shorter actual useful life of a Gutachten,
+    the book value at the start of the year spread over the remaining months (rate None)."""
 
     tax_year: TaxYear
     amount: NonNegativeMoney | None
@@ -583,6 +618,10 @@ class AfaLine(Schema):
     rate: Rate | None
     months: int = Field(ge=0, le=12)
     method_code: Literal[1, 2] | None  # Z33: 1 linear / wie Vorjahr, 2 laut Erläuterung
+    method: AfaMethod = "statutory"
+    useful_life_years: int | None = None  # the governing useful_life row's years
+    useful_life_from_year: TaxYear | None = None  # and its first year
+    book_value_start: NonNegativeMoney | None = None  # basis + additions − earlier AfA
     sources: list[SourceRef] = Field(default_factory=list)
     warnings: list[DraftWarning] = Field(default_factory=list)
 

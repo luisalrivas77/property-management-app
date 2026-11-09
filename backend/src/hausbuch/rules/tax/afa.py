@@ -1,4 +1,4 @@
-"""AfA linear (phase 3 §5.2, D55, D73). Pure: AfaFacts in, one AfaLine per tax year out.
+"""AfA linear (phase 3 §5.2, D55, D73, D79). Pure: AfaFacts in, one AfaLine per tax year out.
 
 The basis comes from the property record only: purchase price plus the acquisition cost rows,
 times the selected split's building share (the Nebenkosten split by the same share). The
@@ -6,6 +6,13 @@ times the selected split's building share (the Nebenkosten split by the same sha
 cost booked with no row warns, a price paid in a different total warns, neither changes the
 figure. Basis additions (Herstellungskosten, the 15 % crossing) are gross and accrue from
 1 January of the year they were paid (R 7.4 Abs. 9 EStR).
+
+A shorter actual useful life (§7 Abs. 4 S. 2 EStG, D79): from the first year of a useful_life
+input in force, the AfA is the book value at the start of the year (basis + additions so far
+− the AfA of earlier years) spread over the remaining months of that life (R 7.4 Abs. 9 EStR).
+The life's months are counted from the AfA start month when it applies from the purchase year,
+else from January of its first year; a later input restarts the count. Years before the first
+input keep the statutory amount; without any input the line is exactly the statutory one.
 """
 
 from decimal import Decimal
@@ -17,6 +24,7 @@ from hausbuch.schemas.tax import (
     DraftWarning,
     RuleSet,
     SourceRef,
+    UsefulLifeFact,
     WarningCode,
 )
 
@@ -95,10 +103,68 @@ def _warnings(facts: AfaFacts) -> list[DraftWarning]:
     return out
 
 
+def _additions_through(facts: AfaFacts, tax_year: int) -> Decimal:
+    return cents(sum((a.amount for a in facts.additions if a.tax_year <= tax_year), ZERO))
+
+
+def _statutory(base: Decimal, facts: AfaFacts, tax_year: int, rate: Decimal) -> Decimal:
+    months = owned_months(facts.purchase_date, facts.ownership_ended_on, tax_year)
+    return cents((base + _additions_through(facts, tax_year)) * rate * months / 12)
+
+
+def governing(facts: AfaFacts, tax_year: int) -> UsefulLifeFact | None:
+    """The useful_life input that governs `tax_year`: the one with the greatest from_year at or
+    before it (the service keeps one per year; with two, the later in the list wins)."""
+    best: UsefulLifeFact | None = None
+    for row in facts.useful_lives:
+        if row.from_year <= tax_year and (best is None or row.from_year >= best.from_year):
+            best = row
+    return best
+
+
+def _remaining_value(
+    base: Decimal, facts: AfaFacts, tax_year: int, rate: Decimal
+) -> tuple[Decimal, Decimal]:
+    """(book value at the start of `tax_year`, AfA of `tax_year`), walking the years from the
+    purchase year. Statutory until the first governing row; from each governing row's first
+    year, the remaining life restarts at years × 12 months."""
+    book = base
+    remaining = 0
+    current: UsefulLifeFact | None = None
+    added = {
+        year: sum((a.amount for a in facts.additions if a.tax_year == year), ZERO)
+        for year in {a.tax_year for a in facts.additions}
+    }
+    # additions dated before the purchase year count from its start (as the statutory sum)
+    book += sum((v for y, v in added.items() if y < facts.purchase_date.year), ZERO)
+    amount = ZERO
+    for year in range(facts.purchase_date.year, tax_year + 1):
+        book += added.get(year, ZERO)
+        months = owned_months(facts.purchase_date, facts.ownership_ended_on, year)
+        row = governing(facts, year)
+        if row is None:
+            amount = min(_statutory(base, facts, year, rate), book)
+        else:
+            if row is not current:
+                current, remaining = row, row.years * 12
+            if months == 0:
+                amount = ZERO
+            elif months >= remaining:  # the last months take the rest (0 once written off)
+                amount = book
+            else:
+                amount = cents(book * months / remaining)
+            remaining = max(remaining - months, 0)
+        amount = max(amount, ZERO)
+        if year == tax_year:
+            return book, amount
+        book -= amount
+    raise AssertionError("tax_year is not before the purchase year here")
+
+
 def afa(facts: AfaFacts, tax_year: int, rule_set: RuleSet) -> AfaLine:
     months = owned_months(facts.purchase_date, facts.ownership_ended_on, tax_year)
     base = basis(facts)
-    additions = cents(sum((a.amount for a in facts.additions if a.tax_year <= tax_year), ZERO))
+    additions = _additions_through(facts, tax_year)
     sources = _sources(facts, tax_year)
     warnings = _warnings(facts)
     if base is None:
@@ -114,18 +180,47 @@ def afa(facts: AfaFacts, tax_year: int, rule_set: RuleSet) -> AfaLine:
             warnings=warnings,
         )
     rate = rule_set.afa_rate(facts.build_year)
-    amount = cents((base + additions) * rate * months / 12)
-    changed = tax_year == facts.purchase_date.year or any(
-        a.tax_year == tax_year for a in facts.additions
+    row = governing(facts, tax_year) if tax_year >= facts.purchase_date.year else None
+    changed = (
+        tax_year == facts.purchase_date.year
+        or any(a.tax_year == tax_year for a in facts.additions)
+        or (row is not None and row.from_year == tax_year)
+    )
+    method_code = (2 if changed else 1) if months else None
+    if row is None:
+        return AfaLine(
+            tax_year=tax_year,
+            amount=cents((base + additions) * rate * months / 12),
+            basis=base,
+            additions=additions,
+            rate=rate,
+            months=months,
+            method_code=method_code,
+            sources=sources,
+            warnings=warnings,
+        )
+    book, amount = _remaining_value(base, facts, tax_year, rate)
+    refs = [SourceRef(kind="tax_input", id=row.tax_input_id)]
+    if row.document_id is not None:
+        refs.append(SourceRef(kind="document", id=row.document_id))
+    report = warning(
+        WarningCode.AFA_USEFUL_LIFE_REPORT,
+        refs,
+        years=str(row.years),
+        from_year=str(row.from_year),
     )
     return AfaLine(
         tax_year=tax_year,
         amount=amount,
         basis=base,
         additions=additions,
-        rate=rate,
+        rate=None,
         months=months,
-        method_code=(2 if changed else 1) if months else None,
-        sources=sources,
-        warnings=warnings,
+        method_code=method_code,
+        method="useful_life",
+        useful_life_years=row.years,
+        useful_life_from_year=row.from_year,
+        book_value_start=book,
+        sources=unique(sources + refs),
+        warnings=[*warnings, report],
     )

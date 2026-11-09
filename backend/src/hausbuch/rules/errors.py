@@ -63,5 +63,7 @@ TAX_INPUT_NOT_CURRENT = "tax_input.not_current"  # supersedes a superseded or wi
 TAX_INPUT_ALLOCATION_NOT_CONFIRMED = "tax_input.allocation_not_confirmed"
 # D78: an Erweiterung is excluded from the 15 % test only on a renovation elected herstellung.
 TAX_INPUT_EXTENSION_NEEDS_HERSTELLUNG = "tax_input.extension_needs_herstellung"
+# D79: a useful_life must be shorter than the statutory life for the build year.
+TAX_INPUT_USEFUL_LIFE_NOT_SHORTER = "tax_input.useful_life_not_shorter"
 TAX_EXPORT_FAILED = "tax_export.failed"
 TAX_EXPORT_TOO_LARGE = "tax_export.too_large"  # an archive over 100 MiB

@@ -21,6 +21,7 @@ from hausbuch.schemas.tax import (
     TaxProperty,
     TaxYearResult,
     TrackedAmount,
+    UsefulLifeFact,
     WarningCode,
 )
 
@@ -250,4 +251,14 @@ def afa_facts(facts: DraftFacts, additions=()) -> AfaFacts:
         split=facts.split,
         additions=list(additions),
         allocations=[a for a in facts.allocations if a.category in evidence],
+        useful_lives=[
+            UsefulLifeFact(
+                tax_input_id=row.id,
+                from_year=row.tax_year,
+                years=row.value.years,  # type: ignore[union-attr]
+                document_id=row.document_id,
+            )
+            for row in in_force(facts.tax_inputs, TaxInputKind.USEFUL_LIFE)
+            if row.tax_year is not None
+        ],
     )
