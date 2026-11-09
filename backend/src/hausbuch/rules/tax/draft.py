@@ -67,7 +67,7 @@ from ._common import (
 from .afa import afa
 from .anschaffungsnah import CATEGORIES as LIMIT_CATEGORIES
 from .anschaffungsnah import limit_status
-from .rounding import money_str, split_cents, split_euros, whole_euros
+from .rounding import cents, money_str, split_cents, split_euros, whole_euros
 from .spekulation import tax_free_from
 from .tax_year import tax_year_of
 from .verbilligt import check as reduced_rent_check
@@ -355,8 +355,8 @@ def draft(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> AnlageVDraft:
             return sum(rounded_rows)
         return whole_euros(book.amount(key), form.lines[key].rounding)
 
-    income = sum((book.amount(k) for k in INCOME_KEYS), ZERO)
-    costs = sum((book.amount(k) for k in COST_KEYS), ZERO)
+    income = cents(sum((book.amount(k) for k in INCOME_KEYS), ZERO))
+    costs = cents(sum((book.amount(k) for k in COST_KEYS), ZERO))
     income_eur = sum(rounded(k) for k in INCOME_KEYS if k in book)
     costs_eur = sum(rounded(k) for k in COST_KEYS if k in book)
     totals = DraftTotals(
