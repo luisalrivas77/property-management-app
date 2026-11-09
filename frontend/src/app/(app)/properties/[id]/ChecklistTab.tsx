@@ -141,8 +141,11 @@ function hintFor(item: DocumentChecklistItem): string {
   return base;
 }
 
-export function ChecklistTab({ propertyId }: { propertyId: string }) {
-  const [year, setYear] = useState<number | null>(null);
+/** `year`, when given, fixes the tax year and hides the selector (the Steuern screen, whose
+ * own selector sets it). */
+export function ChecklistTab({ propertyId, year: fixedYear }: { propertyId: string; year?: number }) {
+  const [chosenYear, setYear] = useState<number | null>(null);
+  const year = fixedYear ?? chosenYear;
   const [years, setYears] = useState<number[]>([]);
   const [defaultYear, setDefaultYear] = useState<number | null>(null);
   const selectId = useId();
@@ -169,7 +172,7 @@ export function ChecklistTab({ propertyId }: { propertyId: string }) {
       <div className="row checklist-head">
         <h2 id={`${selectId}-title`}>Unterlagen für die Steuererklärung</h2>
         <span className="spacer" />
-        {years.length > 0 && shownYear !== null ? (
+        {fixedYear === undefined && years.length > 0 && shownYear !== null ? (
           <label htmlFor={selectId} className="inline">
             Steuerjahr
             <select id={selectId} value={shownYear} onChange={(event) => setYear(Number(event.target.value))}>

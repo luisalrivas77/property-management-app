@@ -93,7 +93,9 @@ export type ProposalRecord = Schemas["ProposalRecord"];
 export type ProposalStatus = Schemas["ProposalStatus"];
 export type ExtractionKind = Schemas["ExtractionKind"];
 export type ExtractedValue = Schemas["ExtractedValue"];
-export type SourceRef = Schemas["SourceRef"];
+// Two backend models are named SourceRef (schemas/ai.py, schemas/tax.py), so the OpenAPI
+// document qualifies both by module; TaxSourceRef below is the other one.
+export type SourceRef = Schemas["hausbuch__schemas__ai__SourceRef"];
 export type FieldDecision = Schemas["FieldDecision"];
 export type ProposalApplyBody = Schemas["ProposalApplyBody"];
 export type ProposalApplyRecord = Schemas["ProposalApplyRecord"];
@@ -132,3 +134,17 @@ export type Event = Schemas["Event"];
 export type EventType = Schemas["EventType"];
 export type EntityType = Schemas["EntityType"];
 export type JsonValue = Schemas["JsonValue"];
+
+// the tax year (phase 3): the Anlage V draft
+export type AnlageVDraft = Schemas["AnlageVDraft"];
+export type DraftLine = Schemas["DraftLine"];
+export type DraftWarning = Schemas["DraftWarning"];
+export type WarningCode = Schemas["WarningCode"];
+export type TaxSourceRef = Schemas["hausbuch__schemas__tax__SourceRef"];
+export type TaxSourceKind = TaxSourceRef["kind"];
+export type UnitRow = Schemas["UnitRow"];
+export type TrackedAmount = Schemas["TrackedAmount"];
+export type MovedPayment = Schemas["MovedPayment"];
+export type LimitStatus = Schemas["LimitStatus"];
+export type AfaLine = Schemas["AfaLine"];
+export type AllocationFact = Schemas["AllocationFact"];

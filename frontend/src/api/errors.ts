@@ -104,6 +104,9 @@ export const RULE_CODE_TEXT: Record<string, string> = {
     "Das Muster ist kein gültiger Suchausdruck (regulärer Ausdruck, höchstens 200 Zeichen).",
   // POST /inbox/ai-retry (D50); a proposal's ai.disabled has its own text in AI_ERROR_TEXT.
   "ai.disabled": "Die KI ist auf dem Server nicht eingeschaltet. Zahlungen lassen sich nur von Hand zuordnen.",
+  // the Anlage V draft (phase-3.md §10)
+  "tax.year_not_available": "Für dieses Jahr gibt es zu dieser Immobilie keinen Entwurf (vor dem Kauf oder in der Zukunft).",
+  "tax.no_rule_set": "Für dieses Steuerjahr gibt es noch kein Regelwerk, also keinen Entwurf.",
 };
 
 /** German text for a proposal's `error_code`: why reading the document failed or was

@@ -31,6 +31,8 @@
 //   …" one with same_amount_only. Nothing is preselected and Bestätigen stays disabled until
 //   one is chosen; the answer holds for the category it was given for, so changing the
 //   category asks again. Without that list there is no question and same_amount_only is false.
+// - Phase 3 (§11 "Inputs"): under a confirmed line, its repairs and renovation rows get their
+//   tax questions (components/taxInputs.tsx), in their own form beside this one.
 import Link from "next/link";
 import { useCallback, useId, useMemo, useState, type FormEvent } from "react";
 
@@ -43,6 +45,7 @@ import { collector, Field, FormBanner, useFormErrors, type FieldMessages } from 
 import { formatDate, formatDateTime, formatMoney } from "./format";
 import { decimalInput, toSignedMoneyString } from "./input";
 import { ALLOCATION_CATEGORY, ALLOCATION_METHOD, options } from "./labels";
+import { AllocationTaxInputs } from "./taxInputs";
 import { Loading } from "./ui";
 import { useLoad } from "./useLoad";
 
@@ -218,15 +221,18 @@ export function AllocationPanel({
   return (
     <Loading state={state}>
       {({ view, directory }) => (
-        // Keyed by the line, so another line starts with its own rows.
-        <AllocationEditor
-          key={view.transaction.id}
-          view={view}
-          directory={directory}
-          reasoning={reasoning}
-          question={question}
-          onSaved={onSaved}
-        />
+        <>
+          {/* Keyed by the line, so another line starts with its own rows. */}
+          <AllocationEditor
+            key={view.transaction.id}
+            view={view}
+            directory={directory}
+            reasoning={reasoning}
+            question={question}
+            onSaved={onSaved}
+          />
+          <AllocationTaxInputs allocations={view.allocations} />
+        </>
       )}
     </Loading>
   );

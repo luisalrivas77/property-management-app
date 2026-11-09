@@ -14,6 +14,7 @@ import { formatArea, formatDate, formatDecimal, formatShare } from "@/components
 import { HistoryTimeline } from "@/components/history";
 import { historySubject, loadPropertyContext } from "@/components/propertyContext";
 import { RENT_MODEL } from "@/components/labels";
+import { MarketRentSection } from "@/components/taxInputs";
 import { Breadcrumbs, Facts, Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 
@@ -62,6 +63,8 @@ export default function UnitPage() {
             />
             <h2>Mietverhältnisse</h2>
             <UnitTenancies unitId={unit.id} tenants={tenants} />
+            <h2>Ortsübliche Miete</h2>
+            <MarketRentSection propertyId={property.id} unitId={unit.id} perUnit={property.kind === "mfh"} />
             <h2>Verlauf</h2>
             <UnitHistory propertyId={property.id} unitId={unit.id} />
             <h2>Dokumente</h2>

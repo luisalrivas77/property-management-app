@@ -17,7 +17,12 @@ several existing records match, the one with the smallest id wins.
 
 Record keys, in this order when a kind proposes them: typing, property, correction:<field>,
 unit, price_split, ownership, cost:<kind>, loan, tenant:<n>, tenancy, rent, deposit_received,
-link:property / link:loan / link:tenancy.
+link:property / link:loan / link:tenancy, tax_input:<kind>.
+
+Phase 3 (docs/phases/phase-3.md §9): a Zinsbescheinigung also proposes
+tax_input:interest_certified {tax_year, loan_id, value.amount}, a Hausgeldabrechnung
+tax_input:ruecklage_spent {tax_year, value.amount}; the apply writes them through
+services/tax_inputs (D14).
 """
 
 import re
@@ -121,18 +126,12 @@ def build_proposal(
             b.lease()
         case ExtractionKind.HANDOVER_PROTOCOL:
             b.handover_protocol()
-        case (
-            ExtractionKind.GRUNDSTEUERBESCHEID
-            | ExtractionKind.WIRTSCHAFTSPLAN
-            | ExtractionKind.HAUSGELDABRECHNUNG
-        ):
+        case ExtractionKind.GRUNDSTEUERBESCHEID | ExtractionKind.WIRTSCHAFTSPLAN:
             b.link_property(_resolve_property(extraction, context))
+        case ExtractionKind.HAUSGELDABRECHNUNG:
+            b.hausgeldabrechnung()
         case ExtractionKind.ZINSBESCHEINIGUNG:
-            loan = _match_loan(extraction, context.loans)
-            if loan is None and len(context.loans) == 1:
-                loan = context.loans[0]
-            if loan is not None:
-                b.link("link:loan", loan.id)
+            b.zinsbescheinigung()
         case ExtractionKind.DEPOSIT_RECORD:
             b.deposit_record()
         case _:  # statement, unknown: typing only
@@ -698,6 +697,49 @@ class _Builder:
             fields["tenancy_id"] = tenancy_value
             self.add("deposit_received", "deposit_received", "create", fields)
         self.link("link:tenancy", tenancy.id)
+
+    # -- the two certificates (phase 3 §9)
+
+    def zinsbescheinigung(self) -> None:
+        """link:loan by lender and contract number, else the only loan; and the certified
+        interest, proposed even without a loan (the user picks it in the review)."""
+        loan = _match_loan(self.x, self.ctx.loans)
+        if loan is not None:
+            loan_value = _derived(
+                str(loan.id),
+                [("lender", self.ev("lender")), ("contract_number", self.ev("contract_number"))],
+            )
+        elif len(self.ctx.loans) == 1:
+            loan = self.ctx.loans[0]
+            loan_value = _code_value(str(loan.id), "low")  # nothing in the document names it
+        else:
+            loan_value = ExtractedValue.missing()
+        if loan is not None:
+            self.link("link:loan", loan.id)
+        self.add(
+            "tax_input:interest_certified",
+            "tax_input",
+            "create",
+            {
+                "tax_year": self.ev("tax_year"),
+                "loan_id": loan_value,
+                "value.amount": self.ev("interest_paid"),
+            },
+        )
+
+    def hausgeldabrechnung(self) -> None:
+        """link:property by address; the Rücklage the WEG spent, only for a property found
+        (a tax input belongs to one)."""
+        prop = _resolve_property(self.x, self.ctx)
+        if prop is None:
+            return
+        self.link_property(prop)
+        self.add(
+            "tax_input:ruecklage_spent",
+            "tax_input",
+            "create",
+            {"tax_year": self.ev("tax_year"), "value.amount": self.ev("ruecklage_spent")},
+        )
 
 
 # --- Matching existing records ----------------------------------------------------------

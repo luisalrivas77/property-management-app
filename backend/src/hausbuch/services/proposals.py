@@ -96,9 +96,10 @@ from hausbuch.schemas.proposal import (
     ProposalApplyRecord,
     ProposalRecord,
 )
+from hausbuch.schemas.tax import TaxInputCreate, TaxInputKind
 from hausbuch.schemas.tenancy import InitialRent, TenancyCreate, TenantCreate
 
-from . import documents, loans, owners, properties, tenancies, tenants, units
+from . import documents, loans, owners, properties, tax_inputs, tenancies, tenants, units
 from .context import CommandContext
 from .errors import NotFoundError, RuleViolationError
 from .events import append_event
@@ -115,7 +116,9 @@ _RERUN_SUPERSEDES = (*_SUPERSEDABLE, ProposalStatus.BLOCKED_TENANT_DATA)
 _DECIDED = (ProposalStatus.APPLIED, ProposalStatus.REJECTED)
 
 # §6.5: property -> corrections -> unit -> ownership -> price split -> costs -> loan ->
-# tenants -> tenancy (with the rent row) -> typing -> links. By the key's prefix.
+# tenants -> tenancy (with the rent row) -> typing -> links -> tax inputs (phase 3 §9: after
+# the links, so a certificate's figure follows the loan or property the user linked). By the
+# key's prefix.
 _APPLY_ORDER = {
     "property": 0,
     "correction": 1,
@@ -130,6 +133,7 @@ _APPLY_ORDER = {
     "deposit_received": 10,
     "typing": 11,
     "link": 12,
+    "tax_input": 13,
 }
 # The record whose entity a link record points at when the proposal had no target yet.
 _LINK_SOURCE = {
@@ -846,6 +850,50 @@ class _Apply:
             documents.link_document(self.ctx, self.document_id, target_type, target)
         return target
 
+    def _tax_input(self, record: ProposalRecord, values: dict[str, Any]) -> UUID:
+        """A certificate's figure (phase 3 §9) through services/tax_inputs, with this document
+        as its evidence. The certified interest belongs to the loan's property; the Rücklage
+        to the property the document is linked to. Only the proposed fields are taken from
+        the values (never a supersedes_id or a withdrawal). A current row of the same
+        question with the same value and document: nothing is written; another value or
+        document: the new row supersedes it (a corrected certificate)."""
+        kind = TaxInputKind(record.key.split(":", 1)[1])
+        if kind not in _PREFILL_TAX_INPUTS:
+            raise ValueError(f"record {record.key!r} cannot be applied in this step")
+        given = _undot({f: values[f] for f in _PREFILL_TAX_INPUTS[kind] if f in values})
+        if kind is TaxInputKind.INTEREST_CERTIFIED:
+            if given.get("loan_id") is None:
+                linked = self.entity("link:loan")
+                given["loan_id"] = None if linked is None else str(linked)
+            if given["loan_id"] is None:
+                raise ValueError(f"record {record.key!r} needs the loan the interest was paid on")
+            loan_id = _validate(record.key, _LoanRef, {"loan_id": given["loan_id"]}).loan_id
+            loan = loans.get_loan(self.ctx.conn, loan_id)
+            if loan is None:
+                raise NotFoundError(EntityType.LOAN, loan_id)
+            property_id = loan.property_id
+        else:
+            property_id = self.entity("link:property") or self.property_id(record.key)
+        data = _validate(
+            record.key,
+            TaxInputCreate,
+            given
+            | {
+                "property_id": str(property_id),
+                "kind": kind.value,
+                "document_id": str(self.document_id),
+            },
+        )
+        current = tax_inputs.find_current(
+            self.ctx.conn, property_id, kind, tax_year=data.tax_year, loan_id=data.loan_id
+        )
+        if current:
+            (row,) = current  # one per year (and loan): create_tax_input refuses a second
+            if row.value == data.value and row.document_id == data.document_id:
+                return row.id
+            data = data.model_copy(update={"supersedes_id": row.id})
+        return tax_inputs.create_tax_input(self.ctx, property_id, data).id
+
     _HANDLERS: dict[str, Callable[["_Apply", ProposalRecord, dict[str, Any]], UUID]] = {
         "property": _property,
         "correction": _correction,
@@ -860,11 +908,24 @@ class _Apply:
         "deposit_received": _deposit_received,
         "typing": _typing,
         "link": _link,
+        "tax_input": _tax_input,
     }
 
 
 class _LinkValues(Schema):
     target_id: UUID
+
+
+class _LoanRef(Schema):
+    loan_id: UUID
+
+
+# The tax inputs a pre-fill proposes (rules.prefill, phase 3 §9) and the fields the apply
+# takes from the user's values.
+_PREFILL_TAX_INPUTS = {
+    TaxInputKind.INTEREST_CERTIFIED: ("tax_year", "loan_id", "value.amount"),
+    TaxInputKind.RUECKLAGE_SPENT: ("tax_year", "value.amount"),
+}
 
 
 class _DepositValues(DepositReceivedBody):

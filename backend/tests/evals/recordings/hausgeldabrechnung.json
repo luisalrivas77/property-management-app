@@ -1,0 +1,283 @@
+{
+ "format": 1,
+ "doc": "hausgeldabrechnung",
+ "synthetic": false,
+ "recorded_on": "2026-11-09",
+ "sdk_version": "2.6.0",
+ "classify": {
+  "prompt_version": "624ea59735496705",
+  "request_sha256": "e02e5e0f8ec92bb7178c3b1e0d1807322926850c31aee1784cd0eb8110f20061",
+  "message": {
+   "id": "msg_011CgsPGsxcx4i1vVoNz4ghp",
+   "container": null,
+   "content": [
+    {
+     "citations": null,
+     "text": "{\"type\":\"hausgeldabrechnung\",\"subtype\":null,\"contains_tenant_data\":false,\"language\":\"de\",\"confidence\":\"high\"}",
+     "type": "text"
+    }
+   ],
+   "diagnostics": null,
+   "model": "claude-haiku-5-5",
+   "role": "assistant",
+   "stop_details": null,
+   "stop_reason": "end_turn",
+   "stop_sequence": null,
+   "type": "message",
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": "us",
+    "input_tokens": 5418,
+    "output_tokens": 49,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": "standard"
+   }
+  }
+ },
+ "extract": [
+  {
+   "prompt_version": "db37026b509dd7a8",
+   "request_sha256": "92e6008839cf123686ada389d1b7885556d6f110d72aa1d187e8dbde0c8b4916",
+   "message": {
+    "id": "msg_011CgsPGiEEHu2vy8ZPhhNCt",
+    "container": null,
+    "content": [
+     {
+      "citations": null,
+      "text": "title: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "WEG Lindenstraße 7, 10115 Berlin\r\nHausgeldabrechnung 2026 - Einzelabrechnung WE 3\r\nAbrechnungszeitraum 01.01.2026 bis 31.12.2026\r\nUmlagefähige Kosten, Anteil WE 3: 2.371,60 EUR\r\nNicht umlagefähige Kosten (Verwaltung): 552,00 EUR\r\nZuführung zur Erhaltungsrücklage: 900,00 EUR\r\nSumme Kosten: 3.823,60 EUR\r\nGeleistete Vorauszahlungen: 3.720,00 EUR\r\nNachzahlung: 103,60 EUR",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Hausgeldabrechnung Einzelabrechnung WE 3",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ndocument_date: unbekannt\nstreet: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "WEG Lindenstraße 7, 10115 Berlin\r\nHausgeldabrechnung 2026 - Einzelabrechnung WE 3\r\nAbrechnungszeitraum 01.01.2026 bis 31.12.2026\r\nUmlagefähige Kosten, Anteil WE 3: 2.371,60 EUR\r\nNicht umlagefähige Kosten (Verwaltung): 552,00 EUR\r\nZuführung zur Erhaltungsrücklage: 900,00 EUR\r\nSumme Kosten: 3.823,60 EUR\r\nGeleistete Vorauszahlungen: 3.720,00 EUR\r\nNachzahlung: 103,60 EUR",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Lindenstraße",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nhouse_number: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "WEG Lindenstraße 7, 10115 Berlin\r\nHausgeldabrechnung 2026 - Einzelabrechnung WE 3\r\nAbrechnungszeitraum 01.01.2026 bis 31.12.2026\r\nUmlagefähige Kosten, Anteil WE 3: 2.371,60 EUR\r\nNicht umlagefähige Kosten (Verwaltung): 552,00 EUR\r\nZuführung zur Erhaltungsrücklage: 900,00 EUR\r\nSumme Kosten: 3.823,60 EUR\r\nGeleistete Vorauszahlungen: 3.720,00 EUR\r\nNachzahlung: 103,60 EUR",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "7",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\npostal_code: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "WEG Lindenstraße 7, 10115 Berlin\r\nHausgeldabrechnung 2026 - Einzelabrechnung WE 3\r\nAbrechnungszeitraum 01.01.2026 bis 31.12.2026\r\nUmlagefähige Kosten, Anteil WE 3: 2.371,60 EUR\r\nNicht umlagefähige Kosten (Verwaltung): 552,00 EUR\r\nZuführung zur Erhaltungsrücklage: 900,00 EUR\r\nSumme Kosten: 3.823,60 EUR\r\nGeleistete Vorauszahlungen: 3.720,00 EUR\r\nNachzahlung: 103,60 EUR",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "10115",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ntax_year: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "WEG Lindenstraße 7, 10115 Berlin\r\nHausgeldabrechnung 2026 - Einzelabrechnung WE 3\r\nAbrechnungszeitraum 01.01.2026 bis 31.12.2026\r\nUmlagefähige Kosten, Anteil WE 3: 2.371,60 EUR\r\nNicht umlagefähige Kosten (Verwaltung): 552,00 EUR\r\nZuführung zur Erhaltungsrücklage: 900,00 EUR\r\nSumme Kosten: 3.823,60 EUR\r\nGeleistete Vorauszahlungen: 3.720,00 EUR\r\nNachzahlung: 103,60 EUR",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "2026",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nsettlement_result: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "WEG Lindenstraße 7, 10115 Berlin\r\nHausgeldabrechnung 2026 - Einzelabrechnung WE 3\r\nAbrechnungszeitraum 01.01.2026 bis 31.12.2026\r\nUmlagefähige Kosten, Anteil WE 3: 2.371,60 EUR\r\nNicht umlagefähige Kosten (Verwaltung): 552,00 EUR\r\nZuführung zur Erhaltungsrücklage: 900,00 EUR\r\nSumme Kosten: 3.823,60 EUR\r\nGeleistete Vorauszahlungen: 3.720,00 EUR\r\nNachzahlung: 103,60 EUR",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "103,60 €",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\numlagefaehig_total: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "WEG Lindenstraße 7, 10115 Berlin\r\nHausgeldabrechnung 2026 - Einzelabrechnung WE 3\r\nAbrechnungszeitraum 01.01.2026 bis 31.12.2026\r\nUmlagefähige Kosten, Anteil WE 3: 2.371,60 EUR\r\nNicht umlagefähige Kosten (Verwaltung): 552,00 EUR\r\nZuführung zur Erhaltungsrücklage: 900,00 EUR\r\nSumme Kosten: 3.823,60 EUR\r\nGeleistete Vorauszahlungen: 3.720,00 EUR\r\nNachzahlung: 103,60 EUR",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "2.371,60 €",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nverwaltung_total: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "WEG Lindenstraße 7, 10115 Berlin\r\nHausgeldabrechnung 2026 - Einzelabrechnung WE 3\r\nAbrechnungszeitraum 01.01.2026 bis 31.12.2026\r\nUmlagefähige Kosten, Anteil WE 3: 2.371,60 EUR\r\nNicht umlagefähige Kosten (Verwaltung): 552,00 EUR\r\nZuführung zur Erhaltungsrücklage: 900,00 EUR\r\nSumme Kosten: 3.823,60 EUR\r\nGeleistete Vorauszahlungen: 3.720,00 EUR\r\nNachzahlung: 103,60 EUR",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "552,00 €",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nruecklage_contribution: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "WEG Lindenstraße 7, 10115 Berlin\r\nHausgeldabrechnung 2026 - Einzelabrechnung WE 3\r\nAbrechnungszeitraum 01.01.2026 bis 31.12.2026\r\nUmlagefähige Kosten, Anteil WE 3: 2.371,60 EUR\r\nNicht umlagefähige Kosten (Verwaltung): 552,00 EUR\r\nZuführung zur Erhaltungsrücklage: 900,00 EUR\r\nSumme Kosten: 3.823,60 EUR\r\nGeleistete Vorauszahlungen: 3.720,00 EUR\r\nNachzahlung: 103,60 EUR",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "900,00 €",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nruecklage_spent: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Entwicklung der Erhaltungsrücklage 2026, Anteil WE 3\r\nStand am 01.01.2026: 4.210,00 EUR\r\nZuführung: 900,00 EUR\r\nEntnahme (Dachrinnen-Erneuerung): 412,50 EUR\r\nStand am 31.12.2026: 4.697,50 EUR",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "412,50 €",
+      "type": "text"
+     }
+    ],
+    "diagnostics": null,
+    "model": "claude-sonnet-5-5",
+    "role": "assistant",
+    "stop_details": null,
+    "stop_reason": "end_turn",
+    "stop_sequence": null,
+    "type": "message",
+    "usage": {
+     "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+     },
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "inference_geo": "us",
+     "input_tokens": 5146,
+     "output_tokens": 335,
+     "output_tokens_details": {
+      "thinking_tokens": 0
+     },
+     "server_tool_use": null,
+     "service_tier": "standard",
+     "speed": "standard"
+    }
+   },
+   "page_offset": 0
+  }
+ ]
+}
