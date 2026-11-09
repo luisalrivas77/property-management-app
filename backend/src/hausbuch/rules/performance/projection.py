@@ -87,6 +87,13 @@ class _Drafts:
         return self._get(year)
 
     def result(self, year: int) -> Decimal:
+        """The property's result in a Bescheid's year. A year the property was not owned in
+        (before the purchase, after the end of ownership) has none: its assessment contains
+        nothing of the property, and there may be no rule set to draft it with."""
+        prop = self.facts.property
+        ended = prop.ownership_ended_on
+        if year < prop.purchase_date.year or (ended is not None and year > ended.year):
+            return ZERO
         return self(year).totals.result
 
 
@@ -200,7 +207,9 @@ def project(
         for y in range(prop.purchase_date.year, today.year + 1)
     ]
 
-    synthesis = synthesize(facts, levers, loans, today, scenario_id=scenario_id)
+    synthesis = synthesize(
+        facts, levers, loans, today, scenario_id=scenario_id, rule_sets=rule_sets
+    )
     projected_facts = _projected_facts(facts, synthesis.all_rows(), synthesis.tax_inputs)
     scenario_refs = [SourceRef(kind="scenario", id=scenario_id)] if scenario_id else []
     assumptions: list[Assumption] = [

@@ -260,6 +260,26 @@ def test_a_carried_bescheid_needs_the_property(world):
     assert exc.value.code == INCOME_ASSESSED_RESULT_NEEDED
 
 
+def test_a_bescheid_from_before_the_purchase_holds_no_result_of_the_property(world):
+    """A Bescheid of a year before the purchase (the World's property: 1 May 2024) carried
+    into a later year: nothing of the property is in it, so the base is its zvE unreduced
+    (review of 9 Nov 2026: it used to fail with tax.year_not_available)."""
+    doc = _document(world)
+    _create(
+        world, kind="bescheid_zve", tax_year=2023, document_id=doc, value={"amount": "80000.00"}
+    )
+    got = world.query(
+        tax_rate,
+        tax_year=2026,
+        result=Decimal("-7948.66"),
+        property_id=world.property_id,
+        today=TODAY,
+    )
+    assert (got.zve.source, got.zve.carried_forward) == ("bescheid", True)
+    assert got.zve.amount == Decimal("80000.00")
+    assert got.effect is not None and got.effect.effect < 0
+
+
 def test_an_override_wins(world):
     a = _owner(world, "Person A")
     _create(world, **_gross(a.id, "60000.00"))

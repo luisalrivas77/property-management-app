@@ -2,8 +2,9 @@
 supersede and withdraw, one default in force per property, the sale year, the event in the
 same transaction (without the name), and workspace isolation."""
 
+import itertools
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
@@ -26,6 +27,7 @@ from hausbuch.services.properties import create_property
 from hausbuch.services.scenarios import create_scenario, default_scenario, list_scenarios
 
 # World's clock is 7 Nov 2026: a sale in 2026 or before has no projected year.
+_TICK = itertools.count(1)
 
 
 @pytest.fixture
@@ -40,8 +42,15 @@ def _body(world: World, **overrides) -> ScenarioCreate:
     )
 
 
+def _record(world: World, property_id, body: ScenarioCreate):
+    """One write, a second after the previous one: rows written in one test would otherwise
+    share recorded_at, and "oldest first" (then the id) would be random."""
+    now = world.now + timedelta(seconds=next(_TICK))
+    return world.cmd(create_scenario, property_id, body, now=now)
+
+
 def _create(world: World, body: ScenarioCreate):
-    return world.cmd(create_scenario, world.property_id, body)
+    return _record(world, world.property_id, body)
 
 
 def _codes(exc_info) -> list[str]:
@@ -138,14 +147,14 @@ def _second_property(world: World) -> uuid.UUID:
 def test_scope_checks(world):
     second = _second_property(world)
     with pytest.raises(RuleViolationError) as exc:
-        world.cmd(create_scenario, second, _body(world))
+        _record(world, second, _body(world))
     assert _codes(exc) == [SCENARIO_SCOPE_INVALID]
     their_loan = world.loan(property_id=second, iban=None)
     with pytest.raises(RuleViolationError) as exc:
         _create(world, _body(world, levers={"loans": [{"loan_id": str(their_loan)}]}))
     assert _codes(exc) == [SCENARIO_SCOPE_INVALID]
-    their_row = world.cmd(
-        create_scenario,
+    their_row = _record(
+        world,
         second,
         ScenarioCreate.model_validate(
             {"property_id": second, "name": "X", "levers": {"sale_year": 2036}}
@@ -172,10 +181,10 @@ def test_another_workspace_sees_nothing_and_cannot_reference_rows(
         assert conn.execute(select(scenario_table)).all() == []
     assert other.query(default_scenario, world.property_id) is None
     with pytest.raises(NotFoundError):
-        other.cmd(create_scenario, world.property_id, _body(world))
+        _record(other, world.property_id, _body(world))
     with pytest.raises(NotFoundError):
-        other.cmd(
-            create_scenario,
+        _record(
+            other,
             other.property_id,
             ScenarioCreate.model_validate(
                 {

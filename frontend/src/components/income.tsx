@@ -288,7 +288,7 @@ function ZveSummary({ rate, error, year }: { rate: TaxRateResult | undefined; er
   const zve = rate.zve;
   return (
     <p>
-      zvE {year}: <strong>{zve.amount != null ? formatMoney(zve.amount) : "—"}</strong>{" "}
+      {zve.source === "bescheid" && !zve.carried_forward ? "zvE laut Bescheid" : "zvE"} {year}: <strong>{zve.amount != null ? formatMoney(zve.amount) : "—"}</strong>{" "}
       <span className="badge">{SOURCE_LABEL[zve.source]}</span>
       {zve.carried_forward ? <span className="muted"> · aus den Angaben für {zve.tax_year} fortgeschrieben</span> : null}
     </p>

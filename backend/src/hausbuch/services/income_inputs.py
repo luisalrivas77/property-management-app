@@ -48,6 +48,7 @@ from hausbuch.rules.errors import (
     INCOME_ASSESSED_RESULT_NEEDED,
     INCOME_INPUT_NOT_CURRENT,
     INCOME_INPUT_SCOPE_INVALID,
+    TAX_YEAR_NOT_AVAILABLE,
     RuleError,
 )
 from hausbuch.rules.performance.income import owner_estimates, year_tax_effect
@@ -321,6 +322,14 @@ def _assessed(
                 f"the Bescheid of {year} applies to {tax_year}: name the property, so its"
                 f" {year} result can be taken out of the assessed zvE",
             )
-        return anlage_v_draft(conn, property_id, tax_year=year, today=today).totals.result
+        try:
+            return anlage_v_draft(conn, property_id, tax_year=year, today=today).totals.result
+        except RuleError as exc:
+            # A Bescheid of a year the property was not owned in (typically the year before
+            # the purchase) contains no result of it: exactly 0. tax.no_rule_set for an owned
+            # year still fails, as that result is genuinely unknown.
+            if exc.code == TAX_YEAR_NOT_AVAILABLE:
+                return Decimal("0.00")
+            raise
 
     return assessed

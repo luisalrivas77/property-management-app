@@ -108,7 +108,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '13646.00', soli: '0.00', church: '1091.68', total: '14737.68'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-6197.28'
+      net_cash: '-3160.32'
       invested: null
       value: '300000.00'
       loan_balance: '234779.24'
@@ -139,7 +139,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '13688.00', soli: '0.00', church: '1095.04', total: '14783.04'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-6151.92'
+      net_cash: '-3205.68'
       invested: null
       value: '300000.00'
       loan_balance: '230935.24'
@@ -170,7 +170,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '13730.00', soli: '0.00', church: '1098.40', total: '14828.40'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-6106.56'
+      net_cash: '-3251.04'
       invested: null
       value: '300000.00'
       loan_balance: '226954.52'
@@ -201,7 +201,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '13774.00', soli: '0.00', church: '1101.92', total: '14875.92'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-6059.04'
+      net_cash: '-3298.56'
       invested: null
       value: '300000.00'
       loan_balance: '222832.21'
@@ -232,7 +232,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '13820.00', soli: '0.00', church: '1105.60', total: '14925.60'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-6009.36'
+      net_cash: '-3348.24'
       invested: null
       value: '300000.00'
       loan_balance: '218563.31'
@@ -263,7 +263,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '13868.00', soli: '0.00', church: '1109.44', total: '14977.44'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-5957.52'
+      net_cash: '-3400.08'
       invested: null
       value: '300000.00'
       loan_balance: '214142.56'
@@ -294,7 +294,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '13918.00', soli: '0.00', church: '1113.44', total: '15031.44'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-5903.52'
+      net_cash: '-3454.08'
       invested: null
       value: '300000.00'
       loan_balance: '209564.57'
@@ -325,7 +325,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '13968.00', soli: '0.00', church: '1117.44', total: '15085.44'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-5849.52'
+      net_cash: '-3508.08'
       invested: null
       value: '300000.00'
       loan_balance: '204823.76'
@@ -356,7 +356,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '14022.00', soli: '0.00', church: '1121.76', total: '15143.76'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-5791.20'
+      net_cash: '-3566.40'
       invested: null
       value: '300000.00'
       loan_balance: '199914.34'
@@ -387,7 +387,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '14076.00', soli: '0.00', church: '1126.08', total: '15202.08'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-5732.88'
+      net_cash: '-3624.72'
       invested: null
       value: '300000.00'
       loan_balance: '194830.30'
@@ -408,33 +408,33 @@ cases:
       loan_balance: '194830.30'
       net_proceeds: '94459.70'
       initial_equity: '85000.00'
-      profit: '-59853.57'
+      profit: '-28537.89'
       bridge:
       - {key: appreciation, amount: '0.00'}
       - {key: loan_paid_down, amount: '45169.70'}
-      - {key: cash_flow, amount: '-69313.27'}
+      - {key: cash_flow, amount: '-37997.59'}
       - {key: buying_costs, amount: '-25000.00'}
       - {key: selling_costs, amount: '-10710.00'}
       - {key: sale_tax, amount: '0.00'}
-      cagr: '-0.109496'
-      irr: '-0.061054'
+      cagr: '-0.038202'
+      irr: '-0.030056'
       flows:
       - {'on': 2026-07-01, amount: '-85000.00', kind: initial_equity}
-      - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
-      - {'on': 2027-12-31, amount: '-6197.28', kind: cash_flow}
-      - {'on': 2028-12-31, amount: '-6151.92', kind: cash_flow}
-      - {'on': 2029-12-31, amount: '-6106.56', kind: cash_flow}
-      - {'on': 2030-12-31, amount: '-6059.04', kind: cash_flow}
-      - {'on': 2031-12-31, amount: '-6009.36', kind: cash_flow}
-      - {'on': 2032-12-31, amount: '-5957.52', kind: cash_flow}
-      - {'on': 2033-12-31, amount: '-5903.52', kind: cash_flow}
-      - {'on': 2034-12-31, amount: '-5849.52', kind: cash_flow}
-      - {'on': 2035-12-31, amount: '-5791.20', kind: cash_flow}
-      - {'on': 2036-12-31, amount: '-5732.88', kind: cash_flow}
+      - {'on': 2026-12-31, amount: '-4180.39', kind: cash_flow}
+      - {'on': 2027-12-31, amount: '-3160.32', kind: cash_flow}
+      - {'on': 2028-12-31, amount: '-3205.68', kind: cash_flow}
+      - {'on': 2029-12-31, amount: '-3251.04', kind: cash_flow}
+      - {'on': 2030-12-31, amount: '-3298.56', kind: cash_flow}
+      - {'on': 2031-12-31, amount: '-3348.24', kind: cash_flow}
+      - {'on': 2032-12-31, amount: '-3400.08', kind: cash_flow}
+      - {'on': 2033-12-31, amount: '-3454.08', kind: cash_flow}
+      - {'on': 2034-12-31, amount: '-3508.08', kind: cash_flow}
+      - {'on': 2035-12-31, amount: '-3566.40', kind: cash_flow}
+      - {'on': 2036-12-31, amount: '-3624.72', kind: cash_flow}
       - {'on': 2036-12-31, amount: '94459.70', kind: net_proceeds}
     afa_actual: '2340.00'
     cash_flow_actual:
-    - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
+    - {'on': 2026-12-31, amount: '-4180.39', kind: cash_flow}
 - id: growth_and_rate_switch
   description: '§10.3 B: 2 % value, rent and cost growth from the second year; a 4.5 % follow-up rate
     from 1 Aug 2031'
@@ -481,7 +481,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '13646.00', soli: '0.00', church: '1091.68', total: '14737.68'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-6197.28'
+      net_cash: '-3160.32'
       invested: null
       value: '306000.00'
       loan_balance: '234779.24'
@@ -512,7 +512,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '13742.00', soli: '0.00', church: '1099.36', total: '14841.36'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-5947.18'
+      net_cash: '-3117.58'
       invested: null
       value: '312120.00'
       loan_balance: '230935.24'
@@ -543,7 +543,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '13838.00', soli: '0.00', church: '1107.04', total: '14945.04'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-5694.15'
+      net_cash: '-3071.91'
       invested: null
       value: '318362.40'
       loan_balance: '226954.52'
@@ -574,7 +574,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '13938.00', soli: '0.00', church: '1115.04', total: '15053.04'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-5433.80'
+      net_cash: '-3027.56'
       invested: null
       value: '324729.65'
       loan_balance: '222832.21'
@@ -605,7 +605,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '13810.00', soli: '0.00', church: '1104.80', total: '14914.80'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-5416.66'
+      net_cash: '-2733.94'
       invested: null
       value: '331224.24'
       loan_balance: '219298.98'
@@ -636,7 +636,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '13444.00', soli: '0.00', church: '1075.52', total: '14519.52'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-5653.45'
+      net_cash: '-2180.17'
       invested: null
       value: '337848.73'
       loan_balance: '217122.95'
@@ -667,7 +667,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '13534.00', soli: '0.00', church: '1082.72', total: '14616.72'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-5394.58'
+      net_cash: '-2115.70'
       invested: null
       value: '344605.70'
       loan_balance: '214846.92'
@@ -698,7 +698,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '13626.00', soli: '0.00', church: '1090.08', total: '14716.08'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-5130.32'
+      net_cash: '-2050.16'
       invested: null
       value: '351497.81'
       loan_balance: '212466.33'
@@ -729,7 +729,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '13722.00', soli: '0.00', church: '1097.76', total: '14819.76'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-4858.45'
+      net_cash: '-1985.65'
       invested: null
       value: '358527.77'
       loan_balance: '209976.38'
@@ -760,7 +760,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '13820.00', soli: '0.00', church: '1105.60', total: '14925.60'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-4581.05'
+      net_cash: '-1919.93'
       invested: null
       value: '365698.33'
       loan_balance: '207372.03'
@@ -781,33 +781,33 @@ cases:
       loan_balance: '207372.03'
       net_proceeds: '145270.87'
       initial_equity: '85000.00'
-      profit: '-3590.52'
+      profit: '30727.56'
       bridge:
       - {key: appreciation, amount: '65698.33'}
       - {key: loan_paid_down, amount: '32627.97'}
-      - {key: cash_flow, amount: '-63861.39'}
+      - {key: cash_flow, amount: '-29543.31'}
       - {key: buying_costs, amount: '-25000.00'}
       - {key: selling_costs, amount: '-13055.43'}
       - {key: sale_tax, amount: '0.00'}
-      cagr: '-0.004101'
-      irr: '-0.002918'
+      cagr: '0.029819'
+      irr: '0.025701'
       flows:
       - {'on': 2026-07-01, amount: '-85000.00', kind: initial_equity}
-      - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
-      - {'on': 2027-12-31, amount: '-6197.28', kind: cash_flow}
-      - {'on': 2028-12-31, amount: '-5947.18', kind: cash_flow}
-      - {'on': 2029-12-31, amount: '-5694.15', kind: cash_flow}
-      - {'on': 2030-12-31, amount: '-5433.80', kind: cash_flow}
-      - {'on': 2031-12-31, amount: '-5416.66', kind: cash_flow}
-      - {'on': 2032-12-31, amount: '-5653.45', kind: cash_flow}
-      - {'on': 2033-12-31, amount: '-5394.58', kind: cash_flow}
-      - {'on': 2034-12-31, amount: '-5130.32', kind: cash_flow}
-      - {'on': 2035-12-31, amount: '-4858.45', kind: cash_flow}
-      - {'on': 2036-12-31, amount: '-4581.05', kind: cash_flow}
+      - {'on': 2026-12-31, amount: '-4180.39', kind: cash_flow}
+      - {'on': 2027-12-31, amount: '-3160.32', kind: cash_flow}
+      - {'on': 2028-12-31, amount: '-3117.58', kind: cash_flow}
+      - {'on': 2029-12-31, amount: '-3071.91', kind: cash_flow}
+      - {'on': 2030-12-31, amount: '-3027.56', kind: cash_flow}
+      - {'on': 2031-12-31, amount: '-2733.94', kind: cash_flow}
+      - {'on': 2032-12-31, amount: '-2180.17', kind: cash_flow}
+      - {'on': 2033-12-31, amount: '-2115.70', kind: cash_flow}
+      - {'on': 2034-12-31, amount: '-2050.16', kind: cash_flow}
+      - {'on': 2035-12-31, amount: '-1985.65', kind: cash_flow}
+      - {'on': 2036-12-31, amount: '-1919.93', kind: cash_flow}
       - {'on': 2036-12-31, amount: '145270.87', kind: net_proceeds}
     afa_actual: '2340.00'
     cash_flow_actual:
-    - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
+    - {'on': 2026-12-31, amount: '-4180.39', kind: cash_flow}
 - id: useful_life_and_sale_inside_ten_years
   description: '§10.3 C: a 21-year useful life from 2027 (Gutachten, D79), 3 % value growth, sale 2030
     inside §23'
@@ -861,7 +861,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '11698.00', soli: '0.00', church: '935.84', total: '12633.84'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-8301.12'
+      net_cash: '-1056.48'
       invested: null
       value: '309000.00'
       loan_balance: '234779.24'
@@ -892,7 +892,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '11738.00', soli: '0.00', church: '939.04', total: '12677.04'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-8257.92'
+      net_cash: '-1099.68'
       invested: null
       value: '318270.00'
       loan_balance: '230935.24'
@@ -923,7 +923,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '11778.00', soli: '0.00', church: '942.24', total: '12720.24'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-8214.72'
+      net_cash: '-1142.88'
       invested: null
       value: '327818.10'
       loan_balance: '226954.52'
@@ -954,7 +954,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '11822.00', soli: '0.00', church: '945.76', total: '12767.76'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-8167.20'
+      net_cash: '-1190.40'
       invested: null
       value: '337652.64'
       loan_balance: '222832.21'
@@ -979,27 +979,27 @@ cases:
       loan_balance: '222832.21'
       net_proceeds: '85343.67'
       initial_equity: '85000.00'
-      profit: '-42151.76'
+      profit: '-8326.16'
       bridge:
       - {key: appreciation, amount: '37652.64'}
       - {key: loan_paid_down, amount: '17167.79'}
-      - {key: cash_flow, amount: '-42495.43'}
+      - {key: cash_flow, amount: '-8669.83'}
       - {key: buying_costs, amount: '-25000.00'}
       - {key: selling_costs, amount: '-12054.20'}
       - {key: sale_tax, amount: '-17422.56'}
-      cagr: '-0.141170'
-      irr: '-0.106343'
+      cagr: '-0.022644'
+      irr: '-0.021269'
       flows:
       - {'on': 2026-07-01, amount: '-85000.00', kind: initial_equity}
-      - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
-      - {'on': 2027-12-31, amount: '-8301.12', kind: cash_flow}
-      - {'on': 2028-12-31, amount: '-8257.92', kind: cash_flow}
-      - {'on': 2029-12-31, amount: '-8214.72', kind: cash_flow}
-      - {'on': 2030-12-31, amount: '-8167.20', kind: cash_flow}
+      - {'on': 2026-12-31, amount: '-4180.39', kind: cash_flow}
+      - {'on': 2027-12-31, amount: '-1056.48', kind: cash_flow}
+      - {'on': 2028-12-31, amount: '-1099.68', kind: cash_flow}
+      - {'on': 2029-12-31, amount: '-1142.88', kind: cash_flow}
+      - {'on': 2030-12-31, amount: '-1190.40', kind: cash_flow}
       - {'on': 2030-12-31, amount: '85343.67', kind: net_proceeds}
     afa_actual: '2340.00'
     cash_flow_actual:
-    - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
+    - {'on': 2026-12-31, amount: '-4180.39', kind: cash_flow}
 - id: useful_life_control_sale_2037
   description: '§10.3 C''s control: no useful-life row (statutory AfA), sale 2037, tax-free'
   facts: *facts_flat_rate
@@ -1043,7 +1043,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '13646.00', soli: '0.00', church: '1091.68', total: '14737.68'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-6197.28'
+      net_cash: '-3160.32'
       invested: null
       value: '309000.00'
       loan_balance: '234779.24'
@@ -1074,7 +1074,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '13688.00', soli: '0.00', church: '1095.04', total: '14783.04'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-6151.92'
+      net_cash: '-3205.68'
       invested: null
       value: '318270.00'
       loan_balance: '230935.24'
@@ -1105,7 +1105,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '13730.00', soli: '0.00', church: '1098.40', total: '14828.40'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-6106.56'
+      net_cash: '-3251.04'
       invested: null
       value: '327818.10'
       loan_balance: '226954.52'
@@ -1136,7 +1136,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '13774.00', soli: '0.00', church: '1101.92', total: '14875.92'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-6059.04'
+      net_cash: '-3298.56'
       invested: null
       value: '337652.64'
       loan_balance: '222832.21'
@@ -1167,7 +1167,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '13820.00', soli: '0.00', church: '1105.60', total: '14925.60'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-6009.36'
+      net_cash: '-3348.24'
       invested: null
       value: '347782.22'
       loan_balance: '218563.31'
@@ -1198,7 +1198,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '13868.00', soli: '0.00', church: '1109.44', total: '14977.44'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-5957.52'
+      net_cash: '-3400.08'
       invested: null
       value: '358215.69'
       loan_balance: '214142.56'
@@ -1229,7 +1229,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '13918.00', soli: '0.00', church: '1113.44', total: '15031.44'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-5903.52'
+      net_cash: '-3454.08'
       invested: null
       value: '368962.16'
       loan_balance: '209564.57'
@@ -1260,7 +1260,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '13968.00', soli: '0.00', church: '1117.44', total: '15085.44'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-5849.52'
+      net_cash: '-3508.08'
       invested: null
       value: '380031.02'
       loan_balance: '204823.76'
@@ -1291,7 +1291,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '14022.00', soli: '0.00', church: '1121.76', total: '15143.76'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-5791.20'
+      net_cash: '-3566.40'
       invested: null
       value: '391431.96'
       loan_balance: '199914.34'
@@ -1322,7 +1322,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '14076.00', soli: '0.00', church: '1126.08', total: '15202.08'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-5732.88'
+      net_cash: '-3624.72'
       invested: null
       value: '403174.91'
       loan_balance: '194830.30'
@@ -1353,7 +1353,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '14134.00', soli: '0.00', church: '1130.72', total: '15264.72'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-5670.24'
+      net_cash: '-3687.36'
       invested: null
       value: '415270.16'
       loan_balance: '189565.45'
@@ -1374,34 +1374,34 @@ cases:
       loan_balance: '189565.45'
       net_proceeds: '210879.57'
       initial_equity: '85000.00'
-      profit: '50896.06'
+      profit: '84194.62'
       bridge:
       - {key: appreciation, amount: '115270.16'}
       - {key: loan_paid_down, amount: '50434.55'}
-      - {key: cash_flow, amount: '-74983.51'}
+      - {key: cash_flow, amount: '-41684.95'}
       - {key: buying_costs, amount: '-25000.00'}
       - {key: selling_costs, amount: '-14825.14'}
       - {key: sale_tax, amount: '0.00'}
-      cagr: '0.041641'
-      irr: '0.030964'
+      cagr: '0.061679'
+      irr: '0.053327'
       flows:
       - {'on': 2026-07-01, amount: '-85000.00', kind: initial_equity}
-      - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
-      - {'on': 2027-12-31, amount: '-6197.28', kind: cash_flow}
-      - {'on': 2028-12-31, amount: '-6151.92', kind: cash_flow}
-      - {'on': 2029-12-31, amount: '-6106.56', kind: cash_flow}
-      - {'on': 2030-12-31, amount: '-6059.04', kind: cash_flow}
-      - {'on': 2031-12-31, amount: '-6009.36', kind: cash_flow}
-      - {'on': 2032-12-31, amount: '-5957.52', kind: cash_flow}
-      - {'on': 2033-12-31, amount: '-5903.52', kind: cash_flow}
-      - {'on': 2034-12-31, amount: '-5849.52', kind: cash_flow}
-      - {'on': 2035-12-31, amount: '-5791.20', kind: cash_flow}
-      - {'on': 2036-12-31, amount: '-5732.88', kind: cash_flow}
-      - {'on': 2037-12-31, amount: '-5670.24', kind: cash_flow}
+      - {'on': 2026-12-31, amount: '-4180.39', kind: cash_flow}
+      - {'on': 2027-12-31, amount: '-3160.32', kind: cash_flow}
+      - {'on': 2028-12-31, amount: '-3205.68', kind: cash_flow}
+      - {'on': 2029-12-31, amount: '-3251.04', kind: cash_flow}
+      - {'on': 2030-12-31, amount: '-3298.56', kind: cash_flow}
+      - {'on': 2031-12-31, amount: '-3348.24', kind: cash_flow}
+      - {'on': 2032-12-31, amount: '-3400.08', kind: cash_flow}
+      - {'on': 2033-12-31, amount: '-3454.08', kind: cash_flow}
+      - {'on': 2034-12-31, amount: '-3508.08', kind: cash_flow}
+      - {'on': 2035-12-31, amount: '-3566.40', kind: cash_flow}
+      - {'on': 2036-12-31, amount: '-3624.72', kind: cash_flow}
+      - {'on': 2037-12-31, amount: '-3687.36', kind: cash_flow}
       - {'on': 2037-12-31, amount: '210879.57', kind: net_proceeds}
     afa_actual: '2340.00'
     cash_flow_actual:
-    - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
+    - {'on': 2026-12-31, amount: '-4180.39', kind: cash_flow}
 - id: upkeep_excluded_from_15pct
   description: 'Upkeep of 40,000.00 in 2027 (above 15 % of the building cost, inside the three years)
     is routine upkeep (exclude_from_15pct): deducted, not capitalised; the AfA stays 4,680.00 (without
@@ -1447,7 +1447,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '2686.00', soli: '0.00', church: '214.88', total: '2900.88'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-57434.08'
+      net_cash: '-30723.52'
       invested: null
       value: '300000.00'
       loan_balance: '234779.24'
@@ -1497,7 +1497,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '13646.00', soli: '0.00', church: '1091.68', total: '14737.68'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-6197.28'
+      net_cash: '-3160.32'
       invested: null
       value: '300000.00'
       loan_balance: '234779.24'
@@ -1528,7 +1528,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '13764.00', soli: '0.00', church: '1101.12', total: '14865.12'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-5822.64'
+      net_cash: '-3040.56'
       invested: null
       value: '300000.00'
       loan_balance: '230935.24'
@@ -1578,7 +1578,7 @@ cases:
         carried_forward: true
         breakdown_with: {est: '13006.00', soli: '0.00', church: '1040.48', total: '14046.48'}
         breakdown_without: {est: '15052.00', soli: '0.00', church: '1204.16', total: '16256.16'}
-      net_cash: '-8948.48'
+      net_cash: '-4529.12'
       invested: null
       value: '300000.00'
       loan_balance: '234779.24'

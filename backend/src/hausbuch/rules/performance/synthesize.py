@@ -26,21 +26,26 @@ AllocationFact rows the property would book, so phase 3's draft() can run over t
   recurring, service period the month of due_on; the year's balance is the closing balance
   of its last entry due on or before 31 Dec of Y.
 
-A synthesized row whose month a real recurring line of the same category and tenancy or loan
-already pays (its service period) is left out. Ids are UUID5 over a fixed namespace and the
+A synthesized rent, NK or loan row (dated in its service month) whose month a real recurring
+line of the same category and tenancy or loan already pays (its service period) is left out.
+Cost rows are dated by the line's booking pattern instead, so for each real line of the
+category that §11 puts into the year (recurring or not), the year's earliest cost row is left
+out. Ids are UUID5 over a fixed namespace and the
 row's meaning (scenario key, property, year, category, month or entry, tenancy or loan), so
 the same levers give the same ids. Every row maps to a SourceRef: `schedule_entry` (the row's
 own id) for loan rows, `scenario` for the rest (the saved scenario's id, else the row's id).
 """
 
 import calendar
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from uuid import UUID, uuid5
 
 from hausbuch.rules.loan_schedule import build_schedule
+from hausbuch.rules.tax import registry
+from hausbuch.rules.tax._common import of_year
 from hausbuch.rules.tax.rounding import CENT, cents
 from hausbuch.schemas.allocation import AllocationCategory as C
 from hausbuch.schemas.allocation import ServicePeriod
@@ -51,6 +56,7 @@ from hausbuch.schemas.tax import (
     AllocationFact,
     DraftFacts,
     ExcludeFrom15Pct,
+    RuleSet,
     SourceRef,
     TaxInputFact,
     TaxInputKind,
@@ -289,7 +295,13 @@ def cost_templates(allocations: Sequence[AllocationFact], today: date) -> list[C
     return templates
 
 
-def _costs(b: _Builder, year: int, n: int, templates: list[CostTemplate], covered) -> None:
+def _costs(
+    b: _Builder, year: int, n: int, templates: list[CostTemplate], real_of_year: Sequence
+) -> None:
+    """The cost rows of `year`. Synthetic cost rows are dated by the line's booking pattern,
+    not by a service month, so what real lines already pay is judged by §11: for each real
+    line of the category that §11 puts into `year` (recurring or not), the year's earliest
+    synthetic row is left out (review F2)."""
     for t in templates:
         annual = cents(-t.line.amount * 12 / t.cadence * _growth(b.levers.cost_inflation, n))
         dates = []
@@ -301,9 +313,10 @@ def _costs(b: _Builder, year: int, n: int, templates: list[CostTemplate], covere
             if on.year == year:
                 dates.append(on)
             k += 1
-        paid_months, _ = covered.get((t.category, None), (set(), ZERO))
-        for on, amount in zip(dates, _spread(annual, len(dates)), strict=True):
-            if amount == 0 or on.month in paid_months:
+        paid = sum(1 for a in real_of_year if a.category is t.category)
+        rows = list(zip(dates, _spread(annual, len(dates)), strict=True))
+        for on, amount in rows[paid:]:  # the dates ascend: the earliest are left out
+            if amount == 0:
                 continue
             b.add(
                 year,
@@ -387,8 +400,10 @@ def synthesize(
     today: date,
     *,
     scenario_id: UUID | None = None,
+    rule_sets: Callable[[int], RuleSet] = registry.rule_set_or_latest,
 ) -> Synthesis:
-    """The synthesized rows of every year from today.year + 1 to levers.sale_year."""
+    """The synthesized rows of every year from today.year + 1 to levers.sale_year.
+    `rule_sets` gives the §11 rule set of a year (the cost rows' check against real lines)."""
     key = str(scenario_id) if scenario_id is not None else levers.model_dump_json()
     b = _Builder(facts, levers, key, scenario_id)
     years = range(today.year + 1, levers.sale_year + 1)
@@ -398,7 +413,7 @@ def synthesize(
     for year in years:
         n = year - today.year
         _rents(b, year, n, today, covered_by_year[year])
-        _costs(b, year, n, templates, covered_by_year[year])
+        _costs(b, year, n, templates, of_year(real, year, rule_sets(year)))
         _upkeep(b, year, n)
     _loans(b, years, loans, covered_by_year)
     return b.out

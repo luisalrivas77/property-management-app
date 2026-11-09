@@ -46,11 +46,11 @@ cases:
     - {owner_id: 0000000a-0000-4000-8000-000000000002, church_tax: true, tax_state: BY, share: {numerator: 1,
         denominator: 2}}
     cash_flows:
-    - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
-    - {'on': 2027-12-31, amount: '-8301.12', kind: cash_flow}
-    - {'on': 2028-12-31, amount: '-8257.92', kind: cash_flow}
-    - {'on': 2029-12-31, amount: '-8214.72', kind: cash_flow}
-    - {'on': 2030-12-31, amount: '-8167.20', kind: cash_flow}
+    - {'on': 2026-12-31, amount: '-4180.39', kind: cash_flow}
+    - {'on': 2027-12-31, amount: '-1056.48', kind: cash_flow}
+    - {'on': 2028-12-31, amount: '-1099.68', kind: cash_flow}
+    - {'on': 2029-12-31, amount: '-1142.88', kind: cash_flow}
+    - {'on': 2030-12-31, amount: '-1190.40', kind: cash_flow}
   expect:
     sale_date: 2030-12-31
     tax_free_from: 2036-03-11
@@ -69,23 +69,23 @@ cases:
     loan_balance: '222832.21'
     net_proceeds: '85343.67'
     initial_equity: '85000.00'
-    profit: '-42151.76'
+    profit: '-8326.16'
     bridge:
     - {key: appreciation, amount: '37652.64'}
     - {key: loan_paid_down, amount: '17167.79'}
-    - {key: cash_flow, amount: '-42495.43'}
+    - {key: cash_flow, amount: '-8669.83'}
     - {key: buying_costs, amount: '-25000.00'}
     - {key: selling_costs, amount: '-12054.20'}
     - {key: sale_tax, amount: '-17422.56'}
-    cagr: '-0.141170'
-    irr: '-0.106343'
+    cagr: '-0.022644'
+    irr: '-0.021269'
     flows:
     - {'on': 2026-07-01, amount: '-85000.00', kind: initial_equity}
-    - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
-    - {'on': 2027-12-31, amount: '-8301.12', kind: cash_flow}
-    - {'on': 2028-12-31, amount: '-8257.92', kind: cash_flow}
-    - {'on': 2029-12-31, amount: '-8214.72', kind: cash_flow}
-    - {'on': 2030-12-31, amount: '-8167.20', kind: cash_flow}
+    - {'on': 2026-12-31, amount: '-4180.39', kind: cash_flow}
+    - {'on': 2027-12-31, amount: '-1056.48', kind: cash_flow}
+    - {'on': 2028-12-31, amount: '-1099.68', kind: cash_flow}
+    - {'on': 2029-12-31, amount: '-1142.88', kind: cash_flow}
+    - {'on': 2030-12-31, amount: '-1190.40', kind: cash_flow}
     - {'on': 2030-12-31, amount: '85343.67', kind: net_proceeds}
 - id: tax_free_after_ten_years
   description: '§10.3 A''s sale: 31 Dec 2036 ≥ 11 Mar 2036, not taxable'
@@ -108,17 +108,17 @@ cases:
     - {owner_id: 0000000a-0000-4000-8000-000000000002, church_tax: true, tax_state: BY, share: {numerator: 1,
         denominator: 2}}
     cash_flows:
-    - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
-    - {'on': 2027-12-31, amount: '-6197.28', kind: cash_flow}
-    - {'on': 2028-12-31, amount: '-6151.92', kind: cash_flow}
-    - {'on': 2029-12-31, amount: '-6106.56', kind: cash_flow}
-    - {'on': 2030-12-31, amount: '-6059.04', kind: cash_flow}
-    - {'on': 2031-12-31, amount: '-6009.36', kind: cash_flow}
-    - {'on': 2032-12-31, amount: '-5957.52', kind: cash_flow}
-    - {'on': 2033-12-31, amount: '-5903.52', kind: cash_flow}
-    - {'on': 2034-12-31, amount: '-5849.52', kind: cash_flow}
-    - {'on': 2035-12-31, amount: '-5791.20', kind: cash_flow}
-    - {'on': 2036-12-31, amount: '-5732.88', kind: cash_flow}
+    - {'on': 2026-12-31, amount: '-4180.39', kind: cash_flow}
+    - {'on': 2027-12-31, amount: '-3160.32', kind: cash_flow}
+    - {'on': 2028-12-31, amount: '-3205.68', kind: cash_flow}
+    - {'on': 2029-12-31, amount: '-3251.04', kind: cash_flow}
+    - {'on': 2030-12-31, amount: '-3298.56', kind: cash_flow}
+    - {'on': 2031-12-31, amount: '-3348.24', kind: cash_flow}
+    - {'on': 2032-12-31, amount: '-3400.08', kind: cash_flow}
+    - {'on': 2033-12-31, amount: '-3454.08', kind: cash_flow}
+    - {'on': 2034-12-31, amount: '-3508.08', kind: cash_flow}
+    - {'on': 2035-12-31, amount: '-3566.40', kind: cash_flow}
+    - {'on': 2036-12-31, amount: '-3624.72', kind: cash_flow}
   expect:
     sale_date: 2036-12-31
     tax_free_from: 2036-03-11
@@ -133,29 +133,29 @@ cases:
     loan_balance: '194830.30'
     net_proceeds: '94459.70'
     initial_equity: '85000.00'
-    profit: '-59853.57'
+    profit: '-28537.89'
     bridge:
     - {key: appreciation, amount: '0.00'}
     - {key: loan_paid_down, amount: '45169.70'}
-    - {key: cash_flow, amount: '-69313.27'}
+    - {key: cash_flow, amount: '-37997.59'}
     - {key: buying_costs, amount: '-25000.00'}
     - {key: selling_costs, amount: '-10710.00'}
     - {key: sale_tax, amount: '0.00'}
-    cagr: '-0.109496'
-    irr: '-0.061054'
+    cagr: '-0.038202'
+    irr: '-0.030056'
     flows:
     - {'on': 2026-07-01, amount: '-85000.00', kind: initial_equity}
-    - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
-    - {'on': 2027-12-31, amount: '-6197.28', kind: cash_flow}
-    - {'on': 2028-12-31, amount: '-6151.92', kind: cash_flow}
-    - {'on': 2029-12-31, amount: '-6106.56', kind: cash_flow}
-    - {'on': 2030-12-31, amount: '-6059.04', kind: cash_flow}
-    - {'on': 2031-12-31, amount: '-6009.36', kind: cash_flow}
-    - {'on': 2032-12-31, amount: '-5957.52', kind: cash_flow}
-    - {'on': 2033-12-31, amount: '-5903.52', kind: cash_flow}
-    - {'on': 2034-12-31, amount: '-5849.52', kind: cash_flow}
-    - {'on': 2035-12-31, amount: '-5791.20', kind: cash_flow}
-    - {'on': 2036-12-31, amount: '-5732.88', kind: cash_flow}
+    - {'on': 2026-12-31, amount: '-4180.39', kind: cash_flow}
+    - {'on': 2027-12-31, amount: '-3160.32', kind: cash_flow}
+    - {'on': 2028-12-31, amount: '-3205.68', kind: cash_flow}
+    - {'on': 2029-12-31, amount: '-3251.04', kind: cash_flow}
+    - {'on': 2030-12-31, amount: '-3298.56', kind: cash_flow}
+    - {'on': 2031-12-31, amount: '-3348.24', kind: cash_flow}
+    - {'on': 2032-12-31, amount: '-3400.08', kind: cash_flow}
+    - {'on': 2033-12-31, amount: '-3454.08', kind: cash_flow}
+    - {'on': 2034-12-31, amount: '-3508.08', kind: cash_flow}
+    - {'on': 2035-12-31, amount: '-3566.40', kind: cash_flow}
+    - {'on': 2036-12-31, amount: '-3624.72', kind: cash_flow}
     - {'on': 2036-12-31, amount: '94459.70', kind: net_proceeds}
 - id: gain_below_freigrenze
   description: '§10.3 A sold in 2027 at 319,780.00 without selling costs: gain 1,800.00, 900.00 per spouse
@@ -179,8 +179,8 @@ cases:
     - {owner_id: 0000000a-0000-4000-8000-000000000002, church_tax: true, tax_state: BY, share: {numerator: 1,
         denominator: 2}}
     cash_flows:
-    - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
-    - {'on': 2027-12-31, amount: '-6197.28', kind: cash_flow}
+    - {'on': 2026-12-31, amount: '-4180.39', kind: cash_flow}
+    - {'on': 2027-12-31, amount: '-3160.32', kind: cash_flow}
   expect:
     sale_date: 2027-12-31
     tax_free_from: 2036-03-11
@@ -199,20 +199,20 @@ cases:
     loan_balance: '234779.24'
     net_proceeds: '85000.76'
     initial_equity: '85000.00'
-    profit: '-15750.99'
+    profit: '-7339.95'
     bridge:
     - {key: appreciation, amount: '19780.00'}
     - {key: loan_paid_down, amount: '5220.76'}
-    - {key: cash_flow, amount: '-15751.75'}
+    - {key: cash_flow, amount: '-7340.71'}
     - {key: buying_costs, amount: '-25000.00'}
     - {key: selling_costs, amount: '0.00'}
     - {key: sale_tax, amount: '0.00'}
-    cagr: '-0.127678'
-    irr: '-0.118150'
+    cagr: '-0.058417'
+    irr: '-0.056473'
     flows:
     - {'on': 2026-07-01, amount: '-85000.00', kind: initial_equity}
-    - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
-    - {'on': 2027-12-31, amount: '-6197.28', kind: cash_flow}
+    - {'on': 2026-12-31, amount: '-4180.39', kind: cash_flow}
+    - {'on': 2027-12-31, amount: '-3160.32', kind: cash_flow}
     - {'on': 2027-12-31, amount: '85000.76', kind: net_proceeds}
 - id: gain_at_freigrenze
   description: 'Gain 2,000.00, 1,000.00 per spouse: not below the Freigrenze, the whole gain is taxed'
@@ -235,8 +235,8 @@ cases:
     - {owner_id: 0000000a-0000-4000-8000-000000000002, church_tax: true, tax_state: BY, share: {numerator: 1,
         denominator: 2}}
     cash_flows:
-    - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
-    - {'on': 2027-12-31, amount: '-6197.28', kind: cash_flow}
+    - {'on': 2026-12-31, amount: '-4180.39', kind: cash_flow}
+    - {'on': 2027-12-31, amount: '-3160.32', kind: cash_flow}
   expect:
     sale_date: 2027-12-31
     tax_free_from: 2036-03-11
@@ -255,20 +255,20 @@ cases:
     loan_balance: '234779.24'
     net_proceeds: '84522.52'
     initial_equity: '85000.00'
-    profit: '-16229.23'
+    profit: '-7818.19'
     bridge:
     - {key: appreciation, amount: '19980.00'}
     - {key: loan_paid_down, amount: '5220.76'}
-    - {key: cash_flow, amount: '-15751.75'}
+    - {key: cash_flow, amount: '-7340.71'}
     - {key: buying_costs, amount: '-25000.00'}
     - {key: selling_costs, amount: '0.00'}
     - {key: sale_tax, amount: '-678.24'}
-    cagr: '-0.131698'
-    irr: '-0.121850'
+    cagr: '-0.062286'
+    irr: '-0.060209'
     flows:
     - {'on': 2026-07-01, amount: '-85000.00', kind: initial_equity}
-    - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
-    - {'on': 2027-12-31, amount: '-6197.28', kind: cash_flow}
+    - {'on': 2026-12-31, amount: '-4180.39', kind: cash_flow}
+    - {'on': 2027-12-31, amount: '-3160.32', kind: cash_flow}
     - {'on': 2027-12-31, amount: '84522.52', kind: net_proceeds}
 - id: loss_not_refunded
   description: 'Sold at the purchase price: a §23 loss, no tax and no refund (nicht verrechenbar)'
@@ -291,8 +291,8 @@ cases:
     - {owner_id: 0000000a-0000-4000-8000-000000000002, church_tax: true, tax_state: BY, share: {numerator: 1,
         denominator: 2}}
     cash_flows:
-    - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
-    - {'on': 2027-12-31, amount: '-6197.28', kind: cash_flow}
+    - {'on': 2026-12-31, amount: '-4180.39', kind: cash_flow}
+    - {'on': 2027-12-31, amount: '-3160.32', kind: cash_flow}
   expect:
     sale_date: 2027-12-31
     tax_free_from: 2036-03-11
@@ -311,18 +311,18 @@ cases:
     loan_balance: '234779.24'
     net_proceeds: '65220.76'
     initial_equity: '85000.00'
-    profit: '-35530.99'
+    profit: '-27119.95'
     bridge:
     - {key: appreciation, amount: '0.00'}
     - {key: loan_paid_down, amount: '5220.76'}
-    - {key: cash_flow, amount: '-15751.75'}
+    - {key: cash_flow, amount: '-7340.71'}
     - {key: buying_costs, amount: '-25000.00'}
     - {key: selling_costs, amount: '0.00'}
     - {key: sale_tax, amount: '0.00'}
-    cagr: '-0.302873'
-    irr: '-0.277983'
+    cagr: '-0.225957'
+    irr: '-0.217733'
     flows:
     - {'on': 2026-07-01, amount: '-85000.00', kind: initial_equity}
-    - {'on': 2026-12-31, amount: '-9554.47', kind: cash_flow}
-    - {'on': 2027-12-31, amount: '-6197.28', kind: cash_flow}
+    - {'on': 2026-12-31, amount: '-4180.39', kind: cash_flow}
+    - {'on': 2027-12-31, amount: '-3160.32', kind: cash_flow}
     - {'on': 2027-12-31, amount: '65220.76', kind: net_proceeds}
