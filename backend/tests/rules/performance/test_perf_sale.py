@@ -27,7 +27,8 @@ def facts_of(case) -> SaleFacts:
         loan_principal=f.loan_principal,
         value=f.value,
         selling_costs_rate=f.selling_costs_rate,
-        afa_claimed=f.afa_claimed,
+        afa_claimed_building=f.afa_claimed,
+        afa_claimed_movable=f.afa_claimed_movable,
         loan_balance=f.loan_balance,
         zve_base=f.zve_base,
         result_sale_year=f.result_sale_year,
@@ -37,6 +38,7 @@ def facts_of(case) -> SaleFacts:
             for o in f.owners
         ],
         cash_flows=f.cash_flows,
+        freigrenze=registry.rule_set_or_latest(f.sale_year).speculation_freigrenze,
     )
 
 
@@ -79,3 +81,14 @@ def test_basis_additions_lower_the_gain():
         registry.tariff(2030),
     )
     assert got.gain == Decimal("43064.16")
+
+
+def test_the_freigrenze_is_the_facts_own():
+    """D93: the Freigrenze comes from the sale year's rule set, not a constant. Under the
+    600.00 of the years before 2024, gain_below_freigrenze's 900.00 per spouse is taxed."""
+    case = next(c for c in SALE.cases if c.id == "gain_below_freigrenze")
+    f = facts_of(case)
+    assert f.freigrenze == Decimal("1000")
+    got = sale(SaleFacts(**{**f.__dict__, "freigrenze": Decimal("600")}), registry.tariff(2027))
+    assert [o.below_freigrenze for o in got.gain_per_owner] == [False, False]
+    assert not got.freigrenze_applied and got.sale_tax > 0

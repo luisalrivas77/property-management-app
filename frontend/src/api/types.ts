@@ -5123,6 +5123,10 @@ export interface components {
             selling_costs: string;
             /** Afa Claimed */
             afa_claimed: string;
+            /** Afa Claimed Building */
+            afa_claimed_building: string;
+            /** Afa Claimed Movable */
+            afa_claimed_movable: string;
             /** Gain */
             gain: string | null;
             /** Gain Per Owner */

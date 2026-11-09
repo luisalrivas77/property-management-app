@@ -709,7 +709,9 @@ function SaleBanner({ sale, propertyId }: { sale: SaleResult; propertyId: string
     <div className="notice notice-warn planning-banner" role="status">
       <p>
         Verkauf am {saleDate} liegt vor dem {freeFrom}: innerhalb von zehn Jahren seit dem notariellen Kauf, ein Gewinn ist
-        steuerpflichtig (§ 23 EStG). Die abgeschriebene AfA ({formatMoney(sale.afa_claimed)}) wird dem Gewinn hinzugerechnet.
+        steuerpflichtig (§ 23 EStG). Die abgeschriebene AfA ({formatMoney(sale.afa_claimed)}
+        {isZero(sale.afa_claimed_movable) ? null : <>, davon Küche {formatMoney(sale.afa_claimed_movable)}</>}) wird dem
+        Gewinn hinzugerechnet.
       </p>
       <p>
         {sale.gain == null

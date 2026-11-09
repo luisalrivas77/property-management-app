@@ -300,7 +300,9 @@ def project(
         )
         for y in [*actual, *years]
     ]
-    afa_claimed = sum((y.afa or ZERO for y in [*actual, *years]), ZERO)
+    owned = [*actual, *years]
+    afa_building = sum((y.afa or ZERO for y in owned), ZERO)
+    afa_movable = sum((y.afa_movable or ZERO for y in owned), ZERO)  # D94: the kitchen's too
     sale_afa = year_drafts[sale_year].afa
     additions = sale_afa.additions if sale_afa is not None else ZERO
     result = sale(
@@ -313,13 +315,15 @@ def project(
             loan_principal=sum((t.principal for t in loans.values()), ZERO),
             value=last.value or ZERO,
             selling_costs_rate=levers.selling_costs_rate,
-            afa_claimed=afa_claimed,
+            afa_claimed_building=afa_building,
+            afa_claimed_movable=afa_movable,
             loan_balance=last.loan_balance or ZERO,
             zve_base=base.amount if base is not None else None,
             result_sale_year=last.taxable_result or ZERO,
             shares=_shares(facts, owners),
             profiles=owners,
             cash_flows=cash_flows,
+            freigrenze=sale_rule_set.speculation_freigrenze,
             basis_additions=additions,
             override_rate=override,
             value_sources=[*scenario_refs, SourceRef(kind="property", id=prop.id)],

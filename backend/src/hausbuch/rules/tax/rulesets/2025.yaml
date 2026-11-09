@@ -24,6 +24,8 @@ spread_82b_max_years: 5
 reduced_rent_full: "0.66"           # §21 Abs. 2 EStG
 reduced_rent_split: "0.50"
 speculation_years: 10               # §23 Abs. 1 S. 1 Nr. 1 EStG
+speculation_freigrenze: "1000"      # §23 Abs. 3 S. 5 EStG, per spouse: 1,000 from VZ 2024
+                                    # (Wachstumschancengesetz), 600 before (phase 4 D93)
 
 form:
   form_year: 2025

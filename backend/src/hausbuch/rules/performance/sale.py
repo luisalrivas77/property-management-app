@@ -6,12 +6,15 @@ property without a contract date has no such day and is treated as outside §23 
 projection states it as an assumption).
 
 - selling costs C = value × rate, half-up to the cent.
-- gain = V − C − (purchase price + Σ cost rows + Σ basis additions − building AfA claimed);
-  the kitchen's own AfA (D80, wk.afa_movable) is never added back.
+- gain = V − C − (purchase price + Σ cost rows + Σ basis additions − AfA claimed), the AfA
+  claimed being the building's plus the D80 kitchen's (wk.afa_movable) of every year owned
+  (D94): the kitchen's cost stays in the basis and the sale value is not split, as if the
+  kitchen left with the flat at its book value.
 - Each owner's share of the gain is half-up to the cent, the last owner taking the
-  remainder; it is below the Freigrenze when 0 < share < 1,000 (§23 Abs. 3 S. 5, a cliff,
-  tested per spouse). The taxed gain is the sum of the shares that are positive and not below
-  it; a loss is taxed at 0.00 and never refunded (§23 Abs. 3 S. 7: "nicht verrechenbar").
+  remainder; it is below the Freigrenze when 0 < share < the Freigrenze (§23 Abs. 3 S. 5, a
+  cliff, tested per spouse), the sale year's rule set's speculation_freigrenze (D93). The
+  taxed gain is the sum of the shares that are positive and not below it; a loss is taxed at
+  0.00 and never refunded (§23 Abs. 3 S. 7: "nicht verrechenbar").
 - sale tax T = T(base + R + taxed gain) − T(base + R) under the sale year's tariff, with base
   the household's zvE without the property and R the property's result of the sale year
   (D82's difference, never gain × rate); under a marginal_rate_override it is taxed gain ×
@@ -43,7 +46,6 @@ from hausbuch.schemas.tax import SourceRef, TaxOwner
 from .irr import cagr, xirr, years_between
 
 ZERO = Decimal("0.00")
-FREIGRENZE_23 = Decimal("1000")  # §23 Abs. 3 S. 5 EStG, per spouse (BMF 5 Oct 2000 Rz. 41)
 
 
 @dataclass(frozen=True)
@@ -58,13 +60,15 @@ class SaleFacts:
     loan_principal: Decimal  # Σ the loans' principal, for E₀
     value: Decimal  # V at the sale: the sale year's projected value
     selling_costs_rate: Decimal
-    afa_claimed: Decimal  # Σ building AfA of every year owned through the sale year
+    afa_claimed_building: Decimal  # Σ building AfA (wk.afa) of every year owned to the sale
+    afa_claimed_movable: Decimal  # Σ the D80 kitchen's AfA (wk.afa_movable) of them (D94)
     loan_balance: Decimal  # L at the sale
     zve_base: Decimal | None  # the sale year's household zvE without the property
     result_sale_year: Decimal  # R: the property's taxable result of the sale year
     shares: Sequence[TaxOwner]  # the owners' shares of the property
     profiles: Sequence[OwnerTaxProfile]  # their church tax status, for T
     cash_flows: Sequence[DatedFlow]  # CF_y on 31 Dec of each year, actual and projected
+    freigrenze: Decimal  # §23 Abs. 3 S. 5, per spouse: the sale year's rule set's (D93)
     basis_additions: Decimal = ZERO  # Σ costs capitalised into the basis (D73)
     override_rate: Decimal | None = None  # the sale year's marginal_rate_override
     joint: bool = True
@@ -73,8 +77,13 @@ class SaleFacts:
     afa_sources: list[SourceRef] = field(default_factory=list)
     tax_sources: list[SourceRef] = field(default_factory=list)
 
+    @property
+    def afa_claimed(self) -> Decimal:
+        """All AfA added back at a taxable sale: the building's and the kitchen's (D94)."""
+        return self.afa_claimed_building + self.afa_claimed_movable
 
-def _owner_gains(gain: Decimal, shares: Sequence[TaxOwner]) -> list[OwnerGain]:
+
+def _owner_gains(gain: Decimal, shares: Sequence[TaxOwner], freigrenze: Decimal) -> list[OwnerGain]:
     """The gain split by the owners' shares, half-up, the last owner taking the remainder."""
     gains: list[OwnerGain] = []
     left = gain
@@ -87,7 +96,7 @@ def _owner_gains(gain: Decimal, shares: Sequence[TaxOwner]) -> list[OwnerGain]:
                 owner_id=owner.owner_id,
                 share=owner.share,
                 gain=part,
-                below_freigrenze=0 < part < FREIGRENZE_23,
+                below_freigrenze=0 < part < freigrenze,
             )
         )
     return gains
@@ -122,7 +131,7 @@ def sale(f: SaleFacts, tariff: Tariff) -> SaleResult:
     if taxable:
         basis = f.purchase_price + f.cost_rows + f.basis_additions - f.afa_claimed
         gain = f.value - selling - basis
-        owners = _owner_gains(gain, f.shares)
+        owners = _owner_gains(gain, f.shares, f.freigrenze)
         if owners:
             taxed = sum((o.gain for o in owners if o.gain > 0 and not o.below_freigrenze), ZERO)
         else:  # no owner shares known: the whole gain, without the per-spouse Freigrenze
@@ -161,6 +170,8 @@ def sale(f: SaleFacts, tariff: Tariff) -> SaleResult:
         value=f.value,
         selling_costs=selling,
         afa_claimed=f.afa_claimed,
+        afa_claimed_building=f.afa_claimed_building,
+        afa_claimed_movable=f.afa_claimed_movable,
         gain=gain,
         gain_per_owner=owners,
         freigrenze_applied=any(o.below_freigrenze for o in owners),

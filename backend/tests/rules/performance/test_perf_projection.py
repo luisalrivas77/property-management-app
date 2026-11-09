@@ -18,7 +18,7 @@ from hausbuch.schemas.allocation import AllocationCategory as C
 from hausbuch.schemas.allocation import ServicePeriod
 from hausbuch.schemas.enums import IncomeInputKind
 from hausbuch.schemas.performance import IncomeInputFact
-from hausbuch.schemas.tax import AllocationFact, TaxInputKind
+from hausbuch.schemas.tax import AllocationFact, TaxInputFact, TaxInputKind
 
 PROJECTION = load("projection")
 assert isinstance(PROJECTION, ProjectionFixture)
@@ -186,6 +186,38 @@ def test_a_bescheid_of_a_year_before_the_purchase_is_carried_forward(bescheid_ye
         base_tax = total_tax(Decimal("80000.00"), registry.tariff(year.year), case.owners)
         assert effect.breakdown_without == base_tax, year.year
     assert got.sale is not None
+
+
+def test_a_kitchen_s_afa_is_added_back_at_the_sale():
+    """D94 through project(): C's sale inside ten years with a kitchen (D80) of 8,000.00 in
+    the price. The sale adds back the kitchen's AfA of every year owned, the actual 2026
+    included, next to the building's, and the gain takes both."""
+    case = _case("useful_life_and_sale_inside_ten_years")
+    facts = case.facts.resolve()
+    kitchen = TaxInputFact.model_validate(
+        {
+            "id": UUID("000000f4-0000-4000-8000-000000000001"),
+            "property_id": facts.property.id,
+            "kind": "movable_asset",
+            "tax_year": 2026,
+            "value": {"label": "einbaukueche", "amount": "8000.00"},
+        }
+    )
+    facts = facts.model_copy(update={"tax_inputs": [*facts.tax_inputs, kitchen]})
+    loans = {loan.loan_id: loan.terms for loan in case.loans}
+    actual = actual_year(facts, 2026, case.today, case.owners, case.income_inputs)
+    got = project(facts, case.levers, case.owners, case.income_inputs, case.today, loans)
+    owned = [actual, *got.years]
+    s = got.sale
+    assert s is not None and s.taxable
+    movable = sum((y.afa_movable or Decimal("0") for y in owned), Decimal("0"))
+    assert movable > 0
+    assert s.afa_claimed_movable == movable
+    assert s.afa_claimed_building == sum((y.afa or Decimal("0") for y in owned), Decimal("0"))
+    assert s.afa_claimed == s.afa_claimed_building + s.afa_claimed_movable
+    cost_rows = sum((c.amount for c in facts.cost_rows), Decimal("0"))
+    basis = facts.property.purchase_price + cost_rows - s.afa_claimed
+    assert s.gain == s.value - s.selling_costs - basis
 
 
 @pytest.mark.parametrize(

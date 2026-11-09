@@ -220,6 +220,7 @@ PHASE4_CASES = {
         "gain_at_freigrenze",
         "loss_not_refunded",
         "tax_free_after_ten_years",
+        "kitchen_afa_added_back",  # D94: the kitchen's AfA added back at a taxable sale
     },
     "irr": {
         "two_flows_10pct",
@@ -248,6 +249,7 @@ def test_phase4_cases_cover_the_spec():
         ("projection", ("expect", "years", 0, "equity"), "65220.77"),
         ("projection", ("expect", "sale", "afa_claimed"), "49140.01"),
         ("sale", ("expect", "profit"), "-42151.77"),
+        ("sale", ("expect", "afa_claimed_movable"), "1300.01"),  # D94: the parts add up
     ],
 )
 def test_phase4_fixtures_check_their_arithmetic(name, path, slip):
