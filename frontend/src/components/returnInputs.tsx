@@ -20,6 +20,7 @@ import { DocumentPicker } from "./documents";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
 import { formatArea, formatDate, formatFraction, formatMoney, formatShare } from "./format";
 import { decimalInput, toDecimalString, toFraction, toMoneyString, type Parsed } from "./input";
+import { BelegLink } from "./returnInputEvidence";
 import {
   COMMUTE_KIND,
   EQUIPMENT_CLASS,
@@ -447,6 +448,7 @@ function KindBlock({
                   {row.tax_year !== year ? <span className="muted"> (aus {row.tax_year})</span> : null}
                 </span>
                 <span className="row tax-input-actions">
+                  <BelegLink documentId={row.document_id} />
                   <button type="button" className="link" onClick={() => setEditing(row.id)} disabled={busy || editing !== null}>
                     ändern
                   </button>

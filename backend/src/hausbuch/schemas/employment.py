@@ -665,6 +665,31 @@ class ReturnInput(ReturnInputFact):
     recorded_by: UUID | None = None
 
 
+class ReturnInputEvidenceValue(Schema):
+    """One value of the pre-fill a row was applied from: where the document states it (page
+    and quote, when the model cited one) and what the user did with it on apply."""
+
+    field: str  # the proposal's field name, e.g. "value.gross" or "value.gross.ytd"
+    page: int | None = Field(default=None, ge=1)
+    quote: str | None = None
+    decision: Literal["accepted", "edited", "cleared", "skipped"] | None = None
+
+
+class ReturnInputEvidence(Schema):
+    """GET /return-inputs/{id}/evidence: the row's Beleg and, when the row was applied from a
+    pre-fill proposal, each value's page and quote (read-only, gap 3). `scrubbed` says the
+    proposal's values were removed 90 days after the decision (phase 2 D19), so only the Beleg
+    is left; `values` is then empty."""
+
+    return_input_id: UUID
+    document_id: UUID | None = None
+    opens_inline: bool = False  # the original opens in the browser (#page= works)
+    proposal_id: UUID | None = None
+    decided_at: datetime | None = None
+    scrubbed: bool = False
+    values: list[ReturnInputEvidenceValue] = Field(default_factory=list)
+
+
 class OwnerReturnFacts(Schema):
     """Everything draft_n and vorsorge read for one owner and year: the owner's rows (yearly
     kinds of the year, spanning kinds up to it), the expected-pay row as the last fallback,

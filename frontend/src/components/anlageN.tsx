@@ -17,6 +17,7 @@ import type { components } from "@/api/types";
 import { formatDate, formatDecimal, formatMoney } from "./format";
 import { ANLAGE_N_STATUS, RETURN_INPUT_KIND, WARNING_TEXT } from "./labels";
 import { BlockRows, hasBlocks } from "./anlageNBlocks";
+import { EvidenceFold } from "./returnInputEvidence";
 import { InputsPanel, type ReturnInput } from "./returnInputs";
 import { ReturnEstimateCard, useReturnEstimate, type ReturnEstimate } from "./returnEstimate";
 import { ExportCard, SourcesButton, type ExportButton } from "./tax";
@@ -537,6 +538,7 @@ function Documents({ rows, year }: { rows: ReturnInput[]; year: number }) {
                     <>
                       {" · "}
                       <Link href={`/documents/${row.document_id}`}>Dokument öffnen</Link>
+                      <EvidenceFold returnInputId={row.id} />
                     </>
                   ) : null}
                 </li>
@@ -566,6 +568,7 @@ function Documents({ rows, year }: { rows: ReturnInput[]; year: number }) {
                           <>
                             {" · "}
                             <Link href={`/documents/${row.document_id}`}>Dokument öffnen</Link>
+                            <EvidenceFold returnInputId={row.id} />
                           </>
                         ) : null}
                       </li>

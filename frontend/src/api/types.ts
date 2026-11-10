@@ -128,6 +128,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/return-inputs/{return_input_id}/evidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Return Input Evidence Get
+         * @description The row's Beleg and, for a row applied from a pre-fill proposal, each value's page and
+         *     quote with what the user did with it (accepted, edited, cleared). Read-only; `scrubbed`
+         *     once the proposal's values are gone after 90 days (phase 2 D19). 404 for an unknown
+         *     row.
+         */
+        get: operations["return_input_evidence_get_api_return_inputs__return_input_id__evidence_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tax/anlage-n/years": {
         parameters: {
             query?: never;
@@ -6412,6 +6435,53 @@ export interface components {
             withdrawn: boolean;
         };
         /**
+         * ReturnInputEvidence
+         * @description GET /return-inputs/{id}/evidence: the row's Beleg and, when the row was applied from a
+         *     pre-fill proposal, each value's page and quote (read-only, gap 3). `scrubbed` says the
+         *     proposal's values were removed 90 days after the decision (phase 2 D19), so only the Beleg
+         *     is left; `values` is then empty.
+         */
+        ReturnInputEvidence: {
+            /**
+             * Return Input Id
+             * Format: uuid
+             */
+            return_input_id: string;
+            /** Document Id */
+            document_id?: string | null;
+            /**
+             * Opens Inline
+             * @default false
+             */
+            opens_inline: boolean;
+            /** Proposal Id */
+            proposal_id?: string | null;
+            /** Decided At */
+            decided_at?: string | null;
+            /**
+             * Scrubbed
+             * @default false
+             */
+            scrubbed: boolean;
+            /** Values */
+            values?: components["schemas"]["ReturnInputEvidenceValue"][];
+        };
+        /**
+         * ReturnInputEvidenceValue
+         * @description One value of the pre-fill a row was applied from: where the document states it (page
+         *     and quote, when the model cited one) and what the user did with it on apply.
+         */
+        ReturnInputEvidenceValue: {
+            /** Field */
+            field: string;
+            /** Page */
+            page?: number | null;
+            /** Quote */
+            quote?: string | null;
+            /** Decision */
+            decision?: ("accepted" | "edited" | "cleared" | "skipped") | null;
+        };
+        /**
          * ReturnInputFact
          * @description A stored row as the rules see it (every row of the history, as TaxInputFact).
          */
@@ -8427,6 +8497,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReturnInput"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    return_input_evidence_get_api_return_inputs__return_input_id__evidence_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                return_input_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReturnInputEvidence"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

@@ -482,6 +482,47 @@
         }
       }
     },
+    "/api/return-inputs/{return_input_id}/evidence": {
+      "get": {
+        "summary": "Return Input Evidence Get",
+        "description": "The row's Beleg and, for a row applied from a pre-fill proposal, each value's page and\nquote with what the user did with it (accepted, edited, cleared). Read-only; `scrubbed`\nonce the proposal's values are gone after 90 days (phase 2 D19). 404 for an unknown\nrow.",
+        "operationId": "return_input_evidence_get_api_return_inputs__return_input_id__evidence_get",
+        "parameters": [
+          {
+            "name": "return_input_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Return Input Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReturnInputEvidence"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/tax/anlage-n/years": {
       "get": {
         "summary": "Anlage N Years",
@@ -17104,6 +17145,130 @@
         ],
         "title": "ReturnInputCreate",
         "description": "One return input row as written. A correction is a new row with supersedes_id (a current\nrow of the same kind and year, and the same owner); withdrawn = true ends it. Rows are\nnever changed."
+      },
+      "ReturnInputEvidence": {
+        "properties": {
+          "return_input_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Return Input Id"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "opens_inline": {
+            "type": "boolean",
+            "title": "Opens Inline",
+            "default": false
+          },
+          "proposal_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposal Id"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "scrubbed": {
+            "type": "boolean",
+            "title": "Scrubbed",
+            "default": false
+          },
+          "values": {
+            "items": {
+              "$ref": "#/components/schemas/ReturnInputEvidenceValue"
+            },
+            "type": "array",
+            "title": "Values"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "return_input_id"
+        ],
+        "title": "ReturnInputEvidence",
+        "description": "GET /return-inputs/{id}/evidence: the row's Beleg and, when the row was applied from a\npre-fill proposal, each value's page and quote (read-only, gap 3). `scrubbed` says the\nproposal's values were removed 90 days after the decision (phase 2 D19), so only the Beleg\nis left; `values` is then empty."
+      },
+      "ReturnInputEvidenceValue": {
+        "properties": {
+          "field": {
+            "type": "string",
+            "title": "Field"
+          },
+          "page": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page"
+          },
+          "quote": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "accepted",
+                  "edited",
+                  "cleared",
+                  "skipped"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "field"
+        ],
+        "title": "ReturnInputEvidenceValue",
+        "description": "One value of the pre-fill a row was applied from: where the document states it (page\nand quote, when the model cited one) and what the user did with it on apply."
       },
       "ReturnInputFact": {
         "properties": {
