@@ -783,8 +783,10 @@ class TaxYearResult(Schema):
 
 class AllocationFact(PaymentFacts):
     """A confirmed allocation as the draft sees it. Amount signed (income +, costs −); a 0.00
-    row may be present and is ignored by every rule (D70). invoice_net is the linked invoice
-    extraction's amount_net (a magnitude), for the 15 % tracker (D56)."""
+    row may be present and is ignored by every rule (D70). invoice_net is this allocation's
+    share of the linked invoice extraction's amount_net (a magnitude), for the 15 % tracker
+    (D56): the whole net for a payment of the whole bill, net × part ÷ gross for one part of a
+    bill split by its lines (phase 2 D135)."""
 
     allocation_id: UUID
     transaction_id: UUID | None = None
