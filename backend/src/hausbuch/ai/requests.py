@@ -36,6 +36,7 @@ from typing import Any
 
 import anthropic
 
+from hausbuch.rules.extraction_parse import accepted_subtype
 from hausbuch.schemas.ai import AiJob, ClassifyOutput, ConfidenceLevel
 from hausbuch.schemas.allocation import LlmMatchOutput
 from hausbuch.schemas.common import Schema
@@ -152,7 +153,10 @@ _ENUM_FIELDS = ("type", "subtype", "language", "confidence")
 
 def parse_classification(text: str) -> ClassifyOutput:
     """The classify answer as ClassifyOutput. Enum values are compared case-insensitively (a
-    documented structured-outputs caveat). Raises ValueError when it does not validate."""
+    documented structured-outputs caveat). Raises ValueError when it does not validate. A
+    catalogue subtype on a type with its own reader is dropped here, where the classification
+    is accepted (accepted_subtype, D131), so what is stored, routed and kept follows the
+    type."""
     data = json.loads(text)
     if not isinstance(data, dict):
         raise ValueError("classification is not an object")
@@ -161,7 +165,11 @@ def parse_classification(text: str) -> ClassifyOutput:
         if isinstance(value, str):
             value = value.strip().lower()
             data[key] = None if key == "subtype" and value in ("", "null", "none") else value
-    return ClassifyOutput.model_validate(data)
+    classification = ClassifyOutput.model_validate(data)
+    subtype = accepted_subtype(classification.type, classification.subtype)
+    if subtype is classification.subtype:
+        return classification
+    return classification.model_copy(update={"subtype": subtype})
 
 
 # --- Step 4: categorize and explain ---------------------------------------------------

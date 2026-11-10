@@ -4,19 +4,20 @@ the tenant gate's two lists, the fields the general reading asks, and the retent
 The table below is §6.2.1 typed out: subtype, its document type, retention (OWN, TEN, TAX =
 O, M, S), the link its group proposes, and the reader (general unless named)."""
 
+import json
 from datetime import date
 
 import pytest
 
-from hausbuch.ai.requests import field_list
-from hausbuch.rules.extraction_parse import TENANT_SUBTYPES, extraction_kind
+from hausbuch.ai.requests import field_list, parse_classification
+from hausbuch.rules.extraction_parse import CATALOGUE_SUBTYPES, TENANT_SUBTYPES, extraction_kind
 from hausbuch.rules.retention import document_retention
 from hausbuch.schemas.document import DocumentRetentionInput, RetentionPolicy
 from hausbuch.schemas.enums import DocumentSubtype as S
 from hausbuch.schemas.enums import DocumentType as T
 from hausbuch.schemas.enums import ExtractionKind as K
 from hausbuch.schemas.enums import RetentionClass
-from hausbuch.schemas.extraction import GENERAL_LINK, asked_fields
+from hausbuch.schemas.extraction import GENERAL_LINK, TENANCY_GROUP, asked_fields
 from hausbuch.services.proposals import _TENANT_SUBTYPES
 
 OWN, TEN, TAX = (
@@ -192,3 +193,86 @@ def test_retention_follows_the_group(subtype, type_, retention, link, reader):
         RetentionPolicy(),
     )
     assert got.retention_class is retention
+
+
+# --- the dedicated types win over a catalogue subtype (D131, decided 10 Nov 2026) ---------
+
+DEDICATED = [
+    (T.LOHNSTEUERBESCHEINIGUNG, K.LOHNSTEUERBESCHEINIGUNG),
+    (T.GEHALTSABRECHNUNG, K.GEHALTSABRECHNUNG),
+    (T.ZINSBESCHEINIGUNG, K.ZINSBESCHEINIGUNG),
+    (T.WIRTSCHAFTSPLAN, K.WIRTSCHAFTSPLAN),
+    (T.HAUSGELDABRECHNUNG, K.HAUSGELDABRECHNUNG),
+]
+
+
+def _classified(type_, subtype):
+    return parse_classification(
+        json.dumps(
+            {
+                "type": type_.value,
+                "subtype": subtype.value if subtype is not None else None,
+                "contains_tenant_data": False,
+                "language": "de",
+                "confidence": "high",
+            }
+        )
+    )
+
+
+@pytest.mark.parametrize(("type_", "reader"), DEDICATED)
+@pytest.mark.parametrize(
+    "subtype",
+    [S.EMPLOYER_CERTIFICATE, S.LOAN_STATEMENT, S.WEG_MINUTES, S.DEPOT_REPORT, S.UTILITY_BILL],
+)
+def test_a_dedicated_type_drops_a_catalogue_subtype(type_, reader, subtype):
+    classification = _classified(type_, subtype)
+    assert classification.type is type_
+    assert classification.subtype is None
+    assert extraction_kind(classification.type, classification.subtype) is reader
+
+
+def test_the_first_recordings_misread_is_read_as_a_wage_certificate():
+    classification = _classified(T.LOHNSTEUERBESCHEINIGUNG, S.EMPLOYER_CERTIFICATE)
+    assert classification.subtype is None
+    assert extraction_kind(classification.type, None) is K.LOHNSTEUERBESCHEINIGUNG
+
+
+@pytest.mark.parametrize(("type_", "reader"), DEDICATED)
+@pytest.mark.parametrize("subtype", sorted(TENANCY_GROUP))
+def test_a_tenancy_subtype_is_kept_on_a_dedicated_type(type_, reader, subtype):
+    """A tenant's payslip stays a tenant document: the subtype is the tenant gate's signal,
+    and read as the owners' payslip it would propose an owner's pay."""
+    classification = _classified(type_, subtype)
+    assert classification.subtype is subtype
+    assert subtype in TENANT_SUBTYPES
+    assert extraction_kind(classification.type, subtype) is K.GENERAL
+
+
+@pytest.mark.parametrize(("type_", "reader"), DEDICATED)
+@pytest.mark.parametrize("subtype", sorted({row[0] for row in EXISTING}))
+def test_the_subtypes_before_the_catalogue_are_kept(type_, reader, subtype):
+    assert _classified(type_, subtype).subtype is subtype
+
+
+@pytest.mark.parametrize(
+    ("type_", "subtype", "reader"),
+    [
+        (T.STATEMENT, S.DEPOT_STATEMENT, K.GENERAL),
+        (T.STATEMENT, S.LOAN_STATEMENT, K.GENERAL),
+        (T.BESCHEID, S.PREPAYMENT_NOTICE, K.GENERAL),
+        (T.INVOICE, S.CHILDCARE_INVOICE, K.GENERAL),
+        (T.LETTER, S.RENT_INCREASE, K.GENERAL),
+        (T.CONTRACT, S.MANAGEMENT_CONTRACT, K.MANAGEMENT_CONTRACT),
+        (T.OTHER, S.ENERGY_CERTIFICATE, K.GENERAL),
+    ],
+)
+def test_a_catalogue_subtype_still_overrides_the_other_types(type_, subtype, reader):
+    classification = _classified(type_, subtype)
+    assert classification.subtype is subtype
+    assert extraction_kind(classification.type, classification.subtype) is reader
+
+
+def test_the_catalogue_is_the_forty_new_subtypes():
+    assert len(CATALOGUE_SUBTYPES) == 40
+    assert {row[0] for row in CATALOGUE} - {S.EINKOMMENSTEUERBESCHEID} == CATALOGUE_SUBTYPES

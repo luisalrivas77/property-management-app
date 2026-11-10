@@ -554,6 +554,50 @@ TENANT_SUBTYPES = frozenset(
 )
 
 
+# The subtypes that existed before the catalogue (0020's list); the rest are the catalogue's.
+_BEFORE_CATALOGUE = frozenset(
+    {
+        DocumentSubtype.PURCHASE_CONTRACT,
+        DocumentSubtype.PRICE_SPLIT_EVIDENCE,
+        DocumentSubtype.APPRAISAL,
+        DocumentSubtype.LOAN_CONTRACT,
+        DocumentSubtype.LEASE,
+        DocumentSubtype.HANDOVER_PROTOCOL,
+        DocumentSubtype.DEPOSIT_RECORD,
+        DocumentSubtype.COST_BASIS_EVIDENCE,
+        DocumentSubtype.GRUNDSTEUERBESCHEID,
+        DocumentSubtype.EINKOMMENSTEUERBESCHEID,
+    }
+)
+CATALOGUE_SUBTYPES = frozenset(set(DocumentSubtype) - _BEFORE_CATALOGUE)
+# The types with a reader of their own that no catalogue subtype overrides (D131, decided 10
+# Nov 2026 after the first eval recording read an owner's Lohnsteuerbescheinigung as an
+# Arbeitgeberbescheinigung, which subtype-first routing would have read for title and date
+# only). A statement, Bescheid, invoice, letter, contract or `other` still yields to one.
+DEDICATED_TYPES = frozenset(
+    {
+        DocumentType.LOHNSTEUERBESCHEINIGUNG,
+        DocumentType.GEHALTSABRECHNUNG,
+        DocumentType.ZINSBESCHEINIGUNG,
+        DocumentType.WIRTSCHAFTSPLAN,
+        DocumentType.HAUSGELDABRECHNUNG,
+    }
+)
+
+
+def accepted_subtype(
+    type_: DocumentType, subtype: DocumentSubtype | None
+) -> DocumentSubtype | None:
+    """The subtype a classification keeps: a catalogue subtype on a dedicated type is dropped,
+    so the type's reader, the retention and the proposal's typing follow the type. A
+    subtype of the tenancy group is kept: it is the tenant gate's signal, and a tenant's
+    payslip read as the owners' would propose an owner's pay (D131, PR #128 review). The
+    subtypes from before the catalogue are kept as they always were."""
+    if subtype in CATALOGUE_SUBTYPES and type_ in DEDICATED_TYPES and subtype not in TENANCY_GROUP:
+        return None
+    return subtype
+
+
 def extraction_kind(type_: DocumentType, subtype: DocumentSubtype | None) -> ExtractionKind:
     """The field set to extract for a classified document. The subtype wins over the type (a
     Grundsteuerbescheid is a bescheid with its own field set, a Depotauszug a statement read

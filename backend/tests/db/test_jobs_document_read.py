@@ -431,6 +431,30 @@ def test_the_general_reading_keeps_only_the_asked_fields(setup, recorder, app_en
     assert "street:" not in client.requests[1].content[1]["text"]
 
 
+def test_a_dedicated_type_drops_a_catalogue_subtype_before_routing(setup, recorder, app_engine):
+    """D131 (decided 10 Nov 2026): a Lohnsteuerbescheinigung the classifier also called an
+    Arbeitgeberbescheinigung is read as a wage certificate, and stored without the subtype."""
+    answer = {"employer_name": ("Beispiel GmbH", 1, "Arbeitgeber: Beispiel GmbH")}
+    client = FakeModelClient(
+        [
+            text_response(_classify("lohnsteuerbescheinigung", "employer_certificate")),
+            cited_response(answer),
+        ]
+    )
+    deps, ws, doc, proposal = setup(_pdf(1), client)
+    _run(deps, ws, doc, proposal)
+    [(_, _, kw)] = recorder.results
+    assert kw["classification"].type is DocumentType.LOHNSTEUERBESCHEINIGUNG
+    assert kw["classification"].subtype is None
+    assert set(kw["values"]) == set(
+        EXTRACTION_MODELS[ExtractionKind.LOHNSTEUERBESCHEINIGUNG].model_fields
+    )
+    asked = client.requests[1].content[1]["text"].splitlines()[1:]
+    assert "employer_name" in [line.split(":", 1)[0] for line in asked]
+    [classify_row, _] = _calls(app_engine, ws, doc)
+    assert classify_row.output["subtype"] is None  # what ai_call keeps follows the type
+
+
 def test_a_property_group_subtype_asks_the_address(setup, recorder, app_engine):
     answer = LETTER_ANSWER | {"street": ("Lindenstraße", 1, "Lindenstraße 12, 10115 Berlin")}
     client = FakeModelClient(
