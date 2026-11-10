@@ -108,3 +108,27 @@ def test_a_steuernummer_the_model_wrote_into_a_value_is_scrubbed():
     blocks = [CitedTextBlock(text=f"addressee: Max Mustermann ({STEUERNUMMER})")]
     value = parse_lines(blocks, KIND, reference_year=2027)["addressee"].value
     assert STEUERNUMMER not in value and "Max Mustermann" in value
+
+
+@pytest.mark.parametrize(
+    "written", ["./. 5.000", "./.5.000 €", "- 5.000,00", "−5.000", "5.000,00-"]
+)
+def test_a_negative_zve_written_apart_from_its_digits_keeps_its_sign(written):
+    # Review of PR #128: a Bescheid prints a negative zvE as "./. 5.000"; the parser took
+    # only a sign glued to the first digit and stored +5000.00 at high confidence.
+    blocks = [
+        CitedTextBlock(text="taxable_income: "),
+        CitedTextBlock(text=written, citations=[_cited(f"zu versteuerndes Einkommen {written}")]),
+    ]
+    zve = parse_lines(blocks, KIND, reference_year=2027)["taxable_income"]
+    assert zve.value == "-5000.00" and zve.confidence == "high"
+
+
+@pytest.mark.parametrize("written", ["84.300 €", "+84.300", "84.300 - laut Anlage"])
+def test_a_dash_elsewhere_never_makes_a_figure_negative(written):
+    blocks = [
+        CitedTextBlock(text="taxable_income: "),
+        CitedTextBlock(text=written, citations=[_cited(f"zu versteuerndes Einkommen {written}")]),
+    ]
+    zve = parse_lines(blocks, KIND, reference_year=2027)["taxable_income"]
+    assert zve.value == "84300.00"

@@ -26,6 +26,10 @@ UNKNOWN = "unbekannt"
 _KEY_LINE = re.compile(r"([a-z0-9_]+):[ \t]*(.*)")
 _NUMBER = re.compile(r"[+-]?[0-9][0-9.,]*[0-9]|[+-]?[0-9]")
 _THOUSANDS_ONLY = re.compile(r"[+-]?[0-9]{1,3}(\.[0-9]{3})+")
+# A minus written apart from the number (D129 review): "./. 5.000", "- 5.000,00", "−5.000"
+# (U+2212) at the start of the value, or "5.000,00-" at its end.
+_SEPARATE_SIGN = re.compile(r"(?:\./\.|[-\u2212]) ?(?=[0-9])")
+_TRAILING_MINUS = re.compile(r"[0-9]-$")
 _NUMERIC_DATE = re.compile(r"([0-9]{1,2})\.\s?([0-9]{1,2})\.\s?([0-9]{4})")
 _ISO_DATE = re.compile(r"([0-9]{4})-([0-9]{2})-([0-9]{2})")
 # A two-digit year, as handwritten by a signature ("Ort, den 30.3.26", Luis's Darlehensvertrag,
@@ -255,8 +259,20 @@ def normalize_value(raw: str, kind: ValueKind):
 
 def _decimal(raw: str) -> Decimal:
     """The first number in the text, German form first: a comma is the decimal separator and
-    dots group thousands; without a comma, dots in groups of three are thousands."""
-    match = _NUMBER.search(raw.replace(" ", " "))
+    dots group thousands; without a comma, dots in groups of three are thousands.
+
+    A negative may also be written with the sign apart from the digits, as an
+    Einkommensteuerbescheid prints a negative zvE ("./. 5.000"), or as "- 5.000,00", "−5.000"
+    or "5.000,00-". Only a sign at the very start (at most one space before the digits) or at
+    the very end of the value counts, so a dash in running text never turns into a sign."""
+    text = raw.replace("\u00a0", " ").strip()
+    negative = False
+    lead = _SEPARATE_SIGN.match(text)
+    if lead is not None:
+        negative, text = True, text[lead.end() :]
+    elif _TRAILING_MINUS.search(text):
+        negative, text = True, text[:-1]
+    match = _NUMBER.search(text)
     if match is None:
         raise _Invalid("no number")
     token = match.group()
@@ -277,7 +293,7 @@ def _decimal(raw: str) -> Decimal:
         raise _Invalid("not a number") from None
     if not number.is_finite():
         raise _Invalid("not a finite number")
-    return number
+    return -number if negative and number > 0 else number
 
 
 def _plain(number: Decimal) -> str:
