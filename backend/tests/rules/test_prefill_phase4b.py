@@ -10,6 +10,7 @@ import pytest
 
 from hausbuch.rules.prefill import (
     CERTIFICATE_LINES,
+    PAYSLIP_LINES,
     _church_tax_marked,
     _month_start,
     _tax_class_parts,
@@ -487,3 +488,100 @@ def test_return_input_value_nests_dotted_keys_and_drops_other_keys():
 def test_return_input_value_refuses_a_field_given_whole_and_by_part():
     with pytest.raises(ValueError, match="both whole and by part"):
         return_input_value("payslip", {"value.gross": {"month": "1"}, "value.gross.month": "2"})
+
+
+# --- Review of step 2: the payslip's figures not read ---------------------------------------
+
+
+def test_every_payslip_figure_has_a_name_for_the_note():
+    assert set(PAYSLIP_LINES) == set(PAYSLIP_FIGURES)
+
+
+def test_a_payslip_figure_not_read_is_named_in_a_note():
+    extraction = _payslip(income_tax_month=ExtractedValue.missing())
+    notes = _slip_records(extraction)["return_input:payslip"].notes
+    (month_note,) = [n for n in notes if n.startswith("Nicht gelesen (Monat)")]
+    assert "Lohnsteuer" in month_note and "als 0 übernommen" in month_note
+    assert "Steuer-Brutto" not in month_note  # gross_month was read
+    (ytd_note,) = [n for n in notes if n.startswith("Nicht gelesen (Jahreswerte)")]
+    assert "Lohnsteuer" not in ytd_note  # income_tax_ytd was read
+    assert "Solidaritätszuschlag" in ytd_note and "hochgerechnet" in ytd_note
+
+
+def test_a_payslip_with_every_figure_read_has_no_unread_note():
+    read = {f"{f}_{part}": _v("1.00") for f in PAYSLIP_FIGURES for part in ("month", "ytd")}
+    notes = _slip_records(_payslip(**read))["return_input:payslip"].notes
+    assert not any(n.startswith("Nicht gelesen") for n in notes)
+
+
+# --- Review of step 2: the same document under another owner or year ------------------------
+
+
+@pytest.mark.parametrize(
+    "update", [{"owner_id": OWNER_B.id}, {"tax_year": 2025}], ids=["owner", "year"]
+)
+def test_the_same_document_recorded_elsewhere_is_named_in_a_note(update):
+    elsewhere = CERT_ROW.model_copy(update=update)
+    notes = _cert_records(pay_rows=[elsewhere])["return_input:wage_certificate"].notes
+    (note,) = [n for n in notes if n.startswith("Dieses Dokument ist schon für")]
+    owner = OWNER_B if update.get("owner_id") == OWNER_B.id else OWNER_A
+    assert owner.full_name in note and str(elsewhere.tax_year) in note
+    assert "zuerst jenen Eintrag zurückziehen" in note
+
+
+def test_the_same_document_under_the_same_owner_and_year_has_no_elsewhere_note():
+    notes = _cert_records(pay_rows=[CERT_ROW])["return_input:wage_certificate"].notes
+    assert not any(n.startswith("Dieses Dokument ist schon für") for n in notes)
+
+
+def test_a_payslip_recorded_under_another_owner_is_named_in_a_note():
+    row = ExistingPayRow(
+        id=UUID(int=5),
+        owner_id=OWNER_B.id,
+        kind="payslip",
+        tax_year=2026,
+        employer="Muster GmbH",
+        period_month="2026-07-01",
+        document_id=DOC,
+    )
+    notes = _slip_records(pay_rows=[row])["return_input:payslip"].notes
+    assert any(n.startswith(f"Dieses Dokument ist schon für {OWNER_B.full_name}") for n in notes)
+
+
+# --- Review of step 2: one employer spelled two ways ----------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("stored", "noted"),
+    [
+        ("Muster GmbH & Co. KG", True),
+        ("Muster", True),
+        ("muster  GMBH", False),  # the same key: the same employer, nothing to check
+        ("Beispiel AG", False),
+        ("Muster Logistik GmbH", True),
+    ],
+)
+def test_an_employer_spelled_differently_is_named_in_a_note(stored, noted):
+    row = CERT_ROW.model_copy(update={"document_id": UUID(int=8), "employer": stored})
+    for records, key in (
+        (_cert_records(pay_rows=[row]), "return_input:wage_certificate"),
+        (_slip_records(pay_rows=[row]), "return_input:payslip"),
+    ):
+        record = records[key]
+        notes = [n for n in record.notes if "prüfe, ob es derselbe Arbeitgeber ist" in n]
+        assert bool(notes) is noted, (stored, key)
+        if noted:
+            assert f"'{stored}'" in notes[0]
+        assert record.fields["value.employer"].value == "Muster GmbH"  # never changed
+
+
+def test_another_owners_employer_is_not_compared():
+    row = CERT_ROW.model_copy(
+        update={
+            "document_id": UUID(int=8),
+            "owner_id": OWNER_B.id,
+            "employer": "Muster GmbH & Co. KG",
+        }
+    )
+    notes = _cert_records(pay_rows=[row])["return_input:wage_certificate"].notes
+    assert not any("derselbe Arbeitgeber" in n for n in notes)

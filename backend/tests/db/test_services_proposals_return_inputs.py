@@ -394,6 +394,56 @@ def test_an_owner_id_other_than_the_linked_owner_is_refused(
     assert _pay_rows(read, ws) == []
 
 
+def test_the_linked_owners_id_sent_in_capitals_is_the_same_owner(
+    run, read, job, fresh_workspaces, blob_store, enqueued
+):
+    """The chosen and the linked owner are compared as UUIDs, not as text."""
+    ws, _ = fresh_workspaces
+    owner = _owner(run, ws)
+    _, ready, _ = _read_ready(
+        run, job, ws, blob_store, enqueued, CERTIFICATE, CERTIFICATE_VALUES, b"%PDF lstb g"
+    )
+    assert {r.key: r for r in ready.records}["link:owner"].target_id == owner
+    shouted = {"owner_id": str(owner).upper()}
+    _apply(run, ws, ready, _accept_all(ready, **{"return_input:wage_certificate": shouted}))
+    [row] = _pay_rows(read, ws)
+    assert row["owner_id"] == owner
+
+
+def test_the_same_document_under_another_owner_is_refused_until_withdrawn(
+    run, read, job, fresh_workspaces, blob_store, enqueued
+):
+    """A certificate applied for one owner, read again and applied for the other: refused,
+    never superseded across owners; the review's note says so first."""
+    ws, _ = fresh_workspaces
+    first = _owner(run, ws)
+    second = _owner(run, ws, "Max Mustermann")
+    doc, ready, _ = _read_ready(
+        run, job, ws, blob_store, enqueued, CERTIFICATE, CERTIFICATE_VALUES, b"%PDF lstb h"
+    )
+    _apply(run, ws, ready)
+    [row] = _pay_rows(read, ws)
+    assert row["owner_id"] == first
+
+    rerun = run(ws, proposals.request_read, doc.id)
+    again = job(
+        ws,
+        proposals.record_read_result,
+        rerun.id,
+        classification=CERTIFICATE,
+        classify_call_id=run(ws, _ai_call, doc.id, "classify"),
+        values=CERTIFICATE_VALUES | {"employee_name": _v("Max Mustermann")},
+        extract_call_id=run(ws, _ai_call, doc.id, "extract"),
+    )
+    records = {r.key: r for r in again.records}
+    assert records["link:owner"].target_id == second
+    notes = records["return_input:wage_certificate"].notes
+    assert any(n.startswith("Dieses Dokument ist schon für Erika Musterfrau") for n in notes)
+    with pytest.raises(ValueError, match=f"already recorded as return_input {row['id']}"):
+        _apply(run, ws, again)
+    assert _pay_rows(read, ws) == [row]
+
+
 def test_only_the_records_fields_are_taken_from_the_values(
     run, read, job, fresh_workspaces, blob_store, enqueued
 ):

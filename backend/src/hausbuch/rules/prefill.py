@@ -804,6 +804,7 @@ class _Builder:
                 "Für diesen Zeitraum gibt es von diesem Arbeitgeber schon eine "
                 "Lohnsteuerbescheinigung; diese ersetzt sie (eine berichtigte Bescheinigung)."
             )
+        notes += self._pay_row_notes("wage_certificate", owner, tax_year, fields)
         self.add("return_input:wage_certificate", "return_input", "create", fields, notes=notes)
 
     def payslip(self) -> None:
@@ -829,6 +830,19 @@ class _Builder:
             fields[f"value.{figure}.month"] = self.ev(f"{figure}_month")
             fields[f"value.{figure}.ytd"] = self.ev(f"{figure}_ytd")
         notes = []
+        no_month = [f for f in PAYSLIP_FIGURES if fields[f"value.{f}.month"].value is None]
+        if no_month:
+            notes.append(
+                f"Nicht gelesen (Monat): {', '.join(PAYSLIP_LINES[f] for f in no_month)}. Steht "
+                "dort ein Betrag, bitte eintragen; ein leeres Monatsfeld wird als 0 übernommen."
+            )
+        no_ytd = [f for f in PAYSLIP_FIGURES if fields[f"value.{f}.ytd"].value is None]
+        if no_ytd:
+            notes.append(
+                f"Nicht gelesen (Jahreswerte): {', '.join(PAYSLIP_LINES[f] for f in no_ytd)}. "
+                "Steht dort ein Betrag, bitte eintragen; ein leeres Jahresfeld bleibt leer und "
+                "wird hochgerechnet."
+            )
         if on is not None:
             notes.append(
                 _projection_note(on, fields["value.gross.month"], fields["value.gross.ytd"])
@@ -838,6 +852,7 @@ class _Builder:
                     f"Für {MONTH_NAMES[on.month - 1]} {on.year} gibt es von diesem Arbeitgeber "
                     "schon eine Gehaltsabrechnung; diese ersetzt sie."
                 )
+        notes += self._pay_row_notes("payslip", owner, tax_year, fields)
         self.add("return_input:payslip", "return_input", "create", fields, notes=notes)
 
     def _owner(self) -> ExtractedValue:
@@ -884,6 +899,46 @@ class _Builder:
             document_id=self.ctx.document_id,
             value={name: v.value for name, v in fields.items()},
         )
+
+    def _pay_row_notes(
+        self,
+        kind: str,
+        owner: ExtractedValue,
+        tax_year: ExtractedValue,
+        fields: dict[str, ExtractedValue],
+    ) -> list[str]:
+        """This document already recorded under another owner or year (the apply refuses it
+        until that row is withdrawn), and the owner's rows from an employer spelled
+        differently but likely the same (one name's words all in the other's). Notes only:
+        no proposed value changes."""
+        notes = []
+        names = {o.id: o.full_name for o in self.ctx.owners}
+        owner_id = None if owner.value is None else UUID(str(owner.value))
+        for row in self.ctx.pay_rows:
+            if row.kind != kind or row.document_id != self.ctx.document_id:
+                continue
+            if row.owner_id != owner_id or row.tax_year != tax_year.value:
+                notes.append(
+                    f"Dieses Dokument ist schon für {names.get(row.owner_id, 'einen Eigentümer')}"
+                    f" im Jahr {row.tax_year} übernommen. Für einen anderen Eigentümer oder ein "
+                    "anderes Jahr zuerst jenen Eintrag zurückziehen."
+                )
+        employer = fields["value.employer"].value
+        if owner_id is None or not employer:
+            return notes
+        key, words = employer_key(employer), _employer_words(employer)
+        seen = set()
+        for row in self.ctx.pay_rows:
+            if row.owner_id != owner_id or employer_key(row.employer) in seen | {key}:
+                continue
+            stored = _employer_words(row.employer)
+            if words and stored and (words <= stored or stored <= words):
+                seen.add(employer_key(row.employer))
+                notes.append(
+                    f"Für diesen Eigentümer gibt es schon Zeilen vom Arbeitgeber "
+                    f"'{row.employer}'; prüfe, ob es derselbe Arbeitgeber ist."
+                )
+        return notes
 
 
 # --- Matching existing records ----------------------------------------------------------
@@ -1261,6 +1316,18 @@ CERTIFICATE_LINES: dict[str, str] = {
     "care_employee": "Nr. 26",
     "unemployment_employee": "Nr. 27",
 }
+# The payslip's name of each figure, for the note naming the figures not read.
+PAYSLIP_LINES: dict[str, str] = {
+    "gross": "Steuer-Brutto",
+    "income_tax": "Lohnsteuer",
+    "soli": "Solidaritätszuschlag",
+    "church_tax": "Kirchensteuer",
+    "pension_employee": "Rentenversicherung",
+    "health_employee": "Krankenversicherung",
+    "care_employee": "Pflegeversicherung",
+    "unemployment_employee": "Arbeitslosenversicherung",
+    "tax_free_benefits": "steuerfreie Bezüge",
+}
 MONTH_NAMES = (
     "Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September",
     "Oktober", "November", "Dezember",
@@ -1384,6 +1451,15 @@ def _projection_note(on: date, month: ExtractedValue, ytd: ExtractedValue) -> st
 def employer_key(name: Any) -> str:
     """An employer's name compared: casefolded, whitespace collapsed."""
     return _norm(name)
+
+
+_EMPLOYER_WORD = re.compile(r"[^\W_]+")
+
+
+def _employer_words(name: Any) -> frozenset[str]:
+    """An employer's name as its words, casefolded ("Muster GmbH & Co. KG" -> muster, gmbh,
+    co, kg): only to spot one employer spelled two ways, never to match rows."""
+    return frozenset(_EMPLOYER_WORD.findall(_norm(name)))
 
 
 def replaced_pay_row(

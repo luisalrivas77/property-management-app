@@ -941,7 +941,9 @@ class _Apply:
         with this document as its evidence. Only the record's own fields are taken from the
         values (never a supersedes_id, a withdrawal, a note or an unread list: unread is
         computed by return_input_value, Q-O29). The owner is the confirmed owner_id, else the
-        owner linked in this apply, and must be an owner of this workspace (read under RLS).
+        owner linked in this apply (the two compared as UUIDs), and must be an owner of this
+        workspace (read under RLS). A current row of the same kind from this document under
+        another owner or tax year is refused, never superseded: withdraw it first.
         The current row it replaces is the one rules.prefill.replaced_pay_row names (the
         review's note says the same); the same value from the same document again writes
         nothing."""
@@ -951,12 +953,15 @@ class _Apply:
         given = {f: values[f] for f in record.fields if f in values}
         linked = self.entity("link:owner")
         chosen = given.get("owner_id")
-        if chosen is not None and linked is not None and str(chosen) != str(linked):
+        if chosen is not None:
+            chosen = _validate(record.key, _OwnerRef, {"owner_id": str(chosen)}).owner_id
+        if linked is not None:
+            linked = _validate(record.key, _OwnerRef, {"owner_id": str(linked)}).owner_id
+        if chosen is not None and linked is not None and chosen != linked:
             raise ValueError(f"record {record.key!r} names another owner than link:owner")
-        owner_ref = chosen if chosen is not None else linked
-        if owner_ref is None:
+        owner_id = chosen if chosen is not None else linked
+        if owner_id is None:
             raise ValueError(f"record {record.key!r} needs the owner the pay belongs to")
-        owner_id = _validate(record.key, _OwnerRef, {"owner_id": str(owner_ref)}).owner_id
         if owners.get_owner(self.ctx.conn, owner_id) is None:
             raise NotFoundError(EntityType.OWNER, owner_id)
         data = _validate(
@@ -970,6 +975,14 @@ class _Apply:
                 "value": return_input_value(kind, given),
             },
         )
+        # The same document already recorded under another owner or year: never superseded
+        # across owners or years; the user withdraws that row first.
+        for row, _ in _current_pay_rows(self.ctx.conn):
+            same_document = row.kind == data.kind and row.document_id == self.document_id
+            if same_document and (row.owner_id != owner_id or row.tax_year != data.tax_year):
+                raise ValueError(
+                    f"this document is already recorded as return_input {row.id}; withdraw it first"
+                )
         current = _current_pay_rows(self.ctx.conn, owner_id=owner_id)
         replaced = replaced_pay_row(
             kind,
