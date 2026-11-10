@@ -45,6 +45,7 @@ from .routes import (
     properties,
     proposals,
     questionnaire,
+    reminders,
     return_inputs,
     statements,
     tax,
@@ -79,6 +80,7 @@ ROUTE_MODULES = (
     performance,
     history,
     inbound_mail,
+    reminders,
     workspace,
     auth,
 )

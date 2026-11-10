@@ -251,11 +251,15 @@ def inbox(
     conn: Connection, today: date | None = None, now: datetime | None = None
 ) -> list[InboxItem]:
     """Every item of §8.3, newest first. Texts quote no bank line, name or IBAN. With `today`,
-    also last year's open Jahresfragen (phase 4b D110, `questionnaire_open`); with `now`,
-    the email-in cards (phase 5 §5.4: email_received, email_failed)."""
+    also last year's open Jahresfragen (phase 4b D110, `questionnaire_open`) and the reminders
+    visible today (phase 5 §6, `reminder`); with `now`, the email-in cards (phase 5 §5.4:
+    email_received, email_failed)."""
     items = _proposal_items(conn) + import_inbox_items(conn) + _allocation_items(conn)
     if today is not None:
         items += _questionnaire_items(conn, today)
+        from .reminders import reminder_inbox_items  # it imports the checklist services
+
+        items += reminder_inbox_items(conn, today)
     if now is not None:
         from .inbound_mail import inbound_mail_items  # it imports the statement services
 

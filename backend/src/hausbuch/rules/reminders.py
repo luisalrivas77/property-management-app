@@ -90,6 +90,39 @@ CATALOGUE: dict[ReminderKind, _Row] = {
     K.RENT_MISSING: _Row(0, (0,), "action", "auto"),
     K.SYNC_STALE: _Row(0, (0,), "info", "auto"),
 }
+_S = ReminderScope
+# The scopes each kind's instances carry (§6.2); an acknowledgement names one of them.
+KIND_SCOPES: dict[ReminderKind, tuple[ReminderScope, ...]] = {
+    K.GRUNDSTEUER_INSTALMENT: (_S.PROPERTY,),
+    K.CHECKLIST_DUE: (_S.PROPERTY, _S.LOAN),
+    K.RETURN_DEADLINE: (_S.WORKSPACE,),
+    K.QUESTIONNAIRE_OPEN: (_S.WORKSPACE,),
+    K.WAGE_CERTIFICATE_MISSING: (_S.OWNER,),
+    K.LOAN_FIXED_RATE_END: (_S.LOAN,),
+    K.LOAN_SPECIAL_TERMINATION: (_S.LOAN,),
+    K.SPECULATION_END: (_S.PROPERTY,),
+    K.SETTLEMENT_DEADLINE: (_S.TENANCY,),
+    K.RENT_MISSING: (_S.TENANCY,),
+    K.SYNC_STALE: (_S.ACCOUNT,),
+}
+del _S
+
+
+def parse_reminder_id(value: str) -> tuple[ReminderKind, UUID | None, date] | None:
+    """(kind, scope_id or None for the workspace, due_on) of an id, None when it is not one."""
+    key, sep, rest = value.rpartition(":")
+    if not sep:
+        return None
+    try:
+        due_on = date.fromisoformat(rest)
+        kind_value, sep, scope = key.rpartition(":")
+        kind = ReminderKind(kind_value)
+        scope_id = None if scope == "workspace" else UUID(scope)
+    except ValueError:
+        return None
+    if not sep or reminder_id(kind, scope_id, due_on) != value:
+        return None
+    return kind, scope_id, due_on
 
 
 def reminder_id(kind: ReminderKind, scope_id: UUID | None, due_on: date) -> str:
