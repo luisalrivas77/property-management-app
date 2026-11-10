@@ -113,6 +113,14 @@ def add_years(day: date, years: int) -> date:
     return date(year, day.month, min(day.day, last))
 
 
+def add_months(day: date, months: int) -> date:
+    """The same day `months` later (negative: earlier); a day the month lacks → its last."""
+    index = day.year * 12 + day.month - 1 + months
+    year, month = divmod(index, 12)
+    month += 1
+    return date(year, month, min(day.day, calendar.monthrange(year, month)[1]))
+
+
 def owned_in(prop: TaxProperty, tax_year: int) -> bool:
     """Owned on at least one day of the year (from the handover)."""
     ended = prop.ownership_ended_on
