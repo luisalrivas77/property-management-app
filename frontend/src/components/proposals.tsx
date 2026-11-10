@@ -424,6 +424,16 @@ const FIELDS: Record<string, Record<string, FieldSpec>> = {
       "Betrag (€)",
       "Der Betrag laut Dokument. Er wird erst mit „Übernehmen“ als Steuerangabe gespeichert und ersetzt dann eine frühere Angabe derselben Art für dieses Jahr.",
     ),
+    // A repair paid from another account (phase 3 D137): when the work was done and its net,
+    // for the 15 % limit on renovation in the first three years after the purchase.
+    "value.performed_on": date(
+      "Leistungsdatum",
+      "Wann die Arbeit gemacht wurde. Vorgeschlagen ist das Rechnungsdatum; steht auf der Rechnung ein Leistungsdatum oder -zeitraum, tragen Sie dessen letzten Tag ein. Hausbuch braucht es für die 15-%-Grenze in den ersten drei Jahren nach dem Kauf: Liegen die Arbeiten in diesen drei Jahren über 15 % des Gebäudewerts (netto), zählen sie zu den Anschaffungskosten statt zum Erhaltungsaufwand.",
+    ),
+    "value.amount_net": money(
+      "Netto (€)",
+      "Der Betrag ohne Umsatzsteuer, aus den Positionen der Rechnung. Die 15-%-Grenze rechnet netto; abgesetzt wird der Bruttobetrag.",
+    ),
     // The Grundsteuerbescheid's schedule (tax_input:grundsteuer_schedule, phase 5 D126): one
     // date and one amount per Fälligkeit; empty slots are left out when it is applied.
     "value.annual_amount": money("Jahresbetrag (€)", "Die festgesetzte Grundsteuer für ein Jahr, laut Bescheid."),

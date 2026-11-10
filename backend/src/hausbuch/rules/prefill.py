@@ -117,7 +117,7 @@ from hausbuch.schemas.proposal import (
     PrefillContext,
     ProposalRecord,
 )
-from hausbuch.schemas.tax import GRUNDSTEUER_SUM_TOLERANCE
+from hausbuch.schemas.tax import GRUNDSTEUER_SUM_TOLERANCE, LIMIT_15_CATEGORIES
 
 from .categories import CATEGORY_LABEL, TAX_TREATMENT
 from .extraction_parse import _MONTHS, cost_lines_balance
@@ -266,11 +266,18 @@ class BillSort:
     """How a bill is booked (D135). financing: the whole bill is a financing cost (D35, or
     every line is). parts: the gross euro part per category in taxonomy order, VAT shared,
     summing to the total; empty when the lines were not used (missing, not summing, a line
-    without a category): the bill is then booked whole, as before."""
+    without a category): the bill is then booked whole, as before. nets: the same parts before
+    their share of the Umsatzsteuer (phase 3 D137: a repair's net for the 15 % test)."""
 
-    def __init__(self, financing: bool, parts: dict[AllocationCategory, Decimal]) -> None:
+    def __init__(
+        self,
+        financing: bool,
+        parts: dict[AllocationCategory, Decimal],
+        nets: dict[AllocationCategory, Decimal] | None = None,
+    ) -> None:
         self.financing = financing
         self.parts = parts
+        self.nets = nets or {}
 
     @property
     def by_lines(self) -> bool:
@@ -293,10 +300,10 @@ def sort_bill(
         whole_financing = names_financing(title)
     else:
         return BillSort(False, {})
-    parts = _line_parts(cost_lines, amount_total, whole_financing)
+    parts, nets = _line_parts(cost_lines, amount_total, whole_financing)
     if parts and set(parts) == {AllocationCategory.LOAN_FEES}:
-        return BillSort(True, parts)
-    return BillSort(whole_financing and not parts, parts)
+        return BillSort(True, parts, nets)
+    return BillSort(whole_financing and not parts, parts, nets)
 
 
 def sort_reading(
@@ -318,14 +325,16 @@ def sort_reading(
     )
 
 
-def _line_parts(
-    read: ExtractedValue, total: ExtractedValue, whole_financing: bool
-) -> dict[AllocationCategory, Decimal]:
+_NoParts = tuple[dict[AllocationCategory, Decimal], dict[AllocationCategory, Decimal]]
+
+
+def _line_parts(read: ExtractedValue, total: ExtractedValue, whole_financing: bool) -> _NoParts:
+    """The gross part per category (VAT shared, summing to the total) and its net."""
     if read.value is None or "validates" not in read.checks:
-        return {}
+        return {}, {}
     lines = parse_cost_lines(read.value)
     if lines is None or not cost_lines_balance(lines, total.value):
-        return {}
+        return {}, {}
     any_purchase = any(_names(line.text, _PURCHASE_TERMS) for line in lines if not line.vat)
     net: dict[AllocationCategory, Decimal] = {}
     vat = Decimal(0)
@@ -342,10 +351,10 @@ def _line_parts(
         else:
             category = line.category
         if category is None:
-            return {}  # a line nobody could place: the bill stays whole
+            return {}, {}  # a line nobody could place: the bill stays whole
         net[category] = net.get(category, Decimal(0)) + line.amount
     if not net or any(amount <= 0 for amount in net.values()):
-        return {}
+        return {}, {}
     ordered = [c for c in AllocationCategory if c in net]
     gross = [net[c] for c in ordered]
     if vat:
@@ -359,7 +368,7 @@ def _line_parts(
     stated = _decimal(total.value)
     if stated is not None:
         gross[-1] += stated - sum(gross, Decimal(0))
-    return dict(zip(ordered, gross, strict=True))
+    return dict(zip(ordered, gross, strict=True)), {c: net[c] for c in ordered}
 
 
 def _names(text: str, terms: Sequence[str]) -> bool:
@@ -950,9 +959,32 @@ class _Builder:
                     "value.category": _code_value(category.value, confidence),
                     "value.label": label,
                     "value.amount": value,
+                    **self._limit_fields(category),
                 },
                 notes=[_PAID_PRIVATELY_HINT.format(place=_ANLAGE_V_PLACE[category])],
             )
+
+    def _limit_fields(self, category: AllocationCategory) -> dict[str, ExtractedValue]:
+        """Phase 3 D137: a part the 15 % test counts (repairs) also proposes when the work was
+        done and its net. The invoice reading has no service period, so the date proposed is
+        the bill's date (on or after the work; the card asks for the Leistungsdatum when the
+        bill states one); the net is the part's lines before its share of the Umsatzsteuer."""
+        if category not in LIMIT_15_CATEGORIES:
+            return {}
+        dated = self.ev("document_date")
+        performed = dated.model_copy(
+            update={"confidence": "medium" if dated.confidence == "high" else dated.confidence}
+        )
+        net = self.bill.nets.get(category)
+        amount_net = (
+            ExtractedValue.missing()
+            if net is None
+            else _derived(
+                str(net.quantize(_CENTS)),
+                [("cost_lines", self.ev("cost_lines")), ("amount_total", self.ev("amount_total"))],
+            )
+        )
+        return {"value.performed_on": performed, "value.amount_net": amount_net}
 
     def _cost(self, prop: ExistingProperty, amount: ExtractedValue) -> None:
         sender = self.ev("sender")

@@ -97,6 +97,9 @@ def test_a_repair_bill_paid_from_another_account_is_a_private_cost(
         "value.category": "repairs",
         "value.label": "Rechnung Reparatur Sanitär",
         "value.amount": "297.50",
+        # phase 3 D137: a repair also carries the work date (the bill's date) and its net
+        "value.performed_on": "2026-06-10",
+        "value.amount_net": "250.00",
     }
     assert _private(read, ws, prop) == []  # the read writes nothing (D14)
 
@@ -109,6 +112,7 @@ def test_a_repair_bill_paid_from_another_account_is_a_private_cost(
         Decimal("297.50"),
     )
     assert row.value.cost_class == "other" and row.value.label == "Rechnung Reparatur Sanitär"
+    assert (row.value.performed_on, row.value.amount_net) == (date(2026, 6, 10), Decimal("250.00"))
     applied = {a.key: a.entity_id for a in result.applied}
     assert applied["tax_input:private_cost:repairs"] == row.id
     # The event keeps the category (a code), never the label (review F3).
@@ -177,6 +181,8 @@ def test_a_category_changed_on_the_card_brings_its_class(
     run(ws, proposals.apply_proposal, ready.id, body, iban_key=TEST_IBAN_KEY)
     [row] = _private(read, ws, prop)
     assert (row.value.category, row.value.cost_class) == (AllocationCategory(category), cost_class)
+    # phase 3 D137: the work date and the net leave with the repairs category
+    assert (row.value.performed_on, row.value.amount_net) == (None, None)
 
 
 def _reread(run, job, ws, doc, values):
