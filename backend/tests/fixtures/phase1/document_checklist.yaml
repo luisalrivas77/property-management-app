@@ -11,7 +11,8 @@
 #   price_split                property  by the selected split (below)                     always
 #   acquisition_cost_evidence  per cost  the row's document_id (whatever its typing)       always
 #   grundsteuerbescheid        property  subtype grundsteuerbescheid linked to P or one of
-#                                        its units, tax_year null or <= Y                  always
+#                                        its units, tax_year null or <= Y; only from the
+#                                        first full year of ownership (phase 5 D126)  15 Jan Y
 #   loan_contract              per loan  subtype loan_contract linked to the loan          always
 #   zinsbescheinigung          per loan  type zinsbescheinigung, tax_year = Y, linked to
 #                                        the loan                                    28 Feb Y+1
@@ -86,7 +87,7 @@ cases:
     expect:
       - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
       - {code: price_split, status: missing, scope: {type: property, id: *P}}
-      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, due_on: 2026-01-15, scope: {type: property, id: *P}}
 
   - id: etw_with_nothing_in
     description: an ETW adds Wirtschaftsplan (due 1 Jan Y) and Hausgeldabrechnung (30 Jun Y+1)
@@ -98,7 +99,7 @@ cases:
     expect:
       - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
       - {code: price_split, status: missing, scope: {type: property, id: *P}}
-      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, due_on: 2026-01-15, scope: {type: property, id: *P}}
       - {code: wirtschaftsplan, status: missing, due_on: 2026-01-01, scope: {type: property, id: *P}}
       - {code: hausgeldabrechnung, status: expected, due_on: 2027-06-30, scope: {type: property, id: *P}}
 
@@ -119,7 +120,7 @@ cases:
     expect:
       - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
       - {code: price_split, status: missing, scope: {type: property, id: *P}}
-      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, due_on: 2026-01-15, scope: {type: property, id: *P}}
 
   # --- Purchase contract and price split ---------------------------------------------
 
@@ -140,7 +141,7 @@ cases:
     expect:
       - {code: purchase_contract, status: present, scope: {type: property, id: *P}, documents: [*D2, *D1]}
       - {code: price_split, status: present, scope: {type: property, id: *P}, documents: [*D2, *D1]}
-      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, due_on: 2026-01-15, scope: {type: property, id: *P}}
 
   - id: split_from_contract_without_the_contract_and_wrong_targets
     description: >
@@ -165,7 +166,7 @@ cases:
     expect:
       - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
       - {code: price_split, status: missing, scope: {type: property, id: *P}}
-      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, due_on: 2026-01-15, scope: {type: property, id: *P}}
 
   - id: split_by_appraisal_counts_its_evidence
     description: the Gutachten is the split's evidence_document_id; it need not be linked
@@ -179,7 +180,7 @@ cases:
     expect:
       - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
       - {code: price_split, status: present, scope: {type: property, id: *P}, documents: [*D1]}
-      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, due_on: 2026-01-15, scope: {type: property, id: *P}}
 
   - id: split_by_bmf_tool_needs_no_document
     description: the BMF Arbeitshilfe result is stored with the split
@@ -191,7 +192,7 @@ cases:
     expect:
       - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
       - {code: price_split, status: present, scope: {type: property, id: *P}}
-      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, due_on: 2026-01-15, scope: {type: property, id: *P}}
 
   # --- Acquisition costs ---------------------------------------------------------------
 
@@ -228,7 +229,7 @@ cases:
         status: present
         scope: {type: acquisition_cost, id: *C1, cost_kind: broker, cost_amount: "12000.00"}
         documents: [*D1]
-      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, due_on: 2026-01-15, scope: {type: property, id: *P}}
 
   # --- Grundsteuerbescheid --------------------------------------------------------------
 
@@ -250,7 +251,7 @@ cases:
     expect:
       - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
       - {code: price_split, status: missing, scope: {type: property, id: *P}}
-      - {code: grundsteuerbescheid, status: present, scope: {type: property, id: *P}, documents: [*D2, *D1]}
+      - {code: grundsteuerbescheid, status: present, due_on: 2026-01-15, scope: {type: property, id: *P}, documents: [*D2, *D1]}
 
   - id: grundsteuerbescheid_for_the_same_year_counts
     tax_year: 2026
@@ -263,7 +264,7 @@ cases:
     expect:
       - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
       - {code: price_split, status: missing, scope: {type: property, id: *P}}
-      - {code: grundsteuerbescheid, status: present, scope: {type: property, id: *P}, documents: [*D1]}
+      - {code: grundsteuerbescheid, status: present, due_on: 2026-01-15, scope: {type: property, id: *P}, documents: [*D1]}
 
   - id: grundsteuerbescheid_linked_to_a_unit_counts
     description: >
@@ -282,7 +283,7 @@ cases:
     expect:
       - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
       - {code: price_split, status: missing, scope: {type: property, id: *P}}
-      - {code: grundsteuerbescheid, status: present, scope: {type: property, id: *P}, documents: [*D1]}
+      - {code: grundsteuerbescheid, status: present, due_on: 2026-01-15, scope: {type: property, id: *P}, documents: [*D1]}
       - {code: wirtschaftsplan, status: missing, due_on: 2026-01-01, scope: {type: property, id: *P}}
       - {code: hausgeldabrechnung, status: expected, due_on: 2027-06-30, scope: {type: property, id: *P}}
 
@@ -302,7 +303,7 @@ cases:
     expect:
       - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
       - {code: price_split, status: missing, scope: {type: property, id: *P}}
-      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, due_on: 2026-01-15, scope: {type: property, id: *P}}
 
   # --- Loans ------------------------------------------------------------------------------
 
@@ -326,7 +327,7 @@ cases:
     expect:
       - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
       - {code: price_split, status: missing, scope: {type: property, id: *P}}
-      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, due_on: 2026-01-15, scope: {type: property, id: *P}}
       - {code: loan_contract, status: present, scope: {type: loan, id: *L1, lender: Sparkasse}, documents: [*D1]}
       - {code: loan_contract, status: missing, scope: {type: loan, id: *L2, lender: KfW}}
       - {code: zinsbescheinigung, status: expected, due_on: 2027-02-28, scope: {type: loan, id: *L1, lender: Sparkasse}}
@@ -351,7 +352,7 @@ cases:
     expect:
       - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
       - {code: price_split, status: missing, scope: {type: property, id: *P}}
-      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, due_on: 2025-01-15, scope: {type: property, id: *P}}
       - {code: loan_contract, status: missing, scope: {type: loan, id: *L1, lender: Sparkasse}}
       - {code: zinsbescheinigung, status: present, due_on: 2026-02-28, scope: {type: loan, id: *L1, lender: Sparkasse}, documents: [*D1]}
 
@@ -372,7 +373,7 @@ cases:
     expect:
       - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
       - {code: price_split, status: missing, scope: {type: property, id: *P}}
-      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, due_on: 2026-01-15, scope: {type: property, id: *P}}
       - {code: loan_contract, status: missing, scope: {type: loan, id: *L1, lender: Sparkasse}}
       - {code: zinsbescheinigung, status: incomplete, due_on: 2027-02-28, scope: {type: loan, id: *L1, lender: Sparkasse}, documents: [*D1]}
 
@@ -388,7 +389,7 @@ cases:
     expect:
       - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
       - {code: price_split, status: missing, scope: {type: property, id: *P}}
-      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, due_on: 2025-01-15, scope: {type: property, id: *P}}
       - {code: loan_contract, status: missing, scope: {type: loan, id: *L1, lender: Sparkasse}}
       - {code: zinsbescheinigung, status: incomplete, due_on: 2026-02-28, scope: {type: loan, id: *L1, lender: Sparkasse}, documents: [*D1]}
 
@@ -410,7 +411,7 @@ cases:
     expect:
       - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
       - {code: price_split, status: missing, scope: {type: property, id: *P}}
-      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, due_on: 2025-01-15, scope: {type: property, id: *P}}
       - {code: loan_contract, status: missing, scope: {type: loan, id: *L1, lender: Sparkasse}}
       - {code: loan_contract, status: missing, scope: {type: loan, id: *L2, lender: KfW}}
       - {code: zinsbescheinigung, status: missing, due_on: 2026-02-28, scope: {type: loan, id: *L1, lender: Sparkasse}}
@@ -426,7 +427,7 @@ cases:
     expect:
       - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
       - {code: price_split, status: missing, scope: {type: property, id: *P}}
-      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, due_on: 2025-01-15, scope: {type: property, id: *P}}
       - {code: loan_contract, status: missing, scope: {type: loan, id: *L1, lender: Sparkasse}}
       - {code: zinsbescheinigung, status: expected, due_on: 2026-02-28, scope: {type: loan, id: *L1, lender: Sparkasse}}
 
@@ -440,7 +441,7 @@ cases:
     expect:
       - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
       - {code: price_split, status: missing, scope: {type: property, id: *P}}
-      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, due_on: 2025-01-15, scope: {type: property, id: *P}}
       - {code: loan_contract, status: missing, scope: {type: loan, id: *L1, lender: Sparkasse}}
       - {code: zinsbescheinigung, status: missing, due_on: 2026-02-28, scope: {type: loan, id: *L1, lender: Sparkasse}}
 
@@ -456,7 +457,7 @@ cases:
     expect:
       - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
       - {code: price_split, status: missing, scope: {type: property, id: *P}}
-      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, due_on: 2023-01-15, scope: {type: property, id: *P}}
       - {code: loan_contract, status: missing, scope: {type: loan, id: *L1, lender: Sparkasse}}
       - {code: zinsbescheinigung, status: missing, due_on: 2024-02-28, scope: {type: loan, id: *L1, lender: Sparkasse}}
 
@@ -491,7 +492,7 @@ cases:
     expect:
       - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
       - {code: price_split, status: missing, scope: {type: property, id: *P}}
-      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, due_on: 2026-01-15, scope: {type: property, id: *P}}
       - code: lease
         status: present
         scope: {type: tenancy, id: *T1, unit_label: WE 1, tenancy_start: 2019-08-01}
@@ -536,7 +537,7 @@ cases:
     expect:
       - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
       - {code: price_split, status: missing, scope: {type: property, id: *P}}
-      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, due_on: 2026-01-15, scope: {type: property, id: *P}}
       - code: lease
         status: missing
         scope: {type: tenancy, id: *T3, unit_label: Stellplatz 4, tenancy_start: 2018-03-01}
@@ -568,7 +569,7 @@ cases:
     expect:
       - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
       - {code: price_split, status: missing, scope: {type: property, id: *P}}
-      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, due_on: 2025-01-15, scope: {type: property, id: *P}}
       - {code: wirtschaftsplan, status: present, due_on: 2025-01-01, scope: {type: property, id: *P}, documents: [*D1]}
       - {code: hausgeldabrechnung, status: present, due_on: 2026-06-30, scope: {type: property, id: *P}, documents: [*D2]}
 
@@ -591,7 +592,7 @@ cases:
     expect:
       - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
       - {code: price_split, status: missing, scope: {type: property, id: *P}}
-      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, due_on: 2026-01-15, scope: {type: property, id: *P}}
       - {code: wirtschaftsplan, status: incomplete, due_on: 2026-01-01, scope: {type: property, id: *P}, documents: [*D1]}
       - {code: hausgeldabrechnung, status: incomplete, due_on: 2027-06-30, scope: {type: property, id: *P}, documents: [*D2]}
 
@@ -604,7 +605,7 @@ cases:
     expect:
       - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
       - {code: price_split, status: missing, scope: {type: property, id: *P}}
-      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, due_on: 2025-01-15, scope: {type: property, id: *P}}
       - {code: wirtschaftsplan, status: missing, due_on: 2025-01-01, scope: {type: property, id: *P}}
       - {code: hausgeldabrechnung, status: expected, due_on: 2026-06-30, scope: {type: property, id: *P}}
 
@@ -617,7 +618,7 @@ cases:
     expect:
       - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
       - {code: price_split, status: missing, scope: {type: property, id: *P}}
-      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, due_on: 2025-01-15, scope: {type: property, id: *P}}
       - {code: wirtschaftsplan, status: missing, due_on: 2025-01-01, scope: {type: property, id: *P}}
       - {code: hausgeldabrechnung, status: missing, due_on: 2026-06-30, scope: {type: property, id: *P}}
 
@@ -631,7 +632,7 @@ cases:
     expect:
       - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
       - {code: price_split, status: missing, scope: {type: property, id: *P}}
-      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: expected, due_on: 2027-01-15, scope: {type: property, id: *P}}
       - {code: wirtschaftsplan, status: expected, due_on: 2027-01-01, scope: {type: property, id: *P}}
       - {code: hausgeldabrechnung, status: expected, due_on: 2028-06-30, scope: {type: property, id: *P}}
 
@@ -657,7 +658,6 @@ cases:
     expect:
       - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
       - {code: price_split, status: missing, scope: {type: property, id: *P}}
-      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
 
   - id: owned_until_the_first_day_of_the_year
     description: sold on 1 Jan Y still counts for Y
@@ -667,7 +667,7 @@ cases:
     expect:
       - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
       - {code: price_split, status: missing, scope: {type: property, id: *P}}
-      - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, due_on: 2026-01-15, scope: {type: property, id: *P}}
 
   # --- Phase 5 D126: the Grundsteuerbescheid from the first full year of ownership ----------
   # §9 Abs. 1 GrStG: the Grundsteuer is assessed on the conditions at the start of the calendar
@@ -676,16 +676,14 @@ cases:
   # for Y (the seller is, on 1 Jan Y) and is the debtor from 1 Jan Y+1; the first Bescheid
   # addressed to the buyer is issued early in Y+1. Step 3 gives the catalogue entry
   # applies = year(purchase_date) + 1 onwards and due = 15 Jan Y (a fixed day the spec chose,
-  # D126, not a statutory date: Bescheide are usually sent in January). Until step 3 the rule
-  # lists the Bescheid from the purchase year with no due date, so these cases are pending, and
-  # step 3 also changes every existing case above that lists a grundsteuerbescheid item for the
-  # purchase year or without a due date.
+  # D126, not a statutory date: Bescheide are usually sent in January). Step 3 (phase 5 spec
+  # §12.1) made these cases live and gave every existing case above its grundsteuerbescheid
+  # due date, dropping the item from the purchase-year case.
 
   - id: grundsteuerbescheid_not_required_in_purchase_year
     description: >
       bought (Übergang) 1 May 2024: the 2024 Grundsteuer is the seller's (§9 Abs. 1, §10 Abs. 1
       GrStG), so the checklist for 2024 has no grundsteuerbescheid item at all
-    pending: "phase 5 step 3 (D126): the grundsteuerbescheid entry gains applies and due"
     tax_year: 2024
     today: 2024-11-06
     facts: {<<: *efh}
@@ -697,7 +695,6 @@ cases:
     description: >
       2025 is the first full year of ownership: the item exists with due_on 15 Jan 2025 and is
       expected on 10 Jan 2025 (due_on > today), not missing yet
-    pending: "phase 5 step 3 (D126): the grundsteuerbescheid entry gains applies and due"
     tax_year: 2025
     today: 2025-01-10
     facts: {<<: *efh}
@@ -708,7 +705,6 @@ cases:
 
   - id: grundsteuerbescheid_missing_on_15_jan_first_full_year
     description: on the due date itself the item is missing (due_on <= today), as every dated item
-    pending: "phase 5 step 3 (D126): the grundsteuerbescheid entry gains applies and due"
     tax_year: 2025
     today: 2025-01-15
     facts: {<<: *efh}
