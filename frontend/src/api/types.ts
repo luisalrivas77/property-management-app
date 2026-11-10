@@ -3482,7 +3482,7 @@ export interface components {
             version: number;
             source: components["schemas"]["ExtractionSource"];
             /** Fields */
-            fields: components["schemas"]["ManualDocumentFields"] | components["schemas"]["PurchaseContractExtraction"] | components["schemas"]["LoanContractExtraction"] | components["schemas"]["LeaseExtraction"] | components["schemas"]["HandoverProtocolExtraction"] | components["schemas"]["DepositRecordExtraction"] | components["schemas"]["InvoiceExtraction"] | components["schemas"]["BescheidExtraction"] | components["schemas"]["GrundsteuerbescheidExtraction"] | components["schemas"]["WirtschaftsplanExtraction"] | components["schemas"]["HausgeldabrechnungExtraction"] | components["schemas"]["ZinsbescheinigungExtraction"] | components["schemas"]["StatementExtraction"] | components["schemas"]["WageCertificateExtraction"] | components["schemas"]["PayslipExtraction"] | components["schemas"]["IncomeTaxAssessmentExtraction"];
+            fields: components["schemas"]["ManualDocumentFields"] | components["schemas"]["PurchaseContractExtraction"] | components["schemas"]["LoanContractExtraction"] | components["schemas"]["LeaseExtraction"] | components["schemas"]["HandoverProtocolExtraction"] | components["schemas"]["DepositRecordExtraction"] | components["schemas"]["InvoiceExtraction"] | components["schemas"]["BescheidExtraction"] | components["schemas"]["GrundsteuerbescheidExtraction"] | components["schemas"]["WirtschaftsplanExtraction"] | components["schemas"]["HausgeldabrechnungExtraction"] | components["schemas"]["ZinsbescheinigungExtraction"] | components["schemas"]["StatementExtraction"] | components["schemas"]["WageCertificateExtraction"] | components["schemas"]["PayslipExtraction"] | components["schemas"]["IncomeTaxAssessmentExtraction"] | components["schemas"]["GeneralExtraction"] | components["schemas"]["ManagementContractExtraction"];
             /**
              * Schema Version
              * @default 1
@@ -3540,7 +3540,7 @@ export interface components {
          * @description Finer typing where retention or the AfA basis depends on it.
          * @enum {string}
          */
-        DocumentSubtype: "purchase_contract" | "price_split_evidence" | "appraisal" | "loan_contract" | "lease" | "handover_protocol" | "deposit_record" | "cost_basis_evidence" | "grundsteuerbescheid" | "einkommensteuerbescheid";
+        DocumentSubtype: "purchase_contract" | "price_split_evidence" | "appraisal" | "loan_contract" | "lease" | "handover_protocol" | "deposit_record" | "cost_basis_evidence" | "grundsteuerbescheid" | "einkommensteuerbescheid" | "land_register_extract" | "declaration_of_division" | "land_charge_deed" | "energy_certificate" | "building_records" | "insurance_policy" | "management_contract" | "service_contract" | "weg_minutes" | "weg_invitation" | "special_levy" | "repayment_schedule" | "loan_terms_change" | "loan_statement" | "lease_amendment" | "rent_increase" | "termination_notice" | "tenant_self_disclosure" | "landlord_confirmation" | "operating_costs_statement" | "tenant_correspondence" | "utility_bill" | "quote" | "chimney_sweep_notice" | "prepayment_notice" | "tax_return_copy" | "donation_receipt" | "childcare_invoice" | "household_services_invoice" | "insurance_contribution_certificate" | "pension_contribution_certificate" | "benefit_notice" | "child_benefit_notice" | "employment_contract" | "employer_certificate" | "work_expense_invoice" | "depot_statement" | "depot_report" | "trade_confirmation" | "capital_income_tax_certificate";
         /**
          * DocumentType
          * @description The classifier's output set (AI layer). Phase 1 sets it by hand.
@@ -3969,7 +3969,7 @@ export interface components {
          *     models in schemas/extraction.py.
          * @enum {string}
          */
-        ExtractionKind: "manual" | "purchase_contract" | "loan_contract" | "lease" | "handover_protocol" | "deposit_record" | "invoice" | "bescheid" | "grundsteuerbescheid" | "wirtschaftsplan" | "hausgeldabrechnung" | "zinsbescheinigung" | "statement" | "lohnsteuerbescheinigung" | "gehaltsabrechnung" | "einkommensteuerbescheid";
+        ExtractionKind: "manual" | "purchase_contract" | "loan_contract" | "lease" | "handover_protocol" | "deposit_record" | "invoice" | "bescheid" | "grundsteuerbescheid" | "wirtschaftsplan" | "hausgeldabrechnung" | "zinsbescheinigung" | "statement" | "lohnsteuerbescheinigung" | "gehaltsabrechnung" | "einkommensteuerbescheid" | "general" | "management_contract";
         /**
          * ExtractionSource
          * @enum {string}
@@ -4026,6 +4026,30 @@ export interface components {
             numerator: number;
             /** Denominator */
             denominator: number;
+        };
+        /**
+         * GeneralExtraction
+         * @description The general reading (D130): title and date for every document without a reader of its
+         *     own, plus the one field set its subtype's group needs to find its link (D131): the
+         *     property's address for the property, WEG, running-costs and tenancy groups, the lender and
+         *     contract number for the loan group. A request asks only those (asked_fields); an
+         *     owner's home address is never asked.
+         */
+        GeneralExtraction: {
+            /** @description a short German title, two to six words naming what the document is */
+            title?: components["schemas"]["ExtractedValue"];
+            /** @description the date the document carries */
+            document_date?: components["schemas"]["ExtractedValue"];
+            /** @description street of the property the document concerns */
+            street?: components["schemas"]["ExtractedValue"];
+            /** @description house number of that property */
+            house_number?: components["schemas"]["ExtractedValue"];
+            /** @description five-digit PLZ of that property */
+            postal_code?: components["schemas"]["ExtractedValue"];
+            /** @description the bank that gave the loan */
+            lender?: components["schemas"]["ExtractedValue"];
+            /** @description Darlehensnummer / Vertragsnummer; when none is printed, the loan's Kontonummer. The number only, without its label */
+            contract_number?: components["schemas"]["ExtractedValue"];
         };
         /** GrundsteuerInstalment */
         GrundsteuerInstalment: {
@@ -4809,6 +4833,32 @@ export interface components {
             credential: {
                 [key: string]: components["schemas"]["JsonValue"];
             };
+        };
+        /**
+         * ManagementContractExtraction
+         * @description Verwaltervertrag (contract / management_contract, D130): a Mietverwaltungsvertrag with
+         *     the household's letting manager, or the WEG's Verwaltervertrag. Proposes typing and
+         *     link:property; the fee is booked from the bank lines that pay it, never from here.
+         */
+        ManagementContractExtraction: {
+            /** @description a short German title, two to six words naming what the document is */
+            title?: components["schemas"]["ExtractedValue"];
+            /** @description the date the document carries */
+            document_date?: components["schemas"]["ExtractedValue"];
+            /** @description the Verwalter's name only, without the address */
+            manager?: components["schemas"]["ExtractedValue"];
+            /** @description street of the managed property */
+            street?: components["schemas"]["ExtractedValue"];
+            /** @description house number of the managed property */
+            house_number?: components["schemas"]["ExtractedValue"];
+            /** @description five-digit PLZ of the managed property */
+            postal_code?: components["schemas"]["ExtractedValue"];
+            /** @description Vertragsbeginn: when the management starts */
+            start_date?: components["schemas"]["ExtractedValue"];
+            /** @description the Verwaltervergütung per month as written, e.g. 30,00 € zzgl. MwSt. je Einheit */
+            monthly_fee?: components["schemas"]["ExtractedValue"];
+            /** @description Kündigungsfrist, as written */
+            notice_period?: components["schemas"]["ExtractedValue"];
         };
         /**
          * ManualDocumentFields
