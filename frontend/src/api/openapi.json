@@ -8578,6 +8578,28 @@
         ],
         "title": "BridgeRow"
       },
+      "CarriedField": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Key"
+          },
+          "field": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Field"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "field"
+        ],
+        "title": "CarriedField",
+        "description": "A field of another record of the same proposal (D132): its record key and field name,\ndotted as the apply body names it (\"tax_input:interest_certified\", \"value.amount\")."
+      },
       "ChecklistDocumentRef": {
         "properties": {
           "id": {
@@ -16088,6 +16110,35 @@
             },
             "type": "array",
             "title": "Notes"
+          },
+          "hand_from": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CarriedField"
+            },
+            "propertyNames": {
+              "enum": [
+                "amount_total",
+                "period_start",
+                "period_end",
+                "counterparty",
+                "reference",
+                "notes"
+              ]
+            },
+            "type": "object",
+            "title": "Hand From"
+          },
+          "hand_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hand Version"
           }
         },
         "additionalProperties": false,

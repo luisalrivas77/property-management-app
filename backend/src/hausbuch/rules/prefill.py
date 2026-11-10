@@ -62,8 +62,10 @@ counterparty, reference, notes, as the kind maps them) under their hand-field na
 with the reading's value (cited, or derived by code), proposed empty when the reading holds
 none, so the review asks for it there. A hand field whose reading field another record of
 the proposal already asks for (a loan contract's lender, an invoice's amount in its
-Nebenkosten row) is left out, so no value is asked twice. The apply writes them as the
-document's hand fields (services.documents.hand_fields_into).
+Nebenkosten row) is left out, so no value is asked twice; the typing record's hand_from
+names that record's field, and the apply writes the value the user applied there into the
+document's reading as well. The apply writes them as the document's hand fields
+(services.documents.hand_fields_into).
 """
 
 import re
@@ -88,6 +90,7 @@ from hausbuch.schemas.enums import (
 )
 from hausbuch.schemas.extraction import GENERAL_LINK, _Typing
 from hausbuch.schemas.proposal import (
+    CarriedField,
     ExistingLoan,
     ExistingOwner,
     ExistingPayRow,
@@ -391,9 +394,10 @@ class _Builder:
         self.ctx = context
         self.records: list[ProposalRecord] = []
         # Reading fields a record of this proposal asks for without proposing them (an
-        # unstated optional field of a record that creates, whose card still shows it): the
-        # typing record leaves their hand fields out (D132).
-        self.carried: set[str] = set()
+        # unstated optional field of a record that creates, whose card still shows it), by
+        # the record field that asks: the typing record leaves their hand fields out and
+        # names that field in hand_from (D132).
+        self.carried: dict[str, CarriedField] = {}
         # A utility bill or a §35a or work-expense invoice (D131): read as an invoice, never a
         # Nebenkosten or financing cost of the purchase.
         self.catalogue_invoice = context.classification.subtype in _CATALOGUE_INVOICES
@@ -479,7 +483,9 @@ class _Builder:
         value the hand field cannot hold (raw text in a money field) is proposed empty with
         its quote, as the typing form shows it (rules.hand_fields.hand_values). Left out: a
         hand field whose reading field another record proposes, i.e. holds that very value
-        (by identity, not equality: two missing values are equal), or that is `carried`.
+        (by identity, not equality: two missing values are equal), or that is `carried`; the
+        record field that asks for it instead is named in the typing's hand_from, so the
+        apply writes the value applied there into the reading (D132, J1).
 
         Without a reading of its own (kind None: typing only, or blocked by the tenant gate)
         the typing record carries the hand fields the document's typing form offers now
@@ -500,14 +506,19 @@ class _Builder:
         mapping = HAND_FIELD_MAP.get(self.kind)
         if not mapping:
             return
-        proposed = {id(value) for record in self.records[1:] for value in record.fields.values()}
+        proposed: dict[int, CarriedField] = {}
+        for record in self.records[1:]:
+            for field, value in record.fields.items():
+                proposed.setdefault(id(value), CarriedField(key=record.key, field=field))
         shown = hand_values(self.x, mapping)
         for name in HAND_FIELDS:
             target = mapping.get(name)
-            if target is None or target in self.carried:
+            if target is None:
                 continue
             value = self.ev(target)
-            if id(value) in proposed:
+            carrier = self.carried.get(target) or proposed.get(id(value))
+            if carrier is not None:
+                typing.hand_from[name] = carrier
                 continue
             if value.value is not None and getattr(shown, name) is None:
                 checks = ["cited"] if value.source is not None else []
@@ -742,7 +753,8 @@ class _Builder:
         fields = {"kind": kind_value, "amount": amount}
         if note.value is not None:
             fields["note"] = note
-        self.carried.add("reference")  # the new row's card asks for its note, stated or not
+        # The new row's card asks for its note, stated or not (D132).
+        self.carried["reference"] = CarriedField(key=f"cost:{kind}", field="note")
         self.add(f"cost:{kind}", "acquisition_cost", "create", fields)
 
     # -- Darlehensvertrag
@@ -774,7 +786,8 @@ class _Builder:
                 fields["interest_only_before_first_payment"] = interest_only
             self.add("loan", "loan", "create", fields)
             # The new loan's card asks for both, stated or not (D132).
-            self.carried.update(("lender", "contract_number"))
+            for name in ("lender", "contract_number"):
+                self.carried[name] = CarriedField(key="loan", field=name)
         else:
             # LoanPatch has no signed_on: the contract date is set when the loan is created.
             keys = ("lender", "contract_number", "signed_on")

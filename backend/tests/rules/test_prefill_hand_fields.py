@@ -3,9 +3,12 @@
 prefill.yaml pins the records per case; these pin the rule's edges: a value computed by
 code keeps its derived_from and no source, a raw text the hand field cannot hold is
 proposed empty with its quote, and a hand field whose reading field another record
-proposes (or a new record's card asks for) is left out, so no value is asked twice.
+proposes (or a new record's card asks for) is left out, so no value is asked twice, and
+the typing record's hand_from names the record field that asks for it instead, so the apply
+writes that value into the reading too (J1).
 """
 
+from datetime import date
 from decimal import Decimal
 from uuid import uuid4
 
@@ -18,13 +21,20 @@ from hausbuch.schemas.document import HandFields, ManualDocumentFields
 from hausbuch.schemas.enums import DocumentSubtype, DocumentType, ExtractionKind
 from hausbuch.schemas.extraction import (
     DepositRecordExtraction,
+    InvoiceExtraction,
     LoanContractExtraction,
     ManagementContractExtraction,
     PurchaseContractExtraction,
     ZinsbescheinigungExtraction,
     _Typing,
 )
-from hausbuch.schemas.proposal import ExistingLoan, PrefillContext
+from hausbuch.schemas.proposal import (
+    CarriedField,
+    ExistingLoan,
+    ExistingProperty,
+    ExistingTenancy,
+    PrefillContext,
+)
 
 
 def _cited(value, quote: str = "…") -> ExtractedValue:
@@ -131,6 +141,9 @@ def test_a_value_another_record_proposes_is_not_asked_on_typing():
     assert "amount_total" not in fields
     assert fields["counterparty"].value == "Musterbank AG"
     assert fields["reference"].value is None
+    assert _typing(records).hand_from == {
+        "amount_total": CarriedField(key="tax_input:interest_certified", field="value.amount")
+    }
 
 
 @pytest.mark.rule
@@ -150,6 +163,102 @@ def test_a_new_loan_asks_for_lender_and_number_itself():
     fields = _typing(records).fields
     assert "counterparty" not in fields
     assert "reference" not in fields
+    assert _typing(records).hand_from == {
+        "counterparty": CarriedField(key="loan", field="lender"),
+        "reference": CarriedField(key="loan", field="contract_number"),
+    }
+
+
+@pytest.mark.rule
+def test_a_loan_patch_leaves_lender_and_number_on_typing():
+    """LoanPatch never proposes the lender or the number (the loan was found by them), so
+    the typing record asks for them itself and names no other record."""
+    loan = ExistingLoan(
+        id=uuid4(), property_id=uuid4(), lender="Musterbank AG", contract_number="4711 0815"
+    )
+    reading = LoanContractExtraction(
+        lender=_cited("Musterbank AG"),
+        contract_number=_cited("47110815"),
+        principal=_cited("200000.00"),
+        nominal_rate=_cited("0.035"),
+        monthly_payment=_cited("750.00"),
+    )
+    records = build_proposal(
+        ExtractionKind.LOAN_CONTRACT,
+        reading,
+        _context(DocumentType.CONTRACT, None, loans=[loan]),
+    )
+    (patch,) = [r for r in records if r.key == "loan"]
+    assert (patch.mode, patch.target_id) == ("patch", loan.id)
+    assert "lender" not in patch.fields and "contract_number" not in patch.fields
+    typing = _typing(records)
+    assert typing.fields["counterparty"].value == "Musterbank AG"
+    assert typing.fields["reference"].value == "47110815"
+    assert typing.hand_from == {}
+
+
+def _flat() -> ExistingProperty:
+    return ExistingProperty.model_validate(
+        {
+            "id": str(uuid4()),
+            "kind": "etw",
+            "address": {
+                "street": "Lindenstraße",
+                "house_number": "12",
+                "postal_code": "10115",
+                "city": "Berlin",
+            },
+            "build_year": 1994,
+            "notarized_on": "2024-03-15",
+            "purchase_date": "2024-05-02",
+            "purchase_price": "289000.00",
+        }
+    )
+
+
+@pytest.mark.rule
+def test_a_new_nebenkosten_row_carries_the_invoices_amount_and_reference():
+    reading = InvoiceExtraction(
+        sender=_cited("Notar Dr. Beispiel"),
+        amount_total=_cited("4312.10"),
+        reference=_cited("UR 123/2024"),
+        subject=_cited("Kaufvertrag"),
+    )
+    records = build_proposal(
+        ExtractionKind.INVOICE,
+        reading,
+        _context(DocumentType.INVOICE, DocumentSubtype.COST_BASIS_EVIDENCE, properties=[_flat()]),
+    )
+    (cost,) = [r for r in records if r.key.startswith("cost:")]
+    assert cost.mode == "create"
+    typing = _typing(records)
+    assert typing.hand_from == {
+        "amount_total": CarriedField(key=cost.key, field="amount"),
+        "reference": CarriedField(key=cost.key, field="note"),
+    }
+    assert "amount_total" not in typing.fields and "reference" not in typing.fields
+    # Asked on typing: the sender and the subject, which no other record proposes.
+    assert typing.fields["counterparty"].value == "Notar Dr. Beispiel"
+    assert typing.fields["notes"].value == "Kaufvertrag"
+
+
+@pytest.mark.rule
+def test_a_kaution_receipt_carries_the_amount():
+    tenancy = ExistingTenancy(
+        id=uuid4(),
+        unit_id=uuid4(),
+        start_date=date(2026, 5, 1),
+        deposit_amount=Decimal("3000.00"),
+    )
+    reading = DepositRecordExtraction(amount=_cited("3000.00"), received_on=_cited("2026-05-02"))
+    records = build_proposal(
+        ExtractionKind.DEPOSIT_RECORD,
+        reading,
+        _context(DocumentType.LETTER, DocumentSubtype.DEPOSIT_RECORD, tenancies=[tenancy]),
+    )
+    assert _typing(records).hand_from == {
+        "amount_total": CarriedField(key="deposit_received", field="amount")
+    }
 
 
 @pytest.mark.rule

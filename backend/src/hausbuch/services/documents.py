@@ -602,6 +602,13 @@ def current_extraction(conn: Connection, document_id: UUID) -> DocumentExtractio
     return None if row is None else DocumentExtraction.model_validate(dict(row._mapping))
 
 
+def lock_document(conn: Connection, document_id: UUID) -> None:
+    """Take the document row's lock (FOR UPDATE), as every extraction write does, so no new
+    extraction version can be written until the caller's transaction ends."""
+    if _select_document(conn, document_id, for_update=True) is None:
+        raise NotFoundError(EntityType.DOCUMENT, document_id)
+
+
 def extraction_version(conn: Connection, extraction_id: UUID) -> int | None:
     """The version number of one extraction row (a proposal names the reading it was built
     from by id), None when no such row is visible."""
