@@ -2983,6 +2983,13 @@ export interface components {
              */
             favourable: "kindergeld" | "allowances";
         };
+        /** Choice */
+        Choice: {
+            /** Code */
+            code: string;
+            /** Label De */
+            label_de: string;
+        };
         /**
          * CommuteComponent
          * @description §5.2: the routes' Pauschale (the non-car part capped), the tickets when higher, minus
@@ -5758,31 +5765,62 @@ export interface components {
             /** @description e.g. je zur Hälfte */
             ownership_clause?: components["schemas"]["ExtractedValue"];
         };
-        /**
-         * QuestionPrefill
-         * @description One answer slot of the year with what last year leaves (§5.11). proposed_answer is the
-         *     prior answer carried, or the question's default_answer when there is none (spec §7
-         *     addition, 10 Nov 2026).
-         */
-        QuestionPrefill: {
+        /** Question */
+        Question: {
             /** Key */
             key: string;
+            /**
+             * Section
+             * @enum {string}
+             */
+            section: "einkommen" | "werbungskosten" | "haushalt" | "kinder" | "immobilie";
             /**
              * Scope
              * @enum {string}
              */
             scope: "owner" | "household" | "property";
-            /** Owner Id */
-            owner_id?: string | null;
-            /** Property Id */
-            property_id?: string | null;
-            prior_answer?: components["schemas"]["QuestionnaireAnswer"] | null;
-            /** Proposed Answer */
-            proposed_answer?: ("yes" | "no") | null;
-            /** Proposed Rows */
-            proposed_rows?: (components["schemas"]["ReturnInputCreate"] | components["schemas"]["TaxInputCreate"])[];
-            /** Reconfirm Rows */
-            reconfirm_rows?: components["schemas"]["ReturnInputFact"][];
+            /** Question De */
+            question_de: string;
+            /** Why De */
+            why_de: string;
+            /**
+             * Answer Type
+             * @enum {string}
+             */
+            answer_type: "yes_no" | "choice" | "facts";
+            /** Choices */
+            choices?: components["schemas"]["Choice"][] | null;
+            /** Targets */
+            targets?: components["schemas"]["QuestionTarget"][];
+            /**
+             * Carry Forward
+             * @enum {string}
+             */
+            carry_forward: "copy" | "reconfirm" | "none";
+            /** Default Answer */
+            default_answer?: ("yes" | "no") | null;
+        };
+        /**
+         * QuestionTarget
+         * @description What a "yes" leads to: rows of a return_input or tax_input kind, or a reminder printed on
+         *     the Gesamt card and the sheet. value_match selects the target rows by their value's coded
+         *     fields (e.g. {"item_class": "subscription"}, {"expense_class": "account_fee"}), so two
+         *     questions can share one kind (spec §7 addition, 10 Nov 2026).
+         */
+        QuestionTarget: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "return_input" | "tax_input" | "reminder";
+            /** Input Kind */
+            input_kind?: components["schemas"]["ReturnInputKind"] | components["schemas"]["TaxInputKind"] | null;
+            /** Value Match */
+            value_match?: {
+                [key: string]: string;
+            };
+            /** Reminder De */
+            reminder_de?: string | null;
         };
         /** QuestionnaireAnswer */
         QuestionnaireAnswer: {
@@ -5886,9 +5924,41 @@ export interface components {
             open?: components["schemas"]["OpenQuestion"][];
         };
         /**
+         * QuestionnaireSlot
+         * @description One slot of the viewed year: what last year leaves (QuestionPrefill) plus the slot's
+         *     current answer of this year, if any, so the screen can show it and correct it with a new
+         *     answer whose supersedes_id names it. The rows written with an answer are not linked to it;
+         *     the screen reads the slot's current rows from /return-inputs and the property's
+         *     /tax-inputs.
+         */
+        QuestionnaireSlot: {
+            /** Key */
+            key: string;
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "owner" | "household" | "property";
+            /** Owner Id */
+            owner_id?: string | null;
+            /** Property Id */
+            property_id?: string | null;
+            prior_answer?: components["schemas"]["QuestionnaireAnswer"] | null;
+            /** Proposed Answer */
+            proposed_answer?: ("yes" | "no") | null;
+            /** Proposed Rows */
+            proposed_rows?: (components["schemas"]["ReturnInputCreate"] | components["schemas"]["TaxInputCreate"])[];
+            /** Reconfirm Rows */
+            reconfirm_rows?: components["schemas"]["ReturnInputFact"][];
+            current_answer?: components["schemas"]["QuestionnaireAnswer"] | null;
+        };
+        /**
          * QuestionnaireView
-         * @description GET /tax/questionnaire: the year's slots in file order (owners in name order) and the
-         *     progress. reused_from is set when the year has no file of its own.
+         * @description GET /tax/questionnaire: the year's questions and slots in file order (owners in name
+         *     order) and the progress. reused_from is set when the year has no file of its own. questions
+         *     are the file's (texts, answer type, choices, targets, carry-forward), each once; a slot
+         *     names its question by key, so the screen renders the question from the data, never from
+         *     its own copy (phase 4b §10, principle 5).
          */
         QuestionnaireView: {
             /** Tax Year */
@@ -5897,8 +5967,10 @@ export interface components {
             version: string;
             /** Reused From */
             reused_from?: number | null;
+            /** Questions */
+            questions: components["schemas"]["Question"][];
             /** Slots */
-            slots: components["schemas"]["QuestionPrefill"][];
+            slots: components["schemas"]["QuestionnaireSlot"][];
             progress: components["schemas"]["QuestionnaireProgress"];
             /** Reminders */
             reminders: string[];

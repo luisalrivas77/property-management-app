@@ -35,6 +35,17 @@ import { formatDate, formatMoney } from "./format";
 type AllocationCategory = components["schemas"]["AllocationCategory"];
 type AllocationMethod = components["schemas"]["AllocationMethod"];
 type InboxItemKind = components["schemas"]["InboxItemKind"];
+type ReturnInputKind = components["schemas"]["ReturnInputKind"];
+type GrossSource = NonNullable<components["schemas"]["OwnerZve"]["gross_source"]>;
+type HouseholdServiceClass = components["schemas"]["HouseholdServicesFact"]["service_class"];
+type HouseholdServiceSource = components["schemas"]["HouseholdServicesFact"]["source"];
+type QuestionSection = components["schemas"]["Question"]["section"];
+type QuestionnaireAnswerValue = components["schemas"]["QuestionnaireAnswerValue"];
+type CommuteKind = components["schemas"]["CommuteFact"]["kind"];
+type ItemClass = components["schemas"]["EquipmentFact"]["item_class"];
+type OtherExpenseClass = components["schemas"]["OtherExpenseFact"]["expense_class"];
+type WorkRoomPrefer = NonNullable<components["schemas"]["WorkRoomFact"]["prefer"]>;
+type PrivateCostClass = components["schemas"]["PrivateCostValue"]["cost_class"];
 
 type Confidence = ExtractedValue["confidence"];
 type Check = NonNullable<ExtractedValue["checks"]>[number];
@@ -381,6 +392,108 @@ export const INBOX_ITEM_KIND: Record<InboxItemKind, string> = {
   questionnaire_open: "Jahresfragen",
 };
 
+// --- The income tax return's inputs (phase-4b.md §7, §10) --------------------------------
+
+/** What a return input row is (return_input.kind, D97). */
+export const RETURN_INPUT_KIND: Record<ReturnInputKind, string> = {
+  wage_certificate: "Lohnsteuerbescheinigung",
+  payslip: "Gehaltsabrechnung",
+  commute: "Arbeitsweg",
+  home_office: "Homeoffice-Tage",
+  work_room: "Arbeitszimmer",
+  work_equipment: "Arbeitsmittel",
+  telecom: "Telekommunikation",
+  professional_association: "Beiträge zu Berufsverbänden",
+  training: "Fortbildung",
+  other_expense: "Sonstige Werbungskosten",
+  other_insurance: "Weitere Versicherungen",
+  replacement_income: "Lohnersatzleistungen",
+  vorsorge_override: "Vorsorge manuell",
+  child: "Kind",
+  childcare_cost: "Kinderbetreuungskosten",
+  household_services: "Haushaltsnahe Dienstleistungen (§ 35a)",
+  special_expense: "Spende",
+};
+
+/** Where an owner's gross pay comes from (OwnerZve.gross_source, D98); the screen adds the
+ * year or the payslip month. */
+export const GROSS_SOURCE: Record<GrossSource, string> = {
+  certificate: "laut Lohnsteuerbescheinigung",
+  payslip: "Hochrechnung aus Gehaltsabrechnung",
+  expected: "Schätzung",
+};
+
+/** A §35a cost's class (HouseholdServicesFact.service_class, D112). */
+export const HOUSEHOLD_SERVICE_CLASS: Record<HouseholdServiceClass, string> = {
+  handwerker: "Handwerkerleistung",
+  haushaltsnah: "Haushaltsnahe Dienstleistung",
+  minijob: "Minijob im Haushalt",
+};
+
+/** Where a §35a labour cost was read from (HouseholdServicesFact.source). */
+export const HOUSEHOLD_SERVICE_SOURCE: Record<HouseholdServiceSource, string> = {
+  own_invoice: "eigene Rechnung",
+  nebenkostenabrechnung: "Nebenkostenabrechnung der eigenen Wohnung",
+};
+
+/** The section of a Jahresfrage (Question.section, D110). */
+export const QUESTION_SECTION: Record<QuestionSection, string> = {
+  einkommen: "Einkommen",
+  werbungskosten: "Werbungskosten",
+  haushalt: "Haushalt",
+  kinder: "Kinder",
+  immobilie: "Immobilie",
+};
+
+/** A Jahresfrage's coded answer (questionnaire_answer.answer, D110). */
+export const QUESTIONNAIRE_ANSWER: Record<QuestionnaireAnswerValue, string> = {
+  yes: "Ja",
+  no: "Nein",
+  not_applicable: "Trifft nicht zu",
+};
+
+/** A commute route's kind (CommuteFact.kind). */
+export const COMMUTE_KIND: Record<CommuteKind, string> = {
+  first_workplace: "Erste Tätigkeitsstätte",
+  collection_point: "Sammelpunkt oder weiträumiges Tätigkeitsgebiet",
+};
+
+/** A work item's class (EquipmentFact.item_class, D108). */
+export const ITEM_CLASS: Record<ItemClass, string> = {
+  computer: "Computer",
+  software: "Software",
+  phone: "Telefon",
+  furniture: "Möbel",
+  tools: "Werkzeug",
+  subscription: "Abonnement",
+  other: "Sonstiges",
+};
+
+/** An other Werbungskosten item's class (OtherExpenseFact.expense_class). */
+export const OTHER_EXPENSE_CLASS: Record<OtherExpenseClass, string> = {
+  account_fee: "Kontoführungsgebühren",
+  application: "Bewerbungskosten",
+  ferry_flight: "Fähr- oder Flugkosten zur Arbeit",
+  other: "Sonstiges",
+};
+
+/** The Arbeitszimmer's choice between the flat amount and the actual costs (D106). */
+export const WORK_ROOM_PREFER: Record<WorkRoomPrefer, string> = {
+  flat: "Jahrespauschale",
+  actual: "Tatsächliche Kosten",
+};
+
+/** A privately paid rental cost's class (PrivateCostValue.cost_class, D111). */
+export const PRIVATE_COST_CLASS: Record<PrivateCostClass, string> = {
+  travel: "Fahrten zur Wohnung",
+  postage: "Porto",
+  advertising: "Anzeigen",
+  association: "Vermieterverein",
+  legal_insurance: "Rechtsschutzversicherung",
+  software: "Software",
+  other: "Sonstiges",
+};
+
 // --- The Anlage V draft (phase-3.md §11) ----------------------------------------------
 
 type Params = Record<string, string>;
@@ -531,34 +644,10 @@ export function options<K extends string>(labels: Record<K, string>): [K, string
 
 // --- Phase 4b (phase-4b.md §10): the Anlage N tab and the Gesamt card ----------------------
 
-type ReturnInputKind = components["schemas"]["ReturnInputKind"];
 type EquipmentClass = components["schemas"]["EquipmentFact"]["item_class"];
-type OtherExpenseClass = components["schemas"]["OtherExpenseFact"]["expense_class"];
 type ReplacementBenefit = components["schemas"]["ReplacementFact"]["benefit"];
-type CommuteKind = components["schemas"]["CommuteFact"]["kind"];
 type AnlageNStatus = components["schemas"]["AnlageNDraft"]["status"];
 type ReturnStatus = components["schemas"]["ReturnEstimate"]["status"];
-
-/** A return_input row's kind (D97). */
-export const RETURN_INPUT_KIND: Record<ReturnInputKind, string> = {
-  wage_certificate: "Lohnsteuerbescheinigung",
-  payslip: "Gehaltsabrechnung",
-  commute: "Arbeitsweg",
-  home_office: "Homeoffice-Tage",
-  work_room: "Arbeitszimmer",
-  work_equipment: "Arbeitsmittel",
-  telecom: "Telekommunikation",
-  professional_association: "Beiträge zu Berufsverbänden",
-  training: "Fortbildung",
-  other_expense: "Sonstige Werbungskosten",
-  other_insurance: "Weitere Versicherungen",
-  replacement_income: "Lohnersatzleistungen",
-  vorsorge_override: "Vorsorge manuell",
-  child: "Kind",
-  childcare_cost: "Kinderbetreuungskosten",
-  household_services: "Haushaltsnahe Dienstleistungen (§ 35a)",
-  special_expense: "Spende",
-};
 
 /** A work item's class (D108): it decides the useful life. */
 export const EQUIPMENT_CLASS: Record<EquipmentClass, string> = {
@@ -571,13 +660,6 @@ export const EQUIPMENT_CLASS: Record<EquipmentClass, string> = {
   other: "Sonstiges",
 };
 
-export const OTHER_EXPENSE_CLASS: Record<OtherExpenseClass, string> = {
-  account_fee: "Kontoführung (Pauschale)",
-  application: "Bewerbung",
-  ferry_flight: "Fähr- und Flugkosten",
-  other: "Sonstiges",
-};
-
 /** A wage-replacement benefit paid by an authority (Progressionsvorbehalt, D102). */
 export const REPLACEMENT_BENEFIT: Record<ReplacementBenefit, string> = {
   elterngeld: "Elterngeld",
@@ -586,11 +668,6 @@ export const REPLACEMENT_BENEFIT: Record<ReplacementBenefit, string> = {
   arbeitslosengeld: "Arbeitslosengeld",
   kurzarbeitergeld: "Kurzarbeitergeld",
   other: "Andere Lohnersatzleistung",
-};
-
-export const COMMUTE_KIND: Record<CommuteKind, string> = {
-  first_workplace: "Erste Tätigkeitsstätte",
-  collection_point: "Sammelpunkt oder weiträumiges Tätigkeitsgebiet",
 };
 
 /** The Anlage N draft's status: where the pay comes from. */

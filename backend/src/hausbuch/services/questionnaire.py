@@ -26,7 +26,8 @@ the key's scope):
   (`questionnaire.scope_invalid`).
 
 Reads: `questionnaire_view(conn, tax_year)` (GET /tax/questionnaire: every slot with last
-year's answer, the proposed rows and the items to reconfirm, plus the progress), and
+year's answer, the proposed rows, the items to reconfirm and this year's current answer, plus
+the progress), and
 `questionnaire_progress` / `current_answers` for the estimate and the Zu prüfen card.
 """
 
@@ -52,6 +53,7 @@ from hausbuch.rules.tax.anlage_n._base import rules_for
 from hausbuch.schemas.common import Schema, TaxYear
 from hausbuch.schemas.employment import (
     HOUSEHOLD_KINDS,
+    Question,
     QuestionnaireAnswer,
     QuestionnaireAnswerCreate,
     QuestionnaireProgress,
@@ -77,14 +79,28 @@ _SUPERSEDED_ONCE = "questionnaire_answer_supersedes_id_key"
 _SLOT = ("question_key", "tax_year", "owner_id", "property_id")
 
 
+class QuestionnaireSlot(QuestionPrefill):
+    """One slot of the viewed year: what last year leaves (QuestionPrefill) plus the slot's
+    current answer of this year, if any, so the screen can show it and correct it with a new
+    answer whose supersedes_id names it. The rows written with an answer are not linked to it;
+    the screen reads the slot's current rows from /return-inputs and the property's
+    /tax-inputs."""
+
+    current_answer: QuestionnaireAnswer | None = None
+
+
 class QuestionnaireView(Schema):
-    """GET /tax/questionnaire: the year's slots in file order (owners in name order) and the
-    progress. reused_from is set when the year has no file of its own."""
+    """GET /tax/questionnaire: the year's questions and slots in file order (owners in name
+    order) and the progress. reused_from is set when the year has no file of its own. questions
+    are the file's (texts, answer type, choices, targets, carry-forward), each once; a slot
+    names its question by key, so the screen renders the question from the data, never from
+    its own copy (phase 4b §10, principle 5)."""
 
     tax_year: TaxYear
     version: str
     reused_from: TaxYear | None = None
-    slots: list[QuestionPrefill]
+    questions: list[Question]
+    slots: list[QuestionnaireSlot]
     progress: QuestionnaireProgress
     reminders: list[str]
 
@@ -176,11 +192,19 @@ def questionnaire_view(conn: Connection, tax_year: int) -> QuestionnaireView:
         prior_tax_rows=_private_costs(conn, tax_year - 1),
         rule_set=rules_for(tax_year),
     )
+    by_slot = {(a.question_key, a.owner_id, a.property_id): a for a in answers}
     return QuestionnaireView(
         tax_year=tax_year,
         version=q.version,
         reused_from=q.reused_from,
-        slots=slots,
+        questions=q.questions,
+        slots=[
+            QuestionnaireSlot(
+                **dict(s),
+                current_answer=by_slot.get((s.key, s.owner_id, s.property_id)),
+            )
+            for s in slots
+        ],
         progress=rules.progress(tax_year, q, answers, owners, properties),
         reminders=rules.reminders(answers, q),
     )
