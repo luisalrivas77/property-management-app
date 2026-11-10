@@ -308,11 +308,20 @@ class PrivateCostValue(Schema):
     """A rental cost paid from a private account (phase 4b D111): trips to the flat, postage,
     a landlords' association, software and the like; tax_year on the row is the year paid.
     travel: trips × km_round_trip × the rule set's travel_rate_per_km (no amount typed);
-    every other class: amount × share. The label is free text: it stays in the row and never
-    enters the event payload (only amounts and codes do)."""
+    every other class: amount × share. financing (phase 4b D134) is a Geldbeschaffungskosten
+    bill paid privately, such as the notary and land registry for the Grundschuld: it goes to
+    wk.financing_costs, every other class to wk.other. The label is free text: it stays in the
+    row and never enters the event payload (only amounts and codes do)."""
 
     cost_class: Literal[
-        "travel", "postage", "advertising", "association", "legal_insurance", "software", "other"
+        "travel",
+        "postage",
+        "advertising",
+        "association",
+        "legal_insurance",
+        "software",
+        "financing",
+        "other",
     ]
     label: str = Field(min_length=1, max_length=120)
     amount: NonNegativeMoney | None = None
