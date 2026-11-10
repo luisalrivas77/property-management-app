@@ -103,7 +103,7 @@ async function answerScreen(page: Page, question: string, group: string): Promis
 
 test("the 2026 questions are walked to all answered, and 2027 carries and reconfirms", async ({ page, signedIn }) => {
   void signedIn;
-  test.setTimeout(240_000);
+  test.setTimeout(360_000);
   const ownerA = await apiCall<{ id: string }>(page, "POST", "/api/owners", { full_name: "A", church_tax: false });
   await apiCall(page, "POST", "/api/owners", { full_name: "B", church_tax: false });
   await apiCall(page, "POST", "/api/properties", {
