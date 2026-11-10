@@ -174,6 +174,27 @@ function Row({ label, amount, strong }: { label: ReactNode; amount: string; stro
   );
 }
 
+const MONTH_NAMES = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+
+/** "2026-03" → "März 2026" (the API sends the birth month only, never the day). */
+function monthName(born: string): string {
+  const match = /^(\d{4})-(\d{2})$/.exec(born);
+  return match ? `${MONTH_NAMES[Number(match[2]) - 1] ?? match[2]} ${match[1]}` : born;
+}
+
+/** "Kind ab März 2026 (10 Monate)" for a child born in the year, else "Kind geb. Mai 2019
+ * (12 Monate)"; children with no month in the year are left out, as the rule leaves them. */
+function childrenLabel(estimate: ReturnEstimate): string {
+  const counted = (estimate.children ?? []).filter((child) => child.months > 0);
+  const parts = counted.map((child) => {
+    const months = `${child.months} ${child.months === 1 ? "Monat" : "Monate"}`;
+    return child.born_month.startsWith(`${estimate.tax_year}-`)
+      ? `Kind ab ${monthName(child.born_month)} (${months})`
+      : `Kind geb. ${monthName(child.born_month)} (${months})`;
+  });
+  return parts.length > 0 ? parts.join(", ") : `Kinder (${estimate.assessed.children?.months ?? 0} Monate)`;
+}
+
 /** The chain from the Einkünfte to the result, every figure as the API sent it. */
 function Breakdown({ estimate, owners, properties }: { estimate: ReturnEstimate; owners: Owner[]; properties: Property[] }) {
   const a = estimate.assessed;
@@ -222,8 +243,8 @@ function Breakdown({ estimate, owners, properties }: { estimate: ReturnEstimate;
         {children ? (
           <li className="tax-estimate-note">
             {children.favourable === "kindergeld"
-              ? `Kinder (${children.months} Monate): Kindergeld ${formatMoney(children.kindergeld)} günstiger als die Freibeträge (Ersparnis ${formatMoney(children.saving)})`
-              : `Kinder (${children.months} Monate): Freibeträge ${formatMoney(children.allowances)} günstiger als das Kindergeld ${formatMoney(children.kindergeld)} (Ersparnis ${formatMoney(children.saving)})`}
+              ? `${childrenLabel(estimate)}: Kindergeld ${formatMoney(children.kindergeld)} günstiger als die Freibeträge (Ersparnis ${formatMoney(children.saving)})`
+              : `${childrenLabel(estimate)}: Freibeträge ${formatMoney(children.allowances)} günstiger als das Kindergeld ${formatMoney(children.kindergeld)} (Ersparnis ${formatMoney(children.saving)})`}
           </li>
         ) : null}
         <Row label="Steuerermäßigung § 35a" amount={a.credit_35a} />

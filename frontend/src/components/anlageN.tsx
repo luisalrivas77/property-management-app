@@ -16,6 +16,7 @@ import type { components } from "@/api/types";
 
 import { formatDate, formatDecimal, formatMoney } from "./format";
 import { ANLAGE_N_STATUS, RETURN_INPUT_KIND, WARNING_TEXT } from "./labels";
+import { BlockRows, hasBlocks } from "./anlageNBlocks";
 import { InputsPanel, type ReturnInput } from "./returnInputs";
 import { ReturnEstimateCard, useReturnEstimate, type ReturnEstimate } from "./returnEstimate";
 import { SourcesButton } from "./tax";
@@ -355,17 +356,14 @@ function CostsCard({ draft }: { draft: AnlageNDraft }) {
   const totals = ["wk.itemised", "wk.allowance", "wk.applied"]
     .map((key) => all.find((line) => line.key === key))
     .filter((line): line is DraftLine => line !== undefined);
+  const blocks = draft.components;
   return (
     <section className="card tax-lines" aria-label="Werbungskosten">
       <h2>Werbungskosten</h2>
-      {items.length === 0 ? (
-        <p className="muted">Noch keine Werbungskosten eingetragen; es gilt der Arbeitnehmer-Pauschbetrag.</p>
+      {hasBlocks(blocks) ? (
+        <BlockRows blocks={blocks} year={draft.tax_year} />
       ) : (
-        <ul className="tax-line-list">
-          {items.map((line) => (
-            <LineItem key={line.key} line={line} label={routeLabel(line)} />
-          ))}
-        </ul>
+        <p className="muted">Noch keine Werbungskosten eingetragen; es gilt der Arbeitnehmer-Pauschbetrag.</p>
       )}
       <ul className="tax-line-list">
         {totals.map((line) => (
@@ -373,10 +371,20 @@ function CostsCard({ draft }: { draft: AnlageNDraft }) {
         ))}
       </ul>
       <p className="tax-subline">{comparison(draft)}</p>
-      <p className="muted tax-subline">
-        Die Entfernungs- und die Homeoffice-Pauschale stehen nur als Tage und Kilometer auf dem Formular; ihr Betrag ist im
-        Einzelnachweis enthalten.
-      </p>
+      {items.length > 0 ? (
+        <details className="tax-form-lines">
+          <summary>Formularzeilen</summary>
+          <ul className="tax-line-list">
+            {items.map((line) => (
+              <LineItem key={line.key} line={line} label={routeLabel(line)} />
+            ))}
+          </ul>
+          <p className="muted tax-subline">
+            Die Entfernungs- und die Homeoffice-Pauschale stehen nur als Tage und Kilometer auf dem Formular; ihr Betrag ist
+            im Einzelnachweis enthalten.
+          </p>
+        </details>
+      ) : null}
     </section>
   );
 }

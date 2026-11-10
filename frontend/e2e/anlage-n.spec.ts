@@ -115,8 +115,14 @@ test("the Anlage N tab saves every kind of input, switches owner and shows the e
   expect(rows.find((row) => row.kind === "work_equipment")?.tax_year).toBe(YEAR);
   expect(rows.find((row) => row.kind === "commute")?.value).toMatchObject({ workplace_label: "Werk Nord", days: 200, km: 20 });
 
-  // The draft now itemises: the Werbungskosten card lists the route and the totals.
+  // The draft now itemises: the Werbungskosten card explains each block and lists the totals;
+  // the form lines (route 1 as days and km) fold out below.
   const costs = page.getByRole("region", { name: "Werbungskosten", exact: true });
+  await expect(costs).toContainText("Werk Nord: Auto: 200 Tage × 20 km × 0,38 € = 1.520,00 €");
+  await expect(costs).toContainText("40 Tage × 6,00 € = 240,00 €");
+  await expect(costs).toContainText("Arbeitsmittel: Laptop");
+  await expect(costs).toContainText("Fortbildung: Fachbuch");
+  await costs.getByText("Formularzeilen").click();
   await expect(costs).toContainText("Arbeitsweg 1");
   const draft = await apiCall<{ wk_itemised: string; wk_applied: string }>(
     page,
