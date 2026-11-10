@@ -11,7 +11,9 @@ accepted attachment brings and records each attempt at a mail:
     waits at pending_balance with its usual card); the import runs in a savepoint, so a
     refusal (an empty file, a statement.* code) leaves the uploaded document in place;
   - a statement that matches no account, several, or cannot be imported stays a document,
-    typed `statement` when untyped, and is listed as `email.statement_unmatched`;
+    typed `statement` when untyped; its card is inferred on read (`inbound_mail_items`: a
+    link without an import to a document typed `statement` that no import has taken since),
+    so no row carries a code for it;
   - anything else gets the upload's proposal (`proposal_for_upload`, when the AI layer is
     on), so the classifier's tenant-data gate applies exactly as for an upload (phase 2
     §5.5: the gate sits in the document_read job, after classification).
@@ -306,7 +308,7 @@ def inbound_mail_items(conn: Connection, now: datetime) -> list[InboxItem]:
 
     - email_received, one per attachment linked in the last 24 h, with its document (and
       import);
-    - email_received for a statement no account took (email.statement_unmatched), shown
+    - email_received for a statement no account took (inferred, no code is stored), shown
       until an import of that document exists, for at most 30 days;
     - email_failed for a mail whose third attempt failed in the last 30 days."""
     imported_docs = select(import_table.c.document_id)

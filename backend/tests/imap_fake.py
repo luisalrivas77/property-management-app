@@ -192,6 +192,10 @@ class FakeServer:
                 body += f" BODYSTRUCTURE {message.bodystructure}".encode()
             for spec in re.findall(r"BODY\.PEEK\[([^\]]*)\]", inner):
                 if spec.startswith("HEADER.FIELDS"):
+                    if spec != f"HEADER.FIELDS ({' '.join(HEADER_FIELDS)})":
+                        # The poll asks for exactly rules.inbound_mail's list (no Subject).
+                        self.violations.append(f"FETCH {spec}")
+                        return f"{tag} BAD header fields\r\n".encode()
                     data = message.header
                 elif re.fullmatch(r"[1-9][0-9]*(\.[1-9][0-9]*)*", spec):
                     data = message.sections[spec]

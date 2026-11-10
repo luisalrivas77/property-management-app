@@ -15,8 +15,8 @@ The guards (D121, §5.5):
 - The client issues only the commands in ALLOWED_COMMANDS: CAPABILITY (imaplib, on
   connect), LOGIN, EXAMINE, UID SEARCH, UID FETCH and LOGOUT. Never SELECT, STORE, COPY,
   MOVE, EXPUNGE, CREATE, DELETE, APPEND, LIST or CLOSE, and no SMTP. A missing label fails
-  the poll with email.label_missing, never a CREATE. tests/db/test_inbound_mail.py runs the
-  poll against a fake server that fails on any other command.
+  the poll with email.label_missing, never a CREATE. tests/db/test_services_inbound_mail.py
+  runs the poll against a fake server that fails on any other command.
 - imaplib.Debug must be 0: at 1 or more imaplib prints the LOGIN line, password included,
   to stderr. A poll refuses to start otherwise.
 - Nothing of the mail is logged: one line per poll with counts and codes
