@@ -564,6 +564,223 @@ DOCS: list[Doc] = [
             "closing_balance": "1695.83",
         },
     ),
+    # Phase 2 D130, D131 (§6.2.1): the general reading and the Verwaltervertrag, on the pairs
+    # the classifier confuses most easily. The title is written by the model (D36), so it is
+    # never an expected value; a general reading states the document date plus the fields
+    # its subtype's group asks (the property's address, or nothing for income tax and the
+    # household finances).
+    Doc(
+        name="verwaltervertrag",
+        type="contract",
+        subtype="management_contract",
+        kind="management_contract",
+        pages=[
+            [
+                "Mietverwaltungsvertrag",
+                "",
+                "zwischen Luis Testkauf und Ana Testkauf (Eigentümer)",
+                "und der Muster Hausverwaltung GmbH, Bahnhofstraße 1, 10117 Berlin (Verwalter)",
+                "",
+                "§ 1 Gegenstand",
+                "Der Verwalter übernimmt die Mietverwaltung der Wohnung",
+                "Lindenstraße 7, 10115 Berlin, WE 3.",
+                "",
+                "§ 2 Vertragsbeginn",
+                "Der Vertrag beginnt am 01.06.2026.",
+                "",
+                "§ 3 Vergütung",
+                "Der Verwalter erhält 30,00 EUR zzgl. MwSt. je Einheit und Monat.",
+                "",
+                "§ 4 Kündigung",
+                "Kündigungsfrist: drei Monate zum Monatsende.",
+                "",
+                "Berlin, den 20.05.2026",
+            ]
+        ],
+        expected={
+            "document_date": "2026-05-20",
+            "manager": "Muster Hausverwaltung GmbH",
+            "street": "Lindenstraße",
+            "house_number": "7",
+            "postal_code": "10115",
+            "start_date": "2026-06-01",
+        },
+    ),
+    # A household letter that fits no subtype: title and date only (D130).
+    Doc(
+        name="schreiben",
+        type="letter",
+        subtype=None,
+        kind="general",
+        pages=[
+            [
+                "Beispiel Post AG - Kundenservice",
+                "Datum: 05.03.2026",
+                "",
+                "Bestätigung Ihres Nachsendeauftrags",
+                "",
+                "Sehr geehrter Herr Testkauf,",
+                "Ihr Nachsendeauftrag vom 01.03.2026 ist ab dem 10.03.2026 für sechs Monate aktiv.",
+                "Mit freundlichen Grüßen",
+                "Ihr Kundenservice",
+            ]
+        ],
+        expected={"document_date": "2026-03-05"},
+    ),
+    # Grundbuchauszug vs Kaufvertrag: the extract cites the purchase contract and its buyers.
+    Doc(
+        name="grundbuchauszug",
+        type="letter",
+        subtype="land_register_extract",
+        kind="general",
+        pages=[
+            [
+                "Amtsgericht Musterstadt - Grundbuch von Mitte",
+                "Wohnungsgrundbuch Blatt 4711",
+                "Amtlicher Ausdruck vom 15.04.2026",
+                "",
+                "Bestandsverzeichnis",
+                "85/1000 Miteigentumsanteil an dem Grundstück",
+                "Lindenstraße 7, 10115 Berlin,",
+                "verbunden mit dem Sondereigentum an der Wohnung Nr. 3",
+                "",
+                "Erste Abteilung - Eigentümer",
+                "Luis Testkauf und Ana Testkauf, je zur Hälfte",
+                "aufgelassen am 12.02.2026 (Kaufvertrag UR-Nr. 1234/2026),",
+                "eingetragen am 01.04.2026",
+                "",
+                "Dritte Abteilung",
+                "Grundschuld zu 260.000,00 EUR für die Musterbank AG",
+            ]
+        ],
+        expected={
+            "document_date": "2026-04-15",
+            "street": "Lindenstraße",
+            "house_number": "7",
+            "postal_code": "10115",
+        },
+    ),
+    # Vorauszahlungsbescheid vs Einkommensteuerbescheid: it names the assessment it follows.
+    # The Steuernummer and the couple's address are invented; the general reading asks
+    # neither (title and date only).
+    Doc(
+        name="vorauszahlungsbescheid",
+        type="bescheid",
+        subtype="prepayment_notice",
+        kind="general",
+        pages=[
+            [
+                "Finanzamt Musterstadt",
+                "Steuernummer 045/815/08154",
+                "Datum 20.06.2027",
+                "",
+                "Herrn und Frau",
+                "Jonas und Lea Beispielmann",
+                "Beispielallee 4",
+                "34117 Kassel",
+                "",
+                "Bescheid über Vorauszahlungen zur Einkommensteuer und zum Solidaritätszuschlag",
+                "für 2027 und die folgenden Kalenderjahre",
+                "",
+                "Grundlage: Einkommensteuerbescheid 2026 vom 14.05.2027",
+                "Die Vorauszahlungen werden wie folgt festgesetzt:",
+                "10.09.2027   Einkommensteuer   1.200,00 EUR",
+                "10.12.2027   Einkommensteuer   1.200,00 EUR",
+            ]
+        ],
+        expected={"document_date": "2027-06-20"},
+    ),
+    # Depotauszug vs Kontoauszug: a securities account with its cash account.
+    Doc(
+        name="depotauszug",
+        type="statement",
+        subtype="depot_statement",
+        kind="general",
+        pages=[
+            [
+                "Beispiel Depotbank AG - Depotauszug zum 30.06.2026",
+                "Depot-Nr. 9876 5432",
+                "Depotinhaber: Luis Testkauf und Ana Testkauf",
+                "",
+                "Bestand         Wertpapier                 Kurs       Kurswert",
+                "12,500 Stk.     Beispiel Welt-Aktien ETF   102,40     1.280,00 EUR",
+                "",
+                f"Verrechnungskonto {IBAN_B}",
+                "Saldo am 30.06.2026                                  2.000,00 EUR",
+                "Depotwert gesamt                                     3.280,00 EUR",
+            ]
+        ],
+        expected={"document_date": "2026-06-30"},
+    ),
+    # Nachtrag vs Mietvertrag: an amendment that cites the lease it changes.
+    Doc(
+        name="nachtrag_mietvertrag",
+        type="contract",
+        subtype="lease_amendment",
+        kind="general",
+        contains_tenant_data=True,
+        pages=[
+            [
+                "Nachtrag Nr. 1 zum Mietvertrag vom 01.05.2026",
+                "",
+                "zwischen Luis Testkauf (Vermieter)",
+                "und Mia Mieterin (Mieterin)",
+                "über die Wohnung Lindenstraße 7, 10115 Berlin, WE 3, Zimmer 2",
+                "",
+                "§ 1 Ab dem 01.09.2026 darf die Mieterin den Kellerraum Nr. 3 mitbenutzen.",
+                "§ 2 Alle übrigen Vereinbarungen des Mietvertrags bleiben unverändert.",
+                "",
+                "Berlin, den 15.08.2026",
+                "Luis Testkauf                     Mia Mieterin",
+            ]
+        ],
+        expected={
+            "document_date": "2026-08-15",
+            "street": "Lindenstraße",
+            "house_number": "7",
+            "postal_code": "10115",
+        },
+    ),
+    # A rental applicant's income proof vs the owners' own payslip: a Mieterselbstauskunft
+    # with the applicant's payslip attached. The address asked is the flat's, never the
+    # applicant's own (Ahornweg).
+    Doc(
+        name="mieterselbstauskunft",
+        type="other",
+        subtype="tenant_self_disclosure",
+        kind="general",
+        contains_tenant_data=True,
+        pages=[
+            [
+                "Mieterselbstauskunft",
+                "für die Wohnung Lindenstraße 7, 10115 Berlin, WE 3, Zimmer 1",
+                "Vermieter: Luis Testkauf",
+                "",
+                "Mietinteressent: Tom Interessent",
+                "Derzeitige Anschrift: Ahornweg 5, 50667 Köln",
+                "Arbeitgeber: Beispiel Software GmbH, unbefristet seit 2022",
+                "Monatliches Nettoeinkommen: 2.400,00 EUR",
+                "Als Einkommensnachweis liegt die Gehaltsabrechnung Juni 2026 bei.",
+                "",
+                "Köln, den 10.07.2026",
+                "Tom Interessent",
+            ],
+            [
+                "Beispiel Software GmbH - Gehaltsabrechnung Juni 2026",
+                "Herrn Tom Interessent, Ahornweg 5, 50667 Köln",
+                "Gesamt-Brutto                 3.600,00",
+                "Lohnsteuer                      520,00",
+                "Sozialversicherung AN           680,00",
+                "Auszahlungsbetrag             2.400,00",
+            ],
+        ],
+        expected={
+            "document_date": "2026-07-10",
+            "street": "Lindenstraße",
+            "house_number": "7",
+            "postal_code": "10115",
+        },
+    ),
 ]
 
 DOCS_BY_NAME = {doc.name: doc for doc in DOCS}

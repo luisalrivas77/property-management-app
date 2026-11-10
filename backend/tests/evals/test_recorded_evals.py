@@ -52,6 +52,8 @@ def _check(doc: Doc, recording: dict) -> None:
     assert result.classification.type.value == doc.type
     assert (result.classification.subtype and result.classification.subtype.value) == doc.subtype
     assert result.kind == ExtractionKind(doc.kind)
+    # the tenant gate's input (D131: every tenancy-group document sets it)
+    assert result.classification.contains_tenant_data is doc.contains_tenant_data
     wrong = {
         name: (result.values[name].value, expected)
         for name, expected in doc.expected.items()
