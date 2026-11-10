@@ -5,6 +5,8 @@ Class from (subtype, type), subtype first:
   (spec amendment 1: evidence of cost in the AfA basis, needed for the §23 gain)
   -> ownership_records;
 - lease, handover_protocol, deposit_record -> tenancy_records;
+- the document catalogue (phase-2.md §6.2.1): its O subtypes -> ownership_records, its M
+  subtypes (the tenancy group) -> tenancy_records;
 - any other typed document -> tax_records; an untyped one is held (untyped).
 
 Every period ends on 31 Dec of (base year + N years) (D11): never earlier than "date + N
@@ -32,6 +34,27 @@ _CLASS_BY_SUBTYPE: dict[DocumentSubtype, RetentionClass] = {
     DocumentSubtype.LEASE: RetentionClass.TENANCY_RECORDS,
     DocumentSubtype.HANDOVER_PROTOCOL: RetentionClass.TENANCY_RECORDS,
     DocumentSubtype.DEPOSIT_RECORD: RetentionClass.TENANCY_RECORDS,
+    # The document catalogue (phase-2.md D130, D131, §6.2.1): records that back the purchase,
+    # the AfA or a contract running for years (O), and the tenancy's papers (M). Every other
+    # catalogue subtype is a tax record, the default.
+    DocumentSubtype.LAND_REGISTER_EXTRACT: RetentionClass.OWNERSHIP_RECORDS,
+    DocumentSubtype.DECLARATION_OF_DIVISION: RetentionClass.OWNERSHIP_RECORDS,
+    DocumentSubtype.LAND_CHARGE_DEED: RetentionClass.OWNERSHIP_RECORDS,
+    DocumentSubtype.ENERGY_CERTIFICATE: RetentionClass.OWNERSHIP_RECORDS,
+    DocumentSubtype.BUILDING_RECORDS: RetentionClass.OWNERSHIP_RECORDS,
+    DocumentSubtype.INSURANCE_POLICY: RetentionClass.OWNERSHIP_RECORDS,
+    DocumentSubtype.MANAGEMENT_CONTRACT: RetentionClass.OWNERSHIP_RECORDS,
+    DocumentSubtype.SERVICE_CONTRACT: RetentionClass.OWNERSHIP_RECORDS,
+    DocumentSubtype.WEG_MINUTES: RetentionClass.OWNERSHIP_RECORDS,
+    DocumentSubtype.REPAYMENT_SCHEDULE: RetentionClass.OWNERSHIP_RECORDS,
+    DocumentSubtype.LOAN_TERMS_CHANGE: RetentionClass.OWNERSHIP_RECORDS,
+    DocumentSubtype.LEASE_AMENDMENT: RetentionClass.TENANCY_RECORDS,
+    DocumentSubtype.RENT_INCREASE: RetentionClass.TENANCY_RECORDS,
+    DocumentSubtype.TERMINATION_NOTICE: RetentionClass.TENANCY_RECORDS,
+    DocumentSubtype.TENANT_SELF_DISCLOSURE: RetentionClass.TENANCY_RECORDS,
+    DocumentSubtype.LANDLORD_CONFIRMATION: RetentionClass.TENANCY_RECORDS,
+    DocumentSubtype.OPERATING_COSTS_STATEMENT: RetentionClass.TENANCY_RECORDS,
+    DocumentSubtype.TENANT_CORRESPONDENCE: RetentionClass.TENANCY_RECORDS,
 }
 
 

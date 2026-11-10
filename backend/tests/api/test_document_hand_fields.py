@@ -14,7 +14,7 @@ import pytest
 from hausbuch.rules.errors import RuleError
 from hausbuch.schemas.ai import ExtractedValue, SourceRef
 from hausbuch.schemas.document import DocumentExtraction, ManualDocumentFields
-from hausbuch.schemas.enums import ExtractionKind
+from hausbuch.schemas.enums import DocumentSubtype, ExtractionKind
 from hausbuch.schemas.extraction import (
     EXTRACTION_MODELS,
     BescheidExtraction,
@@ -24,6 +24,8 @@ from hausbuch.schemas.extraction import (
     LoanContractExtraction,
     StatementExtraction,
     ZinsbescheinigungExtraction,
+    asked_fields,
+    is_hand_only,
     value_kind,
 )
 from hausbuch.services.documents import (
@@ -256,3 +258,41 @@ def test_a_statement_period_out_of_order_shows_neither_end():
     view = hand_fields(_extraction(ExtractionKind.STATEMENT, reading))
     assert (view.values.period_start, view.values.period_end) == (None, None)
     assert hand_fields_into(ExtractionKind.STATEMENT, reading, view.values) is reading
+
+
+# --- The catalogue's two kinds (D130, D131; decided 10 Nov 2026) --------------------------
+
+GENERAL_KINDS = [ExtractionKind.GENERAL, ExtractionKind.MANAGEMENT_CONTRACT]
+
+
+@pytest.mark.parametrize("kind", GENERAL_KINDS)
+def test_the_general_kinds_offer_every_hand_field_a_letter_took_before(kind):
+    # A letter without a reader of its own took all six by hand before the catalogue; the
+    # general reading and a Verwaltervertrag lose none of them.
+    assert list(HAND_FIELD_MAP[kind]) == ALL_SIX
+    reading = EXTRACTION_MODELS[kind]()
+    assert hand_fields(_extraction(kind, reading)).available == ALL_SIX
+
+
+@pytest.mark.parametrize("kind", GENERAL_KINDS)
+def test_the_general_kinds_keep_six_typed_fields_and_show_them_back(kind):
+    typed = ManualDocumentFields(
+        amount_total=Decimal("120.00"),
+        period_start=date(2026, 1, 1),
+        period_end=date(2026, 12, 31),
+        counterparty="Beispiel Hausverwaltung GmbH",
+        reference="VV-2026-7",
+        notes="Kündigung zum Jahresende",
+    )
+    written = hand_fields_into(kind, EXTRACTION_MODELS[kind](), typed)
+    assert hand_fields(_extraction(kind, written)).values == typed
+
+
+@pytest.mark.parametrize("kind", GENERAL_KINDS)
+def test_a_hand_only_field_is_never_asked(kind):
+    model = EXTRACTION_MODELS[kind]
+    hand_only = {name for name in model.model_fields if is_hand_only(model, name)}
+    assert hand_only  # the places of the hand fields the reading does not read
+    assert hand_only <= set(HAND_FIELD_MAP[kind].values())
+    for subtype in (None, *DocumentSubtype):
+        assert not hand_only & set(asked_fields(kind, subtype)), subtype

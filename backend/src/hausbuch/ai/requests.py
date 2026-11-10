@@ -36,11 +36,12 @@ from typing import Any
 
 import anthropic
 
+from hausbuch.rules.extraction_parse import accepted_subtype
 from hausbuch.schemas.ai import AiJob, ClassifyOutput, ConfidenceLevel
 from hausbuch.schemas.allocation import LlmMatchOutput
 from hausbuch.schemas.common import Schema
-from hausbuch.schemas.enums import ExtractionKind
-from hausbuch.schemas.extraction import EXTRACTION_MODELS, ValueKind, value_kind
+from hausbuch.schemas.enums import DocumentSubtype, ExtractionKind
+from hausbuch.schemas.extraction import EXTRACTION_MODELS, ValueKind, asked_fields, value_kind
 from hausbuch.settings import Settings
 
 from .client import ModelRequest
@@ -114,25 +115,34 @@ def classify_request(settings: Settings, document: dict) -> ModelRequest:
     )
 
 
-def extract_request(settings: Settings, kind: ExtractionKind, document: dict) -> ModelRequest:
+def extract_request(
+    settings: Settings,
+    kind: ExtractionKind,
+    document: dict,
+    *,
+    subtype: DocumentSubtype | None = None,
+) -> ModelRequest:
+    """The subtype decides which fields the general reading asks (asked_fields, D131); every
+    other kind asks all of its fields whatever the subtype."""
     prompt = load_prompt("extract")
     return ModelRequest(
         job=AiJob.EXTRACT,
         model=settings.ai_model_extract,
         prompt_version=prompt.version,
         system=prompt.text,
-        content=[document, {"type": "text", "text": field_list(kind)}],
+        content=[document, {"type": "text", "text": field_list(kind, subtype)}],
         max_tokens=EXTRACT_MAX_TOKENS,
         inference_geo=settings.ai_inference_geo,
         effort=EXTRACT_EFFORT,
     )
 
 
-def field_list(kind: ExtractionKind) -> str:
-    """The user turn of an extract request: one `key: meaning (form)` line per field."""
+def field_list(kind: ExtractionKind, subtype: DocumentSubtype | None = None) -> str:
+    """The user turn of an extract request: one `key: meaning (form)` line per asked field."""
     model = EXTRACTION_MODELS[kind]
     lines = ["Fields:"]
-    for name, info in model.model_fields.items():
+    for name in asked_fields(kind, subtype):
+        info = model.model_fields[name]
         meaning = info.description or name
         lines.append(f"{name}: {meaning} ({_FORMS[value_kind(model, name)]})")
     return "\n".join(lines)
@@ -143,7 +153,10 @@ _ENUM_FIELDS = ("type", "subtype", "language", "confidence")
 
 def parse_classification(text: str) -> ClassifyOutput:
     """The classify answer as ClassifyOutput. Enum values are compared case-insensitively (a
-    documented structured-outputs caveat). Raises ValueError when it does not validate."""
+    documented structured-outputs caveat). Raises ValueError when it does not validate. A
+    catalogue subtype on a type with its own reader is dropped here, where the classification
+    is accepted (accepted_subtype, D131), so what is stored, routed and kept follows the
+    type."""
     data = json.loads(text)
     if not isinstance(data, dict):
         raise ValueError("classification is not an object")
@@ -152,7 +165,11 @@ def parse_classification(text: str) -> ClassifyOutput:
         if isinstance(value, str):
             value = value.strip().lower()
             data[key] = None if key == "subtype" and value in ("", "null", "none") else value
-    return ClassifyOutput.model_validate(data)
+    classification = ClassifyOutput.model_validate(data)
+    subtype = accepted_subtype(classification.type, classification.subtype)
+    if subtype is classification.subtype:
+        return classification
+    return classification.model_copy(update={"subtype": subtype})
 
 
 # --- Step 4: categorize and explain ---------------------------------------------------

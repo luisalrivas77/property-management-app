@@ -11,12 +11,19 @@ confidence from the checks that passed. The confidence is never a number the mod
 """
 
 import re
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from hausbuch.schemas.ai import CitedTextBlock, ExtractedValue, SourceRef
 from hausbuch.schemas.enums import DocumentSubtype, DocumentType, ExtractionKind
-from hausbuch.schemas.extraction import EXTRACTION_MODELS, ValueKind, value_kind
+from hausbuch.schemas.extraction import (
+    EXTRACTION_MODELS,
+    TENANCY_GROUP,
+    ValueKind,
+    asked_fields,
+    value_kind,
+)
 
 from .errors import RuleError
 from .iban import normalize_iban
@@ -79,6 +86,8 @@ def parse_lines(
     *,
     page_offset: int = 0,
     reference_year: int | None = None,
+    subtype: DocumentSubtype | None = None,
+    properties: tuple["PropertyAddress", ...] = (),
 ) -> dict[str, ExtractedValue]:
     """The fields an extract response stated, keyed by field name.
 
@@ -88,16 +97,33 @@ def parse_lines(
     for a PDF split into several requests. For the owners' tax documents (SCRUBBED_KINDS: the
     two pay documents and the Einkommensteuerbescheid) the lines and every quote are scrubbed
     of identifiers first (scrub_identifiers, D103, D129), with
-    reference_year (the job clock's year; default: this year) for the birth-date rule.
+    reference_year (the job clock's year; default: this year) for the birth-date rule. The
+    general reading and a Verwaltervertrag (GENERAL_SCRUBBED_KINDS) get scrub_general on
+    every line and every quote (D131, decided 10 Nov 2026). Only `properties`, the
+    workspace's own addresses, are kept: an address the request asked for (asked_fields with
+    `subtype`) keeps its value only when it is a property's, else its value goes and its
+    cited source stays (the pre-fill then links nothing); a contract number shaped like an
+    IBAN or a Steuernummer is not read; a line the model volunteered keeps nothing (PR #135
+    review).
     """
     model = EXTRACTION_MODELS[kind]
     scrub = kind in SCRUBBED_KINDS
+    general = kind in GENERAL_SCRUBBED_KINDS
     lines = _lines(blocks)
     if scrub:
         # Scrubbed together, so a value under a line of labels is seen; the scrub keeps lines.
         texts = scrub_identifiers(
             "\n".join(text for text, _ in lines), reference_year=reference_year
         ).split("\n")
+        lines = [(text, contributors) for text, (_, contributors) in zip(texts, lines, strict=True)]
+    # A line for a field the request did not ask (a hand-only field, or a link field the
+    # subtype does not need) is never a value.
+    link, asked = NO_LINK, frozenset(asked_fields(kind, subtype))
+    if general:
+        link = link_values([text for text, _ in lines], asked, properties)
+        texts = scrub_general_answer("\n".join(text for text, _ in lines), asked, properties).split(
+            "\n"
+        )
         lines = [(text, contributors) for text, (_, contributors) in zip(texts, lines, strict=True)]
     result: dict[str, ExtractedValue] = {}
     for text, contributors in lines:
@@ -107,7 +133,7 @@ def parse_lines(
         key, raw = match.group(1), _without_page_reference(match.group(2).strip())
         if key in _LABELLED_FIELDS:
             raw = _without_number_label(raw)
-        if not raw or raw.casefold() == UNKNOWN:
+        if not raw or raw.casefold() == UNKNOWN or key not in asked:
             result[key] = ExtractedValue.missing()
             continue
         source = _source(blocks, contributors, page_offset)
@@ -115,8 +141,30 @@ def parse_lines(
             source = source.model_copy(
                 update={"quote": scrub_identifiers(source.quote, reference_year=reference_year)}
             )
+        if general and source is not None:
+            source = source.model_copy(
+                update={"quote": scrub_general(source.quote, properties, link.contract_number)}
+            )
+        if general and key == "contract_number" and link.contract_number is None:
+            result[key] = ExtractedValue.missing()  # an identifier read as the number
+            continue
+        if general and key in _ADDRESS_FIELDS and not link.address_matches:
+            # A stated address that is no property's; a line the model wrote "unbekannt" (now
+            # "…" like every unkept address line) is simply missing.
+            read = key in link.address_read
+            result[key] = _unmatched_address(source) if read else ExtractedValue.missing()
+            continue
         result[key] = _extracted(raw, value_kind(model, key), source)
     return result
+
+
+def _unmatched_address(source: SourceRef | None) -> ExtractedValue:
+    """An address line of a general reading that is no property's (an owner's home read as
+    the property): its value goes, and the cited source stays, so the pre-fill knows an
+    address was read and links nothing (prefill.address_unmatched)."""
+    if source is None:
+        return ExtractedValue.missing()
+    return ExtractedValue(value=None, source=source, checks=["cited"], confidence="low")
 
 
 def _without_page_reference(raw: str) -> str:
@@ -498,8 +546,231 @@ def _birth_date(match: re.Match[str], reference_year: int) -> str:
     return SCRUBBED if year <= reference_year - _BIRTH_DATE_YEARS else match.group(0)
 
 
+# --- the general reading's scrub (D131, decided 10 Nov 2026) -----------------------------
+
+# The general reading and a Verwaltervertrag are scrubbed too: a Vorauszahlungsbescheid
+# prints the Steuernummer and the owners' home address, a tenant's Selbstauskunft the
+# applicant's. The model cites whole passages, so every quote can carry them.
+GENERAL_SCRUBBED_KINDS = frozenset({ExtractionKind.GENERAL, ExtractionKind.MANAGEMENT_CONTRACT})
+# The fields a general reading links a property by, and the loan's number. Their lines are
+# kept only when they hold a property's own address or a contract number that is no
+# identifier; every other value goes (PR #135 review, F1 and F2). The lender is scrubbed like
+# any other line: the bank's name stays, a customer number or an address beside it goes.
+_ADDRESS_FIELDS = frozenset({"street", "house_number", "postal_code"})
+_LINK_VALUE_FIELDS = _ADDRESS_FIELDS | {"contract_number"}
+_ID_PATTERNS = _PATTERNS[:-2]  # everything but the two address patterns, in their order
+_STREET, _POSTAL_TOWN = _PATTERNS[-2:]
+# A contract number shaped like an IBAN or a Steuernummer (with slashes) is an identifier,
+# not a loan's number: it counts as not read.
+_IDENTIFIER_SHAPES = (_PATTERNS[3], _PATTERNS[4])
+_KEEP_MARK = ""  # private-use characters: no pattern matches them
+
+
+@dataclass(frozen=True)
+class PropertyAddress:
+    """A property's address as the workspace stores it: the only street, house number and
+    postal code a general reading keeps. The job loads them before parsing; they are never
+    taken from the model's lines."""
+
+    street: str
+    house_number: str
+    postal_code: str
+
+
+@dataclass(frozen=True)
+class LinkValues:
+    """What a general reading's link lines decide (link_values): whether it read an address,
+    whether that address is one of the workspace's properties, and the contract number it
+    read when that number is no identifier (it stays in every quote, so the loan can still be
+    linked by it)."""
+
+    address_read: frozenset[str] = frozenset()  # the address fields with a stated value
+    address_matches: bool = False
+    contract_number: str | None = None
+
+
+NO_LINK = LinkValues()
+
+
+def street_key(value: object) -> str:
+    """Casefolded (ß as ss), spaces, hyphens and dots removed, and a street ending in the
+    abbreviation "str" spelled out: "Lindenstr.", "Linden-Straße" and "Lindenstrasse" are
+    one key."""
+    key = re.sub(r"[\s.\-]", "", str(value).casefold())
+    return f"{key}asse" if key.endswith("str") else key
+
+
+def house_number_key(value: object) -> str:
+    """Casefolded, spaces and trailing dots removed: "12 a" is "12a". A hyphen or slash
+    stays significant, so "1-2" (or "1 - 2") is never "12" (review, 7 Nov 2026)."""
+    return re.sub(r"\s", "", str(value).casefold()).rstrip(".")
+
+
+def _postal_key(value: object) -> str:
+    return "".join(str(value).split())
+
+
+_ADDRESS_KEYS = {
+    "street": street_key,
+    "house_number": house_number_key,
+    "postal_code": _postal_key,
+}
+
+
+def link_values(
+    texts: list[str], asked: frozenset[str], properties: tuple[PropertyAddress, ...] = ()
+) -> LinkValues:
+    """The link lines of an answer (unscrubbed), of the fields the request asked for only.
+    The address read matches when one property has every address field read (street and
+    house number by key, the postal code as written); a contract number counts only when it
+    is not shaped like an IBAN or a Steuernummer."""
+    found: dict[str, str] = {}
+    for text in texts:
+        match = _KEY_LINE.fullmatch(text)
+        if match is None or match.group(1) not in _LINK_VALUE_FIELDS & asked:
+            continue
+        raw = _without_page_reference(match.group(2).strip())
+        if match.group(1) == "contract_number":
+            raw = _without_number_label(raw)
+        if raw and raw.casefold() != UNKNOWN:
+            found[match.group(1)] = raw
+    number = found.get("contract_number")
+    if number is not None and _is_identifier(number):
+        number = None
+    read = {key: value for key, value in found.items() if key in _ADDRESS_FIELDS}
+    return LinkValues(
+        address_read=frozenset(read),
+        address_matches=bool(read) and any(_fits(read, p) for p in properties),
+        contract_number=number,
+    )
+
+
+def _is_identifier(number: str) -> bool:
+    return any(shape.search(number.upper()) for shape in _IDENTIFIER_SHAPES)
+
+
+def _fits(read: dict[str, str], prop: PropertyAddress) -> bool:
+    stored = {"street": prop.street, "house_number": prop.house_number}
+    stored["postal_code"] = prop.postal_code
+    return all(
+        _ADDRESS_KEYS[name](value) == _ADDRESS_KEYS[name](stored[name])
+        for name, value in read.items()
+    )
+
+
+def scrub_general(
+    text: str,
+    properties: tuple[PropertyAddress, ...] = (),
+    contract_number: str | None = None,
+) -> str:
+    """The text without identifiers or a person's address, for the general reading and a
+    Verwaltervertrag (D131, decided 10 Nov 2026): the labelled identifiers and those of
+    D103/D129 (Steuernummer in both forms, Identifikationsnummer, Sozialversicherungsnummer,
+    eTIN, IBAN, a run of nine or more digits), a labelled birth date, and every street with
+    its number and postal code with its town but a property's own (`properties`: the
+    workspace's addresses, never what the model read). An unlabelled old date stays: a
+    Teilungserklärung or a building's records may be decades old, and their date is the
+    document's own. `contract_number`, a loan number link_values accepted, stays wherever it
+    stands on its own, so a loan can still be linked by it. Pure and idempotent; lines are
+    kept."""
+    protected = _protected_contract_number(contract_number)
+    if protected is not None:
+        text = protected.sub(_KEEP_MARK, text)
+    text = _under_labels(text)
+    text = _LABELLED.sub(lambda m: f"{m.group('label')}{m.group('sep')}{SCRUBBED}", text)
+    for pattern in _ID_PATTERNS:
+        text = pattern.sub(SCRUBBED, text)
+    text = _STREET.sub(
+        lambda m: m.group(0) if _is_property_street(m, properties) else SCRUBBED, text
+    )
+    text = _POSTAL_TOWN.sub(
+        lambda m: m.group(0) if _is_property_postal(m.group(0), properties) else SCRUBBED, text
+    )
+    if protected is not None and contract_number is not None:
+        text = text.replace(_KEEP_MARK, contract_number.strip())
+    return text
+
+
+# A contract number shorter than this is not protected: a short one ("12") would hide the
+# digits of an identifier from the patterns.
+_PROTECTED_MIN_LENGTH = 4
+
+
+def _protected_contract_number(number: str | None) -> re.Pattern[str] | None:
+    """The read contract number as it stands in the text on its own, not inside a longer
+    number or word."""
+    if number is None or len(number.strip()) < _PROTECTED_MIN_LENGTH:
+        return None
+    return re.compile(rf"(?<![A-Za-z0-9]){re.escape(number.strip())}(?![A-Za-z0-9])")
+
+
+def _is_property_street(match: re.Match[str], properties: tuple[PropertyAddress, ...]) -> bool:
+    """The street match is a property's street and house number, compared by key, with the
+    words before the match where the property's street has more of them ("Berliner Straße"
+    stored, "Straße 7" matched)."""
+    name, _, number = " ".join(match.group(0).split()).rpartition(" ")
+    words = match.string[: match.start()].split()
+    for prop in properties:
+        if house_number_key(number) != house_number_key(prop.house_number):
+            continue
+        wanted = street_key(prop.street)
+        if street_key(name) == wanted:
+            return True
+        extra = len(prop.street.split()) - 1
+        for count in range(1, min(extra, len(words)) + 1):
+            if street_key(" ".join([*words[-count:], name])) == wanted:
+                return True
+    return False
+
+
+def _is_property_postal(found: str, properties: tuple[PropertyAddress, ...]) -> bool:
+    return any(found.split()[0] == _postal_key(p.postal_code) for p in properties)
+
+
+def scrub_general_answer(
+    text: str, asked: frozenset[str], properties: tuple[PropertyAddress, ...] = ()
+) -> str:
+    """A general reading's raw answer as ai_call keeps it: every line scrubbed (scrub_general)
+    but an asked address line when the address read is a property's, and an asked contract
+    number line when the number is no identifier, which are kept as written. Any other
+    address or contract number line, asked or volunteered, keeps its key only."""
+    lines = text.split("\n")
+    link = link_values(lines, asked, properties)
+    scrubbed = scrub_general("\n".join(lines), properties, link.contract_number).split("\n")
+    return "\n".join(
+        _answer_line(line, clean, asked, link) for line, clean in zip(lines, scrubbed, strict=True)
+    )
+
+
+def _answer_line(line: str, clean: str, asked: frozenset[str], link: LinkValues) -> str:
+    """An asked address line of a property's address, or an asked contract number that is no
+    identifier, as written; any other address or contract number line with its value gone
+    (an owner's home read as the property, a line the model volunteered, an IBAN read as the
+    number); any other line scrubbed."""
+    match = _KEY_LINE.fullmatch(line)
+    if match is None or match.group(1) not in _LINK_VALUE_FIELDS:
+        return clean
+    key = match.group(1)
+    kept = key in asked and (
+        link.address_matches if key in _ADDRESS_FIELDS else link.contract_number is not None
+    )
+    return line if kept else f"{key}: {SCRUBBED}"
+
+
 # --- Which field set a classified document gets -----------------------------------------
 
+# The catalogue's invoices keep the invoice reader (amount, due date; D131).
+_CATALOGUE_INVOICES = (
+    DocumentSubtype.UTILITY_BILL,
+    DocumentSubtype.HOUSEHOLD_SERVICES_INVOICE,
+    DocumentSubtype.WORK_EXPENSE_INVOICE,
+)
+# The subtypes that existed before the catalogue, read by their own kind or by their type.
+_READ_BY_TYPE = (
+    DocumentSubtype.PRICE_SPLIT_EVIDENCE,
+    DocumentSubtype.APPRAISAL,
+    DocumentSubtype.COST_BASIS_EVIDENCE,
+)
 _BY_SUBTYPE: dict[DocumentSubtype, ExtractionKind] = {
     DocumentSubtype.PURCHASE_CONTRACT: ExtractionKind.PURCHASE_CONTRACT,
     DocumentSubtype.LOAN_CONTRACT: ExtractionKind.LOAN_CONTRACT,
@@ -508,6 +779,16 @@ _BY_SUBTYPE: dict[DocumentSubtype, ExtractionKind] = {
     DocumentSubtype.DEPOSIT_RECORD: ExtractionKind.DEPOSIT_RECORD,
     DocumentSubtype.GRUNDSTEUERBESCHEID: ExtractionKind.GRUNDSTEUERBESCHEID,
     DocumentSubtype.EINKOMMENSTEUERBESCHEID: ExtractionKind.EINKOMMENSTEUERBESCHEID,
+    DocumentSubtype.MANAGEMENT_CONTRACT: ExtractionKind.MANAGEMENT_CONTRACT,  # D130
+    **dict.fromkeys(_CATALOGUE_INVOICES, ExtractionKind.INVOICE),
+}
+# Every other subtype of the catalogue (§6.2.1) is read by the general reading, whatever its
+# type: a depot_statement is never read as the rental account's statement, a
+# prepayment_notice never as a Nebenkosten Bescheid (D131).
+_BY_SUBTYPE |= {
+    subtype: ExtractionKind.GENERAL
+    for subtype in DocumentSubtype
+    if subtype not in _BY_SUBTYPE and subtype not in _READ_BY_TYPE
 }
 _BY_TYPE: dict[DocumentType, ExtractionKind] = {
     DocumentType.INVOICE: ExtractionKind.INVOICE,
@@ -520,18 +801,67 @@ _BY_TYPE: dict[DocumentType, ExtractionKind] = {
     DocumentType.GEHALTSABRECHNUNG: ExtractionKind.GEHALTSABRECHNUNG,
 }
 
-# The classifier's types that hold tenant data whatever the upload said (§5.5 step 3).
+# The classifier's types that hold tenant data whatever the upload said (§5.5 step 3): the
+# lease and its papers, and every subtype of the catalogue's tenancy group (D131).
 TENANT_SUBTYPES = frozenset(
-    {DocumentSubtype.LEASE, DocumentSubtype.HANDOVER_PROTOCOL, DocumentSubtype.DEPOSIT_RECORD}
+    {
+        DocumentSubtype.LEASE,
+        DocumentSubtype.HANDOVER_PROTOCOL,
+        DocumentSubtype.DEPOSIT_RECORD,
+        *TENANCY_GROUP,
+    }
 )
 
 
-def extraction_kind(type_: DocumentType, subtype: DocumentSubtype | None) -> ExtractionKind | None:
-    """The field set to extract for a classified document; None means typing only (a letter,
-    an appraisal, `other`). The subtype wins over the type (a Grundsteuerbescheid is a
-    bescheid with its own field set)."""
+# The subtypes that existed before the catalogue (0020's list); the rest are the catalogue's.
+_BEFORE_CATALOGUE = frozenset(
+    {
+        DocumentSubtype.PURCHASE_CONTRACT,
+        DocumentSubtype.PRICE_SPLIT_EVIDENCE,
+        DocumentSubtype.APPRAISAL,
+        DocumentSubtype.LOAN_CONTRACT,
+        DocumentSubtype.LEASE,
+        DocumentSubtype.HANDOVER_PROTOCOL,
+        DocumentSubtype.DEPOSIT_RECORD,
+        DocumentSubtype.COST_BASIS_EVIDENCE,
+        DocumentSubtype.GRUNDSTEUERBESCHEID,
+        DocumentSubtype.EINKOMMENSTEUERBESCHEID,
+    }
+)
+CATALOGUE_SUBTYPES = frozenset(set(DocumentSubtype) - _BEFORE_CATALOGUE)
+# The types with a reader of their own that no catalogue subtype overrides (D131, decided 10
+# Nov 2026 after the first eval recording read an owner's Lohnsteuerbescheinigung as an
+# Arbeitgeberbescheinigung, which subtype-first routing would have read for title and date
+# only). A statement, Bescheid, invoice, letter, contract or `other` still yields to one.
+DEDICATED_TYPES = frozenset(
+    {
+        DocumentType.LOHNSTEUERBESCHEINIGUNG,
+        DocumentType.GEHALTSABRECHNUNG,
+        DocumentType.ZINSBESCHEINIGUNG,
+        DocumentType.WIRTSCHAFTSPLAN,
+        DocumentType.HAUSGELDABRECHNUNG,
+    }
+)
+
+
+def accepted_subtype(
+    type_: DocumentType, subtype: DocumentSubtype | None
+) -> DocumentSubtype | None:
+    """The subtype a classification keeps: a catalogue subtype on a dedicated type is dropped,
+    so the type's reader, the retention and the proposal's typing follow the type. A
+    subtype of the tenancy group is kept: it is the tenant gate's signal, and a tenant's
+    payslip read as the owners' would propose an owner's pay (D131, PR #128 review). The
+    subtypes from before the catalogue are kept as they always were."""
+    if subtype in CATALOGUE_SUBTYPES and type_ in DEDICATED_TYPES and subtype not in TENANCY_GROUP:
+        return None
+    return subtype
+
+
+def extraction_kind(type_: DocumentType, subtype: DocumentSubtype | None) -> ExtractionKind:
+    """The field set to extract for a classified document. The subtype wins over the type (a
+    Grundsteuerbescheid is a bescheid with its own field set, a Depotauszug a statement read
+    for title and date only). A type without a reader of its own (a contract the classifier
+    could not place, a letter, `other`) gets the general reading: title and date (D130)."""
     if subtype is not None and subtype in _BY_SUBTYPE:
         return _BY_SUBTYPE[subtype]
-    if type_ == DocumentType.CONTRACT:
-        return None  # a contract the classifier could not place: typing only
-    return _BY_TYPE.get(type_)
+    return _BY_TYPE.get(type_, ExtractionKind.GENERAL)

@@ -83,8 +83,8 @@ def test_value_without_digits_is_never_in_quote():
             ExtractionKind.PURCHASE_CONTRACT,
         ),
         (DocumentType.CONTRACT, DocumentSubtype.LOAN_CONTRACT, ExtractionKind.LOAN_CONTRACT),
-        (DocumentType.CONTRACT, None, None),
-        (DocumentType.CONTRACT, DocumentSubtype.APPRAISAL, None),
+        (DocumentType.CONTRACT, None, ExtractionKind.GENERAL),  # D130
+        (DocumentType.CONTRACT, DocumentSubtype.APPRAISAL, ExtractionKind.GENERAL),
         (DocumentType.INVOICE, DocumentSubtype.COST_BASIS_EVIDENCE, ExtractionKind.INVOICE),
         (DocumentType.BESCHEID, DocumentSubtype.COST_BASIS_EVIDENCE, ExtractionKind.BESCHEID),
         (
@@ -94,8 +94,8 @@ def test_value_without_digits_is_never_in_quote():
         ),
         (DocumentType.WIRTSCHAFTSPLAN, None, ExtractionKind.WIRTSCHAFTSPLAN),
         (DocumentType.LETTER, DocumentSubtype.HANDOVER_PROTOCOL, ExtractionKind.HANDOVER_PROTOCOL),
-        (DocumentType.LETTER, None, None),
-        (DocumentType.OTHER, None, None),
+        (DocumentType.LETTER, None, ExtractionKind.GENERAL),
+        (DocumentType.OTHER, None, ExtractionKind.GENERAL),
     ],
 )
 def test_extraction_kind(type_, subtype, kind):

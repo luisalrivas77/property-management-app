@@ -4,7 +4,14 @@
 For each PDF, JPEG or PNG in HAUSBUCH_EVAL_DIR (or --dir), the classify and extract requests
 are built exactly as the document_read job builds them (hausbuch.evals.reading), sent with
 HAUSBUCH_ANTHROPIC_API_KEY (the `hausbuch-evals` key), and parsed the same way. The reading is
-compared with `<name>.expected.yaml` beside the document:
+compared with `<name>.expected.yaml` beside the document. An optional `properties.yaml` in the
+directory lists the household's property addresses, the ones the job loads from the workspace
+(the general reading keeps only those; PR #135 review):
+
+    properties:
+      - {street: Musterstraße, house_number: '1', postal_code: '12345'}
+
+and the golden file:
 
     kind: purchase_contract
     fields:
@@ -37,7 +44,7 @@ import hausbuch
 from hausbuch.ai import documents
 from hausbuch.ai.client import AnthropicModelClient, ModelCallError, ModelClient, ModelResponse
 from hausbuch.ai.requests import parse_classification
-from hausbuch.rules.extraction_parse import extraction_kind
+from hausbuch.rules.extraction_parse import PropertyAddress, extraction_kind
 from hausbuch.schemas.ai import ExtractedValue
 from hausbuch.schemas.enums import ExtractionKind
 from hausbuch.schemas.extraction import EXTRACTION_MODELS, ValueKind, value_kind
@@ -86,9 +93,16 @@ class Reading:
     error: str | None = None  # an error code, never a message
 
 
-def read_document(client: ModelClient, settings: Settings, data: bytes, media_type: str) -> Reading:
-    """Classify, then extract the classified kind, as document_read does. No retry: a failed
-    call or an unusable answer is reported with its code."""
+def read_document(
+    client: ModelClient,
+    settings: Settings,
+    data: bytes,
+    media_type: str,
+    properties: tuple[PropertyAddress, ...] = (),
+) -> Reading:
+    """Classify, then extract the classified kind, as document_read does, with `properties`
+    as the workspace's addresses. No retry: a failed call or an unusable answer is reported
+    with its code."""
     try:
         classify = classify_request_for(settings, data, media_type)
         response = _send(client, classify)
@@ -99,18 +113,17 @@ def read_document(client: ModelClient, settings: Settings, data: bytes, media_ty
         except ValueError:
             return Reading(error="ai.unparsable")
         kind = extraction_kind(classification.type, classification.subtype)
-        if kind is None:
-            return Reading()  # typing-only: no fields to compare
+        subtype = classification.subtype
         chunks = []
-        for offset, request in extract_requests_for(settings, kind, data, media_type):
+        for offset, request in extract_requests_for(settings, kind, data, media_type, subtype):
             response = _send(client, request)
             if response is None:
                 return Reading(kind=kind, error="ai.refused")
-            values = chunk_values(kind, response, offset)
+            values = chunk_values(kind, response, offset, subtype, properties)
             if not values:
                 return Reading(kind=kind, error="ai.unparsable")
             chunks.append(values)
-        return Reading(kind=kind, values=merged_values(kind, chunks))
+        return Reading(kind=kind, values=merged_values(kind, chunks, subtype))
     except documents.DocumentInputError as exc:
         return Reading(error=exc.code)
     except ModelCallError as exc:  # status and code only; the SDK's message is never used
@@ -158,6 +171,29 @@ def load_golden(path: Path) -> dict[str, Any]:
     if not isinstance(data, dict) or not isinstance(data.get("fields", {}), dict):
         raise ValueError("a golden file is a mapping with `kind` and `fields`")
     return {"kind": data.get("kind"), "fields": data.get("fields") or {}}
+
+
+PROPERTIES_FILE = "properties.yaml"
+
+
+def load_properties(directory: Path) -> tuple[PropertyAddress, ...]:
+    """The addresses in properties.yaml, none without the file. Raises EvalRunError for a
+    file that is not such a list (never with its content)."""
+    path = directory / PROPERTIES_FILE
+    if not path.is_file():
+        return ()
+    yaml = _yaml()
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        return tuple(
+            PropertyAddress(str(p["street"]), str(p["house_number"]), str(p["postal_code"]))
+            for p in data["properties"]
+        )
+    except (yaml.YAMLError, UnicodeDecodeError, KeyError, TypeError):
+        raise EvalRunError(
+            f"{PROPERTIES_FILE} must hold `properties:` with street, house_number and "
+            "postal_code per property"
+        ) from None
 
 
 def write_golden(path: Path, reading: Reading) -> None:
@@ -311,6 +347,7 @@ def run(
     out = out or sys.stdout
     directory = check_directory(options.directory)
     paths = documents_in(directory, options.names)
+    properties = load_properties(directory)
     if not paths:
         print("No PDF, JPEG or PNG documents in the eval directory.", file=out)
         return 1
@@ -330,7 +367,7 @@ def run(
             continue
         media_type = MEDIA_TYPES[path.suffix.lower()]
         try:
-            reading = read_document(client, settings, path.read_bytes(), media_type)
+            reading = read_document(client, settings, path.read_bytes(), media_type, properties)
         except Exception as exc:  # a bug or the SDK: the class only, never a message
             reading = Reading(error=type(exc).__name__)
         kind = "-" if reading.kind is None else reading.kind.value

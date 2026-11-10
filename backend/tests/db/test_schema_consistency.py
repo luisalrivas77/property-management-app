@@ -101,6 +101,15 @@ def test_enum_matches_check_constraint(connect, table, column):
         assert _allowed_values(conn, table, column) == {m.value for m in COLUMNS[(table, column)]}
 
 
+def test_proposal_kind_is_every_extraction_kind_but_manual(connect):
+    # A proposal is made from a reading; a manual extraction never is pre-filled, so its CHECK
+    # lists every ExtractionKind but `manual`: a new kind (D130's general, management_contract)
+    # must reach both constraints.
+    with connect(OWNER) as conn:
+        allowed = _allowed_values(conn, "proposal", "kind")
+    assert allowed == {m.value for m in E.ExtractionKind} - {E.ExtractionKind.MANUAL.value}
+
+
 def test_link_targets_match_document_link_columns(connect):
     with connect(OWNER) as conn:
         cols = {

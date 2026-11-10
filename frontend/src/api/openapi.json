@@ -9743,6 +9743,12 @@
               },
               {
                 "$ref": "#/components/schemas/IncomeTaxAssessmentExtraction"
+              },
+              {
+                "$ref": "#/components/schemas/GeneralExtraction"
+              },
+              {
+                "$ref": "#/components/schemas/ManagementContractExtraction"
               }
             ],
             "title": "Fields"
@@ -9854,7 +9860,47 @@
           "deposit_record",
           "cost_basis_evidence",
           "grundsteuerbescheid",
-          "einkommensteuerbescheid"
+          "einkommensteuerbescheid",
+          "land_register_extract",
+          "declaration_of_division",
+          "land_charge_deed",
+          "energy_certificate",
+          "building_records",
+          "insurance_policy",
+          "management_contract",
+          "service_contract",
+          "weg_minutes",
+          "weg_invitation",
+          "special_levy",
+          "repayment_schedule",
+          "loan_terms_change",
+          "loan_statement",
+          "lease_amendment",
+          "rent_increase",
+          "termination_notice",
+          "tenant_self_disclosure",
+          "landlord_confirmation",
+          "operating_costs_statement",
+          "tenant_correspondence",
+          "utility_bill",
+          "quote",
+          "chimney_sweep_notice",
+          "prepayment_notice",
+          "tax_return_copy",
+          "donation_receipt",
+          "childcare_invoice",
+          "household_services_invoice",
+          "insurance_contribution_certificate",
+          "pension_contribution_certificate",
+          "benefit_notice",
+          "child_benefit_notice",
+          "employment_contract",
+          "employer_certificate",
+          "work_expense_invoice",
+          "depot_statement",
+          "depot_report",
+          "trade_confirmation",
+          "capital_income_tax_certificate"
         ],
         "title": "DocumentSubtype",
         "description": "Finer typing where retention or the AfA basis depends on it."
@@ -11152,7 +11198,9 @@
           "statement",
           "lohnsteuerbescheinigung",
           "gehaltsabrechnung",
-          "einkommensteuerbescheid"
+          "einkommensteuerbescheid",
+          "general",
+          "management_contract"
         ],
         "title": "ExtractionKind",
         "description": "document_extraction.kind and proposal.kind (migration 0005): which field set an\nextraction holds. `manual` is phase 1's ManualDocumentFields; the others are the per-type\nmodels in schemas/extraction.py."
@@ -11269,6 +11317,73 @@
         ],
         "title": "Fraction",
         "description": "An exact share: ownership (1/2) or Miteigentumsanteil (85/1000)."
+      },
+      "GeneralExtraction": {
+        "properties": {
+          "title": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "a short German title, two to six words naming what the document is",
+            "value_kind": "text"
+          },
+          "document_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the date the document carries",
+            "value_kind": "date"
+          },
+          "street": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "street of the property the document concerns",
+            "value_kind": "text"
+          },
+          "house_number": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "house number of that property",
+            "value_kind": "text"
+          },
+          "postal_code": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "five-digit PLZ of that property",
+            "value_kind": "text"
+          },
+          "lender": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the bank that gave the loan",
+            "value_kind": "text"
+          },
+          "contract_number": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Darlehensnummer / Vertragsnummer; when none is printed, the loan's Kontonummer. The number only, without its label",
+            "value_kind": "text"
+          },
+          "amount_total": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Betrag, typed by hand",
+            "hand_only": true,
+            "value_kind": "money"
+          },
+          "period_start": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Zeitraum von, typed by hand",
+            "hand_only": true,
+            "value_kind": "date"
+          },
+          "period_end": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Zeitraum bis, typed by hand",
+            "hand_only": true,
+            "value_kind": "date"
+          },
+          "notes": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Notiz, typed by hand",
+            "hand_only": true,
+            "value_kind": "text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "GeneralExtraction",
+        "description": "The general reading (D130): title and date for every document without a reader of its\nown, plus the one field set its subtype's group needs to find its link (D131): the\nproperty's address for the property, WEG, running-costs and tenancy groups, the lender and\ncontract number for the loan group. A request asks only those (asked_fields); an\nowner's home address is never asked."
       },
       "GrundsteuerInstalment": {
         "properties": {
@@ -13336,6 +13451,83 @@
         ],
         "title": "LoginVerifyRequest",
         "description": "POST /auth/login/verify (POST /auth/login/options takes an empty body)."
+      },
+      "ManagementContractExtraction": {
+        "properties": {
+          "title": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "a short German title, two to six words naming what the document is",
+            "value_kind": "text"
+          },
+          "document_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the date the document carries",
+            "value_kind": "date"
+          },
+          "manager": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the Verwalter's name only, without the address",
+            "value_kind": "text"
+          },
+          "street": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "street of the managed property",
+            "value_kind": "text"
+          },
+          "house_number": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "house number of the managed property",
+            "value_kind": "text"
+          },
+          "postal_code": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "five-digit PLZ of the managed property",
+            "value_kind": "text"
+          },
+          "start_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Vertragsbeginn: when the management starts",
+            "value_kind": "date"
+          },
+          "monthly_fee": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the Verwaltervergütung per month as written, e.g. 30,00 € zzgl. MwSt. je Einheit",
+            "value_kind": "text"
+          },
+          "notice_period": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Kündigungsfrist, as written",
+            "value_kind": "text"
+          },
+          "amount_total": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Betrag, typed by hand",
+            "hand_only": true,
+            "value_kind": "money"
+          },
+          "period_end": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Zeitraum bis, typed by hand",
+            "hand_only": true,
+            "value_kind": "date"
+          },
+          "reference": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Referenz, typed by hand",
+            "hand_only": true,
+            "value_kind": "text"
+          },
+          "notes": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Notiz, typed by hand",
+            "hand_only": true,
+            "value_kind": "text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ManagementContractExtraction",
+        "description": "Verwaltervertrag (contract / management_contract, D130): a Mietverwaltungsvertrag with\nthe household's letting manager, or the WEG's Verwaltervertrag. Proposes typing and\nlink:property; the fee is booked from the bank lines that pay it, never from here."
       },
       "ManualDocumentFields": {
         "properties": {

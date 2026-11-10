@@ -5,10 +5,10 @@
  "recorded_on": "2026-11-10",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "76607e0fbcb59f81",
-  "request_sha256": "ac8f503e0b01a8d4c2a8906c8b73debe7ec7e4e2513e6dcb070f1261c59d6de1",
+  "prompt_version": "8569510b0727e75f",
+  "request_sha256": "7abb71887350aa9b897d918bbcc1f588740a58e6a151caa019506c3518333e6c",
   "message": {
-   "id": "msg_011CguJ1Nf1zt8aeCchwF44E",
+   "id": "msg_011CguPvM2bfmneQR9cv2A3Q",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 4262,
+    "input_tokens": 6745,
     "output_tokens": 49,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -45,10 +45,10 @@
  },
  "extract": [
   {
-   "prompt_version": "213911d55186e77b",
-   "request_sha256": "26c8bfa22742e9301a5d85f4c42f0d617e36d2e32e6a59c4e74560931e6c5e66",
+   "prompt_version": "5a4e4a41623c9f1a",
+   "request_sha256": "a8623201a54f18f6f969c449edcea45e1a04ce43d00af0b580ce442edf2470fe",
    "message": {
-    "id": "msg_011CguJ14tgC4kmzjziQ1swt",
+    "id": "msg_011CguPv477b6VTtmQr84Urx",
     "container": null,
     "content": [
      {
@@ -68,7 +68,7 @@
         "type": "page_location"
        }
       ],
-      "text": "Gehaltsabrechnung Juli 2026",
+      "text": "Gehaltsabrechnung",
       "type": "text"
      },
      {
@@ -487,8 +487,8 @@
      "cache_creation_input_tokens": 0,
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
-     "input_tokens": 4348,
-     "output_tokens": 748,
+     "input_tokens": 4487,
+     "output_tokens": 742,
      "output_tokens_details": {
       "thinking_tokens": 0
      },

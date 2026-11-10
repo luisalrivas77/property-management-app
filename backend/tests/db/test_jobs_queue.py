@@ -17,7 +17,7 @@ from pypdf import PdfWriter
 from sqlalchemy import insert, text
 from sqlalchemy.engine import make_url
 
-from hausbuch.ai.fake import FakeModelClient, text_response
+from hausbuch.ai.fake import FakeModelClient, cited_response, text_response
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import proposal as proposal_table
 from hausbuch.jobs.document_read import JobDeps, run_document_read
@@ -128,6 +128,16 @@ def _letter_answer() -> str:
     )
 
 
+def _letter_responses() -> list:
+    """The classify answer and the general reading of a letter (phase 2 D130: a letter is
+    read for its title and date since 10 Nov 2026, so a job sends two requests)."""
+    reading = {
+        "title": ("Schreiben der Hausverwaltung", 1, "Schreiben der Hausverwaltung"),
+        "document_date": ("01.11.2026", 1, "Musterstadt, 01.11.2026"),
+    }
+    return [text_response(_letter_answer()), cited_response(reading)]
+
+
 def _settings(dbname, tmp_path) -> Settings:
     return Settings(
         database_url=make_url(ADMIN_URL).set(database=dbname).render_as_string(hide_password=False),
@@ -157,7 +167,7 @@ def test_a_double_enqueue_gives_two_jobs_and_the_second_sends_nothing(
     rows = _jobs(app_engine, ws, doc)
     assert [(r.status, r.args["proposal_id"]) for r in rows] == [("todo", str(proposal))] * 2
 
-    client = FakeModelClient([text_response(_letter_answer())])
+    client = FakeModelClient(_letter_responses())
     deps = JobDeps(
         engine=app_engine,
         settings=_settings(dbname, tmp_path),
@@ -173,7 +183,7 @@ def test_a_double_enqueue_gives_two_jobs_and_the_second_sends_nothing(
             proposal_id=uuid.UUID(row.args["proposal_id"]),
             attempt=0,
         )
-    assert len(client.requests) == 1
+    assert len(client.requests) == 2  # the first job's classify and reading only
     with workspace_transaction(app_engine, ws) as conn:
         assert proposals.get_proposal(conn, proposal).status is ProposalStatus.READY
 
@@ -223,7 +233,7 @@ def test_worker_runs_a_queued_job(
     monkeypatch.setattr(
         proposals, "record_read_failure", lambda ctx, pid, **kw: pytest.fail(f"failed: {kw}")
     )
-    client = FakeModelClient([text_response(_letter_answer())])
+    client = FakeModelClient(_letter_responses())
     settings = _settings(dbname, tmp_path)
     worker = build_worker(
         settings,
@@ -243,7 +253,7 @@ def test_worker_runs_a_queued_job(
     asyncio.run(scenario())
 
     assert [pid for pid, _ in results] == [proposal]
-    assert len(client.requests) == 1
+    assert len(client.requests) == 2  # classify and the general reading (D130)
     [row] = _jobs(app_engine, ws, doc)
     assert row.status == "succeeded"
     assert not worker.running
@@ -283,7 +293,7 @@ def test_a_stalled_job_is_retried_and_a_live_workers_job_is_left_alone(
     monkeypatch.setattr(
         proposals, "record_read_failure", lambda ctx, pid, **kw: pytest.fail(f"failed: {kw}")
     )
-    client = FakeModelClient([text_response(_letter_answer())])
+    client = FakeModelClient(_letter_responses())
     worker = build_worker(
         _settings(dbname, tmp_path),
         app_engine,

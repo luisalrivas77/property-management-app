@@ -44,15 +44,22 @@ from hausbuch.evals.reading import (
     extract_requests_for,
     merged_values,
 )
-from hausbuch.rules.extraction_parse import extraction_kind
+from hausbuch.rules.extraction_parse import PropertyAddress, extraction_kind
 from hausbuch.schemas.ai import ClassifyOutput, ExtractedValue
-from hausbuch.schemas.enums import ExtractionKind
+from hausbuch.schemas.enums import DocumentSubtype, ExtractionKind
 from hausbuch.settings import Settings
 
 __all__ = ["eval_settings"]  # re-exported: test_recorded_evals and record.py import it here
 
 FORMAT = 1
 RECORDINGS_DIR = Path(__file__).parent / "recordings"
+# The synthetic household's properties (make_docs.py), as the job would load them from the
+# workspace: the only addresses a general reading keeps (PR #135 review). They never reach
+# the model, so they change no request hash.
+EVAL_PROPERTIES = (
+    PropertyAddress("Lindenstraße", "7", "10115"),
+    PropertyAddress("Kastanienweg", "4", "04109"),
+)
 
 
 @dataclass(frozen=True)
@@ -64,7 +71,12 @@ class Requests:
 def build_requests(doc: Doc, settings: Settings) -> Requests:
     data = doc_pdf(doc)
     classify = classify_request_for(settings, data, documents.PDF)
-    extract = extract_requests_for(settings, ExtractionKind(doc.kind), data, documents.PDF)
+    # The general reading asks the fields of the subtype's group (D131), so the subtype goes
+    # in as the job passes the classified one.
+    subtype = DocumentSubtype(doc.subtype) if doc.subtype is not None else None
+    extract = extract_requests_for(
+        settings, ExtractionKind(doc.kind), data, documents.PDF, subtype=subtype
+    )
     return Requests(classify, extract)
 
 
@@ -75,7 +87,7 @@ def response_of(entry: dict) -> ModelResponse:
 @dataclass(frozen=True)
 class Replay:
     classification: ClassifyOutput
-    kind: ExtractionKind | None
+    kind: ExtractionKind
     values: dict[str, ExtractedValue]
 
 
@@ -83,13 +95,17 @@ def replay(recording: dict) -> Replay:
     """Classification and merged values from a recording, as the job would compute them."""
     classification = parse_classification(response_of(recording["classify"]).text)
     kind = extraction_kind(classification.type, classification.subtype)
-    merged: dict[str, ExtractedValue] = {}
-    if kind is not None:
-        chunks = (
-            chunk_values(kind, response_of(entry), entry["page_offset"])
-            for entry in recording["extract"]
+    chunks = (
+        chunk_values(
+            kind,
+            response_of(entry),
+            entry["page_offset"],
+            subtype=classification.subtype,
+            properties=EVAL_PROPERTIES,
         )
-        merged = merged_values(kind, chunks)
+        for entry in recording["extract"]
+    )
+    merged = merged_values(kind, chunks, subtype=classification.subtype)
     return Replay(classification, kind, merged)
 
 

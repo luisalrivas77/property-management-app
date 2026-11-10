@@ -1,0 +1,183 @@
+{
+ "format": 1,
+ "doc": "grundbuchauszug",
+ "synthetic": false,
+ "recorded_on": "2026-11-10",
+ "sdk_version": "2.6.0",
+ "classify": {
+  "prompt_version": "8569510b0727e75f",
+  "request_sha256": "e2e6154a550ee3a7359c406c1cd18980751aea88bd8535ad1828f901337f8346",
+  "message": {
+   "id": "msg_011CguPwXk3ZiTTHuLFRdBfN",
+   "container": null,
+   "content": [
+    {
+     "citations": null,
+     "text": "{\"type\":\"letter\",\"subtype\":\"land_register_extract\",\"contains_tenant_data\":false,\"language\":\"de\",\"confidence\":\"high\"}",
+     "type": "text"
+    }
+   ],
+   "diagnostics": null,
+   "model": "claude-haiku-5-5",
+   "role": "assistant",
+   "stop_details": null,
+   "stop_reason": "end_turn",
+   "stop_sequence": null,
+   "type": "message",
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": "us",
+    "input_tokens": 6585,
+    "output_tokens": 46,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": "standard"
+   }
+  }
+ },
+ "extract": [
+  {
+   "prompt_version": "5a4e4a41623c9f1a",
+   "request_sha256": "2577eec1300ce66dbcd38fdffbeba47b6eb91950cdfbe5f9705f66958e4cb681",
+   "message": {
+    "id": "msg_011CguPwPCMJ8jdDE1yG7ipo",
+    "container": null,
+    "content": [
+     {
+      "citations": null,
+      "text": "title: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Amtsgericht Musterstadt - Grundbuch von Mitte\r\nWohnungsgrundbuch Blatt 4711\r\nAmtlicher Ausdruck vom 15.04.2026\r\nBestandsverzeichnis\r\n85/1000 Miteigentumsanteil an dem Grundstück\r\nLindenstraße 7, 10115 Berlin,\r\nverbunden mit dem Sondereigentum an der Wohnung Nr. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Grundbuchauszug Wohnungsgrundbuch",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ndocument_date: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Amtsgericht Musterstadt - Grundbuch von Mitte\r\nWohnungsgrundbuch Blatt 4711\r\nAmtlicher Ausdruck vom 15.04.2026\r\nBestandsverzeichnis\r\n85/1000 Miteigentumsanteil an dem Grundstück\r\nLindenstraße 7, 10115 Berlin,\r\nverbunden mit dem Sondereigentum an der Wohnung Nr. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "15.04.2026",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nstreet: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Amtsgericht Musterstadt - Grundbuch von Mitte\r\nWohnungsgrundbuch Blatt 4711\r\nAmtlicher Ausdruck vom 15.04.2026\r\nBestandsverzeichnis\r\n85/1000 Miteigentumsanteil an dem Grundstück\r\nLindenstraße 7, 10115 Berlin,\r\nverbunden mit dem Sondereigentum an der Wohnung Nr. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Lindenstraße",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nhouse_number: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Amtsgericht Musterstadt - Grundbuch von Mitte\r\nWohnungsgrundbuch Blatt 4711\r\nAmtlicher Ausdruck vom 15.04.2026\r\nBestandsverzeichnis\r\n85/1000 Miteigentumsanteil an dem Grundstück\r\nLindenstraße 7, 10115 Berlin,\r\nverbunden mit dem Sondereigentum an der Wohnung Nr. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "7",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\npostal_code: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Amtsgericht Musterstadt - Grundbuch von Mitte\r\nWohnungsgrundbuch Blatt 4711\r\nAmtlicher Ausdruck vom 15.04.2026\r\nBestandsverzeichnis\r\n85/1000 Miteigentumsanteil an dem Grundstück\r\nLindenstraße 7, 10115 Berlin,\r\nverbunden mit dem Sondereigentum an der Wohnung Nr. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "10115",
+      "type": "text"
+     }
+    ],
+    "diagnostics": null,
+    "model": "claude-sonnet-5-5",
+    "role": "assistant",
+    "stop_details": null,
+    "stop_reason": "end_turn",
+    "stop_sequence": null,
+    "type": "message",
+    "usage": {
+     "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+     },
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "inference_geo": "us",
+     "input_tokens": 3745,
+     "output_tokens": 155,
+     "output_tokens_details": {
+      "thinking_tokens": 0
+     },
+     "server_tool_use": null,
+     "service_tier": "standard",
+     "speed": "standard"
+    }
+   },
+   "page_offset": 0
+  }
+ ]
+}

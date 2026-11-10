@@ -42,6 +42,19 @@ row. Notes say which row it replaces ("ersetzt den Bescheid vom …"), that the 
 already recorded under another year (the apply refuses it), and warn, never blocking, when
 the assessment is not a Zusammenveranlagung or the addressee names neither owner. The
 addressee's names stay in the extraction: no note quotes them.
+
+Phase 2 D130, D131 (§6.2.1): the general reading and a Verwaltervertrag propose typing and
+at most one link, never a domain record. The link follows the subtype's group
+(schemas.extraction.GENERAL_LINK): property (by the address read, else the only property),
+loan (by lender and contract number, else the only loan) or tenancy (the one tenancy on the
+property found by address whose term holds the document date; none or several, no link),
+except a tenant's Selbstauskunft and a Betriebskostenabrechnung, which link the property by
+address and ask for the tenancy by hand. An address read that is none of the workspace's
+properties (the parser keeps its source, not its value) links nothing.
+Without a match the typing record carries a note naming what was not found. The catalogue's
+invoices (utility bill, household services, work expenses) are read as invoices but propose
+no Nebenkosten row: typing with the tax year from the invoice date, and the property link for
+a utility bill.
 """
 
 import re
@@ -64,7 +77,7 @@ from hausbuch.schemas.enums import (
     PropertyKind,
     RentModel,
 )
-from hausbuch.schemas.extraction import _Typing
+from hausbuch.schemas.extraction import GENERAL_LINK, _Typing
 from hausbuch.schemas.proposal import (
     ExistingLoan,
     ExistingOwner,
@@ -76,6 +89,8 @@ from hausbuch.schemas.proposal import (
 )
 
 from .extraction_parse import _MONTHS
+from .extraction_parse import house_number_key as _house_number_key
+from .extraction_parse import street_key as _street_key
 
 _CONFIDENCE_ORDER: dict[ConfidenceLevel, int] = {"low": 0, "medium": 1, "high": 2}
 _SIX_PLACES = Decimal("0.000001")
@@ -124,6 +139,37 @@ _DEPOSIT_NONE_NOTE = (
     "Es gibt noch kein Mietverhältnis, zu dem die Kaution gehören könnte; bitte zuerst den "
     "Mietvertrag erfassen und den Eingang dann beim Mietverhältnis eintragen."
 )
+# A catalogue document whose link was not found (D131): typing only, and what to do.
+_NO_PROPERTY_NOTE = (
+    "Zu diesem Dokument wurde kein Objekt gefunden: die Adresse passt zu keinem oder zu "
+    "mehreren Objekten. Bitte das Dokument auf seiner Seite von Hand mit dem Objekt verknüpfen."
+)
+_NO_LOAN_NOTE = (
+    "Zu diesem Dokument wurde kein Darlehen gefunden: Darlehensgeber und Nummer passen zu "
+    "keinem Darlehen, und es gibt nicht genau eines. Bitte das Dokument auf seiner Seite von "
+    "Hand mit dem Darlehen verknüpfen."
+)
+_NO_TENANCY_NOTE = (
+    "Zu diesem Dokument wurde kein eindeutiges Mietverhältnis gefunden: Adresse und Datum "
+    "passen zu keinem oder zu mehreren Mietverhältnissen. Bitte das Dokument auf seiner Seite "
+    "von Hand mit dem Mietverhältnis verknüpfen."
+)
+# The two tenancy-group subtypes the document date cannot place (PR #135 review, F3): a
+# tenant's Selbstauskunft predates the tenancy it applies for, and a
+# Betriebskostenabrechnung covers a year in which the tenants may have changed. They link the
+# property by address and leave the tenancy to the user.
+_TENANCY_BY_HAND = frozenset(
+    {DocumentSubtype.TENANT_SELF_DISCLOSURE, DocumentSubtype.OPERATING_COSTS_STATEMENT}
+)
+_TENANCY_BY_HAND_NOTE = (
+    "Das Mietverhältnis lässt sich bei diesem Dokument nicht am Datum erkennen. Bitte das "
+    "Dokument auf seiner Seite von Hand mit dem Mietverhältnis verknüpfen."
+)
+_CATALOGUE_INVOICES = (
+    DocumentSubtype.UTILITY_BILL,
+    DocumentSubtype.HOUSEHOLD_SERVICES_INVOICE,
+    DocumentSubtype.WORK_EXPENSE_INVOICE,
+)
 _FINANCING_BELEG_NOTE = (
     "Diese Rechnung ist schon als Beleg eines Nebenkosten-Eintrags hinterlegt. Der Eintrag "
     "gehört zu den Darlehenskosten: bitte ihn aus den Nebenkosten entfernen."
@@ -143,8 +189,12 @@ def build_proposal(
     match kind:
         case ExtractionKind.PURCHASE_CONTRACT:
             b.purchase_contract()
+        case ExtractionKind.INVOICE if b.catalogue_invoice:
+            b.catalogue_link()  # D131: an invoice of the catalogue proposes no Nebenkosten row
         case ExtractionKind.INVOICE | ExtractionKind.BESCHEID:
             b.cost_document()
+        case ExtractionKind.GENERAL | ExtractionKind.MANAGEMENT_CONTRACT:
+            b.catalogue_link()
         case ExtractionKind.LOAN_CONTRACT:
             b.loan_contract()
         case ExtractionKind.LEASE:
@@ -181,11 +231,17 @@ class _Builder:
         self.x = extraction
         self.ctx = context
         self.records: list[ProposalRecord] = []
+        # A utility bill or a §35a or work-expense invoice (D131): read as an invoice, never a
+        # Nebenkosten or financing cost of the purchase.
+        self.catalogue_invoice = context.classification.subtype in _CATALOGUE_INVOICES
         # A Grundbuchamt Kostenrechnung may be typed bescheid, which has no subject (D35, F1).
-        self.financing = (
-            kind is ExtractionKind.INVOICE
-            and names_financing(self.ev("subject").value, self.ev("title").value)
-        ) or (kind is ExtractionKind.BESCHEID and names_financing(self.ev("title").value))
+        self.financing = not self.catalogue_invoice and (
+            (
+                kind is ExtractionKind.INVOICE
+                and names_financing(self.ev("subject").value, self.ev("title").value)
+            )
+            or (kind is ExtractionKind.BESCHEID and names_financing(self.ev("title").value))
+        )
 
     # -- values
 
@@ -733,6 +789,67 @@ class _Builder:
             self.add("deposit_received", "deposit_received", "create", fields)
         self.link("link:tenancy", tenancy.id)
 
+    # -- the document catalogue (D130, D131, §6.2.1)
+
+    def catalogue_link(self) -> None:
+        """The one link the subtype's group proposes (GENERAL_LINK), through the existing
+        matchers: link:property by address (else the only property, as the
+        Grundsteuerbescheid), link:loan by lender and contract number (else the only loan, as
+        the Zinsbescheinigung), link:tenancy by address and a date within the tenancy. A
+        Selbstauskunft and a Betriebskostenabrechnung (_TENANCY_BY_HAND) link the property by
+        address and ask for the tenancy by hand. No match: typing only, with a note; an
+        address read that is no property's links nothing (address_unmatched). A subtype
+        outside the groups (income tax, household finances, none) proposes typing only.
+        Never a record."""
+        subtype = self.ctx.classification.subtype
+        group = GENERAL_LINK.get(subtype) if subtype is not None else None
+        if group == "property":
+            prop = _resolve_property(self.x, self.ctx)
+            if prop is not None:
+                self.link("link:property", prop.id)
+            else:
+                self.records[0].notes.append(_NO_PROPERTY_NOTE)
+        elif group == "loan":
+            loan = _match_loan(self.x, self.ctx.loans)
+            if loan is None and len(self.ctx.loans) == 1:
+                loan = self.ctx.loans[0]
+            if loan is not None:
+                self.link("link:loan", loan.id)
+            else:
+                self.records[0].notes.append(_NO_LOAN_NOTE)
+        elif subtype in _TENANCY_BY_HAND:
+            # A Selbstauskunft comes before the tenancy and a Betriebskostenabrechnung spans
+            # a year in which tenants may change: the date finds no tenancy (review, F3).
+            prop = _resolve_property(self.x, self.ctx)
+            if prop is not None:
+                self.link("link:property", prop.id)
+            else:
+                self.records[0].notes.append(_NO_PROPERTY_NOTE)
+            self.records[0].notes.append(_TENANCY_BY_HAND_NOTE)
+        elif group == "tenancy":
+            tenancy = self._tenancy_at_date()
+            if tenancy is not None:
+                self.link("link:tenancy", tenancy)
+            else:
+                self.records[0].notes.append(_NO_TENANCY_NOTE)
+
+    def _tenancy_at_date(self) -> UUID | None:
+        """The one tenancy on the property found by address whose term holds the document's
+        date (start ≤ date ≤ end, open while it runs); none or several: None."""
+        prop = _resolve_property(self.x, self.ctx)
+        on = _iso_date(self.ev("document_date").value)
+        if prop is None or on is None:
+            return None
+        units = {u.id for u in self.ctx.units if u.property_id == prop.id}
+        fits = [
+            t.id
+            for t in self.ctx.tenancies
+            if t.unit_id in units
+            and t.start_date <= on
+            and (t.end_date is None or on <= t.end_date)
+        ]
+        return fits[0] if len(fits) == 1 else None
+
     # -- the two certificates (phase 3 §9)
 
     def zinsbescheinigung(self) -> None:
@@ -1128,23 +1245,23 @@ def _match_property(
     return fits[0] if len(fits) == 1 else None
 
 
-def _street_key(value: Any) -> str:
-    """Casefolded (ß as ss), spaces, hyphens and dots removed, and a street ending in the
-    abbreviation "str" spelled out: "Lindenstr.", "Linden-Straße" and "Lindenstrasse" are
-    one key."""
-    key = re.sub(r"[\s.\-]", "", str(value).casefold())
-    return f"{key}asse" if key.endswith("str") else key
-
-
-def _house_number_key(value: Any) -> str:
-    """Casefolded, spaces and trailing dots removed: "12 a" is "12a". A hyphen or slash
-    stays significant, so "1-2" (or "1 - 2") is never "12" (review, 7 Nov 2026)."""
-    return re.sub(r"\s", "", str(value).casefold()).rstrip(".")
+def address_unmatched(extraction: _Typing) -> bool:
+    """A general reading read an address that is none of the workspace's properties: its
+    street, house number or postal code has a cited source but no value (the parser drops
+    such a value, extraction_parse._unmatched_address). Only the general kinds produce it."""
+    for name in ("street", "house_number", "postal_code"):
+        value = getattr(extraction, name, None)
+        if isinstance(value, ExtractedValue) and value.value is None and value.source is not None:
+            return True
+    return False
 
 
 def _resolve_property(extraction: _Typing, context: PrefillContext) -> ExistingProperty | None:
     """The property a document belongs to: by its address when it states one, else the only
-    property of the workspace."""
+    property of the workspace. None when a general reading read an address that is no
+    property's (address_unmatched): an owner's home is never a reason to link."""
+    if address_unmatched(extraction):
+        return None
     only = context.properties[0] if len(context.properties) == 1 else None
     address = _address_of(extraction)
     if address is None:

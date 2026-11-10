@@ -138,17 +138,65 @@ export const DOCUMENT_TYPE: Record<DocumentType, string> = {
   other: "Sonstiges",
 };
 
+// In the picker's order: by the groups of the document catalogue (phase-2.md §6.2.1, D131).
 export const DOCUMENT_SUBTYPE: Record<DocumentSubtype, string> = {
+  // Immobilie und Kauf
   purchase_contract: "Kaufvertrag",
   price_split_evidence: "Nachweis Kaufpreisaufteilung",
   appraisal: "Gutachten",
-  loan_contract: "Darlehensvertrag",
-  lease: "Mietvertrag",
-  handover_protocol: "Übergabeprotokoll",
-  deposit_record: "Kautionsnachweis",
   cost_basis_evidence: "Nachweis Anschaffungskosten",
   grundsteuerbescheid: "Grundsteuerbescheid",
+  land_register_extract: "Grundbuchauszug",
+  declaration_of_division: "Teilungserklärung",
+  land_charge_deed: "Grundschuldbestellungsurkunde",
+  energy_certificate: "Energieausweis",
+  building_records: "Grundriss, Wohnflächen, Baupläne",
+  insurance_policy: "Versicherungsschein",
+  management_contract: "Verwaltervertrag",
+  service_contract: "Versorgungs- oder Wartungsvertrag",
+  // WEG
+  weg_minutes: "Protokoll Eigentümerversammlung",
+  weg_invitation: "Einladung Eigentümerversammlung",
+  special_levy: "Sonderumlage",
+  // Darlehen
+  loan_contract: "Darlehensvertrag",
+  repayment_schedule: "Tilgungsplan",
+  loan_terms_change: "Prolongation, Konditionsanpassung",
+  loan_statement: "Darlehenskontoauszug",
+  // Mietverhältnis
+  lease: "Mietvertrag",
+  lease_amendment: "Nachtrag zum Mietvertrag",
+  handover_protocol: "Übergabeprotokoll",
+  deposit_record: "Kautionsnachweis",
+  rent_increase: "Mieterhöhung",
+  termination_notice: "Kündigung, Mietaufhebung",
+  tenant_self_disclosure: "Mieterselbstauskunft, Einkommensnachweis",
+  landlord_confirmation: "Wohnungsgeberbestätigung",
+  operating_costs_statement: "Betriebskostenabrechnung an Mieter",
+  tenant_correspondence: "Schreiben von oder an Mieter",
+  // Laufende Kosten
+  utility_bill: "Abrechnung Strom, Gas, Wasser",
+  quote: "Kostenvoranschlag, Angebot",
+  chimney_sweep_notice: "Feuerstättenbescheid",
+  // Einkommensteuer
   einkommensteuerbescheid: "Einkommensteuerbescheid",
+  prepayment_notice: "Vorauszahlungsbescheid",
+  tax_return_copy: "Steuererklärung, Übertragungsprotokoll",
+  donation_receipt: "Zuwendungsbestätigung",
+  childcare_invoice: "Kinderbetreuung",
+  household_services_invoice: "Handwerker, haushaltsnahe Dienste (§35a)",
+  insurance_contribution_certificate: "Beitragsbescheinigung Versicherung",
+  pension_contribution_certificate: "Riester- oder Rürup-Bescheinigung",
+  benefit_notice: "Bescheid Lohnersatzleistung",
+  child_benefit_notice: "Kindergeldbescheid",
+  employment_contract: "Arbeitsvertrag",
+  employer_certificate: "Arbeitgeberbescheinigung",
+  work_expense_invoice: "Arbeitsmittel, Fortbildung",
+  // Haushaltsfinanzen
+  depot_statement: "Depotauszug",
+  depot_report: "Depotbericht",
+  trade_confirmation: "Wertpapierabrechnung",
+  capital_income_tax_certificate: "Jahressteuerbescheinigung Kapitalerträge",
 };
 
 export const LINK_TARGET: Record<LinkTarget, string> = {
@@ -286,6 +334,8 @@ export const EXTRACTION_KIND: Record<ExtractionKind, string> = {
   lohnsteuerbescheinigung: "Lohnsteuerbescheinigung",
   gehaltsabrechnung: "Gehaltsabrechnung",
   einkommensteuerbescheid: "Einkommensteuerbescheid",
+  general: "Titel und Datum",
+  management_contract: "Verwaltervertrag",
 };
 
 /** The confidence dot's text (computed by code from the checks, D15). */

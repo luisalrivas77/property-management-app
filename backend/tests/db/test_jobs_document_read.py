@@ -11,7 +11,8 @@ import io
 import json
 import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from decimal import Decimal
 
 import pytest
 from pypdf import PdfWriter
@@ -33,11 +34,13 @@ from hausbuch.db.tables import workspace as workspace_table
 from hausbuch.jobs import document_read as job
 from hausbuch.jobs import tasks
 from hausbuch.jobs.document_read import JobDeps, RetryLater, run_document_read
-from hausbuch.schemas.enums import ActorType, DocumentSource, DocumentType
+from hausbuch.schemas.enums import ActorType, DocumentSource, DocumentType, PropertyKind
 from hausbuch.schemas.extraction import EXTRACTION_MODELS, ExtractionKind
+from hausbuch.schemas.property import Address, PropertyCreate
 from hausbuch.services import proposals
 from hausbuch.services.context import Actor, new_command
 from hausbuch.services.documents import upload_document
+from hausbuch.services.properties import create_property
 from hausbuch.settings import Settings
 
 pytestmark = pytest.mark.db
@@ -75,6 +78,14 @@ INVOICE_ANSWER = {
     "amount_total": ("1.234,56 EUR", 1, "Gesamtbetrag 1.234,56 EUR"),
     "due_on": "unbekannt",
 }
+
+
+# A letter has no reader of its own: since D130 it gets the general reading (title, date).
+LETTER_ANSWER = {
+    "title": ("Schreiben der Hausverwaltung", 1, "Schreiben der Hausverwaltung"),
+    "document_date": ("01.09.2026", 1, "Berlin, 01.09.2026"),
+}
+LETTER = [text_response(_classify("letter")), cited_response(LETTER_ANSWER)]
 
 
 class Recorder:
@@ -274,7 +285,7 @@ def test_gate_2_marked_upload_is_blocked_before_any_call(setup, recorder, app_en
 
 
 def test_gate_2_lets_a_marked_upload_through_when_allowed(setup, recorder, app_engine):
-    client = FakeModelClient([text_response(_classify("letter"))])
+    client = FakeModelClient(list(LETTER))
     deps, ws, doc, proposal = setup(_pdf(1), client, tenant_data=True)
     _allow_tenant_documents(app_engine, ws)
     _run(deps, ws, doc, proposal)
@@ -308,8 +319,14 @@ def test_the_task_takes_no_tenant_data_argument():
 
 @pytest.mark.parametrize(
     "answer",
-    [_classify("contract", "lease"), _classify("letter", None, tenant=True)],
-    ids=["lease", "tenant-letter"],
+    [
+        _classify("contract", "lease"),
+        _classify("letter", None, tenant=True),
+        # D131: the catalogue's tenancy group is a tenant document by subtype alone
+        _classify("letter", "rent_increase"),
+        _classify("other", "tenant_self_disclosure"),
+    ],
+    ids=["lease", "tenant-letter", "rent-increase", "self-disclosure"],
 )
 def test_gate_3_tenant_document_stops_after_classification(setup, recorder, app_engine, answer):
     client = FakeModelClient([text_response(answer)])
@@ -382,13 +399,98 @@ def test_the_setting_is_read_again_before_extraction(setup, recorder, app_engine
     assert kw["values"] is None and kw["extract_call_id"] is None
 
 
-def test_type_without_extraction_is_typing_only(setup, recorder, app_engine):
-    client = FakeModelClient([text_response(_classify("letter"))])
+def test_a_type_without_a_reader_gets_the_general_reading(setup, recorder, app_engine):
+    """D130: a letter is no longer typing-only; the general reading asks its title and date,
+    and nothing else for a letter without a subtype (D131)."""
+    client = FakeModelClient(list(LETTER))
     deps, ws, doc, proposal = setup(_pdf(1), client)
     _run(deps, ws, doc, proposal)
     [(_, _, kw)] = recorder.results
-    assert kw["values"] is None and kw["blocked_tenant_data"] is False
-    assert len(client.requests) == 1
+    assert kw["blocked_tenant_data"] is False
+    assert kw["values"]["title"].value == "Schreiben der Hausverwaltung"
+    assert kw["values"]["document_date"].value == "2026-09-01"
+    assert set(kw["values"]) == set(EXTRACTION_MODELS[ExtractionKind.GENERAL].model_fields)
+    assert len(client.requests) == 2
+    asked = client.requests[1].content[1]["text"].splitlines()[1:]
+    assert [line.split(":", 1)[0] for line in asked] == ["title", "document_date"]
+
+
+def test_the_general_reading_keeps_only_the_asked_fields(setup, recorder, app_engine):
+    """A Vorauszahlungsbescheid asks no address; a street line the model volunteers anyway
+    is not handed over (D131: an owner's home address is never stored)."""
+    answer = LETTER_ANSWER | {
+        "street": ("Musterweg", 1, "Musterweg 7, 12345 Musterstadt"),
+        "house_number": ("7", 1, "Musterweg 7, 12345 Musterstadt"),
+    }
+    client = FakeModelClient(
+        [text_response(_classify("bescheid", "prepayment_notice")), cited_response(answer)]
+    )
+    deps, ws, doc, proposal = setup(_pdf(1), client)
+    _run(deps, ws, doc, proposal)
+    [(_, _, kw)] = recorder.results
+    assert kw["values"]["title"].value == "Schreiben der Hausverwaltung"
+    assert kw["values"]["street"].value is None
+    assert kw["values"]["house_number"].value is None
+    assert "street:" not in client.requests[1].content[1]["text"]
+
+
+def test_a_dedicated_type_drops_a_catalogue_subtype_before_routing(setup, recorder, app_engine):
+    """D131 (decided 10 Nov 2026): a Lohnsteuerbescheinigung the classifier also called an
+    Arbeitgeberbescheinigung is read as a wage certificate, and stored without the subtype."""
+    answer = {"employer_name": ("Beispiel GmbH", 1, "Arbeitgeber: Beispiel GmbH")}
+    client = FakeModelClient(
+        [
+            text_response(_classify("lohnsteuerbescheinigung", "employer_certificate")),
+            cited_response(answer),
+        ]
+    )
+    deps, ws, doc, proposal = setup(_pdf(1), client)
+    _run(deps, ws, doc, proposal)
+    [(_, _, kw)] = recorder.results
+    assert kw["classification"].type is DocumentType.LOHNSTEUERBESCHEINIGUNG
+    assert kw["classification"].subtype is None
+    assert set(kw["values"]) == set(
+        EXTRACTION_MODELS[ExtractionKind.LOHNSTEUERBESCHEINIGUNG].model_fields
+    )
+    asked = client.requests[1].content[1]["text"].splitlines()[1:]
+    assert "employer_name" in [line.split(":", 1)[0] for line in asked]
+    [classify_row, _] = _calls(app_engine, ws, doc)
+    assert classify_row.output["subtype"] is None  # what ai_call keeps follows the type
+
+
+def test_a_property_group_subtype_asks_the_address(setup, recorder, app_engine):
+    answer = LETTER_ANSWER | {"street": ("Lindenstraße", 1, "Lindenstraße 12, 10115 Berlin")}
+    client = FakeModelClient(
+        [text_response(_classify("letter", "weg_minutes")), cited_response(answer)]
+    )
+    deps, ws, doc, proposal = setup(_pdf(1), client)
+    # Only a property's own address keeps its value (PR #135 review, F2).
+    with workspace_transaction(app_engine, ws) as conn:
+        create_property(
+            new_command(conn, ws, USER, now=NOW),
+            PropertyCreate(
+                label="Wohnung Lindenstraße",
+                kind=PropertyKind.ETW,
+                address=Address(
+                    street="Lindenstraße", house_number="12", postal_code="10115", city="Berlin"
+                ),
+                build_year=1994,
+                notarized_on=date(2026, 3, 10),
+                purchase_date=date(2026, 5, 1),
+                purchase_price=Decimal("289000.00"),
+            ),
+        )
+    _run(deps, ws, doc, proposal)
+    [(_, _, kw)] = recorder.results
+    assert kw["values"]["street"].value == "Lindenstraße"
+    asked = client.requests[1].content[1]["text"].splitlines()[1:]
+    assert [line.split(":", 1)[0] for line in asked] == [
+        "title",
+        "document_date",
+        "street",
+        "house_number",
+        "postal_code",
+    ]
 
 
 # --- answers that cannot be used (§5.3) ------------------------------------------------
@@ -411,14 +513,14 @@ def test_unparsable_classification_is_retried_once(setup, recorder, app_engine):
     client = FakeModelClient(
         [
             text_response("not json"),
-            text_response(_classify("letter")),
+            *LETTER,
         ]
     )
     deps, ws, doc, proposal = setup(_pdf(1), client)
     _run(deps, ws, doc, proposal)
     assert recorder.failures == [] and len(recorder.results) == 1
     rows = _calls(app_engine, ws, doc)
-    assert sorted(r.error_code or "" for r in rows) == ["", "ai.unparsable"]
+    assert sorted(r.error_code or "" for r in rows) == ["", "", "ai.unparsable"]
 
 
 def test_extract_without_a_parsable_line_twice_fails(setup, recorder, app_engine):
@@ -521,7 +623,7 @@ def test_an_internal_error_is_retried_then_recorded(setup, recorder, monkeypatch
         raise RuntimeError("secret value 1.234,56 in the message")
 
     monkeypatch.setattr(proposals, "record_read_result", broken)
-    client = FakeModelClient([text_response(_classify("letter"))] * 2)
+    client = FakeModelClient(LETTER * 2)
     deps, ws, doc, proposal = setup(_pdf(1), client)
     with pytest.raises(RetryLater):
         _run(deps, ws, doc, proposal, attempt=0)
@@ -552,7 +654,7 @@ def _set_status(engine, ws, proposal, status):
 
 
 def test_collapsed_rerun_serves_the_newest_pending_proposal(setup, recorder, app_engine):
-    client = FakeModelClient([text_response(_classify("letter"))])
+    client = FakeModelClient(list(LETTER))
     deps, ws, doc, first = setup(_pdf(1), client)
     _set_status(app_engine, ws, first, "superseded")
     with workspace_transaction(app_engine, ws) as conn:
@@ -620,24 +722,26 @@ def test_a_call_recorded_after_its_proposal_was_erased_keeps_no_content(
     setup, recorder, app_engine, scrub
 ):
     deps, ws, doc, proposal = setup(_pdf(1), FakeModelClient())
-    client = _ErasesDuringTheCall(
-        app_engine, ws, proposal, [text_response(_classify("letter"))], scrub=scrub
-    )
+    client = _ErasesDuringTheCall(app_engine, ws, proposal, list(LETTER), scrub=scrub)
     _run(dataclasses.replace(deps, model_client=client), ws, doc, proposal)
 
-    [call] = _calls(app_engine, ws, doc)
-    assert call.output is None and call.raw_text is None
-    # provenance without content: the model, the request hash and the usage stay
-    assert call.job == "classify" and call.model == "fake-model"
-    assert call.input_sha256 is not None and call.input_tokens == 100
-    assert call.error_code is None
+    calls = _calls(app_engine, ws, doc)
+    # the classify call, and the letter's general reading after it (D130): both after the erase
+    assert sorted(c.job for c in calls) == ["classify", "extract"]
+    for call in calls:
+        assert call.output is None and call.raw_text is None
+        # provenance without content: the model, the request hash and the usage stay
+        assert call.model == "fake-model"
+        assert call.input_sha256 is not None and call.input_tokens > 0
+        assert call.error_code is None
 
 
 def test_a_call_for_a_proposal_still_pending_keeps_its_content(setup, recorder, app_engine):
-    deps, ws, doc, proposal = setup(_pdf(1), FakeModelClient([text_response(_classify("letter"))]))
+    deps, ws, doc, proposal = setup(_pdf(1), FakeModelClient(list(LETTER)))
     _run(deps, ws, doc, proposal)
-    [call] = _calls(app_engine, ws, doc)
-    assert call.output is not None and call.raw_text is not None
+    calls = _calls(app_engine, ws, doc)
+    assert [c.job for c in sorted(calls, key=lambda c: c.job)] == ["classify", "extract"]
+    assert all(c.output is not None and c.raw_text is not None for c in calls)
 
 
 # --- nothing secret in the logs --------------------------------------------------------

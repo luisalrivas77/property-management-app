@@ -5,10 +5,10 @@
  "recorded_on": "2026-11-10",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "76607e0fbcb59f81",
-  "request_sha256": "20c8c8a1f6e4eeb61721416fa935e0b684f5e338419f15b239db10f1a8730628",
+  "prompt_version": "8569510b0727e75f",
+  "request_sha256": "6c8963bd9e289730318f3aade56b668d243f7c07a365620324ac80d7ac2b715f",
   "message": {
-   "id": "msg_011CguHxXjP4VZ6MvZc1oq19",
+   "id": "msg_011CguPtLZkf2GoJxn8XoJqr",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 4033,
+    "input_tokens": 6516,
     "output_tokens": 50,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -45,10 +45,10 @@
  },
  "extract": [
   {
-   "prompt_version": "213911d55186e77b",
-   "request_sha256": "134f382f1113ab4e101a376f421831922ab51470904bcf7b212d12fd7031941f",
+   "prompt_version": "5a4e4a41623c9f1a",
+   "request_sha256": "8115ec737f7db0d82422df3c45043e90905d9519d2cec66e89614a509684a902",
    "message": {
-    "id": "msg_011CguHxN7gw17z1Y89aMP5e",
+    "id": "msg_011CguPtAeTESuxHBsjY3q6U",
     "container": null,
     "content": [
      {
@@ -59,7 +59,7 @@
      {
       "citations": [
        {
-        "cited_text": "Notar Dr. Max Beispiel, Marktplatz 1, 12345 Musterstadt\r\nKostenrechnung Nr. 2026-0456 vom 03.03.2026\r\nzur Urkunde 1234/2026 (Kaufvertrag)\r\nBeurkundungsgebühr 1.035,00 EUR\r\nAuslagen 65,00 EUR\r\nNetto 1.100,00 EUR\r\nUmsatzsteuer 19 % 209,00 EUR\r\nGesamtbetrag 1.309,00 EUR\r\nZahlbar bis 17.03.2026 auf DE02 1203 0000 0000 2020 51.",
+        "cited_text": "2026-0456 vom 03.03.2026\r\nzur Urkunde 1234/2026 (Kaufvertrag)\r\nBeurkundungsgebühr 1.035,00 EUR\r\nAuslagen 65,00 EUR\r\nNetto 1.100,00 EUR\r\nUmsatzsteuer 19 % 209,00 EUR\r\nGesamtbetrag 1.309,00 EUR\r\nZahlbar bis 17.03.2026 auf DE02 1203 0000 0000 2020 51.",
         "document_index": 0,
         "document_title": null,
         "end_page_number": 2,
@@ -148,7 +148,7 @@
         "type": "page_location"
        }
       ],
-      "text": "1.309,00 EUR",
+      "text": "1.309,00 €",
       "type": "text"
      },
      {
@@ -168,7 +168,7 @@
         "type": "page_location"
        }
       ],
-      "text": "1.100,00 EUR",
+      "text": "1.100,00 €",
       "type": "text"
      },
      {
@@ -247,8 +247,8 @@
      "cache_creation_input_tokens": 0,
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
-     "input_tokens": 3624,
-     "output_tokens": 326,
+     "input_tokens": 3763,
+     "output_tokens": 318,
      "output_tokens_details": {
       "thinking_tokens": 0
      },

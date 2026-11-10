@@ -1,0 +1,123 @@
+{
+ "format": 1,
+ "doc": "depotauszug",
+ "synthetic": false,
+ "recorded_on": "2026-11-10",
+ "sdk_version": "2.6.0",
+ "classify": {
+  "prompt_version": "8569510b0727e75f",
+  "request_sha256": "3d0444039ee65d591688bb989dd833af1980175461fff86e3df4f181fa1999a1",
+  "message": {
+   "id": "msg_011CguPwyPefkHR3ZBgMgyVn",
+   "container": null,
+   "content": [
+    {
+     "citations": null,
+     "text": "{\"type\":\"statement\",\"subtype\":\"depot_statement\",\"contains_tenant_data\":false,\"language\":\"de\",\"confidence\":\"high\"}",
+     "type": "text"
+    }
+   ],
+   "diagnostics": null,
+   "model": "claude-haiku-5-5",
+   "role": "assistant",
+   "stop_details": null,
+   "stop_reason": "end_turn",
+   "stop_sequence": null,
+   "type": "message",
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": "us",
+    "input_tokens": 6497,
+    "output_tokens": 45,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": "standard"
+   }
+  }
+ },
+ "extract": [
+  {
+   "prompt_version": "5a4e4a41623c9f1a",
+   "request_sha256": "b5fc5bb6ad71eead1ea543b2f3d852fbaf118eabeef82156885902e72059f449",
+   "message": {
+    "id": "msg_011CguPwqMTgfcz4nQ94dZzp",
+    "container": null,
+    "content": [
+     {
+      "citations": null,
+      "text": "title: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Beispiel Depotbank AG - Depotauszug zum 30.06.2026\r\nDepot-Nr. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Depotauszug",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ndocument_date: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Beispiel Depotbank AG - Depotauszug zum 30.06.2026\r\nDepot-Nr. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "30.06.2026",
+      "type": "text"
+     }
+    ],
+    "diagnostics": null,
+    "model": "claude-sonnet-5-5",
+    "role": "assistant",
+    "stop_details": null,
+    "stop_reason": "end_turn",
+    "stop_sequence": null,
+    "type": "message",
+    "usage": {
+     "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+     },
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "inference_geo": "us",
+     "input_tokens": 3610,
+     "output_tokens": 59,
+     "output_tokens_details": {
+      "thinking_tokens": 0
+     },
+     "server_tool_use": null,
+     "service_tier": "standard",
+     "speed": "standard"
+    }
+   },
+   "page_offset": 0
+  }
+ ]
+}

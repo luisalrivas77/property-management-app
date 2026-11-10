@@ -149,6 +149,7 @@ ids:
   tenant_1: &N1 00000012-0000-4000-8000-000000000001
   tenancy_1: &T1 00000013-0000-4000-8000-000000000001
   tenancy_2: &T2 00000013-0000-4000-8000-000000000002
+  tenancy_3: &T3 00000013-0000-4000-8000-000000000003
 
 shared:
   classify_kaufvertrag: &CL_KV {type: contract, subtype: purchase_contract, contains_tenant_data: false, language: de, confidence: high}
@@ -1613,6 +1614,442 @@ cases:
           entity_type: typing
           mode: create
           values: {type: letter, title: Schreiben der Hausverwaltung, document_date: "2026-09-01"}
+
+  # --- The general reading and the document catalogue (D130, D131, §6.2.1) ---------------
+  # kind general: title and date, plus the link fields of the subtype's group; typing and at
+  # most one link (property by address, else the only property; loan by lender and contract
+  # number, else the only loan; tenancy by address and a date within the tenancy: start <=
+  # document_date <= end, an open tenancy has no end, exactly one fits). No match: typing
+  # only, typing's notes name what was not found. Never a record.
+
+  - id: general_letter_typing_only
+    description: D130. A letter without a subtype gets the general reading; typing only, no link, no note.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: {type: letter, subtype: null, contains_tenant_data: false, language: de, confidence: medium}
+      properties: [*PROP_LINDEN]
+    extraction:
+      title: {v: Schreiben der Stadtwerke, p: 1, q: "Ihre Kundennummer"}
+      document_date: {v: "2026-09-01", p: 1, q: "Berlin, 01.09.2026"}
+    expect:
+      keys: [typing]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: letter, title: Schreiben der Stadtwerke, document_date: "2026-09-01"}
+
+  - id: management_contract_links_the_property
+    description: D130. A Verwaltervertrag is typed and linked to the property by address; the fee and the notice period stay in the extraction.
+    kind: management_contract
+    context:
+      document_id: *DOC
+      classification: &CL_MGMT {type: contract, subtype: management_contract, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN, *PROP_KASTANIEN]
+    extraction:
+      title: {v: Mietverwaltungsvertrag Lindenstraße 12, p: 1, q: "Mietverwaltungsvertrag"}
+      document_date: {v: "2026-04-15", p: 3, q: "Berlin, den 15.04.2026"}
+      manager: {v: Muster Hausverwaltung GmbH, p: 1, q: "Muster Hausverwaltung GmbH"}
+      street: {v: Lindenstraße, p: 1, q: "Objekt: Lindenstraße 12, 10115 Berlin"}
+      house_number: {v: "12", p: 1, q: "Objekt: Lindenstraße 12, 10115 Berlin"}
+      postal_code: {v: "10115", p: 1, q: "Objekt: Lindenstraße 12, 10115 Berlin"}
+      start_date: {v: "2026-05-01", p: 1, q: "Der Vertrag beginnt am 01.05.2026."}
+      monthly_fee: {v: "30,00 € zzgl. MwSt. je Einheit", p: 2, q: "Vergütung 30,00 € zzgl. MwSt. je Einheit und Monat"}
+      notice_period: {v: drei Monate zum Monatsende, p: 2, q: "Kündigungsfrist drei Monate zum Monatsende"}
+    expect:
+      keys: [typing, link:property]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: contract, subtype: management_contract, title: Mietverwaltungsvertrag Lindenstraße 12, document_date: "2026-04-15"}
+        - key: link:property
+          entity_type: link
+          mode: create
+          target_id: *P
+          values: {}
+
+  - id: management_contract_no_matching_property
+    description: D130. The contract's address (verified postal code) is neither property; typing only, with a note.
+    kind: management_contract
+    context:
+      document_id: *DOC
+      classification: *CL_MGMT
+      properties: [*PROP_LINDEN, *PROP_KASTANIEN]
+    extraction:
+      title: {v: Verwaltervertrag Birkenweg 3, p: 1, q: "Verwaltervertrag"}
+      document_date: {v: "2026-04-15", p: 3, q: "Berlin, den 15.04.2026"}
+      manager: {v: Muster Hausverwaltung GmbH, p: 1, q: "Muster Hausverwaltung GmbH"}
+      street: {v: Birkenweg, p: 1, q: "Objekt: Birkenweg 3, 10999 Berlin"}
+      house_number: {v: "3", p: 1, q: "Objekt: Birkenweg 3, 10999 Berlin"}
+      postal_code: {v: "10999", p: 1, q: "Objekt: Birkenweg 3, 10999 Berlin"}
+    expect:
+      keys: [typing]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: contract, subtype: management_contract, title: Verwaltervertrag Birkenweg 3, document_date: "2026-04-15"}
+          notes_contain: [kein Objekt gefunden]
+
+  - id: catalogue_property_group_by_address
+    description: D131, property and purchase. A Grundbuchauszug is linked to the property its address names.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: {type: letter, subtype: land_register_extract, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN, *PROP_KASTANIEN]
+    extraction:
+      title: {v: Grundbuchauszug Kastanienallee 5, p: 1, q: "Grundbuch von Prenzlauer Berg"}
+      document_date: {v: "2026-02-03", p: 1, q: "Abdruck vom 03.02.2026"}
+      street: {v: Kastanienallee, p: 1, q: "Kastanienallee 5, 10435 Berlin"}
+      house_number: {v: "5", p: 1, q: "Kastanienallee 5, 10435 Berlin"}
+      postal_code: {v: "10435", p: 1, q: "Kastanienallee 5, 10435 Berlin"}
+    expect:
+      keys: [typing, link:property]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: letter, subtype: land_register_extract, title: Grundbuchauszug Kastanienallee 5, document_date: "2026-02-03"}
+        - key: link:property
+          entity_type: link
+          mode: create
+          target_id: *P2
+          values: {}
+
+  - id: catalogue_weg_group_only_property
+    description: D131, WEG. An Eigentümerversammlung's minutes without an address; the workspace's only property, as for the Grundsteuerbescheid.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: {type: letter, subtype: weg_minutes, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+    extraction:
+      title: {v: Protokoll Eigentümerversammlung 2026, p: 1, q: "Niederschrift der Eigentümerversammlung"}
+      document_date: {v: "2026-06-18", p: 1, q: "am 18.06.2026"}
+    expect:
+      keys: [typing, link:property]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: letter, subtype: weg_minutes, title: Protokoll Eigentümerversammlung 2026, document_date: "2026-06-18"}
+        - key: link:property
+          entity_type: link
+          mode: create
+          target_id: *P
+          values: {}
+
+  - id: catalogue_running_costs_utility_bill
+    description: D131, running costs. A utility bill keeps the invoice reader (amount, due date) but proposes no Nebenkosten row; typing (its tax year derived as for every invoice, D36) and link:property.
+    kind: invoice
+    context:
+      document_id: *DOC
+      classification: {type: invoice, subtype: utility_bill, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+    extraction:
+      title: {v: Jahresabrechnung Strom 2026, p: 1, q: "Jahresabrechnung Strom"}
+      document_date: {v: "2027-01-20", p: 1, q: "Rechnungsdatum 20.01.2027"}
+      sender: {v: Stadtwerke Musterstadt, p: 1, q: "Stadtwerke Musterstadt"}
+      subject: {v: Stromabrechnung 2026, p: 1, q: "Stromabrechnung 2026"}
+      amount_total: {v: "412.30", p: 1, q: "Rechnungsbetrag 412,30 €"}
+    expect:
+      keys: [typing, link:property]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: invoice, subtype: utility_bill, title: Jahresabrechnung Strom 2026, document_date: "2027-01-20", tax_year: 2027}
+          derived: {tax_year: [document_date]}
+        - key: link:property
+          entity_type: link
+          mode: create
+          target_id: *P
+          values: {}
+
+  - id: catalogue_property_group_no_match
+    description: D131. A Kostenvoranschlag for an address that is neither property; typing only, with a note.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: {type: letter, subtype: quote, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN, *PROP_KASTANIEN]
+    extraction:
+      title: {v: Kostenvoranschlag Malerarbeiten, p: 1, q: "Kostenvoranschlag"}
+      document_date: {v: "2026-10-02", p: 1, q: "02.10.2026"}
+      street: {v: Birkenweg, p: 1, q: "Bauvorhaben Birkenweg 3, 10999 Berlin"}
+      house_number: {v: "3", p: 1, q: "Bauvorhaben Birkenweg 3, 10999 Berlin"}
+      postal_code: {v: "10999", p: 1, q: "Bauvorhaben Birkenweg 3, 10999 Berlin"}
+    expect:
+      keys: [typing]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: letter, subtype: quote, title: Kostenvoranschlag Malerarbeiten, document_date: "2026-10-02"}
+          notes_contain: [kein Objekt gefunden]
+
+  - id: catalogue_loan_group_by_contract_number
+    description: D131, loan. A Konditionsanpassung names the lender and the number of one of two loans.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: {type: letter, subtype: loan_terms_change, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      loans:
+        - {id: *L, property_id: *P, lender: Musterbank AG, contract_number: "1001"}
+        - {id: *L2, property_id: *P, lender: Musterbank AG, contract_number: "2002"}
+    extraction:
+      title: {v: Prolongation Darlehen 2002, p: 1, q: "Prolongationsangebot"}
+      document_date: {v: "2026-08-01", p: 1, q: "01.08.2026"}
+      lender: {v: Musterbank AG, p: 1, q: "Musterbank AG"}
+      contract_number: {v: "2002", p: 1, q: "Darlehensnummer 2002"}
+    expect:
+      keys: [typing, link:loan]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: letter, subtype: loan_terms_change, title: Prolongation Darlehen 2002, document_date: "2026-08-01"}
+        - key: link:loan
+          entity_type: link
+          mode: create
+          target_id: *L2
+          values: {}
+
+  - id: catalogue_loan_group_only_loan
+    description: D131, loan. A Darlehenskontoauszug without a number; the workspace's only loan, as for the Zinsbescheinigung.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: {type: statement, subtype: loan_statement, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      loans:
+        - {id: *L, property_id: *P, lender: Musterbank AG, contract_number: "1001"}
+    extraction:
+      title: {v: Jahreskontoauszug Darlehen 2026, p: 1, q: "Jahreskontoauszug"}
+      document_date: {v: "2027-01-05", p: 1, q: "05.01.2027"}
+      lender: {v: Musterbank AG, p: 1, q: "Musterbank AG"}
+    expect:
+      keys: [typing, link:loan]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: statement, subtype: loan_statement, title: Jahreskontoauszug Darlehen 2026, document_date: "2027-01-05"}
+        - key: link:loan
+          entity_type: link
+          mode: create
+          target_id: *L
+          values: {}
+
+  - id: catalogue_loan_group_no_match
+    description: D131. Two loans and a number that is neither; typing only, with a note.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: {type: other, subtype: repayment_schedule, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      loans:
+        - {id: *L, property_id: *P, lender: Musterbank AG, contract_number: "1001"}
+        - {id: *L2, property_id: *P, lender: Musterbank AG, contract_number: "2002"}
+    extraction:
+      title: {v: Tilgungsplan Darlehen 3003, p: 1, q: "Tilgungsplan"}
+      document_date: {v: "2026-05-01", p: 1, q: "Stand 01.05.2026"}
+      lender: {v: Musterbank AG, p: 1, q: "Musterbank AG"}
+      contract_number: {v: "3003", p: 1, q: "Darlehen Nr. 3003"}
+    expect:
+      keys: [typing]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: other, subtype: repayment_schedule, title: Tilgungsplan Darlehen 3003, document_date: "2026-05-01"}
+          notes_contain: [kein Darlehen gefunden]
+
+  - id: catalogue_tenancy_group_by_address_and_date
+    description: D131, tenancy. A Mieterhöhung dated within the running tenancy of the flat; the earlier tenancy on the same unit has ended, the other property's is elsewhere.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: {type: letter, subtype: rent_increase, contains_tenant_data: true, language: de, confidence: high}
+      properties: [*PROP_LINDEN, *PROP_KASTANIEN]
+      units:
+        - {id: *U, property_id: *P, label: WE 3}
+        - {id: *U2, property_id: *P2, label: WE 3}
+      tenancies:
+        - {id: *T1, unit_id: *U, start_date: 2025-01-01}
+        - {id: *T2, unit_id: *U2, start_date: 2024-02-01}
+        - {id: *T3, unit_id: *U, start_date: 2022-03-01, end_date: 2024-12-31}
+    extraction:
+      title: {v: Mieterhöhung Lindenstraße 12, p: 1, q: "Mieterhöhungsverlangen"}
+      document_date: {v: "2026-09-15", p: 1, q: "Berlin, 15.09.2026"}
+      street: {v: Lindenstraße, p: 1, q: "Wohnung Lindenstraße 12, 10115 Berlin"}
+      house_number: {v: "12", p: 1, q: "Wohnung Lindenstraße 12, 10115 Berlin"}
+      postal_code: {v: "10115", p: 1, q: "Wohnung Lindenstraße 12, 10115 Berlin"}
+    expect:
+      keys: [typing, link:tenancy]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: letter, subtype: rent_increase, title: Mieterhöhung Lindenstraße 12, document_date: "2026-09-15"}
+        - key: link:tenancy
+          entity_type: link
+          mode: create
+          target_id: *T1
+          values: {}
+
+  - id: catalogue_tenancy_group_no_match
+    description: D131. Two room tenancies run in the flat at the document's date; which one cannot be told, so typing only, with a note.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: {type: letter, subtype: termination_notice, contains_tenant_data: true, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      units:
+        - {id: *U, property_id: *P, label: Zimmer 1}
+        - {id: *U3, property_id: *P, label: Zimmer 2}
+      tenancies:
+        - {id: *T1, unit_id: *U, start_date: 2026-05-01}
+        - {id: *T2, unit_id: *U3, start_date: 2026-05-01}
+    extraction:
+      title: {v: Kündigung Mietverhältnis, p: 1, q: "Kündigung"}
+      document_date: {v: "2026-10-30", p: 1, q: "Berlin, 30.10.2026"}
+      street: {v: Lindenstraße, p: 1, q: "Lindenstraße 12, 10115 Berlin"}
+      house_number: {v: "12", p: 1, q: "Lindenstraße 12, 10115 Berlin"}
+      postal_code: {v: "10115", p: 1, q: "Lindenstraße 12, 10115 Berlin"}
+    expect:
+      keys: [typing]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: letter, subtype: termination_notice, title: Kündigung Mietverhältnis, document_date: "2026-10-30"}
+          notes_contain: [kein eindeutiges Mietverhältnis]
+
+  - id: catalogue_self_disclosure_links_the_property_only
+    description: PR #135 review, F3. A Selbstauskunft comes before the tenancy it applies for, so its date never places it; the tenancy running at that date is not linked. The property by address, and a note to link the tenancy by hand.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: {type: letter, subtype: tenant_self_disclosure, contains_tenant_data: true, language: de, confidence: high}
+      properties: [*PROP_LINDEN, *PROP_KASTANIEN]
+      units:
+        - {id: *U, property_id: *P, label: WE 3}
+      tenancies:
+        - {id: *T1, unit_id: *U, start_date: 2025-01-01}
+    extraction:
+      title: {v: Mieterselbstauskunft, p: 1, q: "Mieterselbstauskunft"}
+      document_date: {v: "2026-07-10", p: 1, q: "10.07.2026"}
+      street: {v: Lindenstraße, p: 1, q: "für die Wohnung Lindenstraße 12, 10115 Berlin"}
+      house_number: {v: "12", p: 1, q: "für die Wohnung Lindenstraße 12, 10115 Berlin"}
+      postal_code: {v: "10115", p: 1, q: "für die Wohnung Lindenstraße 12, 10115 Berlin"}
+    expect:
+      keys: [typing, link:property]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: letter, subtype: tenant_self_disclosure, title: Mieterselbstauskunft, document_date: "2026-07-10"}
+          notes_contain: [von Hand mit dem Mietverhältnis]
+        - key: link:property
+          entity_type: link
+          mode: create
+          target_id: *P
+          values: {}
+
+  - id: catalogue_operating_costs_statement_links_the_property_only
+    description: PR #135 review, F3. A Betriebskostenabrechnung covers a year in which the tenants may have changed; the one tenancy running at its date is not linked. The property by address, and a note to link the tenancy by hand.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: {type: letter, subtype: operating_costs_statement, contains_tenant_data: true, language: de, confidence: high}
+      properties: [*PROP_LINDEN, *PROP_KASTANIEN]
+      units:
+        - {id: *U2, property_id: *P2, label: WE 3}
+      tenancies:
+        - {id: *T2, unit_id: *U2, start_date: 2024-02-01}
+    extraction:
+      title: {v: Betriebskostenabrechnung 2026, p: 1, q: "Betriebskostenabrechnung 2026"}
+      document_date: {v: "2027-03-15", p: 1, q: "Berlin, 15.03.2027"}
+      street: {v: Kastanienallee, p: 1, q: "Mietobjekt Kastanienallee 5, 10435 Berlin"}
+      house_number: {v: "5", p: 1, q: "Mietobjekt Kastanienallee 5, 10435 Berlin"}
+      postal_code: {v: "10435", p: 1, q: "Mietobjekt Kastanienallee 5, 10435 Berlin"}
+    expect:
+      keys: [typing, link:property]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: letter, subtype: operating_costs_statement, title: Betriebskostenabrechnung 2026, document_date: "2027-03-15"}
+          notes_contain: [von Hand mit dem Mietverhältnis]
+        - key: link:property
+          entity_type: link
+          mode: create
+          target_id: *P2
+          values: {}
+
+  - id: catalogue_income_tax_typing_only
+    description: D131, income tax. A Vorauszahlungsbescheid is read for title and date only; no link and no note.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: {type: bescheid, subtype: prepayment_notice, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      loans:
+        - {id: *L, property_id: *P, lender: Musterbank AG, contract_number: "1001"}
+    extraction:
+      title: {v: Vorauszahlungsbescheid 2027, p: 1, q: "Bescheid über Vorauszahlungen"}
+      document_date: {v: "2026-11-02", p: 1, q: "02.11.2026"}
+    expect:
+      keys: [typing]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: bescheid, subtype: prepayment_notice, title: Vorauszahlungsbescheid 2027, document_date: "2026-11-02"}
+
+  - id: catalogue_household_services_invoice_typing_only
+    description: D131, income tax. A §35a invoice keeps the invoice reader but proposes no Nebenkosten row and no link.
+    kind: invoice
+    context:
+      document_id: *DOC
+      classification: {type: invoice, subtype: household_services_invoice, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+    extraction:
+      title: {v: Rechnung Fensterreinigung, p: 1, q: "Rechnung Fensterreinigung"}
+      document_date: {v: "2026-07-07", p: 1, q: "07.07.2026"}
+      sender: {v: Glanz Gebäudeservice, p: 1, q: "Glanz Gebäudeservice"}
+      amount_total: {v: "119.00", p: 1, q: "Gesamt 119,00 €"}
+    expect:
+      keys: [typing]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: invoice, subtype: household_services_invoice, title: Rechnung Fensterreinigung, document_date: "2026-07-07", tax_year: 2026}
+          derived: {tax_year: [document_date]}
+
+  - id: catalogue_household_finances_typing_only
+    description: D131, household finances. A Depotauszug is never read as the rental account's statement; title and date only.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: {type: statement, subtype: depot_statement, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+    extraction:
+      title: {v: Depotauszug 30.09.2026, p: 1, q: "Depotauszug"}
+      document_date: {v: "2026-09-30", p: 1, q: "per 30.09.2026"}
+    expect:
+      keys: [typing]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: statement, subtype: depot_statement, title: Depotauszug 30.09.2026, document_date: "2026-09-30"}
 
   # --- Kautionsnachweis (D42) ------------------------------------------------------------
 

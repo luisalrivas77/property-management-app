@@ -5,10 +5,10 @@
  "recorded_on": "2026-11-10",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "76607e0fbcb59f81",
-  "request_sha256": "6968b36a05657e0d712ee412e788c6ad2656fa9e11b4b783dd0f00ca8655556b",
+  "prompt_version": "8569510b0727e75f",
+  "request_sha256": "cb5830a27f0dba3350b00e379d73d8694369609b9964e4d4e1ed695662922030",
   "message": {
-   "id": "msg_011CguHyuUcPAUYLpeHT5AN5",
+   "id": "msg_011CguPu6VTVovcwvmm6G9fL",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 4005,
+    "input_tokens": 6488,
     "output_tokens": 48,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -45,10 +45,10 @@
  },
  "extract": [
   {
-   "prompt_version": "213911d55186e77b",
-   "request_sha256": "fb7f4704be4d924ede242ddd4e820735e15f7e07aa6c5448d634c2c93549b157",
+   "prompt_version": "5a4e4a41623c9f1a",
+   "request_sha256": "f5de905f1b6d9a047964bc4cabc91e379bf106400a64816f7e7beaf4e644e8c0",
    "message": {
-    "id": "msg_011CguHyiGv7RzHWeaEVgPs2",
+    "id": "msg_011CguPtuZ8TR6ShMoPMJjDY",
     "container": null,
     "content": [
      {
@@ -188,7 +188,7 @@
         "type": "page_location"
        }
       ],
-      "text": "310,00 EUR",
+      "text": "310,00 €",
       "type": "text"
      },
      {
@@ -208,7 +208,7 @@
         "type": "page_location"
        }
       ],
-      "text": "190,00 EUR",
+      "text": "190,00 €",
       "type": "text"
      },
      {
@@ -228,7 +228,7 @@
         "type": "page_location"
        }
       ],
-      "text": "45,00 EUR",
+      "text": "45,00 €",
       "type": "text"
      },
      {
@@ -248,7 +248,7 @@
         "type": "page_location"
        }
       ],
-      "text": "75,00 EUR",
+      "text": "75,00 €",
       "type": "text"
      },
      {
@@ -287,8 +287,8 @@
      "cache_creation_input_tokens": 0,
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
-     "input_tokens": 3661,
-     "output_tokens": 404,
+     "input_tokens": 3800,
+     "output_tokens": 396,
      "output_tokens_details": {
       "thinking_tokens": 0
      },
