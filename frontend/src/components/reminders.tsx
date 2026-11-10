@@ -2,6 +2,7 @@
 
 // Deadline reminders (docs/phases/phase-5.md §6, §11; D122): the German label per label_code,
 // the link to the reminder's scope, and the "Erledigt" button that posts the acknowledgement.
+// What to do about each kind is REMINDER_GUIDE in components/todos.tsx (phase-3.md D136).
 // Used by the Übersicht card "Nächste Termine" and the Zu prüfen cards (components/inbox.tsx).
 //
 // Every date comes from GET /reminders (due_on, and the dates in label_args); nothing here
@@ -16,6 +17,7 @@ import type { components } from "@/api/types";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { formatDate, formatMonth } from "./format";
+import { reminderTodo } from "./todos";
 
 export type Reminder = components["schemas"]["Reminder"];
 
@@ -157,6 +159,7 @@ export function NextDates({ reminders, onChanged }: { reminders: Reminder[]; onC
         <ul className="stack next-dates">
           {rows.map((reminder) => {
             const link = reminderLink(reminder);
+            const todo = reminderTodo(reminder);
             return (
               <li key={reminder.id} className="row">
                 <strong className="next-dates-when">{formatDate(reminder.due_on)}</strong>
@@ -168,6 +171,7 @@ export function NextDates({ reminders, onChanged }: { reminders: Reminder[]; onC
                       <Link href={link.href}>{link.label}</Link>
                     </>
                   ) : null}
+                  {todo ? <span className="todo-text next-dates-todo">{todo}</span> : null}
                 </span>
                 <span className="spacer" />
                 {reminder.severity === "action" ? <ReminderDone reminder={reminder} onDone={onChanged} /> : null}

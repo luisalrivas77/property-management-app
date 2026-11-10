@@ -579,3 +579,8 @@ button.link.tax-sources-button {
 .todo-inline-form input {
   max-width: 8rem;
 }
+
+.next-dates-todo {
+  display: block;
+  color: var(--muted);
+}

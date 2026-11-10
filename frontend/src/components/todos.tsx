@@ -853,7 +853,14 @@ export function requirementFix(item: DocumentChecklistItem, ctx: ChecklistContex
 type Reminder = components["schemas"]["Reminder"];
 type ReminderKind = components["schemas"]["ReminderKind"];
 
-export const REMINDER_GUIDE: Record<ReminderKind, { todo: boolean; text: (reminder: Reminder) => string }> = {
+interface ReminderGuide {
+  /** True: something to do. False: a note (the date passes and nothing has to change). */
+  todo: boolean;
+  /** Was tun, in plain words. */
+  text: (reminder: Reminder) => string;
+}
+
+export const REMINDER_GUIDE: Record<ReminderKind, ReminderGuide> = {
   "grundsteuer.instalment": {
     todo: true,
     text: (r) =>
