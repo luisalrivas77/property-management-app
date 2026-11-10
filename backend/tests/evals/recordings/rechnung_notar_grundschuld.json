@@ -5,10 +5,10 @@
  "recorded_on": "2026-11-10",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "8569510b0727e75f",
-  "request_sha256": "d9d60113a73f1c12e361302b61089759e26a0abcdc6c57165cdb148354b2f3e5",
+  "prompt_version": "de0ab828a4c10d64",
+  "request_sha256": "f3956856fde2a2a6936fd712e8d038e46bbd7bd2597dacb14b4c73048b081c96",
   "message": {
-   "id": "msg_011CguPtcu21fpngFbUFSZ45",
+   "id": "msg_011CguyKn6T7j5zUP1ZTrNtX",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 6525,
+    "input_tokens": 6572,
     "output_tokens": 42,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -46,9 +46,9 @@
  "extract": [
   {
    "prompt_version": "5a4e4a41623c9f1a",
-   "request_sha256": "124ba1c6d397063465a38e02cf0a73e9bf16b89165dcb66adf2536950ffe0dfd",
+   "request_sha256": "7271b2e726bf718f0de9087e748be9966a79e99013916db44c1171f5fb4109c9",
    "message": {
-    "id": "msg_011CguPtTJaD8wJ8vz2HBZb3",
+    "id": "msg_011CguyKb89qVy86ojLLhYu2",
     "container": null,
     "content": [
      {
@@ -230,6 +230,26 @@
       ],
       "text": "17.03.2026",
       "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ncost_lines: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "2026-0457 vom 03.03.2026\r\nzur Urkunde 1235/2026 (Grundschuldbestellung mit ZV-Unterwerfung)\r\nBeurkundungsgebühr 410,00 EUR\r\nAuslagen 40,00 EUR\r\nNetto 450,00 EUR\r\nUmsatzsteuer 19 % 85,50 EUR\r\nGesamtbetrag 535,50 EUR\r\nZahlbar bis 17.03.2026 auf DE02 1203 0000 0000 2020 51.",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Beurkundungsgebühr | 410,00 EUR | loan_fees; Auslagen | 40,00 EUR | loan_fees; Umsatzsteuer 19 % | 85,50 EUR | vat",
+      "type": "text"
      }
     ],
     "diagnostics": null,
@@ -247,8 +267,8 @@
      "cache_creation_input_tokens": 0,
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
-     "input_tokens": 3772,
-     "output_tokens": 319,
+     "input_tokens": 3999,
+     "output_tokens": 418,
      "output_tokens_details": {
       "thinking_tokens": 0
      },

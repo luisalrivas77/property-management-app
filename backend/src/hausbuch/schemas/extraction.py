@@ -195,6 +195,35 @@ class DepositRecordExtraction(_Typing):
     received_on: ExtractedValue = ev("date", "Eingang")
 
 
+# The category codes the reading may give a bill's cost line (phase 2 D135): the cost
+# categories of the allocation taxonomy, plus `vat` for the Umsatzsteuer line. Code sorts the
+# lines afterwards (rules.prefill.sort_bill): the purchase and financing terms decide over the
+# model's code, and the euro parts are computed by code from the printed amounts.
+COST_LINE_CODES = (
+    "acquisition_cost",
+    "loan_fees",
+    "repairs",
+    "renovation",
+    "insurance",
+    "grundsteuer",
+    "property_management",
+    "hausgeld_umlagefaehig",
+    "hausgeld_verwaltung",
+    "electricity",
+    "professional_fees",
+    "bank_fees",
+    "other_expense",
+    "vat",
+)
+COST_LINES_MEANING = (
+    "every cost line of the bill, each written `text | amount | code`: the line's text and "
+    "its amount as printed, then the code of the kind of cost it is, the only part you choose "
+    "yourself, one of " + ", ".join(COST_LINE_CODES) + " (acquisition_cost for the purchase "
+    "and its land register entry, loan_fees for a Grundschuld or loan, vat for the "
+    "Umsatzsteuer line); never a subtotal (Netto, Zwischensumme) or the total"
+)
+
+
 class InvoiceExtraction(_Typing):
     """Invoices: Nebenkosten (notary, Grundbuchamt, broker) now, repairs and others later."""
 
@@ -208,6 +237,8 @@ class InvoiceExtraction(_Typing):
     reference: ExtractedValue = ev("text", "invoice no. / Aktenzeichen")
     iban: ExtractedValue = ev("iban", "the payee's IBAN, if stated")
     due_on: ExtractedValue = ev("date", "Zahlungsziel, if stated")
+    # Phase 2 D135: kept only when they sum to amount_total (extraction_parse.derive_fields).
+    cost_lines: ExtractedValue = ev("text_list", COST_LINES_MEANING)
 
 
 class BescheidExtraction(_Typing):
@@ -219,6 +250,7 @@ class BescheidExtraction(_Typing):
     iban: ExtractedValue = ev("iban", "the authority's IBAN, if stated")
     due_on: ExtractedValue = ev("date", "fällig am")
     tax_year: ExtractedValue = ev("year", "the year it concerns, if stated")
+    cost_lines: ExtractedValue = ev("text_list", COST_LINES_MEANING)  # phase 2 D135
 
 
 class GrundsteuerbescheidExtraction(_Typing):

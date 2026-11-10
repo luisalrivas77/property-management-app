@@ -2980,6 +2980,8 @@ export interface components {
             due_on?: components["schemas"]["ExtractedValue"];
             /** @description the year it concerns, if stated */
             tax_year?: components["schemas"]["ExtractedValue"];
+            /** @description every cost line of the bill, each written `text | amount | code`: the line's text and its amount as printed, then the code of the kind of cost it is, the only part you choose yourself, one of acquisition_cost, loan_fees, repairs, renovation, insurance, grundsteuer, property_management, hausgeld_umlagefaehig, hausgeld_verwaltung, electricity, professional_fees, bank_fees, other_expense, vat (acquisition_cost for the purchase and its land register entry, loan_fees for a Grundschuld or loan, vat for the Umsatzsteuer line); never a subtotal (Netto, Zwischensumme) or the total */
+            cost_lines?: components["schemas"]["ExtractedValue"];
         };
         /** BescheidZve */
         BescheidZve: {
@@ -4639,6 +4641,8 @@ export interface components {
             iban?: components["schemas"]["ExtractedValue"];
             /** @description Zahlungsziel, if stated */
             due_on?: components["schemas"]["ExtractedValue"];
+            /** @description every cost line of the bill, each written `text | amount | code`: the line's text and its amount as printed, then the code of the kind of cost it is, the only part you choose yourself, one of acquisition_cost, loan_fees, repairs, renovation, insurance, grundsteuer, property_management, hausgeld_umlagefaehig, hausgeld_verwaltung, electricity, professional_fees, bank_fees, other_expense, vat (acquisition_cost for the purchase and its land register entry, loan_fees for a Grundschuld or loan, vat for the Umsatzsteuer line); never a subtotal (Netto, Zwischensumme) or the total */
+            cost_lines?: components["schemas"]["ExtractedValue"];
         };
         JsonValue: unknown;
         /**

@@ -5,10 +5,10 @@
  "recorded_on": "2026-11-10",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "8569510b0727e75f",
-  "request_sha256": "07717b61312cdb85ba2b69b408d5946c8ac0167dab500854329bf750483e44dd",
+  "prompt_version": "de0ab828a4c10d64",
+  "request_sha256": "c9da4a0d2109896d8cfcf0c8e663b48528b324f8678d92081b19c1996c98ee9d",
   "message": {
-   "id": "msg_011CguPtpnPNiC4HPmgeCser",
+   "id": "msg_011CguyLb4THcKUM6o8QPZyv",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 6467,
+    "input_tokens": 6514,
     "output_tokens": 51,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -46,9 +46,9 @@
  "extract": [
   {
    "prompt_version": "5a4e4a41623c9f1a",
-   "request_sha256": "dff6742965ef30fbe3892356fb210fdb3cfd83415c170bc42f2b4af37c37edfd",
+   "request_sha256": "f1b23f27743a25c13ffc6d48cfd12f5c5cb891c10aaac4bcc6956d8f52629299",
    "message": {
-    "id": "msg_011CguPthdHhNZu4upEhAuAG",
+    "id": "msg_011CguyLSmtEBwyp7EN4Zt6Y",
     "container": null,
     "content": [
      {
@@ -173,7 +173,22 @@
      },
      {
       "citations": null,
-      "text": "\ntax_year: unbekannt",
+      "text": "\ntax_year: unbekannt\ncost_lines: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Finanzamt Musterstadt\r\nBescheid über Grunderwerbsteuer\r\nSteuernummer 12/345/67890, vom 25.03.2026\r\nErwerbsvorgang: Kaufvertrag vom 12.02.2026, Urkunde 1234/2026\r\nGegenleistung 325.000,00 EUR, Steuersatz 6,0 %\r\nFestgesetzte Grunderwerbsteuer: 19.500,00 EUR\r\nfällig am 28.04.2026",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Festgesetzte Grunderwerbsteuer | 19.500,00 € | acquisition_cost",
       "type": "text"
      }
     ],
@@ -192,8 +207,8 @@
      "cache_creation_input_tokens": 0,
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
-     "input_tokens": 3658,
-     "output_tokens": 214,
+     "input_tokens": 3885,
+     "output_tokens": 275,
      "output_tokens_details": {
       "thinking_tokens": 0
      },
