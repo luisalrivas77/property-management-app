@@ -686,6 +686,8 @@ export const WARNING_TEXT: Record<WarningCode, (params: Params) => string> = {
   // Phase 4b (phase-4b.md §9): Anlage N and the whole-return estimate.
   "tax.travel_frequency": () =>
     "Mehr als 50 Fahrten zur Immobilie im Jahr: bei fast täglicher Anwesenheit kann nur die halbe Pauschale gelten. Bitte prüfen.",
+  "tax.private_cost_paid_from_account": (p) =>
+    `${p.label ? `„${p.label}“ ist` : "Eine Rechnung ist"} als von einem anderen Konto bezahlt eingetragen, wurde aber vom Mietkonto bezahlt: sie zählt nur einmal, mit der Buchung vom Mietkonto. Die Angabe bitte zurückziehen.`,
   "anlage_n.certificate_missing": () =>
     "Keine Lohnsteuerbescheinigung für dieses Jahr: die Zahlen beruhen auf Gehaltsabrechnungen oder der Schätzung.",
   "anlage_n.church_mismatch": () =>

@@ -1,0 +1,283 @@
+{
+ "format": 1,
+ "doc": "rechnung_reparatur",
+ "synthetic": false,
+ "recorded_on": "2026-11-10",
+ "sdk_version": "2.6.0",
+ "classify": {
+  "prompt_version": "de0ab828a4c10d64",
+  "request_sha256": "1c4a81809f3dc7643743ac3fb9c04cbe21759c1b07d2db261d76b7aeca15d7f4",
+  "message": {
+   "id": "msg_011CguyLNRCALZb4MGyo8iWS",
+   "container": null,
+   "content": [
+    {
+     "citations": null,
+     "text": "{\"type\":\"invoice\",\"subtype\":null,\"contains_tenant_data\":false,\"language\":\"de\",\"confidence\":\"high\"}",
+     "type": "text"
+    }
+   ],
+   "diagnostics": null,
+   "model": "claude-haiku-5-5",
+   "role": "assistant",
+   "stop_details": null,
+   "stop_reason": "end_turn",
+   "stop_sequence": null,
+   "type": "message",
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": "us",
+    "input_tokens": 6585,
+    "output_tokens": 42,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": "standard"
+   }
+  }
+ },
+ "extract": [
+  {
+   "prompt_version": "5a4e4a41623c9f1a",
+   "request_sha256": "08d4715ec77b8d892f35f380c38c734a2ff3461f66bdc1261fda2de0c60f2eff",
+   "message": {
+    "id": "msg_011CguyLAKvSkZFthcmzxNXD",
+    "container": null,
+    "content": [
+     {
+      "citations": null,
+      "text": "title: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "R-2026-0815 vom 10.06.2026\r\nReparatur in der vermieteten Wohnung Lindenstraße 7, 10115 Berlin\r\nArbeitszeit Monteur, 3 Stunden 180,00 EUR\r\nMaterial: Ventil und Dichtungen 70,00 EUR\r\nNetto 250,00 EUR\r\nUmsatzsteuer 19 % 47,50 EUR\r\nRechnungsbetrag 297,50 EUR\r\nZahlbar bis 24.06.2026 auf DE02 1203 0000 0000 2020 51.",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Handwerkerrechnung Reparatur vermietete Wohnung",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ndocument_date: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "R-2026-0815 vom 10.06.2026\r\nReparatur in der vermieteten Wohnung Lindenstraße 7, 10115 Berlin\r\nArbeitszeit Monteur, 3 Stunden 180,00 EUR\r\nMaterial: Ventil und Dichtungen 70,00 EUR\r\nNetto 250,00 EUR\r\nUmsatzsteuer 19 % 47,50 EUR\r\nRechnungsbetrag 297,50 EUR\r\nZahlbar bis 24.06.2026 auf DE02 1203 0000 0000 2020 51.",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "10.06.2026",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nsender: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Sanitär Beispiel GmbH, Werkstraße 3, 12345 Musterstadt\r\nRechnung Nr. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Sanitär Beispiel GmbH",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nsubject: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "R-2026-0815 vom 10.06.2026\r\nReparatur in der vermieteten Wohnung Lindenstraße 7, 10115 Berlin\r\nArbeitszeit Monteur, 3 Stunden 180,00 EUR\r\nMaterial: Ventil und Dichtungen 70,00 EUR\r\nNetto 250,00 EUR\r\nUmsatzsteuer 19 % 47,50 EUR\r\nRechnungsbetrag 297,50 EUR\r\nZahlbar bis 24.06.2026 auf DE02 1203 0000 0000 2020 51.",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Reparatur in der vermieteten Wohnung Lindenstraße 7, 10115 Berlin",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\namount_total: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "R-2026-0815 vom 10.06.2026\r\nReparatur in der vermieteten Wohnung Lindenstraße 7, 10115 Berlin\r\nArbeitszeit Monteur, 3 Stunden 180,00 EUR\r\nMaterial: Ventil und Dichtungen 70,00 EUR\r\nNetto 250,00 EUR\r\nUmsatzsteuer 19 % 47,50 EUR\r\nRechnungsbetrag 297,50 EUR\r\nZahlbar bis 24.06.2026 auf DE02 1203 0000 0000 2020 51.",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "297,50 EUR",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\namount_net: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "R-2026-0815 vom 10.06.2026\r\nReparatur in der vermieteten Wohnung Lindenstraße 7, 10115 Berlin\r\nArbeitszeit Monteur, 3 Stunden 180,00 EUR\r\nMaterial: Ventil und Dichtungen 70,00 EUR\r\nNetto 250,00 EUR\r\nUmsatzsteuer 19 % 47,50 EUR\r\nRechnungsbetrag 297,50 EUR\r\nZahlbar bis 24.06.2026 auf DE02 1203 0000 0000 2020 51.",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "250,00 EUR",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nreference: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Sanitär Beispiel GmbH, Werkstraße 3, 12345 Musterstadt\r\nRechnung Nr. R-2026-0815 vom 10.06.2026\r\nReparatur in der vermieteten Wohnung Lindenstraße 7, 10115 Berlin\r\nArbeitszeit Monteur, 3 Stunden 180,00 EUR\r\nMaterial: Ventil und Dichtungen 70,00 EUR\r\nNetto 250,00 EUR\r\nUmsatzsteuer 19 % 47,50 EUR\r\nRechnungsbetrag 297,50 EUR\r\nZahlbar bis 24.06.2026 auf DE02 1203 0000 0000 2020 51.",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "R-2026-0815",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\niban: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "R-2026-0815 vom 10.06.2026\r\nReparatur in der vermieteten Wohnung Lindenstraße 7, 10115 Berlin\r\nArbeitszeit Monteur, 3 Stunden 180,00 EUR\r\nMaterial: Ventil und Dichtungen 70,00 EUR\r\nNetto 250,00 EUR\r\nUmsatzsteuer 19 % 47,50 EUR\r\nRechnungsbetrag 297,50 EUR\r\nZahlbar bis 24.06.2026 auf DE02 1203 0000 0000 2020 51.",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "DE02 1203 0000 0000 2020 51",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ndue_on: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "R-2026-0815 vom 10.06.2026\r\nReparatur in der vermieteten Wohnung Lindenstraße 7, 10115 Berlin\r\nArbeitszeit Monteur, 3 Stunden 180,00 EUR\r\nMaterial: Ventil und Dichtungen 70,00 EUR\r\nNetto 250,00 EUR\r\nUmsatzsteuer 19 % 47,50 EUR\r\nRechnungsbetrag 297,50 EUR\r\nZahlbar bis 24.06.2026 auf DE02 1203 0000 0000 2020 51.",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "24.06.2026",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ncost_lines: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "R-2026-0815 vom 10.06.2026\r\nReparatur in der vermieteten Wohnung Lindenstraße 7, 10115 Berlin\r\nArbeitszeit Monteur, 3 Stunden 180,00 EUR\r\nMaterial: Ventil und Dichtungen 70,00 EUR\r\nNetto 250,00 EUR\r\nUmsatzsteuer 19 % 47,50 EUR\r\nRechnungsbetrag 297,50 EUR\r\nZahlbar bis 24.06.2026 auf DE02 1203 0000 0000 2020 51.",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Arbeitszeit Monteur, 3 Stunden | 180,00 EUR | repairs; Material: Ventil und Dichtungen | 70,00 EUR | repairs; Umsatzsteuer 19 % | 47,50 EUR | vat",
+      "type": "text"
+     }
+    ],
+    "diagnostics": null,
+    "model": "claude-sonnet-5-5",
+    "role": "assistant",
+    "stop_details": null,
+    "stop_reason": "end_turn",
+    "stop_sequence": null,
+    "type": "message",
+    "usage": {
+     "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+     },
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "inference_geo": "us",
+     "input_tokens": 4013,
+     "output_tokens": 453,
+     "output_tokens_details": {
+      "thinking_tokens": 0
+     },
+     "server_tool_use": null,
+     "service_tier": "standard",
+     "speed": "standard"
+    }
+   },
+   "page_offset": 0
+  }
+ ]
+}

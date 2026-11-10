@@ -30,6 +30,7 @@ from hausbuch.schemas.checklist import (
     ChecklistMarketRent,
 )
 from hausbuch.schemas.tax import (
+    AllocationFact,
     AnlageVDraft,
     BasisAddition,
     Coverage,
@@ -182,6 +183,18 @@ def _generic(facts: DraftFacts, tax_year: int, rule_set: RuleSet, book: LineBook
 TRAVEL_FREQUENCY_TRIPS = 50  # phase 4b D111: above this, the flat may be a Tätigkeitsstätte
 
 
+def _private_cost_line(value, rule_set: RuleSet) -> str:
+    """A private cost's line: its category's (phase 2 D135, the rule set's category_lines,
+    where a confirmed allocation of it would land), else wk.financing_costs for the class
+    financing (D134), else wk.other."""
+    if value.category is not None:
+        key = rule_set.form.category_lines.get(value.category)
+        if key is None or not key.startswith("wk."):
+            raise ValueError(f"rule set {rule_set.tax_year} books {value.category} on no cost line")
+        return key
+    return "wk.financing_costs" if value.cost_class == "financing" else "wk.other"
+
+
 def _private_costs(
     facts: DraftFacts, tax_year: int, rule_set: RuleSet, book: LineBook
 ) -> list[DraftWarning]:
@@ -191,22 +204,39 @@ def _private_costs(
     travel = trips × km_round_trip × travel_rate_per_km (§9 Abs. 1 S. 3 Nr. 4a S. 2 EStG with
     §5 Abs. 2 BRKG); every other class amount × share, to the cent. More than 50 trips in the
     year adds tax.travel_frequency (info): a near-daily presence can make the flat a
-    regelmäßige Tätigkeitsstätte, where only the Entfernungspauschale applies."""
+    regelmäßige Tätigkeitsstätte, where only the Entfernungspauschale applies.
+
+    Phase 2 D135: a row whose document is the Beleg of a confirmed allocation (the bill was
+    paid from the rental account after all) is not counted, so the bill is never deducted
+    twice; tax.private_cost_paid_from_account (warning) names the row and the allocations."""
     warnings = []
+    paid_from_account: dict[UUID, list[AllocationFact]] = {}
+    for a in facts.allocations:
+        if a.document_id is not None:
+            paid_from_account.setdefault(a.document_id, []).append(a)
     rows = [
         r for r in in_force(facts.tax_inputs, TaxInputKind.PRIVATE_COST) if r.tax_year == tax_year
     ]
     trips = 0
     for row in rows:
         v = row.value
+        paying = paid_from_account.get(row.document_id) if row.document_id else None
+        if paying:
+            warnings.append(
+                warning(
+                    WarningCode.TAX_PRIVATE_COST_PAID_FROM_ACCOUNT,
+                    unique([*input_sources(row), *(r for a in paying for r in sources_of(a))]),
+                    label=row.value.label,
+                )
+            )
+            continue
         if v.cost_class == "travel":
             amount = cents(Decimal(v.trips) * v.km_round_trip * rule_set.travel_rate_per_km)
             trips += v.trips
         else:
             amount = cents(v.amount * v.share.numerator / v.share.denominator)
         if amount:
-            key = "wk.financing_costs" if v.cost_class == "financing" else "wk.other"
-            book.add(key, amount, input_sources(row))
+            book.add(_private_cost_line(v, rule_set), amount, input_sources(row))
     if trips > TRAVEL_FREQUENCY_TRIPS:
         warnings.append(
             warning(

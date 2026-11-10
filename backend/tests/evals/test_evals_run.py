@@ -102,7 +102,7 @@ def test_fields_are_compared_without_values(evals_dir, fake, capsys):
     assert states["amount_net"] == "missing"
     assert states["document_date"] == "extra"
     assert "due_on" not in states  # empty in both: counted, not listed
-    assert "  -> 2 match, 1 differs, 1 missing, 1 extra; 4 empty in both" in lines
+    assert "  -> 2 match, 1 differs, 1 missing, 1 extra; 5 empty in both" in lines
     assert "  invoice: 1 document: 2 match, 1 differs, 1 missing, 1 extra (40.0 % match)" in lines
     # No value of the document or the golden file, and never the key.
     for value in ("Beispiel", "1309", "1100", "2026-02-12", "Notarrechnung", KEY):
@@ -174,6 +174,7 @@ def test_write_expected_writes_and_refuses_to_overwrite(evals_dir, fake, capsys)
         "reference",
         "iban",
         "due_on",
+        "cost_lines",
     }
     out = capsys.readouterr().out
     assert "wrote rechnung.expected.yaml" in out
@@ -194,7 +195,7 @@ def test_a_document_without_golden_file(evals_dir, fake, capsys):
     assert _run(evals_dir) == 1
     out = capsys.readouterr().out
     assert "no rechnung.expected.yaml" in out
-    assert "4 of 9 fields stated (--show-values to see them)" in out
+    assert "4 of 10 fields stated (--show-values to see them)" in out
 
 
 def test_a_directory_inside_the_repo_is_refused(fake, capsys):

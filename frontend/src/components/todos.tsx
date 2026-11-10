@@ -298,6 +298,13 @@ export const WARNING_GUIDE: Partial<Record<WarningCode, Guide>> = {
       "Die Zahl der Fahrten prüfen. Waren Sie fast täglich dort, gilt nur die halbe Pauschale; sonst ist nichts zu tun.",
     action: questions,
   },
+  "tax.private_cost_paid_from_account": {
+    todo: true,
+    title: () => "Rechnung doppelt eingetragen",
+    text: () =>
+      "Die Rechnung wurde vom Mietkonto bezahlt und zählt schon mit dieser Buchung. In den Jahresfragen den Eintrag bei den von einem anderen Konto bezahlten Kosten entfernen.",
+    action: questions,
+  },
   // Anlage N (phase-4b.md §9)
   "anlage_n.certificate_missing": {
     todo: true,

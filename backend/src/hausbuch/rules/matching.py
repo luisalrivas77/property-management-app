@@ -143,11 +143,13 @@ def match_loan(tx: MatchTransaction, context: MatchContext) -> AllocationSet | N
 
 
 def match_document(tx: MatchTransaction, context: MatchContext) -> AllocationSet | None:
-    hits = {doc.id: doc for doc in context.documents if _document_hit(tx, doc)}
+    hits = {doc.id: doc for doc in context.documents if document_hit(tx, doc)}
     if len(hits) != 1:
         return None
     (doc,) = hits.values()
     recurring = len(doc.payments) > 1  # a Bescheid's installments
+    if doc.parts and (len(doc.parts) > 1 or doc.parts[0].category != doc.category):
+        return _as_set(tx, _bill_split(tx, doc), AllocationMethod.DOCUMENT_MATCH)
     draft = _draft(
         tx.amount,
         doc.category,
@@ -163,6 +165,39 @@ def match_document(tx: MatchTransaction, context: MatchContext) -> AllocationSet
         confidence=DOCUMENT_CONFIDENCE,
     )
     return _as_set(tx, split, AllocationMethod.DOCUMENT_MATCH)
+
+
+def _bill_split(tx: MatchTransaction, doc: DocumentFacts) -> _Split:
+    """A bill sorted by its cost lines (phase 2 D135): one part per category, in the
+    bill's order, signed as the line; the last part takes the line's amount less the others,
+    so the parts sum to it exactly. Always to review (GUARDED_CONFIDENCE and a question):
+    a line's category may be the model's choice, and the model never books a split."""
+    sign = -1 if tx.amount < 0 else 1
+    period = service_period(tx.purpose, tx.booking_date, False)
+    drafts = []
+    for i, part in enumerate(doc.parts):
+        last = i == len(doc.parts) - 1
+        others = sum((d.amount for d in drafts), Decimal(0))
+        amount = tx.amount - others if last else sign * part.amount
+        drafts.append(
+            _draft(
+                amount,
+                part.category,
+                period,
+                False,
+                property_id=doc.property_id,
+                loan_id=doc.loan_id if part.category is AllocationCategory.LOAN_FEES else None,
+                document_id=doc.id,
+            )
+        )
+    names = ", ".join(f"{CATEGORY_LABEL[p.category]} {_eur(p.amount)}" for p in doc.parts)
+    return _Split(
+        _nonzero(drafts),
+        f"Betrag, Datum und IBAN oder Referenz passen zu einem Beleg; nach seinen Positionen "
+        f"aufgeteilt: {names}.",
+        confidence=GUARDED_CONFIDENCE,
+        question="Stimmt die Aufteilung nach den Positionen der Rechnung?",
+    )
 
 
 # --- Learned rules -------------------------------------------------------------------
@@ -778,7 +813,7 @@ def matcher_owns(hmac: str, context: MatchContext) -> bool:
     )
 
 
-def _document_hit(tx: MatchTransaction, doc: DocumentFacts) -> bool:
+def document_hit(tx: MatchTransaction, doc: DocumentFacts) -> bool:
     paid = abs(tx.amount)
     in_window = any(
         abs(paid - p.amount) <= DOCUMENT_AMOUNT_TOLERANCE

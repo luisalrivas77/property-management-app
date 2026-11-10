@@ -33,7 +33,7 @@ from recordings import (
     synthetic_recording,
 )
 
-from hausbuch.rules.extraction_parse import normalize_value
+from hausbuch.rules.extraction_parse import cost_lines, normalize_value
 from hausbuch.rules.iban import normalize_iban
 from hausbuch.schemas.enums import ExtractionKind
 from hausbuch.schemas.extraction import EXTRACTION_MODELS, value_kind
@@ -79,6 +79,23 @@ def _check(doc: Doc, recording: dict) -> None:
     assert stated == [], f"{doc.name}: fields not in the document came back: {stated}"
     uncited = [name for name in doc.expected if result.values[name].source is None]
     assert uncited == [], f"{doc.name}: values without a page and quote: {uncited}"
+    if doc.expected_cost_lines:
+        _check_cost_lines(doc, result.values["cost_lines"], real=not recording["synthetic"])
+
+
+def _check_cost_lines(doc: Doc, read, *, real: bool) -> None:
+    """D135: the lines parse, sum to the total (derive_fields kept `validates`), and match
+    the expected amounts in order and every expected code. A synthetic recording cites only
+    a value printed on one line, which a list of lines never is."""
+    if real:
+        assert read.source is not None, f"{doc.name}: cost_lines without a page and quote"
+    assert "validates" in read.checks, f"{doc.name}: cost_lines do not sum: {read.value}"
+    lines = cost_lines(read.value)
+    got = [(str(line.amount), "vat" if line.vat else line.category) for line in lines]
+    want = [(amount, code) for _, amount, code in doc.expected_cost_lines]
+    assert [a for a, _ in got] == [a for a, _ in want], f"{doc.name}: cost lines {read.value}"
+    wrong = [(g, w) for (_, g), (_, w) in zip(got, want, strict=True) if w and g != w]
+    assert wrong == [], f"{doc.name}: cost line codes (got, expected): {wrong}"
 
 
 def _build_proposal(doc: Doc, result) -> None:
@@ -150,6 +167,11 @@ def _as_written(doc: Doc) -> dict[str, str]:
         found[name] = _written(lines, expected, kind)
     for name in doc.expected_missing:
         found[name] = "unbekannt"
+    if doc.expected_cost_lines:
+        found["cost_lines"] = "; ".join(
+            f"{text} | {amount} | {code or 'other_expense'}"
+            for text, amount, code in doc.expected_cost_lines
+        )
     return found
 
 

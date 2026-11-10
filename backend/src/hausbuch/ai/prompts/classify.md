@@ -74,7 +74,7 @@ Income tax:
 - `tax_return_copy` (other): Steuererklärung, ELSTER-Übertragungsprotokoll
 - `donation_receipt` (letter): Zuwendungsbestätigung, Spendenquittung
 - `childcare_invoice` (invoice): Kita-Beitrag, Betreuungsrechnung
-- `household_services_invoice` (invoice): Rechnung für Handwerker oder haushaltsnahe Dienste in der eigenen Wohnung (§35a)
+- `household_services_invoice` (invoice): Rechnung für Handwerker oder haushaltsnahe Dienste in der Wohnung, in der der Haushalt selbst wohnt (§35a). Never a bill for work on the rented-out flat (a repair or service there is an `invoice` with subtype null)
 - `insurance_contribution_certificate` (letter): Beitragsbescheinigung Kranken- und Pflegeversicherung, Versicherungsbeiträge
 - `pension_contribution_certificate` (letter): Riester- oder Rürup-Bescheinigung
 - `benefit_notice` (bescheid): Elterngeld-, Krankengeld-, Arbeitslosengeldbescheid (Lohnersatzleistungen)

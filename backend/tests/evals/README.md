@@ -35,6 +35,15 @@ subtype's group asks (the flat's address, never an applicant's own). The check a
 `contains_tenant_data` for the tenancy documents and its absence for the owners' own papers.
 Both prompts changed, and all twenty-one were recorded again on 10 Nov 2026.
 
+A bill's cost lines (phase 2 D135) add `cost_lines` to every invoice and Bescheid, each line
+`text | amount | code`, and two documents: `rechnung_notar_gemischt` (one notary bill for
+the Kaufvertrag and the Grundschuld) and `rechnung_reparatur` (a repair of the let flat). The
+model words each line's text, so a real reading is checked on the amounts, on the codes the
+document's `expected_cost_lines` gives, and on the lines summing to the total. The repair bill
+was first classified as a §35a household-services invoice of the owners' own home, so
+`classify.md` now says that subtype is never a bill for the rented-out flat; all twenty-three
+were recorded again on 10 Nov 2026.
+
 - `test_recorded_evals.py` runs in CI on every push. It replays every recording in
   `recordings/` through the same code the `document_read` job uses (SDK message conversion,
   `parse_classification`, `rules.extraction_parse.parse_lines`, the chunk merge) and checks
@@ -47,7 +56,7 @@ Both prompts changed, and all twenty-one were recorded again on 10 Nov 2026.
   text (`recordings.synthetic_recording`, `"synthetic": true`). They are built in memory,
   never written to `recordings/`, and are not API output.
 
-## Recording (Luis, once per prompt or model change; about $0.25–0.50 for all twenty-one)
+## Recording (Luis, once per prompt or model change; about $0.25–0.50 for all twenty-three)
 
 Needs the `hausbuch-evals` key (deploy/scaleway.md step 13), from your computer:
 

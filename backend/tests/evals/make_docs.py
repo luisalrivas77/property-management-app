@@ -30,6 +30,10 @@ class Doc:
     expected: dict[str, Any]  # field -> normalized value (rules.extraction_parse forms)
     expected_missing: list[str] = field(default_factory=list)  # fields the text never states
     contains_tenant_data: bool = False
+    # A bill's cost lines (phase 2 D135), in document order: (text, amount, code). The model
+    # words the text itself, so a real reading is checked on the amounts and on each code
+    # given here (None: any code; vat: the Umsatzsteuer line); the lines must sum to the total.
+    expected_cost_lines: list[tuple[str, str, str | None]] = field(default_factory=list)
 
 
 DOCS: list[Doc] = [
@@ -250,6 +254,11 @@ DOCS: list[Doc] = [
             "due_on": "2026-03-17",
             "document_date": "2026-03-03",
         },
+        expected_cost_lines=[
+            ("Beurkundungsgebühr", "1035.00", "acquisition_cost"),
+            ("Auslagen", "65.00", "acquisition_cost"),
+            ("Umsatzsteuer 19 %", "209.00", "vat"),
+        ],
     ),
     Doc(
         # D35: a Grundschuld bill is a financing cost, not purchase-cost evidence.
@@ -281,6 +290,87 @@ DOCS: list[Doc] = [
             "due_on": "2026-03-17",
             "document_date": "2026-03-03",
         },
+        # The lines name no term of their own: the bill's subject makes them financing.
+        expected_cost_lines=[
+            ("Beurkundungsgebühr", "410.00", None),
+            ("Auslagen", "40.00", None),
+            ("Umsatzsteuer 19 %", "85.50", "vat"),
+        ],
+    ),
+    Doc(
+        # D135: one notary bill for the purchase and the Grundschuld, split by its lines (the
+        # classifier files it as purchase-cost evidence, recorded 10 Nov 2026).
+        name="rechnung_notar_gemischt",
+        type="invoice",
+        subtype="cost_basis_evidence",
+        kind="invoice",
+        pages=[
+            [
+                "Notar Dr. Max Beispiel, Marktplatz 1, 12345 Musterstadt",
+                "Kostenrechnung Nr. 2026-0458 vom 05.03.2026",
+                "zur Urkunde 1236/2026 (Kaufvertrag und Grundschuldbestellung)",
+                "",
+                "Beurkundung Kaufvertrag                800,00 EUR",
+                "Beurkundung Grundschuld                200,00 EUR",
+                "Netto                                1.000,00 EUR",
+                "Umsatzsteuer 19 %                      190,00 EUR",
+                "Gesamtbetrag                         1.190,00 EUR",
+                "",
+                f"Zahlbar bis 19.03.2026 auf {IBAN_B}.",
+            ]
+        ],
+        expected={
+            "sender": "Notar Dr. Max Beispiel",
+            "amount_total": "1190.00",
+            "amount_net": "1000.00",
+            "reference": "2026-0458",
+            "iban": "DE02120300000000202051",
+            "due_on": "2026-03-19",
+            "document_date": "2026-03-05",
+        },
+        expected_cost_lines=[
+            ("Beurkundung Kaufvertrag", "800.00", None),
+            ("Beurkundung Grundschuld", "200.00", None),
+            ("Umsatzsteuer 19 %", "190.00", "vat"),
+        ],
+    ),
+    Doc(
+        # D135: a repair of the let flat, a deductible cost of the year paid (Erhaltungsaufwand).
+        # Before classify.md said "the flat the household lives in" (10 Nov 2026), it was read
+        # as a §35a household-services invoice of the owners' own home.
+        name="rechnung_reparatur",
+        type="invoice",
+        subtype=None,
+        kind="invoice",
+        pages=[
+            [
+                "Sanitär Beispiel GmbH, Werkstraße 3, 12345 Musterstadt",
+                "Rechnung Nr. R-2026-0815 vom 10.06.2026",
+                "Reparatur in der vermieteten Wohnung Lindenstraße 7, 10115 Berlin",
+                "",
+                "Arbeitszeit Monteur, 3 Stunden          180,00 EUR",
+                "Material: Ventil und Dichtungen          70,00 EUR",
+                "Netto                                   250,00 EUR",
+                "Umsatzsteuer 19 %                        47,50 EUR",
+                "Rechnungsbetrag                         297,50 EUR",
+                "",
+                f"Zahlbar bis 24.06.2026 auf {IBAN_B}.",
+            ]
+        ],
+        expected={
+            "sender": "Sanitär Beispiel GmbH",
+            "amount_total": "297.50",
+            "amount_net": "250.00",
+            "reference": "R-2026-0815",
+            "iban": "DE02120300000000202051",
+            "due_on": "2026-06-24",
+            "document_date": "2026-06-10",
+        },
+        expected_cost_lines=[
+            ("Arbeitszeit Monteur, 3 Stunden", "180.00", "repairs"),
+            ("Material: Ventil und Dichtungen", "70.00", "repairs"),
+            ("Umsatzsteuer 19 %", "47.50", "vat"),
+        ],
     ),
     Doc(
         name="grunderwerbsteuerbescheid",
@@ -306,6 +396,7 @@ DOCS: list[Doc] = [
             "document_date": "2026-03-25",
         },
         expected_missing=["iban"],
+        expected_cost_lines=[("Grunderwerbsteuer", "19500.00", "acquisition_cost")],
     ),
     Doc(
         name="wirtschaftsplan",

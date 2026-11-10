@@ -266,6 +266,70 @@ def test_invoice_net_comes_from_the_linked_invoice(world):
     assert rows[without_net.id].invoice_net is None
 
 
+def _split_bill(world: World):
+    """A 1,190.00 bill (net 1,000.00): 952.00 purchase costs and 238.00 repairs (D135)."""
+    return world.document("invoice", {"amount_total": "1190.00", "amount_net": "1000.00"})
+
+
+def test_a_split_bill_counts_its_net_once(world):
+    """Phase 2 D135: a line split by the bill's lines carries one allocation per part, and
+    each counts its share of the net, so the 15 % test sees the bill's net once."""
+    invoice = _split_bill(world)
+    line = world.line(date(2026, 9, 21), "-1190.00")
+    purchase, repairs = _book(
+        world,
+        line,
+        _scope(world, amount=Decimal("-952.00"), category=C.ACQUISITION_COST, document_id=invoice),
+        _scope(world, amount=Decimal("-238.00"), category=C.REPAIRS, document_id=invoice),
+    )
+    rows = _by_id(_facts(world))
+    assert rows[purchase.id].invoice_net == Decimal("800.00")
+    assert rows[repairs.id].invoice_net == Decimal("200.00")
+    assert sum(r.invoice_net for r in rows.values()) == Decimal("1000.00")
+
+
+def test_one_payment_of_a_bill_counts_its_share_only(world):
+    """A bill paid by two lines, one confirmed and one still proposed: the confirmed one
+    counts its share of the net, read against the bill's own total."""
+    invoice = _split_bill(world)
+    first = world.line(date(2026, 9, 21), "-238.00")
+    (repairs,) = _book(
+        world,
+        first,
+        _scope(world, amount=Decimal("-238.00"), category=C.REPAIRS, document_id=invoice),
+    )
+    second = world.line(date(2026, 9, 22), "-952.00")
+    _book(
+        world,
+        second,
+        _scope(world, amount=Decimal("-952.00"), category=C.REPAIRS, document_id=invoice),
+        confirm=False,
+    )
+    rows = _by_id(_facts(world))
+    assert set(rows) == {repairs.id}
+    assert rows[repairs.id].invoice_net == Decimal("200.00")
+
+
+def test_a_split_bill_raises_the_15_percent_test_by_its_net(world):
+    """The real draft: the two parts of one 1,190.00 bill add 1,000.00 to the used net."""
+
+    def used():
+        draft = world.query(
+            tax_service.anlage_v_draft, world.property_id, tax_year=2026, today=TODAY
+        )
+        return draft.limit_15.used_net
+
+    before = used()
+    invoice = _split_bill(world)
+    _book(
+        world,
+        world.line(date(2026, 9, 21), "-1190.00"),
+        _scope(world, amount=Decimal("-952.00"), category=C.REPAIRS, document_id=invoice),
+        _scope(world, amount=Decimal("-238.00"), category=C.REPAIRS, document_id=invoice),
+    )
+    assert used() - before == Decimal("1000.00")
+
+
 # --- The property record -----------------------------------------------------------------
 
 

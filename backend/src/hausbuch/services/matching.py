@@ -39,6 +39,8 @@ Documents as the matcher sees them (DocumentFacts), from each document's current
   Grundsteuerbescheid -> grundsteuer; any other invoice or Bescheid -> uncategorized (the
   spec names no category for it, and uncategorized never auto-confirms);
 - an invoice or Bescheid pays amount_total on its document_date (else due_on);
+- its parts by kind of cost (D135, rules.prefill.sort_reading over the stored reading): a
+  Grundschuld part takes the loan as a financing bill does;
 - a Grundsteuerbescheid pays its installment on each stated due date, every year from its
   tax_year until the next Bescheid of the property (or next year); no due dates -> no facts;
 - a one-payment document that already backs a confirmed allocation of another line is left
@@ -49,8 +51,9 @@ Documents as the matcher sees them (DocumentFacts), from each document's current
 
 import re
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
+from functools import partial
 from typing import Any, Literal
 from uuid import UUID
 
@@ -77,14 +80,16 @@ from hausbuch.rules import matching as matchers
 from hausbuch.rules.errors import RuleError
 from hausbuch.rules.iban import iban_hmac, normalize_iban
 from hausbuch.rules.periods import service_period
-from hausbuch.rules.prefill import names_financing
+from hausbuch.rules.prefill import names_financing, sort_reading
 from hausbuch.rules.review import route
+from hausbuch.schemas.ai import ExtractedValue
 from hausbuch.schemas.allocation import (
     Allocation,
     AllocationCategory,
     AllocationMethod,
     AllocationSet,
     DocumentFacts,
+    DocumentPart,
     DuePayment,
     HistoryLine,
     HistoryRow,
@@ -485,9 +490,20 @@ def document_facts(
         category = C.ACQUISITION_COST
     else:
         category = C.UNCATEGORIZED
+    bill = sort_reading(x.kind, e.row.subtype, partial(_extracted, x))
+    if bill.parts and loan_id is None and C.LOAN_FEES in bill.parts:
+        # A Grundschuld part of a mixed bill (D135): on the linked loan, else the property's
+        # only loan, as a financing bill's.
+        if len(e.loan_ids) == 1:
+            loan_id = e.loan_ids[0]
+        elif not e.loan_ids and e.property_id is not None:
+            candidates = loans_by_property.get(e.property_id, [])
+            loan_id = candidates[0] if len(candidates) == 1 else None
     property_id = e.property_id
     if loan_id is not None and property_id is None:
-        property_id = next(p for p, ids in loans_by_property.items() if loan_id in ids)
+        # The loan's property; None when the caller's map does not hold it (a bill linked to
+        # two properties and one loan, read with an empty map; review F5).
+        property_id = next((p for p, ids in loans_by_property.items() if loan_id in ids), None)
     return DocumentFacts(
         id=e.row.id,
         kind=x.kind,
@@ -497,7 +513,58 @@ def document_facts(
         payments=[DuePayment(due_on=paid_on, amount=amount)],
         iban_hmac=_hmac(_value(x, "iban"), iban_key),
         reference=_value(x, "reference") or None,
+        parts=[DocumentPart(category=c, amount=a) for c, a in bill.parts.items()],
     )
+
+
+def _extracted(extraction: DocumentExtraction, name: str) -> ExtractedValue:
+    """A field of the stored reading as rules.prefill reads it; missing when absent."""
+    value = getattr(extraction.fields, name, None)
+    return value if isinstance(value, ExtractedValue) else ExtractedValue.missing()
+
+
+def paid_from_rental_account(
+    conn: Connection, document_id: UUID, *, iban_key: bytes | None = None
+) -> bool:
+    """Phase 2 D135: a bank line of the read accounts pays this bill, so none of it is a cost
+    paid from another account. True when an allocation (proposed or confirmed) already
+    carries the document as its Beleg, or when a stored transaction is a document hit of it
+    (rules.matching.document_hit: the amount within 0.01, the booking within 10 days of the
+    document date, and the bill's IBAN or its reference in the purpose; the IBAN is compared
+    only when the key is given). A document the matcher cannot read (no amount or date)
+    finds no line."""
+    carried = conn.execute(
+        select(
+            exists().where(
+                allocation_table.c.document_id == document_id,
+                allocation_table.c.status != AllocationStatus.SUPERSEDED.value,
+            )
+        )
+    ).scalar_one()
+    if carried:
+        return True
+    e = evidence_of(conn, document_id)
+    if e is None or e.extraction.kind is ExtractionKind.GRUNDSTEUERBESCHEID:
+        return False
+    facts = document_facts(e, iban_key=iban_key or b"", loans_by_property={})
+    if facts is None:
+        return False
+    if iban_key is None:
+        facts = facts.model_copy(update={"iban_hmac": None})
+    t = transaction_table.c
+    window = timedelta(days=matchers.DOCUMENT_WINDOW_DAYS)
+    for payment in facts.payments:
+        low = payment.amount - matchers.DOCUMENT_AMOUNT_TOLERANCE
+        high = payment.amount + matchers.DOCUMENT_AMOUNT_TOLERANCE
+        rows = conn.execute(
+            select(transaction_table).where(
+                func.abs(t.amount).between(low, high),
+                t.booking_date.between(payment.due_on - window, payment.due_on + window),
+            )
+        )
+        if any(matchers.document_hit(match_transaction(row), facts) for row in rows):
+            return True
+    return False
 
 
 def grundsteuer_facts(

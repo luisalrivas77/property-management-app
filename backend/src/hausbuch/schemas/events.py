@@ -530,9 +530,11 @@ class RuleRecorded(Schema):
 class PrivateCostRecorded(Schema):
     """A private_cost value as the event log keeps it (phase 4b D111): amounts and codes only.
     The label and the trip dates stay in the tax_input row; the payload drops them, whatever
-    the caller passes."""
+    the caller passes. The category of a bill's part paid from another account (phase 2
+    D135) is a code and is kept; older events have none."""
 
     cost_class: str
+    category: AllocationCategory | None = None
     amount: NonNegativeMoney | None = None
     trips: int | None = None
     km_round_trip: int | None = None
@@ -542,6 +544,7 @@ class PrivateCostRecorded(Schema):
     def of(cls, value: PrivateCostValue) -> "PrivateCostRecorded":
         return cls(
             cost_class=value.cost_class,
+            category=value.category,
             amount=value.amount,
             trips=value.trips,
             km_round_trip=value.km_round_trip,

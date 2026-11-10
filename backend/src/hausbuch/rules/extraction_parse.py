@@ -16,8 +16,10 @@ from datetime import date
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from hausbuch.schemas.ai import CitedTextBlock, ExtractedValue, SourceRef
+from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.enums import DocumentSubtype, DocumentType, ExtractionKind
 from hausbuch.schemas.extraction import (
+    COST_LINE_CODES,
     EXTRACTION_MODELS,
     TENANCY_GROUP,
     ValueKind,
@@ -921,13 +923,90 @@ def management_fee_gross(fee_net: ExtractedValue, monthly_fee: ExtractedValue) -
     )
 
 
+# --- A bill's cost lines (phase 2 D135) ----------------------------------------------------
+
+# An Umsatzsteuer line, besides the code vat: its text names the tax (casefolded, by word).
+_VAT_LINE = re.compile(r"\b(?:umsatzsteuer|mehrwertsteuer|ust|mwst)\b")
+# The sum of the lines may miss the printed total by a rounding cent.
+COST_LINES_TOLERANCE = Decimal("0.01")
+
+
+@dataclass(frozen=True)
+class CostLine:
+    """One cost line of a bill as read: its text, its amount (signed as printed, a credit
+    negative), the model's category (None when its code is unknown, or for the VAT line), and
+    whether it is the Umsatzsteuer line."""
+
+    text: str
+    amount: Decimal
+    category: AllocationCategory | None
+    vat: bool
+
+
+def cost_lines(items: object) -> list[CostLine] | None:
+    """The stored cost_lines value (a list of `text | amount | code` texts) as CostLines; None
+    when it is not a list or any item does not have that shape or a readable amount. Pure."""
+    if not isinstance(items, list) or not items:
+        return None
+    out = []
+    for item in items:
+        if not isinstance(item, str):
+            return None
+        parts = [_collapse(part) for part in item.split("|")]
+        if len(parts) != 3 or not parts[0]:
+            return None
+        text, raw_amount, code = parts
+        try:
+            amount = Decimal(normalize_value(raw_amount, "money"))
+        except (_Invalid, InvalidOperation):
+            return None
+        code = code.casefold()
+        vat = code == "vat" or _VAT_LINE.search(text.casefold()) is not None
+        category = None
+        if not vat and code in COST_LINE_CODES:
+            category = AllocationCategory(code)
+        out.append(CostLine(text=text, amount=amount, category=category, vat=vat))
+    return out
+
+
+def cost_lines_balance(lines: list[CostLine], total: object) -> bool:
+    """True when the lines sum to the bill's total (a stored money string) within a cent."""
+    try:
+        amount = Decimal(str(total)) if total is not None else None
+    except InvalidOperation:
+        return False
+    if amount is None or not amount.is_finite():
+        return False
+    return abs(sum((line.amount for line in lines), Decimal(0)) - amount) <= COST_LINES_TOLERANCE
+
+
+def checked_cost_lines(values: dict[str, ExtractedValue]) -> ExtractedValue | None:
+    """cost_lines with `validates` only when every line parses and they sum to amount_total;
+    otherwise the value stays for the review but loses `validates` (confidence low), so the
+    pre-fill falls back to the whole bill. None when the reading has no cost_lines."""
+    read = values.get("cost_lines")
+    if read is None or read.value is None:
+        return None
+    lines = cost_lines(read.value)
+    total = values.get("amount_total", ExtractedValue.missing()).value
+    if lines is not None and cost_lines_balance(lines, total):
+        return read
+    checks = [c for c in read.checks if c != "validates"]
+    return read.model_copy(update={"checks": checks, "confidence": "low"})
+
+
 def derive_fields(
     kind: ExtractionKind, values: dict[str, ExtractedValue]
 ) -> dict[str, ExtractedValue]:
-    """The fields code computes from a merged reading (today only a Verwaltervertrag's
-    Betrag); the job and the eval reading both call it after the chunk merge."""
+    """The fields code computes or checks in a merged reading: a Verwaltervertrag's Betrag,
+    and an invoice's or Bescheid's cost lines against its total (D135). The job and the eval
+    reading both call it after the chunk merge."""
     if kind is ExtractionKind.MANAGEMENT_CONTRACT:
         fee_net = values.get("fee_net", ExtractedValue.missing())
         monthly_fee = values.get("monthly_fee", ExtractedValue.missing())
         return {**values, "amount_total": management_fee_gross(fee_net, monthly_fee)}
+    if kind in (ExtractionKind.INVOICE, ExtractionKind.BESCHEID):
+        checked = checked_cost_lines(values)
+        if checked is not None:
+            return {**values, "cost_lines": checked}
     return values

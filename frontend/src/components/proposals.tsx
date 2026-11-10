@@ -69,6 +69,7 @@ import {
 } from "./input";
 import {
   ACQUISITION_COST_KIND,
+  ALLOCATION_CATEGORY,
   CHECK,
   CONFIDENCE,
   DEPOSIT_FORM,
@@ -80,6 +81,7 @@ import {
   GRUNDSTEUER_RHYTHM,
   LINK_TARGET,
   options,
+  PRIVATE_COST_CLASS,
   PROPERTY_KIND,
   RECORD_MODE,
   RENT_MODEL,
@@ -124,6 +126,35 @@ const choice = (label: string, choices: Readonly<Record<string, string>>, descri
   choices,
   description,
 });
+
+/** The categories a cost paid from another account may carry (PrivateCostValue.category,
+ * phase 2 D135): the deductible ones, as backend schemas/tax.PRIVATE_COST_CATEGORIES. */
+const PRIVATE_COST_CATEGORY: Readonly<Record<string, string>> = Object.fromEntries(
+  (
+    [
+      "loan_interest",
+      "loan_fees",
+      "hausgeld_umlagefaehig",
+      "hausgeld_verwaltung",
+      "property_management",
+      "grundsteuer",
+      "insurance",
+      "electricity",
+      "repairs",
+      "professional_fees",
+      "bank_fees",
+    ] as const
+  ).map((c) => [c, ALLOCATION_CATEGORY[c]]),
+);
+
+/** A cost paid from another account's amount (D135): one row per bill and category, so it
+ * replaces only the same bill's earlier row, never another bill's. */
+const PRIVATE_COST_AMOUNT: FieldSpec = {
+  label: "Betrag (€)",
+  kind: "money",
+  description:
+    "Dieser Teil der Rechnung mit seinem Anteil an der Umsatzsteuer. Er wird erst mit „Übernehmen“ als privat bezahlte Kosten gespeichert; jede Rechnung ergibt eine eigene Zeile.",
+};
 
 const PROPERTY_FIELDS: Record<string, FieldSpec> = {
   label: text(
@@ -371,6 +402,18 @@ const FIELDS: Record<string, Record<string, FieldSpec>> = {
       kind: "year",
       description: "Das Jahr, für das die Bescheinigung oder Abrechnung den Betrag ausweist.",
     },
+    // A bill's part paid from another account (tax_input:private_cost:<category>, D135).
+    "value.cost_class": choice(
+      "Art",
+      { financing: PRIVATE_COST_CLASS.financing, other: PRIVATE_COST_CLASS.other },
+      "Folgt der Kategorie: Geldbeschaffungskosten bei der Kategorie Geldbeschaffungskosten, sonst „Sonstiges“. Beim Übernehmen setzt Hausbuch sie passend zur gewählten Kategorie.",
+    ),
+    "value.category": choice(
+      "Kategorie",
+      PRIVATE_COST_CATEGORY,
+      "Bestimmt die Zeile der Anlage V, so wie eine Buchung vom Mietkonto mit dieser Kategorie. Vorgeschlagen aus den Positionen der Rechnung; ändern Sie sie, wenn sie nicht passt.",
+    ),
+    "value.label": text("Bezeichnung", "Wofür die Kosten waren; erscheint in der Liste der privat bezahlten Kosten."),
     loan_id: {
       label: "Darlehen",
       kind: "loan",
@@ -556,6 +599,8 @@ const DERIVED_INPUT: Record<string, string> = {
   amount: "Kautionsbetrag",
   fee_net: "Vergütung laut Vertrag (netto)",
   monthly_fee: "Vergütungsklausel (z. B. „zzgl. MwSt.“)",
+  cost_lines: "Rechnungspositionen",
+  amount_total: "Gesamtbetrag",
 };
 
 function lookup(map: Readonly<Record<string, string>>, key: string): string {
@@ -569,6 +614,7 @@ function prefixOf(key: string): [string, string] {
 
 function specFor(record: ProposalRecord, name: string): FieldSpec {
   if (name === "amount_total" && isHandField(record, name) && record.fields?.subtype?.value === "management_contract") return MANAGEMENT_FEE;
+  if (name === "value.amount" && record.key.startsWith("tax_input:private_cost:")) return PRIVATE_COST_AMOUNT;
   return FIELDS[prefixOf(record.key)[0]]?.[name] ?? text(name);
 }
 
@@ -642,6 +688,9 @@ function recordTitle(record: ProposalRecord): string {
     case "link":
       return `Verknüpfung: ${lookup(LINK_TARGET, rest)}`;
     case "tax_input":
+      if (rest.startsWith("private_cost:")) {
+        return `Von einem anderen Konto bezahlt: ${lookup(ALLOCATION_CATEGORY, rest.slice("private_cost:".length))}`;
+      }
       return lookup(TAX_INPUT_TITLE, rest);
     case "income_input":
       return "Einkommensteuerbescheid: zvE laut Bescheid";

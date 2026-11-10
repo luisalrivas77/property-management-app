@@ -7702,7 +7702,7 @@
           "category"
         ],
         "title": "AllocationFact",
-        "description": "A confirmed allocation as the draft sees it. Amount signed (income +, costs −); a 0.00\nrow may be present and is ignored by every rule (D70). invoice_net is the linked invoice\nextraction's amount_net (a magnitude), for the 15 % tracker (D56)."
+        "description": "A confirmed allocation as the draft sees it. Amount signed (income +, costs −); a 0.00\nrow may be present and is ignored by every rule (D70). invoice_net is this allocation's\nshare of the linked invoice extraction's amount_net (a magnitude), for the 15 % tracker\n(D56): the whole net for a payment of the whole bill, net × part ÷ gross for one part of a\nbill split by its lines (phase 2 D135)."
       },
       "AllocationMethod": {
         "type": "string",
@@ -8473,6 +8473,11 @@
             "$ref": "#/components/schemas/ExtractedValue",
             "description": "the year it concerns, if stated",
             "value_kind": "year"
+          },
+          "cost_lines": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "every cost line of the bill, each written `text | amount | code`: the line's text and its amount as printed, then the code of the kind of cost it is, the only part you choose yourself, one of acquisition_cost, loan_fees, repairs, renovation, insurance, grundsteuer, property_management, hausgeld_umlagefaehig, hausgeld_verwaltung, electricity, professional_fees, bank_fees, other_expense, vat (acquisition_cost for the purchase and its land register entry, loan_fees for a Grundschuld or loan, vat for the Umsatzsteuer line); never a subtotal (Netto, Zwischensumme) or the total",
+            "value_kind": "text_list"
           }
         },
         "additionalProperties": false,
@@ -12731,6 +12736,11 @@
             "$ref": "#/components/schemas/ExtractedValue",
             "description": "Zahlungsziel, if stated",
             "value_kind": "date"
+          },
+          "cost_lines": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "every cost line of the bill, each written `text | amount | code`: the line's text and its amount as printed, then the code of the kind of cost it is, the only part you choose yourself, one of acquisition_cost, loan_fees, repairs, renovation, insurance, grundsteuer, property_management, hausgeld_umlagefaehig, hausgeld_verwaltung, electricity, professional_fees, bank_fees, other_expense, vat (acquisition_cost for the purchase and its land register entry, loan_fees for a Grundschuld or loan, vat for the Umsatzsteuer line); never a subtotal (Netto, Zwischensumme) or the total",
+            "value_kind": "text_list"
           }
         },
         "additionalProperties": false,
@@ -15449,6 +15459,16 @@
               "numerator": 1,
               "denominator": 1
             }
+          },
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AllocationCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -15458,7 +15478,7 @@
           "label"
         ],
         "title": "PrivateCostValue",
-        "description": "A rental cost paid from a private account (phase 4b D111): trips to the flat, postage,\na landlords' association, software and the like; tax_year on the row is the year paid.\ntravel: trips × km_round_trip × the rule set's travel_rate_per_km (no amount typed);\nevery other class: amount × share. financing (phase 4b D134) is a Geldbeschaffungskosten\nbill paid privately, such as the notary and land registry for the Grundschuld: it goes to\nwk.financing_costs, every other class to wk.other. The label is free text: it stays in the\nrow and never enters the event payload (only amounts and codes do)."
+        "description": "A rental cost paid from a private account (phase 4b D111): trips to the flat, postage,\na landlords' association, software and the like; tax_year on the row is the year paid.\ntravel: trips × km_round_trip × the rule set's travel_rate_per_km (no amount typed);\nevery other class: amount × share. financing (phase 4b D134) is a Geldbeschaffungskosten\nbill paid privately, such as the notary and land registry for the Grundschuld: it goes to\nwk.financing_costs, every other class to wk.other. Phase 2 D135: a cost a bill's reading\nproposes carries its `category` (PRIVATE_COST_CATEGORIES, with class other, or financing\nfor loan_fees); the draft then books it on that category's line of the rule set's\ncategory_lines, as a confirmed allocation of the category would land. The label is free\ntext: it stays in the row and never enters the event payload (only amounts and codes do)."
       },
       "ProgressionInfo": {
         "properties": {
@@ -21829,6 +21849,7 @@
           "draft.allocation_without_property",
           "archive.finanzamt_copy_needed",
           "tax.travel_frequency",
+          "tax.private_cost_paid_from_account",
           "anlage_n.certificate_missing",
           "anlage_n.church_mismatch",
           "anlage_n.tax_class_6",

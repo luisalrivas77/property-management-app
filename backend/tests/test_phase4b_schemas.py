@@ -113,9 +113,43 @@ def test_a_private_cost_event_carries_amounts_and_codes_only(as_model):
     )
     assert type(event.value) is PrivateCostRecorded
     dumped = event.model_dump(mode="json")
-    assert set(dumped["value"]) == {"cost_class", "amount", "trips", "km_round_trip", "share"}
+    assert set(dumped["value"]) == {
+        "cost_class",
+        "category",
+        "amount",
+        "trips",
+        "km_round_trip",
+        "share",
+    }
+    assert dumped["value"]["category"] is None  # a D111 row has none
     text = event.model_dump_json()
     assert "Herr X" not in text and "2026-03-02" not in text
+
+
+@pytest.mark.parametrize("as_model", [False, True])
+def test_a_bill_part_event_keeps_its_category(as_model):
+    """Phase 2 D135: a bill's part paid from another account keeps its category (a code)
+    in the event; the label still stays out."""
+    raw = {"cost_class": "other", "category": "repairs", "label": "Rechnung Firma X"} | {
+        "amount": "297.50"
+    }
+    value = PrivateCostValue.model_validate(raw) if as_model else raw
+    event = TaxInputRecorded.model_validate(
+        {"tax_input_id": uuid.uuid4(), "kind": "private_cost", "tax_year": 2026, "value": value}
+    )
+    dumped = event.model_dump(mode="json")
+    assert (dumped["value"]["category"], dumped["value"]["amount"]) == ("repairs", "297.50")
+    assert "Firma X" not in event.model_dump_json()
+
+
+def test_an_old_private_cost_event_without_a_category_still_validates():
+    payload = {"tax_input_id": uuid.uuid4(), "kind": "private_cost", "tax_year": 2026}
+    stored = TaxInputRecorded.model_validate(payload | {"value": _private()}).model_dump(
+        mode="json"
+    )
+    del stored["value"]["category"]  # as written before phase 2 D135
+    event = TaxInputRecorded.model_validate(stored)
+    assert type(event.value) is PrivateCostRecorded and event.value.category is None
 
 
 def test_a_private_cost_value_needs_its_class_fields():

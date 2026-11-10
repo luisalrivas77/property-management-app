@@ -48,6 +48,7 @@ from hausbuch.rules.loan_schedule import build_schedule
 from hausbuch.rules.matching import LOAN_WINDOW_DAYS
 from hausbuch.rules.tax import registry
 from hausbuch.rules.tax.draft import draft
+from hausbuch.rules.tax.rounding import cents
 from hausbuch.schemas.allocation import AllocationCategory, ServicePeriod
 from hausbuch.schemas.checklist import ChecklistFacts
 from hausbuch.schemas.document import Document
@@ -422,7 +423,11 @@ def _allocations(
     ).all()
 
     schedules: dict[UUID, list[ScheduleEntry]] = {}
-    nets: dict[UUID, Decimal | None] = {}
+    bills: dict[UUID, tuple[Decimal | None, Decimal | None]] = {}
+    paid: dict[UUID, Decimal] = {}  # per document, the confirmed allocations' magnitudes
+    for r in rows:
+        if r.document_id is not None:
+            paid[r.document_id] = paid.get(r.document_id, Decimal(0)) + abs(r.amount)
     facts = []
     for r in rows:
         category = AllocationCategory(r.category)
@@ -448,8 +453,15 @@ def _allocations(
                 due_on = period.start.replace(day=due_day[r.tenancy_id])
             else:
                 due_on = period.start
-        if r.document_id is not None and r.document_id not in nets:
-            nets[r.document_id] = _invoice_net(conn, r.document_id)
+        invoice_net = None
+        if r.document_id is not None:
+            if r.document_id not in bills:
+                bills[r.document_id] = (
+                    _invoice_net(conn, r.document_id),
+                    _invoice_gross(conn, r.document_id),
+                )
+            net, gross = bills[r.document_id]
+            invoice_net = _net_share(net, gross or paid[r.document_id], abs(r.amount))
         facts.append(
             AllocationFact(
                 allocation_id=r.id,
@@ -466,7 +478,7 @@ def _allocations(
                 tenancy_id=r.tenancy_id,
                 loan_id=r.loan_id,
                 document_id=r.document_id,
-                invoice_net=None if r.document_id is None else nets[r.document_id],
+                invoice_net=invoice_net,
                 counterparty_iban_masked=r.counterparty_iban_masked,
             )
         )
@@ -497,6 +509,34 @@ def _loan_entry(
 def _month_end(day: date) -> date:
     following = date(day.year + day.month // 12, day.month % 12 + 1, 1)
     return date.fromordinal(following.toordinal() - 1)
+
+
+def _net_share(net: Decimal | None, gross: Decimal, part: Decimal) -> Decimal | None:
+    """This allocation's share of its bill's net (phase 2 D135): a bank line split by the
+    bill's lines carries several allocations citing one invoice, and each counts only its
+    part, net × part ÷ gross, half-up to the cent. gross is the bill's amount_total, else the
+    sum of its confirmed allocations. A part as large as the whole bill (or within the
+    matcher's cent above it) keeps the whole net; a share of 0.00 is None."""
+    if net is None or gross <= 0:
+        return None
+    share = min(cents(net * part / gross), net)
+    return share if share > 0 else None
+
+
+def _invoice_gross(conn: Connection, document_id: UUID) -> Decimal | None:
+    """The invoice extraction's amount_total (a magnitude), to pro-rate its net (D135)."""
+    extraction = current_extraction(conn, document_id)
+    if extraction is None or extraction.kind is not ExtractionKind.INVOICE:
+        return None
+    item: Any = getattr(extraction.fields, "amount_total", None)
+    value = getattr(item, "value", None)
+    if value is None:
+        return None
+    try:
+        amount = abs(Decimal(str(value))).quantize(_CENT)
+    except InvalidOperation:
+        return None
+    return amount if amount > 0 else None
 
 
 def _invoice_net(conn: Connection, document_id: UUID) -> Decimal | None:
