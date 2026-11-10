@@ -1066,6 +1066,11 @@ class _Apply:
         given = _undot({f: values[f] for f in _PREFILL_TAX_INPUTS[kind] if f in values})
         if kind is TaxInputKind.GRUNDSTEUER_SCHEDULE:
             given["value"] = grundsteuer_schedule_value(given.get("value", {}))
+        value = given.get("value")
+        if kind is TaxInputKind.PRIVATE_COST and isinstance(value, dict) and value.get("category"):
+            # The class follows the category the user confirmed or changed on the card
+            # (financing exactly for loan_fees, D135), so changing one never contradicts the other.
+            value["cost_class"] = "financing" if value["category"] == "loan_fees" else "other"
         if kind is TaxInputKind.INTEREST_CERTIFIED:
             if given.get("loan_id") is None:
                 linked = self.entity("link:loan")

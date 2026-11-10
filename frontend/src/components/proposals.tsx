@@ -406,7 +406,7 @@ const FIELDS: Record<string, Record<string, FieldSpec>> = {
     "value.cost_class": choice(
       "Art",
       { financing: PRIVATE_COST_CLASS.financing, other: PRIVATE_COST_CLASS.other },
-      "Geldbeschaffungskosten gehören zur Kategorie Geldbeschaffungskosten, alle anderen Teile zu „Sonstiges“.",
+      "Folgt der Kategorie: Geldbeschaffungskosten bei der Kategorie Geldbeschaffungskosten, sonst „Sonstiges“. Beim Übernehmen setzt Hausbuch sie passend zur gewählten Kategorie.",
     ),
     "value.category": choice(
       "Kategorie",

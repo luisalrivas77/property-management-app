@@ -149,6 +149,23 @@ def test_a_repair_bill_paid_from_another_account_is_a_private_cost(
     assert all(r.supersedes_id is None for r in rows)
 
 
+@pytest.mark.parametrize(
+    ("category", "cost_class"), [("insurance", "other"), ("loan_fees", "financing")]
+)
+def test_a_category_changed_on_the_card_brings_its_class(
+    world, run, read, job, blob_store, enqueued, category, cost_class
+):
+    """The user changes Kategorie and leaves Art as proposed: the class follows the category
+    (financing exactly for loan_fees), so the apply is never refused for the pair."""
+    ws, prop = world.ws, world.property_id
+    _, ready, _ = _read_ready(run, job, ws, blob_store, enqueued, INVOICE, _repair(), b"%PDF c")
+    key = "tax_input:private_cost:repairs"
+    body = _accept_all(ready, **{key: {"value.category": category}})
+    run(ws, proposals.apply_proposal, ready.id, body, iban_key=TEST_IBAN_KEY)
+    [row] = _private(read, ws, prop)
+    assert (row.value.category, row.value.cost_class) == (AllocationCategory(category), cost_class)
+
+
 def test_a_bill_a_bank_line_pays_proposes_no_private_cost(
     world, run, read, job, blob_store, enqueued
 ):
