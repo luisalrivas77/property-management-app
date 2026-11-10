@@ -26,6 +26,7 @@ import {
   type ReturnEstimate,
 } from "./returnEstimate";
 import { ExportCard, SourcesButton, type ExportButton } from "./tax";
+import { WarningActionView, WhatToDo, resolveAction } from "./todos";
 import {
   questionnaireHref,
   TaxTabs,
@@ -287,6 +288,15 @@ function DraftView({
                 ausgelesen), oder den erwarteten Bruttolohn auf der Seite{" "}
                 <Link href="/owners">Eigentümer</Link> eintragen.
               </p>
+              <div className="row todo-actions">
+                <ReadUpload
+                  label="Lohnsteuerbescheinigung hochladen"
+                  onUploaded={onChanged}
+                />
+                <Link href="/owners#einkommen">
+                  Erwarteten Bruttolohn eintragen
+                </Link>
+              </div>
             </div>
           )}
           {rows.error != null && rows.data === undefined ? (
@@ -311,6 +321,7 @@ function DraftView({
             estimate={estimate}
             ownerId={owner.id}
             year={year}
+            onChanged={onChanged}
           />
           <Documents rows={list} year={year} />
           <AnlageNHandOver
@@ -575,12 +586,15 @@ function OpenPoints({
   estimate,
   ownerId,
   year,
+  onChanged,
 }: {
   warnings: DraftWarning[];
   estimate: ReturnEstimate | null;
   ownerId: string;
   year: number;
+  onChanged: () => void;
 }) {
+  const ctx = { year, ownerId };
   const sorted = [
     ...warnings.filter((w) => w.severity === "warning"),
     ...warnings.filter((w) => w.severity === "info"),
@@ -643,13 +657,21 @@ function OpenPoints({
                 {warning.severity === "warning" ? "Prüfen" : "Hinweis"}
               </span>
               <p>{WARNING_TEXT[warning.code](warning.params ?? {})}</p>
-              {(warning.refs ?? []).length > 0 ? (
-                <p className="tax-open-actions">
-                  <SourcesButton
-                    refs={warning.refs ?? []}
-                    title="Offener Punkt"
+              <WhatToDo warning={warning} />
+              {resolveAction(warning, ctx) || (warning.refs ?? []).length > 0 ? (
+                <div className="row tax-open-actions">
+                  <WarningActionView
+                    warning={warning}
+                    ctx={ctx}
+                    onChanged={onChanged}
                   />
-                </p>
+                  {(warning.refs ?? []).length > 0 ? (
+                    <SourcesButton
+                      refs={warning.refs ?? []}
+                      title="Offener Punkt"
+                    />
+                  ) : null}
+                </div>
               ) : null}
             </li>
           ))}

@@ -23,7 +23,6 @@ import type {
   TaxExportKind,
   TaxExportState,
   TaxSourceRef,
-  WarningCode,
 } from "@/api/schemas";
 import { ChecklistTab } from "@/app/(app)/properties/[id]/ChecklistTab";
 import { ErrorNotice } from "@/lib/ErrorNotice";
@@ -33,6 +32,7 @@ import { TaxEffectLine } from "./income";
 import { ALLOCATION_CATEGORY, TAX_SOURCE_KIND, WARNING_TEXT, taxNote } from "./labels";
 import { ActionDialog, Loading } from "./ui";
 import { GrundsteuerSection, MovableAssetSection, UsefulLifeSection } from "./taxInputs";
+import { AnlageVTodos, type GuideContext, WarningActionView, WhatToDo, resolveAction } from "./todos";
 import { useLoad, type Loaded } from "./useLoad";
 
 import "./tax.css";
@@ -84,39 +84,9 @@ export function linkFor(ref: TaxSourceRef, propertyId?: string): Action | null {
   }
 }
 
-const propertyTab = (tab: string, label: string) => (_: DraftWarning, propertyId: string) => ({
-  href: `/properties/${propertyId}?tab=${tab}`,
-  label,
-});
-const toInbox = () => ({ href: "/inbox", label: "Zu prüfen öffnen" });
-
-/** The action of an Offene-Punkte entry, where a page exists for it. Warnings about single
- * payments (renovation, other income, the ten-day rule) open their payments in the drawer. */
-const WARNING_ACTION: Partial<Record<WarningCode, (warning: DraftWarning, propertyId: string) => Action | null>> = {
-  "afa.no_split": propertyTab("aufteilung", "Kaufpreisaufteilung wählen"),
-  "afa.cost_row_unpaid": propertyTab("nebenkosten", "Nebenkosten ansehen"),
-  "afa.acquisition_cost_without_row": propertyTab("nebenkosten", "Unter Nebenkosten erfassen"),
-  "afa.purchase_price_mismatch": propertyTab("stammdaten", "Kaufpreis ansehen"),
-  "interest.certificate_mismatch": (warning, propertyId) => {
-    const loan = warning.refs?.find((ref) => ref.kind === "loan" && ref.id);
-    return loan ? { href: `/loans/${loan.id}`, label: "Darlehen öffnen" } : propertyTab("darlehen", "Darlehen ansehen")(warning, propertyId);
-  },
-  "hausgeld.abrechnung_pending": propertyTab("dokumente", "Hausgeldabrechnung ablegen"),
-  "income.living_area_missing": propertyTab("stammdaten", "Stammdaten ansehen"),
-  "umlagen.mixed_terms": (warning) => {
-    const first = warning.params?.tenancies?.split(",")[0]?.trim();
-    return first ? { href: `/tenancies/${first}`, label: "Mietverhältnis öffnen" } : null;
-  },
-  "reduced_rent.no_market_rent": propertyTab("einheiten", "Bei der Einheit eintragen"),
-  "reduced_rent.prognosis_needed": propertyTab("einheiten", "Einheiten ansehen"),
-  "reduced_rent.partial": propertyTab("einheiten", "Einheiten ansehen"),
-  "draft.open_lines_excluded": toInbox,
-  "draft.allocation_without_property": toInbox,
-};
-
-function warningAction(warning: DraftWarning, propertyId: string): Action | null {
-  const specific = WARNING_ACTION[warning.code]?.(warning, propertyId);
-  if (specific) return specific;
+/** A warning without an action of its own in components/todos.tsx (D136) still opens the first
+ * source it cites that has a page. */
+function refAction(warning: DraftWarning, propertyId: string): Action | null {
   for (const ref of warning.refs ?? []) {
     const link = linkFor(ref, propertyId);
     if (link) return link;
@@ -255,10 +225,26 @@ function DraftView({ draft, propertyId, onChanged }: { draft: AnlageVDraft; prop
     [propertyId, draft.tax_year],
   );
   const payments = useLoad(loadPayments);
+  // An action of a to-do (a split selected, a document read) changes the checklist and the
+  // questions too, which load on their own; the counter reloads them with the draft.
+  const [refresh, setRefresh] = useState(0);
+  const changed = useCallback(() => {
+    setRefresh((n) => n + 1);
+    onChanged();
+  }, [onChanged]);
+  const ctx = { year: draft.tax_year, propertyId, draft, payments: payments.data };
 
   return (
     <PaymentsContext.Provider value={payments}>
       <div className="stack">
+        <AnlageVTodos
+          propertyId={propertyId}
+          year={draft.tax_year}
+          draft={draft}
+          payments={payments.data}
+          refresh={refresh}
+          onChanged={changed}
+        />
         {draft.rule_set.form_status === "provisional" ? (
           <div className="notice notice-info" role="status">
             <p>
@@ -288,21 +274,21 @@ function DraftView({ draft, propertyId, onChanged }: { draft: AnlageVDraft; prop
             />
             <section className="card stack" aria-labelledby="tax-useful-life">
               <h2 id="tax-useful-life">Kürzere Nutzungsdauer (Gutachten)</h2>
-              <UsefulLifeSection propertyId={propertyId} defaultYear={draft.tax_year} onChanged={onChanged} />
+              <UsefulLifeSection propertyId={propertyId} defaultYear={draft.tax_year} onChanged={changed} />
             </section>
             <section className="card stack" aria-labelledby="tax-movable-asset">
               <h2 id="tax-movable-asset">Einbauküche / bewegliche Wirtschaftsgüter</h2>
               <MovableAssetSection
                 propertyId={propertyId}
                 purchaseYear={Number(draft.header.transfer_date.slice(0, 4)) || draft.tax_year}
-                onChanged={onChanged}
+                onChanged={changed}
               />
             </section>
             <NotDeductible draft={draft} propertyId={propertyId} />
           </div>
           <aside className="stack tax-side" aria-label="Offene Punkte und Unterlagen">
-            <OpenPoints warnings={warnings} propertyId={propertyId} />
-            <ChecklistTab propertyId={propertyId} year={draft.tax_year} />
+            <OpenPoints warnings={warnings} ctx={ctx} onChanged={changed} />
+            <ChecklistTab propertyId={propertyId} year={draft.tax_year} refresh={refresh} payments={payments.data} />
             <LimitCard limit={draft.limit_15 ?? null} />
             <HandOverCard key={draft.tax_year} propertyId={propertyId} taxYear={draft.tax_year} />
           </aside>
@@ -680,7 +666,17 @@ export function SourcesButton({ refs, title, propertyId }: { refs: TaxSourceRef[
 
 // --- Right column -------------------------------------------------------------------------
 
-function OpenPoints({ warnings, propertyId }: { warnings: DraftWarning[]; propertyId: string }) {
+/** Offene Punkte: every warning with what the rule found, what to do (D136) and its action; a
+ * to-do is also listed under "Was noch fehlt" at the top of the tab. */
+function OpenPoints({
+  warnings,
+  ctx,
+  onChanged,
+}: {
+  warnings: DraftWarning[];
+  ctx: GuideContext & { propertyId: string };
+  onChanged: () => void;
+}) {
   // Warnings first, then information; within each, the order the draft gave.
   const sorted = [...warnings.filter((w) => w.severity === "warning"), ...warnings.filter((w) => w.severity === "info")];
   return (
@@ -691,7 +687,8 @@ function OpenPoints({ warnings, propertyId }: { warnings: DraftWarning[]; proper
       ) : (
         <ul className="tax-open-list">
           {sorted.map((warning, index) => {
-            const action = warningAction(warning, propertyId);
+            const guided = resolveAction(warning, ctx) !== null;
+            const fallback = guided ? null : refAction(warning, ctx.propertyId);
             const payments = (warning.refs ?? []).filter((ref) => ref.kind === "allocation");
             return (
               <li key={`${warning.code}-${index}`} className={`tax-open-item tax-open-${warning.severity}`}>
@@ -699,13 +696,15 @@ function OpenPoints({ warnings, propertyId }: { warnings: DraftWarning[]; proper
                   {warning.severity === "warning" ? "Prüfen" : "Hinweis"}
                 </span>
                 <p>{WARNING_TEXT[warning.code](warning.params ?? {})}</p>
-                {action || payments.length > 0 ? (
-                  <p className="tax-open-actions">
-                    {action ? <Link href={action.href}>{action.label}</Link> : null}
+                <WhatToDo warning={warning} />
+                {guided || fallback || payments.length > 0 ? (
+                  <div className="row tax-open-actions">
+                    {guided ? <WarningActionView warning={warning} ctx={ctx} onChanged={onChanged} /> : null}
+                    {fallback ? <Link href={fallback.href}>{fallback.label}</Link> : null}
                     {payments.length > 0 ? (
-                      <SourcesButton refs={warning.refs ?? []} title="Offener Punkt" propertyId={propertyId} />
+                      <SourcesButton refs={warning.refs ?? []} title="Offener Punkt" propertyId={ctx.propertyId} />
                     ) : null}
-                  </p>
+                  </div>
                 ) : null}
               </li>
             );
