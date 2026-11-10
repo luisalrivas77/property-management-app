@@ -5,10 +5,10 @@
  "recorded_on": "2026-11-10",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "93d91a3094e05c87",
-  "request_sha256": "04056f08c5677416843a72987894b9b5a69078ab8fb48ecd9553a40288484938",
+  "prompt_version": "76607e0fbcb59f81",
+  "request_sha256": "f073770000050f5824a6a80ff19784da8b7c9e33370dcec3a2b7a20e07350c74",
   "message": {
-   "id": "msg_011CgtWqD9WMUJ1Mg5ZBnTVa",
+   "id": "msg_011CguHxpqXxssoSzuVdjaj7",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 3905,
+    "input_tokens": 4042,
     "output_tokens": 42,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -45,10 +45,10 @@
  },
  "extract": [
   {
-   "prompt_version": "5a926fcf9151da70",
-   "request_sha256": "21b13c24e12b27ea332778fd1393fc7ce552641018528320b33e563750c5f052",
+   "prompt_version": "213911d55186e77b",
+   "request_sha256": "6bebe2f0ad078d254a67a637606459676b7d6bf08a43a89c68487e14bead8412",
    "message": {
-    "id": "msg_011CgtWq2rsAGYwbr7MYaAjW",
+    "id": "msg_011CguHxfFa3AmjbJjKvQ8wY",
     "container": null,
     "content": [
      {
@@ -128,7 +128,7 @@
         "type": "page_location"
        }
       ],
-      "text": "Urkunde 1235/2026 (Grundschuldbestellung mit ZV-Unterwerfung)",
+      "text": "Grundschuldbestellung mit ZV-Unterwerfung",
       "type": "text"
      },
      {
@@ -247,8 +247,8 @@
      "cache_creation_input_tokens": 0,
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
-     "input_tokens": 3535,
-     "output_tokens": 333,
+     "input_tokens": 3633,
+     "output_tokens": 319,
      "output_tokens_details": {
       "thinking_tokens": 0
      },

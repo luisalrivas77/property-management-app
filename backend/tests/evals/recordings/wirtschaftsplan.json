@@ -5,10 +5,10 @@
  "recorded_on": "2026-11-10",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "93d91a3094e05c87",
-  "request_sha256": "b99eea20e478ba702a8021788078a4527515d2816d3777c996e8e44593a04904",
+  "prompt_version": "76607e0fbcb59f81",
+  "request_sha256": "6968b36a05657e0d712ee412e788c6ad2656fa9e11b4b783dd0f00ca8655556b",
   "message": {
-   "id": "msg_011CgtWqk66Dt4LkVhxwqhJP",
+   "id": "msg_011CguHyuUcPAUYLpeHT5AN5",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 3868,
+    "input_tokens": 4005,
     "output_tokens": 48,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -45,10 +45,10 @@
  },
  "extract": [
   {
-   "prompt_version": "5a926fcf9151da70",
-   "request_sha256": "227466aea5886018a4a595fa30ffea1ecb74a81ebb523a645ba6e4a78c10bf01",
+   "prompt_version": "213911d55186e77b",
+   "request_sha256": "fb7f4704be4d924ede242ddd4e820735e15f7e07aa6c5448d634c2c93549b157",
    "message": {
-    "id": "msg_011CgtWqYnx3o9SAtw2mpS8L",
+    "id": "msg_011CguHyiGv7RzHWeaEVgPs2",
     "container": null,
     "content": [
      {
@@ -287,7 +287,7 @@
      "cache_creation_input_tokens": 0,
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
-     "input_tokens": 3563,
+     "input_tokens": 3661,
      "output_tokens": 404,
      "output_tokens_details": {
       "thinking_tokens": 0

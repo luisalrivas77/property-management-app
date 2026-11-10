@@ -5,10 +5,10 @@
  "recorded_on": "2026-11-10",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "93d91a3094e05c87",
-  "request_sha256": "ba20bcd198d525e8f0bb3ea11bd1e1a1f1a0731bf07acc35f1fa73f745893b95",
+  "prompt_version": "76607e0fbcb59f81",
+  "request_sha256": "87a7daabe60dfc3d558df24d67b0c6942dbf184ae3903430f6b134802299e4c2",
   "message": {
-   "id": "msg_011CgtWqUEMheShsEbSEpKRh",
+   "id": "msg_011CguHydiKngcrafbwpzU1u",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 3847,
+    "input_tokens": 3984,
     "output_tokens": 51,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -45,10 +45,10 @@
  },
  "extract": [
   {
-   "prompt_version": "5a926fcf9151da70",
-   "request_sha256": "87f7e91a6e6a3c42e92f22a6ef102e557f170f27deacd46ee0601fabe22b396d",
+   "prompt_version": "213911d55186e77b",
+   "request_sha256": "7a50cd4fc6d6c6bb47a4de798d1c41496d90dd48aed4717206586a5e8003b7c4",
    "message": {
-    "id": "msg_011CgtWqJbumtZgAN1gzyHw9",
+    "id": "msg_011CguHxwNSLAViezw51tJHn",
     "container": null,
     "content": [
      {
@@ -128,7 +128,7 @@
         "type": "page_location"
        }
       ],
-      "text": "19.500,00 €",
+      "text": "19.500,00 EUR",
       "type": "text"
      },
      {
@@ -192,8 +192,8 @@
      "cache_creation_input_tokens": 0,
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
-     "input_tokens": 3421,
-     "output_tokens": 214,
+     "input_tokens": 3519,
+     "output_tokens": 216,
      "output_tokens_details": {
       "thinking_tokens": 0
      },
