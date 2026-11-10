@@ -1,0 +1,265 @@
+# questionnaire.yaml: rules/tax/questionnaire.py prefill, progress, reminders and
+# extraordinary_threshold (docs/phases/phase-4b.md §4.2, §5.11, D110, D112).
+
+# Synthetic numbers only (the repo is public). Owners A and B and one flat, on the 2026 file
+# rules/tax/questionnaire/2026.yaml (25 questions: 17 per owner, 6 for the household, 2 per
+# property → 42 slots). Loaded through tests/fixture_models_phase4b.py, which checks every
+# value against the §7 schemas and recomputes each expectation on load.
+#
+# prefill: per slot the previous year's current answer (when the key is in this year's file)
+# carried as the proposed answer unless carry_forward is none or it was not_applicable, else the
+# question's default_answer; for copy targets the previous year's rows of the kind as proposed
+# rows with carried_from_id (dates moved by a year); for reconfirm targets the spanning rows
+# still in force (a child under 18, an item with a slice in the year) listed, never copied.
+# progress: a slot is answered when a current answer of the year exists. `slots` names only the
+# slots it asserts; the others are not checked.
+
+ids:
+  owner_a: 0000000a-0000-4000-8000-000000000001
+  owner_b: 0000000a-0000-4000-8000-000000000002
+  flat: 0000004b-0000-4000-8000-0000000000f1
+
+bases:
+  owners: &owners [0000000a-0000-4000-8000-000000000001, 0000000a-0000-4000-8000-000000000002]
+  properties: &properties [0000004b-0000-4000-8000-0000000000f1]
+  y2025: &y2025 {workspace_id: 0000004b-0000-4000-8000-0000000000ff,
+                 recorded_at: '2026-03-01T10:00:00Z', tax_year: 2025}
+  y2026: &y2026 {workspace_id: 0000004b-0000-4000-8000-0000000000ff,
+                 recorded_at: '2027-03-01T10:00:00Z', tax_year: 2026}
+  commute_b_2025: &commute_b_2025
+    id: 0000004b-0000-4000-8000-000000000101
+    owner_id: 0000000a-0000-4000-8000-000000000002
+    kind: commute
+    tax_year: 2025
+    value: {kind: first_workplace, workplace_label: Büro, period_from: 2025-01-01,
+            period_to: 2025-12-31, days_per_week: 2, days: 100, km: 25, km_car: 25}
+  phone_a: &phone_a
+    id: 0000004b-0000-4000-8000-0000000000a3
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    kind: work_equipment
+    tax_year: 2025
+    value: {label: Smartphone, item_class: phone, gross: '1199.00', bought_on: 2025-03-15,
+            professional_share: {numerator: 1, denominator: 2}}
+  child_2025: &child_2025
+    id: 0000004b-0000-4000-8000-000000000102
+    kind: child
+    tax_year: 2025
+    value: {born_on: 2025-05-01}
+
+cases:
+- id: prefill_copy_commute
+  description: B's 2025 route → one proposed 2026 row with carried_from_id, the period moved to 2026, days editable
+  tax_year: 2026
+  owners: *owners
+  properties: *properties
+  prior_answers:
+  - {<<: *y2025, id: 0000004b-0000-4000-8000-000000000111, question_key: owner.commute,
+     owner_id: 0000000a-0000-4000-8000-000000000002, answer: 'yes'}
+  prior_rows: [*commute_b_2025]
+  expect:
+    slot_count: 42
+    slots:
+    - key: owner.commute
+      owner_id: 0000000a-0000-4000-8000-000000000002
+      prior_answer_id: 0000004b-0000-4000-8000-000000000111
+      proposed_answer: 'yes'
+      proposed_rows:
+      - owner_id: 0000000a-0000-4000-8000-000000000002
+        kind: commute
+        tax_year: 2026
+        carried_from_id: 0000004b-0000-4000-8000-000000000101
+        value: {kind: first_workplace, workplace_label: Büro, period_from: 2026-01-01,
+                period_to: 2026-12-31, days_per_week: 2, days: 100, km: 25, km_car: 25}
+    - {key: owner.commute, owner_id: 0000000a-0000-4000-8000-000000000001}
+    answered: 0
+    total: 42
+- id: prefill_reconfirm_phone
+  description: A's phone of 2025 (36 months) still has a slice in 2026 → listed for confirmation, not copied; a "no" (step 1) supersedes it with disposed_on
+  tax_year: 2026
+  owners: *owners
+  properties: *properties
+  prior_answers:
+  - {<<: *y2025, id: 0000004b-0000-4000-8000-000000000112, question_key: owner.equipment_new,
+     owner_id: 0000000a-0000-4000-8000-000000000001, answer: 'yes'}
+  prior_rows: [*phone_a]
+  expect:
+    slots:
+    - key: owner.equipment_prior
+      owner_id: 0000000a-0000-4000-8000-000000000001
+      reconfirm_ids: [0000004b-0000-4000-8000-0000000000a3]
+    - key: owner.equipment_new
+      owner_id: 0000000a-0000-4000-8000-000000000001
+      prior_answer_id: 0000004b-0000-4000-8000-000000000112
+    - {key: owner.subscriptions, owner_id: 0000000a-0000-4000-8000-000000000001}
+- id: durable_kinds_not_copied
+  description: a child of 2025 and the phone → listed under their reconfirm questions, zero proposed rows anywhere
+  tax_year: 2026
+  owners: *owners
+  properties: *properties
+  prior_answers:
+  - {<<: *y2025, id: 0000004b-0000-4000-8000-000000000113, question_key: household.children,
+     answer: 'yes'}
+  - {<<: *y2025, id: 0000004b-0000-4000-8000-000000000114, question_key: owner.equipment_new,
+     owner_id: 0000000a-0000-4000-8000-000000000001, answer: 'yes'}
+  prior_rows: [*child_2025, *phone_a]
+  expect:
+    slot_count: 42
+    slots:
+    - key: household.children
+      prior_answer_id: 0000004b-0000-4000-8000-000000000113
+      proposed_answer: 'yes'
+      reconfirm_ids: [0000004b-0000-4000-8000-000000000102]
+    - key: owner.equipment_prior
+      owner_id: 0000000a-0000-4000-8000-000000000001
+      reconfirm_ids: [0000004b-0000-4000-8000-0000000000a3]
+    - key: owner.equipment_new
+      owner_id: 0000000a-0000-4000-8000-000000000001
+      prior_answer_id: 0000004b-0000-4000-8000-000000000114
+    - {key: owner.subscriptions, owner_id: 0000000a-0000-4000-8000-000000000001}
+    - {key: household.childcare}
+- id: not_applicable_recorded
+  description: B answers the work room not_applicable → the slot counts as answered, nothing is created; a not_applicable of 2025 is not carried
+  tax_year: 2026
+  owners: *owners
+  properties: *properties
+  prior_answers:
+  - {<<: *y2025, id: 0000004b-0000-4000-8000-000000000115, question_key: owner.work_room,
+     owner_id: 0000000a-0000-4000-8000-000000000002, answer: not_applicable}
+  answers:
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000116, question_key: owner.work_room,
+     owner_id: 0000000a-0000-4000-8000-000000000002, answer: not_applicable}
+  expect:
+    slots:
+    - key: owner.work_room
+      owner_id: 0000000a-0000-4000-8000-000000000002
+      prior_answer_id: 0000004b-0000-4000-8000-000000000115
+    answered: 1
+    total: 42
+- id: progress_count
+  description: two owners, one flat, 25 questions → 42 slots; 32 answered → 10 open, in file order
+  tax_year: 2026
+  owners: *owners
+  properties: *properties
+  answers:
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000201, question_key: owner.pay_documents, owner_id: 0000000a-0000-4000-8000-000000000001, answer: 'yes'}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000202, question_key: owner.tax_class, owner_id: 0000000a-0000-4000-8000-000000000001, answer: 'yes', choice: iv}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000203, question_key: owner.replacement_income, owner_id: 0000000a-0000-4000-8000-000000000001, answer: 'yes', choice: elterngeld}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000204, question_key: owner.insurance_status, owner_id: 0000000a-0000-4000-8000-000000000001, answer: 'yes', choice: statutory}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000205, question_key: owner.other_insurance, owner_id: 0000000a-0000-4000-8000-000000000001, answer: 'no'}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000206, question_key: owner.commute, owner_id: 0000000a-0000-4000-8000-000000000001, answer: 'no'}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000207, question_key: owner.home_office_days, owner_id: 0000000a-0000-4000-8000-000000000001, answer: 'no'}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000208, question_key: owner.work_room, owner_id: 0000000a-0000-4000-8000-000000000001, answer: 'yes'}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000209, question_key: owner.equipment_new, owner_id: 0000000a-0000-4000-8000-000000000001, answer: 'no'}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000210, question_key: owner.equipment_prior, owner_id: 0000000a-0000-4000-8000-000000000001, answer: 'yes'}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000211, question_key: owner.subscriptions, owner_id: 0000000a-0000-4000-8000-000000000001, answer: 'yes'}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000212, question_key: owner.telecom, owner_id: 0000000a-0000-4000-8000-000000000001, answer: 'no'}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000213, question_key: owner.account_fee, owner_id: 0000000a-0000-4000-8000-000000000001, answer: 'yes'}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000214, question_key: owner.union_association, owner_id: 0000000a-0000-4000-8000-000000000001, answer: 'no'}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000215, question_key: owner.training, owner_id: 0000000a-0000-4000-8000-000000000001, answer: 'no'}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000216, question_key: owner.job_move, owner_id: 0000000a-0000-4000-8000-000000000001, answer: 'no'}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000217, question_key: owner.own_expense_trips, owner_id: 0000000a-0000-4000-8000-000000000001, answer: 'no'}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000218, question_key: owner.pay_documents, owner_id: 0000000a-0000-4000-8000-000000000002, answer: 'yes'}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000219, question_key: owner.tax_class, owner_id: 0000000a-0000-4000-8000-000000000002, answer: 'yes', choice: iv}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000220, question_key: owner.replacement_income, owner_id: 0000000a-0000-4000-8000-000000000002, answer: 'yes', choice: krankengeld}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000221, question_key: owner.insurance_status, owner_id: 0000000a-0000-4000-8000-000000000002, answer: 'yes', choice: statutory}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000222, question_key: owner.other_insurance, owner_id: 0000000a-0000-4000-8000-000000000002, answer: 'no'}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000223, question_key: owner.commute, owner_id: 0000000a-0000-4000-8000-000000000002, answer: 'yes'}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000224, question_key: owner.home_office_days, owner_id: 0000000a-0000-4000-8000-000000000002, answer: 'yes'}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000225, question_key: owner.work_room, owner_id: 0000000a-0000-4000-8000-000000000002, answer: 'no'}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000226, question_key: owner.equipment_new, owner_id: 0000000a-0000-4000-8000-000000000002, answer: 'no'}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000227, question_key: owner.equipment_prior, owner_id: 0000000a-0000-4000-8000-000000000002, answer: 'no'}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000228, question_key: owner.subscriptions, owner_id: 0000000a-0000-4000-8000-000000000002, answer: 'no'}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000229, question_key: owner.telecom, owner_id: 0000000a-0000-4000-8000-000000000002, answer: 'no'}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000230, question_key: owner.account_fee, owner_id: 0000000a-0000-4000-8000-000000000002, answer: 'yes'}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000231, question_key: household.children, answer: 'yes'}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000232, question_key: household.childcare, answer: 'no'}
+  expect:
+    slot_count: 42
+    answered: 32
+    total: 42
+    open:
+    - {key: owner.union_association, owner_id: 0000000a-0000-4000-8000-000000000002}
+    - {key: owner.training, owner_id: 0000000a-0000-4000-8000-000000000002}
+    - {key: owner.job_move, owner_id: 0000000a-0000-4000-8000-000000000002}
+    - {key: owner.own_expense_trips, owner_id: 0000000a-0000-4000-8000-000000000002}
+    - {key: household.services_35a}
+    - {key: household.donations}
+    - {key: household.extraordinary}
+    - {key: household.other_not_modelled}
+    - {key: property.trips, property_id: 0000004b-0000-4000-8000-0000000000f1}
+    - {key: property.private_costs, property_id: 0000004b-0000-4000-8000-0000000000f1}
+    reminders: []
+- id: removed_key_not_prefilled
+  description: a key answered in 2025 that the 2026 file no longer has → no slot, no error
+  tax_year: 2026
+  owners: *owners
+  properties: *properties
+  prior_answers:
+  - {<<: *y2025, id: 0000004b-0000-4000-8000-000000000117, question_key: owner.retired_question,
+     owner_id: 0000000a-0000-4000-8000-000000000002, answer: 'yes'}
+  expect:
+    slot_count: 42
+    absent_keys: [owner.retired_question]
+- id: new_key_open
+  description: telecom has no 2025 answer (as if new in 2026) → an open slot without a proposal, beside a carried commute answer
+  tax_year: 2026
+  owners: *owners
+  properties: *properties
+  prior_answers:
+  - {<<: *y2025, id: 0000004b-0000-4000-8000-000000000118, question_key: owner.commute,
+     owner_id: 0000000a-0000-4000-8000-000000000001, answer: 'no'}
+  expect:
+    slots:
+    - {key: owner.telecom, owner_id: 0000000a-0000-4000-8000-000000000001}
+    - key: owner.commute
+      owner_id: 0000000a-0000-4000-8000-000000000001
+      prior_answer_id: 0000004b-0000-4000-8000-000000000118
+      proposed_answer: 'no'
+    answered: 0
+    total: 42
+- id: reminder_on_sheet
+  description: A answers the job move yes → the Umzugskosten sentence for the Gesamt card and the sheet
+  tax_year: 2026
+  owners: *owners
+  properties: *properties
+  answers:
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000119, question_key: owner.job_move,
+     owner_id: 0000000a-0000-4000-8000-000000000001, answer: 'yes'}
+  - {<<: *y2026, id: 0000004b-0000-4000-8000-000000000120, question_key: owner.own_expense_trips,
+     owner_id: 0000000a-0000-4000-8000-000000000001, answer: 'no'}
+  expect:
+    answered: 2
+    total: 42
+    reminders: [Berufliche Umzugskosten von Hand in der Anlage N eintragen.]
+- id: extraordinary_threshold_household
+  description: 'GdE 80,045.44, one child: 2 % of 15,340 + 3 % of 35,790 + 4 % of 28,915.44 = 2,537.1176 → 2,537.12'
+  tax_year: 2026
+  owners: *owners
+  properties: *properties
+  gde: '80045.44'
+  children: 1
+  expect:
+    threshold: '2537.12'
+- id: default_yes_account_fee
+  description: no 2025 answer → the account fee is proposed yes with the 16.00 flat for each owner
+  tax_year: 2026
+  owners: *owners
+  properties: *properties
+  expect:
+    slots:
+    - key: owner.account_fee
+      owner_id: 0000000a-0000-4000-8000-000000000001
+      proposed_answer: 'yes'
+      proposed_rows:
+      - owner_id: 0000000a-0000-4000-8000-000000000001
+        kind: other_expense
+        tax_year: 2026
+        value: {expense_class: account_fee, label: Kontoführung, amount: '16.00'}
+    - key: owner.account_fee
+      owner_id: 0000000a-0000-4000-8000-000000000002
+      proposed_answer: 'yes'
+      proposed_rows:
+      - owner_id: 0000000a-0000-4000-8000-000000000002
+        kind: other_expense
+        tax_year: 2026
+        value: {expense_class: account_fee, label: Kontoführung, amount: '16.00'}

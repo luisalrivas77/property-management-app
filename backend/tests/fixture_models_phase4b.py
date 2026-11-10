@@ -1547,6 +1547,9 @@ MODELS: dict[str, type[Schema]] = {
     "telecom": TelecomFixture,
     "anlage_n": AnlageNFixture,
     "vorsorge": VorsorgeFixture,
+    "children": ChildrenFixture,
+    "return_estimate": EstimateFixture,
+    "questionnaire": QuestionnaireFixture,
 }
 
 

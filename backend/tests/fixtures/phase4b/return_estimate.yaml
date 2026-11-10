@@ -1,0 +1,911 @@
+# return_estimate.yaml: rules/tax/return_estimate.py return_estimate (docs/phases/phase-4b.md
+# §5.8, D101, D102, D109, D112).
+
+# Synthetic numbers only (the repo is public). The household of §5.6: owners A and B take their
+# rows from anlage_n.yaml by case id (`case`, with `drop_inputs` / `add_inputs`), the Anlage V
+# result −7,948.66 stands for phase 3's anlage_v_2026.yaml case A, one child born 15 Mar 2026.
+# Loaded through tests/fixture_models_phase4b.py, which checks every value against the §7
+# schemas and recomputes each expectation on load; tests/test_phase4b_fixture_arithmetic.py
+# recomputes the household chain once more with the real tariff.
+#
+# total_income = Σ Anlage N results + Σ Anlage V results; special_expenses = Σ Vorsorge +
+# max(72, church tax paid + donations within 20 % of total_income, cut to the cent) + Σ per
+# child min(80 % × childcare, 4,800); zvE = floor(total_income − special_expenses); assessed =
+# assessed_tax (§5.10, as children.yaml) with L = Σ (Nr. 15 + typed benefits) less each owner's
+# unused Pauschbetrag (§32b Abs. 2) and the §35a credit Σ per class min(20 % × labour, cap);
+# withheld = Σ Nr. 4–7 over the certificates (or the payslip projection); result = assessed.total
+# − withheld.total (negative = Erstattung). filing_required per §46 Abs. 2 with German reasons;
+# the deadline is 31 July of the next year, moved to the next working day (Q-O24).
+
+ids:
+  owner_a: 0000000a-0000-4000-8000-000000000001
+  owner_b: 0000000a-0000-4000-8000-000000000002
+  flat: 0000004b-0000-4000-8000-0000000000f1
+
+bases:
+  owners_plain: &owners_plain
+  - {owner_id: 0000000a-0000-4000-8000-000000000001}
+  - {owner_id: 0000000a-0000-4000-8000-000000000002}
+  owner_a: &owner_a {case: owner_a_remote_work_room}
+  owner_b: &owner_b {case: owner_b_commute_day_rate}
+  child_march: &child_march
+    id: 0000004b-0000-4000-8000-0000000000e0
+    kind: child
+    tax_year: 2026
+    value: {born_on: 2026-03-15}
+  flat_loss: &flat_loss [{property_id: 0000004b-0000-4000-8000-0000000000f1, result: '-7948.66'}]
+  all_answered: &all_answered {answered: 42, total: 42}
+  # owner B's certificate without short-time work (no Nr. 15), for the cases without benefits
+  cert_b_plain: &cert_b_plain
+    id: 0000004b-0000-4000-8000-0000000000e1
+    owner_id: 0000000a-0000-4000-8000-000000000002
+    kind: wage_certificate
+    tax_year: 2026
+    document_id: 0000004b-d0c0-4000-8000-0000000000e1
+    value: &cert_b_plain_value
+      period_from: 2026-01-01
+      period_to: 2026-12-31
+      employer: Muster GmbH
+      tax_class: 4
+      child_allowance_count: '1'
+      gross: '32000.00'
+      income_tax: '3200.00'
+      employer_commute_tax_free: '400.00'
+      pension_employer: '2976.00'
+      pension_employee: '2976.00'
+      health_employee: '2800.00'
+      care_employee: '576.00'
+      unemployment_employee: '416.00'
+  cert_a_value: &cert_a_value
+    period_from: 2026-01-01
+    period_to: 2026-12-31
+    employer: Muster GmbH
+    tax_class: 4
+    child_allowance_count: '1'
+    gross: '60000.00'
+    income_tax: '9200.00'
+    employer_commute_tax_free: '600.00'
+    pension_employer: '5580.00'
+    pension_employee: '5580.00'
+    health_employee: '5250.00'
+    care_employee: '1080.00'
+    unemployment_employee: '780.00'
+  # the household without children: both certificates name none
+  cert_a_childless: &cert_a_childless
+    id: 0000004b-0000-4000-8000-0000000000e2
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    kind: wage_certificate
+    tax_year: 2026
+    document_id: 0000004b-d0c0-4000-8000-0000000000e2
+    value:
+      <<: *cert_a_value
+      child_allowance_count: '0'
+  cert_b_childless: &cert_b_childless
+    id: 0000004b-0000-4000-8000-0000000000e3
+    owner_id: 0000000a-0000-4000-8000-000000000002
+    kind: wage_certificate
+    tax_year: 2026
+    document_id: 0000004b-d0c0-4000-8000-0000000000e3
+    value:
+      <<: *cert_b_plain_value
+      child_allowance_count: '0'
+  owner_a_no_benefits: &owner_a_no_benefits
+    case: owner_a_remote_work_room
+    drop_inputs: [0000004b-0000-4000-8000-0000000000a1, 0000004b-0000-4000-8000-0000000000a6]
+    add_inputs: [*cert_a_childless]
+  owner_b_no_benefits: &owner_b_no_benefits
+    case: owner_b_commute_day_rate
+    drop_inputs: [0000004b-0000-4000-8000-0000000000b1, 0000004b-0000-4000-8000-0000000000b5]
+    add_inputs: [*cert_b_childless]
+  deadline_2026: &deadline_2026 2027-08-02
+  benefits_reason: &benefits_reason
+    required: true
+    reasons: ['Lohnersatzleistungen 7.360,00 € > 410,00 €']
+    deadline: *deadline_2026
+  # the 2027 household of childcare_2027: one certificate per owner, no other rows
+  owners_2027: &owners_2027
+  - owner_id: 0000000a-0000-4000-8000-000000000001
+    inputs:
+    - id: 0000004b-0000-4000-8000-0000000000e7
+      owner_id: 0000000a-0000-4000-8000-000000000001
+      kind: wage_certificate
+      tax_year: 2027
+      document_id: 0000004b-d0c0-4000-8000-0000000000e7
+      value:
+        <<: *cert_a_value
+        period_from: 2027-01-01
+        period_to: 2027-12-31
+  - owner_id: 0000000a-0000-4000-8000-000000000002
+    inputs:
+    - id: 0000004b-0000-4000-8000-0000000000e8
+      owner_id: 0000000a-0000-4000-8000-000000000002
+      kind: wage_certificate
+      tax_year: 2027
+      document_id: 0000004b-d0c0-4000-8000-0000000000e8
+      value:
+        <<: *cert_b_plain_value
+        period_from: 2027-01-01
+        period_to: 2027-12-31
+
+cases:
+- id: household_2026
+  description: 'the worked example of §5.8: zvE 62,033, rate 0.160794, ESt 9,974, Kindergeld wins, result −2,426.00'
+  tax_year: 2026
+  owners: *owners_plain
+  owner_facts: [*owner_a, *owner_b]
+  household: [*child_march]
+  properties: *flat_loss
+  questionnaire: *all_answered
+  expect:
+    status: 'certified'
+    total_income: '80045.44'
+    vorsorge_total: '17940.00'
+    church_tax_paid: '0.00'
+    donations: '0.00'
+    childcare: '0.00'
+    special_expenses: '18012.00'
+    zve: '62033'
+    assessed: &household_assessed
+      zve: '62033'
+      zve_after_allowances: '53903'
+      est_without: '9974'
+      est_with: '7733'
+      est: '9974'
+      credit_35a: '0.00'
+      est_final: '9974.00'
+      progression: {benefits: '7360.00', allowance_unused: '0.00', rate: '0.160794', fictitious_zve: '69393.00', fictitious_tax: '11158'}
+      children: {months: 10, kindergeld: '2590.00', allowances: '8130.00', saving: '2241', favourable: 'kindergeld'}
+      soli: '0.00'
+      church: '0.00'
+      total: '9974.00'
+    withheld: {income_tax: '12400.00', soli: '0.00', church_tax: '0.00', total: '12400.00'}
+    result: '-2426.00'
+    filing_required: {required: true, reasons: ['Lohnersatzleistungen 7.360,00 € > 410,00 €'], deadline: 2027-08-02}
+    missing: []
+    warnings:
+    - {code: return.kindergeld_apply}
+    - {code: return.filing_required}
+- id: no_benefits_no_child
+  description: no benefits (B without short-time work), no child → the plain tariff, ESt 9,010, result −3,390.00
+  tax_year: 2026
+  owners: *owners_plain
+  owner_facts: [*owner_a_no_benefits, *owner_b_no_benefits]
+  properties: *flat_loss
+  questionnaire: *all_answered
+  expect:
+    status: 'certified'
+    total_income: '80045.44'
+    vorsorge_total: '17940.00'
+    church_tax_paid: '0.00'
+    donations: '0.00'
+    childcare: '0.00'
+    special_expenses: '18012.00'
+    zve: '62033'
+    assessed:
+      zve: '62033'
+      zve_after_allowances: '62033'
+      est_without: '9010'
+      est_with: '9010'
+      est: '9010'
+      credit_35a: '0.00'
+      est_final: '9010.00'
+      soli: '0.00'
+      church: '0.00'
+      total: '9010.00'
+    withheld: {income_tax: '12400.00', soli: '0.00', church_tax: '0.00', total: '12400.00'}
+    result: '-3390.00'
+    filing_required: {required: false, reasons: ['Antragsveranlagung'], deadline: 2027-08-02}
+    missing: []
+    warnings: []
+- id: allowances_win_high_income
+  description: 'a large rental profit lifts the zvE to 200,000; a child all year, no benefits: the Freibeträge win, ESt 60,738'
+  tax_year: 2026
+  owners: *owners_plain
+  owner_facts:
+  - case: owner_a_remote_work_room
+    drop_inputs: [0000004b-0000-4000-8000-0000000000a6]
+  - case: owner_b_commute_day_rate
+    drop_inputs: [0000004b-0000-4000-8000-0000000000b1, 0000004b-0000-4000-8000-0000000000b5]
+    add_inputs: [*cert_b_plain]
+  household:
+  - {id: 0000004b-0000-4000-8000-0000000000e4, kind: child, tax_year: 2025, value: {born_on: 2025-06-01}}
+  properties: [{property_id: 0000004b-0000-4000-8000-0000000000f1, result: '130017.90'}]
+  questionnaire: *all_answered
+  expect:
+    status: 'certified'
+    total_income: '218012.00'
+    vorsorge_total: '17940.00'
+    church_tax_paid: '0.00'
+    donations: '0.00'
+    childcare: '0.00'
+    special_expenses: '18012.00'
+    zve: '200000'
+    assessed:
+      zve: '200000'
+      zve_after_allowances: '190244'
+      est_without: '61728'
+      est_with: '57630'
+      est: '60738'
+      credit_35a: '0.00'
+      est_final: '60738.00'
+      children: {months: 12, kindergeld: '3108.00', allowances: '9756.00', saving: '4098', favourable: 'allowances'}
+      soli: '2014.67'
+      church: '0.00'
+      total: '62752.67'
+    withheld: {income_tax: '12400.00', soli: '0.00', church_tax: '0.00', total: '12400.00'}
+    result: '50352.67'
+    filing_required: {required: true, reasons: ['Einkünfte ohne Lohnsteuerabzug 130.017,90 € > 410,00 €'], deadline: 2027-08-02}
+    missing: []
+    warnings:
+    - {code: return.filing_required}
+- id: back_payment
+  description: the household case with 9,000.00 withheld (A's Lohnsteuer 5,800.00) → +974.00 Nachzahlung
+  tax_year: 2026
+  owners: *owners_plain
+  owner_facts:
+  - case: owner_a_remote_work_room
+    drop_inputs: [0000004b-0000-4000-8000-0000000000a1]
+    add_inputs:
+    - id: 0000004b-0000-4000-8000-0000000000e5
+      owner_id: 0000000a-0000-4000-8000-000000000001
+      kind: wage_certificate
+      tax_year: 2026
+      document_id: 0000004b-d0c0-4000-8000-0000000000e5
+      value: {<<: *cert_a_value, income_tax: '5800.00'}
+  - *owner_b
+  household: [*child_march]
+  properties: *flat_loss
+  questionnaire: *all_answered
+  expect:
+    status: 'certified'
+    total_income: '80045.44'
+    vorsorge_total: '17940.00'
+    church_tax_paid: '0.00'
+    donations: '0.00'
+    childcare: '0.00'
+    special_expenses: '18012.00'
+    zve: '62033'
+    assessed: *household_assessed
+    withheld: {income_tax: '9000.00', soli: '0.00', church_tax: '0.00', total: '9000.00'}
+    result: '974.00'
+    filing_required: {required: true, reasons: ['Lohnersatzleistungen 7.360,00 € > 410,00 €'], deadline: 2027-08-02}
+    missing: []
+    warnings:
+    - {code: return.kindergeld_apply}
+    - {code: return.filing_required}
+- id: with_35a_credit
+  description: plus Handwerker labour 1,000.00 from the own home's Nebenkostenabrechnung and 500.00 for a locksmith, paid by transfer → credit 300.00, result −2,726.00
+  tax_year: 2026
+  owners: *owners_plain
+  owner_facts: [*owner_a, *owner_b]
+  household:
+  - *child_march
+  - {id: 0000004b-0000-4000-8000-0000000000e9, kind: household_services, tax_year: 2026,
+     value: {service_class: handwerker, labour_cost: '1000.00', paid_to_account: true,
+             source: nebenkostenabrechnung}}
+  - {id: 0000004b-0000-4000-8000-0000000000ea, kind: household_services, tax_year: 2026,
+     value: {service_class: handwerker, labour_cost: '500.00', paid_to_account: true,
+             source: own_invoice}}
+  properties: *flat_loss
+  questionnaire: *all_answered
+  expect:
+    status: 'certified'
+    total_income: '80045.44'
+    vorsorge_total: '17940.00'
+    church_tax_paid: '0.00'
+    donations: '0.00'
+    childcare: '0.00'
+    special_expenses: '18012.00'
+    zve: '62033'
+    assessed:
+      zve: '62033'
+      zve_after_allowances: '53903'
+      est_without: '9974'
+      est_with: '7733'
+      est: '9974'
+      credit_35a: '300.00'
+      est_final: '9674.00'
+      progression: {benefits: '7360.00', allowance_unused: '0.00', rate: '0.160794', fictitious_zve: '69393.00', fictitious_tax: '11158'}
+      children: {months: 10, kindergeld: '2590.00', allowances: '8130.00', saving: '2241', favourable: 'kindergeld'}
+      soli: '0.00'
+      church: '0.00'
+      total: '9674.00'
+    withheld: {income_tax: '12400.00', soli: '0.00', church_tax: '0.00', total: '12400.00'}
+    result: '-2726.00'
+    filing_required: {required: true, reasons: ['Lohnersatzleistungen 7.360,00 € > 410,00 €'], deadline: 2027-08-02}
+    missing: []
+    warnings:
+    - {code: return.kindergeld_apply}
+    - {code: return.filing_required}
+- id: 35a_capped
+  description: Handwerker 8,000.00 → 1,200.00 (cap); haushaltsnah 2,000.00 → 400.00; credit 1,600.00
+  tax_year: 2026
+  owners: *owners_plain
+  owner_facts: [*owner_a, *owner_b]
+  household:
+  - *child_march
+  - {id: 0000004b-0000-4000-8000-0000000000eb, kind: household_services, tax_year: 2026,
+     value: {service_class: handwerker, labour_cost: '8000.00', paid_to_account: true,
+             source: own_invoice}}
+  - {id: 0000004b-0000-4000-8000-0000000000ec, kind: household_services, tax_year: 2026,
+     value: {service_class: haushaltsnah, labour_cost: '2000.00', paid_to_account: true,
+             source: own_invoice}}
+  properties: *flat_loss
+  questionnaire: *all_answered
+  expect:
+    status: 'certified'
+    total_income: '80045.44'
+    vorsorge_total: '17940.00'
+    church_tax_paid: '0.00'
+    donations: '0.00'
+    childcare: '0.00'
+    special_expenses: '18012.00'
+    zve: '62033'
+    assessed:
+      zve: '62033'
+      zve_after_allowances: '53903'
+      est_without: '9974'
+      est_with: '7733'
+      est: '9974'
+      credit_35a: '1600.00'
+      est_final: '8374.00'
+      progression: {benefits: '7360.00', allowance_unused: '0.00', rate: '0.160794', fictitious_zve: '69393.00', fictitious_tax: '11158'}
+      children: {months: 10, kindergeld: '2590.00', allowances: '8130.00', saving: '2241', favourable: 'kindergeld'}
+      soli: '0.00'
+      church: '0.00'
+      total: '8374.00'
+    withheld: {income_tax: '12400.00', soli: '0.00', church_tax: '0.00', total: '12400.00'}
+    result: '-4026.00'
+    filing_required: {required: true, reasons: ['Lohnersatzleistungen 7.360,00 € > 410,00 €'], deadline: 2027-08-02}
+    missing: []
+    warnings:
+    - {code: return.kindergeld_apply}
+    - {code: return.filing_required}
+- id: 35a_cash_refused
+  description: a service paid in cash (§35a Abs. 5 S. 3) → refused
+  tax_year: 2026
+  owners: *owners_plain
+  owner_facts: [*owner_a, *owner_b]
+  household:
+  - *child_march
+  - {id: 0000004b-0000-4000-8000-0000000000ed, kind: household_services, tax_year: 2026,
+     value: {service_class: handwerker, labour_cost: '400.00', paid_to_account: false,
+             source: own_invoice}}
+  properties: *flat_loss
+  questionnaire: *all_answered
+  expect:
+    error: {code: return.household_services_cash}
+- id: donation_within_cap
+  description: plus donations 500.00 → Sonderausgaben 500.00 instead of 72.00, zvE 61,605, ESt 9,852, result −2,548.00
+  tax_year: 2026
+  owners: *owners_plain
+  owner_facts: [*owner_a, *owner_b]
+  household:
+  - *child_march
+  - {id: 0000004b-0000-4000-8000-0000000000ee, kind: special_expense, tax_year: 2026,
+     value: {expense_class: donation, amount: '500.00', recipient_label: Verein}}
+  properties: *flat_loss
+  questionnaire: *all_answered
+  expect:
+    status: 'certified'
+    total_income: '80045.44'
+    vorsorge_total: '17940.00'
+    church_tax_paid: '0.00'
+    donations: '500.00'
+    childcare: '0.00'
+    special_expenses: '18440.00'
+    zve: '61605'
+    assessed:
+      zve: '61605'
+      zve_after_allowances: '53475'
+      est_without: '9852'
+      est_with: '7621'
+      est: '9852'
+      credit_35a: '0.00'
+      est_final: '9852.00'
+      progression: {benefits: '7360.00', allowance_unused: '0.00', rate: '0.159936', fictitious_zve: '68965.00', fictitious_tax: '11030'}
+      children: {months: 10, kindergeld: '2590.00', allowances: '8130.00', saving: '2231', favourable: 'kindergeld'}
+      soli: '0.00'
+      church: '0.00'
+      total: '9852.00'
+    withheld: {income_tax: '12400.00', soli: '0.00', church_tax: '0.00', total: '12400.00'}
+    result: '-2548.00'
+    filing_required: {required: true, reasons: ['Lohnersatzleistungen 7.360,00 € > 410,00 €'], deadline: 2027-08-02}
+    missing: []
+    warnings:
+    - {code: return.kindergeld_apply}
+    - {code: return.filing_required}
+- id: donation_over_cap
+  description: donations 20,000.00 → 16,009.08 (20 % of 80,045.44, cut to the cent) deducted, the excess 3,990.92 warned
+  tax_year: 2026
+  owners: *owners_plain
+  owner_facts: [*owner_a, *owner_b]
+  household:
+  - *child_march
+  - {id: 0000004b-0000-4000-8000-0000000000ef, kind: special_expense, tax_year: 2026,
+     value: {expense_class: donation, amount: '20000.00', recipient_label: Stiftung}}
+  properties: *flat_loss
+  questionnaire: *all_answered
+  expect:
+    status: 'certified'
+    total_income: '80045.44'
+    vorsorge_total: '17940.00'
+    church_tax_paid: '0.00'
+    donations: '16009.08'
+    childcare: '0.00'
+    special_expenses: '33949.08'
+    zve: '46096'
+    assessed:
+      zve: '46096'
+      zve_after_allowances: '37966'
+      est_without: '5713'
+      est_with: '3754'
+      est: '5713'
+      credit_35a: '0.00'
+      est_final: '5713.00'
+      progression: {benefits: '7360.00', allowance_unused: '0.00', rate: '0.123952', fictitious_zve: '53456.00', fictitious_tax: '6626'}
+      children: {months: 10, kindergeld: '2590.00', allowances: '8130.00', saving: '1959', favourable: 'kindergeld'}
+      soli: '0.00'
+      church: '0.00'
+      total: '5713.00'
+    withheld: {income_tax: '12400.00', soli: '0.00', church_tax: '0.00', total: '12400.00'}
+    result: '-6687.00'
+    filing_required: {required: true, reasons: ['Lohnersatzleistungen 7.360,00 € > 410,00 €'], deadline: 2027-08-02}
+    missing: []
+    warnings:
+    - {code: return.donation_over_cap, params: {excess: '3990.92'}}
+    - {code: return.kindergeld_apply}
+    - {code: return.filing_required}
+- id: childcare_2027
+  description: 2027 on the 2026 tariff and rule set (fallback); the child of 2026 in care, 6,000.00 → 4,800.00
+  tax_year: 2027
+  owners: *owners_plain
+  owner_facts: *owners_2027
+  household:
+  - *child_march
+  - {id: 0000004b-0000-4000-8000-0000000000c7, kind: childcare_cost, tax_year: 2027,
+     value: {child_id: 0000004b-0000-4000-8000-0000000000e0, amount: '6000.00', paid_to_account: true}}
+  questionnaire: *all_answered
+  expect:
+    status: 'certified'
+    total_income: '89540.00'
+    vorsorge_total: '17940.00'
+    church_tax_paid: '0.00'
+    donations: '0.00'
+    childcare: '4800.00'
+    special_expenses: '22812.00'
+    zve: '66728'
+    assessed:
+      zve: '66728'
+      zve_after_allowances: '56972'
+      est_without: '10370'
+      est_with: '7588'
+      est: '10370'
+      credit_35a: '0.00'
+      est_final: '10370.00'
+      children: {months: 12, kindergeld: '3108.00', allowances: '9756.00', saving: '2782', favourable: 'kindergeld'}
+      soli: '0.00'
+      church: '0.00'
+      total: '10370.00'
+    withheld: {income_tax: '12400.00', soli: '0.00', church_tax: '0.00', total: '12400.00'}
+    result: '-2030.00'
+    filing_required: {required: false, reasons: ['Antragsveranlagung'], deadline: 2028-07-31}
+    missing: []
+    warnings: []
+- id: childcare_capped_7000
+  description: the same with 7,000.00 → 80 % is 5,600.00, capped at 4,800.00
+  tax_year: 2027
+  owners: *owners_plain
+  owner_facts: *owners_2027
+  household:
+  - *child_march
+  - {id: 0000004b-0000-4000-8000-0000000000c8, kind: childcare_cost, tax_year: 2027,
+     value: {child_id: 0000004b-0000-4000-8000-0000000000e0, amount: '7000.00', paid_to_account: true}}
+  questionnaire: *all_answered
+  expect:
+    status: 'certified'
+    total_income: '89540.00'
+    vorsorge_total: '17940.00'
+    church_tax_paid: '0.00'
+    donations: '0.00'
+    childcare: '4800.00'
+    special_expenses: '22812.00'
+    zve: '66728'
+    assessed:
+      zve: '66728'
+      zve_after_allowances: '56972'
+      est_without: '10370'
+      est_with: '7588'
+      est: '10370'
+      credit_35a: '0.00'
+      est_final: '10370.00'
+      children: {months: 12, kindergeld: '3108.00', allowances: '9756.00', saving: '2782', favourable: 'kindergeld'}
+      soli: '0.00'
+      church: '0.00'
+      total: '10370.00'
+    withheld: {income_tax: '12400.00', soli: '0.00', church_tax: '0.00', total: '12400.00'}
+    result: '-2030.00'
+    filing_required: {required: false, reasons: ['Antragsveranlagung'], deadline: 2028-07-31}
+    missing: []
+    warnings: []
+- id: childcare_age_error
+  description: care costs for a child who turned 14 before 2027 → refused
+  tax_year: 2027
+  owners: *owners_plain
+  owner_facts: *owners_2027
+  household:
+  - {id: 0000004b-0000-4000-8000-0000000000c9, kind: child, tax_year: 2026, value: {born_on: 2012-09-01}}
+  - {id: 0000004b-0000-4000-8000-0000000000ca, kind: childcare_cost, tax_year: 2027,
+     value: {child_id: 0000004b-0000-4000-8000-0000000000c9, amount: '1200.00', paid_to_account: true}}
+  questionnaire: *all_answered
+  expect:
+    error: {code: return.childcare_age}
+- id: estimate_from_payslips_status
+  description: B has June's payslip only → status estimate, B's pay and Lohnsteuer from the projection, the certificate missing
+  tax_year: 2026
+  owners: *owners_plain
+  owner_facts:
+  - *owner_a
+  - case: owner_b_commute_day_rate
+    drop_inputs: [0000004b-0000-4000-8000-0000000000b1]
+    add_inputs:
+    - id: 0000004b-0000-4000-8000-0000000000e6
+      owner_id: 0000000a-0000-4000-8000-000000000002
+      kind: payslip
+      tax_year: 2026
+      document_id: 0000004b-d0c0-4000-8000-0000000000e6
+      value:
+        period_month: 2026-06-01
+        employer: Muster GmbH
+        tax_class: 4
+        months_remaining_paid: 6
+        gross: {month: '2600.00', ytd: '15600.00'}
+        income_tax: {month: '260.00', ytd: '1560.00'}
+        soli: {month: '0.00', ytd: '0.00'}
+        church_tax: {month: '0.00', ytd: '0.00'}
+        pension_employee: {month: '241.80', ytd: '1450.80'}
+        health_employee: {month: '227.50', ytd: '1365.00'}
+        care_employee: {month: '46.80', ytd: '280.80'}
+        unemployment_employee: {month: '33.80', ytd: '202.80'}
+  household: [*child_march]
+  properties: *flat_loss
+  questionnaire: *all_answered
+  expect:
+    status: 'estimate'
+    total_income: '78985.44'
+    vorsorge_total: '17784.00'
+    church_tax_paid: '0.00'
+    donations: '0.00'
+    childcare: '0.00'
+    special_expenses: '17856.00'
+    zve: '61129'
+    assessed:
+      zve: '61129'
+      zve_after_allowances: '52999'
+      est_without: '9209'
+      est_with: '6975'
+      est: '9209'
+      credit_35a: '0.00'
+      est_final: '9209.00'
+      progression: {benefits: '3360.00', allowance_unused: '0.00', rate: '0.150661', fictitious_zve: '64489.00', fictitious_tax: '9716'}
+      children: {months: 10, kindergeld: '2590.00', allowances: '8130.00', saving: '2234', favourable: 'kindergeld'}
+      soli: '0.00'
+      church: '0.00'
+      total: '9209.00'
+    withheld: {income_tax: '12320.00', soli: '0.00', church_tax: '0.00', total: '12320.00'}
+    result: '-3111.00'
+    filing_required: {required: true, reasons: ['Lohnersatzleistungen 3.360,00 € > 410,00 €'], deadline: 2027-08-02}
+    missing:
+    - {kind: 'document', key: 'wage_certificate', owner_id: '0000000a-0000-4000-8000-000000000002'}
+    warnings:
+    - {code: return.kindergeld_apply}
+    - {code: return.filing_required}
+- id: benefit_letter_pending
+  description: B answered "yes, Arbeitslosengeld" in the questionnaire, no row typed yet → missing names the letter
+  tax_year: 2026
+  owners: *owners_plain
+  owner_facts: [*owner_a, *owner_b]
+  household: [*child_march]
+  properties: *flat_loss
+  questionnaire: *all_answered
+  answers:
+  - {id: 0000004b-0000-4000-8000-0000000000f2, workspace_id: 0000004b-0000-4000-8000-0000000000ff,
+     recorded_at: '2027-03-01T10:00:00Z', question_key: owner.replacement_income, tax_year: 2026,
+     owner_id: 0000000a-0000-4000-8000-000000000002, answer: 'yes', choice: arbeitslosengeld}
+  expect:
+    status: 'certified'
+    total_income: '80045.44'
+    vorsorge_total: '17940.00'
+    church_tax_paid: '0.00'
+    donations: '0.00'
+    childcare: '0.00'
+    special_expenses: '18012.00'
+    zve: '62033'
+    assessed: *household_assessed
+    withheld: {income_tax: '12400.00', soli: '0.00', church_tax: '0.00', total: '12400.00'}
+    result: '-2426.00'
+    filing_required: {required: true, reasons: ['Lohnersatzleistungen 7.360,00 € > 410,00 €'], deadline: 2027-08-02}
+    missing:
+    - {kind: 'benefit_letter', key: 'replacement_income', owner_id: '0000000a-0000-4000-8000-000000000002'}
+    warnings:
+    - {code: return.kindergeld_apply}
+    - {code: return.filing_required}
+- id: church_tax_as_special_expense
+  description: A in church in Bavaria, 736.00 withheld (8 % of 9,200.00) → Sonderausgaben 736.00 instead of 72.00; church tax charged on ESt_with
+  tax_year: 2026
+  owners:
+  - {owner_id: 0000000a-0000-4000-8000-000000000001, church_tax: true, tax_state: BY}
+  - {owner_id: 0000000a-0000-4000-8000-000000000002}
+  owner_facts:
+  - case: owner_a_remote_work_room
+    church_tax: true
+    drop_inputs: [0000004b-0000-4000-8000-0000000000a1]
+    add_inputs:
+    - id: 0000004b-0000-4000-8000-0000000000f3
+      owner_id: 0000000a-0000-4000-8000-000000000001
+      kind: wage_certificate
+      tax_year: 2026
+      document_id: 0000004b-d0c0-4000-8000-0000000000f3
+      value: {<<: *cert_a_value, church_tax_marked: true, church_tax: '736.00'}
+  - *owner_b
+  household: [*child_march]
+  properties: *flat_loss
+  questionnaire: *all_answered
+  expect:
+    status: 'certified'
+    total_income: '80045.44'
+    vorsorge_total: '17940.00'
+    church_tax_paid: '736.00'
+    donations: '0.00'
+    childcare: '0.00'
+    special_expenses: '18676.00'
+    zve: '61369'
+    assessed:
+      zve: '61369'
+      zve_after_allowances: '53239'
+      est_without: '9786'
+      est_with: '7557'
+      est: '9786'
+      credit_35a: '0.00'
+      est_final: '9786.00'
+      progression: {benefits: '7360.00', allowance_unused: '0.00', rate: '0.159466', fictitious_zve: '68729.00', fictitious_tax: '10960'}
+      children: {months: 10, kindergeld: '2590.00', allowances: '8130.00', saving: '2229', favourable: 'kindergeld'}
+      soli: '0.00'
+      church: '302.28'
+      total: '10088.28'
+    withheld: {income_tax: '12400.00', soli: '0.00', church_tax: '736.00', total: '13136.00'}
+    result: '-3047.72'
+    filing_required: {required: true, reasons: ['Lohnersatzleistungen 7.360,00 € > 410,00 €'], deadline: 2027-08-02}
+    missing: []
+    warnings:
+    - {code: return.kindergeld_apply}
+    - {code: return.filing_required}
+- id: benefit_double_warning
+  description: B types Mutterschaftsgeld 1,000.00 while her certificate shows Nr. 15 > 0 → a warning (perhaps counted twice)
+  tax_year: 2026
+  owners: *owners_plain
+  owner_facts:
+  - *owner_a
+  - case: owner_b_commute_day_rate
+    add_inputs:
+    - {id: 0000004b-0000-4000-8000-0000000000f4, owner_id: 0000000a-0000-4000-8000-000000000002,
+       kind: replacement_income, tax_year: 2026, value: {benefit: mutterschaftsgeld, amount: '1000.00'}}
+  household: [*child_march]
+  properties: *flat_loss
+  questionnaire: *all_answered
+  expect:
+    status: 'certified'
+    total_income: '80045.44'
+    vorsorge_total: '17940.00'
+    church_tax_paid: '0.00'
+    donations: '0.00'
+    childcare: '0.00'
+    special_expenses: '18012.00'
+    zve: '62033'
+    assessed:
+      zve: '62033'
+      zve_after_allowances: '53903'
+      est_without: '10095'
+      est_with: '7857'
+      est: '10095'
+      credit_35a: '0.00'
+      est_final: '10095.00'
+      progression: {benefits: '8360.00', allowance_unused: '0.00', rate: '0.162743', fictitious_zve: '70393.00', fictitious_tax: '11456'}
+      children: {months: 10, kindergeld: '2590.00', allowances: '8130.00', saving: '2238', favourable: 'kindergeld'}
+      soli: '0.00'
+      church: '0.00'
+      total: '10095.00'
+    withheld: {income_tax: '12400.00', soli: '0.00', church_tax: '0.00', total: '12400.00'}
+    result: '-2305.00'
+    filing_required: {required: true, reasons: ['Lohnersatzleistungen 8.360,00 € > 410,00 €'], deadline: 2027-08-02}
+    missing: []
+    warnings:
+    - {code: return.benefit_possible_double}
+    - {code: return.kindergeld_apply}
+    - {code: return.filing_required}
+- id: mutterschutz_pay_stop
+  description: 'B paid only in January (2,700.00), Zuschuss 6,000.00 on Nr. 15, Mutterschaftsgeld 4,000.00 typed: zvE 38,411, ESt 4,403, result −4,797.00'
+  tax_year: 2026
+  owners: *owners_plain
+  owner_facts:
+  - *owner_a
+  - owner_id: 0000000a-0000-4000-8000-000000000002
+    inputs:
+    - id: 0000004b-0000-4000-8000-0000000000f5
+      owner_id: 0000000a-0000-4000-8000-000000000002
+      kind: wage_certificate
+      tax_year: 2026
+      document_id: 0000004b-d0c0-4000-8000-0000000000f5
+      value:
+        period_from: 2026-01-01
+        period_to: 2026-12-31
+        employer: Muster GmbH
+        tax_class: 4
+        child_allowance_count: '1'
+        gross: '2700.00'
+        income_tax: '0.00'
+        replacement_benefits: '6000.00'
+        pension_employer: '251.10'
+        pension_employee: '251.10'
+        health_employee: '236.25'
+        care_employee: '48.60'
+        unemployment_employee: '35.10'
+    - {id: 0000004b-0000-4000-8000-0000000000f6, owner_id: 0000000a-0000-4000-8000-000000000002,
+       kind: replacement_income, tax_year: 2026, value: {benefit: mutterschaftsgeld, amount: '4000.00'}}
+  household: [*child_march]
+  properties: *flat_loss
+  questionnaire: *all_answered
+  expect:
+    status: 'certified'
+    total_income: '50745.44'
+    vorsorge_total: '12261.60'
+    church_tax_paid: '0.00'
+    donations: '0.00'
+    childcare: '0.00'
+    special_expenses: '12333.60'
+    zve: '38411'
+    assessed:
+      zve: '38411'
+      zve_after_allowances: '30281'
+      est_without: '4403'
+      est_with: '2632'
+      est: '4403'
+      credit_35a: '0.00'
+      est_final: '4403.00'
+      progression: {benefits: '11800.00', allowance_unused: '0.00', rate: '0.114636', fictitious_zve: '50211.00', fictitious_tax: '5756'}
+      children: {months: 10, kindergeld: '2590.00', allowances: '8130.00', saving: '1771', favourable: 'kindergeld'}
+      soli: '0.00'
+      church: '0.00'
+      total: '4403.00'
+    withheld: {income_tax: '9200.00', soli: '0.00', church_tax: '0.00', total: '9200.00'}
+    result: '-4797.00'
+    filing_required: {required: true, reasons: ['Lohnersatzleistungen 11.800,00 € > 410,00 €'], deadline: 2027-08-02}
+    missing: []
+    warnings:
+    - {code: return.benefit_possible_double}
+    - {code: return.kindergeld_apply}
+    - {code: return.filing_required}
+- id: filing_required_rental_positive
+  description: no benefits, no child, Anlage V +2,000.00 → filing required for income without wage-tax withholding
+  tax_year: 2026
+  owners: *owners_plain
+  owner_facts: [*owner_a_no_benefits, *owner_b_no_benefits]
+  properties: [{property_id: 0000004b-0000-4000-8000-0000000000f1, result: '2000.00'}]
+  questionnaire: *all_answered
+  expect:
+    status: 'certified'
+    total_income: '89994.10'
+    vorsorge_total: '17940.00'
+    church_tax_paid: '0.00'
+    donations: '0.00'
+    childcare: '0.00'
+    special_expenses: '18012.00'
+    zve: '71982'
+    assessed:
+      zve: '71982'
+      zve_after_allowances: '71982'
+      est_without: '11936'
+      est_with: '11936'
+      est: '11936'
+      credit_35a: '0.00'
+      est_final: '11936.00'
+      soli: '0.00'
+      church: '0.00'
+      total: '11936.00'
+    withheld: {income_tax: '12400.00', soli: '0.00', church_tax: '0.00', total: '12400.00'}
+    result: '-464.00'
+    filing_required: {required: true, reasons: ['Einkünfte ohne Lohnsteuerabzug 2.000,00 € > 410,00 €'], deadline: 2027-08-02}
+    missing: []
+    warnings:
+    - {code: return.filing_required}
+- id: filing_optional
+  description: no benefits, Anlage V −1,000.00, classes IV/IV → no duty, Antragsveranlagung
+  tax_year: 2026
+  owners: *owners_plain
+  owner_facts: [*owner_a_no_benefits, *owner_b_no_benefits]
+  properties: [{property_id: 0000004b-0000-4000-8000-0000000000f1, result: '-1000.00'}]
+  questionnaire: *all_answered
+  expect:
+    status: 'certified'
+    total_income: '86994.10'
+    vorsorge_total: '17940.00'
+    church_tax_paid: '0.00'
+    donations: '0.00'
+    childcare: '0.00'
+    special_expenses: '18012.00'
+    zve: '68982'
+    assessed:
+      zve: '68982'
+      zve_after_allowances: '68982'
+      est_without: '11036'
+      est_with: '11036'
+      est: '11036'
+      credit_35a: '0.00'
+      est_final: '11036.00'
+      soli: '0.00'
+      church: '0.00'
+      total: '11036.00'
+    withheld: {income_tax: '12400.00', soli: '0.00', church_tax: '0.00', total: '12400.00'}
+    result: '-1364.00'
+    filing_required: {required: false, reasons: ['Antragsveranlagung'], deadline: 2027-08-02}
+    missing: []
+    warnings: []
+- id: questions_open
+  description: 10 of 42 slots unanswered → missing lists the ten, the status stays certified
+  tax_year: 2026
+  owners: *owners_plain
+  owner_facts: [*owner_a, *owner_b]
+  household: [*child_march]
+  properties: *flat_loss
+  questionnaire:
+    answered: 32
+    total: 42
+    open:
+    - {key: owner.union_association, scope: owner, owner_id: 0000000a-0000-4000-8000-000000000002}
+    - {key: owner.training, scope: owner, owner_id: 0000000a-0000-4000-8000-000000000002}
+    - {key: owner.job_move, scope: owner, owner_id: 0000000a-0000-4000-8000-000000000002}
+    - {key: owner.own_expense_trips, scope: owner, owner_id: 0000000a-0000-4000-8000-000000000002}
+    - {key: household.services_35a, scope: household}
+    - {key: household.donations, scope: household}
+    - {key: household.extraordinary, scope: household}
+    - {key: household.other_not_modelled, scope: household}
+    - {key: property.trips, scope: property, property_id: 0000004b-0000-4000-8000-0000000000f1}
+    - {key: property.private_costs, scope: property, property_id: 0000004b-0000-4000-8000-0000000000f1}
+  expect:
+    status: 'certified'
+    total_income: '80045.44'
+    vorsorge_total: '17940.00'
+    church_tax_paid: '0.00'
+    donations: '0.00'
+    childcare: '0.00'
+    special_expenses: '18012.00'
+    zve: '62033'
+    assessed: *household_assessed
+    withheld: {income_tax: '12400.00', soli: '0.00', church_tax: '0.00', total: '12400.00'}
+    result: '-2426.00'
+    filing_required: {required: true, reasons: ['Lohnersatzleistungen 7.360,00 € > 410,00 €'], deadline: 2027-08-02}
+    missing:
+    - {kind: 'question', key: 'owner.union_association', owner_id: '0000000a-0000-4000-8000-000000000002'}
+    - {kind: 'question', key: 'owner.training', owner_id: '0000000a-0000-4000-8000-000000000002'}
+    - {kind: 'question', key: 'owner.job_move', owner_id: '0000000a-0000-4000-8000-000000000002'}
+    - {kind: 'question', key: 'owner.own_expense_trips', owner_id: '0000000a-0000-4000-8000-000000000002'}
+    - {kind: 'question', key: 'household.services_35a'}
+    - {kind: 'question', key: 'household.donations'}
+    - {kind: 'question', key: 'household.extraordinary'}
+    - {kind: 'question', key: 'household.other_not_modelled'}
+    - {kind: 'question', key: 'property.trips', property_id: '0000004b-0000-4000-8000-0000000000f1'}
+    - {kind: 'question', key: 'property.private_costs', property_id: '0000004b-0000-4000-8000-0000000000f1'}
+    warnings:
+    - {code: return.kindergeld_apply}
+    - {code: return.filing_required}
+    - {code: return.questionnaire_open, params: {open: '10'}}
+- id: filing_deadline_next_working_day
+  description: 31 July 2027 is a Saturday → the deadline is Monday 2 August 2027 (§108 Abs. 3 AO)
+  tax_year: 2026
+  owners: *owners_plain
+  owner_facts: [*owner_a, *owner_b]
+  household: [*child_march]
+  properties: *flat_loss
+  questionnaire: *all_answered
+  expect:
+    filing_required: *benefits_reason
