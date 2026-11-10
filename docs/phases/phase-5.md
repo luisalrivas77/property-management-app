@@ -333,6 +333,20 @@ The step 4 review (one round) found two real defects and three small ones; the f
 - **The test double pins the header list**: a header fetch for any list other than `HEADER_FIELDS` is a violation.
 - **Kept as is:** a retry after a partly failed attempt asks `proposal_for_upload` again for the parts already stored; only a proposal decided inside the ten minutes between attempts leads to a second read (one model call).
 
+### 12.3 Step 3 as built (10 Nov 2026, not yet reviewed or merged)
+
+Commits `b98a96d` (checklist), `3c5a0ac` (`rules/reminders.py`), `9e55706` (`is_direct_debit`), `7c10071` (the schedule from the Bescheid's proposal), `1324a98` (`services/reminders.py`, the routes, the Zu prüfen cards), `466de5f` (screens). No migration. The email channel (step 3b: `jobs/notify.py`, the TEM client, the settings switch) is not built; `due_notifications` is ready for it.
+
+- **Direct debit (D126), checked 10 Nov 2026:** `rules/statements.is_direct_debit(raw)` is true only for a camt line whose bank transaction code has domain `PMNT` and family `RDDT` or `IDDT`; the codes were read on the real rental account's export on 10 Nov 2026 (codes only; the tests use those shapes with synthetic numbers). A CSV line carries no code and is never a direct debit, and a transfer (`ICDT`) never is, so the Grundsteuer mode is never inferred from either.
+- **Which payments clear an instalment:** confirmed `grundsteuer` allocations (not 0 €, not an excluded duplicate) whose property is this one, or that have no property and sit on an account carrying this property's confirmed allocations. A payment clears an instalment at its amount ± 0.01 €; the schedule's own sum check (instalments vs annual amount) keeps the schema's 0.04 €.
+- **The proposal (D126)** is a separate rule (`rules/prefill.grundsteuer_schedule_record`) appended by `record_read_result`, because phase 2's prefill fixture pins a Bescheid's `build_proposal` records. A Fälligkeit read as "15.02." becomes that day in the Bescheid's first year, keeping its quote; the slot amount is the Vierteljahresbetrag when the Bescheid states one, else the Jahresbetrag over the number of dates (derived, marked so). The payment mode is not read; the review can set it, empty meaning automatic.
+- **Readings the spec left open:**
+  - An acknowledgement needs a well-formed id and a scope of the kind's type in this workspace; it does not require the instance to be in today's list, so an ack written before an instance is listed still hides it.
+  - The tax years behind `tax.return_deadline` and `tax.questionnaire_open` run from the first purchase or pay year, at most two years back, to the current year; an older year's deadline falls in the year before last, below the 1 January floor, so nothing listed is lost. A year whose questionnaire progress cannot be computed (no questionnaire file) counts as complete.
+  - A rent line without a service period counts for its booking month in `rent_missing`.
+  - The Zu prüfen cards are the `action` reminders visible today, except `tax.questionnaire_open`, whose D110 card already exists. An error while computing the reminders fails the Zu prüfen list as a whole; it is not caught.
+- **Fixture outside §12.1, left red for a spec PR:** `tests/fixtures/phase3/anlage_v_2026.yaml` (line 409) lists a present `grundsteuerbescheid` item for 2026 on a property bought on 1 Jul 2026; under D126 the first Bescheid is expected for 2027, so the item is no longer listed and `tests/rules/tax/test_tax_rule_draft.py::test_draft_missing_documents[case_a]` and `[export_roundtrip]` fail. §12.1 names only the two checklist fixtures, so the line was not deleted here; deleting it is the fix.
+
 ## 13. Implementation steps
 
 | Step | Delivers | Migration | Done when | Size | Review | Luis does |
