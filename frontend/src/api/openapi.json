@@ -10646,6 +10646,84 @@
         "title": "ErrorResponse",
         "description": "Every non-2xx body. Only the fields that apply to `error` are set (see ErrorKind)."
       },
+      "EstimateLineSources": {
+        "properties": {
+          "vorsorge": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Vorsorge"
+          },
+          "church_tax_paid": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Church Tax Paid"
+          },
+          "donations": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Donations"
+          },
+          "childcare": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Childcare"
+          },
+          "special_allowance": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Special Allowance"
+          },
+          "income_tax": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Income Tax"
+          },
+          "children": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Children"
+          },
+          "credit_35a": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Credit 35A"
+          },
+          "surcharges": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Surcharges"
+          },
+          "withheld": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Withheld"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "EstimateLineSources",
+        "description": "What each line of the whole-return estimate came from, so the Gesamt card opens the\nsources line by line (ReturnEstimate.sources stays their union). The Anlage N and V lines\ncarry theirs on OwnerIncome and PropertyIncome."
+      },
       "Event": {
         "properties": {
           "id": {
@@ -13790,6 +13868,13 @@
               }
             ],
             "title": "Tax Class Source"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Sources"
           }
         },
         "additionalProperties": false,
@@ -14884,6 +14969,13 @@
             "type": "string",
             "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
             "title": "Result"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Sources"
           }
         },
         "additionalProperties": false,
@@ -16666,6 +16758,9 @@
             },
             "type": "array",
             "title": "Sources"
+          },
+          "line_sources": {
+            "$ref": "#/components/schemas/EstimateLineSources"
           },
           "children": {
             "items": {

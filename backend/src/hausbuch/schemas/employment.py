@@ -1121,11 +1121,13 @@ class OwnerIncome(Schema):
     # owner.tax_class answer, else none.
     tax_class: TaxClass | None = None
     tax_class_source: Literal["certificate", "payslip", "questionnaire"] | None = None
+    sources: list[SourceRef] = Field(default_factory=list)  # the Anlage N lines' rows
 
 
 class PropertyIncome(Schema):
     property_id: UUID
     result: Money  # the Anlage V result
+    sources: list[SourceRef] = Field(default_factory=list)  # the estimate sets the property
 
 
 class Withheld(Schema):
@@ -1156,6 +1158,25 @@ class ChildMonthsDetail(Schema):
 
     born_month: str = Field(pattern=r"^[0-9]{4}-(0[1-9]|1[0-2])$")  # YYYY-MM
     months: int = Field(ge=0, le=12)
+
+
+class EstimateLineSources(Schema):
+    """What each line of the whole-return estimate came from, so the Gesamt card opens the
+    sources line by line (ReturnEstimate.sources stays their union). The Anlage N and V lines
+    carry theirs on OwnerIncome and PropertyIncome."""
+
+    vorsorge: list[SourceRef] = Field(default_factory=list)
+    church_tax_paid: list[SourceRef] = Field(default_factory=list)
+    donations: list[SourceRef] = Field(default_factory=list)
+    childcare: list[SourceRef] = Field(default_factory=list)
+    special_allowance: list[SourceRef] = Field(default_factory=list)
+    # the income tax with the Progressionsvorbehalt: tariff, rule set and the benefits' rows
+    income_tax: list[SourceRef] = Field(default_factory=list)
+    children: list[SourceRef] = Field(default_factory=list)
+    credit_35a: list[SourceRef] = Field(default_factory=list)
+    # Soli and church tax: the tariff
+    surcharges: list[SourceRef] = Field(default_factory=list)
+    withheld: list[SourceRef] = Field(default_factory=list)
 
 
 class ReturnEstimate(Schema):
@@ -1191,7 +1212,8 @@ class ReturnEstimate(Schema):
     reminders: list[str] = Field(default_factory=list)
     warnings: list[DraftWarning] = Field(default_factory=list)
     tariff: TariffStamp
-    sources: list[SourceRef] = Field(default_factory=list)
+    sources: list[SourceRef] = Field(default_factory=list)  # every line's sources, once each
+    line_sources: EstimateLineSources = Field(default_factory=EstimateLineSources)
     # the household's children with their months in the year, in the household's order
     children: list[ChildMonthsDetail] = Field(default_factory=list)
 

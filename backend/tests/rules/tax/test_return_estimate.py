@@ -23,6 +23,7 @@ from hausbuch.rules.tax.return_estimate import (
 )
 from hausbuch.schemas.employment import PropertyIncome, QuestionnaireAnswer
 from hausbuch.schemas.performance import IncomeInputFact
+from hausbuch.schemas.tax import SourceRef
 
 ZERO = Decimal("0")
 
@@ -97,6 +98,36 @@ def test_the_estimate_opens_its_sources_and_stamps_the_tariff():
     assert got.tariff.tax_year == 2026
     assert [i.status for i in got.income_n] == ["certified", "certified"]
     assert sum((i.result for i in got.income_n), ZERO) + Decimal("-7948.66") == got.total_income
+
+
+@pytest.mark.rule
+def test_each_estimate_line_opens_its_own_sources():
+    """Every line of the Gesamt card names what it came from, and the union stays the
+    estimate's sources: the Anlage N lines their owner's rows, the Anlage V lines their
+    property, Vorsorge and Einbehalten the certificates, the children their rows."""
+    case = next(c for c in load("return_estimate").cases if c.id == "household_2026")
+    got = _estimate(case)
+    lines = got.line_sources
+    union = set(got.sources)
+    every = [ref for n in got.income_n for ref in n.sources]
+    every += [ref for v in got.income_v for ref in v.sources]
+    every += [ref for name in type(lines).model_fields for ref in getattr(lines, name)]
+    assert set(every) <= union
+    assert set(every) == union - {ref for ref in union if ref.kind == "income_input"}
+
+    for n, facts in zip(got.income_n, case.resolved_owners(), strict=True):
+        ids = {r.id for r in facts.inputs}
+        rows = {ref.id for ref in n.sources if ref.kind == "return_input"}
+        assert rows and rows <= ids
+    assert [v.sources for v in got.income_v] == [
+        [SourceRef(kind="property", id=p.property_id)] for p in case.properties
+    ]
+    assert {ref.kind for ref in lines.withheld} >= {"return_input"}
+    assert {ref.kind for ref in lines.vorsorge} >= {"return_input"}
+    child_ids = {r.id for r in current(case.household) if r.kind == "child"}
+    assert child_ids and child_ids <= {ref.id for ref in lines.children}
+    assert lines.income_tax[0].kind == "tariff" and lines.surcharges == lines.special_allowance
+    assert lines.donations == [] and lines.credit_35a == []
 
 
 @pytest.mark.rule

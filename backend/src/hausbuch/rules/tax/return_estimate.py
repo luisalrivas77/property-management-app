@@ -45,6 +45,7 @@ from hausbuch.schemas.employment import (
     AssessedTax,
     ChildMonthsDetail,
     ChildrenResult,
+    EstimateLineSources,
     FilingCheck,
     MissingItem,
     OwnerIncome,
@@ -301,6 +302,9 @@ def return_estimate(
                 status=item.status,
                 tax_class=tax_class,
                 tax_class_source=source,
+                sources=unique(
+                    [ref for line in item.line_sources.values() for ref in line] + [RULE_SET_SOURCE]
+                ),
             )
         )
     paid_facts = [f for f in owner_facts if f.owner_id in items]
@@ -393,11 +397,27 @@ def return_estimate(
     refs += household.sources
     refs += [SourceRef(kind="property", id=p.property_id) for p in properties]
     refs += [RULE_SET_SOURCE, TARIFF_SOURCE]
+    of_household = figures.line_sources
+    line_sources = EstimateLineSources(
+        vorsorge=unique([ref for v in vorsorge_of.values() for ref in v.sources]),
+        church_tax_paid=of_household.get("church_tax_paid", []),
+        donations=of_household.get("donations", []),
+        childcare=of_household.get("childcare", []),
+        special_allowance=[TARIFF_SOURCE],
+        income_tax=unique([TARIFF_SOURCE, RULE_SET_SOURCE, *of_household.get("benefits", [])]),
+        children=unique([*of_household.get("children", []), TARIFF_SOURCE]),
+        credit_35a=of_household.get("credit_35a", []),
+        surcharges=[TARIFF_SOURCE],
+        withheld=unique([ref for i in items.values() for ref in i.pay.sources()]),
+    )
     return ReturnEstimate(
         tax_year=tax_year,
         status=status,
         income_n=income_n,
-        income_v=list(properties),
+        income_v=[
+            p.model_copy(update={"sources": [SourceRef(kind="property", id=p.property_id)]})
+            for p in properties
+        ],
         total_income=gde,
         vorsorge_total=vorsorge_total,
         church_tax_paid=household.church_tax_paid,
@@ -421,5 +441,6 @@ def return_estimate(
             tax_year=tariff.tax_year, version=tariff.version, reused_from=tariff.reused_from
         ),
         sources=unique(refs),
+        line_sources=line_sources,
         children=child_rows,
     )

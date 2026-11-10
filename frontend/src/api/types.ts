@@ -3817,6 +3817,34 @@ export interface components {
             /** Request Id */
             request_id?: string | null;
         };
+        /**
+         * EstimateLineSources
+         * @description What each line of the whole-return estimate came from, so the Gesamt card opens the
+         *     sources line by line (ReturnEstimate.sources stays their union). The Anlage N and V lines
+         *     carry theirs on OwnerIncome and PropertyIncome.
+         */
+        EstimateLineSources: {
+            /** Vorsorge */
+            vorsorge?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+            /** Church Tax Paid */
+            church_tax_paid?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+            /** Donations */
+            donations?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+            /** Childcare */
+            childcare?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+            /** Special Allowance */
+            special_allowance?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+            /** Income Tax */
+            income_tax?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+            /** Children */
+            children?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+            /** Credit 35A */
+            credit_35a?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+            /** Surcharges */
+            surcharges?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+            /** Withheld */
+            withheld?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+        };
         /** Event */
         Event: {
             /**
@@ -5105,6 +5133,8 @@ export interface components {
             tax_class?: ("i" | "ii" | "iii" | "iv" | "iv_factor" | "v" | "vi") | null;
             /** Tax Class Source */
             tax_class_source?: ("certificate" | "payslip" | "questionnaire") | null;
+            /** Sources */
+            sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
         };
         /** OwnerPatch */
         OwnerPatch: {
@@ -5603,6 +5633,8 @@ export interface components {
             property_id: string;
             /** Result */
             result: string;
+            /** Sources */
+            sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
         };
         /**
          * PropertyKind
@@ -6304,6 +6336,7 @@ export interface components {
             tariff: components["schemas"]["TariffStamp"];
             /** Sources */
             sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+            line_sources?: components["schemas"]["EstimateLineSources"];
             /** Children */
             children?: components["schemas"]["ChildMonthsDetail"][];
         };

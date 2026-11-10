@@ -74,6 +74,9 @@ class HouseholdFigures:
     allowance_unused: Decimal = ZERO
     donated: Decimal = ZERO
     warnings: list[DraftWarning] = field(default_factory=list)
+    # context.sources split by what each one proves: benefits, church_tax_paid, donations,
+    # childcare, children, credit_35a (the Gesamt card's line sources)
+    line_sources: dict[str, list[SourceRef]] = field(default_factory=dict)
 
 
 def household_figures(
@@ -88,6 +91,12 @@ def household_figures(
     (the module docstring). `items` holds each owner's `itemise` result."""
     warnings: list[DraftWarning] = []
     refs: list[SourceRef] = []
+    lines: dict[str, list[SourceRef]] = {}
+
+    def cite(line: str, found: list[SourceRef]) -> None:
+        refs.extend(found)
+        lines.setdefault(line, []).extend(found)
+
     benefits = unused_total = ZERO
     church_paid = ZERO
     for facts in owner_facts:
@@ -100,9 +109,9 @@ def household_figures(
         unused_total += unused
         certs = item.pay.certificates
         if own:
-            refs += row_sources(typed)
+            cite("benefits", row_sources(typed))
             if item.replacement_benefits:
-                refs += item.pay.sources()
+                cite("benefits", item.pay.sources())
         nr15 = {
             r.value.replacement_benefits
             for r in year_rows
@@ -113,7 +122,7 @@ def household_figures(
         paid = sum((c.church_tax + c.church_tax_spouse for c in certs), ZERO)
         if paid:
             church_paid += paid
-            refs += item.pay.sources()
+            cite("church_tax_paid", item.pay.sources())
 
     rows = in_year(household_rows, tax_year)
     of_year = [r for r in rows if r.tax_year == tax_year]
@@ -130,7 +139,7 @@ def household_figures(
                 excess=str(donated - cap),
             )
         )
-    refs += row_sources(donation_rows)
+    cite("donations", row_sources(donation_rows))
 
     child_rows = {r.id: r for r in rows if r.kind is K.CHILD}
     children = [r.value for r in child_rows.values()]
@@ -155,12 +164,12 @@ def household_figures(
             if born.year == tax_year - care.max_age:
                 turning.add(child.id)
             childcare += min(cents(r.value.amount * care.share), care.cap_per_child)
-        refs += row_sources(care_rows)
+        cite("childcare", row_sources(care_rows))
     warnings += [
         warning(WarningCode.RETURN_CHILDCARE_UNTIL_14, row_sources([child_rows[c]]))
         for c in sorted(turning)
     ]
-    refs += row_sources(child_rows.values())
+    cite("children", row_sources(child_rows.values()))
 
     service_rows = [r for r in of_year if r.kind is K.HOUSEHOLD_SERVICES]
     if any(not r.value.paid_to_account for r in service_rows):
@@ -182,7 +191,7 @@ def household_figures(
                 ZERO,
             )
             credit += min(cents(labour * caps.rate), getattr(caps, service_class))
-        refs += row_sources(service_rows)
+        cite("credit_35a", row_sources(service_rows))
 
     context = HouseholdTaxContext(
         children=children,
@@ -194,7 +203,11 @@ def household_figures(
         sources=unique(refs),
     )
     return HouseholdFigures(
-        context=context, allowance_unused=unused_total, donated=donated, warnings=warnings
+        context=context,
+        allowance_unused=unused_total,
+        donated=donated,
+        warnings=warnings,
+        line_sources={line: unique(found) for line, found in lines.items()},
     )
 
 
