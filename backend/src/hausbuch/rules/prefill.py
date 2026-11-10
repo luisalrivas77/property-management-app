@@ -34,6 +34,14 @@ empty, never 0, and named in a note); a Gehaltsabrechnung link:owner and return_
 = 12 − month and the gross projection in a note. return_input_value turns the confirmed
 values into the row's value: an unread certificate line becomes 0 and is listed in `unread`
 (Q-O29). The apply writes them through services/return_inputs (D14).
+
+Phase 4b D129 (§8.4): an Einkommensteuerbescheid proposes income_input:bescheid_zve
+{tax_year, value.amount ← taxable_income}; the apply writes it through
+services/income_inputs with this document as the Bescheid and supersedes the year's current
+row. Notes say which row it replaces ("ersetzt den Bescheid vom …"), that the document is
+already recorded under another year (the apply refuses it), and warn, never blocking, when
+the assessment is not a Zusammenveranlagung or the addressee names neither owner. The
+addressee's names stay in the extraction: no note quotes them.
 """
 
 import re
@@ -155,6 +163,8 @@ def build_proposal(
             b.wage_certificate()
         case ExtractionKind.GEHALTSABRECHNUNG:
             b.payslip()
+        case ExtractionKind.EINKOMMENSTEUERBESCHEID:
+            b.income_tax_assessment()
         case _:  # statement, unknown: typing only
             pass
     return b.records
@@ -941,6 +951,52 @@ class _Builder:
                 )
         return notes
 
+    def income_tax_assessment(self) -> None:
+        """income_input:bescheid_zve: the year and the zvE; the notes of D129 (§8.4)."""
+        tax_year = self.ev("tax_year")
+        fields = {"tax_year": tax_year, "value.amount": self.ev("taxable_income")}
+        notes = []
+        if fields["value.amount"].value is None:
+            notes.append(_ZVE_UNREAD_NOTE)
+        year = tax_year.value
+        for row in self.ctx.bescheid_rows:
+            if row.document_id == self.ctx.document_id and row.tax_year != year:
+                notes.append(
+                    f"Dieser Bescheid ist schon als zvE für {row.tax_year} übernommen. Für ein "
+                    "anderes Jahr zuerst jenen Eintrag zurückziehen."
+                )
+        replaced = _first(
+            sorted(
+                (r for r in self.ctx.bescheid_rows if year is not None and r.tax_year == year),
+                key=lambda r: str(r.id),
+            )
+        )
+        if replaced is not None and replaced.document_id == self.ctx.document_id:
+            notes.append(
+                "Dieser Bescheid ist schon übernommen; ein geänderter Betrag ersetzt den Eintrag."
+            )
+        elif replaced is not None and replaced.document_date is not None:
+            notes.append(
+                f"Für {year} gibt es schon einen Bescheid; dieser ersetzt den Bescheid vom "
+                f"{replaced.document_date:%d.%m.%Y} (ein Änderungsbescheid)."
+            )
+        elif replaced is not None:
+            notes.append(
+                f"Für {year} gibt es schon einen Bescheid; dieser ersetzt den bisher "
+                "übernommenen Bescheid (ein Änderungsbescheid)."
+            )
+        assessment = self.ev("assessment_type").value
+        if assessment is not None and not _JOINT_ASSESSMENT.search(str(assessment).casefold()):
+            notes.append(_NOT_JOINT_NOTE)
+        addressee = self.ev("addressee").value
+        if (
+            addressee is not None
+            and self.ctx.owners
+            and not _names_an_owner(addressee, self.ctx.owners)
+        ):
+            notes.append(_NOT_THE_OWNERS_NOTE)
+        self.add("income_input:bescheid_zve", "income_input", "create", fields, notes=notes)
+
 
 # --- Matching existing records ----------------------------------------------------------
 
@@ -1296,6 +1352,20 @@ def _ownership_share(clause: str, buyers: int) -> tuple[int, int] | None:
 # --- The pay documents' values (phase 4b §8.2) ------------------------------------------
 
 _PAY_KINDS = frozenset({ExtractionKind.LOHNSTEUERBESCHEINIGUNG, ExtractionKind.GEHALTSABRECHNUNG})
+# D129: the Bescheid's notes. The app computes the joint splitting tariff only (D82, D83).
+_JOINT_ASSESSMENT = re.compile(r"zusammen\s*-?\s*veranlag")
+_NOT_JOINT_NOTE = (
+    "Laut Bescheid ist das keine Zusammenveranlagung; die App rechnet mit dem "
+    "Splittingtarif. Bitte prüfen, ob der Betrag trotzdem übernommen werden soll."
+)
+_NOT_THE_OWNERS_NOTE = (
+    "Der Bescheid scheint nicht an die Eigentümer gerichtet (etwa der Einkommensnachweis "
+    "eines Mieters). Bitte prüfen, bevor der Betrag übernommen wird."
+)
+_ZVE_UNREAD_NOTE = (
+    "Das zu versteuernde Einkommen wurde nicht gelesen; bitte den Betrag aus dem Bescheid "
+    "eintragen (die Zeile „zu versteuerndes Einkommen“)."
+)
 # The certificate's line of each amount, for the note naming the lines not read (§5.1).
 CERTIFICATE_LINES: dict[str, str] = {
     "gross": "Nr. 3",
@@ -1350,6 +1420,20 @@ def _name_key(name: Any) -> frozenset[str]:
     particles dropped, so "Musterfrau, Erika" and "Erika Musterfrau" are one key."""
     text = str(name).casefold().replace("ß", "ss")
     return frozenset(t for t in _NAME_TOKEN.findall(text) if t not in _NAME_FILLERS)
+
+
+def _names_an_owner(addressee: Any, owners: Sequence[ExistingOwner]) -> bool:
+    """D129: whether the Bescheid's addressee names at least one owner, by name tokens like
+    D96's employee name: an owner whose tokens equal the addressee's, or one of at least two
+    tokens all printed in it ("Max und Erika Mustermann" names both owners)."""
+    key = _name_key(addressee)
+    if not key:
+        return False
+    for owner in owners:
+        owner_key = _name_key(owner.full_name)
+        if owner_key and (owner_key == key or (len(owner_key) >= 2 and owner_key <= key)):
+            return True
+    return False
 
 
 def _match_owner(name: Any, owners: Sequence[ExistingOwner]) -> tuple[ExistingOwner | None, bool]:

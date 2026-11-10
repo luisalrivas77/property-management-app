@@ -378,6 +378,28 @@ class PayslipExtraction(_Typing):
     )
 
 
+class IncomeTaxAssessmentExtraction(_Typing):
+    """Einkommensteuerbescheid (bescheid / einkommensteuerbescheid; phase-4b.md D129, §8.4):
+    the assessed zvE of one year, proposed as the household's bescheid_zve. Only these fields:
+    no identifier, no address, no other figure of the assessment is ever read."""
+
+    tax_year: ExtractedValue = ev(
+        "year", "the year assessed (Bescheid für 20xx über Einkommensteuer ...)"
+    )
+    taxable_income: ExtractedValue = ev(
+        "money",
+        "zu versteuerndes Einkommen (not Summe der Einkünfte, Gesamtbetrag der Einkünfte or"
+        " Einkommen)",
+    )
+    assessment_type: ExtractedValue = ev(
+        "text", "the kind of assessment, e.g. Zusammenveranlagung or Einzelveranlagung"
+    )
+    # Compared with the owners' names in the review (rules.prefill); never in an event.
+    addressee: ExtractedValue = ev(
+        "text", "the names of the persons the Bescheid is for, names only"
+    )
+
+
 EXTRACTION_MODELS: dict[ExtractionKind, type[_Typing]] = {
     ExtractionKind.PURCHASE_CONTRACT: PurchaseContractExtraction,
     ExtractionKind.LOAN_CONTRACT: LoanContractExtraction,
@@ -393,6 +415,7 @@ EXTRACTION_MODELS: dict[ExtractionKind, type[_Typing]] = {
     ExtractionKind.STATEMENT: StatementExtraction,
     ExtractionKind.LOHNSTEUERBESCHEINIGUNG: WageCertificateExtraction,
     ExtractionKind.GEHALTSABRECHNUNG: PayslipExtraction,
+    ExtractionKind.EINKOMMENSTEUERBESCHEID: IncomeTaxAssessmentExtraction,
 }
 
 AnyExtraction = (
@@ -410,4 +433,5 @@ AnyExtraction = (
     | StatementExtraction
     | WageCertificateExtraction
     | PayslipExtraction
+    | IncomeTaxAssessmentExtraction
 )

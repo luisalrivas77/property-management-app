@@ -13,6 +13,10 @@ proposal left queued/running (a re-run superseded it while the job ran).
 Phase 4b (docs/phases/phase-4b.md §8.2): a pay document's return_input record is written
 through services/return_inputs.create_input after the links, for an owner of this workspace,
 replacing the current row rules.prefill.replaced_pay_row names.
+
+Phase 4b D129 (§8.4): an Einkommensteuerbescheid's income_input:bescheid_zve record is
+written through services/income_inputs.create_income_input after the links, with this
+document as the Bescheid, superseding the year's current bescheid_zve row.
 """
 
 from collections.abc import Callable
@@ -68,6 +72,7 @@ from hausbuch.schemas.enums import (
     DocumentSubtype,
     EntityType,
     ExtractionKind,
+    IncomeInputKind,
     LinkTarget,
     PriceSplitSource,
     ProposalStatus,
@@ -86,6 +91,7 @@ from hausbuch.schemas.events import (
 )
 from hausbuch.schemas.extraction import EXTRACTION_MODELS, _Typing
 from hausbuch.schemas.loan import LoanTerms
+from hausbuch.schemas.performance import IncomeInputCreate
 from hausbuch.schemas.property import (
     AcquisitionCostCreate,
     PriceSplitCreate,
@@ -93,6 +99,7 @@ from hausbuch.schemas.property import (
     UnitCreate,
 )
 from hausbuch.schemas.proposal import (
+    ExistingBescheidZve,
     ExistingCost,
     ExistingDepositReceipt,
     ExistingLoan,
@@ -112,7 +119,17 @@ from hausbuch.schemas.proposal import (
 from hausbuch.schemas.tax import TaxInputCreate, TaxInputKind
 from hausbuch.schemas.tenancy import InitialRent, TenancyCreate, TenantCreate
 
-from . import documents, loans, owners, properties, tax_inputs, tenancies, tenants, units
+from . import (
+    documents,
+    income_inputs,
+    loans,
+    owners,
+    properties,
+    tax_inputs,
+    tenancies,
+    tenants,
+    units,
+)
 from .context import CommandContext
 from .errors import NotFoundError, RuleViolationError
 from .events import append_event
@@ -131,7 +148,8 @@ _DECIDED = (ProposalStatus.APPLIED, ProposalStatus.REJECTED)
 # §6.5: property -> corrections -> unit -> ownership -> price split -> costs -> loan ->
 # tenants -> tenancy (with the rent row) -> typing -> links -> tax inputs (phase 3 §9: after
 # the links, so a certificate's figure follows the loan or property the user linked) ->
-# return inputs (phase 4b §8.2: after link:owner, for the same reason). By the key's prefix.
+# return inputs (phase 4b §8.2: after link:owner, for the same reason) -> income inputs
+# (phase 4b D129: the Bescheid's zvE, after the typing). By the key's prefix.
 _APPLY_ORDER = {
     "property": 0,
     "correction": 1,
@@ -148,6 +166,7 @@ _APPLY_ORDER = {
     "link": 12,
     "tax_input": 13,
     "return_input": 14,
+    "income_input": 15,
 }
 _PAY_KINDS = ("wage_certificate", "payslip")
 # The record whose entity a link record points at when the proposal had no target yet.
@@ -474,7 +493,32 @@ def prefill_context(
             ExistingTenant(id=t.id, full_name=t.full_name) for t in tenants.list_tenants(conn)
         ],
         pay_rows=[row for row, _ in _current_pay_rows(conn)],
+        bescheid_rows=[
+            ExistingBescheidZve(
+                id=row.id,
+                tax_year=row.tax_year,
+                document_id=row.document_id,
+                document_date=_document_date(conn, row.document_id),
+            )
+            for row in _current_bescheid_rows(conn)
+        ],
     )
+
+
+def _current_bescheid_rows(conn: Connection, *, tax_year: int | None = None) -> list[Any]:
+    """The workspace's current household bescheid_zve rows (D129), oldest first, under the
+    caller's row-level security."""
+    return [
+        row
+        for row in income_inputs.list_income_inputs(conn, tax_year=tax_year)
+        if row.kind == IncomeInputKind.BESCHEID_ZVE and row.owner_id is None
+    ]
+
+
+def _document_date(conn: Connection, document_id: UUID | None) -> date | None:
+    document = None if document_id is None else documents.get_document(conn, document_id)
+    typing = None if document is None else document.typing
+    return None if typing is None else typing.document_date
 
 
 def _current_pay_rows(
@@ -1010,6 +1054,42 @@ class _Apply:
 
         return return_inputs.create_input(self.ctx, data).id
 
+    def _income_input(self, record: ProposalRecord, values: dict[str, Any]) -> UUID:
+        """An Einkommensteuerbescheid's zvE (phase 4b D129) through
+        services/income_inputs.create_income_input: household scope, kind bescheid_zve, this
+        document as the Bescheid. Only tax_year and value.amount are taken from the values
+        (never a document, a supersedes_id, a withdrawal or a note: the row and its event
+        carry no free text). This document already recorded for another year is refused,
+        never superseded: withdraw that row first. The year's current row with the same
+        amount from this document: nothing is written; otherwise the new row supersedes it
+        (an Änderungsbescheid, or a corrected amount)."""
+        kind = record.key.split(":", 1)[1]
+        if kind != IncomeInputKind.BESCHEID_ZVE.value:
+            raise ValueError(f"record {record.key!r} cannot be applied in this step")
+        given = _undot({f: values[f] for f in ("tax_year", "value.amount") if f in values})
+        data = _validate(
+            record.key,
+            IncomeInputCreate,
+            {
+                "kind": kind,
+                "tax_year": given.get("tax_year"),
+                "document_id": str(self.document_id),
+                "value": given.get("value") or {},
+            },
+        )
+        for row in _current_bescheid_rows(self.ctx.conn):
+            if row.document_id == self.document_id and row.tax_year != data.tax_year:
+                raise ValueError(
+                    f"this document is already recorded as income_input {row.id}; withdraw it first"
+                )
+        current = _current_bescheid_rows(self.ctx.conn, tax_year=data.tax_year)
+        if current:
+            (row,) = current  # one per year: create_income_input refuses a second
+            if row.value == data.value and row.document_id == data.document_id:
+                return row.id
+            data = data.model_copy(update={"supersedes_id": row.id})
+        return income_inputs.create_income_input(self.ctx, data).id
+
     _HANDLERS: dict[str, Callable[["_Apply", ProposalRecord, dict[str, Any]], UUID]] = {
         "property": _property,
         "correction": _correction,
@@ -1026,6 +1106,7 @@ class _Apply:
         "link": _link,
         "tax_input": _tax_input,
         "return_input": _return_input,
+        "income_input": _income_input,
     }
 
 

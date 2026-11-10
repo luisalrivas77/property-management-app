@@ -21,6 +21,7 @@ from hausbuch.schemas.events import (
 )
 from hausbuch.schemas.extraction import (
     EXTRACTION_MODELS,
+    IncomeTaxAssessmentExtraction,
     PayslipExtraction,
     WageCertificateExtraction,
 )
@@ -36,9 +37,11 @@ FORBIDDEN = (
     "sozialversicherung",
     "adresse",
 )
+# The Einkommensteuerbescheid's extraction (D129) is held to the same rule.
 PAY_MODELS = [
     WageCertificateExtraction,
     PayslipExtraction,
+    IncomeTaxAssessmentExtraction,
     N.WageCertificate,
     N.Payslip,
     N.MonthAndYtd,
@@ -57,6 +60,23 @@ def test_no_identifier_field_on_a_pay_document(model):
 def test_the_pay_documents_have_their_extraction_models():
     assert EXTRACTION_MODELS[ExtractionKind.LOHNSTEUERBESCHEINIGUNG] is WageCertificateExtraction
     assert EXTRACTION_MODELS[ExtractionKind.GEHALTSABRECHNUNG] is PayslipExtraction
+
+
+def test_the_income_tax_assessment_reads_exactly_its_five_fields():
+    """D129: the year, the date, the zvE, the kind of assessment and the addressee, plus the
+    title every kind proposes for its typing. Nothing else of the Bescheid is ever read."""
+    model = EXTRACTION_MODELS[ExtractionKind.EINKOMMENSTEUERBESCHEID]
+    assert model is IncomeTaxAssessmentExtraction
+    assert set(model.model_fields) == {
+        "title",
+        "document_date",
+        "tax_year",
+        "taxable_income",
+        "assessment_type",
+        "addressee",
+    }
+    description = model.model_fields["taxable_income"].description or ""
+    assert "zu versteuerndes Einkommen" in description
 
 
 def test_the_classifier_offers_every_type_with_the_pay_documents_since_step_2():

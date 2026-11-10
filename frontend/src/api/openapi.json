@@ -8078,7 +8078,8 @@
                   "ownership",
                   "deposit_received",
                   "tax_input",
-                  "return_input"
+                  "return_input",
+                  "income_input"
                 ]
               }
             ],
@@ -9739,6 +9740,9 @@
               },
               {
                 "$ref": "#/components/schemas/PayslipExtraction"
+              },
+              {
+                "$ref": "#/components/schemas/IncomeTaxAssessmentExtraction"
               }
             ],
             "title": "Fields"
@@ -9849,7 +9853,8 @@
           "handover_protocol",
           "deposit_record",
           "cost_basis_evidence",
-          "grundsteuerbescheid"
+          "grundsteuerbescheid",
+          "einkommensteuerbescheid"
         ],
         "title": "DocumentSubtype",
         "description": "Finer typing where retention or the AfA basis depends on it."
@@ -11146,7 +11151,8 @@
           "zinsbescheinigung",
           "statement",
           "lohnsteuerbescheinigung",
-          "gehaltsabrechnung"
+          "gehaltsabrechnung",
+          "einkommensteuerbescheid"
         ],
         "title": "ExtractionKind",
         "description": "document_extraction.kind and proposal.kind (migration 0005): which field set an\nextraction holds. `manual` is phase 1's ManualDocumentFields; the others are the per-type\nmodels in schemas/extraction.py."
@@ -12263,6 +12269,44 @@
         ],
         "title": "IncomeInputKind",
         "description": "income_input.kind (migration 0016, phase 4 D83)."
+      },
+      "IncomeTaxAssessmentExtraction": {
+        "properties": {
+          "title": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "a short German title, two to six words naming what the document is",
+            "value_kind": "text"
+          },
+          "document_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the date the document carries",
+            "value_kind": "date"
+          },
+          "tax_year": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the year assessed (Bescheid für 20xx über Einkommensteuer ...)",
+            "value_kind": "year"
+          },
+          "taxable_income": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "zu versteuerndes Einkommen (not Summe der Einkünfte, Gesamtbetrag der Einkünfte or Einkommen)",
+            "value_kind": "money"
+          },
+          "assessment_type": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the kind of assessment, e.g. Zusammenveranlagung or Einzelveranlagung",
+            "value_kind": "text"
+          },
+          "addressee": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the names of the persons the Bescheid is for, names only",
+            "value_kind": "text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "IncomeTaxAssessmentExtraction",
+        "description": "Einkommensteuerbescheid (bescheid / einkommensteuerbescheid; phase-4b.md D129, §8.4):\nthe assessed zvE of one year, proposed as the household's bescheid_zve. Only these fields:\nno identifier, no address, no other figure of the assessment is ever read."
       },
       "InitialRent": {
         "properties": {
@@ -15671,7 +15715,8 @@
                   "ownership",
                   "deposit_received",
                   "tax_input",
-                  "return_input"
+                  "return_input",
+                  "income_input"
                 ]
               }
             ],

@@ -112,6 +112,9 @@ class DocumentSubtype(StrEnum):
     COST_BASIS_EVIDENCE = "cost_basis_evidence"
     # The property's Grundsteuerbescheid (type bescheid); a tax record (spec amendment 3).
     GRUNDSTEUERBESCHEID = "grundsteuerbescheid"
+    # Phase 4b D129 (migration 0020): the household's Einkommensteuerbescheid (type bescheid);
+    # a tax record like every Bescheid. Its zvE is proposed as the year's bescheid_zve.
+    EINKOMMENSTEUERBESCHEID = "einkommensteuerbescheid"
 
 
 class ExtractionSource(StrEnum):
@@ -202,6 +205,8 @@ class ExtractionKind(StrEnum):
     # Phase 4b (D96, migration 0018)
     LOHNSTEUERBESCHEINIGUNG = "lohnsteuerbescheinigung"
     GEHALTSABRECHNUNG = "gehaltsabrechnung"
+    # Phase 4b D129 (migration 0020)
+    EINKOMMENSTEUERBESCHEID = "einkommensteuerbescheid"
 
 
 class ProposalStatus(StrEnum):

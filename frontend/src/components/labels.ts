@@ -148,6 +148,7 @@ export const DOCUMENT_SUBTYPE: Record<DocumentSubtype, string> = {
   deposit_record: "Kautionsnachweis",
   cost_basis_evidence: "Nachweis Anschaffungskosten",
   grundsteuerbescheid: "Grundsteuerbescheid",
+  einkommensteuerbescheid: "Einkommensteuerbescheid",
 };
 
 export const LINK_TARGET: Record<LinkTarget, string> = {
@@ -284,6 +285,7 @@ export const EXTRACTION_KIND: Record<ExtractionKind, string> = {
   statement: "Kontoauszug",
   lohnsteuerbescheinigung: "Lohnsteuerbescheinigung",
   gehaltsabrechnung: "Gehaltsabrechnung",
+  einkommensteuerbescheid: "Einkommensteuerbescheid",
 };
 
 /** The confidence dot's text (computed by code from the checks, D15). */

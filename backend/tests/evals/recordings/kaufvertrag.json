@@ -5,10 +5,10 @@
  "recorded_on": "2026-11-10",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "93d91a3094e05c87",
-  "request_sha256": "568910b4027b09db979454d739b73e55374da37295fbc31076b535a231764ce0",
+  "prompt_version": "76607e0fbcb59f81",
+  "request_sha256": "984f7750f7752845a9c5a77fe4631f40d6540efe3909e92e998571ffc44c593c",
   "message": {
-   "id": "msg_011CgtWoangv2ac2biRy5YQF",
+   "id": "msg_011CguHw5KrzraPPL2Gm67B1",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 7239,
+    "input_tokens": 7376,
     "output_tokens": 46,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -45,10 +45,10 @@
  },
  "extract": [
   {
-   "prompt_version": "5a926fcf9151da70",
-   "request_sha256": "f7ba59433e6f138a37ec25c0310f2d08122c3be50bb8dc710514328809ce14ec",
+   "prompt_version": "213911d55186e77b",
+   "request_sha256": "abb8cd852539041915cc5004ab715138e4a6fb3016569b475998c842ea50205d",
    "message": {
-    "id": "msg_011CgtWoJzS5757fhcUBTymb",
+    "id": "msg_011CguHvmgyJgeH6GbnnBMY8",
     "container": null,
     "content": [
      {
@@ -68,7 +68,7 @@
         "type": "page_location"
        }
       ],
-      "text": "Kaufvertrag Wohnungseigentum",
+      "text": "Kaufvertrag über Wohnungseigentum",
       "type": "text"
      },
      {
@@ -319,7 +319,7 @@
      {
       "citations": [
        {
-        "cited_text": "72,5 m².\r\n",
+        "cited_text": "Wohnfläche ca. 72,5 m².\r\n",
         "document_index": 0,
         "document_title": null,
         "end_page_number": 3,
@@ -387,8 +387,8 @@
      "cache_creation_input_tokens": 0,
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
-     "input_tokens": 7174,
-     "output_tokens": 528,
+     "input_tokens": 7272,
+     "output_tokens": 533,
      "output_tokens_details": {
       "thinking_tokens": 0
      },

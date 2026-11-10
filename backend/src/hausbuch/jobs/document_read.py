@@ -406,8 +406,8 @@ def _extract_chunk(
         output = {key: value.model_dump(mode="json") for key, value in values.items()}
         return _Parsed(values, output, None)
 
-    # The pay documents' raw answer is scrubbed like their values and quotes (D103): no
-    # identifier reaches ai_call.raw_text either.
+    # The pay documents' and the Einkommensteuerbescheid's raw answer is scrubbed like their
+    # values and quotes (D103, D129): no identifier reaches ai_call.raw_text either.
     scrub = partial(scrub_identifiers, reference_year=year) if kind in SCRUBBED_KINDS else None
     return _with_one_retry(
         deps, workspace_id, document_id, proposal_id, request, parsed, scrub=scrub

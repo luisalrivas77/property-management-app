@@ -14,7 +14,15 @@ import json
 import uuid
 
 import pytest
-from make_docs import DOCS, DOCS_BY_NAME, FAKE_IDENTIFIERS, Doc, build_pdf, doc_pdf
+from make_docs import (
+    BESCHEID_IDENTIFIERS,
+    DOCS,
+    DOCS_BY_NAME,
+    FAKE_IDENTIFIERS,
+    Doc,
+    build_pdf,
+    doc_pdf,
+)
 from pypdf import PdfReader
 from recordings import (
     RECORDINGS_DIR,
@@ -80,14 +88,19 @@ def test_real_recording(path):
     assert reasons == [], f"{path.name} is stale, re-record it: {reasons}"
     _check(doc, recording)
     _build_proposal(doc, replay(recording))
-    if doc.name in PAY_DOCUMENTS:
-        # D103 on the model's real answer: no invented identifier in a stored value or quote.
+    if doc.name in SCRUBBED_DOCUMENTS:
+        # D103, D129 on the model's real answer: no invented identifier in a stored value or
+        # quote.
         stored = _stored(replay(recording))
-        for fragment in FAKE_IDENTIFIERS:
+        for fragment in SCRUBBED_DOCUMENTS[doc.name]:
             assert fragment not in stored, f"{path.name}: {fragment!r} stored"
 
 
 PAY_DOCUMENTS = ("lohnsteuerbescheinigung", "gehaltsabrechnung")
+# The documents whose values and quotes are scrubbed, with the identifiers printed on them.
+SCRUBBED_DOCUMENTS = {name: FAKE_IDENTIFIERS for name in PAY_DOCUMENTS} | {
+    "einkommensteuerbescheid": BESCHEID_IDENTIFIERS
+}
 
 
 def _stored(result) -> str:
@@ -152,16 +165,36 @@ def test_pay_documents_store_no_identifier(name):
     values or quotes the job stores. Each value here cites its whole page, so every
     identifier on it passes through the scrub; the expected figures still check out."""
     doc = DOCS_BY_NAME[name]
+    printed = _printed(doc, FAKE_IDENTIFIERS)
+    # both print the IdNr, the birth date, the Personalnummer and the address
+    assert {"345 678", "14.03.1988", "731942", "Musterweg", "60311"} <= set(printed)
+    _assert_scrubbed(doc, printed)
+
+
+def test_bescheid_stores_no_identifier():
+    """Phase 4b D129: the Einkommensteuerbescheid's invented Steuernummer (both forms), the two
+    Identifikationsnummern, the address and the IBAN never reach the values or quotes the
+    job stores, while the year and the zvE still check out."""
+    doc = DOCS_BY_NAME["einkommensteuerbescheid"]
+    printed = _printed(doc, BESCHEID_IDENTIFIERS)
+    assert set(printed) == set(BESCHEID_IDENTIFIERS)  # every one is on the page
+    _assert_scrubbed(doc, printed)
+
+
+def _printed(doc: Doc, fragments: tuple[str, ...]) -> list[str]:
+    text = "\n".join(line for page in doc.pages for line in page)
+    return [fragment for fragment in fragments if fragment in text]
+
+
+def _assert_scrubbed(doc: Doc, printed: list[str]) -> None:
+    """Each value here cites its whole page, so every identifier on it passes through the
+    scrub; the expected figures must still check out."""
     requests = build_requests(doc, SETTINGS)
     recording = synthetic_recording(doc, requests, _as_written(doc))
     for block in recording["extract"][0]["message"]["content"]:
         for citation in block["citations"] or []:
             page = doc.pages[citation["start_page_number"] - 1]
             citation["cited_text"] = "\n".join(page)
-    text = "\n".join(line for page in doc.pages for line in page)
-    printed = [fragment for fragment in FAKE_IDENTIFIERS if fragment in text]
-    # both print the IdNr, the birth date, the Personalnummer and the address
-    assert {"345 678", "14.03.1988", "731942", "Musterweg", "60311"} <= set(printed)
     stored = _stored(replay(recording))
     for fragment in printed:
         assert fragment not in stored, fragment

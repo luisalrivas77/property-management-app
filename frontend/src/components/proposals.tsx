@@ -50,7 +50,17 @@ import type { Directory } from "./entities";
 import { targets, tenantName } from "./entities";
 import { FieldDescription, FormBanner, InfoToggle, useFormErrors, type FieldMessages } from "./form";
 import { formatArea, formatDate, formatDateTime, formatFraction, formatMoney, formatPercent, formatShare } from "./format";
-import { decimalInput, percentInput, toDecimalString, toFraction, toMoneyString, toRate, toYear, type Parsed } from "./input";
+import {
+  decimalInput,
+  percentInput,
+  toDecimalString,
+  toFraction,
+  toMoneyString,
+  toRate,
+  toSignedMoneyString,
+  toYear,
+  type Parsed,
+} from "./input";
 import {
   ACQUISITION_COST_KIND,
   CHECK,
@@ -93,6 +103,8 @@ interface FieldSpec {
   description?: string;
   /** An "area" value's decimal places, when not 2 (a unit's rooms: 1, as the backend's Rooms). */
   decimals?: number;
+  /** A "money" value that may be negative (a Bescheid's zvE in a loss year). */
+  signed?: boolean;
 }
 
 const text = (label: string, description?: string): FieldSpec => ({ label, kind: "text", description });
@@ -340,6 +352,21 @@ const FIELDS: Record<string, Record<string, FieldSpec>> = {
       "Der Betrag laut Dokument. Er wird erst mit „Übernehmen“ als Steuerangabe gespeichert und ersetzt dann eine frühere Angabe derselben Art für dieses Jahr.",
     ),
   },
+  // The Einkommensteuerbescheid's zvE (phase 4b D129): income_input:bescheid_zve, household-wide.
+  income_input: {
+    tax_year: {
+      label: "Steuerjahr",
+      kind: "year",
+      description: "Das Jahr, über das der Bescheid die Einkommensteuer festsetzt („Bescheid für 20xx“).",
+    },
+    "value.amount": {
+      label: "zu versteuerndes Einkommen (€)",
+      kind: "money",
+      signed: true,
+      description:
+        "Die Zeile „zu versteuerndes Einkommen“ des Bescheids, nicht Summe der Einkünfte, Gesamtbetrag der Einkünfte oder Einkommen. Mit „Übernehmen“ wird sie zum zvE laut Bescheid für dieses Jahr (Eigentümer-Seite) und ersetzt einen früheren Bescheid desselben Jahres; die Steuerwirkung rechnet dann mit diesem Betrag statt mit der Schätzung.",
+    },
+  },
 };
 
 /**
@@ -408,6 +435,8 @@ const CREATE_FIELDS: Readonly<Record<string, readonly string[]>> = {
   rent: ["cold_rent", "operating_costs_prepayment", "effective_from"],
   // _DepositValues (DepositReceivedBody + tenancy_id)
   deposit_received: ["tenancy_id", "amount", "received_on"],
+  // IncomeInputCreate, kind bescheid_zve (the apply sets the kind and this document)
+  income_input: ["tax_year", "value.amount"],
 };
 
 /** A tax_input record's title, by the kind its key names. */
@@ -517,6 +546,8 @@ function recordTitle(record: ProposalRecord): string {
       return `Verknüpfung: ${lookup(LINK_TARGET, rest)}`;
     case "tax_input":
       return lookup(TAX_INPUT_TITLE, rest);
+    case "income_input":
+      return "Einkommensteuerbescheid: zvE laut Bescheid";
     default:
       return record.key;
   }
@@ -564,7 +595,7 @@ function fromRaw(spec: FieldSpec, raw: string): Parsed<unknown> {
   if (raw.trim() === "") return { ok: true, value: null };
   switch (spec.kind) {
     case "money":
-      return toMoneyString(raw);
+      return spec.signed ? toSignedMoneyString(raw) : toMoneyString(raw);
     case "rate":
       return toRate(raw, 6);
     case "area":
@@ -992,6 +1023,8 @@ function appliedLabel(entity: AppliedEntity): string {
       return "Kautionseingang erfasst";
     case "tax_input":
       return `${lookup(TAX_INPUT_TITLE, rest)} als Steuerangabe erfasst`;
+    case "income_input":
+      return "zvE laut Bescheid erfasst";
     default:
       return entity.key;
   }
@@ -1020,6 +1053,8 @@ function entityHref(entity: AppliedEntity, propertyId: string | null): string | 
       return propertyId ? `/properties/${propertyId}?tab=aufteilung` : null;
     case "ownership":
       return `/properties/${id}?tab=eigentuemer`;
+    case "income_input":
+      return "/owners"; // the Eigentümer page's Einkommen section, "zvE laut Bescheid"
     default:
       return null;
   }

@@ -26,6 +26,10 @@ UNKNOWN = "unbekannt"
 _KEY_LINE = re.compile(r"([a-z0-9_]+):[ \t]*(.*)")
 _NUMBER = re.compile(r"[+-]?[0-9][0-9.,]*[0-9]|[+-]?[0-9]")
 _THOUSANDS_ONLY = re.compile(r"[+-]?[0-9]{1,3}(\.[0-9]{3})+")
+# A minus written apart from the number (D129 review): "./. 5.000", "- 5.000,00", "−5.000"
+# (U+2212) at the start of the value, or "5.000,00-" at its end.
+_SEPARATE_SIGN = re.compile(r"(?:\./\.|[-\u2212]) ?(?=[0-9])")
+_TRAILING_MINUS = re.compile(r"[0-9]-$")
 _NUMERIC_DATE = re.compile(r"([0-9]{1,2})\.\s?([0-9]{1,2})\.\s?([0-9]{4})")
 _ISO_DATE = re.compile(r"([0-9]{4})-([0-9]{2})-([0-9]{2})")
 # A two-digit year, as handwritten by a signature ("Ort, den 30.3.26", Luis's Darlehensvertrag,
@@ -81,8 +85,9 @@ def parse_lines(
     Only keys of EXTRACTION_MODELS[kind] count; a repeated key: the last line wins. A field
     the response did not mention is not in the result (the caller fills it with
     ExtractedValue.missing()). page_offset is the first page of the request's chunk minus 1,
-    for a PDF split into several requests. For the two pay documents (SCRUBBED_KINDS) the
-    lines and every quote are scrubbed of identifiers first (scrub_identifiers, D103), with
+    for a PDF split into several requests. For the owners' tax documents (SCRUBBED_KINDS: the
+    two pay documents and the Einkommensteuerbescheid) the lines and every quote are scrubbed
+    of identifiers first (scrub_identifiers, D103, D129), with
     reference_year (the job clock's year; default: this year) for the birth-date rule.
     """
     model = EXTRACTION_MODELS[kind]
@@ -254,8 +259,20 @@ def normalize_value(raw: str, kind: ValueKind):
 
 def _decimal(raw: str) -> Decimal:
     """The first number in the text, German form first: a comma is the decimal separator and
-    dots group thousands; without a comma, dots in groups of three are thousands."""
-    match = _NUMBER.search(raw.replace(" ", " "))
+    dots group thousands; without a comma, dots in groups of three are thousands.
+
+    A negative may also be written with the sign apart from the digits, as an
+    Einkommensteuerbescheid prints a negative zvE ("./. 5.000"), or as "- 5.000,00", "−5.000"
+    or "5.000,00-". Only a sign at the very start (at most one space before the digits) or at
+    the very end of the value counts, so a dash in running text never turns into a sign."""
+    text = raw.replace("\u00a0", " ").strip()
+    negative = False
+    lead = _SEPARATE_SIGN.match(text)
+    if lead is not None:
+        negative, text = True, text[lead.end() :]
+    elif _TRAILING_MINUS.search(text):
+        negative, text = True, text[:-1]
+    match = _NUMBER.search(text)
     if match is None:
         raise _Invalid("no number")
     token = match.group()
@@ -276,7 +293,7 @@ def _decimal(raw: str) -> Decimal:
         raise _Invalid("not a number") from None
     if not number.is_finite():
         raise _Invalid("not a finite number")
-    return number
+    return -number if negative and number > 0 else number
 
 
 def _plain(number: Decimal) -> str:
@@ -349,13 +366,18 @@ def _iban(raw: str) -> str:
     raise _Invalid("not a valid IBAN")
 
 
-# --- The identifier scrub of the pay documents (phase-4b.md D96, D103, §8.3) -------------
+# --- The identifier scrub of the owners' own tax documents (phase-4b.md D96, D103, D129) ---
 
-# The two kinds whose lines and quotes are scrubbed before anything is stored: an owner's
-# Lohnsteuerbescheinigung and payslip. The model sees the whole page; a quote it cites can
-# span a neighbouring field, and a value it writes can carry more than was asked.
+# The kinds whose lines and quotes are scrubbed before anything is stored: an owner's
+# Lohnsteuerbescheinigung and payslip (D103) and the household's Einkommensteuerbescheid
+# (D129). The model sees the whole page; a quote it cites can span a neighbouring field, and a
+# value it writes can carry more than was asked.
 SCRUBBED_KINDS = frozenset(
-    {ExtractionKind.LOHNSTEUERBESCHEINIGUNG, ExtractionKind.GEHALTSABRECHNUNG}
+    {
+        ExtractionKind.LOHNSTEUERBESCHEINIGUNG,
+        ExtractionKind.GEHALTSABRECHNUNG,
+        ExtractionKind.EINKOMMENSTEUERBESCHEID,
+    }
 )
 SCRUBBED = "…"
 
@@ -418,9 +440,12 @@ _PATTERNS = (
     re.compile(r"(?<![A-Za-z0-9])[A-Z]{8}[0-9]{2}[A-Z][0-9]{2}[A-Z](?![A-Za-z0-9])"),
     # An IBAN, grouped or not.
     re.compile(r"(?<![A-Za-z0-9])[A-Z]{2}[0-9]{2}(?:[ \t]?[A-Z0-9]){11,30}(?![A-Za-z0-9])"),
-    # A Steuernummer ("12/345/67890", "143/123/45678") and any run of nine or more digits (an
-    # amount on these documents always has separators).
+    # A Steuernummer as the Länder print it ("12/345/67890", "143/123/45678", D129), its
+    # 13-digit ELSTER form ("2181508150123"), and any run of nine or more digits (an amount on
+    # these documents always has separators). The 13-digit form is a run of nine or more as
+    # well; it is named so that D129's two formats stay covered if the run rule changes.
     re.compile(r"(?<![0-9/])[0-9]{2,3}/[0-9]{3,4}/[0-9]{4,5}(?![0-9/])"),
+    re.compile(r"(?<![0-9])[0-9]{13}(?![0-9])"),
     re.compile(r"(?<![0-9])[0-9]{9,}(?![0-9])"),
     # A street with its number ("Musterweg 9", "Industriestr. 5a") and a postal code with its
     # town ("12345 Musterstadt"): the employee's or the employer's address.
@@ -437,14 +462,15 @@ _PATTERNS = (
 
 
 def scrub_identifiers(text: str, *, reference_year: int | None = None) -> str:
-    """The text with every identifier of a pay document replaced by "…" (D103): a value after
-    an identifier's label (Identifikationsnummer, eTIN, Sozialversicherungsnummer,
-    Personalnummer, Steuernummer, IBAN, Geburtsdatum, ...), every number on the line under a
-    line of such labels only, a full date at least 14 years before reference_year (a birth
-    date; default: this year), an Identifikationsnummer, a Sozialversicherungsnummer, an
-    eTIN, an IBAN, a Steuernummer, any run of nine or more digits, a street with its house
-    number and a postal code with its town. Amounts, the period's dates, the tax class and
-    names stay. Pure and idempotent; lines are kept."""
+    """The text with every identifier of a pay document or an Einkommensteuerbescheid
+    replaced by "…" (D103, D129): a value after an identifier's label
+    (Identifikationsnummer, eTIN, Sozialversicherungsnummer, Personalnummer, Steuernummer,
+    IBAN, Geburtsdatum, ...), every number on the line under a line of such labels only, a
+    full date at least 14 years before reference_year (a birth date; default: this year), an
+    Identifikationsnummer, a Sozialversicherungsnummer, an eTIN, an IBAN, a Steuernummer
+    (with slashes or in its 13-digit form), any run of nine or more digits, a street with its
+    house number and a postal code with its town. Amounts, the period's dates, the tax class
+    and names stay. Pure and idempotent; lines are kept."""
     year = date.today().year if reference_year is None else reference_year
     text = _under_labels(text)
     text = _LABELLED.sub(lambda m: f"{m.group('label')}{m.group('sep')}{SCRUBBED}", text)
@@ -481,6 +507,7 @@ _BY_SUBTYPE: dict[DocumentSubtype, ExtractionKind] = {
     DocumentSubtype.HANDOVER_PROTOCOL: ExtractionKind.HANDOVER_PROTOCOL,
     DocumentSubtype.DEPOSIT_RECORD: ExtractionKind.DEPOSIT_RECORD,
     DocumentSubtype.GRUNDSTEUERBESCHEID: ExtractionKind.GRUNDSTEUERBESCHEID,
+    DocumentSubtype.EINKOMMENSTEUERBESCHEID: ExtractionKind.EINKOMMENSTEUERBESCHEID,
 }
 _BY_TYPE: dict[DocumentType, ExtractionKind] = {
     DocumentType.INVOICE: ExtractionKind.INVOICE,

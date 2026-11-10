@@ -345,6 +345,7 @@ export function IncomeSection({ owners }: { owners: Owner[] }) {
                     defaultText="kein Bescheid erfasst"
                     onChanged={changed}
                   />
+                  <ReadUpload label="Bescheid hochladen und auslesen" />
                 </dd>
               </div>
               <div>
