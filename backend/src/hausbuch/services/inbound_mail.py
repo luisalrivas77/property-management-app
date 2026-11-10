@@ -20,6 +20,11 @@ accepted attachment brings and records each attempt at a mail:
 - `record_mail`: one `inbound_mail` row per attempt, with the attachment links and one
   `document.received_by_email` event per document. A message is final after an accepted or
   rejected row, or MAX_ATTEMPTS failed ones (`final_message_hashes`).
+- `note_poll_outcome`: a poll that cannot log in, cannot open its label or has not reached
+  the server for several polls is a `workspace.inbox_poll_failed` event, and the first
+  completed poll after it a `workspace.inbox_poll_recovered` one; each only when the
+  outcome changes, so the log holds the transitions, not every poll. The card
+  (`email_inbox_failed`) is computed on read from the latest of them.
 
 Nothing of the mail is stored but its attachments: a row carries the SHA-256 of the
 Message-ID, the time, the decision, the code and the counts (§5.5).
@@ -35,6 +40,7 @@ from sqlalchemy import Connection, and_, func, or_, select
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import app_user as app_user_table
 from hausbuch.db.tables import document as document_table
+from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import inbound_mail as mail_table
 from hausbuch.db.tables import inbound_mail_attachment as link_table
 from hausbuch.db.tables import statement_import as import_table
@@ -44,7 +50,13 @@ from hausbuch.schemas.api import InboxItem, InboxItemKind
 from hausbuch.schemas.bank import StatementFormat
 from hausbuch.schemas.document import DocumentTyping
 from hausbuch.schemas.enums import DocumentSource, DocumentType
-from hausbuch.schemas.events import DocumentReceivedByEmail, EventType
+from hausbuch.schemas.events import (
+    DocumentReceivedByEmail,
+    EventType,
+    InboxPollCode,
+    InboxPollFailed,
+    InboxPollRecovered,
+)
 from hausbuch.schemas.inbound_mail import MAX_ATTEMPTS, InboundDecision, InboundMail
 from hausbuch.storage import BlobStore
 
@@ -267,6 +279,79 @@ def record_mail(
     return mail_id
 
 
+# --- The poll's own outcome ------------------------------------------------------------------
+
+_POLL_EVENTS = (EventType.WORKSPACE_INBOX_POLL_FAILED, EventType.WORKSPACE_INBOX_POLL_RECOVERED)
+
+
+@dataclass(frozen=True)
+class PollState:
+    """The latest poll-outcome event: failing with `code`, or recovered from `code`."""
+
+    failing: bool
+    code: str
+    recorded_at: datetime
+
+
+def poll_state(conn: Connection) -> PollState | None:
+    """The latest workspace.inbox_poll_* event, or None before the first. Row-level security
+    keeps it to the transaction's workspace (the events' entity is the workspace itself)."""
+    t = event_table
+    row = conn.execute(
+        select(t.c.type, t.c.payload, t.c.recorded_at)
+        .where(t.c.entity_type == "workspace", t.c.type.in_([e.value for e in _POLL_EVENTS]))
+        .order_by(t.c.seq.desc())
+        .limit(1)
+    ).first()
+    if row is None:
+        return None
+    if row.type == EventType.WORKSPACE_INBOX_POLL_FAILED.value:
+        return PollState(True, row.payload["code"], row.recorded_at)
+    return PollState(False, row.payload["previous_code"], row.recorded_at)
+
+
+def note_poll_outcome(ctx: CommandContext, code: InboxPollCode | None) -> bool:
+    """Record the poll's outcome when it differs from the latest one: `code` for a failure a
+    person must fix, None for a poll that completed. Returns whether an event was written."""
+    state = poll_state(ctx.conn)
+    if code is not None:
+        if state is not None and state.failing and state.code == code:
+            return False
+        append_event(
+            ctx, EventType.WORKSPACE_INBOX_POLL_FAILED, ctx.workspace_id, InboxPollFailed(code=code)
+        )
+        return True
+    if state is None or not state.failing:
+        return False
+    append_event(
+        ctx,
+        EventType.WORKSPACE_INBOX_POLL_RECOVERED,
+        ctx.workspace_id,
+        InboxPollRecovered(previous_code=state.code),
+    )
+    return True
+
+
+# What the email_inbox_failed card says per code: what happened, and what to do (§5.5).
+_POLL_CARD = {
+    E.EMAIL_AUTH_REJECTED: (
+        "Der Posteingang per E-Mail kann sich nicht mehr bei Gmail anmelden"
+        f" ({E.EMAIL_AUTH_REJECTED}): das App-Passwort wurde widerrufen oder ist falsch.",
+        "Ein neues App-Passwort erstellen und als Secret hinterlegen.",
+    ),
+    E.EMAIL_LABEL_MISSING: (
+        "Der Posteingang per E-Mail findet sein Gmail-Label nicht"
+        f" ({E.EMAIL_LABEL_MISSING}); weitergeleitete Mails werden nicht gelesen.",
+        "Das Label in Gmail wieder anlegen oder seinen Namen im Secret korrigieren.",
+    ),
+    E.EMAIL_UNREACHABLE: (
+        "Der Posteingang per E-Mail erreicht Gmail seit mehreren Abrufen nicht"
+        f" ({E.EMAIL_UNREACHABLE}).",
+        "Meist vorübergehend. Hält es an, die Verbindung des Servers zu Gmail prüfen.",
+    ),
+}
+
+
 # --- Reads -----------------------------------------------------------------------------------
 
 
@@ -310,7 +395,8 @@ def inbound_mail_items(conn: Connection, now: datetime) -> list[InboxItem]:
       import);
     - email_received for a statement no account took (inferred, no code is stored), shown
       until an import of that document exists, for at most 30 days;
-    - email_failed for a mail whose third attempt failed in the last 30 days."""
+    - email_failed for a mail whose third attempt failed in the last 30 days;
+    - email_inbox_failed while the latest poll outcome is a failure (note_poll_outcome)."""
     imported_docs = select(import_table.c.document_id)
     statement_doc = and_(
         link_table.c.import_id.is_(None),
@@ -374,6 +460,17 @@ def inbound_mail_items(conn: Connection, now: datetime) -> list[InboxItem]:
                     f" ({E.EMAIL_FAILED})."
                 ),
                 question="Bitte die Anhänge direkt hochladen.",
+            )
+        )
+    state = poll_state(conn)
+    if state is not None and state.failing:
+        reasoning, question = _POLL_CARD[state.code]
+        items.append(
+            InboxItem(
+                kind=InboxItemKind.EMAIL_INBOX_FAILED,
+                created_at=state.recorded_at,
+                reasoning=reasoning,
+                question=question,
             )
         )
     return items

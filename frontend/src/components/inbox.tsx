@@ -16,7 +16,9 @@
 //   at /tax/<year>/fragen;
 // - a forwarded mail's attachment (email_received, phase 5 D121): a link to the document, or
 //   to the account's Kontoauszüge when it was imported; a mail that failed three times
-//   (email_failed) has no action, its question says to upload the attachments directly.
+//   (email_failed) has no action, its question says to upload the attachments directly. A
+//   poll that cannot log in, find its label or reach Gmail (email_inbox_failed) has none
+//   either: its question says what to fix, and the card goes once a poll completes.
 //
 // GET /inbox names ids only, so the lines, imports, accounts, duplicates and documents are
 // loaded alongside to show what each item is about. Amounts are shown as the API returns them.
@@ -74,13 +76,14 @@ const SECTION_OF: Record<InboxItemKind, SectionKey> = {
   import_unreconciled: "imports",
   possible_duplicate: "duplicates",
   questionnaire_open: "other",
-  // Phase 5's six card kinds share the "Automatisch" section (phase-5.md §11); the API
+  // Phase 5's card kinds (§11's six, and email_inbox_failed) share "Automatisch"; the API
   // returns each only once its step is built.
   bank_approval_needed: "automatic",
   bank_sync_failed: "automatic",
   bank_balance_drift: "automatic",
   email_received: "automatic",
   email_failed: "automatic",
+  email_inbox_failed: "automatic",
   reminder: "automatic",
 };
 
@@ -106,6 +109,7 @@ const PILL_CLASS: Record<InboxItemKind, string> = {
   bank_balance_drift: "badge badge-warn",
   email_received: "badge badge-info",
   email_failed: "badge badge-danger",
+  email_inbox_failed: "badge badge-danger",
   reminder: "badge badge-info",
 };
 
@@ -330,6 +334,9 @@ function EntryTitle({ item, data }: { item: InboxItem; data: InboxData }) {
   }
   if (item.kind === "email_failed") {
     return <strong>Weitergeleitete Mail</strong>;
+  }
+  if (item.kind === "email_inbox_failed") {
+    return <strong>Posteingang per E-Mail</strong>;
   }
   if (item.import_id) {
     const imp = data.imports.get(item.import_id);

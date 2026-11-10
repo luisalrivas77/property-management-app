@@ -11001,6 +11001,8 @@
           "workspace.questionnaire_answered",
           "workspace.reminder_acknowledged",
           "workspace.notification_sent",
+          "workspace.inbox_poll_failed",
+          "workspace.inbox_poll_recovered",
           "proposal.created",
           "proposal.superseded",
           "proposal.rejected",
@@ -12031,6 +12033,7 @@
           "bank_balance_drift",
           "email_received",
           "email_failed",
+          "email_inbox_failed",
           "reminder"
         ],
         "title": "InboxItemKind",

@@ -684,8 +684,8 @@ once.
 3. **Gmail filter** (Settings → Filters → Create a new filter): To
    `<user>+<token>@gmail.com` → *Apply the label* `Hausbuch` (create the label here), and
    optionally *Skip the Inbox*. Only mails to the token address get the label; the app reads
-   nothing else. If the label is missing or renamed, the poll logs `email.label_missing` and
-   creates nothing.
+   nothing else. If the label is missing or renamed, the poll logs `email.label_missing`,
+   shows a card on Zu prüfen and creates nothing.
 4. **Secret Manager** (step 8): four secrets, `hausbuch-inbox-imap-user` (the Gmail
    address), `hausbuch-inbox-imap-password` (the app password), `hausbuch-inbox-address`
    (the token address) and `hausbuch-inbox-label` (`Hausbuch`).
@@ -718,7 +718,20 @@ mistyped, or 2-Step Verification turned off); `"email.label_missing"` means the 
 gone or renamed; `"connect_failed"` means the connection to `imap.gmail.com` never came up
 (the line's `exc_type` names the error); `"connection_lost"` means it broke in the middle,
 and the next poll starts that mail again; `"skipped"` means `imaplib.Debug` was on or not
-exactly one workspace exists. These are log lines only: no card shows them.
+exactly one workspace exists. The line's `unreadable` counts mails whose listing Gmail
+refused (or answered in a form the app cannot read) even when asked for alone: they are
+skipped and asked for again at the next poll, and the other mails go on.
+
+**The card for a poll that needs you.** Three of these outcomes show a card in Zu prüfen ›
+Automatisch, titled "Posteingang per E-Mail", until a later poll completes:
+`email.auth_rejected` (the text says to create a new app password and paste it as the
+secret), `email.label_missing` (create the label again or correct its name in the secret),
+and `email.unreachable`, which is `connect_failed` three polls in a row, about 30 minutes
+(one failed connect is usually a blip and shows nothing; the count is kept in the running
+container only, so a restart starts it again). Each change is one History event on the
+workspace (`workspace.inbox_poll_failed` with the code, then
+`workspace.inbox_poll_recovered`), never one per poll. `connection_lost`, `skipped` and a
+database error stay log lines only.
 
 **Rotation or revocation**: create a new app password, add it as a new version of
 `hausbuch-inbox-imap-password`, paste it into the container, redeploy, then revoke the old

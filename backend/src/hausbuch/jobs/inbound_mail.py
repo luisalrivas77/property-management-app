@@ -38,9 +38,17 @@ counted as `unrecorded` in the log line and decided again at each poll, never fe
 
 Workspace: the mailbox belongs to the deployment, and the members of one workspace are its
 allowed senders, so the poll runs only when exactly one workspace is provisioned (this
-household's deployment) and logs a skip otherwise. Poll-level failures (the login refused
-after the app password was revoked, the label missing) are logged with their code; no table
-holds them, so no card shows them (reported to the orchestrator as a spec gap).
+household's deployment) and logs a skip otherwise.
+
+Poll-level failures a person must fix become a card (§5.5): the login refused after the app
+password was revoked (email.auth_rejected), the label missing (email.label_missing), and a
+server not reached for UNREACHABLE_AFTER polls in a row (email.unreachable; one failed
+connect is usually a blip). Each is a workspace.inbox_poll_failed event written only when the
+outcome changes, and the first completed poll after it writes workspace.inbox_poll_recovered,
+which ends the card (services.inbound_mail.note_poll_outcome). The run of failed connects is
+counted in this process only, so a restart starts it again. A skipped poll (not exactly one
+workspace, imaplib.Debug set) and a connection lost or a database error mid-poll change
+nothing: they are logged, and the next poll decides.
 """
 
 import contextlib
@@ -86,6 +94,7 @@ SEARCH_DAYS = 30  # D121: UID SEARCH SINCE today - 30 days
 FETCH_BATCH = 50  # header and BODYSTRUCTURE fetches per command
 IMAP_PORT = 993
 IMAP_TIMEOUT_S = 60
+UNREACHABLE_AFTER = 3  # failed connects in a row before the email.unreachable card (30 min)
 
 # The IMAP commands this module may issue (D121's whitelist). "UID SEARCH" and "UID FETCH"
 # are the UID command with its sub-command.
@@ -99,6 +108,9 @@ SYSTEM_ACTOR = Actor(ActorType.SYSTEM, POLL_TASK)
 logger = logging.getLogger("hausbuch.jobs.inbound_mail")
 
 Connect = Callable[[Settings], imaplib.IMAP4]
+
+# Failed connects in a row per workspace, in this process (see the module docstring).
+_connect_failures: Counter = Counter()
 
 
 def configured(settings: Settings) -> bool:
@@ -183,8 +195,14 @@ def run_poll_inbox(
         _log(result, reason="workspaces")
         return result
     now = deps.clock()
+    result = _poll(deps, connect, ws, now)
+    _note_outcome(deps, ws, now, result)
+    return result
+
+
+def _poll(deps: JobDeps, connect: Connect, ws: UUID, now: datetime) -> PollResult:
     try:
-        imap = connect(settings)
+        imap = connect(deps.settings)
     except (OSError, imaplib.IMAP4.error) as exc:
         result = PollResult("connect_failed")
         _log(result, exc_type=type(exc).__name__)
@@ -205,6 +223,34 @@ def run_poll_inbox(
             imap.logout()
     _log(result)
     return result
+
+
+_NO_CHANGE = object()
+
+
+def _outcome(ws: UUID, status: str) -> Any:
+    """The poll's outcome for the card: an email.* code, None for a completed poll, or
+    _NO_CHANGE (a lost connection, a database error, a connect failure not yet persistent)."""
+    if status == "connect_failed":
+        _connect_failures[ws] += 1
+        return E.EMAIL_UNREACHABLE if _connect_failures[ws] >= UNREACHABLE_AFTER else _NO_CHANGE
+    _connect_failures.pop(ws, None)  # the server answered
+    if status in (E.EMAIL_AUTH_REJECTED, E.EMAIL_LABEL_MISSING):
+        return status
+    return None if status == "done" else _NO_CHANGE
+
+
+def _note_outcome(deps: JobDeps, ws: UUID, now: datetime, result: PollResult) -> None:
+    """Write the outcome event when it changed. Never raises (the database may be the fault)."""
+    outcome = _outcome(ws, result.status)
+    if outcome is _NO_CHANGE:
+        return
+    try:
+        with workspace_transaction(deps.engine, ws) as conn:
+            service.note_poll_outcome(new_command(conn, ws, SYSTEM_ACTOR, now=now), outcome)
+    except Exception as exc:  # noqa: BLE001 - class name only; the next poll tries again
+        fields = {"event": "inbound_mail_outcome_failed", "exc_type": type(exc).__name__}
+        logger.error("the poll's outcome could not be recorded", extra={"fields": fields})
 
 
 def _session(deps: JobDeps, imap: imaplib.IMAP4, ws: UUID, now: datetime, result) -> None:

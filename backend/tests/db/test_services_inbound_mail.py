@@ -581,6 +581,99 @@ def test_a_revoked_app_password_fails_the_poll(inbox):
     assert "EXAMINE" not in server.commands and server.violations == []
 
 
+_POLL_EVENTS = (EventType.WORKSPACE_INBOX_POLL_FAILED, EventType.WORKSPACE_INBOX_POLL_RECOVERED)
+
+
+def _poll_events(engine, ws) -> list[tuple[str, dict]]:
+    with workspace_transaction(engine, ws) as conn:
+        return [(e.type.value, e.payload) for e in list_events(conn) if e.type in _POLL_EVENTS]
+
+
+def _poll_cards(engine, ws, at=NOW) -> list:
+    with workspace_transaction(engine, ws) as conn:
+        items = review.inbox(conn, today=at.date(), now=at)
+    return [i for i in items if i.kind is InboxItemKind.EMAIL_INBOX_FAILED]
+
+
+def test_a_revoked_app_password_shows_a_card_until_a_poll_logs_in_again(inbox, app_engine):
+    """§5.5: the revoke path ends in a card. One event per change, not one per poll."""
+    poll, server, ws, _ = inbox
+    server.password = "revoked"
+
+    for n in range(3):
+        assert poll(at=NOW + timedelta(minutes=10 * n)).status == E.EMAIL_AUTH_REJECTED
+
+    assert _poll_events(app_engine, ws) == [
+        ("workspace.inbox_poll_failed", {"code": E.EMAIL_AUTH_REJECTED})
+    ]
+    [card] = _poll_cards(app_engine, ws, NOW + timedelta(hours=1))
+    assert card.created_at == NOW
+    assert "nicht mehr bei Gmail anmelden" in card.reasoning
+    assert card.question == "Ein neues App-Passwort erstellen und als Secret hinterlegen."
+    for text in (IMAP_USER, IMAP_PASSWORD, TOKEN, LABEL):
+        assert text not in f"{card.reasoning} {card.question}"
+
+    server.password = IMAP_PASSWORD  # a new app password, pasted as the secret
+    assert poll(at=NOW + timedelta(minutes=40)).status == "done"
+    assert poll(at=NOW + timedelta(minutes=50)).status == "done"
+
+    assert _poll_events(app_engine, ws) == [
+        ("workspace.inbox_poll_failed", {"code": E.EMAIL_AUTH_REJECTED}),
+        ("workspace.inbox_poll_recovered", {"previous_code": E.EMAIL_AUTH_REJECTED}),
+    ]
+    assert _poll_cards(app_engine, ws, NOW + timedelta(hours=1)) == []
+
+
+def test_a_missing_label_shows_its_own_card(inbox, app_engine):
+    poll, server, ws, _ = inbox
+    server.password = "revoked"
+    poll()
+    server.password, server.labels = IMAP_PASSWORD, {}  # logged in again, but no label
+    poll(at=NOW + timedelta(minutes=10))
+
+    assert _poll_events(app_engine, ws) == [
+        ("workspace.inbox_poll_failed", {"code": E.EMAIL_AUTH_REJECTED}),
+        ("workspace.inbox_poll_failed", {"code": E.EMAIL_LABEL_MISSING}),
+    ]
+    [card] = _poll_cards(app_engine, ws, NOW + timedelta(hours=1))
+    assert "Gmail-Label nicht" in card.reasoning
+
+
+def test_a_completed_poll_without_an_earlier_failure_writes_nothing(inbox, app_engine):
+    poll, _, ws, _ = inbox
+    assert poll().status == "done"
+    assert _poll_events(app_engine, ws) == []
+    assert _poll_cards(app_engine, ws) == []
+
+
+def test_the_server_unreachable_three_polls_in_a_row_shows_a_card(inbox, app_engine):
+    poll, server, ws, deps = inbox
+
+    def unreachable(settings):
+        raise OSError("network down")
+
+    def attempt(n, connect):
+        at = NOW + timedelta(minutes=10 * n)
+        d = JobDeps(deps.engine, deps.settings, deps.blob_store, deps.model_client, lambda: at)
+        return job.run_poll_inbox(d, connect=connect, workspace_id=ws).status
+
+    # Two failed connects, then one that works: a blip, no card, and the run starts again.
+    assert [attempt(n, unreachable) for n in range(2)] == ["connect_failed"] * 2
+    assert attempt(2, lambda s: FakeImap(server)) == "done"
+    assert [attempt(n, unreachable) for n in range(3, 5)] == ["connect_failed"] * 2
+    assert _poll_events(app_engine, ws) == []
+
+    assert [attempt(n, unreachable) for n in range(5, 8)] == ["connect_failed"] * 3
+
+    assert _poll_events(app_engine, ws) == [
+        ("workspace.inbox_poll_failed", {"code": E.EMAIL_UNREACHABLE})
+    ]
+    [card] = _poll_cards(app_engine, ws, NOW + timedelta(hours=2))
+    assert card.created_at == NOW + timedelta(minutes=50)  # the third in a row
+    assert attempt(8, lambda s: FakeImap(server)) == "done"
+    assert _poll_cards(app_engine, ws, NOW + timedelta(hours=2)) == []
+
+
 def test_the_poll_is_off_until_configured_and_refuses_imaplib_debug(inbox, tmp_path, monkeypatch):
     poll, _, _, deps = inbox
     off = JobDeps(

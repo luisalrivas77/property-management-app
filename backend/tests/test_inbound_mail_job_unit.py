@@ -68,3 +68,14 @@ def test_the_module_defers_no_job_and_calls_no_writing_imap_method():
         "imap_mailbox(settings.inbox_label), readonly=True"
     ]
     assert "smtplib" not in code
+
+
+def test_every_poll_failure_code_has_a_card():
+    from typing import get_args
+
+    from hausbuch.rules import errors as E
+    from hausbuch.schemas.events import InboxPollCode
+    from hausbuch.services import inbound_mail as service
+
+    codes = {E.EMAIL_AUTH_REJECTED, E.EMAIL_LABEL_MISSING, E.EMAIL_UNREACHABLE}
+    assert set(get_args(InboxPollCode)) == set(service._POLL_CARD) == codes

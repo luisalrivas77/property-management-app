@@ -223,6 +223,8 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "workspace.questionnaire_answered": "Jahresfrage beantwortet",
   "workspace.reminder_acknowledged": "Erinnerung erledigt, verschoben oder stumm geschaltet",
   "workspace.notification_sent": "Erinnerung per E-Mail verschickt",
+  "workspace.inbox_poll_failed": "Posteingang per E-Mail gestört",
+  "workspace.inbox_poll_recovered": "Posteingang per E-Mail läuft wieder",
   "proposal.created": "Vorschlag erstellt",
   "proposal.superseded": "Vorschlag ersetzt",
   "proposal.rejected": "Vorschlag abgelehnt",
@@ -406,6 +408,7 @@ export const INBOX_ITEM_KIND: Record<InboxItemKind, string> = {
   bank_balance_drift: "Kontostand weicht ab",
   email_received: "Per Mail erhalten",
   email_failed: "Mail nicht übernommen",
+  email_inbox_failed: "Posteingang gestört",
   reminder: "Termin",
 };
 
