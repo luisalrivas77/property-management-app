@@ -428,10 +428,12 @@ test("a failed read and a tenant document offer manual entry", async ({ page, si
 
 const empty = { value: null, source: null, derived_from: [], checks: [], confidence: "low" };
 const POINTER = "Prüfen Sie den Vorschlag oben";
+const LINK_POINTER = "Die vorgeschlagene Verknüpfung prüfen Sie im Vorschlag oben";
 
 /** A Verwaltervertrag read with its fee (phase 2 D132): the typing record carries the hand
- * fields, the Betrag computed by code (PR #137), the others read or empty. */
-const MANAGEMENT_RECORDS = [
+ * fields, the Betrag computed by code (PR #137), the others read or empty; and the link to its
+ * property, found by address. */
+const managementRecords = (propertyId: string) => [
   {
     key: "typing",
     entity_type: "typing",
@@ -449,11 +451,24 @@ const MANAGEMENT_RECORDS = [
     },
     notes: [],
   },
+  { key: "link:property", entity_type: "link", mode: "create", target_id: propertyId, fields: {}, notes: [] },
 ];
 
-test("one form: the hand fields are in the typing card, and the page's form waits for the decision", async ({ page, signedIn }) => {
+test("one form: the hand fields and the link are in the card, and the page's forms wait for the decision", async ({ page, signedIn }) => {
   void signedIn;
+  const property = await apiCall<{ id: string }>(page, "POST", "/api/properties", {
+    label: "Wohnung Verwaltung",
+    kind: "etw",
+    address: { street: "Teststraße", house_number: "7", postal_code: "10115", city: "Berlin", country_code: "DE" },
+    build_year: 1994,
+    notarized_on: "2024-03-15",
+    purchase_date: "2024-05-01",
+    purchase_price: "289000.00",
+  });
   const documentId = await uploadPdf(page, "Verwaltervertrag.pdf");
+  // A link the document already has: shown, but not removable while the card proposes one.
+  await apiCall(page, "POST", `/api/documents/${documentId}/links`, { target_type: "property", target_id: property.id });
+  const MANAGEMENT_RECORDS = managementRecords(property.id);
   const mock: Mock = {
     list: [proposal(documentId, { kind: "management_contract", records: MANAGEMENT_RECORDS })],
     poll: null,
@@ -472,10 +487,16 @@ test("one form: the hand fields are in the typing card, and the page's form wait
 
   const form = vorschlag(page).getByRole("form", { name: "Vorschlag prüfen" });
   const typingForm = page.getByRole("form", { name: "Typisierung bearbeiten" });
+  const linkForm = page.getByRole("form", { name: "Verknüpfung hinzufügen" });
+  const remove = page.getByRole("button", { name: "entfernen", exact: true });
   await expect(form).toBeVisible();
-  // Never both: while the proposal waits, the page's own typing form is not there.
+  // Never both: while the proposal waits, the page's own typing and link forms are not there.
   await expect(typingForm).toHaveCount(0);
   await expect(page.getByText(POINTER)).toBeVisible();
+  await expect(linkForm).toHaveCount(0);
+  await expect(remove).toHaveCount(0);
+  await expect(page.getByText(LINK_POINTER)).toBeVisible();
+  await expect(page.getByText(/\(seit /)).toHaveCount(1); // the existing link, read-only
 
   const card = form.getByRole("region", { name: /^Typisierung/ });
   await expect(card.getByLabel("Vergütung pro Monat (€)")).toHaveValue("35,70");
@@ -506,6 +527,9 @@ test("one form: the hand fields are in the typing card, and the page's form wait
   await expect(form).toHaveCount(0);
   await expect(typingForm).toBeVisible();
   await expect(page.getByText(POINTER)).toHaveCount(0);
+  await expect(linkForm).toBeVisible();
+  await expect(remove).toHaveCount(1);
+  await expect(page.getByText(LINK_POINTER)).toHaveCount(0);
 });
 
 test("one form: a tenant document's typing-only proposal hides the page's form too", async ({ page, signedIn }) => {
@@ -545,4 +569,7 @@ test("one form: a tenant document's typing-only proposal hides the page's form t
   const card = form.getByRole("region", { name: /^Typisierung/ });
   await expect(card.getByLabel("Betrag gesamt (€)")).toHaveValue("");
   await expect(card.getByLabel("Notiz", { exact: true })).toBeVisible();
+  // No link proposed: linking stays on the page, so the link form shows.
+  await expect(page.getByRole("form", { name: "Verknüpfung hinzufügen" })).toBeVisible();
+  await expect(page.getByText(LINK_POINTER)).toHaveCount(0);
 });

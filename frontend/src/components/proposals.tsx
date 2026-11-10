@@ -17,6 +17,8 @@
 //   Referenz, Notiz as the kind has them; D132): read, computed by code ("Berechnet aus …") or
 //   empty to type. While a proposal is pending review (isPendingReview) the page hides its own
 //   typing form, so the card is the one form; an empty hand field is sent as null (a clear).
+//   When it proposes a link (proposesLink), the page also hides its link form and remove
+//   buttons and shows the existing links read-only.
 //   Nothing is saved before "Übernehmen" (D14): apply sends every
 //   record with the final values and the per-field decisions; a 422's `loc` starts with the
 //   record key and lands at its field.
@@ -861,30 +863,43 @@ export function isPendingReview(proposal: Proposal): boolean {
   return proposal.status === "ready" || (proposal.status === "blocked_tenant_data" && (proposal.records ?? []).length > 0);
 }
 
+/** A pending proposal that proposes a link (link:property, link:loan, link:tenancy): its card is
+ * then the one place to link, and the page hides its own link form (D132). */
+export function proposesLink(proposal: Proposal): boolean {
+  return isPendingReview(proposal) && (proposal.records ?? []).some((record) => record.entity_type === "link");
+}
+
 /**
  * The "Vorschlag" section of a document page. `onApplied` reloads the page's document (its
  * typing and links change with an apply; a finished read changes its extraction).
- * `onPendingChange` tells the page whether a proposal is pending review (isPendingReview):
- * undefined while the proposals load, so the page shows neither form until it knows.
+ * `onPendingChange` tells the page whether a proposal is pending review (isPendingReview), and
+ * `onPendingLinksChange` whether that proposal proposes a link (proposesLink): undefined while
+ * the proposals load, so the page shows neither of its forms until it knows.
  */
 export function ProposalSection({
   detail,
   directory,
   onApplied,
   onPendingChange,
+  onPendingLinksChange,
 }: {
   detail: DocumentDetail;
   directory: Directory | null;
   onApplied: () => void;
   onPendingChange?: (pending: boolean | undefined) => void;
+  onPendingLinksChange?: (pending: boolean | undefined) => void;
 }) {
   const documentId = detail.document.id;
   const { proposal, error, setProposal, reload } = useCurrentProposal(documentId, onApplied);
   // A failed load counts as none pending: the page's own form is then the way to type.
   const pending = proposal ? isPendingReview(proposal) : proposal === null || error ? false : undefined;
+  const pendingLinks = proposal ? proposesLink(proposal) : pending;
   useEffect(() => {
     onPendingChange?.(pending);
   }, [pending, onPendingChange]);
+  useEffect(() => {
+    onPendingLinksChange?.(pendingLinks);
+  }, [pendingLinks, onPendingLinksChange]);
   const [applied, setApplied] = useState<ProposalApplyResult | null>(null);
   const [actionError, setActionError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
