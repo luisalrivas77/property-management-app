@@ -24,8 +24,8 @@ from hausbuch.ai.requests import CLASSIFY_PAGES, classify_request, extract_reque
 from hausbuch.jobs.document_read import merge_values
 from hausbuch.rules.extraction_parse import parse_lines
 from hausbuch.schemas.ai import ExtractedValue
-from hausbuch.schemas.enums import ExtractionKind
-from hausbuch.schemas.extraction import EXTRACTION_MODELS
+from hausbuch.schemas.enums import DocumentSubtype, ExtractionKind
+from hausbuch.schemas.extraction import EXTRACTION_MODELS, asked_fields
 from hausbuch.settings import Settings
 
 
@@ -61,9 +61,13 @@ def classify_request_for(settings: Settings, data: bytes, media_type: str) -> Mo
 
 
 def extract_requests_for(
-    settings: Settings, kind: ExtractionKind, data: bytes, media_type: str
+    settings: Settings,
+    kind: ExtractionKind,
+    data: bytes,
+    media_type: str,
+    subtype: DocumentSubtype | None = None,
 ) -> list[tuple[int, ModelRequest]]:
-    """(page offset, request) per chunk."""
+    """(page offset, request) per chunk; the subtype picks the general reading's fields."""
     is_pdf = media_type == documents.PDF
     pages = page_total(data, media_type)
     ranges = documents.chunks(pages, settings.ai_max_pages) if is_pdf else [(0, 1)]
@@ -71,7 +75,7 @@ def extract_requests_for(
     for start, stop in ranges:
         chunk = documents.pdf_pages(data, start, stop) if is_pdf else data
         block = documents.document_block(chunk, media_type, citations=True)
-        requests.append((start, extract_request(settings, kind, block)))
+        requests.append((start, extract_request(settings, kind, block, subtype=subtype)))
     return requests
 
 
@@ -84,11 +88,20 @@ def chunk_values(
 
 
 def merged_values(
-    kind: ExtractionKind, chunks: Iterable[dict[str, ExtractedValue]]
+    kind: ExtractionKind,
+    chunks: Iterable[dict[str, ExtractedValue]],
+    subtype: DocumentSubtype | None = None,
 ) -> dict[str, ExtractedValue]:
-    """The chunks merged as the job merges them, with every field of the kind present."""
+    """The chunks merged as the job merges them, with every field of the kind present and
+    only the asked ones (asked_fields) keeping a value."""
     merged: dict[str, ExtractedValue] = {}
     for values in chunks:
         merge_values(merged, values)
     fields = EXTRACTION_MODELS[kind].model_fields
-    return {name: merged.get(name, ExtractedValue.missing()) for name in fields}
+    asked = asked_fields(kind, subtype)
+    return {
+        name: merged.get(name, ExtractedValue.missing())
+        if name in asked
+        else ExtractedValue.missing()
+        for name in fields
+    }

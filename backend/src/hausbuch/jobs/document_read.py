@@ -56,8 +56,8 @@ from hausbuch.rules.extraction_parse import (
     scrub_identifiers,
 )
 from hausbuch.schemas.ai import ClassifyOutput, ExtractedValue
-from hausbuch.schemas.enums import ActorType, ExtractionKind, ProposalStatus
-from hausbuch.schemas.extraction import EXTRACTION_MODELS
+from hausbuch.schemas.enums import ActorType, DocumentSubtype, ExtractionKind, ProposalStatus
+from hausbuch.schemas.extraction import EXTRACTION_MODELS, asked_fields
 from hausbuch.services import documents as document_service
 from hausbuch.services import proposals
 from hausbuch.services.context import Actor, new_command
@@ -319,12 +319,12 @@ def _read(
     ):
         _finish(deps, workspace_id, original.proposal_id, classification, classify_id)
         return
+    # Every document gets a reading since D130: a type without its own reader gets the general
+    # one (title and date, plus its subtype group's link fields).
     kind = extraction_kind(classification.type, classification.subtype)
-    if kind is None:  # typing-only: no per-type extraction for this type
-        _finish(deps, workspace_id, original.proposal_id, classification, classify_id, ok=True)
-        return
-
-    values, extract_id = _extract(deps, workspace_id, document_id, original, pages, kind)
+    values, extract_id = _extract(
+        deps, workspace_id, document_id, original, pages, kind, classification.subtype
+    )
     _finish(
         deps,
         workspace_id,
@@ -362,10 +362,13 @@ def _extract(
     original: _Original,
     pages: int,
     kind: ExtractionKind,
+    subtype: DocumentSubtype | None = None,
 ) -> tuple[dict[str, ExtractedValue], UUID]:
     """All fields of `kind`, merged over the chunks of a long PDF. The first chunk's
     ai_call id is the one handed over (record_read_result takes one; the others are in
-    ai_call under the same document)."""
+    ai_call under the same document). Only the fields the request asked for keep a value
+    (asked_fields: the general reading asks its subtype group's fields only, D131); any
+    other field is missing, even when the model wrote a line for it."""
     is_pdf = original.media_type == documents.PDF
     ranges = documents.chunks(pages, deps.settings.ai_max_pages) if is_pdf else [(0, 1)]
     merged: dict[str, ExtractedValue] = {}
@@ -376,7 +379,7 @@ def _extract(
         except documents.DocumentInputError as exc:
             raise _Stop(exc.code, first_id) from None
         block = documents.document_block(data, original.media_type, citations=True)
-        request = extract_request(deps.settings, kind, block)
+        request = extract_request(deps.settings, kind, block, subtype=subtype)
         values, call_id = _extract_chunk(
             deps, workspace_id, document_id, original.proposal_id, request, kind, start
         )
@@ -384,7 +387,13 @@ def _extract(
         merge_values(merged, values)
     assert first_id is not None
     fields = EXTRACTION_MODELS[kind].model_fields
-    return {name: merged.get(name, ExtractedValue.missing()) for name in fields}, first_id
+    asked = asked_fields(kind, subtype)
+    return {
+        name: merged.get(name, ExtractedValue.missing())
+        if name in asked
+        else ExtractedValue.missing()
+        for name in fields
+    }, first_id
 
 
 def _extract_chunk(

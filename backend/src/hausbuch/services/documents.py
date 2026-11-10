@@ -115,6 +115,10 @@ HAND_FIELD_MAP: dict[ExtractionKind, dict[HandField, str]] = {
     ExtractionKind.LOAN_CONTRACT: {"counterparty": "lender", "reference": "contract_number"},
     ExtractionKind.GRUNDSTEUERBESCHEID: {"reference": "reference"},
     ExtractionKind.STATEMENT: {"period_start": "period_start", "period_end": "period_end"},
+    # D130, D131: the general reading holds a lender and a number for the loan group only; a
+    # Verwaltervertrag names its manager.
+    ExtractionKind.GENERAL: {"counterparty": "lender", "reference": "contract_number"},
+    ExtractionKind.MANAGEMENT_CONTRACT: {"counterparty": "manager"},
 }
 
 

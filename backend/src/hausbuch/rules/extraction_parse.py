@@ -16,7 +16,7 @@ from decimal import Decimal, InvalidOperation
 
 from hausbuch.schemas.ai import CitedTextBlock, ExtractedValue, SourceRef
 from hausbuch.schemas.enums import DocumentSubtype, DocumentType, ExtractionKind
-from hausbuch.schemas.extraction import EXTRACTION_MODELS, ValueKind, value_kind
+from hausbuch.schemas.extraction import EXTRACTION_MODELS, TENANCY_GROUP, ValueKind, value_kind
 
 from .errors import RuleError
 from .iban import normalize_iban
@@ -500,6 +500,18 @@ def _birth_date(match: re.Match[str], reference_year: int) -> str:
 
 # --- Which field set a classified document gets -----------------------------------------
 
+# The catalogue's invoices keep the invoice reader (amount, due date; D131).
+_CATALOGUE_INVOICES = (
+    DocumentSubtype.UTILITY_BILL,
+    DocumentSubtype.HOUSEHOLD_SERVICES_INVOICE,
+    DocumentSubtype.WORK_EXPENSE_INVOICE,
+)
+# The subtypes that existed before the catalogue, read by their own kind or by their type.
+_READ_BY_TYPE = (
+    DocumentSubtype.PRICE_SPLIT_EVIDENCE,
+    DocumentSubtype.APPRAISAL,
+    DocumentSubtype.COST_BASIS_EVIDENCE,
+)
 _BY_SUBTYPE: dict[DocumentSubtype, ExtractionKind] = {
     DocumentSubtype.PURCHASE_CONTRACT: ExtractionKind.PURCHASE_CONTRACT,
     DocumentSubtype.LOAN_CONTRACT: ExtractionKind.LOAN_CONTRACT,
@@ -508,6 +520,16 @@ _BY_SUBTYPE: dict[DocumentSubtype, ExtractionKind] = {
     DocumentSubtype.DEPOSIT_RECORD: ExtractionKind.DEPOSIT_RECORD,
     DocumentSubtype.GRUNDSTEUERBESCHEID: ExtractionKind.GRUNDSTEUERBESCHEID,
     DocumentSubtype.EINKOMMENSTEUERBESCHEID: ExtractionKind.EINKOMMENSTEUERBESCHEID,
+    DocumentSubtype.MANAGEMENT_CONTRACT: ExtractionKind.MANAGEMENT_CONTRACT,  # D130
+    **dict.fromkeys(_CATALOGUE_INVOICES, ExtractionKind.INVOICE),
+}
+# Every other subtype of the catalogue (§6.2.1) is read by the general reading, whatever its
+# type: a depot_statement is never read as the rental account's statement, a
+# prepayment_notice never as a Nebenkosten Bescheid (D131).
+_BY_SUBTYPE |= {
+    subtype: ExtractionKind.GENERAL
+    for subtype in DocumentSubtype
+    if subtype not in _BY_SUBTYPE and subtype not in _READ_BY_TYPE
 }
 _BY_TYPE: dict[DocumentType, ExtractionKind] = {
     DocumentType.INVOICE: ExtractionKind.INVOICE,
@@ -520,18 +542,23 @@ _BY_TYPE: dict[DocumentType, ExtractionKind] = {
     DocumentType.GEHALTSABRECHNUNG: ExtractionKind.GEHALTSABRECHNUNG,
 }
 
-# The classifier's types that hold tenant data whatever the upload said (§5.5 step 3).
+# The classifier's types that hold tenant data whatever the upload said (§5.5 step 3): the
+# lease and its papers, and every subtype of the catalogue's tenancy group (D131).
 TENANT_SUBTYPES = frozenset(
-    {DocumentSubtype.LEASE, DocumentSubtype.HANDOVER_PROTOCOL, DocumentSubtype.DEPOSIT_RECORD}
+    {
+        DocumentSubtype.LEASE,
+        DocumentSubtype.HANDOVER_PROTOCOL,
+        DocumentSubtype.DEPOSIT_RECORD,
+        *TENANCY_GROUP,
+    }
 )
 
 
-def extraction_kind(type_: DocumentType, subtype: DocumentSubtype | None) -> ExtractionKind | None:
-    """The field set to extract for a classified document; None means typing only (a letter,
-    an appraisal, `other`). The subtype wins over the type (a Grundsteuerbescheid is a
-    bescheid with its own field set)."""
+def extraction_kind(type_: DocumentType, subtype: DocumentSubtype | None) -> ExtractionKind:
+    """The field set to extract for a classified document. The subtype wins over the type (a
+    Grundsteuerbescheid is a bescheid with its own field set, a Depotauszug a statement read
+    for title and date only). A type without a reader of its own (a contract the classifier
+    could not place, a letter, `other`) gets the general reading: title and date (D130)."""
     if subtype is not None and subtype in _BY_SUBTYPE:
         return _BY_SUBTYPE[subtype]
-    if type_ == DocumentType.CONTRACT:
-        return None  # a contract the classifier could not place: typing only
-    return _BY_TYPE.get(type_)
+    return _BY_TYPE.get(type_, ExtractionKind.GENERAL)

@@ -28,7 +28,7 @@ from pydantic import Field
 
 from .ai import ExtractedValue
 from .common import Schema
-from .enums import ExtractionKind
+from .enums import DocumentSubtype, ExtractionKind
 
 ValueKind = Literal[
     "money", "decimal", "rate", "date", "year", "fraction", "iban", "text", "text_list"
@@ -400,6 +400,94 @@ class IncomeTaxAssessmentExtraction(_Typing):
     )
 
 
+# Phase 2 D130, D131 (§6.2, §6.2.1): the general reading and the Verwaltervertrag. Neither
+# proposes a record, only typing and at most one link, so no field here is a euro figure.
+
+
+class GeneralExtraction(_Typing):
+    """The general reading (D130): title and date for every document without a reader of its
+    own, plus the one field set its subtype's group needs to find its link (D131): the
+    property's address for the property, WEG, running-costs and tenancy groups, the lender and
+    contract number for the loan group. A request asks only those (asked_fields); an
+    owner's home address is never asked."""
+
+    street: ExtractedValue = ev("text", "street of the property the document concerns")
+    house_number: ExtractedValue = ev("text", "house number of that property")
+    postal_code: ExtractedValue = ev("text", "five-digit PLZ of that property")
+    lender: ExtractedValue = ev("text", "the bank that gave the loan")
+    contract_number: ExtractedValue = ev(
+        "text",
+        "Darlehensnummer / Vertragsnummer; when none is printed, the loan's Kontonummer. The"
+        " number only, without its label",
+    )
+
+
+class ManagementContractExtraction(_Typing):
+    """Verwaltervertrag (contract / management_contract, D130): a Mietverwaltungsvertrag with
+    the household's letting manager, or the WEG's Verwaltervertrag. Proposes typing and
+    link:property; the fee is booked from the bank lines that pay it, never from here."""
+
+    manager: ExtractedValue = ev("text", "the Verwalter's name only, without the address")
+    street: ExtractedValue = ev("text", "street of the managed property")
+    house_number: ExtractedValue = ev("text", "house number of the managed property")
+    postal_code: ExtractedValue = ev("text", "five-digit PLZ of the managed property")
+    start_date: ExtractedValue = ev("date", "Vertragsbeginn: when the management starts")
+    monthly_fee: ExtractedValue = ev(
+        "text", "the Verwaltervergütung per month as written, e.g. 30,00 € zzgl. MwSt. je Einheit"
+    )
+    notice_period: ExtractedValue = ev("text", "Kündigungsfrist, as written")
+
+
+GeneralLink = Literal["property", "loan", "tenancy"]
+
+# The link each catalogue subtype's group proposes (§6.2.1); a subtype not here (income tax,
+# household finances, or none) is read for title and date only.
+_PROPERTY_GROUPS = (
+    # property and purchase
+    DocumentSubtype.LAND_REGISTER_EXTRACT,
+    DocumentSubtype.DECLARATION_OF_DIVISION,
+    DocumentSubtype.LAND_CHARGE_DEED,
+    DocumentSubtype.ENERGY_CERTIFICATE,
+    DocumentSubtype.BUILDING_RECORDS,
+    DocumentSubtype.INSURANCE_POLICY,
+    DocumentSubtype.MANAGEMENT_CONTRACT,
+    DocumentSubtype.SERVICE_CONTRACT,
+    # WEG
+    DocumentSubtype.WEG_MINUTES,
+    DocumentSubtype.WEG_INVITATION,
+    DocumentSubtype.SPECIAL_LEVY,
+    # running costs
+    DocumentSubtype.UTILITY_BILL,
+    DocumentSubtype.QUOTE,
+    DocumentSubtype.CHIMNEY_SWEEP_NOTICE,
+)
+LOAN_GROUP = (
+    DocumentSubtype.REPAYMENT_SCHEDULE,
+    DocumentSubtype.LOAN_TERMS_CHANGE,
+    DocumentSubtype.LOAN_STATEMENT,
+)
+TENANCY_GROUP = (
+    DocumentSubtype.LEASE_AMENDMENT,
+    DocumentSubtype.RENT_INCREASE,
+    DocumentSubtype.TERMINATION_NOTICE,
+    DocumentSubtype.TENANT_SELF_DISCLOSURE,
+    DocumentSubtype.LANDLORD_CONFIRMATION,
+    DocumentSubtype.OPERATING_COSTS_STATEMENT,
+    DocumentSubtype.TENANT_CORRESPONDENCE,
+)
+GENERAL_LINK: dict[DocumentSubtype, GeneralLink] = {
+    **dict.fromkeys(_PROPERTY_GROUPS, "property"),
+    **dict.fromkeys(LOAN_GROUP, "loan"),
+    **dict.fromkeys(TENANCY_GROUP, "tenancy"),
+}
+_ADDRESS = ("street", "house_number", "postal_code")
+_LINK_FIELDS: dict[GeneralLink, tuple[str, ...]] = {
+    "property": _ADDRESS,
+    "loan": ("lender", "contract_number"),
+    "tenancy": _ADDRESS,
+}
+
+
 EXTRACTION_MODELS: dict[ExtractionKind, type[_Typing]] = {
     ExtractionKind.PURCHASE_CONTRACT: PurchaseContractExtraction,
     ExtractionKind.LOAN_CONTRACT: LoanContractExtraction,
@@ -416,7 +504,23 @@ EXTRACTION_MODELS: dict[ExtractionKind, type[_Typing]] = {
     ExtractionKind.LOHNSTEUERBESCHEINIGUNG: WageCertificateExtraction,
     ExtractionKind.GEHALTSABRECHNUNG: PayslipExtraction,
     ExtractionKind.EINKOMMENSTEUERBESCHEID: IncomeTaxAssessmentExtraction,
+    ExtractionKind.GENERAL: GeneralExtraction,
+    ExtractionKind.MANAGEMENT_CONTRACT: ManagementContractExtraction,
 }
+
+
+def asked_fields(kind: ExtractionKind, subtype: DocumentSubtype | None = None) -> tuple[str, ...]:
+    """The fields an extract request asks for, in the model's order: every field of the kind,
+    except for the general reading, which asks title and date plus the link fields of the
+    subtype's group (D131). The job keeps only these, so a line the model volunteered (an
+    address on a Vorauszahlungsbescheid) is never stored."""
+    names = tuple(EXTRACTION_MODELS[kind].model_fields)
+    if kind is not ExtractionKind.GENERAL:
+        return names
+    link = GENERAL_LINK.get(subtype) if subtype is not None else None
+    wanted = {"title", "document_date", *(_LINK_FIELDS[link] if link is not None else ())}
+    return tuple(name for name in names if name in wanted)
+
 
 AnyExtraction = (
     PurchaseContractExtraction
@@ -434,4 +538,6 @@ AnyExtraction = (
     | WageCertificateExtraction
     | PayslipExtraction
     | IncomeTaxAssessmentExtraction
+    | GeneralExtraction
+    | ManagementContractExtraction
 )

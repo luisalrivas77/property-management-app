@@ -176,10 +176,23 @@ _LINK_SOURCE = {
     LinkTarget.TENANCY: "tenancy",
 }
 _LOAN_CORRECTED = ("principal", "disbursed_on")  # through correct_disbursement
-# Tenant documents by type (§5.5 step 3); a letter from a tenant is caught by the
-# classifier's contains_tenant_data.
+# Tenant documents by type (§5.5 step 3): the lease and its papers and the catalogue's tenancy
+# group (D131); any other letter from a tenant is caught by the classifier's
+# contains_tenant_data. Kept as its own copy of rules.extraction_parse.TENANT_SUBTYPES, so the
+# service repeats the job's gate from its own list.
 _TENANT_SUBTYPES = frozenset(
-    {DocumentSubtype.LEASE, DocumentSubtype.HANDOVER_PROTOCOL, DocumentSubtype.DEPOSIT_RECORD}
+    {
+        DocumentSubtype.LEASE,
+        DocumentSubtype.HANDOVER_PROTOCOL,
+        DocumentSubtype.DEPOSIT_RECORD,
+        DocumentSubtype.LEASE_AMENDMENT,
+        DocumentSubtype.RENT_INCREASE,
+        DocumentSubtype.TERMINATION_NOTICE,
+        DocumentSubtype.TENANT_SELF_DISCLOSURE,
+        DocumentSubtype.LANDLORD_CONFIRMATION,
+        DocumentSubtype.OPERATING_COSTS_STATEMENT,
+        DocumentSubtype.TENANT_CORRESPONDENCE,
+    }
 )
 _JSONB_COLUMNS = ("targets", "fields", "decisions", "applied_entities")
 
@@ -357,27 +370,25 @@ def record_read_result(
     built_kind: ExtractionKind | None = None
     extraction_id = None
     if values is not None and not blocked_tenant_data:
-        if kind is None:  # no field set for this type: only the typing fields can apply
-            extraction = _Typing.model_validate(values)
-        else:
-            extraction = EXTRACTION_MODELS[kind].model_validate(values)
-            assert extract_call_id is not None
-            stored = documents.record_ai_extraction(
-                ctx, document_id, extraction, ai_call_id=extract_call_id
-            )
-            extraction_id = stored.id
-            built_kind = kind
-            append_event(
-                ctx,
-                EventType.DOCUMENT_EXTRACTED,
-                document_id,
-                DocumentExtracted(
-                    ai_call_id=extract_call_id,
-                    extraction_version=stored.version,
-                    kind=kind,
-                    field_names=sorted(values),
-                ),
-            )
+        # Every classification has a field set since D130 (the general reading at least).
+        extraction = EXTRACTION_MODELS[kind].model_validate(values)
+        assert extract_call_id is not None
+        stored = documents.record_ai_extraction(
+            ctx, document_id, extraction, ai_call_id=extract_call_id
+        )
+        extraction_id = stored.id
+        built_kind = kind
+        append_event(
+            ctx,
+            EventType.DOCUMENT_EXTRACTED,
+            document_id,
+            DocumentExtracted(
+                ai_call_id=extract_call_id,
+                extraction_version=stored.version,
+                kind=kind,
+                field_names=sorted(values),
+            ),
+        )
 
     context = prefill_context(ctx.conn, document_id, classification)
     records = build_proposal(built_kind, extraction, context)
@@ -388,7 +399,7 @@ def record_read_result(
         status=ProposalStatus.BLOCKED_TENANT_DATA if blocked_tenant_data else ProposalStatus.READY,
         error_code=AI_BLOCKED_TENANT_DATA if blocked_tenant_data else None,
         contains_tenant_data=tenant_mark,
-        kind=None if kind is None else kind.value,
+        kind=kind.value,
         extraction_id=extraction_id,
         ai_call_id=extract_call_id if extraction_id is not None else classify_call_id,
         target_mode=(ProposalTargetMode.PATCH if targeted else ProposalTargetMode.CREATE).value,

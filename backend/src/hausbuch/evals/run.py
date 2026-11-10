@@ -99,10 +99,9 @@ def read_document(client: ModelClient, settings: Settings, data: bytes, media_ty
         except ValueError:
             return Reading(error="ai.unparsable")
         kind = extraction_kind(classification.type, classification.subtype)
-        if kind is None:
-            return Reading()  # typing-only: no fields to compare
+        subtype = classification.subtype
         chunks = []
-        for offset, request in extract_requests_for(settings, kind, data, media_type):
+        for offset, request in extract_requests_for(settings, kind, data, media_type, subtype):
             response = _send(client, request)
             if response is None:
                 return Reading(kind=kind, error="ai.refused")
@@ -110,7 +109,7 @@ def read_document(client: ModelClient, settings: Settings, data: bytes, media_ty
             if not values:
                 return Reading(kind=kind, error="ai.unparsable")
             chunks.append(values)
-        return Reading(kind=kind, values=merged_values(kind, chunks))
+        return Reading(kind=kind, values=merged_values(kind, chunks, subtype))
     except documents.DocumentInputError as exc:
         return Reading(error=exc.code)
     except ModelCallError as exc:  # status and code only; the SDK's message is never used

@@ -20,7 +20,7 @@ from hausbuch.ai.requests import (
 )
 from hausbuch.schemas.ai import AiJob
 from hausbuch.schemas.enums import DocumentSubtype, DocumentType, ExtractionKind
-from hausbuch.schemas.extraction import EXTRACTION_MODELS
+from hausbuch.schemas.extraction import EXTRACTION_MODELS, asked_fields
 from hausbuch.settings import Settings
 
 KEY = "sk-ant-api03-SECRET-test-key"
@@ -115,9 +115,13 @@ def test_extract_request_has_citations_and_no_structured_output():
 
 @pytest.mark.parametrize("kind", list(EXTRACTION_MODELS))
 def test_field_list_names_every_field(kind):
+    """Every field of the kind; the general reading only its asked ones (D131: title and date
+    without a subtype)."""
     text = field_list(kind)
     keys = [line.split(":", 1)[0] for line in text.splitlines()[1:]]
-    assert keys == list(EXTRACTION_MODELS[kind].model_fields)
+    assert keys == list(asked_fields(kind))
+    if kind is not ExtractionKind.GENERAL:
+        assert keys == list(EXTRACTION_MODELS[kind].model_fields)
     assert "D5" not in text  # internal notes do not reach the prompt
 
 
