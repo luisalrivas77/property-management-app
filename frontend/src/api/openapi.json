@@ -7349,7 +7349,8 @@
                   "link",
                   "ownership",
                   "deposit_received",
-                  "tax_input"
+                  "tax_input",
+                  "return_input"
                 ]
               }
             ],
@@ -13303,7 +13304,8 @@
                   "link",
                   "ownership",
                   "deposit_received",
-                  "tax_input"
+                  "tax_input",
+                  "return_input"
                 ]
               }
             ],

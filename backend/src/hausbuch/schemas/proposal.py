@@ -37,6 +37,7 @@ RecordEntity = (
         "ownership",
         "deposit_received",  # Kautionsnachweis (step 2): tenancy.deposit_received via the service
         "tax_input",  # phase 3 §9: ruecklage_spent / interest_certified via services/tax_inputs
+        "return_input",  # phase 4b §8.2: wage_certificate / payslip via services/return_inputs
     ]
 )
 
@@ -176,6 +177,19 @@ class ExistingTenant(Schema):
     full_name: str | None  # null after erasure: never matched
 
 
+class ExistingPayRow(Schema):
+    """A current return_input row of a pay document (phase 4b §8.2): what a certificate or a
+    payslip of the same owner, employer (and month) would supersede. No figure, no name."""
+
+    id: UUID
+    owner_id: UUID
+    kind: Literal["wage_certificate", "payslip"]
+    tax_year: int
+    employer: str
+    period_month: date | None = None  # a payslip's month
+    document_id: UUID | None = None
+
+
 class PrefillContext(Schema):
     """Everything build_proposal may look at. Lists are unordered: the result must not
     depend on their order (prefill.yaml runs every case shuffled too)."""
@@ -189,3 +203,5 @@ class PrefillContext(Schema):
     loans: list[ExistingLoan] = Field(default_factory=list)
     tenancies: list[ExistingTenancy] = Field(default_factory=list)
     tenants: list[ExistingTenant] = Field(default_factory=list)
+    # Phase 4b: the current certificate and payslip rows, for the note that one is replaced.
+    pay_rows: list[ExistingPayRow] = Field(default_factory=list)

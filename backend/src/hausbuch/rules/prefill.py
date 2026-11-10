@@ -17,12 +17,23 @@ several existing records match, the one with the smallest id wins.
 
 Record keys, in this order when a kind proposes them: typing, property, correction:<field>,
 unit, price_split, ownership, cost:<kind>, loan, tenant:<n>, tenancy, rent, deposit_received,
-link:property / link:loan / link:tenancy, tax_input:<kind>.
+link:property / link:loan / link:tenancy / link:owner, tax_input:<kind>,
+return_input:<kind>.
 
 Phase 3 (docs/phases/phase-3.md §9): a Zinsbescheinigung also proposes
 tax_input:interest_certified {tax_year, loan_id, value.amount}, a Hausgeldabrechnung
 tax_input:ruecklage_spent {tax_year, value.amount}; the apply writes them through
 services/tax_inputs (D14).
+
+Phase 4b (docs/phases/phase-4b.md §8.2, D96, D105): a Lohnsteuerbescheinigung proposes
+link:owner (the employee's name against this workspace's owners, by name tokens; unmatched,
+the user picks the owner) and return_input:wage_certificate {owner_id, tax_year,
+value.<field>} with every WageCertificate field (a line the model did not read is proposed
+empty, never 0, and named in a note); a Gehaltsabrechnung link:owner and return_input:payslip
+{owner_id, tax_year, value.<field>, value.<figure>.month / .ytd} with months_remaining_paid
+= 12 − month and the gross projection in a note. return_input_value turns the confirmed
+values into the row's value: an unread certificate line becomes 0 and is listed in `unread`
+(Q-O29). The apply writes them through services/return_inputs (D14).
 """
 
 import re
@@ -35,6 +46,7 @@ from uuid import UUID
 from pydantic import JsonValue
 
 from hausbuch.schemas.ai import ConfidenceLevel, ExtractedValue
+from hausbuch.schemas.employment import CERTIFICATE_AMOUNTS, PAYSLIP_FIGURES
 from hausbuch.schemas.enums import (
     AcquisitionCostKind,
     DepositForm,
@@ -46,11 +58,15 @@ from hausbuch.schemas.enums import (
 from hausbuch.schemas.extraction import _Typing
 from hausbuch.schemas.proposal import (
     ExistingLoan,
+    ExistingOwner,
+    ExistingPayRow,
     ExistingProperty,
     ExistingUnit,
     PrefillContext,
     ProposalRecord,
 )
+
+from .extraction_parse import _MONTHS
 
 _CONFIDENCE_ORDER: dict[ConfidenceLevel, int] = {"low": 0, "medium": 1, "high": 2}
 _SIX_PLACES = Decimal("0.000001")
@@ -134,6 +150,10 @@ def build_proposal(
             b.zinsbescheinigung()
         case ExtractionKind.DEPOSIT_RECORD:
             b.deposit_record()
+        case ExtractionKind.LOHNSTEUERBESCHEINIGUNG:
+            b.wage_certificate()
+        case ExtractionKind.GEHALTSABRECHNUNG:
+            b.payslip()
         case _:  # statement, unknown: typing only
             pass
     return b.records
@@ -210,6 +230,10 @@ class _Builder:
         if self.kind is ExtractionKind.INVOICE:
             tax_year = self._invoice_tax_year()
             if tax_year is not None:
+                fields["tax_year"] = tax_year
+        if self.kind in _PAY_KINDS and "tax_year" not in fields:
+            tax_year = self._pay_tax_year()
+            if tax_year.value is not None:
                 fields["tax_year"] = tax_year
         notes = []
         if self.financing:
@@ -741,6 +765,126 @@ class _Builder:
             {"tax_year": self.ev("tax_year"), "value.amount": self.ev("ruecklage_spent")},
         )
 
+    # -- the two pay documents (phase 4b §8.2)
+
+    def wage_certificate(self) -> None:
+        """link:owner and return_input:wage_certificate with every certificate field."""
+        owner = self._owner()
+        tax_year = self._pay_tax_year()
+        tax_class = self.ev("tax_class")
+        fields = {
+            "owner_id": owner,
+            "tax_year": tax_year,
+            "value.period_from": self.ev("period_from"),
+            "value.period_to": self.ev("period_to"),
+            "value.employer": self.ev("employer_name"),
+            "value.tax_class": _mapped(tax_class, _tax_class_number),
+            "value.tax_class_factor": _mapped(tax_class, _tax_class_factor),
+            "value.church_tax_marked": _mapped(self.ev("church_tax_mark"), _church_tax_marked),
+            "value.child_allowance_count": self.ev("child_allowance_count"),
+        }
+        for name in CERTIFICATE_AMOUNTS:
+            fields[f"value.{name}"] = self.ev(name)
+        notes = []
+        unread = [name for name in CERTIFICATE_AMOUNTS if fields[f"value.{name}"].value is None]
+        if unread:
+            notes.append(
+                f"Nicht gelesen: {', '.join(CERTIFICATE_LINES[n] for n in unread)}. Steht dort "
+                "ein Betrag, bitte eintragen; ein leeres Feld wird als 0 übernommen und als "
+                "nicht gelesen vermerkt."
+            )
+        same = self._current_pay_rows("wage_certificate", owner, tax_year)
+        employer = _norm(self.ev("employer_name").value)
+        if any(row.document_id == self.ctx.document_id for row in same):
+            notes.append(
+                "Diese Lohnsteuerbescheinigung ist schon übernommen; geänderte Werte ersetzen "
+                "den Eintrag."
+            )
+        elif any(_norm(row.employer) == employer for row in same):
+            notes.append(
+                "Für dieses Jahr gibt es von diesem Arbeitgeber schon eine "
+                "Lohnsteuerbescheinigung. Ist diese eine berichtigte, bitte die alte unter "
+                "Einkommensteuer zurückziehen."
+            )
+        self.add("return_input:wage_certificate", "return_input", "create", fields, notes=notes)
+
+    def payslip(self) -> None:
+        """link:owner and return_input:payslip: the month's and the year-to-date figures,
+        months_remaining_paid = 12 − month, the gross projection in a note (D105)."""
+        owner = self._owner()
+        tax_year = self._pay_tax_year()
+        month = _mapped(self.ev("period_month"), _month_start)
+        on = _iso_date(month.value)
+        tax_class = self.ev("tax_class")
+        fields = {
+            "owner_id": owner,
+            "tax_year": tax_year,
+            "value.period_month": month,
+            "value.employer": self.ev("employer_name"),
+            "value.tax_class": _mapped(tax_class, _tax_class_number),
+            "value.tax_class_factor": _mapped(tax_class, _tax_class_factor),
+            "value.months_remaining_paid": _derived(
+                None if on is None else 12 - on.month, [("period_month", month)]
+            ),
+        }
+        for figure in PAYSLIP_FIGURES:
+            fields[f"value.{figure}.month"] = self.ev(f"{figure}_month")
+            fields[f"value.{figure}.ytd"] = self.ev(f"{figure}_ytd")
+        notes = []
+        if on is not None:
+            notes.append(
+                _projection_note(on, fields["value.gross.month"], fields["value.gross.ytd"])
+            )
+            employer = _norm(self.ev("employer_name").value)
+            if any(
+                row.period_month == on and _norm(row.employer) == employer
+                for row in self._current_pay_rows("payslip", owner, tax_year)
+            ):
+                notes.append(
+                    f"Für {MONTH_NAMES[on.month - 1]} {on.year} gibt es von diesem Arbeitgeber "
+                    "schon eine Gehaltsabrechnung; diese ersetzt sie."
+                )
+        self.add("return_input:payslip", "return_input", "create", fields, notes=notes)
+
+    def _owner(self) -> ExtractedValue:
+        """link:owner and the owner_id value: the one owner of this workspace whose name is
+        the employee's (by name tokens); else no target and no value (the user picks). The
+        context holds this workspace's owners only."""
+        name = self.ev("employee_name")
+        owner, exact = _match_owner(name.value, self.ctx.owners)
+        self.link("link:owner", None if owner is None else owner.id)
+        value = _derived(None if owner is None else str(owner.id), [("employee_name", name)])
+        if owner is not None and not exact and value.confidence == "high":
+            value = value.model_copy(update={"confidence": "medium"})
+        return value
+
+    def _pay_tax_year(self) -> ExtractedValue:
+        """A certificate's stated year, else the year of its period; a payslip's month's."""
+        if self.kind is ExtractionKind.LOHNSTEUERBESCHEINIGUNG:
+            if self.stated("tax_year"):
+                return self.ev("tax_year")
+            sources = [(n, self.ev(n)) for n in ("period_from", "period_to")]
+        else:
+            sources = [("period_month", _mapped(self.ev("period_month"), _month_start))]
+        for name, source in sources:
+            on = _iso_date(source.value)
+            if on is not None:
+                return _derived(on.year, [(name, source)])
+        return ExtractedValue.missing()
+
+    def _current_pay_rows(
+        self, kind: str, owner: ExtractedValue, tax_year: ExtractedValue
+    ) -> list[ExistingPayRow]:
+        if owner.value is None or tax_year.value is None:
+            return []
+        return [
+            row
+            for row in self.ctx.pay_rows
+            if row.kind == kind
+            and str(row.owner_id) == owner.value
+            and row.tax_year == tax_year.value
+        ]
+
 
 # --- Matching existing records ----------------------------------------------------------
 
@@ -1093,4 +1237,179 @@ def _ownership_share(clause: str, buyers: int) -> tuple[int, int] | None:
     return None
 
 
-__all__ = ["build_proposal"]
+# --- The pay documents' values (phase 4b §8.2) ------------------------------------------
+
+_PAY_KINDS = frozenset({ExtractionKind.LOHNSTEUERBESCHEINIGUNG, ExtractionKind.GEHALTSABRECHNUNG})
+# The certificate's line of each amount, for the note naming the lines not read (§5.1).
+CERTIFICATE_LINES: dict[str, str] = {
+    "gross": "Nr. 3",
+    "income_tax": "Nr. 4",
+    "soli": "Nr. 5",
+    "church_tax": "Nr. 6",
+    "church_tax_spouse": "Nr. 7",
+    "replacement_benefits": "Nr. 15",
+    "short_time_allowance": "Nr. 15a",
+    "employer_commute_tax_free": "Nr. 17",
+    "employer_commute_flat_taxed": "Nr. 18",
+    "pension_employer": "Nr. 22a",
+    "pension_employee": "Nr. 23a",
+    "pension_employee_professional": "Nr. 23b",
+    "subsidy_health": "Nr. 24a",
+    "subsidy_private_health": "Nr. 24b",
+    "subsidy_care": "Nr. 24c",
+    "health_employee": "Nr. 25",
+    "care_employee": "Nr. 26",
+    "unemployment_employee": "Nr. 27",
+}
+MONTH_NAMES = (
+    "Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September",
+    "Oktober", "November", "Dezember",
+)  # fmt: skip
+_NAME_TOKEN = re.compile(r"[^\W\d_]+")
+_NAME_FILLERS = frozenset({"dr", "prof", "herr", "frau", "von", "zu", "van", "der", "de"})
+_ROMAN = {"i": 1, "ii": 2, "iii": 3, "iv": 4, "v": 5, "vi": 6}
+_FACTOR = re.compile(r"(?<![0-9])0[,.][0-9]{1,4}(?![0-9])")
+_ARABIC_CLASS = re.compile(r"(?<![0-9.,])[1-6](?![0-9.,])")
+_ROMAN_CLASS = re.compile(r"(?<![a-z])(vi|iv|v|iii|ii|i)(?![a-z])")
+_NO_CHURCH_TAX = frozenset({"", "-", "--", "kein", "keine", "ohne", "nein", "0", "entfällt"})
+_CHURCH_CODE = re.compile(r"[a-z]{2}")
+_MONTH_YEAR = re.compile(r"(?<![0-9])([0-9]{1,2})\s*[./-]\s*([0-9]{4})(?![0-9])")
+_WORD_MONTH_YEAR = re.compile(r"([a-zäöü]+)\.?\s+([0-9]{4})")
+
+
+def _name_key(name: Any) -> frozenset[str]:
+    """A person's name as a set of tokens: letters only, casefolded, ß as ss, titles and
+    particles dropped, so "Musterfrau, Erika" and "Erika Musterfrau" are one key."""
+    text = str(name).casefold().replace("ß", "ss")
+    return frozenset(t for t in _NAME_TOKEN.findall(text) if t not in _NAME_FILLERS)
+
+
+def _match_owner(name: Any, owners: Sequence[ExistingOwner]) -> tuple[ExistingOwner | None, bool]:
+    """The one owner whose name tokens equal the employee's (exact), else the one owner of at
+    least two name tokens all printed in it (a middle name printed: not exact); several or
+    none: None. `owners` is the workspace's own list (RLS-scoped by prefill_context)."""
+    key = _name_key(name) if name is not None else frozenset()
+    if not key:
+        return None, False
+    exact = [o for o in owners if _name_key(o.full_name) == key]
+    if exact:
+        return (exact[0], True) if len(exact) == 1 else (None, False)
+    within = [
+        o for o in owners if len(_name_key(o.full_name)) >= 2 and _name_key(o.full_name) <= key
+    ]
+    return (within[0], False) if len(within) == 1 else (None, False)
+
+
+def _tax_class_parts(text: Any) -> tuple[int, bool] | None:
+    """ "4 / 0,950" -> (4, True); "IV" -> (4, False); "Steuerklasse 1" -> (1, False). A Faktor
+    (a number below 1) counts beside class IV only (§39f). None when no class is named."""
+    t = _norm(text)
+    factor = _FACTOR.search(t)
+    rest = t if factor is None else f"{t[: factor.start()]} {t[factor.end() :]}"
+    arabic = _ARABIC_CLASS.search(rest)
+    if arabic is not None:
+        number = int(arabic.group())
+    else:
+        words = rest.replace("steuerklasse", " ").replace("faktor", " ").replace("stkl", " ")
+        roman = _ROMAN_CLASS.search(words)
+        if roman is None:
+            return None
+        number = _ROMAN[roman.group(1)]
+    return number, factor is not None and number == 4
+
+
+def _tax_class_number(text: Any) -> int | None:
+    parts = _tax_class_parts(text)
+    return None if parts is None else parts[0]
+
+
+def _tax_class_factor(text: Any) -> bool | None:
+    parts = _tax_class_parts(text)
+    return None if parts is None else parts[1]
+
+
+def _church_tax_marked(text: Any) -> bool | None:
+    """The Kirchensteuermerkmal: a confession code ("ev", "rk", "ev/rk") is a mark; dashes
+    or "keine" are none; anything else is not understood (None: the user decides)."""
+    t = _norm(text).replace("–", "-").replace("—", "-")
+    words = [w.strip(".") for w in re.split(r"[\s/,;]+", t)]
+    if all(w in _NO_CHURCH_TAX or set(w) == {"-"} for w in words):
+        return False
+    if any(_CHURCH_CODE.fullmatch(w) for w in words):
+        return True
+    return None
+
+
+def _month_start(value: Any) -> str | None:
+    """The first of the month a payslip pays, from a date or a month written without a day
+    ("08/2026", "August 2026"), as an ISO date."""
+    on = _iso_date(value)
+    if on is not None:
+        return on.replace(day=1).isoformat()
+    if not isinstance(value, str):
+        return None
+    t = _norm(value)
+    found = _MONTH_YEAR.search(t)
+    if found is not None and 1 <= int(found.group(1)) <= 12:
+        return date(int(found.group(2)), int(found.group(1)), 1).isoformat()
+    found = _WORD_MONTH_YEAR.search(t)
+    if found is not None and found.group(1) in _MONTHS:
+        return date(int(found.group(2)), _MONTHS[found.group(1)], 1).isoformat()
+    return None
+
+
+def _euro_de(amount: Decimal) -> str:
+    """60000 -> "60.000,00 €"."""
+    text = f"{amount.quantize(_CENTS, rounding=ROUND_HALF_UP):,.2f}"
+    return text.replace(",", "_").replace(".", ",").replace("_", ".") + " €"
+
+
+def _projection_note(on: date, month: ExtractedValue, ytd: ExtractedValue) -> str:
+    """What the payslip row projects the year's gross to (D105: ytd + month ×
+    months_remaining_paid), so the remaining months are checked with their effect shown."""
+    remaining = 12 - on.month
+    advice = (
+        f"Noch bezahlte Monate: {remaining} (bis Dezember); ändern, wenn das Gehalt vor "
+        "Dezember endet (Mutterschutz, Jobwechsel)."
+    )
+    m, y = _decimal(month.value), _decimal(ytd.value)
+    if m is None or y is None:
+        return advice
+    return (
+        f"Hochrechnung {on.year}: {_euro_de(y + m * remaining)} (bis "
+        f"{MONTH_NAMES[on.month - 1]} {_euro_de(y)}, dazu {remaining} × {_euro_de(m)}). " + advice
+    )
+
+
+def return_input_value(kind: str, values: dict[str, Any]) -> dict[str, Any]:
+    """The `value` of a return_input row from the user's confirmed values of its record (the
+    `value.*` fields, dotted; any other key is ignored), as ReturnInputCreate reads it.
+
+    An empty field (missing or null) is left to the schema's default, except a certificate
+    amount: it becomes "0" and is named in `unread` (Q-O29: a line the model did not read and
+    the user left empty is never a silent 0). `unread` is always computed here; a value given
+    for it is ignored."""
+    nested: dict[str, Any] = {}
+    for name, value in values.items():
+        head, dot, path = name.partition(".")
+        if head != "value" or not dot or value is None or path == "unread":
+            continue
+        *parents, leaf = path.split(".")
+        target = nested
+        for part in parents:
+            child = target.setdefault(part, {})
+            if not isinstance(child, dict):
+                raise ValueError(f"field {name!r} given both whole and by part")
+            target = child
+        if leaf in target:
+            raise ValueError(f"field {name!r} given both whole and by part")
+        target[leaf] = value
+    if kind == "wage_certificate":
+        unread = [n for n in CERTIFICATE_AMOUNTS if nested.get(n) is None]
+        for n in unread:
+            nested[n] = "0"
+        nested["unread"] = unread
+    return nested
+
+
+__all__ = ["build_proposal", "return_input_value"]

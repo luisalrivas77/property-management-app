@@ -2506,7 +2506,7 @@ export interface components {
             /** Key */
             key: string;
             /** Entity Type */
-            entity_type: components["schemas"]["EntityType"] | ("acquisition_cost" | "price_split" | "rent_schedule" | "typing" | "link" | "ownership" | "deposit_received" | "tax_input");
+            entity_type: components["schemas"]["EntityType"] | ("acquisition_cost" | "price_split" | "rent_schedule" | "typing" | "link" | "ownership" | "deposit_received" | "tax_input" | "return_input");
             /**
              * Mode
              * @enum {string}
@@ -4942,7 +4942,7 @@ export interface components {
             /** Key */
             key: string;
             /** Entity Type */
-            entity_type: components["schemas"]["EntityType"] | ("acquisition_cost" | "price_split" | "rent_schedule" | "typing" | "link" | "ownership" | "deposit_received" | "tax_input");
+            entity_type: components["schemas"]["EntityType"] | ("acquisition_cost" | "price_split" | "rent_schedule" | "typing" | "link" | "ownership" | "deposit_received" | "tax_input" | "return_input");
             /**
              * Mode
              * @enum {string}
