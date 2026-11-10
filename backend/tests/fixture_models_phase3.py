@@ -332,7 +332,7 @@ class LimitSummary(Schema):
     limit: NonNegativeMoney
     window_start: date
     window_end: date
-    counted: list[UUID]  # allocation ids, as a set
+    counted: list[UUID]  # allocation ids (a private cost: its tax input id, D137), as a set
     used_net: NonNegativeMoney
     ratio_percent: Percent
     exceeded: bool

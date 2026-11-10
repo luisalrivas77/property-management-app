@@ -103,7 +103,7 @@ def tracked(actual, expected, where: str = "") -> None:
 
 def basis_additions(actual, expected, where: str = "") -> None:
     def key(b):
-        return (str(b.allocation_id), b.tax_year, b.amount, b.reason)
+        return (str(b.allocation_id), str(b.tax_input_id), b.tax_year, b.amount, b.reason)
 
     got, want = sorted(map(key, actual)), sorted(map(key, expected))
     assert got == want, f"{where}: basis additions {got} != {want}"

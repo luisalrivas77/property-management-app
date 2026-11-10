@@ -8397,9 +8397,28 @@
       "BasisAddition": {
         "properties": {
           "allocation_id": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Allocation Id"
+          },
+          "tax_input_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Input Id"
           },
           "tax_year": {
             "type": "integer",
@@ -8424,13 +8443,12 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "allocation_id",
           "tax_year",
           "amount",
           "reason"
         ],
         "title": "BasisAddition",
-        "description": "Herstellungskosten added to the AfA basis in the year paid, accruing from 1 January of\nthat year (§5.2). The amount is gross: input VAT a VAT-exempt landlord cannot deduct is part\nof the Herstellungskosten (§9b Abs. 1 EStG); only the 15 % test itself is net (§5.3)."
+        "description": "Herstellungskosten added to the AfA basis in the year paid, accruing from 1 January of\nthat year (§5.2). The amount is gross: input VAT a VAT-exempt landlord cannot deduct is part\nof the Herstellungskosten (§9b Abs. 1 EStG); only the 15 % test itself is net (§5.3).\nSince D137 it may be a private_cost row (tax_input_id) moved by the 15 % crossing."
       },
       "BescheidExtraction": {
         "properties": {
@@ -9299,13 +9317,39 @@
       "CountedCost": {
         "properties": {
           "allocation_id": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Allocation Id"
           },
+          "tax_input_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Input Id"
+          },
           "booking_date": {
-            "type": "string",
-            "format": "date",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Booking Date"
           },
           "tax_year": {
@@ -9336,14 +9380,13 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "allocation_id",
-          "booking_date",
           "tax_year",
           "gross",
           "net",
           "net_source"
         ],
-        "title": "CountedCost"
+        "title": "CountedCost",
+        "description": "A cost the 15 % test counts: an allocation (booking_date set), or since D137 a\nprivate_cost row (tax_input_id, no booking_date: the row has a tax year, not a bank line)."
       },
       "Coverage": {
         "properties": {
@@ -15469,6 +15512,30 @@
                 "type": "null"
               }
             ]
+          },
+          "performed_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Performed On"
+          },
+          "amount_net": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Net"
           }
         },
         "additionalProperties": false,
@@ -15478,7 +15545,7 @@
           "label"
         ],
         "title": "PrivateCostValue",
-        "description": "A rental cost paid from a private account (phase 4b D111): trips to the flat, postage,\na landlords' association, software and the like; tax_year on the row is the year paid.\ntravel: trips × km_round_trip × the rule set's travel_rate_per_km (no amount typed);\nevery other class: amount × share. financing (phase 4b D134) is a Geldbeschaffungskosten\nbill paid privately, such as the notary and land registry for the Grundschuld: it goes to\nwk.financing_costs, every other class to wk.other. Phase 2 D135: a cost a bill's reading\nproposes carries its `category` (PRIVATE_COST_CATEGORIES, with class other, or financing\nfor loan_fees); the draft then books it on that category's line of the rule set's\ncategory_lines, as a confirmed allocation of the category would land. The label is free\ntext: it stays in the row and never enters the event payload (only amounts and codes do)."
+        "description": "A rental cost paid from a private account (phase 4b D111): trips to the flat, postage,\na landlords' association, software and the like; tax_year on the row is the year paid.\ntravel: trips × km_round_trip × the rule set's travel_rate_per_km (no amount typed);\nevery other class: amount × share. financing (phase 4b D134) is a Geldbeschaffungskosten\nbill paid privately, such as the notary and land registry for the Grundschuld: it goes to\nwk.financing_costs, every other class to wk.other. Phase 2 D135: a cost a bill's reading\nproposes carries its `category` (PRIVATE_COST_CATEGORIES, with class other, or financing\nfor loan_fees); the draft then books it on that category's line of the rule set's\ncategory_lines, as a confirmed allocation of the category would land. The label is free\ntext: it stays in the row and never enters the event payload (only amounts and codes do).\n\nPhase 3 D137: a row whose category the 15 % test counts (LIMIT_15_CATEGORIES) may carry\nperformed_on (when the work was done, the date tested against the window, D76) and\namount_net (the bill's net for this part, before share; at most amount); a row without\nthem is counted conservatively. Other rows carry neither."
       },
       "ProgressionInfo": {
         "properties": {
@@ -21833,6 +21900,7 @@
           "limit.exceeded",
           "limit.prior_year_amendment",
           "limit.estimated_net",
+          "limit.private_cost_undated",
           "anschaffungsnah.performance_date_check",
           "renovation.undecided",
           "interest.certificate_mismatch",

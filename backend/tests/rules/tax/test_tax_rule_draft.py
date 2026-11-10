@@ -75,7 +75,7 @@ def test_draft(case):
             "exceeded",
         ):
             assert getattr(lim, field) == getattr(want, field), f"limit_15.{field}"
-        assert {c.allocation_id for c in lim.counted} == set(want.counted)
+        assert {c.allocation_id or c.tax_input_id for c in lim.counted} == set(want.counted)
     if e.reduced_rent is not None:
         assert [(c.id, c.agreed_warm, c.area_m2, c.outcome) for c in got.reduced_rent.checks] == [
             (r.id, r.agreed_warm, r.area_m2, r.outcome) for r in e.reduced_rent

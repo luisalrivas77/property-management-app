@@ -304,6 +304,10 @@ class MovableAsset(Schema):
     in_purchase_price: bool = True
 
 
+# The categories the 15 % test counts (phase 3 §5.3, D56): allocations of them, and since D137
+# the private_cost rows that carry one (only repairs can: renovation is no private cost).
+LIMIT_15_CATEGORIES = frozenset({AllocationCategory.REPAIRS, AllocationCategory.RENOVATION})
+
 # The categories a cost paid from another account may carry (phase 2 D135): the deductible
 # ones of rules.categories.TAX_TREATMENT (tests/rules/tax/test_private_cost_category.py keeps the
 # two equal). Tilgung, the Rücklage, the purchase price and its Nebenkosten, renovation and
@@ -335,7 +339,12 @@ class PrivateCostValue(Schema):
     proposes carries its `category` (PRIVATE_COST_CATEGORIES, with class other, or financing
     for loan_fees); the draft then books it on that category's line of the rule set's
     category_lines, as a confirmed allocation of the category would land. The label is free
-    text: it stays in the row and never enters the event payload (only amounts and codes do)."""
+    text: it stays in the row and never enters the event payload (only amounts and codes do).
+
+    Phase 3 D137: a row whose category the 15 % test counts (LIMIT_15_CATEGORIES) may carry
+    performed_on (when the work was done, the date tested against the window, D76) and
+    amount_net (the bill's net for this part, before share; at most amount); a row without
+    them is counted conservatively. Other rows carry neither."""
 
     cost_class: Literal[
         "travel",
@@ -354,9 +363,21 @@ class PrivateCostValue(Schema):
     trip_dates: list[date] = Field(default_factory=list)
     share: Fraction = Fraction(numerator=1, denominator=1)
     category: AllocationCategory | None = None  # phase 2 D135
+    performed_on: date | None = None  # phase 3 D137
+    amount_net: NonNegativeMoney | None = None  # phase 3 D137
 
     @model_validator(mode="after")
     def _by_class(self) -> Self:
+        if (self.performed_on is not None or self.amount_net is not None) and (
+            self.category not in LIMIT_15_CATEGORIES
+        ):
+            raise ValueError("a work date and a net go with a category the 15 % test counts")
+        if (
+            self.amount_net is not None
+            and self.amount is not None
+            and self.amount_net > self.amount
+        ):
+            raise ValueError("the net is at most the amount")
         if self.category is not None:
             if self.category not in PRIVATE_COST_CATEGORIES:
                 raise ValueError("a private cost's category is a deductible one")
@@ -574,6 +595,8 @@ class WarningCode(StrEnum):
     LIMIT_EXCEEDED = "limit.exceeded"
     LIMIT_PRIOR_YEAR_AMENDMENT = "limit.prior_year_amendment"
     LIMIT_ESTIMATED_NET = "limit.estimated_net"
+    # D137: a private repair without the date of the work, counted or near the window's end
+    LIMIT_PRIVATE_COST_UNDATED = "limit.private_cost_undated"
     # A cost booked soon after the window with no service period: when was the work done? (D76)
     ANSCHAFFUNGSNAH_PERFORMANCE_DATE_CHECK = "anschaffungsnah.performance_date_check"
     RENOVATION_UNDECIDED = "renovation.undecided"
@@ -638,6 +661,7 @@ WARNING_SEVERITY: dict[WarningCode, Severity] = {
     W.LIMIT_EXCEEDED: "warning",
     W.LIMIT_PRIOR_YEAR_AMENDMENT: "warning",
     W.LIMIT_ESTIMATED_NET: "info",
+    W.LIMIT_PRIVATE_COST_UNDATED: "warning",
     W.ANSCHAFFUNGSNAH_PERFORMANCE_DATE_CHECK: "warning",
     W.RENOVATION_UNDECIDED: "warning",
     W.INTEREST_CERTIFICATE_MISMATCH: "warning",
@@ -822,12 +846,37 @@ class AfaSplit(Schema):
     evidence_document_id: UUID | None = None
 
 
-class BasisAddition(Schema):
+class _AllocationOrTaxInput(Schema):
+    """A cost the 15 % test or the AfA basis names: a confirmed allocation, or (D137) a
+    private_cost tax input. Exactly one of the two ids."""
+
+    allocation_id: UUID | None = None
+    tax_input_id: UUID | None = None
+
+    @model_validator(mode="after")
+    def _one_source(self) -> Self:
+        if (self.allocation_id is None) == (self.tax_input_id is None):
+            raise ValueError("an allocation or a tax input, exactly one")
+        return self
+
+    @property
+    def source_key(self) -> tuple[str, UUID]:
+        if self.allocation_id is not None:
+            return ("allocation", self.allocation_id)
+        assert self.tax_input_id is not None
+        return ("tax_input", self.tax_input_id)
+
+    def source_ref(self) -> SourceRef:
+        kind, id_ = self.source_key
+        return SourceRef(kind=kind, id=id_)
+
+
+class BasisAddition(_AllocationOrTaxInput):
     """Herstellungskosten added to the AfA basis in the year paid, accruing from 1 January of
     that year (§5.2). The amount is gross: input VAT a VAT-exempt landlord cannot deduct is part
-    of the Herstellungskosten (§9b Abs. 1 EStG); only the 15 % test itself is net (§5.3)."""
+    of the Herstellungskosten (§9b Abs. 1 EStG); only the 15 % test itself is net (§5.3).
+    Since D137 it may be a private_cost row (tax_input_id) moved by the 15 % crossing."""
 
-    allocation_id: UUID
     tax_year: TaxYear
     amount: PositiveMoney
     reason: Literal["herstellung", "limit_exceeded"]
@@ -927,9 +976,11 @@ class MovableAfaLine(Schema):
     warnings: list[DraftWarning] = Field(default_factory=list)
 
 
-class CountedCost(Schema):
-    allocation_id: UUID
-    booking_date: date
+class CountedCost(_AllocationOrTaxInput):
+    """A cost the 15 % test counts: an allocation (booking_date set), or since D137 a
+    private_cost row (tax_input_id, no booking_date: the row has a tax year, not a bank line)."""
+
+    booking_date: date | None = None
     tax_year: TaxYear
     gross: PositiveMoney
     net: PositiveMoney
@@ -938,7 +989,9 @@ class CountedCost(Schema):
 
 class LimitFacts(Schema):
     afa: AfaFacts
-    allocations: list[AllocationFact] = Field(default_factory=list)  # repairs, renovation
+    # Counted: repairs and renovation; every other allocation only names the bills a bank line
+    # paid, so a private_cost row with such a Beleg is left out (D135, D137).
+    allocations: list[AllocationFact] = Field(default_factory=list)
     tax_inputs: list[TaxInputFact] = Field(default_factory=list)
 
 

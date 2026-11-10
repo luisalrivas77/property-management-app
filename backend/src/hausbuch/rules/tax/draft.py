@@ -30,7 +30,6 @@ from hausbuch.schemas.checklist import (
     ChecklistMarketRent,
 )
 from hausbuch.schemas.tax import (
-    AllocationFact,
     AnlageVDraft,
     BasisAddition,
     Coverage,
@@ -41,6 +40,7 @@ from hausbuch.schemas.tax import (
     DraftWarning,
     FormStatus,
     LimitFacts,
+    LimitStatus,
     MovableAfaLine,
     MovedPayment,
     OpenLines,
@@ -65,13 +65,14 @@ from ._common import (
     in_force,
     input_sources,
     owned_months,
+    paid_bills,
+    shared,
     sources_of,
     unique,
     warning,
     with_years,
 )
 from .afa import afa
-from .anschaffungsnah import CATEGORIES as LIMIT_CATEGORIES
 from .anschaffungsnah import limit_status
 from .movable import movable_afa
 from .rounding import cents, money_str, split_cents, split_euros, whole_euros
@@ -119,10 +120,11 @@ RULE_CATEGORIES = frozenset(
 
 
 def _additions(facts: DraftFacts, rule_set: RuleSet, limit) -> list[BasisAddition]:
-    """Herstellung elections first, then the 15 % crossing; each allocation once (D74)."""
-    out: dict[UUID, BasisAddition] = {}
+    """Herstellung elections first, then the 15 % crossing; each allocation (and each private
+    cost row, D137) once (D74)."""
+    out: dict[tuple[str, UUID], BasisAddition] = {}
     for b in erhaltungsaufwand.herstellung_additions(facts, rule_set) + list(limit.basis_additions):
-        out.setdefault(b.allocation_id, b)
+        out.setdefault(b.source_key, b)
     return list(out.values())
 
 
@@ -196,7 +198,7 @@ def _private_cost_line(value, rule_set: RuleSet) -> str:
 
 
 def _private_costs(
-    facts: DraftFacts, tax_year: int, rule_set: RuleSet, book: LineBook
+    facts: DraftFacts, tax_year: int, rule_set: RuleSet, book: LineBook, limit: LimitStatus
 ) -> list[DraftWarning]:
     """Phase 4b §5.12, D111: rental costs paid from a private account, summed into wk.other,
     except the class financing (D134), which goes to wk.financing_costs beside the ledger's
@@ -208,12 +210,17 @@ def _private_costs(
 
     Phase 2 D135: a row whose document is the Beleg of a confirmed allocation (the bill was
     paid from the rental account after all) is not counted, so the bill is never deducted
-    twice; tax.private_cost_paid_from_account (warning) names the row and the allocations."""
+    twice; tax.private_cost_paid_from_account (warning) names the row and the allocations.
+
+    Phase 3 D137: a repair row the 15 % crossing moved into the AfA basis (limit_exceeded) is
+    not booked here; the AfA carries it."""
     warnings = []
-    paid_from_account: dict[UUID, list[AllocationFact]] = {}
-    for a in facts.allocations:
-        if a.document_id is not None:
-            paid_from_account.setdefault(a.document_id, []).append(a)
+    paid_from_account = paid_bills(facts.allocations)
+    moved = {
+        b.tax_input_id
+        for b in limit.basis_additions
+        if b.reason == "limit_exceeded" and b.tax_input_id is not None
+    }
     rows = [
         r for r in in_force(facts.tax_inputs, TaxInputKind.PRIVATE_COST) if r.tax_year == tax_year
     ]
@@ -230,11 +237,13 @@ def _private_costs(
                 )
             )
             continue
+        if row.id in moved:
+            continue  # capitalised by the 15 % crossing (D137)
         if v.cost_class == "travel":
             amount = cents(Decimal(v.trips) * v.km_round_trip * rule_set.travel_rate_per_km)
             trips += v.trips
         else:
-            amount = cents(v.amount * v.share.numerator / v.share.denominator)
+            amount = shared(v.amount, row)
         if amount:
             book.add(_private_cost_line(v, rule_set), amount, input_sources(row))
     if trips > TRAVEL_FREQUENCY_TRIPS:
@@ -357,7 +366,7 @@ def draft(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> AnlageVDraft:
     limit = limit_status(
         LimitFacts(
             afa=afa_facts(facts),
-            allocations=[a for a in facts.allocations if a.category in LIMIT_CATEGORIES],
+            allocations=facts.allocations,  # every Beleg a bank line paid (D137)
             tax_inputs=facts.tax_inputs,
         ),
         tax_year,
@@ -402,7 +411,7 @@ def draft(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> AnlageVDraft:
         )
         warnings += r.warnings
     _generic(facts, tax_year, rule_set, book)
-    warnings += _private_costs(facts, tax_year, rule_set, book)
+    warnings += _private_costs(facts, tax_year, rule_set, book, limit)
 
     rows = _merge_rows(rows)
     if rows:

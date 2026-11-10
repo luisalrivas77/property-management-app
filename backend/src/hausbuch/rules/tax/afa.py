@@ -75,11 +75,7 @@ def _sources(facts: AfaFacts, tax_year: int) -> list[SourceRef]:
         for r in facts.cost_rows
         if r.document_id is not None
     ]
-    refs += [
-        SourceRef(kind="allocation", id=a.allocation_id)
-        for a in facts.additions
-        if a.tax_year <= tax_year
-    ]
+    refs += [a.source_ref() for a in facts.additions if a.tax_year <= tax_year]
     for asset in current_assets(facts):  # D80: a kitchen in the price reduced the basis
         if asset.in_purchase_price:
             refs.append(SourceRef(kind="tax_input", id=asset.tax_input_id))

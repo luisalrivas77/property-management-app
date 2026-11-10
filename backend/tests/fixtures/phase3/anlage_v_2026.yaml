@@ -148,6 +148,9 @@ ids:
   input_private_financing: &TI7 000000f1-0000-4000-8000-000000000007
   # phase 2 D135: a cost entered as paid from another account that a bank line paid
   input_private_paid_from_account: &TI8 000000f1-0000-4000-8000-000000000008
+  # phase 3 D137: a repair paid from another account, and its bill
+  input_private_repair: &TI9 000000f1-0000-4000-8000-000000000009
+  doc_private_repair: &D_PR 00000d0c-0000-4000-8000-00000000000f
 
 bases:
   property: &property
@@ -821,3 +824,135 @@ cases:
         - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
         - {code: draft.form_provisional}
         - {code: tax.private_cost_paid_from_account, params: {label: Notar Grundschuld}}
+
+  # Phase 3 D137 (phase 2 D135's gap): a repair paid from another account (a private_cost of
+  # category repairs) counts toward the 15 % test like a repairs allocation. Below the limit it
+  # stays on wk.maintenance; when it is what crosses the limit, it and every counted cost of
+  # the window join the AfA basis gross (D73) and leave wk.maintenance.
+  - id: private_repair_below_limit_stays_in_maintenance
+    description: >
+      case A plus a repair of 595.00 (net 500.00, done 20 Nov 2026) paid from a private
+      account → counted (5,500.00 of 35,100.00 = 15.7 %), not exceeded; wk.maintenance
+      5,950.00 + 595.00 = 6,545.00 with the tax input and its bill among the sources,
+      result −8,543.66
+    tax_year: 2026
+    rule_set_year: 2026
+    facts:
+      <<: *facts
+      tax_inputs:
+        - *inputs_a_tiles
+        - *input_certified
+        - {id: *TI9, property_id: *P, kind: private_cost, tax_year: 2026, document_id: *D_PR,
+           value: {cost_class: other, category: repairs, label: Rechnung Reparatur Sanitär,
+                   amount: "595.00", performed_on: 2026-11-20, amount_net: "500.00"}}
+    expect:
+      lines:
+        - *line_rent
+        - *line_umlagen
+        - {key: income.total, amount: "6180.00", amount_rounded: 6180}
+        - *line_afa
+        - *line_interest
+        - *line_financing
+        - key: wk.maintenance
+          amount: "6545.00"
+          amount_rounded: 6545
+          provisional: true
+          sources: [{kind: allocation, id: *PA}, {kind: document, id: *D_P},
+                    {kind: allocation, id: *TL}, {kind: document, id: *D_T},
+                    {kind: tax_input, id: *TI1}, {kind: tax_input, id: *TI9},
+                    {kind: document, id: *D_PR}]
+        - *line_allocable
+        - *line_non_allocable
+        - {key: wk.total, amount: "14723.66", amount_rounded: 14725}
+        - {key: result.surplus, amount: "-8543.66", amount_rounded: -8545}
+        - {key: result.owner_a, amount: "-4271.83", amount_rounded: -4273}
+        - {key: result.owner_b, amount: "-4271.83", amount_rounded: -4272}
+      totals: {income: "6180.00", costs: "14723.66", result: "-8543.66", income_rounded: 6180,
+               costs_rounded: 14725, result_rounded: -8545}
+      owners:
+        - {owner_id: *OA, amount: "-4271.83", amount_rounded: -4273}
+        - {owner_id: *OB, amount: "-4271.83", amount_rounded: -4272}
+      warnings:
+        - *w_unpaid
+        - {code: hausgeld.abrechnung_pending}
+        - *w_other
+        - *w_other
+        - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
+        - {code: reduced_rent.no_market_rent}
+        - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
+        - {code: draft.form_provisional}
+      limit_15:
+        <<: *limit_15
+        counted: [*PA, *TL, *TI9]
+        used_net: "5500.00"
+        ratio_percent: "15.7"
+
+  - id: private_repair_crossing_moves_to_basis
+    description: >
+      case A plus a repair of 41,650.00 (net 35,000.00, done 20 Nov 2026) paid from a private
+      account → 40,000.00 net > 35,100.00: exceeded in 2026 (114.0 %). The painter, the tiles
+      and the private repair join the AfA basis gross: (234,000.00 + 1,190.00 + 4,760.00 +
+      41,650.00) × 2 % × 6/12 = 2,816.00; wk.maintenance keeps only its provisional flag (the
+      Rücklage); costs 8,654.66, result −2,474.66
+    tax_year: 2026
+    rule_set_year: 2026
+    facts:
+      <<: *facts
+      tax_inputs:
+        - *inputs_a_tiles
+        - *input_certified
+        - {id: *TI9, property_id: *P, kind: private_cost, tax_year: 2026, document_id: *D_PR,
+           value: {cost_class: other, category: repairs, label: Dachreparatur,
+                   amount: "41650.00", performed_on: 2026-11-20, amount_net: "35000.00"}}
+    expect:
+      lines:
+        - *line_rent
+        - *line_umlagen
+        - {key: income.total, amount: "6180.00", amount_rounded: 6180}
+        - key: wk.afa
+          amount: "2816.00"
+          amount_rounded: 2816
+          sources:
+            - {kind: property, id: *P}
+            - {kind: price_split, id: *S}
+            - {kind: document, id: *D_KV}
+            - {kind: acquisition_cost, id: *C1}
+            - {kind: acquisition_cost, id: *C2}
+            - {kind: acquisition_cost, id: *C3}
+            - {kind: document, id: *D_GREST}
+            - {kind: document, id: *D_NOTAR}
+            - {kind: document, id: *D_GB}
+            - {kind: allocation, id: *PA}
+            - {kind: allocation, id: *TL}
+            - {kind: tax_input, id: *TI9}
+        - *line_interest
+        - *line_financing
+        - {key: wk.maintenance, amount: "0.00", amount_rounded: 0, provisional: true}
+        - *line_allocable
+        - *line_non_allocable
+        - {key: wk.total, amount: "8654.66", amount_rounded: 8656}
+        - {key: result.surplus, amount: "-2474.66", amount_rounded: -2476}
+        - {key: result.owner_a, amount: "-1237.33", amount_rounded: -1238}
+        - {key: result.owner_b, amount: "-1237.33", amount_rounded: -1238}
+      totals: {income: "6180.00", costs: "8654.66", result: "-2474.66", income_rounded: 6180,
+               costs_rounded: 8656, result_rounded: -2476}
+      owners:
+        - {owner_id: *OA, amount: "-1237.33", amount_rounded: -1238}
+        - {owner_id: *OB, amount: "-1237.33", amount_rounded: -1238}
+      afa: {amount: "2816.00", basis: "234000.00", months: 6, method_code: 2}
+      warnings:
+        - *w_unpaid
+        - {code: hausgeld.abrechnung_pending}
+        - *w_other
+        - *w_other
+        - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
+        - {code: reduced_rent.no_market_rent}
+        - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
+        - {code: draft.form_provisional}
+        - {code: limit.exceeded, params: {exceeded_in_year: "2026"}}
+      limit_15:
+        <<: *limit_15
+        counted: [*PA, *TL, *TI9]
+        used_net: "40000.00"
+        ratio_percent: "114.0"
+        exceeded: true

@@ -32,6 +32,16 @@
 #     the tax year paid of a repairs or renovation cost without a service_period, not counted,
 #     booked within 90 days after window_end (params booking_date, amount): was the work done
 #     inside the window?
+#   D137 (phase 2 D135's gap): a private_cost tax input of a counted category (only repairs: a
+#     private cost never carries renovation) counts like an allocation: gross = amount × share,
+#     net = amount_net × share (net_source invoice), else round(gross ÷ 1.19, 2) (estimated,
+#     limit.estimated_net); counted entry and basis addition carry tax_input_id, no booking_date.
+#     The date tested is value.performed_on; without one the row is counted when its tax_year
+#     is a window year, and the draft of its tax year carries limit.private_cost_undated
+#     (params label, amount = gross), as does an undated row paid within 90 days after
+#     window_end (not counted). A row whose document is the Beleg of a confirmed allocation is
+#     not counted (the allocation is). In the running sum a row stands on 31 Dec of its tax
+#     year, after the allocations of that day.
 
 rule_set_year: 2026
 
@@ -49,6 +59,9 @@ ids:
   input_roof: &I_ROOF 000000f1-0000-4000-8000-000000000001
   input_exclude: &I_EXCL 000000f1-0000-4000-8000-000000000002
   input_herstellung: &I_HERST 000000f1-0000-4000-8000-000000000003
+  # D137: a repair paid from another account (tax_input private_cost) and its bill
+  input_private_repair: &I_PRIV 000000f1-0000-4000-8000-000000000004
+  doc_repair: &D_REP 00000d0c-0000-4000-8000-000000000002
 
 bases:
   # The §14 flat without its cost rows' evidence: basis 234,000.00 → limit 35,100.00.
@@ -364,3 +377,162 @@ cases:
           - {allocation_id: *A_R1, tax_year: 2027, amount: "40460.00", reason: limit_exceeded}
         warnings:
           - {code: limit.exceeded, params: {exceeded_in_year: "2027"}}
+
+
+  # --- D137: repairs paid from another account (tax_input private_cost, category repairs) ----
+
+  - id: private_repair_crossing_moves_to_basis
+    description: >
+      D137. The 2026 painter and tiles (5,000.00 net) plus a roof repair paid from a private
+      account in 2027 (41,650.00 gross, net 35,000.00, done 15 Mar 2027) → 40,000.00 net >
+      35,100.00: exceeded in 2027 (114.0 %). The private row joins the basis gross in its tax
+      year like the allocations; the 2026 draft must be amended for the 5,950.00 moved
+    facts:
+      afa: *afa
+      allocations: [*painter, *tiles]
+      tax_inputs:
+        - {id: *I_PRIV, property_id: *P, kind: private_cost, tax_year: 2027, document_id: *D_REP,
+           value: {cost_class: other, category: repairs, label: Dachreparatur, amount: "41650.00",
+                   performed_on: 2027-03-15, amount_net: "35000.00"}}
+    expect:
+      - &private_crossing
+        <<: *window
+        tax_year: 2026
+        counted:
+          - *c_painter
+          - *c_tiles
+          - {tax_input_id: *I_PRIV, tax_year: 2027, gross: "41650.00", net: "35000.00",
+             net_source: invoice}
+        used_net: "40000.00"
+        ratio_percent: "114.0"
+        exceeded: true
+        exceeded_in_year: 2027
+        basis_additions:
+          - {allocation_id: *A_PAINTER, tax_year: 2026, amount: "1190.00", reason: limit_exceeded}
+          - {allocation_id: *A_TILES, tax_year: 2026, amount: "4760.00", reason: limit_exceeded}
+          - {tax_input_id: *I_PRIV, tax_year: 2027, amount: "41650.00", reason: limit_exceeded}
+        warnings:
+          - {code: limit.prior_year_amendment, params: {exceeded_in_year: "2027", amount: "5950.00"}}
+      - <<: *private_crossing
+        tax_year: 2027
+        warnings: [{code: limit.exceeded, params: {exceeded_in_year: "2027"}}]
+
+  - id: private_repair_below_limit
+    description: >
+      D137. The painter (1,000.00 net) plus a repair paid privately in 2026 for the letting's
+      half (amount 1,190.00, net 1,000.00, share 1/2 → gross 595.00, net 500.00): 1,500.00 of
+      35,100.00 = 4.3 %, not exceeded; the row stays on the Erhaltungsaufwand
+    facts:
+      afa: *afa
+      allocations: [*painter]
+      tax_inputs:
+        - {id: *I_PRIV, property_id: *P, kind: private_cost, tax_year: 2026, document_id: *D_REP,
+           value: {cost_class: other, category: repairs, label: Heizung Reparatur,
+                   amount: "1190.00", share: {numerator: 1, denominator: 2},
+                   performed_on: 2026-11-20, amount_net: "1000.00"}}
+    expect:
+      - <<: *window
+        tax_year: 2026
+        counted:
+          - *c_painter
+          - {tax_input_id: *I_PRIV, tax_year: 2026, gross: "595.00", net: "500.00",
+             net_source: invoice}
+        used_net: "1500.00"
+        ratio_percent: "4.3"
+        exceeded: false
+
+  - id: private_repair_outside_window
+    description: >
+      D137. A repair paid privately in 2029 whose work was done on 2 Jul 2029, the day after
+      the window's last day → not counted; only the painter's 1,000.00 (2.8 %)
+    facts:
+      afa: *afa
+      allocations: [*painter]
+      tax_inputs:
+        - {id: *I_PRIV, property_id: *P, kind: private_cost, tax_year: 2029, document_id: *D_REP,
+           value: {cost_class: other, category: repairs, label: Fenster abdichten,
+                   amount: "1190.00", performed_on: 2029-07-02, amount_net: "1000.00"}}
+    expect:
+      - <<: *window
+        tax_year: 2029
+        counted: [*c_painter]
+        used_net: "1000.00"
+        ratio_percent: "2.8"
+        exceeded: false
+
+  - id: private_repair_undated_counted_conservatively
+    description: >
+      D137. A repair paid privately in 2027 with neither the date of the work nor a net: 2027
+      is a window year, so it is counted (the work may have been done inside the window) at
+      1,190.00 ÷ 1.19 = 1,000.00 estimated; the 2027 draft asks for the date
+      (limit.private_cost_undated) and notes the estimate (limit.estimated_net)
+    facts:
+      afa: *afa
+      allocations: [*painter]
+      tax_inputs:
+        - {id: *I_PRIV, property_id: *P, kind: private_cost, tax_year: 2027,
+           value: {cost_class: other, category: repairs, label: Malerarbeiten Flur,
+                   amount: "1190.00"}}
+    expect:
+      - &private_undated
+        <<: *window
+        tax_year: 2026
+        counted:
+          - *c_painter
+          - {tax_input_id: *I_PRIV, tax_year: 2027, gross: "1190.00", net: "1000.00",
+             net_source: estimated}
+        used_net: "2000.00"
+        ratio_percent: "5.7"
+        exceeded: false
+      - <<: *private_undated
+        tax_year: 2027
+        warnings:
+          - {code: limit.estimated_net, params: {gross: "1190.00", net: "1000.00"}}
+          - {code: limit.private_cost_undated, params: {label: Malerarbeiten Flur, amount: "1190.00"}}
+
+  - id: private_repair_undated_paid_after_window
+    description: >
+      D137. Handover 15 Nov 2026, so the window ends 15 Nov 2029 and D76's 90 days reach
+      13 Feb 2030. An undated repair paid privately in 2030 is not counted (2030 is no window
+      year), but the 2030 draft asks when the work was done (limit.private_cost_undated)
+    facts:
+      afa: {<<: *afa, purchase_date: 2026-11-15}
+      tax_inputs:
+        - {id: *I_PRIV, property_id: *P, kind: private_cost, tax_year: 2030,
+           value: {cost_class: other, category: repairs, label: Malerarbeiten Flur,
+                   amount: "1190.00"}}
+    expect:
+      - tax_year: 2030
+        basis_building_cost: "234000.00"
+        limit: "35100.00"
+        window_start: 2026-11-15
+        window_end: 2029-11-15
+        used_net: "0.00"
+        ratio_percent: "0.0"
+        exceeded: false
+        warnings:
+          - {code: limit.private_cost_undated, params: {label: Malerarbeiten Flur, amount: "1190.00"}}
+
+  - id: private_repair_paid_from_account_not_counted
+    description: >
+      D137 with phase 2 D135 (5). A repair entered as paid from another account whose bill is
+      the Beleg of a confirmed repairs allocation (the rental account paid it after all): the
+      allocation is counted once (1,000.00 net, 2.8 %), the tax input not at all
+    facts:
+      afa: *afa
+      allocations:
+        - {allocation_id: *A_R1, booking_date: 2027-02-01, amount: "-1190.00", category: repairs,
+           invoice_net: "1000.00", document_id: *D_REP}
+      tax_inputs:
+        - {id: *I_PRIV, property_id: *P, kind: private_cost, tax_year: 2027, document_id: *D_REP,
+           value: {cost_class: other, category: repairs, label: Fenster abdichten,
+                   amount: "1190.00", performed_on: 2027-01-20, amount_net: "1000.00"}}
+    expect:
+      - <<: *window
+        tax_year: 2027
+        counted:
+          - {allocation_id: *A_R1, booking_date: 2027-02-01, tax_year: 2027, gross: "1190.00",
+             net: "1000.00", net_source: invoice}
+        used_net: "1000.00"
+        ratio_percent: "2.8"
+        exceeded: false

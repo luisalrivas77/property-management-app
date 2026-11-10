@@ -189,7 +189,16 @@ export const WARNING_GUIDE: Partial<Record<WarningCode, Guide>> = {
     todo: false,
     text: () =>
       "Für eine genaue Rechnung die Rechnung zur Zahlung hochladen und verknüpfen; ohne sie rechnet die App mit 19 % Umsatzsteuer.",
-    action: payment("Zahlung öffnen"),
+    // A cost paid from another account (D137) has no bank line: its net is typed in the Jahresfragen.
+    action: (warning, ctx) =>
+      payment("Zahlung öffnen")(warning, ctx) ?? ((warning.refs ?? []).some((r) => r.kind === "tax_input") ? questions(warning, ctx) : null),
+  },
+  "limit.private_cost_undated": {
+    todo: true,
+    title: (p) => `Wann wurde ${p.label ? `„${p.label}“` : "die Reparatur"} gemacht?`,
+    text: () =>
+      "Diese Reparatur wurde von einem anderen Konto bezahlt. In den ersten drei Jahren nach dem Kauf zählen Reparaturen nur bis zu einer Grenze sofort als Kosten, darüber werden sie über die Jahre abgeschrieben. Ohne das Datum der Arbeit zählt die App sie vorsichtshalber mit. In den Jahresfragen bei diesem Eintrag das Datum der Arbeit von der Rechnung eintragen, und den Nettobetrag, wenn er dort steht.",
+    action: questions,
   },
   "anschaffungsnah.performance_date_check": {
     todo: true,
