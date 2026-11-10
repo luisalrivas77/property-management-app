@@ -7,7 +7,9 @@ earliest payslip's ytd equals its month (pay started that month); `period_to` is
 month's end. The projection carries no employer pension share (Nr. 22a): a payslip does not
 print it, and below the cap the pension deduction is the employee share either way.
 `tax_free_benefits` is informational (a Zuschuss is on the certificate's Nr. 15 once it
-arrives). A month whose ytd ≠ the previous ytd + its month raises `anlage_n.payslip_gap`.
+arrives). A month whose ytd ≠ the previous ytd + its month raises `anlage_n.payslip_gap` with
+`month` (that month), `previous` (the slip before it), `employer` and, when months lie between
+the two slips, `missing` (those months, comma-separated): the screen names the month.
 """
 
 import calendar
@@ -58,9 +60,15 @@ def projected_certificate(
             continue
         if after.gross.ytd != before.gross.ytd + after.gross.month:
             month = after.period_month.month
-            warnings.append(
-                warning(WarningCode.ANLAGE_N_PAYSLIP_GAP, month=f"{tax_year}-{month:02d}")
-            )
+            params = {
+                "month": f"{tax_year}-{month:02d}",
+                "previous": f"{tax_year}-{before.period_month.month:02d}",
+                "employer": after.employer,
+            }
+            between = range(before.period_month.month + 1, month)
+            if between:
+                params["missing"] = ",".join(f"{tax_year}-{m:02d}" for m in between)
+            warnings.append(warning(WarningCode.ANLAGE_N_PAYSLIP_GAP, **params))
     figures: dict[str, Decimal] = {}
     for name in _PROJECTED:
         pair = getattr(last, name)

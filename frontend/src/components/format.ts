@@ -71,6 +71,16 @@ export function formatDate(value: string | null | undefined): string {
   return match ? `${match[3]}.${match[2]}.${match[1]}` : value;
 }
 
+const MONTH_NAMES = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+
+/** A month ("2026-07" or "2026-07-01") as "Juli 2026"; anything else as sent. */
+export function formatMonth(value: string | null | undefined): string {
+  if (!value) return "–";
+  const match = /^(\d{4})-(\d{2})/.exec(value);
+  const name = match ? MONTH_NAMES[Number(match[2]) - 1] : undefined;
+  return match && name ? `${name} ${match[1]}` : value;
+}
+
 const dateTime = new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeStyle: "short" });
 
 /** A timestamp (recorded_at, created_at) in local time. */

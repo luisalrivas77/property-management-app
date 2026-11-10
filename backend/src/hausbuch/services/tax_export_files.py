@@ -165,6 +165,36 @@ def _count(params: dict[str, str], one: str, many: str) -> str:
     return f"{n or 'Einige'} {one if n == '1' else many}"
 
 
+_MONTHS = (
+    "Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September",
+    "Oktober", "November", "Dezember",
+)  # fmt: skip
+
+
+def _month_name(iso: str | None) -> str | None:
+    """A month "2026-07" as "Juli 2026"; None for anything else."""
+    match = re.fullmatch(r"([0-9]{4})-(0[1-9]|1[0-2])", iso or "")
+    return f"{_MONTHS[int(match[2]) - 1]} {match[1]}" if match else None
+
+
+def _payslip_gap_text(p: dict[str, str]) -> str:
+    """anlage_n.payslip_gap with its months (labels.ts says the same, with the employer)."""
+    month = _month_name(p.get("month"))
+    if month is None:
+        return "Zwischen den Gehaltsabrechnungen fehlt ein Monat."
+    missing = [m for m in (_month_name(x) for x in p.get("missing", "").split(",")) if m]
+    if missing:
+        names = ", ".join(missing)
+        verb = "fehlt" if len(missing) == 1 else "fehlen"
+        return (
+            f"Gehaltsabrechnung {names} {verb}: die Jahressumme im {month} passt nicht zur "
+            "Summe der Abrechnung davor."
+        )
+    return (
+        f"Gehaltsabrechnung {month} passt nicht zur Vormonatssumme: bitte die Jahreswerte prüfen."
+    )
+
+
 # The warning texts of labels.ts WARNING_TEXT, without any counterparty: the sheet carries no
 # IBAN, not even a masked one.
 WARNING_TEXT: dict[WarningCode, Callable[[dict[str, str]], str]] = {
@@ -303,7 +333,7 @@ WARNING_TEXT: dict[WarningCode, Callable[[dict[str, str]], str]] = {
         "Die Anlage N für dieses Jahr ist noch nicht veröffentlicht; Zeilen und "
         "Kennzahlen sind vorläufig."
     ),
-    WarningCode.ANLAGE_N_PAYSLIP_GAP: lambda p: "Zwischen den Gehaltsabrechnungen fehlt ein Monat.",
+    WarningCode.ANLAGE_N_PAYSLIP_GAP: _payslip_gap_text,
     WarningCode.ANLAGE_N_PAYSLIP_NO_YTD: lambda p: (
         "Die Gehaltsabrechnung hat keine Jahreswerte: die Hochrechnung nutzt nur den Monatswert."
     ),

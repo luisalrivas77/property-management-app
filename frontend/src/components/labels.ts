@@ -29,7 +29,7 @@ import type {
 } from "@/api/schemas";
 import type { components } from "@/api/types";
 
-import { formatDate, formatMoney } from "./format";
+import { formatDate, formatMoney, formatMonth } from "./format";
 
 // Step 4's enums have no alias in schemas.ts yet.
 type AllocationCategory = components["schemas"]["AllocationCategory"];
@@ -573,7 +573,7 @@ export const WARNING_TEXT: Record<WarningCode, (params: Params) => string> = {
   "anlage_n.receipt_missing": () => "Für eine Ausgabe ist kein Beleg hinterlegt.",
   "anlage_n.form_provisional": () =>
     "Die Anlage N für dieses Jahr ist noch nicht veröffentlicht; Zeilen und Kennzahlen sind vorläufig.",
-  "anlage_n.payslip_gap": () => "Zwischen den Gehaltsabrechnungen fehlt ein Monat.",
+  "anlage_n.payslip_gap": (p) => payslipGapText(p),
   "anlage_n.payslip_no_ytd": () =>
     "Die Gehaltsabrechnung hat keine Jahreswerte: die Hochrechnung nutzt nur den Monatswert.",
   "anlage_n.work_room_records": () => "Für das Arbeitszimmer bitte Grundriss und Kosten aufbewahren.",
@@ -692,6 +692,19 @@ const NOT_MODELLED: Record<string, string> = {
   prepayments: "Vorauszahlungen",
   capital_income: "Kapitalerträge (ab Phase 8)",
 };
+
+/** anlage_n.payslip_gap with its months: `month` is the payslip whose year-to-date sum does not
+ * follow from the one before (`previous`); `missing` lists the months between the two, if any. */
+function payslipGapText(p: Params): string {
+  if (!p.month) return "Zwischen den Gehaltsabrechnungen fehlt ein Monat.";
+  const employer = p.employer ? ` (${p.employer})` : "";
+  const missing = (p.missing ?? "").split(",").filter((m) => m !== "");
+  if (missing.length > 0) {
+    const names = missing.map(formatMonth).join(", ");
+    return `Gehaltsabrechnung ${names}${employer} ${missing.length === 1 ? "fehlt" : "fehlen"}: die Jahressumme im ${formatMonth(p.month)} passt nicht zur Summe der Abrechnung davor.`;
+  }
+  return `Gehaltsabrechnung ${formatMonth(p.month)}${employer} passt nicht zur Vormonatssumme: bitte die Jahreswerte prüfen.`;
+}
 
 /** An unknown code is shown as sent. */
 export function notModelledLabel(code: string): string {
