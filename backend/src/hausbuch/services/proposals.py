@@ -56,7 +56,13 @@ from hausbuch.schemas.api import (
 )
 from hausbuch.schemas.common import Schema
 from hausbuch.schemas.document import DocumentTyping
-from hausbuch.schemas.employment import RETURN_INPUT_VALUES, ReturnInputCreate
+from hausbuch.schemas.employment import (
+    RETURN_INPUT_VALUES,
+    ReturnInput,
+    ReturnInputCreate,
+    ReturnInputEvidence,
+    ReturnInputEvidenceValue,
+)
 from hausbuch.schemas.enums import (
     ActorType,
     DocumentSubtype,
@@ -1067,6 +1073,50 @@ def list_document_proposals(conn: Connection, document_id: UUID) -> list[Proposa
         .order_by(proposal_table.c.created_at.desc(), proposal_table.c.id.desc())
     )
     return [_to_proposal(r) for r in rows]
+
+
+def return_input_evidence(conn: Connection, row: ReturnInput) -> ReturnInputEvidence:
+    """The row's Beleg and, when an applied proposal of that document created or kept the row
+    (its applied_entities name the row), each value's page, quote and decision: the newest
+    such proposal. owner_id is left out (matched by code, never quoted). Read-only."""
+    found = ReturnInputEvidence(return_input_id=row.id, document_id=row.document_id)
+    if row.document_id is None:
+        return found
+    names_row = [{"entity_type": "return_input", "entity_id": str(row.id)}]
+    p = proposal_table.c
+    match = conn.execute(
+        select(p.id, p.fields, p.decisions, p.applied_entities, p.decided_at, p.scrubbed_at)
+        .where(
+            p.document_id == row.document_id,
+            p.status == ProposalStatus.APPLIED.value,
+            p.applied_entities.contains(names_row),
+        )
+        .order_by(p.decided_at.desc(), p.id.desc())
+        .limit(1)
+    ).one_or_none()
+    if match is None:
+        return found
+    found = found.model_copy(update={"proposal_id": match.id, "decided_at": match.decided_at})
+    if match.scrubbed_at is not None or match.fields is None:
+        return found.model_copy(update={"scrubbed": True})
+    key = next(a["key"] for a in match.applied_entities or [] if a.get("entity_id") == str(row.id))
+    record = next(
+        (ProposalRecord.model_validate(r) for r in match.fields if r.get("key") == key), None
+    )
+    if record is None:
+        return found
+    decisions = (match.decisions or {}).get(key, {})
+    values = [
+        ReturnInputEvidenceValue(
+            field=name,
+            page=None if value.source is None else value.source.page,
+            quote=None if value.source is None else value.source.quote,
+            decision=decisions.get(name),
+        )
+        for name, value in record.fields.items()
+        if name != "owner_id"
+    ]
+    return found.model_copy(update={"values": values})
 
 
 # --- Helpers -----------------------------------------------------------------------------

@@ -4,14 +4,15 @@
 // return as GET /api/tax/return-estimate computes it on every read — refund or back-payment,
 // the §46 filing check with its deadline, the Jahresfragen progress, and a fold-out with the
 // chain from the Einkünfte to the result. Every euro figure is the backend's (principle 1);
-// this card formats, names and links, it adds nothing up. The estimate cites its sources as
-// one list (ReturnEstimate.sources), so the card has one sources button, not one per figure.
+// this card formats, names and links, it adds nothing up. Each line of the fold-out opens its
+// own sources (OwnerIncome.sources, PropertyIncome.sources, ReturnEstimate.line_sources); the
+// headline button opens all of them at once (ReturnEstimate.sources, their union).
 import Link from "next/link";
 import { useCallback, type ReactNode } from "react";
 
 import { api, ok } from "@/api/client";
 import { ApiError, ruleCodes } from "@/api/errors";
-import type { Owner, Property } from "@/api/schemas";
+import type { Owner, Property, TaxSourceRef } from "@/api/schemas";
 import type { components } from "@/api/types";
 
 import { formatDate, formatMoney, formatPercent } from "./format";
@@ -81,6 +82,23 @@ export function ReturnEstimateCard({ year, state }: { year: number; state: Loade
   return <EstimateView estimate={state.data} owners={owners.data ?? []} properties={properties.data ?? []} />;
 }
 
+/** Why a refund or back-payment arises, from the two owners' Steuerklassen (Q-O18): the class
+ * sets only the monthly Lohnsteuer, never the year's tax, so this is a sentence and no figure.
+ * Null unless both owners have a class and the pair is one of the married combinations. */
+export function taxClassSentence(estimate: ReturnEstimate): string | null {
+  const classes = (estimate.income_n ?? []).map((i) => i.tax_class).filter((c): c is NonNullable<typeof c> => c != null);
+  if (classes.length !== 2) return null;
+  const pair = [...classes].sort().join("/");
+  if (pair === "iii/v") return "Steuerklassen III/V: die Erstattung oder Nachzahlung gleicht den Lohnsteuerabzug aus.";
+  if (classes.includes("iv_factor") && classes.every((c) => c === "iv" || c === "iv_factor")) {
+    return "Steuerklassen IV/IV mit Faktor: der Lohnsteuerabzug liegt schon nahe an der gemeinsamen Steuer; die Erstattung oder Nachzahlung gleicht den Rest aus.";
+  }
+  if (pair === "iv/iv") {
+    return "Steuerklassen IV/IV: jeder zahlt Lohnsteuer wie allein veranlagt; die Erstattung oder Nachzahlung gleicht den Unterschied zur gemeinsamen Steuer aus.";
+  }
+  return null;
+}
+
 function ownerName(owners: Owner[], id: string | null | undefined): string {
   return owners.find((o) => o.id === id)?.full_name ?? "Eigentümer";
 }
@@ -95,6 +113,7 @@ function EstimateView({ estimate, owners, properties }: { estimate: ReturnEstima
       : "Voraussichtliche Nachzahlung";
   const filing = estimate.filing_required;
   const progress = estimate.questionnaire;
+  const classes = taxClassSentence(estimate);
   const shown = (estimate.warnings ?? []).filter(
     (w) => w.code !== "return.filing_required" && w.code !== "return.questionnaire_open",
   );
@@ -122,6 +141,7 @@ function EstimateView({ estimate, owners, properties }: { estimate: ReturnEstima
           <>Abgabe freiwillig ({(filing.reasons ?? []).join("; ")})</>
         )}
       </p>
+      {classes ? <p className="tax-subline tax-estimate-classes">{classes}</p> : null}
       <p className="tax-subline">
         Jahresfragen {year}: {progress.answered} von {progress.total} beantwortet ·{" "}
         <Link href={questionnaireHref(year)}>{progress.answered < progress.total ? "Weiter" : "Ansehen"}</Link>
@@ -155,7 +175,7 @@ function EstimateView({ estimate, owners, properties }: { estimate: ReturnEstima
       ) : null}
       {(estimate.not_modelled ?? []).length > 0 ? (
         <p className="muted tax-subline">
-          Nicht berücksichtigt: {(estimate.not_modelled ?? []).map(notModelledLabel).join(", ")}
+          Nicht berücksichtigt: {(estimate.not_modelled ?? []).map((code) => notModelledText(code, estimate)).join(", ")}
         </p>
       ) : null}
       {estimate.tariff.reused_from != null ? (
@@ -165,10 +185,36 @@ function EstimateView({ estimate, owners, properties }: { estimate: ReturnEstima
   );
 }
 
-function Row({ label, amount, strong }: { label: ReactNode; amount: string; strong?: boolean }) {
+/** A "Nicht berücksichtigt" item; the außergewöhnliche Belastungen carry the household's
+ * zumutbare Belastung (§33 Abs. 3, a reminder figure the API computes and subtracts nowhere). */
+function notModelledText(code: string, estimate: ReturnEstimate): string {
+  const label = notModelledLabel(code);
+  return code === "extraordinary_burden" && estimate.extraordinary_threshold != null
+    ? `${label} (zumutbare Belastung ${formatMoney(estimate.extraordinary_threshold)})`
+    : label;
+}
+
+function Row({
+  label,
+  amount,
+  strong,
+  refs,
+  title,
+  propertyId,
+}: {
+  label: ReactNode;
+  amount: string;
+  strong?: boolean;
+  refs?: TaxSourceRef[];
+  title?: string;
+  propertyId?: string;
+}) {
   return (
     <li className={strong ? "tax-estimate-total" : undefined}>
       <span>{label}</span>
+      {refs && refs.length > 0 ? (
+        <SourcesButton refs={refs} title={title ?? (typeof label === "string" ? label : "Zeile")} propertyId={propertyId} />
+      ) : null}
       <span className="num">{formatMoney(amount)}</span>
     </li>
   );
@@ -201,6 +247,7 @@ function Breakdown({ estimate, owners, properties }: { estimate: ReturnEstimate;
   const progression = a.progression;
   const children = a.children;
   const withheld = estimate.withheld;
+  const lines = estimate.line_sources;
   const propertyLabel = (id: string) => properties.find((p) => p.id === id)?.label ?? "Immobilie";
   return (
     <div className="stack tax-estimate-breakdown">
@@ -212,10 +259,17 @@ function Breakdown({ estimate, owners, properties }: { estimate: ReturnEstimate;
               key={n.owner_id}
               label={`Anlage N ${ownerName(owners, n.owner_id)}${n.status === "none" ? " (kein Arbeitslohn erfasst)" : ""}`}
               amount={n.result}
+              refs={n.sources}
             />
           ))}
           {(estimate.income_v ?? []).map((v) => (
-            <Row key={v.property_id} label={`Anlage V ${propertyLabel(v.property_id)}`} amount={v.result} />
+            <Row
+              key={v.property_id}
+              label={`Anlage V ${propertyLabel(v.property_id)}`}
+              amount={v.result}
+              refs={v.sources}
+              propertyId={v.property_id}
+            />
           ))}
           <Row label="Summe der Einkünfte" amount={estimate.total_income} strong />
         </ul>
@@ -223,11 +277,26 @@ function Breakdown({ estimate, owners, properties }: { estimate: ReturnEstimate;
       <div>
         <p className="tax-tracked-head">Sonderausgaben</p>
         <ul className="tax-estimate-rows">
-          <Row label="Vorsorgeaufwendungen" amount={estimate.vorsorge_total} />
-          {!isZeroAmount(estimate.church_tax_paid) ? <Row label="Kirchensteuer gezahlt" amount={estimate.church_tax_paid} /> : null}
-          {!isZeroAmount(estimate.donations) ? <Row label="Spenden" amount={estimate.donations} /> : null}
-          {!isZeroAmount(estimate.childcare) ? <Row label="Kinderbetreuungskosten" amount={estimate.childcare} /> : null}
-          <Row label="Sonderausgaben gesamt (mindestens der Pauschbetrag)" amount={estimate.special_expenses} strong />
+          <Row label="Vorsorgeaufwendungen" amount={estimate.vorsorge_total} refs={lines?.vorsorge} />
+          {estimate.special_allowance_used ? (
+            <Row
+              label={
+                isZeroAmount(estimate.church_tax_paid) && isZeroAmount(estimate.donations)
+                  ? "Sonderausgaben-Pauschbetrag"
+                  : "Sonderausgaben-Pauschbetrag (höher als Kirchensteuer und Spenden)"
+              }
+              amount={estimate.special_allowance ?? "0"}
+              refs={lines?.special_allowance}
+              title="Sonderausgaben-Pauschbetrag"
+            />
+          ) : (
+            <>
+              {!isZeroAmount(estimate.church_tax_paid) ? <Row label="Kirchensteuer gezahlt" amount={estimate.church_tax_paid} refs={lines?.church_tax_paid} /> : null}
+              {!isZeroAmount(estimate.donations) ? <Row label="Spenden" amount={estimate.donations} refs={lines?.donations} /> : null}
+            </>
+          )}
+          {!isZeroAmount(estimate.childcare) ? <Row label="Kinderbetreuungskosten" amount={estimate.childcare} refs={lines?.childcare} /> : null}
+          <Row label="Sonderausgaben gesamt" amount={estimate.special_expenses} strong />
         </ul>
       </div>
       <ul className="tax-estimate-rows">
@@ -239,20 +308,30 @@ function Breakdown({ estimate, owners, properties }: { estimate: ReturnEstimate;
               : "Einkommensteuer"
           }
           amount={a.est}
+          refs={lines?.income_tax}
+          title="Einkommensteuer"
         />
         {children ? (
           <li className="tax-estimate-note">
-            {children.favourable === "kindergeld"
-              ? `${childrenLabel(estimate)}: Kindergeld ${formatMoney(children.kindergeld)} günstiger als die Freibeträge (Ersparnis ${formatMoney(children.saving)})`
-              : `${childrenLabel(estimate)}: Freibeträge ${formatMoney(children.allowances)} günstiger als das Kindergeld ${formatMoney(children.kindergeld)} (Ersparnis ${formatMoney(children.saving)})`}
+            <span>
+              {children.favourable === "kindergeld"
+                ? `${childrenLabel(estimate)}: Kindergeld ${formatMoney(children.kindergeld)} günstiger als die Freibeträge (Ersparnis ${formatMoney(children.saving)})`
+                : `${childrenLabel(estimate)}: Freibeträge ${formatMoney(children.allowances)} günstiger als das Kindergeld ${formatMoney(children.kindergeld)} (Ersparnis ${formatMoney(children.saving)})`}
+            </span>
+            <SourcesButton refs={lines?.children ?? []} title="Kinder" />
           </li>
         ) : null}
-        <Row label="Steuerermäßigung § 35a" amount={a.credit_35a} />
+        <Row label="Steuerermäßigung § 35a" amount={a.credit_35a} refs={lines?.credit_35a} />
         {!isZeroAmount(a.credit_35a) ? <Row label="Einkommensteuer nach Ermäßigung" amount={a.est_final} /> : null}
-        <Row label="Solidaritätszuschlag" amount={a.soli} />
-        <Row label="Kirchensteuer" amount={a.church} />
+        <Row label="Solidaritätszuschlag" amount={a.soli} refs={lines?.surcharges} />
+        <Row label="Kirchensteuer" amount={a.church} refs={lines?.surcharges} />
         <Row label="Festzusetzen" amount={a.total} strong />
-        <Row label="Einbehalten (Lohnsteuer, Soli, Kirchensteuer laut Nr. 4–7)" amount={withheld.total} />
+        <Row
+          label="Einbehalten (Lohnsteuer, Soli, Kirchensteuer laut Nr. 4–7)"
+          amount={withheld.total}
+          refs={lines?.withheld}
+          title="Einbehalten"
+        />
         <Row
           label={estimate.result.startsWith("-") ? "Ergebnis (Erstattung)" : "Ergebnis (Nachzahlung)"}
           amount={estimate.result}

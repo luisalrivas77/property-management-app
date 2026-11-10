@@ -96,6 +96,11 @@ async function answerScreen(page: Page, question: string, group: string): Promis
       return answer(page, isA ? "Nein" : "Trifft nicht zu");
     case "Gab es Spenden oder Mitgliedsbeiträge an gemeinnützige Organisationen?":
       return answer(page, "Trifft nicht zu");
+    case "Gab es hohe Krankheitskosten oder andere außergewöhnliche Belastungen?":
+      // The zumutbare Belastung from the estimate, a reminder figure (gap 6); 2027 has no
+      // Anlage N rule set, so no estimate and no figure there.
+      if (page.url().includes(`/tax/${YEAR}/`)) await expect(page.getByText(`Ihre zumutbare Belastung ${YEAR}:`)).toBeVisible();
+      return answer(page, "Nein");
     default:
       return answer(page, "Nein");
   }

@@ -665,6 +665,31 @@ class ReturnInput(ReturnInputFact):
     recorded_by: UUID | None = None
 
 
+class ReturnInputEvidenceValue(Schema):
+    """One value of the pre-fill a row was applied from: where the document states it (page
+    and quote, when the model cited one) and what the user did with it on apply."""
+
+    field: str  # the proposal's field name, e.g. "value.gross" or "value.gross.ytd"
+    page: int | None = Field(default=None, ge=1)
+    quote: str | None = None
+    decision: Literal["accepted", "edited", "cleared", "skipped"] | None = None
+
+
+class ReturnInputEvidence(Schema):
+    """GET /return-inputs/{id}/evidence: the row's Beleg and, when the row was applied from a
+    pre-fill proposal, each value's page and quote (read-only, gap 3). `scrubbed` says the
+    proposal's values were removed 90 days after the decision (phase 2 D19), so only the Beleg
+    is left; `values` is then empty."""
+
+    return_input_id: UUID
+    document_id: UUID | None = None
+    opens_inline: bool = False  # the original opens in the browser (#page= works)
+    proposal_id: UUID | None = None
+    decided_at: datetime | None = None
+    scrubbed: bool = False
+    values: list[ReturnInputEvidenceValue] = Field(default_factory=list)
+
+
 class OwnerReturnFacts(Schema):
     """Everything draft_n and vorsorge read for one owner and year: the owner's rows (yearly
     kinds of the year, spanning kinds up to it), the expected-pay row as the last fallback,
@@ -1109,15 +1134,25 @@ class FilingCheck(Schema):
     deadline: date
 
 
+TaxClass = Literal["i", "ii", "iii", "iv", "iv_factor", "v", "vi"]  # owner.tax_class's codes
+
+
 class OwnerIncome(Schema):
     owner_id: UUID
     result: Money  # the Anlage N result
     status: Literal["certified", "estimate", "none"]
+    # The Steuerklasse for the Gesamt card's sentence only (Q-O18): it changes no figure. From
+    # the latest confirmed certificate (else payslip) outside class VI, else the year's
+    # owner.tax_class answer, else none.
+    tax_class: TaxClass | None = None
+    tax_class_source: Literal["certificate", "payslip", "questionnaire"] | None = None
+    sources: list[SourceRef] = Field(default_factory=list)  # the Anlage N lines' rows
 
 
 class PropertyIncome(Schema):
     property_id: UUID
     result: Money  # the Anlage V result
+    sources: list[SourceRef] = Field(default_factory=list)  # the estimate sets the property
 
 
 class Withheld(Schema):
@@ -1150,6 +1185,25 @@ class ChildMonthsDetail(Schema):
     months: int = Field(ge=0, le=12)
 
 
+class EstimateLineSources(Schema):
+    """What each line of the whole-return estimate came from, so the Gesamt card opens the
+    sources line by line (ReturnEstimate.sources stays their union). The Anlage N and V lines
+    carry theirs on OwnerIncome and PropertyIncome."""
+
+    vorsorge: list[SourceRef] = Field(default_factory=list)
+    church_tax_paid: list[SourceRef] = Field(default_factory=list)
+    donations: list[SourceRef] = Field(default_factory=list)
+    childcare: list[SourceRef] = Field(default_factory=list)
+    special_allowance: list[SourceRef] = Field(default_factory=list)
+    # the income tax with the Progressionsvorbehalt: tariff, rule set and the benefits' rows
+    income_tax: list[SourceRef] = Field(default_factory=list)
+    children: list[SourceRef] = Field(default_factory=list)
+    credit_35a: list[SourceRef] = Field(default_factory=list)
+    # Soli and church tax: the tariff
+    surcharges: list[SourceRef] = Field(default_factory=list)
+    withheld: list[SourceRef] = Field(default_factory=list)
+
+
 class ReturnEstimate(Schema):
     """The whole-return estimate (§5.8, D101). result = assessed.total − withheld.total:
     positive is a back-payment, negative a refund."""
@@ -1164,6 +1218,14 @@ class ReturnEstimate(Schema):
     donations: NonNegativeMoney = _ZERO
     childcare: NonNegativeMoney = _ZERO
     special_expenses: NonNegativeMoney
+    # The Sonderausgaben-Pauschbetrag (§10c, joint) and whether it counted instead of the
+    # church tax paid and the donations (they were below it): labels for the screen only.
+    special_allowance: NonNegativeMoney = _ZERO
+    special_allowance_used: bool = False
+    # The household's zumutbare Belastung (§33 Abs. 3) over total_income: a reminder figure
+    # for the außergewöhnliche Belastungen the estimate does not model, never subtracted
+    # (D95, D112). None when the tariff carries no bands.
+    extraordinary_threshold: NonNegativeMoney | None = None
     zve: NonNegativeMoney
     assessed: AssessedTax
     withheld: Withheld
@@ -1175,7 +1237,8 @@ class ReturnEstimate(Schema):
     reminders: list[str] = Field(default_factory=list)
     warnings: list[DraftWarning] = Field(default_factory=list)
     tariff: TariffStamp
-    sources: list[SourceRef] = Field(default_factory=list)
+    sources: list[SourceRef] = Field(default_factory=list)  # every line's sources, once each
+    line_sources: EstimateLineSources = Field(default_factory=EstimateLineSources)
     # the household's children with their months in the year, in the household's order
     children: list[ChildMonthsDetail] = Field(default_factory=list)
 

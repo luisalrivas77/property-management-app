@@ -35,9 +35,22 @@ export function taxFormHref(form: TaxForm, state: TaxYearState): string {
   ])}`;
 }
 
-/** The Jahresfragen flow of the year (built in the questionnaire step, phase-4b.md §10). */
-export function questionnaireHref(year: number): string {
-  return `/tax/${year}/fragen`;
+/** One answer slot of the Jahresfragen: the question's key and whose it is. */
+export interface QuestionTarget {
+  key: string;
+  ownerId?: string | null;
+  propertyId?: string | null;
+}
+
+/** The Jahresfragen flow of the year (built in the questionnaire step, phase-4b.md §10), opened
+ * at one question when `target` is given (?frage=…&eigentuemer=…&immobilie=…). */
+export function questionnaireHref(year: number, target?: QuestionTarget): string {
+  const base = `/tax/${year}/fragen`;
+  if (!target) return base;
+  const query = new URLSearchParams({ frage: target.key });
+  if (target.ownerId) query.set("eigentuemer", target.ownerId);
+  if (target.propertyId) query.set("immobilie", target.propertyId);
+  return `${base}?${query.toString()}`;
 }
 
 export function TaxTabs({ current, state }: { current: TaxForm; state: TaxYearState }) {

@@ -21,8 +21,9 @@ from hausbuch.rules.tax.return_estimate import (
     filing_deadline,
     return_estimate,
 )
-from hausbuch.schemas.employment import PropertyIncome
+from hausbuch.schemas.employment import PropertyIncome, QuestionnaireAnswer
 from hausbuch.schemas.performance import IncomeInputFact
+from hausbuch.schemas.tax import SourceRef
 
 ZERO = Decimal("0")
 
@@ -97,6 +98,130 @@ def test_the_estimate_opens_its_sources_and_stamps_the_tariff():
     assert got.tariff.tax_year == 2026
     assert [i.status for i in got.income_n] == ["certified", "certified"]
     assert sum((i.result for i in got.income_n), ZERO) + Decimal("-7948.66") == got.total_income
+
+
+@pytest.mark.rule
+def test_each_estimate_line_opens_its_own_sources():
+    """Every line of the Gesamt card names what it came from, and the union stays the
+    estimate's sources: the Anlage N lines their owner's rows, the Anlage V lines their
+    property, Vorsorge and Einbehalten the certificates, the children their rows."""
+    case = next(c for c in load("return_estimate").cases if c.id == "household_2026")
+    got = _estimate(case)
+    lines = got.line_sources
+    union = set(got.sources)
+    every = [ref for n in got.income_n for ref in n.sources]
+    every += [ref for v in got.income_v for ref in v.sources]
+    every += [ref for name in type(lines).model_fields for ref in getattr(lines, name)]
+    assert set(every) <= union
+    assert set(every) == union - {ref for ref in union if ref.kind == "income_input"}
+
+    for n, facts in zip(got.income_n, case.resolved_owners(), strict=True):
+        ids = {r.id for r in facts.inputs}
+        rows = {ref.id for ref in n.sources if ref.kind == "return_input"}
+        assert rows and rows <= ids
+    assert [v.sources for v in got.income_v] == [
+        [SourceRef(kind="property", id=p.property_id)] for p in case.properties
+    ]
+    assert {ref.kind for ref in lines.withheld} >= {"return_input"}
+    assert {ref.kind for ref in lines.vorsorge} >= {"return_input"}
+    child_ids = {r.id for r in current(case.household) if r.kind == "child"}
+    assert child_ids and child_ids <= {ref.id for ref in lines.children}
+    assert lines.income_tax[0].kind == "tariff" and lines.surcharges == lines.special_allowance
+    assert lines.donations == [] and lines.credit_35a == []
+
+
+@pytest.mark.rule
+def test_the_estimate_flags_the_pauschbetrag_and_shows_the_zumutbare_belastung():
+    """Labels only: the 72 € Pauschbetrag counted (no church tax, no donations), and the
+    zumutbare Belastung of questionnaire.yaml's extraordinary_threshold_household (GdE
+    80,045.44, one child) is shown, subtracted from nothing."""
+    case = next(c for c in load("return_estimate").cases if c.id == "household_2026")
+    got = _estimate(case)
+    assert got.total_income == Decimal("80045.44")
+    assert got.special_allowance == Decimal("72")
+    assert got.special_allowance_used is True
+    assert got.extraordinary_threshold == Decimal("2537.12")
+    assert got.special_expenses == case.expect.special_expenses
+    assert got.zve == case.expect.zve and got.result == case.expect.result
+
+    # Church tax paid above the Pauschbetrag: the itemised amount counts instead.
+    cases = load("return_estimate").cases
+    church = next(c for c in cases if c.id == "church_tax_as_special_expense")
+    itemised = _estimate(church)
+    assert itemised.church_tax_paid + itemised.donations > 72
+    assert itemised.special_allowance_used is False
+
+
+def _tax_class_answer(owner_id, choice: str) -> QuestionnaireAnswer:
+    return QuestionnaireAnswer.model_validate(
+        {
+            "id": UUID(int=98),
+            "workspace_id": UUID(int=97),
+            "recorded_at": "2027-03-01T10:00:00Z",
+            "question_key": "owner.tax_class",
+            "tax_year": 2026,
+            "owner_id": owner_id,
+            "answer": "yes",
+            "choice": choice,
+        }
+    )
+
+
+@pytest.mark.rule
+def test_the_tax_class_comes_from_the_certificate_then_the_questionnaire():
+    """Q-O18: the Steuerklasse is a label for the Gesamt card. The certificate wins over the
+    answer, IV with the Faktor is its own code, an owner without pay takes the answer, and no
+    figure moves."""
+    case = next(c for c in load("return_estimate").cases if c.id == "household_2026")
+    t, rs = registry.tariff(2026), rules_for(2026)
+    a, b = case.resolved_owners()
+    plain = _estimate(case)
+    assert [(i.tax_class, i.tax_class_source) for i in plain.income_n] == [
+        ("iv", "certificate"),
+        ("iv", "certificate"),
+    ]
+
+    def estimate(facts, answers):
+        return return_estimate(
+            2026,
+            case.owners,
+            facts,
+            current(case.household),
+            [PropertyIncome(property_id=p.property_id, result=p.result) for p in case.properties],
+            case.questionnaire,
+            answers,
+            t,
+            rs,
+        )
+
+    # The answer does not override a confirmed certificate.
+    answered = estimate([a, b], [_tax_class_answer(a.owner_id, "iii")])
+    assert answered.income_n[0].tax_class == "iv"
+
+    # A certificate with the Faktor reads as IV mit Faktor; the tax stays the same.
+    factored = [
+        r.model_copy(update={"value": r.value.model_copy(update={"tax_class_factor": True})})
+        if r.kind == "wage_certificate"
+        else r
+        for r in b.inputs
+    ]
+    with_factor = estimate([a, b.model_copy(update={"inputs": factored})], [])
+    assert with_factor.income_n[1].tax_class == "iv_factor"
+    assert (with_factor.zve, with_factor.assessed) == (plain.zve, plain.assessed)
+
+    # An owner without pay takes the questionnaire's answer; a withdrawn one counts as none.
+    nobody = b.model_copy(update={"inputs": [], "expected_gross_pay": None})
+    asked = estimate([a, nobody], [_tax_class_answer(b.owner_id, "v")])
+    assert (asked.income_n[1].tax_class, asked.income_n[1].tax_class_source) == (
+        "v",
+        "questionnaire",
+    )
+    withdrawn = _tax_class_answer(b.owner_id, "v").model_copy(
+        update={"withdrawn": True, "supersedes_id": UUID(int=96)}
+    )
+    unknown = estimate([a, nobody], [withdrawn])
+    assert unknown.income_n[1].tax_class is None
+    assert (asked.zve, asked.result) == (unknown.zve, unknown.result)
 
 
 @pytest.mark.rule

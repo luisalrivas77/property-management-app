@@ -99,4 +99,18 @@ test("the Einkommen section shows the pay source and adds a child and household 
   await expect(page.getByText(`Für ${YEAR} sind keine Spenden erfasst.`)).toBeVisible();
   const donations = await apiCall<unknown[]>(page, "GET", `/api/return-inputs?tax_year=${YEAR}&kind=special_expense`);
   expect(donations).toHaveLength(0);
+
+  // A row with a document opens it as its Beleg (gap 3); a row without one has no link.
+  await apiCall(page, "POST", "/api/return-inputs", {
+    kind: "special_expense",
+    tax_year: YEAR,
+    document_id: document.id,
+    value: { expense_class: "donation", amount: "30.00", recipient_label: "Verein Y" },
+    withdrawn: false,
+  });
+  await page.reload();
+  await page.getByLabel("Steuerjahr").selectOption(String(YEAR));
+  const withReceipt = page.getByRole("listitem").filter({ hasText: "Verein Y" });
+  await expect(withReceipt.getByRole("link", { name: "Beleg" })).toHaveAttribute("href", `/documents/${document.id}`);
+  await expect(page.getByRole("listitem").filter({ hasText: "Handwerkerleistung" }).getByRole("link", { name: "Beleg" })).toHaveCount(0);
 });

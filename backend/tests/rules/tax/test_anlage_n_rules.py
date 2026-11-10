@@ -234,3 +234,24 @@ def test_a_disposal_after_the_plan_ended_adds_no_slice():
     )
     assert _in_force(row, 2030, rs)
     assert not _in_force(row, 2031, rs)
+
+
+@pytest.mark.rule
+def test_a_payslip_gap_names_its_months_and_employer():
+    """The gap warning says which payslip does not follow (month), the one before (previous),
+    the months between (missing) and the employer, so the screen can name the month."""
+    case = next(c for c in load("payslip").cases if c.id == "missing_month_warning")
+    got = pay_certificates(case.certificates, case.payslips, case.tax_year)
+    (gap,) = [w for w in got.warnings if w.code.value == "anlage_n.payslip_gap"]
+    assert gap.params == {
+        "month": "2026-08",
+        "previous": "2026-06",
+        "employer": "Muster GmbH",
+        "missing": "2026-07",
+    }
+    consecutive = [
+        case.payslips[0],
+        case.payslips[1].model_copy(update={"period_month": date(2026, 7, 1)}),
+    ]
+    (gap,) = pay_certificates([], consecutive, 2026).warnings
+    assert gap.params == {"month": "2026-07", "previous": "2026-06", "employer": "Muster GmbH"}
