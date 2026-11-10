@@ -1,0 +1,463 @@
+{
+ "format": 1,
+ "doc": "lohnsteuerbescheinigung",
+ "synthetic": false,
+ "recorded_on": "2026-11-10",
+ "sdk_version": "2.6.0",
+ "classify": {
+  "prompt_version": "93d91a3094e05c87",
+  "request_sha256": "a76064cb704f40484bf17245a9f5dd6afca28a76f62d2d223866ddaf5814793a",
+  "message": {
+   "id": "msg_011CgtWrdRn3FCYgxCxeS8Hg",
+   "container": null,
+   "content": [
+    {
+     "citations": null,
+     "text": "{\"type\":\"lohnsteuerbescheinigung\",\"subtype\":null,\"contains_tenant_data\":false,\"language\":\"de\",\"confidence\":\"high\"}",
+     "type": "text"
+    }
+   ],
+   "diagnostics": null,
+   "model": "claude-haiku-5-5",
+   "role": "assistant",
+   "stop_details": null,
+   "stop_reason": "end_turn",
+   "stop_sequence": null,
+   "type": "message",
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": "us",
+    "input_tokens": 6047,
+    "output_tokens": 52,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": "standard"
+   }
+  }
+ },
+ "extract": [
+  {
+   "prompt_version": "5a926fcf9151da70",
+   "request_sha256": "732c2a8cf7485bb3af8fb8bae90224dcc7bd202285f91db08c8e0746124a37eb",
+   "message": {
+    "id": "msg_011CgtWrJzkxMZ8xDeMjUNVR",
+    "container": null,
+    "content": [
+     {
+      "citations": null,
+      "text": "title: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Ausdruck der elektronischen Lohnsteuerbescheinigung für 2026\r\nNachstehende Daten wurden maschinell an die Finanzverwaltung übertragen.\r\n",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Lohnsteuerbescheinigung 2026",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ndocument_date: unbekannt\nemployee_name: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Erika Musterfrau\r\nMusterweg 9a\r\n60311 Frankfurt am Main\r\nGeburtsdatum: 14.03.1988 Identifikationsnummer: 12 345 678 903\r\neTIN: MSTRERKA88C14K Personalnummer: 731942\r\nAnschrift und Steuernummer des Arbeitgebers:\r\nMuster GmbH, Industriestraße 5, 12345 Musterstadt, Steuernummer 012/345/67890\r\nAngaben zur Besteuerung des Arbeitslohns (Stand 01.01.2026):\r\nSteuerklasse/Faktor 4 / 0,950 Zahl der Kinderfreibeträge 1,0\r\nKirchensteuermerkmale ev",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Erika Musterfrau",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nemployer_name: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Erika Musterfrau\r\nMusterweg 9a\r\n60311 Frankfurt am Main\r\nGeburtsdatum: 14.03.1988 Identifikationsnummer: 12 345 678 903\r\neTIN: MSTRERKA88C14K Personalnummer: 731942\r\nAnschrift und Steuernummer des Arbeitgebers:\r\nMuster GmbH, Industriestraße 5, 12345 Musterstadt, Steuernummer 012/345/67890\r\nAngaben zur Besteuerung des Arbeitslohns (Stand 01.01.2026):\r\nSteuerklasse/Faktor 4 / 0,950 Zahl der Kinderfreibeträge 1,0\r\nKirchensteuermerkmale ev",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Muster GmbH",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ntax_year: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Ausdruck der elektronischen Lohnsteuerbescheinigung für 2026\r\nNachstehende Daten wurden maschinell an die Finanzverwaltung übertragen.\r\n",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "2026",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nperiod_from: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Dauer des Dienstverhältnisses vom 01.01.2026 bis 31.12.2026\r\n3. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "01.01.2026",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nperiod_to: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Dauer des Dienstverhältnisses vom 01.01.2026 bis 31.12.2026\r\n3. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "31.12.2026",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ntax_class: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Erika Musterfrau\r\nMusterweg 9a\r\n60311 Frankfurt am Main\r\nGeburtsdatum: 14.03.1988 Identifikationsnummer: 12 345 678 903\r\neTIN: MSTRERKA88C14K Personalnummer: 731942\r\nAnschrift und Steuernummer des Arbeitgebers:\r\nMuster GmbH, Industriestraße 5, 12345 Musterstadt, Steuernummer 012/345/67890\r\nAngaben zur Besteuerung des Arbeitslohns (Stand 01.01.2026):\r\nSteuerklasse/Faktor 4 / 0,950 Zahl der Kinderfreibeträge 1,0\r\nKirchensteuermerkmale ev",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "4 / 0,950",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nchurch_tax_mark: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Erika Musterfrau\r\nMusterweg 9a\r\n60311 Frankfurt am Main\r\nGeburtsdatum: 14.03.1988 Identifikationsnummer: 12 345 678 903\r\neTIN: MSTRERKA88C14K Personalnummer: 731942\r\nAnschrift und Steuernummer des Arbeitgebers:\r\nMuster GmbH, Industriestraße 5, 12345 Musterstadt, Steuernummer 012/345/67890\r\nAngaben zur Besteuerung des Arbeitslohns (Stand 01.01.2026):\r\nSteuerklasse/Faktor 4 / 0,950 Zahl der Kinderfreibeträge 1,0\r\nKirchensteuermerkmale ev",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "ev",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nchild_allowance_count: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Erika Musterfrau\r\nMusterweg 9a\r\n60311 Frankfurt am Main\r\nGeburtsdatum: 14.03.1988 Identifikationsnummer: 12 345 678 903\r\neTIN: MSTRERKA88C14K Personalnummer: 731942\r\nAnschrift und Steuernummer des Arbeitgebers:\r\nMuster GmbH, Industriestraße 5, 12345 Musterstadt, Steuernummer 012/345/67890\r\nAngaben zur Besteuerung des Arbeitslohns (Stand 01.01.2026):\r\nSteuerklasse/Faktor 4 / 0,950 Zahl der Kinderfreibeträge 1,0\r\nKirchensteuermerkmale ev",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "1,0",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ngross: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Bruttoarbeitslohn einschl. Sachbezüge ohne 9. und 10. 60.000,00\r\n4. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "60.000,00",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nincome_tax: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Einbehaltene Lohnsteuer von 3. 9.192,00\r\n6. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "9.192,00",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nsoli: unbekannt\nchurch_tax: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Einbehaltene Kirchensteuer des Arbeitnehmers von 3. 735,36\r\n15. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "735,36",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nchurch_tax_spouse: unbekannt\nreplacement_benefits: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Kurzarbeitergeld, Zuschuss zum Mutterschaftsgeld,\r\n Verdienstausfallentschädigung, Aufstockungsbetrag 1.200,00\r\n17. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "1.200,00",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nshort_time_allowance: unbekannt\nemployer_commute_tax_free: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Steuerfreie Arbeitgeberleistungen, die auf die\r\n Entfernungspauschale anzurechnen sind 480,00\r\n22. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "480,00",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nemployer_commute_flat_taxed: unbekannt\npension_employer: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Arbeitgeberanteil a) zur gesetzlichen Rentenversicherung 5.580,00\r\n23. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "5.580,00",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\npension_employee: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Arbeitnehmeranteil a) zur gesetzlichen Rentenversicherung 5.580,00\r\n25. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "5.580,00",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\npension_employee_professional: unbekannt\nsubsidy_health: unbekannt\nsubsidy_private_health: unbekannt\nsubsidy_care: unbekannt\nhealth_employee: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Arbeitnehmerbeiträge zur gesetzlichen Krankenversicherung 4.890,00\r\n26. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "4.890,00",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ncare_employee: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Arbeitnehmerbeiträge zur sozialen Pflegeversicherung 1.080,00\r\n27. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "1.080,00",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nunemployment_employee: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Arbeitnehmerbeiträge zur Arbeitslosenversicherung 780,00",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "780,00",
+      "type": "text"
+     }
+    ],
+    "diagnostics": null,
+    "model": "claude-sonnet-5-5",
+    "role": "assistant",
+    "stop_details": null,
+    "stop_reason": "end_turn",
+    "stop_sequence": null,
+    "type": "message",
+    "usage": {
+     "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+     },
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "inference_geo": "us",
+     "input_tokens": 6869,
+     "output_tokens": 731,
+     "output_tokens_details": {
+      "thinking_tokens": 0
+     },
+     "server_tool_use": null,
+     "service_tier": "standard",
+     "speed": "standard"
+    }
+   },
+   "page_offset": 0
+  }
+ ]
+}

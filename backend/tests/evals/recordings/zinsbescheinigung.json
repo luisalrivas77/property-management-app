@@ -2,18 +2,18 @@
  "format": 1,
  "doc": "zinsbescheinigung",
  "synthetic": false,
- "recorded_on": "2026-11-09",
+ "recorded_on": "2026-11-10",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "624ea59735496705",
-  "request_sha256": "8a08082a7a1aa22777069f14b31a0ce422e5acf31130d78f1209b83a5d00fd5b",
+  "prompt_version": "93d91a3094e05c87",
+  "request_sha256": "b80dd072b46e526e4029a1d8e7183ef683c8aa473ae1b242c3f869c64fb81e42",
   "message": {
-   "id": "msg_011CgsPGcXBm3pMXt7WUuvCo",
+   "id": "msg_011CgtWqwh6JidPYEB3qXZbJ",
    "container": null,
    "content": [
     {
      "citations": null,
-     "text": "{\"type\": \"zinsbescheinigung\", \"subtype\": null, \"contains_tenant_data\": false, \"language\": \"de\", \"confidence\": \"high\"}",
+     "text": "{\"type\":\"zinsbescheinigung\",\"subtype\":null,\"contains_tenant_data\":false,\"language\":\"de\",\"confidence\":\"high\"}",
      "type": "text"
     }
    ],
@@ -32,8 +32,8 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 3736,
-    "output_tokens": 50,
+    "input_tokens": 3924,
+    "output_tokens": 48,
     "output_tokens_details": {
      "thinking_tokens": 0
     },
@@ -45,10 +45,10 @@
  },
  "extract": [
   {
-   "prompt_version": "db37026b509dd7a8",
-   "request_sha256": "4d7560c4d436fa716f3dc27b55b852166325be204b1486d68ac4f5f17a252557",
+   "prompt_version": "5a926fcf9151da70",
+   "request_sha256": "0105b41e1bcac59158326156dd3456375c24cc0fbd6d79d1d3226c96d0cdd88f",
    "message": {
-    "id": "msg_011CgsPGSEZqxpHakLrLUuGT",
+    "id": "msg_011CgtWqpai21EXnD5ZBkNmR",
     "container": null,
     "content": [
      {
@@ -73,7 +73,7 @@
      },
      {
       "citations": null,
-      "text": " → Jahreszinsbescheinigung Darlehen\ndocument_date: unbekannt\nlender: ",
+      "text": "\ndocument_date: unbekannt\nlender: ",
       "type": "text"
      },
      {
@@ -99,7 +99,7 @@
      {
       "citations": [
        {
-        "cited_text": "4711-0815\r\nDarlehensstand am 01.01.2026: 243.410,12 EUR\r\nIm Jahr 2026 gezahlte Zinsen: 8.123,45 EUR\r\nIm Jahr 2026 geleistete Tilgung: 6.566,59 EUR\r\nDarlehensstand am 31.12.2026: 236.843,53 EUR\r\nDiese Bescheinigung wurde maschinell erstellt.",
+        "cited_text": "Musterbank AG, Bankplatz 1, 60311 Frankfurt am Main\r\nLuis Testkauf und Ana Testkauf\r\nMusterweg 9, 12345 Musterstadt\r\nJahreszinsbescheinigung 2026\r\nfür Ihr Darlehen Nr. 4711-0815\r\nDarlehensstand am 01.01.2026: 243.410,12 EUR\r\nIm Jahr 2026 gezahlte Zinsen: 8.123,45 EUR\r\nIm Jahr 2026 geleistete Tilgung: 6.566,59 EUR\r\nDarlehensstand am 31.12.2026: 236.843,53 EUR\r\nDiese Bescheinigung wurde maschinell erstellt.",
         "document_index": 0,
         "document_title": null,
         "end_page_number": 2,
@@ -148,7 +148,7 @@
         "type": "page_location"
        }
       ],
-      "text": "8.123,45 EUR",
+      "text": "8.123,45 €",
       "type": "text"
      }
     ],
@@ -167,8 +167,8 @@
      "cache_creation_input_tokens": 0,
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
-     "input_tokens": 3319,
-     "output_tokens": 190,
+     "input_tokens": 3463,
+     "output_tokens": 173,
      "output_tokens_details": {
       "thinking_tokens": 0
      },

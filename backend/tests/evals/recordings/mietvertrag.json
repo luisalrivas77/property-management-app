@@ -2,13 +2,13 @@
  "format": 1,
  "doc": "mietvertrag",
  "synthetic": false,
- "recorded_on": "2026-11-07",
+ "recorded_on": "2026-11-10",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "624ea59735496705",
-  "request_sha256": "9c929028cdf37bf270b9ba1133d68a528dcfafb3e5cfdbe6831839e45f4d2a46",
+  "prompt_version": "93d91a3094e05c87",
+  "request_sha256": "a21d5b514dfe6d62b4a24134229e8585feeea76ebb6892a6e01f4b5bed7450d8",
   "message": {
-   "id": "msg_011CgpDaMgHqPfmFBsRfwDdB",
+   "id": "msg_011CgtWpKePu5p7TgNgcbvCz",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 5325,
+    "input_tokens": 5513,
     "output_tokens": 42,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -45,10 +45,10 @@
  },
  "extract": [
   {
-   "prompt_version": "db37026b509dd7a8",
-   "request_sha256": "ba807888b847bddffdbbe56483df39f732cac264dbfcae6dd8d0ff62d8c3af4e",
+   "prompt_version": "5a926fcf9151da70",
+   "request_sha256": "8e6ea8110755889f805fbbd0615181fe4c3ba4efa60d8de8577c3dbe27cee7ed",
    "message": {
-    "id": "msg_011CgpDa5w18Vp3fuPPcdVvY",
+    "id": "msg_011CgtWp3EBFsCmriKq548wk",
     "container": null,
     "content": [
      {
@@ -268,7 +268,7 @@
         "type": "page_location"
        }
       ],
-      "text": "2.940,00 EUR",
+      "text": "2.940,00 €",
       "type": "text"
      },
      {
@@ -308,7 +308,7 @@
         "type": "page_location"
        }
       ],
-      "text": "980,00 EUR",
+      "text": "980,00 €",
       "type": "text"
      },
      {
@@ -328,7 +328,7 @@
         "type": "page_location"
        }
       ],
-      "text": "180,00 EUR",
+      "text": "180,00 €",
       "type": "text"
      },
      {
@@ -348,7 +348,7 @@
         "type": "page_location"
        }
       ],
-      "text": "70,00 EUR",
+      "text": "70,00 €",
       "type": "text"
      }
     ],
@@ -367,8 +367,8 @@
      "cache_creation_input_tokens": 0,
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
-     "input_tokens": 5439,
-     "output_tokens": 612,
+     "input_tokens": 5583,
+     "output_tokens": 604,
      "output_tokens_details": {
       "thinking_tokens": 0
      },
