@@ -18,7 +18,7 @@ financial health with "how much could I invest" (phase 9). The property projecti
 automation (phase 5) slot in between; the order is argued in section 9.
 
 **What stays the same:** everything you already have. Properties, the document vault, the inbox,
-statements, allocations, rules and the six principles carry over unchanged. A crypto wallet or a
+statements, allocations, rules and the principles (seven since 10 Nov 2026) carry over unchanged. A crypto wallet or a
 BISON export becomes just another account whose lines run through the same import → match →
 review → confirm pipeline. Nothing a model says ever becomes a euro figure; a model only
 classifies, matches and explains.

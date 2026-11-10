@@ -80,7 +80,7 @@ Your final message is the entire deliverable and is read by an agent, not render
 
 Project rules to check against, beyond `CLAUDE.md`:
 
-- The six architecture principles in `docs/ARCHITECTURE.md`. A euro figure computed by a model, a total with no link to its sources, an overwrite where an event belongs, or a modified original is a finding (cite the principle).
+- The seven architecture principles in `docs/ARCHITECTURE.md`. A euro figure computed by a model, a total with no link to its sources, an overwrite where an event belongs, a modified original, or a feature that needs the user to know a tax step by hand (a gap shown without an action, a record a document implies but the suggestion leaves out) is a finding (cite the principle).
 - Rule fixtures in `backend/tests/fixtures/` are the contract. An implementation PR that edits a fixture or a test's expectations is a finding, whatever the reason.
 - Every table has `workspace_id` with forced row-level security and composite foreign keys. A new table or query that can read or reference another workspace's rows is a security finding.
 - Tenant personal data never goes into an event payload (phase 1 spec, decision D5).

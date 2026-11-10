@@ -8,7 +8,7 @@ and a running profit view through to sale.
 
 The architecture spec below is the source of truth for scope, domain model, pipeline,
 AI layer, tax rules, stack and delivery phases. Read it before designing or changing
-anything, and check every change against its six architecture principles.
+anything, and check every change against its seven architecture principles.
 
 @docs/ARCHITECTURE.md
 
