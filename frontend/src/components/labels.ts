@@ -610,7 +610,7 @@ export const WORK_ROOM_PREFER: Record<WorkRoomPrefer, string> = {
   actual: "Tatsächliche Kosten",
 };
 
-/** A privately paid rental cost's class (PrivateCostValue.cost_class, D111). */
+/** A privately paid rental cost's class (PrivateCostValue.cost_class, D111; financing D134). */
 export const PRIVATE_COST_CLASS: Record<PrivateCostClass, string> = {
   travel: "Fahrten zur Wohnung",
   postage: "Porto",
@@ -618,6 +618,7 @@ export const PRIVATE_COST_CLASS: Record<PrivateCostClass, string> = {
   association: "Vermieterverein",
   legal_insurance: "Rechtsschutzversicherung",
   software: "Software",
+  financing: "Geldbeschaffungskosten (z. B. Notar und Grundbuch für die Grundschuld)",
   other: "Sonstiges",
 };
 

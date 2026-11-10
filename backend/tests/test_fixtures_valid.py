@@ -168,6 +168,8 @@ PHASE3_CASES = {
         # phase 4b D111 (docs/phases/phase-4b.md §5.12): privately paid rental costs
         "private_costs_in_other",
         "travel_frequency_warning",
+        # phase 4b D134: a privately paid financing cost on the Geldbeschaffungskosten line
+        "private_financing_cost_in_financing",
     },
 }
 
