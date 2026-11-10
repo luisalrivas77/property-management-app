@@ -33,6 +33,7 @@ from hausbuch.schemas.enums import (
     DocumentSource,
     DocumentSubtype,
     DocumentType,
+    ExtractionKind,
     LinkTarget,
     PropertyKind,
     ProposalStatus,
@@ -624,6 +625,44 @@ def test_the_service_repeats_the_tenant_gate_on_the_classifier_result(
     assert read(ws, extractions) == []
 
 
+@pytest.mark.parametrize(
+    "subtype",
+    [DocumentSubtype.RENT_INCREASE, DocumentSubtype.TENANT_SELF_DISCLOSURE],
+    ids=["rent-increase", "self-disclosure"],
+)
+def test_a_tenancy_group_subtype_is_blocked_while_tenant_documents_are_off(
+    run, read, job, fresh_workspaces, blob_store, enqueued, subtype
+):
+    """D131: every subtype of the catalogue's tenancy group is a tenant document by type, even
+    when the classifier's flag says no. With ai_tenant_documents off nothing of its reading
+    is stored, and the row is marked, so a re-run is blocked before any call (D16)."""
+    ws, _ = fresh_workspaces
+    classification = ClassifyOutput(
+        type=DocumentType.LETTER,
+        subtype=subtype,
+        contains_tenant_data=False,
+        language="de",
+        confidence="high",
+    )
+    values = {"title": _v("Mieterhöhung Lindenstraße 12"), "document_date": _v("2026-09-15")}
+    doc, stored, _ = _read_ready(
+        run, job, ws, blob_store, enqueued, classification, values, f"%PDF {subtype}".encode()
+    )
+    assert stored.status is ProposalStatus.BLOCKED_TENANT_DATA
+    assert stored.contains_tenant_data is True
+    assert [r.key for r in stored.records] == ["typing"]
+    assert stored.extraction_id is None
+
+    def extractions(conn):
+        return conn.execute(
+            select(extraction_table).where(extraction_table.c.document_id == doc.id)
+        ).all()
+
+    assert read(ws, extractions) == []
+    again = run(ws, proposals.rerun_proposal, doc.id)
+    assert again.status is ProposalStatus.BLOCKED_TENANT_DATA
+
+
 # --- The uploader's tenant-data flag on the row (D16 gate 2) -----------------------------
 
 
@@ -945,6 +984,52 @@ def test_a_deposit_record_applies_as_a_kaution_receipt_on_its_tenancy(
     assert (second.mode, second.target_id) == ("unchanged", tenancy.id)
     run(ws, proposals.apply_proposal, again.id, _accept_all(again), iban_key=TEST_IBAN_KEY)
     assert len(read(ws, deposit_receipts, tenancy.id)) == 1
+
+
+def test_a_rent_increase_is_read_generally_and_linked_to_its_tenancy(
+    run, read, job, dbname, fresh_workspaces, blob_store, enqueued
+):
+    """D131 with the real context: the general reading of a tenancy-group letter is stored
+    as a `general` extraction, proposes typing and link:tenancy (the tenancy its date falls
+    in, found through the property's address), and applying it links the document only."""
+    ws, _ = fresh_workspaces
+    tenancy = _let_flat(run, dbname, ws)
+    classification = ClassifyOutput(
+        type=DocumentType.LETTER,
+        subtype=DocumentSubtype.RENT_INCREASE,
+        contains_tenant_data=True,
+        language="de",
+        confidence="high",
+    )
+    values = {
+        "title": _v("Mieterhöhung Lindenstraße 12"),
+        "document_date": _v("2026-09-15"),
+        "street": _v("Lindenstraße"),
+        "house_number": _v("12"),
+    }
+    doc, ready, _ = _read_ready(
+        run, job, ws, blob_store, enqueued, classification, values, b"%PDF mieterhoehung"
+    )
+    assert ready.status is ProposalStatus.READY
+    assert ready.kind == ExtractionKind.GENERAL
+    assert [r.key for r in ready.records] == ["typing", "link:tenancy"]
+    assert ready.records[1].target_id == tenancy.id
+
+    def extraction_kinds(conn):
+        return [
+            row.kind
+            for row in conn.execute(
+                select(extraction_table).where(extraction_table.c.document_id == doc.id)
+            )
+        ]
+
+    assert read(ws, extraction_kinds) == ["general"]
+    run(ws, proposals.apply_proposal, ready.id, _accept_all(ready), iban_key=TEST_IBAN_KEY)
+    assert (LinkTarget.TENANCY, tenancy.id) in [
+        (lk.target_type, lk.target_id) for lk in read(ws, list_links, doc.id)
+    ]
+    typed = read(ws, get_document, doc.id)
+    assert typed.typing.subtype is DocumentSubtype.RENT_INCREASE
 
 
 # --- Values the proposal did not contain, filled by hand (7 Nov 2026) -------------------------

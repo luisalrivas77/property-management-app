@@ -168,6 +168,9 @@ class ExistingTenancy(Schema):
     id: UUID
     unit_id: UUID
     start_date: date
+    # A catalogue document of the tenancy group is linked to the tenancy its date falls in
+    # (D131); null while the tenancy runs.
+    end_date: date | None = None
     # A Kautionsnachweis is matched to its tenancy by these (D42).
     deposit_amount: NonNegativeMoney | None = None
     deposit_receipts: list[ExistingDepositReceipt] = Field(default_factory=list)

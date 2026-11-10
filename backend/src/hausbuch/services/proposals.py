@@ -488,6 +488,7 @@ def prefill_context(
                 id=t.id,
                 unit_id=t.unit_id,
                 start_date=t.start_date,
+                end_date=t.end_date,
                 deposit_amount=t.deposit_amount,
                 deposit_receipts=[
                     ExistingDepositReceipt(

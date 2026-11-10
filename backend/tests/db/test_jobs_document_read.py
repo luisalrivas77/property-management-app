@@ -316,8 +316,14 @@ def test_the_task_takes_no_tenant_data_argument():
 
 @pytest.mark.parametrize(
     "answer",
-    [_classify("contract", "lease"), _classify("letter", None, tenant=True)],
-    ids=["lease", "tenant-letter"],
+    [
+        _classify("contract", "lease"),
+        _classify("letter", None, tenant=True),
+        # D131: the catalogue's tenancy group is a tenant document by subtype alone
+        _classify("letter", "rent_increase"),
+        _classify("other", "tenant_self_disclosure"),
+    ],
+    ids=["lease", "tenant-letter", "rent-increase", "self-disclosure"],
 )
 def test_gate_3_tenant_document_stops_after_classification(setup, recorder, app_engine, answer):
     client = FakeModelClient([text_response(answer)])
@@ -673,9 +679,7 @@ def test_a_call_recorded_after_its_proposal_was_erased_keeps_no_content(
     setup, recorder, app_engine, scrub
 ):
     deps, ws, doc, proposal = setup(_pdf(1), FakeModelClient())
-    client = _ErasesDuringTheCall(
-        app_engine, ws, proposal, list(LETTER), scrub=scrub
-    )
+    client = _ErasesDuringTheCall(app_engine, ws, proposal, list(LETTER), scrub=scrub)
     _run(dataclasses.replace(deps, model_client=client), ws, doc, proposal)
 
     calls = _calls(app_engine, ws, doc)
