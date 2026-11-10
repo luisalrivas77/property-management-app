@@ -46,12 +46,14 @@ from hausbuch.ai.requests import (
     parse_classification,
 )
 from hausbuch.db.session import workspace_transaction
+from hausbuch.db.tables import property_ as property_table
 from hausbuch.db.tables import proposal as proposal_table
 from hausbuch.db.tables import workspace as workspace_table
 from hausbuch.rules.extraction_parse import (
     GENERAL_SCRUBBED_KINDS,
     SCRUBBED_KINDS,
     TENANT_SUBTYPES,
+    PropertyAddress,
     extraction_kind,
     parse_lines,
     scrub_general_answer,
@@ -134,6 +136,9 @@ class _Original:
     data: bytes
     tenant_documents_allowed: bool
     contains_tenant_data: bool  # gate 2: the row's flag (uploader or an earlier classify)
+    # The workspace's property addresses: the only addresses a general reading keeps
+    # (PR #135 review, F2), loaded here and never taken from the model's answer.
+    properties: tuple[PropertyAddress, ...] = ()
 
 
 def run_document_read(
@@ -239,7 +244,19 @@ def _load(
             return _Original(target, "", b"", allowed, tenant)
         media_type = document_service.document_media_type(conn, document_id)
         data = document_service.read_original(conn, deps.blob_store, document_id)
-    return _Original(target, media_type or "", data, allowed, tenant)
+        properties = property_addresses(conn)
+    return _Original(target, media_type or "", data, allowed, tenant, properties)
+
+
+def property_addresses(conn) -> tuple[PropertyAddress, ...]:
+    """Street, house number and postal code of every property of the workspace (row-level
+    security limits the rows to it), sold ones included: a document may still concern one."""
+    rows = conn.execute(
+        select(
+            property_table.c.street, property_table.c.house_number, property_table.c.postal_code
+        ).order_by(property_table.c.id)
+    ).all()
+    return tuple(PropertyAddress(r.street, r.house_number, r.postal_code) for r in rows)
 
 
 def _tenant_documents_allowed(deps: JobDeps, workspace_id: UUID) -> bool:
@@ -383,7 +400,15 @@ def _extract(
         block = documents.document_block(data, original.media_type, citations=True)
         request = extract_request(deps.settings, kind, block, subtype=subtype)
         values, call_id = _extract_chunk(
-            deps, workspace_id, document_id, original.proposal_id, request, kind, start, subtype
+            deps,
+            workspace_id,
+            document_id,
+            original.proposal_id,
+            request,
+            kind,
+            start,
+            subtype,
+            original.properties,
         )
         first_id = first_id or call_id
         merge_values(merged, values)
@@ -407,13 +432,19 @@ def _extract_chunk(
     kind: ExtractionKind,
     page_offset: int,
     subtype: DocumentSubtype | None = None,
+    properties: tuple[PropertyAddress, ...] = (),
 ) -> tuple[dict[str, ExtractedValue], UUID]:
     # The birth-date rule of the scrub counts back from the job clock's year (D103).
     year = deps.clock().year
 
     def parsed(response: ModelResponse) -> _Parsed:
         values = parse_lines(
-            response.blocks, kind, page_offset=page_offset, reference_year=year, subtype=subtype
+            response.blocks,
+            kind,
+            page_offset=page_offset,
+            reference_year=year,
+            subtype=subtype,
+            properties=properties,
         )
         if not values:  # no line keyed by a field of this kind
             return _Parsed(None, None, UNPARSABLE)
@@ -422,12 +453,17 @@ def _extract_chunk(
 
     # The pay documents' and the Einkommensteuerbescheid's raw answer is scrubbed like their
     # values and quotes (D103, D129): no identifier reaches ai_call.raw_text either. So is the
-    # general reading's and a Verwaltervertrag's, but for its link lines (D131).
+    # general reading's and a Verwaltervertrag's, keeping only a property's own address and a
+    # contract number that is no identifier (D131; PR #135 review).
     scrub: Callable[[str], str] | None = None
     if kind in SCRUBBED_KINDS:
         scrub = partial(scrub_identifiers, reference_year=year)
     elif kind in GENERAL_SCRUBBED_KINDS:
-        scrub = partial(scrub_general_answer, asked=frozenset(asked_fields(kind, subtype)))
+        scrub = partial(
+            scrub_general_answer,
+            asked=frozenset(asked_fields(kind, subtype)),
+            properties=properties,
+        )
     return _with_one_retry(
         deps, workspace_id, document_id, proposal_id, request, parsed, scrub=scrub
     )
@@ -438,10 +474,14 @@ _RANK = {"low": 0, "medium": 1, "high": 2}
 
 def merge_values(merged: dict[str, ExtractedValue], values: dict[str, ExtractedValue]) -> None:
     """A stated value replaces a missing one; a later chunk's value replaces an earlier
-    stated one only with strictly higher confidence (the first statement wins ties)."""
+    stated one only with strictly higher confidence (the first statement wins ties). A cited
+    line without a value (a general reading's address that is no property's) counts as
+    stated against a missing one, so a later chunk that read nothing never hides it."""
     for key, value in values.items():
         current = merged.get(key)
-        first_statement = current is None or current.value is None
+        first_statement = current is None or (
+            current.value is None and (value.value is not None or current.source is None)
+        )
         better = (
             current is not None
             and value.value is not None

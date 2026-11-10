@@ -22,7 +22,7 @@ from hausbuch.ai import documents
 from hausbuch.ai.client import ModelRequest, ModelResponse
 from hausbuch.ai.requests import CLASSIFY_PAGES, classify_request, extract_request
 from hausbuch.jobs.document_read import merge_values
-from hausbuch.rules.extraction_parse import parse_lines
+from hausbuch.rules.extraction_parse import PropertyAddress, parse_lines
 from hausbuch.schemas.ai import ExtractedValue
 from hausbuch.schemas.enums import DocumentSubtype, ExtractionKind
 from hausbuch.schemas.extraction import EXTRACTION_MODELS, asked_fields
@@ -84,11 +84,15 @@ def chunk_values(
     response: ModelResponse,
     page_offset: int,
     subtype: DocumentSubtype | None = None,
+    properties: tuple[PropertyAddress, ...] = (),
 ) -> dict[str, ExtractedValue]:
     """One chunk's answer; empty when no line names a field of `kind` (the job's
-    ai.unparsable). The subtype picks the general reading's link fields, whose quotes keep the
-    address they read (D131)."""
-    return parse_lines(response.blocks, kind, page_offset=page_offset, subtype=subtype)
+    ai.unparsable). The subtype picks the general reading's link fields (D131); `properties`
+    are the addresses the job would load from the workspace, the only ones a general reading
+    keeps (PR #135 review)."""
+    return parse_lines(
+        response.blocks, kind, page_offset=page_offset, subtype=subtype, properties=properties
+    )
 
 
 def merged_values(

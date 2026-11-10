@@ -87,6 +87,7 @@ def parse_lines(
     page_offset: int = 0,
     reference_year: int | None = None,
     subtype: DocumentSubtype | None = None,
+    properties: tuple["PropertyAddress", ...] = (),
 ) -> dict[str, ExtractedValue]:
     """The fields an extract response stated, keyed by field name.
 
@@ -98,10 +99,12 @@ def parse_lines(
     of identifiers first (scrub_identifiers, D103, D129), with
     reference_year (the job clock's year; default: this year) for the birth-date rule. The
     general reading and a Verwaltervertrag (GENERAL_SCRUBBED_KINDS) get scrub_general on
-    every line but those of the link fields the request asked for (asked_fields with
-    `subtype`), and on every quote with the property address and contract number those lines
-    read kept (D131, decided 10 Nov 2026). A link line the model volunteered (a home address
-    on a Vorauszahlungsbescheid) is scrubbed like any other and keeps nothing.
+    every line and every quote (D131, decided 10 Nov 2026). Only `properties`, the
+    workspace's own addresses, are kept: an address the request asked for (asked_fields with
+    `subtype`) keeps its value only when it is a property's, else its value goes and its
+    cited source stays (the pre-fill then links nothing); a contract number shaped like an
+    IBAN or a Steuernummer is not read; a line the model volunteered keeps nothing (PR #135
+    review).
     """
     model = EXTRACTION_MODELS[kind]
     scrub = kind in SCRUBBED_KINDS
@@ -115,10 +118,12 @@ def parse_lines(
         lines = [(text, contributors) for text, (_, contributors) in zip(texts, lines, strict=True)]
     # A line for a field the request did not ask (a hand-only field, or a link field the
     # subtype does not need) is never a value.
-    kept, asked = NO_LINK, frozenset(asked_fields(kind, subtype))
+    link, asked = NO_LINK, frozenset(asked_fields(kind, subtype))
     if general:
-        kept = link_values([text for text, _ in lines], asked)
-        texts = scrub_general_answer("\n".join(text for text, _ in lines), asked).split("\n")
+        link = link_values([text for text, _ in lines], asked, properties)
+        texts = scrub_general_answer("\n".join(text for text, _ in lines), asked, properties).split(
+            "\n"
+        )
         lines = [(text, contributors) for text, (_, contributors) in zip(texts, lines, strict=True)]
     result: dict[str, ExtractedValue] = {}
     for text, contributors in lines:
@@ -137,9 +142,29 @@ def parse_lines(
                 update={"quote": scrub_identifiers(source.quote, reference_year=reference_year)}
             )
         if general and source is not None:
-            source = source.model_copy(update={"quote": scrub_general(source.quote, kept)})
+            source = source.model_copy(
+                update={"quote": scrub_general(source.quote, properties, link.contract_number)}
+            )
+        if general and key == "contract_number" and link.contract_number is None:
+            result[key] = ExtractedValue.missing()  # an identifier read as the number
+            continue
+        if general and key in _ADDRESS_FIELDS and not link.address_matches:
+            # A stated address that is no property's; a line the model wrote "unbekannt" (now
+            # "…" like every unkept address line) is simply missing.
+            read = key in link.address_read
+            result[key] = _unmatched_address(source) if read else ExtractedValue.missing()
+            continue
         result[key] = _extracted(raw, value_kind(model, key), source)
     return result
+
+
+def _unmatched_address(source: SourceRef | None) -> ExtractedValue:
+    """An address line of a general reading that is no property's (an owner's home read as
+    the property): its value goes, and the cited source stays, so the pre-fill knows an
+    address was read and links nothing (prefill.address_unmatched)."""
+    if source is None:
+        return ExtractedValue.missing()
+    return ExtractedValue(value=None, source=source, checks=["cited"], confidence="low")
 
 
 def _without_page_reference(raw: str) -> str:
@@ -527,34 +552,78 @@ def _birth_date(match: re.Match[str], reference_year: int) -> str:
 # prints the Steuernummer and the owners' home address, a tenant's Selbstauskunft the
 # applicant's. The model cites whole passages, so every quote can carry them.
 GENERAL_SCRUBBED_KINDS = frozenset({ExtractionKind.GENERAL, ExtractionKind.MANAGEMENT_CONTRACT})
-# The fields whose value is what the reading links by: their values are never scrubbed, and
-# the property address and the contract number they read stay in every quote.
-_LINK_VALUE_FIELDS = frozenset(
-    {"street", "house_number", "postal_code", "lender", "contract_number"}
-)
+# The fields a general reading links a property by, and the loan's number. Their lines are
+# kept only when they hold a property's own address or a contract number that is no
+# identifier; every other value goes (PR #135 review, F1 and F2). The lender is scrubbed like
+# any other line: the bank's name stays, a customer number or an address beside it goes.
+_ADDRESS_FIELDS = frozenset({"street", "house_number", "postal_code"})
+_LINK_VALUE_FIELDS = _ADDRESS_FIELDS | {"contract_number"}
 _ID_PATTERNS = _PATTERNS[:-2]  # everything but the two address patterns, in their order
 _STREET, _POSTAL_TOWN = _PATTERNS[-2:]
+# A contract number shaped like an IBAN or a Steuernummer (with slashes) is an identifier,
+# not a loan's number: it counts as not read.
+_IDENTIFIER_SHAPES = (_PATTERNS[3], _PATTERNS[4])
 _KEEP_MARK = ""  # private-use characters: no pattern matches them
 
 
 @dataclass(frozen=True)
-class LinkValues:
-    """What a general reading read to link by: the property's address and a contract
-    number. A street with this number and this postal code with its town stay in a quote;
-    every other address goes, like an identifier."""
+class PropertyAddress:
+    """A property's address as the workspace stores it: the only street, house number and
+    postal code a general reading keeps. The job loads them before parsing; they are never
+    taken from the model's lines."""
 
-    street: str | None = None
-    house_number: str | None = None
-    postal_code: str | None = None
+    street: str
+    house_number: str
+    postal_code: str
+
+
+@dataclass(frozen=True)
+class LinkValues:
+    """What a general reading's link lines decide (link_values): whether it read an address,
+    whether that address is one of the workspace's properties, and the contract number it
+    read when that number is no identifier (it stays in every quote, so the loan can still be
+    linked by it)."""
+
+    address_read: frozenset[str] = frozenset()  # the address fields with a stated value
+    address_matches: bool = False
     contract_number: str | None = None
 
 
-NO_LINK = LinkValues()  # nothing read to link by: every address goes
+NO_LINK = LinkValues()
 
 
-def link_values(texts: list[str], asked: frozenset[str]) -> LinkValues:
-    """The link fields as an answer's `field: value` lines state them (unscrubbed), of the
-    fields the request asked for only."""
+def street_key(value: object) -> str:
+    """Casefolded (ß as ss), spaces, hyphens and dots removed, and a street ending in the
+    abbreviation "str" spelled out: "Lindenstr.", "Linden-Straße" and "Lindenstrasse" are
+    one key."""
+    key = re.sub(r"[\s.\-]", "", str(value).casefold())
+    return f"{key}asse" if key.endswith("str") else key
+
+
+def house_number_key(value: object) -> str:
+    """Casefolded, spaces and trailing dots removed: "12 a" is "12a". A hyphen or slash
+    stays significant, so "1-2" (or "1 - 2") is never "12" (review, 7 Nov 2026)."""
+    return re.sub(r"\s", "", str(value).casefold()).rstrip(".")
+
+
+def _postal_key(value: object) -> str:
+    return "".join(str(value).split())
+
+
+_ADDRESS_KEYS = {
+    "street": street_key,
+    "house_number": house_number_key,
+    "postal_code": _postal_key,
+}
+
+
+def link_values(
+    texts: list[str], asked: frozenset[str], properties: tuple[PropertyAddress, ...] = ()
+) -> LinkValues:
+    """The link lines of an answer (unscrubbed), of the fields the request asked for only.
+    The address read matches when one property has every address field read (street and
+    house number by key, the postal code as written); a contract number counts only when it
+    is not shaped like an IBAN or a Steuernummer."""
     found: dict[str, str] = {}
     for text in texts:
         match = _KEY_LINE.fullmatch(text)
@@ -565,37 +634,60 @@ def link_values(texts: list[str], asked: frozenset[str]) -> LinkValues:
             raw = _without_number_label(raw)
         if raw and raw.casefold() != UNKNOWN:
             found[match.group(1)] = raw
+    number = found.get("contract_number")
+    if number is not None and _is_identifier(number):
+        number = None
+    read = {key: value for key, value in found.items() if key in _ADDRESS_FIELDS}
     return LinkValues(
-        street=found.get("street"),
-        house_number=found.get("house_number"),
-        postal_code=found.get("postal_code"),
-        contract_number=found.get("contract_number"),
+        address_read=frozenset(read),
+        address_matches=bool(read) and any(_fits(read, p) for p in properties),
+        contract_number=number,
     )
 
 
-def scrub_general(text: str, kept: LinkValues = NO_LINK) -> str:
+def _is_identifier(number: str) -> bool:
+    return any(shape.search(number.upper()) for shape in _IDENTIFIER_SHAPES)
+
+
+def _fits(read: dict[str, str], prop: PropertyAddress) -> bool:
+    stored = {"street": prop.street, "house_number": prop.house_number}
+    stored["postal_code"] = prop.postal_code
+    return all(
+        _ADDRESS_KEYS[name](value) == _ADDRESS_KEYS[name](stored[name])
+        for name, value in read.items()
+    )
+
+
+def scrub_general(
+    text: str,
+    properties: tuple[PropertyAddress, ...] = (),
+    contract_number: str | None = None,
+) -> str:
     """The text without identifiers or a person's address, for the general reading and a
     Verwaltervertrag (D131, decided 10 Nov 2026): the labelled identifiers and those of
     D103/D129 (Steuernummer in both forms, Identifikationsnummer, Sozialversicherungsnummer,
     eTIN, IBAN, a run of nine or more digits), a labelled birth date, and every street with
-    its number and postal code with its town except the property address the reading read
-    (`kept`). An unlabelled old date stays: a Teilungserklärung or a building's records may
-    be decades old, and their date is the document's own. The contract number read stays
-    wherever it stands on its own, so a loan can still be linked by it. Pure and idempotent;
-    lines are kept."""
-    protected = _protected_contract_number(kept.contract_number)
+    its number and postal code with its town but a property's own (`properties`: the
+    workspace's addresses, never what the model read). An unlabelled old date stays: a
+    Teilungserklärung or a building's records may be decades old, and their date is the
+    document's own. `contract_number`, a loan number link_values accepted, stays wherever it
+    stands on its own, so a loan can still be linked by it. Pure and idempotent; lines are
+    kept."""
+    protected = _protected_contract_number(contract_number)
     if protected is not None:
         text = protected.sub(_KEEP_MARK, text)
     text = _under_labels(text)
     text = _LABELLED.sub(lambda m: f"{m.group('label')}{m.group('sep')}{SCRUBBED}", text)
     for pattern in _ID_PATTERNS:
         text = pattern.sub(SCRUBBED, text)
-    text = _STREET.sub(lambda m: m.group(0) if _is_kept_street(m, kept) else SCRUBBED, text)
-    text = _POSTAL_TOWN.sub(
-        lambda m: m.group(0) if _is_kept_postal(m.group(0), kept) else SCRUBBED, text
+    text = _STREET.sub(
+        lambda m: m.group(0) if _is_property_street(m, properties) else SCRUBBED, text
     )
-    if protected is not None and kept.contract_number is not None:
-        text = text.replace(_KEEP_MARK, kept.contract_number.strip())
+    text = _POSTAL_TOWN.sub(
+        lambda m: m.group(0) if _is_property_postal(m.group(0), properties) else SCRUBBED, text
+    )
+    if protected is not None and contract_number is not None:
+        text = text.replace(_KEEP_MARK, contract_number.strip())
     return text
 
 
@@ -612,55 +704,57 @@ def _protected_contract_number(number: str | None) -> re.Pattern[str] | None:
     return re.compile(rf"(?<![A-Za-z0-9]){re.escape(number.strip())}(?![A-Za-z0-9])")
 
 
-def _normalized(text: str) -> str:
-    return " ".join(text.split()).casefold()
+def _is_property_street(match: re.Match[str], properties: tuple[PropertyAddress, ...]) -> bool:
+    """The street match is a property's street and house number, compared by key, with the
+    words before the match where the property's street has more of them ("Berliner Straße"
+    stored, "Straße 7" matched)."""
+    name, _, number = " ".join(match.group(0).split()).rpartition(" ")
+    words = match.string[: match.start()].split()
+    for prop in properties:
+        if house_number_key(number) != house_number_key(prop.house_number):
+            continue
+        wanted = street_key(prop.street)
+        if street_key(name) == wanted:
+            return True
+        extra = len(prop.street.split()) - 1
+        for count in range(1, min(extra, len(words)) + 1):
+            if street_key(" ".join([*words[-count:], name])) == wanted:
+                return True
+    return False
 
 
-def _is_kept_street(match: re.Match[str], kept: LinkValues) -> bool:
-    """The street match is the read property address: its number is the read house number,
-    and its street is the read street, with the words before the match where the read street
-    has more of them ("Berliner Straße" read, "Straße 7" matched)."""
-    if not kept.street or not kept.house_number:
-        return False
-    name, _, number = _normalized(match.group(0)).rpartition(" ")
-    if number.replace(" ", "") != kept.house_number.replace(" ", "").casefold():
-        return False
-    street = _normalized(kept.street)
-    if street == name:
-        return True
-    if not street.endswith(" " + name):
-        return False
-    head = street[: -len(name)].strip()
-    before = _normalized(match.string[: match.start()])
-    return before.endswith(head) and (
-        len(before) == len(head) or not before[-len(head) - 1].isalpha()
-    )
+def _is_property_postal(found: str, properties: tuple[PropertyAddress, ...]) -> bool:
+    return any(found.split()[0] == _postal_key(p.postal_code) for p in properties)
 
 
-def _is_kept_postal(found: str, kept: LinkValues) -> bool:
-    return bool(kept.postal_code) and found.split()[0] == kept.postal_code.strip()
-
-
-def scrub_general_answer(text: str, asked: frozenset[str]) -> str:
+def scrub_general_answer(
+    text: str, asked: frozenset[str], properties: tuple[PropertyAddress, ...] = ()
+) -> str:
     """A general reading's raw answer as ai_call keeps it: every line scrubbed (scrub_general)
-    but those of the link fields the request asked for, whose values are what the reading
-    links by."""
+    but an asked address line when the address read is a property's, and an asked contract
+    number line when the number is no identifier, which are kept as written. Any other
+    address or contract number line, asked or volunteered, keeps its key only."""
     lines = text.split("\n")
-    kept = link_values(lines, asked)
-    scrubbed = scrub_general("\n".join(lines), kept).split("\n")
+    link = link_values(lines, asked, properties)
+    scrubbed = scrub_general("\n".join(lines), properties, link.contract_number).split("\n")
     return "\n".join(
-        _answer_line(line, clean, asked) for line, clean in zip(lines, scrubbed, strict=True)
+        _answer_line(line, clean, asked, link) for line, clean in zip(lines, scrubbed, strict=True)
     )
 
 
-def _answer_line(line: str, clean: str, asked: frozenset[str]) -> str:
-    """An asked link line as written; one the model volunteered (a field not asked, such as
-    an owner's home address as the street of a Vorauszahlungsbescheid) with its value gone;
-    any other line scrubbed."""
+def _answer_line(line: str, clean: str, asked: frozenset[str], link: LinkValues) -> str:
+    """An asked address line of a property's address, or an asked contract number that is no
+    identifier, as written; any other address or contract number line with its value gone
+    (an owner's home read as the property, a line the model volunteered, an IBAN read as the
+    number); any other line scrubbed."""
     match = _KEY_LINE.fullmatch(line)
     if match is None or match.group(1) not in _LINK_VALUE_FIELDS:
         return clean
-    return line if match.group(1) in asked else f"{match.group(1)}: {SCRUBBED}"
+    key = match.group(1)
+    kept = key in asked and (
+        link.address_matches if key in _ADDRESS_FIELDS else link.contract_number is not None
+    )
+    return line if kept else f"{key}: {SCRUBBED}"
 
 
 # --- Which field set a classified document gets -----------------------------------------

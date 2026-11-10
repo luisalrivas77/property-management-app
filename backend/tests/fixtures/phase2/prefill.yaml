@@ -1930,6 +1930,68 @@ cases:
           values: {type: letter, subtype: termination_notice, title: Kündigung Mietverhältnis, document_date: "2026-10-30"}
           notes_contain: [kein eindeutiges Mietverhältnis]
 
+  - id: catalogue_self_disclosure_links_the_property_only
+    description: PR #135 review, F3. A Selbstauskunft comes before the tenancy it applies for, so its date never places it; the tenancy running at that date is not linked. The property by address, and a note to link the tenancy by hand.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: {type: letter, subtype: tenant_self_disclosure, contains_tenant_data: true, language: de, confidence: high}
+      properties: [*PROP_LINDEN, *PROP_KASTANIEN]
+      units:
+        - {id: *U, property_id: *P, label: WE 3}
+      tenancies:
+        - {id: *T1, unit_id: *U, start_date: 2025-01-01}
+    extraction:
+      title: {v: Mieterselbstauskunft, p: 1, q: "Mieterselbstauskunft"}
+      document_date: {v: "2026-07-10", p: 1, q: "10.07.2026"}
+      street: {v: Lindenstraße, p: 1, q: "für die Wohnung Lindenstraße 12, 10115 Berlin"}
+      house_number: {v: "12", p: 1, q: "für die Wohnung Lindenstraße 12, 10115 Berlin"}
+      postal_code: {v: "10115", p: 1, q: "für die Wohnung Lindenstraße 12, 10115 Berlin"}
+    expect:
+      keys: [typing, link:property]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: letter, subtype: tenant_self_disclosure, title: Mieterselbstauskunft, document_date: "2026-07-10"}
+          notes_contain: [von Hand mit dem Mietverhältnis]
+        - key: link:property
+          entity_type: link
+          mode: create
+          target_id: *P
+          values: {}
+
+  - id: catalogue_operating_costs_statement_links_the_property_only
+    description: PR #135 review, F3. A Betriebskostenabrechnung covers a year in which the tenants may have changed; the one tenancy running at its date is not linked. The property by address, and a note to link the tenancy by hand.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: {type: letter, subtype: operating_costs_statement, contains_tenant_data: true, language: de, confidence: high}
+      properties: [*PROP_LINDEN, *PROP_KASTANIEN]
+      units:
+        - {id: *U2, property_id: *P2, label: WE 3}
+      tenancies:
+        - {id: *T2, unit_id: *U2, start_date: 2024-02-01}
+    extraction:
+      title: {v: Betriebskostenabrechnung 2026, p: 1, q: "Betriebskostenabrechnung 2026"}
+      document_date: {v: "2027-03-15", p: 1, q: "Berlin, 15.03.2027"}
+      street: {v: Kastanienallee, p: 1, q: "Mietobjekt Kastanienallee 5, 10435 Berlin"}
+      house_number: {v: "5", p: 1, q: "Mietobjekt Kastanienallee 5, 10435 Berlin"}
+      postal_code: {v: "10435", p: 1, q: "Mietobjekt Kastanienallee 5, 10435 Berlin"}
+    expect:
+      keys: [typing, link:property]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: letter, subtype: operating_costs_statement, title: Betriebskostenabrechnung 2026, document_date: "2027-03-15"}
+          notes_contain: [von Hand mit dem Mietverhältnis]
+        - key: link:property
+          entity_type: link
+          mode: create
+          target_id: *P2
+          values: {}
+
   - id: catalogue_income_tax_typing_only
     description: D131, income tax. A Vorauszahlungsbescheid is read for title and date only; no link and no note.
     kind: general

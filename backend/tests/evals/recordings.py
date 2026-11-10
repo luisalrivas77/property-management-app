@@ -44,7 +44,7 @@ from hausbuch.evals.reading import (
     extract_requests_for,
     merged_values,
 )
-from hausbuch.rules.extraction_parse import extraction_kind
+from hausbuch.rules.extraction_parse import PropertyAddress, extraction_kind
 from hausbuch.schemas.ai import ClassifyOutput, ExtractedValue
 from hausbuch.schemas.enums import DocumentSubtype, ExtractionKind
 from hausbuch.settings import Settings
@@ -53,6 +53,13 @@ __all__ = ["eval_settings"]  # re-exported: test_recorded_evals and record.py im
 
 FORMAT = 1
 RECORDINGS_DIR = Path(__file__).parent / "recordings"
+# The synthetic household's properties (make_docs.py), as the job would load them from the
+# workspace: the only addresses a general reading keeps (PR #135 review). They never reach
+# the model, so they change no request hash.
+EVAL_PROPERTIES = (
+    PropertyAddress("Lindenstraße", "7", "10115"),
+    PropertyAddress("Kastanienweg", "4", "04109"),
+)
 
 
 @dataclass(frozen=True)
@@ -89,7 +96,13 @@ def replay(recording: dict) -> Replay:
     classification = parse_classification(response_of(recording["classify"]).text)
     kind = extraction_kind(classification.type, classification.subtype)
     chunks = (
-        chunk_values(kind, response_of(entry), entry["page_offset"], subtype=classification.subtype)
+        chunk_values(
+            kind,
+            response_of(entry),
+            entry["page_offset"],
+            subtype=classification.subtype,
+            properties=EVAL_PROPERTIES,
+        )
         for entry in recording["extract"]
     )
     merged = merged_values(kind, chunks, subtype=classification.subtype)

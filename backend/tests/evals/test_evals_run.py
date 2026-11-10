@@ -16,6 +16,7 @@ from hausbuch.ai import documents
 from hausbuch.ai.fake import FakeModelClient, cited_response, text_response
 from hausbuch.evals import run as evals_run
 from hausbuch.evals.reading import classify_request_for, eval_settings, extract_requests_for
+from hausbuch.rules.extraction_parse import PropertyAddress
 from hausbuch.schemas.enums import ExtractionKind
 
 KEY = "sk-ant-api03-SECRET-evals-run-test"
@@ -227,3 +228,17 @@ def test_a_failed_call_prints_its_code_only(evals_dir, monkeypatch, capsys):
     monkeypatch.setattr(evals_run, "make_client", lambda key, s: FakeModelClient([error]))
     assert _run(evals_dir) == 1
     assert "rechnung.pdf: not read (ai.api_error (HTTP 400))" in capsys.readouterr().out
+
+
+def test_the_property_addresses_come_from_properties_yaml(tmp_path):
+    # The general reading keeps only the workspace's property addresses; an eval run takes
+    # them from properties.yaml beside the documents (none without it).
+    assert evals_run.load_properties(tmp_path) == ()
+    (tmp_path / "properties.yaml").write_text(
+        "properties:\n  - {street: Musterstraße, house_number: '1', postal_code: '12345'}\n",
+        encoding="utf-8",
+    )
+    assert evals_run.load_properties(tmp_path) == (PropertyAddress("Musterstraße", "1", "12345"),)
+    (tmp_path / "properties.yaml").write_text("properties: [{street: X}]\n", encoding="utf-8")
+    with pytest.raises(evals_run.EvalRunError):
+        evals_run.load_properties(tmp_path)
