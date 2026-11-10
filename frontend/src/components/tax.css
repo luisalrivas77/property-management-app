@@ -349,3 +349,156 @@ button.link.tax-sources-button {
   margin-top: 24px;
   font-size: 13px;
 }
+
+/* Phase 4b (phase-4b.md §10): the Gesamt card above the tabs, the Jahresfragen link in the
+   tab bar, the owner switch and the Eingaben of the Anlage N tab. */
+
+.tax-estimate {
+  margin-bottom: 16px;
+}
+
+.tax-estimate .eyebrow {
+  margin: 0 0 4px;
+}
+
+.tax-estimate-head {
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 12px;
+}
+
+.tax-estimate-result {
+  margin: 0;
+  font-size: 18px;
+}
+
+.tax-estimate-result strong {
+  font-size: 22px;
+}
+
+.tax-estimate-refund {
+  color: var(--accent-strong);
+}
+
+.tax-estimate-details {
+  margin-top: 8px;
+}
+
+.tax-estimate-details summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tax-estimate-block {
+  margin-top: 12px;
+}
+
+.tax-estimate-list {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 14px;
+}
+
+.tax-estimate-list li {
+  padding: 2px 0;
+}
+
+.tax-estimate-rows {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  font-size: 14px;
+}
+
+.tax-estimate-rows li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding: 6px 0;
+  border-top: 1px solid var(--divider);
+}
+
+.tax-estimate-rows li > .num {
+  margin-left: auto;
+}
+
+.tax-estimate-total {
+  font-weight: 700;
+}
+
+.tax-estimate-note {
+  color: var(--muted);
+}
+
+.tabs .tax-tab-questions {
+  margin-left: auto;
+}
+
+.tax-owner-switch {
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
+.tax-owner-switch a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.tax-owner-switch a[aria-current="page"] {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+  color: var(--accent-strong);
+}
+
+.tax-input-block {
+  padding-top: 12px;
+  border-top: 1px solid var(--divider);
+}
+
+.tax-input-block h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.tax-input-rows {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  font-size: 14px;
+}
+
+.tax-input-rows li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding: 6px 0;
+}
+
+.tax-input-actions {
+  gap: 12px;
+  margin-left: auto;
+}
+
+.tax-input-form {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.tax-payslip-months {
+  columns: 2;
+}

@@ -60,20 +60,25 @@ interface Action {
   label: string;
 }
 
-/** Where a source can be opened today. Payments, transactions, tax inputs and the rule set
- * have no page of their own; they are listed in the sources drawer only. */
-export function linkFor(ref: TaxSourceRef, propertyId: string): Action | null {
+/** Where a source can be opened today. Payments, transactions, tax inputs, return inputs and
+ * the rule sets have no page of their own; they are listed in the sources drawer only. A
+ * property ref opens its own property when it names one (the Gesamt card cites several), else
+ * the screen's. */
+export function linkFor(ref: TaxSourceRef, propertyId?: string): Action | null {
+  const property = (ref.kind === "property" ? ref.id : null) ?? propertyId;
   switch (ref.kind) {
     case "document":
       return ref.id ? { href: `/documents/${ref.id}`, label: "Dokument öffnen" } : null;
     case "loan":
       return ref.id ? { href: `/loans/${ref.id}`, label: "Darlehen öffnen" } : null;
     case "property":
-      return { href: `/properties/${propertyId}?tab=stammdaten`, label: "Stammdaten" };
+      return property ? { href: `/properties/${property}?tab=stammdaten`, label: "Stammdaten" } : null;
     case "price_split":
-      return { href: `/properties/${propertyId}?tab=aufteilung`, label: "Kaufpreisaufteilung" };
+      return property ? { href: `/properties/${property}?tab=aufteilung`, label: "Kaufpreisaufteilung" } : null;
     case "acquisition_cost":
-      return { href: `/properties/${propertyId}?tab=nebenkosten`, label: "Nebenkosten" };
+      return property ? { href: `/properties/${property}?tab=nebenkosten`, label: "Nebenkosten" } : null;
+    case "income_input":
+      return { href: "/owners", label: "Einkommen ansehen" };
     default:
       return null;
   }
@@ -121,7 +126,21 @@ function warningAction(warning: DraftWarning, propertyId: string): Action | null
 
 // --- The screen ---------------------------------------------------------------------------
 
-export function AnlageVScreen({ property, properties, year }: { property: Property; properties: Property[]; year: number }) {
+/** `summary` (the household's Gesamt card, phase-4b.md §10) goes between the header and the
+ * tabs; `tabs` replaces the plain tab bar (the page adds Anlage N and the Jahresfragen). */
+export function AnlageVScreen({
+  property,
+  properties,
+  year,
+  summary,
+  tabs,
+}: {
+  property: Property;
+  properties: Property[];
+  year: number;
+  summary?: ReactNode;
+  tabs?: ReactNode;
+}) {
   const router = useRouter();
   const ids = useId();
   const href = useCallback(
@@ -189,17 +208,20 @@ export function AnlageVScreen({ property, properties, year }: { property: Proper
           </label>
         </div>
       </div>
-      <nav aria-label="Formulare" className="tabs">
-        <Link href={href(year, property.id)} aria-current="page" scroll={false}>
-          Anlage V
-        </Link>
-        <span className="tab-disabled" aria-disabled="true">
-          KAP <span className="tab-note">ab Phase 8</span>
-        </span>
-        <span className="tab-disabled" aria-disabled="true">
-          SO <span className="tab-note">ab Phase 8</span>
-        </span>
-      </nav>
+      {summary}
+      {tabs ?? (
+        <nav aria-label="Formulare" className="tabs">
+          <Link href={href(year, property.id)} aria-current="page" scroll={false}>
+            Anlage V
+          </Link>
+          <span className="tab-disabled" aria-disabled="true">
+            KAP <span className="tab-note">ab Phase 8</span>
+          </span>
+          <span className="tab-disabled" aria-disabled="true">
+            SO <span className="tab-note">ab Phase 8</span>
+          </span>
+        </nav>
+      )}
       <Loading state={draft}>{(data) => <DraftView draft={data} propertyId={property.id} onChanged={draft.reload} />}</Loading>
       <p className="muted tax-footer">{FOOTER}</p>
     </>
@@ -613,7 +635,7 @@ function PaymentSource({ source, fact }: { source: TaxSourceRef; fact: Allocatio
  * category, masked counterparty and period with links to its bank line and Beleg; documents,
  * loans and the purchase records link to their pages; the rest show their kind and the amount
  * the rule stated. */
-export function SourcesButton({ refs, title, propertyId }: { refs: TaxSourceRef[]; title: string; propertyId: string }) {
+export function SourcesButton({ refs, title, propertyId }: { refs: TaxSourceRef[]; title: string; propertyId?: string }) {
   const payments = useContext(PaymentsContext);
   if (refs.length === 0) return null;
   const hasPayments = refs.some((ref) => ref.kind === "allocation");

@@ -528,3 +528,94 @@ export function movedLabel(bookingDate: string, taxYear: number): string {
 export function options<K extends string>(labels: Record<K, string>): [K, string][] {
   return Object.entries(labels) as [K, string][];
 }
+
+// --- Phase 4b (phase-4b.md §10): the Anlage N tab and the Gesamt card ----------------------
+
+type ReturnInputKind = components["schemas"]["ReturnInputKind"];
+type EquipmentClass = components["schemas"]["EquipmentFact"]["item_class"];
+type OtherExpenseClass = components["schemas"]["OtherExpenseFact"]["expense_class"];
+type ReplacementBenefit = components["schemas"]["ReplacementFact"]["benefit"];
+type CommuteKind = components["schemas"]["CommuteFact"]["kind"];
+type AnlageNStatus = components["schemas"]["AnlageNDraft"]["status"];
+type ReturnStatus = components["schemas"]["ReturnEstimate"]["status"];
+
+/** A return_input row's kind (D97). */
+export const RETURN_INPUT_KIND: Record<ReturnInputKind, string> = {
+  wage_certificate: "Lohnsteuerbescheinigung",
+  payslip: "Gehaltsabrechnung",
+  commute: "Arbeitsweg",
+  home_office: "Homeoffice-Tage",
+  work_room: "Arbeitszimmer",
+  work_equipment: "Arbeitsmittel",
+  telecom: "Telekommunikation",
+  professional_association: "Beiträge zu Berufsverbänden",
+  training: "Fortbildung",
+  other_expense: "Sonstige Werbungskosten",
+  other_insurance: "Weitere Versicherungen",
+  replacement_income: "Lohnersatzleistungen",
+  vorsorge_override: "Vorsorge manuell",
+  child: "Kind",
+  childcare_cost: "Kinderbetreuungskosten",
+  household_services: "Haushaltsnahe Dienstleistungen (§ 35a)",
+  special_expense: "Spende",
+};
+
+/** A work item's class (D108): it decides the useful life. */
+export const EQUIPMENT_CLASS: Record<EquipmentClass, string> = {
+  computer: "Computer, Laptop, Tablet",
+  software: "Software",
+  phone: "Smartphone, Telefon",
+  furniture: "Büromöbel",
+  tools: "Werkzeug",
+  subscription: "Abo (z. B. Software, Fachzeitschrift)",
+  other: "Sonstiges",
+};
+
+export const OTHER_EXPENSE_CLASS: Record<OtherExpenseClass, string> = {
+  account_fee: "Kontoführung (Pauschale)",
+  application: "Bewerbung",
+  ferry_flight: "Fähr- und Flugkosten",
+  other: "Sonstiges",
+};
+
+/** A wage-replacement benefit paid by an authority (Progressionsvorbehalt, D102). */
+export const REPLACEMENT_BENEFIT: Record<ReplacementBenefit, string> = {
+  elterngeld: "Elterngeld",
+  mutterschaftsgeld: "Mutterschaftsgeld der Krankenkasse",
+  krankengeld: "Krankengeld",
+  arbeitslosengeld: "Arbeitslosengeld",
+  kurzarbeitergeld: "Kurzarbeitergeld",
+  other: "Andere Lohnersatzleistung",
+};
+
+export const COMMUTE_KIND: Record<CommuteKind, string> = {
+  first_workplace: "Erste Tätigkeitsstätte",
+  collection_point: "Sammelpunkt oder weiträumiges Tätigkeitsgebiet",
+};
+
+/** The Anlage N draft's status: where the pay comes from. */
+export const ANLAGE_N_STATUS: Record<AnlageNStatus, string> = {
+  certified: "bescheinigt",
+  estimate: "Schätzung",
+  none: "kein Arbeitslohn",
+};
+
+/** The whole-return estimate's status (D101). */
+export const RETURN_STATUS: Record<ReturnStatus, string> = {
+  estimate: "Schätzung",
+  certified: "laut Bescheinigungen",
+};
+
+/** What the estimate leaves out (backend services/return_inputs.py NOT_MODELLED, D95). */
+const NOT_MODELLED: Record<string, string> = {
+  extraordinary_burden: "außergewöhnliche Belastungen",
+  riester: "Riester",
+  maintenance: "Unterhalt",
+  prepayments: "Vorauszahlungen",
+  capital_income: "Kapitalerträge (ab Phase 8)",
+};
+
+/** An unknown code is shown as sent. */
+export function notModelledLabel(code: string): string {
+  return NOT_MODELLED[code] ?? code;
+}
