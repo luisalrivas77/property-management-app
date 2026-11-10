@@ -354,6 +354,8 @@ containers use:
 | `hausbuch-anthropic-api-key` | the Claude API key of the `hausbuch` Console workspace (step 13) | API container |
 | `hausbuch-inbox-imap-user` | the Gmail address whose label is read (step 16) | API container |
 | `hausbuch-inbox-imap-password` | the Google app password named `Hausbuch` (step 16) | API container |
+| `hausbuch-inbox-address` | the token address `<user>+<token>@gmail.com` (step 16) | API container |
+| `hausbuch-inbox-label` | `Hausbuch` (step 16) | API container |
 
 `sslmode=require` encrypts the connection but does not check the server's certificate: the
 container image does not carry the instance's CA.
@@ -526,7 +528,7 @@ The last two columns are your computer's `~/.hausbuch-owner.env`, not anything a
 | `HAUSBUCH_AI_ENABLED` | `true` once step 13 is done (default `false`) | — | — | — |
 | `HAUSBUCH_INBOX_IMAP_USER` | **secret** (step 16), optional | — | — | — |
 | `HAUSBUCH_INBOX_IMAP_PASSWORD` | **secret** (step 16), optional | — | — | — |
-| `HAUSBUCH_INBOX_ADDRESS` | the token address (step 16), optional | — | — | — |
+| `HAUSBUCH_INBOX_ADDRESS` | **secret** (step 16), optional | — | — | — |
 | `HAUSBUCH_INBOX_LABEL` | `Hausbuch` (step 16), optional | — | — | — |
 | `HAUSBUCH_API_URL` | — | **build argument**, not a variable (step 7) | — | — |
 
@@ -684,12 +686,13 @@ once.
    optionally *Skip the Inbox*. Only mails to the token address get the label; the app reads
    nothing else. If the label is missing or renamed, the poll logs `email.label_missing` and
    creates nothing.
-4. **Secret Manager** (step 8): two secrets, `hausbuch-inbox-imap-user` (the Gmail address)
-   and `hausbuch-inbox-imap-password` (the app password).
-5. **API container** (step 10): add the secret environment variables
-   `HAUSBUCH_INBOX_IMAP_USER` and `HAUSBUCH_INBOX_IMAP_PASSWORD`, pasting the secrets'
-   values, and the plain variables `HAUSBUCH_INBOX_ADDRESS` (the token address) and
-   `HAUSBUCH_INBOX_LABEL=Hausbuch`. `HAUSBUCH_INBOX_IMAP_HOST` defaults to
+4. **Secret Manager** (step 8): four secrets, `hausbuch-inbox-imap-user` (the Gmail
+   address), `hausbuch-inbox-imap-password` (the app password), `hausbuch-inbox-address`
+   (the token address) and `hausbuch-inbox-label` (`Hausbuch`).
+5. **API container** (step 10): add `HAUSBUCH_INBOX_IMAP_USER`,
+   `HAUSBUCH_INBOX_IMAP_PASSWORD` and `HAUSBUCH_INBOX_ADDRESS` as secret environment
+   variables, pasting the secrets' values (the token address is what keeps strangers out,
+   so it is treated as a secret too), and `HAUSBUCH_INBOX_LABEL=Hausbuch` as a plain one. `HAUSBUCH_INBOX_IMAP_HOST` defaults to
    `imap.gmail.com` and `HAUSBUCH_INBOX_AUTHSERV_ID` to `mx.google.com`; leave both. The
    container refuses to start with the user and no password (or the reverse), or with a
    login and no address or label. While the four are unset the poll does nothing.
@@ -709,10 +712,13 @@ once.
    delivered to itself. Record the answer in phase-5.md Q-O47 either way. The log line names
    counts and codes only, never an address, a subject or a file name.
 
-**What the log can say at a poll level.** `status=connect_failed` with `email.auth_rejected`
-means Google refused the login (password revoked, or 2-Step Verification turned off);
-`email.label_missing` means the label is gone; `connection_lost` is retried at the next
-poll. These are log lines only: no card shows them (phase-5.md, step 4 notes).
+**What the log line's `status` can say** (anything but `done` is logged as a warning):
+`"email.auth_rejected"` means Google refused the login (the app password revoked or
+mistyped, or 2-Step Verification turned off); `"email.label_missing"` means the label is
+gone or renamed; `"connect_failed"` means the connection to `imap.gmail.com` never came up
+(the line's `exc_type` names the error); `"connection_lost"` means it broke in the middle,
+and the next poll starts that mail again; `"skipped"` means `imaplib.Debug` was on or not
+exactly one workspace exists. These are log lines only: no card shows them.
 
 **Rotation or revocation**: create a new app password, add it as a new version of
 `hausbuch-inbox-imap-password`, paste it into the container, redeploy, then revoke the old
