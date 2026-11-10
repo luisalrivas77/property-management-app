@@ -26,13 +26,13 @@ from .enqueue import (
     REMATCH_WAITING_TASK,
     TAX_EXPORT_TASK,
 )
+from .inbound_mail import POLL_CRON, POLL_LOCK, POLL_TASK, run_poll_inbox
 from .matching import (
     run_match_import,
     run_match_transaction,
     run_rematch_on_evidence,
     run_rematch_waiting,
 )
-from .inbound_mail import POLL_CRON, POLL_LOCK, POLL_TASK, run_poll_inbox
 from .scrub import SCRUB_CRON, SCRUB_TASK, run_scrub_proposals
 from .tax_export import run_tax_export
 
