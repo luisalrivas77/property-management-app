@@ -156,6 +156,9 @@ PHASE3_CASES = {
         "case_b_renovation_undecided",
         "pre_handover_as_rent",
         "export_roundtrip",
+        # phase 4b D111 (docs/phases/phase-4b.md §5.12): privately paid rental costs
+        "private_costs_in_other",
+        "travel_frequency_warning",
     },
 }
 
@@ -195,6 +198,11 @@ PHASE4_CASES = {
         "carried_forward_2028",
         "no_inputs_none",
         "tariff_reused_for_2030",
+        # phase 4b D98 (docs/phases/phase-4b.md §5.9, §11): the employment and household contexts
+        "household_2026_contexts",
+        "deductions_override_beats_employment",
+        "payslip_gross_source",
+        "plain_tariff_without_context",
     },
     "actuals": {
         "anlage_v_2026_case_a",

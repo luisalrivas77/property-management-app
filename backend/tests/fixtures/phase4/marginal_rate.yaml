@@ -284,3 +284,138 @@ cases:
   owners: *owners
   expect:
     tariff: {tax_year: 2030, version: '2026.1', reused_from: 2026}
+# --- Phase 4b amendment (docs/phases/phase-4b.md §5.9, D98), written in phase 4b step 0 ---
+# zve_base and tax_effect take the owners' Anlage N summaries (`employment`) and the household
+# context (`household`). Per owner: gross from the summary (its gross_source), deductions =
+# wk_applied + vorsorge + 36 (deductions_source employment) unless a deductions_override row
+# exists, which still wins. With a household context the effect is assessed_tax(base + R) −
+# assessed_tax(base) (§5.10: the Progressionsvorbehalt at six decimals of the rate, floored;
+# the Günstigerprüfung; §35a; Soli and church tax on est_with); without one, total_tax as
+# before. The household is owners A and B of phase 4b's anlage_n.yaml, outside a church, one
+# child born 15 Mar 2026, benefits L = 7,360.00. `pending` names the step that builds the
+# rule; tests/rules/performance/test_income.py skips the case until then.
+- id: household_2026_contexts
+  description: 'phase 4b §5.9: the household base 69,982.10; effect 9,974 − 12,289 = −2,315.00'
+  pending: phase 4b step 1 (D98 contexts in rules/performance/income.py and tariff.tax_effect)
+  tax_year: 2026
+  owners: &owners_no_church
+  - {owner_id: 0000000a-0000-4000-8000-000000000001, church_tax: false}
+  - {owner_id: 0000000a-0000-4000-8000-000000000002, church_tax: false}
+  inputs: &income_2026_4b
+  - id: 0000004d-0000-4000-8000-000000000011
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    kind: expected_gross_pay
+    tax_year: 2026
+    value: {amount: '58000.00'}
+  - id: 0000004d-0000-4000-8000-000000000012
+    owner_id: 0000000a-0000-4000-8000-000000000002
+    kind: expected_gross_pay
+    tax_year: 2026
+    value: {amount: '30000.00'}
+  employment: &employment_ab
+  - {owner_id: 0000000a-0000-4000-8000-000000000001, gross: '60000.00', gross_source: certificate,
+    wk_applied: '2775.90', vorsorge: '11700.00'}
+  - {owner_id: 0000000a-0000-4000-8000-000000000002, gross: '32000.00', gross_source: certificate,
+    wk_applied: '1230.00', vorsorge: '6240.00'}
+  household: &household_ab
+    children: [{born_on: 2026-03-15}]
+    replacement_benefits: '7360.00'
+  result: '-7948.66'
+  expect:
+    zve:
+      amount: '69982.10'
+      source: estimate
+      carried_forward: false
+      tax_year: 2026
+      per_owner:
+      - {owner_id: 0000000a-0000-4000-8000-000000000001, gross: '60000.00', gross_source: certificate,
+        deductions: '14511.90', deductions_source: employment, amount: '45488.10'}
+      - {owner_id: 0000000a-0000-4000-8000-000000000002, gross: '32000.00', gross_source: certificate,
+        deductions: '7506.00', deductions_source: employment, amount: '24494.00'}
+      household: *household_ab
+    effect:
+      effect: '-2315.00'
+      effective_rate: '29.1'
+      slope: null
+      source: estimate
+      carried_forward: false
+      breakdown_with: {est: '9974.00', soli: '0.00', church: '0.00', total: '9974.00'}
+      breakdown_without: {est: '12289.00', soli: '0.00', church: '0.00', total: '12289.00'}
+- id: deductions_override_beats_employment
+  description: 'D98: a typed deductions_override still wins over the Anlage N summary'
+  pending: phase 4b step 1 (D98 contexts in rules/performance/income.py and tariff.tax_effect)
+  tax_year: 2026
+  owners: *owners_no_church
+  inputs:
+  - id: 0000004d-0000-4000-8000-000000000011
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    kind: expected_gross_pay
+    tax_year: 2026
+    value: {amount: '58000.00'}
+  - id: 0000004d-0000-4000-8000-000000000013
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    kind: deductions_override
+    tax_year: 2026
+    value: {amount: '15000.00'}
+  employment:
+  - {owner_id: 0000000a-0000-4000-8000-000000000001, gross: '60000.00', gross_source: certificate,
+    wk_applied: '2775.90', vorsorge: '11700.00'}
+  expect:
+    zve:
+      amount: '45000.00'
+      source: estimate
+      carried_forward: false
+      tax_year: 2026
+      per_owner:
+      - {owner_id: 0000000a-0000-4000-8000-000000000001, gross: '60000.00', gross_source: certificate,
+        deductions: '15000.00', deductions_source: override, amount: '45000.00'}
+- id: payslip_gross_source
+  description: 'D98, D105: before the certificate, the gross is the payslip projection'
+  pending: phase 4b step 1 (D98 contexts in rules/performance/income.py and tariff.tax_effect)
+  tax_year: 2026
+  owners: *owners_no_church
+  inputs:
+  - id: 0000004d-0000-4000-8000-000000000011
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    kind: expected_gross_pay
+    tax_year: 2026
+    value: {amount: '58000.00'}
+  employment:
+  - {owner_id: 0000000a-0000-4000-8000-000000000001, gross: '60000.00', gross_source: payslip,
+    wk_applied: '2775.90', vorsorge: '11700.00'}
+  expect:
+    zve:
+      amount: '45488.10'
+      source: estimate
+      carried_forward: false
+      tax_year: 2026
+      per_owner:
+      - {owner_id: 0000000a-0000-4000-8000-000000000001, gross: '60000.00', gross_source: payslip,
+        deductions: '14511.90', deductions_source: employment, amount: '45488.10'}
+- id: plain_tariff_without_context
+  description: 'the summaries without a household context: the plain tariff, T(62,033) − T(69,982) = 9,010 − 11,334'
+  pending: phase 4b step 1 (D98 contexts in rules/performance/income.py and tariff.tax_effect)
+  tax_year: 2026
+  owners: *owners_no_church
+  inputs: *income_2026_4b
+  employment: *employment_ab
+  result: '-7948.66'
+  expect:
+    zve:
+      amount: '69982.10'
+      source: estimate
+      carried_forward: false
+      tax_year: 2026
+      per_owner:
+      - {owner_id: 0000000a-0000-4000-8000-000000000001, gross: '60000.00', gross_source: certificate,
+        deductions: '14511.90', deductions_source: employment, amount: '45488.10'}
+      - {owner_id: 0000000a-0000-4000-8000-000000000002, gross: '32000.00', gross_source: certificate,
+        deductions: '7506.00', deductions_source: employment, amount: '24494.00'}
+    effect:
+      effect: '-2324.00'
+      effective_rate: '29.2'
+      slope: null
+      source: estimate
+      carried_forward: false
+      breakdown_with: {est: '9010.00', soli: '0.00', church: '0.00', total: '9010.00'}
+      breakdown_without: {est: '11334.00', soli: '0.00', church: '0.00', total: '11334.00'}

@@ -45,10 +45,12 @@ from hausbuch.schemas.common import (
     Schema,
     TaxYear,
 )
+from hausbuch.schemas.employment import OwnerEmployment
 from hausbuch.schemas.enums import OperatingCostsTerms
 from hausbuch.schemas.loan import LoanTerms
 from hausbuch.schemas.performance import (
     DatedFlow,
+    HouseholdTaxContext,
     IncomeInputFact,
     Levers,
     OwnerTaxProfile,
@@ -255,6 +257,9 @@ class MarginalExpect(Schema):
 
 
 class MarginalCase(Lenient):
+    # A case written ahead of its rule (phase 4b step 0 wrote the D98 context cases for step
+    # 1): the step that builds it. test_income.py skips the case until it is removed.
+    pending: str | None = None
     tax_year: TaxYear
     owners: list[OwnerTaxProfile] = Field(default_factory=list)
     inputs: list[IncomeInputFact] = Field(default_factory=list)
@@ -264,7 +269,35 @@ class MarginalCase(Lenient):
     # For tax_effect: a stated zvE_base (None: zve_base's amount from the inputs) and R.
     zve_base: NonNegativeMoney | None = None
     result: Money | None = None
+    # Phase 4b D98: the owners' Anlage N summaries and the household context. Given, they
+    # replace D84's default deductions per owner (a deductions_override row still wins) and
+    # tax_effect evaluates return_estimate.assessed_tax at both points instead of total_tax.
+    employment: list[OwnerEmployment] = Field(default_factory=list)
+    household: HouseholdTaxContext | None = None
     expect: MarginalExpect
+
+    @model_validator(mode="after")
+    def _employment(self) -> Self:
+        """D98: an owner's part from a summary takes its gross and source, and deducts
+        wk_applied + vorsorge + the Sonderausgaben-Pauschbetrag (36)."""
+        zve = self.expect.zve
+        if zve is None or not self.employment:
+            return self
+        allowance = registry.tariff(self.tax_year).special_expenses_allowance
+        by_owner = {e.owner_id: e for e in self.employment}
+        for part in zve.per_owner:
+            e = by_owner.get(part.owner_id)
+            if e is None:
+                continue
+            if (part.gross, part.gross_source) != (e.gross, e.gross_source):
+                raise ValueError(f"{self.id}: the gross and its source are the summary's")
+            if part.deductions_source == "employment" and part.deductions != (
+                e.wk_applied + e.vorsorge + allowance
+            ):
+                raise ValueError(f"{self.id}: deductions = wk_applied + vorsorge + 36")
+            if part.amount != max(Decimal("0"), part.gross - part.deductions):
+                raise ValueError(f"{self.id}: amount = gross − deductions")
+        return self
 
 
 class MarginalFixture(_Fixture):

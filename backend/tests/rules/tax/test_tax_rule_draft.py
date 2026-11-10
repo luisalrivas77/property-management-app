@@ -27,6 +27,8 @@ def _run(case) -> AnlageVDraft:
 @pytest.mark.rule
 @pytest.mark.parametrize("case", DRAFT.cases, ids=lambda c: c.id)
 def test_draft(case):
+    if case.pending:
+        pytest.skip(f"written ahead of its rule: {case.pending}")
     got = _run(case)
     e = case.expect
     where = case.id

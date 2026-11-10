@@ -444,6 +444,9 @@ class DraftExpect(Schema):
 
 
 class DraftCase(Lenient):
+    # A case written ahead of its rule (phase 4b step 0 wrote private_cost cases for step 1):
+    # the step that builds it. test_tax_rule_draft.py skips the case until it is removed.
+    pending: str | None = None
     tax_year: TaxYear
     rule_set_year: TaxYear
     facts: DraftFacts
