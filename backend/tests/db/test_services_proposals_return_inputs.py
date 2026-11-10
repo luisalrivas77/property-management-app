@@ -11,6 +11,7 @@ All names, employers, figures and identifiers are invented.
 
 import importlib.util
 import json
+import logging
 import re
 import sys
 import types
@@ -212,7 +213,8 @@ def _everything_stored(read, ws) -> str:
 # --- The certificate, read by the job and applied -------------------------------------------
 
 
-def test_a_certificate_read_and_applied_stores_no_identifier_anywhere(setup, run, read):
+def test_a_certificate_read_and_applied_stores_no_identifier_anywhere(setup, run, read, caplog):
+    caplog.set_level(logging.DEBUG)
     client = FakeModelClient(
         [
             text_response(_classify("lohnsteuerbescheinigung")),
@@ -257,6 +259,12 @@ def test_a_certificate_read_and_applied_stores_no_identifier_anywhere(setup, run
     assert "Erika Musterfrau" in stored_text and "60000.00" in stored_text  # sanity
     for fragment in FORBIDDEN:
         assert fragment not in stored_text, fragment
+    # nor in any log line of the read and the apply
+    logged = caplog.text + json.dumps(
+        [getattr(r, "fields", None) for r in caplog.records], default=str
+    )
+    for fragment in FORBIDDEN:
+        assert fragment not in logged, fragment
 
 
 # --- The payslip ------------------------------------------------------------------------------
