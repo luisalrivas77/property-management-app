@@ -13,7 +13,10 @@
 //   link to the account's Kontoauszüge, which show both balances;
 // - a possible duplicate: the Konten card with Zusammenführen / Beide behalten;
 // - last year's open Jahresfragen (questionnaire_open, phase 4b D110): a link into the flow
-//   at /tax/<year>/fragen.
+//   at /tax/<year>/fragen;
+// - a forwarded mail's attachment (email_received, phase 5 D121): a link to the document, or
+//   to the account's Kontoauszüge when it was imported; a mail that failed three times
+//   (email_failed) has no action, its question says to upload the attachments directly.
 //
 // GET /inbox names ids only, so the lines, imports, accounts, duplicates and documents are
 // loaded alongside to show what each item is about. Amounts are shown as the API returns them.
@@ -54,6 +57,7 @@ const SECTIONS = [
   { key: "unread", title: "Dokumente, die nicht gelesen wurden" },
   { key: "imports", title: "Kontoauszüge" },
   { key: "duplicates", title: "Mögliche Doppelbuchungen" },
+  { key: "automatic", title: "Automatisch" },
   { key: "other", title: "Weitere Punkte" },
 ] as const;
 
@@ -70,14 +74,14 @@ const SECTION_OF: Record<InboxItemKind, SectionKey> = {
   import_unreconciled: "imports",
   possible_duplicate: "duplicates",
   questionnaire_open: "other",
-  // Phase 5: listed under Weitere Punkte until steps 1-4 give them the "Automatisch" section
-  // (phase-5.md §11); the API does not return them before then.
-  bank_approval_needed: "other",
-  bank_sync_failed: "other",
-  bank_balance_drift: "other",
-  email_received: "other",
-  email_failed: "other",
-  reminder: "other",
+  // Phase 5's six card kinds share the "Automatisch" section (phase-5.md §11); the API
+  // returns each only once its step is built.
+  bank_approval_needed: "automatic",
+  bank_sync_failed: "automatic",
+  bank_balance_drift: "automatic",
+  email_received: "automatic",
+  email_failed: "automatic",
+  reminder: "automatic",
 };
 
 /** A line kind without a line id cannot open the panel: it is listed under Weitere Punkte,
@@ -185,7 +189,8 @@ export function InboxList({
             <ul className="inbox-list" aria-label={title}>
               {items.map((item) => {
                 // A possible duplicate also names its later line, which may sit in two pairs: its own id first.
-                const key = `${item.kind}:${item.possible_duplicate_id ?? item.proposal_id ?? item.import_id ?? item.transaction_id ?? item.document_id}`;
+                // A forwarded document can arrive in two mails, and a failed mail names no id: the time tells them apart.
+                const key = `${item.kind}:${item.possible_duplicate_id ?? item.proposal_id ?? item.import_id ?? item.transaction_id ?? item.document_id}:${item.created_at}`;
                 return (
                   <li key={key}>
                     {isLineItem(item) ? (
@@ -323,6 +328,9 @@ function EntryTitle({ item, data }: { item: InboxItem; data: InboxData }) {
   if (item.kind === "questionnaire_open") {
     return <strong>Jahresfragen {item.tax_year ?? ""}</strong>;
   }
+  if (item.kind === "email_failed") {
+    return <strong>Weitergeleitete Mail</strong>;
+  }
   if (item.import_id) {
     const imp = data.imports.get(item.import_id);
     const account = imp ? data.accounts.get(imp.account_id) : undefined;
@@ -392,6 +400,11 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
       return item.tax_year != null ? (
         <Link href={`/tax/${item.tax_year}/fragen`}>Jahresfragen {item.tax_year} beantworten</Link>
       ) : null;
+    case "email_received": {
+      const imp = item.import_id ? data.imports.get(item.import_id) : undefined;
+      if (imp) return <Link href={`/accounts/${imp.account_id}?tab=kontoauszuege`}>Kontoauszug ansehen</Link>;
+      return item.document_id ? <Link href={`/documents/${item.document_id}`}>Dokument öffnen</Link> : null;
+    }
     default:
       return null;
   }
