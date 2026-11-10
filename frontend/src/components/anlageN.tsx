@@ -19,7 +19,7 @@ import { ANLAGE_N_STATUS, RETURN_INPUT_KIND, WARNING_TEXT } from "./labels";
 import { BlockRows, hasBlocks } from "./anlageNBlocks";
 import { InputsPanel, type ReturnInput } from "./returnInputs";
 import { ReturnEstimateCard, useReturnEstimate, type ReturnEstimate } from "./returnEstimate";
-import { SourcesButton } from "./tax";
+import { ExportCard, SourcesButton, type ExportButton } from "./tax";
 import { questionnaireHref, TaxTabs, taxFormHref, type TaxYearState } from "./taxYear";
 import { Loading } from "./ui";
 import { useLoad, type Loaded } from "./useLoad";
@@ -229,16 +229,54 @@ function DraftView({
         <aside className="stack tax-side" aria-label="Offene Punkte und Unterlagen">
           <OpenPoints warnings={warnings} estimate={estimate} ownerId={owner.id} year={year} />
           <Documents rows={list} year={year} />
-          <section className="card stack tax-handover" aria-labelledby="tax-n-handover">
-            <h2 id="tax-n-handover">Übergabe</h2>
-            <button type="button" className="secondary" disabled>
-              Anlage N (PDF)
-            </button>
-            <p className="muted tax-subline">ab Schritt 4</p>
-          </section>
+          <AnlageNHandOver ownerId={owner.id} year={year} ready={draft !== null} />
         </aside>
       </div>
     </div>
+  );
+}
+
+// --- Übergabe: the owner's field sheet (phase 4b D104) ---------------------------------------
+
+const SHEET_BUTTONS: ExportButton[] = [{ kind: "anlage_n_sheet", label: "Feldblatt (PDF)" }];
+
+function AnlageNHandOver({ ownerId, year, ready }: { ownerId: string; year: number; ready: boolean }) {
+  const loadHistory = useCallback(
+    () =>
+      ok(
+        api.GET("/api/owners/{owner_id}/anlage-n/exports", {
+          params: { path: { owner_id: ownerId }, query: { tax_year: year } },
+        }),
+      ),
+    [ownerId, year],
+  );
+  const queue = useCallback(
+    async (kind: ExportButton["kind"]) => {
+      const queued = await ok(
+        api.POST("/api/owners/{owner_id}/anlage-n/exports", {
+          params: { path: { owner_id: ownerId } },
+          body: { tax_year: year, kind },
+        }),
+      );
+      return queued.export_id;
+    },
+    [ownerId, year],
+  );
+  return (
+    <ExportCard
+      key={`${ownerId}-${year}`}
+      titleId="tax-n-handover"
+      taxYear={year}
+      buttons={SHEET_BUTTONS}
+      disabled={!ready}
+      note={
+        ready
+          ? "Das Feldblatt sagt, was in welche Zeile der Anlage N in ELSTER gehört, und nennt am Ende, was von Hand einzutragen ist."
+          : "Das Feldblatt gibt es, sobald Arbeitslohn erfasst ist."
+      }
+      loadHistory={loadHistory}
+      queue={queue}
+    />
   );
 }
 

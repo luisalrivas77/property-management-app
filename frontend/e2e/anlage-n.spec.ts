@@ -58,7 +58,14 @@ test("the Anlage N tab saves every kind of input, switches owner and shows the e
   await expect(tabs.getByRole("link", { name: "Anlage N" })).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("region", { name: "Arbeitslohn" })).toContainText("aus dem erwarteten Bruttolohn");
   await expect(page.getByText("Ein Entwurf zum Prüfen, keine Steuerberatung.")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Anlage N (PDF)" })).toBeDisabled();
+  // The field sheet (step 4) is queued: the e2e API runs without its job worker
+  // (playwright.config.ts), so the export stays queued and the card says it is being made;
+  // the written file and the history are covered by backend/tests/api/test_anlage_n_exports.py.
+  const handOver = page.getByRole("region", { name: "Übergabe" });
+  await handOver.getByRole("button", { name: "Feldblatt (PDF)" }).click();
+  await expect(handOver.getByRole("status")).toHaveText("Feldblatt Anlage N (PDF) wird erstellt …");
+  await expect(handOver.getByRole("button", { name: "Feldblatt (PDF)" })).toBeDisabled();
+  await expect(handOver.getByRole("alert")).toHaveCount(0);
 
   // One input per block.
   await save(page, "Arbeitsweg hinzufügen", "Arbeitsweg eintragen", {

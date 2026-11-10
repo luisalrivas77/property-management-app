@@ -599,7 +599,8 @@ export const WARNING_TEXT: Record<WarningCode, (params: Params) => string> = {
   "return.not_modelled": () => "Ein Teil der Erklärung wird von der App nicht berechnet; die Schätzung ist unvollständig.",
   questionnaire_provisional: () =>
     "Die Fragen für dieses Jahr sind noch nicht festgelegt; es gelten die des Vorjahres.",
-  "tax_export.questions_open": () => "Beim Export waren noch Fragen zum Steuerjahr offen.",
+  "tax_export.questions_open": (p) =>
+    `${p.count ?? "Einige"} ${p.count === "1" ? "Jahresfrage" : "Jahresfragen"} offen: beim Export noch nicht beantwortet, die Angaben können sich noch ändern.`,
 };
 
 /** What a line's source is, in the sources drawer. */
