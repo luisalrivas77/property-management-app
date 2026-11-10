@@ -118,14 +118,17 @@ def tax_export(
     tax_year: str,
     kind: str,
     created_by: str,
+    owner_id: str = "",
 ) -> None:
+    """`owner_id` defaults to "" for a job queued before phase 4b, which named a property."""
     deps: JobDeps = context.additional_context[DEPS_KEY]
     assert context.job is not None
     run_tax_export(
         deps,
         workspace_id=UUID(workspace_id),
         export_id=UUID(export_id),
-        property_id=UUID(property_id),
+        property_id=UUID(property_id) if property_id else None,
+        owner_id=UUID(owner_id) if owner_id else None,
         tax_year=int(tax_year),
         kind=TaxExportKind(kind),
         created_by=UUID(created_by) if created_by else None,

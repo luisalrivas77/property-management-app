@@ -198,20 +198,23 @@ def enqueue_tax_export(
     *,
     workspace_id: UUID,
     export_id: UUID,
-    property_id: UUID,
+    property_id: UUID | None = None,
+    owner_id: UUID | None = None,
     tax_year: int,
     kind: str,
     created_by: UUID | None,
 ) -> None:
     """Queue `tax_export` for one export, in the caller's transaction. Locked by
-    `export:{id}`. created_by is "" for an export no person asked for."""
+    `export:{id}`. created_by is "" for an export no person asked for. An Anlage N sheet
+    names its owner and every other kind its property (phase 4b D104); the other one is ""."""
     _defer(
         conn,
         TAX_EXPORT_TASK,
         export_lock(export_id),
         workspace_id=str(workspace_id),
         export_id=str(export_id),
-        property_id=str(property_id),
+        property_id="" if property_id is None else str(property_id),
+        owner_id="" if owner_id is None else str(owner_id),
         tax_year=str(tax_year),
         kind=kind,
         created_by="" if created_by is None else str(created_by),

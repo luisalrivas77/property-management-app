@@ -4883,6 +4883,118 @@
         }
       }
     },
+    "/api/owners/{owner_id}/anlage-n/exports": {
+      "post": {
+        "summary": "Anlage N Export Create",
+        "description": "Queue the owner's Anlage N field sheet (kind `anlage_n_sheet`) as it is now; poll\nGET /tax-exports/{export_id}.",
+        "operationId": "anlage_n_export_create_api_owners__owner_id__anlage_n_exports_post",
+        "parameters": [
+          {
+            "name": "owner_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Owner Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaxExportCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaxExportQueued"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Anlage N Exports List",
+        "description": "The owner's stored Anlage N sheets (ready ones only), newest first.",
+        "operationId": "anlage_n_exports_list_api_owners__owner_id__anlage_n_exports_get",
+        "parameters": [
+          {
+            "name": "owner_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Owner Id"
+            }
+          },
+          {
+            "name": "tax_year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 2100,
+                  "minimum": 2000
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tax Year"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaxExport"
+                  },
+                  "title": "Response Anlage N Exports List Api Owners  Owner Id  Anlage N Exports Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/tax-exports/{export_id}": {
       "get": {
         "summary": "Tax Export Get",
@@ -18148,7 +18260,7 @@
           "export_id"
         ],
         "title": "TaxExportQueued",
-        "description": "POST /properties/{id}/anlage-v/exports: the id to poll GET /tax-exports/{id} with."
+        "description": "POST /properties/{id}/anlage-v/exports or /owners/{id}/anlage-n/exports: the id to poll\nGET /tax-exports/{id} with."
       },
       "TaxExportState": {
         "properties": {
@@ -18158,9 +18270,28 @@
             "title": "Id"
           },
           "property_id": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Property Id"
+          },
+          "owner_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Id"
           },
           "tax_year": {
             "type": "integer",
@@ -18215,13 +18346,12 @@
         "type": "object",
         "required": [
           "id",
-          "property_id",
           "tax_year",
           "kind",
           "status"
         ],
         "title": "TaxExportState",
-        "description": "GET /tax-exports/{id}. `export` and `download_url` once ready; the URL is signed and\nvalid DOWNLOAD_TTL_S seconds, so a client fetches it right before downloading."
+        "description": "GET /tax-exports/{id}. `export` and `download_url` once ready; the URL is signed and\nvalid DOWNLOAD_TTL_S seconds, so a client fetches it right before downloading. An Anlage\nN sheet names its owner, every other export its property (exactly one is set)."
       },
       "TaxInput": {
         "properties": {

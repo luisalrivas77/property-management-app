@@ -1656,6 +1656,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/owners/{owner_id}/anlage-n/exports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Anlage N Exports List
+         * @description The owner's stored Anlage N sheets (ready ones only), newest first.
+         */
+        get: operations["anlage_n_exports_list_api_owners__owner_id__anlage_n_exports_get"];
+        put?: never;
+        /**
+         * Anlage N Export Create
+         * @description Queue the owner's Anlage N field sheet (kind `anlage_n_sheet`) as it is now; poll
+         *     GET /tax-exports/{export_id}.
+         */
+        post: operations["anlage_n_export_create_api_owners__owner_id__anlage_n_exports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tax-exports/{export_id}": {
         parameters: {
             query?: never;
@@ -6814,7 +6839,8 @@ export interface components {
         TaxExportKind: "field_sheet" | "archive" | "anlage_n_sheet";
         /**
          * TaxExportQueued
-         * @description POST /properties/{id}/anlage-v/exports: the id to poll GET /tax-exports/{id} with.
+         * @description POST /properties/{id}/anlage-v/exports or /owners/{id}/anlage-n/exports: the id to poll
+         *     GET /tax-exports/{id} with.
          */
         TaxExportQueued: {
             /**
@@ -6826,7 +6852,8 @@ export interface components {
         /**
          * TaxExportState
          * @description GET /tax-exports/{id}. `export` and `download_url` once ready; the URL is signed and
-         *     valid DOWNLOAD_TTL_S seconds, so a client fetches it right before downloading.
+         *     valid DOWNLOAD_TTL_S seconds, so a client fetches it right before downloading. An Anlage
+         *     N sheet names its owner, every other export its property (exactly one is set).
          */
         TaxExportState: {
             /**
@@ -6834,11 +6861,10 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /**
-             * Property Id
-             * Format: uuid
-             */
-            property_id: string;
+            /** Property Id */
+            property_id?: string | null;
+            /** Owner Id */
+            owner_id?: string | null;
             /** Tax Year */
             tax_year: number;
             kind: components["schemas"]["TaxExportKind"];
@@ -11408,6 +11434,74 @@ export interface operations {
             header?: never;
             path: {
                 property_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaxExportCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaxExportQueued"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    anlage_n_exports_list_api_owners__owner_id__anlage_n_exports_get: {
+        parameters: {
+            query?: {
+                tax_year?: number | null;
+            };
+            header?: never;
+            path: {
+                owner_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaxExport"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    anlage_n_export_create_api_owners__owner_id__anlage_n_exports_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                owner_id: string;
             };
             cookie?: never;
         };

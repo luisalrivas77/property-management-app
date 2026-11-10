@@ -141,6 +141,8 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "tax_export.too_large":
     "Die Belege des Jahres sind zusammen größer als 100 MiB. Das Archiv bitte von Hand aufteilen; die Ausfüllhilfe geht weiterhin.",
   "tax_export.failed": "Der Export ist fehlgeschlagen. Bitte noch einmal versuchen.",
+  "tax_export.kind_invalid":
+    "Diese Art Export gibt es hier nicht: das Feldblatt der Anlage N je Eigentümer, Ausfüllhilfe und Archiv je Immobilie.",
   // return inputs, the Anlage N draft and the whole-return estimate (phase-4b.md §9)
   "return_input.scope_invalid":
     "Diese Angabe passt nicht zu ihrem Eintrag: eine Änderung gilt für dieselbe Art, dasselbe Jahr und dieselbe Person, eine Rücknahme wiederholt den Wert, und Zeiträume liegen im Steuerjahr.",

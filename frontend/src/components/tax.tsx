@@ -798,7 +798,7 @@ export function TaxFreeLine({ propertyId }: { propertyId: string }) {
 const EXPORT_KIND: Record<TaxExportKind, string> = {
   field_sheet: "Ausfüllhilfe (PDF)",
   archive: "Jahresarchiv (ZIP)",
-  anlage_n_sheet: "Anlage N (PDF)",
+  anlage_n_sheet: "Feldblatt Anlage N (PDF)",
 };
 const EXPORT_POLL_MS = 2000;
 
@@ -812,16 +812,29 @@ function exportVersion(item: TaxExport): string {
   return `Regelwerk ${item.rule_set_version} · ${form}`;
 }
 
-function HandOverCard({ propertyId, taxYear }: { propertyId: string; taxYear: number }) {
-  const loadHistory = useCallback(
-    () =>
-      ok(
-        api.GET("/api/properties/{property_id}/anlage-v/exports", {
-          params: { path: { property_id: propertyId }, query: { tax_year: taxYear } },
-        }),
-      ),
-    [propertyId, taxYear],
-  );
+export type ExportButton = { kind: TaxExportKind; label: string; secondary?: boolean };
+
+/** The Übergabe card of a tax screen: its export buttons, the running export's status (polled
+ * until ready or failed, then downloaded) and the stored exports. `loadHistory` and `queue`
+ * must be stable (useCallback); `queue` posts one export and answers its id. Used for a
+ * property's Anlage V exports and an owner's Anlage N sheet (phase 4b D104). */
+export function ExportCard({
+  titleId,
+  taxYear,
+  buttons,
+  note,
+  disabled = false,
+  loadHistory,
+  queue,
+}: {
+  titleId: string;
+  taxYear: number;
+  buttons: ExportButton[];
+  note: ReactNode;
+  disabled?: boolean;
+  loadHistory: () => Promise<TaxExport[]>;
+  queue: (kind: TaxExportKind) => Promise<string>;
+}) {
   const history = useLoad(loadHistory);
   const reloadHistory = history.reload;
   const [pending, setPending] = useState<TaxExportState | null>(null);
@@ -832,13 +845,8 @@ function HandOverCard({ propertyId, taxYear }: { propertyId: string; taxYear: nu
     setError(null);
     setFailedCode(null);
     try {
-      const queued = await ok(
-        api.POST("/api/properties/{property_id}/anlage-v/exports", {
-          params: { path: { property_id: propertyId } },
-          body: { tax_year: taxYear, kind },
-        }),
-      );
-      setPending({ id: queued.export_id, property_id: propertyId, tax_year: taxYear, kind, status: "queued" });
+      const exportId = await queue(kind);
+      setPending({ id: exportId, tax_year: taxYear, kind, status: "queued" });
     } catch (caught) {
       setError(caught);
     }
@@ -883,23 +891,25 @@ function HandOverCard({ propertyId, taxYear }: { propertyId: string; taxYear: nu
     }
   }
 
-  const busy = pending !== null;
+  const busy = pending !== null || disabled;
   const items = history.data ?? [];
   return (
-    <section className="card tax-handover" aria-labelledby="tax-handover-title">
-      <h2 id="tax-handover-title">Übergabe</h2>
+    <section className="card tax-handover" aria-labelledby={titleId}>
+      <h2 id={titleId}>Übergabe</h2>
       <div className="row">
-        <button type="button" disabled={busy} onClick={() => void start("field_sheet")}>
-          Ausfüllhilfe PDF
-        </button>
-        <button type="button" className="secondary" disabled={busy} onClick={() => void start("archive")}>
-          Archiv ZIP
-        </button>
+        {buttons.map((button) => (
+          <button
+            key={button.kind}
+            type="button"
+            className={button.secondary ? "secondary" : undefined}
+            disabled={busy}
+            onClick={() => void start(button.kind)}
+          >
+            {button.label}
+          </button>
+        ))}
       </div>
-      <p className="muted tax-handover-note">
-        Die Ausfüllhilfe sagt, was in welche Zeile in ELSTER gehört. Das Archiv enthält sie, die Zeilen und Zahlungen
-        als CSV und die Belege des Jahres im Original.
-      </p>
+      <p className="muted tax-handover-note">{note}</p>
       {pending ? (
         <p className="tax-handover-status" role="status">
           {EXPORT_KIND[pending.kind]} wird erstellt …
@@ -932,5 +942,49 @@ function HandOverCard({ propertyId, taxYear }: { propertyId: string; taxYear: nu
         </>
       ) : null}
     </section>
+  );
+}
+
+const ANLAGE_V_BUTTONS: ExportButton[] = [
+  { kind: "field_sheet", label: "Ausfüllhilfe PDF" },
+  { kind: "archive", label: "Archiv ZIP", secondary: true },
+];
+
+function HandOverCard({ propertyId, taxYear }: { propertyId: string; taxYear: number }) {
+  const loadHistory = useCallback(
+    () =>
+      ok(
+        api.GET("/api/properties/{property_id}/anlage-v/exports", {
+          params: { path: { property_id: propertyId }, query: { tax_year: taxYear } },
+        }),
+      ),
+    [propertyId, taxYear],
+  );
+  const queue = useCallback(
+    async (kind: TaxExportKind) => {
+      const queued = await ok(
+        api.POST("/api/properties/{property_id}/anlage-v/exports", {
+          params: { path: { property_id: propertyId } },
+          body: { tax_year: taxYear, kind },
+        }),
+      );
+      return queued.export_id;
+    },
+    [propertyId, taxYear],
+  );
+  return (
+    <ExportCard
+      titleId="tax-handover-title"
+      taxYear={taxYear}
+      buttons={ANLAGE_V_BUTTONS}
+      note={
+        <>
+          Die Ausfüllhilfe sagt, was in welche Zeile in ELSTER gehört. Das Archiv enthält sie, die Zeilen und Zahlungen
+          als CSV und die Belege des Jahres im Original.
+        </>
+      }
+      loadHistory={loadHistory}
+      queue={queue}
+    />
   );
 }
