@@ -34,14 +34,18 @@ from the return_input rows of the year):
 - gross per owner: the Anlage N summary's (a certificate, else the payslip projection) when it
   has one, else the expected_gross_pay row; an owner with a summary needs no income_input row.
   A summary whose gross is itself the expected pay (no certificate, no payslip) is not used:
-  its Vorsorge would be 0, and D84's default estimates the social insurance instead.
+  D84's default estimates the social insurance (phase 4b's estimate uses the same default,
+  `default_vorsorge`, D113).
 - deductions: a deductions_override row first (the user's figure always wins), else the
   summary's wk_applied + vorsorge + the Sonderausgaben-Pauschbetrag (36), else D84's default.
 - household: the Sonderausgaben beyond Vorsorge become max(2 × 36, church tax paid +
   donations) + childcare instead of 36 per owner, so `household_deductions` = max(0, church +
   donations − 72) + childcare comes off the owners' sum; the tax effect is assessed_tax at both
   points (tariff.tax_effect). Only for an estimate: a Bescheid's zvE and a rate override keep
-  their D83 precedence, and their effect is computed as before.
+  their D83 precedence. Under a Bescheid (D114) the context keeps only the year's
+  wage-replacement benefits (the Progressionsvorbehalt belongs to the tariff at that zvE, the
+  rest is already in it); without benefits the effect is the plain tariff, as under an
+  override (R × rate), which is unchanged.
 
 Public signatures (phase 4 step 2 imports these; keep them stable):
 
@@ -274,13 +278,24 @@ def _estimate(
         used = [bescheid]
         if source == "override":
             used.append(_override_row(rows))
+        # D114: the Bescheid's zvE already holds every deduction, the children's allowances and
+        # nothing of the §35a credit is needed for the effect; but the Progressionsvorbehalt is
+        # a property of the tariff at that zvE, not part of it, so the year's wage-replacement
+        # benefits stay. Under an override nothing changes (R × rate).
+        context = None
+        if source == "bescheid" and household is not None and household.replacement_benefits:
+            context = HouseholdTaxContext(
+                replacement_benefits=household.replacement_benefits,
+                sources=household.sources,
+            )
         return ZveEstimate(
             amount=max(ZERO, cents(base)),
             source=source,
             carried_forward=rows.carried_forward,
             tax_year=rows.year,
             per_owner=[],
-            sources=_refs(used),
+            household=context,
+            sources=unique([*_refs(used), *(context.sources if context is not None else ())]),
         )
     per_owner, used, employment_refs = _owner_estimates(rows, owners, tariff, employment)
     if source == "override":
@@ -365,7 +380,7 @@ def year_tax_effect(
     or the estimated base. (None, None) when no row applies (income.missing: the screen shows
     "— · Einkommen eintragen"). The effect carries the base's source, carried_forward flag and
     rows, plus the tariff. With a household context on an estimate, T is the assessed tax at
-    both points (phase 4b D98)."""
+    both points (phase 4b D98); on a Bescheid, with the year's benefits only (D114)."""
     rows = _year_rows(year, inputs, employment)
     if rows is None:
         return None, None
