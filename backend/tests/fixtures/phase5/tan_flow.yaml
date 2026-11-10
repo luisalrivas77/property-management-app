@@ -1,0 +1,121 @@
+# Rule fixture: a sync run's state machine (hausbuch.rules.bank_sync.next_state)
+#
+# next_state(status, event, trigger) -> SyncTransition(status, error_code, end_dialog)
+#                                       | RuleError
+# docs/phases/phase-5.md D118 (decoupled pushTAN, polled), D120 (a scheduled run never waits),
+# D127 (nothing new: no import), §4.3, §12. A case is a run: it starts in `start` and applies
+# its steps in order; each step's status is the previous step's result (a refused step leaves
+# the status as it was).
+#
+#   from              event          -> status          error_code             end_dialog
+#   queued            started        -> running
+#   needs_approval    started        -> running         (a person restarts it: §4.6 button)
+#   running|importing started        -> RuleError bank.sync_running (one run per account)
+#   running           tan_demanded   -> needs_approval                         scheduled only
+#   needs_approval    tan_confirmed  -> running
+#   needs_approval    tan_timeout    -> failed          bank.approval_timeout  true
+#   needs_approval    worker_lost    -> needs_approval  (the row stays restartable)
+#   running           streams_empty  -> nothing_new
+#   running           nothing_new    -> nothing_new     (D127: no document, no import)
+#   running           new_lines      -> importing
+#   importing         imported       -> done
+#   any live state    error          -> failed          (null: the job records the bank.*
+#                                                        code it caught on the row itself)
+#   live = queued, running, needs_approval, importing; done, nothing_new and failed are final.
+#
+# Step 0 readings (each listed in the step 0 report as a spec finding):
+# - §9's SyncEvent list has no event for "the preview found new lines"; NEW_LINES is added
+#   (schemas/bank_sync.py) because new_lines_importing_then_done needs it.
+# - end_dialog for a manual run's TAN demand is false: the job keeps the dialog open and polls
+#   the decoupled approval (D118). A scheduled run's demand ends the dialog at once (D120).
+# - Pairs the table does not list (an event on a final row; running + worker_lost; queued +
+#   tan_demanded …) are undefined in step 0: §4.3 does not say what a redeploy during a read
+#   does to a running row. Step 1 decides them with the job; no case here pins one.
+# - A scheduled run's needs_approval row counts as live for D120's card, but a manual start
+#   from that card restarts the same row (needs_approval + started -> running), so the
+#   bank.sync_running refusal applies only to running and importing rows.
+
+cases:
+  - id: manual_tan_waits
+    description: a person started the run; the TAN demand waits for the phone
+    trigger: manual
+    start: queued
+    steps:
+      - {event: started, expect: {status: running}}
+      - {event: tan_demanded, expect: {status: needs_approval, end_dialog: false}}
+
+  - id: scheduled_tan_aborts
+    description: nobody watches a scheduled run; the dialog is closed at once (D120)
+    trigger: scheduled
+    start: queued
+    steps:
+      - {event: started, expect: {status: running}}
+      - {event: tan_demanded, expect: {status: needs_approval, end_dialog: true}}
+
+  - id: confirmed_continues
+    description: the approval arrived within the polling window; the run reads on
+    trigger: manual
+    start: running
+    steps:
+      - {event: tan_demanded, expect: {status: needs_approval}}
+      - {event: tan_confirmed, expect: {status: running}}
+      - {event: new_lines, expect: {status: importing}}
+
+  - id: timeout_fails
+    description: no approval within SYNC_APPROVAL_TIMEOUT_S; the run fails and the dialog ends
+    trigger: manual
+    start: needs_approval
+    steps:
+      - event: tan_timeout
+        expect: {status: failed, error_code: bank.approval_timeout, end_dialog: true}
+
+  - id: worker_lost_stays_restartable
+    description: >
+      a redeploy while the approval is awaited leaves the row in needs_approval, and a
+      person's next start runs it again
+    trigger: scheduled
+    start: needs_approval
+    steps:
+      - {event: worker_lost, expect: {status: needs_approval}}
+      - {event: started, expect: {status: running}}
+
+  - id: second_start_refused
+    description: a second start while the run reads or imports is refused, the row unchanged
+    trigger: manual
+    start: running
+    steps:
+      - {event: started, error: {code: bank.sync_running}}
+      - {event: new_lines, expect: {status: importing}}
+      - {event: started, error: {code: bank.sync_running}}
+      - {event: imported, expect: {status: done}}
+
+  - id: empty_streams_nothing_new
+    description: the bank returned no booked camt stream for the window
+    trigger: scheduled
+    start: running
+    steps:
+      - {event: streams_empty, expect: {status: nothing_new}}
+
+  - id: all_lines_known_nothing_new
+    description: every line of the archive is already stored (D127); no import follows
+    trigger: scheduled
+    start: queued
+    steps:
+      - {event: started, expect: {status: running}}
+      - {event: nothing_new, expect: {status: nothing_new}}
+
+  - id: new_lines_importing_then_done
+    description: the preview found a new line; upload and import run, then the run is done
+    trigger: manual
+    start: queued
+    steps:
+      - {event: started, expect: {status: running}}
+      - {event: new_lines, expect: {status: importing}}
+      - {event: imported, expect: {status: done}}
+
+  - id: error_fails_any_live_state
+    description: a bank failure ends a live run; the job writes the bank.* code it caught
+    trigger: manual
+    start: importing
+    steps:
+      - {event: error, expect: {status: failed}}

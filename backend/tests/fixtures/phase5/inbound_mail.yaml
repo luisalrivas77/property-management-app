@@ -1,0 +1,275 @@
+# Rule fixture: whether a mail of the household's label is taken in
+# (hausbuch.rules.inbound_mail.decide)
+#
+# decide(facts: InboundMailFacts, policy: InboundPolicy) -> MailDecision
+# docs/phases/phase-5.md D121, §5.3, §5.5, §12. decide reads only the header fields and the
+# BODYSTRUCTURE; a rejected mail's parts are never fetched (attachments = [], skipped = 0).
+#
+# Checks in order, the first failure wins:
+#   0. Message-ID present, else email.no_message_id
+#   1. recipient: the policy's token address, case-folded, is one of the recipients (To, Cc and
+#      Delivered-To together), else email.recipient_mismatch
+#   2. sender: the From address, case-folded, is one of allowed_senders (case-folded), else
+#      email.sender_not_allowed
+#   3. authentication: only Authentication-Results whose authserv-id equals the policy's
+#      (Gmail's own, mx.google.com) count; none of them -> email.auth_missing; accepted when
+#      one of them is dkim=pass with header.d = the From domain, or spf=pass with the
+#      smtp.mailfrom domain = the From domain; otherwise email.auth_failed
+#   4. attachments: the parts with a filename, at most one forwarded message deep, that are not
+#      a message/rfc822 part themselves. Those whose media type is in policy.media_types are
+#      fetched (`attachments`, by part index in BODYSTRUCTURE order); the others are counted
+#      in `skipped`. None to fetch -> email.no_attachment
+#   5. limits: more than max_attachments (20) to fetch, or one of them above max_bytes (25 MiB,
+#      the BODYSTRUCTURE's size of the encoded part) -> email.too_large
+#   accepted: code email.accepted
+#
+# Step 0 readings (each listed in the step 0 report as a spec finding):
+# - The Message-ID check is not in §5.3's order; it is first here, because a mail without one
+#   cannot be recorded at all: inbound_mail.message_id_hash is NOT NULL (§8), so the service
+#   logs the rejection by count only.
+# - "spf pass" counts only when the SPF-checked domain is the From address's domain (as DMARC
+#   alignment does); an SPF pass for a foreign bounce domain says nothing about the sender.
+# - A forwarded message (message/rfc822) is followed one level, and the forwarded message
+#   itself is never stored as a document (its attachments are), although message/rfc822 is an
+#   accepted upload type. Parts inside a second forwarded level are ignored, not counted.
+# - The size limit is on the encoded size (base64 adds a third), so a decoded file a little
+#   under 25 MiB can be refused; conservative.
+#
+# Synthetic policy: the two members' addresses at example.org, the token address at
+# example.com (the household's own Gmail label in production, D121).
+
+bases:
+  policy: &policy
+    allowed_senders: [eigentuemer.a@example.org, eigentuemer.b@example.org]
+    token_address: haushalt+x7k2q9@example.com
+    authserv_id: mx.google.com
+    media_types: [application/pdf, image/jpeg, image/png, application/xml, text/csv,
+                  application/zip, message/rfc822]
+  dkim_pass: &dkim_pass {authserv_id: mx.google.com, method: dkim, result: pass, domain: example.org}
+  spf_pass: &spf_pass {authserv_id: mx.google.com, method: spf, result: pass, domain: example.org}
+  body: &body {index: "1", media_type: text/plain, size_bytes: 500}
+  pdf: &pdf {index: "2", filename: rechnung.pdf, media_type: application/pdf, size_bytes: 120000}
+  facts: &facts
+    from_address: eigentuemer.a@example.org
+    recipients: [haushalt+x7k2q9@example.com]
+    auth_results: [*dkim_pass, *spf_pass]
+    parts: [*body, *pdf]
+    message_id_present: true
+
+cases:
+  - id: member_dkim_pass_pdf_accepted
+    description: a member forwards an invoice; Gmail's own header says dkim=pass for example.org
+    facts: {<<: *facts, auth_results: [*dkim_pass]}
+    policy: *policy
+    expect: {accept: true, code: email.accepted, attachments: ["2"]}
+
+  - id: member_spf_pass_only_accepted
+    description: dkim fails (a mailing list rewrote the body) but spf passes for the From domain
+    facts:
+      <<: *facts
+      auth_results:
+        - {authserv_id: mx.google.com, method: dkim, result: fail, domain: example.org}
+        - *spf_pass
+    policy: *policy
+    expect: {accept: true, code: email.accepted, attachments: ["2"]}
+
+  - id: sender_not_member_rejected
+    description: an authenticated mail from someone who is not a member
+    facts:
+      <<: *facts
+      from_address: rechnung@handwerker.example.net
+      auth_results:
+        - {authserv_id: mx.google.com, method: dkim, result: pass, domain: handwerker.example.net}
+    policy: *policy
+    expect: {accept: false, code: email.sender_not_allowed}
+
+  - id: auth_from_other_authserv_ignored_rejected
+    description: >
+      a forged Authentication-Results header with a foreign authserv-id claims dkim=pass; it
+      is ignored, and Gmail's own header is absent, so the mail is unauthenticated
+    facts:
+      <<: *facts
+      auth_results:
+        - {authserv_id: mx.attacker.example, method: dkim, result: pass, domain: example.org}
+    policy: *policy
+    expect: {accept: false, code: email.auth_missing}
+
+  - id: auth_missing_rejected
+    description: no Authentication-Results header at all
+    facts: {<<: *facts, auth_results: []}
+    policy: *policy
+    expect: {accept: false, code: email.auth_missing}
+
+  - id: auth_fail_rejected
+    description: Gmail's own header says dkim=fail and spf=softfail for the From domain
+    facts:
+      <<: *facts
+      auth_results:
+        - {authserv_id: mx.google.com, method: dkim, result: fail, domain: example.org}
+        - {authserv_id: mx.google.com, method: spf, result: softfail, domain: example.org}
+    policy: *policy
+    expect: {accept: false, code: email.auth_failed}
+
+  - id: spf_pass_other_domain_rejected
+    description: spf passes, but for a bounce domain that is not the From address's domain
+    facts:
+      <<: *facts
+      auth_results:
+        - {authserv_id: mx.google.com, method: spf, result: pass, domain: bounce.example.net}
+    policy: *policy
+    expect: {accept: false, code: email.auth_failed}
+
+  - id: recipient_without_token_rejected
+    description: sent to the plain address without the token (the check runs before the sender)
+    facts: {<<: *facts, recipients: [haushalt@example.com]}
+    policy: *policy
+    expect: {accept: false, code: email.recipient_mismatch}
+
+  - id: delivered_to_token_accepted
+    description: the token address only in Delivered-To (a Bcc to the token address)
+    facts: {<<: *facts, recipients: [haushalt@example.com, haushalt+x7k2q9@example.com]}
+    policy: *policy
+    expect: {accept: true, code: email.accepted, attachments: ["2"]}
+
+  - id: no_attachment_rejected
+    description: a plain and an HTML body, no part with a filename
+    facts:
+      <<: *facts
+      parts:
+        - {index: "1", media_type: text/plain, size_bytes: 500}
+        - {index: "2", media_type: text/html, size_bytes: 1500}
+    policy: *policy
+    expect: {accept: false, code: email.no_attachment}
+
+  - id: nested_rfc822_attachments_collected
+    description: >
+      a mail forwarded as an attachment (message/rfc822 part 2): its PDF and photo are fetched
+      as 2.2 and 2.3; the forwarded message itself and its body are not
+    facts:
+      <<: *facts
+      parts:
+        - *body
+        - {index: "2", filename: weitergeleitet.eml, media_type: message/rfc822,
+           size_bytes: 400000, nested_rfc822: true}
+        - {index: "2.1", media_type: text/plain, size_bytes: 300}
+        - {index: "2.2", filename: rechnung.pdf, media_type: application/pdf, size_bytes: 200000}
+        - {index: "2.3", filename: foto.jpg, media_type: image/jpeg, size_bytes: 150000}
+    policy: *policy
+    expect: {accept: true, code: email.accepted, attachments: ["2.2", "2.3"]}
+
+  - id: nested_two_levels_not_followed
+    description: >
+      a forwarded message that itself holds a forwarded message: the inner one's PDF (2.2.2)
+      is neither fetched nor counted; the outer mail's own PDF (3) is fetched
+    facts:
+      <<: *facts
+      parts:
+        - *body
+        - {index: "2", filename: weitergeleitet.eml, media_type: message/rfc822,
+           size_bytes: 600000, nested_rfc822: true}
+        - {index: "2.1", media_type: text/plain, size_bytes: 300}
+        - {index: "2.2", filename: original.eml, media_type: message/rfc822,
+           size_bytes: 300000, nested_rfc822: true}
+        - {index: "2.2.1", media_type: text/plain, size_bytes: 200}
+        - {index: "2.2.2", filename: alt.pdf, media_type: application/pdf, size_bytes: 200000}
+        - {index: "3", filename: beleg.pdf, media_type: application/pdf, size_bytes: 90000}
+    policy: *policy
+    expect: {accept: true, code: email.accepted, attachments: ["3"]}
+
+  - id: too_many_attachments_rejected
+    description: 21 PDFs to fetch, one more than max_attachments (20)
+    facts:
+      <<: *facts
+      parts:
+        - *body
+        - {index: "2", filename: a02.pdf, media_type: application/pdf, size_bytes: 1000}
+        - {index: "3", filename: a03.pdf, media_type: application/pdf, size_bytes: 1000}
+        - {index: "4", filename: a04.pdf, media_type: application/pdf, size_bytes: 1000}
+        - {index: "5", filename: a05.pdf, media_type: application/pdf, size_bytes: 1000}
+        - {index: "6", filename: a06.pdf, media_type: application/pdf, size_bytes: 1000}
+        - {index: "7", filename: a07.pdf, media_type: application/pdf, size_bytes: 1000}
+        - {index: "8", filename: a08.pdf, media_type: application/pdf, size_bytes: 1000}
+        - {index: "9", filename: a09.pdf, media_type: application/pdf, size_bytes: 1000}
+        - {index: "10", filename: a10.pdf, media_type: application/pdf, size_bytes: 1000}
+        - {index: "11", filename: a11.pdf, media_type: application/pdf, size_bytes: 1000}
+        - {index: "12", filename: a12.pdf, media_type: application/pdf, size_bytes: 1000}
+        - {index: "13", filename: a13.pdf, media_type: application/pdf, size_bytes: 1000}
+        - {index: "14", filename: a14.pdf, media_type: application/pdf, size_bytes: 1000}
+        - {index: "15", filename: a15.pdf, media_type: application/pdf, size_bytes: 1000}
+        - {index: "16", filename: a16.pdf, media_type: application/pdf, size_bytes: 1000}
+        - {index: "17", filename: a17.pdf, media_type: application/pdf, size_bytes: 1000}
+        - {index: "18", filename: a18.pdf, media_type: application/pdf, size_bytes: 1000}
+        - {index: "19", filename: a19.pdf, media_type: application/pdf, size_bytes: 1000}
+        - {index: "20", filename: a20.pdf, media_type: application/pdf, size_bytes: 1000}
+        - {index: "21", filename: a21.pdf, media_type: application/pdf, size_bytes: 1000}
+        - {index: "22", filename: a22.pdf, media_type: application/pdf, size_bytes: 1000}
+    policy: *policy
+    expect: {accept: false, code: email.too_large}
+
+  - id: too_large_rejected
+    description: one PDF of 25 MiB + 1 byte (26,214,401 bytes encoded)
+    facts:
+      <<: *facts
+      parts:
+        - *body
+        - {index: "2", filename: scan.pdf, media_type: application/pdf, size_bytes: 26214401}
+    policy: *policy
+    expect: {accept: false, code: email.too_large}
+
+  - id: exactly_25_mib_accepted
+    description: a PDF of exactly 25 MiB (25 × 1,048,576 = 26,214,400 bytes) is within the limit
+    facts:
+      <<: *facts
+      parts:
+        - *body
+        - {index: "2", filename: scan.pdf, media_type: application/pdf, size_bytes: 26214400}
+    policy: *policy
+    expect: {accept: true, code: email.accepted, attachments: ["2"]}
+
+  - id: unknown_type_skipped_counted
+    description: a .docx beside a PDF; the PDF is fetched, the .docx counted and left alone
+    facts:
+      <<: *facts
+      parts:
+        - *body
+        - *pdf
+        - {index: "3", filename: notiz.docx,
+           media_type: application/vnd.openxmlformats-officedocument.wordprocessingml.document,
+           size_bytes: 30000}
+    policy: *policy
+    expect: {accept: true, code: email.accepted, attachments: ["2"], skipped: 1}
+
+  - id: rejected_mail_parts_not_counted
+    description: a rejected mail's parts are neither fetched nor counted (skipped stays 0)
+    facts:
+      <<: *facts
+      from_address: fremd@example.net
+      auth_results:
+        - {authserv_id: mx.google.com, method: dkim, result: pass, domain: example.net}
+      parts:
+        - *body
+        - *pdf
+        - {index: "3", filename: notiz.docx,
+           media_type: application/vnd.openxmlformats-officedocument.wordprocessingml.document,
+           size_bytes: 30000}
+    policy: *policy
+    expect: {accept: false, code: email.sender_not_allowed}
+
+  - id: no_message_id_rejected
+    description: without a Message-ID a re-delivery cannot be told from a new mail (§5.5)
+    facts: {<<: *facts, message_id_present: false}
+    policy: *policy
+    expect: {accept: false, code: email.no_message_id}
+
+  - id: case_folded_sender
+    description: >
+      the From address and the token address differ from the policy only in case, and the
+      auth domain in case too; all compare case-folded
+    facts:
+      <<: *facts
+      from_address: Eigentuemer.A@Example.ORG
+      recipients: [Haushalt+X7K2Q9@Example.com]
+      auth_results:
+        - {authserv_id: mx.google.com, method: dkim, result: pass, domain: EXAMPLE.org}
+    policy: *policy
+    expect: {accept: true, code: email.accepted, attachments: ["2"]}

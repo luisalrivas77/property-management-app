@@ -1,0 +1,80 @@
+# Rule fixture: the archive a sync stores (hausbuch.rules.bank_sync.build_archive)
+#
+# build_archive(streams: list[bytes]) -> bytes
+# docs/phases/phase-5.md D115 (the same camt ZIP the online-banking export produces, imported
+# through the unchanged phase 2 path), D34 (phase 2's archive rules), §12. A stream is one
+# booked camt document as HKCAZ returned it.
+#
+#   - one member per stream, named camt-0001.xml, camt-0002.xml, … in the order received
+#     (the parser orders the reports by their own dates and checks the balance chain, D34,
+#     so the bank's order never matters to the import, only to the bytes);
+#   - stored without compression (ZIP_STORED), every member's timestamp 1980-01-01 00:00:00
+#     (the ZIP epoch), no comment and no extra field: the same streams always give the same
+#     bytes, so the document's SHA-256 is reproducible (principle 6) and an identical re-run
+#     dedups on the hash;
+#   - no stream -> RuleError bank.nothing_new (no archive, no document, D127);
+#   - more than MAX_ARCHIVE_MEMBERS (400) members, or more than MAX_ARCHIVE_BYTES (20 MiB)
+#     together -> RuleError statement.archive_rejected (phase 2's check_archive_members on
+#     the members it would write), so the sync never stores an archive the import refuses.
+#
+# The model builds this reference archive from phase 2's anonymised sample
+# (tests/fixtures/phase2/bank_samples/camt052.zip, one daily camt.052 report per member) and
+# reads it back with phase 2's unchanged services.bank.camt.read_camt: `lines` is the booked
+# lines it reads and the balance chain must hold. The step 1 rule test does the same with the
+# rule's output and compares its bytes with the reference archive.
+#
+# Sample members used, with their booked lines (read from the sample):
+#   2026.04.01.xml  1 line      2026.06.30.xml  3 lines      2026.07.01.xml  1 line
+
+cases:
+  - id: one_stream_one_member
+    description: one booked stream gives one member
+    streams:
+      - {sample: 2026.04.01.xml}
+    expect:
+      members: [camt-0001.xml]
+      lines: 1
+
+  - id: three_streams_ordered
+    description: >
+      three streams in the bank's order (not by date) keep that order in the member names;
+      read_camt orders the reports by date and the balances chain (1 + 3 + 1 = 5 lines)
+    streams:
+      - {sample: 2026.07.01.xml}
+      - {sample: 2026.04.01.xml}
+      - {sample: 2026.06.30.xml}
+    expect:
+      members: [camt-0001.xml, camt-0002.xml, camt-0003.xml]
+      lines: 5
+
+  - id: same_input_same_bytes
+    description: two builds of the same streams are byte-identical (same SHA-256)
+    streams:
+      - {sample: 2026.04.01.xml}
+      - {sample: 2026.06.30.xml}
+    expect:
+      members: [camt-0001.xml, camt-0002.xml]
+      lines: 4
+      identical_builds: true
+
+  - id: empty_raises_nothing_new
+    description: no booked stream; nothing is built (D127)
+    streams: []
+    expect:
+      error: {code: bank.nothing_new}
+
+  - id: too_many_members_rejected
+    description: 401 streams, one more than phase 2 accepts in one archive (D34)
+    streams:
+      - {bytes: 100, count: 401}
+    expect:
+      error: {code: statement.archive_rejected}
+
+  - id: too_large_rejected
+    description: >
+      two streams of 10 MiB + 1 byte: 2 × 10,485,761 = 20,971,522 bytes, above
+      MAX_ARCHIVE_BYTES = 20 × 1,048,576 = 20,971,520
+    streams:
+      - {bytes: 10485761, count: 2}
+    expect:
+      error: {code: statement.archive_rejected}

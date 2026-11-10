@@ -1,0 +1,94 @@
+# Rule fixture: the FinTS request window (hausbuch.rules.bank_sync.request_window)
+#
+# request_window(connection, today) -> SyncWindow(start, end, may_need_approval)
+# docs/phases/phase-5.md D120, §3, §12. Input: SyncWindowFacts (the account's balance anchor
+# opening_balance_on, D21, and bank_connection.last_booking_on, null before the first
+# successful sync) and today (Europe/Berlin).
+#
+#   start = opening_balance_on + 1 day                          before the first success
+#   start = max(last_booking_on - 14 days, opening_balance_on + 1 day)   after a success
+#   end   = today                                    (never later, whatever the bank booked)
+#   start > end -> RuleError bank.window_invalid
+#   may_need_approval = (end - start) in days > 90
+#
+# Step 0 readings (each listed in the step 0 report as a spec finding):
+# - D120 says the first window is [opening_balance_on, today]. The phase 2 importer refuses a
+#   file whose first booking day is on or before the anchor (rules.statements.reconcile:
+#   statement.before_anchor; the anchor balance already includes that day), so a window that
+#   starts on the anchor day can bring a line that makes the whole import unreconciled. The
+#   window therefore starts the day after the anchor, and the clamp after a success uses the
+#   same bound (the overlap of 14 days must not reach back over the anchor either).
+# - "longer than 90 days" (D120, §3: the SCA exemption covers the last 90 days of history):
+#   counted as the difference end - start. §12's cases pin it: a difference of 91 days is
+#   flagged, 90 is not (start = today - 90 is still inside the exemption).
+# - The flag is information for the job (expect a TAN); it never shortens the window.
+#
+# Derivations (calendar arithmetic only; 2026 is not a leap year) are in a comment per case.
+
+cases:
+  - id: first_sync_from_anchor
+    description: no success yet; the window starts the day after the anchor
+    # 31 Mar 2026 + 1 = 1 Apr 2026; end = today 20 Apr; 20 Apr - 1 Apr = 19 days <= 90
+    today: 2026-04-20
+    facts: {opening_balance_on: 2026-03-31}
+    expect:
+      window: {start: 2026-04-01, end: 2026-04-20, may_need_approval: false}
+
+  - id: after_success_minus_14_days
+    description: after a success the window reaches 14 days back over the last booking day
+    # 2 Nov 2026 - 14 days = 19 Oct 2026 (2 Nov is day 306, 306 - 14 = 292 = 19 Oct);
+    # later than 1 Apr, so no clamp; 10 Nov - 19 Oct = 22 days
+    today: 2026-11-10
+    facts: {opening_balance_on: 2026-03-31, last_booking_on: 2026-11-02}
+    expect:
+      window: {start: 2026-10-19, end: 2026-11-10, may_need_approval: false}
+
+  - id: after_success_clamped_to_anchor
+    description: the 14-day overlap never reaches back to the anchor day
+    # 5 Apr 2026 - 14 days = 22 Mar 2026, before 1 Apr (anchor + 1) -> 1 Apr; 7 days
+    today: 2026-04-08
+    facts: {opening_balance_on: 2026-03-31, last_booking_on: 2026-04-05}
+    expect:
+      window: {start: 2026-04-01, end: 2026-04-08, may_need_approval: false}
+
+  - id: end_is_today_never_future
+    description: >
+      the bank booked a line dated after today (a weekend value date); the window still
+      ends today and the start follows from the last booking day
+    # 12 Nov 2026 - 14 days = 29 Oct 2026; end = today 10 Nov (not 12 Nov); 12 days
+    today: 2026-11-10
+    facts: {opening_balance_on: 2026-03-31, last_booking_on: 2026-11-12}
+    expect:
+      window: {start: 2026-10-29, end: 2026-11-10, may_need_approval: false}
+
+  - id: long_window_may_need_approval
+    description: a first window of 91 days is flagged (the SCA exemption covers 90)
+    # start 1 Apr 2026; 1 Apr + 91 days = 1 Jul 2026 (30 left in April, 31 May, 30 June = 91)
+    today: 2026-07-01
+    facts: {opening_balance_on: 2026-03-31}
+    expect:
+      window: {start: 2026-04-01, end: 2026-07-01, may_need_approval: true}
+
+  - id: short_window_no_flag
+    description: a window of 90 days is not flagged
+    # start 1 Apr 2026; 1 Apr + 90 days = 30 Jun 2026
+    today: 2026-06-30
+    facts: {opening_balance_on: 2026-03-31}
+    expect:
+      window: {start: 2026-04-01, end: 2026-06-30, may_need_approval: false}
+
+  - id: anchor_after_today_error
+    description: an anchor after today leaves no day to request
+    # start = 21 Nov 2026 > today 10 Nov 2026
+    today: 2026-11-10
+    facts: {opening_balance_on: 2026-11-20}
+    expect:
+      error: {code: bank.window_invalid}
+
+  - id: anchor_today_error
+    description: an anchor on today leaves no day to request either (start = tomorrow)
+    # start = 11 Nov 2026 > today 10 Nov 2026
+    today: 2026-11-10
+    facts: {opening_balance_on: 2026-11-10}
+    expect:
+      error: {code: bank.window_invalid}

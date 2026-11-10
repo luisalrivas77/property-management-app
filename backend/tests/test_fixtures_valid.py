@@ -8,6 +8,7 @@ import fixture_models_phase2 as phase2
 import fixture_models_phase3 as phase3
 import fixture_models_phase4 as phase4
 import fixture_models_phase4b as phase4b
+import fixture_models_phase5 as phase5
 import pytest
 from fixture_models import RentFixture
 from pydantic import ValidationError
@@ -27,6 +28,7 @@ PHASES = {
     "phase3": phase3,
     "phase4": phase4,
     "phase4b": phase4b,
+    "phase5": phase5,
 }
 FIXTURE_FILES = [(p, name) for p, mod in PHASES.items() for name in sorted(mod.MODELS)]
 
@@ -502,6 +504,128 @@ def test_phase4b_fixtures_check_their_arithmetic(name, case_id, path, slip):
     node[path[-1]] = slip
     with pytest.raises(ValidationError):
         phase4b.MODELS[name].model_validate(data)
+
+
+# docs/phases/phase-5.md §12: the cases each phase 5 fixture must carry (a file may carry
+# more). A case renamed or dropped here is a spec change.
+PHASE5_CASES = {
+    "sync_window": {
+        "first_sync_from_anchor",
+        "after_success_minus_14_days",
+        "end_is_today_never_future",
+        "long_window_may_need_approval",
+        "short_window_no_flag",
+        "anchor_after_today_error",
+    },
+    "sync_archive": {
+        "one_stream_one_member",
+        "three_streams_ordered",
+        "same_input_same_bytes",
+        "empty_raises_nothing_new",
+        "too_many_members_rejected",
+        "too_large_rejected",
+    },
+    "tan_flow": {
+        "manual_tan_waits",
+        "scheduled_tan_aborts",
+        "confirmed_continues",
+        "timeout_fails",
+        "worker_lost_stays_restartable",
+        "second_start_refused",
+        "empty_streams_nothing_new",
+        "all_lines_known_nothing_new",
+        "new_lines_importing_then_done",
+    },
+    "sync_balance": {
+        "hksal_matches_reconciled",
+        "hksal_mismatch_unreconciled",
+        "file_balance_wins_over_hksal",
+        "duplicate_reference_skipped_lines_new_zero",
+        "different_reference_double_insert_unreconciled",
+        "nothing_new_balance_equal_no_drift",
+        "nothing_new_balance_differs_drift",
+    },
+    "inbound_mail": {
+        "member_dkim_pass_pdf_accepted",
+        "member_spf_pass_only_accepted",
+        "sender_not_member_rejected",
+        "auth_from_other_authserv_ignored_rejected",
+        "auth_missing_rejected",
+        "auth_fail_rejected",
+        "recipient_without_token_rejected",
+        "delivered_to_token_accepted",
+        "no_attachment_rejected",
+        "nested_rfc822_attachments_collected",
+        "nested_two_levels_not_followed",
+        "too_many_attachments_rejected",
+        "too_large_rejected",
+        "unknown_type_skipped_counted",
+        "no_message_id_rejected",
+        "case_folded_sender",
+    },
+}
+
+
+def test_phase5_cases_cover_the_spec():
+    assert set(PHASE5_CASES) == set(phase5.MODELS)
+    for name, required in PHASE5_CASES.items():
+        ids = {c.id for c in phase5.load(name).cases}
+        assert required <= ids, (name, required - ids)
+
+
+@pytest.mark.parametrize(
+    ("name", "case_id", "path", "slip"),
+    [
+        ("sync_window", "after_success_minus_14_days", ("expect", "window", "start"), "2026-10-20"),
+        (
+            "sync_window",
+            "long_window_may_need_approval",
+            ("expect", "window", "may_need_approval"),
+            False,
+        ),
+        ("sync_window", "first_sync_from_anchor", ("expect", "window", "start"), "2026-03-31"),
+        ("tan_flow", "scheduled_tan_aborts", ("steps", 1, "expect", "end_dialog"), False),
+        ("tan_flow", "timeout_fails", ("steps", 0, "expect", "error_code"), None),
+        ("sync_archive", "three_streams_ordered", ("expect", "lines"), 4),
+        ("sync_archive", "too_many_members_rejected", ("streams", 0, "count"), 400),
+        ("sync_archive", "too_large_rejected", ("streams", 0, "bytes"), 10485760),
+        ("sync_balance", "hksal_mismatch_unreconciled", ("expect", "result", "difference"), "9.99"),
+        (
+            "sync_balance",
+            "different_reference_double_insert_unreconciled",
+            ("expect", "lines_new"),
+            1,
+        ),
+        ("sync_balance", "nothing_new_balance_differs_drift", ("expect", "drift"), "-4.91"),
+        ("sync_balance", "file_balance_wins_over_hksal", ("expect", "balance_source"), "bank"),
+        (
+            "inbound_mail",
+            "auth_from_other_authserv_ignored_rejected",
+            ("expect", "code"),
+            "email.auth_failed",
+        ),
+        ("inbound_mail", "unknown_type_skipped_counted", ("expect", "skipped"), 0),
+        (
+            "inbound_mail",
+            "nested_two_levels_not_followed",
+            ("expect", "attachments"),
+            ["2.2.2", "3"],
+        ),
+        ("inbound_mail", "exactly_25_mib_accepted", ("facts", "parts", 1, "size_bytes"), 26214401),
+    ],
+)
+def test_phase5_fixtures_check_their_contract(name, case_id, path, slip):
+    """A slip in a hand-filled expectation fails on load (the validators recompute it)."""
+    import copy
+
+    data = copy.deepcopy(phase5.raw(name))
+    case = next(c for c in data["cases"] if c["id"] == case_id)
+    node = case
+    for key in path[:-1]:
+        node = node[key]
+    node[path[-1]] = slip
+    with pytest.raises(ValidationError):
+        phase5.MODELS[name].model_validate(data)
 
 
 def _has(case: dict, path: tuple) -> bool:
