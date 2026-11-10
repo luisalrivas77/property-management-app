@@ -14892,102 +14892,6 @@
         ],
         "title": "Question"
       },
-      "QuestionPrefill": {
-        "properties": {
-          "key": {
-            "type": "string",
-            "pattern": "^(owner|household|property)\\.[a-z0-9_]{1,52}$",
-            "title": "Key"
-          },
-          "scope": {
-            "type": "string",
-            "enum": [
-              "owner",
-              "household",
-              "property"
-            ],
-            "title": "Scope"
-          },
-          "owner_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Owner Id"
-          },
-          "property_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Property Id"
-          },
-          "prior_answer": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/QuestionnaireAnswer"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "proposed_answer": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "yes",
-                  "no"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Proposed Answer"
-          },
-          "proposed_rows": {
-            "items": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/ReturnInputCreate"
-                },
-                {
-                  "$ref": "#/components/schemas/TaxInputCreate"
-                }
-              ]
-            },
-            "type": "array",
-            "title": "Proposed Rows"
-          },
-          "reconfirm_rows": {
-            "items": {
-              "$ref": "#/components/schemas/ReturnInputFact"
-            },
-            "type": "array",
-            "title": "Reconfirm Rows"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "key",
-          "scope"
-        ],
-        "title": "QuestionPrefill",
-        "description": "One answer slot of the year with what last year leaves (§5.11). proposed_answer is the\nprior answer carried, or the question's default_answer when there is none (spec §7\naddition, 10 Nov 2026)."
-      },
       "QuestionTarget": {
         "properties": {
           "kind": {
@@ -15323,6 +15227,112 @@
         ],
         "title": "QuestionnaireProgress"
       },
+      "QuestionnaireSlot": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^(owner|household|property)\\.[a-z0-9_]{1,52}$",
+            "title": "Key"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "household",
+              "property"
+            ],
+            "title": "Scope"
+          },
+          "owner_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Id"
+          },
+          "property_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Property Id"
+          },
+          "prior_answer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuestionnaireAnswer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proposed_answer": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "yes",
+                  "no"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed Answer"
+          },
+          "proposed_rows": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ReturnInputCreate"
+                },
+                {
+                  "$ref": "#/components/schemas/TaxInputCreate"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Proposed Rows"
+          },
+          "reconfirm_rows": {
+            "items": {
+              "$ref": "#/components/schemas/ReturnInputFact"
+            },
+            "type": "array",
+            "title": "Reconfirm Rows"
+          },
+          "current_answer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuestionnaireAnswer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "scope"
+        ],
+        "title": "QuestionnaireSlot",
+        "description": "One slot of the viewed year: what last year leaves (QuestionPrefill) plus the slot's\ncurrent answer of this year, if any, so the screen can show it and correct it with a new\nanswer whose supersedes_id names it. The rows written with an answer are not linked to it;\nthe screen reads the slot's current rows from /return-inputs and the property's\n/tax-inputs."
+      },
       "QuestionnaireView": {
         "properties": {
           "tax_year": {
@@ -15357,7 +15367,7 @@
           },
           "slots": {
             "items": {
-              "$ref": "#/components/schemas/QuestionPrefill"
+              "$ref": "#/components/schemas/QuestionnaireSlot"
             },
             "type": "array",
             "title": "Slots"

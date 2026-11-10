@@ -5623,32 +5623,6 @@ export interface components {
             default_answer?: ("yes" | "no") | null;
         };
         /**
-         * QuestionPrefill
-         * @description One answer slot of the year with what last year leaves (§5.11). proposed_answer is the
-         *     prior answer carried, or the question's default_answer when there is none (spec §7
-         *     addition, 10 Nov 2026).
-         */
-        QuestionPrefill: {
-            /** Key */
-            key: string;
-            /**
-             * Scope
-             * @enum {string}
-             */
-            scope: "owner" | "household" | "property";
-            /** Owner Id */
-            owner_id?: string | null;
-            /** Property Id */
-            property_id?: string | null;
-            prior_answer?: components["schemas"]["QuestionnaireAnswer"] | null;
-            /** Proposed Answer */
-            proposed_answer?: ("yes" | "no") | null;
-            /** Proposed Rows */
-            proposed_rows?: (components["schemas"]["ReturnInputCreate"] | components["schemas"]["TaxInputCreate"])[];
-            /** Reconfirm Rows */
-            reconfirm_rows?: components["schemas"]["ReturnInputFact"][];
-        };
-        /**
          * QuestionTarget
          * @description What a "yes" leads to: rows of a return_input or tax_input kind, or a reminder printed on
          *     the Gesamt card and the sheet. value_match selects the target rows by their value's coded
@@ -5772,6 +5746,35 @@ export interface components {
             open?: components["schemas"]["OpenQuestion"][];
         };
         /**
+         * QuestionnaireSlot
+         * @description One slot of the viewed year: what last year leaves (QuestionPrefill) plus the slot's
+         *     current answer of this year, if any, so the screen can show it and correct it with a new
+         *     answer whose supersedes_id names it. The rows written with an answer are not linked to it;
+         *     the screen reads the slot's current rows from /return-inputs and the property's
+         *     /tax-inputs.
+         */
+        QuestionnaireSlot: {
+            /** Key */
+            key: string;
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "owner" | "household" | "property";
+            /** Owner Id */
+            owner_id?: string | null;
+            /** Property Id */
+            property_id?: string | null;
+            prior_answer?: components["schemas"]["QuestionnaireAnswer"] | null;
+            /** Proposed Answer */
+            proposed_answer?: ("yes" | "no") | null;
+            /** Proposed Rows */
+            proposed_rows?: (components["schemas"]["ReturnInputCreate"] | components["schemas"]["TaxInputCreate"])[];
+            /** Reconfirm Rows */
+            reconfirm_rows?: components["schemas"]["ReturnInputFact"][];
+            current_answer?: components["schemas"]["QuestionnaireAnswer"] | null;
+        };
+        /**
          * QuestionnaireView
          * @description GET /tax/questionnaire: the year's questions and slots in file order (owners in name
          *     order) and the progress. reused_from is set when the year has no file of its own. questions
@@ -5789,7 +5792,7 @@ export interface components {
             /** Questions */
             questions: components["schemas"]["Question"][];
             /** Slots */
-            slots: components["schemas"]["QuestionPrefill"][];
+            slots: components["schemas"]["QuestionnaireSlot"][];
             progress: components["schemas"]["QuestionnaireProgress"];
             /** Reminders */
             reminders: string[];
