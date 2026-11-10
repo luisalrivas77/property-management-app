@@ -1,11 +1,19 @@
 # Recorded evals (phase 2, D29)
 
 Synthetic German documents (a Kaufvertrag, Darlehensvertrag, Mietvertrag, notary
-invoice, Grunderwerbsteuerbescheid, Wirtschaftsplan and PDF Kontoauszug, and since phase 3
-§9 a Zinsbescheinigung and a Hausgeldabrechnung) with fictional parties, generated
+invoice, Grunderwerbsteuerbescheid, Wirtschaftsplan and PDF Kontoauszug, since phase 3
+§9 a Zinsbescheinigung and a Hausgeldabrechnung, and since phase 4b step 2 a
+Lohnsteuerbescheinigung and a Gehaltsabrechnung) with fictional parties, generated
 deterministically by `make_docs.py`. Each document's expected classification and field
-values sit next to its text there. The two phase 3 documents have no live recording until
-Luis runs `record.py zinsbescheinigung hausgeldabrechnung` (D66).
+values sit next to its text there.
+
+The two pay documents print invented identifiers in their real shapes (Identifikationsnummer,
+eTIN, Personalnummer, Sozialversicherungsnummer, date of birth, address, IBAN;
+`make_docs.FAKE_IDENTIFIERS`). `test_pay_documents_store_no_identifier` replays them with every
+value citing its whole page and checks that none of those identifiers survives into the stored
+values or quotes (phase 4b D103). Phase 4b step 2 changed both prompts (the classifier offers
+the two pay documents, `extract.md` gained the pay-document paragraph), so **every** recording
+is stale until all thirteen are recorded again (`record.py` without arguments).
 
 - `test_recorded_evals.py` runs in CI on every push. It replays every recording in
   `recordings/` through the same code the `document_read` job uses (SDK message conversion,
@@ -19,7 +27,7 @@ Luis runs `record.py zinsbescheinigung hausgeldabrechnung` (D66).
   text (`recordings.synthetic_recording`, `"synthetic": true`). They are built in memory,
   never written to `recordings/`, and are not API output.
 
-## Recording (Luis, once per prompt or model change; about $0.10)
+## Recording (Luis, once per prompt or model change; about $0.15–0.35 for all thirteen)
 
 Needs the `hausbuch-evals` key (deploy/scaleway.md step 13), from your computer:
 

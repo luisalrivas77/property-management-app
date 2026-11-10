@@ -402,6 +402,100 @@ DOCS: list[Doc] = [
             "ruecklage_spent": "412.50",
         },
     ),
+    # Phase 4b §8.3: the two pay documents, laid out like the 2026 Muster of the Ausdruck der
+    # elektronischen Lohnsteuerbescheinigung and a common payslip. The identifiers on them
+    # (FAKE_IDENTIFIERS) are invented and only have the printed shapes: the scrub (D103) must
+    # keep every one of them out of what is stored (test_pay_documents_store_no_identifier).
+    Doc(
+        name="lohnsteuerbescheinigung",
+        type="lohnsteuerbescheinigung",
+        subtype=None,
+        kind="lohnsteuerbescheinigung",
+        pages=[
+            [
+                "Ausdruck der elektronischen Lohnsteuerbescheinigung für 2026",
+                "Nachstehende Daten wurden maschinell an die Finanzverwaltung übertragen.",
+                "",
+                "Erika Musterfrau",
+                "Musterweg 9a",
+                "60311 Frankfurt am Main",
+                "Geburtsdatum: 14.03.1988   Identifikationsnummer: 12 345 678 903",
+                "eTIN: MSTRERKA88C14K   Personalnummer: 731942",
+                "",
+                "Anschrift und Steuernummer des Arbeitgebers:",
+                "Muster GmbH, Industriestraße 5, 12345 Musterstadt, Steuernummer 012/345/67890",
+                "",
+                "Angaben zur Besteuerung des Arbeitslohns (Stand 01.01.2026):",
+                "Steuerklasse/Faktor 4 / 0,950   Zahl der Kinderfreibeträge 1,0",
+                "Kirchensteuermerkmale ev",
+            ],
+            [
+                "Personalnummer: 731942   Identifikationsnummer: 12 345 678 903",
+                "1. Dauer des Dienstverhältnisses   vom 01.01.2026 bis 31.12.2026",
+                "3. Bruttoarbeitslohn einschl. Sachbezüge ohne 9. und 10.   60.000,00",
+                "4. Einbehaltene Lohnsteuer von 3.                            9.192,00",
+                "6. Einbehaltene Kirchensteuer des Arbeitnehmers von 3.         735,36",
+                "15. Kurzarbeitergeld, Zuschuss zum Mutterschaftsgeld,",
+                "    Verdienstausfallentschädigung, Aufstockungsbetrag          1.200,00",
+                "17. Steuerfreie Arbeitgeberleistungen, die auf die",
+                "    Entfernungspauschale anzurechnen sind                      480,00",
+                "22. Arbeitgeberanteil a) zur gesetzlichen Rentenversicherung 5.580,00",
+                "23. Arbeitnehmeranteil a) zur gesetzlichen Rentenversicherung 5.580,00",
+                "25. Arbeitnehmerbeiträge zur gesetzlichen Krankenversicherung 4.890,00",
+                "26. Arbeitnehmerbeiträge zur sozialen Pflegeversicherung      1.080,00",
+                "27. Arbeitnehmerbeiträge zur Arbeitslosenversicherung           780,00",
+            ],
+        ],
+        expected={
+            "period_from": "2026-01-01",
+            "period_to": "2026-12-31",
+            "gross": "60000.00",
+            "income_tax": "9192.00",
+            "replacement_benefits": "1200.00",
+            "employer_commute_tax_free": "480.00",
+            "pension_employee": "5580.00",
+            "health_employee": "4890.00",
+            "care_employee": "1080.00",
+            "unemployment_employee": "780.00",
+        },
+        expected_missing=["soli", "church_tax_spouse", "employer_commute_flat_taxed"],
+    ),
+    Doc(
+        name="gehaltsabrechnung",
+        type="gehaltsabrechnung",
+        subtype=None,
+        kind="gehaltsabrechnung",
+        pages=[
+            [
+                "Muster GmbH - Gehaltsabrechnung Juli 2026",
+                "Abrechnungszeitraum 01.07.2026 - 31.07.2026",
+                "Erika Musterfrau, Musterweg 9a, 60311 Frankfurt am Main",
+                "Personalnummer: 731942   Geburtsdatum: 14.03.1988",
+                "Steuer-ID: 12 345 678 903   SV-Nummer: 65 140388 M 00 3",
+                "Steuerklasse 4   Konfession ev   Kinderfreibeträge 1,0",
+                "",
+                "                                 Monat     Jahreswerte (kumuliert)",
+                "Gehalt                        5.000,00",
+                "Jobticket (steuerfrei)          150,00      1.050,00",
+                "Gesamt-Brutto                 5.150,00     36.050,00",
+                "Steuer-Brutto                 5.000,00     35.000,00",
+                "Lohnsteuer                      766,00      5.362,00",
+                "Kirchensteuer                    61,28        428,96",
+                "Rentenversicherung AN           465,00      3.255,00",
+                "Krankenversicherung AN          407,50      2.852,50",
+                "Pflegeversicherung AN            90,00        630,00",
+                "Arbeitslosenversicherung AN      65,00        455,00",
+                "Auszahlungsbetrag             3.245,22",
+                f"Überweisung auf {IBAN_A}",
+            ]
+        ],
+        expected={
+            "gross_month": "5000.00",
+            "gross_ytd": "35000.00",
+            "income_tax_ytd": "5362.00",
+        },
+        expected_missing=["soli_month", "soli_ytd"],
+    ),
     Doc(
         name="kontoauszug",
         type="statement",
@@ -430,6 +524,21 @@ DOCS: list[Doc] = [
 ]
 
 DOCS_BY_NAME = {doc.name: doc for doc in DOCS}
+
+# The invented identifiers printed on the two pay documents, each as a fragment that must not
+# survive the scrub in any spelling (digits of the IdNr in groups, the SV-Nr's birth digits,
+# the address, the IBAN's account digits).
+FAKE_IDENTIFIERS = (
+    "345 678",  # Identifikationsnummer
+    "14.03.1988",  # Geburtsdatum
+    "MSTRERKA",  # eTIN
+    "731942",  # Personalnummer
+    "140388",  # Sozialversicherungsnummer
+    "Musterweg",  # the employee's street
+    "60311",  # the employee's postcode
+    "012/345/67890",  # the employer's Steuernummer
+    "0532 0130",  # the IBAN's account digits
+)
 
 
 # --- a deterministic minimal PDF ------------------------------------------------------
