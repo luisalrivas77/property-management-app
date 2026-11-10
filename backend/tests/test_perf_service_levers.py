@@ -35,6 +35,8 @@ class Reads:
         monkeypatch.setattr(service, "list_loans", self.list_loans)
         monkeypatch.setattr(service, "get_scenario", lambda conn, sid: self.by_id.get(sid))
         monkeypatch.setattr(service, "default_scenario", lambda conn, pid: default)
+        # Phase 4b D98: no return_input rows, so no year has an employment or household context.
+        monkeypatch.setattr(service, "tax_contexts", lambda conn: lambda year, result: (None, None))
 
     def draft_facts(self, conn, property_id, *, tax_year, today):
         if property_id != PID:

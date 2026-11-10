@@ -490,6 +490,8 @@ class InboxItemKind(StrEnum):
     POSSIBLE_DUPLICATE = "possible_duplicate"
     ALLOCATION_PROPOSED = "allocation_proposed"  # a proposed allocation set to confirm
     UNMATCHED = "unmatched"  # "Nicht zugeordnet": no allocation set at all
+    # phase 4b D110: last year's Jahresfragen, from 1 January until every slot is answered
+    QUESTIONNAIRE_OPEN = "questionnaire_open"
 
 
 class InboxItem(Schema):
@@ -505,6 +507,7 @@ class InboxItem(Schema):
     import_id: UUID | None = None
     possible_duplicate_id: UUID | None = None
     transaction_id: UUID | None = None
+    tax_year: int | None = None  # questionnaire_open: the year whose questions are open
 
 
 class AiRetryResult(Schema):

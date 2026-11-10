@@ -92,6 +92,8 @@ def test_every_router_is_included_under_api(engine, tmp_path, monkeypatch):
     assert names == [
         "owners",
         "income_inputs",
+        "return_inputs",
+        "questionnaire",
         "properties",
         "units",
         "tenants",

@@ -287,10 +287,15 @@ def tax_rate(
     `tax_year`) on the year's tariff (D82, D83). A Bescheid's zvE contains the property's
     result of the Bescheid's own year: `result` for `tax_year`; for a Bescheid carried forward
     from an earlier year, that year's draft result of `property_id`. Without property_id then:
-    RuleError income.assessed_result_needed. RuleError tariff.no_file before every tariff."""
+    RuleError income.assessed_result_needed. RuleError tariff.no_file before every tariff.
+    Phase 4b D98: the household's return_input rows give the Anlage N summaries and the
+    household context (services/return_inputs.tax_contexts)."""
+    from .return_inputs import tax_contexts  # it reads this module's income_facts
+
     t = registry.tariff(tax_year)
     inputs = income_facts(conn)
     owners = owner_profiles(conn)
+    employment, household = tax_contexts(conn)(tax_year, result)
     estimate, effect = year_tax_effect(
         tax_year,
         result,
@@ -298,6 +303,8 @@ def tax_rate(
         owners,
         t,
         assessed_result=_assessed(conn, tax_year, result, property_id, today),
+        employment=employment,
+        household=household,
     )
     return TaxRateResult(
         tax_year=tax_year,
@@ -306,7 +313,7 @@ def tax_rate(
         missing=estimate is None,
         zve=estimate,
         effect=effect,
-        owner_estimates=owner_estimates(tax_year, inputs, owners, t),
+        owner_estimates=owner_estimates(tax_year, inputs, owners, t, employment=employment),
     )
 
 

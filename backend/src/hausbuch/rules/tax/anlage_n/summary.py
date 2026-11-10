@@ -38,8 +38,9 @@ from hausbuch.schemas.employment import (
     OwnerReturnFacts,
     ReturnInputFact,
 )
+from hausbuch.schemas.enums import IncomeInputKind
 from hausbuch.schemas.enums import ReturnInputKind as K
-from hausbuch.schemas.performance import HouseholdTaxContext, Tariff
+from hausbuch.schemas.performance import HouseholdTaxContext, IncomeInputFact, Tariff
 from hausbuch.schemas.tax import DraftWarning, SourceRef, WarningCode
 
 from ._base import SPANNING_KINDS, ZERO, cents, current, in_year, row_sources
@@ -236,6 +237,25 @@ class TaxContexts:
     household_rows: list[ReturnInputFact]
     rules: Callable[[int], AnlageNRuleSet]
     tariffs: Callable[[int], Tariff]
+    # The current expected_gross_pay rows (phase 4, all years): an owner whose facts carry
+    # none gets the latest one up to the source year, as itemise's last fallback.
+    expected_pay: list[IncomeInputFact] = field(default_factory=list)
+
+    def _with_expected(self, facts: OwnerReturnFacts, year: int) -> OwnerReturnFacts:
+        if facts.expected_gross_pay is not None:
+            return facts
+        rows = [
+            r
+            for r in self.expected_pay
+            if r.owner_id == facts.owner_id
+            and r.kind is IncomeInputKind.EXPECTED_GROSS_PAY
+            and r.tax_year <= year
+            and not r.withdrawn
+        ]
+        if not rows:
+            return facts
+        latest = max(rows, key=lambda r: r.tax_year)
+        return facts.model_copy(update={"expected_gross_pay": latest})
 
     def source_year(self, tax_year: int) -> int | None:
         rows = [*(r for f in self.owner_facts for r in f.inputs), *self.household_rows]
@@ -251,14 +271,15 @@ class TaxContexts:
         if year is None:
             return None, None
         rs, tariff = self.rules(year), self.tariffs(year)
+        owner_facts = [self._with_expected(f, year) for f in self.owner_facts]
         items: dict[UUID, Itemised] = {}
-        for f in self.owner_facts:
+        for f in owner_facts:
             try:
                 items[f.owner_id] = itemise(f, year, rs, tariff)
             except RuleError as error:
                 if error.code != ANLAGE_N_NO_PAY:
                     raise
-        counted = [f for f in self.owner_facts if f.owner_id in items]
+        counted = [f for f in owner_facts if f.owner_id in items]
         employment = [
             employment_summary(f, year, rs, tariff)
             for f in counted
