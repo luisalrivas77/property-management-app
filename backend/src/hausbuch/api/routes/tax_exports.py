@@ -7,6 +7,12 @@ list shows the property's stored exports, newest first. services/tax_export.py h
 logic. Error codes, all 422 with `code`: the draft's `tax.year_not_available` and
 `tax.no_rule_set`, and `tax_export.too_large` for an archive whose originals exceed 100 MiB.
 
+Phase 4b (docs/phases/phase-4b.md D104): an owner's Anlage N field sheet (PDF) is exported
+per owner under /owners/{owner_id}/anlage-n/exports, with the Anlage N draft's errors
+(`tax.no_rule_set`, `anlage_n.no_pay`); GET /tax-exports/{id} and its download serve both.
+`tax_export.kind_invalid` refuses an `anlage_n_sheet` on the property route and any other kind
+on the owner route.
+
 The download is an ordinary domain route (the session is required as everywhere), plus the
 signature: a link copied out of the page stops working after DOWNLOAD_TTL_S. A wrong or
 expired signature answers 404, like an export of another workspace.
@@ -26,7 +32,9 @@ from hausbuch.services.tax_export import (
     TaxExportState,
     export_state,
     list_exports,
+    list_owner_exports,
     read_export_file,
+    request_anlage_n_export,
     request_export,
     signature_valid,
 )
@@ -53,6 +61,23 @@ def tax_exports_list(
 ) -> list[TaxExport]:
     """The property's stored exports (ready ones only), newest first."""
     return cmd.read(list_exports, property_id, tax_year=tax_year)
+
+
+@router.post("/owners/{owner_id}/anlage-n/exports", status_code=202)
+def anlage_n_export_create(owner_id: UUID, body: TaxExportCreate, cmd: Cmd) -> TaxExportQueued:
+    """Queue the owner's Anlage N field sheet (kind `anlage_n_sheet`) as it is now; poll
+    GET /tax-exports/{export_id}."""
+    return cmd.run(request_anlage_n_export, owner_id, body)
+
+
+@router.get("/owners/{owner_id}/anlage-n/exports")
+def anlage_n_exports_list(
+    owner_id: UUID,
+    cmd: Cmd,
+    tax_year: Annotated[int | None, Query(ge=2000, le=2100)] = None,
+) -> list[TaxExport]:
+    """The owner's stored Anlage N sheets (ready ones only), newest first."""
+    return cmd.read(list_owner_exports, owner_id, tax_year=tax_year)
 
 
 @router.get("/tax-exports/{export_id}")

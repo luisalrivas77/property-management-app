@@ -56,6 +56,7 @@ from hausbuch.rules.categories import CATEGORY_LABEL
 from hausbuch.rules.tax.field_sheet import UNIT_ROWS, FieldSheetRow, field_sheet
 from hausbuch.rules.tax.rounding import cents
 from hausbuch.schemas.checklist import ChecklistStatus, RequirementCode
+from hausbuch.schemas.employment import AnlageNDraft
 from hausbuch.schemas.enums import AcquisitionCostKind, PriceSplitSource
 from hausbuch.schemas.tax import (
     AnlageVDraft,
@@ -354,7 +355,8 @@ WARNING_TEXT: dict[WarningCode, Callable[[dict[str, str]], str]] = {
         "Die Fragen für dieses Jahr sind noch nicht festgelegt; es gelten die des Vorjahres."
     ),
     WarningCode.TAX_EXPORT_QUESTIONS_OPEN: lambda p: (
-        "Beim Export waren noch Fragen zum Steuerjahr offen."
+        f"{_count(p, 'Jahresfrage', 'Jahresfragen')} offen: beim Export noch nicht "
+        "beantwortet, die Angaben können sich noch ändern."
     ),
 }
 
@@ -373,7 +375,7 @@ def warning_text(warning: DraftWarning) -> str:
 # --- The snapshot ------------------------------------------------------------------------
 
 
-def draft_json(draft: AnlageVDraft) -> dict:
+def draft_json(draft: AnlageVDraft | AnlageNDraft) -> dict:
     """The draft as stored in tax_export.draft (D59, D65)."""
     return draft.model_dump(mode="json")
 
@@ -1050,6 +1052,9 @@ def readme_text(
     property_label: str,
     files: Sequence[tuple[str, bytes]],
     documents: Sequence[ArchiveDocument],
+    banner: Sequence[str] = (),
+    notes: Sequence[str] = (),
+    income_tax: bool = False,
 ) -> bytes:
     created = _local(stamp.created_at)
     h = draft.header
@@ -1063,6 +1068,8 @@ def readme_text(
     lines = [
         f"Hausbuch – Jahresarchiv Anlage V {draft.tax_year}",
         "",
+        *(f"Hinweis: {text}" for text in banner),
+        *([""] if banner else []),
         f"Immobilie: {property_label}, {address}",
         f"Steuerjahr: {draft.tax_year}",
         f"Formularstand: {form_status_text(draft, rule_set)}",
@@ -1090,6 +1097,13 @@ def readme_text(
         )
     else:
         lines.append("  keine")
+    if income_tax:  # phase 4b D104: the owners' Anlage N sheets and the Gesamt page
+        lines += [
+            "",
+            "Einkommensteuer (Anlage N je Eigentümer, Gesamtschätzung des Haushalts)",
+            "  Die Gesamtschätzung ist eine Schätzung, kein Bescheid.",
+            *(f"  {text}" for text in notes),
+        ]
     lines += [
         "",
         "zahlungen.csv nennt den Beleg einer Zahlung mit seiner Nummer in dokumente/ und die "
@@ -1136,9 +1150,15 @@ def render_archive(
     *,
     property_label: str,
     documents: Sequence[ArchiveDocument],
+    extra_files: Sequence[tuple[str, bytes]] = (),
+    banner: Sequence[str] = (),
+    notes: Sequence[str] = (),
 ) -> bytes:
     """The yearly archive (ZIP): ausfuellhilfe.pdf, anlage-v-<year>.csv, zahlungen.csv,
-    README.txt and dokumente/ with the untouched originals (stored, not recompressed)."""
+    README.txt, the `extra_files` (phase 4b D104: each owner's Anlage N sheet and the Gesamt
+    page, already rendered) and dokumente/ with the untouched originals (stored, not
+    recompressed). `banner`: lines printed at the top of README.txt (the open Jahresfragen);
+    `notes`: its Einkommensteuer section (what was left out and why)."""
     copies = sum(1 for d in documents if d.finanzamt_copy is not None)
     sheet = render_field_sheet(draft, rule_set, facts, stamp, finanzamt_copies=copies)
     numbers = {d.document_id: d.number for d in documents}
@@ -1148,7 +1168,15 @@ def render_archive(
         ("zahlungen.csv", payments_csv(draft, facts, numbers)),
     ]
     readme = readme_text(
-        draft, rule_set, stamp, property_label=property_label, files=files, documents=documents
+        draft,
+        rule_set,
+        stamp,
+        property_label=property_label,
+        files=[*files, *extra_files],
+        documents=documents,
+        banner=banner,
+        notes=notes,
+        income_tax=bool(extra_files or notes),
     )
     when = _zip_time(stamp.created_at)
     buffer = io.BytesIO()
@@ -1156,6 +1184,8 @@ def render_archive(
         for path, data in files:
             _add(archive, path, data, when, stored=False)
         _add(archive, "README.txt", readme, when, stored=False)
+        for path, data in extra_files:
+            _add(archive, path, data, when, stored=False)
         for document in documents:
             _add(archive, document.path, document.data, when, stored=True)
     return buffer.getvalue()

@@ -79,6 +79,8 @@ TAX_INPUT_MOVABLE_ASSET_SEPARATE_UNSUPPORTED = "tax_input.movable_asset_separate
 TAX_INPUT_MOVABLE_ASSET_NO_PURCHASE_DATE = "tax_input.movable_asset_no_purchase_date"
 TAX_EXPORT_FAILED = "tax_export.failed"
 TAX_EXPORT_TOO_LARGE = "tax_export.too_large"  # an archive over 100 MiB
+# phase 4b D104: an Anlage N sheet is exported per owner, every other kind per property
+TAX_EXPORT_KIND_INVALID = "tax_export.kind_invalid"
 
 
 # --- Phase 4 codes (docs/phases/phase-4.md §8) -----------------------------------------

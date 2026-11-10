@@ -10,8 +10,8 @@ Outcomes, read back by GET /tax-exports/{id} (services.tax_export.export_state):
 - exists: a second run for the same id; nothing written;
 - too_large: the archive outgrew 100 MiB after the request checked it; the job succeeds without
   a row, which the state reads as `failed` with `tax_export.too_large`;
-- a RuleError or NotFoundError (the property was deleted, the year no longer has a rule set):
-  re-raised at once, so the job fails (`tax_export.failed`); a retry would not change it;
+- a RuleError or NotFoundError (the property or owner was deleted, the year no longer has a
+  rule set): re-raised at once, so the job fails (`tax_export.failed`); a retry would not change it;
 - any other error (database, blob store): RetryLater (10 s, 60 s, 5 min) while attempts
   remain, then re-raised, so the job fails.
 
@@ -50,7 +50,8 @@ def run_tax_export(
     *,
     workspace_id: UUID,
     export_id: UUID,
-    property_id: UUID,
+    property_id: UUID | None,
+    owner_id: UUID | None = None,
     tax_year: int,
     kind: TaxExportKind,
     created_by: UUID | None,
@@ -70,6 +71,7 @@ def run_tax_export(
                 deps.blob_store,
                 export_id=export_id,
                 property_id=property_id,
+                owner_id=owner_id,
                 tax_year=tax_year,
                 kind=kind,
                 created_by=created_by,
