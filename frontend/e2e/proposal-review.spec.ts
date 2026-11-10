@@ -409,6 +409,8 @@ test("a failed read and a tenant document offer manual entry", async ({ page, si
   await expect(blocked.getByRole("link", { name: "Von Hand eingeben" })).toHaveAttribute("href", "/tenancies/new");
   await expect(blocked.getByRole("form", { name: "Vorschlag prüfen" })).toHaveCount(0);
   await expect(blocked.getByRole("button", { name: "Neu auslesen" })).toHaveCount(0);
+  // Nothing to review in the card (no typing was proposed), so the page's own form is the one form.
+  await expect(page.getByRole("form", { name: "Typisierung bearbeiten" })).toBeVisible();
 
   // Once the household lets the AI read tenant documents, the blocked document can be read again.
   const origin = new URL(page.url()).origin;
@@ -422,4 +424,125 @@ test("a failed read and a tenant document offer manual entry", async ({ page, si
   await expect(blocked.getByRole("status")).toContainText("Inzwischen ist das für den Haushalt freigegeben");
   await expect(blocked.getByRole("button", { name: "Neu auslesen" })).toBeVisible();
   await expect(blocked.getByRole("link", { name: "Von Hand eingeben" })).toHaveAttribute("href", "/tenancies/new");
+});
+
+const empty = { value: null, source: null, derived_from: [], checks: [], confidence: "low" };
+const POINTER = "Prüfen Sie den Vorschlag oben";
+
+/** A Verwaltervertrag read with its fee (phase 2 D132): the typing record carries the hand
+ * fields, the Betrag computed by code (PR #137), the others read or empty. */
+const MANAGEMENT_RECORDS = [
+  {
+    key: "typing",
+    entity_type: "typing",
+    mode: "create",
+    fields: {
+      type: cited("contract", 1, "Vertrag"),
+      subtype: cited("management_contract", 1, "Mietverwaltungsvertrag"),
+      title: cited("Mietverwaltungsvertrag", 1, "Mietverwaltungsvertrag"),
+      amount_total: { value: "35.70", source: null, derived_from: ["fee_net", "monthly_fee"], checks: ["derived", "validates"], confidence: "high" },
+      counterparty: cited("Muster Hausverwaltung GmbH", 1, "Muster Hausverwaltung GmbH"),
+      period_start: cited("2026-05-01", 1, "Der Vertrag beginnt am 01.05.2026."),
+      period_end: empty,
+      reference: empty,
+      notes: empty,
+    },
+    notes: [],
+  },
+];
+
+test("one form: the hand fields are in the typing card, and the page's form waits for the decision", async ({ page, signedIn }) => {
+  void signedIn;
+  const documentId = await uploadPdf(page, "Verwaltervertrag.pdf");
+  const mock: Mock = {
+    list: [proposal(documentId, { kind: "management_contract", records: MANAGEMENT_RECORDS })],
+    poll: null,
+    polls: 0,
+    applies: [],
+    apply: () => ({
+      status: 200,
+      json: {
+        proposal: proposal(documentId, { kind: "management_contract", status: "applied", records: MANAGEMENT_RECORDS, decided_at: NOW }),
+        applied: [{ key: "typing", entity_type: "typing", mode: "create", skipped: false, entity_id: documentId }],
+      },
+    }),
+  };
+  await mockProposals(page, mock);
+  await page.goto(`/documents/${documentId}`);
+
+  const form = vorschlag(page).getByRole("form", { name: "Vorschlag prüfen" });
+  const typingForm = page.getByRole("form", { name: "Typisierung bearbeiten" });
+  await expect(form).toBeVisible();
+  // Never both: while the proposal waits, the page's own typing form is not there.
+  await expect(typingForm).toHaveCount(0);
+  await expect(page.getByText(POINTER)).toBeVisible();
+
+  const card = form.getByRole("region", { name: /^Typisierung/ });
+  await expect(card.getByLabel("Vergütung pro Monat (€)")).toHaveValue("35,70");
+  await expect(card.getByText("Berechnet aus: Vergütung laut Vertrag (netto), Vergütungsklausel (z. B. „zzgl. MwSt.“).")).toBeVisible();
+  await expect(card.getByLabel("Gegenpartei", { exact: true })).toHaveValue("Muster Hausverwaltung GmbH");
+  await expect(card.getByLabel("Zeitraum von", { exact: true })).toHaveValue("2026-05-01");
+  await expect(card.getByLabel("Referenz", { exact: true })).toHaveValue("");
+  await card.getByLabel("Referenz", { exact: true }).fill("MV-2026-7");
+  await form.getByRole("button", { name: "Übernehmen" }).click();
+  await expect(vorschlag(page).getByText("Übernommen.")).toBeVisible();
+
+  // The hand fields go with the typing; an empty one as null, so a clear is explicit.
+  const sent = (mock.applies[0] as { records: Json[] }).records.find((r) => r.key === "typing");
+  expect(sent).toMatchObject({
+    skip: false,
+    values: {
+      type: "contract",
+      subtype: "management_contract",
+      amount_total: "35.70",
+      counterparty: "Muster Hausverwaltung GmbH",
+      period_start: "2026-05-01",
+      period_end: null,
+      reference: "MV-2026-7",
+      notes: null,
+    },
+  });
+  // Decided: the card is gone and the page's form is the one place to change values again.
+  await expect(form).toHaveCount(0);
+  await expect(typingForm).toBeVisible();
+  await expect(page.getByText(POINTER)).toHaveCount(0);
+});
+
+test("one form: a tenant document's typing-only proposal hides the page's form too", async ({ page, signedIn }) => {
+  void signedIn;
+  const documentId = await uploadPdf(page, "Kautionsnachweis.pdf");
+  const records = [
+    {
+      key: "typing",
+      entity_type: "typing",
+      mode: "create",
+      fields: {
+        type: { ...cited("letter", 1, "Kautionsnachweis"), confidence: "medium" },
+        amount_total: empty,
+        period_start: empty,
+        period_end: empty,
+        counterparty: empty,
+        reference: empty,
+        notes: empty,
+      },
+      notes: [],
+    },
+  ];
+  const mock: Mock = {
+    list: [proposal(documentId, { status: "blocked_tenant_data", kind: null, contains_tenant_data: true, records })],
+    poll: null,
+    polls: 0,
+    applies: [],
+    apply: () => ({ status: 500, json: {} }),
+  };
+  await mockProposals(page, mock);
+  await page.goto(`/documents/${documentId}`);
+
+  const form = vorschlag(page).getByRole("form", { name: "Vorschlag prüfen" });
+  await expect(form).toBeVisible();
+  await expect(page.getByRole("form", { name: "Typisierung bearbeiten" })).toHaveCount(0);
+  await expect(page.getByText(POINTER)).toBeVisible();
+  const card = form.getByRole("region", { name: /^Typisierung/ });
+  await expect(card.getByLabel("Betrag gesamt (€)")).toHaveValue("");
+  await expect(card.getByLabel("Notiz", { exact: true })).toBeVisible();
 });

@@ -4206,7 +4206,7 @@ export interface components {
          *
          *     For a `manual` extraction (or none) the values are its fields and all six are available.
          *     For an AI kind, `values` holds what the reading stored for the fields that kind has a place
-         *     for (services.documents.HAND_FIELD_MAP), and `available` names exactly those; a reading the
+         *     for (rules.hand_fields.HAND_FIELD_MAP), and `available` names exactly those; a reading the
          *     hand types cannot hold (a low-confidence raw text in a money field) shows as null.
          */
         HandFields: {

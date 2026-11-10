@@ -11675,7 +11675,7 @@
           "available"
         ],
         "title": "HandFields",
-        "description": "The document's \"Felder (von Hand)\" as the typing form shows them (phase 2 D37).\n\nFor a `manual` extraction (or none) the values are its fields and all six are available.\nFor an AI kind, `values` holds what the reading stored for the fields that kind has a place\nfor (services.documents.HAND_FIELD_MAP), and `available` names exactly those; a reading the\nhand types cannot hold (a low-confidence raw text in a money field) shows as null."
+        "description": "The document's \"Felder (von Hand)\" as the typing form shows them (phase 2 D37).\n\nFor a `manual` extraction (or none) the values are its fields and all six are available.\nFor an AI kind, `values` holds what the reading stored for the fields that kind has a place\nfor (rules.hand_fields.HAND_FIELD_MAP), and `available` names exactly those; a reading the\nhand types cannot hold (a low-confidence raw text in a money field) shows as null."
       },
       "HandoverProtocolExtraction": {
         "properties": {

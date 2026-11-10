@@ -5,7 +5,8 @@
 // typing form (Typ, Untertyp, Titel, Datum, Steuerjahr, hand fields: a new extraction
 // version when they change; over an AI reading they show what it read and a change is written
 // into the reading's own kind, phase-2.md D37), the links (Zieltyp + picker, remove), and the
-// retention result.
+// retention result. One form at a time (D132): while a proposal is pending review, its typing
+// card carries these same fields and the typing form is replaced by a one-line pointer.
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useState, type FormEvent } from "react";
@@ -30,6 +31,9 @@ export default function DocumentPage() {
   const directory = useLoad(loadDirectory);
   // Lives here, not in TypingForm: the form remounts (its key) when the saved typing reloads.
   const [typingSaved, setTypingSaved] = useState(false);
+  // D132: one form at a time. While a proposal is pending review, its typing card holds every
+  // field this form offers, so the form is not shown; undefined while the proposals load.
+  const [proposalPending, setProposalPending] = useState<boolean | undefined>(undefined);
 
   return (
     <section>
@@ -39,18 +43,28 @@ export default function DocumentPage() {
             <Breadcrumbs items={[{ href: "/documents", label: "Dokumente" }, { label: documentLabel(data.document) }]} />
             <h1>{documentLabel(data.document)}</h1>
             <Original detail={data} />
-            <ProposalSection detail={data} directory={directory.data ?? null} onApplied={detail.reload} />
+            <ProposalSection detail={data} directory={directory.data ?? null} onApplied={detail.reload} onPendingChange={setProposalPending} />
             <h2 id="typisierung">Typisierung</h2>
-            {typingSaved ? <Notice>Typisierung gespeichert.</Notice> : null}
-            <TypingForm
-              key={`${data.document.updated_at}-${data.extraction?.version ?? 0}`}
-              detail={data}
-              onSubmit={() => setTypingSaved(false)}
-              onSaved={() => {
-                setTypingSaved(true);
-                detail.reload();
-              }}
-            />
+            {proposalPending ? (
+              <p className="muted" role="note">
+                Prüfen Sie den Vorschlag oben; nach dem Übernehmen oder Verwerfen können Sie hier Werte ändern.
+              </p>
+            ) : proposalPending === false ? (
+              <>
+                {typingSaved ? <Notice>Typisierung gespeichert.</Notice> : null}
+                <TypingForm
+                  key={`${data.document.updated_at}-${data.extraction?.version ?? 0}`}
+                  detail={data}
+                  onSubmit={() => setTypingSaved(false)}
+                  onSaved={() => {
+                    setTypingSaved(true);
+                    detail.reload();
+                  }}
+                />
+              </>
+            ) : (
+              <p className="muted">Lädt …</p>
+            )}
             <h2>Verknüpfungen</h2>
             <Links detail={data} targets={directory.data ? targets(directory.data) : null} onChanged={detail.reload} />
             {directory.error ? <ErrorNotice error={directory.error} /> : null}
@@ -198,7 +212,7 @@ function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onS
   }
 
   return (
-    <form className="card stack" onSubmit={submit} noValidate>
+    <form className="card stack" onSubmit={submit} noValidate aria-label="Typisierung bearbeiten">
       <div className="grid">
         <Field
           id="doc-type"

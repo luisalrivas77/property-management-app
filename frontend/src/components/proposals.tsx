@@ -13,6 +13,10 @@
 //   (CREATE_FIELDS), not only the proposed ones: the AI pre-fills what it found, the rest is
 //   typed by hand (Luis, 7 Nov 2026). A tenancy's unit and a Kaution's tenancy are picked from
 //   the workspace's units and tenancies, preselected with the one code matched.
+//   The typing card also carries the document's hand fields (Betrag, Gegenpartei, Zeitraum,
+//   Referenz, Notiz as the kind has them; D132): read, computed by code ("Berechnet aus …") or
+//   empty to type. While a proposal is pending review (isPendingReview) the page hides its own
+//   typing form, so the card is the one form; an empty hand field is sent as null (a clear).
 //   Nothing is saved before "Übernehmen" (D14): apply sends every
 //   record with the final values and the per-field decisions; a 422's `loc` starts with the
 //   record key and lands at its field.
@@ -177,6 +181,28 @@ const FIELDS: Record<string, Record<string, FieldSpec>> = {
       description:
         "Das Jahr, für das das Dokument gilt, z. B. 2026 bei der Zinsbescheinigung 2026. Die Unterlagen-Checkliste ordnet Jahresunterlagen danach zu, und die Aufbewahrungsfrist zählt ab diesem Jahr.",
     },
+    // The document's hand-entry fields (D132), as the typing form on the page offers them.
+    amount_total: {
+      label: "Betrag gesamt (€)",
+      kind: "money",
+      signed: true,
+      description:
+        "Der Gesamtbetrag laut Dokument, bei einer Rechnung brutto. Bei Rechnungen und Bescheiden sucht Hausbuch damit die passende Zahlung im Kontoauszug.",
+    },
+    counterparty: text(
+      "Gegenpartei",
+      "Wer das Dokument ausgestellt hat oder an wen gezahlt wird, z. B. Handwerker, Stadtkasse oder Hausverwaltung.",
+    ),
+    period_start: date(
+      "Zeitraum von",
+      "Der Beginn des Zeitraums, für den das Dokument gilt, z. B. des Abrechnungsjahrs einer Hausgeldabrechnung.",
+    ),
+    period_end: date("Zeitraum bis", "Das Ende dieses Zeitraums."),
+    reference: text(
+      "Referenz",
+      "Die Rechnungsnummer oder das Aktenzeichen laut Dokument. Steht sie im Verwendungszweck einer Überweisung, hilft das, die Zahlung diesem Beleg zuzuordnen.",
+    ),
+    notes: text("Notiz", "Freier Text für Sie."),
   },
   property: PROPERTY_FIELDS,
   correction: PROPERTY_FIELDS,
@@ -484,6 +510,23 @@ const CREATE_FIELDS: Readonly<Record<string, readonly string[]>> = {
   ],
 };
 
+/** The hand-entry fields a typing record may carry (D132), in the page form's order. They are
+ * shown only when the record carries them: a kind without hand fields gets no empty boxes. */
+const HAND_FIELDS: readonly string[] = ["amount_total", "counterparty", "period_start", "period_end", "reference", "notes"];
+
+/** A Verwaltervertrag's Betrag holds its monthly fee with MwSt., so it is named so (as on the page). */
+const MANAGEMENT_FEE: FieldSpec = {
+  label: "Vergütung pro Monat (€)",
+  kind: "money",
+  signed: true,
+  description:
+    "Die Verwaltervergütung je Monat mit MwSt. Hausbuch rechnet sie aus dem Nettobetrag laut Vertrag; steht dort „zzgl. MwSt.“ ohne Satz, mit 19 %. Gebucht wird sie aus den Zahlungen im Kontoauszug, nicht aus dem Vertrag.",
+};
+
+function isHandField(record: ProposalRecord, name: string): boolean {
+  return prefixOf(record.key)[0] === "typing" && HAND_FIELDS.includes(name);
+}
+
 /** A tax_input record's title, by the kind its key names. */
 const TAX_INPUT_TITLE: Record<string, string> = {
   interest_certified: "Zinsbescheinigung: gezahlte Zinsen",
@@ -509,6 +552,8 @@ const DERIVED_INPUT: Record<string, string> = {
   unit_label: "WE-Nummer",
   rent_clause: "Mietklausel",
   amount: "Kautionsbetrag",
+  fee_net: "Vergütung laut Vertrag (netto)",
+  monthly_fee: "Vergütungsklausel (z. B. „zzgl. MwSt.“)",
 };
 
 function lookup(map: Readonly<Record<string, string>>, key: string): string {
@@ -521,6 +566,7 @@ function prefixOf(key: string): [string, string] {
 }
 
 function specFor(record: ProposalRecord, name: string): FieldSpec {
+  if (name === "amount_total" && isHandField(record, name) && record.fields?.subtype?.value === "management_contract") return MANAGEMENT_FEE;
   return FIELDS[prefixOf(record.key)[0]]?.[name] ?? text(name);
 }
 
@@ -537,7 +583,10 @@ type Row = [string, ExtractedValue | null];
  * every other mode, only the proposed fields, as before. */
 function rowsOf(record: ProposalRecord): Row[] {
   const proposed = fieldsOf(record);
-  const schema = record.mode === "create" ? (CREATE_FIELDS[record.key] ?? CREATE_FIELDS[prefixOf(record.key)[0]]) : undefined;
+  const prefix = prefixOf(record.key)[0];
+  let schema = record.mode === "create" ? (CREATE_FIELDS[record.key] ?? CREATE_FIELDS[prefix]) : undefined;
+  // The hand fields the typing record carries, after the typing's own, in the page form's order.
+  if (schema && prefix === "typing") schema = [...schema, ...HAND_FIELDS.filter((name) => record.fields?.[name] !== undefined)];
   if (!schema) return proposed;
   const byName = new Map(proposed);
   const rows: Row[] = [];
@@ -795,30 +844,47 @@ function manualEntry(kind: ExtractionKind | null, directory: Directory | null): 
   }
 }
 
-function ManualEntry({ kind, directory }: { kind: ExtractionKind | null; directory: Directory | null }) {
-  const { href, where } = manualEntry(kind, directory);
+function ManualEntry({ kind, directory, inCard = false }: { kind: ExtractionKind | null; directory: Directory | null; inCard?: boolean }) {
+  // inCard: the typing card below is the document's one form while the proposal is pending (D132).
+  const { href, where } = inCard && manualEntry(kind, directory).href === "#typisierung" ? { href: "#vorschlag", where: "Typisierung im Vorschlag" } : manualEntry(kind, directory);
   return (
     <p>
-      <Link href={href}>Von Hand eingeben</Link> <span className="muted">({where}; das Dokument unten typisieren und verknüpfen)</span>
+      <Link href={href}>Von Hand eingeben</Link>{" "}
+      <span className="muted">({where}; {inCard ? "Typ und Felder im Vorschlag unten eintragen und übernehmen" : "das Dokument unten typisieren und verknüpfen"})</span>
     </p>
   );
+}
+
+/** A proposal whose typing card is the document's one form (D132): one shown for review (ready,
+ * or blocked by the tenant gate with its typing). While it is, the page hides its typing form. */
+export function isPendingReview(proposal: Proposal): boolean {
+  return proposal.status === "ready" || (proposal.status === "blocked_tenant_data" && (proposal.records ?? []).length > 0);
 }
 
 /**
  * The "Vorschlag" section of a document page. `onApplied` reloads the page's document (its
  * typing and links change with an apply; a finished read changes its extraction).
+ * `onPendingChange` tells the page whether a proposal is pending review (isPendingReview):
+ * undefined while the proposals load, so the page shows neither form until it knows.
  */
 export function ProposalSection({
   detail,
   directory,
   onApplied,
+  onPendingChange,
 }: {
   detail: DocumentDetail;
   directory: Directory | null;
   onApplied: () => void;
+  onPendingChange?: (pending: boolean | undefined) => void;
 }) {
   const documentId = detail.document.id;
   const { proposal, error, setProposal, reload } = useCurrentProposal(documentId, onApplied);
+  // A failed load counts as none pending: the page's own form is then the way to type.
+  const pending = proposal ? isPendingReview(proposal) : proposal === null || error ? false : undefined;
+  useEffect(() => {
+    onPendingChange?.(pending);
+  }, [pending, onPendingChange]);
   const [applied, setApplied] = useState<ProposalApplyResult | null>(null);
   const [actionError, setActionError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
@@ -933,10 +999,10 @@ export function ProposalSection({
         {tenantDocumentsAllowed ? (
           <div className="row">{rerunButton("Neu auslesen", hasTyping ? "Das Dokument neu auslesen? Dieser Vorschlag wird ersetzt." : null)}</div>
         ) : null}
-        <ManualEntry kind={proposal.kind} directory={directory} />
+        <ManualEntry kind={proposal.kind} directory={directory} inCard={hasTyping} />
         {hasTyping ? (
           <>
-            <p className="muted">Erkannt wurde nur die Art des Dokuments; diese Typisierung lässt sich übernehmen.</p>
+            <p className="muted">Erkannt wurde nur die Art des Dokuments; diese Typisierung lässt sich übernehmen, die Felder von Hand ergänzt.</p>
             <ProposalReview
               key={proposal.id}
               proposal={proposal}
@@ -1167,8 +1233,10 @@ function buildApply(
         continue;
       }
       // Empty stays out: the backend records it as cleared (or accepted, when nothing was
-      // proposed) and the *Create default applies.
+      // proposed) and the *Create default applies. A hand field is sent empty as null: the
+      // backend leaves a hand field it is not sent as it is, so a clear must be explicit (D132).
       if (parsed.value !== null) values[name] = parsed.value;
+      else if (isHandField(record, name)) values[name] = null;
     }
     // A correction kept as it is changes nothing: the record is skipped.
     if (keepAll) out.push({ key: record.key, skip: true, decisions });
@@ -1452,7 +1520,7 @@ function FieldRow({
   const existing = record.mode === "patch" || record.mode === "correction";
   const take = state?.take ?? true;
   const current = record.current?.[name];
-  const hint = fieldHint(spec, value, hasNotes);
+  const hint = fieldHint(spec, value, hasNotes, isHandField(record, name));
   const source = value?.source ?? null;
   const describedBy =
     [spec.description && descriptionOpen ? descriptionId : null, hint ? hintId : null, errors.length > 0 ? errorId : null].filter(Boolean).join(" ") ||
@@ -1594,8 +1662,11 @@ function FieldRow({
   );
 }
 
-function fieldHint(spec: FieldSpec, value: ExtractedValue | null, hasNotes: boolean): string | null {
+function fieldHint(spec: FieldSpec, value: ExtractedValue | null, hasNotes: boolean, hand: boolean): string | null {
   if (!value) return spec.kind === "bool" ? "Nicht im Vorschlag; bei Bedarf von Hand ankreuzen." : "Nicht im Vorschlag; bei Bedarf von Hand eintragen.";
+  // A hand field (D132): never read, or read but not as a value it can hold; or already stored.
+  if (hand && value.value === null && !value.source) return "Nicht ausgelesen; bei Bedarf von Hand eintragen.";
+  if (hand && value.value !== null && !value.source && (value.derived_from ?? []).length === 0) return "Bisher beim Dokument gespeichert.";
   if (value.value === null) {
     if (spec.kind === "unit") return "Keine Einheit passt eindeutig zum Mietvertrag; bitte wählen.";
     if (spec.kind === "tenancy") return "Kein Mietverhältnis passt eindeutig; bitte wählen.";
