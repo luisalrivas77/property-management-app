@@ -636,7 +636,7 @@ export const WARNING_TEXT: Record<WarningCode, (params: Params) => string> = {
     `Eine Zahlung${p.amount ? ` über ${money(p)}` : ""} ist im einen Jahr gebucht und im anderen wertgestellt; sie zählt im Jahr der Buchung.`,
   "afa.no_split": () => "Keine Kaufpreisaufteilung gewählt: ohne Gebäudeanteil bleibt die AfA leer.",
   "afa.cost_row_unpaid": (p) =>
-    `${p.kind ? (ACQUISITION_COST_KIND[p.kind as AcquisitionCostKind] ?? p.kind) : "Nebenkosten"} ${money(p)}: keine Zahlung vom Mietkonto gefunden (vielleicht privat bezahlt). Sie zählt trotzdem zur AfA-Basis.`,
+    `${p.kind ? (ACQUISITION_COST_KIND[p.kind as AcquisitionCostKind] ?? p.kind) : "Nebenkosten"} ${money(p)}: keine Zahlung vom Mietkonto gefunden (vielleicht von einem anderen Konto bezahlt). Sie zählt trotzdem zur AfA-Basis.`,
   "afa.acquisition_cost_without_row": (p) =>
     `Zahlung von Anschaffungsnebenkosten über ${money(p)} ohne passenden Eintrag unter Nebenkosten: sie zählt erst zur AfA-Basis, wenn sie dort erfasst ist.`,
   "afa.purchase_price_mismatch": (p) =>
