@@ -31,9 +31,10 @@ type Payslip = components["schemas"]["Payslip"];
 type WageCertificate = components["schemas"]["WageCertificate"];
 
 const FOOTER = "Ein Entwurf zum Prüfen, keine Steuerberatung.";
-const FIRST_RULE_YEAR = 2026;
 
 const loadOwners = () => ok(api.GET("/api/owners"));
+// The years with an Anlage N rule set (a draft is made only under the year's own one).
+const loadYears = () => ok(api.GET("/api/tax/anlage-n/years")).then((r) => r.years);
 
 /** The draft, or why there is none: no pay source yet, or no rule set for the year. */
 type DraftState = { draft: AnlageNDraft } | { missing: "no_pay" | "no_rule_set" };
@@ -110,10 +111,9 @@ function OwnerScreen({ owner, owners, state }: { owner: Owner; owners: Owner[]; 
     reloadEstimate();
   }, [reloadRows, reloadDraft, reloadEstimate]);
 
-  const thisYear = new Date().getFullYear();
-  const yearOptions: number[] = [];
-  for (let y = FIRST_RULE_YEAR; y <= Math.max(year, thisYear); y += 1) yearOptions.push(y);
-  if (!yearOptions.includes(year)) yearOptions.unshift(year);
+  const years = useLoad(loadYears);
+  // The rule set years, plus the year shown when it has none (it then says so).
+  const yearOptions = years.data && !years.data.includes(year) ? [...years.data, year].sort((a, b) => a - b) : (years.data ?? [year]);
 
   return (
     <>

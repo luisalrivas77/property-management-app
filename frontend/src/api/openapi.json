@@ -482,6 +482,35 @@
         }
       }
     },
+    "/api/tax/anlage-n/years": {
+      "get": {
+        "summary": "Anlage N Years",
+        "description": "The years an Anlage N draft exists for, ascending (the tab's year picker): a draft is\nonly made under the year's own rule set (GET /owners/{id}/anlage-n is 422 tax.no_rule_set\nfor any other year).",
+        "operationId": "anlage_n_years_api_tax_anlage_n_years_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnlageNYears"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/owners/{owner_id}/anlage-n": {
       "get": {
         "summary": "Owner Anlage N",
@@ -7714,6 +7743,26 @@
         ],
         "title": "AnlageNDraft",
         "description": "One owner's Anlage N for one year (§5.6). status: certified (from certificates),\nestimate (payslip projection or expected pay), none (no pay source)."
+      },
+      "AnlageNYears": {
+        "properties": {
+          "years": {
+            "items": {
+              "type": "integer",
+              "maximum": 2100.0,
+              "minimum": 2000.0
+            },
+            "type": "array",
+            "title": "Years"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "years"
+        ],
+        "title": "AnlageNYears",
+        "description": "GET /tax/anlage-n/years: the tax years with an Anlage N rule set file of their own."
       },
       "AnlageVDraft": {
         "properties": {

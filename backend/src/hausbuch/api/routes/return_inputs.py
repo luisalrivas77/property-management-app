@@ -12,6 +12,8 @@ from uuid import UUID
 
 from fastapi import Query
 
+from hausbuch.rules.tax import registry
+from hausbuch.schemas.common import Schema, TaxYear
 from hausbuch.schemas.employment import AnlageNDraft, ReturnEstimate, ReturnInput, ReturnInputCreate
 from hausbuch.schemas.enums import ReturnInputKind
 from hausbuch.services.documents import LOCAL_TIME_ZONE
@@ -58,6 +60,20 @@ def return_input_create(body: ReturnInputCreate, cmd: Cmd) -> ReturnInput:
     anlage_n.useful_life_missing, tax.no_rule_set (a yearly row before 2026); 404 for an
     unknown owner, document or referenced row."""
     return cmd.run(create_input, body)
+
+
+class AnlageNYears(Schema):
+    """GET /tax/anlage-n/years: the tax years with an Anlage N rule set file of their own."""
+
+    years: list[TaxYear]
+
+
+@router.get("/tax/anlage-n/years")
+def anlage_n_years() -> AnlageNYears:
+    """The years an Anlage N draft exists for, ascending (the tab's year picker): a draft is
+    only made under the year's own rule set (GET /owners/{id}/anlage-n is 422 tax.no_rule_set
+    for any other year)."""
+    return AnlageNYears(years=list(registry.anlage_n_years()))
 
 
 @router.get("/owners/{owner_id}/anlage-n")

@@ -128,6 +128,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tax/anlage-n/years": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Anlage N Years
+         * @description The years an Anlage N draft exists for, ascending (the tab's year picker): a draft is
+         *     only made under the year's own rule set (GET /owners/{id}/anlage-n is 422 tax.no_rule_set
+         *     for any other year).
+         */
+        get: operations["anlage_n_years_api_tax_anlage_n_years_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/owners/{owner_id}/anlage-n": {
         parameters: {
             query?: never;
@@ -2647,6 +2669,14 @@ export interface components {
             sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
             form: components["schemas"]["RuleSetStamp"];
             components?: components["schemas"]["WerbungskostenComponents"];
+        };
+        /**
+         * AnlageNYears
+         * @description GET /tax/anlage-n/years: the tax years with an Anlage N rule set file of their own.
+         */
+        AnlageNYears: {
+            /** Years */
+            years: number[];
         };
         /** AnlageVDraft */
         AnlageVDraft: {
@@ -8348,6 +8378,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReturnInput"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    anlage_n_years_api_tax_anlage_n_years_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnlageNYears"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
