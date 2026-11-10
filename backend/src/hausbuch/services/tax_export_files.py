@@ -313,6 +313,10 @@ WARNING_TEXT: dict[WarningCode, Callable[[dict[str, str]], str]] = {
         "Ein Arbeitszimmer zählt nur, wenn es der Mittelpunkt der gesamten Tätigkeit ist. "
         "Bitte prüfen."
     ),
+    WarningCode.ANLAGE_N_WORK_ROOM_PARTIAL: lambda p: (
+        f"Das Arbeitszimmer zählt für {p.get('months') or 'einige'} Monate: die "
+        "Tagespauschale nur für Tage der übrigen Monate eintragen."
+    ),
     WarningCode.ANLAGE_N_FIRST_WORKPLACE_CHECK: lambda p: (
         "Bitte prüfen, ob dies die erste Tätigkeitsstätte ist (Festlegung durch den Arbeitgeber)."
     ),
@@ -331,6 +335,10 @@ WARNING_TEXT: dict[WarningCode, Callable[[dict[str, str]], str]] = {
     ),
     WarningCode.RETURN_CHILD_OVER_18: lambda p: (
         "Ein Kind ist volljährig: es zählt nur bei Ausbildung oder Studium."
+    ),
+    WarningCode.RETURN_CHILDCARE_UNTIL_14: lambda p: (
+        "Ein Kind wird in diesem Jahr 14: es zählen nur die Kinderbetreuungskosten bis "
+        "zum 14. Geburtstag."
     ),
     WarningCode.RETURN_DONATION_OVER_CAP: lambda p: (
         "Die Spenden übersteigen die Höchstgrenze; der Rest zählt nicht in diesem Jahr."

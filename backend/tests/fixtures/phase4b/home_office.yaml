@@ -5,7 +5,8 @@
 # which checks every value against the §7 schemas and recomputes each expectation on load.
 #
 # amount = min(6 × (Z58 days + Z59 days), 1,260); a work room of the same owner covering 12
-# months refuses the row (anlage_n.work_room_excludes_day_rate); days_implausible when commute
+# months refuses the row (anlage_n.work_room_excludes_day_rate), one covering 1-11 months adds
+# the info anlage_n.work_room_partial when days are typed; days_implausible when commute
 # days + Z58 days exceed the 261 weekdays of 2026; home_office_capped above 210 days.
 
 bases:
@@ -52,6 +53,15 @@ cases:
   work_room: *room_12
   expect:
     error: {code: anlage_n.work_room_excludes_day_rate}
+- id: with_work_room_nine_months_warning
+  description: a work room for 9 months beside 40 home-office days → 240.00, and the note that the day rate counts only outside the room's months (D106)
+  tax_year: 2026
+  fact: {days_other_workplace: 40}
+  work_room: {<<: *room_12, months: 9}
+  expect:
+    amount: '240.00'
+    warnings:
+    - {code: anlage_n.work_room_partial, params: {months: '9'}}
 - id: zero_days_no_line
   description: no days → 0.00 and no line
   tax_year: 2026

@@ -465,6 +465,8 @@ export const WARNING_TEXT: Record<WarningCode, (params: Params) => string> = {
   "anlage_n.work_room_records": () => "Für das Arbeitszimmer bitte Grundriss und Kosten aufbewahren.",
   "anlage_n.work_room_centre": () =>
     "Ein Arbeitszimmer zählt nur, wenn es der Mittelpunkt der gesamten Tätigkeit ist. Bitte prüfen.",
+  "anlage_n.work_room_partial": (p) =>
+    `Das Arbeitszimmer zählt für ${p.months ?? "einige"} Monate: die Tagespauschale nur für Tage der übrigen Monate eintragen.`,
   "anlage_n.first_workplace_check": () =>
     "Bitte prüfen, ob dies die erste Tätigkeitsstätte ist (Festlegung durch den Arbeitgeber).",
   "return.progression_provisional": () =>
@@ -475,6 +477,8 @@ export const WARNING_TEXT: Record<WarningCode, (params: Params) => string> = {
     "Die Zahl der Kinderfreibeträge der Bescheinigung passt nicht zu den erfassten Kindern.",
   "return.kindergeld_apply": () => "Für ein Kind ist noch kein Kindergeld erfasst: bitte bei der Familienkasse beantragen.",
   "return.child_over_18": () => "Ein Kind ist volljährig: es zählt nur bei Ausbildung oder Studium.",
+  "return.childcare_until_14": () =>
+    "Ein Kind wird in diesem Jahr 14: es zählen nur die Kinderbetreuungskosten bis zum 14. Geburtstag.",
   "return.donation_over_cap": () => "Die Spenden übersteigen die Höchstgrenze; der Rest zählt nicht in diesem Jahr.",
   "return.filing_required": () => "Für dieses Jahr besteht eine Pflicht zur Abgabe der Steuererklärung.",
   "return.questionnaire_open": () => "Es sind noch Fragen zum Steuerjahr offen.",

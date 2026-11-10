@@ -310,6 +310,7 @@ PHASE4B_CASES = {
         "days_250_capped",
         "overlap_warning",
         "with_work_room_error",
+        "with_work_room_nine_months_warning",
         "zero_days_no_line",
     },
     "work_room": {
@@ -379,6 +380,7 @@ PHASE4B_CASES = {
         "donation_within_cap",
         "donation_over_cap",
         "childcare_2027",
+        "childcare_turns_14",
         "estimate_from_payslips_status",
         "benefit_letter_pending",
         "church_tax_as_special_expense",
@@ -418,6 +420,12 @@ def test_phase4b_cases_cover_the_spec():
         ("payslip", "july_projection", ("expect", "projected", 0, "income_tax"), "9200.00"),
         ("commute", "mixed_car_and_train", ("expect", "total"), "2464.00"),
         ("home_office", "days_250_capped", ("expect", "amount"), "1500.00"),
+        (
+            "home_office",
+            "with_work_room_nine_months_warning",
+            ("expect", "warnings", 0, "params", "months"),
+            "3",
+        ),
         ("work_room", "nine_months", ("expect", "flat"), "1260.00"),
         ("equipment", "phone_2025_slice_2026", ("years", 5, "amount"), "19.97"),
         ("telecom", "reimbursed", ("expect",), "240.00"),
@@ -447,6 +455,13 @@ def test_phase4b_cases_cover_the_spec():
             "return.kindergeld_apply",
         ),
         ("return_estimate", "filing_optional", ("expect", "filing_required", "required"), True),
+        ("return_estimate", "childcare_turns_14", ("expect", "childcare"), "800.00"),
+        (
+            "return_estimate",
+            "childcare_turns_14",
+            ("expect", "warnings", 0, "code"),
+            "return.child_over_18",
+        ),
         (
             "return_estimate",
             "filing_required_factor",

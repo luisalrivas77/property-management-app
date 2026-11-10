@@ -305,6 +305,8 @@ def _home_office(
         )
     if full > rs.home_office_cap:
         warnings.append(("anlage_n.home_office_capped", {"days": str(days)}))
+    if room is not None and days > 0:  # 1-11 months: the day rate only outside them (D106)
+        warnings.append(("anlage_n.work_room_partial", {"months": str(room.months)}))
     return min(full, rs.home_office_cap), warnings
 
 
@@ -731,6 +733,14 @@ def _estimate(case: EstimateCase) -> dict:
         if child.born_on <= date(year - care.max_age, 1, 1):  # 14 before the year began
             raise Refused("return.childcare_age")
         childcare += min(cents(v.amount * care.share), care.cap_per_child)
+    # 14 during the year: the yearly cap stands (BMF 14 Mar 2012 Rn. 18), only costs up to the
+    # birthday count, which the app cannot check; one note per child (F6)
+    turning = {
+        v.child_id
+        for v in _values(household_rows, K.CHILDCARE_COST)
+        if child_rows[v.child_id].born_on.year == year - care.max_age
+    }
+    warnings += [("return.childcare_until_14", {}) for _ in sorted(turning)]
     services = _values(household_rows, K.HOUSEHOLD_SERVICES)
     if any(not v.paid_to_account for v in services):
         raise Refused("return.household_services_cash")

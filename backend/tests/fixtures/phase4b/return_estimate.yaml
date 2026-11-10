@@ -951,3 +951,40 @@ cases:
     missing: []
     warnings:
     - {code: return.filing_required}
+- id: childcare_turns_14
+  description: the child turns 14 on 1 Sep 2027 → the 2027 costs count (80 %, the yearly cap not prorated, BMF 14 Mar 2012 Rn. 18) with the note that only costs up to the birthday count
+  tax_year: 2027
+  owners: *owners_plain
+  owner_facts: *owners_2027
+  household:
+  - {id: 0000004b-0000-4000-8000-000000000302, kind: child, tax_year: 2026, value: {born_on: 2013-09-01}}
+  - {id: 0000004b-0000-4000-8000-000000000303, kind: childcare_cost, tax_year: 2027,
+     value: {child_id: 0000004b-0000-4000-8000-000000000302, amount: '1200.00', paid_to_account: true}}
+  questionnaire: *all_answered
+  expect:
+    status: 'certified'
+    total_income: '89540.00'
+    vorsorge_total: '17940.00'
+    church_tax_paid: '0.00'
+    donations: '0.00'
+    childcare: '960.00'
+    special_expenses: '18972.00'
+    zve: '70568'
+    assessed:
+      zve: '70568'
+      zve_after_allowances: '60812'
+      est_without: '11510'
+      est_with: '8662'
+      est: '11510'
+      credit_35a: '0.00'
+      est_final: '11510.00'
+      children: {months: 12, kindergeld: '3108.00', allowances: '9756.00', saving: '2848', favourable: 'kindergeld'}
+      soli: '0.00'
+      church: '0.00'
+      total: '11510.00'
+    withheld: {income_tax: '12400.00', soli: '0.00', church_tax: '0.00', total: '12400.00'}
+    result: '-890.00'
+    filing_required: {required: false, reasons: ['Antragsveranlagung'], deadline: 2028-07-31}
+    missing: []
+    warnings:
+    - {code: return.childcare_until_14}

@@ -498,12 +498,14 @@ class WarningCode(StrEnum):
     ANLAGE_N_PAYSLIP_NO_YTD = "anlage_n.payslip_no_ytd"
     ANLAGE_N_WORK_ROOM_RECORDS = "anlage_n.work_room_records"
     ANLAGE_N_WORK_ROOM_CENTRE = "anlage_n.work_room_centre"
+    ANLAGE_N_WORK_ROOM_PARTIAL = "anlage_n.work_room_partial"  # F5: a room for 1-11 months
     ANLAGE_N_FIRST_WORKPLACE_CHECK = "anlage_n.first_workplace_check"
     RETURN_PROGRESSION_PROVISIONAL = "return.progression_provisional"
     RETURN_BENEFIT_POSSIBLE_DOUBLE = "return.benefit_possible_double"
     RETURN_CHILDREN_MISMATCH = "return.children_mismatch"
     RETURN_KINDERGELD_APPLY = "return.kindergeld_apply"
     RETURN_CHILD_OVER_18 = "return.child_over_18"
+    RETURN_CHILDCARE_UNTIL_14 = "return.childcare_until_14"  # F6: the year the child turns 14
     RETURN_DONATION_OVER_CAP = "return.donation_over_cap"
     RETURN_FILING_REQUIRED = "return.filing_required"
     RETURN_QUESTIONNAIRE_OPEN = "return.questionnaire_open"
@@ -556,12 +558,14 @@ WARNING_SEVERITY: dict[WarningCode, Severity] = {
     W.ANLAGE_N_PAYSLIP_NO_YTD: "warning",
     W.ANLAGE_N_WORK_ROOM_RECORDS: "info",
     W.ANLAGE_N_WORK_ROOM_CENTRE: "info",
+    W.ANLAGE_N_WORK_ROOM_PARTIAL: "info",
     W.ANLAGE_N_FIRST_WORKPLACE_CHECK: "info",
     W.RETURN_PROGRESSION_PROVISIONAL: "info",
     W.RETURN_BENEFIT_POSSIBLE_DOUBLE: "warning",
     W.RETURN_CHILDREN_MISMATCH: "info",
     W.RETURN_KINDERGELD_APPLY: "info",
     W.RETURN_CHILD_OVER_18: "warning",
+    W.RETURN_CHILDCARE_UNTIL_14: "info",
     W.RETURN_DONATION_OVER_CAP: "info",
     W.RETURN_FILING_REQUIRED: "info",
     W.RETURN_QUESTIONNAIRE_OPEN: "info",
