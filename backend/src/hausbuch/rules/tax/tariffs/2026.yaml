@@ -78,3 +78,28 @@ social_insurance:
   bbg_pension: "101400.00"              # BBG RV, 8,450 a month
   bbg_health: "69750.00"                # BBG KV/PV, 5,812.50 a month
   health_deductible_share: "0.96"       # §10 Abs. 1 Nr. 3 S. 4 EStG (Krankengeld entitlement)
+
+# Phase 4b (docs/phases/phase-4b.md §4, D109, D112): the household figures of the whole-return
+# estimate. Additive: a tariff without them still loads, and the phase 4 tax effect reads none.
+children:
+  allowance_per_parent: "3414.00"       # §32 Abs. 6 S. 1 EStG, Kinderfreibetrag 2026 per parent
+  bea_per_parent: "1464.00"             # §32 Abs. 6 S. 1, Betreuungs-/Erziehungs-/Ausbildungsbedarf
+  kindergeld_monthly: "259.00"          # §66 Abs. 1 EStG, 2026
+household_services:                     # §35a EStG: 20 % of the labour cost, credit capped
+  rate: "0.20"
+  handwerker: "1200.00"                 # Abs. 3
+  haushaltsnah: "4000.00"               # Abs. 2
+  minijob: "510.00"                     # Abs. 1
+childcare:                              # §10 Abs. 1 Nr. 5 EStG
+  share: "0.80"
+  cap_per_child: "4800.00"
+  max_age: 14                           # before the 14th birthday
+donation_cap_share: "0.20"              # §10b Abs. 1 S. 1 Nr. 1 EStG, of the Gesamtbetrag der Einkünfte
+filing_threshold_progression: "410.00"  # §46 Abs. 2 Nr. 1 EStG
+extraordinary_burden_bands:             # §33 Abs. 3 EStG, zumutbare Belastung (reminder only)
+  - {up_to: "15340.00", rate_single: "0.05", rate_joint: "0.04",
+     rate_one_two_children: "0.02", rate_three_plus: "0.01"}
+  - {up_to: "51130.00", rate_single: "0.06", rate_joint: "0.05",
+     rate_one_two_children: "0.03", rate_three_plus: "0.01"}
+  - {up_to: null, rate_single: "0.07", rate_joint: "0.06",
+     rate_one_two_children: "0.04", rate_three_plus: "0.02"}

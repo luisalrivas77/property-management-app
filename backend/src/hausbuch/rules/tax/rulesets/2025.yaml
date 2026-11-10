@@ -27,6 +27,9 @@ speculation_years: 10               # §23 Abs. 1 S. 1 Nr. 1 EStG
 speculation_freigrenze: "1000"      # §23 Abs. 3 S. 5 EStG, per spouse: 1,000 from VZ 2024
                                     # (Wachstumschancengesetz), 600 before (phase 4 D93)
 
+travel_rate_per_km: "0.30"          # §9 Abs. 1 S. 3 Nr. 4a S. 2 EStG with §5 Abs. 2 BRKG:
+                                    # trips to a property, per km driven (phase 4b D111)
+
 form:
   form_year: 2025
   status: published

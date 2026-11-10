@@ -63,6 +63,42 @@ def test_2026_soli_church_and_deduction_figures_are_pinned():
     assert si.health_deductible_share == D("0.96")
 
 
+def test_2026_household_figures_are_pinned():
+    """Phase 4b (§4, D109, D112): children, §35a, childcare, donations, the filing threshold
+    and the §33 bands."""
+    t = tariff(2026)
+    c = t.children
+    assert (c.allowance_per_parent, c.bea_per_parent, c.kindergeld_monthly) == (
+        D("3414"),
+        D("1464"),
+        D("259"),
+    )
+    h = t.household_services
+    assert (h.rate, h.handwerker, h.haushaltsnah, h.minijob) == (
+        D("0.20"),
+        D("1200"),
+        D("4000"),
+        D("510"),
+    )
+    cc = t.childcare
+    assert (cc.share, cc.cap_per_child, cc.max_age) == (D("0.80"), D("4800"), 14)
+    assert t.donation_cap_share == D("0.20")
+    assert t.filing_threshold_progression == D("410")
+    bands = [
+        (b.up_to, b.rate_single, b.rate_joint, b.rate_one_two_children, b.rate_three_plus)
+        for b in t.extraordinary_burden_bands
+    ]
+    assert bands == [
+        (D("15340"), D("0.05"), D("0.04"), D("0.02"), D("0.01")),
+        (D("51130"), D("0.06"), D("0.05"), D("0.03"), D("0.01")),
+        (None, D("0.07"), D("0.06"), D("0.04"), D("0.02")),
+    ]
+
+
+def test_the_anlage_v_rule_sets_carry_the_travel_rate():
+    assert rule_set(2025).travel_rate_per_km == rule_set(2026).travel_rate_per_km == D("0.30")
+
+
 def _zone_tax(zone: TariffZone, x: int) -> Decimal:
     if zone.kind == "zero":
         return D(0)
@@ -150,6 +186,11 @@ def _zones(**edit) -> list[dict]:
         {"church_tax_rates": {"BY": "0.08"}},  # not every Bundesland
         {"reused_from": 2026},  # reused from itself
         {"soli_free_limit_single": "40700.00"},  # the joint limit is the larger
+        {
+            "extraordinary_burden_bands": tariff(2026).model_dump(mode="json")[
+                "extraordinary_burden_bands"
+            ][::-1]
+        },  # bands not increasing, the open one not last
     ],
 )
 def test_an_invalid_tariff_is_refused(changes):

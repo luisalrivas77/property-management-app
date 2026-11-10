@@ -11,6 +11,12 @@ Phase 4 (docs/phases/phase-4.md D81, §4): the income tax tariff of a year, from
 earlier one, marked `reused_from`, so a projected year always has a tariff; only a year before
 every file raises `tariff.no_file`. `rule_set_or_latest` does the same fallback for the rule set
 and is for the projection only (the Steuern screen keeps raising `tax.no_rule_set`).
+
+Phase 4b (docs/phases/phase-4b.md §4, D99, D110): the Anlage N rule set of a year, from
+`anlage_n/<year>.yaml`, loaded like the rule set (a year without a file raises
+`tax.no_rule_set`); and the yearly questions, from `questionnaire/<year>.yaml`, with the
+tariff's latest-year fallback marked `reused_from` (the screen then shows
+`questionnaire_provisional`).
 """
 
 from functools import cache
@@ -19,11 +25,14 @@ from importlib.resources import files
 import yaml
 
 from hausbuch.rules.errors import PROJECTION_NO_RULE_SET, TARIFF_NO_FILE, TAX_NO_RULE_SET, RuleError
+from hausbuch.schemas.employment import AnlageNRuleSet, Questionnaire
 from hausbuch.schemas.performance import Tariff
 from hausbuch.schemas.tax import RuleSet
 
 _RULESETS = files("hausbuch.rules.tax") / "rulesets"
 _TARIFFS = files("hausbuch.rules.tax") / "tariffs"
+_ANLAGE_N = files("hausbuch.rules.tax") / "anlage_n"
+_QUESTIONNAIRES = files("hausbuch.rules.tax") / "questionnaire"
 
 
 def _years(directory) -> tuple[int, ...]:
@@ -89,3 +98,46 @@ def _tariff_file(year: int) -> Tariff:
     if loaded.tax_year != year or loaded.reused_from is not None:
         raise ValueError(f"tariffs/{year}.yaml declares tax_year {loaded.tax_year}")
     return loaded
+
+
+def anlage_n_years() -> tuple[int, ...]:
+    """The tax years that have an Anlage N rule set file, ascending."""
+    return _years(_ANLAGE_N)
+
+
+def questionnaire_years() -> tuple[int, ...]:
+    """The tax years that have a questionnaire file, ascending."""
+    return _years(_QUESTIONNAIRES)
+
+
+@cache
+def anlage_n(tax_year: int) -> AnlageNRuleSet:
+    """The validated Anlage N rule set for `tax_year` (D99). A year without a file raises
+    RuleError tax.no_rule_set, as the Anlage V rule set does. Cached."""
+    resource = _ANLAGE_N / f"{tax_year}.yaml"
+    if not resource.is_file():
+        raise RuleError(TAX_NO_RULE_SET, f"no Anlage N rule set for tax year {tax_year}")
+    loaded = AnlageNRuleSet.model_validate(yaml.safe_load(resource.read_text(encoding="utf-8")))
+    if loaded.tax_year != tax_year:
+        raise ValueError(f"anlage_n/{tax_year}.yaml declares tax_year {loaded.tax_year}")
+    return loaded
+
+
+@cache
+def questionnaire(tax_year: int) -> Questionnaire:
+    """The year's questions (D110); for a year without a file, the latest earlier file with
+    tax_year set to the year asked for and reused_from to the file's year. Before every file:
+    RuleError tax.no_rule_set. Cached."""
+    earlier = [y for y in questionnaire_years() if y <= tax_year]
+    if not earlier:
+        raise RuleError(TAX_NO_RULE_SET, f"no questionnaire for {tax_year} or any earlier year")
+    year = earlier[-1]
+    data = yaml.safe_load((_QUESTIONNAIRES / f"{year}.yaml").read_text(encoding="utf-8"))
+    own = Questionnaire.model_validate(data)
+    if own.tax_year != year or own.reused_from is not None:
+        raise ValueError(f"questionnaire/{year}.yaml declares tax_year {own.tax_year}")
+    if year == tax_year:
+        return own
+    return Questionnaire.model_validate(
+        own.model_dump() | {"tax_year": tax_year, "reused_from": year}
+    )
