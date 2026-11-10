@@ -310,7 +310,7 @@ def test_an_answer_is_written_with_its_rows_or_not_at_all(world):
     _create(world, **_home_office(other.id))
     with pytest.raises(RuleViolationError) as info:
         _answer(world, answer=room, return_inputs=[_work_room(other.id)])
-    assert info.value.codes == [RETURN_INPUT_WORK_ROOM_CONFLICT]
+    assert list(info.value.codes) == [RETURN_INPUT_WORK_ROOM_CONFLICT]
     assert [a.question_key for a in world.query(list_answers, tax_year=2026)] == [
         "owner.home_office_days"
     ]
