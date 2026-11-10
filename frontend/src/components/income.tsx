@@ -8,6 +8,8 @@
 //   change is a new row naming the current one (supersedes_id), "Entfernen" is a withdrawal
 //   (withdrawn = true, repeating the current value). The server refuses a write against a row
 //   that is no longer current (income_input.not_current), e.g. after a change in another tab.
+// - Phase 4b (phase-4b.md §10): the gross pay's source chip and the Kinder and Haushalt blocks
+//   with the links to the Anlage N and the Jahresfragen (components/householdReturn.tsx).
 // - TaxEffectLine (Steuern page): the "Steuerwirkung" of the draft's result, from
 //   GET /api/tax-rate, with its source (Schätzung / Bescheid / manuell).
 //
@@ -23,6 +25,7 @@ import type { IncomeInput, IncomeInputCreate, IncomeInputKind, Owner, TaxRateRes
 import { DocumentPicker } from "./documents";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
 import { formatDecimal, formatMoney, formatPercent, todayIso } from "./format";
+import { GrossSourceChip, HouseholdReturnBlocks } from "./householdReturn";
 import { decimalInput, percentInput, toMoneyString, toRate, toSignedMoneyString, type Parsed } from "./input";
 import { Loading } from "./ui";
 import { useLoad } from "./useLoad";
@@ -211,6 +214,7 @@ export function IncomeSection({ owners }: { owners: Owner[] }) {
                             current={current(list, "expected_gross_pay", owner.id)}
                             onChanged={changed}
                           />
+                          <GrossSourceChip estimate={estimate} year={year} />
                         </td>
                         <td>
                           <InputCell
@@ -220,7 +224,9 @@ export function IncomeSection({ owners }: { owners: Owner[] }) {
                             current={current(list, "deductions_override", owner.id)}
                             defaultText={
                               estimate
-                                ? `geschätzt: ${formatMoney(estimate.deductions)}`
+                                ? estimate.deductions_source === "employment"
+                                  ? `aus Anlage N und Vorsorge: ${formatMoney(estimate.deductions)}`
+                                  : `geschätzt: ${formatMoney(estimate.deductions)}`
                                 : "geschätzt, sobald ein Bruttogehalt eingetragen ist"
                             }
                             onChanged={changed}
@@ -264,6 +270,7 @@ export function IncomeSection({ owners }: { owners: Owner[] }) {
           </>
         )}
       </Loading>
+      <HouseholdReturnBlocks year={year} />
     </div>
   );
 }

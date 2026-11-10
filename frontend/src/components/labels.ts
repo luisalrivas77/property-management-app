@@ -35,6 +35,10 @@ import { formatDate, formatMoney } from "./format";
 type AllocationCategory = components["schemas"]["AllocationCategory"];
 type AllocationMethod = components["schemas"]["AllocationMethod"];
 type InboxItemKind = components["schemas"]["InboxItemKind"];
+type ReturnInputKind = components["schemas"]["ReturnInputKind"];
+type GrossSource = NonNullable<components["schemas"]["OwnerZve"]["gross_source"]>;
+type HouseholdServiceClass = components["schemas"]["HouseholdServicesFact"]["service_class"];
+type HouseholdServiceSource = components["schemas"]["HouseholdServicesFact"]["source"];
 
 type Confidence = ExtractedValue["confidence"];
 type Check = NonNullable<ExtractedValue["checks"]>[number];
@@ -379,6 +383,50 @@ export const INBOX_ITEM_KIND: Record<InboxItemKind, string> = {
   allocation_proposed: "Vorschlag prüfen",
   unmatched: "Nicht zugeordnet",
   questionnaire_open: "Jahresfragen",
+};
+
+// --- The income tax return's inputs (phase-4b.md §7, §10) --------------------------------
+
+/** What a return input row is (return_input.kind, D97). */
+export const RETURN_INPUT_KIND: Record<ReturnInputKind, string> = {
+  wage_certificate: "Lohnsteuerbescheinigung",
+  payslip: "Gehaltsabrechnung",
+  commute: "Weg zur Arbeit",
+  home_office: "Homeoffice-Tage",
+  work_room: "Arbeitszimmer",
+  work_equipment: "Arbeitsmittel",
+  telecom: "Telefon und Internet",
+  professional_association: "Gewerkschaft oder Berufsverband",
+  training: "Fortbildung",
+  other_expense: "Sonstige Werbungskosten",
+  other_insurance: "Weitere Versicherungen",
+  replacement_income: "Lohnersatzleistung",
+  vorsorge_override: "Vorsorge von Hand",
+  child: "Kind",
+  childcare_cost: "Kinderbetreuung",
+  household_services: "Handwerker und Dienstleistungen im Haushalt (§35a)",
+  special_expense: "Spende",
+};
+
+/** Where an owner's gross pay comes from (OwnerZve.gross_source, D98); the screen adds the
+ * year or the payslip month. */
+export const GROSS_SOURCE: Record<GrossSource, string> = {
+  certificate: "laut Lohnsteuerbescheinigung",
+  payslip: "Hochrechnung aus Gehaltsabrechnung",
+  expected: "Schätzung",
+};
+
+/** A §35a cost's class (HouseholdServicesFact.service_class, D112). */
+export const HOUSEHOLD_SERVICE_CLASS: Record<HouseholdServiceClass, string> = {
+  handwerker: "Handwerkerleistung",
+  haushaltsnah: "Haushaltsnahe Dienstleistung",
+  minijob: "Minijob im Haushalt",
+};
+
+/** Where a §35a labour cost was read from (HouseholdServicesFact.source). */
+export const HOUSEHOLD_SERVICE_SOURCE: Record<HouseholdServiceSource, string> = {
+  own_invoice: "eigene Rechnung",
+  nebenkostenabrechnung: "Nebenkostenabrechnung der eigenen Wohnung",
 };
 
 // --- The Anlage V draft (phase-3.md §11) ----------------------------------------------
