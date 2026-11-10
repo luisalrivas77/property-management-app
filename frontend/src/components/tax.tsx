@@ -223,6 +223,13 @@ export function AnlageVScreen({
         </nav>
       )}
       <Loading state={draft}>{(data) => <DraftView draft={data} propertyId={property.id} onChanged={draft.reload} />}</Loading>
+      {/* Outside the draft (PR #139 review): a reminder links here for a year whose rule set is
+          not published yet (2027 until the data PR, D124), and the schedule row is the only
+          place its amount is shown (D122). */}
+      <section className="card stack" aria-labelledby="tax-grundsteuer-title" id="tax-grundsteuer">
+        <h2 id="tax-grundsteuer-title">Grundsteuer</h2>
+        <GrundsteuerSection propertyId={property.id} defaultYear={year} />
+      </section>
       <p className="muted tax-footer">{FOOTER}</p>
     </>
   );
@@ -290,10 +297,6 @@ function DraftView({ draft, propertyId, onChanged }: { draft: AnlageVDraft; prop
                 purchaseYear={Number(draft.header.transfer_date.slice(0, 4)) || draft.tax_year}
                 onChanged={onChanged}
               />
-            </section>
-            <section className="card stack" aria-labelledby="tax-grundsteuer-title" id="tax-grundsteuer">
-              <h2 id="tax-grundsteuer-title">Grundsteuer</h2>
-              <GrundsteuerSection propertyId={propertyId} defaultYear={draft.tax_year} />
             </section>
             <NotDeductible draft={draft} propertyId={propertyId} />
           </div>
