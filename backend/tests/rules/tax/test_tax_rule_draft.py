@@ -12,7 +12,7 @@ from hausbuch.rules.tax.draft import draft
 from hausbuch.rules.tax.field_sheet import field_sheet
 from hausbuch.rules.tax.registry import rule_set
 from hausbuch.schemas.checklist import RequirementCode
-from hausbuch.schemas.tax import AnlageVDraft, TaxInputFact
+from hausbuch.schemas.tax import AnlageVDraft, PrivateCostValue, TaxInputFact
 
 DRAFT = load("anlage_v_2026")
 assert isinstance(DRAFT, DraftFixture)
@@ -156,3 +156,47 @@ def test_a_kitchen_has_its_own_line_and_reduces_the_building_afa():
     sheet = {r.key: r for r in field_sheet(got, rule_set(2026))}
     assert (sheet["wk.afa_movable"].zeile, sheet["wk.afa_movable"].kennzahl) == (45, "60")
     assert AnlageVDraft.model_validate_json(got.model_dump_json()) == got
+
+
+@pytest.mark.rule
+def test_a_private_financing_cost_joins_the_financing_line_at_its_share():
+    """D134 on case_a: a privately paid financing cost of 300.00 at a share of 1/2 adds
+    150.00 to wk.financing_costs (Z49–51, Kz 34) beside the ledger's 480.00 loan_fees; a
+    postage cost of the same kind of row still goes to wk.other. A financing cost needs an
+    amount, never trips."""
+    case = next(c for c in DRAFT.cases if c.id == "case_a")
+
+    def private(cost_class: str, amount: str, share=None) -> TaxInputFact:
+        value = {"cost_class": cost_class, "label": "Beispiel", "amount": amount}
+        if share is not None:
+            value["share"] = share
+        return TaxInputFact.model_validate(
+            {
+                "id": uuid4(),
+                "property_id": case.facts.property.id,
+                "kind": "private_cost",
+                "tax_year": 2026,
+                "value": value,
+            }
+        )
+
+    financing = private("financing", "300.00", {"numerator": 1, "denominator": 2})
+    postage = private("postage", "20.00")
+    facts = case.facts.model_copy(
+        update={"tax_inputs": [*case.facts.tax_inputs, financing, postage]}
+    )
+    got = draft(facts, 2026, rule_set(2026))
+    lines = {line.key: line for line in got.lines}
+    f = lines["wk.financing_costs"]
+    assert (f.amount, f.amount_rounded) == (Decimal("630.00"), 630)
+    assert ("tax_input", financing.id) in cmp.refs(f.sources)
+    assert ("tax_input", postage.id) not in cmp.refs(f.sources)
+    other = lines["wk.other"]
+    assert other.amount == Decimal("20.00")
+    assert cmp.refs(other.sources) == {("tax_input", postage.id)}
+    sheet = {r.key: r for r in field_sheet(got, rule_set(2026))}
+    assert (sheet["wk.financing_costs"].zeile, sheet["wk.financing_costs"].kennzahl) == (51, "34")
+    with pytest.raises(ValueError, match="an amount and no trips"):
+        PrivateCostValue.model_validate(
+            {"cost_class": "financing", "label": "Notar", "trips": 2, "km_round_trip": 10}
+        )

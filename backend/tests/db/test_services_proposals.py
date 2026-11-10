@@ -35,13 +35,14 @@ from hausbuch.schemas.enums import (
     DocumentType,
     ExtractionKind,
     LinkTarget,
+    PriceSplitSource,
     PropertyKind,
     ProposalStatus,
     RentModel,
     TenancyRole,
 )
 from hausbuch.schemas.events import EventType
-from hausbuch.schemas.property import Address, PropertyCreate, UnitCreate
+from hausbuch.schemas.property import Address, PriceSplitCreate, PropertyCreate, UnitCreate
 from hausbuch.schemas.proposal import ProposalApplyBody, ProposalApplyRecord
 from hausbuch.schemas.tenancy import TenancyCreate, TenancyParty, TenantCreate
 from hausbuch.services import proposals
@@ -52,9 +53,12 @@ from hausbuch.services.events import list_events
 from hausbuch.services.loans import list_loans
 from hausbuch.services.properties import (
     create_property,
+    get_property,
     list_acquisition_costs,
     list_price_splits,
     list_properties,
+    record_price_split,
+    select_price_split,
 )
 from hausbuch.services.tenancies import (
     create_tenancy,
@@ -425,6 +429,8 @@ def test_apply_creates_through_the_services_in_one_command(
     assert applied["unit"].entity_id == unit.id and unit.label == "WE 3"
     [split] = read(ws, list_price_splits, prop.id)
     assert split.building_share == Decimal("0.8") and split.evidence_document_id == doc.id
+    # D133: the property had no split chosen, so the contract's becomes the AfA basis.
+    assert read(ws, get_property, prop.id).selected_price_split_id == split.id
     typed = read(ws, get_document, doc.id)
     assert typed.typing.subtype is DocumentSubtype.PURCHASE_CONTRACT
     assert [(lk.target_type, lk.target_id) for lk in read(ws, list_links, doc.id)] == [
@@ -436,6 +442,8 @@ def test_apply_creates_through_the_services_in_one_command(
     events = read(ws, list_events)
     apply_events = [e for e in events if e.correlation_id == events[-1].correlation_id]
     assert EventType.PROPERTY_CREATED in _types(apply_events)
+    selected = [e for e in apply_events if e.type == EventType.PROPERTY_PRICE_SPLIT_SELECTED]
+    assert [e.payload for e in selected] == [{"split_id": str(split.id)}]
     assert _types(apply_events)[-1] == EventType.PROPOSAL_APPLIED
     payload = apply_events[-1].payload
     by_key = {r["key"]: r for r in payload["records"]}
@@ -493,6 +501,35 @@ def test_apply_skips_records_and_records_the_skip(
     assert skipped == {"price_split"}
     [prop] = read(ws, list_properties)
     assert read(ws, list_price_splits, prop.id) == []
+
+
+def test_a_contract_split_never_replaces_the_split_already_chosen(
+    run, read, job, fresh_workspaces, blob_store, enqueued
+):
+    """D133: the contract's split is recorded beside the chosen one, which stays the basis."""
+    ws, _ = fresh_workspaces
+    prop = run(ws, create_property, FLAT)
+    bmf = run(
+        ws,
+        record_price_split,
+        PriceSplitCreate(
+            property_id=prop.id,
+            source=PriceSplitSource.BMF_TOOL,
+            building_share=Decimal("0.75"),
+            inputs={"bodenrichtwert": "1450.00"},
+        ),
+    )
+    run(ws, select_price_split, prop.id, bmf.id)
+    doc, ready, _ = _read_ready(
+        run, job, ws, blob_store, enqueued, PURCHASE, PURCHASE_VALUES, b"%PDF chosen"
+    )
+    run(ws, proposals.apply_proposal, ready.id, _accept_all(ready), iban_key=TEST_IBAN_KEY)
+
+    [first, contract] = read(ws, list_price_splits, prop.id)
+    assert first == bmf and contract.evidence_document_id == doc.id
+    assert read(ws, get_property, prop.id).selected_price_split_id == bmf.id
+    events = read(ws, list_events, entity_id=prop.id)
+    assert _types(events).count(EventType.PROPERTY_PRICE_SPLIT_SELECTED) == 1
 
 
 def test_a_cost_invoice_creates_the_cost_with_this_document_as_beleg(

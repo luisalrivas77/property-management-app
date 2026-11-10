@@ -124,6 +124,17 @@ def test_acquisition_costs_and_price_splits(client_a):
     )
     assert split["building_share"] == "0.780000"
     assert ok(client_a.get(f"/api/properties/{prop['id']}/price-splits")) == [split]
+    # D133: the first split becomes the AfA basis; a second one does not replace it.
+    path = f"/api/properties/{prop['id']}"
+    assert ok(client_a.get(path))["selected_price_split_id"] == split["id"]
+    second = create(
+        client_a,
+        "/api/price-splits",
+        {"property_id": prop["id"], "source": "purchase_contract", "building_share": "0.7"},
+    )
+    assert ok(client_a.get(path))["selected_price_split_id"] == split["id"]
+    selected = ok(client_a.post(f"/api/properties/{prop['id']}/price-splits/{second['id']}/select"))
+    assert selected["selected_price_split_id"] == second["id"]
     selected = ok(client_a.post(f"/api/properties/{prop['id']}/price-splits/{split['id']}/select"))
     assert selected["selected_price_split_id"] == split["id"]
 

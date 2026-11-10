@@ -794,8 +794,9 @@ class _Apply:
             "source": PriceSplitSource.PURCHASE_CONTRACT.value,
             "evidence_document_id": str(self.document_id),
         } | values
+        # D133: a split read from the contract becomes the AfA basis when none is chosen yet.
         return properties.record_price_split(
-            self.ctx, _validate(record.key, PriceSplitCreate, data)
+            self.ctx, _validate(record.key, PriceSplitCreate, data), select_if_none=True
         ).id
 
     def _cost(self, record: ProposalRecord, values: dict[str, Any]) -> UUID:

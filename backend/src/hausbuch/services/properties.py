@@ -437,9 +437,21 @@ def list_acquisition_costs(conn: Connection, property_id: UUID) -> list[Acquisit
     return [_to_cost(r) for r in rows]
 
 
-def record_price_split(ctx: CommandContext, data: PriceSplitCreate) -> PriceSplit:
-    """Append a building/land split candidate. Candidates are never edited (append-only)."""
-    require_row(ctx.conn, property_table, EntityType.PROPERTY, data.property_id)
+def record_price_split(
+    ctx: CommandContext, data: PriceSplitCreate, *, select_if_none: bool = False
+) -> PriceSplit:
+    """Append a building/land split candidate. Candidates are never edited (append-only).
+    With `select_if_none` (pre-fill apply and the manual add, phase 2 D133) the split also
+    becomes the AfA basis when the property has none selected yet, with the same event as the
+    manual choice; a split the user already chose is never replaced."""
+    if select_if_none:
+        # Lock before the insert: the insert's foreign key takes a share lock on the row, and
+        # two writers upgrading it afterwards would deadlock.
+        current = _to_property(_lock(ctx.conn, data.property_id))
+        none_selected = current.selected_price_split_id is None
+    else:
+        require_row(ctx.conn, property_table, EntityType.PROPERTY, data.property_id)
+        none_selected = False
     require_document(ctx.conn, data.evidence_document_id)
     values = data.model_dump()
     if values["inputs"] is None:
@@ -462,6 +474,8 @@ def record_price_split(ctx: CommandContext, data: PriceSplitCreate) -> PriceSpli
         ),
         property_id=split.property_id,
     )
+    if none_selected:
+        select_price_split(ctx, split.property_id, split.id)
     return split
 
 

@@ -185,7 +185,9 @@ TRAVEL_FREQUENCY_TRIPS = 50  # phase 4b D111: above this, the flat may be a Tät
 def _private_costs(
     facts: DraftFacts, tax_year: int, rule_set: RuleSet, book: LineBook
 ) -> list[DraftWarning]:
-    """Phase 4b §5.12, D111: rental costs paid from a private account, summed into wk.other.
+    """Phase 4b §5.12, D111: rental costs paid from a private account, summed into wk.other,
+    except the class financing (D134), which goes to wk.financing_costs beside the ledger's
+    loan_fees (a privately paid Grundschuld notary bill is a Geldbeschaffungskosten).
     travel = trips × km_round_trip × travel_rate_per_km (§9 Abs. 1 S. 3 Nr. 4a S. 2 EStG with
     §5 Abs. 2 BRKG); every other class amount × share, to the cent. More than 50 trips in the
     year adds tax.travel_frequency (info): a near-daily presence can make the flat a
@@ -203,7 +205,8 @@ def _private_costs(
         else:
             amount = cents(v.amount * v.share.numerator / v.share.denominator)
         if amount:
-            book.add("wk.other", amount, input_sources(row))
+            key = "wk.financing_costs" if v.cost_class == "financing" else "wk.other"
+            book.add(key, amount, input_sources(row))
     if trips > TRAVEL_FREQUENCY_TRIPS:
         warnings.append(
             warning(

@@ -294,7 +294,8 @@ questions:
     question_de: "Gab es Kosten der Vermietung, die privat bezahlt wurden, etwa Porto, Anzeigen oder Beiträge?"
     why_de: >-
       Kosten, die nicht vom Mietkonto bezahlt wurden, sieht die App sonst nicht. Sie zählen in
-      der Anlage V unter den sonstigen Kosten.
+      der Anlage V unter den sonstigen Kosten; Kosten der Finanzierung, etwa Notar und
+      Grundbuch für die Grundschuld, unter den Geldbeschaffungskosten.
     answer_type: yes_no
     targets:
       - {kind: tax_input, input_kind: private_cost}

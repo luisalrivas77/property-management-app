@@ -1,7 +1,8 @@
 """Schuldzinsen, Geldbeschaffungskosten and the Zinsbescheinigung (phase 3 §5.5, D63, D66).
 
 wk.interest is the ledger's loan_interest of the tax year (after §5.1), wk.financing_costs its
-loan_fees; both count before the handover too (vorab entstandene Werbungskosten). Tilgung is
+loan_fees (plus a privately paid financing cost, added by draft.py, phase 4b D134); both count
+before the handover too (vorab entstandene Werbungskosten). Tilgung is
 tracked, never deducted. A confirmed Zinsbescheinigung is compared with the booked interest of
 its loan and year, never summed: the ledger stays the source of the figure.
 """

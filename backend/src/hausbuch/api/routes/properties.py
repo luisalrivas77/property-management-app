@@ -154,7 +154,7 @@ def price_splits_list(property_id: UUID, cmd: Cmd) -> list[PriceSplit]:
 
 @router.post("/price-splits", status_code=201)
 def price_split_record(body: PriceSplitCreate, cmd: Cmd) -> PriceSplit:
-    return cmd.run(record_price_split, body)
+    return cmd.run(record_price_split, body, select_if_none=True)  # D133
 
 
 @router.post("/properties/{property_id}/price-splits/{split_id}/select")
