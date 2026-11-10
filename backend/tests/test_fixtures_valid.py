@@ -331,6 +331,31 @@ PHASE4B_CASES = {
         "other_without_life_error",
     },
     "telecom": {"flat_under_cap", "capped", "reimbursed", "six_months"},
+    "anlage_n": {
+        "owner_a_remote_work_room",
+        "owner_b_commute_day_rate",
+        "pauschbetrag_wins",
+        "union_beside_allowance",
+        "allowance_capped_at_pay",
+        "estimate_from_payslips",
+        "two_certificates_one_year",
+        "church_mismatch_warning",
+        "tax_class_6_warning",
+        "work_room_and_day_rate_error",
+        "first_workplace_check_warning",
+        "telecom_added",
+    },
+    "vorsorge": {
+        "owner_a_60k",
+        "owner_b_32k",
+        "low_pay_15k_av_counts",
+        "low_pay_other_insurance",
+        "other_insurance_no_effect",
+        "above_bbg_120k",
+        "from_payslip_projection",
+        "override_private",
+        "no_krankengeld_no_cut",
+    },
 }
 
 
@@ -350,6 +375,10 @@ def test_phase4b_cases_cover_the_spec():
         ("work_room", "nine_months", ("expect", "flat"), "1260.00"),
         ("equipment", "phone_2025_slice_2026", ("years", 5, "amount"), "19.97"),
         ("telecom", "reimbursed", ("expect",), "240.00"),
+        ("anlage_n", "owner_a_remote_work_room", ("expect", "result"), "57224.11"),
+        ("anlage_n", "owner_b_commute_day_rate", ("expect", "lines", 3, "amount"), "0.00"),
+        ("anlage_n", "union_beside_allowance", ("expect", "wk_applied"), "1230.00"),
+        ("vorsorge", "low_pay_15k_av_counts", ("expect", "other"), "0.00"),
     ],
 )
 def test_phase4b_fixtures_check_their_arithmetic(name, case_id, path, slip):

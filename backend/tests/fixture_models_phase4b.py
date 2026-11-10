@@ -1545,6 +1545,8 @@ MODELS: dict[str, type[Schema]] = {
     "work_room": WorkRoomFixture,
     "equipment": EquipmentFixture,
     "telecom": TelecomFixture,
+    "anlage_n": AnlageNFixture,
+    "vorsorge": VorsorgeFixture,
 }
 
 

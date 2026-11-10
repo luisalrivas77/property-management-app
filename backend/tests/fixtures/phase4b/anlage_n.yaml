@@ -1,0 +1,407 @@
+# anlage_n.yaml: rules/tax/anlage_n/draft.py draft_n with other.py (docs/phases/phase-4b.md
+# §5.6, D100).
+
+# Synthetic numbers only (the repo is public). The household of §5.6 is invented: owner A
+# works fully remote from a work room and bought a phone in 2025; owner B commutes by car,
+# works from home on some days and was on short-time work for part of the year; both are
+# statutory-insured employees outside a church at the fictional employer "Muster GmbH".
+# Loaded through tests/fixture_models_phase4b.py, which checks every value against the §7
+# schemas and recomputes each expectation on load. return_estimate.yaml and vorsorge.yaml
+# take the owners' rows from here by case id.
+#
+# wk_itemised = commute + Tagespauschale + work room + equipment + telecom + dues + training +
+# other; wk_applied = union dues + max(min(1,230, gross), wk_itemised − union dues) (§9a S. 3
+# from 2026); result = gross − wk_applied. `lines` are the money lines by key (module
+# docstring of fixture_models_phase4b.py); `components` the pieces of wk_itemised.
+
+ids:
+  owner_a: 0000000a-0000-4000-8000-000000000001
+  owner_b: 0000000a-0000-4000-8000-000000000002
+
+bases:
+  cert_a: &cert_a
+    id: 0000004b-0000-4000-8000-0000000000a1
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    kind: wage_certificate
+    tax_year: 2026
+    document_id: 0000004b-d0c0-4000-8000-0000000000a1
+    value:
+      period_from: 2026-01-01
+      period_to: 2026-12-31
+      employer: Muster GmbH
+      tax_class: 4
+      child_allowance_count: '1'
+      gross: '60000.00'
+      income_tax: '9200.00'
+      employer_commute_tax_free: '600.00'
+      pension_employer: '5580.00'
+      pension_employee: '5580.00'
+      health_employee: '5250.00'
+      care_employee: '1080.00'
+      unemployment_employee: '780.00'
+  room_a: &room_a
+    id: 0000004b-0000-4000-8000-0000000000a2
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    kind: work_room
+    tax_year: 2026
+    value: {months: 12, room_m2: '12', home_m2: '80', rent_year: '14400.00',
+            running_costs_year: '2400.00'}
+  phone_a: &phone_a
+    id: 0000004b-0000-4000-8000-0000000000a3
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    kind: work_equipment
+    tax_year: 2025
+    value: {label: Smartphone, item_class: phone, gross: '1199.00', bought_on: 2025-03-15,
+            professional_share: {numerator: 1, denominator: 2}}
+  subscription_a: &subscription_a
+    id: 0000004b-0000-4000-8000-0000000000a4
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    kind: work_equipment
+    tax_year: 2026
+    value: {label: KI-Abo, item_class: subscription, gross: '240.00', bought_on: 2026-01-15,
+            professional_share: {numerator: 1, denominator: 2}}
+  account_fee_a: &account_fee_a
+    id: 0000004b-0000-4000-8000-0000000000a5
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    kind: other_expense
+    tax_year: 2026
+    value: {expense_class: account_fee, label: Kontoführung}
+  elterngeld_a: &elterngeld_a
+    id: 0000004b-0000-4000-8000-0000000000a6
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    kind: replacement_income
+    tax_year: 2026
+    value: {benefit: elterngeld, amount: '1800.00'}
+  cert_b: &cert_b
+    id: 0000004b-0000-4000-8000-0000000000b1
+    owner_id: 0000000a-0000-4000-8000-000000000002
+    kind: wage_certificate
+    tax_year: 2026
+    document_id: 0000004b-d0c0-4000-8000-0000000000b1
+    value:
+      period_from: 2026-01-01
+      period_to: 2026-12-31
+      employer: Muster GmbH
+      tax_class: 4
+      child_allowance_count: '1'
+      gross: '32000.00'
+      income_tax: '3200.00'
+      replacement_benefits: '4000.00'
+      short_time_allowance: '4000.00'
+      employer_commute_tax_free: '400.00'
+      pension_employer: '2976.00'
+      pension_employee: '2976.00'
+      health_employee: '2800.00'
+      care_employee: '576.00'
+      unemployment_employee: '416.00'
+  commute_b: &commute_b
+    id: 0000004b-0000-4000-8000-0000000000b2
+    owner_id: 0000000a-0000-4000-8000-000000000002
+    kind: commute
+    tax_year: 2026
+    value: {kind: first_workplace, workplace_label: Büro, period_from: 2026-01-01,
+            period_to: 2026-12-31, days_per_week: 2, days: 100, km: 25, km_car: 25}
+  office_b: &office_b
+    id: 0000004b-0000-4000-8000-0000000000b3
+    owner_id: 0000000a-0000-4000-8000-000000000002
+    kind: home_office
+    tax_year: 2026
+    value: {days_other_workplace: 90}
+  krankengeld_b: &krankengeld_b
+    id: 0000004b-0000-4000-8000-0000000000b5
+    owner_id: 0000000a-0000-4000-8000-000000000002
+    kind: replacement_income
+    tax_year: 2026
+    value: {benefit: krankengeld, amount: '1560.00'}
+  payslip_a_july: &payslip_a_july
+    id: 0000004b-0000-4000-8000-0000000000a7
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    kind: payslip
+    tax_year: 2026
+    document_id: 0000004b-d0c0-4000-8000-0000000000a7
+    value:
+      period_month: 2026-07-01
+      employer: Muster GmbH
+      tax_class: 4
+      months_remaining_paid: 5
+      gross: {month: '5000.00', ytd: '35000.00'}
+      income_tax: {month: '766.00', ytd: '5362.00'}
+      soli: {month: '0.00', ytd: '0.00'}
+      church_tax: {month: '0.00', ytd: '0.00'}
+      pension_employee: {month: '465.00', ytd: '3255.00'}
+      health_employee: {month: '437.50', ytd: '3062.50'}
+      care_employee: {month: '90.00', ytd: '630.00'}
+      unemployment_employee: {month: '65.00', ytd: '455.00'}
+  provisional: &provisional {code: anlage_n.form_provisional, params: {form_year: '2025'}}
+  a_warnings: &a_warnings
+  - *provisional
+  - {code: anlage_n.work_room_centre}
+  - {code: anlage_n.work_room_records}
+  - {code: anlage_n.first_workplace_check}
+
+cases:
+- id: owner_a_remote_work_room
+  description: 'A: work room 2,520.00 + phone 119.90 + subscription 120.00 + Kontoführung 16.00 = 2,775.90'
+  tax_year: 2026
+  facts:
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    inputs: [*cert_a, *room_a, *phone_a, *subscription_a, *account_fee_a, *elterngeld_a]
+  expect:
+    status: certified
+    gross_source: certificate
+    gross: '60000.00'
+    wk_itemised: '2775.90'
+    wk_union: '0.00'
+    wk_allowance: '1230.00'
+    wk_applied: '2775.90'
+    result: '57224.10'
+    replacement_benefits: '0.00'
+    components: {work_room: '2520.00', equipment: '239.90', other: '16.00'}
+    lines:
+    - {key: pay.gross, amount: '60000.00'}
+    - {key: pay.income_tax, amount: '9200.00'}
+    - {key: commute.employer_tax_free, amount: '600.00'}
+    - {key: equipment.total, amount: '239.90'}
+    - {key: work_room.amount, amount: '2520.00'}
+    - {key: other.total, amount: '16.00'}
+    - {key: wk.itemised, amount: '2775.90'}
+    - {key: wk.allowance, amount: '1230.00'}
+    - {key: wk.applied, amount: '2775.90'}
+    warnings: *a_warnings
+- id: owner_b_commute_day_rate
+  description: 'B: commute 950.00 − Nr. 17 400.00 = 550.00, plus 90 days × 6 = 540.00 → 1,090.00 < 1,230'
+  tax_year: 2026
+  facts:
+    owner_id: 0000000a-0000-4000-8000-000000000002
+    inputs: [*cert_b, *commute_b, *office_b, *krankengeld_b]
+  expect:
+    status: certified
+    gross_source: certificate
+    gross: '32000.00'
+    wk_itemised: '1090.00'
+    wk_union: '0.00'
+    wk_allowance: '1230.00'
+    wk_applied: '1230.00'
+    result: '30770.00'
+    replacement_benefits: '4000.00'
+    components: {commute: '550.00', home_office: '540.00'}
+    lines:
+    - {key: pay.gross, amount: '32000.00'}
+    - {key: pay.income_tax, amount: '3200.00'}
+    - {key: pay.replacement_benefits, amount: '4000.00'}
+    - {key: commute.employer_tax_free, amount: '400.00'}
+    - {key: home_office.days_other_workplace, amount: '90'}
+    - {key: wk.itemised, amount: '1090.00'}
+    - {key: wk.allowance, amount: '1230.00'}
+    - {key: wk.applied, amount: '1230.00'}
+    warnings: [*provisional]
+- id: pauschbetrag_wins
+  description: B's certificate and the 16.00 Kontoführung only → the Pauschbetrag 1,230.00
+  tax_year: 2026
+  facts:
+    owner_id: 0000000a-0000-4000-8000-000000000002
+    inputs:
+    - *cert_b
+    - {id: 0000004b-0000-4000-8000-0000000000b6, owner_id: 0000000a-0000-4000-8000-000000000002,
+       kind: other_expense, tax_year: 2026, value: {expense_class: account_fee, label: Kontoführung}}
+  expect:
+    gross: '32000.00'
+    wk_itemised: '16.00'
+    wk_applied: '1230.00'
+    result: '30770.00'
+    components: {other: '16.00'}
+    warnings: [*provisional]
+- id: union_beside_allowance
+  description: 'training 900.00 + union dues 240.00: 240.00 + max(1,230, 900.00) = 1,470.00 (§9a S. 3, 2026)'
+  tax_year: 2026
+  facts:
+    owner_id: 0000000a-0000-4000-8000-000000000002
+    inputs:
+    - *cert_b
+    - {id: 0000004b-0000-4000-8000-0000000000b7, owner_id: 0000000a-0000-4000-8000-000000000002,
+       kind: training, tax_year: 2026, document_id: 0000004b-d0c0-4000-8000-0000000000b7,
+       value: {label: Fachkurs, amount: '900.00'}}
+    - {id: 0000004b-0000-4000-8000-0000000000b8, owner_id: 0000000a-0000-4000-8000-000000000002,
+       kind: professional_association, tax_year: 2026,
+       value: {name: Gewerkschaft, amount: '240.00', is_union: true}}
+  expect:
+    gross: '32000.00'
+    wk_itemised: '1140.00'
+    wk_union: '240.00'
+    wk_allowance: '1230.00'
+    wk_applied: '1470.00'
+    result: '30530.00'
+    components: {dues: '240.00', training: '900.00'}
+    lines:
+    - {key: pay.gross, amount: '32000.00'}
+    - {key: pay.income_tax, amount: '3200.00'}
+    - {key: pay.replacement_benefits, amount: '4000.00'}
+    - {key: commute.employer_tax_free, amount: '400.00'}
+    - {key: dues.associations, amount: '240.00'}
+    - {key: training.total, amount: '900.00'}
+    - {key: wk.itemised, amount: '1140.00'}
+    - {key: wk.allowance, amount: '1230.00'}
+    - {key: wk.applied, amount: '1470.00'}
+    warnings: [*provisional]
+- id: allowance_capped_at_pay
+  description: gross 800.00 → the Pauschbetrag is at most the pay (§9a S. 2), result 0.00
+  tax_year: 2026
+  facts:
+    owner_id: 0000000a-0000-4000-8000-000000000002
+    inputs:
+    - id: 0000004b-0000-4000-8000-0000000000c1
+      owner_id: 0000000a-0000-4000-8000-000000000002
+      kind: wage_certificate
+      tax_year: 2026
+      document_id: 0000004b-d0c0-4000-8000-0000000000c1
+      value: {period_from: 2026-10-01, period_to: 2026-12-31, employer: Muster GmbH, tax_class: 4,
+              gross: '800.00'}
+  expect:
+    gross: '800.00'
+    wk_itemised: '0.00'
+    wk_allowance: '800.00'
+    wk_applied: '800.00'
+    result: '0.00'
+    warnings: [*provisional]
+- id: estimate_from_payslips
+  description: A's July payslip instead of the certificate → gross 60,000.00 projected, status estimate
+  tax_year: 2026
+  facts:
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    inputs: [*payslip_a_july, *room_a, *phone_a, *subscription_a, *account_fee_a]
+  expect:
+    status: estimate
+    gross_source: payslip
+    gross: '60000.00'
+    wk_itemised: '2775.90'
+    wk_applied: '2775.90'
+    result: '57224.10'
+    lines:
+    - {key: pay.gross, amount: '60000.00'}
+    - {key: pay.income_tax, amount: '9192.00'}
+    - {key: equipment.total, amount: '239.90'}
+    - {key: work_room.amount, amount: '2520.00'}
+    - {key: other.total, amount: '16.00'}
+    - {key: wk.itemised, amount: '2775.90'}
+    - {key: wk.allowance, amount: '1230.00'}
+    - {key: wk.applied, amount: '2775.90'}
+    warnings: *a_warnings
+- id: two_certificates_one_year
+  description: a job change on 1 July, two certificates of 30,000.00 each → summed, no overlap
+  tax_year: 2026
+  facts:
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    inputs:
+    - id: 0000004b-0000-4000-8000-0000000000c2
+      owner_id: 0000000a-0000-4000-8000-000000000001
+      kind: wage_certificate
+      tax_year: 2026
+      document_id: 0000004b-d0c0-4000-8000-0000000000c2
+      value: {period_from: 2026-01-01, period_to: 2026-06-30, employer: Muster GmbH, tax_class: 4,
+              gross: '30000.00', income_tax: '4600.00'}
+    - id: 0000004b-0000-4000-8000-0000000000c3
+      owner_id: 0000000a-0000-4000-8000-000000000001
+      kind: wage_certificate
+      tax_year: 2026
+      document_id: 0000004b-d0c0-4000-8000-0000000000c3
+      value: {period_from: 2026-07-01, period_to: 2026-12-31, employer: Beispiel AG, tax_class: 4,
+              gross: '30000.00', income_tax: '4600.00'}
+  expect:
+    status: certified
+    gross: '60000.00'
+    wk_applied: '1230.00'
+    result: '58770.00'
+    lines:
+    - {key: pay.gross, amount: '60000.00'}
+    - {key: pay.income_tax, amount: '9200.00'}
+    - {key: wk.itemised, amount: '0.00'}
+    - {key: wk.allowance, amount: '1230.00'}
+    - {key: wk.applied, amount: '1230.00'}
+    warnings: [*provisional]
+- id: church_mismatch_warning
+  description: the certificate withholds church tax while the owner is recorded outside a church
+  tax_year: 2026
+  facts:
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    church_tax: false
+    inputs:
+    - {<<: *cert_a, value: {period_from: 2026-01-01, period_to: 2026-12-31, employer: Muster GmbH,
+                            tax_class: 4, church_tax_marked: true, gross: '60000.00',
+                            income_tax: '9200.00', church_tax: '736.00'}}
+  expect:
+    gross: '60000.00'
+    result: '58770.00'
+    warnings: [*provisional, {code: anlage_n.church_mismatch}]
+- id: tax_class_6_warning
+  description: a second job in tax class VI beside A's certificate → both summed, a warning
+  tax_year: 2026
+  facts:
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    inputs:
+    - *cert_a
+    - id: 0000004b-0000-4000-8000-0000000000c4
+      owner_id: 0000000a-0000-4000-8000-000000000001
+      kind: wage_certificate
+      tax_year: 2026
+      document_id: 0000004b-d0c0-4000-8000-0000000000c4
+      value: {period_from: 2026-01-01, period_to: 2026-12-31, employer: Beispiel AG, tax_class: 6,
+              gross: '6000.00', income_tax: '1000.00'}
+  expect:
+    gross: '66000.00'
+    wk_applied: '1230.00'
+    result: '64770.00'
+    warnings: [*provisional, {code: anlage_n.tax_class_6}]
+- id: work_room_and_day_rate_error
+  description: A's work room covers 12 months, so a Tagespauschale row is refused (D106)
+  tax_year: 2026
+  facts:
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    inputs:
+    - *cert_a
+    - *room_a
+    - {id: 0000004b-0000-4000-8000-0000000000c5, owner_id: 0000000a-0000-4000-8000-000000000001,
+       kind: home_office, tax_year: 2026, value: {days_no_other_workplace: 50}}
+  expect:
+    error: {code: anlage_n.work_room_excludes_day_rate}
+- id: first_workplace_check_warning
+  description: 'A: a work room and no commute → the D107 note on the first workplace'
+  tax_year: 2026
+  facts:
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    inputs: [*cert_a, *room_a]
+  expect:
+    gross: '60000.00'
+    wk_itemised: '2520.00'
+    wk_applied: '2520.00'
+    result: '57480.00'
+    warnings: *a_warnings
+- id: telecom_added
+  description: 'A plus telecom bills 720.00 → 144.00 on the other line, itemised 2,919.90'
+  tax_year: 2026
+  facts:
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    inputs:
+    - *cert_a
+    - *room_a
+    - *phone_a
+    - *subscription_a
+    - *account_fee_a
+    - {id: 0000004b-0000-4000-8000-0000000000c6, owner_id: 0000000a-0000-4000-8000-000000000001,
+       kind: telecom, tax_year: 2026, value: {bills_year: '720.00'}}
+  expect:
+    gross: '60000.00'
+    wk_itemised: '2919.90'
+    wk_applied: '2919.90'
+    result: '57080.10'
+    components: {work_room: '2520.00', equipment: '239.90', telecom: '144.00', other: '16.00'}
+    lines:
+    - {key: pay.gross, amount: '60000.00'}
+    - {key: pay.income_tax, amount: '9200.00'}
+    - {key: commute.employer_tax_free, amount: '600.00'}
+    - {key: equipment.total, amount: '239.90'}
+    - {key: work_room.amount, amount: '2520.00'}
+    - {key: other.total, amount: '160.00'}
+    - {key: wk.itemised, amount: '2919.90'}
+    - {key: wk.allowance, amount: '1230.00'}
+    - {key: wk.applied, amount: '2919.90'}
+    warnings: *a_warnings
