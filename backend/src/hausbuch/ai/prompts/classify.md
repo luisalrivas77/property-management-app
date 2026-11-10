@@ -14,6 +14,8 @@ Answer with the JSON object the response format defines, and nothing else.
 - `zinsbescheinigung`: a bank's yearly interest certificate for a loan
 - `wirtschaftsplan`: a WEG Wirtschaftsplan (planned Hausgeld for the year)
 - `hausgeldabrechnung`: a WEG Hausgeldabrechnung / Jahresabrechnung (the year's settlement)
+- `lohnsteuerbescheinigung`: an employer's Ausdruck der elektronischen Lohnsteuerbescheinigung (one employee's pay and withheld taxes for a year)
+- `gehaltsabrechnung`: a monthly payslip (Gehaltsabrechnung, Lohnabrechnung, Entgeltabrechnung, Verdienstabrechnung)
 - `other`: anything else
 
 `subtype`, only when one of these fits, else null:
@@ -30,7 +32,7 @@ Answer with the JSON object the response format defines, and nothing else.
 `contains_tenant_data`: true when the document names a tenant (Mieter) or holds a tenant's
 personal data (name, contact details, bank account, payments): a lease, a handover protocol,
 a deposit record, a letter from or to a tenant. False for documents about the property, its
-purchase, its loan or its owners only.
+purchase, its loan or its owners only (an owner's Lohnsteuerbescheinigung or payslip included).
 
 `language`: `de`, `en` or `other`.
 

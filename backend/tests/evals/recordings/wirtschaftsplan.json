@@ -2,13 +2,13 @@
  "format": 1,
  "doc": "wirtschaftsplan",
  "synthetic": false,
- "recorded_on": "2026-11-07",
+ "recorded_on": "2026-11-10",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "624ea59735496705",
-  "request_sha256": "ddf2b37933995fee2c1b1ce5137dbbd5b2ecbe132dc49c02e66b91b03321cb64",
+  "prompt_version": "93d91a3094e05c87",
+  "request_sha256": "b99eea20e478ba702a8021788078a4527515d2816d3777c996e8e44593a04904",
   "message": {
-   "id": "msg_011CgoexgnGPsY7ehmozFyLe",
+   "id": "msg_011CgtWqk66Dt4LkVhxwqhJP",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 3680,
+    "input_tokens": 3868,
     "output_tokens": 48,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -45,10 +45,10 @@
  },
  "extract": [
   {
-   "prompt_version": "db37026b509dd7a8",
-   "request_sha256": "9c0ac0cec97d68110cd972640c137591d018d7ed0daad703742f9cb7711538ac",
+   "prompt_version": "5a926fcf9151da70",
+   "request_sha256": "227466aea5886018a4a595fa30ffea1ecb74a81ebb523a645ba6e4a78c10bf01",
    "message": {
-    "id": "msg_011CgoexWDXSD3tiyxsQWbAd",
+    "id": "msg_011CgtWqYnx3o9SAtw2mpS8L",
     "container": null,
     "content": [
      {
@@ -68,7 +68,7 @@
         "type": "page_location"
        }
       ],
-      "text": "Wirtschaftsplan 2026 Einzelplan",
+      "text": "Wirtschaftsplan Einzelplan Hausgeld",
       "type": "text"
      },
      {
@@ -287,8 +287,8 @@
      "cache_creation_input_tokens": 0,
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
-     "input_tokens": 3419,
-     "output_tokens": 402,
+     "input_tokens": 3563,
+     "output_tokens": 404,
      "output_tokens_details": {
       "thinking_tokens": 0
      },

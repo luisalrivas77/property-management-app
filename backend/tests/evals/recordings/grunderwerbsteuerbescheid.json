@@ -2,13 +2,13 @@
  "format": 1,
  "doc": "grunderwerbsteuerbescheid",
  "synthetic": false,
- "recorded_on": "2026-11-07",
+ "recorded_on": "2026-11-10",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "624ea59735496705",
-  "request_sha256": "a8e537a0fc4c2f535f9b0ff4ba21607c7ae7450ba5e060558985faa6a31e777e",
+  "prompt_version": "93d91a3094e05c87",
+  "request_sha256": "ba20bcd198d525e8f0bb3ea11bd1e1a1f1a0731bf07acc35f1fa73f745893b95",
   "message": {
-   "id": "msg_011CgoexSBRmkLPFU8fGgxZx",
+   "id": "msg_011CgtWqUEMheShsEbSEpKRh",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 3659,
+    "input_tokens": 3847,
     "output_tokens": 51,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -45,10 +45,10 @@
  },
  "extract": [
   {
-   "prompt_version": "db37026b509dd7a8",
-   "request_sha256": "e69523cbfe3ab42b4618f5bbc60928db98d1fa262c9b9c3c927d64160731c0db",
+   "prompt_version": "5a926fcf9151da70",
+   "request_sha256": "87f7e91a6e6a3c42e92f22a6ef102e557f170f27deacd46ee0601fabe22b396d",
    "message": {
-    "id": "msg_011CgoexG1kCxwrVpC1TmeVY",
+    "id": "msg_011CgtWqJbumtZgAN1gzyHw9",
     "container": null,
     "content": [
      {
@@ -128,7 +128,7 @@
         "type": "page_location"
        }
       ],
-      "text": "19.500,00 EUR",
+      "text": "19.500,00 €",
       "type": "text"
      },
      {
@@ -192,8 +192,8 @@
      "cache_creation_input_tokens": 0,
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
-     "input_tokens": 3277,
-     "output_tokens": 216,
+     "input_tokens": 3421,
+     "output_tokens": 214,
      "output_tokens_details": {
       "thinking_tokens": 0
      },

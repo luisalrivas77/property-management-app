@@ -2,13 +2,13 @@
  "format": 1,
  "doc": "rechnung_notar_grundschuld",
  "synthetic": false,
- "recorded_on": "2026-11-07",
+ "recorded_on": "2026-11-10",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "624ea59735496705",
-  "request_sha256": "0388c89bb6b0e59ad50e826fe5af435478ba1cb4347a3b09bb39ca2a022b3f1c",
+  "prompt_version": "93d91a3094e05c87",
+  "request_sha256": "04056f08c5677416843a72987894b9b5a69078ab8fb48ecd9553a40288484938",
   "message": {
-   "id": "msg_011CgoexBepRTHBq49d7iwWD",
+   "id": "msg_011CgtWqD9WMUJ1Mg5ZBnTVa",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 3717,
+    "input_tokens": 3905,
     "output_tokens": 42,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -45,10 +45,10 @@
  },
  "extract": [
   {
-   "prompt_version": "db37026b509dd7a8",
-   "request_sha256": "6e05a5991f5f5ed6a3a52fc310b9faee37d84fdb3aec9177bfc8550b17485648",
+   "prompt_version": "5a926fcf9151da70",
+   "request_sha256": "21b13c24e12b27ea332778fd1393fc7ce552641018528320b33e563750c5f052",
    "message": {
-    "id": "msg_011Cgoex1AHGTfHshPoJRn9J",
+    "id": "msg_011CgtWq2rsAGYwbr7MYaAjW",
     "container": null,
     "content": [
      {
@@ -128,7 +128,7 @@
         "type": "page_location"
        }
       ],
-      "text": "Grundschuldbestellung mit ZV-Unterwerfung",
+      "text": "Urkunde 1235/2026 (Grundschuldbestellung mit ZV-Unterwerfung)",
       "type": "text"
      },
      {
@@ -247,8 +247,8 @@
      "cache_creation_input_tokens": 0,
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
-     "input_tokens": 3391,
-     "output_tokens": 319,
+     "input_tokens": 3535,
+     "output_tokens": 333,
      "output_tokens_details": {
       "thinking_tokens": 0
      },

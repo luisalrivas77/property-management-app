@@ -30,6 +30,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from functools import partial
 from typing import Any
 from uuid import UUID
 
@@ -47,7 +48,13 @@ from hausbuch.ai.requests import (
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import proposal as proposal_table
 from hausbuch.db.tables import workspace as workspace_table
-from hausbuch.rules.extraction_parse import TENANT_SUBTYPES, extraction_kind, parse_lines
+from hausbuch.rules.extraction_parse import (
+    SCRUBBED_KINDS,
+    TENANT_SUBTYPES,
+    extraction_kind,
+    parse_lines,
+    scrub_identifiers,
+)
 from hausbuch.schemas.ai import ClassifyOutput, ExtractedValue
 from hausbuch.schemas.enums import ActorType, ExtractionKind, ProposalStatus
 from hausbuch.schemas.extraction import EXTRACTION_MODELS
@@ -389,14 +396,22 @@ def _extract_chunk(
     kind: ExtractionKind,
     page_offset: int,
 ) -> tuple[dict[str, ExtractedValue], UUID]:
+    # The birth-date rule of the scrub counts back from the job clock's year (D103).
+    year = deps.clock().year
+
     def parsed(response: ModelResponse) -> _Parsed:
-        values = parse_lines(response.blocks, kind, page_offset=page_offset)
+        values = parse_lines(response.blocks, kind, page_offset=page_offset, reference_year=year)
         if not values:  # no line keyed by a field of this kind
             return _Parsed(None, None, UNPARSABLE)
         output = {key: value.model_dump(mode="json") for key, value in values.items()}
         return _Parsed(values, output, None)
 
-    return _with_one_retry(deps, workspace_id, document_id, proposal_id, request, parsed)
+    # The pay documents' raw answer is scrubbed like their values and quotes (D103): no
+    # identifier reaches ai_call.raw_text either.
+    scrub = partial(scrub_identifiers, reference_year=year) if kind in SCRUBBED_KINDS else None
+    return _with_one_retry(
+        deps, workspace_id, document_id, proposal_id, request, parsed, scrub=scrub
+    )
 
 
 _RANK = {"low": 0, "medium": 1, "high": 2}
@@ -431,13 +446,18 @@ def _with_one_retry(
     proposal_id: UUID,
     request: ModelRequest,
     parse: Callable[[ModelResponse], _Parsed],
+    *,
+    scrub: Callable[[str], str] | None = None,
 ) -> tuple[Any, UUID]:
     """Send, record, parse; a refusal / max_tokens stop or an unparsable answer is sent once
-    more (§5.3), and a second one ends the job with its code."""
+    more (§5.3), and a second one ends the job with its code. `scrub` is applied to the raw
+    text ai_call stores."""
     parsed = _Parsed(None, None, UNPARSABLE)
     call_id: UUID | None = None
     for _ in range(2):
-        parsed, call_id = _send(deps, workspace_id, document_id, proposal_id, request, parse)
+        parsed, call_id = _send(
+            deps, workspace_id, document_id, proposal_id, request, parse, scrub=scrub
+        )
         if parsed.error_code is None:
             return parsed.result, call_id
     assert parsed.error_code is not None
@@ -451,6 +471,8 @@ def _send(
     proposal_id: UUID,
     request: ModelRequest,
     parse: Callable[[ModelResponse], _Parsed],
+    *,
+    scrub: Callable[[str], str] | None = None,
 ) -> tuple[_Parsed, UUID]:
     """One model call and its ai_call row, committed before the response is used.
 
@@ -489,6 +511,7 @@ def _send(
             output=parsed.output if keep_content else None,
             error_code=parsed.error_code,
             keep_raw_text=keep_content,
+            scrub=scrub,
         )
     return parsed, call_id
 

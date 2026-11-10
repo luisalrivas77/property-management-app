@@ -14,7 +14,7 @@ import json
 import uuid
 
 import pytest
-from make_docs import DOCS, DOCS_BY_NAME, Doc, build_pdf, doc_pdf
+from make_docs import DOCS, DOCS_BY_NAME, FAKE_IDENTIFIERS, Doc, build_pdf, doc_pdf
 from pypdf import PdfReader
 from recordings import (
     RECORDINGS_DIR,
@@ -80,6 +80,21 @@ def test_real_recording(path):
     assert reasons == [], f"{path.name} is stale, re-record it: {reasons}"
     _check(doc, recording)
     _build_proposal(doc, replay(recording))
+    if doc.name in PAY_DOCUMENTS:
+        # D103 on the model's real answer: no invented identifier in a stored value or quote.
+        stored = _stored(replay(recording))
+        for fragment in FAKE_IDENTIFIERS:
+            assert fragment not in stored, f"{path.name}: {fragment!r} stored"
+
+
+PAY_DOCUMENTS = ("lohnsteuerbescheinigung", "gehaltsabrechnung")
+
+
+def _stored(result) -> str:
+    """The replayed values and their quotes as the job stores them, as one JSON text."""
+    return json.dumps(
+        {k: v.model_dump(mode="json") for k, v in result.values.items()}, ensure_ascii=False
+    )
 
 
 # --- the harness, on synthetic recordings ---------------------------------------------
@@ -129,6 +144,28 @@ def test_build_proposal_accepts_the_replayed_values(doc):
     """rules.prefill (the proposals chunk) on the replayed values; skipped until it exists."""
     requests = build_requests(doc, SETTINGS)
     _build_proposal(doc, replay(synthetic_recording(doc, requests, _as_written(doc))))
+
+
+@pytest.mark.parametrize("name", PAY_DOCUMENTS)
+def test_pay_documents_store_no_identifier(name):
+    """Phase 4b §8.3, D103: the invented identifiers on the two pay documents never reach the
+    values or quotes the job stores. Each value here cites its whole page, so every
+    identifier on it passes through the scrub; the expected figures still check out."""
+    doc = DOCS_BY_NAME[name]
+    requests = build_requests(doc, SETTINGS)
+    recording = synthetic_recording(doc, requests, _as_written(doc))
+    for block in recording["extract"][0]["message"]["content"]:
+        for citation in block["citations"] or []:
+            page = doc.pages[citation["start_page_number"] - 1]
+            citation["cited_text"] = "\n".join(page)
+    text = "\n".join(line for page in doc.pages for line in page)
+    printed = [fragment for fragment in FAKE_IDENTIFIERS if fragment in text]
+    # both print the IdNr, the birth date, the Personalnummer and the address
+    assert {"345 678", "14.03.1988", "731942", "Musterweg", "60311"} <= set(printed)
+    stored = _stored(replay(recording))
+    for fragment in printed:
+        assert fragment not in stored, fragment
+    _check(doc, recording)
 
 
 def test_stale_recording_is_detected():

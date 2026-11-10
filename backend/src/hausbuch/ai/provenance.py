@@ -5,6 +5,7 @@ which is a header), the usage numbers and inference_geo from the response, the p
 and the raw text. It is immutable; tenant erasure may null output and raw_text (0005).
 """
 
+from collections.abc import Callable
 from typing import Any
 from uuid import UUID
 
@@ -27,11 +28,13 @@ def record_ai_call(
     output: Any = None,
     error_code: str | None = None,
     keep_raw_text: bool = True,
+    scrub: Callable[[str], str] | None = None,
 ) -> UUID:
     """Insert the row for one request (a response, or the failure that replaced it). A
     document job names its document_id, a matching job its transaction_id. `keep_raw_text`
     False stores a response without its text (the document job's proposal was erased while
-    the call was out; the caller passes no output either)."""
+    the call was out; the caller passes no output either). `scrub`, when given, is applied to
+    the raw text before it is stored (the pay documents' identifier scrub, phase-4b.md D103)."""
     if (response is None) == (failure is None):
         raise ValueError("exactly one of response and failure")
     row: dict[str, Any] = {
@@ -46,6 +49,9 @@ def record_ai_call(
         "error_code": error_code if failure is None else (error_code or failure.error_code),
     }
     if response is not None:
+        raw_text = response.text if keep_raw_text else None
+        if raw_text is not None and scrub is not None:
+            raw_text = scrub(raw_text)
         row |= {
             "model": response.model or request.model,
             "inference_geo": response.inference_geo,
@@ -53,7 +59,7 @@ def record_ai_call(
             "output_tokens": response.output_tokens,
             "cache_read_tokens": response.cache_read_tokens,
             "stop_reason": response.stop_reason,
-            "raw_text": response.text if keep_raw_text else None,
+            "raw_text": raw_text,
             "duration_ms": response.duration_ms,
         }
     else:

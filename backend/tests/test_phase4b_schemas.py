@@ -1,6 +1,6 @@
 """Phase 4b step 0 schema guards (docs/phases/phase-4b.md §6, §7, D96, D110, D111): no identifier
-field on the pay documents, no free text in an event payload, and the classifier left as it is
-until step 2."""
+field on the pay documents, no free text in an event payload, and (since step 2) the classifier
+offering the two pay documents."""
 
 import uuid
 from datetime import date
@@ -9,7 +9,7 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
-from hausbuch.ai.requests import NOT_YET_CLASSIFIED, classify_schema
+from hausbuch.ai.requests import classify_schema
 from hausbuch.schemas import employment as N
 from hausbuch.schemas.enums import DocumentType, ExtractionKind, ReturnInputKind
 from hausbuch.schemas.events import (
@@ -59,10 +59,12 @@ def test_the_pay_documents_have_their_extraction_models():
     assert EXTRACTION_MODELS[ExtractionKind.GEHALTSABRECHNUNG] is PayslipExtraction
 
 
-def test_the_classifier_does_not_offer_the_pay_documents_until_step_2():
+def test_the_classifier_offers_every_type_with_the_pay_documents_since_step_2():
+    # Step 0 kept the two pay documents out of the classify request; step 2 added their
+    # extraction and let the classifier answer them (§12).
     offered = set(classify_schema()["$defs"]["DocumentType"]["enum"])
-    assert offered == {t.value for t in DocumentType} - NOT_YET_CLASSIFIED
-    assert {"lohnsteuerbescheinigung", "gehaltsabrechnung"} == NOT_YET_CLASSIFIED
+    assert offered == {t.value for t in DocumentType}
+    assert {"lohnsteuerbescheinigung", "gehaltsabrechnung"} <= offered
 
 
 # --- D111: a private cost's label and trip dates never reach the event log ---------------

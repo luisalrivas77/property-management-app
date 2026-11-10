@@ -2,13 +2,13 @@
  "format": 1,
  "doc": "kaufvertrag",
  "synthetic": false,
- "recorded_on": "2026-11-07",
+ "recorded_on": "2026-11-10",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "624ea59735496705",
-  "request_sha256": "a20368de6033b11956efad7ebc589cb921953004913fca142f2eb400da1763cb",
+  "prompt_version": "93d91a3094e05c87",
+  "request_sha256": "568910b4027b09db979454d739b73e55374da37295fbc31076b535a231764ce0",
   "message": {
-   "id": "msg_011Cgoew2rhNz6KjAPB1EzEf",
+   "id": "msg_011CgtWoangv2ac2biRy5YQF",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 7051,
+    "input_tokens": 7239,
     "output_tokens": 46,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -45,10 +45,10 @@
  },
  "extract": [
   {
-   "prompt_version": "db37026b509dd7a8",
-   "request_sha256": "aa7dc9078fee0986995183fa834ed06d8cee3d4aec072b6a441b781e8afc72a9",
+   "prompt_version": "5a926fcf9151da70",
+   "request_sha256": "f7ba59433e6f138a37ec25c0310f2d08122c3be50bb8dc710514328809ce14ec",
    "message": {
-    "id": "msg_011CgoevmA93hYSdEtujjxkW",
+    "id": "msg_011CgtWoJzS5757fhcUBTymb",
     "container": null,
     "content": [
      {
@@ -319,7 +319,7 @@
      {
       "citations": [
        {
-        "cited_text": "Wohnfläche ca. 72,5 m².\r\n",
+        "cited_text": "72,5 m².\r\n",
         "document_index": 0,
         "document_title": null,
         "end_page_number": 3,
@@ -387,8 +387,8 @@
      "cache_creation_input_tokens": 0,
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
-     "input_tokens": 7030,
-     "output_tokens": 526,
+     "input_tokens": 7174,
+     "output_tokens": 528,
      "output_tokens_details": {
       "thinking_tokens": 0
      },

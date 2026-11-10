@@ -2,13 +2,13 @@
  "format": 1,
  "doc": "rechnung_notar",
  "synthetic": false,
- "recorded_on": "2026-11-07",
+ "recorded_on": "2026-11-10",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "624ea59735496705",
-  "request_sha256": "ae3be1d4b901e7a75236ee3e7aa090fa0c87d8ce6d060f1dac7d709f7f8058da",
+  "prompt_version": "93d91a3094e05c87",
+  "request_sha256": "9c0a3a052146047226cfa5391f85a9a4774a9f7f4c6daaca1c83925c55882462",
   "message": {
-   "id": "msg_011Cgoeww1ze94A6S79MJJ83",
+   "id": "msg_011CgtWpwpFjVx5B2F41TuMA",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 3708,
+    "input_tokens": 3896,
     "output_tokens": 50,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -45,10 +45,10 @@
  },
  "extract": [
   {
-   "prompt_version": "db37026b509dd7a8",
-   "request_sha256": "a829fdcc142a818319491c679f5b447cf6e3c36bedaa55218da2b72616ccf56e",
+   "prompt_version": "5a926fcf9151da70",
+   "request_sha256": "147c7f649f6653dd1e9db00d7ab87f4d370fe2604dbcdc57d2d93e73d7c01968",
    "message": {
-    "id": "msg_011CgoewmU1qSc3NhpRGdHHB",
+    "id": "msg_011CgtWpn6N7mj35mejHv1uc",
     "container": null,
     "content": [
      {
@@ -247,7 +247,7 @@
      "cache_creation_input_tokens": 0,
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
-     "input_tokens": 3382,
+     "input_tokens": 3526,
      "output_tokens": 326,
      "output_tokens_details": {
       "thinking_tokens": 0
