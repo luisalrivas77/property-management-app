@@ -501,7 +501,9 @@ def document_facts(
             loan_id = candidates[0] if len(candidates) == 1 else None
     property_id = e.property_id
     if loan_id is not None and property_id is None:
-        property_id = next(p for p, ids in loans_by_property.items() if loan_id in ids)
+        # The loan's property; None when the caller's map does not hold it (a bill linked to
+        # two properties and one loan, read with an empty map; review F5).
+        property_id = next((p for p, ids in loans_by_property.items() if loan_id in ids), None)
     return DocumentFacts(
         id=e.row.id,
         kind=x.kind,

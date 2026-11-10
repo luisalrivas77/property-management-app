@@ -7,8 +7,16 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from db.db_support import TEST_IBAN_KEY
 from db.matching_support import World
 from db.test_services_matching import _match, _rows
+from sqlalchemy import insert
+
+from hausbuch.db.session import workspace_transaction
+from hausbuch.db.tables import document_link as link_table
+from hausbuch.schemas.property import Address, PropertyCreate
+from hausbuch.services import matching
+from hausbuch.services.properties import create_property
 
 pytestmark = pytest.mark.db
 
@@ -80,3 +88,36 @@ def test_a_utility_bill_is_never_split(world):
     _match(world, tx)
     (row,) = _rows(world, tx)
     assert (row.category, row.document_id) == ("uncategorized", doc)
+
+
+def test_a_bill_of_two_properties_and_one_loan_is_read_without_error(world):
+    """Review F5: the links name two properties (so no property) and one loan, and
+    paid_from_rental_account reads it with an empty loan map: the Grundschuld part takes the
+    loan, the property stays None, and nothing raises."""
+    loan = world.loan()
+    other = world.cmd(
+        create_property,
+        PropertyCreate(
+            label="Wohnung Beispielweg",
+            kind="etw",
+            address=Address(
+                street="Beispielweg", house_number="1", postal_code="10115", city="Berlin"
+            ),
+            build_year=2000,
+            notarized_on=date(2025, 3, 1),
+            purchase_date=date(2025, 4, 1),
+            purchase_price=Decimal("200000.00"),
+        ),
+    ).id
+    doc = _bill(world, MIXED_LINES)
+    with workspace_transaction(world.engine, world.ws) as conn:
+        for link in ({"property_id": other}, {"loan_id": loan}):
+            conn.execute(
+                insert(link_table).values(
+                    workspace_id=world.ws, document_id=doc, created_at=world.now, **link
+                )
+            )
+    assert not world.query(matching.paid_from_rental_account, doc, iban_key=TEST_IBAN_KEY)
+    e = world.query(matching.evidence_of, doc)
+    facts = matching.document_facts(e, iban_key=TEST_IBAN_KEY, loans_by_property={})
+    assert (facts.loan_id, facts.property_id) == (loan, None)
