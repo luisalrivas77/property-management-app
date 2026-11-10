@@ -10,7 +10,7 @@ allocations and tax inputs and returns the draft with every line's sources:
    kitchen bought with the flat leaves the building basis of both the AfA and the 15 % test),
    the line rules (§5.4–5.7, 5.10), then the categories no rule owns, routed by
    the rule set's category_lines (Grundsteuer, insurance, management and bank fees,
-   professional fees).
+   professional fees), and the year's private_cost rows into wk.other (phase 4b §5.12, D111).
 3. Lines are merged by key (amounts summed, sources united). income.rent_total is the sum of
    the merged Z13 rows (D71). Open categories, an undecided renovation and the pending lines
    of the year are excluded and counted (D59).
@@ -61,6 +61,8 @@ from ._common import (
     LineBook,
     afa_facts,
     flat_area,
+    in_force,
+    input_sources,
     owned_months,
     sources_of,
     unique,
@@ -175,6 +177,42 @@ def _generic(facts: DraftFacts, tax_year: int, rule_set: RuleSet, book: LineBook
             continue
         amount = a.amount if key.startswith("income.") else -a.amount
         book.add(key, amount, sources_of(a))
+
+
+TRAVEL_FREQUENCY_TRIPS = 50  # phase 4b D111: above this, the flat may be a Tätigkeitsstätte
+
+
+def _private_costs(
+    facts: DraftFacts, tax_year: int, rule_set: RuleSet, book: LineBook
+) -> list[DraftWarning]:
+    """Phase 4b §5.12, D111: rental costs paid from a private account, summed into wk.other.
+    travel = trips × km_round_trip × travel_rate_per_km (§9 Abs. 1 S. 3 Nr. 4a S. 2 EStG with
+    §5 Abs. 2 BRKG); every other class amount × share, to the cent. More than 50 trips in the
+    year adds tax.travel_frequency (info): a near-daily presence can make the flat a
+    regelmäßige Tätigkeitsstätte, where only the Entfernungspauschale applies."""
+    warnings = []
+    rows = [
+        r for r in in_force(facts.tax_inputs, TaxInputKind.PRIVATE_COST) if r.tax_year == tax_year
+    ]
+    trips = 0
+    for row in rows:
+        v = row.value
+        if v.cost_class == "travel":
+            amount = cents(Decimal(v.trips) * v.km_round_trip * rule_set.travel_rate_per_km)
+            trips += v.trips
+        else:
+            amount = cents(v.amount * v.share.numerator / v.share.denominator)
+        if amount:
+            book.add("wk.other", amount, input_sources(row))
+    if trips > TRAVEL_FREQUENCY_TRIPS:
+        warnings.append(
+            warning(
+                WarningCode.TAX_TRAVEL_FREQUENCY,
+                [ref for r in rows if r.value.cost_class == "travel" for ref in input_sources(r)],
+                trips=str(trips),
+            )
+        )
+    return warnings
 
 
 def _open(facts: DraftFacts, tax_year: int, rule_set: RuleSet, rules_open: OpenLines) -> OpenLines:
@@ -331,6 +369,7 @@ def draft(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> AnlageVDraft:
         )
         warnings += r.warnings
     _generic(facts, tax_year, rule_set, book)
+    warnings += _private_costs(facts, tax_year, rule_set, book)
 
     rows = _merge_rows(rows)
     if rows:
