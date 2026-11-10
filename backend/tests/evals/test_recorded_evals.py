@@ -115,9 +115,18 @@ def test_real_recording(path):
 
 PAY_DOCUMENTS = ("lohnsteuerbescheinigung", "gehaltsabrechnung")
 # The documents whose values and quotes are scrubbed, with the identifiers printed on them.
-SCRUBBED_DOCUMENTS = {name: FAKE_IDENTIFIERS for name in PAY_DOCUMENTS} | {
-    "einkommensteuerbescheid": BESCHEID_IDENTIFIERS
+# The general reading's two documents with a person's data on them (D131, decided 10 Nov
+# 2026): the owners' Steuernummer and home address on a Vorauszahlungsbescheid, and the
+# applicant's current address on a tenant's Selbstauskunft (the flat's address stays).
+GENERAL_IDENTIFIERS = {
+    "vorauszahlungsbescheid": ("045/815/08154", "Beispielallee", "34117", "Kassel"),
+    "mieterselbstauskunft": ("Ahornweg", "50667"),
 }
+SCRUBBED_DOCUMENTS = (
+    {name: FAKE_IDENTIFIERS for name in PAY_DOCUMENTS}
+    | {"einkommensteuerbescheid": BESCHEID_IDENTIFIERS}
+    | GENERAL_IDENTIFIERS
+)
 
 
 def _stored(result) -> str:
@@ -195,6 +204,18 @@ def test_bescheid_stores_no_identifier():
     doc = DOCS_BY_NAME["einkommensteuerbescheid"]
     printed = _printed(doc, BESCHEID_IDENTIFIERS)
     assert set(printed) == set(BESCHEID_IDENTIFIERS)  # every one is on the page
+    _assert_scrubbed(doc, printed)
+
+
+@pytest.mark.parametrize("name", sorted(GENERAL_IDENTIFIERS))
+def test_the_general_reading_stores_no_identifier_or_home_address(name):
+    """D131 (decided 10 Nov 2026): the Steuernummer and the owners' home address on a
+    Vorauszahlungsbescheid, and the applicant's address on a Selbstauskunft, never reach the
+    values or quotes the job stores, even with every value citing its whole page; the flat's
+    address, which the reading links by, and the document's date still check out."""
+    doc = DOCS_BY_NAME[name]
+    printed = _printed(doc, GENERAL_IDENTIFIERS[name])
+    assert set(printed) == set(GENERAL_IDENTIFIERS[name])  # every one is on the page
     _assert_scrubbed(doc, printed)
 
 

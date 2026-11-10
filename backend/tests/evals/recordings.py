@@ -89,7 +89,7 @@ def replay(recording: dict) -> Replay:
     classification = parse_classification(response_of(recording["classify"]).text)
     kind = extraction_kind(classification.type, classification.subtype)
     chunks = (
-        chunk_values(kind, response_of(entry), entry["page_offset"])
+        chunk_values(kind, response_of(entry), entry["page_offset"], subtype=classification.subtype)
         for entry in recording["extract"]
     )
     merged = merged_values(kind, chunks, subtype=classification.subtype)

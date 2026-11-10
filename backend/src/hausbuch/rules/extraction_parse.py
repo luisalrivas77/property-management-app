@@ -11,12 +11,19 @@ confidence from the checks that passed. The confidence is never a number the mod
 """
 
 import re
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from hausbuch.schemas.ai import CitedTextBlock, ExtractedValue, SourceRef
 from hausbuch.schemas.enums import DocumentSubtype, DocumentType, ExtractionKind
-from hausbuch.schemas.extraction import EXTRACTION_MODELS, TENANCY_GROUP, ValueKind, value_kind
+from hausbuch.schemas.extraction import (
+    EXTRACTION_MODELS,
+    TENANCY_GROUP,
+    ValueKind,
+    asked_fields,
+    value_kind,
+)
 
 from .errors import RuleError
 from .iban import normalize_iban
@@ -79,6 +86,7 @@ def parse_lines(
     *,
     page_offset: int = 0,
     reference_year: int | None = None,
+    subtype: DocumentSubtype | None = None,
 ) -> dict[str, ExtractedValue]:
     """The fields an extract response stated, keyed by field name.
 
@@ -88,16 +96,28 @@ def parse_lines(
     for a PDF split into several requests. For the owners' tax documents (SCRUBBED_KINDS: the
     two pay documents and the Einkommensteuerbescheid) the lines and every quote are scrubbed
     of identifiers first (scrub_identifiers, D103, D129), with
-    reference_year (the job clock's year; default: this year) for the birth-date rule.
+    reference_year (the job clock's year; default: this year) for the birth-date rule. The
+    general reading and a Verwaltervertrag (GENERAL_SCRUBBED_KINDS) get scrub_general on
+    every line but those of the link fields the request asked for (asked_fields with
+    `subtype`), and on every quote with the property address and contract number those lines
+    read kept (D131, decided 10 Nov 2026). A link line the model volunteered (a home address
+    on a Vorauszahlungsbescheid) is scrubbed like any other and keeps nothing.
     """
     model = EXTRACTION_MODELS[kind]
     scrub = kind in SCRUBBED_KINDS
+    general = kind in GENERAL_SCRUBBED_KINDS
     lines = _lines(blocks)
     if scrub:
         # Scrubbed together, so a value under a line of labels is seen; the scrub keeps lines.
         texts = scrub_identifiers(
             "\n".join(text for text, _ in lines), reference_year=reference_year
         ).split("\n")
+        lines = [(text, contributors) for text, (_, contributors) in zip(texts, lines, strict=True)]
+    kept, asked = NO_LINK, frozenset(model.model_fields)
+    if general:
+        asked = frozenset(asked_fields(kind, subtype))
+        kept = link_values([text for text, _ in lines], asked)
+        texts = scrub_general_answer("\n".join(text for text, _ in lines), asked).split("\n")
         lines = [(text, contributors) for text, (_, contributors) in zip(texts, lines, strict=True)]
     result: dict[str, ExtractedValue] = {}
     for text, contributors in lines:
@@ -107,7 +127,7 @@ def parse_lines(
         key, raw = match.group(1), _without_page_reference(match.group(2).strip())
         if key in _LABELLED_FIELDS:
             raw = _without_number_label(raw)
-        if not raw or raw.casefold() == UNKNOWN:
+        if not raw or raw.casefold() == UNKNOWN or key not in asked:
             result[key] = ExtractedValue.missing()
             continue
         source = _source(blocks, contributors, page_offset)
@@ -115,6 +135,8 @@ def parse_lines(
             source = source.model_copy(
                 update={"quote": scrub_identifiers(source.quote, reference_year=reference_year)}
             )
+        if general and source is not None:
+            source = source.model_copy(update={"quote": scrub_general(source.quote, kept)})
         result[key] = _extracted(raw, value_kind(model, key), source)
     return result
 
@@ -496,6 +518,148 @@ def _under_labels(text: str) -> str:
 def _birth_date(match: re.Match[str], reference_year: int) -> str:
     year = int(match.group("dmy") or match.group("word") or match.group("iso"))
     return SCRUBBED if year <= reference_year - _BIRTH_DATE_YEARS else match.group(0)
+
+
+# --- the general reading's scrub (D131, decided 10 Nov 2026) -----------------------------
+
+# The general reading and a Verwaltervertrag are scrubbed too: a Vorauszahlungsbescheid
+# prints the Steuernummer and the owners' home address, a tenant's Selbstauskunft the
+# applicant's. The model cites whole passages, so every quote can carry them.
+GENERAL_SCRUBBED_KINDS = frozenset({ExtractionKind.GENERAL, ExtractionKind.MANAGEMENT_CONTRACT})
+# The fields whose value is what the reading links by: their values are never scrubbed, and
+# the property address and the contract number they read stay in every quote.
+_LINK_VALUE_FIELDS = frozenset(
+    {"street", "house_number", "postal_code", "lender", "contract_number"}
+)
+_ID_PATTERNS = _PATTERNS[:-2]  # everything but the two address patterns, in their order
+_STREET, _POSTAL_TOWN = _PATTERNS[-2:]
+_KEEP_MARK = ""  # private-use characters: no pattern matches them
+
+
+@dataclass(frozen=True)
+class LinkValues:
+    """What a general reading read to link by: the property's address and a contract
+    number. A street with this number and this postal code with its town stay in a quote;
+    every other address goes, like an identifier."""
+
+    street: str | None = None
+    house_number: str | None = None
+    postal_code: str | None = None
+    contract_number: str | None = None
+
+
+NO_LINK = LinkValues()  # nothing read to link by: every address goes
+
+
+def link_values(texts: list[str], asked: frozenset[str]) -> LinkValues:
+    """The link fields as an answer's `field: value` lines state them (unscrubbed), of the
+    fields the request asked for only."""
+    found: dict[str, str] = {}
+    for text in texts:
+        match = _KEY_LINE.fullmatch(text)
+        if match is None or match.group(1) not in _LINK_VALUE_FIELDS & asked:
+            continue
+        raw = _without_page_reference(match.group(2).strip())
+        if match.group(1) == "contract_number":
+            raw = _without_number_label(raw)
+        if raw and raw.casefold() != UNKNOWN:
+            found[match.group(1)] = raw
+    return LinkValues(
+        street=found.get("street"),
+        house_number=found.get("house_number"),
+        postal_code=found.get("postal_code"),
+        contract_number=found.get("contract_number"),
+    )
+
+
+def scrub_general(text: str, kept: LinkValues = NO_LINK) -> str:
+    """The text without identifiers or a person's address, for the general reading and a
+    Verwaltervertrag (D131, decided 10 Nov 2026): the labelled identifiers and those of
+    D103/D129 (Steuernummer in both forms, Identifikationsnummer, Sozialversicherungsnummer,
+    eTIN, IBAN, a run of nine or more digits), a labelled birth date, and every street with
+    its number and postal code with its town except the property address the reading read
+    (`kept`). An unlabelled old date stays: a Teilungserklärung or a building's records may
+    be decades old, and their date is the document's own. The contract number read stays
+    wherever it stands on its own, so a loan can still be linked by it. Pure and idempotent;
+    lines are kept."""
+    protected = _protected_contract_number(kept.contract_number)
+    if protected is not None:
+        text = protected.sub(_KEEP_MARK, text)
+    text = _under_labels(text)
+    text = _LABELLED.sub(lambda m: f"{m.group('label')}{m.group('sep')}{SCRUBBED}", text)
+    for pattern in _ID_PATTERNS:
+        text = pattern.sub(SCRUBBED, text)
+    text = _STREET.sub(lambda m: m.group(0) if _is_kept_street(m, kept) else SCRUBBED, text)
+    text = _POSTAL_TOWN.sub(
+        lambda m: m.group(0) if _is_kept_postal(m.group(0), kept) else SCRUBBED, text
+    )
+    if protected is not None and kept.contract_number is not None:
+        text = text.replace(_KEEP_MARK, kept.contract_number.strip())
+    return text
+
+
+# A contract number shorter than this is not protected: a short one ("12") would hide the
+# digits of an identifier from the patterns.
+_PROTECTED_MIN_LENGTH = 4
+
+
+def _protected_contract_number(number: str | None) -> re.Pattern[str] | None:
+    """The read contract number as it stands in the text on its own, not inside a longer
+    number or word."""
+    if number is None or len(number.strip()) < _PROTECTED_MIN_LENGTH:
+        return None
+    return re.compile(rf"(?<![A-Za-z0-9]){re.escape(number.strip())}(?![A-Za-z0-9])")
+
+
+def _normalized(text: str) -> str:
+    return " ".join(text.split()).casefold()
+
+
+def _is_kept_street(match: re.Match[str], kept: LinkValues) -> bool:
+    """The street match is the read property address: its number is the read house number,
+    and its street is the read street, with the words before the match where the read street
+    has more of them ("Berliner Straße" read, "Straße 7" matched)."""
+    if not kept.street or not kept.house_number:
+        return False
+    name, _, number = _normalized(match.group(0)).rpartition(" ")
+    if number.replace(" ", "") != kept.house_number.replace(" ", "").casefold():
+        return False
+    street = _normalized(kept.street)
+    if street == name:
+        return True
+    if not street.endswith(" " + name):
+        return False
+    head = street[: -len(name)].strip()
+    before = _normalized(match.string[: match.start()])
+    return before.endswith(head) and (
+        len(before) == len(head) or not before[-len(head) - 1].isalpha()
+    )
+
+
+def _is_kept_postal(found: str, kept: LinkValues) -> bool:
+    return bool(kept.postal_code) and found.split()[0] == kept.postal_code.strip()
+
+
+def scrub_general_answer(text: str, asked: frozenset[str]) -> str:
+    """A general reading's raw answer as ai_call keeps it: every line scrubbed (scrub_general)
+    but those of the link fields the request asked for, whose values are what the reading
+    links by."""
+    lines = text.split("\n")
+    kept = link_values(lines, asked)
+    scrubbed = scrub_general("\n".join(lines), kept).split("\n")
+    return "\n".join(
+        _answer_line(line, clean, asked) for line, clean in zip(lines, scrubbed, strict=True)
+    )
+
+
+def _answer_line(line: str, clean: str, asked: frozenset[str]) -> str:
+    """An asked link line as written; one the model volunteered (a field not asked, such as
+    an owner's home address as the street of a Vorauszahlungsbescheid) with its value gone;
+    any other line scrubbed."""
+    match = _KEY_LINE.fullmatch(line)
+    if match is None or match.group(1) not in _LINK_VALUE_FIELDS:
+        return clean
+    return line if match.group(1) in asked else f"{match.group(1)}: {SCRUBBED}"
 
 
 # --- Which field set a classified document gets -----------------------------------------

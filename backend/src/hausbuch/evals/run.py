@@ -105,7 +105,7 @@ def read_document(client: ModelClient, settings: Settings, data: bytes, media_ty
             response = _send(client, request)
             if response is None:
                 return Reading(kind=kind, error="ai.refused")
-            values = chunk_values(kind, response, offset)
+            values = chunk_values(kind, response, offset, subtype)
             if not values:
                 return Reading(kind=kind, error="ai.unparsable")
             chunks.append(values)

@@ -49,10 +49,12 @@ from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import proposal as proposal_table
 from hausbuch.db.tables import workspace as workspace_table
 from hausbuch.rules.extraction_parse import (
+    GENERAL_SCRUBBED_KINDS,
     SCRUBBED_KINDS,
     TENANT_SUBTYPES,
     extraction_kind,
     parse_lines,
+    scrub_general_answer,
     scrub_identifiers,
 )
 from hausbuch.schemas.ai import ClassifyOutput, ExtractedValue
@@ -381,7 +383,7 @@ def _extract(
         block = documents.document_block(data, original.media_type, citations=True)
         request = extract_request(deps.settings, kind, block, subtype=subtype)
         values, call_id = _extract_chunk(
-            deps, workspace_id, document_id, original.proposal_id, request, kind, start
+            deps, workspace_id, document_id, original.proposal_id, request, kind, start, subtype
         )
         first_id = first_id or call_id
         merge_values(merged, values)
@@ -404,20 +406,28 @@ def _extract_chunk(
     request: ModelRequest,
     kind: ExtractionKind,
     page_offset: int,
+    subtype: DocumentSubtype | None = None,
 ) -> tuple[dict[str, ExtractedValue], UUID]:
     # The birth-date rule of the scrub counts back from the job clock's year (D103).
     year = deps.clock().year
 
     def parsed(response: ModelResponse) -> _Parsed:
-        values = parse_lines(response.blocks, kind, page_offset=page_offset, reference_year=year)
+        values = parse_lines(
+            response.blocks, kind, page_offset=page_offset, reference_year=year, subtype=subtype
+        )
         if not values:  # no line keyed by a field of this kind
             return _Parsed(None, None, UNPARSABLE)
         output = {key: value.model_dump(mode="json") for key, value in values.items()}
         return _Parsed(values, output, None)
 
     # The pay documents' and the Einkommensteuerbescheid's raw answer is scrubbed like their
-    # values and quotes (D103, D129): no identifier reaches ai_call.raw_text either.
-    scrub = partial(scrub_identifiers, reference_year=year) if kind in SCRUBBED_KINDS else None
+    # values and quotes (D103, D129): no identifier reaches ai_call.raw_text either. So is the
+    # general reading's and a Verwaltervertrag's, but for its link lines (D131).
+    scrub: Callable[[str], str] | None = None
+    if kind in SCRUBBED_KINDS:
+        scrub = partial(scrub_identifiers, reference_year=year)
+    elif kind in GENERAL_SCRUBBED_KINDS:
+        scrub = partial(scrub_general_answer, asked=frozenset(asked_fields(kind, subtype)))
     return _with_one_retry(
         deps, workspace_id, document_id, proposal_id, request, parsed, scrub=scrub
     )

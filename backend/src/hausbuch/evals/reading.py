@@ -80,11 +80,15 @@ def extract_requests_for(
 
 
 def chunk_values(
-    kind: ExtractionKind, response: ModelResponse, page_offset: int
+    kind: ExtractionKind,
+    response: ModelResponse,
+    page_offset: int,
+    subtype: DocumentSubtype | None = None,
 ) -> dict[str, ExtractedValue]:
     """One chunk's answer; empty when no line names a field of `kind` (the job's
-    ai.unparsable)."""
-    return parse_lines(response.blocks, kind, page_offset=page_offset)
+    ai.unparsable). The subtype picks the general reading's link fields, whose quotes keep the
+    address they read (D131)."""
+    return parse_lines(response.blocks, kind, page_offset=page_offset, subtype=subtype)
 
 
 def merged_values(
