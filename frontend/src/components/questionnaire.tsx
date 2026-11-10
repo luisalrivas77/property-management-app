@@ -47,6 +47,7 @@ import {
   RETURN_INPUT_KIND,
   WORK_ROOM_PREFER,
 } from "./labels";
+import type { QuestionTarget } from "./taxYear";
 import { Loading } from "./ui";
 import { useLoad } from "./useLoad";
 
@@ -553,7 +554,9 @@ function describeRow(row: ReturnInputFact, index: number): string {
 
 // --- the page -------------------------------------------------------------------------------
 
-export function QuestionnaireFlow({ year }: { year: number }) {
+/** `start` opens the flow at that slot (a link from the Anlage N tab); without it, or when the
+ * year has no such slot, the flow opens at the first open question. */
+export function QuestionnaireFlow({ year, start }: { year: number; start?: QuestionTarget | null }) {
   const load = useCallback(() => loadFlow(year), [year]);
   const state = useLoad(load);
   const [index, setIndex] = useState<number | null>(null);
@@ -568,7 +571,12 @@ export function QuestionnaireFlow({ year }: { year: number }) {
         {(data) => {
           const list = steps(data);
           const firstOpen = list.findIndex((s) => isOpen(data.view, s.slot));
-          const current = index ?? (firstOpen === -1 ? list.length : firstOpen);
+          const startAt = start
+            ? list.findIndex((s) =>
+                sameSlot(s.slot, { key: start.key, owner_id: start.ownerId ?? null, property_id: start.propertyId ?? null }),
+              )
+            : -1;
+          const current = index ?? (startAt !== -1 ? startAt : firstOpen === -1 ? list.length : firstOpen);
           const reload = () => state.reload();
           return (
             <>

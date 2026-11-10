@@ -35,6 +35,9 @@ const FOOTER = "Ein Entwurf zum Prüfen, keine Steuerberatung.";
 const loadOwners = () => ok(api.GET("/api/owners"));
 // The years with an Anlage N rule set (a draft is made only under the year's own one).
 const loadYears = () => ok(api.GET("/api/tax/anlage-n/years")).then((r) => r.years);
+// The year's questions with their German text (the open ones are listed under Offene Punkte).
+const loadQuestionnaire = (year: number) =>
+  ok(api.GET("/api/tax/questionnaire", { params: { query: { tax_year: year } } }));
 
 /** The draft, or why there is none: no pay source yet, or no rule set for the year. */
 type DraftState = { draft: AnlageNDraft } | { missing: "no_pay" | "no_rule_set" };
@@ -441,25 +444,30 @@ function OpenPoints({
   year: number;
 }) {
   const sorted = [...warnings.filter((w) => w.severity === "warning"), ...warnings.filter((w) => w.severity === "info")];
-  const questions = (estimate?.questionnaire.open ?? []).filter((q) => q.owner_id === ownerId).length;
+  const load = useCallback(() => loadQuestionnaire(year), [year]);
+  const view = useLoad(load);
+  // This person's open slots, then the household's (no owner, no property); the property
+  // questions belong to the Anlage V tab.
+  const open = (view.data?.progress.open ?? estimate?.questionnaire.open ?? []).filter(
+    (q) => q.owner_id === ownerId || (q.owner_id == null && q.property_id == null),
+  );
+  const text = new Map((view.data?.questions ?? []).map((q) => [q.key, q.question_de]));
   return (
     <section className="card tax-open" aria-labelledby="tax-n-open">
       <h2 id="tax-n-open">Offene Punkte</h2>
-      {sorted.length === 0 && questions === 0 ? (
+      {sorted.length === 0 && open.length === 0 ? (
         <p className="muted">Keine offenen Punkte.</p>
       ) : (
         <ul className="tax-open-list">
-          {questions > 0 ? (
-            <li className="tax-open-item tax-open-info">
-              <span className="badge badge-info">Frage</span>
-              <p>
-                {questions} {questions === 1 ? "Jahresfrage" : "Jahresfragen"} zu dieser Person offen
-              </p>
+          {open.map((q) => (
+            <li key={`${q.key}-${q.owner_id ?? "household"}`} className="tax-open-item tax-open-info">
+              <span className="badge badge-info">{q.owner_id == null ? "Frage Haushalt" : "Frage"}</span>
+              <p>{text.get(q.key) ?? "Jahresfrage offen"}</p>
               <p className="tax-open-actions">
-                <Link href={questionnaireHref(year)}>Jahresfragen beantworten</Link>
+                <Link href={questionnaireHref(year, { key: q.key, ownerId: q.owner_id })}>Beantworten</Link>
               </p>
             </li>
-          ) : null}
+          ))}
           {sorted.map((warning, index) => (
             <li key={`${warning.code}-${index}`} className={`tax-open-item tax-open-${warning.severity}`}>
               <span className={warning.severity === "warning" ? "badge badge-warn" : "badge badge-info"}>
