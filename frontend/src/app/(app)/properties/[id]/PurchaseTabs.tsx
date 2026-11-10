@@ -255,7 +255,7 @@ export function SplitsTab({ property, onSelected }: { property: Property; onSele
     <div className="stack">
       <p className="muted">
         Der Gebäudeanteil am Kaufpreis bestimmt die AfA. Quellen: Kaufvertrag, BMF-Arbeitshilfe oder Gutachten. Mehrere
-        Kandidaten sind möglich; einer wird als AfA-Basis gewählt.
+        Kandidaten sind möglich; der erste wird von selbst die AfA-Basis, ein anderer kann danach gewählt werden.
       </p>
       <Loading state={splits}>
         {(list) =>
@@ -310,6 +310,7 @@ export function SplitsTab({ property, onSelected }: { property: Property; onSele
               close();
               splits.reload();
               documents.reload();
+              onSelected(); // D133: the first split becomes the AfA basis on its own
             }}
           />
         )}
