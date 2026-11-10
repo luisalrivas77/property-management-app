@@ -854,6 +854,145 @@ class QuestionnaireProgress(Schema):
 
 # --- Rule results (§5) -----------------------------------------------------------------
 
+# The itemised Werbungskosten by block (§5.2–5.6), as the rules computed them: each block's
+# `amount` is the figure the rule returned, its other fields the inputs and intermediate values
+# that rule used, so the screen can explain the amount without computing it. The blocks' amounts
+# add up to AnlageNDraft.wk_itemised. A block is None when the owner has no row of its kind.
+
+
+class CommuteRouteDetail(Schema):
+    """One route as typed, with its part of the Pauschale (§5.2): the car km and the other km
+    (Sammelbeförderung, Bus, Bahn, Rad) each × days × rate, to the cent."""
+
+    input_id: UUID
+    workplace_label: str
+    days: int = Field(ge=0)
+    km: int = Field(ge=1)
+    km_car: int = Field(ge=0)
+    km_rest: int = Field(ge=0)  # km_collective + km_other
+    pauschale_car: NonNegativeMoney
+    pauschale_rest: NonNegativeMoney
+    public_transport_costs: NonNegativeMoney | None = None
+
+
+class CommuteComponent(Schema):
+    """§5.2: the routes' Pauschale (the non-car part capped), the tickets when higher, minus
+    the employer's tax-free and flat-taxed commute benefits, floored at 0."""
+
+    amount: NonNegativeMoney  # the deductible part
+    routes: list[CommuteRouteDetail] = Field(default_factory=list)
+    rates: list[CommuteRateTier] = Field(default_factory=list)
+    pauschale_car: NonNegativeMoney
+    pauschale_rest: NonNegativeMoney
+    cap_non_car: NonNegativeMoney
+    rest_capped: bool  # the non-car part was cut to cap_non_car
+    public_transport_costs: NonNegativeMoney
+    public_transport_used: bool  # the tickets replaced the Pauschale
+    total: NonNegativeMoney  # before the employer's benefits
+    employer_offset: NonNegativeMoney
+
+
+class HomeOfficeComponent(Schema):
+    """§5.3: (days_other_workplace + days_no_other_workplace) × day_rate, at most cap."""
+
+    amount: NonNegativeMoney
+    input_id: UUID  # the return_input row the block reads
+    days_other_workplace: int = Field(ge=0)
+    days_no_other_workplace: int = Field(ge=0)
+    day_rate: NonNegativeMoney
+    full: NonNegativeMoney  # days × day_rate before the cap
+    cap: NonNegativeMoney
+    capped: bool
+
+
+class WorkRoomComponent(Schema):
+    """§5.4: the flat rate (a twelfth per month) against the room's share of the costs."""
+
+    amount: NonNegativeMoney
+    input_id: UUID  # the return_input row the block reads
+    months: int = Field(ge=1, le=12)
+    actual: NonNegativeMoney
+    flat: NonNegativeMoney
+    method: Literal["actual", "flat"]
+    prefer: Literal["flat", "actual"] | None = None
+
+
+class EquipmentItemDetail(Schema):
+    """§5.5: one item's amount in the year. method `full`: the base in the purchase year only
+    (a subscription, a low-value item, a class written off at once); `depreciated`: the base
+    over `life_months` from the purchase month, `months_in_year` of them in this year."""
+
+    input_id: UUID
+    label: str
+    item_class: ItemClass
+    bought_year: TaxYear
+    professional_share: Fraction
+    gross: NonNegativeMoney
+    base: NonNegativeMoney  # gross × professional share
+    method: Literal["full", "depreciated"]
+    life_months: int | None = Field(default=None, ge=1)
+    months_in_year: int = Field(ge=0, le=12)
+    disposed: bool = False  # disposed of in or before this year
+    amount: NonNegativeMoney
+
+
+class EquipmentComponent(Schema):
+    amount: NonNegativeMoney
+    items: list[EquipmentItemDetail] = Field(default_factory=list)
+
+
+class TelecomComponent(Schema):
+    """§5.5: min(bills × share, cap_monthly × months) − employer reimbursement, floored at 0."""
+
+    amount: NonNegativeMoney
+    input_id: UUID  # the return_input row the block reads
+    bills_year: NonNegativeMoney
+    share: Rate
+    share_amount: NonNegativeMoney  # bills × share, to the cent
+    months: int = Field(ge=1, le=12)
+    cap_monthly: NonNegativeMoney
+    cap: NonNegativeMoney  # cap_monthly × months
+    employer_reimbursed: NonNegativeMoney
+
+
+class AmountItem(Schema):
+    """One typed row of a sum block (dues, training, other)."""
+
+    input_id: UUID
+    label: str
+    amount: NonNegativeMoney
+    is_union: bool = False  # dues: a union (beside the Pauschbetrag from 2026)
+    flat: bool = False  # other: the account fee's flat amount, none typed
+
+
+class SumComponent(Schema):
+    amount: NonNegativeMoney  # Σ items
+    items: list[AmountItem] = Field(default_factory=list)
+
+
+class WerbungskostenComponents(Schema):
+    commute: CommuteComponent | None = None
+    home_office: HomeOfficeComponent | None = None
+    work_room: WorkRoomComponent | None = None
+    equipment: EquipmentComponent | None = None
+    telecom: TelecomComponent | None = None
+    dues: SumComponent | None = None
+    training: SumComponent | None = None
+    other: SumComponent | None = None
+
+    def total(self) -> Decimal:
+        blocks = (
+            self.commute,
+            self.home_office,
+            self.work_room,
+            self.equipment,
+            self.telecom,
+            self.dues,
+            self.training,
+            self.other,
+        )
+        return sum((b.amount for b in blocks if b is not None), Decimal("0"))
+
 
 class AnlageNDraft(Schema):
     """One owner's Anlage N for one year (§5.6). status: certified (from certificates),
@@ -874,11 +1013,14 @@ class AnlageNDraft(Schema):
     warnings: list[DraftWarning] = Field(default_factory=list)
     sources: list[SourceRef] = Field(default_factory=list)
     form: RuleSetStamp
+    components: WerbungskostenComponents = Field(default_factory=WerbungskostenComponents)
 
     @model_validator(mode="after")
     def _arithmetic(self) -> Self:
         if self.result != self.gross - self.wk_applied:
             raise ValueError("result = gross − wk_applied")
+        if self.components.total() != self.wk_itemised:
+            raise ValueError("Σ components = wk_itemised")
         if (self.status == "none") != (self.gross_source is None):
             raise ValueError("a draft with pay names its source")
         return self
@@ -1001,6 +1143,13 @@ class MissingItem(Schema):
     property_id: UUID | None = None
 
 
+class ChildMonthsDetail(Schema):
+    """One child's months in the year (D109), with the birth month only: never the day."""
+
+    born_month: str = Field(pattern=r"^[0-9]{4}-(0[1-9]|1[0-2])$")  # YYYY-MM
+    months: int = Field(ge=0, le=12)
+
+
 class ReturnEstimate(Schema):
     """The whole-return estimate (§5.8, D101). result = assessed.total − withheld.total:
     positive is a back-payment, negative a refund."""
@@ -1027,6 +1176,8 @@ class ReturnEstimate(Schema):
     warnings: list[DraftWarning] = Field(default_factory=list)
     tariff: TariffStamp
     sources: list[SourceRef] = Field(default_factory=list)
+    # the household's children with their months in the year, in the household's order
+    children: list[ChildMonthsDetail] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _arithmetic(self) -> Self:

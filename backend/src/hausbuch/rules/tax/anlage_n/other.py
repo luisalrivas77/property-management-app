@@ -43,12 +43,16 @@ def training_lines(rows: list[ReturnInputFact]) -> tuple[Decimal, list[DraftWarn
     return sum((r.value.amount for r in mine), ZERO), warnings
 
 
+def other_expense_items(
+    rows: list[ReturnInputFact], rs: AnlageNRuleSet
+) -> list[tuple[ReturnInputFact, Decimal]]:
+    """Each other_expense row with the amount it counts (the flat fee when none is typed)."""
+    return [
+        (r, r.value.amount if r.value.amount is not None else rs.account_fee_flat)
+        for r in rows
+        if r.kind is K.OTHER_EXPENSE
+    ]
+
+
 def other_expense_amount(rows: list[ReturnInputFact], rs: AnlageNRuleSet) -> Decimal:
-    return sum(
-        (
-            r.value.amount if r.value.amount is not None else rs.account_fee_flat
-            for r in rows
-            if r.kind is K.OTHER_EXPENSE
-        ),
-        ZERO,
-    )
+    return sum((amount for _, amount in other_expense_items(rows, rs)), ZERO)

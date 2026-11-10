@@ -32,6 +32,11 @@ class CommuteResult:
     deductible: Decimal
     notes: list[str] = field(default_factory=list)
     warnings: list[DraftWarning] = field(default_factory=list)
+    # How the figures above came about, for the draft's components (§5.2): each route's (car,
+    # other) part, whether the cap cut the other part, and the typed tickets.
+    route_parts: list[tuple[Decimal, Decimal]] = field(default_factory=list)
+    rest_capped: bool = False
+    tickets: Decimal = ZERO
 
 
 def _per_day(km: int, rs: AnlageNRuleSet) -> Decimal:
@@ -63,8 +68,10 @@ def commute_lines(
     routes: list[CommuteFact], certificates: list[WageCertificate], rs: AnlageNRuleSet
 ) -> CommuteResult:
     car = rest = ZERO
+    parts: list[tuple[Decimal, Decimal]] = []
     for route in routes:
         c, r = _route_parts(route, rs)
+        parts.append((c, r))
         car += c
         rest += r
     total = car + min(rest, rs.commute_cap_non_car)
@@ -87,4 +94,7 @@ def commute_lines(
         deductible=max(ZERO, cents(total) - offset),
         notes=notes,
         warnings=warnings,
+        route_parts=parts,
+        rest_capped=rest > rs.commute_cap_non_car,
+        tickets=tickets,
     )

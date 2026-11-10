@@ -39,6 +39,7 @@ from hausbuch.rules.tax.tariff import church_tax, income_tax, soli
 from hausbuch.schemas.employment import (
     AnlageNRuleSet,
     AssessedTax,
+    ChildMonthsDetail,
     ChildrenResult,
     FilingCheck,
     MissingItem,
@@ -314,7 +315,13 @@ def return_estimate(
                     )
                 )
 
-    counted = sum(1 for child in household.children if child_months(child, tax_year)[0] > 0)
+    child_rows = [
+        ChildMonthsDetail(
+            born_month=child.born_on.strftime("%Y-%m"), months=child_months(child, tax_year)[0]
+        )
+        for child in household.children
+    ]
+    counted = sum(1 for child in child_rows if child.months > 0)
     if any(c.child_allowance_count != counted for i in items.values() for c in i.pay.real):
         warnings.append(warning(WarningCode.RETURN_CHILDREN_MISMATCH))
 
@@ -355,4 +362,5 @@ def return_estimate(
             tax_year=tariff.tax_year, version=tariff.version, reused_from=tariff.reused_from
         ),
         sources=unique(refs),
+        children=child_rows,
     )
