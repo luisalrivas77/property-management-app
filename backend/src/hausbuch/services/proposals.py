@@ -130,6 +130,7 @@ from . import (
     documents,
     income_inputs,
     loans,
+    matching,
     owners,
     properties,
     tax_inputs,
@@ -321,6 +322,7 @@ def record_read_result(
     values: dict[str, ExtractedValue] | None,
     extract_call_id: UUID | None,
     blocked_tenant_data: bool = False,
+    iban_key: bytes | None = None,
 ) -> Proposal:
     """The job read the document. Writes the `ai` extraction version (when `values` is
     given), builds the PrefillContext from the workspace, calls
@@ -338,6 +340,11 @@ def record_read_result(
 
     Appends document.classified and, with values, document.extracted (the job does not).
     A no-op returning the proposal as stored when it is no longer queued or running.
+
+    An invoice or Bescheid read: whether a bank line already pays it
+    (services.matching.paid_from_rental_account, with `iban_key` the bill's IBAN is compared
+    too) goes into the context, so no part of it is proposed as paid from another account
+    (phase 2 D135).
     """
     current = _lock(ctx.conn, proposal_id)
     if current.status not in _IN_FLIGHT:
@@ -401,7 +408,11 @@ def record_read_result(
             ),
         )
 
-    context = prefill_context(ctx.conn, document_id, classification)
+    paid = built_kind in (
+        ExtractionKind.INVOICE,
+        ExtractionKind.BESCHEID,
+    ) and matching.paid_from_rental_account(ctx.conn, document_id, iban_key=iban_key)
+    context = prefill_context(ctx.conn, document_id, classification, paid_from_rental_account=paid)
     records = build_proposal(built_kind, extraction, context)
     if extraction_id is None and records and records[0].key == "typing":
         # No reading of its own: the hand fields come from the current extraction, whose
@@ -472,7 +483,11 @@ def record_read_failure(
 
 
 def prefill_context(
-    conn: Connection, document_id: UUID, classification: ClassifyOutput
+    conn: Connection,
+    document_id: UUID,
+    classification: ClassifyOutput,
+    *,
+    paid_from_rental_account: bool = False,
 ) -> PrefillContext:
     """The workspace's records as the plain facts build_proposal reads (§6.3)."""
     props = properties.list_properties(conn)
@@ -480,6 +495,7 @@ def prefill_context(
     return PrefillContext(
         document_id=document_id,
         classification=classification,
+        paid_from_rental_account=paid_from_rental_account,
         properties=[
             ExistingProperty.model_validate(
                 p.model_dump(include=set(ExistingProperty.model_fields))
@@ -1040,8 +1056,11 @@ class _Apply:
         to the property the document is linked to. Only the proposed fields are taken from
         the values (never a supersedes_id or a withdrawal). A current row of the same
         question with the same value and document: nothing is written; another value or
-        document: the new row supersedes it (a corrected certificate)."""
-        kind = TaxInputKind(record.key.split(":", 1)[1])
+        document: the new row supersedes it (a corrected certificate). A cost paid from
+        another account (tax_input:private_cost:<category>, phase 2 D135) is one of any number
+        per property and year: the row it replaces is the current one of the same year,
+        document and category (the same bill applied again), never another bill's."""
+        kind = TaxInputKind(record.key.split(":")[1])
         if kind not in _PREFILL_TAX_INPUTS:
             raise ValueError(f"record {record.key!r} cannot be applied in this step")
         given = _undot({f: values[f] for f in _PREFILL_TAX_INPUTS[kind] if f in values})
@@ -1073,6 +1092,14 @@ class _Apply:
         current = tax_inputs.find_current(
             self.ctx.conn, property_id, kind, tax_year=data.tax_year, loan_id=data.loan_id
         )
+        if kind is TaxInputKind.PRIVATE_COST:
+            category = getattr(data.value, "category", None)
+            current = [
+                r
+                for r in current
+                if r.document_id == data.document_id
+                and getattr(r.value, "category", None) == category
+            ][-1:]
         if current:
             (row,) = current  # one per year (and loan): create_tax_input refuses a second
             if row.value == data.value and row.document_id == data.document_id:
@@ -1221,6 +1248,14 @@ class _OwnerRef(Schema):
 _PREFILL_TAX_INPUTS = {
     TaxInputKind.INTEREST_CERTIFIED: ("tax_year", "loan_id", "value.amount"),
     TaxInputKind.RUECKLAGE_SPENT: ("tax_year", "value.amount"),
+    # phase 2 D135: a bill's part paid from another account, one record per category
+    TaxInputKind.PRIVATE_COST: (
+        "tax_year",
+        "value.cost_class",
+        "value.category",
+        "value.label",
+        "value.amount",
+    ),
     # phase 5 D126: the Bescheid's schedule, one date and amount per slot (rules.prefill)
     TaxInputKind.GRUNDSTEUER_SCHEDULE: (
         "tax_year",

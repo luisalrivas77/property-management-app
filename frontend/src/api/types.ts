@@ -5797,8 +5797,11 @@ export interface components {
          *     travel: trips × km_round_trip × the rule set's travel_rate_per_km (no amount typed);
          *     every other class: amount × share. financing (phase 4b D134) is a Geldbeschaffungskosten
          *     bill paid privately, such as the notary and land registry for the Grundschuld: it goes to
-         *     wk.financing_costs, every other class to wk.other. The label is free text: it stays in the
-         *     row and never enters the event payload (only amounts and codes do).
+         *     wk.financing_costs, every other class to wk.other. Phase 2 D135: a cost a bill's reading
+         *     proposes carries its `category` (PRIVATE_COST_CATEGORIES, with class other, or financing
+         *     for loan_fees); the draft then books it on that category's line of the rule set's
+         *     category_lines, as a confirmed allocation of the category would land. The label is free
+         *     text: it stays in the row and never enters the event payload (only amounts and codes do).
          */
         PrivateCostValue: {
             /**
@@ -5823,6 +5826,7 @@ export interface components {
              *     }
              */
             share: components["schemas"]["Fraction"];
+            category?: components["schemas"]["AllocationCategory"] | null;
         };
         /**
          * ProgressionInfo
@@ -8256,7 +8260,7 @@ export interface components {
          * WarningCode
          * @enum {string}
          */
-        WarningCode: "year_end_straddle" | "afa.no_split" | "afa.cost_row_unpaid" | "afa.acquisition_cost_without_row" | "afa.purchase_price_mismatch" | "afa.useful_life_report" | "afa.movable_asset_no_evidence" | "afa.movable_asset_exceeds_building" | "limit.exceeded" | "limit.prior_year_amendment" | "limit.estimated_net" | "anschaffungsnah.performance_date_check" | "renovation.undecided" | "interest.certificate_mismatch" | "hausgeld.abrechnung_pending" | "income.other_review" | "income.pre_handover" | "income.living_area_missing" | "umlagen.mixed_terms" | "reduced_rent.no_market_rent" | "reduced_rent.prognosis_needed" | "reduced_rent.partial" | "draft.open_lines_excluded" | "draft.form_provisional" | "draft.allocation_without_property" | "archive.finanzamt_copy_needed" | "tax.travel_frequency" | "anlage_n.certificate_missing" | "anlage_n.church_mismatch" | "anlage_n.tax_class_6" | "anlage_n.periods_overlap" | "anlage_n.days_implausible" | "anlage_n.home_office_capped" | "anlage_n.too_many_routes" | "anlage_n.receipt_missing" | "anlage_n.form_provisional" | "anlage_n.payslip_gap" | "anlage_n.payslip_no_ytd" | "anlage_n.work_room_records" | "anlage_n.work_room_centre" | "anlage_n.work_room_partial" | "anlage_n.first_workplace_check" | "return.progression_provisional" | "return.benefit_possible_double" | "return.children_mismatch" | "return.kindergeld_apply" | "return.child_over_18" | "return.childcare_until_14" | "return.donation_over_cap" | "return.filing_required" | "return.questionnaire_open" | "return.not_modelled" | "questionnaire_provisional" | "tax_export.questions_open";
+        WarningCode: "year_end_straddle" | "afa.no_split" | "afa.cost_row_unpaid" | "afa.acquisition_cost_without_row" | "afa.purchase_price_mismatch" | "afa.useful_life_report" | "afa.movable_asset_no_evidence" | "afa.movable_asset_exceeds_building" | "limit.exceeded" | "limit.prior_year_amendment" | "limit.estimated_net" | "anschaffungsnah.performance_date_check" | "renovation.undecided" | "interest.certificate_mismatch" | "hausgeld.abrechnung_pending" | "income.other_review" | "income.pre_handover" | "income.living_area_missing" | "umlagen.mixed_terms" | "reduced_rent.no_market_rent" | "reduced_rent.prognosis_needed" | "reduced_rent.partial" | "draft.open_lines_excluded" | "draft.form_provisional" | "draft.allocation_without_property" | "archive.finanzamt_copy_needed" | "tax.travel_frequency" | "tax.private_cost_paid_from_account" | "anlage_n.certificate_missing" | "anlage_n.church_mismatch" | "anlage_n.tax_class_6" | "anlage_n.periods_overlap" | "anlage_n.days_implausible" | "anlage_n.home_office_capped" | "anlage_n.too_many_routes" | "anlage_n.receipt_missing" | "anlage_n.form_provisional" | "anlage_n.payslip_gap" | "anlage_n.payslip_no_ytd" | "anlage_n.work_room_records" | "anlage_n.work_room_centre" | "anlage_n.work_room_partial" | "anlage_n.first_workplace_check" | "return.progression_provisional" | "return.benefit_possible_double" | "return.children_mismatch" | "return.kindergeld_apply" | "return.child_over_18" | "return.childcare_until_14" | "return.donation_over_cap" | "return.filing_required" | "return.questionnaire_open" | "return.not_modelled" | "questionnaire_provisional" | "tax_export.questions_open";
         /** WerbungskostenComponents */
         WerbungskostenComponents: {
             commute?: components["schemas"]["CommuteComponent"] | null;

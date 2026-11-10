@@ -170,6 +170,8 @@ PHASE3_CASES = {
         "travel_frequency_warning",
         # phase 4b D134: a privately paid financing cost on the Geldbeschaffungskosten line
         "private_financing_cost_in_financing",
+        # phase 2 D135: a private cost whose bill a bank line paid is not counted twice
+        "private_cost_paid_from_account_not_counted",
     },
 }
 

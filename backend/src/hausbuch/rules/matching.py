@@ -143,7 +143,7 @@ def match_loan(tx: MatchTransaction, context: MatchContext) -> AllocationSet | N
 
 
 def match_document(tx: MatchTransaction, context: MatchContext) -> AllocationSet | None:
-    hits = {doc.id: doc for doc in context.documents if _document_hit(tx, doc)}
+    hits = {doc.id: doc for doc in context.documents if document_hit(tx, doc)}
     if len(hits) != 1:
         return None
     (doc,) = hits.values()
@@ -778,7 +778,7 @@ def matcher_owns(hmac: str, context: MatchContext) -> bool:
     )
 
 
-def _document_hit(tx: MatchTransaction, doc: DocumentFacts) -> bool:
+def document_hit(tx: MatchTransaction, doc: DocumentFacts) -> bool:
     paid = abs(tx.amount)
     in_window = any(
         abs(paid - p.amount) <= DOCUMENT_AMOUNT_TOLERANCE

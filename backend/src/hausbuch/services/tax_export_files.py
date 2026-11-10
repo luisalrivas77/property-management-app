@@ -305,6 +305,11 @@ WARNING_TEXT: dict[WarningCode, Callable[[dict[str, str]], str]] = {
         "Mehr als 50 Fahrten zur Immobilie im Jahr: bei fast täglicher Anwesenheit kann "
         "nur die halbe Pauschale gelten. Bitte prüfen."
     ),
+    WarningCode.TAX_PRIVATE_COST_PAID_FROM_ACCOUNT: lambda p: (
+        "Eine Rechnung ist als von einem anderen Konto bezahlt eingetragen, wurde aber vom "
+        "Mietkonto bezahlt: sie zählt nur einmal, mit der Buchung vom Mietkonto. Die Angabe "
+        "bitte zurückziehen."
+    ),
     WarningCode.ANLAGE_N_CERTIFICATE_MISSING: lambda p: (
         "Keine Lohnsteuerbescheinigung für dieses Jahr: die Zahlen beruhen auf "
         "Gehaltsabrechnungen oder der Schätzung."

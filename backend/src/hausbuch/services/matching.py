@@ -49,7 +49,7 @@ Documents as the matcher sees them (DocumentFacts), from each document's current
 
 import re
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 from uuid import UUID
@@ -498,6 +498,50 @@ def document_facts(
         iban_hmac=_hmac(_value(x, "iban"), iban_key),
         reference=_value(x, "reference") or None,
     )
+
+
+def paid_from_rental_account(
+    conn: Connection, document_id: UUID, *, iban_key: bytes | None = None
+) -> bool:
+    """Phase 2 D135: a bank line of the read accounts pays this bill, so none of it is a cost
+    paid from another account. True when an allocation (proposed or confirmed) already
+    carries the document as its Beleg, or when a stored transaction is a document hit of it
+    (rules.matching.document_hit: the amount within 0.01, the booking within 10 days of the
+    document date, and the bill's IBAN or its reference in the purpose; the IBAN is compared
+    only when the key is given). A document the matcher cannot read (no amount or date)
+    finds no line."""
+    carried = conn.execute(
+        select(
+            exists().where(
+                allocation_table.c.document_id == document_id,
+                allocation_table.c.status != AllocationStatus.SUPERSEDED.value,
+            )
+        )
+    ).scalar_one()
+    if carried:
+        return True
+    e = evidence_of(conn, document_id)
+    if e is None or e.extraction.kind is ExtractionKind.GRUNDSTEUERBESCHEID:
+        return False
+    facts = document_facts(e, iban_key=iban_key or b"", loans_by_property={})
+    if facts is None:
+        return False
+    if iban_key is None:
+        facts = facts.model_copy(update={"iban_hmac": None})
+    t = transaction_table.c
+    window = timedelta(days=matchers.DOCUMENT_WINDOW_DAYS)
+    for payment in facts.payments:
+        low = payment.amount - matchers.DOCUMENT_AMOUNT_TOLERANCE
+        high = payment.amount + matchers.DOCUMENT_AMOUNT_TOLERANCE
+        rows = conn.execute(
+            select(transaction_table).where(
+                func.abs(t.amount).between(low, high),
+                t.booking_date.between(payment.due_on - window, payment.due_on + window),
+            )
+        )
+        if any(matchers.document_hit(match_transaction(row), facts) for row in rows):
+            return True
+    return False
 
 
 def grundsteuer_facts(

@@ -15459,6 +15459,16 @@
               "numerator": 1,
               "denominator": 1
             }
+          },
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AllocationCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -15468,7 +15478,7 @@
           "label"
         ],
         "title": "PrivateCostValue",
-        "description": "A rental cost paid from a private account (phase 4b D111): trips to the flat, postage,\na landlords' association, software and the like; tax_year on the row is the year paid.\ntravel: trips × km_round_trip × the rule set's travel_rate_per_km (no amount typed);\nevery other class: amount × share. financing (phase 4b D134) is a Geldbeschaffungskosten\nbill paid privately, such as the notary and land registry for the Grundschuld: it goes to\nwk.financing_costs, every other class to wk.other. The label is free text: it stays in the\nrow and never enters the event payload (only amounts and codes do)."
+        "description": "A rental cost paid from a private account (phase 4b D111): trips to the flat, postage,\na landlords' association, software and the like; tax_year on the row is the year paid.\ntravel: trips × km_round_trip × the rule set's travel_rate_per_km (no amount typed);\nevery other class: amount × share. financing (phase 4b D134) is a Geldbeschaffungskosten\nbill paid privately, such as the notary and land registry for the Grundschuld: it goes to\nwk.financing_costs, every other class to wk.other. Phase 2 D135: a cost a bill's reading\nproposes carries its `category` (PRIVATE_COST_CATEGORIES, with class other, or financing\nfor loan_fees); the draft then books it on that category's line of the rule set's\ncategory_lines, as a confirmed allocation of the category would land. The label is free\ntext: it stays in the row and never enters the event payload (only amounts and codes do)."
       },
       "ProgressionInfo": {
         "properties": {
@@ -21839,6 +21849,7 @@
           "draft.allocation_without_property",
           "archive.finanzamt_copy_needed",
           "tax.travel_frequency",
+          "tax.private_cost_paid_from_account",
           "anlage_n.certificate_missing",
           "anlage_n.church_mismatch",
           "anlage_n.tax_class_6",

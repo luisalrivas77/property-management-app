@@ -304,14 +304,38 @@ class MovableAsset(Schema):
     in_purchase_price: bool = True
 
 
+# The categories a cost paid from another account may carry (phase 2 D135): the deductible
+# ones of rules.categories.TAX_TREATMENT (tests/rules/tax/test_private_cost_category.py keeps the
+# two equal). Tilgung, the Rücklage, the purchase price and its Nebenkosten, renovation and
+# the open categories never become a private cost.
+PRIVATE_COST_CATEGORIES = frozenset(
+    {
+        AllocationCategory.LOAN_INTEREST,
+        AllocationCategory.LOAN_FEES,
+        AllocationCategory.HAUSGELD_UMLAGEFAEHIG,
+        AllocationCategory.HAUSGELD_VERWALTUNG,
+        AllocationCategory.PROPERTY_MANAGEMENT,
+        AllocationCategory.GRUNDSTEUER,
+        AllocationCategory.INSURANCE,
+        AllocationCategory.ELECTRICITY,
+        AllocationCategory.REPAIRS,
+        AllocationCategory.PROFESSIONAL_FEES,
+        AllocationCategory.BANK_FEES,
+    }
+)
+
+
 class PrivateCostValue(Schema):
     """A rental cost paid from a private account (phase 4b D111): trips to the flat, postage,
     a landlords' association, software and the like; tax_year on the row is the year paid.
     travel: trips × km_round_trip × the rule set's travel_rate_per_km (no amount typed);
     every other class: amount × share. financing (phase 4b D134) is a Geldbeschaffungskosten
     bill paid privately, such as the notary and land registry for the Grundschuld: it goes to
-    wk.financing_costs, every other class to wk.other. The label is free text: it stays in the
-    row and never enters the event payload (only amounts and codes do)."""
+    wk.financing_costs, every other class to wk.other. Phase 2 D135: a cost a bill's reading
+    proposes carries its `category` (PRIVATE_COST_CATEGORIES, with class other, or financing
+    for loan_fees); the draft then books it on that category's line of the rule set's
+    category_lines, as a confirmed allocation of the category would land. The label is free
+    text: it stays in the row and never enters the event payload (only amounts and codes do)."""
 
     cost_class: Literal[
         "travel",
@@ -329,9 +353,17 @@ class PrivateCostValue(Schema):
     km_round_trip: int | None = Field(default=None, ge=1, le=2000)
     trip_dates: list[date] = Field(default_factory=list)
     share: Fraction = Fraction(numerator=1, denominator=1)
+    category: AllocationCategory | None = None  # phase 2 D135
 
     @model_validator(mode="after")
     def _by_class(self) -> Self:
+        if self.category is not None:
+            if self.category not in PRIVATE_COST_CATEGORIES:
+                raise ValueError("a private cost's category is a deductible one")
+            if self.cost_class not in ("other", "financing"):
+                raise ValueError("a category goes with the class other or financing")
+            if (self.cost_class == "financing") != (self.category is AllocationCategory.LOAN_FEES):
+                raise ValueError("the class financing goes with the category loan_fees")
         if self.cost_class == "travel":
             if self.trips is None or self.km_round_trip is None or self.amount is not None:
                 raise ValueError("a travel cost has trips and km_round_trip, no amount")
@@ -560,6 +592,8 @@ class WarningCode(StrEnum):
     ARCHIVE_FINANZAMT_COPY_NEEDED = "archive.finanzamt_copy_needed"  # Q8
     # Phase 4b (docs/phases/phase-4b.md §9)
     TAX_TRAVEL_FREQUENCY = "tax.travel_frequency"  # D111: more than 50 trips to the flat
+    # Phase 2 D135: a cost entered as paid from another account whose bill a bank line paid
+    TAX_PRIVATE_COST_PAID_FROM_ACCOUNT = "tax.private_cost_paid_from_account"
     ANLAGE_N_CERTIFICATE_MISSING = "anlage_n.certificate_missing"
     ANLAGE_N_CHURCH_MISMATCH = "anlage_n.church_mismatch"
     ANLAGE_N_TAX_CLASS_6 = "anlage_n.tax_class_6"
@@ -620,6 +654,7 @@ WARNING_SEVERITY: dict[WarningCode, Severity] = {
     W.DRAFT_ALLOCATION_WITHOUT_PROPERTY: "warning",
     W.ARCHIVE_FINANZAMT_COPY_NEEDED: "info",
     W.TAX_TRAVEL_FREQUENCY: "info",
+    W.TAX_PRIVATE_COST_PAID_FROM_ACCOUNT: "warning",
     W.ANLAGE_N_CERTIFICATE_MISSING: "warning",
     W.ANLAGE_N_CHURCH_MISMATCH: "warning",
     W.ANLAGE_N_TAX_CLASS_6: "warning",

@@ -617,4 +617,5 @@ def _finish(
             values=values,
             extract_call_id=extract_id,
             blocked_tenant_data=not ok,
+            iban_key=deps.settings.iban_hmac_key,
         )
