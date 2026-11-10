@@ -7,6 +7,7 @@ import fixture_models as phase1
 import fixture_models_phase2 as phase2
 import fixture_models_phase3 as phase3
 import fixture_models_phase4 as phase4
+import fixture_models_phase4b as phase4b
 import pytest
 from fixture_models import RentFixture
 from pydantic import ValidationError
@@ -20,7 +21,13 @@ from hausbuch.schemas.allocation import (
 from hausbuch.schemas.common import Money
 from hausbuch.schemas.events import EVENT_CATALOG, EventType, RuleRecorded
 
-PHASES = {"phase1": phase1, "phase2": phase2, "phase3": phase3, "phase4": phase4}
+PHASES = {
+    "phase1": phase1,
+    "phase2": phase2,
+    "phase3": phase3,
+    "phase4": phase4,
+    "phase4b": phase4b,
+}
 FIXTURE_FILES = [(p, name) for p, mod in PHASES.items() for name in sorted(mod.MODELS)]
 
 
@@ -272,6 +279,91 @@ def test_phase4_fixtures_check_their_arithmetic(name, path, slip):
     node[path[-1]] = slip
     with pytest.raises(ValidationError):
         phase4.MODELS[name].model_validate(data)
+
+
+# docs/phases/phase-4b.md §11: the cases each phase 4b fixture must carry (a file may carry
+# more). A case renamed or dropped here is a spec change.
+PHASE4B_CASES = {
+    "payslip": {
+        "july_projection",
+        "january_zero_remaining",
+        "december_no_projection",
+        "missing_month_warning",
+        "no_ytd_low_confidence",
+        "certificate_replaces_projection",
+        "two_employers_summed",
+    },
+    "commute": {
+        "car_25km_220_days",
+        "public_transport_capped",
+        "ticket_costs_exceed",
+        "mixed_car_and_train",
+        "employer_benefit_offset",
+        "no_commute_with_subsidy",
+        "two_routes_in_year",
+        "km_floored",
+        "four_routes_warning",
+    },
+    "home_office": {
+        "days_90_owner_b",
+        "days_210_at_cap",
+        "days_250_capped",
+        "overlap_warning",
+        "with_work_room_error",
+        "zero_days_no_line",
+    },
+    "work_room": {
+        "actual_beats_flat",
+        "flat_beats_actual",
+        "nine_months",
+        "prefer_flat",
+        "room_only_costs_added",
+    },
+    "equipment": {
+        "laptop_1500_full_in_year",
+        "monitor_gwg_70pct",
+        "phone_2025_slice_2026",
+        "phone_disposed_2027",
+        "subscription_half_share",
+        "desk_afa_156_months",
+        "chair_bought_december",
+        "net_typed_wins",
+        "other_without_life_error",
+    },
+    "telecom": {"flat_under_cap", "capped", "reimbursed", "six_months"},
+}
+
+
+def test_phase4b_cases_cover_the_spec():
+    assert set(PHASE4B_CASES) == set(phase4b.MODELS)
+    for name, required in PHASE4B_CASES.items():
+        ids = {c.id for c in phase4b.load(name).cases}
+        assert required <= ids, (name, required - ids)
+
+
+@pytest.mark.parametrize(
+    ("name", "case_id", "path", "slip"),
+    [
+        ("payslip", "july_projection", ("expect", "projected", 0, "income_tax"), "9200.00"),
+        ("commute", "mixed_car_and_train", ("expect", "total"), "2464.00"),
+        ("home_office", "days_250_capped", ("expect", "amount"), "1500.00"),
+        ("work_room", "nine_months", ("expect", "flat"), "1260.00"),
+        ("equipment", "phone_2025_slice_2026", ("years", 5, "amount"), "19.97"),
+        ("telecom", "reimbursed", ("expect",), "240.00"),
+    ],
+)
+def test_phase4b_fixtures_check_their_arithmetic(name, case_id, path, slip):
+    """A one-cent slip in a hand-filled figure fails on load (the validators recompute it)."""
+    import copy
+
+    data = copy.deepcopy(phase4b.raw(name))
+    case = next(c for c in data["cases"] if c["id"] == case_id)
+    node = case
+    for key in path[:-1]:
+        node = node[key]
+    node[path[-1]] = slip
+    with pytest.raises(ValidationError):
+        phase4b.MODELS[name].model_validate(data)
 
 
 def _has(case: dict, path: tuple) -> bool:

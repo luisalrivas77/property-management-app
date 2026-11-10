@@ -1,0 +1,26 @@
+# telecom.yaml: rules/tax/anlage_n/telecom.py telecom_line (docs/phases/phase-4b.md §5.5, D112).
+
+# Synthetic numbers only (the repo is public). Loaded through tests/fixture_models_phase4b.py.
+# amount = max(0, min(cents(bills_year × 0.20), 20 × months) − employer_reimbursed).
+
+cases:
+- id: flat_under_cap
+  description: bills 720.00 for 12 months → 144.00
+  tax_year: 2026
+  fact: {bills_year: '720.00'}
+  expect: '144.00'
+- id: capped
+  description: bills 1,800.00 → 360.00 vs the cap 240.00 → 240.00
+  tax_year: 2026
+  fact: {bills_year: '1800.00'}
+  expect: '240.00'
+- id: reimbursed
+  description: the capped case with 100.00 reimbursed tax-free by the employer → 140.00
+  tax_year: 2026
+  fact: {bills_year: '1800.00', employer_reimbursed: '100.00'}
+  expect: '140.00'
+- id: six_months
+  description: bills 600.00 over 6 months → 120.00 vs 120.00 → 120.00
+  tax_year: 2026
+  fact: {bills_year: '600.00', months: 6}
+  expect: '120.00'

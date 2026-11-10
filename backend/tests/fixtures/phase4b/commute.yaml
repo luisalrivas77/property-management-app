@@ -1,0 +1,108 @@
+# commute.yaml: rules/tax/anlage_n/commute.py commute_lines (docs/phases/phase-4b.md §5.2, D100 (1)).
+
+# Synthetic numbers only (the repo is public). Loaded through tests/fixture_models_phase4b.py,
+# which checks every value against the §7 schemas and recomputes each expectation on load.
+#
+# 2026: one rate 0.38 from km 1 (anlage_n/2026.yaml). Per route: car = days × km_car × 0.38,
+# rest = days × (km_collective + km_other) × 0.38; year: total = Σ car + min(Σ rest, 4,500);
+# typed public-transport costs replace the total when higher (note); deductible = max(0, total −
+# Σ Nr. 17 − Σ Nr. 18). More than three routes do not fit the form: too_many_routes.
+
+bases:
+  full_year: &full_year
+    kind: first_workplace
+    workplace_label: Büro
+    period_from: 2026-01-01
+    period_to: 2026-12-31
+    days_per_week: 5
+    days: 220
+  cert_b: &cert_b
+    period_from: 2026-01-01
+    period_to: 2026-12-31
+    employer: Muster GmbH
+    tax_class: 4
+    gross: '32000.00'
+    employer_commute_tax_free: '400.00'
+  cert_a: &cert_a
+    period_from: 2026-01-01
+    period_to: 2026-12-31
+    employer: Muster GmbH
+    tax_class: 4
+    gross: '60000.00'
+    employer_commute_tax_free: '600.00'
+
+cases:
+- id: car_25km_220_days
+  description: 220 × 25 × 0.38 = 2,090.00
+  tax_year: 2026
+  routes:
+  - {<<: *full_year, km: 25, km_car: 25}
+  expect: {pauschale_car: '2090.00', pauschale_rest: '0.00', total: '2090.00',
+           employer_offset: '0.00', deductible: '2090.00'}
+- id: public_transport_capped
+  description: 60 km by train on 220 days = 5,016.00, capped at 4,500.00
+  tax_year: 2026
+  routes:
+  - {<<: *full_year, km: 60, km_collective: 60}
+  expect: {pauschale_car: '0.00', pauschale_rest: '5016.00', total: '4500.00',
+           employer_offset: '0.00', deductible: '4500.00'}
+- id: ticket_costs_exceed
+  description: the same route with 5,200.00 of tickets → the tickets
+  tax_year: 2026
+  routes:
+  - {<<: *full_year, km: 60, km_collective: 60, public_transport_costs: '5200.00'}
+  expect: {pauschale_car: '0.00', pauschale_rest: '5016.00', total: '5200.00',
+           employer_offset: '0.00', deductible: '5200.00', notes: [public_transport_costs_exceed]}
+- id: mixed_car_and_train
+  description: 30 km, 10 by car to the station, 20 by train → 836.00 + 1,672.00 (the cap tests 1,672.00 only)
+  tax_year: 2026
+  routes:
+  - {<<: *full_year, km: 30, km_car: 10, km_collective: 20}
+  expect: {pauschale_car: '836.00', pauschale_rest: '1672.00', total: '2508.00',
+           employer_offset: '0.00', deductible: '2508.00'}
+- id: employer_benefit_offset
+  description: 'owner B: 100 days × 25 km by car = 950.00, Nr. 17 = 400.00 → 550.00'
+  tax_year: 2026
+  routes:
+  - {<<: *full_year, days_per_week: 2, days: 100, km: 25, km_car: 25}
+  certificates: [*cert_b]
+  expect: {pauschale_car: '950.00', pauschale_rest: '0.00', total: '950.00',
+           employer_offset: '400.00', deductible: '550.00'}
+- id: no_commute_with_subsidy
+  description: 'owner A: no route, Nr. 17 = 600.00 → 0.00 (Z51 still prints 600.00)'
+  tax_year: 2026
+  routes: []
+  certificates: [*cert_a]
+  expect: {pauschale_car: '0.00', pauschale_rest: '0.00', total: '0.00',
+           employer_offset: '600.00', deductible: '0.00'}
+- id: two_routes_in_year
+  description: Jan–Jun 25 km on 110 days, Jul–Dec 10 km on 110 days → 1,045.00 + 418.00
+  tax_year: 2026
+  routes:
+  - {<<: *full_year, period_to: 2026-06-30, days: 110, km: 25, km_car: 25}
+  - {<<: *full_year, period_from: 2026-07-01, days: 110, km: 10, km_car: 10}
+  expect: {pauschale_car: '1463.00', pauschale_rest: '0.00', total: '1463.00',
+           employer_offset: '0.00', deductible: '1463.00'}
+- id: km_floored
+  description: a typed 25.9 km is 25 full km
+  tax_year: 2026
+  routes:
+  - {<<: *full_year, km: '25.9', km_car: '25.9'}
+  expect: {pauschale_car: '2090.00', pauschale_rest: '0.00', total: '2090.00',
+           employer_offset: '0.00', deductible: '2090.00'}
+- id: four_routes_warning
+  description: four routes of 50 days × 10 km by car; the form holds three
+  tax_year: 2026
+  routes:
+  - {<<: *full_year, period_to: 2026-03-31, days: 50, km: 10, km_car: 10}
+  - {<<: *full_year, period_from: 2026-04-01, period_to: 2026-06-30, days: 50, km: 10, km_car: 10}
+  - {<<: *full_year, period_from: 2026-07-01, period_to: 2026-09-30, days: 50, km: 10, km_car: 10}
+  - {<<: *full_year, period_from: 2026-10-01, days: 50, km: 10, km_car: 10}
+  expect:
+    pauschale_car: '760.00'
+    pauschale_rest: '0.00'
+    total: '760.00'
+    employer_offset: '0.00'
+    deductible: '760.00'
+    warnings:
+    - {code: anlage_n.too_many_routes, params: {routes: '4'}}
