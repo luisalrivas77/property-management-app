@@ -13,7 +13,7 @@ confidence from the checks that passed. The confidence is never a number the mod
 import re
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from hausbuch.schemas.ai import CitedTextBlock, ExtractedValue, SourceRef
 from hausbuch.schemas.enums import DocumentSubtype, DocumentType, ExtractionKind
@@ -865,3 +865,69 @@ def extraction_kind(type_: DocumentType, subtype: DocumentSubtype | None) -> Ext
     if subtype is not None and subtype in _BY_SUBTYPE:
         return _BY_SUBTYPE[subtype]
     return _BY_TYPE.get(type_, ExtractionKind.GENERAL)
+
+
+# --- A Verwaltervertrag's fee with MwSt. (Luis, 10 Nov 2026) -----------------------------
+
+# "zzgl. MwSt.", "zuzüglich der gesetzlichen Umsatzsteuer", "zzgl. 19 % USt." and the like:
+# the contract adds VAT to the stated fee.
+_VAT_ADDED = re.compile(
+    r"(?:zzgl\.?|zuzügl\.?|zuzüglich|plus|\+)\s*(?:der\s+)?(?:gesetzl(?:\.|ichen?)\s*)?"
+    r"(?:[0-9]{1,2}(?:,[0-9]+)?\s*%\s*)?(?:MwSt|Mehrwertsteuer|USt|Umsatzsteuer)",
+    re.IGNORECASE,
+)
+_VAT_RATE = re.compile(r"([0-9]{1,2}(?:,[0-9]+)?)\s*%")
+# §12 Abs. 1 UStG: the standard rate, which a property manager's fee carries.
+STANDARD_VAT_RATE = Decimal("19")
+_CENT = Decimal("0.01")
+
+
+def management_fee_gross(fee_net: ExtractedValue, monthly_fee: ExtractedValue) -> ExtractedValue:
+    """Betrag for a Verwaltervertrag: the net fee the model read, plus MwSt. when the fee's
+    wording (its text or either quote) adds it, at the rate the wording names, else 19 %.
+    Without such wording the fee is taken as it stands. Computed by code (principle 1), so it
+    carries `derived` and no source; missing when the net fee is."""
+    try:  # a parsed money value is stored in plain form ("30.00")
+        net = Decimal(str(fee_net.value)) if fee_net.value is not None else None
+    except InvalidOperation:
+        net = None
+    if net is None or not net.is_finite():
+        return ExtractedValue.missing()
+    wording = " ".join(
+        str(part)
+        for part in (
+            monthly_fee.value,
+            monthly_fee.source.quote if monthly_fee.source else None,
+            fee_net.source.quote if fee_net.source else None,
+        )
+        if part
+    )
+    gross = net
+    if _VAT_ADDED.search(wording):
+        rate = STANDARD_VAT_RATE
+        named = _VAT_RATE.search(wording)
+        if named is not None:
+            candidate = Decimal(named.group(1).replace(",", "."))
+            if 0 < candidate <= 25:
+                rate = candidate
+        gross = (net * (100 + rate) / 100).quantize(_CENT, rounding=ROUND_HALF_UP)
+    levels = [v.confidence if v.value is not None else "low" for v in (fee_net, monthly_fee)]
+    order = {"low": 0, "medium": 1, "high": 2}
+    return ExtractedValue(
+        value=str(gross.quantize(_CENT)),
+        derived_from=["fee_net", "monthly_fee"],
+        checks=["derived", "validates"],
+        confidence=min(levels, key=order.__getitem__),
+    )
+
+
+def derive_fields(
+    kind: ExtractionKind, values: dict[str, ExtractedValue]
+) -> dict[str, ExtractedValue]:
+    """The fields code computes from a merged reading (today only a Verwaltervertrag's
+    Betrag); the job and the eval reading both call it after the chunk merge."""
+    if kind is ExtractionKind.MANAGEMENT_CONTRACT:
+        fee_net = values.get("fee_net", ExtractedValue.missing())
+        monthly_fee = values.get("monthly_fee", ExtractedValue.missing())
+        return {**values, "amount_total": management_fee_gross(fee_net, monthly_fee)}
+    return values

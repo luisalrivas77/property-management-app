@@ -22,7 +22,7 @@ from hausbuch.ai import documents
 from hausbuch.ai.client import ModelRequest, ModelResponse
 from hausbuch.ai.requests import CLASSIFY_PAGES, classify_request, extract_request
 from hausbuch.jobs.document_read import merge_values
-from hausbuch.rules.extraction_parse import PropertyAddress, parse_lines
+from hausbuch.rules.extraction_parse import PropertyAddress, derive_fields, parse_lines
 from hausbuch.schemas.ai import ExtractedValue
 from hausbuch.schemas.enums import DocumentSubtype, ExtractionKind
 from hausbuch.schemas.extraction import EXTRACTION_MODELS, asked_fields
@@ -107,9 +107,10 @@ def merged_values(
         merge_values(merged, values)
     fields = EXTRACTION_MODELS[kind].model_fields
     asked = asked_fields(kind, subtype)
-    return {
+    values = {
         name: merged.get(name, ExtractedValue.missing())
         if name in asked
         else ExtractedValue.missing()
         for name in fields
     }
+    return derive_fields(kind, values)

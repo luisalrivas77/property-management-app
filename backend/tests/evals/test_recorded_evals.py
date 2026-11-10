@@ -288,3 +288,13 @@ def test_expected_values_are_valid_field_values():
         for name, value in doc.expected.items():
             if value_kind(model, name) == "iban":
                 assert normalize_iban(value) == value
+
+
+def test_verwaltervertrag_betrag_is_the_fee_with_vat():
+    """The recorded reading's net fee (30,00 EUR zzgl. MwSt.) becomes Betrag 35.70, computed
+    by code after the merge (Luis, 10 Nov 2026)."""
+    path = RECORDINGS_DIR / "verwaltervertrag.json"
+    result = replay(json.loads(path.read_text()))
+    assert result.values["fee_net"].value == "30.00"
+    assert result.values["amount_total"].value == "35.70"
+    assert result.values["amount_total"].derived_from == ["fee_net", "monthly_fee"]

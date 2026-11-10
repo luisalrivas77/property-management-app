@@ -147,6 +147,8 @@ function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onS
   }));
   const [type, setType] = useState<DocumentType | "">(typing?.type ?? "");
   const [subtype, setSubtype] = useState<DocumentSubtype | "">(typing?.subtype ?? "");
+  // A Verwaltervertrag's Betrag holds its monthly fee (read since 10 Nov 2026), so it is named so.
+  const isManagementContract = subtype === "management_contract" || extraction?.kind === "management_contract";
   const [title, setTitle] = useState(typing?.title ?? "");
   const [documentDate, setDocumentDate] = useState(typing?.document_date ?? "");
   const [taxYear, setTaxYear] = useState(typing?.tax_year ? String(typing.tax_year) : "");
@@ -274,8 +276,12 @@ function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onS
             {available.has("amount_total") ? (
               <Field
                 id="doc-amount"
-                label="Betrag gesamt (€)"
-                description="Der Gesamtbetrag laut Dokument, bei einer Rechnung brutto. Bei Rechnungen und Bescheiden sucht Hausbuch damit die passende Zahlung im Kontoauszug."
+                label={isManagementContract ? "Vergütung pro Monat (€)" : "Betrag gesamt (€)"}
+                description={
+                  isManagementContract
+                    ? "Die Verwaltervergütung je Monat mit MwSt. Hausbuch rechnet sie aus dem Nettobetrag laut Vertrag; steht dort „zzgl. MwSt.“ ohne Satz, mit 19 %. Gebucht wird sie aus den Zahlungen im Kontoauszug, nicht aus dem Vertrag."
+                    : "Der Gesamtbetrag laut Dokument, bei einer Rechnung brutto. Bei Rechnungen und Bescheiden sucht Hausbuch damit die passende Zahlung im Kontoauszug."
+                }
                 errors={form.of("fields.amount_total")}
               >
                 <input type="text" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoComplete="off" />

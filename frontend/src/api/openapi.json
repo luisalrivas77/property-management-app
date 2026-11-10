@@ -13499,9 +13499,14 @@
             "description": "Kündigungsfrist, as written",
             "value_kind": "text"
           },
+          "fee_net": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the Verwaltervergütung per month as a number, as the contract states it, before any MwSt. the contract adds",
+            "value_kind": "money"
+          },
           "amount_total": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "Betrag, typed by hand",
+            "description": "Betrag: the monthly fee with MwSt.",
             "hand_only": true,
             "value_kind": "money"
           },
