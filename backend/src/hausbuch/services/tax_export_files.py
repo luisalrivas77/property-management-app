@@ -207,7 +207,7 @@ WARNING_TEXT: dict[WarningCode, Callable[[dict[str, str]], str]] = {
     ),
     WarningCode.AFA_COST_ROW_UNPAID: lambda p: (
         f"{_cost_kind(p.get('kind'))} {_p(p)}: keine Zahlung vom Mietkonto gefunden (vielleicht "
-        "privat bezahlt). Sie zählt trotzdem zur AfA-Basis."
+        "von einem anderen Konto bezahlt). Sie zählt trotzdem zur AfA-Basis."
     ),
     WarningCode.AFA_ACQUISITION_COST_WITHOUT_ROW: lambda p: (
         f"Zahlung von Anschaffungsnebenkosten über {_p(p)} ohne passenden Eintrag unter "

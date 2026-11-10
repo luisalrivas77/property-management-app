@@ -1090,7 +1090,7 @@ function ItemForm({
   return (
     <fieldset className="fragen-item">
       <legend>
-        {item.kind === "private_cost" ? "Privat bezahlte Kosten" : RETURN_INPUT_KIND[item.kind as keyof typeof RETURN_INPUT_KIND]}{" "}
+        {item.kind === "private_cost" ? "Von einem anderen Konto bezahlt" : RETURN_INPUT_KIND[item.kind as keyof typeof RETURN_INPUT_KIND]}{" "}
         {index + 1}
       </legend>
       <div className="grid">
