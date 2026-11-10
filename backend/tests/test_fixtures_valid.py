@@ -431,6 +431,18 @@ def test_phase4b_cases_cover_the_spec():
         ("return_estimate", "household_2026", ("expect", "zve"), "62034"),
         ("return_estimate", "donation_over_cap", ("expect", "donations"), "16009.09"),
         ("return_estimate", "mutterschutz_pay_stop", ("expect", "vorsorge_total"), "12226.50"),
+        (
+            "return_estimate",
+            "mutterschutz_pay_stop",
+            ("expect", "warnings", 0, "code"),
+            "return.benefit_possible_double",
+        ),
+        (
+            "return_estimate",
+            "benefit_double_warning",
+            ("expect", "warnings", 0, "code"),
+            "return.kindergeld_apply",
+        ),
         ("return_estimate", "filing_optional", ("expect", "filing_required", "required"), True),
         (
             "return_estimate",

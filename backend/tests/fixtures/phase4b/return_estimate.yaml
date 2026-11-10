@@ -681,7 +681,7 @@ cases:
     - {code: return.kindergeld_apply}
     - {code: return.filing_required}
 - id: benefit_double_warning
-  description: B types Mutterschaftsgeld 1,000.00 while her certificate shows Nr. 15 > 0 → a warning (perhaps counted twice)
+  description: B types her Kurzarbeitergeld 4,000.00 as a benefit although it is already Nr. 15 of her certificate (the same amount) → a warning that it may be counted twice
   tax_year: 2026
   owners: *owners_plain
   owner_facts:
@@ -689,7 +689,7 @@ cases:
   - case: owner_b_commute_day_rate
     add_inputs:
     - {id: 0000004b-0000-4000-8000-0000000000f4, owner_id: 0000000a-0000-4000-8000-000000000002,
-       kind: replacement_income, tax_year: 2026, value: {benefit: mutterschaftsgeld, amount: '1000.00'}}
+       kind: replacement_income, tax_year: 2026, value: {benefit: kurzarbeitergeld, amount: '4000.00'}}
   household: [*child_march]
   properties: *flat_loss
   questionnaire: *all_answered
@@ -705,26 +705,26 @@ cases:
     assessed:
       zve: '62033'
       zve_after_allowances: '53903'
-      est_without: '10095'
-      est_with: '7857'
-      est: '10095'
+      est_without: '10450'
+      est_with: '8209'
+      est: '10450'
       credit_35a: '0.00'
-      est_final: '10095.00'
-      progression: {benefits: '8360.00', allowance_unused: '0.00', rate: '0.162743', fictitious_zve: '70393.00', fictitious_tax: '11456'}
-      children: {months: 10, kindergeld: '2590.00', allowances: '8130.00', saving: '2238', favourable: 'kindergeld'}
+      est_final: '10450.00'
+      progression: {benefits: '11360.00', allowance_unused: '0.00', rate: '0.168462', fictitious_zve: '73393.00', fictitious_tax: '12364'}
+      children: {months: 10, kindergeld: '2590.00', allowances: '8130.00', saving: '2241', favourable: 'kindergeld'}
       soli: '0.00'
       church: '0.00'
-      total: '10095.00'
+      total: '10450.00'
     withheld: {income_tax: '12400.00', soli: '0.00', church_tax: '0.00', total: '12400.00'}
-    result: '-2305.00'
-    filing_required: {required: true, reasons: ['Lohnersatzleistungen 8.360,00 € > 410,00 €'], deadline: 2027-08-02}
+    result: '-1950.00'
+    filing_required: {required: true, reasons: ['Lohnersatzleistungen 11.360,00 € > 410,00 €'], deadline: 2027-08-02}
     missing: []
     warnings:
     - {code: return.benefit_possible_double}
     - {code: return.kindergeld_apply}
     - {code: return.filing_required}
 - id: mutterschutz_pay_stop
-  description: 'B paid only in January (2,700.00), Zuschuss 6,000.00 on Nr. 15, Mutterschaftsgeld 4,000.00 typed: zvE 38,411, ESt 4,403, result −4,797.00'
+  description: 'B paid only in January (2,700.00), Zuschuss 6,000.00 on Nr. 15, Mutterschaftsgeld 4,000.00 typed (a different amount, so no double-count warning): zvE 38,411, ESt 4,403, result −4,797.00'
   tax_year: 2026
   owners: *owners_plain
   owner_facts:
@@ -782,7 +782,6 @@ cases:
     filing_required: {required: true, reasons: ['Lohnersatzleistungen 11.800,00 € > 410,00 €'], deadline: 2027-08-02}
     missing: []
     warnings:
-    - {code: return.benefit_possible_double}
     - {code: return.kindergeld_apply}
     - {code: return.filing_required}
 - id: filing_required_rental_positive

@@ -689,7 +689,14 @@ def _estimate(case: EstimateCase) -> dict:
         unused = min(own, max(ZERO, tariff.employee_allowance - d["gross"]))
         benefits += own - unused
         unused_total += unused
-        if any(v.benefit == "mutterschaftsgeld" for v in typed) and d["replacement_benefits"] > 0:
+        # the same money typed twice: a typed amount equal to one of the owner's Nr. 15 amounts
+        # (a Mutterschaftsgeld beside a different Zuschuss on Nr. 15 is the normal case)
+        nr15 = {
+            c.replacement_benefits
+            for c in _values(rows, K.WAGE_CERTIFICATE)
+            if c.replacement_benefits > 0
+        }
+        if any(v.amount in nr15 for v in typed):
             warnings.append(("return.benefit_possible_double", {}))
     # Sonderausgaben
     vorsorge_total = sum((v["deductible"] for v in vorsorge.values()), ZERO)
