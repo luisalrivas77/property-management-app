@@ -26,8 +26,13 @@
 //   (tax_input.movable_asset_exceeds_building), a missing price split
 //   (tax_input.movable_asset_no_split) and a missing handover date
 //   (tax_input.movable_asset_no_purchase_date).
+// - On the Steuern page: the Grundsteuer schedule (phase-5.md D126, §11), the Bescheid's annual
+//   amount, its instalments (dates and amounts), the rhythm and the payment mode, the Bescheid
+//   required; the server refuses instalments outside the first year, out of order or not
+//   summing to the annual amount (tax_input.grundsteuer_schedule_invalid).
 //
 // The labels live here, not in labels.ts (phase 3 step 2 scope).
+import Link from "next/link";
 import { useCallback, useId, useMemo, useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
@@ -38,6 +43,7 @@ import { DocumentPicker } from "./documents";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
 import { formatDate, formatMoney, todayIso } from "./format";
 import { decimalInput, toMoneyString } from "./input";
+import { GRUNDSTEUER_MODE, GRUNDSTEUER_RHYTHM } from "./labels";
 import { Loading } from "./ui";
 import { useLoad } from "./useLoad";
 
@@ -1034,6 +1040,310 @@ function MovableAssetForm({
       </div>
       {replaces !== null ? (
         <p className="muted hint">Eine Korrektur ersetzt die Angabe ab {replaces.tax_year}; die bisherige bleibt im Verlauf.</p>
+      ) : null}
+      <div className="row">
+        <Submit busy={busy}>{replaces === null ? "Eintragen" : "Korrektur speichern"}</Submit>
+        <button type="button" className="link" onClick={onCancel}>
+          Abbrechen
+        </button>
+      </div>
+      {banner ? <p className="notice notice-error">{banner}</p> : null}
+      <FormBanner errors={form.errors} />
+    </form>
+  );
+}
+
+// --- on the Steuern page: the Grundsteuer schedule from the Bescheid (phase-5.md D126, §11) ----
+
+type GrundsteuerValue = Schemas["GrundsteuerSchedule"];
+type GrundsteuerRhythm = NonNullable<GrundsteuerValue["rhythm"]>;
+type GrundsteuerMode = NonNullable<GrundsteuerValue["payment_mode"]>;
+
+const GRUNDSTEUER_SLOTS = 4;
+const GRUNDSTEUER_KEYS = ["tax_year", "value.annual_amount", "value.instalments", "document_id"] as const;
+
+/**
+ * Grundsteuer (D126): the Bescheid's annual amount and its instalments (dates and amounts),
+ * the rhythm and the payment mode, with the Bescheid it comes from. A row applies from its first
+ * year until a newer one; the reminders repeat its dates in later years. Filled by the Bescheid's
+ * proposal in the review, or typed here; every figure is the Bescheid's, the server checks that
+ * the instalments fall in the first year, in order, and sum to the annual amount.
+ */
+export function GrundsteuerSection({ propertyId, defaultYear }: { propertyId: string; defaultYear: number }) {
+  const load = useCallback(() => loadInputs(propertyId, "grundsteuer_schedule"), [propertyId]);
+  const state = useLoad(load);
+  const [editing, setEditing] = useState<TaxInput | "new" | null>(null);
+  const [banner, setBanner] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function withdraw(row: TaxInput) {
+    setBusy(true);
+    setBanner(null);
+    try {
+      await record(propertyId, {
+        property_id: propertyId,
+        kind: "grundsteuer_schedule",
+        tax_year: row.tax_year,
+        document_id: row.document_id,
+        value: row.value,
+        supersedes_id: row.id,
+        withdrawn: true,
+      });
+    } catch (error) {
+      setBanner(messageOf(error) ?? "Das Zurückziehen hat nicht geklappt. Bitte erneut versuchen.");
+    } finally {
+      setBusy(false);
+      state.reload();
+    }
+  }
+
+  return (
+    <div className="stack">
+      <Loading state={state}>
+        {(rows) => {
+          const sorted = [...rows].sort((a, b) => (a.tax_year ?? 0) - (b.tax_year ?? 0));
+          return sorted.length === 0 ? (
+            <p className="muted">
+              Noch kein Grundsteuerbescheid erfasst. Ohne ihn erinnert die App an die gesetzlichen Termine (15. Februar, Mai,
+              August und November), sobald ein Bescheid verknüpft ist.
+            </p>
+          ) : (
+            <ul className="stack">
+              {sorted.map((row) => {
+                const value = row.value as GrundsteuerValue;
+                return (
+                  <li key={row.id} className="stack">
+                    <div className="row">
+                      <strong>
+                        Ab {row.tax_year}: {formatMoney(value.annual_amount)} im Jahr
+                        {value.rhythm ? `, ${GRUNDSTEUER_RHYTHM[value.rhythm]}` : ""}
+                      </strong>
+                      <span className="spacer" />
+                      <button type="button" className="link" onClick={() => setEditing(row)} disabled={busy}>
+                        Korrigieren
+                      </button>
+                      <button type="button" className="link" onClick={() => void withdraw(row)} disabled={busy}>
+                        Zurückziehen
+                      </button>
+                    </div>
+                    <span className="muted">
+                      {value.instalments.map((i) => `${formatDate(i.due_on)}: ${formatMoney(i.amount)}`).join(" · ")}
+                    </span>
+                    <span className="muted">
+                      Zahlungsweise: {GRUNDSTEUER_MODE[value.payment_mode ?? "auto"]}
+                      {row.document_id ? (
+                        <>
+                          {" · "}
+                          <Link href={`/documents/${row.document_id}`}>Bescheid öffnen</Link>
+                        </>
+                      ) : null}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          );
+        }}
+      </Loading>
+      {banner ? <p className="notice notice-error">{banner}</p> : null}
+      {editing === null ? (
+        <div>
+          <button type="button" className="secondary" onClick={() => setEditing("new")}>
+            Grundsteuerbescheid eintragen
+          </button>
+        </div>
+      ) : (
+        <GrundsteuerForm
+          key={editing === "new" ? "new" : editing.id}
+          propertyId={propertyId}
+          defaultYear={defaultYear}
+          replaces={editing === "new" ? null : editing}
+          onDone={() => {
+            setEditing(null);
+            state.reload();
+          }}
+          onCancel={() => setEditing(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function GrundsteuerForm({
+  propertyId,
+  defaultYear,
+  replaces,
+  onDone,
+  onCancel,
+}: {
+  propertyId: string;
+  defaultYear: number;
+  replaces: TaxInput | null;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const old = replaces?.value as GrundsteuerValue | undefined;
+  const [fromYear, setFromYear] = useState(String(replaces?.tax_year ?? defaultYear));
+  const [annual, setAnnual] = useState(old ? decimalInput(old.annual_amount) : "");
+  const [slots, setSlots] = useState(() =>
+    Array.from({ length: GRUNDSTEUER_SLOTS }, (_, n) => ({
+      dueOn: old?.instalments[n]?.due_on ?? "",
+      amount: old?.instalments[n] ? decimalInput(old.instalments[n].amount) : "",
+    })),
+  );
+  const [rhythm, setRhythm] = useState<GrundsteuerRhythm | "">(old?.rhythm ?? "");
+  const [mode, setMode] = useState<GrundsteuerMode | "auto">(old?.payment_mode ?? "auto");
+  const [documentId, setDocumentId] = useState<string | null>(replaces?.document_id ?? null);
+  const [busy, setBusy] = useState(false);
+  const [banner, setBanner] = useState<string | null>(null);
+  const form = useFormErrors(useMemo(() => [...GRUNDSTEUER_KEYS], []));
+  const base = useId();
+
+  function setSlot(n: number, patch: Partial<{ dueOn: string; amount: string }>) {
+    setSlots((current) => current.map((slot, i) => (i === n ? { ...slot, ...patch } : slot)));
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    const values = collector();
+    const year = values.take("tax_year", wholeNumber(fromYear, 2000, "Bitte ein Steuerjahr eingeben, z. B. 2027."));
+    const money = values.take("value.annual_amount", toMoneyString(annual));
+    const instalments: { due_on: string; amount: string }[] = [];
+    for (const slot of slots) {
+      if (!slot.dueOn && !slot.amount.trim()) continue;
+      const amount = toMoneyString(slot.amount);
+      if (!slot.dueOn || !amount.ok) {
+        values.messages["value.instalments"] = ["Jede Rate braucht ein Datum und einen Betrag."];
+        continue;
+      }
+      instalments.push({ due_on: slot.dueOn, amount: amount.value });
+    }
+    if (instalments.length === 0 && !values.messages["value.instalments"]) {
+      values.messages["value.instalments"] = ["Bitte mindestens eine Rate mit Datum und Betrag eintragen."];
+    }
+    if (documentId === null) values.messages["document_id"] = ["Bitte den Grundsteuerbescheid auswählen."];
+    if (!values.ok || year === undefined || money === undefined || documentId === null || values.messages["value.instalments"]) {
+      return form.invalid(values.messages);
+    }
+    setBusy(true);
+    setBanner(null);
+    form.clear();
+    try {
+      await record(propertyId, {
+        property_id: propertyId,
+        kind: "grundsteuer_schedule",
+        tax_year: year,
+        document_id: documentId,
+        value: {
+          annual_amount: money,
+          instalments,
+          rhythm: rhythm === "" ? null : rhythm,
+          payment_mode: mode === "auto" ? null : mode,
+        },
+        supersedes_id: replaces?.id ?? null,
+        withdrawn: false,
+      });
+      onDone();
+    } catch (error) {
+      const codes = codesOf(error);
+      if (codes.includes("tax_input.not_current") && replaces === null) {
+        setBanner("Für dieses Jahr ist schon ein Bescheid erfasst. Bitte diesen korrigieren.");
+      } else if (codes.includes("tax_input.not_current")) {
+        setBanner(CODE_MESSAGES["tax_input.not_current"] ?? null);
+      } else if (error instanceof ApiError && JSON.stringify(error.body ?? "").includes("tax_input.grundsteuer_schedule_invalid")) {
+        setBanner(
+          "Die Raten passen nicht: alle im ersten Jahr, nach Datum geordnet, und zusammen der Jahresbetrag (auf 4 Cent genau).",
+        );
+      } else {
+        form.fail(error);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="stack" onSubmit={submit} noValidate>
+      <div className="grid">
+        <Field
+          id={`${base}-from`}
+          label="Ab Steuerjahr"
+          description="Das erste Jahr, für das der Bescheid gilt; die Raten liegen in diesem Jahr."
+          errors={form.of("tax_year")}
+        >
+          <input
+            type="text"
+            inputMode="numeric"
+            value={fromYear}
+            onChange={(e) => setFromYear(e.target.value)}
+            disabled={replaces !== null}
+            autoComplete="off"
+          />
+        </Field>
+        <Field id={`${base}-annual`} label="Jahresbetrag (€)" description="Wie im Bescheid." errors={form.of("value.annual_amount")}>
+          <input type="text" inputMode="decimal" value={annual} onChange={(e) => setAnnual(e.target.value)} autoComplete="off" />
+        </Field>
+      </div>
+      <fieldset className="stack">
+        <legend>Fälligkeiten laut Bescheid</legend>
+        {slots.map((slot, n) => (
+          <div key={n} className="row">
+            <label className="inline" htmlFor={`${base}-due-${n}`}>
+              Rate {n + 1} am
+              <input id={`${base}-due-${n}`} type="date" value={slot.dueOn} onChange={(e) => setSlot(n, { dueOn: e.target.value })} />
+            </label>
+            <label className="inline" htmlFor={`${base}-amount-${n}`}>
+              Betrag (€)
+              <input
+                id={`${base}-amount-${n}`}
+                type="text"
+                inputMode="decimal"
+                value={slot.amount}
+                onChange={(e) => setSlot(n, { amount: e.target.value })}
+                autoComplete="off"
+              />
+            </label>
+          </div>
+        ))}
+        {form.of("value.instalments").length > 0 ? (
+          <ul className="field-errors">
+            {form.of("value.instalments").map((message) => (
+              <li key={message}>{message}</li>
+            ))}
+          </ul>
+        ) : null}
+      </fieldset>
+      <div className="grid">
+        <Field id={`${base}-rhythm`} label="Rhythmus (optional)" description="Die Zahlweise, wie der Bescheid sie nennt.">
+          <select value={rhythm} onChange={(e) => setRhythm(e.target.value as GrundsteuerRhythm | "")}>
+            <option value="">keine Angabe</option>
+            {entries(GRUNDSTEUER_RHYTHM).map(([key, label]) => (
+              <option key={key} value={key}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field
+          id={`${base}-mode`}
+          label="Zahlungsweise"
+          description="„Erinnern“: eine Woche vorher. „Lastschrift prüfen“: drei Tage danach, falls die Abbuchung fehlt. „automatisch“: Lastschrift, sobald eine Rate per Lastschrift abgebucht wurde, sonst Erinnern."
+        >
+          <select value={mode} onChange={(e) => setMode(e.target.value as GrundsteuerMode | "auto")}>
+            {entries(GRUNDSTEUER_MODE).map(([key, label]) => (
+              <option key={key} value={key}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field id={`${base}-document`} label="Grundsteuerbescheid" errors={form.of("document_id")}>
+          <DocumentPicker value={documentId} onChange={setDocumentId} />
+        </Field>
+      </div>
+      {replaces !== null ? (
+        <p className="muted hint">Eine Korrektur ersetzt den Bescheid ab {replaces.tax_year}; der bisherige bleibt im Verlauf.</p>
       ) : null}
       <div className="row">
         <Submit busy={busy}>{replaces === null ? "Eintragen" : "Korrektur speichern"}</Submit>

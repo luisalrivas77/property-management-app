@@ -1944,6 +1944,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/reminders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Reminder List
+         * @description Today is the day in Europe/Berlin. An instance stays listed while it is open, also
+         *     after its due day; one hidden by an acknowledgement or cleared by the data is not.
+         */
+        get: operations["reminder_list_api_reminders_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reminders/{reminder_id}/ack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reminder Ack
+         * @description 422 reminder.unknown for an id that is not a reminder's; 422 reminder.scope_invalid
+         *     when its scope is not this workspace's property, loan, tenancy, owner or account of the
+         *     kind's scope type.
+         */
+        post: operations["reminder_ack_api_reminders__reminder_id__ack_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workspace/settings": {
         parameters: {
             query?: never;
@@ -6368,6 +6411,90 @@ export interface components {
             /** Via */
             via: components["schemas"]["LinkTargetRef"][];
         };
+        /** Reminder */
+        Reminder: {
+            /** Id */
+            id: string;
+            kind: components["schemas"]["ReminderKind"];
+            scope: components["schemas"]["ReminderScope"];
+            /** Scope Id */
+            scope_id?: string | null;
+            /**
+             * Due On
+             * Format: date
+             */
+            due_on: string;
+            /**
+             * Visible From
+             * Format: date
+             */
+            visible_from: string;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "action" | "info";
+            /**
+             * Cleared By
+             * @enum {string}
+             */
+            cleared_by: "ack" | "auto";
+            /** Label Code */
+            label_code: string;
+            /** Label Args */
+            label_args?: {
+                [key: string]: string | number;
+            };
+            /** Email Leads */
+            email_leads?: number[];
+        };
+        /**
+         * ReminderAck
+         * @description A reminder_ack row (append-only, §6.3).
+         */
+        ReminderAck: {
+            reminder_key: components["schemas"]["ReminderKind"];
+            scope_type: components["schemas"]["ReminderScope"];
+            /** Scope Id */
+            scope_id?: string | null;
+            /** Due On */
+            due_on?: string | null;
+            action: components["schemas"]["ReminderAckAction"];
+            /** Snoozed Until */
+            snoozed_until?: string | null;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+        };
+        /**
+         * ReminderAckAction
+         * @description reminder_ack.action (migration 0019, §6.3).
+         * @enum {string}
+         */
+        ReminderAckAction: "done" | "snoozed" | "muted" | "unmuted";
+        /**
+         * ReminderAckCreate
+         * @description POST /reminders/{reminder_id}/ack (§6.3).
+         */
+        ReminderAckCreate: {
+            action: components["schemas"]["ReminderAckAction"];
+            /** Snoozed Until */
+            snoozed_until?: string | null;
+        };
+        /**
+         * ReminderKind
+         * @description The catalogue's eleven kinds (§6.2); the value is the reminder key.
+         * @enum {string}
+         */
+        ReminderKind: "grundsteuer.instalment" | "checklist.due" | "tax.return_deadline" | "tax.questionnaire_open" | "tax.wage_certificate_missing" | "loan.fixed_rate_end" | "loan.special_termination" | "property.speculation_end" | "tenancy.settlement_deadline" | "tenancy.rent_missing" | "bank.sync_stale";
+        /**
+         * ReminderScope
+         * @description reminder_ack.scope_type (migration 0019). WORKSPACE is §6.2's "household".
+         * @enum {string}
+         */
+        ReminderScope: "workspace" | "property" | "loan" | "tenancy" | "owner" | "account";
         /** RenovationTreatment */
         RenovationTreatment: {
             /**
@@ -12318,6 +12445,73 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InboxAddress"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    reminder_list_api_reminders_get: {
+        parameters: {
+            query?: {
+                from?: string | null;
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Reminder"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    reminder_ack_api_reminders__reminder_id__ack_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reminder_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReminderAckCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReminderAck"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

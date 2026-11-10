@@ -32,7 +32,7 @@ import { formatDate, formatDateTime, formatDecimal, formatMoney, formatPercent, 
 import { TaxEffectLine } from "./income";
 import { ALLOCATION_CATEGORY, TAX_SOURCE_KIND, WARNING_TEXT, taxNote } from "./labels";
 import { ActionDialog, Loading } from "./ui";
-import { MovableAssetSection, UsefulLifeSection } from "./taxInputs";
+import { GrundsteuerSection, MovableAssetSection, UsefulLifeSection } from "./taxInputs";
 import { useLoad, type Loaded } from "./useLoad";
 
 import "./tax.css";
@@ -290,6 +290,10 @@ function DraftView({ draft, propertyId, onChanged }: { draft: AnlageVDraft; prop
                 purchaseYear={Number(draft.header.transfer_date.slice(0, 4)) || draft.tax_year}
                 onChanged={onChanged}
               />
+            </section>
+            <section className="card stack" aria-labelledby="tax-grundsteuer-title" id="tax-grundsteuer">
+              <h2 id="tax-grundsteuer-title">Grundsteuer</h2>
+              <GrundsteuerSection propertyId={propertyId} defaultYear={draft.tax_year} />
             </section>
             <NotDeductible draft={draft} propertyId={propertyId} />
           </div>

@@ -70,6 +70,8 @@ import {
   DOCUMENT_TYPE,
   EVENT_TYPE,
   EXTRACTION_KIND,
+  GRUNDSTEUER_MODE,
+  GRUNDSTEUER_RHYTHM,
   LINK_TARGET,
   options,
   PROPERTY_KIND,
@@ -351,6 +353,20 @@ const FIELDS: Record<string, Record<string, FieldSpec>> = {
       "Betrag (€)",
       "Der Betrag laut Dokument. Er wird erst mit „Übernehmen“ als Steuerangabe gespeichert und ersetzt dann eine frühere Angabe derselben Art für dieses Jahr.",
     ),
+    // The Grundsteuerbescheid's schedule (tax_input:grundsteuer_schedule, phase 5 D126): one
+    // date and one amount per Fälligkeit; empty slots are left out when it is applied.
+    "value.annual_amount": money("Jahresbetrag (€)", "Die festgesetzte Grundsteuer für ein Jahr, laut Bescheid."),
+    ...grundsteuerSlots(),
+    "value.rhythm": choice(
+      "Rhythmus",
+      GRUNDSTEUER_RHYTHM,
+      "Die Zahlweise, wie der Bescheid sie nennt; nur zur Information, die Erinnerungen folgen den Daten.",
+    ),
+    "value.payment_mode": choice(
+      "Zahlungsweise",
+      { remind: GRUNDSTEUER_MODE.remind, sepa_mandate: GRUNDSTEUER_MODE.sepa_mandate },
+      "„Erinnern“: eine Woche vor jeder Rate. „Lastschrift prüfen“: drei Tage danach, falls die Abbuchung fehlt. Leer lassen: Hausbuch nimmt Lastschrift an, sobald eine Rate per Lastschrift abgebucht wurde.",
+    ),
   },
   // The Einkommensteuerbescheid's zvE (phase 4b D129): income_input:bescheid_zve, household-wide.
   income_input: {
@@ -368,6 +384,19 @@ const FIELDS: Record<string, Record<string, FieldSpec>> = {
     },
   },
 };
+
+/** Four instalment slots of the Grundsteuer schedule: a due day and an amount each. */
+function grundsteuerSlots(): Record<string, FieldSpec> {
+  const slots: Record<string, FieldSpec> = {};
+  for (const n of [1, 2, 3, 4]) {
+    slots[`value.due_on_${n}`] = date(`Rate ${n}: fällig am`, "Die Fälligkeit im ersten Jahr des Bescheids.");
+    slots[`value.amount_${n}`] = money(
+      `Rate ${n}: Betrag (€)`,
+      "Der Betrag dieser Rate laut Bescheid; nennt er keinen, der Jahresbetrag geteilt durch die Zahl der Raten.",
+    );
+  }
+  return slots;
+}
 
 /**
  * The fields of a record that creates (mode `create`), in this order: every field of the model
@@ -437,12 +466,29 @@ const CREATE_FIELDS: Readonly<Record<string, readonly string[]>> = {
   deposit_received: ["tenancy_id", "amount", "received_on"],
   // IncomeInputCreate, kind bescheid_zve (the apply sets the kind and this document)
   income_input: ["tax_year", "value.amount"],
+  // GrundsteuerSchedule (by the record's whole key: the certificates' tax_input records keep
+  // their proposed fields only), so the payment mode can be chosen before applying.
+  "tax_input:grundsteuer_schedule": [
+    "tax_year",
+    "value.annual_amount",
+    "value.due_on_1",
+    "value.amount_1",
+    "value.due_on_2",
+    "value.amount_2",
+    "value.due_on_3",
+    "value.amount_3",
+    "value.due_on_4",
+    "value.amount_4",
+    "value.rhythm",
+    "value.payment_mode",
+  ],
 };
 
 /** A tax_input record's title, by the kind its key names. */
 const TAX_INPUT_TITLE: Record<string, string> = {
   interest_certified: "Zinsbescheinigung: gezahlte Zinsen",
   ruecklage_spent: "Hausgeldabrechnung: Entnahme aus der Rücklage",
+  grundsteuer_schedule: "Grundsteuerbescheid: Jahresbetrag und Fälligkeiten",
 };
 
 /** The extraction fields a derived value names in `derived_from`. */
@@ -491,7 +537,7 @@ type Row = [string, ExtractedValue | null];
  * every other mode, only the proposed fields, as before. */
 function rowsOf(record: ProposalRecord): Row[] {
   const proposed = fieldsOf(record);
-  const schema = record.mode === "create" ? CREATE_FIELDS[prefixOf(record.key)[0]] : undefined;
+  const schema = record.mode === "create" ? (CREATE_FIELDS[record.key] ?? CREATE_FIELDS[prefixOf(record.key)[0]]) : undefined;
   if (!schema) return proposed;
   const byName = new Map(proposed);
   const rows: Row[] = [];

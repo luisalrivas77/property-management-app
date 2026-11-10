@@ -19,6 +19,10 @@
 //   (email_failed) has no action, its question says to upload the attachments directly. A
 //   poll that cannot log in, find its label or reach Gmail (email_inbox_failed) has none
 //   either: its question says what to fix, and the card goes once a poll completes.
+// - a deadline reminder (reminder, phase 5 §6, §11) visible today: its label, the link to its
+//   scope (the Grundsteuer card to the schedule row on Steuern) and "Erledigt", which posts
+//   the acknowledgement. GET /inbox names the reminder's id only; the label comes from
+//   GET /reminders, loaded alongside.
 //
 // GET /inbox names ids only, so the lines, imports, accounts, duplicates and documents are
 // loaded alongside to show what each item is about. Amounts are shown as the API returns them.
@@ -39,6 +43,7 @@ import { BalanceForm, DuplicateCard } from "./accounts";
 import { documentLabel } from "./documents";
 import { formatDate, formatDateTime, formatMoney } from "./format";
 import { INBOX_ITEM_KIND } from "./labels";
+import { ReminderDone, reminderLabel, reminderLink, type Reminder } from "./reminders";
 import { ActionDialog, Notice } from "./ui";
 
 // Step 4's schemas have no alias in schemas.ts yet.
@@ -120,16 +125,18 @@ export interface InboxData {
   accounts: Map<string, Account>;
   duplicates: Map<string, PossibleDuplicate>;
   documents: Map<string, Document>;
+  reminders: Map<string, Reminder>;
 }
 
 /** GET /inbox plus what its items point at: every statement account's lines and imports, the
  * possible duplicates and the vault's documents (one household holds few of each). */
 export async function loadInbox(): Promise<InboxData> {
-  const [items, accounts, duplicates, documents] = await Promise.all([
+  const [items, accounts, duplicates, documents, reminders] = await Promise.all([
     ok(api.GET("/api/inbox")),
     ok(api.GET("/api/accounts")),
     ok(api.GET("/api/possible-duplicates")),
     ok(api.GET("/api/documents")),
+    ok(api.GET("/api/reminders")),
   ]);
   const perAccount = await Promise.all(
     accounts
@@ -150,6 +157,7 @@ export async function loadInbox(): Promise<InboxData> {
     accounts: new Map(accounts.map((account) => [account.id, account])),
     duplicates: new Map(duplicates.map((pair) => [pair.id, pair])),
     documents: new Map(documents.map((document) => [document.id, document])),
+    reminders: new Map(reminders.map((reminder) => [reminder.id, reminder])),
   };
 }
 
@@ -194,7 +202,7 @@ export function InboxList({
               {items.map((item) => {
                 // A possible duplicate also names its later line, which may sit in two pairs: its own id first.
                 // A forwarded document can arrive in two mails, and a failed mail names no id: the time tells them apart.
-                const key = `${item.kind}:${item.possible_duplicate_id ?? item.proposal_id ?? item.import_id ?? item.transaction_id ?? item.document_id}:${item.created_at}`;
+                const key = `${item.kind}:${item.possible_duplicate_id ?? item.proposal_id ?? item.import_id ?? item.transaction_id ?? item.document_id ?? item.reminder_id}:${item.created_at}`;
                 return (
                   <li key={key}>
                     {isLineItem(item) ? (
@@ -338,6 +346,17 @@ function EntryTitle({ item, data }: { item: InboxItem; data: InboxData }) {
   if (item.kind === "email_inbox_failed") {
     return <strong>Posteingang per E-Mail</strong>;
   }
+  if (item.kind === "reminder") {
+    const reminder = item.reminder_id ? data.reminders.get(item.reminder_id) : undefined;
+    return reminder ? (
+      <>
+        <strong>{reminderLabel(reminder)}</strong>
+        <span className="inbox-detail">fällig am {formatDate(reminder.due_on)}</span>
+      </>
+    ) : (
+      <strong>Termin</strong>
+    );
+  }
   if (item.import_id) {
     const imp = data.imports.get(item.import_id);
     const account = imp ? data.accounts.get(imp.account_id) : undefined;
@@ -411,6 +430,17 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
       const imp = item.import_id ? data.imports.get(item.import_id) : undefined;
       if (imp) return <Link href={`/accounts/${imp.account_id}?tab=kontoauszuege`}>Kontoauszug ansehen</Link>;
       return item.document_id ? <Link href={`/documents/${item.document_id}`}>Dokument öffnen</Link> : null;
+    }
+    case "reminder": {
+      const reminder = item.reminder_id ? data.reminders.get(item.reminder_id) : undefined;
+      if (!reminder) return null;
+      const link = reminderLink(reminder);
+      return (
+        <>
+          {link ? <Link href={link.href}>{link.label}</Link> : null}
+          <ReminderDone reminder={reminder} onDone={onChanged} />
+        </>
+      );
     }
     default:
       return null;
