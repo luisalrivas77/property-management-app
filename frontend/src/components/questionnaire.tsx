@@ -539,7 +539,7 @@ function StepScreen({
         if (table === "tax_inputs") {
           taxInputs.push({
             property_id: slot.property_id ?? "",
-            kind: "private_cost",
+            kind: item.kind as TaxInputCreate["kind"],
             tax_year: year,
             value: value as unknown as TaxInputCreate["value"],
             carried_from_id: item.carriedFromId,
