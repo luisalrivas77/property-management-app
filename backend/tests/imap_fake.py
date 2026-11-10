@@ -116,6 +116,10 @@ class FakeServer:
     violations: list[str] = field(default_factory=list)
     selected: str | None = None
     drop_after_fetches: int | None = None  # simulate a lost connection
+    # UIDs whose FETCH is answered NO (Gmail: "Some messages could not be FETCHed"), for the
+    # listing (BODYSTRUCTURE and header fields) or for a part's bytes.
+    refuse_listing_uids: set[int] = field(default_factory=set)
+    refuse_part_uids: set[int] = field(default_factory=set)
 
     def add(self, label: str, raw: bytes, **kwargs) -> StoredMessage:
         messages = self.labels.setdefault(label, [])
@@ -178,6 +182,9 @@ class FakeServer:
             raise ConnectionResetError("dropped")
         wanted = {int(u) for u in uid_set.split(",")}
         inner = items.strip("()")
+        refused = self.refuse_listing_uids if "HEADER.FIELDS" in inner else self.refuse_part_uids
+        if wanted & refused:
+            return f"{tag} NO [SERVERBUG] Some messages could not be FETCHed (Failure)\r\n".encode()
         if re.search(r"BODY\[", inner) or re.search(r"\b(RFC822|FLAGS|ENVELOPE)\b", inner):
             self.violations.append(f"FETCH {items}")  # BODY[ without PEEK sets \Seen
             return f"{tag} BAD fetch\r\n".encode()

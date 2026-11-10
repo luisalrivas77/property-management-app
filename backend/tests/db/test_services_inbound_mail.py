@@ -512,6 +512,51 @@ def test_a_connection_lost_mid_mail_records_nothing(inbox, app_engine):
     assert poll().accepted == 1
 
 
+def test_a_refused_part_fails_its_mail_and_the_next_mail_is_taken(inbox, app_engine):
+    """A NO to one part's FETCH is that mail's failed attempt, not a lost connection."""
+    poll, server, ws, _ = inbox
+    bad = server.add(LABEL, _mail(("a.pdf", _pdf("refused-part"), "application/pdf")))
+    server.add(LABEL, _mail(("b.pdf", _pdf("healthy-after-part"), "application/pdf")))
+    server.refuse_part_uids = {bad.uid}
+
+    result = poll()
+
+    assert (result.status, result.accepted, result.failed) == ("done", 1, 1)
+    rows = _rows(app_engine, ws, mail_table)
+    assert sorted((r.decision, r.code, r.attempt) for r in rows) == [
+        ("accepted", E.EMAIL_ACCEPTED, 1),
+        ("failed", E.EMAIL_FAILED, 1),
+    ]
+    [link] = _rows(app_engine, ws, link_table)
+    [doc] = _rows(app_engine, ws, document_table)
+    assert (link.document_id, doc.original_filename) == (doc.id, "b.pdf")
+    _assert_read_only(server)
+
+
+@pytest.mark.parametrize("how", ["refused", "unreadable"])
+def test_a_bad_listing_batch_is_fetched_again_uid_by_uid(inbox, app_engine, how):
+    """A NO (or an answer the parser cannot read) for the listing of a batch would hide every
+    mail of the batch: each UID is fetched alone, and the one that still fails is skipped."""
+    poll, server, ws, _ = inbox
+    bad = server.add(LABEL, _mail(("a.pdf", _pdf(f"listing-{how}"), "application/pdf")))
+    server.add(LABEL, _mail(("b.pdf", _pdf(f"healthy-{how}"), "application/pdf")))
+    if how == "refused":
+        server.refuse_listing_uids = {bad.uid}
+    else:
+        bad.bodystructure = bad.bodystructure[:-1]  # one ')' short: the parser raises
+
+    result = poll()
+
+    assert (result.status, result.accepted, result.unreadable) == ("done", 1, 1)
+    [mail] = _rows(app_engine, ws, mail_table)  # nothing recorded for the bad one
+    assert mail.decision == "accepted"
+    [doc] = _rows(app_engine, ws, document_table)
+    assert doc.original_filename == "b.pdf"
+    listings = [uids for uids, items in server.fetches if "HEADER.FIELDS" in items]
+    assert len(listings) == 3  # the batch, then each UID alone
+    _assert_read_only(server)
+
+
 # --- Poll-level outcomes -----------------------------------------------------------------------
 
 

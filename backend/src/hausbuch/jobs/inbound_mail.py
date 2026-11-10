@@ -29,7 +29,11 @@ The guards (D121, §5.5):
 Attempts: a mail whose part could not be stored is recorded `failed` and retried at the next
 polls, at most MAX_ATTEMPTS times (the email_failed card follows). A connection lost in the
 middle of a mail records nothing for it: the next poll starts it again without spending an
-attempt. A mail without a Message-ID cannot be recorded (the hash is NOT NULL, §12.1); it is
+attempt. A FETCH the server answers with NO, or with an answer the parser cannot read, is
+not a lost connection: a refused part fails that mail's attempt like a storage error, and a
+refused listing batch is fetched again one UID at a time, the UIDs that still fail counted
+as `unreadable` and skipped, so one bad mail never stops the others. A mail without a
+Message-ID cannot be recorded (the hash is NOT NULL, §12.1); it is
 counted as `unrecorded` in the log line and decided again at each poll, never fetched.
 
 Workspace: the mailbox belongs to the deployment, and the members of one workspace are its
@@ -128,11 +132,17 @@ class PollResult:
     failed: int = 0
     known: int = 0  # already final, skipped without a decision
     unrecorded: int = 0  # no Message-ID: rejected, not recordable
+    unreadable: int = 0  # the server refused or garbled its listing even alone: skipped
     codes: Counter = field(default_factory=Counter)
 
 
 class _ConnectionLost(Exception):
     """The server or the network went away mid-poll; nothing is recorded for the mail."""
+
+
+class _FetchRefused(Exception):
+    """The server answered one FETCH with NO, or with an answer the parser cannot read. The
+    connection is fine: the poll goes on with the next mail (or the next UID)."""
 
 
 def _log(result: PollResult, **extra: Any) -> None:
@@ -144,6 +154,7 @@ def _log(result: PollResult, **extra: Any) -> None:
         "failed": result.failed,
         "known": result.known,
         "unrecorded": result.unrecorded,
+        "unreadable": result.unreadable,
         "codes": dict(sorted(result.codes.items())),
     } | extra
     level = logging.INFO if result.status in ("done", "not_configured") else logging.WARNING
@@ -227,7 +238,7 @@ def _session(deps: JobDeps, imap: imaplib.IMAP4, ws: UUID, now: datetime, result
                 max_bytes=min(MAX_ATTACHMENT_BYTES, settings.max_upload_bytes),
             )
         for batch in _batches(uids, FETCH_BATCH):
-            for message in _fetch(imap, ",".join(batch), _LISTING_ITEMS):
+            for message in _listing(imap, batch, result):
                 try:
                     _one(deps, imap, ws, now, policy, message, result)
                 except (_ConnectionLost, imaplib.IMAP4.abort, OSError):
@@ -246,13 +257,33 @@ def _batches(items: list[str], size: int) -> Iterator[list[str]]:
 
 
 def _fetch(imap: imaplib.IMAP4, uid_set: str, items: str) -> list[dict[str, Any]]:
+    """One UID FETCH. A NO (Gmail's "Some messages could not be FETCHed"; imaplib then drops
+    the untagged data of the whole command) or an answer the parser cannot read raises
+    _FetchRefused; a lost connection raises imaplib's abort or OSError, as before."""
     typ, data = imap.uid("FETCH", uid_set, items)
     if typ != "OK":
-        raise _ConnectionLost("fetch refused")
+        raise _FetchRefused("fetch refused")
     try:
         return parse_fetch_response([d for d in data if d is not None])
-    except ValueError as exc:  # a malformed answer: the server is not what we expect
-        raise _ConnectionLost("fetch unreadable") from exc
+    except ValueError as exc:  # one message the parser cannot read spoils the whole answer
+        raise _FetchRefused("fetch unreadable") from exc
+
+
+def _listing(imap: imaplib.IMAP4, batch: list[str], result: PollResult) -> list[dict[str, Any]]:
+    """The listing items of a batch of UIDs. When the server refuses the batch, or its answer
+    cannot be read, each UID is fetched alone, so one bad mail cannot hide the others; a UID
+    that still fails is counted as unreadable and skipped (it is decided again next poll)."""
+    try:
+        return _fetch(imap, ",".join(batch), _LISTING_ITEMS)
+    except _FetchRefused:
+        pass
+    messages: list[dict[str, Any]] = []
+    for uid in batch:
+        try:
+            messages += _fetch(imap, uid, _LISTING_ITEMS)
+        except _FetchRefused:
+            result.unreadable += 1
+    return messages
 
 
 def _record(deps: JobDeps, ws: UUID, now: datetime, **kwargs: Any) -> None:
@@ -309,7 +340,13 @@ def _one(deps, imap, ws, now, policy, message: dict[str, Any], result: PollResul
     part_failed = False
     for index in decision.attachments:
         part = by_index[index]
-        raw = _fetch_part(imap, message["UID"], index)  # _ConnectionLost propagates
+        try:
+            raw = _fetch_part(imap, message["UID"], index)  # a lost connection propagates
+        except _FetchRefused:  # refused or unreadable: this attempt fails, the poll goes on
+            part_failed = True
+            fields = {"event": "inbound_mail_part_refused"}
+            logger.warning("the server refused an attachment", extra={"fields": fields})
+            continue
         try:
             stored.append(_store(deps, ws, now, part, raw))
         except Exception as exc:  # noqa: BLE001 - class name only; the attempt is recorded
