@@ -35,7 +35,7 @@ useful_lives:                       # months; Q-O21
 telecom_share: "0.20"               # R 9.1 Abs. 5 S. 4 LStR without proof (D112, Q-O27)
 telecom_cap_monthly: "20.00"
 account_fee_flat: "16.00"           # Kontoführung, H 9.1 LStH (practice)
-union_dues_beside_allowance: true   # §9a S. 3 EStG from VZ 2026 (Q-O26)
+union_dues_beside_allowance: true   # from VZ 2026 (§9a S. 3 EStG, StÄndG 2025; spec §3)
 other_vorsorge_cap_employee: "1900.00"     # §10 Abs. 4 S. 2 EStG
 other_vorsorge_cap_self_paying: "2800.00"  # §10 Abs. 4 S. 1 EStG
 pension_max_contribution: "30826.00"       # §10 Abs. 3 S. 1, 2026 (Q-O12)
@@ -85,8 +85,8 @@ form:
       {key: commute.route_1.days_per_week, zeile: 28, kind: header, rounding: none,
        label: "Arbeitstage je Woche"}
     commute.route_1.absent_days:
-      {key: commute.route_1.absent_days, zeile: 28, kennzahl: "115", kind: header, rounding: none,
-       label: "Urlaubs- und Krankheitstage"}
+      {key: commute.route_1.absent_days, zeile: 28, kind: header, rounding: none,
+       label: "Urlaubs-, Krankheits-, Heimarbeits- und Dienstreisetage"}
     commute.route_1.days:
       {key: commute.route_1.days, zeile: 29, kennzahl: "110", kind: header, rounding: none,
        label: "Arbeitstage, an denen die Arbeitsstätte aufgesucht wurde"}
@@ -118,8 +118,8 @@ form:
       {key: commute.route_2.days_per_week, zeile: 36, kind: header, rounding: none,
        label: "Arbeitstage je Woche"}
     commute.route_2.absent_days:
-      {key: commute.route_2.absent_days, zeile: 36, kennzahl: "135", kind: header, rounding: none,
-       label: "Urlaubs- und Krankheitstage"}
+      {key: commute.route_2.absent_days, zeile: 36, kind: header, rounding: none,
+       label: "Urlaubs-, Krankheits-, Heimarbeits- und Dienstreisetage"}
     commute.route_2.days:
       {key: commute.route_2.days, zeile: 37, kennzahl: "130", kind: header, rounding: none,
        label: "Arbeitstage, an denen die Arbeitsstätte aufgesucht wurde"}
@@ -151,8 +151,8 @@ form:
       {key: commute.route_3.days_per_week, zeile: 44, kind: header, rounding: none,
        label: "Arbeitstage je Woche"}
     commute.route_3.absent_days:
-      {key: commute.route_3.absent_days, zeile: 44, kennzahl: "155", kind: header, rounding: none,
-       label: "Urlaubs- und Krankheitstage"}
+      {key: commute.route_3.absent_days, zeile: 44, kind: header, rounding: none,
+       label: "Urlaubs-, Krankheits-, Heimarbeits- und Dienstreisetage"}
     commute.route_3.days:
       {key: commute.route_3.days, zeile: 45, kennzahl: "150", kind: header, rounding: none,
        label: "Arbeitstage, an denen die Arbeitsstätte aufgesucht wurde"}

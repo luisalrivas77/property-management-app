@@ -345,6 +345,8 @@ class CommuteFact(Schema):
     period_from: date
     period_to: date
     days_per_week: int = Field(ge=1, le=7)
+    # the form's "Urlaubs-, Krankheits-, Heimarbeits- und Dienstreisetage" (no Kz; informational)
+    absent_days: int = Field(default=0, ge=0, le=366)
     days: int = Field(ge=0, le=366)
     km: int = Field(ge=1, le=1000)
     km_car: int = Field(default=0, ge=0)
