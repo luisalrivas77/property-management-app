@@ -32,6 +32,7 @@ from .matching import (
     run_rematch_on_evidence,
     run_rematch_waiting,
 )
+from .inbound_mail import POLL_CRON, POLL_LOCK, POLL_TASK, run_poll_inbox
 from .scrub import SCRUB_CRON, SCRUB_TASK, run_scrub_proposals
 from .tax_export import run_tax_export
 
@@ -143,6 +144,13 @@ def scrub_proposals(context: JobContext, *, timestamp: int) -> None:
     run_scrub_proposals(deps)
 
 
+def poll_inbox(context: JobContext, *, timestamp: int) -> None:
+    """D121, every ten minutes: email-in from the household's Gmail label. Off (returns at
+    once) until the four HAUSBUCH_INBOX_* values are set."""
+    deps: JobDeps = context.additional_context[DEPS_KEY]
+    run_poll_inbox(deps)
+
+
 def register_tasks(app: procrastinate.App) -> procrastinate.App:
     """The queued tasks, plus scrub_proposals as a periodic task: the worker's periodic
     deferrer queues it at SCRUB_CRON. Procrastinate skips a schedule missed by more than
@@ -160,4 +168,8 @@ def register_tasks(app: procrastinate.App) -> procrastinate.App:
     # however many instances run a deferrer, and a duplicate run would scrub nothing.
     scrub = app.task(name=SCRUB_TASK, pass_context=True)(scrub_proposals)
     app.periodic(cron=SCRUB_CRON, periodic_id=SCRUB_TASK)(scrub)
+    # No retry: the next poll is ten minutes away. The lock keeps one poll at a time when a
+    # slow one is still running at the next tick.
+    poll = app.task(name=POLL_TASK, pass_context=True, lock=POLL_LOCK)(poll_inbox)
+    app.periodic(cron=POLL_CRON, periodic_id=POLL_TASK)(poll)
     return app

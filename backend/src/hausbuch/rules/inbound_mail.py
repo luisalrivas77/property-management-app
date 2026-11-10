@@ -637,3 +637,26 @@ def parse_internaldate(value: str | None) -> datetime | None:
     except ValueError:
         return None
     return local.astimezone(UTC)
+
+
+def imap_mailbox(label: str) -> str:
+    """The label as an IMAP mailbox argument: modified UTF-7 (RFC 3501 §5.1.3, so a label
+    "Hausbücher" works) and quoted, since imaplib sends arguments as given."""
+    out: list[str] = []
+    pending: list[str] = []
+
+    def flush() -> None:
+        if pending:
+            utf16 = "".join(pending).encode("utf-16-be")
+            out.append("&" + base64.b64encode(utf16).decode().rstrip("=").replace("/", ",") + "-")
+            pending.clear()
+
+    for char in label:
+        if 0x20 <= ord(char) <= 0x7E:
+            flush()
+            out.append("&-" if char == "&" else char)
+        else:
+            pending.append(char)
+    flush()
+    escaped = "".join(out).replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'

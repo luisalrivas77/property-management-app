@@ -16,6 +16,7 @@ from hausbuch.rules.inbound_mail import (
     body_parts,
     decide,
     decode_part,
+    imap_mailbox,
     imap_since,
     mail_facts,
     message_id_hash,
@@ -302,6 +303,13 @@ def test_imap_dates_use_english_month_names():
     )
     assert parse_internaldate("not a date") is None
     assert parse_internaldate(None) is None
+
+
+def test_the_label_is_quoted_modified_utf7():
+    assert imap_mailbox("Hausbuch") == '"Hausbuch"'
+    assert imap_mailbox("Finanzen/Haus & Hof") == '"Finanzen/Haus &- Hof"'
+    assert imap_mailbox("Hausbücher") == '"Hausb&APw-cher"'
+    assert imap_mailbox('a"b') == '"a\\"b"'
 
 
 def test_codes_are_the_spec_strings():

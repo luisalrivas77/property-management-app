@@ -38,8 +38,10 @@ router = domain_router()
 
 @router.get("/inbox")
 def inbox_list(cmd: Cmd) -> list[InboxItem]:
-    """Plus, from 1 January, last year's open Jahresfragen (phase 4b D110)."""
-    return cmd.read(review.inbox, today=datetime.now(LOCAL_TIME_ZONE).date())
+    """Plus, from 1 January, last year's open Jahresfragen (phase 4b D110), and the email-in
+    cards (phase 5 §5.4)."""
+    now = datetime.now(LOCAL_TIME_ZONE)
+    return cmd.read(review.inbox, today=now.date(), now=now)
 
 
 @router.post("/inbox/ai-retry")
