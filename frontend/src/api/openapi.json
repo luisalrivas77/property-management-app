@@ -21345,6 +21345,11 @@
             "type": "boolean",
             "title": "Auto Accept Llm",
             "default": false
+          },
+          "reminder_emails": {
+            "type": "boolean",
+            "title": "Reminder Emails",
+            "default": false
           }
         },
         "additionalProperties": false,

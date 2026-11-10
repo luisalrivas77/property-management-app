@@ -8064,6 +8064,11 @@ export interface components {
              * @default false
              */
             auto_accept_llm: boolean;
+            /**
+             * Reminder Emails
+             * @default false
+             */
+            reminder_emails: boolean;
         };
         /**
          * WorkspaceSettings

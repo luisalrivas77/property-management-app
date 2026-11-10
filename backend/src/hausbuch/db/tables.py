@@ -1,4 +1,4 @@
-"""SQLAlchemy Core tables for migrations 0001-0013.
+"""SQLAlchemy Core tables for migrations 0001-0019.
 
 The migration is the source of truth. This module mirrors its columns (name, type, nullability,
 whether a server default exists) and primary keys, so services can build typed queries; it
@@ -88,6 +88,8 @@ workspace = Table(
     # 0005 (phase 2 settings)
     Column("ai_tenant_documents", Boolean, nullable=False, server_default=text("false")),
     Column("auto_accept_llm", Boolean, nullable=False, server_default=text("false")),
+    # 0019 (phase 5, D123)
+    Column("reminder_emails", Boolean, nullable=False, server_default=text("false")),
 )
 
 app_user = Table(
@@ -728,4 +730,101 @@ questionnaire_answer = Table(
     Column("withdrawn", Boolean, nullable=False, server_default=text("false")),
     _timestamp("recorded_at"),
     _uuid("recorded_by", nullable=True),
+)
+
+
+# --- Phase 5: automation (0019) ----------------------------------------------
+
+bank_connection = Table(
+    "bank_connection",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("account_id"),
+    _text("bank_code"),
+    _text("fints_url"),
+    _text("login_name"),
+    _text("tan_mechanism", nullable=True),
+    Column("client_data", LargeBinary, nullable=True),
+    Column("client_data_mac", LargeBinary, nullable=True),
+    Column("auto_sync", Boolean, nullable=False, server_default=text("false")),
+    _timestamp("sca_confirmed_at", nullable=True, default=False),
+    _timestamp("last_sync_at", nullable=True, default=False),
+    _date("last_booking_on", nullable=True),
+    _created_at(),
+    _updated_at(),
+)
+bank_sync = Table(
+    "bank_sync",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("account_id"),
+    _uuid("connection_id"),
+    _text("trigger"),
+    _text("status", server_default=text("'queued'")),
+    _date("requested_from", nullable=True),
+    _date("requested_to", nullable=True),
+    _uuid("import_id", nullable=True),
+    Column("lines_total", Integer, nullable=True),
+    Column("lines_new", Integer, nullable=True),
+    _text("balance_source", nullable=True),
+    Column("balance_checked", Boolean, nullable=False, server_default=text("false")),
+    _text("error_code", nullable=True),
+    _timestamp("started_at", nullable=True, default=False),
+    _timestamp("finished_at", nullable=True, default=False),
+    _uuid("created_by", nullable=True),
+    _created_at(),
+    _updated_at(),
+)
+inbound_mail = Table(
+    "inbound_mail",
+    metadata,
+    _id(),
+    _workspace_id(),
+    Column("message_id_hash", LargeBinary, nullable=False),
+    Column("attempt", SmallInteger, nullable=False),
+    _timestamp("received_at", nullable=True, default=False),
+    _text("decision"),
+    _text("code", nullable=True),
+    Column("attachments_total", SmallInteger, nullable=True),
+    Column("attachments_accepted", SmallInteger, nullable=True),
+    _timestamp("recorded_at"),
+)
+inbound_mail_attachment = Table(
+    "inbound_mail_attachment",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("mail_id"),
+    _uuid("document_id"),
+    _uuid("import_id", nullable=True),
+    _timestamp("recorded_at"),
+)
+reminder_ack = Table(
+    "reminder_ack",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _text("reminder_key"),
+    _text("scope_type"),
+    _uuid("scope_id", nullable=True),
+    _date("due_on", nullable=True),
+    _text("action"),
+    _date("snoozed_until", nullable=True),
+    _timestamp("recorded_at"),
+    _uuid("recorded_by", nullable=True),
+)
+notification = Table(
+    "notification",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _text("reminder_id"),
+    Column("lead_days", SmallInteger, nullable=False),
+    _text("channel"),
+    _uuid("recipient_user_id"),
+    _timestamp("sent_at"),
+    _text("status"),
+    _text("error_code", nullable=True),
 )

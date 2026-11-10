@@ -59,6 +59,13 @@ MIGRATION_TABLES = {
     "projection_scenario",
     "return_input",
     "questionnaire_answer",
+    # Phase 5 (docs/phases/phase-5.md §8)
+    "bank_connection",
+    "bank_sync",
+    "inbound_mail",
+    "inbound_mail_attachment",
+    "reminder_ack",
+    "notification",
 }
 # Procrastinate's own tables (0005): not RLS'd, no workspace_id (D20). The one exclusion.
 QUEUE_TABLE_PREFIX = "procrastinate_"
