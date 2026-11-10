@@ -115,6 +115,56 @@ class DocumentSubtype(StrEnum):
     # Phase 4b D129 (migration 0020): the household's Einkommensteuerbescheid (type bescheid);
     # a tax record like every Bescheid. Its zvE is proposed as the year's bescheid_zve.
     EINKOMMENSTEUERBESCHEID = "einkommensteuerbescheid"
+    # The document catalogue (phase-2.md D130, D131, §6.2.1; migration 0021). Each is read by
+    # the general reading (title, date, plus its group's link field), except the three invoices
+    # (invoice reader) and the Verwaltervertrag (its own kind); none creates a record.
+    # Property and purchase (retention ownership_records; link:property)
+    LAND_REGISTER_EXTRACT = "land_register_extract"  # Grundbuchauszug (letter)
+    DECLARATION_OF_DIVISION = "declaration_of_division"  # Teilungserklärung (contract)
+    LAND_CHARGE_DEED = "land_charge_deed"  # Grundschuldbestellungsurkunde (contract)
+    ENERGY_CERTIFICATE = "energy_certificate"  # Energieausweis (other)
+    BUILDING_RECORDS = "building_records"  # Grundriss, Wohnflächenberechnung ... (other)
+    INSURANCE_POLICY = "insurance_policy"  # Versicherungsschein (contract)
+    MANAGEMENT_CONTRACT = "management_contract"  # Verwaltervertrag (contract, D130)
+    SERVICE_CONTRACT = "service_contract"  # Versorger- oder Wartungsvertrag (contract)
+    # WEG (link:property)
+    WEG_MINUTES = "weg_minutes"  # Protokoll der Eigentümerversammlung (letter; ownership)
+    WEG_INVITATION = "weg_invitation"  # Einladung zur Eigentümerversammlung (letter)
+    SPECIAL_LEVY = "special_levy"  # Sonderumlage (letter)
+    # Loan (link:loan)
+    REPAYMENT_SCHEDULE = "repayment_schedule"  # Tilgungsplan (other; ownership)
+    LOAN_TERMS_CHANGE = "loan_terms_change"  # Prolongation, Konditionsanpassung (letter; own.)
+    LOAN_STATEMENT = "loan_statement"  # Darlehenskontoauszug (statement)
+    # Tenancy (tenant gate; retention tenancy_records; link:tenancy)
+    LEASE_AMENDMENT = "lease_amendment"  # Nachtrag zum Mietvertrag (contract)
+    RENT_INCREASE = "rent_increase"  # Mieterhöhung (letter)
+    TERMINATION_NOTICE = "termination_notice"  # Kündigung, Mietaufhebungsvertrag (letter)
+    TENANT_SELF_DISCLOSURE = "tenant_self_disclosure"  # Mieterselbstauskunft (other)
+    LANDLORD_CONFIRMATION = "landlord_confirmation"  # Wohnungsgeberbestätigung (letter)
+    OPERATING_COSTS_STATEMENT = "operating_costs_statement"  # Betriebskostenabrechnung (letter)
+    TENANT_CORRESPONDENCE = "tenant_correspondence"  # Schreiben von oder an Mieter (letter)
+    # Running costs (link:property)
+    UTILITY_BILL = "utility_bill"  # Jahresabrechnung Strom, Gas, Wasser (invoice; invoice reader)
+    QUOTE = "quote"  # Kostenvoranschlag, Angebot (letter)
+    CHIMNEY_SWEEP_NOTICE = "chimney_sweep_notice"  # Feuerstättenbescheid (bescheid)
+    # Income tax (no link)
+    PREPAYMENT_NOTICE = "prepayment_notice"  # Vorauszahlungsbescheid (bescheid)
+    TAX_RETURN_COPY = "tax_return_copy"  # Steuererklärung, ELSTER-Protokoll (other)
+    DONATION_RECEIPT = "donation_receipt"  # Zuwendungsbestätigung (letter)
+    CHILDCARE_INVOICE = "childcare_invoice"  # Kita-Beitrag, Betreuungsrechnung (invoice)
+    HOUSEHOLD_SERVICES_INVOICE = "household_services_invoice"  # §35a (invoice; invoice reader)
+    INSURANCE_CONTRIBUTION_CERTIFICATE = "insurance_contribution_certificate"  # (letter)
+    PENSION_CONTRIBUTION_CERTIFICATE = "pension_contribution_certificate"  # Riester (letter)
+    BENEFIT_NOTICE = "benefit_notice"  # Elterngeld-, Krankengeldbescheid (bescheid)
+    CHILD_BENEFIT_NOTICE = "child_benefit_notice"  # Kindergeldbescheid (bescheid)
+    EMPLOYMENT_CONTRACT = "employment_contract"  # Arbeitsvertrag (contract)
+    EMPLOYER_CERTIFICATE = "employer_certificate"  # Arbeitgeberbescheinigung (letter)
+    WORK_EXPENSE_INVOICE = "work_expense_invoice"  # Arbeitsmittel (invoice; invoice reader)
+    # Household finances (no link; their own readers come with phases 6 and 8)
+    DEPOT_STATEMENT = "depot_statement"  # Depotauszug (statement)
+    DEPOT_REPORT = "depot_report"  # Quartals- oder Vermögensbericht (other)
+    TRADE_CONFIRMATION = "trade_confirmation"  # Wertpapierabrechnung (letter)
+    CAPITAL_INCOME_TAX_CERTIFICATE = "capital_income_tax_certificate"  # (letter)
 
 
 class ExtractionSource(StrEnum):
@@ -207,6 +257,10 @@ class ExtractionKind(StrEnum):
     GEHALTSABRECHNUNG = "gehaltsabrechnung"
     # Phase 4b D129 (migration 0020)
     EINKOMMENSTEUERBESCHEID = "einkommensteuerbescheid"
+    # Phase 2 D130, D131 (migration 0021): title and date (plus a group's link field) for
+    # every document without a reader of its own, and the Verwaltervertrag.
+    GENERAL = "general"
+    MANAGEMENT_CONTRACT = "management_contract"
 
 
 class ProposalStatus(StrEnum):
