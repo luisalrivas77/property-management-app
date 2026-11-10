@@ -312,10 +312,12 @@ class DocumentLinked(Schema):
 
 
 class WorkspaceSetting(StrEnum):
-    """The workspace columns migration 0005 adds (D16, D26)."""
+    """The workspace's boolean settings: the two columns migration 0005 adds (D16, D26) and
+    phase 5's `reminder_emails` (migration 0019, D123)."""
 
     AI_TENANT_DOCUMENTS = "ai_tenant_documents"
     AUTO_ACCEPT_LLM = "auto_accept_llm"
+    REMINDER_EMAILS = "reminder_emails"
 
 
 class WorkspaceSettingsChanged(Schema):
@@ -861,8 +863,8 @@ class EventType(StrEnum):
     WORKSPACE_INCOME_INPUT_RECORDED = "workspace.income_input_recorded"  # phase 4
     WORKSPACE_RETURN_INPUT_RECORDED = "workspace.return_input_recorded"  # phase 4b
     WORKSPACE_QUESTIONNAIRE_ANSWERED = "workspace.questionnaire_answered"  # phase 4b
-    # Phase 5. §8's `workspace.reminder_emails_changed` is not added: the switch is a workspace
-    # setting and changes through workspace.settings_changed like the other two (step 0 finding).
+    # Phase 5. §8's `workspace.reminder_emails_changed` is not added: the switch is a member of
+    # WorkspaceSetting and changes through workspace.settings_changed like the other two.
     WORKSPACE_REMINDER_ACKNOWLEDGED = "workspace.reminder_acknowledged"
     WORKSPACE_NOTIFICATION_SENT = "workspace.notification_sent"
 

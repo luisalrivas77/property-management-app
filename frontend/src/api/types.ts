@@ -8072,13 +8072,15 @@ export interface components {
         };
         /**
          * WorkspaceSettings
-         * @description GET /workspace/settings. Both default to false (D16, D26).
+         * @description GET /workspace/settings. All three default to false (D16, D26; phase 5 D123).
          */
         WorkspaceSettings: {
             /** Ai Tenant Documents */
             ai_tenant_documents: boolean;
             /** Auto Accept Llm */
             auto_accept_llm: boolean;
+            /** Reminder Emails */
+            reminder_emails: boolean;
         };
         /** WorkspaceSettingsPatch */
         WorkspaceSettingsPatch: {
@@ -8086,6 +8088,8 @@ export interface components {
             ai_tenant_documents?: boolean;
             /** Auto Accept Llm */
             auto_accept_llm?: boolean;
+            /** Reminder Emails */
+            reminder_emails?: boolean;
         };
         /**
          * YearFigures

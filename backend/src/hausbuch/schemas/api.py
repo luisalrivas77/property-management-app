@@ -374,15 +374,17 @@ class DepositReceipt(Schema):
 
 
 class WorkspaceSettings(Schema):
-    """GET /workspace/settings. Both default to false (D16, D26)."""
+    """GET /workspace/settings. All three default to false (D16, D26; phase 5 D123)."""
 
     ai_tenant_documents: bool
     auto_accept_llm: bool
+    reminder_emails: bool
 
 
 class WorkspaceSettingsPatch(Patch):
     ai_tenant_documents: bool = Field(default=None)
     auto_accept_llm: bool = Field(default=None)
+    reminder_emails: bool = Field(default=None)
 
 
 class DocumentUploadResult(Schema):

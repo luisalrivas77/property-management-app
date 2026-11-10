@@ -21371,16 +21371,21 @@
           "auto_accept_llm": {
             "type": "boolean",
             "title": "Auto Accept Llm"
+          },
+          "reminder_emails": {
+            "type": "boolean",
+            "title": "Reminder Emails"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
           "ai_tenant_documents",
-          "auto_accept_llm"
+          "auto_accept_llm",
+          "reminder_emails"
         ],
         "title": "WorkspaceSettings",
-        "description": "GET /workspace/settings. Both default to false (D16, D26)."
+        "description": "GET /workspace/settings. All three default to false (D16, D26; phase 5 D123)."
       },
       "WorkspaceSettingsPatch": {
         "properties": {
@@ -21391,6 +21396,10 @@
           "auto_accept_llm": {
             "type": "boolean",
             "title": "Auto Accept Llm"
+          },
+          "reminder_emails": {
+            "type": "boolean",
+            "title": "Reminder Emails"
           }
         },
         "additionalProperties": false,
