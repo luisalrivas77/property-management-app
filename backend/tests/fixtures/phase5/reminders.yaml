@@ -1,0 +1,756 @@
+# Rule fixture: deadline reminders (hausbuch.rules.reminders.build_reminders)
+#
+# build_reminders(facts: ReminderFacts, today) -> list[Reminder]
+# docs/phases/phase-5.md D122, D126, §6.1-§6.3, §12. Pure and order-independent: the rule test
+# shuffles every list of the facts. The catalogue is §6.2's table; the fixture model checks
+# each expected reminder against it (scope, leads, severity, how it clears, label arguments)
+# and against its kind's due-date formula over the case's facts. Which instances exist is
+# written out by hand per case, with the derivation in a comment.
+#
+# Output contract (step 0's reading of §6.2; each point a spec finding where §6 is silent):
+# - An instance is returned while it is open (not cleared `auto`, not hidden by an ack) and
+#   1 Jan of last year <= due_on <= today + 90 days (HORIZON_DAYS, the largest lead). A past
+#   instance stays until it is cleared; the floor keeps a property bought years ago from
+#   listing every old year (§6.2 does not bound the past).
+# - Sorted by (due_on, id). id = "<key>:<scope_id or workspace>:<due_on>".
+# - visible_from = due_on - in-app lead; email_leads in days before due_on (negative: after).
+#
+#   kind                         scope        in-app  email     severity cleared  label_args
+#   grundsteuer.instalment       property     7 / 0   7 / -3    action   auto     property
+#     (remind / sepa_mandate: label_code grundsteuer.instalment.remind / .sepa_mandate)
+#   checklist.due                property|loan  14    14, 0     action   auto     property|lender, year
+#     (label_code checklist.due.<item code>)
+#   tax.return_deadline          workspace    90      60, 14    action   ack      year
+#   tax.questionnaire_open       workspace    0       -14       action   auto     year
+#   tax.wage_certificate_missing owner        0       0         action   auto     year
+#   loan.fixed_rate_end          loan         0       0         action   ack      lender, fixed_until, months_before
+#   loan.special_termination     loan         0       none      info     ack      lender
+#   property.speculation_end     property     0       none      info     ack      property, tax_free_from
+#   tenancy.settlement_deadline  tenancy      90      90, 30    action   ack      unit, year
+#   tenancy.rent_missing         tenancy      0       0         action   auto     unit, month
+#   bank.sync_stale              account      0       0         info     auto     account
+#   Every other kind's label_code is its key.
+#
+# Due dates and conditions per kind:
+# - grundsteuer.instalment (D126): only while the checklist's grundsteuerbescheid item for the
+#   year is present (a Bescheid linked to the property or a unit), for every year from
+#   year(purchase_date) + 1 (§9 Abs. 1, §10 Abs. 1 GrStG: the seller owes the purchase year).
+#   Dates: the latest grundsteuer_schedule row with tax_year <= Y, its days carried into Y
+#   (same day and month); else 15 Feb, 15 May, 15 Aug, 15 Nov (§28 Abs. 1 GrStG). Cleared by
+#   a confirmed grundsteuer payment booked within ±10 days of due_on (and, with a schedule
+#   row, |amount| = the instalment ± 0.01). Mode: the row's payment_mode; else sepa_mandate
+#   once an earlier instalment was cleared by a direct-debit line, else remind.
+# - checklist.due: build_checklist(property's facts, Y, today) for Y from year(purchase_date)
+#   to year(today + 90); an item with a due_on and status missing, or expected (in-app from 14
+#   days before). Step 3 (D126) gives the grundsteuerbescheid item applies = Y >= purchase
+#   year + 1 and due_on = 15 Jan Y. Two dated items of one scope on one day would share an id
+#   (spec finding; no such catalogue pair exists today).
+# - tax.return_deadline: filing_deadline(Y) (§149 Abs. 2 AO, moved by §108 Abs. 3 AO) for every
+#   listed tax year; 31 Jul 2027 is a Saturday, so 2026's is Monday 2 Aug 2027.
+# - tax.questionnaire_open: 1 Jan Y+1 while the year's questionnaire is incomplete.
+# - tax.wage_certificate_missing: 1 Mar Y+1 (§41b Abs. 1 S. 3 EStG: handed out by the end of
+#   February) for an owner with Y in pay_years and not in wage_certificate_years.
+# - loan.fixed_rate_end: fixed_until - 12 months and - 6 months (a day the month lacks -> its
+#   last day).
+# - loan.special_termination: add_years(disbursed_on, 10) - 6 months. §489 Abs. 1 Nr. 2 BGB
+#   lets the borrower give notice once ten years have passed since full receipt, with six
+#   months' notice; the date is when to start checking, six months ahead (§6.2's formula).
+# - property.speculation_end: tax_free_from(notarized_on, latest rule set) - 12 months, while
+#   still owned (§23 Abs. 1 Nr. 1 EStG; tax_free_from = notarized + 10 years + 1 day).
+# - tenancy.settlement_deadline: 31 Dec Y+1 (§556 Abs. 3 S. 2 BGB) for each calendar year Y
+#   the tenancy overlaps from the property's purchase year on, operating_costs_terms =
+#   prepayment only (never flat_rate or included: D72, D91).
+# - tenancy.rent_missing: for each full month M from max(tenancy start, purchase_date) whose
+#   due_on = rent_due_day of M + 5 days: no rent payment's service period overlaps M, and there
+#   is at least one non-owner account and every non-owner account has opening_balance_on <
+#   due_on <= reconciled_until (the statements reach the date; otherwise the statement is not
+#   in yet and nothing fires). label_args name the unit, never a tenant (D5).
+# - bank.sync_stale: (last_sync_on, else connected_on) + 35 days, for an account with a
+#   connection. Cleared auto by a newer success (the date moves).
+# - acks: `done` hides the instance with that key, scope and due_on; `snoozed` hides it while
+#   today < snoozed_until; the latest muted/unmuted row by recorded_at for the key and scope
+#   decides whether every instance is hidden.
+#
+# Cases that do not test the checklist or the Grundsteuer kinds mute them for the property
+# (the `quiet` acks), so a case's output shows only what it is about.
+
+ids:
+  property: &P 0000005b-0000-4000-8000-000000000001
+  property_b: &P2 0000005b-0000-4000-8000-000000000002
+  loan_1: &L1 0000005f-0000-4000-8000-000000000001
+  loan_2: &L2 0000005f-0000-4000-8000-000000000002
+  loan_3: &L3 0000005f-0000-4000-8000-000000000003
+  tenancy_1: &T1 0000005e-0000-4000-8000-000000000001
+  tenancy_2: &T2 0000005e-0000-4000-8000-000000000002
+  tenancy_3: &T3 0000005e-0000-4000-8000-000000000003
+  owner_a: &O1 0000005d-0000-4000-8000-000000000001
+  owner_b: &O2 0000005d-0000-4000-8000-000000000002
+  account: &A1 0000005a-0000-4000-8000-000000000001
+  doc_bescheid: &D_GSB 0000005c-0000-4000-8000-000000000001
+  doc_zins: &D_ZB 0000005c-0000-4000-8000-000000000002
+  schedule_2027: &S27 00000051-0000-4000-8000-000000000001
+  pay_1: &G1 00000052-0000-4000-8000-000000000001
+  pay_2: &G2 00000052-0000-4000-8000-000000000002
+  rent_jun: &R6 00000053-0000-4000-8000-000000000006
+  rent_jul: &R7 00000053-0000-4000-8000-000000000007
+  rent_aug: &R8 00000053-0000-4000-8000-000000000008
+  rent_sep: &R9 00000053-0000-4000-8000-000000000009
+  rent_oct: &R10 00000053-0000-4000-8000-000000000010
+
+bases:
+  bescheid: &bescheid
+    {id: *D_GSB, type: bescheid, subtype: grundsteuerbescheid, received_at: 2027-01-12T09:00:00Z,
+     links: [{target_type: property, target_id: *P}]}
+  checklist: &checklist {property_id: *P, kind: efh, purchase_date: 2026-05-01}
+  property: &property
+    id: *P
+    label: Wohnung A
+    purchase_date: 2026-05-01
+    notarized_on: 2026-03-15  # §23 free from 16 Mar 2036: never within these cases' horizon
+    checklist: *checklist
+  property_with_bescheid: &property_with_bescheid
+    <<: *property
+    checklist: {<<: *checklist, documents: [*bescheid]}
+  quarterly_2027: &quarterly_2027
+    id: *S27
+    tax_year: 2027
+    instalments:
+      - {due_on: 2027-02-15, amount: "100.00"}
+      - {due_on: 2027-05-15, amount: "100.00"}
+      - {due_on: 2027-08-15, amount: "100.00"}
+      - {due_on: 2027-11-15, amount: "100.00"}
+  mute_checklist: &mute_checklist
+    {reminder_key: checklist.due, scope_type: property, scope_id: *P, action: muted,
+     recorded_at: 2026-05-01T08:00:00Z}
+  mute_grundsteuer: &mute_grundsteuer
+    {reminder_key: grundsteuer.instalment, scope_type: property, scope_id: *P, action: muted,
+     recorded_at: 2026-05-01T08:00:00Z}
+  rent_jun_sep: &rent_jun_sep
+    - {id: *R6, service_period_start: 2026-06-01, service_period_end: 2026-06-30}
+    - {id: *R7, service_period_start: 2026-07-01, service_period_end: 2026-07-31}
+    - {id: *R8, service_period_start: 2026-08-01, service_period_end: 2026-08-31}
+    - {id: *R9, service_period_start: 2026-09-01, service_period_end: 2026-09-30}
+  tenancy_1: &tenancy_1
+    id: *T1
+    property_id: *P
+    unit_label: Zimmer 1
+    start_date: 2026-06-01
+    operating_costs_terms: flat_rate
+    rent_due_day: 3
+    rent_payments: *rent_jun_sep
+  account: &account
+    {id: *A1, label: Mietkonto, opening_balance_on: 2026-04-30, reconciled_until: 2026-10-31}
+  loan_fixed: &loan_fixed
+    # disbursed 31 Aug 2022: special termination 31 Aug 2032 - 6 months = 29 Feb 2032, far out
+    {id: *L2, lender: Bank B, disbursed_on: 2022-08-31, fixed_until: 2027-08-31}
+  return_2026: &return_2026
+    {tax_year: 2026, questionnaire_complete: true}
+  return_deadline_2026: &return_deadline_2026
+    id: tax.return_deadline:workspace:2027-08-02
+    kind: tax.return_deadline
+    scope: workspace
+    due_on: 2027-08-02
+    visible_from: 2027-05-04
+    severity: action
+    cleared_by: ack
+    label_code: tax.return_deadline
+    label_args: {year: 2026}
+    email_leads: [60, 14]
+  fixed_12: &fixed_12
+    id: loan.fixed_rate_end:0000005f-0000-4000-8000-000000000002:2026-08-31
+    kind: loan.fixed_rate_end
+    scope: loan
+    scope_id: *L2
+    due_on: 2026-08-31
+    visible_from: 2026-08-31
+    severity: action
+    cleared_by: ack
+    label_code: loan.fixed_rate_end
+    label_args: {lender: Bank B, fixed_until: "2027-08-31", months_before: 12}
+    email_leads: [0]
+  fixed_6: &fixed_6
+    id: loan.fixed_rate_end:0000005f-0000-4000-8000-000000000002:2027-02-28
+    kind: loan.fixed_rate_end
+    scope: loan
+    scope_id: *L2
+    due_on: 2027-02-28
+    visible_from: 2027-02-28
+    severity: action
+    cleared_by: ack
+    label_code: loan.fixed_rate_end
+    label_args: {lender: Bank B, fixed_until: "2027-08-31", months_before: 6}
+    email_leads: [0]
+  rent_oct_t1: &rent_oct_t1
+    id: tenancy.rent_missing:0000005e-0000-4000-8000-000000000001:2026-10-08
+    kind: tenancy.rent_missing
+    scope: tenancy
+    scope_id: *T1
+    due_on: 2026-10-08
+    visible_from: 2026-10-08
+    severity: action
+    cleared_by: auto
+    label_code: tenancy.rent_missing
+    label_args: {unit: Zimmer 1, month: "2026-10"}
+    email_leads: [0]
+  gs_q1_2027: &gs_q1_2027
+    id: grundsteuer.instalment:0000005b-0000-4000-8000-000000000001:2027-02-15
+    kind: grundsteuer.instalment
+    scope: property
+    scope_id: *P
+    due_on: 2027-02-15
+    visible_from: 2027-02-08
+    severity: action
+    cleared_by: auto
+    label_code: grundsteuer.instalment.remind
+    label_args: {property: Wohnung A}
+    email_leads: [7]
+  gs_q2_2027: &gs_q2_2027
+    id: grundsteuer.instalment:0000005b-0000-4000-8000-000000000001:2027-05-15
+    kind: grundsteuer.instalment
+    scope: property
+    scope_id: *P
+    due_on: 2027-05-15
+    visible_from: 2027-05-08
+    severity: action
+    cleared_by: auto
+    label_code: grundsteuer.instalment.remind
+    label_args: {property: Wohnung A}
+    email_leads: [7]
+  gs_q3_2027: &gs_q3_2027
+    id: grundsteuer.instalment:0000005b-0000-4000-8000-000000000001:2027-08-15
+    kind: grundsteuer.instalment
+    scope: property
+    scope_id: *P
+    due_on: 2027-08-15
+    visible_from: 2027-08-08
+    severity: action
+    cleared_by: auto
+    label_code: grundsteuer.instalment.remind
+    label_args: {property: Wohnung A}
+    email_leads: [7]
+  gs_q2_2027_sepa: &gs_q2_2027_sepa
+    <<: *gs_q2_2027
+    visible_from: 2027-05-15
+    label_code: grundsteuer.instalment.sepa_mandate
+    email_leads: [-3]
+  special_l3: &special_l3
+    id: loan.special_termination:0000005f-0000-4000-8000-000000000003:2026-12-30
+    kind: loan.special_termination
+    scope: loan
+    scope_id: *L3
+    due_on: 2026-12-30
+    visible_from: 2026-12-30
+    severity: info
+    cleared_by: ack
+    label_code: loan.special_termination
+    label_args: {lender: Bank C}
+    email_leads: []
+  loan_l3: &loan_l3
+    # 30 Jun 2017 + 10 years = 30 Jun 2027; - 6 months = 30 Dec 2026. fixed_until 30 Jun 2032:
+    # its 12- and 6-month dates fall in 2031 and 2032, outside every horizon here
+    {id: *L3, lender: Bank C, disbursed_on: 2017-06-30, fixed_until: 2032-06-30}
+  sync_stale_a1: &sync_stale_a1
+    id: bank.sync_stale:0000005a-0000-4000-8000-000000000001:2026-11-05
+    kind: bank.sync_stale
+    scope: account
+    scope_id: *A1
+    due_on: 2026-11-05
+    visible_from: 2026-11-05
+    severity: info
+    cleared_by: auto
+    label_code: bank.sync_stale
+    label_args: {account: Mietkonto}
+    email_leads: [0]
+
+cases:
+  # --- Grundsteuer (D126) -----------------------------------------------------------------
+
+  - id: grundsteuer_bescheid_expected_first_full_year
+    description: >
+      bought 1 May 2026: no Bescheid item for 2026 (the seller owes it), the 2027 item is due
+      15 Jan 2027 and visible from 1 Jan 2027; no instalment without a Bescheid
+    # horizon 20 Dec 2026 + 90 = 20 Mar 2027 -> checklist years 2026, 2027; 2027's item is
+    # expected (15 Jan 2027 > today); visible 15 Jan - 14 = 1 Jan 2027
+    today: 2026-12-20
+    facts:
+      properties: [*property]
+    expect:
+      - id: checklist.due:0000005b-0000-4000-8000-000000000001:2027-01-15
+        kind: checklist.due
+        scope: property
+        scope_id: *P
+        due_on: 2027-01-15
+        visible_from: 2027-01-01
+        severity: action
+        cleared_by: auto
+        label_code: checklist.due.grundsteuerbescheid
+        label_args: {property: Wohnung A, year: 2027}
+        email_leads: [14, 0]
+
+  - id: grundsteuer_bescheid_present_silent
+    description: >
+      the Bescheid arrived on 12 Jan 2027 and is linked (tax year open): the 2027 item is
+      present, so no checklist reminder (the instalments it starts are muted here, they are
+      the next cases' subject)
+    today: 2027-01-20
+    facts:
+      properties: [*property_with_bescheid]
+      acks: [*mute_grundsteuer]
+    expect: []
+
+  - id: grundsteuer_quarters_without_schedule
+    description: >
+      Bescheid linked, no schedule row: the statutory quarters of §28 Abs. 1 GrStG from 2027;
+      15 Feb is past and unpaid (still open), 15 May is within the horizon
+    # horizon 20 Feb 2027 + 90 = 21 May 2027 -> 15 Feb, 15 May; 15 Aug is beyond; mode remind
+    # (no row, no direct debit): visible due - 7
+    today: 2027-02-20
+    facts:
+      properties: [*property_with_bescheid]
+    expect: [*gs_q1_2027, *gs_q2_2027]
+
+  - id: grundsteuer_dates_from_schedule
+    description: a schedule row with two dates (15 Feb and 15 Aug) gives two reminders, no quarters
+    # horizon 1 Jun 2027 + 90 = 30 Aug 2027; 15 Feb is unpaid (open), 15 Aug within
+    today: 2027-06-01
+    facts:
+      properties:
+        - <<: *property_with_bescheid
+          grundsteuer_schedules:
+            - id: *S27
+              tax_year: 2027
+              instalments:
+                - {due_on: 2027-02-15, amount: "200.00"}
+                - {due_on: 2027-08-15, amount: "200.00"}
+    expect: [*gs_q1_2027, *gs_q3_2027]
+
+  - id: grundsteuer_schedule_carried_to_next_year
+    description: >
+      the 2027 row (1 Mar and 1 Sep) is the latest with tax_year <= 2028, so 2028 repeats its
+      days; both 2027 instalments were paid on their day
+    # 2027: 1 Mar paid 1 Mar (-200.00), 1 Sep paid 1 Sep (-200.00): cleared. 2028: 1 Mar 2028
+    # within the horizon (10 Feb 2028 + 90 = 10 May 2028), 1 Sep beyond; mode remind (two
+    # transfers, no direct debit); visible 1 Mar 2028 - 7 = 23 Feb 2028 (2028 is a leap year)
+    today: 2028-02-10
+    facts:
+      properties:
+        - <<: *property_with_bescheid
+          grundsteuer_schedules:
+            - id: *S27
+              tax_year: 2027
+              instalments:
+                - {due_on: 2027-03-01, amount: "200.00"}
+                - {due_on: 2027-09-01, amount: "200.00"}
+          grundsteuer_payments:
+            - {id: *G1, booking_date: 2027-03-01, amount: "-200.00", direct_debit: false}
+            - {id: *G2, booking_date: 2027-09-01, amount: "-200.00", direct_debit: false}
+    expect:
+      - id: grundsteuer.instalment:0000005b-0000-4000-8000-000000000001:2028-03-01
+        kind: grundsteuer.instalment
+        scope: property
+        scope_id: *P
+        due_on: 2028-03-01
+        visible_from: 2028-02-23
+        severity: action
+        cleared_by: auto
+        label_code: grundsteuer.instalment.remind
+        label_args: {property: Wohnung A}
+        email_leads: [7]
+
+  - id: grundsteuer_remind_cleared_by_matching_debit
+    description: >
+      15 Feb is cleared by -100.00 booked 14 Feb (1 day, the instalment ± 0.01); 15 May is not
+      cleared by -99.50 booked 14 May (0.50 off the instalment), so it stays open
+    # horizon 20 May 2027 + 90 = 18 Aug 2027 -> 15 May (open) and 15 Aug
+    today: 2027-05-20
+    facts:
+      properties:
+        - <<: *property_with_bescheid
+          grundsteuer_schedules: [*quarterly_2027]
+          grundsteuer_payments:
+            - {id: *G1, booking_date: 2027-02-14, amount: "-100.00", direct_debit: false}
+            - {id: *G2, booking_date: 2027-05-14, amount: "-99.50", direct_debit: false}
+    expect: [*gs_q2_2027, *gs_q3_2027]
+
+  - id: grundsteuer_mode_inferred_after_direct_debit
+    description: >
+      15 Feb was cleared by a direct-debit line (PMNT/RDDT), so the next instalment is a
+      "Lastschrift prüfen" reminder: visible on its day, mailed 3 days after if still open
+    # horizon 10 May 2027 + 90 = 8 Aug 2027 -> 15 May only (15 Aug beyond)
+    today: 2027-05-10
+    facts:
+      properties:
+        - <<: *property_with_bescheid
+          grundsteuer_schedules: [*quarterly_2027]
+          grundsteuer_payments:
+            - {id: *G1, booking_date: 2027-02-15, amount: "-100.00", direct_debit: true}
+    expect: [*gs_q2_2027_sepa]
+
+  - id: grundsteuer_transfer_clears_but_infers_nothing
+    description: the same payment as a transfer (Überweisung) clears 15 Feb; 15 May still says "fällig"
+    today: 2027-05-10
+    facts:
+      properties:
+        - <<: *property_with_bescheid
+          grundsteuer_schedules: [*quarterly_2027]
+          grundsteuer_payments:
+            - {id: *G1, booking_date: 2027-02-15, amount: "-100.00", direct_debit: false}
+    expect: [*gs_q2_2027]
+
+  - id: grundsteuer_mode_set_sepa
+    description: the row says sepa_mandate; the reminder is visible from its due date
+    # horizon 1 Feb 2027 + 90 = 2 May 2027 -> 15 Feb only
+    today: 2027-02-01
+    facts:
+      properties:
+        - <<: *property_with_bescheid
+          grundsteuer_schedules: [{<<: *quarterly_2027, payment_mode: sepa_mandate}]
+    expect:
+      - <<: *gs_q1_2027
+        visible_from: 2027-02-15
+        label_code: grundsteuer.instalment.sepa_mandate
+        email_leads: [-3]
+
+  - id: grundsteuer_muted
+    description: muted, unmuted, muted again; the latest row by recorded_at decides (muted)
+    today: 2027-02-20
+    facts:
+      properties: [*property_with_bescheid]
+      acks:
+        - {reminder_key: grundsteuer.instalment, scope_type: property, scope_id: *P,
+           action: muted, recorded_at: 2027-02-01T08:00:00Z}
+        - {reminder_key: grundsteuer.instalment, scope_type: property, scope_id: *P,
+           action: unmuted, recorded_at: 2027-01-10T08:00:00Z}
+        - {reminder_key: grundsteuer.instalment, scope_type: property, scope_id: *P,
+           action: muted, recorded_at: 2027-01-05T08:00:00Z}
+    expect: []
+
+  # --- Checklist ---------------------------------------------------------------------------
+
+  - id: checklist_due_missing_fires
+    description: >
+      the 2026 Zinsbescheinigung (due 28 Feb 2027) and the 2027 Grundsteuerbescheid (due
+      15 Jan 2027) are both missing on 1 Mar 2027
+    # horizon 1 Mar 2027 + 90 = 30 May 2027; years 2026, 2027. 2027's Zinsbescheinigung is due
+    # 28 Feb 2028 (beyond); special termination 20 Apr 2036 - 6 months = 20 Oct 2035 (beyond)
+    today: 2027-03-01
+    facts:
+      properties:
+        - <<: *property
+          checklist:
+            <<: *checklist
+            loans: [{id: *L1, lender: Bank A, disbursed_on: 2026-04-20}]
+      loans: [{id: *L1, lender: Bank A, disbursed_on: 2026-04-20}]
+    expect:
+      - id: checklist.due:0000005b-0000-4000-8000-000000000001:2027-01-15
+        kind: checklist.due
+        scope: property
+        scope_id: *P
+        due_on: 2027-01-15
+        visible_from: 2027-01-01
+        severity: action
+        cleared_by: auto
+        label_code: checklist.due.grundsteuerbescheid
+        label_args: {property: Wohnung A, year: 2027}
+        email_leads: [14, 0]
+      - id: checklist.due:0000005f-0000-4000-8000-000000000001:2027-02-28
+        kind: checklist.due
+        scope: loan
+        scope_id: *L1
+        due_on: 2027-02-28
+        visible_from: 2027-02-14
+        severity: action
+        cleared_by: auto
+        label_code: checklist.due.zinsbescheinigung
+        label_args: {lender: Bank A, year: 2026}
+        email_leads: [14, 0]
+
+  - id: checklist_present_silent
+    description: >
+      both documents are in: nothing from the checklist (the instalments the Bescheid starts
+      are muted here, they are the Grundsteuer cases' subject)
+    today: 2027-03-01
+    facts:
+      properties:
+        - <<: *property
+          checklist:
+            <<: *checklist
+            loans: [{id: *L1, lender: Bank A, disbursed_on: 2026-04-20}]
+            documents:
+              - *bescheid
+              - {id: *D_ZB, type: zinsbescheinigung, tax_year: 2026,
+                 received_at: 2027-02-10T09:00:00Z, links: [{target_type: loan, target_id: *L1}]}
+      loans: [{id: *L1, lender: Bank A, disbursed_on: 2026-04-20}]
+      acks: [*mute_grundsteuer]
+    expect: []
+
+  # --- Tax year ----------------------------------------------------------------------------
+
+  - id: return_deadline_2026_on_2_aug_2027
+    description: >
+      31 Jul 2027 is a Saturday, so the 2026 return is due Monday 2 Aug 2027 (§108 Abs. 3 AO);
+      visible 90 days before, from 4 May 2027
+    # 2 Aug 2027 - 90 days: -2 = 31 Jul, -31 = 30 Jun, -30 = 31 May, -27 = 4 May (2+31+30+27)
+    today: 2027-05-04
+    facts:
+      tax_years: [*return_2026]
+    expect: [*return_deadline_2026]
+
+  - id: questionnaire_open_from_jan_1
+    description: >
+      the 2026 questionnaire is incomplete on 1 Jan 2027; mailed 14 days later (15 Jan); the
+      return deadline (2 Aug 2027) is beyond today + 90 = 1 Apr 2027
+    today: 2027-01-01
+    facts:
+      tax_years: [{tax_year: 2026, questionnaire_complete: false}]
+    expect:
+      - id: tax.questionnaire_open:workspace:2027-01-01
+        kind: tax.questionnaire_open
+        scope: workspace
+        due_on: 2027-01-01
+        visible_from: 2027-01-01
+        severity: action
+        cleared_by: auto
+        label_code: tax.questionnaire_open
+        label_args: {year: 2026}
+        email_leads: [-14]
+
+  - id: wage_certificate_missing_from_mar_1
+    description: >
+      owner A had pay in 2026 and no Lohnsteuerbescheinigung on 2 Mar 2027; owner B's is in
+    today: 2027-03-02
+    facts:
+      owners:
+        - {id: *O1, pay_years: [2026]}
+        - {id: *O2, pay_years: [2026], wage_certificate_years: [2026]}
+    expect:
+      - id: tax.wage_certificate_missing:0000005d-0000-4000-8000-000000000001:2027-03-01
+        kind: tax.wage_certificate_missing
+        scope: owner
+        scope_id: *O1
+        due_on: 2027-03-01
+        visible_from: 2027-03-01
+        severity: action
+        cleared_by: auto
+        label_code: tax.wage_certificate_missing
+        label_args: {year: 2026}
+        email_leads: [0]
+
+  - id: wage_certificate_present_silent
+    description: both certificates are in
+    today: 2027-03-02
+    facts:
+      owners:
+        - {id: *O1, pay_years: [2026], wage_certificate_years: [2026]}
+        - {id: *O2, pay_years: [2026], wage_certificate_years: [2026]}
+    expect: []
+
+  # --- Loans and the §23 date --------------------------------------------------------------
+
+  - id: fixed_rate_end_12_and_6_months
+    description: >
+      fixed until 31 Aug 2027: 12 months before is 31 Aug 2026 (past, not acknowledged, still
+      open), 6 months before is 28 Feb 2027 (31 Feb does not exist)
+    # horizon 10 Jan 2027 + 90 = 10 Apr 2027; floor 1 Jan 2026
+    today: 2027-01-10
+    facts:
+      loans: [*loan_fixed]
+    expect: [*fixed_12, *fixed_6]
+
+  - id: special_termination_info
+    description: >
+      paid out 30 Jun 2017: §489 Abs. 1 Nr. 2 BGB notice is possible from 30 Jun 2027; the info
+      card comes six months ahead, 30 Dec 2026, and is never mailed
+    today: 2026-11-10
+    facts:
+      loans: [*loan_l3]
+    expect: [*special_l3]
+
+  - id: speculation_end_12_months_before
+    description: >
+      notarized 10 Feb 2017: tax-free from 11 Feb 2027 (10 years + 1 day); the info card is
+      due 12 months before, 11 Feb 2026
+    # tax_free_from = add_years(2017-02-10, 10) + 1 day = 2027-02-11; - 12 months = 2026-02-11.
+    # Bought 1 Apr 2017: the checklist would list every year's Bescheid; muted here
+    today: 2026-02-20
+    facts:
+      properties:
+        - id: *P2
+          label: Wohnung B
+          purchase_date: 2017-04-01
+          notarized_on: 2017-02-10
+          checklist: {property_id: *P2, kind: efh, purchase_date: 2017-04-01}
+      acks:
+        - {reminder_key: checklist.due, scope_type: property, scope_id: *P2, action: muted,
+           recorded_at: 2017-04-01T08:00:00Z}
+    expect:
+      - id: property.speculation_end:0000005b-0000-4000-8000-000000000002:2026-02-11
+        kind: property.speculation_end
+        scope: property
+        scope_id: *P2
+        due_on: 2026-02-11
+        visible_from: 2026-02-11
+        severity: info
+        cleared_by: ack
+        label_code: property.speculation_end
+        label_args: {property: Wohnung B, tax_free_from: "2027-02-11"}
+        email_leads: []
+
+  # --- Tenancies ---------------------------------------------------------------------------
+
+  - id: settlement_only_for_prepayment
+    description: >
+      three tenancies from 1 Jun 2026: the prepayment one's 2026 settlement is due 31 Dec 2027
+      (§556 Abs. 3 S. 2 BGB), visible from 2 Oct 2027; flat_rate and included are silent
+    # 31 Dec 2027 - 90 days = 2 Oct 2027 (-30 = 1 Dec, -30 = 1 Nov, -30 = 2 Oct); 2027's
+    # settlement is due 31 Dec 2028 (beyond today + 90 = 8 Jan 2028). No account: no rent check
+    today: 2027-10-10
+    facts:
+      properties: [*property]
+      tenancies:
+        - {<<: *tenancy_1, operating_costs_terms: prepayment, rent_payments: []}
+        - {<<: *tenancy_1, id: *T2, unit_label: Zimmer 2, rent_payments: []}
+        - {<<: *tenancy_1, id: *T3, unit_label: Zimmer 3, operating_costs_terms: included,
+           rent_payments: []}
+      acks: [*mute_checklist]
+    expect:
+      - id: tenancy.settlement_deadline:0000005e-0000-4000-8000-000000000001:2027-12-31
+        kind: tenancy.settlement_deadline
+        scope: tenancy
+        scope_id: *T1
+        due_on: 2027-12-31
+        visible_from: 2027-10-02
+        severity: action
+        cleared_by: ack
+        label_code: tenancy.settlement_deadline
+        label_args: {unit: Zimmer 1, year: 2026}
+        email_leads: [90, 30]
+
+  - id: rent_missing_fires_when_statements_cover_date
+    description: >
+      rent booked for June to September; October's is due 3 Oct + 5 = 8 Oct 2026 and the
+      statements are reconciled to 31 Oct, so it is missing. November's (8 Nov) is past the
+      reconciled statements, so nothing fires for it
+    today: 2026-11-10
+    facts:
+      properties: [*property]
+      tenancies: [*tenancy_1]
+      accounts: [*account]
+      acks: [*mute_checklist]
+    expect: [*rent_oct_t1]
+
+  - id: rent_missing_silent_without_statements
+    description: the statements reach only 30 Sep; 8 Oct is not covered, so nothing fires
+    today: 2026-11-10
+    facts:
+      properties: [*property]
+      tenancies: [*tenancy_1]
+      accounts: [{<<: *account, reconciled_until: 2026-09-30}]
+      acks: [*mute_checklist]
+    expect: []
+
+  - id: rent_missing_cleared_by_allocation
+    description: October's rent is booked (service period October); nothing is missing
+    today: 2026-11-10
+    facts:
+      properties: [*property]
+      tenancies:
+        - <<: *tenancy_1
+          rent_payments:
+            - {id: *R6, service_period_start: 2026-06-01, service_period_end: 2026-06-30}
+            - {id: *R7, service_period_start: 2026-07-01, service_period_end: 2026-07-31}
+            - {id: *R8, service_period_start: 2026-08-01, service_period_end: 2026-08-31}
+            - {id: *R9, service_period_start: 2026-09-01, service_period_end: 2026-09-30}
+            - {id: *R10, service_period_start: 2026-10-01, service_period_end: 2026-10-31}
+      accounts: [*account]
+      acks: [*mute_checklist]
+    expect: []
+
+  - id: rent_missing_label_names_unit_only
+    description: >
+      rent due on the 1st: October's is missing from 1 Oct + 5 = 6 Oct 2026; label_args carry
+      the unit label and the month, no tenant field
+    today: 2026-11-10
+    facts:
+      properties: [*property]
+      tenancies: [{<<: *tenancy_1, id: *T2, unit_label: Zimmer 2, rent_due_day: 1}]
+      accounts: [*account]
+      acks: [*mute_checklist]
+    expect:
+      - id: tenancy.rent_missing:0000005e-0000-4000-8000-000000000002:2026-10-06
+        kind: tenancy.rent_missing
+        scope: tenancy
+        scope_id: *T2
+        due_on: 2026-10-06
+        visible_from: 2026-10-06
+        severity: action
+        cleared_by: auto
+        label_code: tenancy.rent_missing
+        label_args: {unit: Zimmer 2, month: "2026-10"}
+        email_leads: [0]
+
+  # --- Bank connection ---------------------------------------------------------------------
+
+  - id: sync_stale_after_35_days
+    description: the last successful sync was 1 Oct 2026; stale from 1 Oct + 35 = 5 Nov 2026
+    today: 2026-11-10
+    facts:
+      accounts:
+        - {<<: *account, connection: true, connected_on: 2026-09-01, last_sync_on: 2026-10-01}
+    expect: [*sync_stale_a1]
+
+  # --- Acknowledgements and the contract ---------------------------------------------------
+
+  - id: snoozed_hidden_until_date
+    description: the return deadline snoozed until 1 Jun 2027 is hidden on 4 May 2027
+    today: 2027-05-04
+    facts:
+      tax_years: [*return_2026]
+      acks:
+        - {reminder_key: tax.return_deadline, scope_type: workspace, due_on: 2027-08-02,
+           action: snoozed, snoozed_until: 2027-06-01, recorded_at: 2027-05-04T08:00:00Z}
+    expect: []
+
+  - id: snoozed_back_on_its_date
+    description: on 1 Jun 2027 (today < snoozed_until no longer holds) it is back
+    today: 2027-06-01
+    facts:
+      tax_years: [*return_2026]
+      acks:
+        - {reminder_key: tax.return_deadline, scope_type: workspace, due_on: 2027-08-02,
+           action: snoozed, snoozed_until: 2027-06-01, recorded_at: 2027-05-04T08:00:00Z}
+    expect: [*return_deadline_2026]
+
+  - id: done_hides_instance_only
+    description: done for the 12-month date hides that instance; the 6-month one stays
+    today: 2027-01-10
+    facts:
+      loans: [*loan_fixed]
+      acks:
+        - {reminder_key: loan.fixed_rate_end, scope_type: loan, scope_id: *L2,
+           due_on: 2026-08-31, action: done, recorded_at: 2026-09-01T08:00:00Z}
+    expect: [*fixed_6]
+
+  - id: ids_stable_across_days
+    description: >
+      the facts of grundsteuer_quarters_without_schedule five days later: the same two
+      instances with the same ids (the rule test compares the two cases' ids)
+    # horizon 25 Feb 2027 + 90 = 26 May 2027 -> still 15 Feb and 15 May
+    today: 2027-02-25
+    facts:
+      properties: [*property_with_bescheid]
+    expect: [*gs_q1_2027, *gs_q2_2027]
+
+  - id: order_independent
+    description: >
+      three kinds at once, sorted by due_on: October's missing rent (8 Oct), the stale sync
+      (5 Nov), the special termination card (30 Dec); the rule test shuffles every list
+    today: 2026-11-10
+    facts:
+      properties: [*property]
+      loans: [*loan_l3]
+      tenancies: [*tenancy_1]
+      accounts:
+        - {<<: *account, connection: true, connected_on: 2026-09-01, last_sync_on: 2026-10-01}
+      acks: [*mute_checklist]
+    expect: [*rent_oct_t1, *sync_stale_a1, *special_l3]

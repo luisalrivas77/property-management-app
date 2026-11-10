@@ -1,0 +1,167 @@
+# Rule fixture: a sync's balance check (phase 2's rules.statements.reconcile, unchanged, with
+# balance_source = bank; hausbuch.rules.bank_sync.balance_drift)
+#
+# docs/phases/phase-5.md D116 (the bank's reference is the overlap guarantee, reconciliation
+# the backstop), D117 (the declared closing from the file's Bal, else HKSAL), D127 (nothing
+# new: no import), §12.
+#
+# A case: the account's anchor (opening_balance, opening_balance_on), the lines already stored
+# (from an earlier upload or sync), the sync's archive lines, the archive's own balances when
+# the camt states them, and HKSAL's booked balance read in the same dialog.
+#
+#   1. Hash every archive line with phase 2's line_hashes (a line with an AcctSvcrRef hashes by
+#      the reference, booking day and amount: rules.statements._reference). lines_new = the
+#      archive lines whose hash is not stored yet (services.statements.preview_import, D127).
+#   2. lines_new = 0 -> nothing_new: no document, no import row, no reconcile (result null);
+#      balance_drift(hksal, last_reconciled_closing) = hksal - last_reconciled_closing, null
+#      when they are equal (the info card bank.balance_drift on a difference, D117).
+#   3. lines_new > 0 -> the new lines are stored (import_statement, unchanged);
+#      balance_source = file and declared_closing = the archive's CLBD when the camt states
+#      one, else balance_source = bank and declared_closing = HKSAL (D117); then phase 2's
+#      window_sums over the stored lines (the file's first and last booking day) and
+#      reconcile(anchor, stored_before, stored_through, declared_closing, file_opening);
+#      file_opening only when the file states it. No drift check on an import (the reconcile
+#      result is the check); drift is null.
+#
+# Every case: account anchor 1,000.00 on 31 Mar 2026; amounts are synthetic.
+
+ids:
+  account: &A 0000005a-0000-4000-8000-000000000001
+
+bases:
+  anchor: &anchor {amount: "1000.00", on_date: 2026-03-31}
+  r1: &R1 {ref: R1, booking_date: 2026-04-02, amount: "500.00", purpose: Miete April}
+  r2: &R2 {ref: R2, booking_date: 2026-04-15, amount: "-120.00", purpose: Hausgeld April}
+
+cases:
+  - id: hksal_matches_reconciled
+    description: the camt carries no Bal; HKSAL is declared and the import reconciles
+    # stored after: +500.00 - 120.00 = 380.00; computed closing 1,000.00 + 380.00 = 1,380.00
+    # = HKSAL 1,380.00 -> difference 0.00, reconciled; computed opening 1,000.00 + 0.00
+    account_id: *A
+    anchor: *anchor
+    file: [*R1, *R2]
+    hksal: "1380.00"
+    expect:
+      lines_total: 2
+      lines_new: 2
+      balance_source: bank
+      declared_closing: "1380.00"
+      stored_before: "0.00"
+      stored_through: "380.00"
+      result:
+        {status: reconciled, computed_opening: "1000.00", computed_closing: "1380.00",
+         difference: "0.00"}
+
+  - id: hksal_mismatch_unreconciled
+    description: HKSAL differs from the computed closing; the import is unreconciled
+    # computed closing 1,380.00; declared (HKSAL) 1,390.00; difference 1,390.00 - 1,380.00
+    # = 10.00 -> unreconciled, statement.unreconciled
+    account_id: *A
+    anchor: *anchor
+    file: [*R1, *R2]
+    hksal: "1390.00"
+    expect:
+      lines_total: 2
+      lines_new: 2
+      balance_source: bank
+      declared_closing: "1390.00"
+      stored_before: "0.00"
+      stored_through: "380.00"
+      result:
+        {status: unreconciled, computed_opening: "1000.00", computed_closing: "1380.00",
+         difference: "10.00", error_code: statement.unreconciled}
+
+  - id: file_balance_wins_over_hksal
+    description: the camt states OPBD and CLBD; the file's closing is declared, HKSAL unused
+    # declared = CLBD 1,380.00 (not HKSAL 1,390.00); computed closing 1,380.00 -> 0.00;
+    # opening difference 1,000.00 - 1,000.00 = 0.00
+    account_id: *A
+    anchor: *anchor
+    file: [*R1, *R2]
+    file_opening: "1000.00"
+    file_closing: "1380.00"
+    hksal: "1390.00"
+    expect:
+      lines_total: 2
+      lines_new: 2
+      balance_source: file
+      declared_closing: "1380.00"
+      stored_before: "0.00"
+      stored_through: "380.00"
+      result:
+        {status: reconciled, computed_opening: "1000.00", computed_closing: "1380.00",
+         difference: "0.00", opening_difference: "0.00"}
+
+  - id: duplicate_reference_skipped_lines_new_zero
+    description: >
+      the export already stored both lines with the same AcctSvcrRef; the sync's archive
+      hashes the same, so lines_new = 0 and nothing is stored (D116's no-op)
+    # both hashes known -> nothing_new; drift 1,380.00 - 1,380.00 = 0 -> null
+    account_id: *A
+    anchor: *anchor
+    stored: [*R1, *R2]
+    file: [*R1, *R2]
+    hksal: "1380.00"
+    last_reconciled_closing: "1380.00"
+    expect:
+      lines_total: 2
+      lines_new: 0
+
+  - id: different_reference_double_insert_unreconciled
+    description: >
+      the bank sends other references over FinTS than in the export (X1, X2 for R1, R2):
+      both copies are stored, the computed closing overshoots and the import is unreconciled
+      with the overshoot as the difference (D116's backstop)
+    # stored before the sync: R1 +500.00, R2 -120.00; the archive: X1 +500.00 (2 Apr),
+    # X2 -120.00 (15 Apr), X3 -30.00 (20 Apr), all three new (different references).
+    # stored through 20 Apr: 500 - 120 + 500 - 120 - 30 = 730.00; computed closing
+    # 1,000.00 + 730.00 = 1,730.00; HKSAL (the real balance) 1,000 + 500 - 120 - 30
+    # = 1,350.00; difference 1,350.00 - 1,730.00 = -380.00 (the doubled R1 + R2)
+    account_id: *A
+    anchor: *anchor
+    stored: [*R1, *R2]
+    file:
+      - {ref: X1, booking_date: 2026-04-02, amount: "500.00", purpose: Miete April}
+      - {ref: X2, booking_date: 2026-04-15, amount: "-120.00", purpose: Hausgeld April}
+      - {ref: X3, booking_date: 2026-04-20, amount: "-30.00", purpose: Kontoführung}
+    hksal: "1350.00"
+    expect:
+      lines_total: 3
+      lines_new: 3
+      balance_source: bank
+      declared_closing: "1350.00"
+      stored_before: "0.00"
+      stored_through: "730.00"
+      result:
+        {status: unreconciled, computed_opening: "1000.00", computed_closing: "1730.00",
+         difference: "-380.00", error_code: statement.unreconciled}
+
+  - id: nothing_new_balance_equal_no_drift
+    description: the overlap window brought only a known line; HKSAL equals the last closing
+    # R2's hash is stored -> lines_new 0; drift 1,380.00 - 1,380.00 = 0 -> null
+    account_id: *A
+    anchor: *anchor
+    stored: [*R1, *R2]
+    file: [*R2]
+    hksal: "1380.00"
+    last_reconciled_closing: "1380.00"
+    expect:
+      lines_total: 1
+      lines_new: 0
+
+  - id: nothing_new_balance_differs_drift
+    description: >
+      nothing new arrived but HKSAL moved (a line booked after the window, or a reversal):
+      the drift is reported as the info card bank.balance_drift (D117)
+    # drift = 1,375.10 - 1,380.00 = -4.90
+    account_id: *A
+    anchor: *anchor
+    stored: [*R1, *R2]
+    file: [*R2]
+    hksal: "1375.10"
+    last_reconciled_closing: "1380.00"
+    expect:
+      lines_total: 1
+      lines_new: 0
+      drift: "-4.90"

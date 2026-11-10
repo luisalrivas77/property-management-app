@@ -52,6 +52,7 @@ from .property import Address
 # strings with the other phase 3 codes (schemas do not import rules).
 FORM_MAPPING_INCOMPLETE = "form_mapping.incomplete"
 TAX_INPUT_SCOPE_INVALID = "tax_input.scope_invalid"
+GRUNDSTEUER_SCHEDULE_INVALID = "tax_input.grundsteuer_schedule_invalid"  # phase 5 D126
 
 # --- The rule set as data (§4.1) -------------------------------------------------------
 
@@ -244,6 +245,8 @@ class TaxInputKind(StrEnum):
     USEFUL_LIFE = "useful_life"  # a shorter actual useful life from a Gutachten, from a year (D79)
     MOVABLE_ASSET = "movable_asset"  # a movable asset (the Einbauküche), from a year (D80)
     PRIVATE_COST = "private_cost"  # a rental cost paid privately, per year (phase 4b D111)
+    # Phase 5 D126: the Grundsteuerbescheid's instalments, per property from its first year
+    GRUNDSTEUER_SCHEDULE = "grundsteuer_schedule"
 
 
 class Spread82b(Schema):
@@ -330,6 +333,48 @@ class PrivateCostValue(Schema):
         return self
 
 
+# The rounding the instalments of a Grundsteuerbescheid may carry against the yearly amount:
+# a quarter of an annual figure in cents is rounded per instalment, so four instalments may
+# miss it by at most 4 × 0.01 (phase 5 §9).
+GRUNDSTEUER_SUM_TOLERANCE = Decimal("0.04")
+
+
+class GrundsteuerInstalment(Schema):
+    due_on: date
+    amount: PositiveMoney
+
+
+class GrundsteuerSchedule(Schema):
+    """The Grundsteuerbescheid's schedule (phase 5 D126; §28 GrStG). tax_year on the row is the
+    first year it applies to, document_id the Bescheid; a later year repeats this row's dates
+    (same day and month) until a newer row exists. Every amount is a confirmed figure from the
+    Bescheid, never a model's (D13-D15).
+
+    payment_mode None = inferred (D126): `remind` until an earlier instalment was cleared by a
+    direct-debit line, then `sepa_mandate`. rhythm is informational (the Bescheid's wording);
+    the dates are what reminders use."""
+
+    annual_amount: PositiveMoney
+    instalments: list[GrundsteuerInstalment] = Field(min_length=1, max_length=4)
+    rhythm: Literal["quarterly", "half_yearly", "yearly_august", "yearly_july"] | None = None
+    payment_mode: Literal["remind", "sepa_mandate"] | None = None
+
+    @model_validator(mode="after")
+    def _instalments(self) -> Self:
+        problems = []
+        dates = [i.due_on for i in self.instalments]
+        if len({d.year for d in dates}) != 1:
+            problems.append("every instalment falls in one calendar year")
+        if len(set(dates)) != len(dates) or dates != sorted(dates):
+            problems.append("instalment dates are distinct and in order")
+        total = sum((i.amount for i in self.instalments), Decimal("0"))
+        if abs(total - self.annual_amount) > GRUNDSTEUER_SUM_TOLERANCE:
+            problems.append("the instalments sum to the annual amount (within 0.04)")
+        if problems:
+            raise ValueError(f"{GRUNDSTEUER_SCHEDULE_INVALID}: {'; '.join(problems)}")
+        return self
+
+
 TaxInputValue = (
     Spread82b
     | RenovationTreatment
@@ -341,6 +386,7 @@ TaxInputValue = (
     | UsefulLife
     | MovableAsset
     | PrivateCostValue
+    | GrundsteuerSchedule
 )
 
 K = TaxInputKind
@@ -355,16 +401,26 @@ TAX_INPUT_VALUES: dict[TaxInputKind, type[Schema]] = {
     K.USEFUL_LIFE: UsefulLife,
     K.MOVABLE_ASSET: MovableAsset,
     K.PRIVATE_COST: PrivateCostValue,
+    K.GRUNDSTEUER_SCHEDULE: GrundsteuerSchedule,
 }
 # The scope each kind needs; migration 0013's CHECKs say the same.
 ALLOCATION_SCOPED = frozenset({K.SPREAD_82B, K.RENOVATION_TREATMENT, K.EXCLUDE_FROM_15PCT})
 # tax_year set: the year, or the first year (useful_life D79, movable_asset D80).
 YEAR_SCOPED = frozenset(
-    {K.RUECKLAGE_SPENT, K.INTEREST_CERTIFIED, K.USEFUL_LIFE, K.MOVABLE_ASSET, K.PRIVATE_COST}
+    {
+        K.RUECKLAGE_SPENT,
+        K.INTEREST_CERTIFIED,
+        K.USEFUL_LIFE,
+        K.MOVABLE_ASSET,
+        K.PRIVATE_COST,
+        K.GRUNDSTEUER_SCHEDULE,  # the first year the Bescheid applies to (phase 5 D126)
+    }
 )
 # A document required: the certificate, the Abrechnung, the Gutachten (D79). A movable asset's
 # evidence is optional (D80: its value is often an estimate).
-DOCUMENT_REQUIRED = frozenset({K.RUECKLAGE_SPENT, K.INTEREST_CERTIFIED, K.USEFUL_LIFE})
+DOCUMENT_REQUIRED = frozenset(
+    {K.RUECKLAGE_SPENT, K.INTEREST_CERTIFIED, K.USEFUL_LIFE, K.GRUNDSTEUER_SCHEDULE}
+)
 # The yearly kinds a row may be confirmed from last year's (the questionnaire's copy, D110).
 CARRIED_KINDS = frozenset({K.PRIVATE_COST})
 del K
@@ -423,16 +479,26 @@ class TaxInputCreate(Schema):
         if (self.tax_year is not None) != (k in YEAR_SCOPED):
             problems.append(
                 "tax_year is set exactly for ruecklage_spent, interest_certified, useful_life,"
-                " movable_asset and private_cost"
+                " movable_asset, private_cost and grundsteuer_schedule"
             )
         if self.carried_from_id is not None and k not in CARRIED_KINDS:
             problems.append("carried_from_id belongs to private_cost only")
         if k in DOCUMENT_REQUIRED and self.document_id is None:
-            problems.append("a certificate figure or a useful life needs its document")
+            problems.append(
+                "a certificate figure, a useful life or a Grundsteuer schedule needs its document"
+            )
         if self.withdrawn and self.supersedes_id is None:
             problems.append("a withdrawal supersedes the row it withdraws")
         if problems:
             raise ValueError(f"{TAX_INPUT_SCOPE_INVALID}: {'; '.join(problems)}")
+        if (
+            isinstance(self.value, GrundsteuerSchedule)
+            and self.value.instalments[0].due_on.year != self.tax_year
+        ):
+            # D126: the row's dates are the first year it applies to
+            raise ValueError(
+                f"{GRUNDSTEUER_SCHEDULE_INVALID}: the instalments fall in the row's tax_year"
+            )
         return self
 
 

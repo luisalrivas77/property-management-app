@@ -116,3 +116,37 @@ ANLAGE_N_WORK_ROOM_EXCLUDES_DAY_RATE = "anlage_n.work_room_excludes_day_rate"  #
 ANLAGE_N_NO_PAY = "anlage_n.no_pay"  # no certificate, payslip or expected pay
 RETURN_CHILDCARE_AGE = "return.childcare_age"  # a child aged 14 or more (§10 Abs. 1 Nr. 5)
 RETURN_HOUSEHOLD_SERVICES_CASH = "return.household_services_cash"  # §35a Abs. 5 S. 3
+
+
+# --- Phase 5 codes (docs/phases/phase-5.md §4.4, §12) ----------------------------------
+
+BANK_NOT_CONFIGURED = "bank.not_configured"  # no PIN or product id in the environment
+BANK_TAN_NOT_DECOUPLED = "bank.tan_not_decoupled"  # chipTAN, smsTAN: not supported (D118)
+BANK_APPROVAL_TIMEOUT = "bank.approval_timeout"  # no pushTAN approval in SYNC_APPROVAL_TIMEOUT_S
+BANK_SYNC_RUNNING = "bank.sync_running"  # one sync per account at a time
+BANK_RATE_LIMITED = "bank.rate_limited"  # more than 4 manual starts per account and hour
+BANK_ACCOUNT_NOT_FOUND = "bank.account_not_found"  # the login does not list the account's IBAN
+BANK_STATE_REJECTED = "bank.state_rejected"  # the stored client state's MAC does not verify
+BANK_UNREACHABLE = "bank.unreachable"  # network or HTTP 5xx; the only retried failure
+BANK_REFUSED = "bank.refused"  # a bank code starting 9; only the four digits are kept
+BANK_NOTHING_NEW = "bank.nothing_new"  # an info code on the row, not a failure (D127)
+BANK_BALANCE_DRIFT = "bank.balance_drift"  # info card: HKSAL differs from the last closing
+BANK_UNSUPPORTED_FORMAT = "bank.unsupported_format"  # HICAZS lists no camt format we read
+BANK_WINDOW_INVALID = "bank.window_invalid"  # the request window would start after it ends
+BANK_URL_NOT_HTTPS = "bank.url_not_https"  # also raised by schemas/bank_sync.py
+EMAIL_ACCEPTED = "email.accepted"  # MailDecision.code of an accepted mail (step 0 choice)
+EMAIL_SENDER_NOT_ALLOWED = "email.sender_not_allowed"
+EMAIL_AUTH_FAILED = "email.auth_failed"  # Gmail's own header says neither dkim nor spf pass
+EMAIL_AUTH_MISSING = "email.auth_missing"  # no Authentication-Results from the trusted authserv
+EMAIL_RECIPIENT_MISMATCH = "email.recipient_mismatch"  # the token address is not a recipient
+EMAIL_NO_ATTACHMENT = "email.no_attachment"
+EMAIL_TOO_LARGE = "email.too_large"  # more than 20 attachments, or one above 25 MiB
+EMAIL_NO_MESSAGE_ID = "email.no_message_id"
+EMAIL_STATEMENT_UNMATCHED = "email.statement_unmatched"  # a statement for no or several accounts
+EMAIL_FAILED = "email.failed"  # storage or processing failed; retried up to 3 attempts
+EMAIL_AUTH_REJECTED = "email.auth_rejected"  # Gmail refused the app password (revoked)
+EMAIL_LABEL_MISSING = "email.label_missing"  # the label folder does not exist
+REMINDER_UNKNOWN = "reminder.unknown"
+REMINDER_SCOPE_INVALID = "reminder.scope_invalid"
+NOTIFICATION_FAILED = "notification.failed"
+TAX_INPUT_GRUNDSTEUER_SCHEDULE_INVALID = "tax_input.grundsteuer_schedule_invalid"  # D126

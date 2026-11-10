@@ -1,8 +1,10 @@
 """Runtime settings, read from the environment by an explicit load_settings() call.
 
 Nothing is read at import time, so importing hausbuch never depends on the environment.
-Names and defaults: docs/phases/phase-1-step-3.md (§3.3, §3.7, §4.7, §6.1, §6.3, §6.4, §8), and
-for the AI layer docs/phases/phase-2.md §4.5.
+Names and defaults: docs/phases/phase-1-step-3.md (§3.3, §3.7, §4.7, §6.1, §6.3, §6.4, §8), for
+the AI layer docs/phases/phase-2.md §4.5, and for the bank sync, email-in and reminder mail
+docs/phases/phase-5.md §4.1, §5.2 and §6.4 (D118, D119, D121, D123): all optional, each feature
+off while its values are absent.
 
 Settings validates itself on construction, so values built directly (tests, the CLI) get the
 same checks as values read from the environment.
@@ -58,6 +60,12 @@ DEFAULT_AI_MAX_PAGES = 100  # pages per request; longer PDFs are split (§5.2)
 MAX_AI_PAGES = 600  # the API's limit per request with a 1M context window
 DEFAULT_AI_TIMEOUT_S = 120
 
+# Phase 5 (phase-5.md §4.1, §5.2, §6.4).
+DEFAULT_SYNC_APPROVAL_TIMEOUT_S = 300  # D118: wait at most 5 minutes for a pushTAN approval
+DEFAULT_INBOX_IMAP_HOST = "imap.gmail.com"  # D121
+DEFAULT_INBOX_AUTHSERV_ID = "mx.google.com"  # D121: the only trusted Authentication-Results
+DEFAULT_TEM_REGION = "fr-par"  # D123: Scaleway Transactional Email
+
 # The document_file.media_type CHECK.
 _MEDIA_TYPE = re.compile(r"[a-z]+/[a-z0-9.+-]+")
 _LABEL = r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?"
@@ -100,6 +108,23 @@ class Settings:
     ai_max_pages: int = DEFAULT_AI_MAX_PAGES
     ai_timeout_s: int = DEFAULT_AI_TIMEOUT_S
     eval_dir: Path | None = None  # Luis's real eval documents, outside the repo (D29)
+    # Phase 5 FinTS sync (D118, D119): container secrets, never a column, payload or log line.
+    fints_pin: str | None = field(default=None, repr=False)
+    fints_product_id: str | None = field(default=None, repr=False)  # the DK registration
+    sync_approval_timeout_s: int = DEFAULT_SYNC_APPROVAL_TIMEOUT_S
+    # Phase 5 email-in (D121): the Gmail account, its app password and the token address are
+    # personal or secret; the label and the hosts are not.
+    inbox_imap_user: str | None = field(default=None, repr=False)
+    inbox_imap_password: str | None = field(default=None, repr=False)
+    inbox_address: str | None = field(default=None, repr=False)  # <user>+<token>@gmail.com
+    inbox_label: str | None = None
+    inbox_imap_host: str = DEFAULT_INBOX_IMAP_HOST
+    inbox_authserv_id: str = DEFAULT_INBOX_AUTHSERV_ID
+    # Phase 5 reminder mail (D123): Scaleway Transactional Email.
+    tem_secret_key: str | None = field(default=None, repr=False)
+    tem_project_id: str | None = None
+    tem_region: str = DEFAULT_TEM_REGION
+    mail_from: str | None = None  # the sending address on the verified domain
 
     def __post_init__(self) -> None:
         if not self.database_url:
@@ -125,6 +150,7 @@ class Settings:
             ("HAUSBUCH_SHUTDOWN_GRACE_S", self.shutdown_grace_s),
             ("HAUSBUCH_AI_MAX_PAGES", self.ai_max_pages),
             ("HAUSBUCH_AI_TIMEOUT_S", self.ai_timeout_s),
+            ("HAUSBUCH_SYNC_APPROVAL_TIMEOUT_S", self.sync_approval_timeout_s),
         ):
             if not isinstance(value, int) or isinstance(value, bool) or value < 1:
                 raise SettingsError(f"{name} must be a positive integer")
@@ -133,6 +159,39 @@ class Settings:
                 "HAUSBUCH_SESSION_IDLE_S must not exceed HAUSBUCH_SESSION_MAX_AGE_S"
             )
         self._check_ai()
+        self._check_automation()
+
+    def _check_automation(self) -> None:
+        """Phase 5 (§9): each secret comes with its partner, or neither is set. The messages
+        name the variables, never their values."""
+        if (self.fints_pin is None) != (self.fints_product_id is None):
+            raise SettingsError(
+                "HAUSBUCH_FINTS_PIN and HAUSBUCH_FINTS_PRODUCT_ID are set together or not at all"
+            )
+        if (self.inbox_imap_user is None) != (self.inbox_imap_password is None):
+            raise SettingsError(
+                "HAUSBUCH_INBOX_IMAP_USER and HAUSBUCH_INBOX_IMAP_PASSWORD are set together or "
+                "not at all"
+            )
+        if self.inbox_imap_user is not None and (
+            self.inbox_address is None or self.inbox_label is None
+        ):
+            raise SettingsError(
+                "email-in (HAUSBUCH_INBOX_IMAP_USER) needs HAUSBUCH_INBOX_ADDRESS and "
+                "HAUSBUCH_INBOX_LABEL"
+            )
+        for name, host in (
+            ("HAUSBUCH_INBOX_IMAP_HOST", self.inbox_imap_host),
+            ("HAUSBUCH_INBOX_AUTHSERV_ID", self.inbox_authserv_id),
+        ):
+            if not _HOST.fullmatch(host):
+                raise SettingsError(f"{name} must be a lower-case host name")
+        if self.tem_secret_key is not None and (
+            self.tem_project_id is None or self.mail_from is None
+        ):
+            raise SettingsError(
+                "HAUSBUCH_TEM_SECRET_KEY needs HAUSBUCH_TEM_PROJECT_ID and HAUSBUCH_MAIL_FROM"
+            )
 
     def _check_ai(self) -> None:
         if self.ai_enabled and not self.anthropic_api_key:
@@ -245,6 +304,23 @@ def load_settings(environ: Mapping[str, str] = os.environ) -> Settings:
         ai_max_pages=_int(environ, "HAUSBUCH_AI_MAX_PAGES", DEFAULT_AI_MAX_PAGES),
         ai_timeout_s=_int(environ, "HAUSBUCH_AI_TIMEOUT_S", DEFAULT_AI_TIMEOUT_S),
         eval_dir=None if eval_dir is None else Path(eval_dir),
+        fints_pin=_optional(environ, "HAUSBUCH_FINTS_PIN"),
+        fints_product_id=_optional(environ, "HAUSBUCH_FINTS_PRODUCT_ID"),
+        sync_approval_timeout_s=_int(
+            environ, "HAUSBUCH_SYNC_APPROVAL_TIMEOUT_S", DEFAULT_SYNC_APPROVAL_TIMEOUT_S
+        ),
+        inbox_imap_user=_optional(environ, "HAUSBUCH_INBOX_IMAP_USER"),
+        inbox_imap_password=_optional(environ, "HAUSBUCH_INBOX_IMAP_PASSWORD"),
+        inbox_address=_optional(environ, "HAUSBUCH_INBOX_ADDRESS"),
+        inbox_label=_optional(environ, "HAUSBUCH_INBOX_LABEL"),
+        inbox_imap_host=_optional(environ, "HAUSBUCH_INBOX_IMAP_HOST") or DEFAULT_INBOX_IMAP_HOST,
+        inbox_authserv_id=(
+            _optional(environ, "HAUSBUCH_INBOX_AUTHSERV_ID") or DEFAULT_INBOX_AUTHSERV_ID
+        ),
+        tem_secret_key=_optional(environ, "HAUSBUCH_TEM_SECRET_KEY"),
+        tem_project_id=_optional(environ, "HAUSBUCH_TEM_PROJECT_ID"),
+        tem_region=_optional(environ, "HAUSBUCH_TEM_REGION") or DEFAULT_TEM_REGION,
+        mail_from=_optional(environ, "HAUSBUCH_MAIL_FROM"),
     )
 
 

@@ -81,6 +81,66 @@ def test_ai_enabled_with_a_key_and_the_key_stays_out_of_repr():
     assert api_key not in repr(settings)
 
 
+def test_phase_5_defaults_leave_every_feature_off():
+    """Phase 5 §9: every new variable is optional; without them no sync, poll or mail runs."""
+    settings = load_settings(ENV)
+    assert (settings.fints_pin, settings.fints_product_id) == (None, None)
+    assert settings.sync_approval_timeout_s == 300  # D118: five minutes
+    assert (settings.inbox_imap_user, settings.inbox_imap_password) == (None, None)
+    assert (settings.inbox_address, settings.inbox_label) == (None, None)
+    assert (settings.inbox_imap_host, settings.inbox_authserv_id) == (
+        "imap.gmail.com",
+        "mx.google.com",
+    )
+    assert (settings.tem_secret_key, settings.tem_project_id, settings.mail_from) == (
+        None,
+        None,
+        None,
+    )
+    assert settings.tem_region == "fr-par"
+
+
+# Synthetic values only (public repo).
+PHASE_5_SECRETS = {
+    "HAUSBUCH_FINTS_PIN": "pin-24680-synthetic",
+    "HAUSBUCH_FINTS_PRODUCT_ID": "PRODUCTID0SYNTHETIC",
+    "HAUSBUCH_INBOX_IMAP_USER": "owner.a@mail.example",
+    "HAUSBUCH_INBOX_IMAP_PASSWORD": "abcd efgh ijkl mnop",
+    "HAUSBUCH_INBOX_ADDRESS": "owner.a+k7f3q2xd@mail.example",
+    "HAUSBUCH_TEM_SECRET_KEY": "tem-secret-0123456789",
+}
+
+
+def test_phase_5_values_load_and_the_secret_ones_stay_out_of_repr():
+    settings = load_settings(
+        ENV
+        | PHASE_5_SECRETS
+        | {
+            "HAUSBUCH_SYNC_APPROVAL_TIMEOUT_S": "120",
+            "HAUSBUCH_INBOX_LABEL": "Hausbuch",
+            "HAUSBUCH_INBOX_IMAP_HOST": "imap.mail.example",
+            "HAUSBUCH_INBOX_AUTHSERV_ID": "mx.mail.example",
+            "HAUSBUCH_TEM_PROJECT_ID": "project-0001",
+            "HAUSBUCH_TEM_REGION": "nl-ams",
+            "HAUSBUCH_MAIL_FROM": "erinnerung@hausbuch.example",
+        }
+    )
+    assert settings.fints_pin == PHASE_5_SECRETS["HAUSBUCH_FINTS_PIN"]
+    assert settings.fints_product_id == PHASE_5_SECRETS["HAUSBUCH_FINTS_PRODUCT_ID"]
+    assert settings.inbox_imap_user == PHASE_5_SECRETS["HAUSBUCH_INBOX_IMAP_USER"]
+    assert settings.inbox_address == PHASE_5_SECRETS["HAUSBUCH_INBOX_ADDRESS"]
+    assert (settings.sync_approval_timeout_s, settings.inbox_label) == (120, "Hausbuch")
+    assert (settings.inbox_imap_host, settings.inbox_authserv_id) == (
+        "imap.mail.example",
+        "mx.mail.example",
+    )
+    assert (settings.tem_project_id, settings.tem_region) == ("project-0001", "nl-ams")
+    text = repr(settings)
+    for value in PHASE_5_SECRETS.values():
+        assert value not in text
+    assert "owner.a" not in text  # neither the account nor the token address
+
+
 def test_dev_environment_from_the_step_3_doc():
     settings = load_settings(
         ENV
@@ -170,6 +230,25 @@ def test_repr_hides_secrets():
         ({"HAUSBUCH_AI_MAX_PAGES": "0"}, "positive integer"),
         ({"HAUSBUCH_AI_MAX_PAGES": "601"}, "must not exceed 600"),
         ({"HAUSBUCH_AI_TIMEOUT_S": "-5"}, "positive integer"),
+        # Phase 5 §9: a secret without its partner is refused, naming variables only.
+        ({"HAUSBUCH_FINTS_PIN": "12345"}, "HAUSBUCH_FINTS_PIN and HAUSBUCH_FINTS_PRODUCT_ID"),
+        ({"HAUSBUCH_FINTS_PRODUCT_ID": "P1"}, "HAUSBUCH_FINTS_PIN and HAUSBUCH_FINTS_PRODUCT_ID"),
+        (
+            {"HAUSBUCH_INBOX_IMAP_USER": "a@mail.example"},
+            "HAUSBUCH_INBOX_IMAP_USER and HAUSBUCH_INBOX_IMAP_PASSWORD",
+        ),
+        (
+            {"HAUSBUCH_INBOX_IMAP_PASSWORD": "pw"},
+            "HAUSBUCH_INBOX_IMAP_USER and HAUSBUCH_INBOX_IMAP_PASSWORD",
+        ),
+        (
+            {"HAUSBUCH_INBOX_IMAP_USER": "a@mail.example", "HAUSBUCH_INBOX_IMAP_PASSWORD": "pw"},
+            "needs HAUSBUCH_INBOX_ADDRESS and HAUSBUCH_INBOX_LABEL",
+        ),
+        ({"HAUSBUCH_INBOX_IMAP_HOST": "imap.gmail.com:993"}, "lower-case host name"),
+        ({"HAUSBUCH_INBOX_AUTHSERV_ID": "MX.google.com"}, "lower-case host name"),
+        ({"HAUSBUCH_TEM_SECRET_KEY": "k"}, "needs HAUSBUCH_TEM_PROJECT_ID and HAUSBUCH_MAIL_FROM"),
+        ({"HAUSBUCH_SYNC_APPROVAL_TIMEOUT_S": "0"}, "positive integer"),
     ],
     ids=lambda v: str(v) if isinstance(v, str) else None,
 )

@@ -70,6 +70,14 @@ const SECTION_OF: Record<InboxItemKind, SectionKey> = {
   import_unreconciled: "imports",
   possible_duplicate: "duplicates",
   questionnaire_open: "other",
+  // Phase 5: listed under Weitere Punkte until steps 1-4 give them the "Automatisch" section
+  // (phase-5.md §11); the API does not return them before then.
+  bank_approval_needed: "other",
+  bank_sync_failed: "other",
+  bank_balance_drift: "other",
+  email_received: "other",
+  email_failed: "other",
+  reminder: "other",
 };
 
 /** A line kind without a line id cannot open the panel: it is listed under Weitere Punkte,
@@ -89,6 +97,12 @@ const PILL_CLASS: Record<InboxItemKind, string> = {
   allocation_proposed: "badge badge-info",
   unmatched: "badge badge-warn",
   questionnaire_open: "badge badge-info",
+  bank_approval_needed: "badge badge-warn",
+  bank_sync_failed: "badge badge-danger",
+  bank_balance_drift: "badge badge-warn",
+  email_received: "badge badge-info",
+  email_failed: "badge badge-danger",
+  reminder: "badge badge-info",
 };
 
 export interface InboxData {

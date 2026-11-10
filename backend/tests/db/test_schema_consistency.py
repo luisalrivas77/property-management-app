@@ -10,6 +10,14 @@ from hausbuch.schemas import enums as E
 from hausbuch.schemas.ai import AiJob
 from hausbuch.schemas.allocation import AllocationCategory, AllocationMethod, SplitMethod
 from hausbuch.schemas.bank import StatementFormat
+from hausbuch.schemas.bank_sync import SyncStatus, SyncTrigger
+from hausbuch.schemas.inbound_mail import InboundDecision
+from hausbuch.schemas.reminders import (
+    NotificationChannel,
+    NotificationStatus,
+    ReminderAckAction,
+    ReminderScope,
+)
 from hausbuch.schemas.tax import FormStatus, TaxExportKind, TaxInputKind
 
 COLUMNS: dict[tuple[str, str], type[StrEnum]] = {
@@ -54,6 +62,15 @@ COLUMNS: dict[tuple[str, str], type[StrEnum]] = {
     # Phase 4b
     ("return_input", "kind"): E.ReturnInputKind,
     ("questionnaire_answer", "answer"): E.QuestionnaireAnswerValue,
+    # Phase 5
+    ("bank_sync", "trigger"): SyncTrigger,
+    ("bank_sync", "status"): SyncStatus,
+    ("bank_sync", "balance_source"): E.BalanceSource,
+    ("inbound_mail", "decision"): InboundDecision,
+    ("reminder_ack", "scope_type"): ReminderScope,
+    ("reminder_ack", "action"): ReminderAckAction,
+    ("notification", "channel"): NotificationChannel,
+    ("notification", "status"): NotificationStatus,
 }
 
 

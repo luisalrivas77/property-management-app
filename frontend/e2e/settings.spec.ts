@@ -26,8 +26,12 @@ test("switching on Mieterdokumente is saved and recorded as one event", async ({
   await expect(page.getByRole("switch", { name: "Mieterdokumente von der KI lesen lassen" })).toBeChecked();
   await expect(page.getByRole("switch", { name: "KI-Zuordnungen automatisch bestätigen" })).not.toBeChecked();
 
-  const settings = await apiCall<{ ai_tenant_documents: boolean; auto_accept_llm: boolean }>(page, "GET", "/api/workspace/settings");
-  expect(settings).toEqual({ ai_tenant_documents: true, auto_accept_llm: false });
+  const settings = await apiCall<{ ai_tenant_documents: boolean; auto_accept_llm: boolean; reminder_emails: boolean }>(
+    page,
+    "GET",
+    "/api/workspace/settings",
+  );
+  expect(settings).toEqual({ ai_tenant_documents: true, auto_accept_llm: false, reminder_emails: false });
   const events = await apiCall<{ type: string; payload: unknown }[]>(page, "GET", "/api/events?entity_type=workspace");
   expect(events.filter((e) => e.type === "workspace.settings_changed").map((e) => e.payload)).toEqual([
     { changes: { ai_tenant_documents: true } },

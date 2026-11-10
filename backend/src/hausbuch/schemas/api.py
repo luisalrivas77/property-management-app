@@ -374,15 +374,17 @@ class DepositReceipt(Schema):
 
 
 class WorkspaceSettings(Schema):
-    """GET /workspace/settings. Both default to false (D16, D26)."""
+    """GET /workspace/settings. All three default to false (D16, D26; phase 5 D123)."""
 
     ai_tenant_documents: bool
     auto_accept_llm: bool
+    reminder_emails: bool
 
 
 class WorkspaceSettingsPatch(Patch):
     ai_tenant_documents: bool = Field(default=None)
     auto_accept_llm: bool = Field(default=None)
+    reminder_emails: bool = Field(default=None)
 
 
 class DocumentUploadResult(Schema):
@@ -492,6 +494,13 @@ class InboxItemKind(StrEnum):
     UNMATCHED = "unmatched"  # "Nicht zugeordnet": no allocation set at all
     # phase 4b D110: last year's Jahresfragen, from 1 January until every slot is answered
     QUESTIONNAIRE_OPEN = "questionnaire_open"
+    # Phase 5 (§5.4, §6.2, D117, D120, D122); the screen groups them under "Automatisch".
+    BANK_APPROVAL_NEEDED = "bank_approval_needed"  # a scheduled sync met a pushTAN demand
+    BANK_SYNC_FAILED = "bank_sync_failed"  # a run failed and waits for a person
+    BANK_BALANCE_DRIFT = "bank_balance_drift"  # HKSAL differs from the last reconciled closing
+    EMAIL_RECEIVED = "email_received"  # attachments of forwarded mails, last 24 h
+    EMAIL_FAILED = "email_failed"  # a forwarded mail failed three times
+    REMINDER = "reminder"  # an action reminder visible today
 
 
 class InboxItem(Schema):
@@ -508,6 +517,9 @@ class InboxItem(Schema):
     possible_duplicate_id: UUID | None = None
     transaction_id: UUID | None = None
     tax_year: int | None = None  # questionnaire_open: the year whose questions are open
+    account_id: UUID | None = None  # phase 5: the bank_* kinds
+    sync_id: UUID | None = None  # phase 5: bank_approval_needed, bank_sync_failed
+    reminder_id: str | None = Field(default=None, max_length=160)  # phase 5: reminder
 
 
 class AiRetryResult(Schema):

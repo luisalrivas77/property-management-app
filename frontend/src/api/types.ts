@@ -2854,7 +2854,7 @@ export interface components {
          * @description statement_import.balance_source: where the declared balances came from (D21).
          * @enum {string}
          */
-        BalanceSource: "file" | "user" | "none";
+        BalanceSource: "file" | "user" | "none" | "bank";
         /**
          * BasisAddition
          * @description Herstellungskosten added to the AfA basis in the year paid, accruing from 1 January of
@@ -3924,7 +3924,7 @@ export interface components {
          * EventType
          * @enum {string}
          */
-        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.classified" | "document.extracted" | "document.read_failed" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "rule.created" | "rule.disabled";
+        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "rule.created" | "rule.disabled";
         /** ExcludeFrom15Pct */
         ExcludeFrom15Pct: {
             /**
@@ -4026,6 +4026,37 @@ export interface components {
             numerator: number;
             /** Denominator */
             denominator: number;
+        };
+        /** GrundsteuerInstalment */
+        GrundsteuerInstalment: {
+            /**
+             * Due On
+             * Format: date
+             */
+            due_on: string;
+            /** Amount */
+            amount: string;
+        };
+        /**
+         * GrundsteuerSchedule
+         * @description The Grundsteuerbescheid's schedule (phase 5 D126; §28 GrStG). tax_year on the row is the
+         *     first year it applies to, document_id the Bescheid; a later year repeats this row's dates
+         *     (same day and month) until a newer row exists. Every amount is a confirmed figure from the
+         *     Bescheid, never a model's (D13-D15).
+         *
+         *     payment_mode None = inferred (D126): `remind` until an earlier instalment was cleared by a
+         *     direct-debit line, then `sepa_mandate`. rhythm is informational (the Bescheid's wording);
+         *     the dates are what reminders use.
+         */
+        GrundsteuerSchedule: {
+            /** Annual Amount */
+            annual_amount: string;
+            /** Instalments */
+            instalments: components["schemas"]["GrundsteuerInstalment"][];
+            /** Rhythm */
+            rhythm?: ("quarterly" | "half_yearly" | "yearly_august" | "yearly_july") | null;
+            /** Payment Mode */
+            payment_mode?: ("remind" | "sepa_mandate") | null;
         };
         /**
          * GrundsteuerbescheidExtraction
@@ -4243,13 +4274,19 @@ export interface components {
             transaction_id?: string | null;
             /** Tax Year */
             tax_year?: number | null;
+            /** Account Id */
+            account_id?: string | null;
+            /** Sync Id */
+            sync_id?: string | null;
+            /** Reminder Id */
+            reminder_id?: string | null;
         };
         /**
          * InboxItemKind
          * @description GET /inbox (§8.3): one list, newest first.
          * @enum {string}
          */
-        InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched" | "questionnaire_open";
+        InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched" | "questionnaire_open" | "bank_approval_needed" | "bank_sync_failed" | "bank_balance_drift" | "email_received" | "email_failed" | "reminder";
         /**
          * IncomeInput
          * @description API read model (the table names its timestamp recorded_at, so not Record).
@@ -7050,7 +7087,7 @@ export interface components {
             /** Document Id */
             document_id?: string | null;
             /** Value */
-            value: components["schemas"]["Spread82b"] | components["schemas"]["RenovationTreatment"] | components["schemas"]["ExcludeFrom15Pct"] | components["schemas"]["MarketRent"] | components["schemas"]["RuecklageSpent"] | components["schemas"]["InterestCertified"] | components["schemas"]["PreHandoverIncome"] | components["schemas"]["UsefulLife"] | components["schemas"]["MovableAsset"] | components["schemas"]["PrivateCostValue"];
+            value: components["schemas"]["Spread82b"] | components["schemas"]["RenovationTreatment"] | components["schemas"]["ExcludeFrom15Pct"] | components["schemas"]["MarketRent"] | components["schemas"]["RuecklageSpent"] | components["schemas"]["InterestCertified"] | components["schemas"]["PreHandoverIncome"] | components["schemas"]["UsefulLife"] | components["schemas"]["MovableAsset"] | components["schemas"]["PrivateCostValue"] | components["schemas"]["GrundsteuerSchedule"];
             /** Note */
             note?: string | null;
             /** Supersedes Id */
@@ -7104,7 +7141,7 @@ export interface components {
             /** Document Id */
             document_id?: string | null;
             /** Value */
-            value: components["schemas"]["Spread82b"] | components["schemas"]["RenovationTreatment"] | components["schemas"]["ExcludeFrom15Pct"] | components["schemas"]["MarketRent"] | components["schemas"]["RuecklageSpent"] | components["schemas"]["InterestCertified"] | components["schemas"]["PreHandoverIncome"] | components["schemas"]["UsefulLife"] | components["schemas"]["MovableAsset"] | components["schemas"]["PrivateCostValue"];
+            value: components["schemas"]["Spread82b"] | components["schemas"]["RenovationTreatment"] | components["schemas"]["ExcludeFrom15Pct"] | components["schemas"]["MarketRent"] | components["schemas"]["RuecklageSpent"] | components["schemas"]["InterestCertified"] | components["schemas"]["PreHandoverIncome"] | components["schemas"]["UsefulLife"] | components["schemas"]["MovableAsset"] | components["schemas"]["PrivateCostValue"] | components["schemas"]["GrundsteuerSchedule"];
             /** Note */
             note?: string | null;
             /** Supersedes Id */
@@ -7121,7 +7158,7 @@ export interface components {
          * TaxInputKind
          * @enum {string}
          */
-        TaxInputKind: "spread_82b" | "renovation_treatment" | "exclude_from_15pct" | "market_rent" | "ruecklage_spent" | "interest_certified" | "pre_handover_income" | "useful_life" | "movable_asset" | "private_cost";
+        TaxInputKind: "spread_82b" | "renovation_treatment" | "exclude_from_15pct" | "market_rent" | "ruecklage_spent" | "interest_certified" | "pre_handover_income" | "useful_life" | "movable_asset" | "private_cost" | "grundsteuer_schedule";
         /**
          * TaxRateResult
          * @description GET /api/tax-rate: the Steuern screen's "Steuerwirkung" line (§8, §9).
@@ -8027,16 +8064,23 @@ export interface components {
              * @default false
              */
             auto_accept_llm: boolean;
+            /**
+             * Reminder Emails
+             * @default false
+             */
+            reminder_emails: boolean;
         };
         /**
          * WorkspaceSettings
-         * @description GET /workspace/settings. Both default to false (D16, D26).
+         * @description GET /workspace/settings. All three default to false (D16, D26; phase 5 D123).
          */
         WorkspaceSettings: {
             /** Ai Tenant Documents */
             ai_tenant_documents: boolean;
             /** Auto Accept Llm */
             auto_accept_llm: boolean;
+            /** Reminder Emails */
+            reminder_emails: boolean;
         };
         /** WorkspaceSettingsPatch */
         WorkspaceSettingsPatch: {
@@ -8044,6 +8088,8 @@ export interface components {
             ai_tenant_documents?: boolean;
             /** Auto Accept Llm */
             auto_accept_llm?: boolean;
+            /** Reminder Emails */
+            reminder_emails?: boolean;
         };
         /**
          * YearFigures

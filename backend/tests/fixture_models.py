@@ -224,6 +224,9 @@ class ChecklistCase(Lenient):
     today: date
     facts: ChecklistFacts
     expect: list[ChecklistItem]
+    # A case the rule does not meet yet, naming the step that makes it pass (phase 5 D126's
+    # two Grundsteuerbescheid cases wait for step 3); the rule tests skip it until then.
+    pending: str | None = None
 
 
 class ChecklistFixture(Schema):

@@ -1,8 +1,9 @@
-"""The workspace's settings (docs/phases/phase-2.md D16, D26, D42).
+"""The workspace's settings (docs/phases/phase-2.md D16, D26, D42; docs/phases/phase-5.md D123).
 
-Two switches on the workspace row: `ai_tenant_documents` (tenant documents may be sent to the
-model, §11.2) and `auto_accept_llm` (a confident model answer may book a line without review,
-within D40's limits). Any signed-in member may change them (one household). A change writes
+Three switches on the workspace row: `ai_tenant_documents` (tenant documents may be sent to the
+model, §11.2), `auto_accept_llm` (a confident model answer may book a line without review,
+within D40's limits) and `reminder_emails` (phase 5: the daily reminder digest is mailed to the
+members, migration 0019). Any signed-in member may change them (one household). A change writes
 only the values that differ and appends one workspace.settings_changed event (entity
 `workspace`, the changed names and their new booleans); a patch that changes nothing writes
 no event. A setting is never changed by a direct database write, which would skip the event.
@@ -31,11 +32,13 @@ def update_settings(
     *,
     ai_tenant_documents: bool | None = None,
     auto_accept_llm: bool | None = None,
+    reminder_emails: bool | None = None,
 ) -> WorkspaceSettings:
     """Set the settings passed (None = unchanged); one event naming those that changed."""
     requested = {
         WorkspaceSetting.AI_TENANT_DOCUMENTS: ai_tenant_documents,
         WorkspaceSetting.AUTO_ACCEPT_LLM: auto_accept_llm,
+        WorkspaceSetting.REMINDER_EMAILS: reminder_emails,
     }
     current = ctx.conn.execute(
         select(*_COLUMNS).where(workspace_table.c.id == ctx.workspace_id).with_for_update()

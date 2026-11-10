@@ -24,6 +24,8 @@ dependencies = [
     # Phase 3 (docs/phases/phase-3.md §4, §12): added in the spec PR, as phase 2 did.
     "pyyaml>=6.0,<7",  # the per-year rule sets in rules/tax/rulesets/ (was dev-only)
     "reportlab>=4.2,<5",  # the ELSTER field sheet PDF (BSD, pure Python; Q12)
+    # Phase 5 (docs/phases/phase-5.md §3, D115, D119): added in the spec PR, as phases 2-3 did.
+    "fints>=5.0.1,<6",  # python-fints, LGPL-3.0-or-later: FinTS read-only sync (HKCAZ, HKSAL)
 ]
 
 [project.scripts]

@@ -17,6 +17,7 @@ class Workspace(Schema):
     # Phase 2 settings (migration 0005), changed only with a workspace.settings_changed event.
     ai_tenant_documents: bool = False  # tenant documents may be sent to the model (D16)
     auto_accept_llm: bool = False  # LLM categorizations may auto-confirm (D26)
+    reminder_emails: bool = False  # phase 5 (migration 0019, D123): the daily digest is mailed
 
 
 class AppUser(Record):

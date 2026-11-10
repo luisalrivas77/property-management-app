@@ -8,6 +8,7 @@ import fixture_models_phase2 as phase2
 import fixture_models_phase3 as phase3
 import fixture_models_phase4 as phase4
 import fixture_models_phase4b as phase4b
+import fixture_models_phase5 as phase5
 import pytest
 from fixture_models import RentFixture
 from pydantic import ValidationError
@@ -27,6 +28,7 @@ PHASES = {
     "phase3": phase3,
     "phase4": phase4,
     "phase4b": phase4b,
+    "phase5": phase5,
 }
 FIXTURE_FILES = [(p, name) for p, mod in PHASES.items() for name in sorted(mod.MODELS)]
 
@@ -502,6 +504,218 @@ def test_phase4b_fixtures_check_their_arithmetic(name, case_id, path, slip):
     node[path[-1]] = slip
     with pytest.raises(ValidationError):
         phase4b.MODELS[name].model_validate(data)
+
+
+# docs/phases/phase-5.md §12: the cases each phase 5 fixture must carry (a file may carry
+# more). A case renamed or dropped here is a spec change.
+PHASE5_CASES = {
+    "sync_window": {
+        "first_sync_from_anchor",
+        "after_success_minus_14_days",
+        "end_is_today_never_future",
+        "long_window_may_need_approval",
+        "short_window_no_flag",
+        "anchor_after_today_error",
+    },
+    "sync_archive": {
+        "one_stream_one_member",
+        "three_streams_ordered",
+        "same_input_same_bytes",
+        "empty_raises_nothing_new",
+        "too_many_members_rejected",
+        "too_large_rejected",
+    },
+    "tan_flow": {
+        "manual_tan_waits",
+        "scheduled_tan_aborts",
+        "confirmed_continues",
+        "timeout_fails",
+        "worker_lost_stays_restartable",
+        "second_start_refused",
+        "empty_streams_nothing_new",
+        "all_lines_known_nothing_new",
+        "new_lines_importing_then_done",
+    },
+    "sync_balance": {
+        "hksal_matches_reconciled",
+        "hksal_mismatch_unreconciled",
+        "file_balance_wins_over_hksal",
+        "duplicate_reference_skipped_lines_new_zero",
+        "different_reference_double_insert_unreconciled",
+        "nothing_new_balance_equal_no_drift",
+        "nothing_new_balance_differs_drift",
+    },
+    "inbound_mail": {
+        "member_dkim_pass_pdf_accepted",
+        "member_spf_pass_only_accepted",
+        "sender_not_member_rejected",
+        "auth_from_other_authserv_ignored_rejected",
+        "auth_missing_rejected",
+        "auth_fail_rejected",
+        "recipient_without_token_rejected",
+        "delivered_to_token_accepted",
+        "no_attachment_rejected",
+        "nested_rfc822_attachments_collected",
+        "nested_two_levels_not_followed",
+        "too_many_attachments_rejected",
+        "too_large_rejected",
+        "unknown_type_skipped_counted",
+        "no_message_id_rejected",
+        "case_folded_sender",
+    },
+    "reminders": {
+        "grundsteuer_bescheid_expected_first_full_year",
+        "grundsteuer_bescheid_present_silent",
+        "grundsteuer_quarters_without_schedule",
+        "grundsteuer_dates_from_schedule",
+        "grundsteuer_schedule_carried_to_next_year",
+        "grundsteuer_remind_cleared_by_matching_debit",
+        "grundsteuer_mode_inferred_after_direct_debit",
+        "grundsteuer_transfer_clears_but_infers_nothing",
+        "grundsteuer_mode_set_sepa",
+        "grundsteuer_muted",
+        "checklist_due_missing_fires",
+        "checklist_present_silent",
+        "return_deadline_2026_on_2_aug_2027",
+        "questionnaire_open_from_jan_1",
+        "wage_certificate_missing_from_mar_1",
+        "wage_certificate_present_silent",
+        "fixed_rate_end_12_and_6_months",
+        "special_termination_info",
+        "speculation_end_12_months_before",
+        "settlement_only_for_prepayment",
+        "rent_missing_fires_when_statements_cover_date",
+        "rent_missing_silent_without_statements",
+        "rent_missing_cleared_by_allocation",
+        "rent_missing_label_names_unit_only",
+        "sync_stale_after_35_days",
+        "snoozed_hidden_until_date",
+        "done_hides_instance_only",
+        "ids_stable_across_days",
+        "order_independent",
+    },
+    "notification_schedule": {
+        "lead_day_sends_once",
+        "missed_day_sends_next_day",
+        "already_sent_not_repeated",
+        "two_leads_two_sends",
+        "info_kind_never_mailed",
+        "two_recipients_two_rows",
+        "sepa_mode_sends_after_due_only_if_open",
+        # The PR #125 review's retry decision: a failed send is retried, three attempts in all.
+        "failed_send_retried_next_day",
+        "third_failure_gives_up",
+    },
+}
+
+
+def test_phase5_cases_cover_the_spec():
+    assert set(PHASE5_CASES) == set(phase5.MODELS)
+    for name, required in PHASE5_CASES.items():
+        ids = {c.id for c in phase5.load(name).cases}
+        assert required <= ids, (name, required - ids)
+
+
+@pytest.mark.parametrize(
+    ("name", "case_id", "path", "slip"),
+    [
+        ("sync_window", "after_success_minus_14_days", ("expect", "window", "start"), "2026-10-20"),
+        (
+            "sync_window",
+            "long_window_may_need_approval",
+            ("expect", "window", "may_need_approval"),
+            False,
+        ),
+        ("sync_window", "first_sync_from_anchor", ("expect", "window", "start"), "2026-03-31"),
+        ("tan_flow", "scheduled_tan_aborts", ("steps", 1, "expect", "end_dialog"), False),
+        ("tan_flow", "timeout_fails", ("steps", 0, "expect", "error_code"), None),
+        ("sync_archive", "three_streams_ordered", ("expect", "lines"), 4),
+        ("sync_archive", "too_many_members_rejected", ("streams", 0, "count"), 400),
+        ("sync_archive", "too_large_rejected", ("streams", 0, "bytes"), 10485760),
+        ("sync_balance", "hksal_mismatch_unreconciled", ("expect", "result", "difference"), "9.99"),
+        (
+            "sync_balance",
+            "different_reference_double_insert_unreconciled",
+            ("expect", "lines_new"),
+            1,
+        ),
+        ("sync_balance", "nothing_new_balance_differs_drift", ("expect", "drift"), "-4.91"),
+        ("sync_balance", "file_balance_wins_over_hksal", ("expect", "balance_source"), "bank"),
+        (
+            "inbound_mail",
+            "auth_from_other_authserv_ignored_rejected",
+            ("expect", "code"),
+            "email.auth_failed",
+        ),
+        ("inbound_mail", "unknown_type_skipped_counted", ("expect", "skipped"), 0),
+        (
+            "inbound_mail",
+            "nested_two_levels_not_followed",
+            ("expect", "attachments"),
+            ["2.2.2", "3"],
+        ),
+        ("inbound_mail", "exactly_25_mib_accepted", ("facts", "parts", 1, "size_bytes"), 26214401),
+        (
+            "reminders",
+            "return_deadline_2026_on_2_aug_2027",
+            ("expect", 0, "visible_from"),
+            "2027-05-05",
+        ),
+        (
+            "reminders",
+            "fixed_rate_end_12_and_6_months",
+            ("expect", 1, "label_args", "months_before"),
+            7,
+        ),
+        (
+            "reminders",
+            "settlement_only_for_prepayment",
+            ("expect", 0, "visible_from"),
+            "2027-10-03",
+        ),
+        (
+            "reminders",
+            "rent_missing_label_names_unit_only",
+            ("expect", 0, "label_args", "tenant"),
+            "X",
+        ),
+        (
+            "reminders",
+            "speculation_end_12_months_before",
+            ("expect", 0, "label_args", "tax_free_from"),
+            "2027-02-10",
+        ),
+        ("reminders", "special_termination_info", ("expect", 0, "email_leads"), [0]),
+        ("reminders", "grundsteuer_mode_set_sepa", ("expect", 0, "email_leads"), [7]),
+        (
+            "notification_schedule",
+            "late_start_sends_latest_lead_only",
+            ("expect", 0, "lead_days"),
+            60,
+        ),
+        ("notification_schedule", "sepa_not_before_due_plus_3", ("today",), "2027-05-18"),
+        ("notification_schedule", "failed_send_retried_next_day", ("expect", 0, "attempt"), 1),
+        (
+            "notification_schedule",
+            "retry_that_succeeded_not_repeated",
+            ("sent", 1, "status"),
+            "failed",
+        ),
+        ("notification_schedule", "third_failure_gives_up", ("today",), "2027-07-19"),
+    ],
+)
+def test_phase5_fixtures_check_their_contract(name, case_id, path, slip):
+    """A slip in a hand-filled expectation fails on load (the validators recompute it)."""
+    import copy
+
+    data = copy.deepcopy(phase5.raw(name))
+    case = next(c for c in data["cases"] if c["id"] == case_id)
+    node = case
+    for key in path[:-1]:
+        node = node[key]
+    node[path[-1]] = slip
+    with pytest.raises(ValidationError):
+        phase5.MODELS[name].model_validate(data)
 
 
 def _has(case: dict, path: tuple) -> bool:
