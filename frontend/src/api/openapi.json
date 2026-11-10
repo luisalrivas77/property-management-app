@@ -11291,6 +11291,30 @@
             "$ref": "#/components/schemas/ExtractedValue",
             "description": "Darlehensnummer / Vertragsnummer; when none is printed, the loan's Kontonummer. The number only, without its label",
             "value_kind": "text"
+          },
+          "amount_total": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Betrag, typed by hand",
+            "hand_only": true,
+            "value_kind": "money"
+          },
+          "period_start": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Zeitraum von, typed by hand",
+            "hand_only": true,
+            "value_kind": "date"
+          },
+          "period_end": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Zeitraum bis, typed by hand",
+            "hand_only": true,
+            "value_kind": "date"
+          },
+          "notes": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Notiz, typed by hand",
+            "hand_only": true,
+            "value_kind": "text"
           }
         },
         "additionalProperties": false,
@@ -13259,6 +13283,30 @@
           "notice_period": {
             "$ref": "#/components/schemas/ExtractedValue",
             "description": "Kündigungsfrist, as written",
+            "value_kind": "text"
+          },
+          "amount_total": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Betrag, typed by hand",
+            "hand_only": true,
+            "value_kind": "money"
+          },
+          "period_end": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Zeitraum bis, typed by hand",
+            "hand_only": true,
+            "value_kind": "date"
+          },
+          "reference": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Referenz, typed by hand",
+            "hand_only": true,
+            "value_kind": "text"
+          },
+          "notes": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Notiz, typed by hand",
+            "hand_only": true,
             "value_kind": "text"
           }
         },

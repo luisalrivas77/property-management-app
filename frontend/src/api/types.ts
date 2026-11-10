@@ -4050,6 +4050,14 @@ export interface components {
             lender?: components["schemas"]["ExtractedValue"];
             /** @description Darlehensnummer / Vertragsnummer; when none is printed, the loan's Kontonummer. The number only, without its label */
             contract_number?: components["schemas"]["ExtractedValue"];
+            /** @description Betrag, typed by hand */
+            amount_total?: components["schemas"]["ExtractedValue"];
+            /** @description Zeitraum von, typed by hand */
+            period_start?: components["schemas"]["ExtractedValue"];
+            /** @description Zeitraum bis, typed by hand */
+            period_end?: components["schemas"]["ExtractedValue"];
+            /** @description Notiz, typed by hand */
+            notes?: components["schemas"]["ExtractedValue"];
         };
         /** GrundsteuerInstalment */
         GrundsteuerInstalment: {
@@ -4859,6 +4867,14 @@ export interface components {
             monthly_fee?: components["schemas"]["ExtractedValue"];
             /** @description Kündigungsfrist, as written */
             notice_period?: components["schemas"]["ExtractedValue"];
+            /** @description Betrag, typed by hand */
+            amount_total?: components["schemas"]["ExtractedValue"];
+            /** @description Zeitraum bis, typed by hand */
+            period_end?: components["schemas"]["ExtractedValue"];
+            /** @description Referenz, typed by hand */
+            reference?: components["schemas"]["ExtractedValue"];
+            /** @description Notiz, typed by hand */
+            notes?: components["schemas"]["ExtractedValue"];
         };
         /**
          * ManualDocumentFields

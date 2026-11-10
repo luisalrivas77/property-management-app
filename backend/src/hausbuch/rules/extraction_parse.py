@@ -113,9 +113,10 @@ def parse_lines(
             "\n".join(text for text, _ in lines), reference_year=reference_year
         ).split("\n")
         lines = [(text, contributors) for text, (_, contributors) in zip(texts, lines, strict=True)]
-    kept, asked = NO_LINK, frozenset(model.model_fields)
+    # A line for a field the request did not ask (a hand-only field, or a link field the
+    # subtype does not need) is never a value.
+    kept, asked = NO_LINK, frozenset(asked_fields(kind, subtype))
     if general:
-        asked = frozenset(asked_fields(kind, subtype))
         kept = link_values([text for text, _ in lines], asked)
         texts = scrub_general_answer("\n".join(text for text, _ in lines), asked).split("\n")
         lines = [(text, contributors) for text, (_, contributors) in zip(texts, lines, strict=True)]

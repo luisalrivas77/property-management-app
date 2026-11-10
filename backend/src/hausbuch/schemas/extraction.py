@@ -44,6 +44,22 @@ def ev(kind: ValueKind, meaning: str) -> Any:
     )
 
 
+def hand_ev(kind: ValueKind, meaning: str) -> Any:
+    """A field the model is never asked for: the place of a hand-entry field (D37) a kind
+    reads nothing for, so a person can still type it (D131, decided 10 Nov 2026)."""
+    return Field(
+        default_factory=ExtractedValue.missing,
+        description=meaning,
+        json_schema_extra={"value_kind": kind, "hand_only": True},
+    )
+
+
+def is_hand_only(model: type[Schema], field: str) -> bool:
+    """True for a field made by hand_ev: never asked, never in a prompt."""
+    extra = model.model_fields[field].json_schema_extra
+    return isinstance(extra, dict) and extra.get("hand_only") is True
+
+
 def value_kind(model: type[Schema], field: str) -> ValueKind:
     """The value kind a field of an extraction model holds."""
     extra = model.model_fields[field].json_schema_extra
@@ -401,7 +417,9 @@ class IncomeTaxAssessmentExtraction(_Typing):
 
 
 # Phase 2 D130, D131 (§6.2, §6.2.1): the general reading and the Verwaltervertrag. Neither
-# proposes a record, only typing and at most one link, so no field here is a euro figure.
+# proposes a record, only typing and at most one link, so no field the model reads is a euro
+# figure. The hand_ev fields hold what a person types under "Felder (von Hand)" (D37): every
+# hand-entry field a letter took before the catalogue, so none is lost (decided 10 Nov 2026).
 
 
 class GeneralExtraction(_Typing):
@@ -420,6 +438,11 @@ class GeneralExtraction(_Typing):
         "Darlehensnummer / Vertragsnummer; when none is printed, the loan's Kontonummer. The"
         " number only, without its label",
     )
+    # By hand only (lender and contract_number hold Gegenpartei and Referenz).
+    amount_total: ExtractedValue = hand_ev("money", "Betrag, typed by hand")
+    period_start: ExtractedValue = hand_ev("date", "Zeitraum von, typed by hand")
+    period_end: ExtractedValue = hand_ev("date", "Zeitraum bis, typed by hand")
+    notes: ExtractedValue = hand_ev("text", "Notiz, typed by hand")
 
 
 class ManagementContractExtraction(_Typing):
@@ -436,6 +459,11 @@ class ManagementContractExtraction(_Typing):
         "text", "the Verwaltervergütung per month as written, e.g. 30,00 € zzgl. MwSt. je Einheit"
     )
     notice_period: ExtractedValue = ev("text", "Kündigungsfrist, as written")
+    # By hand only (manager holds Gegenpartei, start_date Zeitraum von).
+    amount_total: ExtractedValue = hand_ev("money", "Betrag, typed by hand")
+    period_end: ExtractedValue = hand_ev("date", "Zeitraum bis, typed by hand")
+    reference: ExtractedValue = hand_ev("text", "Referenz, typed by hand")
+    notes: ExtractedValue = hand_ev("text", "Notiz, typed by hand")
 
 
 GeneralLink = Literal["property", "loan", "tenancy"]
@@ -510,11 +538,12 @@ EXTRACTION_MODELS: dict[ExtractionKind, type[_Typing]] = {
 
 
 def asked_fields(kind: ExtractionKind, subtype: DocumentSubtype | None = None) -> tuple[str, ...]:
-    """The fields an extract request asks for, in the model's order: every field of the kind,
-    except for the general reading, which asks title and date plus the link fields of the
-    subtype's group (D131). The job keeps only these, so a line the model volunteered (an
-    address on a Vorauszahlungsbescheid) is never stored."""
-    names = tuple(EXTRACTION_MODELS[kind].model_fields)
+    """The fields an extract request asks for, in the model's order: every field of the kind
+    but those only typed by hand (hand_ev), except for the general reading, which asks title
+    and date plus the link fields of the subtype's group (D131). The job keeps only these, so
+    a line the model volunteered (an address on a Vorauszahlungsbescheid) is never stored."""
+    model = EXTRACTION_MODELS[kind]
+    names = tuple(name for name in model.model_fields if not is_hand_only(model, name))
     if kind is not ExtractionKind.GENERAL:
         return names
     link = GENERAL_LINK.get(subtype) if subtype is not None else None
