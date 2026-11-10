@@ -5,7 +5,9 @@
 // left for later and answered from the last screen. Then 2027, which reuses the 2026 questions:
 // A's commute is proposed from last year with its carried values marked, and the work item
 // bought in 2026 is reconfirmed as no longer used, which records a superseding row with the
-// disposal date. Synthetic data only (owners A and B, invented figures).
+// disposal date. In between, two answers are changed: A's commute keeps "Ja" with a new
+// distance (its row superseded), A's home office goes from "Ja" to "Nein" (its row withdrawn).
+// Synthetic data only (owners A and B, invented figures).
 import type { Locator, Page } from "@playwright/test";
 
 import { apiCall, expect, test } from "./support";
@@ -145,6 +147,36 @@ test("the 2026 questions are walked to all answered, and 2027 carries and reconf
   await expect(page.getByText("42 von 42 beantwortet.")).toBeVisible();
   await expect(page.getByRole("link", { name: `Zum Steuerjahr ${YEAR}` })).toHaveAttribute("href", `/tax/${YEAR}`);
 
+  // Change two answers. An answered slot shows its answer and "Antwort ändern".
+  await page.getByRole("button", { name: "Zur ersten Frage" }).click();
+  await expect(page.getByText("Frage 1 von 42")).toBeVisible();
+  await expect(page.getByText("Ihre Antwort: Nein")).toBeVisible();
+  const forward = async (text: string) => {
+    for (let step = 0; step < 20; step += 1) {
+      const { question, position } = await screen(page);
+      if (question === text) return;
+      await page.getByRole("button", { name: "Weiter", exact: true }).click();
+      await waitPast(page, position);
+    }
+    throw new Error(`question not reached: ${text}`);
+  };
+  await forward("Ging es regelmäßig zur Arbeitsstätte, und hat sich der Weg geändert?");
+  await expect(page.getByText("Ihre Antwort: Ja")).toBeVisible();
+  await page.getByRole("button", { name: "Antwort ändern" }).click();
+  const change = page.getByRole("form", { name: "Angaben" });
+  await expect(change.getByLabel(/^Arbeitsstätte/)).toHaveValue("Büro A");
+  await fill(change, /^Entfernung/, "30");
+  await change.getByRole("button", { name: "Speichern und weiter" }).click();
+  await expect(page.getByRole("heading", { name: "An wie vielen Tagen wurde überwiegend zu Hause gearbeitet?" })).toBeVisible();
+  await expect(page.getByText("Ihre Antwort: Ja")).toBeVisible();
+  await page.getByRole("button", { name: "Antwort ändern" }).click();
+  await page.getByRole("form", { name: "Angaben" }).getByRole("button", { name: "Abbrechen" }).click();
+  await expect(page.getByText("Bei „Nein“ oder „Trifft nicht zu“ wird die Angabe zu dieser Frage zurückgezogen.")).toBeVisible();
+  await answer(page, "Nein");
+  await expect(page.getByRole("heading", { name: "Gibt es ein eigenes, abgeschlossenes Arbeitszimmer, das der Mittelpunkt der ganzen Arbeit ist?" })).toBeVisible();
+  await page.getByRole("button", { name: "Zurück" }).click();
+  await expect(page.getByText("Ihre Antwort: Nein")).toBeVisible();
+
   const view = await apiCall<{ progress: { answered: number; total: number } }>(
     page,
     "GET",
@@ -153,7 +185,18 @@ test("the 2026 questions are walked to all answered, and 2027 carries and reconf
   expect(view.progress).toMatchObject({ answered: 42, total: 42 });
   const commute = await apiCall<Row[]>(page, "GET", `/api/return-inputs?tax_year=${YEAR}&kind=commute&owner_id=${ownerA.id}`);
   expect(commute).toHaveLength(1);
-  expect(commute[0]?.value).toMatchObject({ workplace_label: "Büro A", days: 180, km: 25, km_car: 25 });
+  expect(commute[0]?.supersedes_id).not.toBeNull();
+  expect(commute[0]?.value).toMatchObject({ workplace_label: "Büro A", days: 180, km: 30, km_car: 30 });
+  const homeOffice = await apiCall<Row[]>(page, "GET", `/api/return-inputs?tax_year=${YEAR}&kind=home_office&owner_id=${ownerA.id}`);
+  expect(homeOffice).toHaveLength(0);
+  const answers = await apiCall<{ slots: { key: string; owner_id: string | null; current_answer: { answer: string; supersedes_id: string | null } | null }[] }>(
+    page,
+    "GET",
+    `/api/tax/questionnaire?tax_year=${YEAR}`,
+  );
+  const homeOfficeAnswer = answers.slots.find((s) => s.key === "owner.home_office_days" && s.owner_id === ownerA.id);
+  expect(homeOfficeAnswer?.current_answer).toMatchObject({ answer: "no" });
+  expect(homeOfficeAnswer?.current_answer?.supersedes_id).not.toBeNull();
   const children = await apiCall<Row[]>(page, "GET", `/api/return-inputs?tax_year=${YEAR}&kind=child`);
   expect(children).toHaveLength(1);
   expect(children[0]?.value).toMatchObject({ born_on: "2026-03-14" });
@@ -178,7 +221,7 @@ test("the 2026 questions are walked to all answered, and 2027 carries and reconf
   await expect(form.getByLabel(/^Arbeitsstätte/)).toHaveValue("Büro A");
   // The carried value is marked "Vorjahr" next to its label.
   await expect(form.getByLabel(/^Arbeitsstätte\s*Vorjahr$/)).toBeVisible();
-  await expect(form.getByLabel(/^Entfernung/)).toHaveValue("25");
+  await expect(form.getByLabel(/^Entfernung/)).toHaveValue("30");
   await form.getByRole("button", { name: "Abbrechen" }).click();
   await page.getByRole("button", { name: "Später beantworten" }).click();
 

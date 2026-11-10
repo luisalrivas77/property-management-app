@@ -17,6 +17,12 @@
 // mehr genutzt seit …"); an item no longer used is a superseding row with disposed_on. A
 // reminder question shows the sentence it prints. "Später beantworten" leaves the slot open.
 //
+// An answered slot shows its answer (the view's current_answer) and "Antwort ändern": the new
+// answer supersedes it (supersedes_id). On a facts question the slot's rows of this year are
+// loaded from /return-inputs or the property's /tax-inputs and pre-filled; an edited row is
+// posted with its own supersedes_id, an untouched one not at all, and a removed one (or every
+// one, when the answer is no longer "Ja") as a withdrawal repeating its value.
+//
 // No euro figure is computed here: the last screen shows the estimate as the API returns it.
 import Link from "next/link";
 import { useCallback, useMemo, useState, type FormEvent } from "react";
@@ -317,6 +323,21 @@ interface Item {
   carried: Record<string, string> | null;
   base: Value;
   carriedFromId: string | null;
+  /** The stored row this item edits (a correction supersedes it), with its inputs as loaded. */
+  existing: Existing | null;
+  originalRaw: Record<string, string> | null;
+}
+
+/** A current row of this year written for the slot, as "Antwort ändern" loads it. */
+interface Existing {
+  table: "return_inputs" | "tax_inputs";
+  id: string;
+  kind: string;
+  taxYear: number;
+  ownerId: string | null;
+  propertyId: string | null;
+  documentId: string | null;
+  value: Value;
 }
 
 let itemCounter = 0;
@@ -326,7 +347,113 @@ function blankItem(target: Target, year: number): Item {
   const raw: Record<string, string> = {};
   for (const spec of FORMS[kind] ?? []) raw[spec.name] = spec.initial ? spec.initial(year) : spec.type === "bool" ? "false" : "";
   for (const [name, value] of Object.entries(target.value_match ?? {})) raw[name] = value;
-  return { key: ++itemCounter, target, kind, raw, carried: null, base: {}, carriedFromId: null };
+  return { key: ++itemCounter, target, kind, raw, carried: null, base: {}, carriedFromId: null, existing: null, originalRaw: null };
+}
+
+function rawOf(kind: string, value: Value): Record<string, string> {
+  const raw: Record<string, string> = {};
+  for (const spec of FORMS[kind] ?? []) raw[spec.name] = toRaw(spec.type, value[spec.name]);
+  return raw;
+}
+
+function matches(value: Value, match: Record<string, string>): boolean {
+  return Object.entries(match).every(([name, code]) => value[name] === code);
+}
+
+/**
+ * The question's target a row of `kind` belongs to: one whose value_match it meets, or one
+ * without value_match when no question's value_match claims it (the backend's prefill reads
+ * rows the same way).
+ */
+function targetFor(question: Question, questions: Question[], kind: string, value: Value): Target | null {
+  const claimed = questions.some((q) =>
+    (q.targets ?? []).some((t) => t.input_kind === kind && t.value_match && matches(value, t.value_match)),
+  );
+  return (
+    (question.targets ?? []).find(
+      (t) => t.input_kind === kind && hasForm(t) && (t.value_match ? matches(value, t.value_match) : !claimed),
+    ) ?? null
+  );
+}
+
+/** True when the item edits a stored row and none of its inputs changed: nothing to post. */
+function unchanged(item: Item): boolean {
+  if (item.existing === null || item.originalRaw === null) return false;
+  const original = item.originalRaw;
+  return Object.entries(item.raw).every(([name, raw]) => raw === (original[name] ?? ""));
+}
+
+/**
+ * The slot's current rows of this year, as editable items. A reconfirm question whose kind a
+ * yearly question also asks for (the work items: equipment_new) leaves this year's rows to
+ * that question, so one row is never edited from two screens.
+ */
+async function loadSlotRows(year: number, slot: Slot, question: Question, questions: Question[]): Promise<Item[]> {
+  const items: Item[] = [];
+  const kinds = new Map<string, Target>();
+  for (const t of question.targets ?? []) if (hasForm(t) && t.input_kind) kinds.set(t.input_kind, t);
+  for (const [kind, target] of kinds) {
+    if (
+      question.carry_forward === "reconfirm" &&
+      questions.some((q) => q.carry_forward !== "reconfirm" && (q.targets ?? []).some((t) => t.input_kind === kind))
+    ) {
+      continue;
+    }
+    let rows: Existing[];
+    if (target.kind === "tax_input") {
+      if (!slot.property_id) continue;
+      const list = await ok(
+        api.GET("/api/properties/{property_id}/tax-inputs", {
+          params: { path: { property_id: slot.property_id }, query: { tax_year: year, kind: kind as TaxInputCreate["kind"] } },
+        }),
+      );
+      rows = list.map((r) => ({
+        table: "tax_inputs",
+        id: r.id,
+        kind: r.kind,
+        taxYear: r.tax_year ?? year,
+        ownerId: null,
+        propertyId: r.property_id,
+        documentId: r.document_id ?? null,
+        value: r.value as unknown as Value,
+      }));
+    } else {
+      const query: { tax_year: number; kind: ReturnInputCreate["kind"]; owner_id?: string } = {
+        tax_year: year,
+        kind: kind as ReturnInputCreate["kind"],
+      };
+      if (slot.owner_id) query.owner_id = slot.owner_id;
+      const list = await ok(api.GET("/api/return-inputs", { params: { query } }));
+      rows = list.map((r) => ({
+        table: "return_inputs",
+        id: r.id,
+        kind: r.kind,
+        taxYear: r.tax_year,
+        ownerId: r.owner_id ?? null,
+        propertyId: null,
+        documentId: r.document_id ?? null,
+        value: r.value as unknown as Value,
+      }));
+    }
+    for (const row of rows) {
+      if (row.taxYear !== year || (row.table === "return_inputs" && row.ownerId !== (slot.owner_id ?? null))) continue;
+      const own = targetFor(question, questions, kind, row.value);
+      if (own === null) continue;
+      const raw = rawOf(kind, row.value);
+      items.push({
+        key: ++itemCounter,
+        target: own,
+        kind,
+        raw,
+        carried: null,
+        base: row.value,
+        carriedFromId: null,
+        existing: row,
+        originalRaw: { ...raw },
+      });
+    }
+  }
+  return items;
 }
 
 function proposedItem(row: ReturnInputCreate | TaxInputCreate, question: Question): Item | null {
@@ -337,10 +464,19 @@ function proposedItem(row: ReturnInputCreate | TaxInputCreate, question: Questio
       Object.entries(t.value_match ?? {}).every(([name, code]) => value[name] === code),
   );
   if (!target || !hasForm(target)) return null;
-  const raw: Record<string, string> = {};
-  for (const spec of FORMS[row.kind] ?? []) raw[spec.name] = toRaw(spec.type, value[spec.name]);
+  const raw = rawOf(row.kind, value);
   const carriedFromId = row.carried_from_id ?? null;
-  return { key: ++itemCounter, target, kind: row.kind, raw, carried: carriedFromId ? { ...raw } : null, base: value, carriedFromId };
+  return {
+    key: ++itemCounter,
+    target,
+    kind: row.kind,
+    raw,
+    carried: carriedFromId ? { ...raw } : null,
+    base: value,
+    carriedFromId,
+    existing: null,
+    originalRaw: null,
+  };
 }
 
 /**
@@ -381,9 +517,10 @@ function buildValue(item: Item, prefix: string, messages: FieldMessages): Value 
       fine = false;
     }
   }
-  if (item.kind === "commute" && fine && value.km_car === undefined) {
+  if (item.kind === "commute" && fine) {
     // The car's share of the route is what the other two leave (km_car + km_collective +
-    // km_other = km, CommuteFact): whole kilometres, not money.
+    // km_other = km, CommuteFact): whole kilometres, not money. The form does not ask for it,
+    // so it is set afresh each time (an edited distance must not keep last value's share).
     const rest = Number(value.km) - Number(value.km_collective ?? 0) - Number(value.km_other ?? 0);
     value.km_car = Math.max(0, rest);
   }
@@ -444,7 +581,7 @@ export function QuestionnaireFlow({ year }: { year: number }) {
                 <Summary year={year} data={data} steps={list} onJump={setIndex} />
               ) : (
                 <StepScreen
-                  key={`${current}:${list[current]?.slot.key}:${isOpen(data.view, list[current]!.slot)}`}
+                  key={`${current}:${list[current]?.slot.key}:${list[current]?.slot.current_answer?.id ?? "open"}`}
                   year={year}
                   data={data}
                   step={list[current]!}
@@ -452,10 +589,13 @@ export function QuestionnaireFlow({ year }: { year: number }) {
                   total={list.length}
                   onBack={() => setIndex(Math.max(0, current - 1))}
                   onNext={() => setIndex(current + 1)}
-                  onAnswered={() => {
-                    // On to the next open slot after this one, else the last screen (which
-                    // lists any slot left open before it).
-                    const next = list.findIndex((s, at) => at > current && isOpen(data.view, s.slot));
+                  onAnswered={(changed) => {
+                    // A first answer moves on to the next open slot after this one, else to the
+                    // last screen (which lists any slot left open before it); a changed answer
+                    // moves on by one.
+                    const next = changed
+                      ? current + 1
+                      : list.findIndex((s, at) => at > current && isOpen(data.view, s.slot));
                     setIndex(next === -1 ? list.length : next);
                     reload();
                   }}
@@ -502,7 +642,7 @@ function StepScreen({
   total: number;
   onBack: () => void;
   onNext: () => void;
-  onAnswered: () => void;
+  onAnswered: (changed: boolean) => void;
 }) {
   const { slot, question } = step;
   const open = isOpen(data.view, slot);
@@ -510,13 +650,32 @@ function StepScreen({
   const reminders = targets.filter((t) => t.kind === "reminder");
   const formTargets = targets.filter(hasForm);
   const documentsOnly = targets.length > 0 && targets.every((t) => t.input_kind && DOCUMENT_KINDS.has(t.input_kind));
-  const reconfirm = question.carry_forward === "reconfirm" ? (slot.reconfirm_rows ?? []) : [];
+  const reconfirm = useMemo(
+    () => (question.carry_forward === "reconfirm" ? (slot.reconfirm_rows ?? []) : []),
+    [question.carry_forward, slot.reconfirm_rows],
+  );
   const facts = question.answer_type !== "choice" && formTargets.length > 0;
 
   const [expanded, setExpanded] = useState(false);
   const [items, setItems] = useState<Item[]>(() => initialItems(slot, question, formTargets, reconfirm, year));
-  const [disposed, setDisposed] = useState<Record<string, string | null>>({});
+  // A standing item's "nicht mehr genutzt seit" as stored (null: in use), so only a change is posted.
+  const storedDisposal = useMemo(
+    () =>
+      Object.fromEntries(
+        reconfirm
+          .filter((r) => DISPOSABLE.has(r.kind))
+          .map((r) => [r.id, ((r.value as unknown as Value).disposed_on as string | null | undefined) ?? null]),
+      ) as Record<string, string | null>,
+    [reconfirm],
+  );
+  const [disposed, setDisposed] = useState<Record<string, string | null>>(storedDisposal);
   const [busy, setBusy] = useState(false);
+  // "Antwort ändern": the slot's answer is open again; its rows of this year are loaded for editing.
+  const current = slot.current_answer ?? null;
+  const [changing, setChanging] = useState(false);
+  const [existing, setExisting] = useState<Existing[]>([]);
+  const [loadingRows, setLoadingRows] = useState(false);
+  const asking = open || changing;
   const keys = useMemo(() => fieldKeys(items), [items]);
   const form = useFormErrors(keys);
   const carriedAny = items.some((i) => i.carried !== null);
@@ -525,9 +684,12 @@ function StepScreen({
     const messages: FieldMessages = {};
     const returnInputs: ReturnInputCreate[] = [];
     const taxInputs: TaxInputCreate[] = [];
+    const kept = new Set<string>();
     if (withRows) {
       for (const item of items) {
-        const table = item.target.kind === "tax_input" ? "tax_inputs" : "return_inputs";
+        if (item.existing) kept.add(item.existing.id);
+        if (unchanged(item)) continue;
+        const table = tableOf(item);
         const at = table === "tax_inputs" ? taxInputs.length : returnInputs.length;
         const value = buildValue(item, `${table}.${at}.value`, messages);
         if (value === null) {
@@ -541,7 +703,9 @@ function StepScreen({
             property_id: slot.property_id ?? "",
             kind: item.kind as TaxInputCreate["kind"],
             tax_year: year,
+            document_id: item.existing?.documentId ?? null,
             value: value as unknown as TaxInputCreate["value"],
+            supersedes_id: item.existing?.id ?? null,
             carried_from_id: item.carriedFromId,
             withdrawn: false,
           });
@@ -550,19 +714,47 @@ function StepScreen({
             owner_id: slot.owner_id ?? null,
             kind: item.kind as ReturnInputCreate["kind"],
             tax_year: year,
+            document_id: item.existing?.documentId ?? null,
             value: value as unknown as ReturnInputCreate["value"],
+            supersedes_id: item.existing?.id ?? null,
             carried_from_id: item.carriedFromId,
             withdrawn: false,
           });
         }
       }
     }
+    // A stored row removed from the list, or every one when the answer is no longer "Ja": a
+    // withdrawal, a new row repeating its value with withdrawn = true.
+    for (const row of existing) {
+      if (kept.has(row.id)) continue;
+      if (row.table === "tax_inputs") {
+        taxInputs.push({
+          property_id: row.propertyId ?? "",
+          kind: row.kind as TaxInputCreate["kind"],
+          tax_year: row.taxYear,
+          document_id: row.documentId,
+          value: row.value as unknown as TaxInputCreate["value"],
+          supersedes_id: row.id,
+          withdrawn: true,
+        });
+      } else {
+        returnInputs.push({
+          owner_id: row.ownerId,
+          kind: row.kind as ReturnInputCreate["kind"],
+          tax_year: row.taxYear,
+          document_id: row.documentId,
+          value: row.value as unknown as ReturnInputCreate["value"],
+          supersedes_id: row.id,
+          withdrawn: true,
+        });
+      }
+    }
     // A standing item no longer used: a superseding row of its own year with disposed_on.
     for (const row of reconfirm) {
       if (!DISPOSABLE.has(row.kind)) continue;
-      const since = disposed[row.id];
-      if (since === undefined || since === null) continue;
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(since)) {
+      const since = disposed[row.id] ?? null;
+      if (since === (storedDisposal[row.id] ?? null)) continue;
+      if (since !== null && !/^\d{4}-\d{2}-\d{2}$/.test(since)) {
         messages[`dispose.${row.id}`] = ["Bitte das Datum eingeben, seit dem es nicht mehr genutzt wird."];
         continue;
       }
@@ -586,6 +778,7 @@ function StepScreen({
         property_id: slot.property_id ?? null,
         answer,
         choice,
+        supersedes_id: changing ? (current?.id ?? null) : null,
         carried_from_id: prior && prior.answer === answer && (prior.choice ?? null) === choice ? prior.id : null,
         withdrawn: false,
       },
@@ -596,10 +789,10 @@ function StepScreen({
     form.clear();
     try {
       await ok(api.POST("/api/tax/questionnaire/answers", { body }));
-      onAnswered();
+      onAnswered(changing);
     } catch (error) {
       if (codesOf(error).includes("questionnaire.not_current")) {
-        form.invalid({ answer: ["Diese Frage wurde inzwischen beantwortet. Die Seite neu laden."] });
+        form.invalid({ answer: ["Diese Frage wurde inzwischen anders beantwortet. Die Seite neu laden."] });
       } else {
         form.fail(error);
       }
@@ -619,6 +812,26 @@ function StepScreen({
       }
     }
     void send(answer, null, false);
+  }
+
+  async function startChange() {
+    form.clear();
+    if (!facts) {
+      setChanging(true);
+      return;
+    }
+    setLoadingRows(true);
+    try {
+      const loaded = await loadSlotRows(year, slot, question, data.view.questions);
+      setExisting(loaded.flatMap((i) => (i.existing ? [i.existing] : [])));
+      setItems(loaded.length > 0 ? loaded : reconfirm.length > 0 ? [] : [blankItem(formTargets[0]!, year)]);
+      setExpanded(current?.answer === "yes" && loaded.length > 0);
+      setChanging(true);
+    } catch (error) {
+      form.fail(error);
+    } finally {
+      setLoadingRows(false);
+    }
   }
 
   function onSubmitFacts(event: FormEvent<HTMLFormElement>) {
@@ -655,11 +868,40 @@ function StepScreen({
         </p>
       ) : null}
 
-      {!open ? (
-        <p className="notice notice-ok">Diese Frage ist schon beantwortet.</p>
+      {!asking ? (
+        <>
+          <p className="notice notice-ok">
+            {current ? (
+              <>
+                Ihre Antwort: <strong>{answerText(question, current.answer, current.choice ?? null)}</strong>
+              </>
+            ) : (
+              "Diese Frage ist schon beantwortet."
+            )}
+          </p>
+          {current ? (
+            <div className="row">
+              <button type="button" className="secondary" disabled={loadingRows} onClick={() => void startChange()}>
+                {loadingRows ? "Lädt …" : "Antwort ändern"}
+              </button>
+            </div>
+          ) : null}
+          <FormBanner errors={form.errors} />
+        </>
       ) : (
         <>
-          {suggestion ? <p className="muted">{suggestion}</p> : null}
+          {changing && current ? (
+            <p className="muted">Bisher: {answerText(question, current.answer, current.choice ?? null)}</p>
+          ) : suggestion ? (
+            <p className="muted">{suggestion}</p>
+          ) : null}
+          {changing && existing.length > 0 && !expanded ? (
+            <p className="muted">
+              Bei „Nein“ oder „Trifft nicht zu“{" "}
+              {existing.length === 1 ? "wird die Angabe" : `werden die ${existing.length} Angaben`} zu dieser Frage
+              zurückgezogen.
+            </p>
+          ) : null}
           {reconfirm.length > 0 ? (
             <Reconfirm
               rows={reconfirm}
@@ -743,6 +985,23 @@ function StepScreen({
             </p>
           ))}
           <FormBanner errors={form.errors} />
+          {changing ? (
+            <div className="row">
+              <button
+                type="button"
+                className="link"
+                onClick={() => {
+                  setChanging(false);
+                  setExpanded(false);
+                  setExisting([]);
+                  setDisposed(storedDisposal);
+                  form.clear();
+                }}
+              >
+                Nicht ändern
+              </button>
+            </div>
+          ) : null}
         </>
       )}
 
@@ -764,6 +1023,12 @@ function StepScreen({
   );
 }
 
+/** An answer as the screen names it: the choice's label, or Ja / Nein / Trifft nicht zu. */
+function answerText(question: Question, answer: AnswerValue, choice: string | null): string {
+  if (choice) return question.choices?.find((c) => c.code === choice)?.label_de ?? choice;
+  return QUESTIONNAIRE_ANSWER[answer];
+}
+
 function initialItems(slot: Slot, question: Question, formTargets: Target[], reconfirm: ReturnInputFact[], year: number): Item[] {
   if (formTargets.length === 0) return [];
   const proposed = (slot.proposed_rows ?? [])
@@ -777,9 +1042,14 @@ function initialItems(slot: Slot, question: Question, formTargets: Target[], rec
 /** The body path of an item's value, as the API reports a field error. */
 function prefixOf(items: Item[], at: number): string {
   const item = items[at]!;
-  const table = item.target.kind === "tax_input" ? "tax_inputs" : "return_inputs";
-  const index = items.slice(0, at).filter((i) => (i.target.kind === "tax_input" ? "tax_inputs" : "return_inputs") === table).length;
+  if (unchanged(item)) return `kept.${item.key}.value`;
+  const table = tableOf(item);
+  const index = items.slice(0, at).filter((i) => tableOf(i) === table && !unchanged(i)).length;
   return `${table}.${index}.value`;
+}
+
+function tableOf(item: Item): "return_inputs" | "tax_inputs" {
+  return item.target.kind === "tax_input" ? "tax_inputs" : "return_inputs";
 }
 
 function fieldKeys(items: Item[]): string[] {
