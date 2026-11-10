@@ -31,7 +31,9 @@ test("a missing price split is a to-do with its button, and recording one closes
     "href",
     `/properties/${property.id}?tab=aufteilung`,
   );
-  // One gap, one entry: the checklist's Kaufpreisaufteilung is not listed beside it.
+  // One gap, one entry: once the checklist is in (the flat has no Grundsteuerbescheid), its
+  // Kaufpreisaufteilung is not listed beside the draft's gap.
+  await expect(todos.getByRole("listitem").filter({ hasText: "Grundsteuerbescheid: fehlt" })).toBeVisible();
   await expect(todos.getByRole("listitem").filter({ hasText: "Kaufpreisaufteilung: fehlt" })).toHaveCount(0);
   // The Offene Punkte entry says what to do as well.
   const open = page.getByRole("region", { name: "Offene Punkte" });

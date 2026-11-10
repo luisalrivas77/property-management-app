@@ -64,15 +64,16 @@ export type GuideAction =
   /** income.living_area_missing: type the flat's Wohnfläche (PATCH /properties/{id}). */
   | { kind: "living_area" };
 
-interface Guide {
-  /** True: something to do, listed under "Was noch fehlt". False: a note or a check. */
-  todo: boolean;
-  /** A short name of the gap for the "Was noch fehlt" list (to-dos only). */
-  title?: (params: Params) => string;
-  /** Was tun, in plain words: what to upload, open or confirm, not the law. */
-  text: (params: Params) => string;
-  action?: (warning: DraftWarning, ctx: GuideContext) => GuideAction | null;
-}
+/** Was tun, in plain words: what to upload, open or confirm, not the law. */
+type GuideText = (params: Params) => string;
+type GuideActionOf = (warning: DraftWarning, ctx: GuideContext) => GuideAction | null;
+
+/** A to-do (listed under "Was noch fehlt") always has a short title and an action; a note or a
+ * check may link somewhere but needs nothing. tsc enforces it, test_todo_guides.py that every
+ * code has an entry. */
+type Guide =
+  | { todo: true; title: (params: Params) => string; text: GuideText; action: GuideActionOf }
+  | { todo: false; title?: undefined; text: GuideText; action?: GuideActionOf };
 
 // --- targets --------------------------------------------------------------------------------
 
