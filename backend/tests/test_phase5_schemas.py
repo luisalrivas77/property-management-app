@@ -99,6 +99,8 @@ def test_connection_create_is_https_only_and_never_echoes_the_url():
         B.BankConnectionCreate.model_validate(base | {"bank_code": "1234567", "fints_url": "x"})
     with pytest.raises(ValidationError, match=B.BANK_URL_NOT_HTTPS):
         B.BankConnectionPatch.model_validate({"fints_url": "ftp://banking.example"})
+    with pytest.raises(ValidationError, match=B.BANK_URL_NOT_HTTPS):  # the CHECK's LIKE is exact
+        B.BankConnectionCreate.model_validate(base | {"fints_url": "HTTPS://banking.example/f"})
     assert B.BankConnectionPatch.model_validate({"auto_sync": True}).changes() == {
         "auto_sync": True
     }

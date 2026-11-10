@@ -16,7 +16,6 @@ keeps them equal to migration 0019's CHECKs.
 """
 
 from datetime import date, datetime
-from decimal import Decimal
 from enum import StrEnum
 from typing import Annotated
 from uuid import UUID
@@ -47,7 +46,7 @@ def mask_login(login: str) -> str:
 def _https_only(value: str | None) -> str | None:
     """bank_connection.fints_url CHECK (LIKE 'https://%'): a FinTS endpoint is https only.
     The message is a fixed string: it never echoes the URL."""
-    if value is not None and not value.lower().startswith("https://"):
+    if value is not None and not value.startswith("https://"):  # the CHECK is case-sensitive
         raise ValueError(f"{BANK_URL_NOT_HTTPS}: the FinTS URL must use https")
     if value is not None and any(c.isspace() for c in value):
         raise ValueError(f"{BANK_URL_NOT_HTTPS}: the FinTS URL must not contain spaces")
@@ -207,10 +206,3 @@ class BalanceDrift(Schema):
 
     hksal_balance: Money  # HKSAL's booked balance
     last_reconciled_closing: Money  # the account's last reconciled closing
-
-
-def drift(hksal_balance: Decimal, last_reconciled_closing: Decimal) -> Decimal | None:
-    """The documented arithmetic of rules.bank_sync.balance_drift (D117), for the fixture
-    models: HKSAL − last reconciled closing, None when equal. The rule is written in step 1."""
-    difference = hksal_balance - last_reconciled_closing
-    return None if difference == 0 else difference

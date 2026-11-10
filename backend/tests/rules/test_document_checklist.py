@@ -15,6 +15,8 @@ _LISTS = ("acquisition_costs", "loans", "units", "tenancies", "documents")
 @pytest.mark.rule
 @pytest.mark.parametrize("case", FX.cases, ids=lambda c: c.id)
 def test_build_checklist(case):
+    if case.pending:
+        pytest.skip(case.pending)
     assert rules.build_checklist(case.facts, case.tax_year, case.today) == case.expect
 
 
@@ -22,6 +24,8 @@ def test_build_checklist(case):
 @pytest.mark.parametrize("seed", [1, 2, 3])
 @pytest.mark.parametrize("case", FX.cases, ids=lambda c: c.id)
 def test_input_order_does_not_matter(case, seed):
+    if case.pending:
+        pytest.skip(case.pending)
     rng = random.Random(seed)
     shuffled = {}
     for name in _LISTS:

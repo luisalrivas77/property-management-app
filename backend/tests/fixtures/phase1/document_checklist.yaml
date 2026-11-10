@@ -668,3 +668,51 @@ cases:
       - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
       - {code: price_split, status: missing, scope: {type: property, id: *P}}
       - {code: grundsteuerbescheid, status: missing, scope: {type: property, id: *P}}
+
+  # --- Phase 5 D126: the Grundsteuerbescheid from the first full year of ownership ----------
+  # §9 Abs. 1 GrStG: the Grundsteuer is assessed on the conditions at the start of the calendar
+  # year; §10 Abs. 1 GrStG: it is owed by the person the property is attributed to at that
+  # moment. A buyer whose Übergang is in year Y (here 1 May 2024) is therefore not the debtor
+  # for Y (the seller is, on 1 Jan Y) and is the debtor from 1 Jan Y+1; the first Bescheid
+  # addressed to the buyer is issued early in Y+1. Step 3 gives the catalogue entry
+  # applies = year(purchase_date) + 1 onwards and due = 15 Jan Y (a fixed day the spec chose,
+  # D126, not a statutory date: Bescheide are usually sent in January). Until step 3 the rule
+  # lists the Bescheid from the purchase year with no due date, so these cases are pending, and
+  # step 3 also changes every existing case above that lists a grundsteuerbescheid item for the
+  # purchase year or without a due date.
+
+  - id: grundsteuerbescheid_not_required_in_purchase_year
+    description: >
+      bought (Übergang) 1 May 2024: the 2024 Grundsteuer is the seller's (§9 Abs. 1, §10 Abs. 1
+      GrStG), so the checklist for 2024 has no grundsteuerbescheid item at all
+    pending: "phase 5 step 3 (D126): the grundsteuerbescheid entry gains applies and due"
+    tax_year: 2024
+    today: 2024-11-06
+    facts: {<<: *efh}
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+
+  - id: grundsteuerbescheid_expected_15_jan_first_full_year
+    description: >
+      2025 is the first full year of ownership: the item exists with due_on 15 Jan 2025 and is
+      expected on 10 Jan 2025 (due_on > today), not missing yet
+    pending: "phase 5 step 3 (D126): the grundsteuerbescheid entry gains applies and due"
+    tax_year: 2025
+    today: 2025-01-10
+    facts: {<<: *efh}
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: expected, due_on: 2025-01-15, scope: {type: property, id: *P}}
+
+  - id: grundsteuerbescheid_missing_on_15_jan_first_full_year
+    description: on the due date itself the item is missing (due_on <= today), as every dated item
+    pending: "phase 5 step 3 (D126): the grundsteuerbescheid entry gains applies and due"
+    tax_year: 2025
+    today: 2025-01-15
+    facts: {<<: *efh}
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - {code: grundsteuerbescheid, status: missing, due_on: 2025-01-15, scope: {type: property, id: *P}}
