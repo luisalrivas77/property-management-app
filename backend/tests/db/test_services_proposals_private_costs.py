@@ -13,7 +13,9 @@ from db.matching_support import World
 from db.test_services_proposals import _accept_all, _ai_call, _read_ready
 from db.test_services_proposals import enqueued as enqueued  # noqa: F401 (a fixture)
 from db.test_services_proposals import job as job  # noqa: F401 (a fixture)
+from sqlalchemy import select
 
+from hausbuch.db.tables import event as event_table
 from hausbuch.schemas.ai import ClassifyOutput, ExtractedValue, SourceRef
 from hausbuch.schemas.allocation import (
     AllocationCategory,
@@ -22,6 +24,7 @@ from hausbuch.schemas.allocation import (
     AllocationSet,
 )
 from hausbuch.schemas.enums import DocumentType
+from hausbuch.schemas.events import EventType
 from hausbuch.schemas.tax import TaxInputKind
 from hausbuch.services import allocations, matching, proposals
 from hausbuch.services.tax_inputs import list_tax_inputs
@@ -108,6 +111,16 @@ def test_a_repair_bill_paid_from_another_account_is_a_private_cost(
     assert row.value.cost_class == "other" and row.value.label == "Rechnung Reparatur Sanitär"
     applied = {a.key: a.entity_id for a in result.applied}
     assert applied["tax_input:private_cost:repairs"] == row.id
+    # The event keeps the category (a code), never the label (review F3).
+    [event] = world.query(
+        lambda conn: conn.execute(
+            select(event_table.c.payload).where(
+                event_table.c.type == EventType.PROPERTY_TAX_INPUT_RECORDED.value
+            )
+        ).all()
+    )
+    assert event.payload["value"]["category"] == "repairs"
+    assert "Sanitär" not in str(event.payload)
 
     # The same bill read and applied again: the same row, nothing new.
     rerun = run(ws, proposals.rerun_proposal, doc.id)
