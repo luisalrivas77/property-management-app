@@ -100,21 +100,42 @@ def in_force(inputs: Iterable[IncomeInputFact]) -> list[IncomeInputFact]:
     return [r for r in rows if not r.withdrawn and r.id not in superseded]
 
 
+def _employee_shares(gross: Decimal, tariff: Tariff) -> tuple[Decimal, Decimal]:
+    """The employee's pension share and health (× 0.96) plus care shares on `gross`, each up
+    to its Beitragsbemessungsgrenze, unrounded."""
+    si = tariff.social_insurance
+    pension_base = min(gross, si.bbg_pension)
+    health_base = min(gross, si.bbg_health)
+    pension = pension_base * si.pension_rate
+    health_care = (
+        health_base * (si.health_rate + si.health_extra_rate) * si.health_deductible_share
+        + health_base * si.care_rate
+    )
+    return pension, health_care
+
+
 def default_deductions(gross: Decimal, tariff: Tariff) -> Decimal:
     """D84's default deductions of one owner on an expected gross pay, half-up to the cent:
     the two Pauschbeträge plus the employee's pension, health (× 0.96) and care shares up to
     the Beitragsbemessungsgrenzen. Unemployment insurance is not deducted."""
-    si = tariff.social_insurance
-    pension_base = min(gross, si.bbg_pension)
-    health_base = min(gross, si.bbg_health)
-    total = (
-        tariff.employee_allowance
-        + tariff.special_expenses_allowance
-        + pension_base * si.pension_rate
-        + health_base * (si.health_rate + si.health_extra_rate) * si.health_deductible_share
-        + health_base * si.care_rate
+    pension, health_care = _employee_shares(gross, tariff)
+    return cents(
+        tariff.employee_allowance + tariff.special_expenses_allowance + pension + health_care
     )
-    return cents(total)
+
+
+def default_vorsorge(gross: Decimal, tariff: Tariff) -> tuple[Decimal, Decimal]:
+    """The social-insurance part of D84's default deductions as (pension, health and care
+    basis): default_deductions less the two Pauschbeträge, so the two always agree to the
+    cent; pension half-up to the cent, the basis the rest. Phase 4b's whole-return estimate
+    uses it as the Vorsorge of an owner with expected pay only (D113)."""
+    total = (
+        default_deductions(gross, tariff)
+        - tariff.employee_allowance
+        - tariff.special_expenses_allowance
+    )
+    pension = cents(_employee_shares(gross, tariff)[0])
+    return pension, total - pension
 
 
 def household_deductions(household: HouseholdTaxContext, tariff: Tariff) -> Decimal:

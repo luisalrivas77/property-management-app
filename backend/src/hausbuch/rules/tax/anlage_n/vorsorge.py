@@ -8,9 +8,13 @@
   S. 4: the basis always counts, the rest only fills the cap).
 
 A `vorsorge_override` row replaces the three figures as typed (a privately insured owner, a
-civil servant). The certificates are the year's real ones plus the payslip projection.
+civil servant). The certificates are the year's real ones plus the payslip projection. An owner
+with neither, but with an expected gross pay, gets phase 4's D84 default shares
+(`income.default_vorsorge`, source `expected`, D113), so the estimate and the Steuerwirkung
+deduct the same; a certificate or payslip always wins.
 """
 
+from hausbuch.rules.performance.income import default_vorsorge
 from hausbuch.schemas.employment import (
     AnlageNRuleSet,
     OwnerReturnFacts,
@@ -19,6 +23,7 @@ from hausbuch.schemas.employment import (
 )
 from hausbuch.schemas.enums import ReturnInputKind as K
 from hausbuch.schemas.performance import Tariff
+from hausbuch.schemas.tax import SourceRef
 
 from ._base import ZERO, cents, in_year, row_sources
 from .payslip import pay_of_rows
@@ -46,6 +51,20 @@ def vorsorge(
         )
     pay = pay_of_rows(rows, tax_year)
     certs = pay.certificates
+    expected = facts.expected_gross_pay
+    if not certs and expected is not None:
+        # D113: expected pay only. Phase 4's D84 default (the employee's pension, health and
+        # care shares), so the Gesamt card and the Steuerwirkung agree on the same inputs.
+        pension, basis = default_vorsorge(expected.value.amount, tariff)
+        return VorsorgeResult(
+            owner_id=facts.owner_id,
+            pension=pension,
+            health_care_basis=basis,
+            other=ZERO,
+            deductible=pension + basis,
+            source="expected",
+            sources=[SourceRef(kind="income_input", id=expected.id)],
+        )
     source = pay.gross_source or "none"
     contributions = (
         _total(certs, "pension_employee")

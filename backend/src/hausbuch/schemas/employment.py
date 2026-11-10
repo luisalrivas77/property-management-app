@@ -890,7 +890,7 @@ class VorsorgeResult(Schema):
     health_care_basis: NonNegativeMoney
     other: NonNegativeMoney
     deductible: NonNegativeMoney
-    source: Literal["certificate", "payslip", "override", "none"]
+    source: Literal["certificate", "payslip", "override", "expected", "none"]
     sources: list[SourceRef] = Field(default_factory=list)
 
     @model_validator(mode="after")

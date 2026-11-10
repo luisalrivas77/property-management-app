@@ -4,15 +4,17 @@ are not asserted; warnings are compared as a multiset of codes."""
 
 from datetime import date
 from decimal import ROUND_FLOOR, Decimal
+from uuid import UUID
 
 import anlage_n_compare as cmp
 import pytest
 from fixture_models_phase4b import current, load
 
-from hausbuch.rules.performance.income import year_tax_effect
+from hausbuch.rules.performance.income import default_deductions, year_tax_effect
 from hausbuch.rules.tax import registry
 from hausbuch.rules.tax.anlage_n._base import rules_for
 from hausbuch.rules.tax.anlage_n.summary import employment_summary, household_context
+from hausbuch.rules.tax.anlage_n.vorsorge import vorsorge
 from hausbuch.rules.tax.return_estimate import (
     assessed_tax,
     assessed_tax_with_warnings,
@@ -20,6 +22,7 @@ from hausbuch.rules.tax.return_estimate import (
     return_estimate,
 )
 from hausbuch.schemas.employment import PropertyIncome
+from hausbuch.schemas.performance import IncomeInputFact
 
 ZERO = Decimal("0")
 
@@ -114,6 +117,55 @@ def test_an_owner_without_any_pay_counts_with_nothing():
     )
     assert got.income_n[1].status == "none" and got.income_n[1].result == 0
     assert all(m.owner_id != nobody.owner_id for m in got.missing)
+
+
+def _expected_pay(owner_id, amount: str) -> IncomeInputFact:
+    return IncomeInputFact.model_validate(
+        {
+            "id": UUID(int=99),
+            "owner_id": owner_id,
+            "kind": "expected_gross_pay",
+            "tax_year": 2026,
+            "value": {"amount": amount},
+        }
+    )
+
+
+@pytest.mark.rule
+def test_expected_pay_only_takes_phase_4s_default_vorsorge():
+    """D113: an owner with expected pay only deducts phase 4's D84 social-insurance shares, so
+    the Gesamt card and the Steuerwirkung agree; the estimate stays an estimate."""
+    case = next(c for c in load("return_estimate").cases if c.id == "no_benefits_no_child")
+    t, rs = registry.tariff(2026), rules_for(2026)
+    a, b = case.resolved_owners()
+    expected_b = b.model_copy(
+        update={"inputs": [], "expected_gross_pay": _expected_pay(b.owner_id, "40000.00")}
+    )
+    got = vorsorge(expected_b, 2026, rs, t)
+    default = default_deductions(Decimal("40000.00"), t)
+    assert got.deductible == default - t.employee_allowance - t.special_expenses_allowance
+    assert (got.source, got.other) == ("expected", ZERO)
+    assert got.deductible > 0
+    assert [s.id for s in got.sources] == [UUID(int=99)]
+
+    estimate = return_estimate(
+        2026,
+        case.owners,
+        [a, expected_b],
+        current(case.household),
+        [PropertyIncome(property_id=p.property_id, result=p.result) for p in case.properties],
+        case.questionnaire,
+        [],
+        t,
+        rs,
+    )
+    assert estimate.vorsorge_total == vorsorge(a, 2026, rs, t).deductible + got.deductible
+    assert estimate.status == "estimate"
+
+    # A confirmed certificate wins over the expected pay, as before.
+    with_cert = b.model_copy(update={"expected_gross_pay": _expected_pay(b.owner_id, "1.00")})
+    assert vorsorge(with_cert, 2026, rs, t) == vorsorge(b, 2026, rs, t)
+    assert vorsorge(b, 2026, rs, t).source == "certificate"
 
 
 @pytest.mark.rule
