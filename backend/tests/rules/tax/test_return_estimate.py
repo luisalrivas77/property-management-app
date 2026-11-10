@@ -3,12 +3,13 @@
 are not asserted; warnings are compared as a multiset of codes."""
 
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_FLOOR, Decimal
 
 import anlage_n_compare as cmp
 import pytest
 from fixture_models_phase4b import current, load
 
+from hausbuch.rules.performance.income import year_tax_effect
 from hausbuch.rules.tax import registry
 from hausbuch.rules.tax.anlage_n._base import rules_for
 from hausbuch.rules.tax.anlage_n.summary import employment_summary, household_context
@@ -138,3 +139,27 @@ def test_the_household_context_matches_the_estimate():
 )
 def test_filing_deadline(year, deadline):
     assert filing_deadline(year) == deadline
+
+
+@pytest.mark.rule
+@pytest.mark.parametrize(
+    "case_id",
+    ["household_2026", "donation_within_cap", "church_tax_as_special_expense", "childcare_2027"],
+)
+def test_phase_4_base_plus_the_rental_result_is_the_estimates_zve(case_id):
+    """D98, one number for one thing: phase 4's zvE base (from the Anlage N summaries and the
+    household context) plus the property's result is the whole-return estimate's zvE, and the
+    tax effect's 'with' point is the estimate's assessed tax."""
+    case = next(c for c in load("return_estimate").cases if c.id == case_id)
+    year = case.tax_year
+    t, rs = registry.tariff(year), rules_for(year)
+    facts = case.resolved_owners()
+    rental = sum((p.result for p in case.properties), ZERO)
+    employment = [employment_summary(f, year, rs, t) for f in facts]
+    household = household_context(facts, current(case.household), year, rs, t, rental_result=rental)
+    base, effect = year_tax_effect(
+        year, rental, [], case.owners, t, employment=employment, household=household
+    )
+    got = _estimate(case)
+    assert (base.amount + rental).to_integral_value(rounding=ROUND_FLOOR) == got.zve
+    assert effect.breakdown_with.total == got.assessed.total

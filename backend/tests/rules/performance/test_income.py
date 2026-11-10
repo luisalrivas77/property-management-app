@@ -20,7 +20,13 @@ CASES = MARGINAL.cases
 
 def _base(case, t):
     return zve_base(
-        case.tax_year, case.inputs, case.owners, t, assessed_result=case.assessed_result
+        case.tax_year,
+        case.inputs,
+        case.owners,
+        t,
+        assessed_result=case.assessed_result,
+        employment=case.employment or None,
+        household=case.household,
     )
 
 
@@ -32,6 +38,8 @@ def _year_effect(case, t):
         case.owners,
         t,
         assessed_result=case.assessed_result,
+        employment=case.employment or None,
+        household=case.household,
     )
 
 

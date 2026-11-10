@@ -18,12 +18,14 @@ household's context for the assessed tax (D109, D112, D102):
   `min(cents(labour × 20 %), cap)`.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import ROUND_DOWN, Decimal
 from uuid import UUID
 
 from hausbuch.rules.errors import (
+    ANLAGE_N_NO_PAY,
     RETURN_CHILDCARE_AGE,
     RETURN_HOUSEHOLD_SERVICES_CASH,
     RETURN_INPUT_SCOPE_INVALID,
@@ -40,7 +42,7 @@ from hausbuch.schemas.enums import ReturnInputKind as K
 from hausbuch.schemas.performance import HouseholdTaxContext, Tariff
 from hausbuch.schemas.tax import DraftWarning, SourceRef, WarningCode
 
-from ._base import ZERO, cents, in_year, row_sources
+from ._base import SPANNING_KINDS, ZERO, cents, current, in_year, row_sources
 from .draft import Itemised, itemise
 from .vorsorge import vorsorge
 
@@ -210,3 +212,66 @@ def household_context(
     items = {f.owner_id: itemise(f, tax_year, rs, tariff) for f in owner_facts}
     gde = sum((i.result for i in items.values()), ZERO) + rental_result
     return household_figures(items, owner_facts, household_rows, gde, tax_year, tariff).context
+
+
+Contexts = tuple[list[OwnerEmployment] | None, HouseholdTaxContext | None]
+
+
+@dataclass
+class TaxContexts:
+    """The D98 contexts of a year for phase 4's tax effect, from the household's current
+    return_input rows (`owner_facts` with every year's rows, `household_rows` the household
+    kinds'). Call it with the year and the property's result of that year (the GdE for the
+    donation cap).
+
+    The source year S is the latest year ≤ Y with a current row of a yearly kind (a child or a
+    work item alone, being spanning rows, make no year). No such year: (None, None), phase 4
+    unchanged. At S: an Anlage N summary per owner whose pay of S is a certificate or payslips
+    (an owner with only expected pay gets none, so D84's default stays); the household context
+    of S over those owners. A projected year after S reuses S's figures (D98's carry-forward:
+    the certified pay, the itemised costs) with no wage-replacement benefits, and the children
+    in force in Y (assessed_tax counts their months for Y)."""
+
+    owner_facts: list[OwnerReturnFacts]
+    household_rows: list[ReturnInputFact]
+    rules: Callable[[int], AnlageNRuleSet]
+    tariffs: Callable[[int], Tariff]
+
+    def source_year(self, tax_year: int) -> int | None:
+        rows = [*(r for f in self.owner_facts for r in f.inputs), *self.household_rows]
+        years = [
+            r.tax_year
+            for r in current(rows)
+            if r.kind not in SPANNING_KINDS and r.tax_year <= tax_year
+        ]
+        return max(years) if years else None
+
+    def __call__(self, tax_year: int, rental_result: Decimal = ZERO) -> Contexts:
+        year = self.source_year(tax_year)
+        if year is None:
+            return None, None
+        rs, tariff = self.rules(year), self.tariffs(year)
+        items: dict[UUID, Itemised] = {}
+        for f in self.owner_facts:
+            try:
+                items[f.owner_id] = itemise(f, year, rs, tariff)
+            except RuleError as error:
+                if error.code != ANLAGE_N_NO_PAY:
+                    raise
+        counted = [f for f in self.owner_facts if f.owner_id in items]
+        employment = [
+            employment_summary(f, year, rs, tariff)
+            for f in counted
+            if items[f.owner_id].gross_source in ("certificate", "payslip")
+        ]
+        gde = sum((i.result for i in items.values()), ZERO) + rental_result
+        context = household_figures(items, counted, self.household_rows, gde, year, tariff).context
+        if year < tax_year:
+            in_force = in_year(self.household_rows, tax_year)
+            context = context.model_copy(
+                update={
+                    "replacement_benefits": ZERO,
+                    "children": [r.value for r in in_force if r.kind is K.CHILD],
+                }
+            )
+        return employment or None, context
