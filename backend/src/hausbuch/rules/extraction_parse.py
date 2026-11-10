@@ -77,11 +77,15 @@ def parse_lines(
     Only keys of EXTRACTION_MODELS[kind] count; a repeated key: the last line wins. A field
     the response did not mention is not in the result (the caller fills it with
     ExtractedValue.missing()). page_offset is the first page of the request's chunk minus 1,
-    for a PDF split into several requests.
+    for a PDF split into several requests. For the two pay documents (SCRUBBED_KINDS) every
+    line and every quote is scrubbed of identifiers first (scrub_identifiers, D103).
     """
     model = EXTRACTION_MODELS[kind]
+    scrub = kind in SCRUBBED_KINDS
     result: dict[str, ExtractedValue] = {}
     for text, contributors in _lines(blocks):
+        if scrub:
+            text = scrub_identifiers(text)
         match = _KEY_LINE.fullmatch(text)
         if match is None or match.group(1) not in model.model_fields:
             continue
@@ -92,6 +96,8 @@ def parse_lines(
             result[key] = ExtractedValue.missing()
             continue
         source = _source(blocks, contributors, page_offset)
+        if scrub and source is not None:
+            source = source.model_copy(update={"quote": scrub_identifiers(source.quote)})
         result[key] = _extracted(raw, value_kind(model, key), source)
     return result
 
@@ -331,6 +337,82 @@ def _iban(raw: str) -> str:
     raise _Invalid("not a valid IBAN")
 
 
+# --- The identifier scrub of the pay documents (phase-4b.md D96, D103, §8.3) -------------
+
+# The two kinds whose lines and quotes are scrubbed before anything is stored: an owner's
+# Lohnsteuerbescheinigung and payslip. The model sees the whole page; a quote it cites can
+# span a neighbouring field, and a value it writes can carry more than was asked.
+SCRUBBED_KINDS = frozenset(
+    {ExtractionKind.LOHNSTEUERBESCHEINIGUNG, ExtractionKind.GEHALTSABRECHNUNG}
+)
+SCRUBBED = "…"
+
+# Each pattern stays within one line ([ \t], never \s), so a scrubbed text keeps its lines.
+_H = r"[ \t]"
+# A label, an optional colon, and what follows it on the line up to the next label-like break.
+_LETTER = "A-Za-zÄÖÜäöüß"
+# One token of an identifier's value: it holds a digit ("12", "14.03.1988", "MSTRMXMS88C14K",
+# "DE89"), or is a single capital (the letter inside a Sozialversicherungsnummer) or a month.
+_ID_TOKEN = (
+    r"(?:(?:januar|februar|märz|april|mai|juni|juli|august|september|oktober|november"
+    rf"|dezember)(?![{_LETTER}])|[A-Za-z0-9./-]*[0-9][A-Za-z0-9./-]*|[A-Z](?![{_LETTER}]))"
+)
+_LABELLED = re.compile(
+    rf"(?<![{_LETTER}])"
+    r"(?P<label>(?:steuerliche[ \t]+)?identifikations-?nummer|identifikations-?nr\.?"
+    r"|id\.?-?nr\.?|steuer-?id(?:entifikationsnummer)?|e-?tin|transfer-?ticket"
+    r"|sozialversicherungs-?(?:nummer|nr\.?)|sv-?(?:nummer|nr\.?)"
+    r"|versicherungs-?(?:nummer|nr\.?)|rv-?(?:nummer|nr\.?)|personal-?(?:nummer|nr\.?)"
+    r"|pers\.?-?nr\.?|p-?nr\.?|arbeitnehmer-?(?:nummer|nr\.?)|mitarbeiter-?(?:nummer|nr\.?)"
+    r"|steuer-?(?:nummer|nr\.?)|st\.?-?nr\.?|iban|geburtsdatum|geb\.?-?datum"
+    r"|geboren(?:[ \t]+am)?|geb\.(?:[ \t]*am)?)"
+    rf"(?<![{_LETTER}](?=[{_LETTER}]))(?![{_LETTER}])"
+    rf"(?P<sep>{_H}*:?{_H}*)"
+    rf"(?P<value>{_ID_TOKEN}(?:{_H}{{1,3}}{_ID_TOKEN})*)",
+    re.IGNORECASE,
+)
+_PATTERNS = (
+    # Identifikationsnummer, as printed on the form ("12 345 678 901") or run together.
+    re.compile(rf"(?<![0-9])[0-9]{{2}}{_H}?[0-9]{{3}}{_H}?[0-9]{{3}}{_H}?[0-9]{{3}}(?![0-9])"),
+    # Sozialversicherungsnummer: area, birth date, the surname's letter, serial and check digit.
+    re.compile(
+        rf"(?<![0-9A-Za-z])[0-9]{{2}}{_H}?[0-9]{{6}}{_H}?[A-Z]{_H}?[0-9]{{2}}{_H}?[0-9](?![0-9])"
+    ),
+    # eTIN: eight letters of the name, the birth year, a month letter, the day and a check letter.
+    re.compile(r"(?<![A-Za-z0-9])[A-Z]{8}[0-9]{2}[A-Z][0-9]{2}[A-Z](?![A-Za-z0-9])"),
+    # An IBAN, grouped or not.
+    re.compile(r"(?<![A-Za-z0-9])[A-Z]{2}[0-9]{2}(?:[ \t]?[A-Z0-9]){11,30}(?![A-Za-z0-9])"),
+    # A Steuernummer ("12/345/67890", "143/123/45678") and any run of nine or more digits (an
+    # amount on these documents always has separators).
+    re.compile(r"(?<![0-9/])[0-9]{2,3}/[0-9]{3,4}/[0-9]{4,5}(?![0-9/])"),
+    re.compile(r"(?<![0-9])[0-9]{9,}(?![0-9])"),
+    # A street with its number ("Musterweg 9", "Industriestr. 5a") and a postal code with its
+    # town ("12345 Musterstadt"): the employee's or the employer's address.
+    re.compile(
+        rf"(?<![{_LETTER}])(?:[A-ZÄÖÜ][{_LETTER}.-]*?)?(?i:straße|strasse|str\.|weg|gasse|platz"
+        rf"|allee|ring|damm|ufer|chaussee|steig|pfad){_H}+[0-9]{{1,4}}(?:{_H}?[a-z])?"
+        r"(?![0-9A-Za-z])",
+    ),
+    re.compile(
+        rf"(?<![0-9.,])[0-9]{{5}}{_H}+(?!(?:EUR|Euro)\b)[A-ZÄÖÜ][A-Za-zÄÖÜäöüß-]+"
+        rf"(?:{_H}+(?:am|an[ \t]der|im|in[ \t]der|ob[ \t]der)?{_H}*[A-ZÄÖÜ][A-Za-zÄÖÜäöüß-]+)?"
+    ),
+)
+
+
+def scrub_identifiers(text: str) -> str:
+    """The text with every identifier of a pay document replaced by "…" (D103): a value after
+    an identifier's label (Identifikationsnummer, eTIN, Sozialversicherungsnummer,
+    Personalnummer, Steuernummer, IBAN, Geburtsdatum, ...), an Identifikationsnummer, a
+    Sozialversicherungsnummer, an eTIN, an IBAN, a Steuernummer, any run of nine or more
+    digits, a street with its house number and a postal code with its town. Amounts, the
+    period's dates, the tax class and names stay. Pure and idempotent; lines are kept."""
+    text = _LABELLED.sub(lambda m: f"{m.group('label')}{m.group('sep')}{SCRUBBED}", text)
+    for pattern in _PATTERNS:
+        text = pattern.sub(SCRUBBED, text)
+    return text
+
+
 # --- Which field set a classified document gets -----------------------------------------
 
 _BY_SUBTYPE: dict[DocumentSubtype, ExtractionKind] = {
@@ -348,6 +430,8 @@ _BY_TYPE: dict[DocumentType, ExtractionKind] = {
     DocumentType.HAUSGELDABRECHNUNG: ExtractionKind.HAUSGELDABRECHNUNG,
     DocumentType.ZINSBESCHEINIGUNG: ExtractionKind.ZINSBESCHEINIGUNG,
     DocumentType.STATEMENT: ExtractionKind.STATEMENT,
+    DocumentType.LOHNSTEUERBESCHEINIGUNG: ExtractionKind.LOHNSTEUERBESCHEINIGUNG,
+    DocumentType.GEHALTSABRECHNUNG: ExtractionKind.GEHALTSABRECHNUNG,
 }
 
 # The classifier's types that hold tenant data whatever the upload said (§5.5 step 3).

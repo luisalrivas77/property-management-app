@@ -20,6 +20,11 @@ Answer with exactly one line per listed field, in the listed order, and nothing 
 - When the document does not state a field, write `field_key: unbekannt`. Never guess, and
   never derive a value from other values.
 - A field marked `(list)` takes several values separated by `; `.
+- Read the figure next to the printed label; the line numbers may differ between years. On a
+  payslip, a field "of the month" is the month's column and a field "Jahreswerte /
+  kumuliert" the column of the year so far (Jahreswerte, kumuliert, Jahressumme, lfd. Jahr).
+  Never write an identification number, a social insurance number, a date of birth, a
+  personnel number, an address or an account number into any value.
 - When a clause gives a condition instead of a date (for example "Tag der vollständigen
   Kaufpreiszahlung"), write `unbekannt` for the date.
 - One line per field, no headings, no comments, no blank lines between fields.

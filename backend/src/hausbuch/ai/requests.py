@@ -39,7 +39,7 @@ import anthropic
 from hausbuch.schemas.ai import AiJob, ClassifyOutput, ConfidenceLevel
 from hausbuch.schemas.allocation import LlmMatchOutput
 from hausbuch.schemas.common import Schema
-from hausbuch.schemas.enums import DocumentType, ExtractionKind
+from hausbuch.schemas.enums import ExtractionKind
 from hausbuch.schemas.extraction import EXTRACTION_MODELS, ValueKind, value_kind
 from hausbuch.settings import Settings
 
@@ -89,21 +89,11 @@ def load_prompt(name: str) -> Prompt:
     )
 
 
-# The document types the classifier may answer. The two phase 4b pay documents (D96) are in
-# DocumentType and the document.type CHECK since migration 0018 but join the classifier in
-# phase 4b step 2, which re-records the classify evals; until then the request schema (and so
-# every recorded request hash) stays as it was.
-NOT_YET_CLASSIFIED = frozenset(
-    {DocumentType.LOHNSTEUERBESCHEINIGUNG.value, DocumentType.GEHALTSABRECHNUNG.value}
-)
-
-
 @cache
 def classify_schema() -> dict:
-    schema = ClassifyOutput.model_json_schema()
-    doc_type = schema["$defs"]["DocumentType"]
-    doc_type["enum"] = [v for v in doc_type["enum"] if v not in NOT_YET_CLASSIFIED]
-    return anthropic.transform_schema(schema)
+    """The classify output schema: every DocumentType, the two phase 4b pay documents included
+    since phase 4b step 2 (D96) gave them their extraction."""
+    return anthropic.transform_schema(ClassifyOutput.model_json_schema())
 
 
 def classify_request(settings: Settings, document: dict) -> ModelRequest:
