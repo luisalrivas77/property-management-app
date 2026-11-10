@@ -44,6 +44,7 @@ import { documentLabel } from "./documents";
 import { formatDate, formatDateTime, formatMoney } from "./format";
 import { INBOX_ITEM_KIND } from "./labels";
 import { ReminderDone, reminderLabel, reminderLink, type Reminder } from "./reminders";
+import { reminderTodo } from "./todos";
 import { ActionDialog, Notice } from "./ui";
 
 // Step 4's schemas have no alias in schemas.ts yet.
@@ -352,6 +353,7 @@ function EntryTitle({ item, data }: { item: InboxItem; data: InboxData }) {
       <>
         <strong>{reminderLabel(reminder)}</strong>
         <span className="inbox-detail">fällig am {formatDate(reminder.due_on)}</span>
+        {reminderTodo(reminder) ? <span className="inbox-detail todo-text">Was tun: {reminderTodo(reminder)}</span> : null}
       </>
     ) : (
       <strong>Termin</strong>

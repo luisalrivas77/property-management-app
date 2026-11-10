@@ -2,15 +2,18 @@
 
 // Unterlagen (spec amendment 3): the documents a tax year of this property needs, as
 // GET /properties/{id}/checklist computes them (rules.document_checklist). Status, labels and
-// hints only; nothing is decided here. German texts are keyed by requirement code. Styled
-// like the "Paperwork for this return" card of docs/mockups/04-tax-year.png.
+// hints only; nothing is decided here. The title, hint, Was tun and fix of each requirement
+// code live in components/todos.tsx (REQUIREMENT_GUIDE, phase-3.md D136), shared with the
+// "Was noch fehlt" lists. Styled like the "Paperwork for this return" card of
+// docs/mockups/04-tax-year.png.
 import Link from "next/link";
 import { useCallback, useId, useState } from "react";
 
 import { api, ok } from "@/api/client";
-import type { ChecklistDocumentRef, ChecklistStatus, DocumentChecklistItem, RequirementCode } from "@/api/schemas";
-import { formatDate, formatMoney } from "@/components/format";
-import { ACQUISITION_COST_KIND, ALLOCATION_CATEGORY, DOCUMENT_SUBTYPE, DOCUMENT_TYPE } from "@/components/labels";
+import type { AllocationFact, ChecklistDocumentRef, ChecklistStatus, DocumentChecklistItem } from "@/api/schemas";
+import { formatDate } from "@/components/format";
+import { DOCUMENT_SUBTYPE, DOCUMENT_TYPE } from "@/components/labels";
+import { REQUIREMENT_GUIDE, requirementFix, requirementTodo } from "@/components/todos";
 import { Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 
@@ -28,102 +31,6 @@ const STATUS_GLYPH: Record<ChecklistStatus, string> = {
   incomplete: "!",
 };
 
-interface Requirement {
-  /** The row's title; `year` is the checklist's tax year. */
-  title: (item: DocumentChecklistItem, year: number) => string;
-  hint: string;
-  /** Where a missing item is fixed: a property tab, or the loan's or tenancy's page. */
-  fix: (item: DocumentChecklistItem, propertyId: string) => { href: string; label: string };
-}
-
-function scopeSuffix(item: DocumentChecklistItem): string {
-  const scope = item.scope;
-  if (scope.type === "loan") return scope.lender ? ` · ${scope.lender}` : "";
-  if (scope.type === "tenancy") return ` · ${scope.unit_label ?? "Einheit"}, ab ${formatDate(scope.tenancy_start)}`;
-  return "";
-}
-
-const propertyTab = (tab: string, label: string) => (_: DocumentChecklistItem, propertyId: string) => ({
-  href: `/properties/${propertyId}?tab=${tab}`,
-  label,
-});
-const loanPage = (item: DocumentChecklistItem) => ({ href: `/loans/${item.scope.id}`, label: "Beim Darlehen verknüpfen" });
-const tenancyPage = (item: DocumentChecklistItem) => ({
-  href: `/tenancies/${item.scope.id}`,
-  label: "Beim Mietverhältnis verknüpfen",
-});
-
-const REQUIREMENTS: Record<RequirementCode, Requirement> = {
-  purchase_contract: {
-    title: () => "Kaufvertrag",
-    hint: "Grundlage für AfA und Spekulationsfrist",
-    fix: propertyTab("dokumente", "Unter Dokumente verknüpfen"),
-  },
-  price_split: {
-    title: () => "Kaufpreisaufteilung",
-    hint: "Gebäudeanteil als AfA-Basis",
-    fix: propertyTab("aufteilung", "Kaufpreisaufteilung wählen"),
-  },
-  acquisition_cost_evidence: {
-    title: (item) =>
-      `Beleg ${item.scope.cost_kind ? ACQUISITION_COST_KIND[item.scope.cost_kind] : "Nebenkosten"} ${formatMoney(item.scope.cost_amount)}`,
-    hint: "Nebenkosten gehören in die AfA-Basis",
-    fix: propertyTab("nebenkosten", "Beleg unter Nebenkosten zuordnen"),
-  },
-  grundsteuerbescheid: {
-    title: () => "Grundsteuerbescheid",
-    hint: "Gilt, bis ein neuer Bescheid kommt",
-    fix: propertyTab("dokumente", "Unter Dokumente verknüpfen"),
-  },
-  loan_contract: {
-    title: (item) => `Darlehensvertrag${scopeSuffix(item)}`,
-    hint: "Zinsen sind Werbungskosten, Tilgung nicht",
-    fix: loanPage,
-  },
-  zinsbescheinigung: {
-    title: (item, year) => `Zinsbescheinigung ${year}${scopeSuffix(item)}`,
-    hint: "Die Bank schickt sie meist im Januar",
-    fix: loanPage,
-  },
-  lease: {
-    title: (item) => `Mietvertrag${scopeSuffix(item)}`,
-    hint: "Grundlage der Mieteinnahmen",
-    fix: tenancyPage,
-  },
-  handover_protocol: {
-    title: (item) => `Übergabeprotokoll${scopeSuffix(item)}`,
-    hint: "Zustand der Wohnung beim Einzug",
-    fix: tenancyPage,
-  },
-  deposit_record: {
-    title: (item) => `Kautionsnachweis${scopeSuffix(item)}`,
-    hint: "Kautionskonto oder Bürgschaft",
-    fix: tenancyPage,
-  },
-  wirtschaftsplan: {
-    title: (_, year) => `Wirtschaftsplan ${year} (WEG)`,
-    hint: "Für die genaue Aufteilung des Hausgelds",
-    fix: propertyTab("dokumente", "Unter Dokumente verknüpfen"),
-  },
-  hausgeldabrechnung: {
-    title: (_, year) => `Hausgeldabrechnung ${year} (WEG)`,
-    hint: "Kommt meist im Frühjahr des Folgejahres",
-    fix: propertyTab("dokumente", "Unter Dokumente verknüpfen"),
-  },
-  // Phase 3 (§8, D64); the Steuern screen and its inputs come in steps 1 and 2.
-  cost_receipt: {
-    title: (item) =>
-      `Beleg ${item.scope.category ? ALLOCATION_CATEGORY[item.scope.category] : "Zahlung"} ${formatDate(item.scope.booking_date)}`,
-    hint: "Rechnung zur Zahlung, falls das Finanzamt fragt",
-    fix: propertyTab("dokumente", "Unter Dokumente verknüpfen"),
-  },
-  market_rent: {
-    title: (item) => `Ortsübliche Miete${item.scope.type === "unit" ? ` · ${item.scope.unit_label ?? "Einheit"}` : ""}`,
-    hint: "Mietspiegel-Wert für den Vergleich mit der vereinbarten Miete",
-    fix: propertyTab("dokumente", "Mietspiegel unter Dokumente ablegen"),
-  },
-};
-
 /** "Kaufvertrag · 15.03.2024": by type and date, never by title (titles can name a tenant). */
 function refLabel(ref: ChecklistDocumentRef): string {
   const kind = ref.subtype ? DOCUMENT_SUBTYPE[ref.subtype] : ref.type ? DOCUMENT_TYPE[ref.type] : "Dokument";
@@ -132,7 +39,7 @@ function refLabel(ref: ChecklistDocumentRef): string {
 }
 
 function hintFor(item: DocumentChecklistItem): string {
-  const base = REQUIREMENTS[item.code].hint;
+  const base = REQUIREMENT_GUIDE[item.code].hint;
   if (item.status === "incomplete") return "Steuerjahr am Dokument eintragen";
   if (item.status === "expected" && item.due_on) return `${base} · erwartet bis ${formatDate(item.due_on)}`;
   if (item.code === "price_split" && item.status === "present" && item.documents.length === 0) {
@@ -142,8 +49,19 @@ function hintFor(item: DocumentChecklistItem): string {
 }
 
 /** `year`, when given, fixes the tax year and hides the selector (the Steuern screen, whose
- * own selector sets it). */
-export function ChecklistTab({ propertyId, year: fixedYear }: { propertyId: string; year?: number }) {
+ * own selector sets it). `refresh` reloads the list after an action elsewhere on the screen;
+ * `payments` (the draft's cited payments) lets a missing receipt open its bank line. */
+export function ChecklistTab({
+  propertyId,
+  year: fixedYear,
+  refresh = 0,
+  payments,
+}: {
+  propertyId: string;
+  year?: number;
+  refresh?: number;
+  payments?: Map<string, AllocationFact>;
+}) {
   const [chosenYear, setYear] = useState<number | null>(null);
   const year = fixedYear ?? chosenYear;
   const [years, setYears] = useState<number[]>([]);
@@ -162,7 +80,8 @@ export function ChecklistTab({ propertyId, year: fixedYear }: { propertyId: stri
         if (year === null) setDefaultYear(data.tax_year);
         return data;
       }),
-    [propertyId, year],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh forces a reload
+    [propertyId, year, refresh],
   );
   const checklist = useLoad(load);
   const shownYear = year ?? defaultYear;
@@ -197,6 +116,7 @@ export function ChecklistTab({ propertyId, year: fixedYear }: { propertyId: stri
                   item={item}
                   year={data.tax_year}
                   propertyId={propertyId}
+                  payments={payments}
                 />
               ))}
             </ul>
@@ -208,9 +128,20 @@ export function ChecklistTab({ propertyId, year: fixedYear }: { propertyId: stri
   );
 }
 
-function ChecklistRow({ item, year, propertyId }: { item: DocumentChecklistItem; year: number; propertyId: string }) {
-  const requirement = REQUIREMENTS[item.code];
-  const fix = item.status === "missing" || item.status === "expected" ? requirement.fix(item, propertyId) : null;
+function ChecklistRow({
+  item,
+  year,
+  propertyId,
+  payments,
+}: {
+  item: DocumentChecklistItem;
+  year: number;
+  propertyId: string;
+  payments?: Map<string, AllocationFact>;
+}) {
+  const guide = REQUIREMENT_GUIDE[item.code];
+  const fix = requirementFix(item, { propertyId, payments });
+  const todo = requirementTodo(item);
   return (
     <li className={`checklist-item checklist-${item.status}`}>
       <span className="checklist-icon" aria-hidden="true">
@@ -218,10 +149,15 @@ function ChecklistRow({ item, year, propertyId }: { item: DocumentChecklistItem;
       </span>
       <div>
         <p className="checklist-title">
-          {requirement.title(item, year)}
+          {guide.title(item, year)}
           <span className="visually-hidden">: {STATUS_LABEL[item.status]}</span>
         </p>
         <p className="checklist-hint">{hintFor(item)}</p>
+        {todo ? (
+          <p className="checklist-hint todo-text">
+            <strong>Was tun:</strong> {todo}
+          </p>
+        ) : null}
         {item.documents.length > 0 || fix ? (
           <p className="checklist-links">
             {item.documents.map((ref) => (

@@ -34,7 +34,10 @@ export default function OwnersPage() {
       <Loading state={owners}>
         {(list) =>
           list.length === 0 ? (
-            <p className="muted">Noch keine Eigentümer.</p>
+            <p className="muted">
+              Noch keine Eigentümer. Unten unter <a href="#eigentuemer-anlegen">Eigentümer anlegen</a> die Personen
+              eintragen.
+            </p>
           ) : (
             <div className="table-wrap">
               <table>
@@ -88,19 +91,22 @@ export default function OwnersPage() {
           )
         }
       </Loading>
-      <h2>Einkommen</h2>
+      <h2 id="einkommen">Einkommen</h2>
       <div className="card">
         <Loading state={owners}>
           {(list) =>
             list.length === 0 ? (
-              <p className="muted">Zuerst die Eigentümer anlegen, dann ihr Einkommen eintragen.</p>
+              <p className="muted">
+                Zuerst unten die <a href="#eigentuemer-anlegen">Eigentümer anlegen</a>, dann hier ihr Einkommen
+                eintragen.
+              </p>
             ) : (
               <IncomeSection owners={list} />
             )
           }
         </Loading>
       </div>
-      <h2>Eigentümer anlegen</h2>
+      <h2 id="eigentuemer-anlegen">Eigentümer anlegen</h2>
       <div className="card">
         <OwnerForm
           key={owners.data?.length ?? 0}

@@ -12,7 +12,7 @@ Favor reusing existing patterns and utilities you find in the codebase over inve
 
 ## In this repo (Hausbuch)
 
-- `docs/ARCHITECTURE.md` is the source of truth, and its six architecture principles are non-negotiable. Read it and the current phase spec in `docs/phases/` before designing.
+- `docs/ARCHITECTURE.md` is the source of truth, and its seven architecture principles are non-negotiable. Read it and the current phase spec in `docs/phases/` before designing.
 - A design that changes the architecture must say which part of `docs/ARCHITECTURE.md` (including its Decisions table) has to change, and why.
 - A phase starts with a spec PR: Pydantic schemas, a hand-written SQL migration, and YAML rule fixtures with worked examples. Shape your plan so it can land that way, and name the fixtures and their cases.
 - Money and tax figures come from deterministic code, never a model (principle 1). Flag anything that would blur that line.

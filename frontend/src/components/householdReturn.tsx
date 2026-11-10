@@ -134,7 +134,7 @@ export function HouseholdReturnBlocks({ year }: { year: number }) {
         <Link href={`/tax/${year}?tab=anlage-n`}>Anlage N {year} ansehen</Link>
         <Link href={`/tax/${year}/fragen`}>Jahresfragen {year} beantworten</Link>
       </p>
-      <h3>Kinder</h3>
+      <h3 id="kinder">Kinder</h3>
       <p className="muted">
         Für jedes Kind zählen nur der Geburtsmonat und ab wann Kindergeld gezahlt wird; ein Name wird nicht gespeichert.
         Das Finanzamt vergleicht Kindergeld und Kinderfreibeträge und nimmt, was günstiger ist.
@@ -152,7 +152,7 @@ export function HouseholdReturnBlocks({ year }: { year: number }) {
           </>
         )}
       </Loading>
-      <h3>Haushalt: Handwerker, Spenden, Kinderbetreuung</h3>
+      <h3 id="haushalt">Haushalt: Handwerker, Spenden, Kinderbetreuung</h3>
       <ItemBlock
         year={year}
         kind="household_services"
