@@ -39,6 +39,8 @@ Documents as the matcher sees them (DocumentFacts), from each document's current
   Grundsteuerbescheid -> grundsteuer; any other invoice or Bescheid -> uncategorized (the
   spec names no category for it, and uncategorized never auto-confirms);
 - an invoice or Bescheid pays amount_total on its document_date (else due_on);
+- its parts by kind of cost (D135, rules.prefill.sort_reading over the stored reading): a
+  Grundschuld part takes the loan as a financing bill does;
 - a Grundsteuerbescheid pays its installment on each stated due date, every year from its
   tax_year until the next Bescheid of the property (or next year); no due dates -> no facts;
 - a one-payment document that already backs a confirmed allocation of another line is left
@@ -51,6 +53,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
+from functools import partial
 from typing import Any, Literal
 from uuid import UUID
 
@@ -77,14 +80,16 @@ from hausbuch.rules import matching as matchers
 from hausbuch.rules.errors import RuleError
 from hausbuch.rules.iban import iban_hmac, normalize_iban
 from hausbuch.rules.periods import service_period
-from hausbuch.rules.prefill import names_financing
+from hausbuch.rules.prefill import names_financing, sort_reading
 from hausbuch.rules.review import route
+from hausbuch.schemas.ai import ExtractedValue
 from hausbuch.schemas.allocation import (
     Allocation,
     AllocationCategory,
     AllocationMethod,
     AllocationSet,
     DocumentFacts,
+    DocumentPart,
     DuePayment,
     HistoryLine,
     HistoryRow,
@@ -485,6 +490,15 @@ def document_facts(
         category = C.ACQUISITION_COST
     else:
         category = C.UNCATEGORIZED
+    bill = sort_reading(x.kind, e.row.subtype, partial(_extracted, x))
+    if bill.parts and loan_id is None and C.LOAN_FEES in bill.parts:
+        # A Grundschuld part of a mixed bill (D135): on the linked loan, else the property's
+        # only loan, as a financing bill's.
+        if len(e.loan_ids) == 1:
+            loan_id = e.loan_ids[0]
+        elif not e.loan_ids and e.property_id is not None:
+            candidates = loans_by_property.get(e.property_id, [])
+            loan_id = candidates[0] if len(candidates) == 1 else None
     property_id = e.property_id
     if loan_id is not None and property_id is None:
         property_id = next(p for p, ids in loans_by_property.items() if loan_id in ids)
@@ -497,7 +511,14 @@ def document_facts(
         payments=[DuePayment(due_on=paid_on, amount=amount)],
         iban_hmac=_hmac(_value(x, "iban"), iban_key),
         reference=_value(x, "reference") or None,
+        parts=[DocumentPart(category=c, amount=a) for c, a in bill.parts.items()],
     )
+
+
+def _extracted(extraction: DocumentExtraction, name: str) -> ExtractedValue:
+    """A field of the stored reading as rules.prefill reads it; missing when absent."""
+    value = getattr(extraction.fields, name, None)
+    return value if isinstance(value, ExtractedValue) else ExtractedValue.missing()
 
 
 def paid_from_rental_account(

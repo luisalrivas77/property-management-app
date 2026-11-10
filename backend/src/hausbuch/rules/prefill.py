@@ -299,6 +299,25 @@ def sort_bill(
     return BillSort(whole_financing and not parts, parts)
 
 
+def sort_reading(
+    kind: ExtractionKind | None,
+    subtype: str | None,
+    ev: Callable[[str], ExtractedValue],
+) -> BillSort:
+    """sort_bill over a reading's values (`ev` gives a field's value, missing when absent).
+    The catalogue's invoices (a utility bill, a §35a or work-expense invoice, D131) are never
+    sorted: they are no Nebenkosten or financing cost of the purchase."""
+    if subtype in _CATALOGUE_INVOICES:
+        return BillSort(False, {})
+    return sort_bill(
+        kind=kind,
+        subject=ev("subject").value,
+        title=ev("title").value,
+        cost_lines=ev("cost_lines"),
+        amount_total=ev("amount_total"),
+    )
+
+
 def _line_parts(
     read: ExtractedValue, total: ExtractedValue, whole_financing: bool
 ) -> dict[AllocationCategory, Decimal]:
@@ -565,17 +584,7 @@ class _Builder:
         self.catalogue_invoice = context.classification.subtype in _CATALOGUE_INVOICES
         # A Grundbuchamt Kostenrechnung may be typed bescheid, which has no subject (D35, F1).
         # Its cost lines decide whether it is whole or split by kind of cost (D135).
-        self.bill = (
-            BillSort(False, {})
-            if self.catalogue_invoice
-            else sort_bill(
-                kind=kind,
-                subject=self.ev("subject").value,
-                title=self.ev("title").value,
-                cost_lines=self.ev("cost_lines"),
-                amount_total=self.ev("amount_total"),
-            )
-        )
+        self.bill = sort_reading(kind, context.classification.subtype, self.ev)
         self.financing = self.bill.financing
 
     # -- values

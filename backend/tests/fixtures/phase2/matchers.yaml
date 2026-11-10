@@ -63,6 +63,14 @@
 #   category loan_fees); recurring true when the document has
 #   more than one payment (a Grundsteuerbescheid's installments), else false; method
 #   document_match, confidence 0.95 (auto-confirm per thresholds.yaml).
+#   D135 (10 Nov 2026): a document with parts (its cost lines sorted by kind of cost,
+#   rules.prefill.sort_bill) of more than one category, or of one category other than the
+#   document's: one allocation per part in the parts' order, signed as the line, each with
+#   the document, its property, and the loan on the loan_fees part only; the last part is the
+#   line's amount less the others (the cent difference to the total lands there); no service
+#   period, recurring false; method document_match, confidence 0.5 and a question (always to
+#   review: a part's category may be the model's). Parts of the document's one category: as
+#   above.
 
 ids:
   property: &P 0000000b-0000-4000-8000-000000000001
@@ -73,6 +81,8 @@ ids:
   doc_grundsteuer: &D_GS 0000000d-0000-4000-8000-000000000001
   doc_notary: &D_NOTARY 0000000d-0000-4000-8000-000000000002
   doc_grundschuld: &D_GRUNDSCHULD 0000000d-0000-4000-8000-000000000003
+  doc_mixed: &D_MIXED 0000000d-0000-4000-8000-000000000004
+  doc_repair: &D_REPAIR 0000000d-0000-4000-8000-000000000005
   hmac_tenant: &H_TENANT "1111111111111111111111111111111111111111111111111111111111111111"
   hmac_owner: &H_OWNER "2222222222222222222222222222222222222222222222222222222222222222"
   hmac_loan: &H_LOAN "3333333333333333333333333333333333333333333333333333333333333333"
@@ -144,6 +154,30 @@ context:
         - {due_on: 2026-03-20, amount: "612.88"}
       iban_hmac: *H_NOTARY
       reference: RE26/00001
+    # D135: a notary bill for the Kaufvertrag (800 + its share of the USt) and the Grundschuld
+    # (200 + its share), 1,190.00 in all.
+    - id: *D_MIXED
+      kind: invoice
+      category: acquisition_cost
+      property_id: *P
+      loan_id: *L
+      payments:
+        - {due_on: 2026-04-10, amount: "1190.00"}
+      iban_hmac: *H_NOTARY
+      reference: RE26/00077
+      parts:
+        - {category: loan_fees, amount: "238.00"}
+        - {category: acquisition_cost, amount: "952.00"}
+    # D135: a repair bill booked whole, its one part repairs (the model's code).
+    - id: *D_REPAIR
+      kind: invoice
+      category: uncategorized
+      property_id: *P
+      payments:
+        - {due_on: 2026-06-10, amount: "297.50"}
+      reference: R-2026-0815
+      parts:
+        - {category: repairs, amount: "297.50"}
 
 cases:
   - id: rent_exact
@@ -326,6 +360,56 @@ cases:
       question: null
       allocations:
         - {amount: "-612.88", category: loan_fees, property_id: *P, loan_id: *L, document_id: *D_GRUNDSCHULD, recurring: false}
+
+  - id: mixed_bill_split_by_its_lines
+    description: D135. The mixed notary bill paid from the rental account; split into the Grundschuld part (loan_fees on the loan) and the Kaufvertrag part (acquisition_cost), always to review.
+    matcher: document
+    transaction: &TX_MIXED
+      id: 0000002a-0000-4000-8000-000000000010
+      booking_date: 2026-04-15
+      amount: "-1190.00"
+      counterparty_name: Notarin Dr. Beispiel
+      counterparty_iban_hmac: *H_NOTARY
+      purpose: Rechnung RE26/00077
+    expect:
+      method: document_match
+      confidence: "0.500"
+      question: Stimmt die Aufteilung nach den Positionen der Rechnung?
+      allocations:
+        - {amount: "-238.00", category: loan_fees, property_id: *P, loan_id: *L, document_id: *D_MIXED, recurring: false}
+        - {amount: "-952.00", category: acquisition_cost, property_id: *P, document_id: *D_MIXED, recurring: false}
+
+  - id: mixed_bill_cent_lands_on_the_last_part
+    description: D135. One cent less than the bill; the last part takes the difference so the parts sum to the line.
+    matcher: document
+    transaction:
+      <<: *TX_MIXED
+      id: 0000002a-0000-4000-8000-000000000011
+      amount: "-1189.99"
+    expect:
+      method: document_match
+      confidence: "0.500"
+      question: Stimmt die Aufteilung nach den Positionen der Rechnung?
+      allocations:
+        - {amount: "-238.00", category: loan_fees, property_id: *P, loan_id: *L, document_id: *D_MIXED, recurring: false}
+        - {amount: "-951.99", category: acquisition_cost, property_id: *P, document_id: *D_MIXED, recurring: false}
+
+  - id: repair_bill_one_part_to_review
+    description: D135. A repair bill whose one part is repairs (the model's code), the document's category uncategorized; booked whole as repairs, to review.
+    matcher: document
+    transaction:
+      id: 0000002a-0000-4000-8000-000000000012
+      booking_date: 2026-06-20
+      amount: "-297.50"
+      counterparty_name: Sanitär Beispiel GmbH
+      counterparty_iban_hmac: *H_OTHER
+      purpose: R-2026-0815
+    expect:
+      method: document_match
+      confidence: "0.500"
+      question: Stimmt die Aufteilung nach den Positionen der Rechnung?
+      allocations:
+        - {amount: "-297.50", category: repairs, property_id: *P, document_id: *D_REPAIR, recurring: false}
 
   # --- interest only before the first annuity (added 2026-11-08) ---------------------------
   # Loan L_IO: paid out 30 June 2026, first annuity 30 December 2026, flag set. The purpose

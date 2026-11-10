@@ -334,6 +334,13 @@ class DuePayment(Schema):
     amount: PositiveMoney
 
 
+class DocumentPart(Schema):
+    """One part of a bill sorted by its cost lines (D135): a category and its gross amount."""
+
+    category: AllocationCategory
+    amount: PositiveMoney
+
+
 class DocumentFacts(Schema):
     """An invoice or Bescheid extraction as the document matcher reads it. payments: an
     invoice's total on its document date; a Grundsteuerbescheid's installments on their
@@ -349,6 +356,9 @@ class DocumentFacts(Schema):
     payments: list[DuePayment] = Field(min_length=1)
     iban_hmac: HmacHex | None = Field(default=None, pattern=HMAC_PATTERN)
     reference: str | None = None
+    # Phase 2 D135: the bill's parts by kind of cost (rules.prefill.sort_bill), gross, summing
+    # to the total; empty when the bill is booked whole.
+    parts: list[DocumentPart] = Field(default_factory=list)
 
 
 class WirtschaftsplanFacts(Schema):
