@@ -15,7 +15,7 @@
   re-asks the model: rematch_waiting and rematch_on_evidence never call it.
 """
 
-from datetime import date
+from datetime import UTC, date, datetime
 from uuid import UUID
 
 from sqlalchemy import Connection, Select, exists, select
@@ -27,7 +27,7 @@ from hausbuch.db.tables import proposal as proposal_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.jobs import enqueue
-from hausbuch.rules.errors import AI_DISABLED
+from hausbuch.rules.errors import AI_DISABLED, RuleError
 from hausbuch.rules.review import THRESHOLDS
 from hausbuch.schemas.ai import AiJob
 from hausbuch.schemas.allocation import (
@@ -247,10 +247,40 @@ _UNMATCHED_QUESTION = "Wofür war diese Buchung?"
 _PROPOSED_QUESTION = "Stimmt diese Zuordnung?"
 
 
-def inbox(conn: Connection) -> list[InboxItem]:
-    """Every item of §8.3, newest first. Texts quote no bank line, name or IBAN."""
+def inbox(conn: Connection, today: date | None = None) -> list[InboxItem]:
+    """Every item of §8.3, newest first. Texts quote no bank line, name or IBAN. With `today`,
+    also last year's open Jahresfragen (phase 4b D110, `questionnaire_open`)."""
     items = _proposal_items(conn) + import_inbox_items(conn) + _allocation_items(conn)
+    if today is not None:
+        items += _questionnaire_items(conn, today)
     return sorted(items, key=lambda item: item.created_at, reverse=True)
+
+
+def _questionnaire_items(conn: Connection, today: date) -> list[InboxItem]:
+    """One card for the previous year's questionnaire from 1 January until every slot is
+    answered. Never raises: a year without a questionnaire (before the first file) or a
+    failure to compute the progress gives no card, so the queue always loads."""
+    from .questionnaire import questionnaire_progress  # it imports the tax services
+
+    year = today.year - 1
+    try:
+        progress = questionnaire_progress(conn, year)
+    except (RuleError, ValueError):  # no file for the year; a file that does not validate
+        return []
+    if not progress.open:
+        return []
+    return [
+        InboxItem(
+            kind=InboxItemKind.QUESTIONNAIRE_OPEN,
+            created_at=datetime(today.year, 1, 1, tzinfo=UTC),
+            reasoning=(
+                f"Die Jahresfragen {year} sind noch offen:"
+                f" {progress.answered} von {progress.total} beantwortet."
+            ),
+            question=f"Möchtest du die Jahresfragen {year} jetzt beantworten?",
+            tax_year=year,
+        )
+    ]
 
 
 def _proposal_items(conn: Connection) -> list[InboxItem]:

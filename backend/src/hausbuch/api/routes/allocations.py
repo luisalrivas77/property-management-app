@@ -29,6 +29,7 @@ from hausbuch.schemas.api import (
 )
 from hausbuch.schemas.enums import EntityType
 from hausbuch.services import review
+from hausbuch.services.documents import LOCAL_TIME_ZONE
 
 from ..deps import Cmd, SettingsDep, domain_router, found
 
@@ -37,7 +38,8 @@ router = domain_router()
 
 @router.get("/inbox")
 def inbox_list(cmd: Cmd) -> list[InboxItem]:
-    return cmd.read(review.inbox)
+    """Plus, from 1 January, last year's open Jahresfragen (phase 4b D110)."""
+    return cmd.read(review.inbox, today=datetime.now(LOCAL_TIME_ZONE).date())
 
 
 @router.post("/inbox/ai-retry")

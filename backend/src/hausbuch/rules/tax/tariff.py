@@ -26,13 +26,20 @@ Public signatures (phase 4 step 2 imports `total_tax` and `tax_effect`; keep the
     total_tax(zve, tariff, owners, joint=True) -> TaxBreakdown
     slope(zve_base, tariff, owners, joint=True) -> Decimal            # percent, one decimal
     tax_effect(zve_base, result, tariff, owners, *, joint=True, source="estimate",
-               carried_forward=False, override_rate=None, sources=()) -> TaxEffect
+               carried_forward=False, override_rate=None, sources=(), household=None)
+        -> TaxEffect
+
+Phase 4b D98: with a `household` context (children, wage-replacement benefits, the §35a
+credit) both points are the assessed tax (rules/tax/return_estimate.assessed_tax: the
+Progressionsvorbehalt, the Kindergeld/Freibetrag Günstigerprüfung, §35a, Soli and church tax
+on the tax after the Freibeträge) instead of total_tax; without one nothing changes.
 """
 
 from collections.abc import Iterable, Sequence
 from decimal import ROUND_FLOOR, Decimal
 
 from hausbuch.schemas.performance import (
+    HouseholdTaxContext,
     OwnerTaxProfile,
     RateSource,
     Tariff,
@@ -201,6 +208,7 @@ def tax_effect(
     carried_forward: bool = False,
     override_rate: Decimal | None = None,
     sources: Iterable[SourceRef] = (),
+    household: HouseholdTaxContext | None = None,
 ) -> TaxEffect:
     """The tax effect of a rental result R on a household base (D82).
 
@@ -210,7 +218,8 @@ def tax_effect(
     half-up to the cent, no breakdowns; effective_rate = the rate in percent, or the slope
     field carries it when R = 0, so exactly one of the two is set. zve_base may be None only
     under an override. `source`, `carried_forward` and `sources` are passed through (D83);
-    the tariff is added to the sources."""
+    the tariff is added to the sources. With `household` (phase 4b D98) both points are
+    assessed_tax (a negative zvE taxed as 0, as total_tax does); an override still wins."""
     refs = [*sources, SourceRef(kind="tariff")]
     if override_rate is not None:
         rate_percent = _percent(override_rate)
@@ -224,8 +233,12 @@ def tax_effect(
         )
     if zve_base is None:
         raise ValueError("a tax effect without an override needs the household base")
-    without = total_tax(zve_base, tariff, owners, joint)
-    with_ = total_tax(zve_base + result, tariff, owners, joint)
+    if household is not None:
+        without = _assessed(zve_base, household, owners, tariff)
+        with_ = _assessed(zve_base + result, household, owners, tariff)
+    else:
+        without = total_tax(zve_base, tariff, owners, joint)
+        with_ = total_tax(zve_base + result, tariff, owners, joint)
     effect = cents(with_.total - without.total)
     return TaxEffect(
         effect=effect,
@@ -236,4 +249,24 @@ def tax_effect(
         breakdown_with=with_,
         breakdown_without=without,
         sources=refs,
+    )
+
+
+def _assessed(
+    zve: Decimal,
+    household: HouseholdTaxContext,
+    owners: Sequence[OwnerTaxProfile],
+    tariff: Tariff,
+) -> TaxBreakdown:
+    """The assessed tax at one point as a breakdown (joint: phase 4b assesses spouses filing
+    jointly only). Imported here, not at the top: return_estimate imports this module."""
+    from .return_estimate import assessed_tax
+
+    a = assessed_tax(max(ZERO, zve), household, owners, tariff)
+    return TaxBreakdown(
+        est=cents(a.est),
+        credit_35a=cents(a.credit_35a),
+        soli=cents(a.soli),
+        church=cents(a.church),
+        total=cents(a.total),
     )

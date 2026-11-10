@@ -43,6 +43,8 @@ from .routes import (
     performance,
     properties,
     proposals,
+    questionnaire,
+    return_inputs,
     statements,
     tax,
     tax_exports,
@@ -58,6 +60,8 @@ API_PREFIX = "/api"
 ROUTE_MODULES = (
     owners,
     income_inputs,
+    return_inputs,
+    questionnaire,
     properties,
     units,
     tenants,

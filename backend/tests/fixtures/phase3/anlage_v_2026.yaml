@@ -627,7 +627,6 @@ cases:
     description: >
       case A plus two privately paid costs: 6 trips of 40 km to the flat (6 × 40 × 0.30 =
       72.00) and a landlords' association fee of 90.00 → wk.other 162.00, result −8,110.66
-    pending: phase 4b step 1 (private_cost lines in rules/tax/draft.py)
     tax_year: 2026
     rule_set_year: 2026
     facts:
@@ -678,7 +677,6 @@ cases:
       case A plus 60 trips of 40 km: more than 50 trips in a year adds the info warning
       tax.travel_frequency (a near-daily presence can make the flat a regelmäßige
       Tätigkeitsstätte); the amount is still computed: 60 × 40 × 0.30 = 720.00
-    pending: phase 4b step 1 (private_cost lines in rules/tax/draft.py)
     tax_year: 2026
     rule_set_year: 2026
     facts:
