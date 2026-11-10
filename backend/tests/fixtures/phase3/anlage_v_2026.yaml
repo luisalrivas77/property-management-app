@@ -140,6 +140,10 @@ ids:
   input_tiles_erhaltung: &TI1 000000f1-0000-4000-8000-000000000001
   input_interest_certified: &TI2 000000f1-0000-4000-8000-000000000002
   input_pre_handover_rent: &TI3 000000f1-0000-4000-8000-000000000003
+  # phase 4b D111: privately paid rental costs (tax_input kind private_cost)
+  input_private_trips: &TI4 000000f1-0000-4000-8000-000000000004
+  input_private_association: &TI5 000000f1-0000-4000-8000-000000000005
+  input_private_trips_60: &TI6 000000f1-0000-4000-8000-000000000006
 
 bases:
   property: &property
@@ -302,7 +306,8 @@ bases:
     loans: [{id: *L1, lender: Beispielbank}]
     allocations: *allocations
     tax_inputs: &inputs_a
-      - {id: *TI1, property_id: *P, kind: renovation_treatment, allocation_id: *TL,
+      - &inputs_a_tiles
+        {id: *TI1, property_id: *P, kind: renovation_treatment, allocation_id: *TL,
          value: {treatment: erhaltung}}
       - &input_certified
         {id: *TI2, property_id: *P, kind: interest_certified, tax_year: 2026, loan_id: *L1,
@@ -612,3 +617,105 @@ cases:
         - {key: result.surplus, zeile: 85, kennzahl: null, amount: "-7948.66", amount_rounded: -7950}
         - {key: result.owner_a, zeile: 86, kennzahl: "20", amount: "-3974.33", amount_rounded: -3975}
         - {key: result.owner_b, zeile: 86, kennzahl: "21", amount: "-3974.33", amount_rounded: -3975}
+
+  # Phase 4b amendment (docs/phases/phase-4b.md §5.12, D111), written in phase 4b step 0: the
+  # draft sums the year's private_cost rows into wk.other (Z80–82, Kz 49, rounded up). Travel
+  # = trips × km_round_trip × travel_rate_per_km (0.30); every other class amount × share.
+  # `pending` names the step that builds the rule; tests/rules/tax/test_tax_rule_draft.py
+  # skips the case until then.
+  - id: private_costs_in_other
+    description: >
+      case A plus two privately paid costs: 6 trips of 40 km to the flat (6 × 40 × 0.30 =
+      72.00) and a landlords' association fee of 90.00 → wk.other 162.00, result −8,110.66
+    pending: phase 4b step 1 (private_cost lines in rules/tax/draft.py)
+    tax_year: 2026
+    rule_set_year: 2026
+    facts:
+      <<: *facts
+      tax_inputs:
+        - *inputs_a_tiles
+        - *input_certified
+        - {id: *TI4, property_id: *P, kind: private_cost, tax_year: 2026,
+           value: {cost_class: travel, label: Fahrten zur Wohnung, trips: 6, km_round_trip: 40}}
+        - {id: *TI5, property_id: *P, kind: private_cost, tax_year: 2026,
+           value: {cost_class: association, label: Vermieterverein, amount: "90.00"}}
+    expect:
+      lines:
+        - *line_rent
+        - *line_umlagen
+        - {key: income.total, amount: "6180.00", amount_rounded: 6180}
+        - *line_afa
+        - *line_interest
+        - *line_financing
+        - {key: wk.maintenance, amount: "5950.00", amount_rounded: 5950, provisional: true}
+        - *line_allocable
+        - *line_non_allocable
+        - key: wk.other
+          amount: "162.00"
+          amount_rounded: 162
+          sources: [{kind: tax_input, id: *TI4}, {kind: tax_input, id: *TI5}]
+        - {key: wk.total, amount: "14290.66", amount_rounded: 14292}
+        - {key: result.surplus, amount: "-8110.66", amount_rounded: -8112}
+        - {key: result.owner_a, amount: "-4055.33", amount_rounded: -4056}
+        - {key: result.owner_b, amount: "-4055.33", amount_rounded: -4056}
+      totals: {income: "6180.00", costs: "14290.66", result: "-8110.66", income_rounded: 6180,
+               costs_rounded: 14292, result_rounded: -8112}
+      owners:
+        - {owner_id: *OA, amount: "-4055.33", amount_rounded: -4056}
+        - {owner_id: *OB, amount: "-4055.33", amount_rounded: -4056}
+      warnings:
+        - *w_unpaid
+        - {code: hausgeld.abrechnung_pending}
+        - *w_other
+        - *w_other
+        - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
+        - {code: reduced_rent.no_market_rent}
+        - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
+        - {code: draft.form_provisional}
+
+  - id: travel_frequency_warning
+    description: >
+      case A plus 60 trips of 40 km: more than 50 trips in a year adds the info warning
+      tax.travel_frequency (a near-daily presence can make the flat a regelmäßige
+      Tätigkeitsstätte); the amount is still computed: 60 × 40 × 0.30 = 720.00
+    pending: phase 4b step 1 (private_cost lines in rules/tax/draft.py)
+    tax_year: 2026
+    rule_set_year: 2026
+    facts:
+      <<: *facts
+      tax_inputs:
+        - *inputs_a_tiles
+        - *input_certified
+        - {id: *TI6, property_id: *P, kind: private_cost, tax_year: 2026,
+           value: {cost_class: travel, label: Fahrten zur Wohnung, trips: 60, km_round_trip: 40}}
+    expect:
+      lines:
+        - *line_rent
+        - *line_umlagen
+        - {key: income.total, amount: "6180.00", amount_rounded: 6180}
+        - *line_afa
+        - *line_interest
+        - *line_financing
+        - {key: wk.maintenance, amount: "5950.00", amount_rounded: 5950, provisional: true}
+        - *line_allocable
+        - *line_non_allocable
+        - {key: wk.other, amount: "720.00", amount_rounded: 720, sources: [{kind: tax_input, id: *TI6}]}
+        - {key: wk.total, amount: "14848.66", amount_rounded: 14850}
+        - {key: result.surplus, amount: "-8668.66", amount_rounded: -8670}
+        - {key: result.owner_a, amount: "-4334.33", amount_rounded: -4335}
+        - {key: result.owner_b, amount: "-4334.33", amount_rounded: -4335}
+      totals: {income: "6180.00", costs: "14848.66", result: "-8668.66", income_rounded: 6180,
+               costs_rounded: 14850, result_rounded: -8670}
+      owners:
+        - {owner_id: *OA, amount: "-4334.33", amount_rounded: -4335}
+        - {owner_id: *OB, amount: "-4334.33", amount_rounded: -4335}
+      warnings:
+        - *w_unpaid
+        - {code: hausgeld.abrechnung_pending}
+        - *w_other
+        - *w_other
+        - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
+        - {code: reduced_rent.no_market_rent}
+        - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
+        - {code: draft.form_provisional}
+        - {code: tax.travel_frequency, params: {trips: "60"}}

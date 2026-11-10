@@ -197,6 +197,9 @@ class RuleSet(Schema):
     reduced_rent_split: Rate = Decimal("0.50")
     speculation_years: int = Field(default=10, ge=1)
     speculation_freigrenze: PositiveMoney = Decimal("1000")  # §23 Abs. 3 S. 5, per spouse (D93)
+    # §9 Abs. 1 S. 3 Nr. 4a S. 2 EStG with §5 Abs. 2 BRKG: a landlord's own-car trip to the
+    # flat, per km driven (phase 4b D111, private_cost travel).
+    travel_rate_per_km: Rate = Decimal("0.30")
     form: FormMapping
 
     @model_validator(mode="after")
@@ -240,6 +243,7 @@ class TaxInputKind(StrEnum):
     PRE_HANDOVER_INCOME = "pre_handover_income"  # how income before the handover counts (D63)
     USEFUL_LIFE = "useful_life"  # a shorter actual useful life from a Gutachten, from a year (D79)
     MOVABLE_ASSET = "movable_asset"  # a movable asset (the Einbauküche), from a year (D80)
+    PRIVATE_COST = "private_cost"  # a rental cost paid privately, per year (phase 4b D111)
 
 
 class Spread82b(Schema):
@@ -297,6 +301,35 @@ class MovableAsset(Schema):
     in_purchase_price: bool = True
 
 
+class PrivateCostValue(Schema):
+    """A rental cost paid from a private account (phase 4b D111): trips to the flat, postage,
+    a landlords' association, software and the like; tax_year on the row is the year paid.
+    travel: trips × km_round_trip × the rule set's travel_rate_per_km (no amount typed);
+    every other class: amount × share. The label is free text: it stays in the row and never
+    enters the event payload (only amounts and codes do)."""
+
+    cost_class: Literal[
+        "travel", "postage", "advertising", "association", "legal_insurance", "software", "other"
+    ]
+    label: str = Field(min_length=1, max_length=120)
+    amount: NonNegativeMoney | None = None
+    trips: int | None = Field(default=None, ge=1, le=366)
+    km_round_trip: int | None = Field(default=None, ge=1, le=2000)
+    trip_dates: list[date] = Field(default_factory=list)
+    share: Fraction = Fraction(numerator=1, denominator=1)
+
+    @model_validator(mode="after")
+    def _by_class(self) -> Self:
+        if self.cost_class == "travel":
+            if self.trips is None or self.km_round_trip is None or self.amount is not None:
+                raise ValueError("a travel cost has trips and km_round_trip, no amount")
+            if self.trip_dates and len(self.trip_dates) != self.trips:
+                raise ValueError("trip_dates, when given, list every trip")
+        elif self.amount is None or self.trips is not None or self.km_round_trip is not None:
+            raise ValueError("a cost other than travel has an amount and no trips")
+        return self
+
+
 TaxInputValue = (
     Spread82b
     | RenovationTreatment
@@ -307,6 +340,7 @@ TaxInputValue = (
     | PreHandoverIncome
     | UsefulLife
     | MovableAsset
+    | PrivateCostValue
 )
 
 K = TaxInputKind
@@ -320,14 +354,19 @@ TAX_INPUT_VALUES: dict[TaxInputKind, type[Schema]] = {
     K.PRE_HANDOVER_INCOME: PreHandoverIncome,
     K.USEFUL_LIFE: UsefulLife,
     K.MOVABLE_ASSET: MovableAsset,
+    K.PRIVATE_COST: PrivateCostValue,
 }
 # The scope each kind needs; migration 0013's CHECKs say the same.
 ALLOCATION_SCOPED = frozenset({K.SPREAD_82B, K.RENOVATION_TREATMENT, K.EXCLUDE_FROM_15PCT})
 # tax_year set: the year, or the first year (useful_life D79, movable_asset D80).
-YEAR_SCOPED = frozenset({K.RUECKLAGE_SPENT, K.INTEREST_CERTIFIED, K.USEFUL_LIFE, K.MOVABLE_ASSET})
+YEAR_SCOPED = frozenset(
+    {K.RUECKLAGE_SPENT, K.INTEREST_CERTIFIED, K.USEFUL_LIFE, K.MOVABLE_ASSET, K.PRIVATE_COST}
+)
 # A document required: the certificate, the Abrechnung, the Gutachten (D79). A movable asset's
 # evidence is optional (D80: its value is often an estimate).
 DOCUMENT_REQUIRED = frozenset({K.RUECKLAGE_SPENT, K.INTEREST_CERTIFIED, K.USEFUL_LIFE})
+# The yearly kinds a row may be confirmed from last year's (the questionnaire's copy, D110).
+CARRIED_KINDS = frozenset({K.PRIVATE_COST})
 del K
 
 
@@ -360,6 +399,8 @@ class TaxInputCreate(Schema):
     value: TaxInputValue
     note: str | None = Field(default=None, max_length=500)
     supersedes_id: UUID | None = None
+    # phase 4b D110: the previous year's row this one was confirmed from (private_cost only)
+    carried_from_id: UUID | None = None
     withdrawn: bool = False
 
     @model_validator(mode="before")
@@ -381,9 +422,11 @@ class TaxInputCreate(Schema):
             problems.append("loan_id is set exactly for interest_certified")
         if (self.tax_year is not None) != (k in YEAR_SCOPED):
             problems.append(
-                "tax_year is set exactly for ruecklage_spent, interest_certified, useful_life"
-                " and movable_asset"
+                "tax_year is set exactly for ruecklage_spent, interest_certified, useful_life,"
+                " movable_asset and private_cost"
             )
+        if self.carried_from_id is not None and k not in CARRIED_KINDS:
+            problems.append("carried_from_id belongs to private_cost only")
         if k in DOCUMENT_REQUIRED and self.document_id is None:
             problems.append("a certificate figure or a useful life needs its document")
         if self.withdrawn and self.supersedes_id is None:
@@ -440,6 +483,35 @@ class WarningCode(StrEnum):
     DRAFT_FORM_PROVISIONAL = "draft.form_provisional"
     DRAFT_ALLOCATION_WITHOUT_PROPERTY = "draft.allocation_without_property"
     ARCHIVE_FINANZAMT_COPY_NEEDED = "archive.finanzamt_copy_needed"  # Q8
+    # Phase 4b (docs/phases/phase-4b.md §9)
+    TAX_TRAVEL_FREQUENCY = "tax.travel_frequency"  # D111: more than 50 trips to the flat
+    ANLAGE_N_CERTIFICATE_MISSING = "anlage_n.certificate_missing"
+    ANLAGE_N_CHURCH_MISMATCH = "anlage_n.church_mismatch"
+    ANLAGE_N_TAX_CLASS_6 = "anlage_n.tax_class_6"
+    ANLAGE_N_PERIODS_OVERLAP = "anlage_n.periods_overlap"
+    ANLAGE_N_DAYS_IMPLAUSIBLE = "anlage_n.days_implausible"
+    ANLAGE_N_HOME_OFFICE_CAPPED = "anlage_n.home_office_capped"
+    ANLAGE_N_TOO_MANY_ROUTES = "anlage_n.too_many_routes"
+    ANLAGE_N_RECEIPT_MISSING = "anlage_n.receipt_missing"
+    ANLAGE_N_FORM_PROVISIONAL = "anlage_n.form_provisional"
+    ANLAGE_N_PAYSLIP_GAP = "anlage_n.payslip_gap"
+    ANLAGE_N_PAYSLIP_NO_YTD = "anlage_n.payslip_no_ytd"
+    ANLAGE_N_WORK_ROOM_RECORDS = "anlage_n.work_room_records"
+    ANLAGE_N_WORK_ROOM_CENTRE = "anlage_n.work_room_centre"
+    ANLAGE_N_WORK_ROOM_PARTIAL = "anlage_n.work_room_partial"  # F5: a room for 1-11 months
+    ANLAGE_N_FIRST_WORKPLACE_CHECK = "anlage_n.first_workplace_check"
+    RETURN_PROGRESSION_PROVISIONAL = "return.progression_provisional"
+    RETURN_BENEFIT_POSSIBLE_DOUBLE = "return.benefit_possible_double"
+    RETURN_CHILDREN_MISMATCH = "return.children_mismatch"
+    RETURN_KINDERGELD_APPLY = "return.kindergeld_apply"
+    RETURN_CHILD_OVER_18 = "return.child_over_18"
+    RETURN_CHILDCARE_UNTIL_14 = "return.childcare_until_14"  # F6: the year the child turns 14
+    RETURN_DONATION_OVER_CAP = "return.donation_over_cap"
+    RETURN_FILING_REQUIRED = "return.filing_required"
+    RETURN_QUESTIONNAIRE_OPEN = "return.questionnaire_open"
+    RETURN_NOT_MODELLED = "return.not_modelled"
+    QUESTIONNAIRE_PROVISIONAL = "questionnaire_provisional"
+    TAX_EXPORT_QUESTIONS_OPEN = "tax_export.questions_open"
 
 
 Severity = Literal["info", "warning"]
@@ -472,6 +544,34 @@ WARNING_SEVERITY: dict[WarningCode, Severity] = {
     W.DRAFT_FORM_PROVISIONAL: "info",
     W.DRAFT_ALLOCATION_WITHOUT_PROPERTY: "warning",
     W.ARCHIVE_FINANZAMT_COPY_NEEDED: "info",
+    W.TAX_TRAVEL_FREQUENCY: "info",
+    W.ANLAGE_N_CERTIFICATE_MISSING: "warning",
+    W.ANLAGE_N_CHURCH_MISMATCH: "warning",
+    W.ANLAGE_N_TAX_CLASS_6: "warning",
+    W.ANLAGE_N_PERIODS_OVERLAP: "warning",
+    W.ANLAGE_N_DAYS_IMPLAUSIBLE: "warning",
+    W.ANLAGE_N_HOME_OFFICE_CAPPED: "info",
+    W.ANLAGE_N_TOO_MANY_ROUTES: "warning",
+    W.ANLAGE_N_RECEIPT_MISSING: "info",
+    W.ANLAGE_N_FORM_PROVISIONAL: "info",
+    W.ANLAGE_N_PAYSLIP_GAP: "warning",
+    W.ANLAGE_N_PAYSLIP_NO_YTD: "warning",
+    W.ANLAGE_N_WORK_ROOM_RECORDS: "info",
+    W.ANLAGE_N_WORK_ROOM_CENTRE: "info",
+    W.ANLAGE_N_WORK_ROOM_PARTIAL: "info",
+    W.ANLAGE_N_FIRST_WORKPLACE_CHECK: "info",
+    W.RETURN_PROGRESSION_PROVISIONAL: "info",
+    W.RETURN_BENEFIT_POSSIBLE_DOUBLE: "warning",
+    W.RETURN_CHILDREN_MISMATCH: "info",
+    W.RETURN_KINDERGELD_APPLY: "info",
+    W.RETURN_CHILD_OVER_18: "warning",
+    W.RETURN_CHILDCARE_UNTIL_14: "info",
+    W.RETURN_DONATION_OVER_CAP: "info",
+    W.RETURN_FILING_REQUIRED: "info",
+    W.RETURN_QUESTIONNAIRE_OPEN: "info",
+    W.RETURN_NOT_MODELLED: "info",
+    W.QUESTIONNAIRE_PROVISIONAL: "info",
+    W.TAX_EXPORT_QUESTIONS_OPEN: "info",
 }
 del W
 
@@ -491,9 +591,14 @@ SourceKind = Literal[
     "schedule_entry",
     "income_input",
     "tariff",
+    # Phase 4b (docs/phases/phase-4b.md §7): a return input row, a questionnaire answer, and
+    # the Anlage N rule set file (no id).
+    "return_input",
+    "questionnaire_answer",
+    "anlage_n_rule_set",
 ]
 # The sources that are a rule file rather than a record: they carry no id.
-_FILE_SOURCES = frozenset({"rule", "tariff"})
+_FILE_SOURCES = frozenset({"rule", "tariff", "anlage_n_rule_set"})
 
 
 class SourceRef(Schema):
@@ -1006,6 +1111,7 @@ class AnlageVDraft(Schema):
 class TaxExportKind(StrEnum):
     FIELD_SHEET = "field_sheet"
     ARCHIVE = "archive"
+    ANLAGE_N_SHEET = "anlage_n_sheet"  # phase 4b D104: one owner's Anlage N sheet
 
 
 class TaxExportCreate(Schema):
@@ -1017,7 +1123,10 @@ class TaxExport(Record):
     """A stored export (immutable). The draft it was built from is in the row's `draft`
     column; the API returns it with the file's signed download URL, not inline."""
 
-    property_id: UUID
+    # Exactly one of the two (migration 0018): an Anlage V export names its property, an
+    # Anlage N sheet its owner (phase 4b D104).
+    property_id: UUID | None = None
+    owner_id: UUID | None = None
     tax_year: TaxYear
     kind: TaxExportKind
     rule_set_version: str
@@ -1026,3 +1135,11 @@ class TaxExport(Record):
     file_sha256: Sha256Hex
     size_bytes: int = Field(gt=0)
     created_by: UUID | None = None
+
+    @model_validator(mode="after")
+    def _one_subject(self) -> Self:
+        if (self.property_id is None) == (self.owner_id is None):
+            raise ValueError("an export names its property or its owner, not both")
+        if (self.owner_id is not None) != (self.kind is TaxExportKind.ANLAGE_N_SHEET):
+            raise ValueError("an Anlage N sheet names its owner; every other export a property")
+        return self

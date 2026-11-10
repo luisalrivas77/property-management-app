@@ -141,6 +141,7 @@ def test_a_spread_is_recorded_with_its_event(world):
         "value": {"years": 3},
         "supersedes_id": None,
         "withdrawn": False,
+        "carried_from_id": None,
     }
     assert world.query(list_tax_inputs, world.property_id) == [row]
 

@@ -1,0 +1,191 @@
+# vorsorge.yaml: rules/tax/anlage_n/vorsorge.py vorsorge (docs/phases/phase-4b.md §5.7).
+
+# Synthetic numbers only (the repo is public). Owners A and B as in anlage_n.yaml. Loaded
+# through tests/fixture_models_phase4b.py, which checks every value against the §7 schemas and
+# recomputes each expectation on load.
+#
+# pension = max(0, min(Σ (23a + 23b + 22a), 30,826) − Σ 22a); health_care_basis = cents(Σ 25 ×
+# 0.96) + Σ 26; other = max(basis, min(1,900, basis + Σ 27 + other insurance)) − basis;
+# deductible = the sum. A vorsorge_override row replaces the three figures as typed (never cut);
+# a payslip projection stands in for a missing certificate (source payslip).
+
+bases:
+  cert_a: &cert_a
+    id: 0000004b-0000-4000-8000-0000000000a1
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    kind: wage_certificate
+    tax_year: 2026
+    document_id: 0000004b-d0c0-4000-8000-0000000000a1
+    value:
+      period_from: 2026-01-01
+      period_to: 2026-12-31
+      employer: Muster GmbH
+      tax_class: 4
+      gross: '60000.00'
+      income_tax: '9200.00'
+      employer_commute_tax_free: '600.00'
+      pension_employer: '5580.00'
+      pension_employee: '5580.00'
+      health_employee: '5250.00'
+      care_employee: '1080.00'
+      unemployment_employee: '780.00'
+  cert_b: &cert_b
+    id: 0000004b-0000-4000-8000-0000000000b1
+    owner_id: 0000000a-0000-4000-8000-000000000002
+    kind: wage_certificate
+    tax_year: 2026
+    document_id: 0000004b-d0c0-4000-8000-0000000000b1
+    value:
+      period_from: 2026-01-01
+      period_to: 2026-12-31
+      employer: Muster GmbH
+      tax_class: 4
+      gross: '32000.00'
+      income_tax: '3200.00'
+      replacement_benefits: '4000.00'
+      short_time_allowance: '4000.00'
+      employer_commute_tax_free: '400.00'
+      pension_employer: '2976.00'
+      pension_employee: '2976.00'
+      health_employee: '2800.00'
+      care_employee: '576.00'
+      unemployment_employee: '416.00'
+  cert_15k: &cert_15k
+    id: 0000004b-0000-4000-8000-0000000000d1
+    owner_id: 0000000a-0000-4000-8000-000000000002
+    kind: wage_certificate
+    tax_year: 2026
+    document_id: 0000004b-d0c0-4000-8000-0000000000d1
+    value:
+      period_from: 2026-01-01
+      period_to: 2026-12-31
+      employer: Muster GmbH
+      tax_class: 5
+      gross: '15000.00'
+      pension_employer: '1395.00'
+      pension_employee: '1395.00'
+      health_employee: '1312.50'
+      care_employee: '270.00'
+      unemployment_employee: '195.00'
+
+cases:
+- id: owner_a_60k
+  description: 5,580.00 + (5,040.00 + 1,080.00) + 0.00 = 11,700.00 (= D84's 12,966.00 − 1,230 − 36)
+  tax_year: 2026
+  facts:
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    inputs: [*cert_a]
+  expect: {pension: '5580.00', health_care_basis: '6120.00', other: '0.00', deductible: '11700.00',
+           source: certificate}
+- id: owner_b_32k
+  description: 2,976.00 + (2,688.00 + 576.00) + 0.00 = 6,240.00
+  tax_year: 2026
+  facts:
+    owner_id: 0000000a-0000-4000-8000-000000000002
+    inputs: [*cert_b]
+  expect: {pension: '2976.00', health_care_basis: '3264.00', other: '0.00', deductible: '6240.00',
+           source: certificate}
+- id: low_pay_15k_av_counts
+  description: basis 1,530.00 leaves room under 1,900, so the AV 195.00 counts → 3,120.00
+  tax_year: 2026
+  facts:
+    owner_id: 0000000a-0000-4000-8000-000000000002
+    inputs: [*cert_15k]
+  expect: {pension: '1395.00', health_care_basis: '1530.00', other: '195.00', deductible: '3120.00',
+           source: certificate}
+- id: low_pay_other_insurance
+  description: the same plus a liability premium 120.00 → other 315.00 → 3,240.00
+  tax_year: 2026
+  facts:
+    owner_id: 0000000a-0000-4000-8000-000000000002
+    inputs:
+    - *cert_15k
+    - {id: 0000004b-0000-4000-8000-0000000000d2, owner_id: 0000000a-0000-4000-8000-000000000002,
+       kind: other_insurance, tax_year: 2026, value: {amount: '120.00'}}
+  expect: {pension: '1395.00', health_care_basis: '1530.00', other: '315.00', deductible: '3240.00',
+           source: certificate}
+- id: other_insurance_no_effect
+  description: B plus 300.00 of premiums → still 6,240.00, the basis already fills the 1,900 cap
+  tax_year: 2026
+  facts:
+    owner_id: 0000000a-0000-4000-8000-000000000002
+    inputs:
+    - *cert_b
+    - {id: 0000004b-0000-4000-8000-0000000000d3, owner_id: 0000000a-0000-4000-8000-000000000002,
+       kind: other_insurance, tax_year: 2026, value: {amount: '300.00'}}
+  expect: {pension: '2976.00', health_care_basis: '3264.00', other: '0.00', deductible: '6240.00',
+           source: certificate}
+- id: above_bbg_120k
+  description: gross 120,000.00, contributions at the 2026 caps → pension 9,430.20
+  tax_year: 2026
+  facts:
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    inputs:
+    - id: 0000004b-0000-4000-8000-0000000000d4
+      owner_id: 0000000a-0000-4000-8000-000000000001
+      kind: wage_certificate
+      tax_year: 2026
+      document_id: 0000004b-d0c0-4000-8000-0000000000d4
+      value:
+        period_from: 2026-01-01
+        period_to: 2026-12-31
+        employer: Muster GmbH
+        tax_class: 3
+        gross: '120000.00'
+        income_tax: '26000.00'
+        pension_employer: '9430.20'
+        pension_employee: '9430.20'
+        health_employee: '6103.13'
+        care_employee: '1255.50'
+        unemployment_employee: '1318.20'
+  expect: {pension: '9430.20', health_care_basis: '7114.50', other: '0.00', deductible: '16544.70',
+           source: certificate}
+- id: from_payslip_projection
+  description: A's July projection (no Nr. 22a on a payslip) → 11,700.00, source payslip
+  tax_year: 2026
+  facts:
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    inputs:
+    - id: 0000004b-0000-4000-8000-0000000000a7
+      owner_id: 0000000a-0000-4000-8000-000000000001
+      kind: payslip
+      tax_year: 2026
+      document_id: 0000004b-d0c0-4000-8000-0000000000a7
+      value:
+        period_month: 2026-07-01
+        employer: Muster GmbH
+        tax_class: 4
+        months_remaining_paid: 5
+        gross: {month: '5000.00', ytd: '35000.00'}
+        income_tax: {month: '766.00', ytd: '5362.00'}
+        pension_employee: {month: '465.00', ytd: '3255.00'}
+        health_employee: {month: '437.50', ytd: '3062.50'}
+        care_employee: {month: '90.00', ytd: '630.00'}
+        unemployment_employee: {month: '65.00', ytd: '455.00'}
+  expect: {pension: '5580.00', health_care_basis: '6120.00', other: '0.00', deductible: '11700.00',
+           source: payslip}
+- id: override_private
+  description: privately insured, the insurer's statement typed as an override → 12,280.00
+  tax_year: 2026
+  facts:
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    inputs:
+    - *cert_a
+    - {id: 0000004b-0000-4000-8000-0000000000d5, owner_id: 0000000a-0000-4000-8000-000000000001,
+       kind: vorsorge_override, tax_year: 2026,
+       value: {pension: '5580.00', health_care_basis: '6400.00', other: '300.00'}}
+  expect: {pension: '5580.00', health_care_basis: '6400.00', other: '300.00', deductible: '12280.00',
+           source: override}
+- id: no_krankengeld_no_cut
+  description: statutory without Krankengeld entitlement, the uncut basis typed → 11,910.00, not cut again
+  tax_year: 2026
+  facts:
+    owner_id: 0000000a-0000-4000-8000-000000000001
+    inputs:
+    - *cert_a
+    - {id: 0000004b-0000-4000-8000-0000000000d6, owner_id: 0000000a-0000-4000-8000-000000000001,
+       kind: vorsorge_override, tax_year: 2026,
+       value: {pension: '5580.00', health_care_basis: '6330.00', other: '0.00',
+               krankengeld_entitlement: false}}
+  expect: {pension: '5580.00', health_care_basis: '6330.00', other: '0.00', deductible: '11910.00',
+           source: override}

@@ -7,6 +7,7 @@ import fixture_models as phase1
 import fixture_models_phase2 as phase2
 import fixture_models_phase3 as phase3
 import fixture_models_phase4 as phase4
+import fixture_models_phase4b as phase4b
 import pytest
 from fixture_models import RentFixture
 from pydantic import ValidationError
@@ -20,7 +21,13 @@ from hausbuch.schemas.allocation import (
 from hausbuch.schemas.common import Money
 from hausbuch.schemas.events import EVENT_CATALOG, EventType, RuleRecorded
 
-PHASES = {"phase1": phase1, "phase2": phase2, "phase3": phase3, "phase4": phase4}
+PHASES = {
+    "phase1": phase1,
+    "phase2": phase2,
+    "phase3": phase3,
+    "phase4": phase4,
+    "phase4b": phase4b,
+}
 FIXTURE_FILES = [(p, name) for p, mod in PHASES.items() for name in sorted(mod.MODELS)]
 
 
@@ -156,6 +163,9 @@ PHASE3_CASES = {
         "case_b_renovation_undecided",
         "pre_handover_as_rent",
         "export_roundtrip",
+        # phase 4b D111 (docs/phases/phase-4b.md §5.12): privately paid rental costs
+        "private_costs_in_other",
+        "travel_frequency_warning",
     },
 }
 
@@ -195,6 +205,11 @@ PHASE4_CASES = {
         "carried_forward_2028",
         "no_inputs_none",
         "tariff_reused_for_2030",
+        # phase 4b D98 (docs/phases/phase-4b.md §5.9, §11): the employment and household contexts
+        "household_2026_contexts",
+        "deductions_override_beats_employment",
+        "payslip_gross_source",
+        "plain_tariff_without_context",
     },
     "actuals": {
         "anlage_v_2026_case_a",
@@ -264,6 +279,229 @@ def test_phase4_fixtures_check_their_arithmetic(name, path, slip):
     node[path[-1]] = slip
     with pytest.raises(ValidationError):
         phase4.MODELS[name].model_validate(data)
+
+
+# docs/phases/phase-4b.md §11: the cases each phase 4b fixture must carry (a file may carry
+# more). A case renamed or dropped here is a spec change.
+PHASE4B_CASES = {
+    "payslip": {
+        "july_projection",
+        "january_zero_remaining",
+        "december_no_projection",
+        "missing_month_warning",
+        "no_ytd_low_confidence",
+        "certificate_replaces_projection",
+        "two_employers_summed",
+    },
+    "commute": {
+        "car_25km_220_days",
+        "public_transport_capped",
+        "ticket_costs_exceed",
+        "mixed_car_and_train",
+        "employer_benefit_offset",
+        "no_commute_with_subsidy",
+        "two_routes_in_year",
+        "km_floored",
+        "four_routes_warning",
+    },
+    "home_office": {
+        "days_90_owner_b",
+        "days_210_at_cap",
+        "days_250_capped",
+        "overlap_warning",
+        "with_work_room_error",
+        "with_work_room_nine_months_warning",
+        "zero_days_no_line",
+    },
+    "work_room": {
+        "actual_beats_flat",
+        "flat_beats_actual",
+        "nine_months",
+        "prefer_flat",
+        "room_only_costs_added",
+    },
+    "equipment": {
+        "laptop_1500_full_in_year",
+        "monitor_gwg_70pct",
+        "phone_2025_slice_2026",
+        "phone_disposed_2027",
+        "subscription_half_share",
+        "desk_afa_156_months",
+        "chair_bought_december",
+        "net_typed_wins",
+        "other_without_life_error",
+    },
+    "telecom": {"flat_under_cap", "capped", "reimbursed", "six_months"},
+    "anlage_n": {
+        "owner_a_remote_work_room",
+        "owner_b_commute_day_rate",
+        "pauschbetrag_wins",
+        "union_beside_allowance",
+        "allowance_capped_at_pay",
+        "estimate_from_payslips",
+        "two_certificates_one_year",
+        "church_mismatch_warning",
+        "tax_class_6_warning",
+        "work_room_and_day_rate_error",
+        "first_workplace_check_warning",
+        "telecom_added",
+    },
+    "vorsorge": {
+        "owner_a_60k",
+        "owner_b_32k",
+        "low_pay_15k_av_counts",
+        "low_pay_other_insurance",
+        "other_insurance_no_effect",
+        "above_bbg_120k",
+        "from_payslip_projection",
+        "override_private",
+        "no_krankengeld_no_cut",
+    },
+    "children": {
+        "born_march_ten_months",
+        "born_november_two_months",
+        "born_january_full_year",
+        "two_children",
+        "kindergeld_wins_62k",
+        "allowances_win_200k",
+        "soli_on_est_with",
+        "soli_after_35a_credit",
+        "child_over_18_warning",
+        "no_context_equals_total_tax",
+    },
+    "return_estimate": {
+        "household_2026",
+        "no_benefits_no_child",
+        "allowances_win_high_income",
+        "back_payment",
+        "with_35a_credit",
+        "35a_capped",
+        "35a_cash_refused",
+        "donation_within_cap",
+        "donation_over_cap",
+        "childcare_2027",
+        "childcare_turns_14",
+        "estimate_from_payslips_status",
+        "benefit_letter_pending",
+        "church_tax_as_special_expense",
+        "benefit_double_warning",
+        "mutterschutz_pay_stop",
+        "filing_required_rental_positive",
+        "filing_optional",
+        "questions_open",
+        "filing_deadline_next_working_day",
+        "filing_required_factor",
+    },
+    "questionnaire": {
+        "prefill_copy_commute",
+        "prefill_reconfirm_phone",
+        "durable_kinds_not_copied",
+        "not_applicable_recorded",
+        "progress_count",
+        "removed_key_not_prefilled",
+        "new_key_open",
+        "reminder_on_sheet",
+        "extraordinary_threshold_household",
+        "default_yes_account_fee",
+    },
+}
+
+
+def test_phase4b_cases_cover_the_spec():
+    assert set(PHASE4B_CASES) == set(phase4b.MODELS)
+    for name, required in PHASE4B_CASES.items():
+        ids = {c.id for c in phase4b.load(name).cases}
+        assert required <= ids, (name, required - ids)
+
+
+@pytest.mark.parametrize(
+    ("name", "case_id", "path", "slip"),
+    [
+        ("payslip", "july_projection", ("expect", "projected", 0, "income_tax"), "9200.00"),
+        ("commute", "mixed_car_and_train", ("expect", "total"), "2464.00"),
+        ("home_office", "days_250_capped", ("expect", "amount"), "1500.00"),
+        (
+            "home_office",
+            "with_work_room_nine_months_warning",
+            ("expect", "warnings", 0, "params", "months"),
+            "3",
+        ),
+        ("work_room", "nine_months", ("expect", "flat"), "1260.00"),
+        ("equipment", "phone_2025_slice_2026", ("years", 5, "amount"), "19.97"),
+        ("telecom", "reimbursed", ("expect",), "240.00"),
+        ("anlage_n", "owner_a_remote_work_room", ("expect", "result"), "57224.11"),
+        ("anlage_n", "owner_b_commute_day_rate", ("expect", "lines", 3, "amount"), "0.00"),
+        ("anlage_n", "union_beside_allowance", ("expect", "wk_applied"), "1230.00"),
+        # the Steuerklasse-6 pay summed into the first column (the draft before F4)
+        ("anlage_n", "tax_class_6_warning", ("expect", "lines", 0, "amount"), "66000.00"),
+        ("vorsorge", "low_pay_15k_av_counts", ("expect", "other"), "0.00"),
+        ("children", "kindergeld_wins_62k", ("expect", "assessed", "est_without"), "9975"),
+        ("children", "soli_after_35a_credit", ("expect", "assessed", "soli"), "2014.67"),
+        ("children", "child_over_18_warning", ("expect", "assessed", "children", "months"), 7),
+        ("return_estimate", "household_2026", ("expect", "result"), "-2427.00"),
+        ("return_estimate", "household_2026", ("expect", "zve"), "62034"),
+        ("return_estimate", "donation_over_cap", ("expect", "donations"), "16009.09"),
+        ("return_estimate", "mutterschutz_pay_stop", ("expect", "vorsorge_total"), "12226.50"),
+        (
+            "return_estimate",
+            "mutterschutz_pay_stop",
+            ("expect", "warnings", 0, "code"),
+            "return.benefit_possible_double",
+        ),
+        (
+            "return_estimate",
+            "benefit_double_warning",
+            ("expect", "warnings", 0, "code"),
+            "return.kindergeld_apply",
+        ),
+        ("return_estimate", "filing_optional", ("expect", "filing_required", "required"), True),
+        ("return_estimate", "childcare_turns_14", ("expect", "childcare"), "800.00"),
+        (
+            "return_estimate",
+            "childcare_turns_14",
+            ("expect", "warnings", 0, "code"),
+            "return.child_over_18",
+        ),
+        (
+            "return_estimate",
+            "filing_required_factor",
+            ("expect", "filing_required", "required"),
+            False,
+        ),
+        (
+            "return_estimate",
+            "filing_deadline_next_working_day",
+            ("expect", "filing_required", "deadline"),
+            "2027-07-31",
+        ),
+        ("questionnaire", "progress_count", ("expect", "answered"), 33),
+        ("questionnaire", "extraordinary_threshold_household", ("expect", "threshold"), "2537.11"),
+        (
+            "questionnaire",
+            "prefill_reconfirm_phone",
+            ("expect", "slots", 0, "reconfirm_ids"),
+            [],
+        ),
+        (
+            "questionnaire",
+            "default_yes_account_fee",
+            ("expect", "slots", 0, "proposed_answer"),
+            None,
+        ),
+    ],
+)
+def test_phase4b_fixtures_check_their_arithmetic(name, case_id, path, slip):
+    """A one-cent slip in a hand-filled figure fails on load (the validators recompute it)."""
+    import copy
+
+    data = copy.deepcopy(phase4b.raw(name))
+    case = next(c for c in data["cases"] if c["id"] == case_id)
+    node = case
+    for key in path[:-1]:
+        node = node[key]
+    node[path[-1]] = slip
+    with pytest.raises(ValidationError):
+        phase4b.MODELS[name].model_validate(data)
 
 
 def _has(case: dict, path: tuple) -> bool:

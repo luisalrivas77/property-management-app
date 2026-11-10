@@ -110,6 +110,14 @@ Percent = Annotated[
 Rooms = Annotated[
     Decimal, Field(gt=0, max_digits=4, decimal_places=1), _STRING_ONLY, _string_schema(1)
 ]
+# The Lohnsteuerbescheinigung's "Zahl der Kinderfreibeträge" (phase 4b §5.1): half steps,
+# informational; not a column (it lives in return_input.value).
+ChildAllowanceCount = Annotated[
+    Decimal,
+    Field(ge=0, le=20, max_digits=3, decimal_places=1, multiple_of=Decimal("0.5")),
+    _STRING_ONLY,
+    _string_schema(1),
+]
 
 TAX_YEAR_MIN = 2000  # also the floor of document.tax_year's CHECK
 TaxYear = Annotated[int, Field(ge=TAX_YEAR_MIN, le=2100)]

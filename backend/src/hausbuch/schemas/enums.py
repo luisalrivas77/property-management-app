@@ -1,6 +1,6 @@
 """Closed value sets. Each mirrors a CHECK constraint in a migration (phase 1: 0001-0004,
-phase 2: 0005-0012, phase 3: 0013, phase 4: 0016); tests/db/test_schema_consistency.py keeps
-them in sync.
+phase 2: 0005-0012, phase 3: 0013, phase 4: 0016, phase 4b: 0018);
+tests/db/test_schema_consistency.py keeps them in sync.
 
 Phase 2 sets that belong to one module live there instead (AiJob in ai.py, StatementFormat in
 bank.py, the allocation sets in allocation.py), as docs/phases/phase-2.md §4 places them."""
@@ -89,6 +89,12 @@ class DocumentType(StrEnum):
     WIRTSCHAFTSPLAN = "wirtschaftsplan"
     HAUSGELDABRECHNUNG = "hausgeldabrechnung"
     OTHER = "other"
+    # Phase 4b (D96, migration 0018): the employer's Lohnsteuerbescheinigung and a monthly
+    # payslip, the owners' own pay documents (retention class tax_records).
+    # Not yet in the classify request schema (ai/requests.py NOT_YET_CLASSIFIED): they join
+    # the classifier in phase 4b step 2, which re-records the classify evals.
+    LOHNSTEUERBESCHEINIGUNG = "lohnsteuerbescheinigung"
+    GEHALTSABRECHNUNG = "gehaltsabrechnung"
 
 
 class DocumentSubtype(StrEnum):
@@ -193,6 +199,9 @@ class ExtractionKind(StrEnum):
     HAUSGELDABRECHNUNG = "hausgeldabrechnung"
     ZINSBESCHEINIGUNG = "zinsbescheinigung"
     STATEMENT = "statement"  # PDF Kontoauszug: balances + lines
+    # Phase 4b (D96, migration 0018)
+    LOHNSTEUERBESCHEINIGUNG = "lohnsteuerbescheinigung"
+    GEHALTSABRECHNUNG = "gehaltsabrechnung"
 
 
 class ProposalStatus(StrEnum):
@@ -297,3 +306,74 @@ class IncomeInputKind(StrEnum):
     DEDUCTIONS_OVERRIDE = "deductions_override"  # per owner and year; replaces the default
     BESCHEID_ZVE = "bescheid_zve"  # per year, household; the Bescheid as its document
     MARGINAL_RATE_OVERRIDE = "marginal_rate_override"  # per year, household; incl. Soli, church
+
+
+# --- Phase 4b ------------------------------------------------------------------
+
+
+class ReturnInputKind(StrEnum):
+    """return_input.kind (migration 0018, phase 4b D97). Owner-scoped unless listed in
+    HOUSEHOLD_KINDS; read per year unless listed in SPANNING_KINDS (D110)."""
+
+    WAGE_CERTIFICATE = "wage_certificate"  # Lohnsteuerbescheinigung; document required
+    PAYSLIP = "payslip"  # one month of one employer; document required (D105)
+    COMMUTE = "commute"  # one route for a period
+    HOME_OFFICE = "home_office"  # Tagespauschale days; one per owner and year
+    WORK_ROOM = "work_room"  # häusliches Arbeitszimmer; one per owner and year (D106)
+    WORK_EQUIPMENT = "work_equipment"  # one item or subscription (D108)
+    TELECOM = "telecom"  # one per owner and year (D112)
+    PROFESSIONAL_ASSOCIATION = "professional_association"  # incl. unions (is_union)
+    TRAINING = "training"
+    OTHER_EXPENSE = "other_expense"  # Kontoführung, Bewerbung, Fähr- und Flugkosten, other
+    OTHER_INSURANCE = "other_insurance"  # §10 Abs. 1 Nr. 3a premiums; one per owner and year
+    REPLACEMENT_INCOME = "replacement_income"  # a benefit paid by an authority (D102)
+    VORSORGE_OVERRIDE = "vorsorge_override"  # one per owner and year
+    CHILD = "child"  # household; first year it counts (D109)
+    CHILDCARE_COST = "childcare_cost"  # household (D112)
+    HOUSEHOLD_SERVICES = "household_services"  # household, §35a (D112)
+    SPECIAL_EXPENSE = "special_expense"  # household, donations (D112)
+
+
+# The household-scoped kinds (owner_id NULL); every other kind names its owner. Migration
+# 0018's scope CHECK says the same.
+HOUSEHOLD_KINDS = frozenset(
+    {
+        ReturnInputKind.CHILD,
+        ReturnInputKind.CHILDCARE_COST,
+        ReturnInputKind.HOUSEHOLD_SERVICES,
+        ReturnInputKind.SPECIAL_EXPENSE,
+    }
+)
+# Read with tax_year <= Y and not ended, never copied into a later year (D97, D110). A
+# work_equipment row is spanning only while its useful life runs past the purchase year; a
+# subscription row is a yearly item of the same kind (D108 (c)).
+SPANNING_KINDS = frozenset({ReturnInputKind.CHILD, ReturnInputKind.WORK_EQUIPMENT})
+# Never carried into the next year: the year's documents and one-off items (D110).
+NOT_CARRIED_KINDS = frozenset(
+    {
+        ReturnInputKind.WAGE_CERTIFICATE,
+        ReturnInputKind.PAYSLIP,
+        ReturnInputKind.REPLACEMENT_INCOME,
+        ReturnInputKind.TRAINING,
+    }
+)
+# One current row per owner and year (the "one current answer" rule; payslip: per owner,
+# employer and month). The other kinds are items, any number.
+ONE_PER_OWNER_AND_YEAR = frozenset(
+    {
+        ReturnInputKind.HOME_OFFICE,
+        ReturnInputKind.WORK_ROOM,
+        ReturnInputKind.TELECOM,
+        ReturnInputKind.OTHER_INSURANCE,
+        ReturnInputKind.VORSORGE_OVERRIDE,
+    }
+)
+
+
+class QuestionnaireAnswerValue(StrEnum):
+    """questionnaire_answer.answer (migration 0018, D110). not_applicable is recorded too, so
+    "answered no" differs from "not asked yet"."""
+
+    YES = "yes"
+    NO = "no"
+    NOT_APPLICABLE = "not_applicable"

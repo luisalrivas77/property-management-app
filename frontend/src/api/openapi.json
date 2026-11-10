@@ -7844,6 +7844,34 @@
         ],
         "title": "ChecklistStatus"
       },
+      "ChildFact": {
+        "properties": {
+          "born_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Born On"
+          },
+          "kindergeld_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kindergeld From"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "born_on"
+        ],
+        "title": "ChildFact",
+        "description": "A child of the household (phase 4b D109; return_input kind child, household scope). No\nname and no other identifier: the birth date decides the months, and it never enters an\nevent payload (only months_in_year does). kindergeld_from: the first month Kindergeld is\npaid, when it differs from the birth month."
+      },
       "ConfirmAllocationsBody": {
         "properties": {
           "allocation_set": {
@@ -8483,6 +8511,12 @@
               },
               {
                 "$ref": "#/components/schemas/StatementExtraction"
+              },
+              {
+                "$ref": "#/components/schemas/WageCertificateExtraction"
+              },
+              {
+                "$ref": "#/components/schemas/PayslipExtraction"
               }
             ],
             "title": "Fields"
@@ -8609,7 +8643,9 @@
           "zinsbescheinigung",
           "wirtschaftsplan",
           "hausgeldabrechnung",
-          "other"
+          "other",
+          "lohnsteuerbescheinigung",
+          "gehaltsabrechnung"
         ],
         "title": "DocumentType",
         "description": "The classifier's output set (AI layer). Phase 1 sets it by hand."
@@ -9414,6 +9450,8 @@
           "owner.created",
           "owner.updated",
           "owner.income_input_recorded",
+          "owner.return_input_recorded",
+          "owner.anlage_n_exported",
           "property.created",
           "property.updated",
           "property.purchase_notarized",
@@ -9452,6 +9490,8 @@
           "document.read_failed",
           "workspace.settings_changed",
           "workspace.income_input_recorded",
+          "workspace.return_input_recorded",
+          "workspace.questionnaire_answered",
           "proposal.created",
           "proposal.superseded",
           "proposal.rejected",
@@ -9587,7 +9627,9 @@
           "wirtschaftsplan",
           "hausgeldabrechnung",
           "zinsbescheinigung",
-          "statement"
+          "statement",
+          "lohnsteuerbescheinigung",
+          "gehaltsabrechnung"
         ],
         "title": "ExtractionKind",
         "description": "document_extraction.kind and proposal.kind (migration 0005): which field set an\nextraction holds. `manual` is phase 1's ManualDocumentFields; the others are the per-type\nmodels in schemas/extraction.py."
@@ -9870,6 +9912,58 @@
         "type": "object",
         "title": "HausgeldabrechnungExtraction",
         "description": "Hausgeldabrechnung: the year's settlement (read by phase 3's Hausgeld rule)."
+      },
+      "HouseholdTaxContext": {
+        "properties": {
+          "children": {
+            "items": {
+              "$ref": "#/components/schemas/ChildFact"
+            },
+            "type": "array",
+            "title": "Children"
+          },
+          "replacement_benefits": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Replacement Benefits",
+            "default": "0"
+          },
+          "church_tax_paid": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Church Tax Paid",
+            "default": "0"
+          },
+          "donations": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Donations",
+            "default": "0"
+          },
+          "childcare": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Childcare",
+            "default": "0"
+          },
+          "household_services_credit": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Household Services Credit",
+            "default": "0"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Sources"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "HouseholdTaxContext",
+        "description": "What the assessed tax needs beyond the zvE (phase 4b D98, D109, D112), built by\nhousehold_context: the children, the Lohnersatzleistungen after the §32b Abs. 2 reduction,\nchurch tax paid, the donations within the cap, childcare within the cap, and the §35a\ncredit. Without it, the assessed tax is the plain tariff (total_tax)."
       },
       "ImportStatus": {
         "type": "string",
@@ -12073,6 +12167,16 @@
             "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
             "title": "Gross"
           },
+          "gross_source": {
+            "type": "string",
+            "enum": [
+              "expected",
+              "certificate",
+              "payslip"
+            ],
+            "title": "Gross Source",
+            "default": "expected"
+          },
           "deductions": {
             "type": "string",
             "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
@@ -12082,7 +12186,8 @@
             "type": "string",
             "enum": [
               "default",
-              "override"
+              "override",
+              "employment"
             ],
             "title": "Deductions Source"
           },
@@ -12102,7 +12207,7 @@
           "amount"
         ],
         "title": "OwnerZve",
-        "description": "One owner's part of the estimate (D84). deductions = the default or the override."
+        "description": "One owner's part of the estimate (D84). deductions = the default, the override, or (phase\n4b D98) the Anlage N's applied Werbungskosten + Vorsorge + 36. gross_source says where the\ngross came from: the expected_gross_pay row, or a certificate or the payslip projection."
       },
       "OwnershipBody": {
         "properties": {
@@ -12235,6 +12340,134 @@
         ],
         "title": "PasskeyVerifyRequest",
         "description": "POST /auth/passkeys/verify: a further passkey for the signed-in user."
+      },
+      "PayslipExtraction": {
+        "properties": {
+          "title": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "a short German title, two to six words naming what the document is",
+            "value_kind": "text"
+          },
+          "document_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the date the document carries",
+            "value_kind": "date"
+          },
+          "employee_name": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the employee's name, to match the owner",
+            "value_kind": "text"
+          },
+          "employer_name": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the employer's name only",
+            "value_kind": "text"
+          },
+          "period_month": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the month paid, as its first day",
+            "value_kind": "date"
+          },
+          "tax_class": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Steuerklasse",
+            "value_kind": "text"
+          },
+          "gross_month": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Steuer-Brutto of the month (not Gesamt-Brutto)",
+            "value_kind": "money"
+          },
+          "gross_ytd": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Steuer-Brutto, Jahreswerte / kumuliert",
+            "value_kind": "money"
+          },
+          "income_tax_month": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Lohnsteuer of the month",
+            "value_kind": "money"
+          },
+          "income_tax_ytd": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Lohnsteuer, Jahreswerte / kumuliert",
+            "value_kind": "money"
+          },
+          "soli_month": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Solidaritätszuschlag of the month",
+            "value_kind": "money"
+          },
+          "soli_ytd": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Solidaritätszuschlag, Jahreswerte / kumuliert",
+            "value_kind": "money"
+          },
+          "church_tax_month": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Kirchensteuer of the month",
+            "value_kind": "money"
+          },
+          "church_tax_ytd": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Kirchensteuer, Jahreswerte / kumuliert",
+            "value_kind": "money"
+          },
+          "pension_employee_month": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Rentenversicherung AN of the month",
+            "value_kind": "money"
+          },
+          "pension_employee_ytd": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Rentenversicherung AN, Jahreswerte / kumuliert",
+            "value_kind": "money"
+          },
+          "health_employee_month": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Krankenversicherung AN of the month",
+            "value_kind": "money"
+          },
+          "health_employee_ytd": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Krankenversicherung AN, Jahreswerte / kumuliert",
+            "value_kind": "money"
+          },
+          "care_employee_month": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Pflegeversicherung AN of the month",
+            "value_kind": "money"
+          },
+          "care_employee_ytd": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Pflegeversicherung AN, Jahreswerte / kumuliert",
+            "value_kind": "money"
+          },
+          "unemployment_employee_month": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Arbeitslosenversicherung AN of the month",
+            "value_kind": "money"
+          },
+          "unemployment_employee_ytd": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Arbeitslosenversicherung AN, Jahreswerte / kumuliert",
+            "value_kind": "money"
+          },
+          "tax_free_benefits_month": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "steuerfreie Bezüge of the month",
+            "value_kind": "money"
+          },
+          "tax_free_benefits_ytd": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "steuerfreie Bezüge, Jahreswerte / kumuliert",
+            "value_kind": "money"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PayslipExtraction",
+        "description": "Gehaltsabrechnung: one month, with the month column and the year-to-date column\n(Jahreswerte / kumuliert). Net pay and the bank account are not read."
       },
       "PossibleDuplicate": {
         "properties": {
@@ -12459,6 +12692,90 @@
         ],
         "title": "PriceSplitSource",
         "description": "Where the building/land split of the purchase price comes from."
+      },
+      "PrivateCostValue": {
+        "properties": {
+          "cost_class": {
+            "type": "string",
+            "enum": [
+              "travel",
+              "postage",
+              "advertising",
+              "association",
+              "legal_insurance",
+              "software",
+              "other"
+            ],
+            "title": "Cost Class"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Label"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "trips": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 366.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trips"
+          },
+          "km_round_trip": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2000.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Km Round Trip"
+          },
+          "trip_dates": {
+            "items": {
+              "type": "string",
+              "format": "date"
+            },
+            "type": "array",
+            "title": "Trip Dates"
+          },
+          "share": {
+            "$ref": "#/components/schemas/Fraction",
+            "default": {
+              "numerator": 1,
+              "denominator": 1
+            }
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "cost_class",
+          "label"
+        ],
+        "title": "PrivateCostValue",
+        "description": "A rental cost paid from a private account (phase 4b D111): trips to the flat, postage,\na landlords' association, software and the like; tax_year on the row is the year paid.\ntravel: trips × km_round_trip × the rule set's travel_rate_per_km (no amount typed);\nevery other class: amount × share. The label is free text: it stays in the row and never\nenters the event payload (only amounts and codes do)."
       },
       "Projection": {
         "properties": {
@@ -14653,9 +14970,28 @@
             "title": "Created At"
           },
           "property_id": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Property Id"
+          },
+          "owner_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Id"
           },
           "tax_year": {
             "type": "integer",
@@ -14708,7 +15044,6 @@
           "id",
           "workspace_id",
           "created_at",
-          "property_id",
           "tax_year",
           "kind",
           "rule_set_version",
@@ -14744,7 +15079,8 @@
         "type": "string",
         "enum": [
           "field_sheet",
-          "archive"
+          "archive",
+          "anlage_n_sheet"
         ],
         "title": "TaxExportKind"
       },
@@ -14936,6 +15272,9 @@
               },
               {
                 "$ref": "#/components/schemas/MovableAsset"
+              },
+              {
+                "$ref": "#/components/schemas/PrivateCostValue"
               }
             ],
             "title": "Value"
@@ -14963,6 +15302,18 @@
               }
             ],
             "title": "Supersedes Id"
+          },
+          "carried_from_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Carried From Id"
           },
           "withdrawn": {
             "type": "boolean",
@@ -15109,6 +15460,9 @@
               },
               {
                 "$ref": "#/components/schemas/MovableAsset"
+              },
+              {
+                "$ref": "#/components/schemas/PrivateCostValue"
               }
             ],
             "title": "Value"
@@ -15137,6 +15491,18 @@
             ],
             "title": "Supersedes Id"
           },
+          "carried_from_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Carried From Id"
+          },
           "withdrawn": {
             "type": "boolean",
             "title": "Withdrawn",
@@ -15164,7 +15530,8 @@
           "interest_certified",
           "pre_handover_income",
           "useful_life",
-          "movable_asset"
+          "movable_asset",
+          "private_cost"
         ],
         "title": "TaxInputKind"
       },
@@ -16408,6 +16775,154 @@
         "title": "UsefulLife",
         "description": "§7 Abs. 4 S. 2 EStG (D79): the building's shorter actual useful life in whole years, as\nthe Gutachten (document_id on the row) states it; tax_year on the row is the first tax year\nit applies to. The service refuses a life not shorter than the statutory one."
       },
+      "WageCertificateExtraction": {
+        "properties": {
+          "title": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "a short German title, two to six words naming what the document is",
+            "value_kind": "text"
+          },
+          "document_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the date the document carries",
+            "value_kind": "date"
+          },
+          "employee_name": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the employee's name, to match the owner",
+            "value_kind": "text"
+          },
+          "employer_name": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the employer's name only",
+            "value_kind": "text"
+          },
+          "tax_year": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the year the certificate covers",
+            "value_kind": "year"
+          },
+          "period_from": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Nr. 1 Dauer des Dienstverhältnisses, vom",
+            "value_kind": "date"
+          },
+          "period_to": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Nr. 1 Dauer des Dienstverhältnisses, bis",
+            "value_kind": "date"
+          },
+          "tax_class": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Steuerklasse/Faktor",
+            "value_kind": "text"
+          },
+          "church_tax_mark": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Kirchensteuermerkmale",
+            "value_kind": "text"
+          },
+          "child_allowance_count": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Zahl der Kinderfreibeträge",
+            "value_kind": "decimal"
+          },
+          "gross": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Nr. 3 Bruttoarbeitslohn einschl. Sachbezüge",
+            "value_kind": "money"
+          },
+          "income_tax": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Nr. 4 Einbehaltene Lohnsteuer von 3.",
+            "value_kind": "money"
+          },
+          "soli": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Nr. 5 Einbehaltener Solidaritätszuschlag von 3.",
+            "value_kind": "money"
+          },
+          "church_tax": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Nr. 6 Einbehaltene Kirchensteuer des Arbeitnehmers von 3.",
+            "value_kind": "money"
+          },
+          "church_tax_spouse": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Nr. 7 Einbehaltene Kirchensteuer des Ehegatten von 3.",
+            "value_kind": "money"
+          },
+          "replacement_benefits": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Nr. 15 Kurzarbeitergeld, Zuschuss zum Mutterschaftsgeld und ähnliche",
+            "value_kind": "money"
+          },
+          "short_time_allowance": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Nr. 15a davon Kurzarbeitergeld",
+            "value_kind": "money"
+          },
+          "employer_commute_tax_free": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Nr. 17 Steuerfreie Arbeitgeberleistungen für Fahrten zwischen Wohnung und erster Tätigkeitsstätte",
+            "value_kind": "money"
+          },
+          "employer_commute_flat_taxed": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Nr. 18 Pauschal besteuerte Arbeitgeberleistungen für Fahrten zwischen Wohnung und erster Tätigkeitsstätte",
+            "value_kind": "money"
+          },
+          "pension_employer": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Nr. 22a Arbeitgeberanteil zur gesetzlichen Rentenversicherung",
+            "value_kind": "money"
+          },
+          "pension_employee": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Nr. 23a Arbeitnehmeranteil zur gesetzlichen Rentenversicherung",
+            "value_kind": "money"
+          },
+          "pension_employee_professional": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Nr. 23b Arbeitnehmeranteil an berufsständische Versorgungseinrichtungen",
+            "value_kind": "money"
+          },
+          "subsidy_health": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Nr. 24a Steuerfreie Arbeitgeberzuschüsse zur gesetzlichen Krankenversicherung",
+            "value_kind": "money"
+          },
+          "subsidy_private_health": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Nr. 24b Steuerfreie Arbeitgeberzuschüsse zur privaten Krankenversicherung",
+            "value_kind": "money"
+          },
+          "subsidy_care": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Nr. 24c Steuerfreie Arbeitgeberzuschüsse zur gesetzlichen Pflegeversicherung",
+            "value_kind": "money"
+          },
+          "health_employee": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Nr. 25 Arbeitnehmerbeiträge zur gesetzlichen Krankenversicherung",
+            "value_kind": "money"
+          },
+          "care_employee": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Nr. 26 Arbeitnehmerbeiträge zur sozialen Pflegeversicherung",
+            "value_kind": "money"
+          },
+          "unemployment_employee": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Nr. 27 Arbeitnehmerbeiträge zur Arbeitslosenversicherung",
+            "value_kind": "money"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "WageCertificateExtraction",
+        "description": "Lohnsteuerbescheinigung: one employer's certificate for one year."
+      },
       "WaitingAmount": {
         "properties": {
           "amount": {
@@ -16458,7 +16973,35 @@
           "draft.open_lines_excluded",
           "draft.form_provisional",
           "draft.allocation_without_property",
-          "archive.finanzamt_copy_needed"
+          "archive.finanzamt_copy_needed",
+          "tax.travel_frequency",
+          "anlage_n.certificate_missing",
+          "anlage_n.church_mismatch",
+          "anlage_n.tax_class_6",
+          "anlage_n.periods_overlap",
+          "anlage_n.days_implausible",
+          "anlage_n.home_office_capped",
+          "anlage_n.too_many_routes",
+          "anlage_n.receipt_missing",
+          "anlage_n.form_provisional",
+          "anlage_n.payslip_gap",
+          "anlage_n.payslip_no_ytd",
+          "anlage_n.work_room_records",
+          "anlage_n.work_room_centre",
+          "anlage_n.work_room_partial",
+          "anlage_n.first_workplace_check",
+          "return.progression_provisional",
+          "return.benefit_possible_double",
+          "return.children_mismatch",
+          "return.kindergeld_apply",
+          "return.child_over_18",
+          "return.childcare_until_14",
+          "return.donation_over_cap",
+          "return.filing_required",
+          "return.questionnaire_open",
+          "return.not_modelled",
+          "questionnaire_provisional",
+          "tax_export.questions_open"
         ],
         "title": "WarningCode"
       },
@@ -16963,6 +17506,16 @@
             "type": "array",
             "title": "Per Owner"
           },
+          "household": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HouseholdTaxContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "sources": {
             "items": {
               "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
@@ -17019,7 +17572,10 @@
               "scenario",
               "schedule_entry",
               "income_input",
-              "tariff"
+              "tariff",
+              "return_input",
+              "questionnaire_answer",
+              "anlage_n_rule_set"
             ],
             "title": "Kind"
           },

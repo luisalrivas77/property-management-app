@@ -270,6 +270,114 @@ class StatementExtraction(_Typing):
     lines: ExtractedValue = ev("text_list", "the booking lines")
 
 
+# Phase 4b (docs/phases/phase-4b.md §8.1, D96, D103). No identifier is a field: the model is
+# never asked for one, and the scrub in rules.extraction_parse removes any that a quote holds.
+# Descriptions name the printed label; the line numbers may move between form years.
+
+
+class WageCertificateExtraction(_Typing):
+    """Lohnsteuerbescheinigung: one employer's certificate for one year."""
+
+    employee_name: ExtractedValue = ev("text", "the employee's name, to match the owner")
+    employer_name: ExtractedValue = ev("text", "the employer's name only")
+    tax_year: ExtractedValue = ev("year", "the year the certificate covers")
+    period_from: ExtractedValue = ev("date", "Nr. 1 Dauer des Dienstverhältnisses, vom")
+    period_to: ExtractedValue = ev("date", "Nr. 1 Dauer des Dienstverhältnisses, bis")
+    tax_class: ExtractedValue = ev("text", "Steuerklasse/Faktor")
+    church_tax_mark: ExtractedValue = ev("text", "Kirchensteuermerkmale")
+    child_allowance_count: ExtractedValue = ev("decimal", "Zahl der Kinderfreibeträge")
+    gross: ExtractedValue = ev("money", "Nr. 3 Bruttoarbeitslohn einschl. Sachbezüge")
+    income_tax: ExtractedValue = ev("money", "Nr. 4 Einbehaltene Lohnsteuer von 3.")
+    soli: ExtractedValue = ev("money", "Nr. 5 Einbehaltener Solidaritätszuschlag von 3.")
+    church_tax: ExtractedValue = ev(
+        "money", "Nr. 6 Einbehaltene Kirchensteuer des Arbeitnehmers von 3."
+    )
+    church_tax_spouse: ExtractedValue = ev(
+        "money", "Nr. 7 Einbehaltene Kirchensteuer des Ehegatten von 3."
+    )
+    replacement_benefits: ExtractedValue = ev(
+        "money", "Nr. 15 Kurzarbeitergeld, Zuschuss zum Mutterschaftsgeld und ähnliche"
+    )
+    short_time_allowance: ExtractedValue = ev("money", "Nr. 15a davon Kurzarbeitergeld")
+    employer_commute_tax_free: ExtractedValue = ev(
+        "money",
+        "Nr. 17 Steuerfreie Arbeitgeberleistungen für Fahrten zwischen Wohnung und erster"
+        " Tätigkeitsstätte",
+    )
+    employer_commute_flat_taxed: ExtractedValue = ev(
+        "money",
+        "Nr. 18 Pauschal besteuerte Arbeitgeberleistungen für Fahrten zwischen Wohnung und"
+        " erster Tätigkeitsstätte",
+    )
+    pension_employer: ExtractedValue = ev(
+        "money", "Nr. 22a Arbeitgeberanteil zur gesetzlichen Rentenversicherung"
+    )
+    pension_employee: ExtractedValue = ev(
+        "money", "Nr. 23a Arbeitnehmeranteil zur gesetzlichen Rentenversicherung"
+    )
+    pension_employee_professional: ExtractedValue = ev(
+        "money", "Nr. 23b Arbeitnehmeranteil an berufsständische Versorgungseinrichtungen"
+    )
+    subsidy_health: ExtractedValue = ev(
+        "money", "Nr. 24a Steuerfreie Arbeitgeberzuschüsse zur gesetzlichen Krankenversicherung"
+    )
+    subsidy_private_health: ExtractedValue = ev(
+        "money", "Nr. 24b Steuerfreie Arbeitgeberzuschüsse zur privaten Krankenversicherung"
+    )
+    subsidy_care: ExtractedValue = ev(
+        "money", "Nr. 24c Steuerfreie Arbeitgeberzuschüsse zur gesetzlichen Pflegeversicherung"
+    )
+    health_employee: ExtractedValue = ev(
+        "money", "Nr. 25 Arbeitnehmerbeiträge zur gesetzlichen Krankenversicherung"
+    )
+    care_employee: ExtractedValue = ev(
+        "money", "Nr. 26 Arbeitnehmerbeiträge zur sozialen Pflegeversicherung"
+    )
+    unemployment_employee: ExtractedValue = ev(
+        "money", "Nr. 27 Arbeitnehmerbeiträge zur Arbeitslosenversicherung"
+    )
+
+
+class PayslipExtraction(_Typing):
+    """Gehaltsabrechnung: one month, with the month column and the year-to-date column
+    (Jahreswerte / kumuliert). Net pay and the bank account are not read."""
+
+    employee_name: ExtractedValue = ev("text", "the employee's name, to match the owner")
+    employer_name: ExtractedValue = ev("text", "the employer's name only")
+    period_month: ExtractedValue = ev("date", "the month paid, as its first day")
+    tax_class: ExtractedValue = ev("text", "Steuerklasse")
+    gross_month: ExtractedValue = ev("money", "Steuer-Brutto of the month (not Gesamt-Brutto)")
+    gross_ytd: ExtractedValue = ev("money", "Steuer-Brutto, Jahreswerte / kumuliert")
+    income_tax_month: ExtractedValue = ev("money", "Lohnsteuer of the month")
+    income_tax_ytd: ExtractedValue = ev("money", "Lohnsteuer, Jahreswerte / kumuliert")
+    soli_month: ExtractedValue = ev("money", "Solidaritätszuschlag of the month")
+    soli_ytd: ExtractedValue = ev("money", "Solidaritätszuschlag, Jahreswerte / kumuliert")
+    church_tax_month: ExtractedValue = ev("money", "Kirchensteuer of the month")
+    church_tax_ytd: ExtractedValue = ev("money", "Kirchensteuer, Jahreswerte / kumuliert")
+    pension_employee_month: ExtractedValue = ev("money", "Rentenversicherung AN of the month")
+    pension_employee_ytd: ExtractedValue = ev(
+        "money", "Rentenversicherung AN, Jahreswerte / kumuliert"
+    )
+    health_employee_month: ExtractedValue = ev("money", "Krankenversicherung AN of the month")
+    health_employee_ytd: ExtractedValue = ev(
+        "money", "Krankenversicherung AN, Jahreswerte / kumuliert"
+    )
+    care_employee_month: ExtractedValue = ev("money", "Pflegeversicherung AN of the month")
+    care_employee_ytd: ExtractedValue = ev(
+        "money", "Pflegeversicherung AN, Jahreswerte / kumuliert"
+    )
+    unemployment_employee_month: ExtractedValue = ev(
+        "money", "Arbeitslosenversicherung AN of the month"
+    )
+    unemployment_employee_ytd: ExtractedValue = ev(
+        "money", "Arbeitslosenversicherung AN, Jahreswerte / kumuliert"
+    )
+    tax_free_benefits_month: ExtractedValue = ev("money", "steuerfreie Bezüge of the month")
+    tax_free_benefits_ytd: ExtractedValue = ev(
+        "money", "steuerfreie Bezüge, Jahreswerte / kumuliert"
+    )
+
+
 EXTRACTION_MODELS: dict[ExtractionKind, type[_Typing]] = {
     ExtractionKind.PURCHASE_CONTRACT: PurchaseContractExtraction,
     ExtractionKind.LOAN_CONTRACT: LoanContractExtraction,
@@ -283,6 +391,8 @@ EXTRACTION_MODELS: dict[ExtractionKind, type[_Typing]] = {
     ExtractionKind.HAUSGELDABRECHNUNG: HausgeldabrechnungExtraction,
     ExtractionKind.ZINSBESCHEINIGUNG: ZinsbescheinigungExtraction,
     ExtractionKind.STATEMENT: StatementExtraction,
+    ExtractionKind.LOHNSTEUERBESCHEINIGUNG: WageCertificateExtraction,
+    ExtractionKind.GEHALTSABRECHNUNG: PayslipExtraction,
 }
 
 AnyExtraction = (
@@ -298,4 +408,6 @@ AnyExtraction = (
     | HausgeldabrechnungExtraction
     | ZinsbescheinigungExtraction
     | StatementExtraction
+    | WageCertificateExtraction
+    | PayslipExtraction
 )

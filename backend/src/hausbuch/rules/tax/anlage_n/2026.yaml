@@ -1,0 +1,244 @@
+# Anlage N rule set for tax year 2026 (docs/phases/phase-4b.md §4, D99). PROVISIONAL form
+# mapping.
+#
+# The Anlage N 2026 was not published as of 10 Nov 2026, so the form mapping below is a copy of
+# the 2025 form's (2025AnlN031NET – Oktober 2025): status provisional, form_year 2025, exactly
+# as rulesets/2026.yaml does for the Anlage V (D53). When ELSTER publishes the 2026 form, a data
+# PR updates the Zeilen and Kennzahlen and sets published / form_year 2026; line keys stay, so
+# no fixture outcome changes (anlage_n.yaml asserts on keys and amounts, never on Zeilen).
+#
+# The Kennzahlen repeat across blocks (Kz 110–114 stand on the pay block and on the first
+# commute route): line keys are the identity, there is no Kz-uniqueness check (D99). The
+# Arbeitnehmer-Pauschbetrag (1,230), the child figures, the §35a caps and the filing threshold
+# live in tariffs/2026.yaml and are read from there, never duplicated here.
+#
+# Rates and amounts are quoted strings: the schema accepts decimal strings only.
+
+tax_year: 2026
+version: "2026.1"
+commute_rates:                      # §9 Abs. 1 S. 3 Nr. 4 EStG: 0.38 from the first km from 2026
+  - {from_km: 1, rate: "0.38"}      # (2025: 0.30 to km 20, 0.38 from km 21)
+commute_cap_non_car: "4500.00"      # §9 Abs. 1 S. 3 Nr. 4 S. 2: the cap, not for a car
+home_office_day_rate: "6.00"        # §4 Abs. 5 S. 1 Nr. 6c EStG, per day
+home_office_cap: "1260.00"          # 210 days
+work_room_flat: "1260.00"           # §4 Abs. 5 S. 1 Nr. 6b S. 4: the Jahrespauschale (D106)
+gwg_limit_net: "800.00"             # §6 Abs. 2 S. 1 EStG, net
+default_vat_rate: "0.19"            # net estimate when an item has no net amount
+useful_lives:                       # months; Q-O21
+  - {item_class: computer, months: null, full_in_year: true}       # BMF 22 Feb 2022: one year
+  - {item_class: software, months: null, full_in_year: true}
+  - {item_class: phone, months: 60, full_in_year: false}           # AfA-Tabelle AV: 5 years
+  - {item_class: furniture, months: 156, full_in_year: false}      # AfA-Tabelle AV: 13 years
+  - {item_class: tools, months: 60, full_in_year: false}
+  - {item_class: subscription, months: null, full_in_year: true}   # a running cost
+  - {item_class: other, months: null, full_in_year: false}         # must be typed
+telecom_share: "0.20"               # R 9.1 Abs. 5 S. 4 LStR without proof (D112, Q-O27)
+telecom_cap_monthly: "20.00"
+account_fee_flat: "16.00"           # Kontoführung, H 9.1 LStH (practice)
+union_dues_beside_allowance: true   # from VZ 2026 (§9a S. 3 EStG, StÄndG 2025; spec §3)
+other_vorsorge_cap_employee: "1900.00"     # §10 Abs. 4 S. 2 EStG
+other_vorsorge_cap_self_paying: "2800.00"  # §10 Abs. 4 S. 1 EStG
+pension_max_contribution: "30826.00"       # §10 Abs. 3 S. 1, 2026 (Q-O12)
+weekdays_in_year: 261               # Mon–Fri in 2026; the plausibility check of D100 (2)
+
+form:
+  form_year: 2025
+  status: provisional
+  version_stamp: "2025AnlN031NET – Oktober 2025"
+  source_url: "https://www.formulare-bfinv.de/"
+
+  lines:
+    # --- Angaben zum Arbeitslohn (two columns: Steuerklasse 1–5, Steuerklasse 6) ---------
+    header.tax_class:
+      {key: header.tax_class, zeile: 4, kennzahl: "168", kind: header, rounding: none,
+       label: "Steuerklasse"}
+    pay.gross:
+      {key: pay.gross, zeile: 5, kennzahl: "110", kind: income, rounding: none,
+       label: "Bruttoarbeitslohn"}
+    pay.income_tax:
+      {key: pay.income_tax, zeile: 6, kennzahl: "140", kind: header, rounding: none,
+       label: "Lohnsteuer"}
+    pay.soli:
+      {key: pay.soli, zeile: 7, kennzahl: "150", kind: header, rounding: none,
+       label: "Solidaritätszuschlag"}
+    pay.church_tax:
+      {key: pay.church_tax, zeile: 8, kennzahl: "142", kind: header, rounding: none,
+       label: "Kirchensteuer des Arbeitnehmers"}
+    pay.church_tax_spouse:
+      {key: pay.church_tax_spouse, zeile: 9, kennzahl: "144", kind: header, rounding: none,
+       label: "Kirchensteuer des Ehegatten"}
+    # the same Zeilen, second column: Steuerklasse 6 (a second job's certificate, D99)
+    pay.gross_class_6:
+      {key: pay.gross_class_6, zeile: 5, kennzahl: "111", kind: income, rounding: none,
+       label: "Bruttoarbeitslohn (Steuerklasse 6)"}
+    pay.income_tax_class_6:
+      {key: pay.income_tax_class_6, zeile: 6, kennzahl: "141", kind: header, rounding: none,
+       label: "Lohnsteuer (Steuerklasse 6)"}
+    pay.soli_class_6:
+      {key: pay.soli_class_6, zeile: 7, kennzahl: "151", kind: header, rounding: none,
+       label: "Solidaritätszuschlag (Steuerklasse 6)"}
+    pay.church_tax_class_6:
+      {key: pay.church_tax_class_6, zeile: 8, kennzahl: "143", kind: header, rounding: none,
+       label: "Kirchensteuer des Arbeitnehmers (Steuerklasse 6)"}
+    pay.church_tax_spouse_class_6:
+      {key: pay.church_tax_spouse_class_6, zeile: 9, kennzahl: "145", kind: header, rounding: none,
+       label: "Kirchensteuer des Ehegatten (Steuerklasse 6)"}
+    pay.replacement_benefits:
+      {key: pay.replacement_benefits, zeile: 20, kennzahl: "119", kind: header, rounding: none,
+       label: "Kurzarbeitergeld, Zuschuss zum Mutterschaftsgeld und ähnliche (laut Nr. 15 der Lohnsteuerbescheinigung)"}
+
+    # --- Wege zwischen Wohnung und erster Tätigkeitsstätte (three routes) ---------------
+    commute.route_1.kind:
+      {key: commute.route_1.kind, zeile: 27, kind: header, rounding: none,
+       label: "Art der Arbeitsstätte (1 = erste Tätigkeitsstätte)"}
+    commute.route_1.address:
+      {key: commute.route_1.address, zeile: 27, kind: header, rounding: none,
+       label: "PLZ, Ort und Straße der Arbeitsstätte"}
+    commute.route_1.period:
+      {key: commute.route_1.period, zeile: 27, kind: header, rounding: none,
+       label: "vom – bis"}
+    commute.route_1.days_per_week:
+      {key: commute.route_1.days_per_week, zeile: 28, kind: header, rounding: none,
+       label: "Arbeitstage je Woche"}
+    commute.route_1.absent_days:
+      {key: commute.route_1.absent_days, zeile: 28, kind: header, rounding: none,
+       label: "Urlaubs-, Krankheits-, Heimarbeits- und Dienstreisetage"}
+    commute.route_1.days:
+      {key: commute.route_1.days, zeile: 29, kennzahl: "110", kind: header, rounding: none,
+       label: "Arbeitstage, an denen die Arbeitsstätte aufgesucht wurde"}
+    commute.route_1.km:
+      {key: commute.route_1.km, zeile: 30, kennzahl: "111", kind: header, rounding: none,
+       label: "Einfache Entfernung in vollen km"}
+    commute.route_1.km_car:
+      {key: commute.route_1.km_car, zeile: 31, kennzahl: "112", kind: header, rounding: none,
+       label: "davon mit eigenem oder zur Nutzung überlassenem Pkw zurückgelegt"}
+    commute.route_1.km_collective:
+      {key: commute.route_1.km_collective, zeile: 32, kennzahl: "113", kind: header, rounding: none,
+       label: "davon mit Sammelbeförderung des Arbeitgebers zurückgelegt"}
+    commute.route_1.km_other:
+      {key: commute.route_1.km_other, zeile: 33, kind: header, rounding: none,
+       label: "davon mit öffentlichen Verkehrsmitteln, Motorrad, Fahrrad, als Fußgänger oder Mitfahrer"}
+    commute.route_1.public_transport_costs:
+      {key: commute.route_1.public_transport_costs, zeile: 34, kennzahl: "114", kind: cost, rounding: up,
+       label: "Aufwendungen für Fahrten mit öffentlichen Verkehrsmitteln"}
+    commute.route_2.kind:
+      {key: commute.route_2.kind, zeile: 35, kind: header, rounding: none,
+       label: "Art der Arbeitsstätte (1 = erste Tätigkeitsstätte)"}
+    commute.route_2.address:
+      {key: commute.route_2.address, zeile: 35, kind: header, rounding: none,
+       label: "PLZ, Ort und Straße der Arbeitsstätte"}
+    commute.route_2.period:
+      {key: commute.route_2.period, zeile: 35, kind: header, rounding: none,
+       label: "vom – bis"}
+    commute.route_2.days_per_week:
+      {key: commute.route_2.days_per_week, zeile: 36, kind: header, rounding: none,
+       label: "Arbeitstage je Woche"}
+    commute.route_2.absent_days:
+      {key: commute.route_2.absent_days, zeile: 36, kind: header, rounding: none,
+       label: "Urlaubs-, Krankheits-, Heimarbeits- und Dienstreisetage"}
+    commute.route_2.days:
+      {key: commute.route_2.days, zeile: 37, kennzahl: "130", kind: header, rounding: none,
+       label: "Arbeitstage, an denen die Arbeitsstätte aufgesucht wurde"}
+    commute.route_2.km:
+      {key: commute.route_2.km, zeile: 38, kennzahl: "131", kind: header, rounding: none,
+       label: "Einfache Entfernung in vollen km"}
+    commute.route_2.km_car:
+      {key: commute.route_2.km_car, zeile: 39, kennzahl: "132", kind: header, rounding: none,
+       label: "davon mit eigenem oder zur Nutzung überlassenem Pkw zurückgelegt"}
+    commute.route_2.km_collective:
+      {key: commute.route_2.km_collective, zeile: 40, kennzahl: "133", kind: header, rounding: none,
+       label: "davon mit Sammelbeförderung des Arbeitgebers zurückgelegt"}
+    commute.route_2.km_other:
+      {key: commute.route_2.km_other, zeile: 41, kind: header, rounding: none,
+       label: "davon mit öffentlichen Verkehrsmitteln, Motorrad, Fahrrad, als Fußgänger oder Mitfahrer"}
+    commute.route_2.public_transport_costs:
+      {key: commute.route_2.public_transport_costs, zeile: 42, kennzahl: "134", kind: cost, rounding: up,
+       label: "Aufwendungen für Fahrten mit öffentlichen Verkehrsmitteln"}
+    commute.route_3.kind:
+      {key: commute.route_3.kind, zeile: 43, kind: header, rounding: none,
+       label: "Art der Arbeitsstätte (1 = erste Tätigkeitsstätte)"}
+    commute.route_3.address:
+      {key: commute.route_3.address, zeile: 43, kind: header, rounding: none,
+       label: "PLZ, Ort und Straße der Arbeitsstätte"}
+    commute.route_3.period:
+      {key: commute.route_3.period, zeile: 43, kind: header, rounding: none,
+       label: "vom – bis"}
+    commute.route_3.days_per_week:
+      {key: commute.route_3.days_per_week, zeile: 44, kind: header, rounding: none,
+       label: "Arbeitstage je Woche"}
+    commute.route_3.absent_days:
+      {key: commute.route_3.absent_days, zeile: 44, kind: header, rounding: none,
+       label: "Urlaubs-, Krankheits-, Heimarbeits- und Dienstreisetage"}
+    commute.route_3.days:
+      {key: commute.route_3.days, zeile: 45, kennzahl: "150", kind: header, rounding: none,
+       label: "Arbeitstage, an denen die Arbeitsstätte aufgesucht wurde"}
+    commute.route_3.km:
+      {key: commute.route_3.km, zeile: 46, kennzahl: "151", kind: header, rounding: none,
+       label: "Einfache Entfernung in vollen km"}
+    commute.route_3.km_car:
+      {key: commute.route_3.km_car, zeile: 47, kennzahl: "152", kind: header, rounding: none,
+       label: "davon mit eigenem oder zur Nutzung überlassenem Pkw zurückgelegt"}
+    commute.route_3.km_collective:
+      {key: commute.route_3.km_collective, zeile: 48, kennzahl: "153", kind: header, rounding: none,
+       label: "davon mit Sammelbeförderung des Arbeitgebers zurückgelegt"}
+    commute.route_3.km_other:
+      {key: commute.route_3.km_other, zeile: 49, kind: header, rounding: none,
+       label: "davon mit öffentlichen Verkehrsmitteln, Motorrad, Fahrrad, als Fußgänger oder Mitfahrer"}
+    commute.route_3.public_transport_costs:
+      {key: commute.route_3.public_transport_costs, zeile: 50, kennzahl: "154", kind: cost, rounding: up,
+       label: "Aufwendungen für Fahrten mit öffentlichen Verkehrsmitteln"}
+    commute.employer_tax_free:
+      {key: commute.employer_tax_free, zeile: 51, kennzahl: "290", kind: header, rounding: none,
+       label: "Steuerfreie Arbeitgeberleistungen für Fahrten zwischen Wohnung und erster Tätigkeitsstätte"}
+    commute.employer_flat_taxed:
+      {key: commute.employer_flat_taxed, zeile: 51, kennzahl: "295", kind: header, rounding: none,
+       label: "Pauschal besteuerte Arbeitgeberleistungen für Fahrten zwischen Wohnung und erster Tätigkeitsstätte"}
+    commute.agency_subsidy:
+      {key: commute.agency_subsidy, zeile: 52, kennzahl: "291", kind: header, rounding: none,
+       label: "Von der Agentur für Arbeit gezahlte Fahrtkostenzuschüsse"}
+
+    # --- Weitere Werbungskosten -----------------------------------------------------------
+    dues.associations:
+      {key: dues.associations, zeile: 53, kennzahl: "310", kind: cost, rounding: up,
+       label: "Beiträge zu Berufsverbänden"}
+    equipment.items:
+      {key: equipment.items, zeile_from: 54, zeile: 55, kind: header, rounding: none,
+       label: "Aufwendungen für Arbeitsmittel (Art der Arbeitsmittel)"}
+    equipment.total:
+      {key: equipment.total, zeile: 56, kennzahl: "320", kind: cost, rounding: up,
+       label: "Arbeitsmittel, Summe"}
+    work_room.amount:
+      {key: work_room.amount, zeile: 57, kennzahl: "325", kind: cost, rounding: up,
+       label: "Aufwendungen für ein häusliches Arbeitszimmer"}
+    home_office.days_other_workplace:
+      {key: home_office.days_other_workplace, zeile: 58, kennzahl: "335", kind: header, rounding: none,
+       label: "Tagespauschale: Tage mit Tätigkeit überwiegend in der häuslichen Wohnung (anderer Arbeitsplatz vorhanden)"}
+    home_office.days_no_other_workplace:
+      {key: home_office.days_no_other_workplace, zeile: 59, kennzahl: "336", kind: header, rounding: none,
+       label: "Tagespauschale: Tage ohne dauerhaft zur Verfügung stehenden anderen Arbeitsplatz"}
+    training.total:
+      {key: training.total, zeile: 60, kennzahl: "330", kind: cost, rounding: up,
+       label: "Fortbildungskosten"}
+    other.ferry_flight:
+      {key: other.ferry_flight, zeile: 61, kind: cost, rounding: up,
+       label: "Fähr- und Flugkosten"}
+    other.items:
+      {key: other.items, zeile_from: 62, zeile: 63, kind: header, rounding: none,
+       label: "Weitere Werbungskosten (z. B. Kontoführung, Telekommunikation, Bewerbung)"}
+    other.total:
+      {key: other.total, zeile: 64, kennzahl: "380", kind: cost, rounding: up,
+       label: "Weitere Werbungskosten, Summe"}
+
+    # --- Computed, not form lines (printed below the lines "zur Kontrolle") ---------------
+    wk.itemised:
+      {key: wk.itemised, kind: total, rounding: none,
+       label: "Werbungskosten, Einzelnachweis"}
+    wk.allowance:
+      {key: wk.allowance, kind: total, rounding: none,
+       label: "Arbeitnehmer-Pauschbetrag"}
+    wk.applied:
+      {key: wk.applied, kind: total, rounding: none,
+       label: "Werbungskosten, angesetzt"}
+    result:
+      {key: result, kind: result, rounding: none,
+       label: "Einkünfte aus nichtselbständiger Arbeit"}

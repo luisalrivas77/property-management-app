@@ -1,0 +1,69 @@
+# home_office.yaml: rules/tax/anlage_n/home_office.py home_office_line (docs/phases/phase-4b.md
+# §5.3, D100 (2), D106).
+
+# Synthetic numbers only (the repo is public). Loaded through tests/fixture_models_phase4b.py,
+# which checks every value against the §7 schemas and recomputes each expectation on load.
+#
+# amount = min(6 × (Z58 days + Z59 days), 1,260); a work room of the same owner covering 12
+# months refuses the row (anlage_n.work_room_excludes_day_rate), one covering 1-11 months adds
+# the info anlage_n.work_room_partial when days are typed; days_implausible when commute
+# days + Z58 days exceed the 261 weekdays of 2026; home_office_capped above 210 days.
+
+bases:
+  room_12: &room_12
+    months: 12
+    room_m2: '12'
+    home_m2: '80'
+    rent_year: '14400.00'
+    running_costs_year: '2400.00'
+
+cases:
+- id: days_90_owner_b
+  description: 'owner B: 90 days at home beside 100 office days → 540.00'
+  tax_year: 2026
+  fact: {days_other_workplace: 90}
+  commute_days: 100
+  expect: {amount: '540.00'}
+- id: days_210_at_cap
+  description: 210 days → 1,260.00, exactly the cap
+  tax_year: 2026
+  fact: {days_no_other_workplace: 210}
+  expect: {amount: '1260.00'}
+- id: days_250_capped
+  description: 250 days → 1,500.00, capped at 1,260.00
+  tax_year: 2026
+  fact: {days_no_other_workplace: 250}
+  expect:
+    amount: '1260.00'
+    warnings:
+    - {code: anlage_n.home_office_capped, params: {days: '250'}}
+- id: overlap_warning
+  description: commute 220 + Z58 60 = 280 > 261 weekdays → warning, the amount still 360.00
+  tax_year: 2026
+  fact: {days_other_workplace: 60}
+  commute_days: 220
+  expect:
+    amount: '360.00'
+    warnings:
+    - {code: anlage_n.days_implausible, params: {days: '280'}}
+- id: with_work_room_error
+  description: a work room for 12 months excludes the Tagespauschale (§4 Abs. 5 S. 1 Nr. 6c S. 3)
+  tax_year: 2026
+  fact: {days_no_other_workplace: 50}
+  work_room: *room_12
+  expect:
+    error: {code: anlage_n.work_room_excludes_day_rate}
+- id: with_work_room_nine_months_warning
+  description: a work room for 9 months beside 40 home-office days → 240.00, and the note that the day rate counts only outside the room's months (D106)
+  tax_year: 2026
+  fact: {days_other_workplace: 40}
+  work_room: {<<: *room_12, months: 9}
+  expect:
+    amount: '240.00'
+    warnings:
+    - {code: anlage_n.work_room_partial, params: {months: '9'}}
+- id: zero_days_no_line
+  description: no days → 0.00 and no line
+  tax_year: 2026
+  fact: {}
+  expect: {amount: '0.00'}

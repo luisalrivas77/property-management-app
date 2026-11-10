@@ -1,0 +1,301 @@
+# The yearly questions (Jahresfragen) for tax year 2026 (docs/phases/phase-4b.md §4.2, D110).
+#
+# Each question is asked once per slot: per owner (scope owner), once for the household
+# (household) or per property (property). A "yes" leads to rows of the named input kind, or to
+# a reminder printed on the Gesamt card and the sheet. value_match picks the rows by their
+# coded fields, so two questions can share one kind. carry_forward: copy = last year's rows
+# are offered for confirmation; reconfirm = rows that span years (a child, an item still in
+# use) are asked about again, never copied; none = asked fresh each year.
+#
+# Keys are stable across years: a renamed key breaks carry-forward, so tests pin them. The
+# texts are plain and generic; nothing in this file is about a particular household.
+
+tax_year: 2026
+version: "2026.1"
+questions:
+  # --- Einkommen ---------------------------------------------------------------------------
+  - key: owner.pay_documents
+    section: einkommen
+    scope: owner
+    question_de: "Liegt die Lohnsteuerbescheinigung für das Jahr vor, oder Gehaltsabrechnungen?"
+    why_de: >-
+      Die Bescheinigung des Arbeitgebers enthält Lohn, Lohnsteuer und Sozialversicherung des
+      Jahres. Bis sie da ist, rechnet die App mit der letzten Gehaltsabrechnung hoch.
+    answer_type: yes_no
+    targets:
+      - {kind: return_input, input_kind: wage_certificate}
+      - {kind: return_input, input_kind: payslip}
+    carry_forward: none
+  - key: owner.tax_class
+    section: einkommen
+    scope: owner
+    question_de: "Welche Steuerklasse gilt?"
+    why_de: >-
+      Die Steuerklasse bestimmt nur, wie viel Lohnsteuer monatlich einbehalten wird, nicht die
+      Steuer des Jahres. Sie erklärt, warum eine Erstattung oder Nachzahlung entsteht.
+    answer_type: choice
+    choices:
+      - {code: i, label_de: "I"}
+      - {code: ii, label_de: "II"}
+      - {code: iii, label_de: "III"}
+      - {code: iv, label_de: "IV"}
+      - {code: iv_factor, label_de: "IV mit Faktor"}
+      - {code: v, label_de: "V"}
+      - {code: vi, label_de: "VI"}
+    carry_forward: none
+  - key: owner.replacement_income
+    section: einkommen
+    scope: owner
+    question_de: "Gab es Lohnersatzleistungen, etwa Elterngeld, Mutterschaftsgeld oder Krankengeld?"
+    why_de: >-
+      Diese Leistungen sind steuerfrei, erhöhen aber den Steuersatz auf das übrige Einkommen
+      (Progressionsvorbehalt). Ab 410 Euro im Jahr ist eine Erklärung Pflicht.
+    answer_type: choice
+    choices:
+      - {code: none, label_de: "Keine"}
+      - {code: elterngeld, label_de: "Elterngeld"}
+      - {code: mutterschaftsgeld, label_de: "Mutterschaftsgeld"}
+      - {code: krankengeld, label_de: "Krankengeld"}
+      - {code: arbeitslosengeld, label_de: "Arbeitslosengeld"}
+      - {code: other, label_de: "Andere"}
+    targets:
+      - {kind: return_input, input_kind: replacement_income}
+    carry_forward: none
+  - key: owner.insurance_status
+    section: einkommen
+    scope: owner
+    question_de: "Wie ist die Krankenversicherung?"
+    why_de: >-
+      Bei gesetzlich Versicherten stehen die Beiträge auf der Lohnsteuerbescheinigung. Bei
+      privater Versicherung oder Beihilfe braucht die App die Beiträge aus der Bescheinigung
+      der Versicherung.
+    answer_type: choice
+    choices:
+      - {code: statutory, label_de: "Gesetzlich versichert"}
+      - {code: private, label_de: "Privat versichert"}
+      - {code: civil_servant, label_de: "Beihilfe und private Versicherung"}
+    targets:
+      - {kind: return_input, input_kind: vorsorge_override}
+    carry_forward: copy
+  - key: owner.other_insurance
+    section: einkommen
+    scope: owner
+    question_de: "Gab es weitere Versicherungen, etwa Haftpflicht, Unfall oder Berufsunfähigkeit?"
+    why_de: >-
+      Sie zählen nur bis zu einer Höchstgrenze, die bei Angestellten meist schon durch die
+      Kranken- und Pflegeversicherung erreicht ist. Meist ändert sich daher nichts.
+    answer_type: yes_no
+    targets:
+      - {kind: return_input, input_kind: other_insurance}
+    carry_forward: copy
+
+  # --- Werbungskosten ----------------------------------------------------------------------
+  - key: owner.commute
+    section: werbungskosten
+    scope: owner
+    question_de: "Ging es regelmäßig zur Arbeitsstätte, und hat sich der Weg geändert?"
+    why_de: >-
+      Für jeden Arbeitstag zählen 38 Cent je Kilometer der einfachen Strecke. Das ist oft der
+      größte Posten der Werbungskosten.
+    answer_type: yes_no
+    targets:
+      - {kind: return_input, input_kind: commute}
+    carry_forward: copy
+  - key: owner.home_office_days
+    section: werbungskosten
+    scope: owner
+    question_de: "An wie vielen Tagen wurde überwiegend zu Hause gearbeitet?"
+    why_de: >-
+      Für jeden solchen Tag zählen 6 Euro, höchstens 1.260 Euro im Jahr. An einem Tag zählt
+      entweder diese Pauschale oder der Weg zur Arbeit.
+    answer_type: yes_no
+    targets:
+      - {kind: return_input, input_kind: home_office}
+    carry_forward: copy
+  - key: owner.work_room
+    section: werbungskosten
+    scope: owner
+    question_de: "Gibt es ein eigenes, abgeschlossenes Arbeitszimmer, das der Mittelpunkt der ganzen Arbeit ist?"
+    why_de: >-
+      Nur dann zählen die Kosten des Zimmers oder eine Jahrespauschale von 1.260 Euro. Eine
+      Arbeitsecke im Wohnzimmer zählt nicht; dafür gibt es die Tagespauschale.
+    answer_type: yes_no
+    targets:
+      - {kind: return_input, input_kind: work_room}
+    carry_forward: copy
+  - key: owner.equipment_new
+    section: werbungskosten
+    scope: owner
+    question_de: "Wurden Arbeitsmittel gekauft, etwa ein Computer, ein Bildschirm oder ein Schreibtisch?"
+    why_de: >-
+      Der beruflich genutzte Anteil zählt: kleine Anschaffungen und Computer im Jahr des Kaufs,
+      teurere Möbel verteilt über mehrere Jahre.
+    answer_type: yes_no
+    targets:
+      - {kind: return_input, input_kind: work_equipment}
+    carry_forward: none
+  - key: owner.equipment_prior
+    section: werbungskosten
+    scope: owner
+    question_de: "Werden Arbeitsmittel aus früheren Jahren noch genutzt?"
+    why_de: >-
+      Ein über mehrere Jahre verteiltes Arbeitsmittel zählt jedes Jahr mit seinem Anteil, bis
+      es abgeschrieben oder verkauft ist.
+    answer_type: yes_no
+    targets:
+      - {kind: return_input, input_kind: work_equipment}
+    carry_forward: reconfirm
+  - key: owner.subscriptions
+    section: werbungskosten
+    scope: owner
+    question_de: "Gab es beruflich genutzte Abonnements, etwa Software oder Fachzeitschriften?"
+    why_de: "Der beruflich genutzte Anteil zählt im Jahr der Zahlung."
+    answer_type: yes_no
+    targets:
+      - {kind: return_input, input_kind: work_equipment, value_match: {item_class: subscription}}
+    carry_forward: copy
+  - key: owner.telecom
+    section: werbungskosten
+    scope: owner
+    question_de: "Wurden Telefon oder Internet auch beruflich genutzt?"
+    why_de: >-
+      Ohne Einzelnachweis zählen 20 Prozent der Rechnungen, höchstens 20 Euro im Monat, soweit
+      der Arbeitgeber sie nicht erstattet.
+    answer_type: yes_no
+    targets:
+      - {kind: return_input, input_kind: telecom}
+    carry_forward: copy
+  - key: owner.account_fee
+    section: werbungskosten
+    scope: owner
+    question_de: "Kontoführungsgebühren pauschal ansetzen?"
+    why_de: "Üblich sind 16 Euro im Jahr ohne Nachweis, für das Konto, auf das der Lohn fließt."
+    answer_type: yes_no
+    targets:
+      - {kind: return_input, input_kind: other_expense, value_match: {expense_class: account_fee}}
+    carry_forward: copy
+    default_answer: "yes"
+  - key: owner.union_association
+    section: werbungskosten
+    scope: owner
+    question_de: "Gab es Beiträge an eine Gewerkschaft oder einen Berufsverband?"
+    why_de: >-
+      Gewerkschaftsbeiträge zählen ab 2026 zusätzlich zum Arbeitnehmer-Pauschbetrag von
+      1.230 Euro.
+    answer_type: yes_no
+    targets:
+      - {kind: return_input, input_kind: professional_association}
+    carry_forward: copy
+  - key: owner.training
+    section: werbungskosten
+    scope: owner
+    question_de: "Gab es Kosten für eine berufliche Fortbildung?"
+    why_de: "Kurse, Prüfungen und Fachbücher für den Beruf zählen, soweit niemand sie erstattet hat."
+    answer_type: yes_no
+    targets:
+      - {kind: return_input, input_kind: training}
+    carry_forward: none
+  - key: owner.job_move
+    section: werbungskosten
+    scope: owner
+    question_de: "Gab es einen Umzug aus beruflichen Gründen?"
+    why_de: "Die App berechnet Umzugskosten nicht; sie erinnert daran, sie von Hand einzutragen."
+    answer_type: yes_no
+    targets:
+      - {kind: reminder, reminder_de: "Berufliche Umzugskosten von Hand in der Anlage N eintragen."}
+    carry_forward: none
+  - key: owner.own_expense_trips
+    section: werbungskosten
+    scope: owner
+    question_de: "Gab es Dienstreisen, die der Arbeitgeber nicht erstattet hat?"
+    why_de: "Die App berechnet Reisekosten nicht; sie erinnert daran, sie von Hand einzutragen."
+    answer_type: yes_no
+    targets:
+      - {kind: reminder, reminder_de: "Nicht erstattete Reisekosten von Hand in der Anlage N eintragen."}
+    carry_forward: none
+
+  # --- Kinder ------------------------------------------------------------------------------
+  - key: household.children
+    section: kinder
+    scope: household
+    question_de: "Leben Kinder im Haushalt, und kam in diesem Jahr ein Kind dazu?"
+    why_de: >-
+      Das Finanzamt vergleicht Kindergeld und Kinderfreibeträge und nimmt, was günstiger ist.
+      Kinder zählen auch beim Solidaritätszuschlag und der Kirchensteuer.
+    answer_type: yes_no
+    targets:
+      - {kind: return_input, input_kind: child}
+    carry_forward: reconfirm
+  - key: household.childcare
+    section: kinder
+    scope: household
+    question_de: "Gab es Kosten für Kita, Tagesmutter oder Hort?"
+    why_de: "80 Prozent der Kosten zählen, höchstens 4.800 Euro je Kind unter 14 Jahren."
+    answer_type: yes_no
+    targets:
+      - {kind: return_input, input_kind: childcare_cost}
+    carry_forward: copy
+
+  # --- Haushalt ----------------------------------------------------------------------------
+  - key: household.services_35a
+    section: haushalt
+    scope: household
+    question_de: "Gab es Handwerker oder Dienstleistungen im eigenen Haushalt, per Überweisung bezahlt?"
+    why_de: >-
+      20 Prozent der Arbeitskosten mindern die Steuer direkt. Gemeint ist die eigene Wohnung;
+      Arbeiten an einer vermieteten Wohnung zählen dort als Kosten.
+    answer_type: yes_no
+    targets:
+      - {kind: return_input, input_kind: household_services}
+    carry_forward: copy
+  - key: household.donations
+    section: haushalt
+    scope: household
+    question_de: "Gab es Spenden oder Mitgliedsbeiträge an gemeinnützige Organisationen?"
+    why_de: "Sie zählen als Sonderausgaben, bis zu 20 Prozent der Einkünfte."
+    answer_type: yes_no
+    targets:
+      - {kind: return_input, input_kind: special_expense}
+    carry_forward: copy
+  - key: household.extraordinary
+    section: haushalt
+    scope: household
+    question_de: "Gab es hohe Krankheitskosten oder andere außergewöhnliche Belastungen?"
+    why_de: >-
+      Sie zählen erst über einem zumutbaren Anteil des Einkommens. Die App rechnet sie nicht,
+      sie zeigt nur diesen Anteil.
+    answer_type: yes_no
+    targets:
+      - {kind: reminder, reminder_de: "Außergewöhnliche Belastungen von Hand eintragen; sie zählen erst über der zumutbaren Belastung."}
+    carry_forward: none
+  - key: household.other_not_modelled
+    section: haushalt
+    scope: household
+    question_de: "Gibt es Riester-Verträge, Unterhaltszahlungen oder Steuervorauszahlungen?"
+    why_de: "Die App berechnet sie nicht; sie erinnert daran, sie von Hand zu berücksichtigen."
+    answer_type: yes_no
+    targets:
+      - {kind: reminder, reminder_de: "Riester, Unterhalt und Vorauszahlungen von Hand eintragen; die Schätzung enthält sie nicht."}
+    carry_forward: none
+
+  # --- Immobilie ---------------------------------------------------------------------------
+  - key: property.trips
+    section: immobilie
+    scope: property
+    question_de: "Gab es Fahrten zur vermieteten Wohnung, etwa für Übergaben oder Reparaturen?"
+    why_de: "Jede Fahrt zählt mit 30 Cent je gefahrenem Kilometer als Werbungskosten der Vermietung."
+    answer_type: yes_no
+    targets:
+      - {kind: tax_input, input_kind: private_cost, value_match: {cost_class: travel}}
+    carry_forward: copy
+  - key: property.private_costs
+    section: immobilie
+    scope: property
+    question_de: "Gab es Kosten der Vermietung, die privat bezahlt wurden, etwa Porto, Anzeigen oder Beiträge?"
+    why_de: >-
+      Kosten, die nicht vom Mietkonto bezahlt wurden, sieht die App sonst nicht. Sie zählen in
+      der Anlage V unter den sonstigen Kosten.
+    answer_type: yes_no
+    targets:
+      - {kind: tax_input, input_kind: private_cost}
+    carry_forward: copy

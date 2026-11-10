@@ -1,0 +1,82 @@
+# equipment.yaml: rules/tax/anlage_n/equipment.py equipment_lines (docs/phases/phase-4b.md §5.5,
+# D100 (3), D108).
+
+# Synthetic numbers only (the repo is public). Loaded through tests/fixture_models_phase4b.py,
+# which checks every value against the §7 schemas and recomputes each expectation on load.
+#
+# Per item and year Y: net = the typed net or cents(gross ÷ 1.19); base = cents(gross × share);
+# a subscription → base in its year; net ≤ 800 or a full_in_year class (computer, software) →
+# base in the purchase year; otherwise linear AfA over the life in months (the class default,
+# or the typed life; an `other` item needs one: anlage_n.useful_life_missing), from the purchase
+# month inclusive, half-up per year, the final year taking the remainder; bought_on may precede
+# Y. With disposed_on: the disposal year counts the months through the disposal month, nothing
+# after. `full_life_sum` checks the slices of every year add up to the base.
+
+cases:
+- id: laptop_1500_full_in_year
+  description: gross 1,500.00, net 1,260.50 > 800, a computer → 1,500.00 in 2026, nothing in 2027
+  item: {label: Laptop, item_class: computer, gross: '1500.00', bought_on: 2026-03-10}
+  years:
+  - {tax_year: 2026, amount: '1500.00'}
+  - {tax_year: 2027, amount: '0.00'}
+- id: monitor_gwg_70pct
+  description: gross 950.81, net 799.00 ≤ 800, share 0.7 → 665.57
+  item: {label: Monitor, item_class: computer, gross: '950.81', bought_on: 2026-05-04,
+         professional_share: {numerator: 7, denominator: 10}}
+  years:
+  - {tax_year: 2026, amount: '665.57'}
+- id: phone_2025_slice_2026
+  description: gross 1,199.00 bought 15 Mar 2025, net 1,007.56 > 800, 60 months, share 0.5 → base 599.50
+  item: &phone {label: Smartphone, item_class: phone, gross: '1199.00', bought_on: 2025-03-15,
+                professional_share: {numerator: 1, denominator: 2}}
+  years:
+  - {tax_year: 2025, amount: '99.92'}
+  - {tax_year: 2026, amount: '119.90'}
+  - {tax_year: 2027, amount: '119.90'}
+  - {tax_year: 2028, amount: '119.90'}
+  - {tax_year: 2029, amount: '119.90'}
+  - {tax_year: 2030, amount: '19.98'}
+  - {tax_year: 2031, amount: '0.00'}
+  full_life_sum: '599.50'
+- id: phone_disposed_2027
+  description: the same phone disposed of on 30 Jun 2027 → 2026 unchanged, 2027 six months, then nothing
+  item: {<<: *phone, disposed_on: 2027-06-30}
+  years:
+  - {tax_year: 2026, amount: '119.90'}
+  - {tax_year: 2027, amount: '59.95'}
+  - {tax_year: 2028, amount: '0.00'}
+- id: subscription_half_share
+  description: 240.00 paid in 2026, share 0.5 → 120.00 in 2026, nothing in 2027
+  item: {label: KI-Abo, item_class: subscription, gross: '240.00', bought_on: 2026-01-15,
+         professional_share: {numerator: 1, denominator: 2}}
+  years:
+  - {tax_year: 2026, amount: '120.00'}
+  - {tax_year: 2027, amount: '0.00'}
+- id: desk_afa_156_months
+  description: gross 1,190.00, net 1,000.00, furniture (13 years), bought 1 Jul 2026
+  item: {label: Schreibtisch, item_class: furniture, gross: '1190.00', bought_on: 2026-07-01}
+  years:
+  - {tax_year: 2026, amount: '45.77'}
+  - {tax_year: 2027, amount: '91.54'}
+  - {tax_year: 2038, amount: '91.54'}
+  - {tax_year: 2039, amount: '45.75'}
+  - {tax_year: 2040, amount: '0.00'}
+  full_life_sum: '1190.00'
+- id: chair_bought_december
+  description: gross 1,071.00, net 900.00, furniture bought 10 Dec 2026 → one month in 2026
+  item: {label: Bürostuhl, item_class: furniture, gross: '1071.00', bought_on: 2026-12-10}
+  years:
+  - {tax_year: 2026, amount: '6.87'}
+  - {tax_year: 2027, amount: '82.38'}
+  full_life_sum: '1071.00'
+- id: net_typed_wins
+  description: tools, gross 999.60 (840.00 net by the default rate) with a typed net 790.00 → GWG, 999.60
+  item: {label: Werkzeug, item_class: tools, gross: '999.60', net: '790.00', bought_on: 2026-04-20}
+  years:
+  - {tax_year: 2026, amount: '999.60'}
+  - {tax_year: 2027, amount: '0.00'}
+- id: other_without_life_error
+  description: an `other` item above the GWG limit without a typed life
+  item: {label: Messgerät, item_class: other, gross: '1190.00', bought_on: 2026-02-01}
+  years:
+  - {tax_year: 2026, error: {code: anlage_n.useful_life_missing}}

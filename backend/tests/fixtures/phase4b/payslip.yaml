@@ -1,0 +1,173 @@
+# payslip.yaml: rules/tax/anlage_n/payslip.py projected_certificate (docs/phases/phase-4b.md
+# §5.1, D105).
+
+# Synthetic numbers only (the repo is public): owner A of §5.6, fictional employers "Muster
+# GmbH" and "Beispiel AG". Loaded through tests/fixture_models_phase4b.py, which checks every
+# value against the §7 schemas and recomputes each expectation on load. Decimals are quoted
+# strings (the schemas accept decimal strings only).
+#
+# Per owner and employer without a certificate, from the latest payslip: figure = ytd + month ×
+# months_remaining_paid (no ytd: month × (month number + remaining), warning payslip_no_ytd);
+# period_from January unless the earliest payslip's ytd equals its month; period_to the end of
+# the last paid month; Nr. 22a = 0 (a payslip does not print it); tax_free_benefits is
+# informational. A certificate of the same employer replaces the projection. `projected` is the
+# full projected WageCertificate per employer (by employer name); amounts left out are 0.
+
+bases:
+  july_a: &july_a
+    period_month: 2026-07-01
+    employer: Muster GmbH
+    tax_class: 4
+    months_remaining_paid: 5
+    gross: {month: '5000.00', ytd: '35000.00'}
+    income_tax: {month: '766.00', ytd: '5362.00'}
+    soli: {month: '0.00', ytd: '0.00'}
+    church_tax: {month: '0.00', ytd: '0.00'}
+    pension_employee: {month: '465.00', ytd: '3255.00'}
+    health_employee: {month: '437.50', ytd: '3062.50'}
+    care_employee: {month: '90.00', ytd: '630.00'}
+    unemployment_employee: {month: '65.00', ytd: '455.00'}
+  projected_a: &projected_a
+    period_from: 2026-01-01
+    period_to: 2026-12-31
+    employer: Muster GmbH
+    tax_class: 4
+    gross: '60000.00'
+    income_tax: '9192.00'
+    pension_employee: '5580.00'
+    health_employee: '5250.00'
+    care_employee: '1080.00'
+    unemployment_employee: '780.00'
+
+cases:
+- id: july_projection
+  description: 'A in July: 35,000 + 5 × 5,000 = 60,000; LSt 5,362 + 5 × 766 = 9,192; RV 5,580'
+  tax_year: 2026
+  payslips: [*july_a]
+  expect:
+    gross_source: payslip
+    gross_total: '60000.00'
+    projected: [*projected_a]
+- id: january_zero_remaining
+  description: pay ends in January before a Mutterschutz, months_remaining_paid 0 → 2,700.00
+  tax_year: 2026
+  payslips:
+  - period_month: 2026-01-01
+    employer: Muster GmbH
+    tax_class: 5
+    months_remaining_paid: 0
+    gross: {month: '2700.00', ytd: '2700.00'}
+    income_tax: {month: '0.00', ytd: '0.00'}
+    pension_employee: {month: '251.10', ytd: '251.10'}
+    health_employee: {month: '236.25', ytd: '236.25'}
+    care_employee: {month: '48.60', ytd: '48.60'}
+    unemployment_employee: {month: '35.10', ytd: '35.10'}
+  expect:
+    gross_source: payslip
+    gross_total: '2700.00'
+    projected:
+    - period_from: 2026-01-01
+      period_to: 2026-01-31
+      employer: Muster GmbH
+      tax_class: 5
+      gross: '2700.00'
+      pension_employee: '251.10'
+      health_employee: '236.25'
+      care_employee: '48.60'
+      unemployment_employee: '35.10'
+- id: december_no_projection
+  description: a December payslip projects nothing, its year-to-date figures are the year
+  tax_year: 2026
+  payslips:
+  - period_month: 2026-12-01
+    employer: Muster GmbH
+    tax_class: 4
+    months_remaining_paid: 0
+    gross: {month: '5000.00', ytd: '60000.00'}
+    income_tax: {month: '766.00', ytd: '9200.00'}
+  expect:
+    gross_source: payslip
+    gross_total: '60000.00'
+    projected:
+    - period_from: 2026-01-01
+      period_to: 2026-12-31
+      employer: Muster GmbH
+      tax_class: 4
+      gross: '60000.00'
+      income_tax: '9200.00'
+- id: missing_month_warning
+  description: June ytd 30,000 + August month 5,000 ≠ August ytd 40,000 (July missing) → payslip_gap
+  tax_year: 2026
+  payslips:
+  - period_month: 2026-06-01
+    employer: Muster GmbH
+    tax_class: 4
+    months_remaining_paid: 6
+    gross: {month: '5000.00', ytd: '30000.00'}
+  - period_month: 2026-08-01
+    employer: Muster GmbH
+    tax_class: 4
+    months_remaining_paid: 4
+    gross: {month: '5000.00', ytd: '40000.00'}
+  expect:
+    gross_source: payslip
+    gross_total: '60000.00'
+    projected:
+    - {period_from: 2026-01-01, period_to: 2026-12-31, employer: Muster GmbH, tax_class: 4,
+       gross: '60000.00'}
+    warnings:
+    - {code: anlage_n.payslip_gap, params: {month: '2026-08'}}
+- id: no_ytd_low_confidence
+  description: the Jahreswerte column unread → 5,000 × (7 + 5) = 60,000 with payslip_no_ytd
+  tax_year: 2026
+  payslips:
+  - period_month: 2026-07-01
+    employer: Muster GmbH
+    tax_class: 4
+    months_remaining_paid: 5
+    gross: {month: '5000.00'}
+  expect:
+    gross_source: payslip
+    gross_total: '60000.00'
+    projected:
+    - {period_from: 2026-01-01, period_to: 2026-12-31, employer: Muster GmbH, tax_class: 4,
+       gross: '60000.00'}
+    warnings:
+    - {code: anlage_n.payslip_no_ytd, params: {month: '2026-07'}}
+- id: certificate_replaces_projection
+  description: the July payslip and the employer's certificate → the certificate's figures
+  tax_year: 2026
+  payslips: [*july_a]
+  certificates:
+  - period_from: 2026-01-01
+    period_to: 2026-12-31
+    employer: Muster GmbH
+    tax_class: 4
+    gross: '60000.00'
+    income_tax: '9200.00'
+    pension_employer: '5580.00'
+    pension_employee: '5580.00'
+    health_employee: '5250.00'
+    care_employee: '1080.00'
+    unemployment_employee: '780.00'
+  expect:
+    gross_source: certificate
+    gross_total: '60000.00'
+    projected: []
+- id: two_employers_summed
+  description: 'a second job (class VI) beside the first: 60,000 + 1,500 + 5 × 500 = 64,000'
+  tax_year: 2026
+  payslips:
+  - *july_a
+  - period_month: 2026-07-01
+    employer: Beispiel AG
+    tax_class: 6
+    months_remaining_paid: 5
+    gross: {month: '500.00', ytd: '1500.00'}
+  expect:
+    gross_source: payslip
+    gross_total: '64000.00'
+    projected:
+    - {period_from: 2026-01-01, period_to: 2026-12-31, employer: Beispiel AG, tax_class: 6,
+       gross: '4000.00'}
+    - *projected_a

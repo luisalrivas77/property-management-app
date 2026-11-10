@@ -1,0 +1,77 @@
+# work_room.yaml: rules/tax/anlage_n/work_room.py work_room_line (docs/phases/phase-4b.md §5.4,
+# D106).
+
+# Synthetic numbers only (the repo is public). Loaded through tests/fixture_models_phase4b.py,
+# which checks every value against the §7 schemas and recomputes each expectation on load.
+#
+# actual = cents((rent_year + running_costs_year) × room_m2 ÷ home_m2 × months ÷ 12) +
+# room_only_costs_year; flat = cents(1,260 × months ÷ 12); the higher unless `prefer` is typed.
+# Warnings: work_room_centre always (info), work_room_records when the actual costs are used.
+
+bases:
+  room_a: &room_a
+    months: 12
+    room_m2: '12'
+    home_m2: '80'
+    rent_year: '14400.00'
+    running_costs_year: '2400.00'
+
+cases:
+- id: actual_beats_flat
+  description: 12 m² of 80 m², rent 14,400.00 + running 2,400.00 → 16,800.00 × 0.15 = 2,520.00
+  tax_year: 2026
+  fact: *room_a
+  expect:
+    actual: '2520.00'
+    flat: '1260.00'
+    method: actual
+    amount: '2520.00'
+    warnings:
+    - {code: anlage_n.work_room_centre}
+    - {code: anlage_n.work_room_records}
+- id: flat_beats_actual
+  description: 6 m² of 100 m², rent 9,000.00 → 540.00 vs the flat 1,260.00
+  tax_year: 2026
+  fact: {months: 12, room_m2: '6', home_m2: '100', rent_year: '9000.00'}
+  expect:
+    actual: '540.00'
+    flat: '1260.00'
+    method: flat
+    amount: '1260.00'
+    warnings:
+    - {code: anlage_n.work_room_centre}
+- id: nine_months
+  description: the first room for 9 months → 1,890.00 vs 945.00
+  tax_year: 2026
+  fact: {<<: *room_a, months: 9}
+  expect:
+    actual: '1890.00'
+    flat: '945.00'
+    method: actual
+    amount: '1890.00'
+    warnings:
+    - {code: anlage_n.work_room_centre}
+    - {code: anlage_n.work_room_records}
+- id: prefer_flat
+  description: the first room with prefer flat → 1,260.00 (no records needed)
+  tax_year: 2026
+  fact: {<<: *room_a, prefer: flat}
+  expect:
+    actual: '2520.00'
+    flat: '1260.00'
+    method: flat
+    amount: '1260.00'
+    warnings:
+    - {code: anlage_n.work_room_centre}
+- id: room_only_costs_added
+  description: the first room plus a 300.00 repaint of the room, added in full → 2,820.00
+  tax_year: 2026
+  fact: {<<: *room_a, room_only_costs_year: '300.00'}
+  expect:
+    actual: '2820.00'
+    flat: '1260.00'
+    method: actual
+    amount: '2820.00'
+    warnings:
+    - {code: anlage_n.work_room_centre}
+    - {code: anlage_n.work_room_records}

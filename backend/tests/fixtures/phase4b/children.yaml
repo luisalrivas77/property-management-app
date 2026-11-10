@@ -1,0 +1,219 @@
+# children.yaml: rules/tax/anlage_n/children.py and return_estimate.assessed_tax
+# (docs/phases/phase-4b.md §5.10, D102, D109, D112).
+
+# Synthetic numbers only (the repo is public). Loaded through tests/fixture_models_phase4b.py,
+# which checks every value against the §7 schemas and recomputes each expectation on load;
+# tests/test_phase4b_fixture_arithmetic.py recomputes them once more with the real tariff.
+#
+# months = max(birth month, January) … December (up to the 18th birthday's month); kindergeld =
+# months × 259; allowances = (3,414 + 1,464) × 2 × months ÷ 12. est(z) = income_tax(z), or with
+# benefits L: floor(z × rate), rate = income_tax(z + L) ÷ (z + L) cut to six decimals (D102).
+# est_without = est(zvE), est_with = est(zvE − allowances); est = est_with + kindergeld when
+# est_without − est_with > kindergeld, else est_without; credit = min(§35a credit, est); Soli and
+# church tax on est_with − credit (§51a Abs. 2 S. 1). Without a context: total_tax.
+
+bases:
+  owners_plain: &owners_plain
+  - {owner_id: 0000000a-0000-4000-8000-000000000001}
+  - {owner_id: 0000000a-0000-4000-8000-000000000002}
+  owners_church: &owners_church
+  - {owner_id: 0000000a-0000-4000-8000-000000000001, church_tax: true, tax_state: BY}
+  - {owner_id: 0000000a-0000-4000-8000-000000000002}
+
+cases:
+- id: born_march_ten_months
+  description: born 15 Mar 2026 → 10 months, Kindergeld 2,590.00, Freibeträge 8,130.00; Kindergeld wins
+  tax_year: 2026
+  zve: '62033'
+  owners: *owners_plain
+  household: {children: [{born_on: 2026-03-15}]}
+  expect:
+    assessed:
+      zve: '62033'
+      zve_after_allowances: '53903'
+      est_without: '9010'
+      est_with: '6746'
+      est: '9010'
+      est_final: '9010'
+      children: {months: 10, kindergeld: '2590.00', allowances: '8130.00', saving: '2264',
+                 favourable: kindergeld}
+      soli: '0.00'
+      church: '0.00'
+      total: '9010.00'
+    warnings: [{code: return.kindergeld_apply}]
+- id: born_november_two_months
+  description: born 20 Nov 2026 → 2 months, 518.00 / 1,626.00
+  tax_year: 2026
+  zve: '62033'
+  owners: *owners_plain
+  household: {children: [{born_on: 2026-11-20}]}
+  expect:
+    assessed:
+      zve: '62033'
+      zve_after_allowances: '60407'
+      est_without: '9010'
+      est_with: '8548'
+      est: '9010'
+      est_final: '9010'
+      children: {months: 2, kindergeld: '518.00', allowances: '1626.00', saving: '462',
+                 favourable: kindergeld}
+      soli: '0.00'
+      church: '0.00'
+      total: '9010.00'
+    warnings: [{code: return.kindergeld_apply}]
+- id: born_january_full_year
+  description: born 5 Jan 2026 → 12 months, 3,108.00 / 9,756.00
+  tax_year: 2026
+  zve: '62033'
+  owners: *owners_plain
+  household: {children: [{born_on: 2026-01-05}]}
+  expect:
+    assessed:
+      zve: '62033'
+      zve_after_allowances: '52277'
+      est_without: '9010'
+      est_with: '6308'
+      est: '9010'
+      est_final: '9010'
+      children: {months: 12, kindergeld: '3108.00', allowances: '9756.00', saving: '2702',
+                 favourable: kindergeld}
+      soli: '0.00'
+      church: '0.00'
+      total: '9010.00'
+    warnings: [{code: return.kindergeld_apply}]
+- id: two_children
+  description: one child all year (born 2024) and one born in March 2026 → 22 months
+  tax_year: 2026
+  zve: '62033'
+  owners: *owners_plain
+  household: {children: [{born_on: 2024-05-01}, {born_on: 2026-03-15}]}
+  expect:
+    assessed:
+      zve: '62033'
+      zve_after_allowances: '44147'
+      est_without: '9010'
+      est_with: '4180'
+      est: '9010'
+      est_final: '9010'
+      children: {months: 22, kindergeld: '5698.00', allowances: '17886.00', saving: '4830',
+                 favourable: kindergeld}
+      soli: '0.00'
+      church: '0.00'
+      total: '9010.00'
+    warnings: [{code: return.kindergeld_apply}]
+- id: kindergeld_wins_62k
+  description: 'the household of §5.8: L 7,360.00, rate 0.160794 → 9,974; with Freibeträge 7,733; saving 2,241 < 2,590'
+  tax_year: 2026
+  zve: '62033'
+  owners: *owners_plain
+  household: {children: [{born_on: 2026-03-15}], replacement_benefits: '7360.00'}
+  expect:
+    assessed:
+      zve: '62033'
+      zve_after_allowances: '53903'
+      est_without: '9974'
+      est_with: '7733'
+      est: '9974'
+      est_final: '9974'
+      progression: {benefits: '7360.00', allowance_unused: '0', rate: '0.160794',
+                    fictitious_zve: '69393.00', fictitious_tax: '11158'}
+      children: {months: 10, kindergeld: '2590.00', allowances: '8130.00', saving: '2241',
+                 favourable: kindergeld}
+      soli: '0.00'
+      church: '0.00'
+      total: '9974.00'
+    warnings: [{code: return.kindergeld_apply}]
+- id: allowances_win_200k
+  description: 'zvE 200,000, a child all year: 61,728 − 57,630 = 4,098 > 3,108 → 57,630 + 3,108 = 60,738; Soli on 57,630'
+  tax_year: 2026
+  zve: '200000'
+  owners: *owners_plain
+  household: {children: [{born_on: 2025-06-01}]}
+  expect:
+    assessed:
+      zve: '200000'
+      zve_after_allowances: '190244'
+      est_without: '61728'
+      est_with: '57630'
+      est: '60738'
+      est_final: '60738'
+      children: {months: 12, kindergeld: '3108.00', allowances: '9756.00', saving: '4098',
+                 favourable: allowances}
+      soli: '2014.67'
+      church: '0.00'
+      total: '62752.67'
+- id: soli_on_est_with
+  description: 'zvE 150,000: est_without 40,728 is above the Soli Freigrenze, est_with 36,630 is not → Soli 0.00; church on 36,630'
+  tax_year: 2026
+  zve: '150000'
+  owners: *owners_church
+  household: {children: [{born_on: 2025-06-01}]}
+  expect:
+    assessed:
+      zve: '150000'
+      zve_after_allowances: '140244'
+      est_without: '40728'
+      est_with: '36630'
+      est: '39738'
+      est_final: '39738'
+      children: {months: 12, kindergeld: '3108.00', allowances: '9756.00', saving: '4098',
+                 favourable: allowances}
+      soli: '0.00'
+      church: '1465.20'
+      total: '41203.20'
+- id: soli_after_35a_credit
+  description: the 200,000 case with a §35a credit 1,200.00 → est 59,538, Soli on 57,630 − 1,200 = 56,430
+  tax_year: 2026
+  zve: '200000'
+  owners: *owners_plain
+  household: {children: [{born_on: 2025-06-01}], household_services_credit: '1200.00'}
+  expect:
+    assessed:
+      zve: '200000'
+      zve_after_allowances: '190244'
+      est_without: '61728'
+      est_with: '57630'
+      est: '60738'
+      credit_35a: '1200.00'
+      est_final: '59538'
+      children: {months: 12, kindergeld: '3108.00', allowances: '9756.00', saving: '4098',
+                 favourable: allowances}
+      soli: '1871.87'
+      church: '0.00'
+      total: '61409.87'
+- id: child_over_18_warning
+  description: born 10 Jun 2008, 18 in June 2026 → counted January to June, a warning (training not modelled)
+  tax_year: 2026
+  zve: '62033'
+  owners: *owners_plain
+  household: {children: [{born_on: 2008-06-10}]}
+  expect:
+    assessed:
+      zve: '62033'
+      zve_after_allowances: '57155'
+      est_without: '9010'
+      est_with: '7638'
+      est: '9010'
+      est_final: '9010'
+      children: {months: 6, kindergeld: '1554.00', allowances: '4878.00', saving: '1372',
+                 favourable: kindergeld}
+      soli: '0.00'
+      church: '0.00'
+      total: '9010.00'
+    warnings: [{code: return.child_over_18, params: {born_year: '2008'}}]
+- id: no_context_equals_total_tax
+  description: without a household context the assessed tax is phase 4's total_tax (9,010 + church 360.40)
+  tax_year: 2026
+  zve: '62033'
+  owners: *owners_church
+  expect:
+    assessed:
+      zve: '62033'
+      zve_after_allowances: '62033'
+      est_without: '9010'
+      est_with: '9010'
+      est: '9010'
+      est_final: '9010'
+      soli: '0.00'
+      church: '360.40'
+      total: '9370.40'

@@ -38,6 +38,8 @@ def _year_effect(case, t):
 @pytest.mark.rule
 @pytest.mark.parametrize("case", CASES, ids=[c.id for c in CASES])
 def test_marginal_rate(case):
+    if case.pending:
+        pytest.skip(f"written ahead of its rule: {case.pending}")
     t = tariff(case.tax_year)
     expect = case.expect
     estimate = _base(case, t)
@@ -67,7 +69,9 @@ def test_marginal_rate(case):
 
 
 @pytest.mark.rule
-@pytest.mark.parametrize("case", [c for c in CASES if c.inputs and c.result is not None])
+@pytest.mark.parametrize(
+    "case", [c for c in CASES if c.inputs and c.result is not None and not c.pending]
+)
 def test_the_effect_uses_zve_base(case):
     """year_tax_effect's base is exactly zve_base's."""
     t = tariff(case.tax_year)
