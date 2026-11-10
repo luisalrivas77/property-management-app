@@ -646,6 +646,12 @@ _CATALOGUE = {
 }
 
 
+def _latest_rule_set():
+    """§6.2: the sale year's rule set, else the latest; a property still owned has no sale
+    year, so the latest published one (its speculation_years)."""
+    return registry.rule_set(max(registry.available_years()))
+
+
 def _row(reminder: Reminder) -> _Row:
     if reminder.kind is K.GRUNDSTEUER_INSTALMENT:
         if reminder.label_code not in _GRUNDSTEUER:
@@ -702,7 +708,7 @@ def _check_against_facts(r: Reminder, facts: ReminderFacts) -> None:
             raise ValueError(f"{r.id}: label_args name the lender")
         want = _add_months(add_years(subject.disbursed_on, 10), -6)
     elif r.kind is K.SPECULATION_END:
-        free = tax_free_from(subject.notarized_on, registry.rule_set_or_latest(due.year))
+        free = tax_free_from(subject.notarized_on, _latest_rule_set())
         if args != {"property": subject.label, "tax_free_from": str(free)}:
             raise ValueError(f"{r.id}: label_args are the property and the §23 date")
         want = _add_months(free, -12)
@@ -824,8 +830,8 @@ MODELS: dict[str, type[Schema]] = {
     "sync_archive": ArchiveFixture,
     "sync_balance": BalanceFixture,
     "inbound_mail": MailFixture,
-    # "reminders": ReminderFixture,
-    # "notification_schedule": NotificationFixture,
+    "reminders": ReminderFixture,
+    "notification_schedule": NotificationFixture,
 }
 
 

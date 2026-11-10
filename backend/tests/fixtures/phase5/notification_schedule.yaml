@@ -1,0 +1,172 @@
+# Rule fixture: which reminder emails go out today (hausbuch.rules.reminders.due_notifications)
+#
+# due_notifications(reminders, sent, today, recipients) -> list[NotificationDue]
+# docs/phases/phase-5.md D123 (a daily digest), §6.2 (email leads), §6.4, §8 (notification is
+# append-only, UNIQUE per item, lead, channel and recipient), §12.
+#
+#   reminders   build_reminders' output for today: open instances only (a cleared or hidden
+#               one is not in the list, which is how "if still open" holds)
+#   sent        the notification rows already written (status sent or failed)
+#   recipients  the workspace's members with an email address, while reminder_emails is on
+#
+#   For each reminder, the leads whose send day (due_on - lead) is on or before today; of
+#   those, only the one with the latest send day (the smallest lead) is due, once per
+#   recipient that has no row for that reminder, lead and recipient yet. Sorted by
+#   (reminder_id, recipient_user_id).
+#
+# Step 0 readings (each listed in the step 0 report as a spec finding):
+# - §12 writes due_notifications(reminders, sent, today); the output names a recipient per
+#   row (NotificationDue.recipient_user_id, the notification table's UNIQUE), so the rule also
+#   takes the recipients.
+# - A day the daily job missed sends that day's lead the next day; an earlier lead that a
+#   later one has overtaken is skipped, never sent late (one mail per instance and day, the
+#   most recent lead).
+# - A failed row counts as sent: the table is append-only with one row per item, lead,
+#   channel and recipient (§8), so a failed send cannot be retried by a second row. A retry
+#   would need a spec change.
+# - bank.sync_stale is info and has an email lead "on the day" in §6.2; §12's case
+#   info_kind_never_mailed is read as the info kinds without leads (special termination,
+#   speculation end), which this file uses.
+#
+# The reminders are the ones reminders.yaml derives (the same ids and leads).
+
+ids:
+  user_a: &U1 00000054-0000-4000-8000-000000000001
+  user_b: &U2 00000054-0000-4000-8000-000000000002
+
+bases:
+  return_deadline_2026: &return_deadline_2026
+    id: tax.return_deadline:workspace:2027-08-02
+    kind: tax.return_deadline
+    scope: workspace
+    due_on: 2027-08-02
+    visible_from: 2027-05-04
+    severity: action
+    cleared_by: ack
+    label_code: tax.return_deadline
+    label_args: {year: 2026}
+    email_leads: [60, 14]
+  gs_q2_2027_sepa: &gs_q2_2027_sepa
+    id: grundsteuer.instalment:0000005b-0000-4000-8000-000000000001:2027-05-15
+    kind: grundsteuer.instalment
+    scope: property
+    scope_id: 0000005b-0000-4000-8000-000000000001
+    due_on: 2027-05-15
+    visible_from: 2027-05-15
+    severity: action
+    cleared_by: auto
+    label_code: grundsteuer.instalment.sepa_mandate
+    label_args: {property: Wohnung A}
+    email_leads: [-3]
+  special_l3: &special_l3
+    id: loan.special_termination:0000005f-0000-4000-8000-000000000003:2026-12-30
+    kind: loan.special_termination
+    scope: loan
+    scope_id: 0000005f-0000-4000-8000-000000000003
+    due_on: 2026-12-30
+    visible_from: 2026-12-30
+    severity: info
+    cleared_by: ack
+    label_code: loan.special_termination
+    label_args: {lender: Bank C}
+    email_leads: []
+
+cases:
+  - id: lead_day_sends_once
+    description: 60 days before 2 Aug 2027 is 3 Jun 2027; the first mail goes out that day
+    # 2 Aug - 60: -2 = 31 Jul, -31 = 30 Jun, -27 = 3 Jun (2 + 31 + 27 = 60)
+    today: 2027-06-03
+    reminders: [*return_deadline_2026]
+    recipients: [*U1]
+    expect:
+      - {reminder_id: "tax.return_deadline:workspace:2027-08-02", lead_days: 60,
+         recipient_user_id: *U1}
+
+  - id: already_sent_not_repeated
+    description: the 60-day mail is already in the notification table
+    today: 2027-06-03
+    reminders: [*return_deadline_2026]
+    sent:
+      - {reminder_id: "tax.return_deadline:workspace:2027-08-02", lead_days: 60,
+         recipient_user_id: *U1, status: sent}
+    recipients: [*U1]
+    expect: []
+
+  - id: missed_day_sends_next_day
+    description: the job did not run on 3 Jun (a redeploy); the 60-day mail goes on 4 Jun
+    today: 2027-06-04
+    reminders: [*return_deadline_2026]
+    recipients: [*U1]
+    expect:
+      - {reminder_id: "tax.return_deadline:workspace:2027-08-02", lead_days: 60,
+         recipient_user_id: *U1}
+
+  - id: two_leads_two_sends
+    description: the 60-day mail went in June; on 19 Jul 2027 (2 Aug - 14) the 14-day one goes
+    today: 2027-07-19
+    reminders: [*return_deadline_2026]
+    sent:
+      - {reminder_id: "tax.return_deadline:workspace:2027-08-02", lead_days: 60,
+         recipient_user_id: *U1, status: sent}
+    recipients: [*U1]
+    expect:
+      - {reminder_id: "tax.return_deadline:workspace:2027-08-02", lead_days: 14,
+         recipient_user_id: *U1}
+
+  - id: late_start_sends_latest_lead_only
+    description: >
+      emails were switched on on 20 Jul 2027, after both send days: only the 14-day mail goes,
+      the overtaken 60-day one is skipped
+    today: 2027-07-20
+    reminders: [*return_deadline_2026]
+    recipients: [*U1]
+    expect:
+      - {reminder_id: "tax.return_deadline:workspace:2027-08-02", lead_days: 14,
+         recipient_user_id: *U1}
+
+  - id: info_kind_never_mailed
+    description: the special termination card has no email lead; on its day nothing is sent
+    today: 2026-12-30
+    reminders: [*special_l3]
+    recipients: [*U1]
+    expect: []
+
+  - id: two_recipients_two_rows
+    description: both members get the mail, one row each
+    today: 2027-06-03
+    reminders: [*return_deadline_2026]
+    recipients: [*U2, *U1]
+    expect:
+      - {reminder_id: "tax.return_deadline:workspace:2027-08-02", lead_days: 60,
+         recipient_user_id: *U1}
+      - {reminder_id: "tax.return_deadline:workspace:2027-08-02", lead_days: 60,
+         recipient_user_id: *U2}
+
+  - id: sepa_mode_sends_after_due_only_if_open
+    description: >
+      a direct-debit instalment due 15 May 2027 that is still open (no matching line) on
+      18 May (due + 3) asks to check the Lastschrift; had the line arrived, build_reminders
+      would not list it and nothing would be sent
+    today: 2027-05-18
+    reminders: [*gs_q2_2027_sepa]
+    recipients: [*U1]
+    expect:
+      - {reminder_id: "grundsteuer.instalment:0000005b-0000-4000-8000-000000000001:2027-05-15",
+         lead_days: -3, recipient_user_id: *U1}
+
+  - id: sepa_not_before_due_plus_3
+    description: on 17 May (due + 2) the bank may still book the debit; nothing yet
+    today: 2027-05-17
+    reminders: [*gs_q2_2027_sepa]
+    recipients: [*U1]
+    expect: []
+
+  - id: failed_send_not_retried
+    description: the 60-day mail failed on 3 Jun; the row exists, so 4 Jun sends nothing
+    today: 2027-06-04
+    reminders: [*return_deadline_2026]
+    sent:
+      - {reminder_id: "tax.return_deadline:workspace:2027-08-02", lead_days: 60,
+         recipient_user_id: *U1, status: failed}
+    recipients: [*U1]
+    expect: []
