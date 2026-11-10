@@ -11,7 +11,8 @@ import io
 import json
 import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from decimal import Decimal
 
 import pytest
 from pypdf import PdfWriter
@@ -33,11 +34,13 @@ from hausbuch.db.tables import workspace as workspace_table
 from hausbuch.jobs import document_read as job
 from hausbuch.jobs import tasks
 from hausbuch.jobs.document_read import JobDeps, RetryLater, run_document_read
-from hausbuch.schemas.enums import ActorType, DocumentSource, DocumentType
+from hausbuch.schemas.enums import ActorType, DocumentSource, DocumentType, PropertyKind
 from hausbuch.schemas.extraction import EXTRACTION_MODELS, ExtractionKind
+from hausbuch.schemas.property import Address, PropertyCreate
 from hausbuch.services import proposals
 from hausbuch.services.context import Actor, new_command
 from hausbuch.services.documents import upload_document
+from hausbuch.services.properties import create_property
 from hausbuch.settings import Settings
 
 pytestmark = pytest.mark.db
@@ -461,6 +464,22 @@ def test_a_property_group_subtype_asks_the_address(setup, recorder, app_engine):
         [text_response(_classify("letter", "weg_minutes")), cited_response(answer)]
     )
     deps, ws, doc, proposal = setup(_pdf(1), client)
+    # Only a property's own address keeps its value (PR #135 review, F2).
+    with workspace_transaction(app_engine, ws) as conn:
+        create_property(
+            new_command(conn, ws, USER, now=NOW),
+            PropertyCreate(
+                label="Wohnung Lindenstraße",
+                kind=PropertyKind.ETW,
+                address=Address(
+                    street="Lindenstraße", house_number="12", postal_code="10115", city="Berlin"
+                ),
+                build_year=1994,
+                notarized_on=date(2026, 3, 10),
+                purchase_date=date(2026, 5, 1),
+                purchase_price=Decimal("289000.00"),
+            ),
+        )
     _run(deps, ws, doc, proposal)
     [(_, _, kw)] = recorder.results
     assert kw["values"]["street"].value == "Lindenstraße"
