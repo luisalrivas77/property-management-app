@@ -20,13 +20,27 @@ import { useCallback, useId, useMemo, useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
 import { ApiError, ruleCodes } from "@/api/errors";
-import type { IncomeInput, IncomeInputCreate, IncomeInputKind, Owner, TaxRateResult, ZveEstimate } from "@/api/schemas";
+import type {
+  IncomeInput,
+  IncomeInputCreate,
+  IncomeInputKind,
+  Owner,
+  TaxRateResult,
+  ZveEstimate,
+} from "@/api/schemas";
 
-import { DocumentPicker } from "./documents";
+import { DocumentPicker, ReadUpload } from "./documents";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
 import { formatDecimal, formatMoney, formatPercent, todayIso } from "./format";
 import { GrossSourceChip, HouseholdReturnBlocks } from "./householdReturn";
-import { decimalInput, percentInput, toMoneyString, toRate, toSignedMoneyString, type Parsed } from "./input";
+import {
+  decimalInput,
+  percentInput,
+  toMoneyString,
+  toRate,
+  toSignedMoneyString,
+  type Parsed,
+} from "./input";
 import { Loading } from "./ui";
 import { useLoad } from "./useLoad";
 
@@ -66,10 +80,20 @@ function record(body: IncomeInputCreate): Promise<IncomeInput> {
   return ok(api.POST("/api/income-inputs", { body }));
 }
 
-function loadRate(taxYear: number, result: string, propertyId: string | null): Promise<TaxRateResult> {
+function loadRate(
+  taxYear: number,
+  result: string,
+  propertyId: string | null,
+): Promise<TaxRateResult> {
   return ok(
     api.GET("/api/tax-rate", {
-      params: { query: { tax_year: taxYear, result, ...(propertyId ? { property_id: propertyId } : {}) } },
+      params: {
+        query: {
+          tax_year: taxYear,
+          result,
+          ...(propertyId ? { property_id: propertyId } : {}),
+        },
+      },
     }),
   );
 }
@@ -77,7 +101,11 @@ function loadRate(taxYear: number, result: string, propertyId: string | null): P
 // --- the Steuern page: Steuerwirkung under the result ---------------------------------------
 
 /** null: no tariff for the year (tariff.no_file), so no effect can be shown. */
-async function loadEffect(taxYear: number, result: string, propertyId: string): Promise<TaxRateResult | null> {
+async function loadEffect(
+  taxYear: number,
+  result: string,
+  propertyId: string,
+): Promise<TaxRateResult | null> {
   try {
     return await loadRate(taxYear, result, propertyId);
   } catch (error) {
@@ -92,22 +120,42 @@ async function loadEffect(taxYear: number, result: string, propertyId: string): 
  * result of 0) and the source of the household income behind it. Without any income:
  * "— · Einkommen eintragen", linking to the Eigentümer page.
  */
-export function TaxEffectLine({ propertyId, taxYear, result }: { propertyId: string; taxYear: number; result: string }) {
-  const load = useCallback(() => loadEffect(taxYear, result, propertyId), [taxYear, result, propertyId]);
+export function TaxEffectLine({
+  propertyId,
+  taxYear,
+  result,
+}: {
+  propertyId: string;
+  taxYear: number;
+  result: string;
+}) {
+  const load = useCallback(
+    () => loadEffect(taxYear, result, propertyId),
+    [taxYear, result, propertyId],
+  );
   const state = useLoad(load);
   if (state.error != null && state.data === undefined) {
-    return <p className="muted tax-subline">Steuerwirkung: konnte nicht berechnet werden.</p>;
+    return (
+      <p className="muted tax-subline">
+        Steuerwirkung: konnte nicht berechnet werden.
+      </p>
+    );
   }
   if (state.data === undefined) return null;
   const rate = state.data;
   if (rate === null) {
-    return <p className="muted tax-subline">Steuerwirkung: für {taxYear} ist kein Einkommensteuertarif hinterlegt.</p>;
+    return (
+      <p className="muted tax-subline">
+        Steuerwirkung: für {taxYear} ist kein Einkommensteuertarif hinterlegt.
+      </p>
+    );
   }
   const effect = rate.effect;
   if (rate.missing || !effect || !rate.zve) {
     return (
       <p className="tax-subline tax-effect">
-        <span>Steuerwirkung</span> <strong>—</strong> · <Link href="/owners">Einkommen eintragen</Link>
+        <span>Steuerwirkung</span> <strong>—</strong> ·{" "}
+        <Link href="/owners">Einkommen eintragen</Link>
       </p>
     );
   }
@@ -118,15 +166,28 @@ export function TaxEffectLine({ propertyId, taxYear, result }: { propertyId: str
     : effect.slope
       ? `Grenzsteuersatz ${percentText(effect.slope)}`
       : null;
-  const tariffNote = rate.tariff.reused_from != null ? `Tarif ${rate.tariff.reused_from}` : null;
+  const tariffNote =
+    rate.tariff.reused_from != null ? `Tarif ${rate.tariff.reused_from}` : null;
   return (
     <p className="tax-subline tax-effect">
-      <span>Steuerwirkung ({effect.source === "estimate" ? "geschätzt" : SOURCE_LABEL[effect.source]})</span>{" "}
+      <span>
+        Steuerwirkung (
+        {effect.source === "estimate"
+          ? "geschätzt"
+          : SOURCE_LABEL[effect.source]}
+        )
+      </span>{" "}
       <strong>{formatMoney(effect.effect)}</strong>
-      {zero ? null : <span className="muted"> {negative ? "weniger" : "mehr"} Steuer</span>}
+      {zero ? null : (
+        <span className="muted"> {negative ? "weniger" : "mehr"} Steuer</span>
+      )}
       {rateText ? <span className="muted"> · {rateText}</span> : null}
       {" · "}
-      <Link href="/owners" className="badge" title="Einkommen und Steuersatz auf der Seite Eigentümer">
+      <Link
+        href="/owners"
+        className="badge"
+        title="Einkommen und Steuersatz auf der Seite Eigentümer"
+      >
         {sourceText(rate.zve)}
         {rate.zve.carried_forward ? " (fortgeschrieben)" : null}
       </Link>
@@ -152,13 +213,24 @@ export function IncomeSection({ owners }: { owners: Owner[] }) {
   const thisYear = Number(todayIso().slice(0, 4));
   const [year, setYear] = useState(thisYear);
   const ids = useId();
-  const loadRows = useCallback(() => ok(api.GET("/api/income-inputs", { params: { query: { tax_year: year } } })), [year]);
+  const loadRows = useCallback(
+    () =>
+      ok(
+        api.GET("/api/income-inputs", {
+          params: { query: { tax_year: year } },
+        }),
+      ),
+    [year],
+  );
   const rows = useLoad(loadRows);
   // A Bescheid carried forward from an earlier year needs that year's rental result taken out
   // of its zvE (the property's draft); the first property names it. The owners' estimates
   // shown here do not depend on it.
   const loadYearRate = useCallback(
-    () => loadProperties().then((list) => loadRate(year, "0.00", list[0]?.id ?? null)),
+    () =>
+      loadProperties().then((list) =>
+        loadRate(year, "0.00", list[0]?.id ?? null),
+      ),
     [year],
   );
   const rate = useLoad(loadYearRate);
@@ -173,7 +245,11 @@ export function IncomeSection({ owners }: { owners: Owner[] }) {
       <div className="row">
         <label htmlFor={`${ids}-year`} className="inline">
           Steuerjahr
-          <select id={`${ids}-year`} value={year} onChange={(event) => setYear(Number(event.target.value))}>
+          <select
+            id={`${ids}-year`}
+            value={year}
+            onChange={(event) => setYear(Number(event.target.value))}
+          >
             {yearChoices(thisYear).map((y) => (
               <option key={y} value={y}>
                 {y}
@@ -183,9 +259,11 @@ export function IncomeSection({ owners }: { owners: Owner[] }) {
         </label>
       </div>
       <p className="muted">
-        Aus dem erwarteten Bruttogehalt schätzt die App das zu versteuernde Einkommen (zvE) und damit, wie sich das
-        Ergebnis der Vermietung auf die Steuer auswirkt. Angaben gelten auch für die Folgejahre, bis ein späteres Jahr
-        eigene Angaben hat; ein Jahr mit eigenen Angaben nutzt nur diese.
+        Aus dem erwarteten Bruttogehalt schätzt die App das zu versteuernde
+        Einkommen (zvE) und damit, wie sich das Ergebnis der Vermietung auf die
+        Steuer auswirkt. Angaben gelten auch für die Folgejahre, bis ein
+        späteres Jahr eigene Angaben hat; ein Jahr mit eigenen Angaben nutzt nur
+        diese.
       </p>
       <Loading state={rows}>
         {(list) => (
@@ -202,7 +280,9 @@ export function IncomeSection({ owners }: { owners: Owner[] }) {
                 </thead>
                 <tbody>
                   {owners.map((owner) => {
-                    const estimate = rate.data?.owner_estimates.find((o) => o.owner_id === owner.id);
+                    const estimate = rate.data?.owner_estimates.find(
+                      (o) => o.owner_id === owner.id,
+                    );
                     return (
                       <tr key={owner.id}>
                         <td>{owner.full_name}</td>
@@ -211,7 +291,11 @@ export function IncomeSection({ owners }: { owners: Owner[] }) {
                             kind="expected_gross_pay"
                             year={year}
                             ownerId={owner.id}
-                            current={current(list, "expected_gross_pay", owner.id)}
+                            current={current(
+                              list,
+                              "expected_gross_pay",
+                              owner.id,
+                            )}
                             onChanged={changed}
                           />
                           <GrossSourceChip estimate={estimate} year={year} />
@@ -221,7 +305,11 @@ export function IncomeSection({ owners }: { owners: Owner[] }) {
                             kind="deductions_override"
                             year={year}
                             ownerId={owner.id}
-                            current={current(list, "deductions_override", owner.id)}
+                            current={current(
+                              list,
+                              "deductions_override",
+                              owner.id,
+                            )}
                             defaultText={
                               estimate
                                 ? estimate.deductions_source === "employment"
@@ -238,6 +326,12 @@ export function IncomeSection({ owners }: { owners: Owner[] }) {
                 </tbody>
               </table>
             </div>
+            <ReadUpload label="Lohnsteuerbescheinigung oder Gehaltsabrechnung hochladen" />
+            <p className="muted">
+              Bestätigte Zahlen einer Lohnsteuerbescheinigung oder
+              Gehaltsabrechnung ersetzen das erwartete Bruttogehalt dieses
+              Jahres; der Steuersatz wird dann daraus berechnet.
+            </p>
             <h3>Haushalt (gemeinsame Veranlagung)</h3>
             <dl className="stack">
               <div>
@@ -275,12 +369,26 @@ export function IncomeSection({ owners }: { owners: Owner[] }) {
   );
 }
 
-function current(list: IncomeInput[], kind: IncomeInputKind, ownerId: string | null): IncomeInput | undefined {
-  return list.find((row) => row.kind === kind && (row.owner_id ?? null) === ownerId);
+function current(
+  list: IncomeInput[],
+  kind: IncomeInputKind,
+  ownerId: string | null,
+): IncomeInput | undefined {
+  return list.find(
+    (row) => row.kind === kind && (row.owner_id ?? null) === ownerId,
+  );
 }
 
 /** The household zvE the year uses and where it comes from. */
-function ZveSummary({ rate, error, year }: { rate: TaxRateResult | undefined; error: unknown; year: number }) {
+function ZveSummary({
+  rate,
+  error,
+  year,
+}: {
+  rate: TaxRateResult | undefined;
+  error: unknown;
+  year: number;
+}) {
   if (rate === undefined) {
     if (error == null) return null;
     const codes = codesOf(error);
@@ -290,14 +398,27 @@ function ZveSummary({ rate, error, year }: { rate: TaxRateResult | undefined; er
     return <p className="muted">{text}</p>;
   }
   if (rate.missing || !rate.zve) {
-    return <p className="muted">Für {year} sind noch keine Einkommensangaben erfasst.</p>;
+    return (
+      <p className="muted">
+        Für {year} sind noch keine Einkommensangaben erfasst.
+      </p>
+    );
   }
   const zve = rate.zve;
   return (
     <p>
-      {zve.source === "bescheid" && !zve.carried_forward ? "zvE laut Bescheid" : "zvE"} {year}: <strong>{zve.amount != null ? formatMoney(zve.amount) : "—"}</strong>{" "}
+      {zve.source === "bescheid" && !zve.carried_forward
+        ? "zvE laut Bescheid"
+        : "zvE"}{" "}
+      {year}:{" "}
+      <strong>{zve.amount != null ? formatMoney(zve.amount) : "—"}</strong>{" "}
       <span className="badge">{SOURCE_LABEL[zve.source]}</span>
-      {zve.carried_forward ? <span className="muted"> · aus den Angaben für {zve.tax_year} fortgeschrieben</span> : null}
+      {zve.carried_forward ? (
+        <span className="muted">
+          {" "}
+          · aus den Angaben für {zve.tax_year} fortgeschrieben
+        </span>
+      ) : null}
     </p>
   );
 }
@@ -374,17 +495,31 @@ function InputCell({
         {current ? (
           <span>
             {valueText(current)}
-            {kind === "deductions_override" ? <span className="muted"> (manuell)</span> : null}
+            {kind === "deductions_override" ? (
+              <span className="muted"> (manuell)</span>
+            ) : null}
           </span>
         ) : (
           <span className="muted">{defaultText ?? "–"}</span>
         )}
-        <button type="button" className="link" onClick={() => setEditing(true)} disabled={busy}>
+        <button
+          type="button"
+          className="link"
+          onClick={() => setEditing(true)}
+          disabled={busy}
+        >
           {current || kind === "deductions_override" ? "ändern" : "Eintragen"}
         </button>
         {current ? (
-          <button type="button" className="link" onClick={() => void withdraw(current)} disabled={busy}>
-            {kind === "deductions_override" ? "Schätzung verwenden" : "Entfernen"}
+          <button
+            type="button"
+            className="link"
+            onClick={() => void withdraw(current)}
+            disabled={busy}
+          >
+            {kind === "deductions_override"
+              ? "Schätzung verwenden"
+              : "Entfernen"}
           </button>
         ) : null}
       </div>
@@ -406,12 +541,16 @@ const FIELD_HELP: Record<IncomeInputKind, string> = {
     "Ein fester Steuersatz einschließlich Solidaritätszuschlag und Kirchensteuer. Er ersetzt für dieses Jahr die Berechnung aus dem Einkommen.",
 };
 
-function parseValue(kind: IncomeInputKind, raw: string): Parsed<IncomeInputCreate["value"]> {
+function parseValue(
+  kind: IncomeInputKind,
+  raw: string,
+): Parsed<IncomeInputCreate["value"]> {
   if (kind === "marginal_rate_override") {
     const rate = toRate(raw, 4);
     return rate.ok ? { ok: true, value: { rate: rate.value } } : rate;
   }
-  const amount = kind === "bescheid_zve" ? toSignedMoneyString(raw) : toMoneyString(raw);
+  const amount =
+    kind === "bescheid_zve" ? toSignedMoneyString(raw) : toMoneyString(raw);
   return amount.ok ? { ok: true, value: { amount: amount.value } } : amount;
 }
 
@@ -433,8 +572,12 @@ function InputForm({
   const old = replaces?.value as { amount?: string; rate?: string } | undefined;
   const isRate = kind === "marginal_rate_override";
   const valueKey = isRate ? "value.rate" : "value.amount";
-  const [raw, setRaw] = useState(isRate ? percentInput(old?.rate) : decimalInput(old?.amount));
-  const [documentId, setDocumentId] = useState<string | null>(replaces?.document_id ?? null);
+  const [raw, setRaw] = useState(
+    isRate ? percentInput(old?.rate) : decimalInput(old?.amount),
+  );
+  const [documentId, setDocumentId] = useState<string | null>(
+    replaces?.document_id ?? null,
+  );
   const [note, setNote] = useState(replaces?.note ?? "");
   const [busy, setBusy] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
@@ -447,7 +590,9 @@ function InputForm({
     const values = collector();
     const value = values.take(valueKey, parseValue(kind, raw));
     if (kind === "bescheid_zve" && documentId === null) {
-      values.messages["document_id"] = ["Bitte den Einkommensteuerbescheid als Beleg auswählen."];
+      values.messages["document_id"] = [
+        "Bitte den Einkommensteuerbescheid als Beleg auswählen.",
+      ];
     }
     if (!values.ok || value === undefined) return form.invalid(values.messages);
     setBusy(true);
@@ -489,7 +634,13 @@ function InputForm({
           description={FIELD_HELP[kind]}
           errors={form.of(valueKey)}
         >
-          <input type="text" inputMode="decimal" value={raw} onChange={(e) => setRaw(e.target.value)} autoComplete="off" />
+          <input
+            type="text"
+            inputMode="decimal"
+            value={raw}
+            onChange={(e) => setRaw(e.target.value)}
+            autoComplete="off"
+          />
         </Field>
         {kind === "bescheid_zve" ? (
           <Field
@@ -501,13 +652,27 @@ function InputForm({
             <DocumentPicker value={documentId} onChange={setDocumentId} />
           </Field>
         ) : null}
-        <Field id={`${base}-note`} label="Notiz (optional)" description="Zum Beispiel woher der Wert stammt.">
-          <input type="text" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} autoComplete="off" />
+        <Field
+          id={`${base}-note`}
+          label="Notiz (optional)"
+          description="Zum Beispiel woher der Wert stammt."
+        >
+          <input
+            type="text"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            maxLength={500}
+            autoComplete="off"
+          />
         </Field>
       </div>
-      {replaces !== null ? <p className="muted hint">Die bisherige Angabe bleibt im Verlauf.</p> : null}
+      {replaces !== null ? (
+        <p className="muted hint">Die bisherige Angabe bleibt im Verlauf.</p>
+      ) : null}
       <div className="row">
-        <Submit busy={busy}>{replaces === null ? "Eintragen" : "Speichern"}</Submit>
+        <Submit busy={busy}>
+          {replaces === null ? "Eintragen" : "Speichern"}
+        </Submit>
         <button type="button" className="link" onClick={onCancel}>
           Abbrechen
         </button>

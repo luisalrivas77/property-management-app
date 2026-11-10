@@ -196,18 +196,23 @@ def _apply(run, ws, proposal, body=None):
 
 
 _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+_HEX = re.compile(r"\b[0-9a-f]{32,}\b")
+_TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d+)?(\+\d{2}:\d{2})?")
 
 
 def _everything_stored(read, ws) -> str:
     """Every stored text of the workspace this feature writes: extraction, ai_call output and
-    raw text, the proposal, events and return_input rows. Ids removed (random hex)."""
+    raw text, the proposal, events and return_input rows. Ids, hashes and timestamps removed:
+    random hex and microseconds can hold a short forbidden fragment such as "0532" by chance."""
 
     def query(conn):
         tables = (extraction_table, ai_call_table, proposal_table, event_table, return_input_table)
         rows = [r._asdict() for t in tables for r in conn.execute(select(t)).all()]
         return json.dumps(rows, default=str, ensure_ascii=False)
 
-    return _UUID.sub("<id>", read(ws, query))
+    text = _UUID.sub("<id>", read(ws, query))
+    text = _HEX.sub("<hash>", text)
+    return _TIMESTAMP.sub("<time>", text)
 
 
 # --- The certificate, read by the job and applied -------------------------------------------
