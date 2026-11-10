@@ -269,6 +269,85 @@ WARNING_TEXT: dict[WarningCode, Callable[[dict[str, str]], str]] = {
         "Ein Dokument öffnet nicht in jedem Programm (Adobe-Formular oder Anmerkungen): für das "
         "Finanzamt eine Kopie drucken (in Adobe Reader öffnen und als PDF drucken)."
     ),
+    # Phase 4b (docs/phases/phase-4b.md §9).
+    WarningCode.TAX_TRAVEL_FREQUENCY: lambda p: (
+        "Mehr als 50 Fahrten zur Immobilie im Jahr: bei fast täglicher Anwesenheit kann "
+        "nur die halbe Pauschale gelten. Bitte prüfen."
+    ),
+    WarningCode.ANLAGE_N_CERTIFICATE_MISSING: lambda p: (
+        "Keine Lohnsteuerbescheinigung für dieses Jahr: die Zahlen beruhen auf "
+        "Gehaltsabrechnungen oder der Schätzung."
+    ),
+    WarningCode.ANLAGE_N_CHURCH_MISMATCH: lambda p: (
+        "Die Kirchensteuermerkmale der Bescheinigung passen nicht zur Angabe beim Eigentümer."
+    ),
+    WarningCode.ANLAGE_N_TAX_CLASS_6: lambda p: (
+        "Steuerklasse 6: ein zweites Arbeitsverhältnis. Beide Bescheinigungen werden "
+        "zusammengezählt."
+    ),
+    WarningCode.ANLAGE_N_PERIODS_OVERLAP: lambda p: (
+        "Zwei Bescheinigungen desselben Arbeitgebers überschneiden sich im Zeitraum."
+    ),
+    WarningCode.ANLAGE_N_DAYS_IMPLAUSIBLE: lambda p: (
+        "Die Zahl der Arbeitstage passt nicht zu den Tagen pro Woche und dem Zeitraum."
+    ),
+    WarningCode.ANLAGE_N_HOME_OFFICE_CAPPED: lambda p: (
+        "Die Tagespauschale ist auf den Jahreshöchstbetrag begrenzt."
+    ),
+    WarningCode.ANLAGE_N_TOO_MANY_ROUTES: lambda p: (
+        "Mehr Wege zur Arbeit, als das Formular Zeilen hat: die übrigen bitte von Hand eintragen."
+    ),
+    WarningCode.ANLAGE_N_RECEIPT_MISSING: lambda p: "Für eine Ausgabe ist kein Beleg hinterlegt.",
+    WarningCode.ANLAGE_N_FORM_PROVISIONAL: lambda p: (
+        "Die Anlage N für dieses Jahr ist noch nicht veröffentlicht; Zeilen und "
+        "Kennzahlen sind vorläufig."
+    ),
+    WarningCode.ANLAGE_N_PAYSLIP_GAP: lambda p: "Zwischen den Gehaltsabrechnungen fehlt ein Monat.",
+    WarningCode.ANLAGE_N_PAYSLIP_NO_YTD: lambda p: (
+        "Die Gehaltsabrechnung hat keine Jahreswerte: die Hochrechnung nutzt nur den Monatswert."
+    ),
+    WarningCode.ANLAGE_N_WORK_ROOM_RECORDS: lambda p: (
+        "Für das Arbeitszimmer bitte Grundriss und Kosten aufbewahren."
+    ),
+    WarningCode.ANLAGE_N_WORK_ROOM_CENTRE: lambda p: (
+        "Ein Arbeitszimmer zählt nur, wenn es der Mittelpunkt der gesamten Tätigkeit ist. "
+        "Bitte prüfen."
+    ),
+    WarningCode.ANLAGE_N_FIRST_WORKPLACE_CHECK: lambda p: (
+        "Bitte prüfen, ob dies die erste Tätigkeitsstätte ist (Festlegung durch den Arbeitgeber)."
+    ),
+    WarningCode.RETURN_PROGRESSION_PROVISIONAL: lambda p: (
+        "Lohnersatzleistungen sind noch nicht bescheinigt: der Steuersatz ist vorläufig."
+    ),
+    WarningCode.RETURN_BENEFIT_POSSIBLE_DOUBLE: lambda p: (
+        "Eine Lohnersatzleistung steht in der Bescheinigung und als eigene Angabe: bitte "
+        "nur einmal erfassen."
+    ),
+    WarningCode.RETURN_CHILDREN_MISMATCH: lambda p: (
+        "Die Zahl der Kinderfreibeträge der Bescheinigung passt nicht zu den erfassten Kindern."
+    ),
+    WarningCode.RETURN_KINDERGELD_APPLY: lambda p: (
+        "Für ein Kind ist noch kein Kindergeld erfasst: bitte bei der Familienkasse beantragen."
+    ),
+    WarningCode.RETURN_CHILD_OVER_18: lambda p: (
+        "Ein Kind ist volljährig: es zählt nur bei Ausbildung oder Studium."
+    ),
+    WarningCode.RETURN_DONATION_OVER_CAP: lambda p: (
+        "Die Spenden übersteigen die Höchstgrenze; der Rest zählt nicht in diesem Jahr."
+    ),
+    WarningCode.RETURN_FILING_REQUIRED: lambda p: (
+        "Für dieses Jahr besteht eine Pflicht zur Abgabe der Steuererklärung."
+    ),
+    WarningCode.RETURN_QUESTIONNAIRE_OPEN: lambda p: "Es sind noch Fragen zum Steuerjahr offen.",
+    WarningCode.RETURN_NOT_MODELLED: lambda p: (
+        "Ein Teil der Erklärung wird von der App nicht berechnet; die Schätzung ist unvollständig."
+    ),
+    WarningCode.QUESTIONNAIRE_PROVISIONAL: lambda p: (
+        "Die Fragen für dieses Jahr sind noch nicht festgelegt; es gelten die des Vorjahres."
+    ),
+    WarningCode.TAX_EXPORT_QUESTIONS_OPEN: lambda p: (
+        "Beim Export waren noch Fragen zum Steuerjahr offen."
+    ),
 }
 
 

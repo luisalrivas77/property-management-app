@@ -51,6 +51,9 @@ COLUMNS: dict[tuple[str, str], type[StrEnum]] = {
     # Phase 4
     ("owner", "tax_state"): E.StateCode,
     ("income_input", "kind"): E.IncomeInputKind,
+    # Phase 4b
+    ("return_input", "kind"): E.ReturnInputKind,
+    ("questionnaire_answer", "answer"): E.QuestionnaireAnswerValue,
 }
 
 

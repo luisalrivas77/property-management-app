@@ -93,6 +93,44 @@ class SocialInsurance(Schema):
     health_deductible_share: Rate = Decimal("0.96")  # §10 Abs. 1 Nr. 3 S. 4 EStG
 
 
+# Phase 4b additions to the tariff file (docs/phases/phase-4b.md §4, D109, D112). Optional
+# blocks, so a tariff without them still loads; the whole-return estimate needs them.
+
+
+class ChildFigures(Schema):
+    allowance_per_parent: PositiveMoney  # §32 Abs. 6 S. 1, Kinderfreibetrag per parent
+    bea_per_parent: PositiveMoney  # §32 Abs. 6 S. 1, Betreuungs-/Erziehungs-/Ausbildungsbedarf
+    kindergeld_monthly: PositiveMoney  # §66 Abs. 1
+
+
+class HouseholdServicesCaps(Schema):
+    """§35a Abs. 1–3 EStG: 20 % of the labour cost, capped per class (the credit, not the
+    cost)."""
+
+    rate: Rate = Decimal("0.20")
+    handwerker: PositiveMoney = Decimal("1200")  # Abs. 3
+    haushaltsnah: PositiveMoney = Decimal("4000")  # Abs. 2
+    minijob: PositiveMoney = Decimal("510")  # Abs. 1
+
+
+class BurdenBand(Schema):
+    """One band of the zumutbare Belastung (§33 Abs. 3 EStG); up_to None = above the last."""
+
+    up_to: PositiveMoney | None
+    rate_single: Rate  # no child, Grundtarif
+    rate_joint: Rate  # no child, Splittingtarif
+    rate_one_two_children: Rate
+    rate_three_plus: Rate
+
+
+class ChildcareFigures(Schema):
+    """§10 Abs. 1 Nr. 5 EStG: two thirds became 80 % from 2025, cap 4,800 per child."""
+
+    share: Rate = Decimal("0.80")
+    cap_per_child: PositiveMoney = Decimal("4800")
+    max_age: int = Field(default=14, ge=1)  # before the 14th birthday
+
+
 class Tariff(Schema):
     """The income tax tariff of one tax year and the defaults the zvE estimate needs (§4).
 
@@ -112,6 +150,14 @@ class Tariff(Schema):
     employee_allowance: NonNegativeMoney  # §9a S. 1 Nr. 1a EStG
     special_expenses_allowance: NonNegativeMoney  # §10c EStG, per owner
     social_insurance: SocialInsurance
+    # Phase 4b (D109, D112)
+    children: ChildFigures | None = None
+    household_services: HouseholdServicesCaps | None = None
+    childcare: ChildcareFigures | None = None
+    donation_cap_share: Rate = Decimal("0.20")  # §10b Abs. 1 S. 1 Nr. 1 EStG, of the GdE
+    # §46 Abs. 2 Nr. 1 EStG: other income or Lohnersatzleistungen above this → filing required
+    filing_threshold_progression: NonNegativeMoney = Decimal("410.00")
+    extraordinary_burden_bands: list[BurdenBand] | None = None  # §33 Abs. 3 (reminder only)
 
     @model_validator(mode="after")
     def _consistent(self) -> Self:
@@ -133,6 +179,13 @@ class Tariff(Schema):
             problems.append("reused_from is an earlier year")
         if self.soli_free_limit_single >= self.soli_free_limit_joint:
             problems.append("the joint Freigrenze is the larger one")
+        if self.extraordinary_burden_bands is not None:
+            bands = self.extraordinary_burden_bands
+            tops = [b.up_to for b in bands[:-1]]
+            if not bands or bands[-1].up_to is not None:
+                problems.append("the last burden band is open (up_to null)")
+            elif any(t is None for t in tops) or tops != sorted(set(tops)):  # type: ignore[type-var]
+                problems.append("burden bands: up_to strictly increasing, one open end")
         if problems:
             raise ValueError(f"{TARIFF_INVALID}: {'; '.join(problems)}")
         return self
@@ -352,13 +405,47 @@ class TaxEffect(Schema):
 
 
 class OwnerZve(Schema):
-    """One owner's part of the estimate (D84). deductions = the default or the override."""
+    """One owner's part of the estimate (D84). deductions = the default, the override, or (phase
+    4b D98) the Anlage N's applied Werbungskosten + Vorsorge + 36. gross_source says where the
+    gross came from: the expected_gross_pay row, or a certificate or the payslip projection."""
 
     owner_id: UUID
     gross: NonNegativeMoney
+    gross_source: Literal["expected", "certificate", "payslip"] = "expected"
     deductions: NonNegativeMoney
-    deductions_source: Literal["default", "override"]
+    deductions_source: Literal["default", "override", "employment"]
     amount: NonNegativeMoney  # max(0, gross − deductions)
+
+
+class ChildFact(Schema):
+    """A child of the household (phase 4b D109; return_input kind child, household scope). No
+    name and no other identifier: the birth date decides the months, and it never enters an
+    event payload (only months_in_year does). kindergeld_from: the first month Kindergeld is
+    paid, when it differs from the birth month."""
+
+    born_on: date
+    kindergeld_from: date | None = None
+
+    @model_validator(mode="after")
+    def _after_birth(self) -> Self:
+        if self.kindergeld_from is not None and self.kindergeld_from < self.born_on.replace(day=1):
+            raise ValueError("Kindergeld starts in the birth month or later")
+        return self
+
+
+class HouseholdTaxContext(Schema):
+    """What the assessed tax needs beyond the zvE (phase 4b D98, D109, D112), built by
+    household_context: the children, the Lohnersatzleistungen after the §32b Abs. 2 reduction,
+    church tax paid, the donations within the cap, childcare within the cap, and the §35a
+    credit. Without it, the assessed tax is the plain tariff (total_tax)."""
+
+    children: list[ChildFact] = Field(default_factory=list)
+    replacement_benefits: NonNegativeMoney = Decimal("0")
+    church_tax_paid: NonNegativeMoney = Decimal("0")
+    donations: NonNegativeMoney = Decimal("0")
+    childcare: NonNegativeMoney = Decimal("0")
+    household_services_credit: NonNegativeMoney = Decimal("0")
+    sources: list[SourceRef] = Field(default_factory=list)
 
 
 class ZveEstimate(Schema):
@@ -370,6 +457,7 @@ class ZveEstimate(Schema):
     carried_forward: bool = False
     tax_year: TaxYear  # the year whose rows were used (earlier than asked when carried)
     per_owner: list[OwnerZve] = Field(default_factory=list)
+    household: HouseholdTaxContext | None = None  # phase 4b D98, when 4b rows exist
     sources: list[SourceRef] = Field(default_factory=list)
 
     @model_validator(mode="after")

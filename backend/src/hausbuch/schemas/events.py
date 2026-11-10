@@ -64,8 +64,10 @@ from .enums import (
     LinkTarget,
     PriceSplitSource,
     PropertyKind,
+    QuestionnaireAnswerValue,
     RentChangeReason,
     RentModel,
+    ReturnInputKind,
     StateCode,
 )
 from .performance import INCOME_INPUT_VALUES, IncomeInputValue, Levers, income_value_by_kind
@@ -74,6 +76,7 @@ from .proposal import FieldDecision, RecordEntity
 from .tax import (
     TAX_INPUT_VALUES,
     FormStatus,
+    PrivateCostValue,
     TaxExportKind,
     TaxInputKind,
     TaxInputValue,
@@ -514,9 +517,32 @@ class RuleRecorded(Schema):
 # Phase 3 (docs/phases/phase-3.md §6). Amounts and codes only: never a note (free text).
 
 
+class PrivateCostRecorded(Schema):
+    """A private_cost value as the event log keeps it (phase 4b D111): amounts and codes only.
+    The label and the trip dates stay in the tax_input row; the payload drops them, whatever
+    the caller passes."""
+
+    cost_class: str
+    amount: NonNegativeMoney | None = None
+    trips: int | None = None
+    km_round_trip: int | None = None
+    share: Fraction
+
+    @classmethod
+    def of(cls, value: PrivateCostValue) -> "PrivateCostRecorded":
+        return cls(
+            cost_class=value.cost_class,
+            amount=value.amount,
+            trips=value.trips,
+            km_round_trip=value.km_round_trip,
+            share=value.share,
+        )
+
+
 class TaxInputRecorded(Schema):
     """property.tax_input_recorded: one tax_input row as written (a correction or withdrawal
-    is a new row, so a new event with supersedes_id; D58)."""
+    is a new row, so a new event with supersedes_id; D58). A private_cost value is recorded as
+    PrivateCostRecorded (no free text)."""
 
     tax_input_id: UUID
     kind: TaxInputKind
@@ -525,18 +551,33 @@ class TaxInputRecorded(Schema):
     loan_id: UUID | None = None
     allocation_id: UUID | None = None
     document_id: UUID | None = None
-    value: TaxInputValue
+    value: TaxInputValue | PrivateCostRecorded
     supersedes_id: UUID | None = None
+    carried_from_id: UUID | None = None  # phase 4b D110
     withdrawn: bool = False
 
     @model_validator(mode="before")
     @classmethod
     def _value_by_kind(cls, data: Any) -> Any:
+        if isinstance(data, dict) and data.get("kind") == TaxInputKind.PRIVATE_COST:
+            value = data.get("value")
+            if isinstance(value, dict) and "label" in value:
+                value = PrivateCostValue.model_validate(value)
+            if isinstance(value, PrivateCostValue):
+                value = PrivateCostRecorded.of(value)
+            elif isinstance(value, dict):
+                value = PrivateCostRecorded.model_validate(value)
+            return data | {"value": value}
         return value_by_kind(data)
 
     @model_validator(mode="after")
     def _value_matches_kind(self) -> Self:
-        if type(self.value) is not TAX_INPUT_VALUES[self.kind]:
+        expected = (
+            PrivateCostRecorded
+            if self.kind is TaxInputKind.PRIVATE_COST
+            else TAX_INPUT_VALUES[self.kind]
+        )
+        if type(self.value) is not expected:
             raise ValueError("value does not match the kind")
         return self
 
@@ -597,6 +638,63 @@ class ScenarioRecorded(Schema):
     withdrawn: bool = False
 
 
+# Phase 4b (docs/phases/phase-4b.md §6). Amounts, codes, months and ids only: never an
+# employer, a workplace, an item label, a recipient, a note, or a child's date of birth.
+
+
+class ReturnInputRecorded(Schema):
+    """owner.return_input_recorded (the owner kinds; entity = the owner) and
+    workspace.return_input_recorded (the household kinds; entity = the workspace): one
+    return_input row as written (D97). amounts: the value's money fields by name (a payslip's
+    pairs as "gross.month" / "gross.ytd"), see employment.return_input_amounts. months_in_year:
+    a child's months in tax_year (D109), never the birth date."""
+
+    return_input_id: UUID
+    kind: ReturnInputKind
+    tax_year: TaxYear
+    document_id: UUID | None = None
+    supersedes_id: UUID | None = None
+    carried_from_id: UUID | None = None
+    withdrawn: bool = False
+    amounts: dict[str, Money] = Field(default_factory=dict)
+    months_in_year: int | None = Field(default=None, ge=0, le=12)
+
+    @model_validator(mode="after")
+    def _child_months(self) -> Self:
+        if (self.months_in_year is not None) != (self.kind is ReturnInputKind.CHILD):
+            raise ValueError("months_in_year is set exactly for a child")
+        return self
+
+
+class QuestionnaireAnswered(Schema):
+    """workspace.questionnaire_answered: one questionnaire_answer row as written (D110)."""
+
+    questionnaire_answer_id: UUID
+    question_key: str = Field(max_length=64)
+    tax_year: TaxYear
+    answer: QuestionnaireAnswerValue
+    choice: str | None = Field(default=None, max_length=32)
+    owner_id: UUID | None = None
+    property_id: UUID | None = None
+    supersedes_id: UUID | None = None
+    carried_from_id: UUID | None = None
+    withdrawn: bool = False
+
+
+class AnlageNExported(Schema):
+    """owner.anlage_n_exported: one owner's Anlage N sheet as handed over (D104)."""
+
+    tax_export_id: UUID
+    tax_year: TaxYear
+    kind: TaxExportKind
+    rule_set_version: str
+    form_year: TaxYear
+    form_status: FormStatus
+    file_sha256: Sha256Hex
+    size_bytes: int = Field(gt=0)
+    result: Money  # the Anlage N result
+
+
 # --- Catalog -----------------------------------------------------------------
 
 EffectiveDate = Literal["required", "optional", "forbidden"]
@@ -613,6 +711,8 @@ class EventType(StrEnum):
     OWNER_CREATED = "owner.created"
     OWNER_UPDATED = "owner.updated"
     OWNER_INCOME_INPUT_RECORDED = "owner.income_input_recorded"  # phase 4
+    OWNER_RETURN_INPUT_RECORDED = "owner.return_input_recorded"  # phase 4b
+    OWNER_ANLAGE_N_EXPORTED = "owner.anlage_n_exported"  # phase 4b
 
     PROPERTY_CREATED = "property.created"
     PROPERTY_UPDATED = "property.updated"
@@ -661,6 +761,8 @@ class EventType(StrEnum):
 
     WORKSPACE_SETTINGS_CHANGED = "workspace.settings_changed"
     WORKSPACE_INCOME_INPUT_RECORDED = "workspace.income_input_recorded"  # phase 4
+    WORKSPACE_RETURN_INPUT_RECORDED = "workspace.return_input_recorded"  # phase 4b
+    WORKSPACE_QUESTIONNAIRE_ANSWERED = "workspace.questionnaire_answered"  # phase 4b
 
     PROPOSAL_CREATED = "proposal.created"
     PROPOSAL_SUPERSEDED = "proposal.superseded"
@@ -698,6 +800,10 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     E.OWNER_INCOME_INPUT_RECORDED: EventSpec(
         IncomeInputRecorded, "forbidden", "Expected gross pay or deductions recorded"
     ),
+    E.OWNER_RETURN_INPUT_RECORDED: EventSpec(
+        ReturnInputRecorded, "forbidden", "Employment fact or pay document recorded"
+    ),
+    E.OWNER_ANLAGE_N_EXPORTED: EventSpec(AnlageNExported, "forbidden", "Anlage N sheet exported"),
     E.PROPERTY_CREATED: EventSpec(PropertyCreated, "forbidden", "Property record created"),
     E.PROPERTY_UPDATED: EventSpec(Updated, "forbidden", "Property fields changed"),
     E.PROPERTY_PURCHASE_NOTARIZED: EventSpec(
@@ -764,6 +870,12 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     ),
     E.WORKSPACE_INCOME_INPUT_RECORDED: EventSpec(
         IncomeInputRecorded, "forbidden", "Bescheid zvE or typed tax rate recorded"
+    ),
+    E.WORKSPACE_RETURN_INPUT_RECORDED: EventSpec(
+        ReturnInputRecorded, "forbidden", "Child or household tax fact recorded"
+    ),
+    E.WORKSPACE_QUESTIONNAIRE_ANSWERED: EventSpec(
+        QuestionnaireAnswered, "forbidden", "Yearly tax question answered"
     ),
     E.PROPOSAL_CREATED: EventSpec(ProposalNoted, "forbidden", "Pre-fill proposal created"),
     E.PROPOSAL_SUPERSEDED: EventSpec(ProposalNoted, "forbidden", "Proposal replaced by a re-run"),

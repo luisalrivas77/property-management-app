@@ -122,6 +122,8 @@ export const DOCUMENT_TYPE: Record<DocumentType, string> = {
   zinsbescheinigung: "Zinsbescheinigung",
   wirtschaftsplan: "Wirtschaftsplan",
   hausgeldabrechnung: "Hausgeldabrechnung",
+  lohnsteuerbescheinigung: "Lohnsteuerbescheinigung",
+  gehaltsabrechnung: "Gehaltsabrechnung",
   other: "Sonstiges",
 };
 
@@ -165,6 +167,8 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "owner.created": "Eigentümer angelegt",
   "owner.updated": "Eigentümer geändert",
   "owner.income_input_recorded": "Einkommensangabe erfasst",
+  "owner.return_input_recorded": "Angabe zur Steuererklärung erfasst",
+  "owner.anlage_n_exported": "Anlage N exportiert",
   "property.created": "Immobilie angelegt",
   "property.updated": "Immobilie geändert",
   "property.purchase_notarized": "Kaufvertrag beurkundet",
@@ -203,6 +207,8 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "document.read_failed": "Dokument konnte nicht gelesen werden",
   "workspace.settings_changed": "Einstellungen geändert",
   "workspace.income_input_recorded": "Einkommensangabe des Haushalts erfasst",
+  "workspace.return_input_recorded": "Angabe des Haushalts zur Steuererklärung erfasst",
+  "workspace.questionnaire_answered": "Jahresfrage beantwortet",
   "proposal.created": "Vorschlag erstellt",
   "proposal.superseded": "Vorschlag ersetzt",
   "proposal.rejected": "Vorschlag abgelehnt",
@@ -254,6 +260,8 @@ export const EXTRACTION_KIND: Record<ExtractionKind, string> = {
   hausgeldabrechnung: "Hausgeldabrechnung",
   zinsbescheinigung: "Zinsbescheinigung",
   statement: "Kontoauszug",
+  lohnsteuerbescheinigung: "Lohnsteuerbescheinigung",
+  gehaltsabrechnung: "Gehaltsabrechnung",
 };
 
 /** The confidence dot's text (computed by code from the checks, D15). */
@@ -433,6 +441,47 @@ export const WARNING_TEXT: Record<WarningCode, (params: Params) => string> = {
     `Eine Zahlung des Kontos${p.amount ? ` über ${money(p)}` : ""} ist keiner Immobilie zugeordnet.`,
   "archive.finanzamt_copy_needed": () =>
     "Ein Dokument öffnet nicht in jedem Programm (Adobe-Formular oder Anmerkungen): für das Finanzamt eine Kopie drucken.",
+  // Phase 4b (phase-4b.md §9): Anlage N and the whole-return estimate.
+  "tax.travel_frequency": () =>
+    "Mehr als 50 Fahrten zur Immobilie im Jahr: bei fast täglicher Anwesenheit kann nur die halbe Pauschale gelten. Bitte prüfen.",
+  "anlage_n.certificate_missing": () =>
+    "Keine Lohnsteuerbescheinigung für dieses Jahr: die Zahlen beruhen auf Gehaltsabrechnungen oder der Schätzung.",
+  "anlage_n.church_mismatch": () =>
+    "Die Kirchensteuermerkmale der Bescheinigung passen nicht zur Angabe beim Eigentümer.",
+  "anlage_n.tax_class_6": () =>
+    "Steuerklasse 6: ein zweites Arbeitsverhältnis. Beide Bescheinigungen werden zusammengezählt.",
+  "anlage_n.periods_overlap": () => "Zwei Bescheinigungen desselben Arbeitgebers überschneiden sich im Zeitraum.",
+  "anlage_n.days_implausible": () =>
+    "Die Zahl der Arbeitstage passt nicht zu den Tagen pro Woche und dem Zeitraum.",
+  "anlage_n.home_office_capped": () => "Die Tagespauschale ist auf den Jahreshöchstbetrag begrenzt.",
+  "anlage_n.too_many_routes": () =>
+    "Mehr Wege zur Arbeit, als das Formular Zeilen hat: die übrigen bitte von Hand eintragen.",
+  "anlage_n.receipt_missing": () => "Für eine Ausgabe ist kein Beleg hinterlegt.",
+  "anlage_n.form_provisional": () =>
+    "Die Anlage N für dieses Jahr ist noch nicht veröffentlicht; Zeilen und Kennzahlen sind vorläufig.",
+  "anlage_n.payslip_gap": () => "Zwischen den Gehaltsabrechnungen fehlt ein Monat.",
+  "anlage_n.payslip_no_ytd": () =>
+    "Die Gehaltsabrechnung hat keine Jahreswerte: die Hochrechnung nutzt nur den Monatswert.",
+  "anlage_n.work_room_records": () => "Für das Arbeitszimmer bitte Grundriss und Kosten aufbewahren.",
+  "anlage_n.work_room_centre": () =>
+    "Ein Arbeitszimmer zählt nur, wenn es der Mittelpunkt der gesamten Tätigkeit ist. Bitte prüfen.",
+  "anlage_n.first_workplace_check": () =>
+    "Bitte prüfen, ob dies die erste Tätigkeitsstätte ist (Festlegung durch den Arbeitgeber).",
+  "return.progression_provisional": () =>
+    "Lohnersatzleistungen sind noch nicht bescheinigt: der Steuersatz ist vorläufig.",
+  "return.benefit_possible_double": () =>
+    "Eine Lohnersatzleistung steht in der Bescheinigung und als eigene Angabe: bitte nur einmal erfassen.",
+  "return.children_mismatch": () =>
+    "Die Zahl der Kinderfreibeträge der Bescheinigung passt nicht zu den erfassten Kindern.",
+  "return.kindergeld_apply": () => "Für ein Kind ist noch kein Kindergeld erfasst: bitte bei der Familienkasse beantragen.",
+  "return.child_over_18": () => "Ein Kind ist volljährig: es zählt nur bei Ausbildung oder Studium.",
+  "return.donation_over_cap": () => "Die Spenden übersteigen die Höchstgrenze; der Rest zählt nicht in diesem Jahr.",
+  "return.filing_required": () => "Für dieses Jahr besteht eine Pflicht zur Abgabe der Steuererklärung.",
+  "return.questionnaire_open": () => "Es sind noch Fragen zum Steuerjahr offen.",
+  "return.not_modelled": () => "Ein Teil der Erklärung wird von der App nicht berechnet; die Schätzung ist unvollständig.",
+  questionnaire_provisional: () =>
+    "Die Fragen für dieses Jahr sind noch nicht festgelegt; es gelten die des Vorjahres.",
+  "tax_export.questions_open": () => "Beim Export waren noch Fragen zum Steuerjahr offen.",
 };
 
 /** What a line's source is, in the sources drawer. */
@@ -450,6 +499,9 @@ export const TAX_SOURCE_KIND: Record<TaxSourceKind, string> = {
   schedule_entry: "Tilgungsplan",
   income_input: "Einkommensangabe",
   tariff: "Einkommensteuertarif",
+  return_input: "Angabe zur Steuererklärung",
+  questionnaire_answer: "Antwort auf eine Jahresfrage",
+  anlage_n_rule_set: "Regelwerk der Anlage N",
 };
 
 /** A line note of the draft (the §5.1 notes); an unknown note is shown as sent. */

@@ -639,13 +639,14 @@ tax_input = Table(
     Column("withdrawn", Boolean, nullable=False, server_default=text("false")),
     _timestamp("recorded_at"),
     _uuid("recorded_by", nullable=True),
+    _uuid("carried_from_id", nullable=True),  # 0018, phase 4b D110
 )
 tax_export = Table(
     "tax_export",
     metadata,
     _id(),
     _workspace_id(),
-    _uuid("property_id"),
+    _uuid("property_id", nullable=True),  # nullable since 0018 (D104)
     Column("tax_year", SmallInteger, nullable=False),
     _text("kind"),
     _text("rule_set_version"),
@@ -656,6 +657,7 @@ tax_export = Table(
     Column("size_bytes", BigInteger, nullable=False),
     _created_at(),
     _uuid("created_by", nullable=True),
+    _uuid("owner_id", nullable=True),  # 0018: an Anlage N sheet's owner (D104)
 )
 
 # --- Phase 4: performance (0016) ---------------------------------------------
@@ -686,6 +688,43 @@ projection_scenario = Table(
     Column("is_default", Boolean, nullable=False, server_default=text("false")),
     Column("levers", JSONB, nullable=False),
     _uuid("supersedes_id", nullable=True),
+    Column("withdrawn", Boolean, nullable=False, server_default=text("false")),
+    _timestamp("recorded_at"),
+    _uuid("recorded_by", nullable=True),
+)
+
+# --- Phase 4b: income tax return (0018) --------------------------------------
+
+return_input = Table(
+    "return_input",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("owner_id", nullable=True),
+    _text("kind"),
+    Column("tax_year", SmallInteger, nullable=False),
+    _uuid("document_id", nullable=True),
+    Column("value", JSONB, nullable=False),
+    _text("note", nullable=True),
+    _uuid("supersedes_id", nullable=True),
+    _uuid("carried_from_id", nullable=True),
+    Column("withdrawn", Boolean, nullable=False, server_default=text("false")),
+    _timestamp("recorded_at"),
+    _uuid("recorded_by", nullable=True),
+)
+questionnaire_answer = Table(
+    "questionnaire_answer",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _text("question_key"),
+    Column("tax_year", SmallInteger, nullable=False),
+    _uuid("owner_id", nullable=True),
+    _uuid("property_id", nullable=True),
+    _text("answer"),
+    _text("choice", nullable=True),
+    _uuid("supersedes_id", nullable=True),
+    _uuid("carried_from_id", nullable=True),
     Column("withdrawn", Boolean, nullable=False, server_default=text("false")),
     _timestamp("recorded_at"),
     _uuid("recorded_by", nullable=True),

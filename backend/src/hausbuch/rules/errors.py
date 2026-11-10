@@ -97,3 +97,20 @@ SCENARIO_SALE_YEAR_BEFORE_TODAY = "scenario.sale_year_before_today"
 # correction supersedes another property's scenario (step 2).
 SCENARIO_SCOPE_INVALID = "scenario.scope_invalid"
 PROJECTION_NO_RULE_SET = "projection.no_rule_set"  # no rule set file for the year or earlier
+
+
+# --- Phase 4b codes (docs/phases/phase-4b.md §9) ---------------------------------------
+
+RETURN_INPUT_SCOPE_INVALID = "return_input.scope_invalid"  # the kind's scope is not met
+RETURN_INPUT_NOT_CURRENT = "return_input.not_current"  # supersedes a superseded/withdrawn row
+RETURN_INPUT_WORK_ROOM_CONFLICT = "return_input.work_room_conflict"  # D106, 12-month room
+RETURN_INPUT_CARRIED_FROM_INVALID = "return_input.carried_from_invalid"  # D110
+QUESTIONNAIRE_SCOPE_INVALID = "questionnaire.scope_invalid"
+QUESTIONNAIRE_UNKNOWN_KEY = "questionnaire.unknown_key"  # not in the year's file
+QUESTIONNAIRE_NOT_CURRENT = "questionnaire.not_current"
+ANLAGE_N_RULE_SET_INVALID = "anlage_n.rule_set_invalid"  # an Anlage N file that does not load
+ANLAGE_N_USEFUL_LIFE_MISSING = "anlage_n.useful_life_missing"  # an `other` item without life
+ANLAGE_N_WORK_ROOM_EXCLUDES_DAY_RATE = "anlage_n.work_room_excludes_day_rate"  # D106
+ANLAGE_N_NO_PAY = "anlage_n.no_pay"  # no certificate, payslip or expected pay
+RETURN_CHILDCARE_AGE = "return.childcare_age"  # a child aged 14 or more (§10 Abs. 1 Nr. 5)
+RETURN_HOUSEHOLD_SERVICES_CASH = "return.household_services_cash"  # §35a Abs. 5 S. 3

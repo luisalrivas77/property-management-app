@@ -2691,6 +2691,22 @@ export interface components {
          */
         ChecklistStatus: "present" | "missing" | "expected" | "incomplete";
         /**
+         * ChildFact
+         * @description A child of the household (phase 4b D109; return_input kind child, household scope). No
+         *     name and no other identifier: the birth date decides the months, and it never enters an
+         *     event payload (only months_in_year does). kindergeld_from: the first month Kindergeld is
+         *     paid, when it differs from the birth month.
+         */
+        ChildFact: {
+            /**
+             * Born On
+             * Format: date
+             */
+            born_on: string;
+            /** Kindergeld From */
+            kindergeld_from?: string | null;
+        };
+        /**
          * ConfirmAllocationsBody
          * @description PUT /transactions/{id}/allocations: the user's allocation set and the "Künftig immer
          *     so zuordnen" checkbox.
@@ -2985,7 +3001,7 @@ export interface components {
             version: number;
             source: components["schemas"]["ExtractionSource"];
             /** Fields */
-            fields: components["schemas"]["ManualDocumentFields"] | components["schemas"]["PurchaseContractExtraction"] | components["schemas"]["LoanContractExtraction"] | components["schemas"]["LeaseExtraction"] | components["schemas"]["HandoverProtocolExtraction"] | components["schemas"]["DepositRecordExtraction"] | components["schemas"]["InvoiceExtraction"] | components["schemas"]["BescheidExtraction"] | components["schemas"]["GrundsteuerbescheidExtraction"] | components["schemas"]["WirtschaftsplanExtraction"] | components["schemas"]["HausgeldabrechnungExtraction"] | components["schemas"]["ZinsbescheinigungExtraction"] | components["schemas"]["StatementExtraction"];
+            fields: components["schemas"]["ManualDocumentFields"] | components["schemas"]["PurchaseContractExtraction"] | components["schemas"]["LoanContractExtraction"] | components["schemas"]["LeaseExtraction"] | components["schemas"]["HandoverProtocolExtraction"] | components["schemas"]["DepositRecordExtraction"] | components["schemas"]["InvoiceExtraction"] | components["schemas"]["BescheidExtraction"] | components["schemas"]["GrundsteuerbescheidExtraction"] | components["schemas"]["WirtschaftsplanExtraction"] | components["schemas"]["HausgeldabrechnungExtraction"] | components["schemas"]["ZinsbescheinigungExtraction"] | components["schemas"]["StatementExtraction"] | components["schemas"]["WageCertificateExtraction"] | components["schemas"]["PayslipExtraction"];
             /**
              * Schema Version
              * @default 1
@@ -3049,7 +3065,7 @@ export interface components {
          * @description The classifier's output set (AI layer). Phase 1 sets it by hand.
          * @enum {string}
          */
-        DocumentType: "statement" | "invoice" | "letter" | "contract" | "bescheid" | "zinsbescheinigung" | "wirtschaftsplan" | "hausgeldabrechnung" | "other";
+        DocumentType: "statement" | "invoice" | "letter" | "contract" | "bescheid" | "zinsbescheinigung" | "wirtschaftsplan" | "hausgeldabrechnung" | "other" | "lohnsteuerbescheinigung" | "gehaltsabrechnung";
         /**
          * DocumentTyping
          * @description What a person (phase 1) or the classifier (phase 2) says the document is.
@@ -3316,7 +3332,7 @@ export interface components {
          * EventType
          * @enum {string}
          */
-        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.classified" | "document.extracted" | "document.read_failed" | "workspace.settings_changed" | "workspace.income_input_recorded" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "rule.created" | "rule.disabled";
+        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.classified" | "document.extracted" | "document.read_failed" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "rule.created" | "rule.disabled";
         /** ExcludeFrom15Pct */
         ExcludeFrom15Pct: {
             /**
@@ -3361,7 +3377,7 @@ export interface components {
          *     models in schemas/extraction.py.
          * @enum {string}
          */
-        ExtractionKind: "manual" | "purchase_contract" | "loan_contract" | "lease" | "handover_protocol" | "deposit_record" | "invoice" | "bescheid" | "grundsteuerbescheid" | "wirtschaftsplan" | "hausgeldabrechnung" | "zinsbescheinigung" | "statement";
+        ExtractionKind: "manual" | "purchase_contract" | "loan_contract" | "lease" | "handover_protocol" | "deposit_record" | "invoice" | "bescheid" | "grundsteuerbescheid" | "wirtschaftsplan" | "hausgeldabrechnung" | "zinsbescheinigung" | "statement" | "lohnsteuerbescheinigung" | "gehaltsabrechnung";
         /**
          * ExtractionSource
          * @enum {string}
@@ -3489,6 +3505,44 @@ export interface components {
             ruecklage_contribution?: components["schemas"]["ExtractedValue"];
             /** @description Entnahme aus der Rücklage */
             ruecklage_spent?: components["schemas"]["ExtractedValue"];
+        };
+        /**
+         * HouseholdTaxContext
+         * @description What the assessed tax needs beyond the zvE (phase 4b D98, D109, D112), built by
+         *     household_context: the children, the Lohnersatzleistungen after the §32b Abs. 2 reduction,
+         *     church tax paid, the donations within the cap, childcare within the cap, and the §35a
+         *     credit. Without it, the assessed tax is the plain tariff (total_tax).
+         */
+        HouseholdTaxContext: {
+            /** Children */
+            children?: components["schemas"]["ChildFact"][];
+            /**
+             * Replacement Benefits
+             * @default 0
+             */
+            replacement_benefits: string;
+            /**
+             * Church Tax Paid
+             * @default 0
+             */
+            church_tax_paid: string;
+            /**
+             * Donations
+             * @default 0
+             */
+            donations: string;
+            /**
+             * Childcare
+             * @default 0
+             */
+            childcare: string;
+            /**
+             * Household Services Credit
+             * @default 0
+             */
+            household_services_credit: string;
+            /** Sources */
+            sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
         };
         /**
          * ImportStatus
@@ -4393,7 +4447,9 @@ export interface components {
         };
         /**
          * OwnerZve
-         * @description One owner's part of the estimate (D84). deductions = the default or the override.
+         * @description One owner's part of the estimate (D84). deductions = the default, the override, or (phase
+         *     4b D98) the Anlage N's applied Werbungskosten + Vorsorge + 36. gross_source says where the
+         *     gross came from: the expected_gross_pay row, or a certificate or the payslip projection.
          */
         OwnerZve: {
             /**
@@ -4403,13 +4459,19 @@ export interface components {
             owner_id: string;
             /** Gross */
             gross: string;
+            /**
+             * Gross Source
+             * @default expected
+             * @enum {string}
+             */
+            gross_source: "expected" | "certificate" | "payslip";
             /** Deductions */
             deductions: string;
             /**
              * Deductions Source
              * @enum {string}
              */
-            deductions_source: "default" | "override";
+            deductions_source: "default" | "override" | "employment";
             /** Amount */
             amount: string;
         };
@@ -4463,6 +4525,61 @@ export interface components {
             };
             /** Label */
             label: string;
+        };
+        /**
+         * PayslipExtraction
+         * @description Gehaltsabrechnung: one month, with the month column and the year-to-date column
+         *     (Jahreswerte / kumuliert). Net pay and the bank account are not read.
+         */
+        PayslipExtraction: {
+            /** @description a short German title, two to six words naming what the document is */
+            title?: components["schemas"]["ExtractedValue"];
+            /** @description the date the document carries */
+            document_date?: components["schemas"]["ExtractedValue"];
+            /** @description the employee's name, to match the owner */
+            employee_name?: components["schemas"]["ExtractedValue"];
+            /** @description the employer's name only */
+            employer_name?: components["schemas"]["ExtractedValue"];
+            /** @description the month paid, as its first day */
+            period_month?: components["schemas"]["ExtractedValue"];
+            /** @description Steuerklasse */
+            tax_class?: components["schemas"]["ExtractedValue"];
+            /** @description Steuer-Brutto of the month (not Gesamt-Brutto) */
+            gross_month?: components["schemas"]["ExtractedValue"];
+            /** @description Steuer-Brutto, Jahreswerte / kumuliert */
+            gross_ytd?: components["schemas"]["ExtractedValue"];
+            /** @description Lohnsteuer of the month */
+            income_tax_month?: components["schemas"]["ExtractedValue"];
+            /** @description Lohnsteuer, Jahreswerte / kumuliert */
+            income_tax_ytd?: components["schemas"]["ExtractedValue"];
+            /** @description Solidaritätszuschlag of the month */
+            soli_month?: components["schemas"]["ExtractedValue"];
+            /** @description Solidaritätszuschlag, Jahreswerte / kumuliert */
+            soli_ytd?: components["schemas"]["ExtractedValue"];
+            /** @description Kirchensteuer of the month */
+            church_tax_month?: components["schemas"]["ExtractedValue"];
+            /** @description Kirchensteuer, Jahreswerte / kumuliert */
+            church_tax_ytd?: components["schemas"]["ExtractedValue"];
+            /** @description Rentenversicherung AN of the month */
+            pension_employee_month?: components["schemas"]["ExtractedValue"];
+            /** @description Rentenversicherung AN, Jahreswerte / kumuliert */
+            pension_employee_ytd?: components["schemas"]["ExtractedValue"];
+            /** @description Krankenversicherung AN of the month */
+            health_employee_month?: components["schemas"]["ExtractedValue"];
+            /** @description Krankenversicherung AN, Jahreswerte / kumuliert */
+            health_employee_ytd?: components["schemas"]["ExtractedValue"];
+            /** @description Pflegeversicherung AN of the month */
+            care_employee_month?: components["schemas"]["ExtractedValue"];
+            /** @description Pflegeversicherung AN, Jahreswerte / kumuliert */
+            care_employee_ytd?: components["schemas"]["ExtractedValue"];
+            /** @description Arbeitslosenversicherung AN of the month */
+            unemployment_employee_month?: components["schemas"]["ExtractedValue"];
+            /** @description Arbeitslosenversicherung AN, Jahreswerte / kumuliert */
+            unemployment_employee_ytd?: components["schemas"]["ExtractedValue"];
+            /** @description steuerfreie Bezüge of the month */
+            tax_free_benefits_month?: components["schemas"]["ExtractedValue"];
+            /** @description steuerfreie Bezüge, Jahreswerte / kumuliert */
+            tax_free_benefits_ytd?: components["schemas"]["ExtractedValue"];
         };
         /**
          * PossibleDuplicate
@@ -4569,6 +4686,38 @@ export interface components {
          * @enum {string}
          */
         PriceSplitSource: "purchase_contract" | "bmf_tool" | "appraisal";
+        /**
+         * PrivateCostValue
+         * @description A rental cost paid from a private account (phase 4b D111): trips to the flat, postage,
+         *     a landlords' association, software and the like; tax_year on the row is the year paid.
+         *     travel: trips × km_round_trip × the rule set's travel_rate_per_km (no amount typed);
+         *     every other class: amount × share. The label is free text: it stays in the row and never
+         *     enters the event payload (only amounts and codes do).
+         */
+        PrivateCostValue: {
+            /**
+             * Cost Class
+             * @enum {string}
+             */
+            cost_class: "travel" | "postage" | "advertising" | "association" | "legal_insurance" | "software" | "other";
+            /** Label */
+            label: string;
+            /** Amount */
+            amount?: string | null;
+            /** Trips */
+            trips?: number | null;
+            /** Km Round Trip */
+            km_round_trip?: number | null;
+            /** Trip Dates */
+            trip_dates?: string[];
+            /**
+             * @default {
+             *       "numerator": 1,
+             *       "denominator": 1
+             *     }
+             */
+            share: components["schemas"]["Fraction"];
+        };
         /** Projection */
         Projection: {
             /**
@@ -5472,11 +5621,10 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
-            /**
-             * Property Id
-             * Format: uuid
-             */
-            property_id: string;
+            /** Property Id */
+            property_id?: string | null;
+            /** Owner Id */
+            owner_id?: string | null;
             /** Tax Year */
             tax_year: number;
             kind: components["schemas"]["TaxExportKind"];
@@ -5502,7 +5650,7 @@ export interface components {
          * TaxExportKind
          * @enum {string}
          */
-        TaxExportKind: "field_sheet" | "archive";
+        TaxExportKind: "field_sheet" | "archive" | "anlage_n_sheet";
         /**
          * TaxExportQueued
          * @description POST /properties/{id}/anlage-v/exports: the id to poll GET /tax-exports/{id} with.
@@ -5566,11 +5714,13 @@ export interface components {
             /** Document Id */
             document_id?: string | null;
             /** Value */
-            value: components["schemas"]["Spread82b"] | components["schemas"]["RenovationTreatment"] | components["schemas"]["ExcludeFrom15Pct"] | components["schemas"]["MarketRent"] | components["schemas"]["RuecklageSpent"] | components["schemas"]["InterestCertified"] | components["schemas"]["PreHandoverIncome"] | components["schemas"]["UsefulLife"] | components["schemas"]["MovableAsset"];
+            value: components["schemas"]["Spread82b"] | components["schemas"]["RenovationTreatment"] | components["schemas"]["ExcludeFrom15Pct"] | components["schemas"]["MarketRent"] | components["schemas"]["RuecklageSpent"] | components["schemas"]["InterestCertified"] | components["schemas"]["PreHandoverIncome"] | components["schemas"]["UsefulLife"] | components["schemas"]["MovableAsset"] | components["schemas"]["PrivateCostValue"];
             /** Note */
             note?: string | null;
             /** Supersedes Id */
             supersedes_id?: string | null;
+            /** Carried From Id */
+            carried_from_id?: string | null;
             /**
              * Withdrawn
              * @default false
@@ -5618,11 +5768,13 @@ export interface components {
             /** Document Id */
             document_id?: string | null;
             /** Value */
-            value: components["schemas"]["Spread82b"] | components["schemas"]["RenovationTreatment"] | components["schemas"]["ExcludeFrom15Pct"] | components["schemas"]["MarketRent"] | components["schemas"]["RuecklageSpent"] | components["schemas"]["InterestCertified"] | components["schemas"]["PreHandoverIncome"] | components["schemas"]["UsefulLife"] | components["schemas"]["MovableAsset"];
+            value: components["schemas"]["Spread82b"] | components["schemas"]["RenovationTreatment"] | components["schemas"]["ExcludeFrom15Pct"] | components["schemas"]["MarketRent"] | components["schemas"]["RuecklageSpent"] | components["schemas"]["InterestCertified"] | components["schemas"]["PreHandoverIncome"] | components["schemas"]["UsefulLife"] | components["schemas"]["MovableAsset"] | components["schemas"]["PrivateCostValue"];
             /** Note */
             note?: string | null;
             /** Supersedes Id */
             supersedes_id?: string | null;
+            /** Carried From Id */
+            carried_from_id?: string | null;
             /**
              * Withdrawn
              * @default false
@@ -5633,7 +5785,7 @@ export interface components {
          * TaxInputKind
          * @enum {string}
          */
-        TaxInputKind: "spread_82b" | "renovation_treatment" | "exclude_from_15pct" | "market_rent" | "ruecklage_spent" | "interest_certified" | "pre_handover_income" | "useful_life" | "movable_asset";
+        TaxInputKind: "spread_82b" | "renovation_treatment" | "exclude_from_15pct" | "market_rent" | "ruecklage_spent" | "interest_certified" | "pre_handover_income" | "useful_life" | "movable_asset" | "private_cost";
         /**
          * TaxRateResult
          * @description GET /api/tax-rate: the Steuern screen's "Steuerwirkung" line (§8, §9).
@@ -6129,6 +6281,68 @@ export interface components {
             years: number;
         };
         /**
+         * WageCertificateExtraction
+         * @description Lohnsteuerbescheinigung: one employer's certificate for one year.
+         */
+        WageCertificateExtraction: {
+            /** @description a short German title, two to six words naming what the document is */
+            title?: components["schemas"]["ExtractedValue"];
+            /** @description the date the document carries */
+            document_date?: components["schemas"]["ExtractedValue"];
+            /** @description the employee's name, to match the owner */
+            employee_name?: components["schemas"]["ExtractedValue"];
+            /** @description the employer's name only */
+            employer_name?: components["schemas"]["ExtractedValue"];
+            /** @description the year the certificate covers */
+            tax_year?: components["schemas"]["ExtractedValue"];
+            /** @description Nr. 1 Dauer des Dienstverhältnisses, vom */
+            period_from?: components["schemas"]["ExtractedValue"];
+            /** @description Nr. 1 Dauer des Dienstverhältnisses, bis */
+            period_to?: components["schemas"]["ExtractedValue"];
+            /** @description Steuerklasse/Faktor */
+            tax_class?: components["schemas"]["ExtractedValue"];
+            /** @description Kirchensteuermerkmale */
+            church_tax_mark?: components["schemas"]["ExtractedValue"];
+            /** @description Zahl der Kinderfreibeträge */
+            child_allowance_count?: components["schemas"]["ExtractedValue"];
+            /** @description Nr. 3 Bruttoarbeitslohn einschl. Sachbezüge */
+            gross?: components["schemas"]["ExtractedValue"];
+            /** @description Nr. 4 Einbehaltene Lohnsteuer von 3. */
+            income_tax?: components["schemas"]["ExtractedValue"];
+            /** @description Nr. 5 Einbehaltener Solidaritätszuschlag von 3. */
+            soli?: components["schemas"]["ExtractedValue"];
+            /** @description Nr. 6 Einbehaltene Kirchensteuer des Arbeitnehmers von 3. */
+            church_tax?: components["schemas"]["ExtractedValue"];
+            /** @description Nr. 7 Einbehaltene Kirchensteuer des Ehegatten von 3. */
+            church_tax_spouse?: components["schemas"]["ExtractedValue"];
+            /** @description Nr. 15 Kurzarbeitergeld, Zuschuss zum Mutterschaftsgeld und ähnliche */
+            replacement_benefits?: components["schemas"]["ExtractedValue"];
+            /** @description Nr. 15a davon Kurzarbeitergeld */
+            short_time_allowance?: components["schemas"]["ExtractedValue"];
+            /** @description Nr. 17 Steuerfreie Arbeitgeberleistungen für Fahrten zwischen Wohnung und erster Tätigkeitsstätte */
+            employer_commute_tax_free?: components["schemas"]["ExtractedValue"];
+            /** @description Nr. 18 Pauschal besteuerte Arbeitgeberleistungen für Fahrten zwischen Wohnung und erster Tätigkeitsstätte */
+            employer_commute_flat_taxed?: components["schemas"]["ExtractedValue"];
+            /** @description Nr. 22a Arbeitgeberanteil zur gesetzlichen Rentenversicherung */
+            pension_employer?: components["schemas"]["ExtractedValue"];
+            /** @description Nr. 23a Arbeitnehmeranteil zur gesetzlichen Rentenversicherung */
+            pension_employee?: components["schemas"]["ExtractedValue"];
+            /** @description Nr. 23b Arbeitnehmeranteil an berufsständische Versorgungseinrichtungen */
+            pension_employee_professional?: components["schemas"]["ExtractedValue"];
+            /** @description Nr. 24a Steuerfreie Arbeitgeberzuschüsse zur gesetzlichen Krankenversicherung */
+            subsidy_health?: components["schemas"]["ExtractedValue"];
+            /** @description Nr. 24b Steuerfreie Arbeitgeberzuschüsse zur privaten Krankenversicherung */
+            subsidy_private_health?: components["schemas"]["ExtractedValue"];
+            /** @description Nr. 24c Steuerfreie Arbeitgeberzuschüsse zur gesetzlichen Pflegeversicherung */
+            subsidy_care?: components["schemas"]["ExtractedValue"];
+            /** @description Nr. 25 Arbeitnehmerbeiträge zur gesetzlichen Krankenversicherung */
+            health_employee?: components["schemas"]["ExtractedValue"];
+            /** @description Nr. 26 Arbeitnehmerbeiträge zur sozialen Pflegeversicherung */
+            care_employee?: components["schemas"]["ExtractedValue"];
+            /** @description Nr. 27 Arbeitnehmerbeiträge zur Arbeitslosenversicherung */
+            unemployment_employee?: components["schemas"]["ExtractedValue"];
+        };
+        /**
          * WaitingAmount
          * @description An amount other lines from the same IBAN and sign are waiting with, and how many.
          */
@@ -6142,7 +6356,7 @@ export interface components {
          * WarningCode
          * @enum {string}
          */
-        WarningCode: "year_end_straddle" | "afa.no_split" | "afa.cost_row_unpaid" | "afa.acquisition_cost_without_row" | "afa.purchase_price_mismatch" | "afa.useful_life_report" | "afa.movable_asset_no_evidence" | "afa.movable_asset_exceeds_building" | "limit.exceeded" | "limit.prior_year_amendment" | "limit.estimated_net" | "anschaffungsnah.performance_date_check" | "renovation.undecided" | "interest.certificate_mismatch" | "hausgeld.abrechnung_pending" | "income.other_review" | "income.pre_handover" | "income.living_area_missing" | "umlagen.mixed_terms" | "reduced_rent.no_market_rent" | "reduced_rent.prognosis_needed" | "reduced_rent.partial" | "draft.open_lines_excluded" | "draft.form_provisional" | "draft.allocation_without_property" | "archive.finanzamt_copy_needed";
+        WarningCode: "year_end_straddle" | "afa.no_split" | "afa.cost_row_unpaid" | "afa.acquisition_cost_without_row" | "afa.purchase_price_mismatch" | "afa.useful_life_report" | "afa.movable_asset_no_evidence" | "afa.movable_asset_exceeds_building" | "limit.exceeded" | "limit.prior_year_amendment" | "limit.estimated_net" | "anschaffungsnah.performance_date_check" | "renovation.undecided" | "interest.certificate_mismatch" | "hausgeld.abrechnung_pending" | "income.other_review" | "income.pre_handover" | "income.living_area_missing" | "umlagen.mixed_terms" | "reduced_rent.no_market_rent" | "reduced_rent.prognosis_needed" | "reduced_rent.partial" | "draft.open_lines_excluded" | "draft.form_provisional" | "draft.allocation_without_property" | "archive.finanzamt_copy_needed" | "tax.travel_frequency" | "anlage_n.certificate_missing" | "anlage_n.church_mismatch" | "anlage_n.tax_class_6" | "anlage_n.periods_overlap" | "anlage_n.days_implausible" | "anlage_n.home_office_capped" | "anlage_n.too_many_routes" | "anlage_n.receipt_missing" | "anlage_n.form_provisional" | "anlage_n.payslip_gap" | "anlage_n.payslip_no_ytd" | "anlage_n.work_room_records" | "anlage_n.work_room_centre" | "anlage_n.first_workplace_check" | "return.progression_provisional" | "return.benefit_possible_double" | "return.children_mismatch" | "return.kindergeld_apply" | "return.child_over_18" | "return.donation_over_cap" | "return.filing_required" | "return.questionnaire_open" | "return.not_modelled" | "questionnaire_provisional" | "tax_export.questions_open";
         /**
          * WirtschaftsplanExtraction
          * @description Wirtschaftsplan: the monthly Hausgeld split the by_wirtschaftsplan rule reads (§8.1).
@@ -6343,6 +6557,7 @@ export interface components {
             tax_year: number;
             /** Per Owner */
             per_owner?: components["schemas"]["OwnerZve"][];
+            household?: components["schemas"]["HouseholdTaxContext"] | null;
             /** Sources */
             sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
         };
@@ -6367,7 +6582,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "allocation" | "transaction" | "document" | "property" | "price_split" | "acquisition_cost" | "loan" | "tax_input" | "rule" | "scenario" | "schedule_entry" | "income_input" | "tariff";
+            kind: "allocation" | "transaction" | "document" | "property" | "price_split" | "acquisition_cost" | "loan" | "tax_input" | "rule" | "scenario" | "schedule_entry" | "income_input" | "tariff" | "return_input" | "questionnaire_answer" | "anlage_n_rule_set";
             /** Id */
             id?: string | null;
             /** Amount */

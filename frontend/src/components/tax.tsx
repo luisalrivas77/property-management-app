@@ -776,6 +776,7 @@ export function TaxFreeLine({ propertyId }: { propertyId: string }) {
 const EXPORT_KIND: Record<TaxExportKind, string> = {
   field_sheet: "Ausfüllhilfe (PDF)",
   archive: "Jahresarchiv (ZIP)",
+  anlage_n_sheet: "Anlage N (PDF)",
 };
 const EXPORT_POLL_MS = 2000;
 
