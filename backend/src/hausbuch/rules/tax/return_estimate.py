@@ -218,6 +218,37 @@ def _year_rows(facts: OwnerReturnFacts, tax_year: int) -> list[ReturnInputFact]:
     return [r for r in in_year(facts.inputs, tax_year) if r.tax_year == tax_year]
 
 
+_CLASS_CODES = {1: "i", 2: "ii", 3: "iii", 4: "iv", 5: "v", 6: "vi"}
+_CHOICES = {*_CLASS_CODES.values(), "iv_factor"}
+
+
+def _tax_class(
+    item: Itemised | None, owner_id: UUID, answers: Sequence[QuestionnaireAnswer]
+) -> tuple[str | None, str | None]:
+    """The owner's Steuerklasse for the Gesamt card (Q-O18), a label that changes no figure:
+    the certificate (else projected payslip) ending last outside class VI (a second job's class
+    says nothing about the couple's split), else the year's owner.tax_class answer."""
+    if item is not None:
+        dated = [(c, "certificate") for c in item.pay.real]
+        dated += [(c, "payslip") for c in item.pay.projected]
+        main = [(c, src) for c, src in dated if c.tax_class != 6] or dated
+        if main:
+            cert, src = max(main, key=lambda pair: pair[0].period_to)
+            if cert.tax_class == 4 and cert.tax_class_factor:
+                return "iv_factor", src
+            return _CLASS_CODES[cert.tax_class], src
+    for a in answers:
+        if (
+            a.question_key == "owner.tax_class"
+            and a.owner_id == owner_id
+            and a.answer == "yes"
+            and not a.withdrawn
+            and a.choice in _CHOICES
+        ):
+            return a.choice, "questionnaire"
+    return None, None
+
+
 def return_estimate(
     tax_year: int,
     owners: Sequence[OwnerTaxProfile],
@@ -249,11 +280,29 @@ def return_estimate(
         except RuleError as error:
             if error.code != ANLAGE_N_NO_PAY:
                 raise
-            income_n.append(OwnerIncome(owner_id=f.owner_id, result=ZERO, status="none"))
+            tax_class, source = _tax_class(None, f.owner_id, answers)
+            income_n.append(
+                OwnerIncome(
+                    owner_id=f.owner_id,
+                    result=ZERO,
+                    status="none",
+                    tax_class=tax_class,
+                    tax_class_source=source,
+                )
+            )
             continue
         items[f.owner_id] = item
         vorsorge_of[f.owner_id] = vorsorge(f, tax_year, rs, tariff)
-        income_n.append(OwnerIncome(owner_id=f.owner_id, result=item.result, status=item.status))
+        tax_class, source = _tax_class(item, f.owner_id, answers)
+        income_n.append(
+            OwnerIncome(
+                owner_id=f.owner_id,
+                result=item.result,
+                status=item.status,
+                tax_class=tax_class,
+                tax_class_source=source,
+            )
+        )
     paid_facts = [f for f in owner_facts if f.owner_id in items]
     rental = sum((p.result for p in properties), ZERO)
     gde = sum((i.result for i in items.values()), ZERO) + rental

@@ -81,6 +81,23 @@ export function ReturnEstimateCard({ year, state }: { year: number; state: Loade
   return <EstimateView estimate={state.data} owners={owners.data ?? []} properties={properties.data ?? []} />;
 }
 
+/** Why a refund or back-payment arises, from the two owners' Steuerklassen (Q-O18): the class
+ * sets only the monthly Lohnsteuer, never the year's tax, so this is a sentence and no figure.
+ * Null unless both owners have a class and the pair is one of the married combinations. */
+export function taxClassSentence(estimate: ReturnEstimate): string | null {
+  const classes = (estimate.income_n ?? []).map((i) => i.tax_class).filter((c): c is NonNullable<typeof c> => c != null);
+  if (classes.length !== 2) return null;
+  const pair = [...classes].sort().join("/");
+  if (pair === "iii/v") return "Steuerklassen III/V: die Erstattung oder Nachzahlung gleicht den Lohnsteuerabzug aus.";
+  if (classes.includes("iv_factor") && classes.every((c) => c === "iv" || c === "iv_factor")) {
+    return "Steuerklassen IV/IV mit Faktor: der Lohnsteuerabzug liegt schon nahe an der gemeinsamen Steuer; die Erstattung oder Nachzahlung gleicht den Rest aus.";
+  }
+  if (pair === "iv/iv") {
+    return "Steuerklassen IV/IV: jeder zahlt Lohnsteuer wie allein veranlagt; die Erstattung oder Nachzahlung gleicht den Unterschied zur gemeinsamen Steuer aus.";
+  }
+  return null;
+}
+
 function ownerName(owners: Owner[], id: string | null | undefined): string {
   return owners.find((o) => o.id === id)?.full_name ?? "Eigentümer";
 }
@@ -95,6 +112,7 @@ function EstimateView({ estimate, owners, properties }: { estimate: ReturnEstima
       : "Voraussichtliche Nachzahlung";
   const filing = estimate.filing_required;
   const progress = estimate.questionnaire;
+  const classes = taxClassSentence(estimate);
   const shown = (estimate.warnings ?? []).filter(
     (w) => w.code !== "return.filing_required" && w.code !== "return.questionnaire_open",
   );
@@ -122,6 +140,7 @@ function EstimateView({ estimate, owners, properties }: { estimate: ReturnEstima
           <>Abgabe freiwillig ({(filing.reasons ?? []).join("; ")})</>
         )}
       </p>
+      {classes ? <p className="tax-subline tax-estimate-classes">{classes}</p> : null}
       <p className="tax-subline">
         Jahresfragen {year}: {progress.answered} von {progress.total} beantwortet ·{" "}
         <Link href={questionnaireHref(year)}>{progress.answered < progress.total ? "Weiter" : "Ansehen"}</Link>

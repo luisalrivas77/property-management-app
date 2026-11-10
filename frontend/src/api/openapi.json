@@ -13754,6 +13754,42 @@
               "none"
             ],
             "title": "Status"
+          },
+          "tax_class": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "i",
+                  "ii",
+                  "iii",
+                  "iv",
+                  "iv_factor",
+                  "v",
+                  "vi"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Class"
+          },
+          "tax_class_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "certificate",
+                  "payslip",
+                  "questionnaire"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Class Source"
           }
         },
         "additionalProperties": false,

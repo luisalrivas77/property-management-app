@@ -5101,6 +5101,10 @@ export interface components {
              * @enum {string}
              */
             status: "certified" | "estimate" | "none";
+            /** Tax Class */
+            tax_class?: ("i" | "ii" | "iii" | "iv" | "iv_factor" | "v" | "vi") | null;
+            /** Tax Class Source */
+            tax_class_source?: ("certificate" | "payslip" | "questionnaire") | null;
         };
         /** OwnerPatch */
         OwnerPatch: {

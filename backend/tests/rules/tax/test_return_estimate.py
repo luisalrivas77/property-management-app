@@ -21,7 +21,7 @@ from hausbuch.rules.tax.return_estimate import (
     filing_deadline,
     return_estimate,
 )
-from hausbuch.schemas.employment import PropertyIncome
+from hausbuch.schemas.employment import PropertyIncome, QuestionnaireAnswer
 from hausbuch.schemas.performance import IncomeInputFact
 
 ZERO = Decimal("0")
@@ -119,6 +119,78 @@ def test_the_estimate_flags_the_pauschbetrag_and_shows_the_zumutbare_belastung()
     itemised = _estimate(church)
     assert itemised.church_tax_paid + itemised.donations > 72
     assert itemised.special_allowance_used is False
+
+
+def _tax_class_answer(owner_id, choice: str) -> QuestionnaireAnswer:
+    return QuestionnaireAnswer.model_validate(
+        {
+            "id": UUID(int=98),
+            "workspace_id": UUID(int=97),
+            "recorded_at": "2027-03-01T10:00:00Z",
+            "question_key": "owner.tax_class",
+            "tax_year": 2026,
+            "owner_id": owner_id,
+            "answer": "yes",
+            "choice": choice,
+        }
+    )
+
+
+@pytest.mark.rule
+def test_the_tax_class_comes_from_the_certificate_then_the_questionnaire():
+    """Q-O18: the Steuerklasse is a label for the Gesamt card. The certificate wins over the
+    answer, IV with the Faktor is its own code, an owner without pay takes the answer, and no
+    figure moves."""
+    case = next(c for c in load("return_estimate").cases if c.id == "household_2026")
+    t, rs = registry.tariff(2026), rules_for(2026)
+    a, b = case.resolved_owners()
+    plain = _estimate(case)
+    assert [(i.tax_class, i.tax_class_source) for i in plain.income_n] == [
+        ("iv", "certificate"),
+        ("iv", "certificate"),
+    ]
+
+    def estimate(facts, answers):
+        return return_estimate(
+            2026,
+            case.owners,
+            facts,
+            current(case.household),
+            [PropertyIncome(property_id=p.property_id, result=p.result) for p in case.properties],
+            case.questionnaire,
+            answers,
+            t,
+            rs,
+        )
+
+    # The answer does not override a confirmed certificate.
+    answered = estimate([a, b], [_tax_class_answer(a.owner_id, "iii")])
+    assert answered.income_n[0].tax_class == "iv"
+
+    # A certificate with the Faktor reads as IV mit Faktor; the tax stays the same.
+    factored = [
+        r.model_copy(update={"value": r.value.model_copy(update={"tax_class_factor": True})})
+        if r.kind == "wage_certificate"
+        else r
+        for r in b.inputs
+    ]
+    with_factor = estimate([a, b.model_copy(update={"inputs": factored})], [])
+    assert with_factor.income_n[1].tax_class == "iv_factor"
+    assert (with_factor.zve, with_factor.assessed) == (plain.zve, plain.assessed)
+
+    # An owner without pay takes the questionnaire's answer; a withdrawn one counts as none.
+    nobody = b.model_copy(update={"inputs": [], "expected_gross_pay": None})
+    asked = estimate([a, nobody], [_tax_class_answer(b.owner_id, "v")])
+    assert (asked.income_n[1].tax_class, asked.income_n[1].tax_class_source) == (
+        "v",
+        "questionnaire",
+    )
+    withdrawn = _tax_class_answer(b.owner_id, "v").model_copy(
+        update={"withdrawn": True, "supersedes_id": UUID(int=96)}
+    )
+    unknown = estimate([a, nobody], [withdrawn])
+    assert unknown.income_n[1].tax_class is None
+    assert (asked.zve, asked.result) == (unknown.zve, unknown.result)
 
 
 @pytest.mark.rule

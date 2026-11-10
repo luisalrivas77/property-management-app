@@ -1109,10 +1109,18 @@ class FilingCheck(Schema):
     deadline: date
 
 
+TaxClass = Literal["i", "ii", "iii", "iv", "iv_factor", "v", "vi"]  # owner.tax_class's codes
+
+
 class OwnerIncome(Schema):
     owner_id: UUID
     result: Money  # the Anlage N result
     status: Literal["certified", "estimate", "none"]
+    # The Steuerklasse for the Gesamt card's sentence only (Q-O18): it changes no figure. From
+    # the latest confirmed certificate (else payslip) outside class VI, else the year's
+    # owner.tax_class answer, else none.
+    tax_class: TaxClass | None = None
+    tax_class_source: Literal["certificate", "payslip", "questionnaire"] | None = None
 
 
 class PropertyIncome(Schema):
