@@ -2779,7 +2779,7 @@ export interface components {
             /** Key */
             key: string;
             /** Entity Type */
-            entity_type: components["schemas"]["EntityType"] | ("acquisition_cost" | "price_split" | "rent_schedule" | "typing" | "link" | "ownership" | "deposit_received" | "tax_input" | "return_input");
+            entity_type: components["schemas"]["EntityType"] | ("acquisition_cost" | "price_split" | "rent_schedule" | "typing" | "link" | "ownership" | "deposit_received" | "tax_input" | "return_input" | "income_input");
             /**
              * Mode
              * @enum {string}
@@ -3482,7 +3482,7 @@ export interface components {
             version: number;
             source: components["schemas"]["ExtractionSource"];
             /** Fields */
-            fields: components["schemas"]["ManualDocumentFields"] | components["schemas"]["PurchaseContractExtraction"] | components["schemas"]["LoanContractExtraction"] | components["schemas"]["LeaseExtraction"] | components["schemas"]["HandoverProtocolExtraction"] | components["schemas"]["DepositRecordExtraction"] | components["schemas"]["InvoiceExtraction"] | components["schemas"]["BescheidExtraction"] | components["schemas"]["GrundsteuerbescheidExtraction"] | components["schemas"]["WirtschaftsplanExtraction"] | components["schemas"]["HausgeldabrechnungExtraction"] | components["schemas"]["ZinsbescheinigungExtraction"] | components["schemas"]["StatementExtraction"] | components["schemas"]["WageCertificateExtraction"] | components["schemas"]["PayslipExtraction"];
+            fields: components["schemas"]["ManualDocumentFields"] | components["schemas"]["PurchaseContractExtraction"] | components["schemas"]["LoanContractExtraction"] | components["schemas"]["LeaseExtraction"] | components["schemas"]["HandoverProtocolExtraction"] | components["schemas"]["DepositRecordExtraction"] | components["schemas"]["InvoiceExtraction"] | components["schemas"]["BescheidExtraction"] | components["schemas"]["GrundsteuerbescheidExtraction"] | components["schemas"]["WirtschaftsplanExtraction"] | components["schemas"]["HausgeldabrechnungExtraction"] | components["schemas"]["ZinsbescheinigungExtraction"] | components["schemas"]["StatementExtraction"] | components["schemas"]["WageCertificateExtraction"] | components["schemas"]["PayslipExtraction"] | components["schemas"]["IncomeTaxAssessmentExtraction"];
             /**
              * Schema Version
              * @default 1
@@ -3540,7 +3540,7 @@ export interface components {
          * @description Finer typing where retention or the AfA basis depends on it.
          * @enum {string}
          */
-        DocumentSubtype: "purchase_contract" | "price_split_evidence" | "appraisal" | "loan_contract" | "lease" | "handover_protocol" | "deposit_record" | "cost_basis_evidence" | "grundsteuerbescheid";
+        DocumentSubtype: "purchase_contract" | "price_split_evidence" | "appraisal" | "loan_contract" | "lease" | "handover_protocol" | "deposit_record" | "cost_basis_evidence" | "grundsteuerbescheid" | "einkommensteuerbescheid";
         /**
          * DocumentType
          * @description The classifier's output set (AI layer). Phase 1 sets it by hand.
@@ -3969,7 +3969,7 @@ export interface components {
          *     models in schemas/extraction.py.
          * @enum {string}
          */
-        ExtractionKind: "manual" | "purchase_contract" | "loan_contract" | "lease" | "handover_protocol" | "deposit_record" | "invoice" | "bescheid" | "grundsteuerbescheid" | "wirtschaftsplan" | "hausgeldabrechnung" | "zinsbescheinigung" | "statement" | "lohnsteuerbescheinigung" | "gehaltsabrechnung";
+        ExtractionKind: "manual" | "purchase_contract" | "loan_contract" | "lease" | "handover_protocol" | "deposit_record" | "invoice" | "bescheid" | "grundsteuerbescheid" | "wirtschaftsplan" | "hausgeldabrechnung" | "zinsbescheinigung" | "statement" | "lohnsteuerbescheinigung" | "gehaltsabrechnung" | "einkommensteuerbescheid";
         /**
          * ExtractionSource
          * @enum {string}
@@ -4360,6 +4360,26 @@ export interface components {
          * @enum {string}
          */
         IncomeInputKind: "expected_gross_pay" | "deductions_override" | "bescheid_zve" | "marginal_rate_override";
+        /**
+         * IncomeTaxAssessmentExtraction
+         * @description Einkommensteuerbescheid (bescheid / einkommensteuerbescheid; phase-4b.md D129, §8.4):
+         *     the assessed zvE of one year, proposed as the household's bescheid_zve. Only these fields:
+         *     no identifier, no address, no other figure of the assessment is ever read.
+         */
+        IncomeTaxAssessmentExtraction: {
+            /** @description a short German title, two to six words naming what the document is */
+            title?: components["schemas"]["ExtractedValue"];
+            /** @description the date the document carries */
+            document_date?: components["schemas"]["ExtractedValue"];
+            /** @description the year assessed (Bescheid für 20xx über Einkommensteuer ...) */
+            tax_year?: components["schemas"]["ExtractedValue"];
+            /** @description zu versteuerndes Einkommen (not Summe der Einkünfte, Gesamtbetrag der Einkünfte or Einkommen) */
+            taxable_income?: components["schemas"]["ExtractedValue"];
+            /** @description the kind of assessment, e.g. Zusammenveranlagung or Einzelveranlagung */
+            assessment_type?: components["schemas"]["ExtractedValue"];
+            /** @description the names of the persons the Bescheid is for, names only */
+            addressee?: components["schemas"]["ExtractedValue"];
+        };
         /**
          * InitialRent
          * @description The first rent row, recorded with the tenancy (reason 'initial').
@@ -5832,7 +5852,7 @@ export interface components {
             /** Key */
             key: string;
             /** Entity Type */
-            entity_type: components["schemas"]["EntityType"] | ("acquisition_cost" | "price_split" | "rent_schedule" | "typing" | "link" | "ownership" | "deposit_received" | "tax_input" | "return_input");
+            entity_type: components["schemas"]["EntityType"] | ("acquisition_cost" | "price_split" | "rent_schedule" | "typing" | "link" | "ownership" | "deposit_received" | "tax_input" | "return_input" | "income_input");
             /**
              * Mode
              * @enum {string}

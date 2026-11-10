@@ -25,6 +25,9 @@ Answer with exactly one line per listed field, in the listed order, and nothing 
   kumuliert" the column of the year so far (Jahreswerte, kumuliert, Jahressumme, lfd. Jahr).
   Never write an identification number, a social insurance number, a date of birth, a
   personnel number, an address or an account number into any value.
+- On an Einkommensteuerbescheid, `taxable_income` is the amount on the line labelled "zu
+  versteuerndes Einkommen", never Summe der Einkünfte, Gesamtbetrag der Einkünfte or
+  Einkommen; never write a Steuernummer.
 - When a clause gives a condition instead of a date (for example "Tag der vollständigen
   Kaufpreiszahlung"), write `unbekannt` for the date.
 - One line per field, no headings, no comments, no blank lines between fields.

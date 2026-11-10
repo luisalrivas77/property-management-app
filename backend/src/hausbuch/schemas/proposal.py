@@ -38,6 +38,7 @@ RecordEntity = (
         "deposit_received",  # Kautionsnachweis (step 2): tenancy.deposit_received via the service
         "tax_input",  # phase 3 §9: ruecklage_spent / interest_certified via services/tax_inputs
         "return_input",  # phase 4b §8.2: wage_certificate / payslip via services/return_inputs
+        "income_input",  # phase 4b §8.4 (D129): bescheid_zve via services/income_inputs
     ]
 )
 
@@ -193,6 +194,17 @@ class ExistingPayRow(Schema):
     document_id: UUID | None = None
 
 
+class ExistingBescheidZve(Schema):
+    """A current household bescheid_zve row (phase 4b D129, §8.4): what an
+    Einkommensteuerbescheid for the same year would supersede. The year, the Bescheid and its
+    date only: no figure."""
+
+    id: UUID
+    tax_year: int
+    document_id: UUID | None = None
+    document_date: date | None = None  # the earlier Bescheid's date, for the note
+
+
 class PrefillContext(Schema):
     """Everything build_proposal may look at. Lists are unordered: the result must not
     depend on their order (prefill.yaml runs every case shuffled too)."""
@@ -208,3 +220,5 @@ class PrefillContext(Schema):
     tenants: list[ExistingTenant] = Field(default_factory=list)
     # Phase 4b: the current certificate and payslip rows, for the note that one is replaced.
     pay_rows: list[ExistingPayRow] = Field(default_factory=list)
+    # Phase 4b D129: the current bescheid_zve rows, for the note that one is replaced.
+    bescheid_rows: list[ExistingBescheidZve] = Field(default_factory=list)

@@ -5,10 +5,10 @@
  "recorded_on": "2026-11-10",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "93d91a3094e05c87",
-  "request_sha256": "a21d5b514dfe6d62b4a24134229e8585feeea76ebb6892a6e01f4b5bed7450d8",
+  "prompt_version": "76607e0fbcb59f81",
+  "request_sha256": "583c08caf8bebfb43e77fc39ff3374047e1f6f74e4750a0d2a23d604095d4e11",
   "message": {
-   "id": "msg_011CgtWpKePu5p7TgNgcbvCz",
+   "id": "msg_011CguHwtbicxAkKVNRLkEZx",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 5513,
+    "input_tokens": 5650,
     "output_tokens": 42,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -45,10 +45,10 @@
  },
  "extract": [
   {
-   "prompt_version": "5a926fcf9151da70",
-   "request_sha256": "8e6ea8110755889f805fbbd0615181fe4c3ba4efa60d8de8577c3dbe27cee7ed",
+   "prompt_version": "213911d55186e77b",
+   "request_sha256": "764efdd14262a70fb79ebec2b659b5052522c07d18bf60be648a61554753eba2",
    "message": {
-    "id": "msg_011CgtWp3EBFsCmriKq548wk",
+    "id": "msg_011CguHwZuKkaGdPWC6Ti81k",
     "container": null,
     "content": [
      {
@@ -268,7 +268,7 @@
         "type": "page_location"
        }
       ],
-      "text": "2.940,00 €",
+      "text": "2.940,00 EUR",
       "type": "text"
      },
      {
@@ -308,7 +308,7 @@
         "type": "page_location"
        }
       ],
-      "text": "980,00 €",
+      "text": "980,00 EUR",
       "type": "text"
      },
      {
@@ -328,7 +328,7 @@
         "type": "page_location"
        }
       ],
-      "text": "180,00 €",
+      "text": "180,00 EUR",
       "type": "text"
      },
      {
@@ -348,7 +348,7 @@
         "type": "page_location"
        }
       ],
-      "text": "70,00 €",
+      "text": "70,00 EUR",
       "type": "text"
      }
     ],
@@ -367,8 +367,8 @@
      "cache_creation_input_tokens": 0,
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
-     "input_tokens": 5583,
-     "output_tokens": 604,
+     "input_tokens": 5681,
+     "output_tokens": 612,
      "output_tokens_details": {
       "thinking_tokens": 0
      },

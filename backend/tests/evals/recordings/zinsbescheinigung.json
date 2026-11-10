@@ -5,10 +5,10 @@
  "recorded_on": "2026-11-10",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "93d91a3094e05c87",
-  "request_sha256": "b80dd072b46e526e4029a1d8e7183ef683c8aa473ae1b242c3f869c64fb81e42",
+  "prompt_version": "76607e0fbcb59f81",
+  "request_sha256": "ecd3481f8c394b0ce77459746bbbb31acacfa33664810d7b4fb9d2ed350f4bce",
   "message": {
-   "id": "msg_011CgtWqwh6JidPYEB3qXZbJ",
+   "id": "msg_011CguHz7H1jcSsRVJFcMzgP",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 3924,
+    "input_tokens": 4061,
     "output_tokens": 48,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -45,10 +45,10 @@
  },
  "extract": [
   {
-   "prompt_version": "5a926fcf9151da70",
-   "request_sha256": "0105b41e1bcac59158326156dd3456375c24cc0fbd6d79d1d3226c96d0cdd88f",
+   "prompt_version": "213911d55186e77b",
+   "request_sha256": "d6f6099a449ebd7ee5678a5a11aad2085546b426eef7f38ebba47105d55b7742",
    "message": {
-    "id": "msg_011CgtWqpai21EXnD5ZBkNmR",
+    "id": "msg_011CguHyzcgUX6SoLBGjaVxC",
     "container": null,
     "content": [
      {
@@ -99,7 +99,7 @@
      {
       "citations": [
        {
-        "cited_text": "Musterbank AG, Bankplatz 1, 60311 Frankfurt am Main\r\nLuis Testkauf und Ana Testkauf\r\nMusterweg 9, 12345 Musterstadt\r\nJahreszinsbescheinigung 2026\r\nfür Ihr Darlehen Nr. 4711-0815\r\nDarlehensstand am 01.01.2026: 243.410,12 EUR\r\nIm Jahr 2026 gezahlte Zinsen: 8.123,45 EUR\r\nIm Jahr 2026 geleistete Tilgung: 6.566,59 EUR\r\nDarlehensstand am 31.12.2026: 236.843,53 EUR\r\nDiese Bescheinigung wurde maschinell erstellt.",
+        "cited_text": "4711-0815\r\nDarlehensstand am 01.01.2026: 243.410,12 EUR\r\nIm Jahr 2026 gezahlte Zinsen: 8.123,45 EUR\r\nIm Jahr 2026 geleistete Tilgung: 6.566,59 EUR\r\nDarlehensstand am 31.12.2026: 236.843,53 EUR\r\nDiese Bescheinigung wurde maschinell erstellt.",
         "document_index": 0,
         "document_title": null,
         "end_page_number": 2,
@@ -148,7 +148,7 @@
         "type": "page_location"
        }
       ],
-      "text": "8.123,45 €",
+      "text": "8.123,45 EUR",
       "type": "text"
      }
     ],
@@ -167,8 +167,8 @@
      "cache_creation_input_tokens": 0,
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
-     "input_tokens": 3463,
-     "output_tokens": 173,
+     "input_tokens": 3561,
+     "output_tokens": 171,
      "output_tokens_details": {
       "thinking_tokens": 0
      },
