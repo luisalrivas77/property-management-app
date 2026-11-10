@@ -22,7 +22,7 @@ import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { formatDate, shortId } from "./format";
 import { DOCUMENT_TYPE, LINK_TARGET } from "./labels";
-import { Loading } from "./ui";
+import { Loading, Notice } from "./ui";
 import { useLoad } from "./useLoad";
 
 // Subtypes whose retention runs from ownership or tenancy end dates, not a tax year
@@ -39,7 +39,9 @@ const NO_TAX_YEAR_SUBTYPES: readonly DocumentSubtype[] = [
   "handover_protocol",
   "deposit_record",
 ];
-export const NO_TAX_YEAR: ReadonlySet<string> = new Set<string>(NO_TAX_YEAR_SUBTYPES);
+export const NO_TAX_YEAR: ReadonlySet<string> = new Set<string>(
+  NO_TAX_YEAR_SUBTYPES,
+);
 
 /** Accepted by POST /documents (§4.7, Q8); the API decides, this only filters the picker. */
 export const UPLOAD_ACCEPT =
@@ -68,24 +70,34 @@ export interface UploadOptions {
   containsTenantData: boolean;
 }
 
-const MANUAL_UPLOAD: UploadOptions = { autoRead: false, containsTenantData: false };
+const MANUAL_UPLOAD: UploadOptions = {
+  autoRead: false,
+  containsTenantData: false,
+};
 
 /** POST /documents answers with the Document, or with a DocumentUploadResult (the document
  * plus the proposal to poll) when it read the upload with AI; a Document has no `document`. */
-function isUploadResult(data: Document | DocumentUploadResult): data is DocumentUploadResult {
+function isUploadResult(
+  data: Document | DocumentUploadResult,
+): data is DocumentUploadResult {
   return "document" in data;
 }
 
 /** POST /documents as multipart. The generated body type names `file` a string (OpenAPI's
  * `format: binary`); openapi-fetch sends a FormData body as is, so the FormData is passed
  * under that type. Without options the upload is phase 1's: no automatic reading. */
-export async function uploadDocument(file: File, options: UploadOptions = MANUAL_UPLOAD): Promise<Uploaded> {
+export async function uploadDocument(
+  file: File,
+  options: UploadOptions = MANUAL_UPLOAD,
+): Promise<Uploaded> {
   const form = new FormData();
   form.append("file", file, file.name);
   form.append("source", "upload");
   if (!options.autoRead) form.append("ai", "false");
   if (options.containsTenantData) form.append("contains_tenant_data", "true");
-  const { data, response } = await api.POST("/api/documents", { body: form as unknown as UploadBody });
+  const { data, response } = await api.POST("/api/documents", {
+    body: form as unknown as UploadBody,
+  });
   if (!data) throw new Error("POST /documents answered without a body");
   const existed = response.status === 200;
   if (isUploadResult(data)) {
@@ -97,18 +109,30 @@ export async function uploadDocument(file: File, options: UploadOptions = MANUAL
       aiUnavailable: options.autoRead && !data.proposal_id,
     };
   }
-  return { document: data, existed, proposalId: null, proposalStatus: null, aiUnavailable: options.autoRead };
+  return {
+    document: data,
+    existed,
+    proposalId: null,
+    proposalStatus: null,
+    aiUnavailable: options.autoRead,
+  };
 }
 
 /** What a person recognises a document by: its title, file name, or hash prefix. */
 export function documentLabel(document: Document): string {
-  return document.typing?.title || document.original_filename || `Dokument ${shortId(document.file_sha256, 12)}`;
+  return (
+    document.typing?.title ||
+    document.original_filename ||
+    `Dokument ${shortId(document.file_sha256, 12)}`
+  );
 }
 
 /** "Rechnung · 12.03.2024" or "nicht typisiert". */
 export function documentKind(document: Document): string {
   if (!document.typing) return "nicht typisiert";
-  const date = document.typing.document_date ? ` · ${formatDate(document.typing.document_date)}` : "";
+  const date = document.typing.document_date
+    ? ` · ${formatDate(document.typing.document_date)}`
+    : "";
   return `${DOCUMENT_TYPE[document.typing.type]}${date}`;
 }
 
@@ -140,9 +164,12 @@ export function UploadControl({
     if (!files || files.length === 0) return;
     setBusy(true);
     setError(null);
-    const options: UploadOptions = prefill ? { autoRead, containsTenantData: autoRead && containsTenantData } : MANUAL_UPLOAD;
+    const options: UploadOptions = prefill
+      ? { autoRead, containsTenantData: autoRead && containsTenantData }
+      : MANUAL_UPLOAD;
     try {
-      for (const file of Array.from(files)) onUploaded(await uploadDocument(file, options));
+      for (const file of Array.from(files))
+        onUploaded(await uploadDocument(file, options));
     } catch (caught) {
       setError(caught);
     } finally {
@@ -173,13 +200,23 @@ export function UploadControl({
         accept={UPLOAD_ACCEPT}
         multiple
         disabled={busy}
-        onChange={(event: ChangeEvent<HTMLInputElement>) => void upload(event.target.files)}
+        onChange={(event: ChangeEvent<HTMLInputElement>) =>
+          void upload(event.target.files)
+        }
       />
-      <p className="muted hint">PDF, Foto, CSV, XML oder E-Mail; Datei hierher ziehen oder auswählen.</p>
+      <p className="muted hint">
+        PDF, Foto, CSV, XML oder E-Mail; Datei hierher ziehen oder auswählen.
+      </p>
       {prefill ? (
         <div className="row upload-options">
           <label className="inline" htmlFor={autoReadId}>
-            <input id={autoReadId} type="checkbox" checked={autoRead} disabled={busy} onChange={(e) => setAutoRead(e.target.checked)} />
+            <input
+              id={autoReadId}
+              type="checkbox"
+              checked={autoRead}
+              disabled={busy}
+              onChange={(e) => setAutoRead(e.target.checked)}
+            />
             Automatisch auslesen
           </label>
           <label className="inline" htmlFor={tenantDataId}>
@@ -195,6 +232,64 @@ export function UploadControl({
         </div>
       ) : null}
       <ErrorNotice error={error} />
+    </div>
+  );
+}
+
+/**
+ * Upload documents to be read automatically from a page that uses their figures (phase-4b.md
+ * §10, D129): the Dokumente upload with "Automatisch auslesen" on, behind a button; each result
+ * links to its document page, where the suggestion is checked, and to Zu prüfen.
+ */
+export function ReadUpload({
+  label,
+  onUploaded,
+}: {
+  label: string;
+  onUploaded?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [uploads, setUploads] = useState<Uploaded[]>([]);
+  return (
+    <div className="stack">
+      <div className="row">
+        <button
+          type="button"
+          className="link"
+          onClick={() => setOpen((current) => !current)}
+          aria-expanded={open}
+        >
+          {open ? "Hochladen schließen" : label}
+        </button>
+      </div>
+      {open ? (
+        <UploadControl
+          label={label}
+          prefill
+          onUploaded={(result) => {
+            setUploads((current) => [result, ...current].slice(0, 5));
+            onUploaded?.();
+          }}
+        />
+      ) : null}
+      {uploads.map(({ document, existed, proposalId, aiUnavailable }) => (
+        <Notice key={`${document.id}-${existed}-${proposalId ?? ""}`}>
+          {existed ? "Bereits vorhanden: " : "Hochgeladen: "}
+          <Link href={`/documents/${document.id}`}>
+            {documentLabel(document)}
+          </Link>
+          {proposalId ? (
+            <>
+              {" – wird automatisch ausgelesen. Der Vorschlag erscheint unter "}
+              <Link href="/inbox">Zu prüfen</Link>
+              {"; jeden Wert bestätigen, dann zählt er."}
+            </>
+          ) : null}
+          {aiUnavailable
+            ? " Automatisches Auslesen ist auf dem Server nicht eingeschaltet."
+            : null}
+        </Notice>
+      ))}
     </div>
   );
 }
@@ -225,7 +320,12 @@ export function DocumentPicker({
     <div className="stack">
       <Loading state={documents}>
         {(list) => (
-          <select id={id} value={value ?? ""} onChange={(event) => onChange(event.target.value || null)} {...aria}>
+          <select
+            id={id}
+            value={value ?? ""}
+            onChange={(event) => onChange(event.target.value || null)}
+            {...aria}
+          >
             <option value="">– kein Dokument –</option>
             {list.map((document) => (
               <option key={document.id} value={document.id}>
@@ -236,7 +336,12 @@ export function DocumentPicker({
         )}
       </Loading>
       <div className="row">
-        <button type="button" className="link" onClick={() => setUploading((open) => !open)} aria-expanded={uploading}>
+        <button
+          type="button"
+          className="link"
+          onClick={() => setUploading((open) => !open)}
+          aria-expanded={uploading}
+        >
           {uploading ? "Hochladen schließen" : "Neues Dokument hochladen"}
         </button>
         {note ? <span className="muted">{note}</span> : null}
@@ -246,7 +351,11 @@ export function DocumentPicker({
           onUploaded={({ document, existed }) => {
             documents.reload();
             onChange(document.id);
-            setNote(existed ? "Bereits vorhanden, ausgewählt." : "Hochgeladen und ausgewählt.");
+            setNote(
+              existed
+                ? "Bereits vorhanden, ausgewählt."
+                : "Hochgeladen und ausgewählt.",
+            );
             setUploading(false);
           }}
         />
@@ -257,17 +366,33 @@ export function DocumentPicker({
 
 /** The documents of one target: rolled up from its children for a property or a unit,
  * otherwise only those linked directly (each then has the one direct link as its `via`). */
-async function loadLinked(targetType: LinkTarget, targetId: string): Promise<RelatedDocument[]> {
+async function loadLinked(
+  targetType: LinkTarget,
+  targetId: string,
+): Promise<RelatedDocument[]> {
   if (targetType === "property") {
-    return ok(api.GET("/api/properties/{property_id}/documents", { params: { path: { property_id: targetId } } }));
+    return ok(
+      api.GET("/api/properties/{property_id}/documents", {
+        params: { path: { property_id: targetId } },
+      }),
+    );
   }
   if (targetType === "unit") {
-    return ok(api.GET("/api/units/{unit_id}/documents", { params: { path: { unit_id: targetId } } }));
+    return ok(
+      api.GET("/api/units/{unit_id}/documents", {
+        params: { path: { unit_id: targetId } },
+      }),
+    );
   }
   const documents = await ok(
-    api.GET("/api/documents", { params: { query: { target_type: targetType, target_id: targetId } } }),
+    api.GET("/api/documents", {
+      params: { query: { target_type: targetType, target_id: targetId } },
+    }),
   );
-  return documents.map((document) => ({ document, via: [{ target_type: targetType, target_id: targetId }] }));
+  return documents.map((document) => ({
+    document,
+    via: [{ target_type: targetType, target_id: targetId }],
+  }));
 }
 
 /** The pages of the children a document can be rolled up through. */
@@ -277,29 +402,43 @@ const VIA_HREF: Partial<Record<LinkTarget, (id: string) => string>> = {
   loan: (id) => `/loans/${id}`,
 };
 
-function isDirect(ref: LinkTargetRef, targetType: LinkTarget, targetId: string): boolean {
+function isDirect(
+  ref: LinkTargetRef,
+  targetType: LinkTarget,
+  targetId: string,
+): boolean {
   return ref.target_type === targetType && ref.target_id === targetId;
 }
 
 /** "direkt" for the page's own link, else the child's kind, linking to its page. */
-function ViaLinks({ via, targetType, targetId }: { via: LinkTargetRef[]; targetType: LinkTarget; targetId: string }) {
+function ViaLinks({
+  via,
+  targetType,
+  targetId,
+}: {
+  via: LinkTargetRef[];
+  targetType: LinkTarget;
+  targetId: string;
+}) {
   return (
     <>
       {via.map((ref, index) => {
         const separator = index > 0 ? ", " : null;
         const key = `${ref.target_type}:${ref.target_id}`;
         if (isDirect(ref, targetType, targetId)) {
-          return (
-            <span key={key}>
-              {separator}direkt
-            </span>
-          );
+          return <span key={key}>{separator}direkt</span>;
         }
         const href = VIA_HREF[ref.target_type];
         return (
           <span key={key}>
             {separator}
-            {href ? <Link href={href(ref.target_id)}>{LINK_TARGET[ref.target_type]}</Link> : LINK_TARGET[ref.target_type]}
+            {href ? (
+              <Link href={href(ref.target_id)}>
+                {LINK_TARGET[ref.target_type]}
+              </Link>
+            ) : (
+              LINK_TARGET[ref.target_type]
+            )}
           </span>
         );
       })}
@@ -312,8 +451,17 @@ function ViaLinks({ via, targetType, targetId }: { via: LinkTargetRef[]; targetT
  * property or unit page the list also holds the documents of its children, with a "Verknüpft
  * über" column; only a direct link can be removed here, the others on the child's page.
  */
-export function LinkedDocuments({ targetType, targetId }: { targetType: LinkTarget; targetId: string }) {
-  const load = useCallback(() => loadLinked(targetType, targetId), [targetType, targetId]);
+export function LinkedDocuments({
+  targetType,
+  targetId,
+}: {
+  targetType: LinkTarget;
+  targetId: string;
+}) {
+  const load = useCallback(
+    () => loadLinked(targetType, targetId),
+    [targetType, targetId],
+  );
   const rollsUp = targetType === "property" || targetType === "unit";
   const linked = useLoad(load);
   const pickerId = useId();
@@ -342,13 +490,27 @@ export function LinkedDocuments({ targetType, targetId }: { targetType: LinkTarg
   }
 
   async function unlink(document: Document) {
-    if (!window.confirm(`Verknüpfung mit „${documentLabel(document)}“ entfernen? Das Dokument bleibt im Archiv.`)) return;
+    if (
+      !window.confirm(
+        `Verknüpfung mit „${documentLabel(document)}“ entfernen? Das Dokument bleibt im Archiv.`,
+      )
+    )
+      return;
     setError(null);
     try {
       await ok(
-        api.DELETE("/api/documents/{document_id}/links/{target_type}/{target_id}", {
-          params: { path: { document_id: document.id, target_type: targetType, target_id: targetId } },
-        }),
+        api.DELETE(
+          "/api/documents/{document_id}/links/{target_type}/{target_id}",
+          {
+            params: {
+              path: {
+                document_id: document.id,
+                target_type: targetType,
+                target_id: targetId,
+              },
+            },
+          },
+        ),
       );
       linked.reload();
     } catch (caught) {
@@ -378,7 +540,9 @@ export function LinkedDocuments({ targetType, targetId }: { targetType: LinkTarg
                   {list.map(({ document, via }) => (
                     <tr key={document.id}>
                       <td>
-                        <Link href={`/documents/${document.id}`}>{documentLabel(document)}</Link>
+                        <Link href={`/documents/${document.id}`}>
+                          {documentLabel(document)}
+                        </Link>
                       </td>
                       <td>
                         <span className="tag">{documentKind(document)}</span>
@@ -386,17 +550,31 @@ export function LinkedDocuments({ targetType, targetId }: { targetType: LinkTarg
                       <td>{formatDate(document.received_at)}</td>
                       {rollsUp ? (
                         <td>
-                          <ViaLinks via={via} targetType={targetType} targetId={targetId} />
+                          <ViaLinks
+                            via={via}
+                            targetType={targetType}
+                            targetId={targetId}
+                          />
                         </td>
                       ) : null}
                       <td className="actions">
-                        <a href={`/api/documents/${document.id}/original?disposition=inline`} target="_blank" rel="noopener">
+                        <a
+                          href={`/api/documents/${document.id}/original?disposition=inline`}
+                          target="_blank"
+                          rel="noopener"
+                        >
                           Öffnen
                         </a>
-                        {via.some((ref) => isDirect(ref, targetType, targetId)) ? (
+                        {via.some((ref) =>
+                          isDirect(ref, targetType, targetId),
+                        ) ? (
                           <>
                             {" "}
-                            <button type="button" className="link" onClick={() => void unlink(document)}>
+                            <button
+                              type="button"
+                              className="link"
+                              onClick={() => void unlink(document)}
+                            >
                               Verknüpfung entfernen
                             </button>
                           </>
@@ -415,7 +593,11 @@ export function LinkedDocuments({ targetType, targetId }: { targetType: LinkTarg
         <label htmlFor={pickerId}>Dokument</label>
         <DocumentPicker id={pickerId} value={picked} onChange={setPicked} />
         <div>
-          <button type="button" onClick={() => void link()} disabled={!picked || busy}>
+          <button
+            type="button"
+            onClick={() => void link()}
+            disabled={!picked || busy}
+          >
             {busy ? "Verknüpft …" : "Verknüpfen"}
           </button>
         </div>
