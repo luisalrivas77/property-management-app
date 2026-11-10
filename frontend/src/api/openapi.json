@@ -8206,7 +8206,8 @@
         "enum": [
           "file",
           "user",
-          "none"
+          "none",
+          "bank"
         ],
         "title": "BalanceSource",
         "description": "statement_import.balance_source: where the declared balances came from (D21)."
@@ -10932,10 +10933,13 @@
           "document.classified",
           "document.extracted",
           "document.read_failed",
+          "document.received_by_email",
           "workspace.settings_changed",
           "workspace.income_input_recorded",
           "workspace.return_input_recorded",
           "workspace.questionnaire_answered",
+          "workspace.reminder_acknowledged",
+          "workspace.notification_sent",
           "proposal.created",
           "proposal.superseded",
           "proposal.rejected",
@@ -10950,6 +10954,12 @@
           "user.enrolled",
           "account.created",
           "account.updated",
+          "account.connection_created",
+          "account.connection_updated",
+          "account.sync_started",
+          "account.sync_approval_needed",
+          "account.sync_completed",
+          "account.sync_failed",
           "statement.imported",
           "statement.reconciled",
           "statement.unreconciled",
@@ -11190,6 +11200,85 @@
         ],
         "title": "Fraction",
         "description": "An exact share: ownership (1/2) or Miteigentumsanteil (85/1000)."
+      },
+      "GrundsteuerInstalment": {
+        "properties": {
+          "due_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Due On"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "due_on",
+          "amount"
+        ],
+        "title": "GrundsteuerInstalment"
+      },
+      "GrundsteuerSchedule": {
+        "properties": {
+          "annual_amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Annual Amount"
+          },
+          "instalments": {
+            "items": {
+              "$ref": "#/components/schemas/GrundsteuerInstalment"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "minItems": 1,
+            "title": "Instalments"
+          },
+          "rhythm": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "quarterly",
+                  "half_yearly",
+                  "yearly_august",
+                  "yearly_july"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rhythm"
+          },
+          "payment_mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "remind",
+                  "sepa_mandate"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Mode"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "annual_amount",
+          "instalments"
+        ],
+        "title": "GrundsteuerSchedule",
+        "description": "The Grundsteuerbescheid's schedule (phase 5 D126; §28 GrStG). tax_year on the row is the\nfirst year it applies to, document_id the Bescheid; a later year repeats this row's dates\n(same day and month) until a newer row exists. Every amount is a confirmed figure from the\nBescheid, never a model's (D13-D15).\n\npayment_mode None = inferred (D126): `remind` until an earlier instalment was cleared by a\ndirect-debit line, then `sepa_mandate`. rhythm is informational (the Bescheid's wording);\nthe dates are what reminders use."
       },
       "GrundsteuerbescheidExtraction": {
         "properties": {
@@ -11667,6 +11756,42 @@
               }
             ],
             "title": "Tax Year"
+          },
+          "account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Id"
+          },
+          "sync_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sync Id"
+          },
+          "reminder_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 160
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reminder Id"
           }
         },
         "additionalProperties": false,
@@ -11689,7 +11814,13 @@
           "possible_duplicate",
           "allocation_proposed",
           "unmatched",
-          "questionnaire_open"
+          "questionnaire_open",
+          "bank_approval_needed",
+          "bank_sync_failed",
+          "bank_balance_drift",
+          "email_received",
+          "email_failed",
+          "reminder"
         ],
         "title": "InboxItemKind",
         "description": "GET /inbox (§8.3): one list, newest first."
@@ -18823,6 +18954,9 @@
               },
               {
                 "$ref": "#/components/schemas/PrivateCostValue"
+              },
+              {
+                "$ref": "#/components/schemas/GrundsteuerSchedule"
               }
             ],
             "title": "Value"
@@ -19011,6 +19145,9 @@
               },
               {
                 "$ref": "#/components/schemas/PrivateCostValue"
+              },
+              {
+                "$ref": "#/components/schemas/GrundsteuerSchedule"
               }
             ],
             "title": "Value"
@@ -19079,7 +19216,8 @@
           "pre_handover_income",
           "useful_life",
           "movable_asset",
-          "private_cost"
+          "private_cost",
+          "grundsteuer_schedule"
         ],
         "title": "TaxInputKind"
       },

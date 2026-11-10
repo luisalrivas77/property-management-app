@@ -248,6 +248,7 @@ class BalanceSource(StrEnum):
     FILE = "file"  # camt.053 Bal or the PDF Kontoauszug
     USER = "user"  # typed by Luis from online banking
     NONE = "none"  # not declared yet
+    BANK = "bank"  # phase 5 D117: a FinTS sync's HKSAL booked balance, when the camt has no Bal
 
 
 class DuplicateStatus(StrEnum):

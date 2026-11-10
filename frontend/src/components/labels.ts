@@ -216,10 +216,13 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "document.classified": "Dokument klassifiziert",
   "document.extracted": "Felder ausgelesen",
   "document.read_failed": "Dokument konnte nicht gelesen werden",
+  "document.received_by_email": "Per weitergeleiteter Mail erhalten",
   "workspace.settings_changed": "Einstellungen geändert",
   "workspace.income_input_recorded": "Einkommensangabe des Haushalts erfasst",
   "workspace.return_input_recorded": "Angabe des Haushalts zur Steuererklärung erfasst",
   "workspace.questionnaire_answered": "Jahresfrage beantwortet",
+  "workspace.reminder_acknowledged": "Erinnerung erledigt, verschoben oder stumm geschaltet",
+  "workspace.notification_sent": "Erinnerung per E-Mail verschickt",
   "proposal.created": "Vorschlag erstellt",
   "proposal.superseded": "Vorschlag ersetzt",
   "proposal.rejected": "Vorschlag abgelehnt",
@@ -234,6 +237,12 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "user.enrolled": "Mitglied beigetreten",
   "account.created": "Konto angelegt",
   "account.updated": "Konto geändert",
+  "account.connection_created": "Bankabruf eingerichtet",
+  "account.connection_updated": "Bankabruf geändert",
+  "account.sync_started": "Bankabruf gestartet",
+  "account.sync_approval_needed": "Bankabruf wartet auf Freigabe",
+  "account.sync_completed": "Bankabruf abgeschlossen",
+  "account.sync_failed": "Bankabruf fehlgeschlagen",
   "statement.imported": "Kontoauszug importiert",
   "statement.reconciled": "Kontoauszug abgestimmt",
   "statement.unreconciled": "Kontoauszug nicht abgestimmt",
@@ -325,6 +334,7 @@ export const BALANCE_SOURCE: Record<BalanceSource, string> = {
   file: "aus der Datei",
   user: "eingegeben (Online-Banking)",
   none: "noch keiner",
+  bank: "vom Bankabruf (Kontostand der Bank)",
 };
 
 export const DUPLICATE_STATUS: Record<DuplicateStatus, string> = {
@@ -390,6 +400,13 @@ export const INBOX_ITEM_KIND: Record<InboxItemKind, string> = {
   allocation_proposed: "Vorschlag prüfen",
   unmatched: "Nicht zugeordnet",
   questionnaire_open: "Jahresfragen",
+  // phase 5 (§11): grouped under "Automatisch" once steps 1-4 build their cards
+  bank_approval_needed: "Freigabe nötig",
+  bank_sync_failed: "Bankabruf fehlgeschlagen",
+  bank_balance_drift: "Kontostand weicht ab",
+  email_received: "Per Mail erhalten",
+  email_failed: "Mail nicht übernommen",
+  reminder: "Termin",
 };
 
 // --- The income tax return's inputs (phase-4b.md §7, §10) --------------------------------

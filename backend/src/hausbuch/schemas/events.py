@@ -33,6 +33,7 @@ from .allocation import (
     SplitMethod,
 )
 from .bank import StatementFormat
+from .bank_sync import BankCode, LoginMasked, SyncStatus, SyncTrigger
 from .common import (
     Area,
     BuildingShare,
@@ -73,6 +74,13 @@ from .enums import (
 from .performance import INCOME_INPUT_VALUES, IncomeInputValue, Levers, income_value_by_kind
 from .property import OwnerShare
 from .proposal import FieldDecision, RecordEntity
+from .reminders import (
+    NotificationChannel,
+    ReminderAckAction,
+    ReminderId,
+    ReminderKind,
+    ReminderScope,
+)
 from .tax import (
     TAX_INPUT_VALUES,
     FormStatus,
@@ -695,6 +703,95 @@ class AnlageNExported(Schema):
     result: Money  # the Anlage N result
 
 
+# Phase 5 (docs/phases/phase-5.md §4.3, §5.4, §6.3, §8). Counts, codes, ids and dates only:
+# never a PIN, a TAN, the login in clear, the FinTS URL, the bank's message text, an amount,
+# a mail address, a subject or a tenant's name (D119, D121, D122). §8 names the bank events
+# `bank.*`, but an event's type prefix must equal its entity type and the entity is the
+# account, so they are `account.*` (step 0 finding); the `bank.*` strings stay error codes.
+
+
+class BankConnectionRecorded(Schema):
+    """account.connection_created and account.connection_updated (D119): the BLZ, the masked
+    login and the switch; `changed` names the fields an update changed (never their values
+    beyond these)."""
+
+    connection_id: UUID
+    account_id: UUID
+    bank_code: BankCode
+    login_masked: LoginMasked
+    auto_sync: bool
+    changed: list[Literal["auto_sync", "fints_url", "login_name", "tan_mechanism"]] = Field(
+        default_factory=list
+    )
+
+
+class BankSyncStarted(Schema):
+    sync_id: UUID
+    connection_id: UUID
+    trigger: SyncTrigger
+    requested_from: date
+    requested_to: date
+
+
+class BankSyncApprovalNeeded(Schema):
+    sync_id: UUID
+    trigger: SyncTrigger
+
+
+class BankSyncCompleted(Schema):
+    """account.sync_completed (§4.3): done or nothing_new, with the counts (D127)."""
+
+    sync_id: UUID
+    status: Literal[SyncStatus.DONE, SyncStatus.NOTHING_NEW]
+    import_id: UUID | None = None  # set exactly for done
+    lines_total: int = Field(ge=0)
+    lines_new: int = Field(ge=0)
+    balance_source: BalanceSource | None = None
+    balance_checked: bool
+    reconciled: bool | None = None  # the import's reconciliation; None for nothing_new
+
+    @model_validator(mode="after")
+    def _import(self) -> Self:
+        if (self.status is SyncStatus.DONE) != (self.import_id is not None):
+            raise ValueError("import_id is set exactly for a run that imported")
+        if self.status is SyncStatus.NOTHING_NEW and self.lines_new != 0:
+            raise ValueError("nothing_new has no new line (D127)")
+        return self
+
+
+class BankSyncFailed(Schema):
+    sync_id: UUID
+    error_code: str = Field(pattern=r"^(bank|statement)\.[a-z_]+$", max_length=64)
+
+
+class DocumentReceivedByEmail(Schema):
+    """document.received_by_email (§8): which inbound_mail row brought it, and whether it was
+    imported as a statement."""
+
+    inbound_mail_id: UUID
+    imported: bool
+
+
+class ReminderAcknowledged(Schema):
+    """workspace.reminder_acknowledged (§6.3)."""
+
+    reminder_key: ReminderKind
+    scope_type: ReminderScope
+    scope_id: UUID | None = None
+    due_on: date | None = None
+    action: ReminderAckAction
+    snoozed_until: date | None = None
+
+
+class NotificationSent(Schema):
+    """workspace.notification_sent (§8): how many members a digest line reached, never who."""
+
+    reminder_id: ReminderId
+    lead_days: int
+    channel: NotificationChannel
+    recipient_count: int = Field(ge=1)
+
+
 # --- Catalog -----------------------------------------------------------------
 
 EffectiveDate = Literal["required", "optional", "forbidden"]
@@ -758,11 +855,16 @@ class EventType(StrEnum):
     DOCUMENT_CLASSIFIED = "document.classified"
     DOCUMENT_EXTRACTED = "document.extracted"
     DOCUMENT_READ_FAILED = "document.read_failed"
+    DOCUMENT_RECEIVED_BY_EMAIL = "document.received_by_email"  # phase 5
 
     WORKSPACE_SETTINGS_CHANGED = "workspace.settings_changed"
     WORKSPACE_INCOME_INPUT_RECORDED = "workspace.income_input_recorded"  # phase 4
     WORKSPACE_RETURN_INPUT_RECORDED = "workspace.return_input_recorded"  # phase 4b
     WORKSPACE_QUESTIONNAIRE_ANSWERED = "workspace.questionnaire_answered"  # phase 4b
+    # Phase 5. §8's `workspace.reminder_emails_changed` is not added: the switch is a workspace
+    # setting and changes through workspace.settings_changed like the other two (step 0 finding).
+    WORKSPACE_REMINDER_ACKNOWLEDGED = "workspace.reminder_acknowledged"
+    WORKSPACE_NOTIFICATION_SENT = "workspace.notification_sent"
 
     PROPOSAL_CREATED = "proposal.created"
     PROPOSAL_SUPERSEDED = "proposal.superseded"
@@ -780,6 +882,13 @@ class EventType(StrEnum):
 
     ACCOUNT_CREATED = "account.created"
     ACCOUNT_UPDATED = "account.updated"
+    # Phase 5 (§8 names them bank.*; see the payloads' comment)
+    ACCOUNT_CONNECTION_CREATED = "account.connection_created"
+    ACCOUNT_CONNECTION_UPDATED = "account.connection_updated"
+    ACCOUNT_SYNC_STARTED = "account.sync_started"
+    ACCOUNT_SYNC_APPROVAL_NEEDED = "account.sync_approval_needed"
+    ACCOUNT_SYNC_COMPLETED = "account.sync_completed"
+    ACCOUNT_SYNC_FAILED = "account.sync_failed"
 
     STATEMENT_IMPORTED = "statement.imported"
     STATEMENT_RECONCILED = "statement.reconciled"
@@ -865,6 +974,10 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     E.DOCUMENT_CLASSIFIED: EventSpec(DocumentClassified, "forbidden", "Classified by the model"),
     E.DOCUMENT_EXTRACTED: EventSpec(DocumentExtracted, "forbidden", "Fields read by the model"),
     E.DOCUMENT_READ_FAILED: EventSpec(DocumentReadFailed, "forbidden", "Could not be read"),
+    # Phase 5
+    E.DOCUMENT_RECEIVED_BY_EMAIL: EventSpec(
+        DocumentReceivedByEmail, "forbidden", "Received as a forwarded mail's attachment"
+    ),
     E.WORKSPACE_SETTINGS_CHANGED: EventSpec(
         WorkspaceSettingsChanged, "forbidden", "Workspace settings changed"
     ),
@@ -876,6 +989,13 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     ),
     E.WORKSPACE_QUESTIONNAIRE_ANSWERED: EventSpec(
         QuestionnaireAnswered, "forbidden", "Yearly tax question answered"
+    ),
+    # Phase 5
+    E.WORKSPACE_REMINDER_ACKNOWLEDGED: EventSpec(
+        ReminderAcknowledged, "forbidden", "Reminder done, snoozed, muted or unmuted"
+    ),
+    E.WORKSPACE_NOTIFICATION_SENT: EventSpec(
+        NotificationSent, "forbidden", "Reminder sent by email"
     ),
     E.PROPOSAL_CREATED: EventSpec(ProposalNoted, "forbidden", "Pre-fill proposal created"),
     E.PROPOSAL_SUPERSEDED: EventSpec(ProposalNoted, "forbidden", "Proposal replaced by a re-run"),
@@ -891,6 +1011,19 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     E.USER_ENROLLED: EventSpec(UserEnrolled, "forbidden", "Enrolled through a link"),
     E.ACCOUNT_CREATED: EventSpec(AccountCreated, "forbidden", "Bank account recorded"),
     E.ACCOUNT_UPDATED: EventSpec(Updated, "forbidden", "Bank account fields changed"),
+    # Phase 5
+    E.ACCOUNT_CONNECTION_CREATED: EventSpec(
+        BankConnectionRecorded, "forbidden", "Bank connection (FinTS) recorded"
+    ),
+    E.ACCOUNT_CONNECTION_UPDATED: EventSpec(
+        BankConnectionRecorded, "forbidden", "Bank connection (FinTS) changed"
+    ),
+    E.ACCOUNT_SYNC_STARTED: EventSpec(BankSyncStarted, "forbidden", "Bank sync started"),
+    E.ACCOUNT_SYNC_APPROVAL_NEEDED: EventSpec(
+        BankSyncApprovalNeeded, "forbidden", "Bank sync waits for a pushTAN approval"
+    ),
+    E.ACCOUNT_SYNC_COMPLETED: EventSpec(BankSyncCompleted, "forbidden", "Bank sync finished"),
+    E.ACCOUNT_SYNC_FAILED: EventSpec(BankSyncFailed, "forbidden", "Bank sync failed"),
     E.STATEMENT_IMPORTED: EventSpec(
         StatementImported, "optional", "Statement imported (date = last booking day)"
     ),
