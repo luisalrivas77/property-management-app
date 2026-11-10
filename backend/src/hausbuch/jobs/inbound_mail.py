@@ -68,7 +68,7 @@ from hausbuch.rules.inbound_mail import (
     section,
 )
 from hausbuch.schemas.enums import ActorType
-from hausbuch.schemas.inbound_mail import InboundDecision, InboundPolicy
+from hausbuch.schemas.inbound_mail import MAX_ATTACHMENT_BYTES, InboundDecision, InboundPolicy
 from hausbuch.services import inbound_mail as service
 from hausbuch.services.context import Actor, new_command
 from hausbuch.settings import Settings
@@ -223,6 +223,8 @@ def _session(deps: JobDeps, imap: imaplib.IMAP4, ws: UUID, now: datetime, result
                 token_address=settings.inbox_address,
                 authserv_id=settings.inbox_authserv_id,
                 media_types=settings.upload_media_types,
+                # A part larger than an upload may be is refused before it is fetched.
+                max_bytes=min(MAX_ATTACHMENT_BYTES, settings.max_upload_bytes),
             )
         for batch in _batches(uids, FETCH_BATCH):
             for message in _fetch(imap, ",".join(batch), _LISTING_ITEMS):

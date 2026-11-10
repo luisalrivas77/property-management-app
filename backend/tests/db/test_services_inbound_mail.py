@@ -264,6 +264,29 @@ def test_a_forged_authentication_result_of_another_server_is_ignored(inbox, app_
     assert _part_fetches(server) == []
 
 
+def test_a_part_above_the_upload_limit_is_rejected_unfetched(inbox, app_engine, tmp_path):
+    """The accept limit is the smaller of 25 MiB and HAUSBUCH_MAX_UPLOAD_BYTES."""
+    poll, server, ws, deps = inbox
+    pdf = _pdf("too-large")
+    small = JobDeps(
+        deps.engine,
+        _settings(tmp_path, max_upload_bytes=len(pdf) // 2),
+        deps.blob_store,
+        deps.model_client,
+        clock=lambda: NOW,
+    )
+    server.add(LABEL, _mail(("gross.pdf", pdf, "application/pdf")))
+
+    result = poll(small)
+
+    assert (result.accepted, result.rejected) == (0, 1)
+    [mail] = _rows(app_engine, ws, mail_table)
+    assert (mail.decision, mail.code) == ("rejected", E.EMAIL_TOO_LARGE)
+    assert _rows(app_engine, ws, document_table) == []
+    assert _part_fetches(server) == []
+    _assert_read_only(server)
+
+
 def test_a_mail_without_a_message_id_is_neither_recorded_nor_fetched(inbox, app_engine):
     poll, server, ws, _ = inbox
     raw = _mail(("rechnung.pdf", _pdf("no-id"), "application/pdf"))
