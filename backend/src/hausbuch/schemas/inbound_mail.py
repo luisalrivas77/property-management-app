@@ -118,3 +118,14 @@ class InboundMail(Schema):
     attachments_accepted: int | None = Field(default=None, ge=0)
     documents: list[UUID] = Field(default_factory=list)
     imports: list[UUID] = Field(default_factory=list)
+
+
+class InboxAddress(Schema):
+    """GET /inbound-mail/address (§11, Einstellungen › Posteingang-Adresse): the token
+    address to forward to and the label the app reads, both null while email-in is not set
+    up (the four HAUSBUCH_INBOX_* values, §5.2). The IMAP login and the app password never
+    leave the server."""
+
+    configured: bool
+    address: str | None = None
+    label: str | None = None

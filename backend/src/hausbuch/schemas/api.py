@@ -500,6 +500,7 @@ class InboxItemKind(StrEnum):
     BANK_BALANCE_DRIFT = "bank_balance_drift"  # HKSAL differs from the last reconciled closing
     EMAIL_RECEIVED = "email_received"  # attachments of forwarded mails, last 24 h
     EMAIL_FAILED = "email_failed"  # a forwarded mail failed three times
+    EMAIL_INBOX_FAILED = "email_inbox_failed"  # the poll cannot log in, open its label or connect
     REMINDER = "reminder"  # an action reminder visible today
 
 

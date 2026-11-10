@@ -247,12 +247,19 @@ _UNMATCHED_QUESTION = "Wofür war diese Buchung?"
 _PROPOSED_QUESTION = "Stimmt diese Zuordnung?"
 
 
-def inbox(conn: Connection, today: date | None = None) -> list[InboxItem]:
+def inbox(
+    conn: Connection, today: date | None = None, now: datetime | None = None
+) -> list[InboxItem]:
     """Every item of §8.3, newest first. Texts quote no bank line, name or IBAN. With `today`,
-    also last year's open Jahresfragen (phase 4b D110, `questionnaire_open`)."""
+    also last year's open Jahresfragen (phase 4b D110, `questionnaire_open`); with `now`,
+    the email-in cards (phase 5 §5.4: email_received, email_failed)."""
     items = _proposal_items(conn) + import_inbox_items(conn) + _allocation_items(conn)
     if today is not None:
         items += _questionnaire_items(conn, today)
+    if now is not None:
+        from .inbound_mail import inbound_mail_items  # it imports the statement services
+
+        items += inbound_mail_items(conn, now)
     return sorted(items, key=lambda item: item.created_at, reverse=True)
 
 

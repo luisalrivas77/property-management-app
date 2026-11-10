@@ -352,6 +352,10 @@ containers use:
 | `hausbuch-s3-access-key` | the step 6 access key | API container |
 | `hausbuch-s3-secret-key` | the step 6 secret key | API container |
 | `hausbuch-anthropic-api-key` | the Claude API key of the `hausbuch` Console workspace (step 13) | API container |
+| `hausbuch-inbox-imap-user` | the Gmail address whose label is read (step 16) | API container |
+| `hausbuch-inbox-imap-password` | the Google app password named `Hausbuch` (step 16) | API container |
+| `hausbuch-inbox-address` | the token address `<user>+<token>@gmail.com` (step 16) | API container |
+| `hausbuch-inbox-label` | `Hausbuch` (step 16) | API container |
 
 `sslmode=require` encrypts the connection but does not check the server's certificate: the
 container image does not carry the instance's CA.
@@ -522,6 +526,10 @@ The last two columns are your computer's `~/.hausbuch-owner.env`, not anything a
 | `HAUSBUCH_RUN_WORKER` | `true` | — | — | — |
 | `HAUSBUCH_ANTHROPIC_API_KEY` | **secret** (step 13) | — | — | — |
 | `HAUSBUCH_AI_ENABLED` | `true` once step 13 is done (default `false`) | — | — | — |
+| `HAUSBUCH_INBOX_IMAP_USER` | **secret** (step 16), optional | — | — | — |
+| `HAUSBUCH_INBOX_IMAP_PASSWORD` | **secret** (step 16), optional | — | — | — |
+| `HAUSBUCH_INBOX_ADDRESS` | **secret** (step 16), optional | — | — | — |
+| `HAUSBUCH_INBOX_LABEL` | `Hausbuch` (step 16), optional | — | — | — |
 | `HAUSBUCH_API_URL` | — | **build argument**, not a variable (step 7) | — | — |
 
 The API's optional settings keep their defaults unless you have a reason to change them:
@@ -650,6 +658,89 @@ image, **before** deploying that image (as with `0004`). `alembic current` must 
 
 The `hausbuch-evals` key is rotated the same way, minus the container steps: replace it in
 your computer's env file only.
+
+## Step 16: Email-in from the Gmail label (phase 5, D121)
+
+The API container reads one Gmail label of the household's own account every 10 minutes
+over IMAP, read-only, and keeps only the attachments of mails a member forwarded to a token
+address (phase-5.md §5, D121). Nothing in the mailbox is changed: the app opens the label
+with `EXAMINE`, fetches with `BODY.PEEK` (so a mail is not even marked read), and never
+creates the label. No migration is needed (the tables came with `0019`).
+
+**What the app password can do.** A Google app password opens the **whole** mailbox. The
+limit to one label is the app's own code, which sends only `CAPABILITY`, `LOGIN`, `EXAMINE`,
+`UID SEARCH`, `UID FETCH` and `LOGOUT` (a test enforces the list). That is the informed
+choice of 10 Nov 2026 over a separate account. The password is a container secret, never a
+database column, a log line or an event; revoking it on Google's page stops the poll at
+once.
+
+1. **Google account**: turn on 2-Step Verification, by a method other than security keys
+   only (an app password is not offered under Advanced Protection). Then Security →
+   2-Step Verification → **App passwords**: create one named `Hausbuch` and copy it once.
+2. **Choose a token**: 8 or more random characters, for example from
+   `python3 -c "import secrets; print(secrets.token_hex(5))"`. The forwarding address is
+   `<user>+<token>@gmail.com`. The token is what keeps a stranger's mail out of the label,
+   so it is shown only to signed-in members (Einstellungen › Posteingang-Adresse).
+3. **Gmail filter** (Settings → Filters → Create a new filter): To
+   `<user>+<token>@gmail.com` → *Apply the label* `Hausbuch` (create the label here), and
+   optionally *Skip the Inbox*. Only mails to the token address get the label; the app reads
+   nothing else. If the label is missing or renamed, the poll logs `email.label_missing`,
+   shows a card on Zu prüfen and creates nothing.
+4. **Secret Manager** (step 8): four secrets, `hausbuch-inbox-imap-user` (the Gmail
+   address), `hausbuch-inbox-imap-password` (the app password), `hausbuch-inbox-address`
+   (the token address) and `hausbuch-inbox-label` (`Hausbuch`).
+5. **API container** (step 10): add `HAUSBUCH_INBOX_IMAP_USER`,
+   `HAUSBUCH_INBOX_IMAP_PASSWORD` and `HAUSBUCH_INBOX_ADDRESS` as secret environment
+   variables, pasting the secrets' values (the token address is what keeps strangers out,
+   so it is treated as a secret too), and `HAUSBUCH_INBOX_LABEL=Hausbuch` as a plain one. `HAUSBUCH_INBOX_IMAP_HOST` defaults to
+   `imap.gmail.com` and `HAUSBUCH_INBOX_AUTHSERV_ID` to `mx.google.com`; leave both. The
+   container refuses to start with the user and no password (or the reverse), or with a
+   login and no address or label. While the four are unset the poll does nothing.
+   `HAUSBUCH_RUN_WORKER` stays `true`: the poll is a periodic job of this container's
+   worker.
+6. **Redeploy**, open Einstellungen › Posteingang-Adresse, and check that the token address
+   is shown.
+7. **Test mail (Q-O47)**: from a member's own address (the email the member signed up
+   with; any other sender is rejected as `email.sender_not_allowed`), forward one
+   non-tenant PDF, for example an invoice, to the token address. Within 10 minutes Zu prüfen
+   shows "Anhang aus einer weitergeleiteten Mail übernommen." in the Automatisch section.
+   The container log has one JSON line per poll with `"event": "inbound_mail_polled"`,
+   for example `"status": "done", "accepted": 1, "rejected": 0, "failed": 0, "codes": {…}`.
+
+   If the mail was rejected instead, its `codes` say why. **`email.auth_missing`** answers
+   Q-O47 with "no": Gmail did not put its own `Authentication-Results` header on the copy it
+   delivered to itself. Record the answer in phase-5.md Q-O47 either way. The log line names
+   counts and codes only, never an address, a subject or a file name.
+
+**What the log line's `status` can say** (anything but `done` is logged as a warning):
+`"email.auth_rejected"` means Google refused the login (the app password revoked or
+mistyped, or 2-Step Verification turned off); `"email.label_missing"` means the label is
+gone or renamed; `"connect_failed"` means the connection to `imap.gmail.com` never came up
+(the line's `exc_type` names the error); `"connection_lost"` means it broke in the middle,
+and the next poll starts that mail again; `"skipped"` means `imaplib.Debug` was on or not
+exactly one workspace exists. The line's `unreadable` counts mails whose listing Gmail
+refused (or answered in a form the app cannot read) even when asked for alone: they are
+skipped and asked for again at the next poll, and the other mails go on.
+
+**The card for a poll that needs you.** Three of these outcomes show a card in Zu prüfen ›
+Automatisch, titled "Posteingang per E-Mail", until a later poll completes:
+`email.auth_rejected` (the text says to create a new app password and paste it as the
+secret), `email.label_missing` (create the label again or correct its name in the secret),
+and `email.unreachable`, which is `connect_failed` three polls in a row, about 30 minutes
+(one failed connect is usually a blip and shows nothing; the count is kept in the running
+container only, so a restart starts it again). Each change is one History event on the
+workspace (`workspace.inbox_poll_failed` with the code, then
+`workspace.inbox_poll_recovered`), never one per poll. `connection_lost`, `skipped` and a
+database error stay log lines only.
+
+**Rotation or revocation**: create a new app password, add it as a new version of
+`hausbuch-inbox-imap-password`, paste it into the container, redeploy, then revoke the old
+one on Google's page. To switch email-in off, remove the four variables and redeploy, then
+revoke the app password.
+
+**Tenant documents are better uploaded than forwarded.** A forwarded lease meets the
+`ai_tenant_documents` switch exactly as an upload does (D16), but it has passed through
+Google first.
 
 ## Checks to run at the first deploy, and record here
 

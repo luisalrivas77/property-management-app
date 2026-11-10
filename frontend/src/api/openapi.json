@@ -4448,7 +4448,7 @@
     "/api/inbox": {
       "get": {
         "summary": "Inbox List",
-        "description": "Plus, from 1 January, last year's open Jahresfragen (phase 4b D110).",
+        "description": "Plus, from 1 January, last year's open Jahresfragen (phase 4b D110), and the email-in\ncards (phase 5 §5.4).",
         "operationId": "inbox_list_api_inbox_get",
         "responses": {
           "200": {
@@ -5678,6 +5678,67 @@
                     "$ref": "#/components/schemas/Event"
                   },
                   "title": "Response Events List Api Events Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/inbound-mail": {
+      "get": {
+        "summary": "Inbound Mail List",
+        "operationId": "inbound_mail_list_api_inbound_mail_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InboundMail"
+                  },
+                  "type": "array",
+                  "title": "Response Inbound Mail List Api Inbound Mail Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/inbound-mail/address": {
+      "get": {
+        "summary": "Inbound Mail Address",
+        "description": "Signed-in members only, as every domain route: the token is what keeps strangers'\nmail out of the label, so it is shown to members and nowhere else.",
+        "operationId": "inbound_mail_address_api_inbound_mail_address_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboxAddress"
                 }
               }
             }
@@ -10945,6 +11006,8 @@
           "workspace.questionnaire_answered",
           "workspace.reminder_acknowledged",
           "workspace.notification_sent",
+          "workspace.inbox_poll_failed",
+          "workspace.inbox_poll_recovered",
           "proposal.created",
           "proposal.superseded",
           "proposal.rejected",
@@ -11660,6 +11723,156 @@
         "title": "ImportStatus",
         "description": "statement_import.status. `imported` with no declared closing balance is what the\ninbox shows as \"pending balance\" (reconcile's pending_balance)."
       },
+      "InboundDecision": {
+        "type": "string",
+        "enum": [
+          "accepted",
+          "rejected",
+          "failed"
+        ],
+        "title": "InboundDecision",
+        "description": "inbound_mail.decision (migration 0019). accepted and rejected are final at once; a\nmessage is final after three failed rows (MAX_ATTEMPTS)."
+      },
+      "InboundMail": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Recorded At"
+          },
+          "received_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received At"
+          },
+          "attempt": {
+            "type": "integer",
+            "maximum": 3.0,
+            "minimum": 1.0,
+            "title": "Attempt"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/InboundDecision"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "attachments_total": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attachments Total"
+          },
+          "attachments_accepted": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attachments Accepted"
+          },
+          "documents": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Documents"
+          },
+          "imports": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Imports"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "workspace_id",
+          "recorded_at",
+          "attempt",
+          "decision"
+        ],
+        "title": "InboundMail",
+        "description": "GET /inbound-mail: one attempt's row with the documents and imports it produced (the\ntable names its timestamp recorded_at, so not Record, as TaxInput)."
+      },
+      "InboxAddress": {
+        "properties": {
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          },
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "configured"
+        ],
+        "title": "InboxAddress",
+        "description": "GET /inbound-mail/address (§11, Einstellungen › Posteingang-Adresse): the token\naddress to forward to and the label the app reads, both null while email-in is not set\nup (the four HAUSBUCH_INBOX_* values, §5.2). The IMAP login and the app password never\nleave the server."
+      },
       "InboxItem": {
         "properties": {
           "kind": {
@@ -11826,6 +12039,7 @@
           "bank_balance_drift",
           "email_received",
           "email_failed",
+          "email_inbox_failed",
           "reminder"
         ],
         "title": "InboxItemKind",
