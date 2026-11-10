@@ -2,8 +2,9 @@
 
 Synthetic German documents (a Kaufvertrag, Darlehensvertrag, Mietvertrag, notary
 invoice, Grunderwerbsteuerbescheid, Wirtschaftsplan and PDF Kontoauszug, since phase 3
-§9 a Zinsbescheinigung and a Hausgeldabrechnung, and since phase 4b step 2 a
-Lohnsteuerbescheinigung and a Gehaltsabrechnung) with fictional parties, generated
+§9 a Zinsbescheinigung and a Hausgeldabrechnung, since phase 4b step 2 a
+Lohnsteuerbescheinigung and a Gehaltsabrechnung, and since phase 4b step 6 an
+Einkommensteuerbescheid) with fictional parties, generated
 deterministically by `make_docs.py`. Each document's expected classification and field
 values sit next to its text there.
 
@@ -12,8 +13,17 @@ eTIN, Personalnummer, Sozialversicherungsnummer, date of birth, address, IBAN;
 `make_docs.FAKE_IDENTIFIERS`). `test_pay_documents_store_no_identifier` replays them with every
 value citing its whole page and checks that none of those identifiers survives into the stored
 values or quotes (phase 4b D103). Phase 4b step 2 changed both prompts (the classifier offers
-the two pay documents, `extract.md` gained the pay-document paragraph), so **every** recording
-is stale until all thirteen are recorded again (`record.py` without arguments).
+the two pay documents, `extract.md` gained the pay-document paragraph); they were recorded
+again afterwards.
+
+The Einkommensteuerbescheid (phase 4b D129) prints an invented Steuernummer in both forms
+(with slashes and the 13-digit ELSTER form), two Identifikationsnummern, the couple's address
+and an IBAN (`make_docs.BESCHEID_IDENTIFIERS`); `test_bescheid_stores_no_identifier` checks
+them the same way. Its four income lines (Summe der Einkünfte, Gesamtbetrag der Einkünfte,
+Einkommen, zu versteuerndes Einkommen) all differ, so only the right one passes. Step 6
+changed both prompts again (the classifier offers the subtype, `extract.md` gained the
+Bescheid line), so **every** recording is stale until all fourteen are recorded again
+(`record.py` without arguments); the Bescheid has no recording yet.
 
 - `test_recorded_evals.py` runs in CI on every push. It replays every recording in
   `recordings/` through the same code the `document_read` job uses (SDK message conversion,
@@ -27,7 +37,7 @@ is stale until all thirteen are recorded again (`record.py` without arguments).
   text (`recordings.synthetic_recording`, `"synthetic": true`). They are built in memory,
   never written to `recordings/`, and are not API output.
 
-## Recording (Luis, once per prompt or model change; about $0.15–0.35 for all thirteen)
+## Recording (Luis, once per prompt or model change; about $0.15–0.35 for all fourteen)
 
 Needs the `hausbuch-evals` key (deploy/scaleway.md step 13), from your computer:
 

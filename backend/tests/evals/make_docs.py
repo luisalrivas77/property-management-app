@@ -496,6 +496,49 @@ DOCS: list[Doc] = [
         },
         expected_missing=["soli_month", "soli_ytd"],
     ),
+    # Phase 4b D129 (§8.4): the household's Einkommensteuerbescheid, a fictional couple with
+    # round figures. Its Summe der Einkünfte, Gesamtbetrag der Einkünfte, Einkommen and zu
+    # versteuerndes Einkommen all differ, so only the right line gives taxable_income. The
+    # identifiers (BESCHEID_IDENTIFIERS) are invented and only have the printed shapes: the
+    # scrub must keep each out of what is stored (test_bescheid_stores_no_identifier).
+    Doc(
+        name="einkommensteuerbescheid",
+        type="bescheid",
+        subtype="einkommensteuerbescheid",
+        kind="einkommensteuerbescheid",
+        pages=[
+            [
+                "Finanzamt Musterstadt",
+                "Steuernummer 045/815/08154   ELSTER-Steuernummer 2645081508154",
+                "Datum 14.05.2027",
+                "",
+                "Herrn und Frau",
+                "Jonas und Lea Beispielmann",
+                "Beispielallee 4",
+                "34117 Kassel",
+                "",
+                "Bescheid für 2026 über Einkommensteuer, Solidaritätszuschlag und Kirchensteuer",
+                "Identifikationsnummer Ehemann: 47 113 525 609   Ehefrau: 58 224 636 710",
+                "Veranlagungsart: Zusammenveranlagung",
+                f"Die Erstattung von 1.240,00 EUR wird überwiesen auf {IBAN_B}.",
+            ],
+            [
+                "Ermittlung des zu versteuernden Einkommens",
+                "Einkünfte aus nichtselbständiger Arbeit Ehemann        52.000,00",
+                "Einkünfte aus nichtselbständiger Arbeit Ehefrau        38.000,00",
+                "Einkünfte aus Vermietung und Verpachtung                2.500,00",
+                "Summe der Einkünfte                                    92.500,00",
+                "abzüglich Altersentlastungsbetrag                      1.300,00",
+                "Gesamtbetrag der Einkünfte                             91.200,00",
+                "abzüglich Sonderausgaben und Vorsorgeaufwendungen      4.800,00",
+                "Einkommen                                              86.400,00",
+                "abzüglich Freibeträge für Kinder                       2.100,00",
+                "Zu versteuerndes Einkommen                             84.300,00",
+                "Festgesetzte Einkommensteuer                           14.500,00",
+            ],
+        ],
+        expected={"tax_year": 2026, "taxable_income": "84300.00"},
+    ),
     Doc(
         name="kontoauszug",
         type="statement",
@@ -538,6 +581,18 @@ FAKE_IDENTIFIERS = (
     "60311",  # the employee's postcode
     "012/345/67890",  # the employer's Steuernummer
     "0532 0130",  # the IBAN's account digits
+)
+# The invented identifiers printed on the Einkommensteuerbescheid (D129), likewise.
+BESCHEID_IDENTIFIERS = (
+    "045/815/08154",  # Steuernummer
+    "08154",
+    "2645081508154",  # its 13-digit ELSTER form
+    "113 525",  # the husband's Identifikationsnummer
+    "224 636",  # the wife's
+    "Beispielallee",  # the couple's street
+    "34117",  # their postcode
+    "Kassel",  # their town
+    "2020 51",  # the IBAN's account digits
 )
 
 
