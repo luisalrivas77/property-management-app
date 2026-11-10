@@ -8578,6 +8578,28 @@
         ],
         "title": "BridgeRow"
       },
+      "CarriedField": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Key"
+          },
+          "field": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Field"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "field"
+        ],
+        "title": "CarriedField",
+        "description": "A field of another record of the same proposal (D132): its record key and field name,\ndotted as the apply body names it (\"tax_input:interest_certified\", \"value.amount\")."
+      },
       "ChecklistDocumentRef": {
         "properties": {
           "id": {
@@ -11675,7 +11697,7 @@
           "available"
         ],
         "title": "HandFields",
-        "description": "The document's \"Felder (von Hand)\" as the typing form shows them (phase 2 D37).\n\nFor a `manual` extraction (or none) the values are its fields and all six are available.\nFor an AI kind, `values` holds what the reading stored for the fields that kind has a place\nfor (services.documents.HAND_FIELD_MAP), and `available` names exactly those; a reading the\nhand types cannot hold (a low-confidence raw text in a money field) shows as null."
+        "description": "The document's \"Felder (von Hand)\" as the typing form shows them (phase 2 D37).\n\nFor a `manual` extraction (or none) the values are its fields and all six are available.\nFor an AI kind, `values` holds what the reading stored for the fields that kind has a place\nfor (rules.hand_fields.HAND_FIELD_MAP), and `available` names exactly those; a reading the\nhand types cannot hold (a low-confidence raw text in a money field) shows as null."
       },
       "HandoverProtocolExtraction": {
         "properties": {
@@ -16089,6 +16111,35 @@
             },
             "type": "array",
             "title": "Notes"
+          },
+          "hand_from": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CarriedField"
+            },
+            "propertyNames": {
+              "enum": [
+                "amount_total",
+                "period_start",
+                "period_end",
+                "counterparty",
+                "reference",
+                "notes"
+              ]
+            },
+            "type": "object",
+            "title": "Hand From"
+          },
+          "hand_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hand Version"
           }
         },
         "additionalProperties": false,

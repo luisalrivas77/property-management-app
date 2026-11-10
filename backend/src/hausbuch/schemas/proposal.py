@@ -16,6 +16,7 @@ from pydantic import Field, JsonValue, model_validator
 
 from .ai import ClassifyOutput, ExtractedValue
 from .common import Fraction, MutableRecord, NonNegativeMoney, PositiveMoney, Schema, Year
+from .document import HandField, HandFields
 from .enums import (
     AcquisitionCostKind,
     EntityType,
@@ -43,6 +44,14 @@ RecordEntity = (
 )
 
 
+class CarriedField(Schema):
+    """A field of another record of the same proposal (D132): its record key and field name,
+    dotted as the apply body names it ("tax_input:interest_certified", "value.amount")."""
+
+    key: str = Field(min_length=1)
+    field: str = Field(min_length=1)
+
+
 class ProposalRecord(Schema):
     """One record the proposal would create or patch.
 
@@ -61,6 +70,16 @@ class ProposalRecord(Schema):
     fields: dict[str, ExtractedValue] = Field(default_factory=dict)
     current: dict[str, JsonValue] | None = None
     notes: list[str] = Field(default_factory=list)  # e.g. the Übergang clause, quoted
+    # Typing only (D132). hand_from: a hand field left off this record because another record
+    # asks for its value (an invoice's Betrag is the Nebenkosten row's amount); the apply
+    # writes what the user applied there into the document's reading. Empty on a proposal
+    # stored before 10 Nov 2026, which then writes no such value.
+    hand_from: dict[HandField, CarriedField] = Field(default_factory=dict)
+    # hand_version: the extraction version the hand fields were read from when the proposal
+    # has no reading of its own (0: none), pinned under the document's lock; the apply's
+    # stale guard compares it with the current version. None with a reading of its own (its
+    # extraction_id anchors it) and on a proposal stored before 10 Nov 2026.
+    hand_version: int | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def _target(self) -> Self:
@@ -225,3 +244,7 @@ class PrefillContext(Schema):
     pay_rows: list[ExistingPayRow] = Field(default_factory=list)
     # Phase 4b D129: the current bescheid_zve rows, for the note that one is replaced.
     bescheid_rows: list[ExistingBescheidZve] = Field(default_factory=list)
+    # Phase 2 D132: the document's hand-entry fields as its typing form shows them now
+    # (services.documents.hand_fields), for a proposal with no reading of its own (typing
+    # only, or blocked by the tenant gate), whose typing record then carries them.
+    hand_fields: HandFields | None = None

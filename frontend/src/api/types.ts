@@ -3018,6 +3018,17 @@ export interface components {
             sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
         };
         /**
+         * CarriedField
+         * @description A field of another record of the same proposal (D132): its record key and field name,
+         *     dotted as the apply body names it ("tax_input:interest_certified", "value.amount").
+         */
+        CarriedField: {
+            /** Key */
+            key: string;
+            /** Field */
+            field: string;
+        };
+        /**
          * ChecklistDocumentRef
          * @description A satisfying document, without its title or filename (either can name a tenant, D5):
          *     the frontend labels it by type and date and links to the document.
@@ -4206,7 +4217,7 @@ export interface components {
          *
          *     For a `manual` extraction (or none) the values are its fields and all six are available.
          *     For an AI kind, `values` holds what the reading stored for the fields that kind has a place
-         *     for (services.documents.HAND_FIELD_MAP), and `available` names exactly those; a reading the
+         *     for (rules.hand_fields.HAND_FIELD_MAP), and `available` names exactly those; a reading the
          *     hand types cannot hold (a low-confidence raw text in a money field) shows as null.
          */
         HandFields: {
@@ -6081,6 +6092,12 @@ export interface components {
             } | null;
             /** Notes */
             notes?: string[];
+            /** Hand From */
+            hand_from?: {
+                [key: string]: components["schemas"]["CarriedField"];
+            };
+            /** Hand Version */
+            hand_version?: number | null;
         };
         /**
          * ProposalRerunBody

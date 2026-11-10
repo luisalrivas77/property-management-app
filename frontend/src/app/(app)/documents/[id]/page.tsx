@@ -5,7 +5,9 @@
 // typing form (Typ, Untertyp, Titel, Datum, Steuerjahr, hand fields: a new extraction
 // version when they change; over an AI reading they show what it read and a change is written
 // into the reading's own kind, phase-2.md D37), the links (Zieltyp + picker, remove), and the
-// retention result.
+// retention result. One form at a time (D132): while a proposal is pending review, its typing
+// card carries these same fields and the typing form is replaced by a one-line pointer; when
+// the proposal proposes a link, the links are shown read-only (no form, no remove) the same way.
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useState, type FormEvent } from "react";
@@ -30,6 +32,11 @@ export default function DocumentPage() {
   const directory = useLoad(loadDirectory);
   // Lives here, not in TypingForm: the form remounts (its key) when the saved typing reloads.
   const [typingSaved, setTypingSaved] = useState(false);
+  // D132: one form at a time. While a proposal is pending review, its typing card holds every
+  // field this form offers, so the form is not shown; undefined while the proposals load.
+  const [proposalPending, setProposalPending] = useState<boolean | undefined>(undefined);
+  // The same for the links: while the pending proposal proposes a link, its card links.
+  const [linksPending, setLinksPending] = useState<boolean | undefined>(undefined);
 
   return (
     <section>
@@ -39,20 +46,42 @@ export default function DocumentPage() {
             <Breadcrumbs items={[{ href: "/documents", label: "Dokumente" }, { label: documentLabel(data.document) }]} />
             <h1>{documentLabel(data.document)}</h1>
             <Original detail={data} />
-            <ProposalSection detail={data} directory={directory.data ?? null} onApplied={detail.reload} />
-            <h2 id="typisierung">Typisierung</h2>
-            {typingSaved ? <Notice>Typisierung gespeichert.</Notice> : null}
-            <TypingForm
-              key={`${data.document.updated_at}-${data.extraction?.version ?? 0}`}
+            <ProposalSection
               detail={data}
-              onSubmit={() => setTypingSaved(false)}
-              onSaved={() => {
-                setTypingSaved(true);
-                detail.reload();
-              }}
+              directory={directory.data ?? null}
+              onApplied={detail.reload}
+              onPendingChange={setProposalPending}
+              onPendingLinksChange={setLinksPending}
             />
+            <h2 id="typisierung">Typisierung</h2>
+            {proposalPending ? (
+              <p className="muted" role="note">
+                Prüfen Sie den Vorschlag oben; nach dem Übernehmen oder Verwerfen können Sie hier Werte ändern.
+              </p>
+            ) : proposalPending === false ? (
+              <>
+                {typingSaved ? <Notice>Typisierung gespeichert.</Notice> : null}
+                <TypingForm
+                  key={`${data.document.updated_at}-${data.extraction?.version ?? 0}`}
+                  detail={data}
+                  onSubmit={() => setTypingSaved(false)}
+                  onSaved={() => {
+                    setTypingSaved(true);
+                    detail.reload();
+                  }}
+                />
+              </>
+            ) : (
+              <p className="muted">Lädt …</p>
+            )}
             <h2>Verknüpfungen</h2>
-            <Links detail={data} targets={directory.data ? targets(directory.data) : null} onChanged={detail.reload} />
+            <Links
+              detail={data}
+              targets={directory.data ? targets(directory.data) : null}
+              onChanged={detail.reload}
+              editable={linksPending === false}
+              pointer={linksPending === true}
+            />
             {directory.error ? <ErrorNotice error={directory.error} /> : null}
             <h2>Aufbewahrung</h2>
             <Retention detail={data} />
@@ -198,7 +227,7 @@ function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onS
   }
 
   return (
-    <form className="card stack" onSubmit={submit} noValidate>
+    <form className="card stack" onSubmit={submit} noValidate aria-label="Typisierung bearbeiten">
       <div className="grid">
         <Field
           id="doc-type"
@@ -346,7 +375,22 @@ function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onS
   );
 }
 
-function Links({ detail, targets: all, onChanged }: { detail: DocumentDetail; targets: Target[] | null; onChanged: () => void }) {
+/** The document's links, and a form to add or remove one when `editable`. Not editable while the
+ * pending proposal proposes a link (D132, `pointer`: one line points to its card) or while the
+ * proposals load: the card is then the one place to link, so the list is read-only. */
+function Links({
+  detail,
+  targets: all,
+  onChanged,
+  editable,
+  pointer,
+}: {
+  detail: DocumentDetail;
+  targets: Target[] | null;
+  onChanged: () => void;
+  editable: boolean;
+  pointer: boolean;
+}) {
   const [targetType, setTargetType] = useState<LinkTarget>("property");
   const [targetId, setTargetId] = useState("");
   const [busy, setBusy] = useState(false);
@@ -406,58 +450,70 @@ function Links({ detail, targets: all, onChanged }: { detail: DocumentDetail; ta
             return (
               <li key={l.id}>
                 {LINK_TARGET[l.target_type]}: {target ? <Link href={target.href}>{target.label}</Link> : <code>{shortId(l.target_id)}</code>}{" "}
-                <span className="muted">(seit {formatDate(l.created_at)})</span>{" "}
-                <button type="button" className="link" onClick={() => void unlink(l.target_type, l.target_id)}>
-                  entfernen
-                </button>
+                <span className="muted">(seit {formatDate(l.created_at)})</span>
+                {editable ? (
+                  <>
+                    {" "}
+                    <button type="button" className="link" onClick={() => void unlink(l.target_type, l.target_id)}>
+                      entfernen
+                    </button>
+                  </>
+                ) : null}
               </li>
             );
           })}
         </ul>
       )}
-      <form className="card stack" onSubmit={link}>
-        <div className="grid">
-          <Field
-            id="link-type"
-            label="Verknüpfen mit"
-            description="Worauf sich das Dokument bezieht, z. B. die Immobilie, ein Darlehen oder ein Mietverhältnis. Die Unterlagen-Checkliste zählt ein Dokument erst, wenn es mit dem passenden Eintrag verknüpft ist."
-          >
-            <select
-              value={targetType}
-              onChange={(e) => {
-                setTargetType(e.target.value as LinkTarget);
-                setTargetId("");
-              }}
+      {pointer ? (
+        <p className="muted" role="note">
+          Die vorgeschlagene Verknüpfung prüfen Sie im Vorschlag oben; danach können Sie hier verknüpfen oder Verknüpfungen entfernen.
+        </p>
+      ) : null}
+      {editable ? (
+        <form className="card stack" onSubmit={link} aria-label="Verknüpfung hinzufügen">
+          <div className="grid">
+            <Field
+              id="link-type"
+              label="Verknüpfen mit"
+              description="Worauf sich das Dokument bezieht, z. B. die Immobilie, ein Darlehen oder ein Mietverhältnis. Die Unterlagen-Checkliste zählt ein Dokument erst, wenn es mit dem passenden Eintrag verknüpft ist."
             >
-              {options(LINK_TARGET).map(([value, text]) => (
-                <option key={value} value={value}>
-                  {text}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field
-            id="link-target"
-            label={LINK_TARGET[targetType]}
-            description="Der Eintrag, mit dem das Dokument verknüpft wird."
-          >
-            <select value={targetId} onChange={(e) => setTargetId(e.target.value)} disabled={all === null}>
-              <option value="">{all === null ? "Lädt …" : choices.length === 0 ? "– nichts zur Auswahl –" : "– wählen –"}</option>
-              {choices.map((target) => (
-                <option key={target.id} value={target.id}>
-                  {target.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </div>
-        <div>
-          <button type="submit" disabled={!targetId || busy}>
-            {busy ? "Verknüpft …" : "Verknüpfen"}
-          </button>
-        </div>
-        <ErrorNotice error={error} />
-      </form>
+              <select
+                value={targetType}
+                onChange={(e) => {
+                  setTargetType(e.target.value as LinkTarget);
+                  setTargetId("");
+                }}
+              >
+                {options(LINK_TARGET).map(([value, text]) => (
+                  <option key={value} value={value}>
+                    {text}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field
+              id="link-target"
+              label={LINK_TARGET[targetType]}
+              description="Der Eintrag, mit dem das Dokument verknüpft wird."
+            >
+              <select value={targetId} onChange={(e) => setTargetId(e.target.value)} disabled={all === null}>
+                <option value="">{all === null ? "Lädt …" : choices.length === 0 ? "– nichts zur Auswahl –" : "– wählen –"}</option>
+                {choices.map((target) => (
+                  <option key={target.id} value={target.id}>
+                    {target.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+          <div>
+            <button type="submit" disabled={!targetId || busy}>
+              {busy ? "Verknüpft …" : "Verknüpfen"}
+            </button>
+          </div>
+          <ErrorNotice error={error} />
+        </form>
+      ) : null}
     </div>
   );
 }
