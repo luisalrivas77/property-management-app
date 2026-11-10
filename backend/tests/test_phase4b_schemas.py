@@ -151,6 +151,42 @@ def test_return_input_amounts_are_money_fields_only():
     assert not any("employer" in k or "period" in k for k in amounts)
 
 
+def test_the_faktor_flag_never_enters_the_amounts():
+    cert = N.WageCertificate.model_validate(
+        {
+            "period_from": "2026-01-01",
+            "period_to": "2026-12-31",
+            "employer": "Arbeitgeber A",
+            "tax_class": 4,
+            "tax_class_factor": True,
+            "gross": "30000.00",
+        }
+    )
+    amounts = N.return_input_amounts(cert)
+    assert amounts["gross"] == Decimal("30000.00")
+    assert not any("tax_class" in k for k in amounts)
+    payslip = N.Payslip.model_validate(
+        {
+            "period_month": "2026-03-01",
+            "employer": "Arbeitgeber A",
+            "tax_class": 4,
+            "tax_class_factor": True,
+            "months_remaining_paid": 9,
+        }
+    )
+    assert not any("tax_class" in k for k in N.return_input_amounts(payslip))
+    with pytest.raises(ValidationError, match="Faktor"):
+        N.WageCertificate.model_validate(
+            {
+                "period_from": "2026-01-01",
+                "period_to": "2026-12-31",
+                "employer": "Arbeitgeber A",
+                "tax_class": 3,
+                "tax_class_factor": True,
+            }
+        )
+
+
 def test_a_child_event_carries_months_never_the_birth_date():
     event = ReturnInputRecorded(
         return_input_id=uuid.uuid4(),

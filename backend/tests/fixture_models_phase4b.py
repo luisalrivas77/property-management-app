@@ -231,6 +231,7 @@ def _projection(payslips: list[Payslip], year: int) -> tuple[WageCertificate, li
         period_to=date(year, end_month, calendar.monthrange(year, end_month)[1]),
         employer=last.employer,
         tax_class=last.tax_class,
+        tax_class_factor=last.tax_class_factor,
         **figures,
     )
     return cert, warnings
@@ -772,6 +773,8 @@ def _estimate(case: EstimateCase) -> dict:
     both_paid = sum(1 for d in drafts.values() if d["gross"] > 0) >= 2
     if both_paid and any(c.tax_class in (5, 6) for c in certs):
         reasons.append("Steuerklasse V oder VI")
+    if both_paid and any(c.tax_class == 4 and c.tax_class_factor for c in certs):
+        reasons.append("Steuerklasse IV mit Faktor")
     filing = FilingCheck(
         required=bool(reasons),
         reasons=reasons or ["Antragsveranlagung"],

@@ -908,3 +908,46 @@ cases:
   questionnaire: *all_answered
   expect:
     filing_required: *benefits_reason
+- id: filing_required_factor
+  description: filing_optional with B's certificate showing Steuerklasse IV mit Faktor → a duty (§46 Abs. 2 Nr. 3a), the figures unchanged
+  tax_year: 2026
+  owners: *owners_plain
+  owner_facts:
+  - *owner_a_no_benefits
+  - case: owner_b_commute_day_rate
+    drop_inputs: [0000004b-0000-4000-8000-0000000000b1, 0000004b-0000-4000-8000-0000000000b5]
+    add_inputs:
+    - id: 0000004b-0000-4000-8000-000000000301
+      owner_id: 0000000a-0000-4000-8000-000000000002
+      kind: wage_certificate
+      tax_year: 2026
+      document_id: 0000004b-d0c0-4000-8000-000000000301
+      value: {<<: *cert_b_plain_value, child_allowance_count: '0', tax_class_factor: true}
+  properties: [{property_id: 0000004b-0000-4000-8000-0000000000f1, result: '-1000.00'}]
+  questionnaire: *all_answered
+  expect:
+    status: 'certified'
+    total_income: '86994.10'
+    vorsorge_total: '17940.00'
+    church_tax_paid: '0.00'
+    donations: '0.00'
+    childcare: '0.00'
+    special_expenses: '18012.00'
+    zve: '68982'
+    assessed:
+      zve: '68982'
+      zve_after_allowances: '68982'
+      est_without: '11036'
+      est_with: '11036'
+      est: '11036'
+      credit_35a: '0.00'
+      est_final: '11036.00'
+      soli: '0.00'
+      church: '0.00'
+      total: '11036.00'
+    withheld: {income_tax: '12400.00', soli: '0.00', church_tax: '0.00', total: '12400.00'}
+    result: '-1364.00'
+    filing_required: {required: true, reasons: ['Steuerklasse IV mit Faktor'], deadline: 2027-08-02}
+    missing: []
+    warnings:
+    - {code: return.filing_required}

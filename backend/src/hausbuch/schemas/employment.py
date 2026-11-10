@@ -253,6 +253,9 @@ class WageCertificate(Schema):
     period_to: date
     employer: str = Field(min_length=1, max_length=120)  # the name only
     tax_class: int = Field(ge=1, le=6)
+    # "Steuerklasse/Faktor" is read as the class and this flag: IV with a Faktor (§39f), a
+    # filing reason of §46 Abs. 2 Nr. 3a; a yes/no, never in an event's amounts
+    tax_class_factor: bool = False
     church_tax_marked: bool = False
     child_allowance_count: ChildAllowanceCount = _ZERO
     gross: NonNegativeMoney = _ZERO
@@ -284,6 +287,8 @@ class WageCertificate(Schema):
             raise ValueError(f"unread names certificate amounts only: {', '.join(unknown)}")
         if self.short_time_allowance > self.replacement_benefits:
             raise ValueError("Nr. 15a is part of Nr. 15")
+        if self.tax_class_factor and self.tax_class != 4:
+            raise ValueError("a Faktor stands beside Steuerklasse IV only (§39f)")
         return self
 
 
@@ -312,6 +317,7 @@ class Payslip(Schema):
     period_month: date  # the first of the month
     employer: str = Field(min_length=1, max_length=120)
     tax_class: int = Field(ge=1, le=6)
+    tax_class_factor: bool = False  # IV with a Faktor (§39f), as on the certificate
     months_remaining_paid: int = Field(ge=0, le=11)
     gross: MonthAndYtd = MonthAndYtd()
     income_tax: MonthAndYtd = MonthAndYtd()
@@ -329,6 +335,8 @@ class Payslip(Schema):
             raise ValueError("period_month is the first of the month")
         if self.months_remaining_paid > 12 - self.period_month.month:
             raise ValueError("months_remaining_paid cannot run past December")
+        if self.tax_class_factor and self.tax_class != 4:
+            raise ValueError("a Faktor stands beside Steuerklasse IV only (§39f)")
         return self
 
 

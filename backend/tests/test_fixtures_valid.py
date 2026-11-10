@@ -388,6 +388,7 @@ PHASE4B_CASES = {
         "filing_optional",
         "questions_open",
         "filing_deadline_next_working_day",
+        "filing_required_factor",
     },
     "questionnaire": {
         "prefill_copy_commute",
@@ -446,6 +447,12 @@ def test_phase4b_cases_cover_the_spec():
             "return.kindergeld_apply",
         ),
         ("return_estimate", "filing_optional", ("expect", "filing_required", "required"), True),
+        (
+            "return_estimate",
+            "filing_required_factor",
+            ("expect", "filing_required", "required"),
+            False,
+        ),
         (
             "return_estimate",
             "filing_deadline_next_working_day",
