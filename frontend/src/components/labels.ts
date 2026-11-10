@@ -378,6 +378,7 @@ export const INBOX_ITEM_KIND: Record<InboxItemKind, string> = {
   possible_duplicate: "Mögliche Doppelbuchung",
   allocation_proposed: "Vorschlag prüfen",
   unmatched: "Nicht zugeordnet",
+  questionnaire_open: "Jahresfragen",
 };
 
 // --- The Anlage V draft (phase-3.md §11) ----------------------------------------------

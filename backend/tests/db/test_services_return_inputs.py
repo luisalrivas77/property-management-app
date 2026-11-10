@@ -77,7 +77,7 @@ def _refused(world: World, code: str, **body) -> None:
     with pytest.raises((RuleViolationError, RuleError)) as info:
         _create(world, **body)
     got = info.value.codes if isinstance(info.value, RuleViolationError) else [info.value.code]
-    assert got == [code]
+    assert list(got) == [code]
 
 
 def _document(world: World, type_: str = "lohnsteuerbescheinigung"):
@@ -286,7 +286,7 @@ def _answer(world: World, **body):
 def _answer_refused(world: World, code: str, **body) -> None:
     with pytest.raises(RuleViolationError) as info:
         _answer(world, **body)
-    assert info.value.codes == [code]
+    assert list(info.value.codes) == [code]
 
 
 def test_an_answer_is_written_with_its_rows_or_not_at_all(world):
@@ -342,7 +342,8 @@ def test_the_questionnaire_lists_every_slot_and_the_progress(world):
     view = world.query(questionnaire_view, 2026)
     assert view.progress.answered == 0
     assert view.progress.total == len(view.slots)
-    assert {s.scope for s in view.slots} == {"owner", "household"}  # no property yet
+    # The World fixture has one property, so its questions are listed too.
+    assert {s.scope for s in view.slots} == {"owner", "household", "property"}
 
 
 def test_the_review_card_shows_last_years_open_questions(world):

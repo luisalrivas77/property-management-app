@@ -67,6 +67,7 @@ const SECTION_OF: Record<InboxItemKind, SectionKey> = {
   import_pending_balance: "imports",
   import_unreconciled: "imports",
   possible_duplicate: "duplicates",
+  questionnaire_open: "other",
 };
 
 /** A line kind without a line id cannot open the panel: it is listed under Weitere Punkte,
@@ -85,6 +86,7 @@ const PILL_CLASS: Record<InboxItemKind, string> = {
   possible_duplicate: "badge badge-warn",
   allocation_proposed: "badge badge-info",
   unmatched: "badge badge-warn",
+  questionnaire_open: "badge badge-info",
 };
 
 export interface InboxData {
@@ -302,6 +304,9 @@ function importPeriod(imp: StatementImport): string {
 
 function EntryTitle({ item, data }: { item: InboxItem; data: InboxData }) {
   const document = item.document_id ? data.documents.get(item.document_id) : undefined;
+  if (item.kind === "questionnaire_open") {
+    return <strong>Jahresfragen {item.tax_year ?? ""}</strong>;
+  }
   if (item.import_id) {
     const imp = data.imports.get(item.import_id);
     const account = imp ? data.accounts.get(imp.account_id) : undefined;
