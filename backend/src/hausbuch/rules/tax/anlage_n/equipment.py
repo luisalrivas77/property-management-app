@@ -10,8 +10,10 @@ months up to the disposal month (the planned slice when d is the plan's last yea
 after. An `other` item without a typed life: RuleError `anlage_n.useful_life_missing`.
 """
 
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
+from typing import Literal
 
 from hausbuch.rules.errors import ANLAGE_N_USEFUL_LIFE_MISSING, RuleError
 from hausbuch.schemas.employment import AnlageNRuleSet, EquipmentFact
@@ -35,20 +37,50 @@ def base_amount(item: EquipmentFact) -> Decimal:
     return cents(item.gross * share)
 
 
+@dataclass
+class EquipmentSlice:
+    """One item's amount in a year and how it came about (the draft's components)."""
+
+    amount: Decimal
+    base: Decimal
+    method: Literal["full", "depreciated"]
+    life_months: int | None = None
+    months_in_year: int = 0  # depreciated: the plan's months in the year
+    disposed: bool = False
+
+
 def equipment_amount(item: EquipmentFact, tax_year: int, rs: AnlageNRuleSet) -> Decimal:
     """Year `tax_year`'s amount of one item (0.00 outside its years)."""
+    return equipment_slice(item, tax_year, rs).amount
+
+
+def equipment_slice(item: EquipmentFact, tax_year: int, rs: AnlageNRuleSet) -> EquipmentSlice:
+    """equipment_amount with its base, method and months."""
     net = item.net if item.net is not None else cents(item.gross / (1 + rs.default_vat_rate))
     base = base_amount(item)
     bought = item.bought_on.year
     life = rs.useful_life(item.item_class)
     if item.item_class == "subscription" or net <= rs.gwg_limit_net or life.full_in_year:
-        return base if tax_year == bought else NOT_ZERO
+        amount = base if tax_year == bought else NOT_ZERO
+        return EquipmentSlice(amount=amount, base=base, method="full")
     months = item.useful_life_months or life.months
     if months is None:
         raise RuleError(
             ANLAGE_N_USEFUL_LIFE_MISSING, f"{item.item_class}: type the useful life in months"
         )
     plan = months_by_year(item.bought_on, months)
+    in_year = dict(plan).get(tax_year, 0)
+
+    def depreciated(amount: Decimal, disposed: bool = False) -> EquipmentSlice:
+        return EquipmentSlice(
+            amount=amount,
+            base=base,
+            method="depreciated",
+            life_months=months,
+            months_in_year=in_year,
+            disposed=disposed,
+        )
+
     slices: dict[int, Decimal] = {}
     done = ZERO
     for i, (year, n) in enumerate(plan):
@@ -57,17 +89,17 @@ def equipment_amount(item: EquipmentFact, tax_year: int, rs: AnlageNRuleSet) -> 
     if tax_year not in slices:
         # Outside the plan nothing counts, whatever the disposal date: a disposal after the
         # life ended must not add a slice the plan never had.
-        return NOT_ZERO
+        return depreciated(NOT_ZERO)
     disposed = item.disposed_on
     if disposed is not None:
         if tax_year > disposed.year:
-            return NOT_ZERO
+            return depreciated(NOT_ZERO, disposed=True)
         if tax_year == disposed.year:
             if tax_year == plan[-1][0]:
-                return slices[tax_year]
+                return depreciated(slices[tax_year], disposed=True)
             start = item.bought_on.month if tax_year == bought else 1
-            return cents(base * (disposed.month - start + 1) / months)
-    return slices[tax_year]
+            return depreciated(cents(base * (disposed.month - start + 1) / months), disposed=True)
+    return depreciated(slices[tax_year])
 
 
 def spans_years(item: EquipmentFact, rs: AnlageNRuleSet) -> bool:

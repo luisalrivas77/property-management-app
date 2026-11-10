@@ -28,6 +28,7 @@ from hausbuch.rules.errors import (
     RETURN_INPUT_WORK_ROOM_CONFLICT,
     RuleError,
 )
+from hausbuch.rules.tax.registry import questionnaire
 from hausbuch.schemas.api import InboxItemKind
 from hausbuch.schemas.employment import ReturnInputCreate
 from hausbuch.schemas.enums import ReturnInputKind
@@ -373,6 +374,52 @@ def test_the_questionnaire_lists_every_slot_and_the_progress(world):
     assert view.progress.total == len(view.slots)
     # The World fixture has one property, so its questions are listed too.
     assert {s.scope for s in view.slots} == {"owner", "household", "property"}
+    # The year file's questions come along once each, in file order; every slot names one.
+    keys = [q.key for q in view.questions]
+    assert keys == [q.key for q in questionnaire(2026).questions]
+    assert {s.key for s in view.slots} == set(keys)
+    tax_class = next(q for q in view.questions if q.key == "owner.tax_class")
+    assert tax_class.answer_type == "choice" and tax_class.choices
+
+
+def test_an_answer_is_changed_by_a_new_answer_that_supersedes_it(world):
+    owner = _owner(world)
+    slot = {"question_key": "owner.home_office_days", "tax_year": 2026, "owner_id": str(owner.id)}
+    first = _answer(world, answer=slot | {"answer": "yes"}, return_inputs=[_home_office(owner.id)])
+    (row,) = world.query(list_return_inputs, tax_year=2026, kind=K.HOME_OFFICE)
+
+    def current(view):
+        return next(
+            s.current_answer for s in view.slots if s.key == slot["question_key"] and s.owner_id
+        )
+
+    before = world.query(questionnaire_view, 2026)
+    assert current(before) == first
+
+    # "Nein" now: the answer names the one it replaces, and the row goes with a withdrawal.
+    withdrawal = _home_office(owner.id) | {"supersedes_id": str(row.id), "withdrawn": True}
+    second = _answer(
+        world,
+        answer=slot | {"answer": "no", "supersedes_id": str(first.id)},
+        return_inputs=[withdrawal],
+    )
+    after = world.query(questionnaire_view, 2026)
+    assert current(after) == second
+    assert world.query(list_answers, tax_year=2026) == [second]
+    assert {a.id for a in world.query(list_answers, tax_year=2026, include_history=True)} == {
+        first.id,
+        second.id,
+    }
+    assert world.query(list_return_inputs, tax_year=2026, kind=K.HOME_OFFICE) == []
+    assert after.progress.answered == before.progress.answered == 1
+    assert after.progress.total == before.progress.total
+
+    # The replaced answer is no longer current, so it cannot be replaced a second time.
+    _answer_refused(
+        world,
+        QUESTIONNAIRE_NOT_CURRENT,
+        answer=slot | {"answer": "yes", "supersedes_id": str(first.id)},
+    )
 
 
 def test_the_review_card_shows_last_years_open_questions(world):

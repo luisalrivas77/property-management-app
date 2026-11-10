@@ -7447,6 +7447,43 @@
         "title": "AllocationStatus",
         "description": "allocation.status (migration 0007, D23). The only column a trigger lets change, and\nonly forward: proposed -> confirmed, proposed -> superseded, confirmed -> superseded."
       },
+      "AmountItem": {
+        "properties": {
+          "input_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Input Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "is_union": {
+            "type": "boolean",
+            "title": "Is Union",
+            "default": false
+          },
+          "flat": {
+            "type": "boolean",
+            "title": "Flat",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "input_id",
+          "label",
+          "amount"
+        ],
+        "title": "AmountItem",
+        "description": "One typed row of a sum block (dues, training, other)."
+      },
       "AnlageNDraft": {
         "properties": {
           "owner_id": {
@@ -7545,6 +7582,9 @@
           },
           "form": {
             "$ref": "#/components/schemas/RuleSetStamp"
+          },
+          "components": {
+            "$ref": "#/components/schemas/WerbungskostenComponents"
           }
         },
         "additionalProperties": false,
@@ -8415,6 +8455,29 @@
         "title": "ChildFact",
         "description": "A child of the household (phase 4b D109; return_input kind child, household scope). No\nname and no other identifier: the birth date decides the months, and it never enters an\nevent payload (only months_in_year does). kindergeld_from: the first month Kindergeld is\npaid, when it differs from the birth month."
       },
+      "ChildMonthsDetail": {
+        "properties": {
+          "born_month": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+            "title": "Born Month"
+          },
+          "months": {
+            "type": "integer",
+            "maximum": 12.0,
+            "minimum": 0.0,
+            "title": "Months"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "born_month",
+          "months"
+        ],
+        "title": "ChildMonthsDetail",
+        "description": "One child's months in the year (D109), with the birth month only: never the day."
+      },
       "ChildcareFact": {
         "properties": {
           "child_id": {
@@ -8482,6 +8545,103 @@
           "favourable"
         ],
         "title": "ChildrenResult"
+      },
+      "Choice": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]{1,32}$",
+            "title": "Code"
+          },
+          "label_de": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Label De"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "label_de"
+        ],
+        "title": "Choice"
+      },
+      "CommuteComponent": {
+        "properties": {
+          "amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "routes": {
+            "items": {
+              "$ref": "#/components/schemas/CommuteRouteDetail"
+            },
+            "type": "array",
+            "title": "Routes"
+          },
+          "rates": {
+            "items": {
+              "$ref": "#/components/schemas/CommuteRateTier"
+            },
+            "type": "array",
+            "title": "Rates"
+          },
+          "pauschale_car": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Pauschale Car"
+          },
+          "pauschale_rest": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Pauschale Rest"
+          },
+          "cap_non_car": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Cap Non Car"
+          },
+          "rest_capped": {
+            "type": "boolean",
+            "title": "Rest Capped"
+          },
+          "public_transport_costs": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Public Transport Costs"
+          },
+          "public_transport_used": {
+            "type": "boolean",
+            "title": "Public Transport Used"
+          },
+          "total": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Total"
+          },
+          "employer_offset": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Employer Offset"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "amount",
+          "pauschale_car",
+          "pauschale_rest",
+          "cap_non_car",
+          "rest_capped",
+          "public_transport_costs",
+          "public_transport_used",
+          "total",
+          "employer_offset"
+        ],
+        "title": "CommuteComponent",
+        "description": "§5.2: the routes' Pauschale (the non-car part capped), the tickets when higher, minus\nthe employer's tax-free and flat-taxed commute benefits, floored at 0."
       },
       "CommuteFact": {
         "properties": {
@@ -8578,6 +8738,97 @@
         ],
         "title": "CommuteFact",
         "description": "One route for one period (§5.2). km_car + km_collective + km_other = km; a decimal\ndistance typed as a string (\"25.9\") is floored to full km."
+      },
+      "CommuteRateTier": {
+        "properties": {
+          "from_km": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "From Km"
+          },
+          "rate": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Rate"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "from_km",
+          "rate"
+        ],
+        "title": "CommuteRateTier",
+        "description": "§9 Abs. 1 S. 3 Nr. 4 EStG: the rate per full kilometre and day from from_km on."
+      },
+      "CommuteRouteDetail": {
+        "properties": {
+          "input_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Input Id"
+          },
+          "workplace_label": {
+            "type": "string",
+            "title": "Workplace Label"
+          },
+          "days": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Days"
+          },
+          "km": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Km"
+          },
+          "km_car": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Km Car"
+          },
+          "km_rest": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Km Rest"
+          },
+          "pauschale_car": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Pauschale Car"
+          },
+          "pauschale_rest": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Pauschale Rest"
+          },
+          "public_transport_costs": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Public Transport Costs"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "input_id",
+          "workplace_label",
+          "days",
+          "km",
+          "km_car",
+          "km_rest",
+          "pauschale_car",
+          "pauschale_rest"
+        ],
+        "title": "CommuteRouteDetail",
+        "description": "One route as typed, with its part of the Pauschale (§5.2): the car km and the other km\n(Sammelbeförderung, Bus, Bahn, Rad) each × days × rate, to the cent."
       },
       "ConfirmAllocationsBody": {
         "properties": {
@@ -9866,6 +10117,28 @@
         "title": "EntityType",
         "description": "Entities that carry events. Also the prefix of every event type."
       },
+      "EquipmentComponent": {
+        "properties": {
+          "amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EquipmentItemDetail"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "amount"
+        ],
+        "title": "EquipmentComponent"
+      },
       "EquipmentFact": {
         "properties": {
           "label": {
@@ -9952,6 +10225,103 @@
         ],
         "title": "EquipmentFact",
         "description": "One work item or subscription (D108). bought_on may lie before the tax year."
+      },
+      "EquipmentItemDetail": {
+        "properties": {
+          "input_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Input Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "item_class": {
+            "type": "string",
+            "enum": [
+              "computer",
+              "software",
+              "phone",
+              "furniture",
+              "tools",
+              "subscription",
+              "other"
+            ],
+            "title": "Item Class"
+          },
+          "bought_year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 2000.0,
+            "title": "Bought Year"
+          },
+          "professional_share": {
+            "$ref": "#/components/schemas/Fraction"
+          },
+          "gross": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Gross"
+          },
+          "base": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Base"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "full",
+              "depreciated"
+            ],
+            "title": "Method"
+          },
+          "life_months": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Life Months"
+          },
+          "months_in_year": {
+            "type": "integer",
+            "maximum": 12.0,
+            "minimum": 0.0,
+            "title": "Months In Year"
+          },
+          "disposed": {
+            "type": "boolean",
+            "title": "Disposed",
+            "default": false
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "input_id",
+          "label",
+          "item_class",
+          "bought_year",
+          "professional_share",
+          "gross",
+          "base",
+          "method",
+          "months_in_year",
+          "amount"
+        ],
+        "title": "EquipmentItemDetail",
+        "description": "§5.5: one item's amount in the year. method `full`: the base in the purchase year only\n(a subscription, a low-value item, a class written off at once); `depreciated`: the base\nover `life_months` from the purchase month, `months_in_year` of them in this year."
       },
       "ErasureBody": {
         "properties": {
@@ -10734,6 +11104,63 @@
         "type": "object",
         "title": "HausgeldabrechnungExtraction",
         "description": "Hausgeldabrechnung: the year's settlement (read by phase 3's Hausgeld rule)."
+      },
+      "HomeOfficeComponent": {
+        "properties": {
+          "amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "input_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Input Id"
+          },
+          "days_other_workplace": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Days Other Workplace"
+          },
+          "days_no_other_workplace": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Days No Other Workplace"
+          },
+          "day_rate": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Day Rate"
+          },
+          "full": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Full"
+          },
+          "cap": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Cap"
+          },
+          "capped": {
+            "type": "boolean",
+            "title": "Capped"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "amount",
+          "input_id",
+          "days_other_workplace",
+          "days_no_other_workplace",
+          "day_rate",
+          "full",
+          "cap",
+          "capped"
+        ],
+        "title": "HomeOfficeComponent",
+        "description": "§5.3: (days_other_workplace + days_no_other_workplace) × day_rate, at most cap."
       },
       "HomeOfficeFact": {
         "properties": {
@@ -14766,12 +15193,23 @@
         "title": "PurchaseContractExtraction",
         "description": "Kaufvertrag (contract / purchase_contract)."
       },
-      "QuestionPrefill": {
+      "Question": {
         "properties": {
           "key": {
             "type": "string",
             "pattern": "^(owner|household|property)\\.[a-z0-9_]{1,52}$",
             "title": "Key"
+          },
+          "section": {
+            "type": "string",
+            "enum": [
+              "einkommen",
+              "werbungskosten",
+              "haushalt",
+              "kinder",
+              "immobilie"
+            ],
+            "title": "Section"
           },
           "scope": {
             "type": "string",
@@ -14782,41 +15220,56 @@
             ],
             "title": "Scope"
           },
-          "owner_id": {
+          "question_de": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Question De"
+          },
+          "why_de": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Why De"
+          },
+          "answer_type": {
+            "type": "string",
+            "enum": [
+              "yes_no",
+              "choice",
+              "facts"
+            ],
+            "title": "Answer Type"
+          },
+          "choices": {
             "anyOf": [
               {
-                "type": "string",
-                "format": "uuid"
+                "items": {
+                  "$ref": "#/components/schemas/Choice"
+                },
+                "type": "array"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Owner Id"
+            "title": "Choices"
           },
-          "property_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/QuestionTarget"
+            },
+            "type": "array",
+            "title": "Targets"
+          },
+          "carry_forward": {
+            "type": "string",
+            "enum": [
+              "copy",
+              "reconfirm",
+              "none"
             ],
-            "title": "Property Id"
+            "title": "Carry Forward"
           },
-          "prior_answer": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/QuestionnaireAnswer"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "proposed_answer": {
+          "default_answer": {
             "anyOf": [
               {
                 "type": "string",
@@ -14829,38 +15282,73 @@
                 "type": "null"
               }
             ],
-            "title": "Proposed Answer"
-          },
-          "proposed_rows": {
-            "items": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/ReturnInputCreate"
-                },
-                {
-                  "$ref": "#/components/schemas/TaxInputCreate"
-                }
-              ]
-            },
-            "type": "array",
-            "title": "Proposed Rows"
-          },
-          "reconfirm_rows": {
-            "items": {
-              "$ref": "#/components/schemas/ReturnInputFact"
-            },
-            "type": "array",
-            "title": "Reconfirm Rows"
+            "title": "Default Answer"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
           "key",
-          "scope"
+          "section",
+          "scope",
+          "question_de",
+          "why_de",
+          "answer_type",
+          "carry_forward"
         ],
-        "title": "QuestionPrefill",
-        "description": "One answer slot of the year with what last year leaves (§5.11). proposed_answer is the\nprior answer carried, or the question's default_answer when there is none (spec §7\naddition, 10 Nov 2026)."
+        "title": "Question"
+      },
+      "QuestionTarget": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "return_input",
+              "tax_input",
+              "reminder"
+            ],
+            "title": "Kind"
+          },
+          "input_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReturnInputKind"
+              },
+              {
+                "$ref": "#/components/schemas/TaxInputKind"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Kind"
+          },
+          "value_match": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Value Match"
+          },
+          "reminder_de": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reminder De"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "QuestionTarget",
+        "description": "What a \"yes\" leads to: rows of a return_input or tax_input kind, or a reminder printed on\nthe Gesamt card and the sheet. value_match selects the target rows by their value's coded\nfields (e.g. {\"item_class\": \"subscription\"}, {\"expense_class\": \"account_fee\"}), so two\nquestions can share one kind (spec §7 addition, 10 Nov 2026)."
       },
       "QuestionnaireAnswer": {
         "properties": {
@@ -15145,6 +15633,112 @@
         ],
         "title": "QuestionnaireProgress"
       },
+      "QuestionnaireSlot": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^(owner|household|property)\\.[a-z0-9_]{1,52}$",
+            "title": "Key"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "household",
+              "property"
+            ],
+            "title": "Scope"
+          },
+          "owner_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Id"
+          },
+          "property_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Property Id"
+          },
+          "prior_answer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuestionnaireAnswer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proposed_answer": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "yes",
+                  "no"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed Answer"
+          },
+          "proposed_rows": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ReturnInputCreate"
+                },
+                {
+                  "$ref": "#/components/schemas/TaxInputCreate"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Proposed Rows"
+          },
+          "reconfirm_rows": {
+            "items": {
+              "$ref": "#/components/schemas/ReturnInputFact"
+            },
+            "type": "array",
+            "title": "Reconfirm Rows"
+          },
+          "current_answer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuestionnaireAnswer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "scope"
+        ],
+        "title": "QuestionnaireSlot",
+        "description": "One slot of the viewed year: what last year leaves (QuestionPrefill) plus the slot's\ncurrent answer of this year, if any, so the screen can show it and correct it with a new\nanswer whose supersedes_id names it. The rows written with an answer are not linked to it;\nthe screen reads the slot's current rows from /return-inputs and the property's\n/tax-inputs."
+      },
       "QuestionnaireView": {
         "properties": {
           "tax_year": {
@@ -15170,9 +15764,16 @@
             ],
             "title": "Reused From"
           },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/Question"
+            },
+            "type": "array",
+            "title": "Questions"
+          },
           "slots": {
             "items": {
-              "$ref": "#/components/schemas/QuestionPrefill"
+              "$ref": "#/components/schemas/QuestionnaireSlot"
             },
             "type": "array",
             "title": "Slots"
@@ -15193,12 +15794,13 @@
         "required": [
           "tax_year",
           "version",
+          "questions",
           "slots",
           "progress",
           "reminders"
         ],
         "title": "QuestionnaireView",
-        "description": "GET /tax/questionnaire: the year's slots in file order (owners in name order) and the\nprogress. reused_from is set when the year has no file of its own."
+        "description": "GET /tax/questionnaire: the year's questions and slots in file order (owners in name\norder) and the progress. reused_from is set when the year has no file of its own. questions\nare the file's (texts, answer type, choices, targets, carry-forward), each once; a slot\nnames its question by key, so the screen renders the question from the data, never from\nits own copy (phase 4b §10, principle 5)."
       },
       "ReducedRentCheck": {
         "properties": {
@@ -15844,6 +16446,13 @@
             },
             "type": "array",
             "title": "Sources"
+          },
+          "children": {
+            "items": {
+              "$ref": "#/components/schemas/ChildMonthsDetail"
+            },
+            "type": "array",
+            "title": "Children"
           }
         },
         "additionalProperties": false,
@@ -17214,6 +17823,28 @@
         ],
         "title": "StatementImport"
       },
+      "SumComponent": {
+        "properties": {
+          "amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AmountItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "amount"
+        ],
+        "title": "SumComponent"
+      },
       "TariffStamp": {
         "properties": {
           "tax_year": {
@@ -18013,6 +18644,71 @@
         ],
         "title": "TaxRateResult",
         "description": "GET /api/tax-rate: the Steuern screen's \"Steuerwirkung\" line (§8, §9).\n\nzve and effect are None together when no income input applies to the year or an earlier\none (`missing`, the flag income.missing: the screen shows \"— · Einkommen eintragen\").\nowner_estimates lists each owner's gross pay, deductions (the D84 default or the typed\noverride) and estimate from the rows that apply, whatever the year's source, so the\nEigentümer page can show the computed default deductions under a Bescheid or an override\ntoo."
+      },
+      "TelecomComponent": {
+        "properties": {
+          "amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "input_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Input Id"
+          },
+          "bills_year": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Bills Year"
+          },
+          "share": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,6})?$",
+            "title": "Share"
+          },
+          "share_amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Share Amount"
+          },
+          "months": {
+            "type": "integer",
+            "maximum": 12.0,
+            "minimum": 1.0,
+            "title": "Months"
+          },
+          "cap_monthly": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Cap Monthly"
+          },
+          "cap": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Cap"
+          },
+          "employer_reimbursed": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Employer Reimbursed"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "amount",
+          "input_id",
+          "bills_year",
+          "share",
+          "share_amount",
+          "months",
+          "cap_monthly",
+          "cap",
+          "employer_reimbursed"
+        ],
+        "title": "TelecomComponent",
+        "description": "§5.5: min(bills × share, cap_monthly × months) − employer reimbursement, floored at 0."
       },
       "TelecomFact": {
         "properties": {
@@ -19673,6 +20369,93 @@
         ],
         "title": "WarningCode"
       },
+      "WerbungskostenComponents": {
+        "properties": {
+          "commute": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommuteComponent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "home_office": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HomeOfficeComponent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "work_room": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkRoomComponent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "equipment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EquipmentComponent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "telecom": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TelecomComponent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dues": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SumComponent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "training": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SumComponent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "other": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SumComponent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "WerbungskostenComponents"
+      },
       "WirtschaftsplanExtraction": {
         "properties": {
           "title": {
@@ -19771,6 +20554,71 @@
         "additionalProperties": false,
         "type": "object",
         "title": "Withheld"
+      },
+      "WorkRoomComponent": {
+        "properties": {
+          "amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "input_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Input Id"
+          },
+          "months": {
+            "type": "integer",
+            "maximum": 12.0,
+            "minimum": 1.0,
+            "title": "Months"
+          },
+          "actual": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Actual"
+          },
+          "flat": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Flat"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "actual",
+              "flat"
+            ],
+            "title": "Method"
+          },
+          "prefer": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "flat",
+                  "actual"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prefer"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "amount",
+          "input_id",
+          "months",
+          "actual",
+          "flat",
+          "method"
+        ],
+        "title": "WorkRoomComponent",
+        "description": "§5.4: the flat rate (a twelfth per month) against the room's share of the costs."
       },
       "WorkRoomFact": {
         "properties": {

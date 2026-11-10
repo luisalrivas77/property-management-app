@@ -11,7 +11,9 @@
 //   Vorschlag is reviewed;
 // - an import waiting for its balance: the Konten balance form; one that does not reconcile: a
 //   link to the account's Kontoauszüge, which show both balances;
-// - a possible duplicate: the Konten card with Zusammenführen / Beide behalten.
+// - a possible duplicate: the Konten card with Zusammenführen / Beide behalten;
+// - last year's open Jahresfragen (questionnaire_open, phase 4b D110): a link into the flow
+//   at /tax/<year>/fragen.
 //
 // GET /inbox names ids only, so the lines, imports, accounts, duplicates and documents are
 // loaded alongside to show what each item is about. Amounts are shown as the API returns them.
@@ -371,6 +373,11 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
       if (!pair || !first || !later) return null;
       return <DuplicateCard pair={pair} first={first} later={later} imports={data.imports} onDecided={onChanged} />;
     }
+    case "questionnaire_open":
+      // phase 4b D110: the one card for last year's open Jahresfragen leads into the flow.
+      return item.tax_year != null ? (
+        <Link href={`/tax/${item.tax_year}/fragen`}>Jahresfragen {item.tax_year} beantworten</Link>
+      ) : null;
     default:
       return null;
   }

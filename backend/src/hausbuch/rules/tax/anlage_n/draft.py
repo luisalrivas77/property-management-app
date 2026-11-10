@@ -22,11 +22,21 @@ from hausbuch.rules.tax._common import unique, warning
 from hausbuch.rules.tax.rounding import whole_euros
 from hausbuch.schemas.employment import (
     COMMUTE_ROUTES,
+    AmountItem,
     AnlageNDraft,
     AnlageNRuleSet,
+    CommuteComponent,
+    CommuteRouteDetail,
+    EquipmentComponent,
+    EquipmentItemDetail,
+    HomeOfficeComponent,
     OwnerReturnFacts,
     ReturnInputFact,
+    SumComponent,
+    TelecomComponent,
     WageCertificate,
+    WerbungskostenComponents,
+    WorkRoomComponent,
 )
 from hausbuch.schemas.enums import ReturnInputKind as K
 from hausbuch.schemas.performance import Tariff
@@ -39,13 +49,13 @@ from hausbuch.schemas.tax import (
     WarningCode,
 )
 
-from ._base import ZERO, in_year, row_sources
+from ._base import ZERO, cents, in_year, row_sources
 from .commute import CommuteResult, commute_lines
-from .equipment import equipment_amount
-from .home_office import home_office_line
-from .other import dues_lines, other_expense_amount, training_lines
+from .equipment import EquipmentSlice, equipment_slice
+from .home_office import HomeOfficeResult, home_office_result
+from .other import Dues, dues_lines, other_expense_items, training_lines
 from .payslip import PaySources, pay_of_rows
-from .telecom import telecom_line
+from .telecom import TelecomResult, telecom_result
 from .work_room import WorkRoomResult, work_room_line
 
 RULE_SET_SOURCE = SourceRef(kind="anlage_n_rule_set")
@@ -86,6 +96,7 @@ class Itemised:
     rows: list[ReturnInputFact]
     warnings: list[DraftWarning] = field(default_factory=list)
     line_sources: dict[str, list[SourceRef]] = field(default_factory=dict)
+    blocks: WerbungskostenComponents = field(default_factory=WerbungskostenComponents)
 
     @property
     def itemised(self) -> Decimal:
@@ -133,21 +144,24 @@ def itemise(facts: OwnerReturnFacts, tax_year: int, rs: AnlageNRuleSet, tariff: 
         warnings += wr.warnings
     offices = of(K.HOME_OFFICE)
     office_amount = ZERO
+    office: HomeOfficeResult | None = None
     if offices:
-        office_amount, w = home_office_line(
-            offices[0].value, sum(r.value.days for r in routes), room, rs
-        )
-        warnings += w
+        office = home_office_result(offices[0].value, sum(r.value.days for r in routes), room, rs)
+        office_amount = office.amount
+        warnings += office.warnings
     equipment_rows = [r for r in rows if r.kind is K.WORK_EQUIPMENT]
-    equipment_slices = [(r, equipment_amount(r.value, tax_year, rs)) for r in equipment_rows]
+    equipment_parts = [(r, equipment_slice(r.value, tax_year, rs)) for r in equipment_rows]
+    equipment_slices = [(r, part.amount) for r, part in equipment_parts]
     equipment = sum((amount for _, amount in equipment_slices), ZERO)
     telecom_rows = of(K.TELECOM)
-    telecom = sum((telecom_line(r.value, rs) for r in telecom_rows), ZERO)
+    telecom_parts = [(r, telecom_result(r.value, rs)) for r in telecom_rows]
+    telecom = sum((part.amount for _, part in telecom_parts), ZERO)
     dues = dues_lines(year_rows)
     training, training_warnings = training_lines(year_rows)
     warnings += training_warnings
     other_rows = of(K.OTHER_EXPENSE)
-    other = other_expense_amount(other_rows, rs)
+    other_parts = other_expense_items(other_rows, rs)
+    other = sum((amount for _, amount in other_parts), ZERO)
     components = Components(
         commute=commute.deductible,
         home_office=office_amount,
@@ -209,7 +223,159 @@ def itemise(facts: OwnerReturnFacts, tax_year: int, rs: AnlageNRuleSet, tariff: 
         rows=rows,
         warnings=warnings,
         line_sources=line_sources,
+        blocks=_blocks(
+            components,
+            routes=routes,
+            commute=commute,
+            rs=rs,
+            office=(offices[0], office) if office is not None else None,
+            room=(rooms[0], wr) if wr is not None else None,
+            equipment=equipment_parts,
+            telecom=telecom_parts,
+            dues=dues,
+            training=of(K.TRAINING),
+            other=other_parts,
+        ),
     )
+
+
+def _blocks(
+    c: Components,
+    *,
+    routes: list[ReturnInputFact],
+    commute: CommuteResult,
+    rs: AnlageNRuleSet,
+    office: tuple[ReturnInputFact, HomeOfficeResult] | None,
+    room: tuple[ReturnInputFact, WorkRoomResult] | None,
+    equipment: list[tuple[ReturnInputFact, EquipmentSlice]],
+    telecom: list[tuple[ReturnInputFact, TelecomResult]],
+    dues: Dues,
+    training: list[ReturnInputFact],
+    other: list[tuple[ReturnInputFact, Decimal]],
+) -> WerbungskostenComponents:
+    """The blocks of `c` with what their rules computed on the way (no figure computed here:
+    every amount is the rule's, every block amount the one in `c`)."""
+    blocks: dict[str, object] = {}
+    if routes or commute.employer_offset:
+        blocks["commute"] = CommuteComponent(
+            amount=c.commute,
+            routes=[
+                CommuteRouteDetail(
+                    input_id=r.id,
+                    workplace_label=r.value.workplace_label,
+                    days=r.value.days,
+                    km=r.value.km,
+                    km_car=r.value.km_car,
+                    km_rest=r.value.km_collective + r.value.km_other,
+                    pauschale_car=cents(car),
+                    pauschale_rest=cents(rest),
+                    public_transport_costs=r.value.public_transport_costs,
+                )
+                for r, (car, rest) in zip(routes, commute.route_parts, strict=True)
+            ],
+            rates=rs.commute_rates,
+            pauschale_car=commute.pauschale_car,
+            pauschale_rest=commute.pauschale_rest,
+            cap_non_car=rs.commute_cap_non_car,
+            rest_capped=commute.rest_capped,
+            public_transport_costs=commute.tickets,
+            public_transport_used="public_transport_costs_exceed" in commute.notes,
+            total=commute.total,
+            employer_offset=commute.employer_offset,
+        )
+    if office is not None:
+        row, result = office
+        blocks["home_office"] = HomeOfficeComponent(
+            amount=c.home_office,
+            input_id=row.id,
+            days_other_workplace=row.value.days_other_workplace,
+            days_no_other_workplace=row.value.days_no_other_workplace,
+            day_rate=rs.home_office_day_rate,
+            full=result.full,
+            cap=rs.home_office_cap,
+            capped=result.full > rs.home_office_cap,
+        )
+    if room is not None:
+        row, wr = room
+        blocks["work_room"] = WorkRoomComponent(
+            amount=c.work_room,
+            input_id=row.id,
+            months=row.value.months,
+            actual=wr.actual,
+            flat=wr.flat,
+            method=wr.method,
+            prefer=row.value.prefer,
+        )
+    if equipment:
+        blocks["equipment"] = EquipmentComponent(
+            amount=c.equipment,
+            items=[
+                EquipmentItemDetail(
+                    input_id=r.id,
+                    label=r.value.label,
+                    item_class=r.value.item_class,
+                    bought_year=r.value.bought_on.year,
+                    professional_share=r.value.professional_share,
+                    gross=r.value.gross,
+                    base=part.base,
+                    method=part.method,
+                    life_months=part.life_months,
+                    months_in_year=part.months_in_year,
+                    disposed=part.disposed,
+                    amount=part.amount,
+                )
+                for r, part in equipment
+            ],
+        )
+    if telecom:
+        # one row per owner and year (ONE_PER_YEAR); the block names the current one
+        row, part = telecom[0]
+        blocks["telecom"] = TelecomComponent(
+            amount=c.telecom,
+            input_id=row.id,
+            bills_year=row.value.bills_year,
+            share=rs.telecom_share,
+            share_amount=part.share_amount,
+            months=row.value.months,
+            cap_monthly=rs.telecom_cap_monthly,
+            cap=part.cap,
+            employer_reimbursed=row.value.employer_reimbursed,
+        )
+    if dues.rows:
+        blocks["dues"] = SumComponent(
+            amount=c.dues,
+            items=[
+                AmountItem(
+                    input_id=r.id,
+                    label=r.value.name,
+                    amount=r.value.amount,
+                    is_union=r.value.is_union,
+                )
+                for r in dues.rows
+            ],
+        )
+    if training:
+        blocks["training"] = SumComponent(
+            amount=c.training,
+            items=[
+                AmountItem(input_id=r.id, label=r.value.label, amount=r.value.amount)
+                for r in training
+            ],
+        )
+    if other:
+        blocks["other"] = SumComponent(
+            amount=c.other,
+            items=[
+                AmountItem(
+                    input_id=r.id,
+                    label=r.value.label,
+                    amount=amount,
+                    flat=r.value.amount is None,
+                )
+                for r, amount in other
+            ],
+        )
+    return WerbungskostenComponents.model_validate(blocks)
 
 
 def _total(certs: list[WageCertificate], name: str) -> Decimal:
@@ -309,6 +475,7 @@ def draft_n(
         replacement_benefits=item.replacement_benefits,
         warnings=item.warnings,
         sources=unique([*every, RULE_SET_SOURCE, TARIFF_SOURCE]),
+        components=item.blocks,
         form=RuleSetStamp(
             tax_year=tax_year,
             version=rs.version,

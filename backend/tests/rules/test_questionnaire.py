@@ -2,12 +2,14 @@
 are unique, every input_kind is a real enum member, every reminder has its text, and the 2026
 keys are pinned (a renamed key breaks carry-forward)."""
 
+import json
+
 import pytest
 from pydantic import ValidationError
 
 from hausbuch.rules.errors import TAX_NO_RULE_SET, RuleError
 from hausbuch.rules.tax.registry import questionnaire, questionnaire_years
-from hausbuch.schemas.employment import Questionnaire
+from hausbuch.schemas.employment import Question, Questionnaire
 from hausbuch.schemas.enums import ReturnInputKind
 from hausbuch.schemas.tax import TaxInputKind
 
@@ -58,6 +60,19 @@ def test_the_2026_keys_are_pinned():
     by_scope = {scope: tuple(x.key for x in q.questions if x.scope == scope) for scope in KEYS_2026}
     assert {s: set(k) for s, k in by_scope.items()} == {s: set(k) for s, k in KEYS_2026.items()}
     assert len(q.questions) == 25
+
+
+def test_the_questions_serialise_for_the_screen():
+    """GET /tax/questionnaire carries the year's questions (§10): each survives a JSON round
+    trip with its texts, choices, input kinds and reminder sentences."""
+    q = questionnaire(2026)
+    dumped = json.loads(json.dumps([x.model_dump(mode="json") for x in q.questions]))
+    assert [Question.model_validate(d) for d in dumped] == q.questions
+    by_key = {d["key"]: d for d in dumped}
+    assert by_key["owner.commute"]["targets"][0]["input_kind"] == "commute"
+    assert by_key["owner.job_move"]["targets"][0]["reminder_de"]
+    assert by_key["property.trips"]["targets"][0]["value_match"] == {"cost_class": "travel"}
+    assert by_key["owner.account_fee"]["default_answer"] == "yes"
 
 
 def test_the_slots_for_two_owners_and_one_property():

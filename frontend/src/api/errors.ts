@@ -141,6 +141,22 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "tax_export.too_large":
     "Die Belege des Jahres sind zusammen größer als 100 MiB. Das Archiv bitte von Hand aufteilen; die Ausfüllhilfe geht weiterhin.",
   "tax_export.failed": "Der Export ist fehlgeschlagen. Bitte noch einmal versuchen.",
+  // return inputs, the Anlage N draft and the whole-return estimate (phase-4b.md §9)
+  "return_input.scope_invalid":
+    "Diese Angabe passt nicht zu ihrem Eintrag: eine Änderung gilt für dieselbe Art, dasselbe Jahr und dieselbe Person, eine Rücknahme wiederholt den Wert, und Zeiträume liegen im Steuerjahr.",
+  "return_input.not_current":
+    "Für dieses Jahr gibt es schon einen gültigen Eintrag dieser Art, oder der geänderte Eintrag ist nicht mehr aktuell. Bitte die Seite neu laden und den aktuellen Eintrag ändern.",
+  "return_input.work_room_conflict":
+    "Ein Arbeitszimmer, das das ganze Jahr Mittelpunkt der Tätigkeit ist, schließt die Homeoffice-Tagespauschale aus. Erst die Homeoffice-Tage entfernen oder weniger als 12 Monate angeben.",
+  "return_input.carried_from_invalid": "Diese Angabe lässt sich nicht aus dem Vorjahr übernehmen.",
+  "anlage_n.no_pay":
+    "Für dieses Jahr ist noch kein Arbeitslohn erfasst (Lohnsteuerbescheinigung, Gehaltsabrechnung oder erwartetes Bruttogehalt).",
+  "anlage_n.useful_life_missing": "Für ein sonstiges Arbeitsmittel bitte die Nutzungsdauer in Monaten angeben.",
+  "anlage_n.work_room_excludes_day_rate":
+    "Ein ganzjähriges Arbeitszimmer und die Homeoffice-Tagespauschale schließen sich aus.",
+  "return.childcare_age": "Kinderbetreuungskosten zählen nur bis zum 14. Geburtstag des Kindes.",
+  "return.household_services_cash":
+    "Bar bezahlte Handwerker- oder Haushaltsleistungen zählen nicht (§ 35a): nur Überweisungen.",
 };
 
 /** German text for a proposal's `error_code`: why reading the document failed or was

@@ -2550,6 +2550,31 @@ export interface components {
          */
         AllocationStatus: "proposed" | "confirmed" | "superseded";
         /**
+         * AmountItem
+         * @description One typed row of a sum block (dues, training, other).
+         */
+        AmountItem: {
+            /**
+             * Input Id
+             * Format: uuid
+             */
+            input_id: string;
+            /** Label */
+            label: string;
+            /** Amount */
+            amount: string;
+            /**
+             * Is Union
+             * @default false
+             */
+            is_union: boolean;
+            /**
+             * Flat
+             * @default false
+             */
+            flat: boolean;
+        };
+        /**
          * AnlageNDraft
          * @description One owner's Anlage N for one year (§5.6). status: certified (from certificates),
          *     estimate (payslip projection or expected pay), none (no pay source).
@@ -2596,6 +2621,7 @@ export interface components {
             /** Sources */
             sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
             form: components["schemas"]["RuleSetStamp"];
+            components?: components["schemas"]["WerbungskostenComponents"];
         };
         /** AnlageVDraft */
         AnlageVDraft: {
@@ -2919,6 +2945,16 @@ export interface components {
             /** Kindergeld From */
             kindergeld_from?: string | null;
         };
+        /**
+         * ChildMonthsDetail
+         * @description One child's months in the year (D109), with the birth month only: never the day.
+         */
+        ChildMonthsDetail: {
+            /** Born Month */
+            born_month: string;
+            /** Months */
+            months: number;
+        };
         /** ChildcareFact */
         ChildcareFact: {
             /**
@@ -2946,6 +2982,42 @@ export interface components {
              * @enum {string}
              */
             favourable: "kindergeld" | "allowances";
+        };
+        /** Choice */
+        Choice: {
+            /** Code */
+            code: string;
+            /** Label De */
+            label_de: string;
+        };
+        /**
+         * CommuteComponent
+         * @description §5.2: the routes' Pauschale (the non-car part capped), the tickets when higher, minus
+         *     the employer's tax-free and flat-taxed commute benefits, floored at 0.
+         */
+        CommuteComponent: {
+            /** Amount */
+            amount: string;
+            /** Routes */
+            routes?: components["schemas"]["CommuteRouteDetail"][];
+            /** Rates */
+            rates?: components["schemas"]["CommuteRateTier"][];
+            /** Pauschale Car */
+            pauschale_car: string;
+            /** Pauschale Rest */
+            pauschale_rest: string;
+            /** Cap Non Car */
+            cap_non_car: string;
+            /** Rest Capped */
+            rest_capped: boolean;
+            /** Public Transport Costs */
+            public_transport_costs: string;
+            /** Public Transport Used */
+            public_transport_used: boolean;
+            /** Total */
+            total: string;
+            /** Employer Offset */
+            employer_offset: string;
         };
         /**
          * CommuteFact
@@ -2996,6 +3068,44 @@ export interface components {
              * @default 0
              */
             km_other: number;
+            /** Public Transport Costs */
+            public_transport_costs?: string | null;
+        };
+        /**
+         * CommuteRateTier
+         * @description §9 Abs. 1 S. 3 Nr. 4 EStG: the rate per full kilometre and day from from_km on.
+         */
+        CommuteRateTier: {
+            /** From Km */
+            from_km: number;
+            /** Rate */
+            rate: string;
+        };
+        /**
+         * CommuteRouteDetail
+         * @description One route as typed, with its part of the Pauschale (§5.2): the car km and the other km
+         *     (Sammelbeförderung, Bus, Bahn, Rad) each × days × rate, to the cent.
+         */
+        CommuteRouteDetail: {
+            /**
+             * Input Id
+             * Format: uuid
+             */
+            input_id: string;
+            /** Workplace Label */
+            workplace_label: string;
+            /** Days */
+            days: number;
+            /** Km */
+            km: number;
+            /** Km Car */
+            km_car: number;
+            /** Km Rest */
+            km_rest: number;
+            /** Pauschale Car */
+            pauschale_car: string;
+            /** Pauschale Rest */
+            pauschale_rest: string;
             /** Public Transport Costs */
             public_transport_costs?: string | null;
         };
@@ -3529,6 +3639,13 @@ export interface components {
          * @enum {string}
          */
         EntityType: "owner" | "property" | "unit" | "tenant" | "tenancy" | "loan" | "document" | "user" | "proposal" | "account" | "statement" | "transaction" | "rule" | "workspace";
+        /** EquipmentComponent */
+        EquipmentComponent: {
+            /** Amount */
+            amount: string;
+            /** Items */
+            items?: components["schemas"]["EquipmentItemDetail"][];
+        };
         /**
          * EquipmentFact
          * @description One work item or subscription (D108). bought_on may lie before the tax year.
@@ -3561,6 +3678,49 @@ export interface components {
             professional_share: components["schemas"]["Fraction"];
             /** Useful Life Months */
             useful_life_months?: number | null;
+        };
+        /**
+         * EquipmentItemDetail
+         * @description §5.5: one item's amount in the year. method `full`: the base in the purchase year only
+         *     (a subscription, a low-value item, a class written off at once); `depreciated`: the base
+         *     over `life_months` from the purchase month, `months_in_year` of them in this year.
+         */
+        EquipmentItemDetail: {
+            /**
+             * Input Id
+             * Format: uuid
+             */
+            input_id: string;
+            /** Label */
+            label: string;
+            /**
+             * Item Class
+             * @enum {string}
+             */
+            item_class: "computer" | "software" | "phone" | "furniture" | "tools" | "subscription" | "other";
+            /** Bought Year */
+            bought_year: number;
+            professional_share: components["schemas"]["Fraction"];
+            /** Gross */
+            gross: string;
+            /** Base */
+            base: string;
+            /**
+             * Method
+             * @enum {string}
+             */
+            method: "full" | "depreciated";
+            /** Life Months */
+            life_months?: number | null;
+            /** Months In Year */
+            months_in_year: number;
+            /**
+             * Disposed
+             * @default false
+             */
+            disposed: boolean;
+            /** Amount */
+            amount: string;
         };
         /** ErasureBody */
         ErasureBody: {
@@ -3848,6 +4008,31 @@ export interface components {
             ruecklage_contribution?: components["schemas"]["ExtractedValue"];
             /** @description Entnahme aus der Rücklage */
             ruecklage_spent?: components["schemas"]["ExtractedValue"];
+        };
+        /**
+         * HomeOfficeComponent
+         * @description §5.3: (days_other_workplace + days_no_other_workplace) × day_rate, at most cap.
+         */
+        HomeOfficeComponent: {
+            /** Amount */
+            amount: string;
+            /**
+             * Input Id
+             * Format: uuid
+             */
+            input_id: string;
+            /** Days Other Workplace */
+            days_other_workplace: number;
+            /** Days No Other Workplace */
+            days_no_other_workplace: number;
+            /** Day Rate */
+            day_rate: string;
+            /** Full */
+            full: string;
+            /** Cap */
+            cap: string;
+            /** Capped */
+            capped: boolean;
         };
         /** HomeOfficeFact */
         HomeOfficeFact: {
@@ -5580,31 +5765,62 @@ export interface components {
             /** @description e.g. je zur Hälfte */
             ownership_clause?: components["schemas"]["ExtractedValue"];
         };
-        /**
-         * QuestionPrefill
-         * @description One answer slot of the year with what last year leaves (§5.11). proposed_answer is the
-         *     prior answer carried, or the question's default_answer when there is none (spec §7
-         *     addition, 10 Nov 2026).
-         */
-        QuestionPrefill: {
+        /** Question */
+        Question: {
             /** Key */
             key: string;
+            /**
+             * Section
+             * @enum {string}
+             */
+            section: "einkommen" | "werbungskosten" | "haushalt" | "kinder" | "immobilie";
             /**
              * Scope
              * @enum {string}
              */
             scope: "owner" | "household" | "property";
-            /** Owner Id */
-            owner_id?: string | null;
-            /** Property Id */
-            property_id?: string | null;
-            prior_answer?: components["schemas"]["QuestionnaireAnswer"] | null;
-            /** Proposed Answer */
-            proposed_answer?: ("yes" | "no") | null;
-            /** Proposed Rows */
-            proposed_rows?: (components["schemas"]["ReturnInputCreate"] | components["schemas"]["TaxInputCreate"])[];
-            /** Reconfirm Rows */
-            reconfirm_rows?: components["schemas"]["ReturnInputFact"][];
+            /** Question De */
+            question_de: string;
+            /** Why De */
+            why_de: string;
+            /**
+             * Answer Type
+             * @enum {string}
+             */
+            answer_type: "yes_no" | "choice" | "facts";
+            /** Choices */
+            choices?: components["schemas"]["Choice"][] | null;
+            /** Targets */
+            targets?: components["schemas"]["QuestionTarget"][];
+            /**
+             * Carry Forward
+             * @enum {string}
+             */
+            carry_forward: "copy" | "reconfirm" | "none";
+            /** Default Answer */
+            default_answer?: ("yes" | "no") | null;
+        };
+        /**
+         * QuestionTarget
+         * @description What a "yes" leads to: rows of a return_input or tax_input kind, or a reminder printed on
+         *     the Gesamt card and the sheet. value_match selects the target rows by their value's coded
+         *     fields (e.g. {"item_class": "subscription"}, {"expense_class": "account_fee"}), so two
+         *     questions can share one kind (spec §7 addition, 10 Nov 2026).
+         */
+        QuestionTarget: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "return_input" | "tax_input" | "reminder";
+            /** Input Kind */
+            input_kind?: components["schemas"]["ReturnInputKind"] | components["schemas"]["TaxInputKind"] | null;
+            /** Value Match */
+            value_match?: {
+                [key: string]: string;
+            };
+            /** Reminder De */
+            reminder_de?: string | null;
         };
         /** QuestionnaireAnswer */
         QuestionnaireAnswer: {
@@ -5708,9 +5924,41 @@ export interface components {
             open?: components["schemas"]["OpenQuestion"][];
         };
         /**
+         * QuestionnaireSlot
+         * @description One slot of the viewed year: what last year leaves (QuestionPrefill) plus the slot's
+         *     current answer of this year, if any, so the screen can show it and correct it with a new
+         *     answer whose supersedes_id names it. The rows written with an answer are not linked to it;
+         *     the screen reads the slot's current rows from /return-inputs and the property's
+         *     /tax-inputs.
+         */
+        QuestionnaireSlot: {
+            /** Key */
+            key: string;
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "owner" | "household" | "property";
+            /** Owner Id */
+            owner_id?: string | null;
+            /** Property Id */
+            property_id?: string | null;
+            prior_answer?: components["schemas"]["QuestionnaireAnswer"] | null;
+            /** Proposed Answer */
+            proposed_answer?: ("yes" | "no") | null;
+            /** Proposed Rows */
+            proposed_rows?: (components["schemas"]["ReturnInputCreate"] | components["schemas"]["TaxInputCreate"])[];
+            /** Reconfirm Rows */
+            reconfirm_rows?: components["schemas"]["ReturnInputFact"][];
+            current_answer?: components["schemas"]["QuestionnaireAnswer"] | null;
+        };
+        /**
          * QuestionnaireView
-         * @description GET /tax/questionnaire: the year's slots in file order (owners in name order) and the
-         *     progress. reused_from is set when the year has no file of its own.
+         * @description GET /tax/questionnaire: the year's questions and slots in file order (owners in name
+         *     order) and the progress. reused_from is set when the year has no file of its own. questions
+         *     are the file's (texts, answer type, choices, targets, carry-forward), each once; a slot
+         *     names its question by key, so the screen renders the question from the data, never from
+         *     its own copy (phase 4b §10, principle 5).
          */
         QuestionnaireView: {
             /** Tax Year */
@@ -5719,8 +5967,10 @@ export interface components {
             version: string;
             /** Reused From */
             reused_from?: number | null;
+            /** Questions */
+            questions: components["schemas"]["Question"][];
             /** Slots */
-            slots: components["schemas"]["QuestionPrefill"][];
+            slots: components["schemas"]["QuestionnaireSlot"][];
             progress: components["schemas"]["QuestionnaireProgress"];
             /** Reminders */
             reminders: string[];
@@ -5983,6 +6233,8 @@ export interface components {
             tariff: components["schemas"]["TariffStamp"];
             /** Sources */
             sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+            /** Children */
+            children?: components["schemas"]["ChildMonthsDetail"][];
         };
         /**
          * ReturnInput
@@ -6440,6 +6692,13 @@ export interface components {
             /** Error Code */
             error_code: string | null;
         };
+        /** SumComponent */
+        SumComponent: {
+            /** Amount */
+            amount: string;
+            /** Items */
+            items?: components["schemas"]["AmountItem"][];
+        };
         /**
          * TariffStamp
          * @description Which tariff a figure was computed with (shown with every projection).
@@ -6711,6 +6970,33 @@ export interface components {
             effect?: components["schemas"]["TaxEffect"] | null;
             /** Owner Estimates */
             owner_estimates: components["schemas"]["OwnerZve"][];
+        };
+        /**
+         * TelecomComponent
+         * @description §5.5: min(bills × share, cap_monthly × months) − employer reimbursement, floored at 0.
+         */
+        TelecomComponent: {
+            /** Amount */
+            amount: string;
+            /**
+             * Input Id
+             * Format: uuid
+             */
+            input_id: string;
+            /** Bills Year */
+            bills_year: string;
+            /** Share */
+            share: string;
+            /** Share Amount */
+            share_amount: string;
+            /** Months */
+            months: number;
+            /** Cap Monthly */
+            cap_monthly: string;
+            /** Cap */
+            cap: string;
+            /** Employer Reimbursed */
+            employer_reimbursed: string;
         };
         /** TelecomFact */
         TelecomFact: {
@@ -7423,6 +7709,17 @@ export interface components {
          * @enum {string}
          */
         WarningCode: "year_end_straddle" | "afa.no_split" | "afa.cost_row_unpaid" | "afa.acquisition_cost_without_row" | "afa.purchase_price_mismatch" | "afa.useful_life_report" | "afa.movable_asset_no_evidence" | "afa.movable_asset_exceeds_building" | "limit.exceeded" | "limit.prior_year_amendment" | "limit.estimated_net" | "anschaffungsnah.performance_date_check" | "renovation.undecided" | "interest.certificate_mismatch" | "hausgeld.abrechnung_pending" | "income.other_review" | "income.pre_handover" | "income.living_area_missing" | "umlagen.mixed_terms" | "reduced_rent.no_market_rent" | "reduced_rent.prognosis_needed" | "reduced_rent.partial" | "draft.open_lines_excluded" | "draft.form_provisional" | "draft.allocation_without_property" | "archive.finanzamt_copy_needed" | "tax.travel_frequency" | "anlage_n.certificate_missing" | "anlage_n.church_mismatch" | "anlage_n.tax_class_6" | "anlage_n.periods_overlap" | "anlage_n.days_implausible" | "anlage_n.home_office_capped" | "anlage_n.too_many_routes" | "anlage_n.receipt_missing" | "anlage_n.form_provisional" | "anlage_n.payslip_gap" | "anlage_n.payslip_no_ytd" | "anlage_n.work_room_records" | "anlage_n.work_room_centre" | "anlage_n.work_room_partial" | "anlage_n.first_workplace_check" | "return.progression_provisional" | "return.benefit_possible_double" | "return.children_mismatch" | "return.kindergeld_apply" | "return.child_over_18" | "return.childcare_until_14" | "return.donation_over_cap" | "return.filing_required" | "return.questionnaire_open" | "return.not_modelled" | "questionnaire_provisional" | "tax_export.questions_open";
+        /** WerbungskostenComponents */
+        WerbungskostenComponents: {
+            commute?: components["schemas"]["CommuteComponent"] | null;
+            home_office?: components["schemas"]["HomeOfficeComponent"] | null;
+            work_room?: components["schemas"]["WorkRoomComponent"] | null;
+            equipment?: components["schemas"]["EquipmentComponent"] | null;
+            telecom?: components["schemas"]["TelecomComponent"] | null;
+            dues?: components["schemas"]["SumComponent"] | null;
+            training?: components["schemas"]["SumComponent"] | null;
+            other?: components["schemas"]["SumComponent"] | null;
+        };
         /**
          * WirtschaftsplanExtraction
          * @description Wirtschaftsplan: the monthly Hausgeld split the by_wirtschaftsplan rule reads (§8.1).
@@ -7475,6 +7772,32 @@ export interface components {
              * @default 0
              */
             total: string;
+        };
+        /**
+         * WorkRoomComponent
+         * @description §5.4: the flat rate (a twelfth per month) against the room's share of the costs.
+         */
+        WorkRoomComponent: {
+            /** Amount */
+            amount: string;
+            /**
+             * Input Id
+             * Format: uuid
+             */
+            input_id: string;
+            /** Months */
+            months: number;
+            /** Actual */
+            actual: string;
+            /** Flat */
+            flat: string;
+            /**
+             * Method
+             * @enum {string}
+             */
+            method: "actual" | "flat";
+            /** Prefer */
+            prefer?: ("flat" | "actual") | null;
         };
         /**
          * WorkRoomFact
