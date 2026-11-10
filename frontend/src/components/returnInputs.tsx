@@ -156,7 +156,13 @@ const KINDS: KindSpec[] = [
       { name: "item_class", label: "Art", type: "select", options: options(EQUIPMENT_CLASS), initial: "computer" },
       { name: "gross", label: "Preis brutto", type: "money" },
       { name: "net", label: "Preis netto laut Rechnung (optional)", type: "money_optional" },
-      { name: "bought_on", label: "Kaufdatum (auch Vorjahre)", type: "date" },
+      {
+        name: "bought_on",
+        label: "Kaufdatum (auch Vorjahre)",
+        type: "date",
+        // a change keeps the row's year (the year it counts from), so a new purchase year is a new row
+        hint: "Ein anderes Kaufjahr: den Eintrag entfernen und neu anlegen.",
+      },
       {
         name: "professional_share",
         label: "Beruflicher Anteil",
