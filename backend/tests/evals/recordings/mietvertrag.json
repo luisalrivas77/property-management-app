@@ -5,10 +5,10 @@
  "recorded_on": "2026-11-10",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "76607e0fbcb59f81",
-  "request_sha256": "583c08caf8bebfb43e77fc39ff3374047e1f6f74e4750a0d2a23d604095d4e11",
+  "prompt_version": "8569510b0727e75f",
+  "request_sha256": "0535c149170ad2d6e32db9c5c9add5880347c65f941bd90848f37e9c0d318b82",
   "message": {
-   "id": "msg_011CguHwtbicxAkKVNRLkEZx",
+   "id": "msg_011CguPsga1VkaVeK5X9e1nZ",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 5650,
+    "input_tokens": 8133,
     "output_tokens": 42,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -45,10 +45,10 @@
  },
  "extract": [
   {
-   "prompt_version": "213911d55186e77b",
-   "request_sha256": "764efdd14262a70fb79ebec2b659b5052522c07d18bf60be648a61554753eba2",
+   "prompt_version": "5a4e4a41623c9f1a",
+   "request_sha256": "45a0d3231bb8f0f0c4c174e130bb0033a3945b34f2097b03e4fd969889d71c4b",
    "message": {
-    "id": "msg_011CguHwZuKkaGdPWC6Ti81k",
+    "id": "msg_011CguPsQqiDEXAfrVwpyAJq",
     "container": null,
     "content": [
      {
@@ -73,7 +73,7 @@
      },
      {
       "citations": null,
-      "text": "\ndocument_date: ",
+      "text": " → Mietvertrag Wohnraum\ndocument_date: ",
       "type": "text"
      },
      {
@@ -268,7 +268,7 @@
         "type": "page_location"
        }
       ],
-      "text": "2.940,00 EUR",
+      "text": "2.940,00 €",
       "type": "text"
      },
      {
@@ -308,7 +308,7 @@
         "type": "page_location"
        }
       ],
-      "text": "980,00 EUR",
+      "text": "980,00 €",
       "type": "text"
      },
      {
@@ -328,7 +328,7 @@
         "type": "page_location"
        }
       ],
-      "text": "180,00 EUR",
+      "text": "180,00 €",
       "type": "text"
      },
      {
@@ -348,7 +348,7 @@
         "type": "page_location"
        }
       ],
-      "text": "70,00 EUR",
+      "text": "70,00 €",
       "type": "text"
      }
     ],
@@ -367,8 +367,8 @@
      "cache_creation_input_tokens": 0,
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
-     "input_tokens": 5681,
-     "output_tokens": 612,
+     "input_tokens": 5820,
+     "output_tokens": 618,
      "output_tokens_details": {
       "thinking_tokens": 0
      },

@@ -1,0 +1,123 @@
+{
+ "format": 1,
+ "doc": "vorauszahlungsbescheid",
+ "synthetic": false,
+ "recorded_on": "2026-11-10",
+ "sdk_version": "2.6.0",
+ "classify": {
+  "prompt_version": "8569510b0727e75f",
+  "request_sha256": "2bf97d5099a2cbd9007841e02bb1e91cd9ca6aa7b57d1d231d90a5c2867b6447",
+  "message": {
+   "id": "msg_011CguPwj3gxgtJXX7WwJNrK",
+   "container": null,
+   "content": [
+    {
+     "citations": null,
+     "text": "{\"type\":\"bescheid\",\"subtype\":\"prepayment_notice\",\"contains_tenant_data\":false,\"language\":\"de\",\"confidence\":\"high\"}",
+     "type": "text"
+    }
+   ],
+   "diagnostics": null,
+   "model": "claude-haiku-5-5",
+   "role": "assistant",
+   "stop_details": null,
+   "stop_reason": "end_turn",
+   "stop_sequence": null,
+   "type": "message",
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": "us",
+    "input_tokens": 6547,
+    "output_tokens": 49,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": "standard"
+   }
+  }
+ },
+ "extract": [
+  {
+   "prompt_version": "5a4e4a41623c9f1a",
+   "request_sha256": "6e76dbc05f3961b1b53d350a8e90d824bfa3dc28d693138852270befecf2f242",
+   "message": {
+    "id": "msg_011CguPwcuc6ZRuV4gAGY54z",
+    "container": null,
+    "content": [
+     {
+      "citations": null,
+      "text": "title: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Finanzamt Musterstadt\r\nSteuernummer 045/815/08154\r\nDatum 20.06.2027\r\nHerrn und Frau\r\nJonas und Lea Beispielmann\r\nBeispielallee 4\r\n34117 Kassel\r\nBescheid über Vorauszahlungen zur Einkommensteuer und zum Solidaritätszuschlag\r\nfür 2027 und die folgenden Kalenderjahre\r\nGrundlage: Einkommensteuerbescheid 2026 vom 14.05.2027\r\nDie Vorauszahlungen werden wie folgt festgesetzt:\r\n10.09.2027 Einkommensteuer 1.200,00 EUR\r\n10.12.2027 Einkommensteuer 1.200,00 EUR",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Vorauszahlungsbescheid Einkommensteuer",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ndocument_date: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Finanzamt Musterstadt\r\nSteuernummer 045/815/08154\r\nDatum 20.06.2027\r\nHerrn und Frau\r\nJonas und Lea Beispielmann\r\nBeispielallee 4\r\n34117 Kassel\r\nBescheid über Vorauszahlungen zur Einkommensteuer und zum Solidaritätszuschlag\r\nfür 2027 und die folgenden Kalenderjahre\r\nGrundlage: Einkommensteuerbescheid 2026 vom 14.05.2027\r\nDie Vorauszahlungen werden wie folgt festgesetzt:\r\n10.09.2027 Einkommensteuer 1.200,00 EUR\r\n10.12.2027 Einkommensteuer 1.200,00 EUR",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "20.06.2027",
+      "type": "text"
+     }
+    ],
+    "diagnostics": null,
+    "model": "claude-sonnet-5-5",
+    "role": "assistant",
+    "stop_details": null,
+    "stop_reason": "end_turn",
+    "stop_sequence": null,
+    "type": "message",
+    "usage": {
+     "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+     },
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "inference_geo": "us",
+     "input_tokens": 3629,
+     "output_tokens": 74,
+     "output_tokens_details": {
+      "thinking_tokens": 0
+     },
+     "server_tool_use": null,
+     "service_tier": "standard",
+     "speed": "standard"
+    }
+   },
+   "page_offset": 0
+  }
+ ]
+}

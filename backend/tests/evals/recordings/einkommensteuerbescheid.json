@@ -5,10 +5,10 @@
  "recorded_on": "2026-11-10",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "76607e0fbcb59f81",
-  "request_sha256": "3c05c5f546e2f8985c09887add07640678a872d99cc036e0333314e2a328a072",
+  "prompt_version": "8569510b0727e75f",
+  "request_sha256": "3505584a7f34fef00d78daa8dfccb1fb106323f72c57ae7d6c68b2c73df7b50b",
   "message": {
-   "id": "msg_011CguJ1eDdtYxjYxKJq78Nn",
+   "id": "msg_011CguPvbG77FmNoR7Uv5P7g",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 5922,
+    "input_tokens": 8405,
     "output_tokens": 53,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -45,10 +45,10 @@
  },
  "extract": [
   {
-   "prompt_version": "213911d55186e77b",
-   "request_sha256": "64d71fb8bcdf1eb1574221717a573b388caa50e32078e0ea0b7fdfac83cf1baf",
+   "prompt_version": "5a4e4a41623c9f1a",
+   "request_sha256": "ce435a5aa37d3fdb3b58ce86802b302d370677b08aa806a3862581d74f7f12b8",
    "message": {
-    "id": "msg_011CguJ1T1DAE9uqzdVGd8Ks",
+    "id": "msg_011CguPvShfKYk7izky3Qc8n",
     "container": null,
     "content": [
      {
@@ -68,7 +68,7 @@
         "type": "page_location"
        }
       ],
-      "text": "Einkommensteuerbescheid 2026",
+      "text": "Einkommensteuerbescheid",
       "type": "text"
      },
      {
@@ -187,8 +187,8 @@
      "cache_creation_input_tokens": 0,
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
-     "input_tokens": 5529,
-     "output_tokens": 200,
+     "input_tokens": 5668,
+     "output_tokens": 197,
      "output_tokens_details": {
       "thinking_tokens": 0
      },

@@ -1,0 +1,183 @@
+{
+ "format": 1,
+ "doc": "mieterselbstauskunft",
+ "synthetic": false,
+ "recorded_on": "2026-11-10",
+ "sdk_version": "2.6.0",
+ "classify": {
+  "prompt_version": "8569510b0727e75f",
+  "request_sha256": "3645e241a142d3b981a191d23c91aef9b620ca79687c9a05337d4c4292a7c2ce",
+  "message": {
+   "id": "msg_011CguPxXkp8tzHbmG1DpgFE",
+   "container": null,
+   "content": [
+    {
+     "citations": null,
+     "text": "{\"type\":\"other\",\"subtype\":\"tenant_self_disclosure\",\"contains_tenant_data\":true,\"language\":\"de\",\"confidence\":\"high\"}",
+     "type": "text"
+    }
+   ],
+   "diagnostics": null,
+   "model": "claude-haiku-5-5",
+   "role": "assistant",
+   "stop_details": null,
+   "stop_reason": "end_turn",
+   "stop_sequence": null,
+   "type": "message",
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": "us",
+    "input_tokens": 8219,
+    "output_tokens": 49,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": "standard"
+   }
+  }
+ },
+ "extract": [
+  {
+   "prompt_version": "5a4e4a41623c9f1a",
+   "request_sha256": "e9cb0df307b1749f22f1b5bf5a630bfd6210c2c8f7107148b2b6c947e02818c0",
+   "message": {
+    "id": "msg_011CguPxPhP8jJboLV6Nu8BM",
+    "container": null,
+    "content": [
+     {
+      "citations": null,
+      "text": "title: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Mieterselbstauskunft\r\nfür die Wohnung Lindenstraße 7, 10115 Berlin, WE 3, Zimmer 1\r\nVermieter: Luis Testkauf\r\nMietinteressent: Tom Interessent\r\nDerzeitige Anschrift: Ahornweg 5, 50667 Köln\r\nArbeitgeber: Beispiel Software GmbH, unbefristet seit 2022\r\nMonatliches Nettoeinkommen: 2.400,00 EUR\r\nAls Einkommensnachweis liegt die Gehaltsabrechnung Juni 2026 bei.\r\n",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Mieterselbstauskunft",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ndocument_date: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Köln, den 10.07.2026\r\nTom Interessent",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "10.07.2026",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nstreet: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Mieterselbstauskunft\r\nfür die Wohnung Lindenstraße 7, 10115 Berlin, WE 3, Zimmer 1\r\nVermieter: Luis Testkauf\r\nMietinteressent: Tom Interessent\r\nDerzeitige Anschrift: Ahornweg 5, 50667 Köln\r\nArbeitgeber: Beispiel Software GmbH, unbefristet seit 2022\r\nMonatliches Nettoeinkommen: 2.400,00 EUR\r\nAls Einkommensnachweis liegt die Gehaltsabrechnung Juni 2026 bei.\r\n",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Lindenstraße",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nhouse_number: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Mieterselbstauskunft\r\nfür die Wohnung Lindenstraße 7, 10115 Berlin, WE 3, Zimmer 1\r\nVermieter: Luis Testkauf\r\nMietinteressent: Tom Interessent\r\nDerzeitige Anschrift: Ahornweg 5, 50667 Köln\r\nArbeitgeber: Beispiel Software GmbH, unbefristet seit 2022\r\nMonatliches Nettoeinkommen: 2.400,00 EUR\r\nAls Einkommensnachweis liegt die Gehaltsabrechnung Juni 2026 bei.\r\n",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "7",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\npostal_code: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Mieterselbstauskunft\r\nfür die Wohnung Lindenstraße 7, 10115 Berlin, WE 3, Zimmer 1\r\nVermieter: Luis Testkauf\r\nMietinteressent: Tom Interessent\r\nDerzeitige Anschrift: Ahornweg 5, 50667 Köln\r\nArbeitgeber: Beispiel Software GmbH, unbefristet seit 2022\r\nMonatliches Nettoeinkommen: 2.400,00 EUR\r\nAls Einkommensnachweis liegt die Gehaltsabrechnung Juni 2026 bei.\r\n",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "10115",
+      "type": "text"
+     }
+    ],
+    "diagnostics": null,
+    "model": "claude-sonnet-5-5",
+    "role": "assistant",
+    "stop_details": null,
+    "stop_reason": "end_turn",
+    "stop_sequence": null,
+    "type": "message",
+    "usage": {
+     "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+     },
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "inference_geo": "us",
+     "input_tokens": 5382,
+     "output_tokens": 145,
+     "output_tokens_details": {
+      "thinking_tokens": 0
+     },
+     "server_tool_use": null,
+     "service_tier": "standard",
+     "speed": "standard"
+    }
+   },
+   "page_offset": 0
+  }
+ ]
+}

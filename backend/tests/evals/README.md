@@ -22,8 +22,18 @@ and an IBAN (`make_docs.BESCHEID_IDENTIFIERS`); `test_bescheid_stores_no_identif
 them the same way. Its four income lines (Summe der Einkünfte, Gesamtbetrag der Einkünfte,
 Einkommen, zu versteuerndes Einkommen) all differ, so only the right one passes. Step 6
 changed both prompts again (the classifier offers the subtype, `extract.md` gained the
-Bescheid line), so **every** recording is stale until all fourteen are recorded again
-(`record.py` without arguments); the Bescheid has no recording yet.
+Bescheid line); all fourteen were recorded again afterwards.
+
+The document catalogue (phase 2 D130, D131) adds seven documents read by the general reading
+or as a Verwaltervertrag: `verwaltervertrag`, a plain letter (`schreiben`), and the pairs the
+classifier confuses most easily: `grundbuchauszug` (it cites the Kaufvertrag),
+`vorauszahlungsbescheid` (it cites the Einkommensteuerbescheid), `depotauszug` (a securities
+account, not the rental account), `nachtrag_mietvertrag` (not the lease) and
+`mieterselbstauskunft` (an applicant's payslip attached: a tenant document, not the owners'
+payslip). The model writes the title, so a general reading checks the date and the fields its
+subtype's group asks (the flat's address, never an applicant's own). The check also requires
+`contains_tenant_data` for the tenancy documents and its absence for the owners' own papers.
+Both prompts changed, and all twenty-one were recorded again on 10 Nov 2026.
 
 - `test_recorded_evals.py` runs in CI on every push. It replays every recording in
   `recordings/` through the same code the `document_read` job uses (SDK message conversion,
@@ -37,7 +47,7 @@ Bescheid line), so **every** recording is stale until all fourteen are recorded 
   text (`recordings.synthetic_recording`, `"synthetic": true`). They are built in memory,
   never written to `recordings/`, and are not API output.
 
-## Recording (Luis, once per prompt or model change; about $0.15–0.35 for all fourteen)
+## Recording (Luis, once per prompt or model change; about $0.25–0.50 for all twenty-one)
 
 Needs the `hausbuch-evals` key (deploy/scaleway.md step 13), from your computer:
 

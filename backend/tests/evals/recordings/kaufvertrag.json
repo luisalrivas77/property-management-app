@@ -5,10 +5,10 @@
  "recorded_on": "2026-11-10",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "76607e0fbcb59f81",
-  "request_sha256": "984f7750f7752845a9c5a77fe4631f40d6540efe3909e92e998571ffc44c593c",
+  "prompt_version": "8569510b0727e75f",
+  "request_sha256": "8849f122371837058b6ce0598d14d47f2f030fd8f08456976f09cda7e92d4f38",
   "message": {
-   "id": "msg_011CguHw5KrzraPPL2Gm67B1",
+   "id": "msg_011CguPrxRisVZCRHSKXTkka",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 7376,
+    "input_tokens": 9859,
     "output_tokens": 46,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -45,10 +45,10 @@
  },
  "extract": [
   {
-   "prompt_version": "213911d55186e77b",
-   "request_sha256": "abb8cd852539041915cc5004ab715138e4a6fb3016569b475998c842ea50205d",
+   "prompt_version": "5a4e4a41623c9f1a",
+   "request_sha256": "4156fd2b7537a64451ef799cffed38f77a1ae5939d2388ba77fc47e46320b6ef",
    "message": {
-    "id": "msg_011CguHvmgyJgeH6GbnnBMY8",
+    "id": "msg_011CguPrhkBJ82kjrk62mhmz",
     "container": null,
     "content": [
      {
@@ -68,7 +68,7 @@
         "type": "page_location"
        }
       ],
-      "text": "Kaufvertrag über Wohnungseigentum",
+      "text": "Kaufvertrag Wohnungseigentum",
       "type": "text"
      },
      {
@@ -88,7 +88,7 @@
         "type": "page_location"
        }
       ],
-      "text": "12. Februar 2026",
+      "text": "12.02.2026",
       "type": "text"
      },
      {
@@ -208,7 +208,7 @@
         "type": "page_location"
        }
       ],
-      "text": "12. Februar 2026",
+      "text": "12.02.2026",
       "type": "text"
      },
      {
@@ -387,8 +387,8 @@
      "cache_creation_input_tokens": 0,
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
-     "input_tokens": 7272,
-     "output_tokens": 533,
+     "input_tokens": 7411,
+     "output_tokens": 522,
      "output_tokens_details": {
       "thinking_tokens": 0
      },

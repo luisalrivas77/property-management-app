@@ -21,7 +21,9 @@ Answer with the JSON object the response format defines, and nothing else.
 
 `subtype`, only when one of these fits, else null. Pick the line that names the document
 itself, not a document it mentions (a Grundbuchauszug that cites the Kaufvertrag is a
-`land_register_extract`). A subtype with a type in brackets is given with that type.
+`land_register_extract`). When you pick a subtype with a type in brackets, `type` must be
+that type. The household's own Lohnsteuerbescheinigung, payslip, Zinsbescheinigung,
+Wirtschaftsplan and Hausgeldabrechnung take their own `type` and subtype null.
 
 The property and its purchase:
 - `purchase_contract`: Kaufvertrag über eine Immobilie (notarial purchase contract)
@@ -78,7 +80,7 @@ Income tax:
 - `benefit_notice` (bescheid): Elterngeld-, Krankengeld-, Arbeitslosengeldbescheid (Lohnersatzleistungen)
 - `child_benefit_notice` (bescheid): Kindergeldbescheid
 - `employment_contract` (contract): Arbeitsvertrag
-- `employer_certificate` (letter): Arbeitgeberbescheinigung (Homeoffice, Fahrtkosten, Reisekosten)
+- `employer_certificate` (letter): Arbeitgeberbescheinigung (Homeoffice, Fahrtkosten, Reisekosten), a letter from the employer; never the Lohnsteuerbescheinigung
 - `work_expense_invoice` (invoice): Rechnung für Arbeitsmittel oder Fortbildung
 
 Household finances:

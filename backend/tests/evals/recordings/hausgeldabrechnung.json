@@ -5,10 +5,10 @@
  "recorded_on": "2026-11-10",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "76607e0fbcb59f81",
-  "request_sha256": "db69ad7a5f1e238fa555a7ea4e9dda2785789cbf7a4dd24af4e7cecda126b948",
+  "prompt_version": "8569510b0727e75f",
+  "request_sha256": "b4ea7ffb72d19f69231c67841dd2d56e54f773838a355bb2fc168d7faf0f2317",
   "message": {
-   "id": "msg_011CguHzSEnhTBzVUBUYfpgz",
+   "id": "msg_011CguPua4u2m6c9SuzbNMbY",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 5743,
+    "input_tokens": 8226,
     "output_tokens": 49,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -45,10 +45,10 @@
  },
  "extract": [
   {
-   "prompt_version": "213911d55186e77b",
-   "request_sha256": "1cc2bafe29239ce94de5ae9efc62e3838ea48934ef076e42b51eb3759072ec43",
+   "prompt_version": "5a4e4a41623c9f1a",
+   "request_sha256": "ec33bb2e427e6905386599bdaeaaaacc24f8fb0fe8ac9dd58c20a603d8d97bd4",
    "message": {
-    "id": "msg_011CguHzErBMdgUthBzNfyQZ",
+    "id": "msg_011CguPuQShu3cP3zZvBPpoc",
     "container": null,
     "content": [
      {
@@ -68,7 +68,7 @@
         "type": "page_location"
        }
       ],
-      "text": "Hausgeldabrechnung Einzelabrechnung WE 3",
+      "text": "Hausgeldabrechnung Einzelabrechnung",
       "type": "text"
      },
      {
@@ -267,8 +267,8 @@
      "cache_creation_input_tokens": 0,
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
-     "input_tokens": 5388,
-     "output_tokens": 335,
+     "input_tokens": 5527,
+     "output_tokens": 331,
      "output_tokens_details": {
       "thinking_tokens": 0
      },

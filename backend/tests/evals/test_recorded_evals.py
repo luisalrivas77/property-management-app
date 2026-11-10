@@ -40,6 +40,16 @@ from hausbuch.schemas.extraction import EXTRACTION_MODELS, value_kind
 from hausbuch.schemas.proposal import PrefillContext
 
 SETTINGS = eval_settings()
+# Documents about the owners only, which must never set contains_tenant_data (classify.md).
+OWNERS_ONLY = (
+    "lohnsteuerbescheinigung",
+    "gehaltsabrechnung",
+    "einkommensteuerbescheid",
+    "vorauszahlungsbescheid",
+    "depotauszug",
+    "grundbuchauszug",
+    "verwaltervertrag",
+)
 
 
 def _real_recordings() -> list:
@@ -52,8 +62,13 @@ def _check(doc: Doc, recording: dict) -> None:
     assert result.classification.type.value == doc.type
     assert (result.classification.subtype and result.classification.subtype.value) == doc.subtype
     assert result.kind == ExtractionKind(doc.kind)
-    # the tenant gate's input (D131: every tenancy-group document sets it)
-    assert result.classification.contains_tenant_data is doc.contains_tenant_data
+    # The tenant gate's input: every tenancy-group document sets it (D131), and the owners'
+    # own papers do not. A rental-account statement may set it (its rent lines are a tenant's
+    # payments), so it is not checked either way.
+    if doc.contains_tenant_data:
+        assert result.classification.contains_tenant_data is True
+    if doc.name in OWNERS_ONLY:
+        assert result.classification.contains_tenant_data is False
     wrong = {
         name: (result.values[name].value, expected)
         for name, expected in doc.expected.items()
