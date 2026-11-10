@@ -33,6 +33,7 @@ from hausbuch.schemas.tax import DraftFacts
 from .errors import NotFoundError, RuleViolationError
 from .income_inputs import income_facts, owner_profiles
 from .loans import list_loans
+from .return_inputs import tax_contexts
 from .scenarios import SCENARIO, default_scenario, get_scenario
 from .tax import draft_facts
 
@@ -49,7 +50,9 @@ def performance_actuals(conn: Connection, property_id: UUID, *, today: date) -> 
     first rule set raises RuleError projection.no_rule_set, one before the first tariff file
     tariff.no_file (§8 error codes); the projection raises the same."""
     facts = _facts(conn, property_id, today)
-    years = actual_years(facts, today, owner_profiles(conn), income_facts(conn))
+    years = actual_years(
+        facts, today, owner_profiles(conn), income_facts(conn), contexts=tax_contexts(conn)
+    )
     return Actuals(property_id=property_id, years=years)
 
 
@@ -115,4 +118,5 @@ def performance_projection(
         today,
         loans,
         scenario_id=used_id,
+        contexts=tax_contexts(conn),
     )

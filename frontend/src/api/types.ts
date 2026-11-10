@@ -97,6 +97,124 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/return-inputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Return Inputs List
+         * @description The current rows (not superseded, not withdrawn), oldest first; include_history=true
+         *     adds the rest. tax_year Y lists the yearly kinds' rows of Y and the spanning kinds' (child,
+         *     work_equipment) of Y or earlier (D97); owner_id and kind narrow the list.
+         */
+        get: operations["return_inputs_list_api_return_inputs_get"];
+        put?: never;
+        /**
+         * Return Input Create
+         * @description One new row and its event (owner.return_input_recorded, or
+         *     workspace.return_input_recorded for the household kinds). 422 return_input.scope_invalid,
+         *     return_input.not_current, return_input.carried_from_invalid,
+         *     return_input.work_room_conflict, return.childcare_age, return.household_services_cash,
+         *     anlage_n.useful_life_missing, tax.no_rule_set (a yearly row before 2026); 404 for an
+         *     unknown owner, document or referenced row.
+         */
+        post: operations["return_input_create_api_return_inputs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/owners/{owner_id}/anlage-n": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Owner Anlage N
+         * @description The owner's Anlage N draft, computed now. 422 tax.no_rule_set before 2026,
+         *     anlage_n.no_pay without any pay source; 404 for an unknown owner.
+         */
+        get: operations["owner_anlage_n_api_owners__owner_id__anlage_n_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tax/return-estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tax Return Estimate
+         * @description The household's whole return (refund or back-payment), computed now from every owner's
+         *     rows, the household rows, every property's Anlage V result and the year's questionnaire.
+         *     422 tax.no_rule_set before 2026.
+         */
+        get: operations["tax_return_estimate_api_tax_return_estimate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tax/questionnaire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tax Questionnaire
+         * @description Every slot of the year in file order, pre-filled from the year before (nothing is
+         *     written), and the progress. 422 tax.no_rule_set before the first questionnaire.
+         */
+        get: operations["tax_questionnaire_api_tax_questionnaire_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tax/questionnaire/answers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tax Questionnaire Answer
+         * @description One answer, its event (workspace.questionnaire_answered) and the return_input and
+         *     tax_input rows it brings, all or nothing. 422 questionnaire.unknown_key,
+         *     questionnaire.scope_invalid, questionnaire.not_current, and each row's own codes; 404 for
+         *     an unknown owner, property or referenced row.
+         */
+        post: operations["tax_questionnaire_answer_api_tax_questionnaire_answers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/properties": {
         parameters: {
             query?: never;
@@ -1381,7 +1499,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Inbox List */
+        /**
+         * Inbox List
+         * @description Plus, from 1 January, last year's open Jahresfragen (phase 4b D110).
+         */
         get: operations["inbox_list_api_inbox_get"];
         put?: never;
         post?: never;
@@ -2428,6 +2549,54 @@ export interface components {
          * @enum {string}
          */
         AllocationStatus: "proposed" | "confirmed" | "superseded";
+        /**
+         * AnlageNDraft
+         * @description One owner's Anlage N for one year (§5.6). status: certified (from certificates),
+         *     estimate (payslip projection or expected pay), none (no pay source).
+         */
+        AnlageNDraft: {
+            /**
+             * Owner Id
+             * Format: uuid
+             */
+            owner_id: string;
+            /** Tax Year */
+            tax_year: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "certified" | "estimate" | "none";
+            /** Gross Source */
+            gross_source?: ("certificate" | "payslip" | "expected") | null;
+            /** Lines */
+            lines?: components["schemas"]["DraftLine"][];
+            /** Gross */
+            gross: string;
+            /** Wk Itemised */
+            wk_itemised: string;
+            /**
+             * Wk Union
+             * @default 0
+             */
+            wk_union: string;
+            /** Wk Allowance */
+            wk_allowance: string;
+            /** Wk Applied */
+            wk_applied: string;
+            /** Result */
+            result: string;
+            /**
+             * Replacement Benefits
+             * @default 0
+             */
+            replacement_benefits: string;
+            /** Warnings */
+            warnings?: components["schemas"]["DraftWarning"][];
+            /** Sources */
+            sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+            form: components["schemas"]["RuleSetStamp"];
+        };
         /** AnlageVDraft */
         AnlageVDraft: {
             /**
@@ -2519,6 +2688,50 @@ export interface components {
             skipped: boolean;
             /** Entity Id */
             entity_id?: string | null;
+        };
+        /**
+         * AssessedTax
+         * @description §5.10: the tax as assessed. est = est_with + kindergeld when the allowances win, else
+         *     est_without; Soli and church tax on est_with minus the §35a credit (§51a Abs. 2 S. 1).
+         */
+        AssessedTax: {
+            /** Zve */
+            zve: string;
+            /** Zve After Allowances */
+            zve_after_allowances: string;
+            /** Est Without */
+            est_without: string;
+            /** Est With */
+            est_with: string;
+            /** Est */
+            est: string;
+            /**
+             * Credit 35A
+             * @default 0
+             */
+            credit_35a: string;
+            /** Est Final */
+            est_final: string;
+            progression?: components["schemas"]["ProgressionInfo"] | null;
+            children?: components["schemas"]["ChildrenResult"] | null;
+            /** Soli */
+            soli: string;
+            /** Church */
+            church: string;
+            /** Total */
+            total: string;
+        };
+        /** AssociationFact */
+        AssociationFact: {
+            /** Name */
+            name: string;
+            /** Amount */
+            amount: string;
+            /**
+             * Is Union
+             * @default false
+             */
+            is_union: boolean;
         };
         /**
          * Assumption
@@ -2705,6 +2918,86 @@ export interface components {
             born_on: string;
             /** Kindergeld From */
             kindergeld_from?: string | null;
+        };
+        /** ChildcareFact */
+        ChildcareFact: {
+            /**
+             * Child Id
+             * Format: uuid
+             */
+            child_id: string;
+            /** Amount */
+            amount: string;
+            /** Paid To Account */
+            paid_to_account: boolean;
+        };
+        /** ChildrenResult */
+        ChildrenResult: {
+            /** Months */
+            months: number;
+            /** Kindergeld */
+            kindergeld: string;
+            /** Allowances */
+            allowances: string;
+            /** Saving */
+            saving: string;
+            /**
+             * Favourable
+             * @enum {string}
+             */
+            favourable: "kindergeld" | "allowances";
+        };
+        /**
+         * CommuteFact
+         * @description One route for one period (§5.2). km_car + km_collective + km_other = km; a decimal
+         *     distance typed as a string ("25.9") is floored to full km.
+         */
+        CommuteFact: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "first_workplace" | "collection_point";
+            /** Workplace Label */
+            workplace_label: string;
+            /**
+             * Period From
+             * Format: date
+             */
+            period_from: string;
+            /**
+             * Period To
+             * Format: date
+             */
+            period_to: string;
+            /** Days Per Week */
+            days_per_week: number;
+            /**
+             * Absent Days
+             * @default 0
+             */
+            absent_days: number;
+            /** Days */
+            days: number;
+            /** Km */
+            km: number;
+            /**
+             * Km Car
+             * @default 0
+             */
+            km_car: number;
+            /**
+             * Km Collective
+             * @default 0
+             */
+            km_collective: number;
+            /**
+             * Km Other
+             * @default 0
+             */
+            km_other: number;
+            /** Public Transport Costs */
+            public_transport_costs?: string | null;
         };
         /**
          * ConfirmAllocationsBody
@@ -3236,6 +3529,39 @@ export interface components {
          * @enum {string}
          */
         EntityType: "owner" | "property" | "unit" | "tenant" | "tenancy" | "loan" | "document" | "user" | "proposal" | "account" | "statement" | "transaction" | "rule" | "workspace";
+        /**
+         * EquipmentFact
+         * @description One work item or subscription (D108). bought_on may lie before the tax year.
+         */
+        EquipmentFact: {
+            /** Label */
+            label: string;
+            /**
+             * Item Class
+             * @enum {string}
+             */
+            item_class: "computer" | "software" | "phone" | "furniture" | "tools" | "subscription" | "other";
+            /** Gross */
+            gross: string;
+            /** Net */
+            net?: string | null;
+            /**
+             * Bought On
+             * Format: date
+             */
+            bought_on: string;
+            /** Disposed On */
+            disposed_on?: string | null;
+            /**
+             * @default {
+             *       "numerator": 1,
+             *       "denominator": 1
+             *     }
+             */
+            professional_share: components["schemas"]["Fraction"];
+            /** Useful Life Months */
+            useful_life_months?: number | null;
+        };
         /** ErasureBody */
         ErasureBody: {
             /**
@@ -3403,6 +3729,23 @@ export interface components {
             type: string;
         };
         /**
+         * FilingCheck
+         * @description §46 Abs. 2 EStG. deadline: 31 July of the following year (§149 Abs. 2 S. 1 AO), moved
+         *     to the next working day when that is a Saturday, Sunday or a nationwide public holiday
+         *     (§108 Abs. 3 AO); computed by rule, never typed. Regional holidays are not considered.
+         */
+        FilingCheck: {
+            /** Required */
+            required: boolean;
+            /** Reasons */
+            reasons?: string[];
+            /**
+             * Deadline
+             * Format: date
+             */
+            deadline: string;
+        };
+        /**
          * FormStatus
          * @description Whether a form mapping is the year's published form or a copy of an earlier one (§4.3).
          * @enum {string}
@@ -3506,6 +3849,36 @@ export interface components {
             /** @description Entnahme aus der Rücklage */
             ruecklage_spent?: components["schemas"]["ExtractedValue"];
         };
+        /** HomeOfficeFact */
+        HomeOfficeFact: {
+            /**
+             * Days Other Workplace
+             * @default 0
+             */
+            days_other_workplace: number;
+            /**
+             * Days No Other Workplace
+             * @default 0
+             */
+            days_no_other_workplace: number;
+        };
+        /** HouseholdServicesFact */
+        HouseholdServicesFact: {
+            /**
+             * Service Class
+             * @enum {string}
+             */
+            service_class: "handwerker" | "haushaltsnah" | "minijob";
+            /** Labour Cost */
+            labour_cost: string;
+            /** Paid To Account */
+            paid_to_account: boolean;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "own_invoice" | "nebenkostenabrechnung";
+        };
         /**
          * HouseholdTaxContext
          * @description What the assessed tax needs beyond the zvE (phase 4b D98, D109, D112), built by
@@ -3577,13 +3950,15 @@ export interface components {
             possible_duplicate_id?: string | null;
             /** Transaction Id */
             transaction_id?: string | null;
+            /** Tax Year */
+            tax_year?: number | null;
         };
         /**
          * InboxItemKind
          * @description GET /inbox (§8.3): one list, newest first.
          * @enum {string}
          */
-        InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched";
+        InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched" | "questionnaire_open";
         /**
          * IncomeInput
          * @description API read model (the table names its timestamp recorded_at, so not Record).
@@ -4204,6 +4579,34 @@ export interface components {
             has_passkey: boolean;
         };
         /**
+         * MissingItem
+         * @description Something the estimate still waits for: an open question slot, a document, or a
+         *     benefit letter answered "yes, pending".
+         */
+        MissingItem: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "question" | "document" | "benefit_letter";
+            /** Key */
+            key?: string | null;
+            /** Owner Id */
+            owner_id?: string | null;
+            /** Property Id */
+            property_id?: string | null;
+        };
+        /** MonthAndYtd */
+        MonthAndYtd: {
+            /**
+             * Month
+             * @default 0
+             */
+            month: string;
+            /** Ytd */
+            ytd?: string | null;
+        };
+        /**
          * MovableAfaLine
          * @description wk.afa_movable for one asset and tax year (D80): linear over useful_life_years from the
          *     AfA start month of from_year (§7 Abs. 1 EStG), pro rata by the months owned; the last year
@@ -4344,12 +4747,43 @@ export interface components {
              */
             sum: string;
         };
+        /** OpenQuestion */
+        OpenQuestion: {
+            /** Key */
+            key: string;
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "owner" | "household" | "property";
+            /** Owner Id */
+            owner_id?: string | null;
+            /** Property Id */
+            property_id?: string | null;
+        };
         /**
          * OperatingCostsTerms
          * @description How a lease agrees the running costs (tenancy.operating_costs_terms, 0013; phase 3 D72).
          * @enum {string}
          */
         OperatingCostsTerms: "prepayment" | "flat_rate" | "included";
+        /** OtherExpenseFact */
+        OtherExpenseFact: {
+            /**
+             * Expense Class
+             * @enum {string}
+             */
+            expense_class: "account_fee" | "application" | "ferry_flight" | "other";
+            /** Label */
+            label: string;
+            /** Amount */
+            amount?: string | null;
+        };
+        /** OtherInsuranceFact */
+        OtherInsuranceFact: {
+            /** Amount */
+            amount: string;
+        };
         /** Owner */
         Owner: {
             /**
@@ -4412,6 +4846,21 @@ export interface components {
             gain: string;
             /** Below Freigrenze */
             below_freigrenze: boolean;
+        };
+        /** OwnerIncome */
+        OwnerIncome: {
+            /**
+             * Owner Id
+             * Format: uuid
+             */
+            owner_id: string;
+            /** Result */
+            result: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "certified" | "estimate" | "none";
         };
         /** OwnerPatch */
         OwnerPatch: {
@@ -4525,6 +4974,83 @@ export interface components {
             };
             /** Label */
             label: string;
+        };
+        /**
+         * Payslip
+         * @description One month's payslip of one employer (D105). months_remaining_paid defaults to
+         *     12 − month in the review; fewer when pay stops before December.
+         */
+        Payslip: {
+            /**
+             * Period Month
+             * Format: date
+             */
+            period_month: string;
+            /** Employer */
+            employer: string;
+            /** Tax Class */
+            tax_class: number;
+            /**
+             * Tax Class Factor
+             * @default false
+             */
+            tax_class_factor: boolean;
+            /** Months Remaining Paid */
+            months_remaining_paid: number;
+            /**
+             * @default {
+             *       "month": "0"
+             *     }
+             */
+            gross: components["schemas"]["MonthAndYtd"];
+            /**
+             * @default {
+             *       "month": "0"
+             *     }
+             */
+            income_tax: components["schemas"]["MonthAndYtd"];
+            /**
+             * @default {
+             *       "month": "0"
+             *     }
+             */
+            soli: components["schemas"]["MonthAndYtd"];
+            /**
+             * @default {
+             *       "month": "0"
+             *     }
+             */
+            church_tax: components["schemas"]["MonthAndYtd"];
+            /**
+             * @default {
+             *       "month": "0"
+             *     }
+             */
+            pension_employee: components["schemas"]["MonthAndYtd"];
+            /**
+             * @default {
+             *       "month": "0"
+             *     }
+             */
+            health_employee: components["schemas"]["MonthAndYtd"];
+            /**
+             * @default {
+             *       "month": "0"
+             *     }
+             */
+            care_employee: components["schemas"]["MonthAndYtd"];
+            /**
+             * @default {
+             *       "month": "0"
+             *     }
+             */
+            unemployment_employee: components["schemas"]["MonthAndYtd"];
+            /**
+             * @default {
+             *       "month": "0"
+             *     }
+             */
+            tax_free_benefits: components["schemas"]["MonthAndYtd"];
         };
         /**
          * PayslipExtraction
@@ -4718,6 +5244,24 @@ export interface components {
              */
             share: components["schemas"]["Fraction"];
         };
+        /**
+         * ProgressionInfo
+         * @description §32b (D102): the special rate is income_tax(zvE + L) ÷ (zvE + L), truncated to four
+         *     decimals of the percentage (six of the fraction, H 32b EStH 2025 Fall B: 6,8648 %), and
+         *     applied to the zvE with the tax floored to whole euros.
+         */
+        ProgressionInfo: {
+            /** Benefits */
+            benefits: string;
+            /** Allowance Unused */
+            allowance_unused: string;
+            /** Rate */
+            rate: string;
+            /** Fictitious Zve */
+            fictitious_zve: string;
+            /** Fictitious Tax */
+            fictitious_tax: string;
+        };
         /** Projection */
         Projection: {
             /**
@@ -4805,6 +5349,16 @@ export interface components {
             purchase_price: string;
             /** Living Area M2 */
             living_area_m2?: string | null;
+        };
+        /** PropertyIncome */
+        PropertyIncome: {
+            /**
+             * Property Id
+             * Format: uuid
+             */
+            property_id: string;
+            /** Result */
+            result: string;
         };
         /**
          * PropertyKind
@@ -5027,6 +5581,151 @@ export interface components {
             ownership_clause?: components["schemas"]["ExtractedValue"];
         };
         /**
+         * QuestionPrefill
+         * @description One answer slot of the year with what last year leaves (§5.11). proposed_answer is the
+         *     prior answer carried, or the question's default_answer when there is none (spec §7
+         *     addition, 10 Nov 2026).
+         */
+        QuestionPrefill: {
+            /** Key */
+            key: string;
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "owner" | "household" | "property";
+            /** Owner Id */
+            owner_id?: string | null;
+            /** Property Id */
+            property_id?: string | null;
+            prior_answer?: components["schemas"]["QuestionnaireAnswer"] | null;
+            /** Proposed Answer */
+            proposed_answer?: ("yes" | "no") | null;
+            /** Proposed Rows */
+            proposed_rows?: (components["schemas"]["ReturnInputCreate"] | components["schemas"]["TaxInputCreate"])[];
+            /** Reconfirm Rows */
+            reconfirm_rows?: components["schemas"]["ReturnInputFact"][];
+        };
+        /** QuestionnaireAnswer */
+        QuestionnaireAnswer: {
+            /** Question Key */
+            question_key: string;
+            /** Tax Year */
+            tax_year: number;
+            /** Owner Id */
+            owner_id?: string | null;
+            /** Property Id */
+            property_id?: string | null;
+            answer: components["schemas"]["QuestionnaireAnswerValue"];
+            /** Choice */
+            choice?: string | null;
+            /** Supersedes Id */
+            supersedes_id?: string | null;
+            /** Carried From Id */
+            carried_from_id?: string | null;
+            /**
+             * Withdrawn
+             * @default false
+             */
+            withdrawn: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+            /** Recorded By */
+            recorded_by?: string | null;
+        };
+        /**
+         * QuestionnaireAnswerBody
+         * @description POST /tax/questionnaire/answers: the answer and the rows it brings, written together.
+         */
+        QuestionnaireAnswerBody: {
+            answer: components["schemas"]["QuestionnaireAnswerCreate"];
+            /**
+             * Return Inputs
+             * @default []
+             */
+            return_inputs: components["schemas"]["ReturnInputCreate"][];
+            /**
+             * Tax Inputs
+             * @default []
+             */
+            tax_inputs: components["schemas"]["TaxInputCreate"][];
+        };
+        /**
+         * QuestionnaireAnswerCreate
+         * @description One answer (D110). No free-text column: choice is a coded option. The question's scope
+         *     decides which id is set (owner. → owner_id, property. → property_id, household. → none);
+         *     the service checks the key against the year's file.
+         */
+        QuestionnaireAnswerCreate: {
+            /** Question Key */
+            question_key: string;
+            /** Tax Year */
+            tax_year: number;
+            /** Owner Id */
+            owner_id?: string | null;
+            /** Property Id */
+            property_id?: string | null;
+            answer: components["schemas"]["QuestionnaireAnswerValue"];
+            /** Choice */
+            choice?: string | null;
+            /** Supersedes Id */
+            supersedes_id?: string | null;
+            /** Carried From Id */
+            carried_from_id?: string | null;
+            /**
+             * Withdrawn
+             * @default false
+             */
+            withdrawn: boolean;
+        };
+        /**
+         * QuestionnaireAnswerValue
+         * @description questionnaire_answer.answer (migration 0018, D110). not_applicable is recorded too, so
+         *     "answered no" differs from "not asked yet".
+         * @enum {string}
+         */
+        QuestionnaireAnswerValue: "yes" | "no" | "not_applicable";
+        /** QuestionnaireProgress */
+        QuestionnaireProgress: {
+            /** Answered */
+            answered: number;
+            /** Total */
+            total: number;
+            /** Open */
+            open?: components["schemas"]["OpenQuestion"][];
+        };
+        /**
+         * QuestionnaireView
+         * @description GET /tax/questionnaire: the year's slots in file order (owners in name order) and the
+         *     progress. reused_from is set when the year has no file of its own.
+         */
+        QuestionnaireView: {
+            /** Tax Year */
+            tax_year: number;
+            /** Version */
+            version: string;
+            /** Reused From */
+            reused_from?: number | null;
+            /** Slots */
+            slots: components["schemas"]["QuestionPrefill"][];
+            progress: components["schemas"]["QuestionnaireProgress"];
+            /** Reminders */
+            reminders: string[];
+        };
+        /**
          * ReducedRentCheck
          * @description §5.8 per Wohnung, monthly figures. market_warm = cold_rent_per_m2 × area + the year's
          *     umlagefähige costs ÷ months owned. ratio_percent: agreed ÷ market_warm, one decimal; the
@@ -5184,6 +5883,23 @@ export interface components {
             recorded_at: string;
         };
         /**
+         * ReplacementFact
+         * @description A benefit paid by an authority (D102); the employer's Zuschuss is on the certificate.
+         */
+        ReplacementFact: {
+            /**
+             * Benefit
+             * @enum {string}
+             */
+            benefit: "elterngeld" | "mutterschaftsgeld" | "krankengeld" | "arbeitslosengeld" | "kurzarbeitergeld" | "other";
+            /** Amount */
+            amount: string;
+            /** Period From */
+            period_from?: string | null;
+            /** Period To */
+            period_to?: string | null;
+        };
+        /**
          * RequirementCode
          * @description One kind of paperwork the return needs. German labels and hints live in the frontend.
          * @enum {string}
@@ -5210,6 +5926,173 @@ export interface components {
             retain_until?: string | null;
             hold?: components["schemas"]["RetentionHold"] | null;
         };
+        /**
+         * ReturnEstimate
+         * @description The whole-return estimate (§5.8, D101). result = assessed.total − withheld.total:
+         *     positive is a back-payment, negative a refund.
+         */
+        ReturnEstimate: {
+            /** Tax Year */
+            tax_year: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "estimate" | "certified";
+            /** Income N */
+            income_n?: components["schemas"]["OwnerIncome"][];
+            /** Income V */
+            income_v?: components["schemas"]["PropertyIncome"][];
+            /** Total Income */
+            total_income: string;
+            /** Vorsorge Total */
+            vorsorge_total: string;
+            /**
+             * Church Tax Paid
+             * @default 0
+             */
+            church_tax_paid: string;
+            /**
+             * Donations
+             * @default 0
+             */
+            donations: string;
+            /**
+             * Childcare
+             * @default 0
+             */
+            childcare: string;
+            /** Special Expenses */
+            special_expenses: string;
+            /** Zve */
+            zve: string;
+            assessed: components["schemas"]["AssessedTax"];
+            withheld: components["schemas"]["Withheld"];
+            /** Result */
+            result: string;
+            filing_required: components["schemas"]["FilingCheck"];
+            questionnaire: components["schemas"]["QuestionnaireProgress"];
+            /** Missing */
+            missing?: components["schemas"]["MissingItem"][];
+            /** Not Modelled */
+            not_modelled?: string[];
+            /** Reminders */
+            reminders?: string[];
+            /** Warnings */
+            warnings?: components["schemas"]["DraftWarning"][];
+            tariff: components["schemas"]["TariffStamp"];
+            /** Sources */
+            sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+        };
+        /**
+         * ReturnInput
+         * @description API read model.
+         */
+        ReturnInput: {
+            /** Owner Id */
+            owner_id?: string | null;
+            kind: components["schemas"]["ReturnInputKind"];
+            /** Tax Year */
+            tax_year: number;
+            /** Document Id */
+            document_id?: string | null;
+            /** Value */
+            value: components["schemas"]["WageCertificate"] | components["schemas"]["Payslip"] | components["schemas"]["CommuteFact"] | components["schemas"]["HomeOfficeFact"] | components["schemas"]["WorkRoomFact"] | components["schemas"]["EquipmentFact"] | components["schemas"]["TelecomFact"] | components["schemas"]["AssociationFact"] | components["schemas"]["TrainingFact"] | components["schemas"]["OtherExpenseFact"] | components["schemas"]["OtherInsuranceFact"] | components["schemas"]["ReplacementFact"] | components["schemas"]["VorsorgeOverride"] | components["schemas"]["ChildFact"] | components["schemas"]["ChildcareFact"] | components["schemas"]["HouseholdServicesFact"] | components["schemas"]["SpecialExpenseFact"];
+            /** Note */
+            note?: string | null;
+            /** Supersedes Id */
+            supersedes_id?: string | null;
+            /** Carried From Id */
+            carried_from_id?: string | null;
+            /**
+             * Withdrawn
+             * @default false
+             */
+            withdrawn: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+            /** Recorded By */
+            recorded_by?: string | null;
+        };
+        /**
+         * ReturnInputCreate
+         * @description One return input row as written. A correction is a new row with supersedes_id (a current
+         *     row of the same kind and year, and the same owner); withdrawn = true ends it. Rows are
+         *     never changed.
+         */
+        ReturnInputCreate: {
+            /** Owner Id */
+            owner_id?: string | null;
+            kind: components["schemas"]["ReturnInputKind"];
+            /** Tax Year */
+            tax_year: number;
+            /** Document Id */
+            document_id?: string | null;
+            /** Value */
+            value: components["schemas"]["WageCertificate"] | components["schemas"]["Payslip"] | components["schemas"]["CommuteFact"] | components["schemas"]["HomeOfficeFact"] | components["schemas"]["WorkRoomFact"] | components["schemas"]["EquipmentFact"] | components["schemas"]["TelecomFact"] | components["schemas"]["AssociationFact"] | components["schemas"]["TrainingFact"] | components["schemas"]["OtherExpenseFact"] | components["schemas"]["OtherInsuranceFact"] | components["schemas"]["ReplacementFact"] | components["schemas"]["VorsorgeOverride"] | components["schemas"]["ChildFact"] | components["schemas"]["ChildcareFact"] | components["schemas"]["HouseholdServicesFact"] | components["schemas"]["SpecialExpenseFact"];
+            /** Note */
+            note?: string | null;
+            /** Supersedes Id */
+            supersedes_id?: string | null;
+            /** Carried From Id */
+            carried_from_id?: string | null;
+            /**
+             * Withdrawn
+             * @default false
+             */
+            withdrawn: boolean;
+        };
+        /**
+         * ReturnInputFact
+         * @description A stored row as the rules see it (every row of the history, as TaxInputFact).
+         */
+        ReturnInputFact: {
+            /** Owner Id */
+            owner_id?: string | null;
+            kind: components["schemas"]["ReturnInputKind"];
+            /** Tax Year */
+            tax_year: number;
+            /** Document Id */
+            document_id?: string | null;
+            /** Value */
+            value: components["schemas"]["WageCertificate"] | components["schemas"]["Payslip"] | components["schemas"]["CommuteFact"] | components["schemas"]["HomeOfficeFact"] | components["schemas"]["WorkRoomFact"] | components["schemas"]["EquipmentFact"] | components["schemas"]["TelecomFact"] | components["schemas"]["AssociationFact"] | components["schemas"]["TrainingFact"] | components["schemas"]["OtherExpenseFact"] | components["schemas"]["OtherInsuranceFact"] | components["schemas"]["ReplacementFact"] | components["schemas"]["VorsorgeOverride"] | components["schemas"]["ChildFact"] | components["schemas"]["ChildcareFact"] | components["schemas"]["HouseholdServicesFact"] | components["schemas"]["SpecialExpenseFact"];
+            /** Note */
+            note?: string | null;
+            /** Supersedes Id */
+            supersedes_id?: string | null;
+            /** Carried From Id */
+            carried_from_id?: string | null;
+            /**
+             * Withdrawn
+             * @default false
+             */
+            withdrawn: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
+        /**
+         * ReturnInputKind
+         * @description return_input.kind (migration 0018, phase 4b D97). Owner-scoped unless listed in
+         *     HOUSEHOLD_KINDS; read per year unless listed in SPANNING_KINDS (D110).
+         * @enum {string}
+         */
+        ReturnInputKind: "wage_certificate" | "payslip" | "commute" | "home_office" | "work_room" | "work_equipment" | "telecom" | "professional_association" | "training" | "other_expense" | "other_insurance" | "replacement_income" | "vorsorge_override" | "child" | "childcare_cost" | "household_services" | "special_expense";
         /** RoomRent */
         RoomRent: {
             /**
@@ -5441,6 +6324,18 @@ export interface components {
              */
             idle_expires_at: string;
         };
+        /** SpecialExpenseFact */
+        SpecialExpenseFact: {
+            /**
+             * Expense Class
+             * @constant
+             */
+            expense_class: "donation";
+            /** Amount */
+            amount: string;
+            /** Recipient Label */
+            recipient_label: string;
+        };
         /**
          * SplitMethod
          * @description matching_rule.split_method (D25): how a rule splits, never how much.
@@ -5560,10 +6455,17 @@ export interface components {
         /**
          * TaxBreakdown
          * @description T(zvE) of D82: Einkommensteuer (splitting, whole euros), Soli and church tax (cents).
+         *     Under a phase 4b household context (D98) it is the assessed tax: est after the
+         *     Günstigerprüfung, less the §35a credit (credit_35a, 0 on the plain tariff).
          */
         TaxBreakdown: {
             /** Est */
             est: string;
+            /**
+             * Credit 35A
+             * @default 0
+             */
+            credit_35a: string;
             /** Soli */
             soli: string;
             /** Church */
@@ -5809,6 +6711,21 @@ export interface components {
             effect?: components["schemas"]["TaxEffect"] | null;
             /** Owner Estimates */
             owner_estimates: components["schemas"]["OwnerZve"][];
+        };
+        /** TelecomFact */
+        TelecomFact: {
+            /** Bills Year */
+            bills_year: string;
+            /**
+             * Months
+             * @default 12
+             */
+            months: number;
+            /**
+             * Employer Reimbursed
+             * @default 0
+             */
+            employer_reimbursed: string;
         };
         /** Tenancy */
         Tenancy: {
@@ -6063,6 +6980,13 @@ export interface components {
             /** Sources */
             sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
         };
+        /** TrainingFact */
+        TrainingFact: {
+            /** Label */
+            label: string;
+            /** Amount */
+            amount: string;
+        };
         /**
          * Transaction
          * @description Read shape. The counterparty IBAN is shown masked only. allocation_status and
@@ -6280,6 +7204,148 @@ export interface components {
             /** Years */
             years: number;
         };
+        /** VorsorgeOverride */
+        VorsorgeOverride: {
+            /** Pension */
+            pension: string;
+            /** Health Care Basis */
+            health_care_basis: string;
+            /** Other */
+            other: string;
+            /**
+             * Krankengeld Entitlement
+             * @default true
+             */
+            krankengeld_entitlement: boolean;
+        };
+        /**
+         * WageCertificate
+         * @description The confirmed figures of one Lohnsteuerbescheinigung (§5.1). A line the model did not
+         *     read is 0 with its field listed under `unread` (the review lets the user type it).
+         */
+        WageCertificate: {
+            /**
+             * Period From
+             * Format: date
+             */
+            period_from: string;
+            /**
+             * Period To
+             * Format: date
+             */
+            period_to: string;
+            /** Employer */
+            employer: string;
+            /** Tax Class */
+            tax_class: number;
+            /**
+             * Tax Class Factor
+             * @default false
+             */
+            tax_class_factor: boolean;
+            /**
+             * Church Tax Marked
+             * @default false
+             */
+            church_tax_marked: boolean;
+            /**
+             * Child Allowance Count
+             * @default 0
+             */
+            child_allowance_count: string;
+            /**
+             * Gross
+             * @default 0
+             */
+            gross: string;
+            /**
+             * Income Tax
+             * @default 0
+             */
+            income_tax: string;
+            /**
+             * Soli
+             * @default 0
+             */
+            soli: string;
+            /**
+             * Church Tax
+             * @default 0
+             */
+            church_tax: string;
+            /**
+             * Church Tax Spouse
+             * @default 0
+             */
+            church_tax_spouse: string;
+            /**
+             * Replacement Benefits
+             * @default 0
+             */
+            replacement_benefits: string;
+            /**
+             * Short Time Allowance
+             * @default 0
+             */
+            short_time_allowance: string;
+            /**
+             * Employer Commute Tax Free
+             * @default 0
+             */
+            employer_commute_tax_free: string;
+            /**
+             * Employer Commute Flat Taxed
+             * @default 0
+             */
+            employer_commute_flat_taxed: string;
+            /**
+             * Pension Employer
+             * @default 0
+             */
+            pension_employer: string;
+            /**
+             * Pension Employee
+             * @default 0
+             */
+            pension_employee: string;
+            /**
+             * Pension Employee Professional
+             * @default 0
+             */
+            pension_employee_professional: string;
+            /**
+             * Subsidy Health
+             * @default 0
+             */
+            subsidy_health: string;
+            /**
+             * Subsidy Private Health
+             * @default 0
+             */
+            subsidy_private_health: string;
+            /**
+             * Subsidy Care
+             * @default 0
+             */
+            subsidy_care: string;
+            /**
+             * Health Employee
+             * @default 0
+             */
+            health_employee: string;
+            /**
+             * Care Employee
+             * @default 0
+             */
+            care_employee: string;
+            /**
+             * Unemployment Employee
+             * @default 0
+             */
+            unemployment_employee: string;
+            /** Unread */
+            unread?: string[];
+        };
         /**
          * WageCertificateExtraction
          * @description Lohnsteuerbescheinigung: one employer's certificate for one year.
@@ -6386,6 +7452,55 @@ export interface components {
             hausgeld_ruecklage_monthly?: components["schemas"]["ExtractedValue"];
             /** @description the WEG account the Hausgeld is paid to */
             iban?: components["schemas"]["ExtractedValue"];
+        };
+        /** Withheld */
+        Withheld: {
+            /**
+             * Income Tax
+             * @default 0
+             */
+            income_tax: string;
+            /**
+             * Soli
+             * @default 0
+             */
+            soli: string;
+            /**
+             * Church Tax
+             * @default 0
+             */
+            church_tax: string;
+            /**
+             * Total
+             * @default 0
+             */
+            total: string;
+        };
+        /**
+         * WorkRoomFact
+         * @description The häusliches Arbeitszimmer (D106): Jahrespauschale or actual costs by the m² share.
+         */
+        WorkRoomFact: {
+            /** Months */
+            months: number;
+            /** Room M2 */
+            room_m2: string;
+            /** Home M2 */
+            home_m2: string;
+            /** Rent Year */
+            rent_year: string;
+            /**
+             * Running Costs Year
+             * @default 0
+             */
+            running_costs_year: string;
+            /**
+             * Room Only Costs Year
+             * @default 0
+             */
+            room_only_costs_year: string;
+            /** Prefer */
+            prefer?: ("flat" | "actual") | null;
         };
         /**
          * Workspace
@@ -6558,6 +7673,11 @@ export interface components {
             /** Per Owner */
             per_owner?: components["schemas"]["OwnerZve"][];
             household?: components["schemas"]["HouseholdTaxContext"] | null;
+            /**
+             * Household Deductions
+             * @default 0
+             */
+            household_deductions: string;
             /** Sources */
             sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
         };
@@ -6812,6 +7932,201 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaxRateResult"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    return_inputs_list_api_return_inputs_get: {
+        parameters: {
+            query?: {
+                tax_year?: number | null;
+                owner_id?: string | null;
+                kind?: components["schemas"]["ReturnInputKind"] | null;
+                include_history?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReturnInput"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    return_input_create_api_return_inputs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReturnInputCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReturnInput"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    owner_anlage_n_api_owners__owner_id__anlage_n_get: {
+        parameters: {
+            query: {
+                tax_year: number;
+            };
+            header?: never;
+            path: {
+                owner_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnlageNDraft"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    tax_return_estimate_api_tax_return_estimate_get: {
+        parameters: {
+            query: {
+                tax_year: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReturnEstimate"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    tax_questionnaire_api_tax_questionnaire_get: {
+        parameters: {
+            query: {
+                tax_year: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionnaireView"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    tax_questionnaire_answer_api_tax_questionnaire_answers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuestionnaireAnswerBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionnaireAnswer"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

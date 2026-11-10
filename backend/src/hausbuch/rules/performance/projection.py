@@ -28,11 +28,13 @@ from hausbuch.rules.tax._common import of_year
 from hausbuch.rules.tax.draft import draft
 from hausbuch.rules.tax.rounding import cents
 from hausbuch.rules.tax.spekulation import tax_free_from
+from hausbuch.schemas.employment import OwnerEmployment
 from hausbuch.schemas.enums import IncomeInputKind
 from hausbuch.schemas.loan import LoanTerms
 from hausbuch.schemas.performance import (
     Assumption,
     DatedFlow,
+    HouseholdTaxContext,
     IncomeInputFact,
     Levers,
     MarginalRateOverride,
@@ -62,6 +64,15 @@ ZERO = Decimal("0.00")
 ONE = Decimal("1")
 RuleSets = Callable[[int], RuleSet]
 Tariffs = Callable[[int], Tariff]
+# phase 4b D98: (year, the property's result that year) -> (Anlage N summaries, household
+# context); rules/tax/anlage_n/summary.TaxContexts, built by the service from return_input rows
+Contexts = Callable[[int, Decimal], tuple[list[OwnerEmployment] | None, HouseholdTaxContext | None]]
+
+
+def _contexts(
+    contexts: Contexts | None, year: int, result: Decimal
+) -> tuple[list[OwnerEmployment] | None, HouseholdTaxContext | None]:
+    return contexts(year, result) if contexts is not None else (None, None)
 
 
 def year_kind(year: int, today: date) -> YearKind:
@@ -107,10 +118,12 @@ def actual_year(
     rule_sets: RuleSets = registry.rule_set_or_latest,
     tariffs: Tariffs = registry.tariff,
     drafts: _Drafts | None = None,
+    contexts: Contexts | None = None,
 ) -> YearFigures:
-    """§5.3 for one year of the real facts (D85)."""
+    """§5.3 for one year of the real facts (D85); `contexts` the phase 4b inputs (D98)."""
     drafts = drafts or _Drafts(facts, rule_sets)
     year_draft = drafts(year)
+    employment, household = _contexts(contexts, year, year_draft.totals.result)
     _, effect = year_tax_effect(
         year,
         year_draft.totals.result,
@@ -118,6 +131,8 @@ def actual_year(
         owners,
         tariffs(year),
         assessed_result=drafts.result,
+        employment=employment,
+        household=household,
     )
     return year_figures(
         year,
@@ -140,6 +155,7 @@ def actual_years(
     *,
     rule_sets: RuleSets = registry.rule_set_or_latest,
     tariffs: Tariffs = registry.tariff,
+    contexts: Contexts | None = None,
 ) -> list[YearFigures]:
     """Every owned year from the purchase year through today's (the last one partial before
     31 Dec), oldest first; none before the purchase or after the end of ownership."""
@@ -150,7 +166,15 @@ def actual_years(
     drafts = _Drafts(facts, rule_sets)
     return [
         actual_year(
-            facts, y, today, owners, inputs, rule_sets=rule_sets, tariffs=tariffs, drafts=drafts
+            facts,
+            y,
+            today,
+            owners,
+            inputs,
+            rule_sets=rule_sets,
+            tariffs=tariffs,
+            drafts=drafts,
+            contexts=contexts,
         )
         for y in range(prop.purchase_date.year, last + 1)
     ]
@@ -195,16 +219,27 @@ def project(
     scenario_id: UUID | None = None,
     rule_sets: RuleSets = registry.rule_set_or_latest,
     tariffs: Tariffs = registry.tariff,
+    contexts: Contexts | None = None,
 ) -> Projection:
     """§5.4 and the sale (§5.5). levers.sale_year must be after today's year (the caller
-    refuses it otherwise: scenario.sale_year_before_today)."""
+    refuses it otherwise: scenario.sale_year_before_today). `contexts`: the phase 4b inputs of
+    each year (D98); with children in a projected year's context the `tax.no_child_allowances`
+    assumption is dropped."""
     if levers.sale_year <= today.year:
         raise ValueError("the sale year is after today's year")
     prop = facts.property
     drafts = _Drafts(facts, rule_sets)
     actual = [
         actual_year(
-            facts, y, today, owners, inputs, rule_sets=rule_sets, tariffs=tariffs, drafts=drafts
+            facts,
+            y,
+            today,
+            owners,
+            inputs,
+            rule_sets=rule_sets,
+            tariffs=tariffs,
+            drafts=drafts,
+            contexts=contexts,
         )
         for y in range(prop.purchase_date.year, today.year + 1)
     ]
@@ -228,6 +263,7 @@ def project(
     year_drafts: dict[int, AnlageVDraft] = {}
     zve_bases: dict[int, tuple] = {}
     provisional: list[int] = []
+    children_modelled = False
     for year in range(today.year + 1, levers.sale_year + 1):
         n = year - today.year
         rule_set = rule_sets(year)
@@ -235,6 +271,9 @@ def project(
         year_drafts[year] = year_draft
         if any(w.code is WarningCode.DRAFT_FORM_PROVISIONAL for w in year_draft.warnings):
             provisional.append(year)
+        employment, household = _contexts(contexts, year, year_draft.totals.result)
+        if household is not None and household.children:
+            children_modelled = True
         base, effect = year_tax_effect(
             year,
             year_draft.totals.result,
@@ -242,6 +281,8 @@ def project(
             owners,
             tariffs(year),
             assessed_result=drafts.result,
+            employment=employment,
+            household=household,
         )
         zve_bases[year] = (base, effect)
         value = _value(levers, prop.purchase_price, n)
@@ -260,6 +301,8 @@ def project(
             ref_of=ref_of,
         )
         years.append(figures)
+    if children_modelled:
+        assumptions = [a for a in assumptions if a.code != "tax.no_child_allowances"]
     if provisional:
         assumptions.append(
             Assumption(

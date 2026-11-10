@@ -47,6 +47,7 @@ from pydantic import JsonValue
 
 from hausbuch.schemas.ai import ConfidenceLevel, ExtractedValue
 from hausbuch.schemas.employment import CERTIFICATE_AMOUNTS, PAYSLIP_FIGURES
+from hausbuch.schemas.employment import employer_key as _shared_employer_key
 from hausbuch.schemas.enums import (
     AcquisitionCostKind,
     DepositForm,
@@ -1449,8 +1450,9 @@ def _projection_note(on: date, month: ExtractedValue, ytd: ExtractedValue) -> st
 
 
 def employer_key(name: Any) -> str:
-    """An employer's name compared: casefolded, whitespace collapsed."""
-    return _norm(name)
+    """An employer's name compared, the same way step 1's services and rules compare it
+    (`schemas.employment.employer_key`: casefolded, whitespace collapsed)."""
+    return _shared_employer_key(str(name))
 
 
 _EMPLOYER_WORD = re.compile(r"[^\W_]+")

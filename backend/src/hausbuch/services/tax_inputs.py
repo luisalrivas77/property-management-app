@@ -51,7 +51,11 @@ beyond TaxInputCreate's own scope validator:
   re-checked. Its question is the label, whatever the year: one current row per
   (property, label), so a second kitchen is refused (`tax_input.not_current`: supersede it); a
   correction keeps the row's first year and label (withdraw it and record a new one to move
-  the year).
+  the year);
+- a `private_cost` (phase 4b D111: a cost the owners paid privately for the rental) is an
+  item: any number per property and year; one confirmed from last year names last year's
+  current `private_cost` row of the property in `carried_from_id`
+  (`return_input.carried_from_invalid`, D110), which the event repeats.
 
 Writes for one property are serialised by locking the property row (FOR NO KEY UPDATE), so
 the "no other current row" and the Erweiterung checks cannot race; `supersedes_id` is UNIQUE
@@ -72,6 +76,7 @@ from hausbuch.db.tables import property_price_split as split_table
 from hausbuch.db.tables import tax_input as tax_input_table
 from hausbuch.db.tables import unit as unit_table
 from hausbuch.rules.errors import (
+    RETURN_INPUT_CARRIED_FROM_INVALID,
     TAX_INPUT_EXTENSION_NEEDS_HERSTELLUNG,
     TAX_INPUT_MOVABLE_ASSET_EXCEEDS_BUILDING,
     TAX_INPUT_MOVABLE_ASSET_NO_PURCHASE_DATE,
@@ -219,6 +224,8 @@ def create_tax_input(ctx: CommandContext, property_id: UUID, data: TaxInputCreat
     require_document(ctx.conn, data.document_id)
     if data.supersedes_id is not None:
         _check_supersedes(ctx.conn, data)
+    if data.carried_from_id is not None:
+        _check_carried_from(ctx.conn, data)
     _check_no_other_current(ctx.conn, data)
     _check_extension(ctx.conn, data, allocation)
 
@@ -257,6 +264,7 @@ def create_tax_input(ctx: CommandContext, property_id: UUID, data: TaxInputCreat
             document_id=created.document_id,
             value=created.value,
             supersedes_id=created.supersedes_id,
+            carried_from_id=created.carried_from_id,
             withdrawn=created.withdrawn,
         ),
         property_id=property_id,
@@ -546,7 +554,24 @@ def _same_question(row: TaxInput, data: TaxInputCreate) -> bool:
         return row.value.valid_from == data.value.valid_from  # type: ignore[union-attr]
     if data.kind is TaxInputKind.MOVABLE_ASSET:
         return row.value.label == data.value.label  # type: ignore[union-attr]
-    return True
+    # phase 4b D111: a private_cost is an item, any number per property and year
+    return data.kind is not TaxInputKind.PRIVATE_COST
+
+
+def _check_carried_from(conn: Connection, data: TaxInputCreate) -> None:
+    """Phase 4b D110: a private_cost row confirmed from last year names last year's current
+    private_cost row of the same property (`return_input.carried_from_invalid`, the shared
+    code of the carry-forward)."""
+    assert data.carried_from_id is not None and data.tax_year is not None
+    origin = get_tax_input(conn, data.carried_from_id)
+    if origin is None:
+        raise NotFoundError(TAX_INPUT, data.carried_from_id)
+    prior = find_current(conn, data.property_id, data.kind, tax_year=data.tax_year - 1)
+    if origin.id not in {r.id for r in prior}:
+        raise RuleViolationError(
+            [RETURN_INPUT_CARRIED_FROM_INVALID],
+            "carried_from_id names a current private cost of this property of the year before",
+        )
 
 
 def _to_tax_input(row: Row) -> TaxInput:

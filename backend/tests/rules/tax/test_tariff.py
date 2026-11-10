@@ -8,6 +8,7 @@ import pytest
 from fixture_models_phase4 import TariffFixture, load
 
 from hausbuch.rules.tax.registry import tariff
+from hausbuch.rules.tax.return_estimate import assessed_tax
 from hausbuch.rules.tax.tariff import (
     church_tax,
     income_tax,
@@ -85,3 +86,26 @@ def test_the_slope_takes_the_soli_factor_of_its_zone():
 def test_a_household_effect_needs_a_base_without_an_override():
     with pytest.raises(ValueError):
         tax_effect(None, D("-1.00"), tariff(2026), OWNERS)
+
+
+@pytest.mark.rule
+@pytest.mark.parametrize("zve", ["0", "11000", "62033", "69982.10", "130000", "400000"])
+@pytest.mark.parametrize("church", [False, True])
+def test_assessed_tax_without_a_context_is_total_tax(zve, church):
+    """Phase 4b §5.10: without a household context the assessed tax is the plain tariff."""
+    t = tariff(2026)
+    owners = [
+        OwnerTaxProfile(
+            owner_id=UUID(int=1), church_tax=church, tax_state=StateCode.BY if church else None
+        ),
+        OwnerTaxProfile(owner_id=UUID(int=2)),
+    ]
+    plain = total_tax(D(zve), t, owners)
+    got = assessed_tax(D(zve), None, owners, t)
+    assert (got.est, got.soli, got.church, got.total) == (
+        plain.est,
+        plain.soli,
+        plain.church,
+        plain.total,
+    )
+    assert got.credit_35a == 0 and got.children is None and got.progression is None

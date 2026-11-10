@@ -372,17 +372,20 @@ RateSource = Literal["estimate", "bescheid", "override"]
 
 
 class TaxBreakdown(Schema):
-    """T(zvE) of D82: Einkommensteuer (splitting, whole euros), Soli and church tax (cents)."""
+    """T(zvE) of D82: Einkommensteuer (splitting, whole euros), Soli and church tax (cents).
+    Under a phase 4b household context (D98) it is the assessed tax: est after the
+    Günstigerprüfung, less the §35a credit (credit_35a, 0 on the plain tariff)."""
 
     est: NonNegativeMoney
+    credit_35a: NonNegativeMoney = Decimal("0")
     soli: NonNegativeMoney
     church: NonNegativeMoney
     total: NonNegativeMoney
 
     @model_validator(mode="after")
     def _sum(self) -> Self:
-        if self.est + self.soli + self.church != self.total:
-            raise ValueError("total = est + soli + church")
+        if self.est - self.credit_35a + self.soli + self.church != self.total:
+            raise ValueError("total = est − credit_35a + soli + church")
         if self.est != self.est.to_integral_value():
             raise ValueError("the Einkommensteuer is whole euros (§32a Abs. 1 S. 6)")
         return self
@@ -458,6 +461,9 @@ class ZveEstimate(Schema):
     tax_year: TaxYear  # the year whose rows were used (earlier than asked when carried)
     per_owner: list[OwnerZve] = Field(default_factory=list)
     household: HouseholdTaxContext | None = None  # phase 4b D98, when 4b rows exist
+    # phase 4b D98: the household's Sonderausgaben beyond the 36 per owner already in the
+    # owners' deductions: max(0, church tax paid + donations − 2 × 36) + childcare
+    household_deductions: NonNegativeMoney = Decimal("0")
     sources: list[SourceRef] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -465,8 +471,9 @@ class ZveEstimate(Schema):
         if self.amount is None and self.source != "override":
             raise ValueError("an estimate or a Bescheid always has an amount")
         parts = sum((o.amount for o in self.per_owner), Decimal("0"))
-        if self.source == "estimate" and self.per_owner and parts != self.amount:
-            raise ValueError("an estimate is the sum of the owners' parts")
+        expected = max(Decimal("0"), parts - self.household_deductions)
+        if self.source == "estimate" and self.per_owner and expected != self.amount:
+            raise ValueError("an estimate is the sum of the owners' parts less the household's")
         return self
 
 

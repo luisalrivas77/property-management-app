@@ -123,6 +123,16 @@ def anlage_n(tax_year: int) -> AnlageNRuleSet:
     return loaded
 
 
+def anlage_n_or_latest(tax_year: int) -> AnlageNRuleSet:
+    """The Anlage N rule set for `tax_year`, else the latest earlier one (a projected or
+    not-yet-published year; phase 4b §5.8 `childcare_2027`). Before every file: RuleError
+    tax.no_rule_set (the API's 422)."""
+    earlier = [y for y in anlage_n_years() if y <= tax_year]
+    if not earlier:
+        raise RuleError(TAX_NO_RULE_SET, f"no Anlage N rule set for {tax_year} or any earlier year")
+    return anlage_n(earlier[-1])
+
+
 @cache
 def questionnaire(tax_year: int) -> Questionnaire:
     """The year's questions (D110); for a year without a file, the latest earlier file with

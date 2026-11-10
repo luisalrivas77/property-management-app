@@ -310,6 +310,13 @@ PAYSLIP_FIGURES: tuple[str, ...] = (
 )
 
 
+def employer_key(name: str) -> str:
+    """The employer as compared (D105): case folded, whitespace runs collapsed to one space,
+    stripped, so "Muster GmbH" and "MUSTER  GMBH" are one employer. Only for comparing and
+    grouping; rows keep the spelling as read."""
+    return " ".join(name.casefold().split())
+
+
 class Payslip(Schema):
     """One month's payslip of one employer (D105). months_remaining_paid defaults to
     12 − month in the review; fewer when pay stops before December."""
@@ -883,7 +890,7 @@ class VorsorgeResult(Schema):
     health_care_basis: NonNegativeMoney
     other: NonNegativeMoney
     deductible: NonNegativeMoney
-    source: Literal["certificate", "payslip", "override", "none"]
+    source: Literal["certificate", "payslip", "override", "expected", "none"]
     sources: list[SourceRef] = Field(default_factory=list)
 
     @model_validator(mode="after")

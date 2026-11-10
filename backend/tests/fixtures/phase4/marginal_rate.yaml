@@ -296,7 +296,6 @@ cases:
 # rule; tests/rules/performance/test_income.py skips the case until then.
 - id: household_2026_contexts
   description: 'phase 4b §5.9: the household base 69,982.10; effect 9,974 − 12,289 = −2,315.00'
-  pending: phase 4b step 1 (D98 contexts in rules/performance/income.py and tariff.tax_effect)
   tax_year: 2026
   owners: &owners_no_church
   - {owner_id: 0000000a-0000-4000-8000-000000000001, church_tax: false}
@@ -343,7 +342,6 @@ cases:
       breakdown_without: {est: '12289.00', soli: '0.00', church: '0.00', total: '12289.00'}
 - id: deductions_override_beats_employment
   description: 'D98: a typed deductions_override still wins over the Anlage N summary'
-  pending: phase 4b step 1 (D98 contexts in rules/performance/income.py and tariff.tax_effect)
   tax_year: 2026
   owners: *owners_no_church
   inputs:
@@ -371,7 +369,6 @@ cases:
         deductions: '15000.00', deductions_source: override, amount: '45000.00'}
 - id: payslip_gross_source
   description: 'D98, D105: before the certificate, the gross is the payslip projection'
-  pending: phase 4b step 1 (D98 contexts in rules/performance/income.py and tariff.tax_effect)
   tax_year: 2026
   owners: *owners_no_church
   inputs:
@@ -394,7 +391,6 @@ cases:
         deductions: '14511.90', deductions_source: employment, amount: '45488.10'}
 - id: plain_tariff_without_context
   description: 'the summaries without a household context: the plain tariff, T(62,033) − T(69,982) = 9,010 − 11,334'
-  pending: phase 4b step 1 (D98 contexts in rules/performance/income.py and tariff.tax_effect)
   tax_year: 2026
   owners: *owners_no_church
   inputs: *income_2026_4b

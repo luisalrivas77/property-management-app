@@ -5,13 +5,23 @@ Each case asserts what its `expect` names: the household base (`zve`), the tax e
 compares exactly, None included, except `sources` (empty in the fixture; checked by kind
 here)."""
 
+from datetime import date
+from decimal import ROUND_DOWN, ROUND_FLOOR, Decimal
+from uuid import UUID
+
 import pytest
 from fixture_models_phase4 import MarginalFixture, load
 
 from hausbuch.rules.performance.income import year_tax_effect, zve_base
 from hausbuch.rules.tax.registry import tariff
-from hausbuch.rules.tax.tariff import tax_effect
-from hausbuch.schemas.performance import TariffStamp
+from hausbuch.rules.tax.tariff import income_tax, tax_effect
+from hausbuch.schemas.performance import (
+    ChildFact,
+    HouseholdTaxContext,
+    IncomeInputFact,
+    OwnerTaxProfile,
+    TariffStamp,
+)
 
 MARGINAL = load("marginal_rate")
 assert isinstance(MARGINAL, MarginalFixture)
@@ -20,7 +30,13 @@ CASES = MARGINAL.cases
 
 def _base(case, t):
     return zve_base(
-        case.tax_year, case.inputs, case.owners, t, assessed_result=case.assessed_result
+        case.tax_year,
+        case.inputs,
+        case.owners,
+        t,
+        assessed_result=case.assessed_result,
+        employment=case.employment or None,
+        household=case.household,
     )
 
 
@@ -32,6 +48,8 @@ def _year_effect(case, t):
         case.owners,
         t,
         assessed_result=case.assessed_result,
+        employment=case.employment or None,
+        household=case.household,
     )
 
 
@@ -66,6 +84,68 @@ def test_marginal_rate(case):
     if expect.tariff is not None:
         stamp = TariffStamp(tax_year=t.tax_year, version=t.version, reused_from=t.reused_from)
         assert stamp == expect.tariff, case.id
+
+
+def _row(n: int, kind: str, value: dict) -> IncomeInputFact:
+    return IncomeInputFact.model_validate(
+        {
+            "id": UUID(int=n),
+            "kind": kind,
+            "tax_year": 2026,
+            "document_id": UUID(int=100 + n) if kind == "bescheid_zve" else None,
+            "value": value,
+        }
+    )
+
+
+def _progression_tax(z: Decimal, benefits: Decimal, t) -> Decimal:
+    """§32b by hand: income_tax(z + L) ÷ (z + L) cut to six decimals, times z, floored."""
+    fictitious = z + benefits
+    rate = (income_tax(fictitious, t) / fictitious).quantize(Decimal("0.000001"), ROUND_DOWN)
+    return (z * rate).to_integral_value(ROUND_FLOOR)
+
+
+@pytest.mark.rule
+def test_a_bescheid_keeps_only_the_years_benefits():
+    """D114: under a Bescheid's zvE the effect is computed with the Progressionsvorbehalt of
+    the year's benefits only; children, the §35a credit and the deductions are already in the
+    assessed zvE. Without benefits it is the plain tariff; an override stays R × rate."""
+    t = tariff(2026)
+    owners = [OwnerTaxProfile(owner_id=UUID(int=1)), OwnerTaxProfile(owner_id=UUID(int=2))]
+    bescheid = [_row(1, "bescheid_zve", {"amount": "20000.00"})]
+    full = HouseholdTaxContext(
+        children=[ChildFact(born_on=date(2020, 5, 1))],
+        replacement_benefits=Decimal("25000.00"),
+        donations=Decimal("1000.00"),
+        household_services_credit=Decimal("500.00"),
+    )
+    result = Decimal("-5000.00")
+
+    def effect(inputs, household):
+        return year_tax_effect(
+            2026, result, inputs, owners, t, assessed_result=Decimal("0"), household=household
+        )
+
+    base, got = effect(bescheid, full)
+    assert base.household == HouseholdTaxContext(replacement_benefits=Decimal("25000.00"))
+    assert base.household_deductions == 0
+    by_hand = _progression_tax(Decimal("15000"), Decimal("25000.00"), t) - _progression_tax(
+        Decimal("20000"), Decimal("25000.00"), t
+    )
+    _, plain = effect(bescheid, None)
+    assert got.effect == by_hand
+    assert got.effect != plain.effect
+
+    no_benefits = full.model_copy(update={"replacement_benefits": Decimal("0")})
+    base, got = effect(bescheid, no_benefits)
+    assert base.household is None
+    assert got == plain
+
+    override = [*bescheid, _row(2, "marginal_rate_override", {"rate": "0.30"})]
+    base, got = effect(override, full)
+    assert base.household is None
+    assert got == effect(override, None)[1]
+    assert got.effect == result * Decimal("0.30")
 
 
 @pytest.mark.rule
