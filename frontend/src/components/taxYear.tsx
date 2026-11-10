@@ -2,14 +2,14 @@
 
 // The tab bar of Steuern › one tax year (phase-3.md §11, phase-4b.md §10): Anlage V, Anlage N,
 // KAP and SO (disabled until phase 8), and the way into the Jahresfragen. Each tab is a URL:
-// /tax/2026 (Anlage V, ?immobilie=…), /tax/2026?formular=anlage-n (?eigentuemer=…), and
+// /tax/2026 (Anlage V, ?immobilie=…), /tax/2026?tab=anlage-n (?eigentuemer=…), and
 // /tax/2026/fragen for the questionnaire. The chosen property and owner travel along, so
 // switching back keeps them.
 import Link from "next/link";
 
 export type TaxForm = "v" | "n";
 
-/** The value of ?formular= for the Anlage N tab. */
+/** The value of ?tab= (the TabBar key) for the Anlage N tab. */
 export const ANLAGE_N_PARAM = "anlage-n";
 
 export interface TaxYearState {
@@ -29,7 +29,7 @@ function query(params: [string, string | null][]): string {
 export function taxFormHref(form: TaxForm, state: TaxYearState): string {
   if (form === "v") return `/tax/${state.year}${query([["immobilie", state.propertyId]])}`;
   return `/tax/${state.year}${query([
-    ["formular", ANLAGE_N_PARAM],
+    ["tab", ANLAGE_N_PARAM],
     ["eigentuemer", state.ownerId],
     ["immobilie", state.propertyId],
   ])}`;

@@ -2,7 +2,7 @@
 
 // Steuern › one tax year (phase-3.md §11, phase-4b.md §10, docs/mockups/04-tax-year.png): the
 // Gesamt card of the whole return above the tabs, then Anlage V (?immobilie=…, the first one
-// when absent; its selector is hidden with one property) or Anlage N (?formular=anlage-n,
+// when absent; its selector is hidden with one property) or Anlage N (?tab=anlage-n,
 // ?eigentuemer=…). KAP and SO are tabs of phase 8 and stay disabled.
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
@@ -31,7 +31,7 @@ function TaxYear() {
   const search = useSearchParams();
   const requested = search.get("immobilie");
   const owner = search.get("eigentuemer");
-  const form = search.get("formular") === ANLAGE_N_PARAM ? "n" : "v";
+  const form = search.get("tab") === ANLAGE_N_PARAM ? "n" : "v";
   const year = /^\d{4}$/.test(yearParam) ? Number(yearParam) : null;
 
   return (
