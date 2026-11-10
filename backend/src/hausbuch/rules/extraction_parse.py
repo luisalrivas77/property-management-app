@@ -70,22 +70,32 @@ class _Invalid(ValueError):
 
 
 def parse_lines(
-    blocks: list[CitedTextBlock], kind: ExtractionKind, *, page_offset: int = 0
+    blocks: list[CitedTextBlock],
+    kind: ExtractionKind,
+    *,
+    page_offset: int = 0,
+    reference_year: int | None = None,
 ) -> dict[str, ExtractedValue]:
     """The fields an extract response stated, keyed by field name.
 
     Only keys of EXTRACTION_MODELS[kind] count; a repeated key: the last line wins. A field
     the response did not mention is not in the result (the caller fills it with
     ExtractedValue.missing()). page_offset is the first page of the request's chunk minus 1,
-    for a PDF split into several requests. For the two pay documents (SCRUBBED_KINDS) every
-    line and every quote is scrubbed of identifiers first (scrub_identifiers, D103).
+    for a PDF split into several requests. For the two pay documents (SCRUBBED_KINDS) the
+    lines and every quote are scrubbed of identifiers first (scrub_identifiers, D103), with
+    reference_year (the job clock's year; default: this year) for the birth-date rule.
     """
     model = EXTRACTION_MODELS[kind]
     scrub = kind in SCRUBBED_KINDS
+    lines = _lines(blocks)
+    if scrub:
+        # Scrubbed together, so a value under a line of labels is seen; the scrub keeps lines.
+        texts = scrub_identifiers(
+            "\n".join(text for text, _ in lines), reference_year=reference_year
+        ).split("\n")
+        lines = [(text, contributors) for text, (_, contributors) in zip(texts, lines, strict=True)]
     result: dict[str, ExtractedValue] = {}
-    for text, contributors in _lines(blocks):
-        if scrub:
-            text = scrub_identifiers(text)
+    for text, contributors in lines:
         match = _KEY_LINE.fullmatch(text)
         if match is None or match.group(1) not in model.model_fields:
             continue
@@ -97,7 +107,9 @@ def parse_lines(
             continue
         source = _source(blocks, contributors, page_offset)
         if scrub and source is not None:
-            source = source.model_copy(update={"quote": scrub_identifiers(source.quote)})
+            source = source.model_copy(
+                update={"quote": scrub_identifiers(source.quote, reference_year=reference_year)}
+            )
         result[key] = _extracted(raw, value_kind(model, key), source)
     return result
 
@@ -357,19 +369,43 @@ _ID_TOKEN = (
     r"(?:(?:januar|februar|märz|april|mai|juni|juli|august|september|oktober|november"
     rf"|dezember)(?![{_LETTER}])|[A-Za-z0-9./-]*[0-9][A-Za-z0-9./-]*|[A-Z](?![{_LETTER}]))"
 )
-_LABELLED = re.compile(
-    rf"(?<![{_LETTER}])"
-    r"(?P<label>(?:steuerliche[ \t]+)?identifikations-?nummer|identifikations-?nr\.?"
+# An identifier's label (D103): Identifikationsnummer, eTIN, Sozialversicherungsnummer,
+# Personalnummer and its short forms (MA-Nr., AN-Nr., Mitarb.-Nr.), Steuernummer, IBAN and the
+# birth date (Geburtsdatum, Geb.-Dat., Gebdat, geboren am).
+_ID_LABEL = (
+    r"(?:steuerliche[ \t]+)?identifikations-?nummer|identifikations-?nr\.?"
     r"|id\.?-?nr\.?|steuer-?id(?:entifikationsnummer)?|e-?tin|transfer-?ticket"
     r"|sozialversicherungs-?(?:nummer|nr\.?)|sv-?(?:nummer|nr\.?)"
     r"|versicherungs-?(?:nummer|nr\.?)|rv-?(?:nummer|nr\.?)|personal-?(?:nummer|nr\.?)"
     r"|pers\.?-?nr\.?|p-?nr\.?|arbeitnehmer-?(?:nummer|nr\.?)|mitarbeiter-?(?:nummer|nr\.?)"
+    r"|mitarb\.?-?nr\.?|ma-?nr\.?|an-?nr\.?"
     r"|steuer-?(?:nummer|nr\.?)|st\.?-?nr\.?|iban|geburtsdatum|geb\.?-?datum"
-    r"|geboren(?:[ \t]+am)?|geb\.(?:[ \t]*am)?)"
-    rf"(?<![{_LETTER}](?=[{_LETTER}]))(?![{_LETTER}])"
+    r"|geburtsdat\.?|geb\.?-?dat\.?|gebdat"
+    r"|geboren(?:[ \t]+am)?|geb\.(?:[ \t]*am)?"
+)
+# A label starts and ends at a word's edge; "Geb." may end in its dot.
+_LABEL_START = rf"(?<![{_LETTER}])"
+_LABEL_END = rf"(?<![{_LETTER}](?=[{_LETTER}]))(?![{_LETTER}])"
+_LABELLED = re.compile(
+    rf"{_LABEL_START}(?P<label>{_ID_LABEL}){_LABEL_END}"
     rf"(?P<sep>{_H}*:?{_H}*)"
     rf"(?P<value>{_ID_TOKEN}(?:{_H}{{1,3}}{_ID_TOKEN})*)",
     re.IGNORECASE,
+)
+# A line of labels only ("Geburtsdatum   Personalnummer"): the values stand on the next line,
+# under their labels, as on a payslip's header.
+_LABELS_ONLY = re.compile(
+    rf"[ \t:/\r]*(?:{_LABEL_START}(?:{_ID_LABEL}){_LABEL_END}[ \t:/\r]*)+", re.IGNORECASE
+)
+_DIGIT_TOKEN = re.compile(r"\S*[0-9]\S*")
+# A full date: 14.03.1988, 14. März 1988, 1988-03-14. One whose year lies at least
+# _BIRTH_DATE_YEARS before the reference year is a birth date on these documents (the pay
+# period, the tax year and the document's own date never lie that far back).
+_BIRTH_DATE_YEARS = 14
+_FULL_DATE = re.compile(
+    rf"(?<![0-9])(?:[0-9]{{1,2}}\.{_H}?[0-9]{{1,2}}\.{_H}?(?P<dmy>[0-9]{{4}})"
+    rf"|[0-9]{{1,2}}\.?{_H}+(?i:{'|'.join(_MONTHS)}){_H}+(?P<word>[0-9]{{4}})"
+    r"|(?P<iso>[0-9]{4})-[0-9]{2}-[0-9]{2})(?![0-9])"
 )
 _PATTERNS = (
     # Identifikationsnummer, as printed on the form ("12 345 678 901") or run together.
@@ -400,17 +436,40 @@ _PATTERNS = (
 )
 
 
-def scrub_identifiers(text: str) -> str:
+def scrub_identifiers(text: str, *, reference_year: int | None = None) -> str:
     """The text with every identifier of a pay document replaced by "…" (D103): a value after
     an identifier's label (Identifikationsnummer, eTIN, Sozialversicherungsnummer,
-    Personalnummer, Steuernummer, IBAN, Geburtsdatum, ...), an Identifikationsnummer, a
-    Sozialversicherungsnummer, an eTIN, an IBAN, a Steuernummer, any run of nine or more
-    digits, a street with its house number and a postal code with its town. Amounts, the
-    period's dates, the tax class and names stay. Pure and idempotent; lines are kept."""
+    Personalnummer, Steuernummer, IBAN, Geburtsdatum, ...), every number on the line under a
+    line of such labels only, a full date at least 14 years before reference_year (a birth
+    date; default: this year), an Identifikationsnummer, a Sozialversicherungsnummer, an
+    eTIN, an IBAN, a Steuernummer, any run of nine or more digits, a street with its house
+    number and a postal code with its town. Amounts, the period's dates, the tax class and
+    names stay. Pure and idempotent; lines are kept."""
+    year = date.today().year if reference_year is None else reference_year
+    text = _under_labels(text)
     text = _LABELLED.sub(lambda m: f"{m.group('label')}{m.group('sep')}{SCRUBBED}", text)
+    text = _FULL_DATE.sub(lambda m: _birth_date(m, year), text)
     for pattern in _PATTERNS:
         text = pattern.sub(SCRUBBED, text)
     return text
+
+
+def _under_labels(text: str) -> str:
+    """Every number on the first non-blank line under a line of identifier labels only."""
+    lines = text.split("\n")
+    out = list(lines)
+    for index, line in enumerate(lines):
+        if not _LABELS_ONLY.fullmatch(line):
+            continue
+        below = next((i for i in range(index + 1, len(lines)) if lines[i].strip()), None)
+        if below is not None:
+            out[below] = _DIGIT_TOKEN.sub(SCRUBBED, out[below])
+    return "\n".join(out)
+
+
+def _birth_date(match: re.Match[str], reference_year: int) -> str:
+    year = int(match.group("dmy") or match.group("word") or match.group("iso"))
+    return SCRUBBED if year <= reference_year - _BIRTH_DATE_YEARS else match.group(0)
 
 
 # --- Which field set a classified document gets -----------------------------------------

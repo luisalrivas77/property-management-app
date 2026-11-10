@@ -30,6 +30,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from functools import partial
 from typing import Any
 from uuid import UUID
 
@@ -395,8 +396,11 @@ def _extract_chunk(
     kind: ExtractionKind,
     page_offset: int,
 ) -> tuple[dict[str, ExtractedValue], UUID]:
+    # The birth-date rule of the scrub counts back from the job clock's year (D103).
+    year = deps.clock().year
+
     def parsed(response: ModelResponse) -> _Parsed:
-        values = parse_lines(response.blocks, kind, page_offset=page_offset)
+        values = parse_lines(response.blocks, kind, page_offset=page_offset, reference_year=year)
         if not values:  # no line keyed by a field of this kind
             return _Parsed(None, None, UNPARSABLE)
         output = {key: value.model_dump(mode="json") for key, value in values.items()}
@@ -404,7 +408,7 @@ def _extract_chunk(
 
     # The pay documents' raw answer is scrubbed like their values and quotes (D103): no
     # identifier reaches ai_call.raw_text either.
-    scrub = scrub_identifiers if kind in SCRUBBED_KINDS else None
+    scrub = partial(scrub_identifiers, reference_year=year) if kind in SCRUBBED_KINDS else None
     return _with_one_retry(
         deps, workspace_id, document_id, proposal_id, request, parsed, scrub=scrub
     )

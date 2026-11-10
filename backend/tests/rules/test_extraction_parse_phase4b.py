@@ -70,14 +70,52 @@ def test_the_field_list_names_no_identifier():
         ("Erika Musterfrau, Musterweg 9a, 60311 Frankfurt am Main", ["Musterweg", "60311", "Main"]),
         ("Am Ring 12, 10115 Berlin", ["Ring 12", "10115", "Berlin"]),
         ("Kundennummer 123456789012", ["123456789012"]),
+        # The short label spellings (review of step 2).
+        (f"Geb.-Dat.: {BIRTH}", [BIRTH]),
+        (f"Geb.dat. {BIRTH}", [BIRTH]),
+        (f"Geburtsdat. {BIRTH}", [BIRTH]),
+        (f"Gebdat {BIRTH}", [BIRTH]),
+        (f"MA-Nr. {PERSONNEL}", [PERSONNEL]),
+        (f"MANr {PERSONNEL}", [PERSONNEL]),
+        (f"Mitarb.-Nr.: {PERSONNEL}", [PERSONNEL]),
+        (f"Mitarb.Nr. {PERSONNEL}", [PERSONNEL]),
+        (f"AN-Nr. {PERSONNEL}", [PERSONNEL]),
+        (f"ANNr: {PERSONNEL}", [PERSONNEL]),
+        # The values under a line of labels only, as on a payslip's header.
+        (f"Geburtsdatum   Personalnummer\n{BIRTH}     731942", [BIRTH, "731942"]),
+        (f"Geb.-Dat. / Pers.-Nr.:\n\n  {BIRTH}  {PERSONNEL}  ", [BIRTH, PERSONNEL]),
+        (f"MA-Nr.\n{PERSONNEL} Abteilung 7", [PERSONNEL, " 7"]),
+        # A birth date without its label: a full date at least 14 years back.
+        (f"employee_name: Erika Musterfrau, {BIRTH}", [BIRTH]),
+        (
+            f"Erika Musterfrau\n{BIRTH}\nMusterweg 9a\n60311 Frankfurt am Main",
+            [BIRTH, "Musterweg", "60311"],
+        ),
+        ("Erika Musterfrau (14. März 1988)", ["1988"]),
+        ("Erika Musterfrau 1988-03-14", ["1988-03-14"]),
     ],
 )
 def test_the_scrub_removes_identifiers(text, gone):
-    scrubbed = scrub_identifiers(text)
+    scrubbed = scrub_identifiers(text, reference_year=2026)
     for fragment in gone:
         assert fragment not in scrubbed, (text, scrubbed)
     assert SCRUBBED in scrubbed
-    assert scrub_identifiers(scrubbed) == scrubbed  # idempotent
+    assert scrubbed.count("\n") == text.count("\n")  # lines are kept
+    assert scrub_identifiers(scrubbed, reference_year=2026) == scrubbed  # idempotent
+
+
+def test_the_name_beside_a_birth_date_stays():
+    scrubbed = scrub_identifiers(f"employee_name: Erika Musterfrau, {BIRTH}", reference_year=2026)
+    assert scrubbed == f"employee_name: Erika Musterfrau, {SCRUBBED}"
+
+
+@pytest.mark.parametrize(
+    ("year", "kept"), [(2026, False), (2025, True), (2016, True), (2027, False)]
+)
+def test_the_birth_date_rule_counts_back_from_the_reference_year(year, kept):
+    # A date in 2012 is 14 years before 2026: a birth date then, an old payslip's date before.
+    text = "Eintritt 01.04.2012"
+    assert (scrub_identifiers(text, reference_year=year) == text) is kept
 
 
 @pytest.mark.parametrize(
@@ -95,10 +133,18 @@ def test_the_scrub_removes_identifiers(text, gone):
         "Erika Musterfrau",
         "Nr. 27 Arbeitnehmerbeiträge zur Arbeitslosenversicherung 780,00 EUR",
         "Jahreswerte kumuliert 12345 EUR",
+        "Stand 01.01.2026",
+        "vom 01.01.2026 bis 31.12.2026",
+        "Abrechnungszeitraum 01.07.2026 - 31.07.2026",
+        "Abrechnung 2026-07-31",
+        "Abrechnung für Juli 2026, ausgezahlt am 30. Juli 2026",
+        # A line of labels with another word is no label line: the next line stays.
+        "Geburtsdatum Eintritt Abteilung\n2.450,00 7",
+        "Steuerklasse Faktor\n4 0,950",
     ],
 )
 def test_the_scrub_keeps_figures_dates_and_names(text):
-    assert scrub_identifiers(text) == text
+    assert scrub_identifiers(text, reference_year=2026) == text
 
 
 def _cited(line: str, page: int = 1) -> PageCitation:
@@ -158,3 +204,25 @@ def test_a_payslip_line_keeps_month_and_year_to_date():
     for value in values.values():
         assert value.confidence == "high"
         assert value.source is not None and PERSONNEL not in value.source.quote
+
+
+def test_a_value_under_a_line_of_labels_is_scrubbed_in_the_lines_and_the_quote():
+    quote = f"Geburtsdatum   Personalnummer\n{BIRTH}     731942\nSteuer-Brutto 5.000,00"
+    blocks = [
+        CitedTextBlock(text="Personalnummer\n"),
+        CitedTextBlock(text="employee_name: Erika Musterfrau 731942\ngross_month: "),
+        CitedTextBlock(text="5.000,00", citations=[_cited(quote)]),
+    ]
+    values = parse_lines(blocks, ExtractionKind.GEHALTSABRECHNUNG, reference_year=2026)
+    assert values["employee_name"].value == f"Erika Musterfrau {SCRUBBED}"
+    gross = values["gross_month"]
+    assert gross.value == "5000.00" and gross.source is not None
+    assert BIRTH not in gross.source.quote and "731942" not in gross.source.quote
+    assert "5.000,00" in gross.source.quote
+
+
+def test_parse_lines_takes_the_reference_year_for_the_birth_date_rule():
+    blocks = [CitedTextBlock(text="employee_name: Erika Musterfrau, 01.04.2012")]
+    kind = ExtractionKind.GEHALTSABRECHNUNG
+    assert "2012" not in parse_lines(blocks, kind, reference_year=2026)["employee_name"].value
+    assert "2012" in parse_lines(blocks, kind, reference_year=2025)["employee_name"].value
