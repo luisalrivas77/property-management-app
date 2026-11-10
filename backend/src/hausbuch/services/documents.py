@@ -9,14 +9,13 @@ the current typing, document_extraction an append-only version per change (D9, p
 import hashlib
 import mimetypes
 import re
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, get_args
+from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from pydantic import TypeAdapter, ValidationError
-from sqlalchemy import Connection, delete, exists, insert, or_, select, update
+from sqlalchemy import Connection, delete, exists, func, insert, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 
@@ -33,6 +32,7 @@ from hausbuch.db.tables import unit as unit_table
 from hausbuch.jobs import enqueue
 from hausbuch.rules import retention
 from hausbuch.rules.errors import RuleError
+from hausbuch.rules.hand_fields import HAND_FIELD_MAP, HAND_FIELDS, hand_values
 from hausbuch.schemas.ai import ExtractedValue
 from hausbuch.schemas.api import LinkTargetRef, RelatedDocument
 from hausbuch.schemas.document import (
@@ -41,7 +41,6 @@ from hausbuch.schemas.document import (
     DocumentLink,
     DocumentRetentionInput,
     DocumentTyping,
-    HandField,
     HandFields,
     ManualDocumentFields,
     RetentionPolicy,
@@ -91,50 +90,9 @@ LOCAL_TIME_ZONE = ZoneInfo("Europe/Berlin")
 EXTRACTION_KIND_MISMATCH = "document.extraction_kind_mismatch"
 # Hand-entry fields shown from an extraction version that is no longer current (D37, F1).
 EXTRACTION_STALE = "document.extraction_stale"
-_HAND_FIELDS: tuple[HandField, ...] = get_args(HandField)
-# D37: where each AI kind keeps the six hand-entry fields (ManualDocumentFields). A kind or a
-# hand field not listed has no place: it is not shown, and a non-null value for it is refused.
-HAND_FIELD_MAP: dict[ExtractionKind, dict[HandField, str]] = {
-    ExtractionKind.INVOICE: {
-        "amount_total": "amount_total",
-        "counterparty": "sender",
-        "reference": "reference",
-        "notes": "subject",
-    },
-    ExtractionKind.BESCHEID: {
-        "amount_total": "amount_total",
-        "counterparty": "sender",
-        "reference": "reference",
-    },
-    ExtractionKind.DEPOSIT_RECORD: {"amount_total": "amount"},
-    ExtractionKind.ZINSBESCHEINIGUNG: {
-        "amount_total": "interest_paid",
-        "counterparty": "lender",
-        "reference": "contract_number",
-    },
-    ExtractionKind.LOAN_CONTRACT: {"counterparty": "lender", "reference": "contract_number"},
-    ExtractionKind.GRUNDSTEUERBESCHEID: {"reference": "reference"},
-    ExtractionKind.STATEMENT: {"period_start": "period_start", "period_end": "period_end"},
-    # D130, D131: every hand-entry field a letter took before the catalogue (the general
-    # reading holds a lender and a number for the loan group; the rest are hand-only fields);
-    # a Verwaltervertrag names its manager and its start, the rest by hand (10 Nov 2026).
-    ExtractionKind.GENERAL: {
-        "amount_total": "amount_total",
-        "period_start": "period_start",
-        "period_end": "period_end",
-        "counterparty": "lender",
-        "reference": "contract_number",
-        "notes": "notes",
-    },
-    ExtractionKind.MANAGEMENT_CONTRACT: {
-        "amount_total": "amount_total",
-        "period_start": "start_date",
-        "period_end": "period_end",
-        "counterparty": "manager",
-        "reference": "reference",
-        "notes": "notes",
-    },
-}
+# D37: the map lives in rules.hand_fields (the pre-fill builder uses it too, D132); kept
+# importable from here.
+_HAND_FIELDS = HAND_FIELDS
 
 
 class InvalidUploadError(ValueError):
@@ -401,10 +359,6 @@ def _extraction_kind(fields: ManualDocumentFields | AnyExtraction) -> Extraction
 
 # --- Hand-entry fields over an AI reading (D37) -----------------------------------------
 
-_HAND_TYPES = {
-    name: TypeAdapter(ManualDocumentFields.model_fields[name].annotation) for name in _HAND_FIELDS
-}
-
 
 def hand_fields(extraction: DocumentExtraction | None) -> HandFields:
     """The hand-entry section as the typing form shows it: a `manual` extraction's own fields
@@ -419,7 +373,7 @@ def hand_fields(extraction: DocumentExtraction | None) -> HandFields:
         return HandFields(values=extraction.fields, available=list(_HAND_FIELDS))
     mapping = HAND_FIELD_MAP.get(extraction.kind, {})
     return HandFields(
-        values=_hand_values(extraction.fields, mapping),
+        values=hand_values(extraction.fields, mapping),
         available=[name for name in _HAND_FIELDS if name in mapping],
     )
 
@@ -443,7 +397,7 @@ def hand_fields_into(
             EXTRACTION_KIND_MISMATCH,
             f"a {kind} reading has no place for the hand field(s) {', '.join(unplaced)}",
         )
-    shown = _hand_values(reading, mapping)
+    shown = hand_values(reading, mapping)
     model = type(reading)
     update: dict[str, ExtractedValue] = {}
     for name, target in mapping.items():
@@ -457,25 +411,6 @@ def hand_fields_into(
             else ExtractedValue(value=value, checks=["validates"], confidence="high")
         )
     return reading.model_copy(update=update) if update else reading
-
-
-def _hand_values(reading: Any, mapping: dict[HandField, str]) -> ManualDocumentFields:
-    values: dict[str, Any] = {}
-    for name, target in mapping.items():
-        stored = getattr(reading, target).value
-        if stored is None:
-            continue
-        try:
-            values[name] = _HAND_TYPES[name].validate_python(stored)
-        except ValidationError:
-            continue  # not a value the hand field can hold: shown empty, kept as it was
-    try:
-        return ManualDocumentFields.model_validate(values)
-    except ValidationError:
-        # Only the period can fail as a whole (an end before its start): show neither.
-        values.pop("period_start", None)
-        values.pop("period_end", None)
-        return ManualDocumentFields.model_validate(values)
 
 
 def _stored(value: Any, kind: str) -> Any:
@@ -665,6 +600,24 @@ def current_extraction(conn: Connection, document_id: UUID) -> DocumentExtractio
         .limit(1)
     ).one_or_none()
     return None if row is None else DocumentExtraction.model_validate(dict(row._mapping))
+
+
+def extraction_version(conn: Connection, extraction_id: UUID) -> int | None:
+    """The version number of one extraction row (a proposal names the reading it was built
+    from by id), None when no such row is visible."""
+    return conn.execute(
+        select(extraction_table.c.version).where(extraction_table.c.id == extraction_id)
+    ).scalar_one_or_none()
+
+
+def extraction_version_at(conn: Connection, document_id: UUID, at: datetime) -> int:
+    """The document's latest extraction version created at or before `at` (0: none)."""
+    version = conn.execute(
+        select(func.max(extraction_table.c.version))
+        .where(extraction_table.c.document_id == document_id)
+        .where(extraction_table.c.created_at <= at)
+    ).scalar_one()
+    return version or 0
 
 
 def document_media_type(conn: Connection, document_id: UUID) -> str | None:

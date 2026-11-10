@@ -39,6 +39,7 @@ from hausbuch.rules.errors import (
     PROPOSAL_NOT_READY,
 )
 from hausbuch.rules.extraction_parse import extraction_kind
+from hausbuch.rules.hand_fields import HAND_FIELDS
 from hausbuch.rules.loan_schedule import build_schedule
 from hausbuch.rules.prefill import (
     build_proposal,
@@ -65,7 +66,7 @@ from hausbuch.schemas.api import (
     UnitPatch,
 )
 from hausbuch.schemas.common import Schema
-from hausbuch.schemas.document import DocumentTyping
+from hausbuch.schemas.document import DocumentTyping, ManualDocumentFields
 from hausbuch.schemas.employment import (
     RETURN_INPUT_VALUES,
     ReturnInput,
@@ -517,6 +518,7 @@ def prefill_context(
             ExistingTenant(id=t.id, full_name=t.full_name) for t in tenants.list_tenants(conn)
         ],
         pay_rows=[row for row, _ in _current_pay_rows(conn)],
+        hand_fields=documents.hand_fields(documents.current_extraction(conn, document_id)),
         bescheid_rows=[
             ExistingBescheidZve(
                 id=row.id,
@@ -946,11 +948,47 @@ class _Apply:
         return receipt.tenancy_id
 
     def _typing(self, record: ProposalRecord, values: dict[str, Any]) -> UUID:
-        # The fields the model read are already the document's `ai` extraction version
-        # (record_read_result); the apply sets the typing only.
+        """The typing, and the document's hand-entry fields the record carries (D132). The
+        fields the model read are already the document's `ai` extraction version
+        (record_read_result); a hand field sent (null: cleared) that differs from what the
+        document holds is written as the typing form writes it (D37: into the reading's own
+        field, a new version only when a value changed); one not sent stays as it is. Refused
+        with document.extraction_stale when the document's fields changed since the
+        proposal was built, as the typing form is."""
+        hand = {
+            name: values.pop(name)
+            for name in list(values)
+            if name in HAND_FIELDS and name in record.fields
+        }
         typing = _validate(record.key, DocumentTyping, values)
-        documents.type_document(self.ctx, self.document_id, typing)
+        fields = None
+        shown_version = None
+        if hand:
+            latest = documents.current_extraction(self.ctx.conn, self.document_id)
+            shown = documents.hand_fields(latest).values
+            typed = _validate(
+                record.key, ManualDocumentFields, shown.model_dump(mode="json") | hand
+            )
+            # No extraction yet and nothing typed: no empty version 1 (as the typing form).
+            if latest is not None or typed != shown:
+                fields = typed
+                shown_version = self._shown_version()
+        documents.type_document(
+            self.ctx, self.document_id, typing, fields, shown_version=shown_version
+        )
         return self.document_id
+
+    def _shown_version(self) -> int:
+        """The extraction version the proposal's hand fields were read from: its own
+        reading's, else the document's latest when the proposal was built (0: none)."""
+        extraction_id = self.proposal.extraction_id
+        if extraction_id is not None:
+            version = documents.extraction_version(self.ctx.conn, extraction_id)
+            assert version is not None  # extraction rows are never deleted
+            return version
+        return documents.extraction_version_at(
+            self.ctx.conn, self.document_id, self.proposal.updated_at
+        )
 
     def _link(self, record: ProposalRecord, values: dict[str, Any]) -> UUID:
         target_type = LinkTarget(record.key.split(":", 1)[1])

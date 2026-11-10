@@ -16,6 +16,7 @@ from pydantic import Field, JsonValue, model_validator
 
 from .ai import ClassifyOutput, ExtractedValue
 from .common import Fraction, MutableRecord, NonNegativeMoney, PositiveMoney, Schema, Year
+from .document import HandFields
 from .enums import (
     AcquisitionCostKind,
     EntityType,
@@ -225,3 +226,7 @@ class PrefillContext(Schema):
     pay_rows: list[ExistingPayRow] = Field(default_factory=list)
     # Phase 4b D129: the current bescheid_zve rows, for the note that one is replaced.
     bescheid_rows: list[ExistingBescheidZve] = Field(default_factory=list)
+    # Phase 2 D132: the document's hand-entry fields as its typing form shows them now
+    # (services.documents.hand_fields), for a proposal with no reading of its own (typing
+    # only, or blocked by the tenant gate), whose typing record then carries them.
+    hand_fields: HandFields | None = None

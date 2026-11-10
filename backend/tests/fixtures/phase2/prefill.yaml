@@ -46,6 +46,13 @@
 #            [validates], the classifier's confidence. subtype only when the classifier gave one.
 #            An invoice's tax_year is derived (D36): the year of due_on, else of document_date
 #            (derived_from names the one used); neither stated -> not proposed.
+#            D132 (10 Nov 2026): typing also carries the kind's hand-entry fields
+#            (services.documents / rules.hand_fields HAND_FIELD_MAP) under their hand-field
+#            names (amount_total, period_start, period_end, counterparty, reference, notes),
+#            copied from the reading field each maps to, null when the reading holds none.
+#            Left out: a hand field whose reading field another record proposes (an
+#            invoice's amount_total in its cost record) or a new record's card asks for
+#            (a new cost row's note <- reference; a new loan's lender and contract_number).
 # Financing invoices (D35): an invoice whose subject or title, or a Bescheid whose title,
 #   contains grundschuld, hypothek or darlehen (casefolded, anywhere) proposes no cost:<kind> record (not create, patch or
 #   unchanged) and no subtype in typing, whatever the classifier said; typing's notes contain
@@ -572,7 +579,7 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: invoice, subtype: cost_basis_evidence, title: Kostenrechnung Notarin Beispiel, document_date: "2026-03-20", tax_year: 2026}
+          values: {type: invoice, subtype: cost_basis_evidence, title: Kostenrechnung Notarin Beispiel, document_date: "2026-03-20", tax_year: 2026, counterparty: "Notarin Dr. Anna Beispiel", notes: null}
           derived: {tax_year: [document_date]}
         - key: cost:notary
           entity_type: acquisition_cost
@@ -606,7 +613,7 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: invoice, title: Notarrechnung Grundschuldbestellung, document_date: "2026-03-20", tax_year: 2026}
+          values: {type: invoice, title: Notarrechnung Grundschuldbestellung, document_date: "2026-03-20", tax_year: 2026, amount_total: "612.88", counterparty: "Notarin Dr. Anna Beispiel", reference: "RE26/00001", notes: "Grundschuld-/Hypothekenbestellung mit ZV-Unterwerfung"}
           derived: {tax_year: [document_date]}
           notes_contain: ["Geldbeschaffungskosten"]
         - key: link:property
@@ -636,7 +643,7 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: invoice, title: Notarrechnung Grundschuldbestellung, document_date: "2026-03-20", tax_year: 2026}
+          values: {type: invoice, title: Notarrechnung Grundschuldbestellung, document_date: "2026-03-20", tax_year: 2026, amount_total: "612.88", counterparty: "Notarin Dr. Anna Beispiel", reference: "RE26/00001", notes: null}
           derived: {tax_year: [document_date]}
           notes_contain: ["Geldbeschaffungskosten"]
 
@@ -659,7 +666,7 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: invoice, title: Notarrechnung Grundschuldbestellung, document_date: "2026-03-20", tax_year: 2026}
+          values: {type: invoice, title: Notarrechnung Grundschuldbestellung, document_date: "2026-03-20", tax_year: 2026, amount_total: "612.88", counterparty: "Notarin Dr. Anna Beispiel", reference: "RE26/00001", notes: "Grundschuld-/Hypothekenbestellung mit ZV-Unterwerfung"}
           derived: {tax_year: [document_date]}
           notes_contain: ["Geldbeschaffungskosten", "aus den Nebenkosten"]
 
@@ -686,7 +693,7 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: invoice, subtype: cost_basis_evidence, title: Notarrechnung Kaufvertrag, document_date: "2026-12-20", tax_year: 2027}
+          values: {type: invoice, subtype: cost_basis_evidence, title: Notarrechnung Kaufvertrag, document_date: "2026-12-20", tax_year: 2027, counterparty: "Notarin Dr. Anna Beispiel", notes: "Kaufvertrag mit Auflassung und Finanzierungsvollmacht"}
           derived: {tax_year: [due_on]}
         - key: cost:notary
           entity_type: acquisition_cost
@@ -804,7 +811,7 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: bescheid, title: Kostenrechnung Grundschuldeintragung, document_date: "2026-04-10"}
+          values: {type: bescheid, title: Kostenrechnung Grundschuldeintragung, document_date: "2026-04-10", amount_total: "250.00", counterparty: "Amtsgericht Berlin-Mitte Grundbuchamt", reference: "KR 4711/26"}
           notes_contain: ["Geldbeschaffungskosten"]
 
   - id: darlehen_rate_derived_from_tilgungssatz
@@ -1590,7 +1597,7 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: bescheid, subtype: grundsteuerbescheid, title: Grundsteuerbescheid 2025, document_date: "2025-03-14", tax_year: 2025}
+          values: {type: bescheid, subtype: grundsteuerbescheid, title: Grundsteuerbescheid 2025, document_date: "2025-03-14", tax_year: 2025, reference: "47110815"}
         - key: link:property
           entity_type: link
           mode: create
@@ -1638,7 +1645,7 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: letter, title: Schreiben der Stadtwerke, document_date: "2026-09-01"}
+          values: {type: letter, title: Schreiben der Stadtwerke, document_date: "2026-09-01", amount_total: null, period_start: null, period_end: null, counterparty: null, reference: null, notes: null}
 
   - id: management_contract_links_the_property
     description: D130. A Verwaltervertrag is typed and linked to the property by address; the fee and the notice period stay in the extraction.
@@ -1663,7 +1670,7 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: contract, subtype: management_contract, title: Mietverwaltungsvertrag Lindenstraße 12, document_date: "2026-04-15"}
+          values: {type: contract, subtype: management_contract, title: Mietverwaltungsvertrag Lindenstraße 12, document_date: "2026-04-15", amount_total: null, period_start: "2026-05-01", period_end: null, counterparty: "Muster Hausverwaltung GmbH", reference: null, notes: null}
         - key: link:property
           entity_type: link
           mode: create
@@ -1690,7 +1697,7 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: contract, subtype: management_contract, title: Verwaltervertrag Birkenweg 3, document_date: "2026-04-15"}
+          values: {type: contract, subtype: management_contract, title: Verwaltervertrag Birkenweg 3, document_date: "2026-04-15", amount_total: null, period_start: null, period_end: null, counterparty: "Muster Hausverwaltung GmbH", reference: null, notes: null}
           notes_contain: [kein Objekt gefunden]
 
   - id: catalogue_property_group_by_address
@@ -1712,7 +1719,7 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: letter, subtype: land_register_extract, title: Grundbuchauszug Kastanienallee 5, document_date: "2026-02-03"}
+          values: {type: letter, subtype: land_register_extract, title: Grundbuchauszug Kastanienallee 5, document_date: "2026-02-03", amount_total: null, period_start: null, period_end: null, counterparty: null, reference: null, notes: null}
         - key: link:property
           entity_type: link
           mode: create
@@ -1735,7 +1742,7 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: letter, subtype: weg_minutes, title: Protokoll Eigentümerversammlung 2026, document_date: "2026-06-18"}
+          values: {type: letter, subtype: weg_minutes, title: Protokoll Eigentümerversammlung 2026, document_date: "2026-06-18", amount_total: null, period_start: null, period_end: null, counterparty: null, reference: null, notes: null}
         - key: link:property
           entity_type: link
           mode: create
@@ -1761,7 +1768,7 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: invoice, subtype: utility_bill, title: Jahresabrechnung Strom 2026, document_date: "2027-01-20", tax_year: 2027}
+          values: {type: invoice, subtype: utility_bill, title: Jahresabrechnung Strom 2026, document_date: "2027-01-20", tax_year: 2027, amount_total: "412.30", counterparty: "Stadtwerke Musterstadt", reference: null, notes: "Stromabrechnung 2026"}
           derived: {tax_year: [document_date]}
         - key: link:property
           entity_type: link
@@ -1788,7 +1795,7 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: letter, subtype: quote, title: Kostenvoranschlag Malerarbeiten, document_date: "2026-10-02"}
+          values: {type: letter, subtype: quote, title: Kostenvoranschlag Malerarbeiten, document_date: "2026-10-02", amount_total: null, period_start: null, period_end: null, counterparty: null, reference: null, notes: null}
           notes_contain: [kein Objekt gefunden]
 
   - id: catalogue_loan_group_by_contract_number
@@ -1812,7 +1819,7 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: letter, subtype: loan_terms_change, title: Prolongation Darlehen 2002, document_date: "2026-08-01"}
+          values: {type: letter, subtype: loan_terms_change, title: Prolongation Darlehen 2002, document_date: "2026-08-01", amount_total: null, period_start: null, period_end: null, counterparty: "Musterbank AG", reference: "2002", notes: null}
         - key: link:loan
           entity_type: link
           mode: create
@@ -1838,7 +1845,7 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: statement, subtype: loan_statement, title: Jahreskontoauszug Darlehen 2026, document_date: "2027-01-05"}
+          values: {type: statement, subtype: loan_statement, title: Jahreskontoauszug Darlehen 2026, document_date: "2027-01-05", amount_total: null, period_start: null, period_end: null, counterparty: "Musterbank AG", reference: null, notes: null}
         - key: link:loan
           entity_type: link
           mode: create
@@ -1866,7 +1873,7 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: other, subtype: repayment_schedule, title: Tilgungsplan Darlehen 3003, document_date: "2026-05-01"}
+          values: {type: other, subtype: repayment_schedule, title: Tilgungsplan Darlehen 3003, document_date: "2026-05-01", amount_total: null, period_start: null, period_end: null, counterparty: "Musterbank AG", reference: "3003", notes: null}
           notes_contain: [kein Darlehen gefunden]
 
   - id: catalogue_tenancy_group_by_address_and_date
@@ -1895,7 +1902,7 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: letter, subtype: rent_increase, title: Mieterhöhung Lindenstraße 12, document_date: "2026-09-15"}
+          values: {type: letter, subtype: rent_increase, title: Mieterhöhung Lindenstraße 12, document_date: "2026-09-15", amount_total: null, period_start: null, period_end: null, counterparty: null, reference: null, notes: null}
         - key: link:tenancy
           entity_type: link
           mode: create
@@ -1927,7 +1934,7 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: letter, subtype: termination_notice, title: Kündigung Mietverhältnis, document_date: "2026-10-30"}
+          values: {type: letter, subtype: termination_notice, title: Kündigung Mietverhältnis, document_date: "2026-10-30", amount_total: null, period_start: null, period_end: null, counterparty: null, reference: null, notes: null}
           notes_contain: [kein eindeutiges Mietverhältnis]
 
   - id: catalogue_self_disclosure_links_the_property_only
@@ -1953,7 +1960,7 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: letter, subtype: tenant_self_disclosure, title: Mieterselbstauskunft, document_date: "2026-07-10"}
+          values: {type: letter, subtype: tenant_self_disclosure, title: Mieterselbstauskunft, document_date: "2026-07-10", amount_total: null, period_start: null, period_end: null, counterparty: null, reference: null, notes: null}
           notes_contain: [von Hand mit dem Mietverhältnis]
         - key: link:property
           entity_type: link
@@ -1984,7 +1991,7 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: letter, subtype: operating_costs_statement, title: Betriebskostenabrechnung 2026, document_date: "2027-03-15"}
+          values: {type: letter, subtype: operating_costs_statement, title: Betriebskostenabrechnung 2026, document_date: "2027-03-15", amount_total: null, period_start: null, period_end: null, counterparty: null, reference: null, notes: null}
           notes_contain: [von Hand mit dem Mietverhältnis]
         - key: link:property
           entity_type: link
@@ -2010,7 +2017,7 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: bescheid, subtype: prepayment_notice, title: Vorauszahlungsbescheid 2027, document_date: "2026-11-02"}
+          values: {type: bescheid, subtype: prepayment_notice, title: Vorauszahlungsbescheid 2027, document_date: "2026-11-02", amount_total: null, period_start: null, period_end: null, counterparty: null, reference: null, notes: null}
 
   - id: catalogue_household_services_invoice_typing_only
     description: D131, income tax. A §35a invoice keeps the invoice reader but proposes no Nebenkosten row and no link.
@@ -2030,7 +2037,7 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: invoice, subtype: household_services_invoice, title: Rechnung Fensterreinigung, document_date: "2026-07-07", tax_year: 2026}
+          values: {type: invoice, subtype: household_services_invoice, title: Rechnung Fensterreinigung, document_date: "2026-07-07", tax_year: 2026, amount_total: "119.00", counterparty: "Glanz Gebäudeservice", reference: null, notes: null}
           derived: {tax_year: [document_date]}
 
   - id: catalogue_household_finances_typing_only
@@ -2049,7 +2056,7 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: statement, subtype: depot_statement, title: Depotauszug 30.09.2026, document_date: "2026-09-30"}
+          values: {type: statement, subtype: depot_statement, title: Depotauszug 30.09.2026, document_date: "2026-09-30", amount_total: null, period_start: null, period_end: null, counterparty: null, reference: null, notes: null}
 
   # --- Kautionsnachweis (D42) ------------------------------------------------------------
 
@@ -2136,7 +2143,7 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: letter, subtype: deposit_record, title: Kautionsnachweis Mietkautionskonto, document_date: "2026-07-03"}
+          values: {type: letter, subtype: deposit_record, title: Kautionsnachweis Mietkautionskonto, document_date: "2026-07-03", amount_total: "3450.00"}
           notes_contain: [Mietverhältnis]
 
   - id: kautionsnachweis_already_recorded
