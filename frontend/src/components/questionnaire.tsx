@@ -856,6 +856,7 @@ function StepScreen({
       <p className="fragen-why">
         <strong>Warum:</strong> {question.why_de}
       </p>
+      {question.key === EXTRAORDINARY_KEY ? <ZumutbareBelastung year={year} /> : null}
       {reminders.map((t) => (
         <p key={t.reminder_de} className="notice notice-info">
           Bei „Ja“ steht auf der Übersicht: {t.reminder_de}
@@ -1204,6 +1205,24 @@ function Reconfirm({
 
 function loadEstimate(year: number): Promise<ReturnEstimate | null> {
   return ok(api.GET("/api/tax/return-estimate", { params: { query: { tax_year: year } } })).catch(() => null);
+}
+
+/** The §33 question (außergewöhnliche Belastungen, not computed by the app, D112). */
+const EXTRAORDINARY_KEY = "household.extraordinary";
+
+/** The household's zumutbare Belastung as the estimate computes it (a reminder figure: the
+ * receipts count only above it; nothing is subtracted). Nothing while it loads or fails. */
+function ZumutbareBelastung({ year }: { year: number }) {
+  const load = useCallback(() => loadEstimate(year), [year]);
+  const estimate = useLoad(load);
+  const threshold = estimate.data?.extraordinary_threshold;
+  if (threshold == null) return null;
+  return (
+    <p className="notice notice-info fragen-threshold">
+      Ihre zumutbare Belastung {year}: <strong>{formatMoney(threshold)}</strong>. Nur Kosten darüber zählen; nach der
+      Gesamtschätzung (Einkünfte und Kinder des Jahres).
+    </p>
+  );
 }
 
 function Summary({

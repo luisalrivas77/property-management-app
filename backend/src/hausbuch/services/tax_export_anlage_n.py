@@ -82,6 +82,17 @@ NOT_MODELLED = {
     "prepayments": "Vorauszahlungen",
     "capital_income": "Kapitalerträge (ab Phase 8)",
 }
+
+
+def _not_modelled(code: str, estimate: ReturnEstimate) -> str:
+    """A "Nicht berücksichtigt" item; the außergewöhnliche Belastungen with the household's
+    zumutbare Belastung (a reminder figure, D112), as the Gesamt card shows it."""
+    label = NOT_MODELLED.get(code, code)
+    if code == "extraordinary_burden" and estimate.extraordinary_threshold is not None:
+        return f"{label} (zumutbare Belastung {_money(estimate.extraordinary_threshold)})"
+    return label
+
+
 # Lines whose amount is a count (days, km), not euros (anlageN.tsx COUNT_LINE).
 COUNT_LINE = re.compile(
     r"^(commute\.route_\d+\.(days|km|km_car|km_collective|km_other)|home_office\.days_[a-z_]+)$"
@@ -477,7 +488,7 @@ def render_estimate_page(
         story.append(_para("Hinweise", _H2))
         story += [_para(f"– {warning_text(w)}") for w in shown]
     if estimate.not_modelled:
-        labels = ", ".join(NOT_MODELLED.get(code, code) for code in estimate.not_modelled)
+        labels = ", ".join(_not_modelled(code, estimate) for code in estimate.not_modelled)
         story.append(_para(f"Nicht berücksichtigt: {labels}", _SMALL))
     if estimate.tariff.reused_from is not None:
         story.append(

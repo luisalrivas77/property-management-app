@@ -16548,6 +16548,29 @@
             "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
             "title": "Special Expenses"
           },
+          "special_allowance": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Special Allowance",
+            "default": "0"
+          },
+          "special_allowance_used": {
+            "type": "boolean",
+            "title": "Special Allowance Used",
+            "default": false
+          },
+          "extraordinary_threshold": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extraordinary Threshold"
+          },
           "zve": {
             "type": "string",
             "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",

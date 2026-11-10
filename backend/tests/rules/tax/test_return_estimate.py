@@ -100,6 +100,28 @@ def test_the_estimate_opens_its_sources_and_stamps_the_tariff():
 
 
 @pytest.mark.rule
+def test_the_estimate_flags_the_pauschbetrag_and_shows_the_zumutbare_belastung():
+    """Labels only: the 72 € Pauschbetrag counted (no church tax, no donations), and the
+    zumutbare Belastung of questionnaire.yaml's extraordinary_threshold_household (GdE
+    80,045.44, one child) is shown, subtracted from nothing."""
+    case = next(c for c in load("return_estimate").cases if c.id == "household_2026")
+    got = _estimate(case)
+    assert got.total_income == Decimal("80045.44")
+    assert got.special_allowance == Decimal("72")
+    assert got.special_allowance_used is True
+    assert got.extraordinary_threshold == Decimal("2537.12")
+    assert got.special_expenses == case.expect.special_expenses
+    assert got.zve == case.expect.zve and got.result == case.expect.result
+
+    # Church tax paid above the Pauschbetrag: the itemised amount counts instead.
+    cases = load("return_estimate").cases
+    church = next(c for c in cases if c.id == "church_tax_as_special_expense")
+    itemised = _estimate(church)
+    assert itemised.church_tax_paid + itemised.donations > 72
+    assert itemised.special_allowance_used is False
+
+
+@pytest.mark.rule
 def test_an_owner_without_any_pay_counts_with_nothing():
     case = next(c for c in load("return_estimate").cases if c.id == "no_benefits_no_child")
     facts = case.resolved_owners()

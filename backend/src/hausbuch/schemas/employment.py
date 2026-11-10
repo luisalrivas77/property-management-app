@@ -1164,6 +1164,14 @@ class ReturnEstimate(Schema):
     donations: NonNegativeMoney = _ZERO
     childcare: NonNegativeMoney = _ZERO
     special_expenses: NonNegativeMoney
+    # The Sonderausgaben-Pauschbetrag (§10c, joint) and whether it counted instead of the
+    # church tax paid and the donations (they were below it): labels for the screen only.
+    special_allowance: NonNegativeMoney = _ZERO
+    special_allowance_used: bool = False
+    # The household's zumutbare Belastung (§33 Abs. 3) over total_income: a reminder figure
+    # for the außergewöhnliche Belastungen the estimate does not model, never subtracted
+    # (D95, D112). None when the tariff carries no bands.
+    extraordinary_threshold: NonNegativeMoney | None = None
     zve: NonNegativeMoney
     assessed: AssessedTax
     withheld: Withheld

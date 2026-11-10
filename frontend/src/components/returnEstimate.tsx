@@ -155,7 +155,7 @@ function EstimateView({ estimate, owners, properties }: { estimate: ReturnEstima
       ) : null}
       {(estimate.not_modelled ?? []).length > 0 ? (
         <p className="muted tax-subline">
-          Nicht berücksichtigt: {(estimate.not_modelled ?? []).map(notModelledLabel).join(", ")}
+          Nicht berücksichtigt: {(estimate.not_modelled ?? []).map((code) => notModelledText(code, estimate)).join(", ")}
         </p>
       ) : null}
       {estimate.tariff.reused_from != null ? (
@@ -163,6 +163,15 @@ function EstimateView({ estimate, owners, properties }: { estimate: ReturnEstima
       ) : null}
     </section>
   );
+}
+
+/** A "Nicht berücksichtigt" item; the außergewöhnliche Belastungen carry the household's
+ * zumutbare Belastung (§33 Abs. 3, a reminder figure the API computes and subtracts nowhere). */
+function notModelledText(code: string, estimate: ReturnEstimate): string {
+  const label = notModelledLabel(code);
+  return code === "extraordinary_burden" && estimate.extraordinary_threshold != null
+    ? `${label} (zumutbare Belastung ${formatMoney(estimate.extraordinary_threshold)})`
+    : label;
 }
 
 function Row({ label, amount, strong }: { label: ReactNode; amount: string; strong?: boolean }) {
@@ -224,10 +233,23 @@ function Breakdown({ estimate, owners, properties }: { estimate: ReturnEstimate;
         <p className="tax-tracked-head">Sonderausgaben</p>
         <ul className="tax-estimate-rows">
           <Row label="Vorsorgeaufwendungen" amount={estimate.vorsorge_total} />
-          {!isZeroAmount(estimate.church_tax_paid) ? <Row label="Kirchensteuer gezahlt" amount={estimate.church_tax_paid} /> : null}
-          {!isZeroAmount(estimate.donations) ? <Row label="Spenden" amount={estimate.donations} /> : null}
+          {estimate.special_allowance_used ? (
+            <Row
+              label={
+                isZeroAmount(estimate.church_tax_paid) && isZeroAmount(estimate.donations)
+                  ? "Sonderausgaben-Pauschbetrag"
+                  : "Sonderausgaben-Pauschbetrag (höher als Kirchensteuer und Spenden)"
+              }
+              amount={estimate.special_allowance ?? "0"}
+            />
+          ) : (
+            <>
+              {!isZeroAmount(estimate.church_tax_paid) ? <Row label="Kirchensteuer gezahlt" amount={estimate.church_tax_paid} /> : null}
+              {!isZeroAmount(estimate.donations) ? <Row label="Spenden" amount={estimate.donations} /> : null}
+            </>
+          )}
           {!isZeroAmount(estimate.childcare) ? <Row label="Kinderbetreuungskosten" amount={estimate.childcare} /> : null}
-          <Row label="Sonderausgaben gesamt (mindestens der Pauschbetrag)" amount={estimate.special_expenses} strong />
+          <Row label="Sonderausgaben gesamt" amount={estimate.special_expenses} strong />
         </ul>
       </div>
       <ul className="tax-estimate-rows">

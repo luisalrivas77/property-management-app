@@ -6269,6 +6269,18 @@ export interface components {
             childcare: string;
             /** Special Expenses */
             special_expenses: string;
+            /**
+             * Special Allowance
+             * @default 0
+             */
+            special_allowance: string;
+            /**
+             * Special Allowance Used
+             * @default false
+             */
+            special_allowance_used: boolean;
+            /** Extraordinary Threshold */
+            extraordinary_threshold?: string | null;
             /** Zve */
             zve: string;
             assessed: components["schemas"]["AssessedTax"];
