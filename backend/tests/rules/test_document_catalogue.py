@@ -176,6 +176,7 @@ def test_another_kind_asks_every_field_whatever_the_subtype():
         "start_date",
         "monthly_fee",
         "notice_period",
+        "fee_net",
     )
 
 

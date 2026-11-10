@@ -459,8 +459,17 @@ class ManagementContractExtraction(_Typing):
         "text", "the Verwaltervergütung per month as written, e.g. 30,00 € zzgl. MwSt. je Einheit"
     )
     notice_period: ExtractedValue = ev("text", "Kündigungsfrist, as written")
+    fee_net: ExtractedValue = ev(
+        "money",
+        "the Verwaltervergütung per month as a number, as the contract states it, before "
+        "any MwSt. the contract adds",
+    )
+    # Betrag holds the monthly fee with MwSt., computed by code from fee_net and the fee's
+    # wording (rules.extraction_parse.management_fee_gross; Luis, 10 Nov 2026: the box stayed
+    # empty although the fee was read), or typed by hand. A contract is never a Beleg for the
+    # matcher, so the amount books nothing. Never asked.
+    amount_total: ExtractedValue = hand_ev("money", "Betrag: the monthly fee with MwSt.")
     # By hand only (manager holds Gegenpartei, start_date Zeitraum von).
-    amount_total: ExtractedValue = hand_ev("money", "Betrag, typed by hand")
     period_end: ExtractedValue = hand_ev("date", "Zeitraum bis, typed by hand")
     reference: ExtractedValue = hand_ev("text", "Referenz, typed by hand")
     notes: ExtractedValue = hand_ev("text", "Notiz, typed by hand")

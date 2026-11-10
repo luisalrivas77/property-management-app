@@ -4965,7 +4965,9 @@ export interface components {
             monthly_fee?: components["schemas"]["ExtractedValue"];
             /** @description Kündigungsfrist, as written */
             notice_period?: components["schemas"]["ExtractedValue"];
-            /** @description Betrag, typed by hand */
+            /** @description the Verwaltervergütung per month as a number, as the contract states it, before any MwSt. the contract adds */
+            fee_net?: components["schemas"]["ExtractedValue"];
+            /** @description Betrag: the monthly fee with MwSt. */
             amount_total?: components["schemas"]["ExtractedValue"];
             /** @description Zeitraum bis, typed by hand */
             period_end?: components["schemas"]["ExtractedValue"];

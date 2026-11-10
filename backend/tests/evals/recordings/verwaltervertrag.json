@@ -8,7 +8,7 @@
   "prompt_version": "8569510b0727e75f",
   "request_sha256": "a699428c728b0dbbad96b13092f2d019fe7b30a069f080408db8523c4e2b4cbc",
   "message": {
-   "id": "msg_011CguPw7H9Dsw2csrwFwFBU",
+   "id": "msg_011CguebkTxRhnU8Fs9nx8UJ",
    "container": null,
    "content": [
     {
@@ -46,9 +46,9 @@
  "extract": [
   {
    "prompt_version": "5a4e4a41623c9f1a",
-   "request_sha256": "9f394372c256df4063a73227c34d1ff9c4ba023439db34cb3afe4367f39c9850",
+   "request_sha256": "1907774f6619ef98e7e471e0eb58d9f05e02bb985cd512ee9882a3e04afd78d3",
    "message": {
-    "id": "msg_011CguPvwpsHZNxmn5tf8vwX",
+    "id": "msg_011CguebaK279dLAwaqwQhAa",
     "container": null,
     "content": [
      {
@@ -230,6 +230,26 @@
       ],
       "text": "drei Monate zum Monatsende",
       "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nfee_net: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "§ 3 Vergütung\r\nDer Verwalter erhält 30,00 EUR zzgl. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "30,00 EUR",
+      "type": "text"
      }
     ],
     "diagnostics": null,
@@ -247,8 +267,8 @@
      "cache_creation_input_tokens": 0,
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
-     "input_tokens": 3930,
-     "output_tokens": 313,
+     "input_tokens": 3975,
+     "output_tokens": 345,
      "output_tokens_details": {
       "thinking_tokens": 0
      },

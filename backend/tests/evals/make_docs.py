@@ -604,6 +604,9 @@ DOCS: list[Doc] = [
             "house_number": "7",
             "postal_code": "10115",
             "start_date": "2026-06-01",
+            # Read as written; Betrag (35.70 with MwSt.) is computed by code, uncited, and
+            # tested in tests/rules/test_extraction_parse_general.py.
+            "fee_net": "30.00",
         },
     ),
     # A household letter that fits no subtype: title and date only (D130).

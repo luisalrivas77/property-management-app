@@ -551,3 +551,53 @@ def test_the_propertys_own_address_still_links_it():
     records = _proposal_for("Lindenstraße", "7", "10115")
     assert [r.key for r in records] == ["typing", "link:property"]
     assert str(records[1].target_id) == _FLAT_ID
+
+
+# --- A Verwaltervertrag's Betrag: the net fee plus MwSt., computed by code ----------------
+
+
+def _read(value, quote):
+    from hausbuch.schemas.ai import SourceRef
+
+    return ExtractedValue(
+        value=value,
+        source=SourceRef(page=1, quote=quote),
+        checks=["cited", "value_in_quote", "validates"],
+        confidence="high",
+    )
+
+
+@pytest.mark.parametrize(
+    ("fee_text", "gross"),
+    [
+        ("30,00 € zzgl. MwSt. je Einheit und Monat", "35.70"),  # Luis's contract, 10 Nov 2026
+        ("30,00 EUR zuzüglich der gesetzlichen Umsatzsteuer", "35.70"),
+        ("30,00 € zzgl. 19 % USt.", "35.70"),
+        ("30,00 € zzgl. 7 % MwSt.", "32.10"),
+        ("30,00 € inkl. MwSt.", "30.00"),
+        ("30,00 € monatlich", "30.00"),
+    ],
+)
+def test_management_fee_gross_adds_vat_only_when_the_contract_does(fee_text, gross):
+    from hausbuch.rules.extraction_parse import derive_fields
+
+    values = {"fee_net": _read("30.00", fee_text), "monthly_fee": _read(fee_text, fee_text)}
+    got = derive_fields(ExtractionKind.MANAGEMENT_CONTRACT, values)["amount_total"]
+    assert got.value == gross
+    assert got.checks == ["derived", "validates"]
+    assert got.derived_from == ["fee_net", "monthly_fee"]
+    assert got.source is None
+
+
+def test_management_fee_gross_missing_without_a_net_fee():
+    from hausbuch.rules.extraction_parse import derive_fields
+
+    got = derive_fields(ExtractionKind.MANAGEMENT_CONTRACT, {})["amount_total"]
+    assert got.value is None
+
+
+def test_other_kinds_derive_nothing():
+    from hausbuch.rules.extraction_parse import derive_fields
+
+    values = {"amount_total": ExtractedValue.missing()}
+    assert derive_fields(ExtractionKind.GENERAL, values) == values

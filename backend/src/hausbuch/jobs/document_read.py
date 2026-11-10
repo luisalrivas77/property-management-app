@@ -54,6 +54,7 @@ from hausbuch.rules.extraction_parse import (
     SCRUBBED_KINDS,
     TENANT_SUBTYPES,
     PropertyAddress,
+    derive_fields,
     extraction_kind,
     parse_lines,
     scrub_general_answer,
@@ -415,12 +416,13 @@ def _extract(
     assert first_id is not None
     fields = EXTRACTION_MODELS[kind].model_fields
     asked = asked_fields(kind, subtype)
-    return {
+    values = {
         name: merged.get(name, ExtractedValue.missing())
         if name in asked
         else ExtractedValue.missing()
         for name in fields
-    }, first_id
+    }
+    return derive_fields(kind, values), first_id
 
 
 def _extract_chunk(
