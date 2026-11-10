@@ -138,6 +138,15 @@ def test_every_warning_code_has_a_sheet_text():
     assert set(WARNING_TEXT) == set(WarningCode)
 
 
+def test_the_payslip_gap_text_names_the_missing_month():
+    text = WARNING_TEXT[WarningCode.ANLAGE_N_PAYSLIP_GAP]
+    gap = {"month": "2026-08", "previous": "2026-06", "missing": "2026-07", "employer": "X"}
+    assert text(gap).startswith("Gehaltsabrechnung Juli 2026 fehlt")
+    assert "X" not in text(gap)  # the sheet names no employer
+    assert "August 2026 passt nicht" in text({"month": "2026-08", "previous": "2026-07"})
+    assert text({}) == "Zwischen den Gehaltsabrechnungen fehlt ein Monat."
+
+
 def test_field_sheet_shows_a_kitchen_line_and_takes_it_out_of_the_building():
     """D80: a kitchen in the price has its own row (Z42–45, Kz 60) with Z42's method, the
     building annex subtracts its basis, a kitchen annex explains its AfA, and its missing

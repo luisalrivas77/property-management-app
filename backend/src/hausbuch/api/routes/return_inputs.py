@@ -11,18 +11,30 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import Query
+from sqlalchemy import Connection
 
-from hausbuch.schemas.employment import AnlageNDraft, ReturnEstimate, ReturnInput, ReturnInputCreate
+from hausbuch.rules.tax import registry
+from hausbuch.schemas.common import Schema, TaxYear
+from hausbuch.schemas.employment import (
+    AnlageNDraft,
+    ReturnEstimate,
+    ReturnInput,
+    ReturnInputCreate,
+    ReturnInputEvidence,
+)
 from hausbuch.schemas.enums import ReturnInputKind
-from hausbuch.services.documents import LOCAL_TIME_ZONE
+from hausbuch.services.documents import LOCAL_TIME_ZONE, document_media_type
+from hausbuch.services.proposals import return_input_evidence
 from hausbuch.services.return_inputs import (
     anlage_n_draft,
     create_input,
+    get_return_input,
     household_return_estimate,
     list_return_inputs,
 )
 
-from ..deps import Cmd, domain_router
+from ..deps import Cmd, domain_router, found
+from .documents import INLINE_MEDIA_TYPES
 
 router = domain_router()
 
@@ -58,6 +70,38 @@ def return_input_create(body: ReturnInputCreate, cmd: Cmd) -> ReturnInput:
     anlage_n.useful_life_missing, tax.no_rule_set (a yearly row before 2026); 404 for an
     unknown owner, document or referenced row."""
     return cmd.run(create_input, body)
+
+
+def _evidence(conn: Connection, return_input_id: UUID) -> ReturnInputEvidence:
+    row = found(get_return_input(conn, return_input_id), "return_input", return_input_id)
+    evidence = return_input_evidence(conn, row)
+    if row.document_id is not None:
+        media_type = document_media_type(conn, row.document_id)
+        evidence = evidence.model_copy(update={"opens_inline": media_type in INLINE_MEDIA_TYPES})
+    return evidence
+
+
+@router.get("/return-inputs/{return_input_id}/evidence")
+def return_input_evidence_get(return_input_id: UUID, cmd: Cmd) -> ReturnInputEvidence:
+    """The row's Beleg and, for a row applied from a pre-fill proposal, each value's page and
+    quote with what the user did with it (accepted, edited, cleared). Read-only; `scrubbed`
+    once the proposal's values are gone after 90 days (phase 2 D19). 404 for an unknown
+    row."""
+    return cmd.read(_evidence, return_input_id)
+
+
+class AnlageNYears(Schema):
+    """GET /tax/anlage-n/years: the tax years with an Anlage N rule set file of their own."""
+
+    years: list[TaxYear]
+
+
+@router.get("/tax/anlage-n/years")
+def anlage_n_years() -> AnlageNYears:
+    """The years an Anlage N draft exists for, ascending (the tab's year picker): a draft is
+    only made under the year's own rule set (GET /owners/{id}/anlage-n is 422 tax.no_rule_set
+    for any other year)."""
+    return AnlageNYears(years=list(registry.anlage_n_years()))
 
 
 @router.get("/owners/{owner_id}/anlage-n")

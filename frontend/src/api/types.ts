@@ -128,6 +128,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/return-inputs/{return_input_id}/evidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Return Input Evidence Get
+         * @description The row's Beleg and, for a row applied from a pre-fill proposal, each value's page and
+         *     quote with what the user did with it (accepted, edited, cleared). Read-only; `scrubbed`
+         *     once the proposal's values are gone after 90 days (phase 2 D19). 404 for an unknown
+         *     row.
+         */
+        get: operations["return_input_evidence_get_api_return_inputs__return_input_id__evidence_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tax/anlage-n/years": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Anlage N Years
+         * @description The years an Anlage N draft exists for, ascending (the tab's year picker): a draft is
+         *     only made under the year's own rule set (GET /owners/{id}/anlage-n is 422 tax.no_rule_set
+         *     for any other year).
+         */
+        get: operations["anlage_n_years_api_tax_anlage_n_years_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/owners/{owner_id}/anlage-n": {
         parameters: {
             query?: never;
@@ -2648,6 +2693,14 @@ export interface components {
             form: components["schemas"]["RuleSetStamp"];
             components?: components["schemas"]["WerbungskostenComponents"];
         };
+        /**
+         * AnlageNYears
+         * @description GET /tax/anlage-n/years: the tax years with an Anlage N rule set file of their own.
+         */
+        AnlageNYears: {
+            /** Years */
+            years: number[];
+        };
         /** AnlageVDraft */
         AnlageVDraft: {
             /**
@@ -3786,6 +3839,34 @@ export interface components {
             result?: components["schemas"]["RetentionResult"] | null;
             /** Request Id */
             request_id?: string | null;
+        };
+        /**
+         * EstimateLineSources
+         * @description What each line of the whole-return estimate came from, so the Gesamt card opens the
+         *     sources line by line (ReturnEstimate.sources stays their union). The Anlage N and V lines
+         *     carry theirs on OwnerIncome and PropertyIncome.
+         */
+        EstimateLineSources: {
+            /** Vorsorge */
+            vorsorge?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+            /** Church Tax Paid */
+            church_tax_paid?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+            /** Donations */
+            donations?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+            /** Childcare */
+            childcare?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+            /** Special Allowance */
+            special_allowance?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+            /** Income Tax */
+            income_tax?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+            /** Children */
+            children?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+            /** Credit 35A */
+            credit_35a?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+            /** Surcharges */
+            surcharges?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+            /** Withheld */
+            withheld?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
         };
         /** Event */
         Event: {
@@ -5071,6 +5152,12 @@ export interface components {
              * @enum {string}
              */
             status: "certified" | "estimate" | "none";
+            /** Tax Class */
+            tax_class?: ("i" | "ii" | "iii" | "iv" | "iv_factor" | "v" | "vi") | null;
+            /** Tax Class Source */
+            tax_class_source?: ("certificate" | "payslip" | "questionnaire") | null;
+            /** Sources */
+            sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
         };
         /** OwnerPatch */
         OwnerPatch: {
@@ -5569,6 +5656,8 @@ export interface components {
             property_id: string;
             /** Result */
             result: string;
+            /** Sources */
+            sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
         };
         /**
          * PropertyKind
@@ -6239,6 +6328,18 @@ export interface components {
             childcare: string;
             /** Special Expenses */
             special_expenses: string;
+            /**
+             * Special Allowance
+             * @default 0
+             */
+            special_allowance: string;
+            /**
+             * Special Allowance Used
+             * @default false
+             */
+            special_allowance_used: boolean;
+            /** Extraordinary Threshold */
+            extraordinary_threshold?: string | null;
             /** Zve */
             zve: string;
             assessed: components["schemas"]["AssessedTax"];
@@ -6258,6 +6359,7 @@ export interface components {
             tariff: components["schemas"]["TariffStamp"];
             /** Sources */
             sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+            line_sources?: components["schemas"]["EstimateLineSources"];
             /** Children */
             children?: components["schemas"]["ChildMonthsDetail"][];
         };
@@ -6331,6 +6433,53 @@ export interface components {
              * @default false
              */
             withdrawn: boolean;
+        };
+        /**
+         * ReturnInputEvidence
+         * @description GET /return-inputs/{id}/evidence: the row's Beleg and, when the row was applied from a
+         *     pre-fill proposal, each value's page and quote (read-only, gap 3). `scrubbed` says the
+         *     proposal's values were removed 90 days after the decision (phase 2 D19), so only the Beleg
+         *     is left; `values` is then empty.
+         */
+        ReturnInputEvidence: {
+            /**
+             * Return Input Id
+             * Format: uuid
+             */
+            return_input_id: string;
+            /** Document Id */
+            document_id?: string | null;
+            /**
+             * Opens Inline
+             * @default false
+             */
+            opens_inline: boolean;
+            /** Proposal Id */
+            proposal_id?: string | null;
+            /** Decided At */
+            decided_at?: string | null;
+            /**
+             * Scrubbed
+             * @default false
+             */
+            scrubbed: boolean;
+            /** Values */
+            values?: components["schemas"]["ReturnInputEvidenceValue"][];
+        };
+        /**
+         * ReturnInputEvidenceValue
+         * @description One value of the pre-fill a row was applied from: where the document states it (page
+         *     and quote, when the model cited one) and what the user did with it on apply.
+         */
+        ReturnInputEvidenceValue: {
+            /** Field */
+            field: string;
+            /** Page */
+            page?: number | null;
+            /** Quote */
+            quote?: string | null;
+            /** Decision */
+            decision?: ("accepted" | "edited" | "cleared" | "skipped") | null;
         };
         /**
          * ReturnInputFact
@@ -8348,6 +8497,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReturnInput"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    return_input_evidence_get_api_return_inputs__return_input_id__evidence_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                return_input_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReturnInputEvidence"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    anlage_n_years_api_tax_anlage_n_years_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnlageNYears"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

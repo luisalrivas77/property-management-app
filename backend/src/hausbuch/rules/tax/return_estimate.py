@@ -16,7 +16,10 @@ Pure functions, no I/O, Decimal throughout; nothing here calls a model (principl
 - Without a context it equals `tariff.total_tax` (test_tariff.py asserts it).
 
 `return_estimate(...)`: total income (GdE) = Σ Anlage N results + Σ Anlage V results;
-Sonderausgaben = Σ Vorsorge + max(72, church tax paid + donations within the cap) + childcare;
+Sonderausgaben = Σ Vorsorge + max(72, church tax paid + donations within the cap) + childcare
+(`special_allowance_used` says the 72 € Pauschbetrag counted, i.e. church tax and donations
+were below it); the zumutbare Belastung (§33 Abs. 3) over the GdE and the children with months
+in the year is shown as a reminder figure and never subtracted (D95, D112);
 zvE = floor(GdE − Sonderausgaben); withheld = Σ Nr. 4–7 over the certificates (real and
 projected); result = assessed.total − withheld.total (negative is a refund); the §46 Abs. 2
 filing check with German reasons and the deadline (31 July of the next year, moved to the next
@@ -35,12 +38,14 @@ from hausbuch.rules.tax.anlage_n.children import child_months, children_months
 from hausbuch.rules.tax.anlage_n.draft import RULE_SET_SOURCE, TARIFF_SOURCE, Itemised, itemise
 from hausbuch.rules.tax.anlage_n.summary import household_figures
 from hausbuch.rules.tax.anlage_n.vorsorge import vorsorge
+from hausbuch.rules.tax.questionnaire import extraordinary_threshold
 from hausbuch.rules.tax.tariff import church_tax, income_tax, soli
 from hausbuch.schemas.employment import (
     AnlageNRuleSet,
     AssessedTax,
     ChildMonthsDetail,
     ChildrenResult,
+    EstimateLineSources,
     FilingCheck,
     MissingItem,
     OwnerIncome,
@@ -214,6 +219,37 @@ def _year_rows(facts: OwnerReturnFacts, tax_year: int) -> list[ReturnInputFact]:
     return [r for r in in_year(facts.inputs, tax_year) if r.tax_year == tax_year]
 
 
+_CLASS_CODES = {1: "i", 2: "ii", 3: "iii", 4: "iv", 5: "v", 6: "vi"}
+_CHOICES = {*_CLASS_CODES.values(), "iv_factor"}
+
+
+def _tax_class(
+    item: Itemised | None, owner_id: UUID, answers: Sequence[QuestionnaireAnswer]
+) -> tuple[str | None, str | None]:
+    """The owner's Steuerklasse for the Gesamt card (Q-O18), a label that changes no figure:
+    the certificate (else projected payslip) ending last outside class VI (a second job's class
+    says nothing about the couple's split), else the year's owner.tax_class answer."""
+    if item is not None:
+        dated = [(c, "certificate") for c in item.pay.real]
+        dated += [(c, "payslip") for c in item.pay.projected]
+        main = [(c, src) for c, src in dated if c.tax_class != 6] or dated
+        if main:
+            cert, src = max(main, key=lambda pair: pair[0].period_to)
+            if cert.tax_class == 4 and cert.tax_class_factor:
+                return "iv_factor", src
+            return _CLASS_CODES[cert.tax_class], src
+    for a in answers:
+        if (
+            a.question_key == "owner.tax_class"
+            and a.owner_id == owner_id
+            and a.answer == "yes"
+            and not a.withdrawn
+            and a.choice in _CHOICES
+        ):
+            return a.choice, "questionnaire"
+    return None, None
+
+
 def return_estimate(
     tax_year: int,
     owners: Sequence[OwnerTaxProfile],
@@ -245,11 +281,32 @@ def return_estimate(
         except RuleError as error:
             if error.code != ANLAGE_N_NO_PAY:
                 raise
-            income_n.append(OwnerIncome(owner_id=f.owner_id, result=ZERO, status="none"))
+            tax_class, source = _tax_class(None, f.owner_id, answers)
+            income_n.append(
+                OwnerIncome(
+                    owner_id=f.owner_id,
+                    result=ZERO,
+                    status="none",
+                    tax_class=tax_class,
+                    tax_class_source=source,
+                )
+            )
             continue
         items[f.owner_id] = item
         vorsorge_of[f.owner_id] = vorsorge(f, tax_year, rs, tariff)
-        income_n.append(OwnerIncome(owner_id=f.owner_id, result=item.result, status=item.status))
+        tax_class, source = _tax_class(item, f.owner_id, answers)
+        income_n.append(
+            OwnerIncome(
+                owner_id=f.owner_id,
+                result=item.result,
+                status=item.status,
+                tax_class=tax_class,
+                tax_class_source=source,
+                sources=unique(
+                    [ref for line in item.line_sources.values() for ref in line] + [RULE_SET_SOURCE]
+                ),
+            )
+        )
     paid_facts = [f for f in owner_facts if f.owner_id in items]
     rental = sum((p.result for p in properties), ZERO)
     gde = sum((i.result for i in items.values()), ZERO) + rental
@@ -260,11 +317,8 @@ def return_estimate(
 
     vorsorge_total = sum((v.deductible for v in vorsorge_of.values()), ZERO)
     allowance = tariff.special_expenses_allowance * 2
-    special = (
-        vorsorge_total
-        + max(allowance, household.church_tax_paid + household.donations)
-        + household.childcare
-    )
+    itemised_special = household.church_tax_paid + household.donations
+    special = vorsorge_total + max(allowance, itemised_special) + household.childcare
     zve = max(ZERO, floor_euros(gde - special))
     assessed, w = assessed_tax_with_warnings(
         zve, household, owners, tariff, tax_year, allowance_unused=figures.allowance_unused
@@ -322,6 +376,12 @@ def return_estimate(
         for child in household.children
     ]
     counted = sum(1 for child in child_rows if child.months > 0)
+    # §33 Abs. 3: a reminder figure only (D95, D112): never subtracted from anything.
+    threshold = (
+        extraordinary_threshold(gde, counted, True, tariff)
+        if tariff.extraordinary_burden_bands
+        else None
+    )
     if any(c.child_allowance_count != counted for i in items.values() for c in i.pay.real):
         warnings.append(warning(WarningCode.RETURN_CHILDREN_MISMATCH))
 
@@ -337,17 +397,36 @@ def return_estimate(
     refs += household.sources
     refs += [SourceRef(kind="property", id=p.property_id) for p in properties]
     refs += [RULE_SET_SOURCE, TARIFF_SOURCE]
+    of_household = figures.line_sources
+    line_sources = EstimateLineSources(
+        vorsorge=unique([ref for v in vorsorge_of.values() for ref in v.sources]),
+        church_tax_paid=of_household.get("church_tax_paid", []),
+        donations=of_household.get("donations", []),
+        childcare=of_household.get("childcare", []),
+        special_allowance=[TARIFF_SOURCE],
+        income_tax=unique([TARIFF_SOURCE, RULE_SET_SOURCE, *of_household.get("benefits", [])]),
+        children=unique([*of_household.get("children", []), TARIFF_SOURCE]),
+        credit_35a=of_household.get("credit_35a", []),
+        surcharges=[TARIFF_SOURCE],
+        withheld=unique([ref for i in items.values() for ref in i.pay.sources()]),
+    )
     return ReturnEstimate(
         tax_year=tax_year,
         status=status,
         income_n=income_n,
-        income_v=list(properties),
+        income_v=[
+            p.model_copy(update={"sources": [SourceRef(kind="property", id=p.property_id)]})
+            for p in properties
+        ],
         total_income=gde,
         vorsorge_total=vorsorge_total,
         church_tax_paid=household.church_tax_paid,
         donations=household.donations,
         childcare=household.childcare,
         special_expenses=special,
+        special_allowance=allowance,
+        special_allowance_used=itemised_special < allowance,
+        extraordinary_threshold=threshold,
         zve=zve,
         assessed=assessed,
         withheld=withheld,
@@ -362,5 +441,6 @@ def return_estimate(
             tax_year=tariff.tax_year, version=tariff.version, reused_from=tariff.reused_from
         ),
         sources=unique(refs),
+        line_sources=line_sources,
         children=child_rows,
     )

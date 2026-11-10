@@ -482,6 +482,76 @@
         }
       }
     },
+    "/api/return-inputs/{return_input_id}/evidence": {
+      "get": {
+        "summary": "Return Input Evidence Get",
+        "description": "The row's Beleg and, for a row applied from a pre-fill proposal, each value's page and\nquote with what the user did with it (accepted, edited, cleared). Read-only; `scrubbed`\nonce the proposal's values are gone after 90 days (phase 2 D19). 404 for an unknown\nrow.",
+        "operationId": "return_input_evidence_get_api_return_inputs__return_input_id__evidence_get",
+        "parameters": [
+          {
+            "name": "return_input_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Return Input Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReturnInputEvidence"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tax/anlage-n/years": {
+      "get": {
+        "summary": "Anlage N Years",
+        "description": "The years an Anlage N draft exists for, ascending (the tab's year picker): a draft is\nonly made under the year's own rule set (GET /owners/{id}/anlage-n is 422 tax.no_rule_set\nfor any other year).",
+        "operationId": "anlage_n_years_api_tax_anlage_n_years_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnlageNYears"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/owners/{owner_id}/anlage-n": {
       "get": {
         "summary": "Owner Anlage N",
@@ -7715,6 +7785,26 @@
         "title": "AnlageNDraft",
         "description": "One owner's Anlage N for one year (§5.6). status: certified (from certificates),\nestimate (payslip projection or expected pay), none (no pay source)."
       },
+      "AnlageNYears": {
+        "properties": {
+          "years": {
+            "items": {
+              "type": "integer",
+              "maximum": 2100.0,
+              "minimum": 2000.0
+            },
+            "type": "array",
+            "title": "Years"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "years"
+        ],
+        "title": "AnlageNYears",
+        "description": "GET /tax/anlage-n/years: the tax years with an Anlage N rule set file of their own."
+      },
       "AnlageVDraft": {
         "properties": {
           "property_id": {
@@ -10596,6 +10686,84 @@
         ],
         "title": "ErrorResponse",
         "description": "Every non-2xx body. Only the fields that apply to `error` are set (see ErrorKind)."
+      },
+      "EstimateLineSources": {
+        "properties": {
+          "vorsorge": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Vorsorge"
+          },
+          "church_tax_paid": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Church Tax Paid"
+          },
+          "donations": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Donations"
+          },
+          "childcare": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Childcare"
+          },
+          "special_allowance": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Special Allowance"
+          },
+          "income_tax": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Income Tax"
+          },
+          "children": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Children"
+          },
+          "credit_35a": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Credit 35A"
+          },
+          "surcharges": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Surcharges"
+          },
+          "withheld": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Withheld"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "EstimateLineSources",
+        "description": "What each line of the whole-return estimate came from, so the Gesamt card opens the\nsources line by line (ReturnEstimate.sources stays their union). The Anlage N and V lines\ncarry theirs on OwnerIncome and PropertyIncome."
       },
       "Event": {
         "properties": {
@@ -13705,6 +13873,49 @@
               "none"
             ],
             "title": "Status"
+          },
+          "tax_class": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "i",
+                  "ii",
+                  "iii",
+                  "iv",
+                  "iv_factor",
+                  "v",
+                  "vi"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Class"
+          },
+          "tax_class_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "certificate",
+                  "payslip",
+                  "questionnaire"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Class Source"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Sources"
           }
         },
         "additionalProperties": false,
@@ -14799,6 +15010,13 @@
             "type": "string",
             "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
             "title": "Result"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Sources"
           }
         },
         "additionalProperties": false,
@@ -16499,6 +16717,29 @@
             "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
             "title": "Special Expenses"
           },
+          "special_allowance": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Special Allowance",
+            "default": "0"
+          },
+          "special_allowance_used": {
+            "type": "boolean",
+            "title": "Special Allowance Used",
+            "default": false
+          },
+          "extraordinary_threshold": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extraordinary Threshold"
+          },
           "zve": {
             "type": "string",
             "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
@@ -16558,6 +16799,9 @@
             },
             "type": "array",
             "title": "Sources"
+          },
+          "line_sources": {
+            "$ref": "#/components/schemas/EstimateLineSources"
           },
           "children": {
             "items": {
@@ -16901,6 +17145,130 @@
         ],
         "title": "ReturnInputCreate",
         "description": "One return input row as written. A correction is a new row with supersedes_id (a current\nrow of the same kind and year, and the same owner); withdrawn = true ends it. Rows are\nnever changed."
+      },
+      "ReturnInputEvidence": {
+        "properties": {
+          "return_input_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Return Input Id"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "opens_inline": {
+            "type": "boolean",
+            "title": "Opens Inline",
+            "default": false
+          },
+          "proposal_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposal Id"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "scrubbed": {
+            "type": "boolean",
+            "title": "Scrubbed",
+            "default": false
+          },
+          "values": {
+            "items": {
+              "$ref": "#/components/schemas/ReturnInputEvidenceValue"
+            },
+            "type": "array",
+            "title": "Values"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "return_input_id"
+        ],
+        "title": "ReturnInputEvidence",
+        "description": "GET /return-inputs/{id}/evidence: the row's Beleg and, when the row was applied from a\npre-fill proposal, each value's page and quote (read-only, gap 3). `scrubbed` says the\nproposal's values were removed 90 days after the decision (phase 2 D19), so only the Beleg\nis left; `values` is then empty."
+      },
+      "ReturnInputEvidenceValue": {
+        "properties": {
+          "field": {
+            "type": "string",
+            "title": "Field"
+          },
+          "page": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page"
+          },
+          "quote": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "accepted",
+                  "edited",
+                  "cleared",
+                  "skipped"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "field"
+        ],
+        "title": "ReturnInputEvidenceValue",
+        "description": "One value of the pre-fill a row was applied from: where the document states it (page\nand quote, when the model cited one) and what the user did with it on apply."
       },
       "ReturnInputFact": {
         "properties": {

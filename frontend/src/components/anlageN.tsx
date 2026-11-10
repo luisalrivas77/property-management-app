@@ -17,6 +17,7 @@ import type { components } from "@/api/types";
 import { formatDate, formatDecimal, formatMoney } from "./format";
 import { ANLAGE_N_STATUS, RETURN_INPUT_KIND, WARNING_TEXT } from "./labels";
 import { BlockRows, hasBlocks } from "./anlageNBlocks";
+import { EvidenceFold } from "./returnInputEvidence";
 import { InputsPanel, type ReturnInput } from "./returnInputs";
 import { ReturnEstimateCard, useReturnEstimate, type ReturnEstimate } from "./returnEstimate";
 import { ExportCard, SourcesButton, type ExportButton } from "./tax";
@@ -31,9 +32,13 @@ type Payslip = components["schemas"]["Payslip"];
 type WageCertificate = components["schemas"]["WageCertificate"];
 
 const FOOTER = "Ein Entwurf zum Prüfen, keine Steuerberatung.";
-const FIRST_RULE_YEAR = 2026;
 
 const loadOwners = () => ok(api.GET("/api/owners"));
+// The years with an Anlage N rule set (a draft is made only under the year's own one).
+const loadYears = () => ok(api.GET("/api/tax/anlage-n/years")).then((r) => r.years);
+// The year's questions with their German text (the open ones are listed under Offene Punkte).
+const loadQuestionnaire = (year: number) =>
+  ok(api.GET("/api/tax/questionnaire", { params: { query: { tax_year: year } } }));
 
 /** The draft, or why there is none: no pay source yet, or no rule set for the year. */
 type DraftState = { draft: AnlageNDraft } | { missing: "no_pay" | "no_rule_set" };
@@ -110,10 +115,9 @@ function OwnerScreen({ owner, owners, state }: { owner: Owner; owners: Owner[]; 
     reloadEstimate();
   }, [reloadRows, reloadDraft, reloadEstimate]);
 
-  const thisYear = new Date().getFullYear();
-  const yearOptions: number[] = [];
-  for (let y = FIRST_RULE_YEAR; y <= Math.max(year, thisYear); y += 1) yearOptions.push(y);
-  if (!yearOptions.includes(year)) yearOptions.unshift(year);
+  const years = useLoad(loadYears);
+  // The rule set years, plus the year shown when it has none (it then says so).
+  const yearOptions = years.data && !years.data.includes(year) ? [...years.data, year].sort((a, b) => a - b) : (years.data ?? [year]);
 
   return (
     <>
@@ -441,25 +445,30 @@ function OpenPoints({
   year: number;
 }) {
   const sorted = [...warnings.filter((w) => w.severity === "warning"), ...warnings.filter((w) => w.severity === "info")];
-  const questions = (estimate?.questionnaire.open ?? []).filter((q) => q.owner_id === ownerId).length;
+  const load = useCallback(() => loadQuestionnaire(year), [year]);
+  const view = useLoad(load);
+  // This person's open slots, then the household's (no owner, no property); the property
+  // questions belong to the Anlage V tab.
+  const open = (view.data?.progress.open ?? estimate?.questionnaire.open ?? []).filter(
+    (q) => q.owner_id === ownerId || (q.owner_id == null && q.property_id == null),
+  );
+  const text = new Map((view.data?.questions ?? []).map((q) => [q.key, q.question_de]));
   return (
     <section className="card tax-open" aria-labelledby="tax-n-open">
       <h2 id="tax-n-open">Offene Punkte</h2>
-      {sorted.length === 0 && questions === 0 ? (
+      {sorted.length === 0 && open.length === 0 ? (
         <p className="muted">Keine offenen Punkte.</p>
       ) : (
         <ul className="tax-open-list">
-          {questions > 0 ? (
-            <li className="tax-open-item tax-open-info">
-              <span className="badge badge-info">Frage</span>
-              <p>
-                {questions} {questions === 1 ? "Jahresfrage" : "Jahresfragen"} zu dieser Person offen
-              </p>
+          {open.map((q) => (
+            <li key={`${q.key}-${q.owner_id ?? "household"}`} className="tax-open-item tax-open-info">
+              <span className="badge badge-info">{q.owner_id == null ? "Frage Haushalt" : "Frage"}</span>
+              <p>{text.get(q.key) ?? "Jahresfrage offen"}</p>
               <p className="tax-open-actions">
-                <Link href={questionnaireHref(year)}>Jahresfragen beantworten</Link>
+                <Link href={questionnaireHref(year, { key: q.key, ownerId: q.owner_id })}>Beantworten</Link>
               </p>
             </li>
-          ) : null}
+          ))}
           {sorted.map((warning, index) => (
             <li key={`${warning.code}-${index}`} className={`tax-open-item tax-open-${warning.severity}`}>
               <span className={warning.severity === "warning" ? "badge badge-warn" : "badge badge-info"}>
@@ -529,6 +538,7 @@ function Documents({ rows, year }: { rows: ReturnInput[]; year: number }) {
                     <>
                       {" · "}
                       <Link href={`/documents/${row.document_id}`}>Dokument öffnen</Link>
+                      <EvidenceFold returnInputId={row.id} />
                     </>
                   ) : null}
                 </li>
@@ -558,6 +568,7 @@ function Documents({ rows, year }: { rows: ReturnInput[]; year: number }) {
                           <>
                             {" · "}
                             <Link href={`/documents/${row.document_id}`}>Dokument öffnen</Link>
+                            <EvidenceFold returnInputId={row.id} />
                           </>
                         ) : null}
                       </li>

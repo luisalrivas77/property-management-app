@@ -493,6 +493,31 @@ button.link.tax-sources-button {
   margin-left: auto;
 }
 
+/* A return input's Fundstellen (returnInputEvidence.tsx): page and quote per value. */
+.evidence-fold {
+  font-size: 14px;
+}
+
+.evidence-fold > summary {
+  cursor: pointer;
+  color: var(--info);
+}
+
+.evidence-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+}
+
+.evidence-list li {
+  padding: 6px 0;
+  border-top: 1px solid var(--divider);
+}
+
+.evidence-field {
+  font-weight: 600;
+}
+
 .tax-input-form {
   padding: 12px;
   border: 1px solid var(--border);

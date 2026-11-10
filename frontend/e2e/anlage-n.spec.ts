@@ -183,3 +183,58 @@ test("the Anlage N tab saves every kind of input, switches owner and shows the e
   await expect(page.getByText("Noch keine Immobilie.")).toBeVisible();
   await expect(page.getByRole("region", { name: "Gesamt" })).toContainText(euro(estimate.result.replace(/^-/, "")));
 });
+
+async function taxClass(page: Page, ownerId: string, choice: string): Promise<void> {
+  await apiCall(page, "POST", "/api/tax/questionnaire/answers", {
+    answer: { question_key: "owner.tax_class", tax_year: YEAR, owner_id: ownerId, answer: "yes", choice },
+  });
+}
+
+test("the Anlage N tab names the open questions, the Gesamt card the tax classes and each line's sources", async ({
+  page,
+  signedIn,
+}) => {
+  void signedIn;
+  const a = await apiCall<Owner>(page, "POST", "/api/owners", { full_name: "A. Muster", church_tax: false });
+  const b = await apiCall<Owner>(page, "POST", "/api/owners", { full_name: "B. Muster", church_tax: false });
+  await expectedPay(page, a.id, "52000.00");
+  await expectedPay(page, b.id, "38000.00");
+  // No certificate yet, so the classes come from the Jahresfragen.
+  await taxClass(page, a.id, "iii");
+  await taxClass(page, b.id, "v");
+
+  await page.goto(`/tax/${YEAR}?tab=anlage-n`);
+  await expect(page.getByRole("heading", { level: 1, name: "A. Muster" })).toBeVisible();
+
+  // Offene Punkte: A's open questions and the household's, by their text; the answered tax
+  // class is not among them, nor a property question.
+  const open = page.getByRole("region", { name: "Offene Punkte" });
+  await expect(open).toContainText("Liegt die Lohnsteuerbescheinigung für das Jahr vor, oder Gehaltsabrechnungen?");
+  await expect(open).toContainText("Leben Kinder im Haushalt, und kam in diesem Jahr ein Kind dazu?");
+  await expect(open).not.toContainText("Welche Steuerklasse gilt?");
+
+  // The Gesamt card explains the refund or back-payment by the classes; no figure depends on it.
+  const card = page.getByRole("region", { name: "Gesamt" });
+  await expect(card).toContainText("Steuerklassen III/V: die Erstattung oder Nachzahlung gleicht den Lohnsteuerabzug aus.");
+
+  // Each line of the fold-out opens its own sources: Vorsorge from each owner's expected pay.
+  await card.getByText("So rechnet die Schätzung").click();
+  const vorsorge = card.getByRole("listitem").filter({ hasText: "Vorsorgeaufwendungen" });
+  await vorsorge.getByRole("button").click();
+  const sources = page.getByRole("dialog", { name: "Quellen: Vorsorgeaufwendungen" });
+  await expect(sources).toContainText("Einkommensangabe");
+  const incomeLinks = sources.getByRole("link", { name: "Einkommen ansehen" });
+  await expect(incomeLinks).toHaveCount(2);
+  await expect(incomeLinks.first()).toHaveAttribute("href", "/owners");
+  await sources.getByRole("button", { name: "Schließen" }).click();
+  await expect(card.getByRole("listitem").filter({ hasText: /^Einkommensteuer/ }).getByRole("button", { name: "2 Quellen" })).toBeVisible();
+
+  // A question's link opens the Jahresfragen at that question.
+  await open
+    .getByRole("listitem")
+    .filter({ hasText: "Leben Kinder im Haushalt" })
+    .getByRole("link", { name: "Beantworten" })
+    .click();
+  await expect(page).toHaveURL(new RegExp(`/tax/${YEAR}/fragen\\?frage=household\\.children$`));
+  await expect(page.locator("h2.fragen-question")).toHaveText("Leben Kinder im Haushalt, und kam in diesem Jahr ein Kind dazu?");
+});

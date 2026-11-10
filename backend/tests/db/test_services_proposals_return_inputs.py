@@ -25,7 +25,7 @@ from db.test_jobs_document_read import setup as setup  # noqa: F401 (a fixture)
 from db.test_services_proposals import _accept_all, _ai_call, _read_ready, _v
 from db.test_services_proposals import enqueued as enqueued  # noqa: F401 (a fixture)
 from db.test_services_proposals import job as job  # noqa: F401 (a fixture)
-from sqlalchemy import insert, select
+from sqlalchemy import insert, null, select, update
 
 import hausbuch.services as services_package
 from hausbuch.ai.fake import FakeModelClient, cited_response, text_response
@@ -39,7 +39,7 @@ from hausbuch.schemas.employment import CERTIFICATE_AMOUNTS, ReturnInputCreate, 
 from hausbuch.schemas.enums import DocumentType, ProposalStatus
 from hausbuch.schemas.events import EventType, ReturnInputRecorded
 from hausbuch.schemas.property import OwnerCreate
-from hausbuch.schemas.proposal import ProposalApplyBody, ProposalApplyRecord
+from hausbuch.schemas.proposal import FieldDecision, ProposalApplyBody, ProposalApplyRecord
 from hausbuch.services import proposals
 from hausbuch.services.allocations import user_id
 from hausbuch.services.errors import NotFoundError
@@ -476,3 +476,77 @@ def test_period_dates_in_the_row(run, read, job, fresh_workspaces, blob_store, e
     [row] = _pay_rows(read, ws)
     assert date.fromisoformat(row["value"]["period_from"]) == date(2026, 1, 1)
     assert date.fromisoformat(row["value"]["period_to"]) == date(2026, 12, 31)
+
+
+# --- The evidence of a row: each value's page and quote ----------------------------------------
+
+
+def _evidence(conn, row_id):
+    from hausbuch.services.return_inputs import get_return_input
+
+    return proposals.return_input_evidence(conn, get_return_input(conn, row_id))
+
+
+def test_a_row_applied_from_a_proposal_shows_each_values_page_and_quote(
+    run, read, job, fresh_workspaces, blob_store, enqueued
+):
+    ws, _ = fresh_workspaces
+    _owner(run, ws)
+    doc, ready, _ = _read_ready(
+        run, job, ws, blob_store, enqueued, PAYSLIP, PAYSLIP_VALUES, b"%PDF juli ev"
+    )
+    body = _accept_all(ready, **{"return_input:payslip": {"value.gross.month": "5001.00"}})
+    for record in body.records:
+        if record.key == "return_input:payslip":
+            record.decisions["value.gross.month"] = FieldDecision.EDITED
+    _apply(run, ws, ready, body)
+    [row] = _pay_rows(read, ws)
+
+    got = read(ws, _evidence, row["id"])
+    assert (got.document_id, got.proposal_id, got.scrubbed) == (doc.id, ready.id, False)
+    by_field = {v.field: v for v in got.values}
+    assert "owner_id" not in by_field  # matched by code, never quoted
+    gross = by_field["value.gross.month"]
+    assert (gross.page, gross.quote, gross.decision) == (
+        1,
+        "Steuer-Brutto 5.000,00 35.000,00",
+        "edited",
+    )
+    assert by_field["value.period_month"].quote == "Abrechnungszeitraum 01.07.2026 - 31.07.2026"
+    assert by_field["value.employer"].decision == "accepted"
+    assert by_field["value.months_remaining_paid"].quote is None  # derived, not cited
+
+    # D19: 90 days after the decision the values are gone; the Beleg stays.
+    def scrub(ctx):
+        ctx.conn.execute(
+            update(proposal_table)
+            .where(proposal_table.c.id == ready.id)
+            .values(fields=null(), decisions=null(), scrubbed_at=ctx.now)
+        )
+
+    run(ws, scrub)
+    later = read(ws, _evidence, row["id"])
+    assert (later.document_id, later.proposal_id, later.scrubbed, later.values) == (
+        doc.id,
+        ready.id,
+        True,
+        [],
+    )
+
+
+def test_a_typed_row_has_no_evidence(run, read, fresh_workspaces):
+    from hausbuch.services.return_inputs import create_input
+
+    ws, _ = fresh_workspaces
+    owner = _owner(run, ws)
+    data = ReturnInputCreate.model_validate(
+        {
+            "owner_id": str(owner),
+            "kind": "training",
+            "tax_year": 2026,
+            "value": {"label": "Fachbuch", "amount": "40.00"},
+        }
+    )
+    row = run(ws, create_input, data)
+    got = read(ws, _evidence, row.id)
+    assert (got.document_id, got.proposal_id, got.values) == (None, None, [])

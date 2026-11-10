@@ -29,7 +29,7 @@ import type {
 } from "@/api/schemas";
 import type { components } from "@/api/types";
 
-import { formatDate, formatMoney } from "./format";
+import { formatDate, formatMoney, formatMonth } from "./format";
 
 // Step 4's enums have no alias in schemas.ts yet.
 type AllocationCategory = components["schemas"]["AllocationCategory"];
@@ -415,6 +415,59 @@ export const RETURN_INPUT_KIND: Record<ReturnInputKind, string> = {
   special_expense: "Spende",
 };
 
+/** A pre-filled pay document's field (the proposal's field name, backend rules/prefill.py
+ * wage_certificate / payslip), as the evidence fold-out names it. The certificate's amounts by
+ * their line (Nr. 3 …), the payslip's figures with month or year to date. */
+const PAY_FIELD: Record<string, string> = {
+  tax_year: "Steuerjahr",
+  "value.period_from": "Zeitraum von",
+  "value.period_to": "Zeitraum bis",
+  "value.period_month": "Abrechnungsmonat",
+  "value.employer": "Arbeitgeber",
+  "value.tax_class": "Steuerklasse",
+  "value.tax_class_factor": "Faktor (Steuerklasse IV)",
+  "value.church_tax_marked": "Kirchensteuermerkmal",
+  "value.child_allowance_count": "Kinderfreibeträge",
+  "value.months_remaining_paid": "Restliche Monate",
+  "value.gross": "Nr. 3 Bruttoarbeitslohn",
+  "value.income_tax": "Nr. 4 Lohnsteuer",
+  "value.soli": "Nr. 5 Solidaritätszuschlag",
+  "value.church_tax": "Nr. 6 Kirchensteuer",
+  "value.church_tax_spouse": "Nr. 7 Kirchensteuer Ehegatte",
+  "value.replacement_benefits": "Nr. 15 Lohnersatzleistungen",
+  "value.short_time_allowance": "Nr. 15a Kurzarbeitergeld",
+  "value.employer_commute_tax_free": "Nr. 17 Fahrtkostenzuschuss steuerfrei",
+  "value.employer_commute_flat_taxed": "Nr. 18 Fahrtkostenzuschuss pauschal versteuert",
+  "value.pension_employer": "Nr. 22a Rentenversicherung Arbeitgeber",
+  "value.pension_employee": "Nr. 23a Rentenversicherung Arbeitnehmer",
+  "value.pension_employee_professional": "Nr. 23b berufsständische Versorgung",
+  "value.subsidy_health": "Nr. 24a Zuschuss Krankenversicherung",
+  "value.subsidy_private_health": "Nr. 24b Zuschuss private Krankenversicherung",
+  "value.subsidy_care": "Nr. 24c Zuschuss Pflegeversicherung",
+  "value.health_employee": "Nr. 25 Krankenversicherung",
+  "value.care_employee": "Nr. 26 Pflegeversicherung",
+  "value.unemployment_employee": "Nr. 27 Arbeitslosenversicherung",
+};
+const PAYSLIP_FIGURE: Record<string, string> = {
+  gross: "Steuer-Brutto",
+  income_tax: "Lohnsteuer",
+  soli: "Solidaritätszuschlag",
+  church_tax: "Kirchensteuer",
+  pension_employee: "Rentenversicherung",
+  health_employee: "Krankenversicherung",
+  care_employee: "Pflegeversicherung",
+  unemployment_employee: "Arbeitslosenversicherung",
+  tax_free_benefits: "steuerfreie Bezüge",
+};
+
+export function payFieldLabel(field: string): string {
+  const figure = /^value\.([a-z_]+)\.(month|ytd)$/.exec(field);
+  if (figure?.[1] && figure[2]) {
+    return `${PAYSLIP_FIGURE[figure[1]] ?? figure[1]} (${figure[2] === "month" ? "Monat" : "Jahr bisher"})`;
+  }
+  return PAY_FIELD[field] ?? field;
+}
+
 /** Where an owner's gross pay comes from (OwnerZve.gross_source, D98); the screen adds the
  * year or the payslip month. */
 export const GROSS_SOURCE: Record<GrossSource, string> = {
@@ -573,7 +626,7 @@ export const WARNING_TEXT: Record<WarningCode, (params: Params) => string> = {
   "anlage_n.receipt_missing": () => "Für eine Ausgabe ist kein Beleg hinterlegt.",
   "anlage_n.form_provisional": () =>
     "Die Anlage N für dieses Jahr ist noch nicht veröffentlicht; Zeilen und Kennzahlen sind vorläufig.",
-  "anlage_n.payslip_gap": () => "Zwischen den Gehaltsabrechnungen fehlt ein Monat.",
+  "anlage_n.payslip_gap": (p) => payslipGapText(p),
   "anlage_n.payslip_no_ytd": () =>
     "Die Gehaltsabrechnung hat keine Jahreswerte: die Hochrechnung nutzt nur den Monatswert.",
   "anlage_n.work_room_records": () => "Für das Arbeitszimmer bitte Grundriss und Kosten aufbewahren.",
@@ -692,6 +745,19 @@ const NOT_MODELLED: Record<string, string> = {
   prepayments: "Vorauszahlungen",
   capital_income: "Kapitalerträge (ab Phase 8)",
 };
+
+/** anlage_n.payslip_gap with its months: `month` is the payslip whose year-to-date sum does not
+ * follow from the one before (`previous`); `missing` lists the months between the two, if any. */
+function payslipGapText(p: Params): string {
+  if (!p.month) return "Zwischen den Gehaltsabrechnungen fehlt ein Monat.";
+  const employer = p.employer ? ` (${p.employer})` : "";
+  const missing = (p.missing ?? "").split(",").filter((m) => m !== "");
+  if (missing.length > 0) {
+    const names = missing.map(formatMonth).join(", ");
+    return `Gehaltsabrechnung ${names}${employer} ${missing.length === 1 ? "fehlt" : "fehlen"}: die Jahressumme im ${formatMonth(p.month)} passt nicht zur Summe der Abrechnung davor.`;
+  }
+  return `Gehaltsabrechnung ${formatMonth(p.month)}${employer} passt nicht zur Vormonatssumme: bitte die Jahreswerte prüfen.`;
+}
 
 /** An unknown code is shown as sent. */
 export function notModelledLabel(code: string): string {

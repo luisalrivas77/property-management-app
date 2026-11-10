@@ -28,6 +28,7 @@ import { DocumentPicker } from "./documents";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
 import { formatMoney } from "./format";
 import { toMoneyString } from "./input";
+import { BelegLink } from "./returnInputEvidence";
 import { GROSS_SOURCE, HOUSEHOLD_SERVICE_CLASS, HOUSEHOLD_SERVICE_SOURCE, options } from "./labels";
 import { Loading } from "./ui";
 import { useLoad } from "./useLoad";
@@ -297,7 +298,7 @@ function RowList({
         {rows.map((row, index) => (
           <li key={row.id} className="row">
             <span>{describe(row, index)}</span>
-            {row.document_id ? <span className="badge">Beleg</span> : null}
+            <BelegLink documentId={row.document_id} />
             <button type="button" className="link" onClick={() => void withdraw(row)} disabled={busy}>
               Entfernen
             </button>
