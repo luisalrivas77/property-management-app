@@ -774,6 +774,24 @@ class DocumentReceivedByEmail(Schema):
     imported: bool
 
 
+# The poll-level outcomes of email-in that a person must fix (D121, §5.5): the app password
+# refused, the label missing, the server not reached for several polls. Codes only (D5).
+InboxPollCode = Literal["email.auth_rejected", "email.label_missing", "email.unreachable"]
+
+
+class InboxPollFailed(Schema):
+    """workspace.inbox_poll_failed: written when the poll's outcome changes to this code,
+    never once per poll."""
+
+    code: InboxPollCode
+
+
+class InboxPollRecovered(Schema):
+    """workspace.inbox_poll_recovered: the first completed poll after a failure."""
+
+    previous_code: InboxPollCode
+
+
 class ReminderAcknowledged(Schema):
     """workspace.reminder_acknowledged (§6.3)."""
 
@@ -867,6 +885,8 @@ class EventType(StrEnum):
     # WorkspaceSetting and changes through workspace.settings_changed like the other two.
     WORKSPACE_REMINDER_ACKNOWLEDGED = "workspace.reminder_acknowledged"
     WORKSPACE_NOTIFICATION_SENT = "workspace.notification_sent"
+    WORKSPACE_INBOX_POLL_FAILED = "workspace.inbox_poll_failed"
+    WORKSPACE_INBOX_POLL_RECOVERED = "workspace.inbox_poll_recovered"
 
     PROPOSAL_CREATED = "proposal.created"
     PROPOSAL_SUPERSEDED = "proposal.superseded"
@@ -998,6 +1018,12 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     ),
     E.WORKSPACE_NOTIFICATION_SENT: EventSpec(
         NotificationSent, "forbidden", "Reminder sent by email"
+    ),
+    E.WORKSPACE_INBOX_POLL_FAILED: EventSpec(
+        InboxPollFailed, "forbidden", "Email-in cannot log in, find its label or reach Gmail"
+    ),
+    E.WORKSPACE_INBOX_POLL_RECOVERED: EventSpec(
+        InboxPollRecovered, "forbidden", "Email-in works again"
     ),
     E.PROPOSAL_CREATED: EventSpec(ProposalNoted, "forbidden", "Pre-fill proposal created"),
     E.PROPOSAL_SUPERSEDED: EventSpec(ProposalNoted, "forbidden", "Proposal replaced by a re-run"),

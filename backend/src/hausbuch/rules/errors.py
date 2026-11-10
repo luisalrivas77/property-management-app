@@ -146,6 +146,7 @@ EMAIL_STATEMENT_UNMATCHED = "email.statement_unmatched"  # a statement for no or
 EMAIL_FAILED = "email.failed"  # storage or processing failed; retried up to 3 attempts
 EMAIL_AUTH_REJECTED = "email.auth_rejected"  # Gmail refused the app password (revoked)
 EMAIL_LABEL_MISSING = "email.label_missing"  # the label folder does not exist
+EMAIL_UNREACHABLE = "email.unreachable"  # the IMAP server not reached three polls in a row
 REMINDER_UNKNOWN = "reminder.unknown"
 REMINDER_SCOPE_INVALID = "reminder.scope_invalid"
 NOTIFICATION_FAILED = "notification.failed"

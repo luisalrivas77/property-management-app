@@ -37,6 +37,7 @@ from .routes import (
     auth,
     documents,
     history,
+    inbound_mail,
     income_inputs,
     loans,
     owners,
@@ -77,6 +78,7 @@ ROUTE_MODULES = (
     tax_exports,
     performance,
     history,
+    inbound_mail,
     workspace,
     auth,
 )

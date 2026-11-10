@@ -109,6 +109,7 @@ def test_every_router_is_included_under_api(engine, tmp_path, monkeypatch):
         "tax_exports",
         "performance",
         "history",
+        "inbound_mail",
         "workspace",
         "auth",
     ]
