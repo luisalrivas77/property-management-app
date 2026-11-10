@@ -8483,6 +8483,27 @@
         ],
         "title": "ChildrenResult"
       },
+      "Choice": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]{1,32}$",
+            "title": "Code"
+          },
+          "label_de": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Label De"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "label_de"
+        ],
+        "title": "Choice"
+      },
       "CommuteFact": {
         "properties": {
           "kind": {
@@ -14766,6 +14787,111 @@
         "title": "PurchaseContractExtraction",
         "description": "Kaufvertrag (contract / purchase_contract)."
       },
+      "Question": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^(owner|household|property)\\.[a-z0-9_]{1,52}$",
+            "title": "Key"
+          },
+          "section": {
+            "type": "string",
+            "enum": [
+              "einkommen",
+              "werbungskosten",
+              "haushalt",
+              "kinder",
+              "immobilie"
+            ],
+            "title": "Section"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "household",
+              "property"
+            ],
+            "title": "Scope"
+          },
+          "question_de": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Question De"
+          },
+          "why_de": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Why De"
+          },
+          "answer_type": {
+            "type": "string",
+            "enum": [
+              "yes_no",
+              "choice",
+              "facts"
+            ],
+            "title": "Answer Type"
+          },
+          "choices": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Choice"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Choices"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/QuestionTarget"
+            },
+            "type": "array",
+            "title": "Targets"
+          },
+          "carry_forward": {
+            "type": "string",
+            "enum": [
+              "copy",
+              "reconfirm",
+              "none"
+            ],
+            "title": "Carry Forward"
+          },
+          "default_answer": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "yes",
+                  "no"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Answer"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "section",
+          "scope",
+          "question_de",
+          "why_de",
+          "answer_type",
+          "carry_forward"
+        ],
+        "title": "Question"
+      },
       "QuestionPrefill": {
         "properties": {
           "key": {
@@ -14861,6 +14987,58 @@
         ],
         "title": "QuestionPrefill",
         "description": "One answer slot of the year with what last year leaves (§5.11). proposed_answer is the\nprior answer carried, or the question's default_answer when there is none (spec §7\naddition, 10 Nov 2026)."
+      },
+      "QuestionTarget": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "return_input",
+              "tax_input",
+              "reminder"
+            ],
+            "title": "Kind"
+          },
+          "input_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReturnInputKind"
+              },
+              {
+                "$ref": "#/components/schemas/TaxInputKind"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Kind"
+          },
+          "value_match": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Value Match"
+          },
+          "reminder_de": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reminder De"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "QuestionTarget",
+        "description": "What a \"yes\" leads to: rows of a return_input or tax_input kind, or a reminder printed on\nthe Gesamt card and the sheet. value_match selects the target rows by their value's coded\nfields (e.g. {\"item_class\": \"subscription\"}, {\"expense_class\": \"account_fee\"}), so two\nquestions can share one kind (spec §7 addition, 10 Nov 2026)."
       },
       "QuestionnaireAnswer": {
         "properties": {
@@ -15170,6 +15348,13 @@
             ],
             "title": "Reused From"
           },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/Question"
+            },
+            "type": "array",
+            "title": "Questions"
+          },
           "slots": {
             "items": {
               "$ref": "#/components/schemas/QuestionPrefill"
@@ -15193,12 +15378,13 @@
         "required": [
           "tax_year",
           "version",
+          "questions",
           "slots",
           "progress",
           "reminders"
         ],
         "title": "QuestionnaireView",
-        "description": "GET /tax/questionnaire: the year's slots in file order (owners in name order) and the\nprogress. reused_from is set when the year has no file of its own."
+        "description": "GET /tax/questionnaire: the year's questions and slots in file order (owners in name\norder) and the progress. reused_from is set when the year has no file of its own. questions\nare the file's (texts, answer type, choices, targets, carry-forward), each once; a slot\nnames its question by key, so the screen renders the question from the data, never from\nits own copy (phase 4b §10, principle 5)."
       },
       "ReducedRentCheck": {
         "properties": {

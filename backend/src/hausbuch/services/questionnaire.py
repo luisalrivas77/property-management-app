@@ -52,6 +52,7 @@ from hausbuch.rules.tax.anlage_n._base import rules_for
 from hausbuch.schemas.common import Schema, TaxYear
 from hausbuch.schemas.employment import (
     HOUSEHOLD_KINDS,
+    Question,
     QuestionnaireAnswer,
     QuestionnaireAnswerCreate,
     QuestionnaireProgress,
@@ -78,12 +79,16 @@ _SLOT = ("question_key", "tax_year", "owner_id", "property_id")
 
 
 class QuestionnaireView(Schema):
-    """GET /tax/questionnaire: the year's slots in file order (owners in name order) and the
-    progress. reused_from is set when the year has no file of its own."""
+    """GET /tax/questionnaire: the year's questions and slots in file order (owners in name
+    order) and the progress. reused_from is set when the year has no file of its own. questions
+    are the file's (texts, answer type, choices, targets, carry-forward), each once; a slot
+    names its question by key, so the screen renders the question from the data, never from
+    its own copy (phase 4b §10, principle 5)."""
 
     tax_year: TaxYear
     version: str
     reused_from: TaxYear | None = None
+    questions: list[Question]
     slots: list[QuestionPrefill]
     progress: QuestionnaireProgress
     reminders: list[str]
@@ -180,6 +185,7 @@ def questionnaire_view(conn: Connection, tax_year: int) -> QuestionnaireView:
         tax_year=tax_year,
         version=q.version,
         reused_from=q.reused_from,
+        questions=q.questions,
         slots=slots,
         progress=rules.progress(tax_year, q, answers, owners, properties),
         reminders=rules.reminders(answers, q),

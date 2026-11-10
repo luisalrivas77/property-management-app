@@ -28,6 +28,7 @@ from hausbuch.rules.errors import (
     RETURN_INPUT_WORK_ROOM_CONFLICT,
     RuleError,
 )
+from hausbuch.rules.tax.registry import questionnaire
 from hausbuch.schemas.api import InboxItemKind
 from hausbuch.schemas.employment import ReturnInputCreate
 from hausbuch.schemas.enums import ReturnInputKind
@@ -373,6 +374,12 @@ def test_the_questionnaire_lists_every_slot_and_the_progress(world):
     assert view.progress.total == len(view.slots)
     # The World fixture has one property, so its questions are listed too.
     assert {s.scope for s in view.slots} == {"owner", "household", "property"}
+    # The year file's questions come along once each, in file order; every slot names one.
+    keys = [q.key for q in view.questions]
+    assert keys == [q.key for q in questionnaire(2026).questions]
+    assert {s.key for s in view.slots} == set(keys)
+    tax_class = next(q for q in view.questions if q.key == "owner.tax_class")
+    assert tax_class.answer_type == "choice" and tax_class.choices
 
 
 def test_the_review_card_shows_last_years_open_questions(world):
