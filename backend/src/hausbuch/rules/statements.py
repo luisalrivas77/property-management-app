@@ -337,3 +337,25 @@ def check_reports(reports: Sequence[ReportBalances]) -> str | None:
         if report.closing_on == previous.closing_on or report.opening != previous.closing:
             return CHAIN_BREAK
     return None
+
+
+# --- Direct debits (phase 5 D126) ---------------------------------------------------------
+
+# ISO 20022 bank transaction codes (camt Domn/Fmly): payments (PMNT), received direct debits
+# (RDDT) and issued direct debits (IDDT). Checked on the real rental account on 10 Nov 2026
+# (codes only): direct debits read PMNT/RDDT/ESDD, the owners' own transfers PMNT/ICDT/ESCT,
+# incoming rent PMNT/RCDT/ESCT or PMNT/RRCT/ESCT.
+DIRECT_DEBIT_DOMAIN = "PMNT"
+DIRECT_DEBIT_FAMILIES = frozenset({"RDDT", "IDDT"})
+
+
+def is_direct_debit(raw: object) -> bool:
+    """Whether a stored line (transaction.raw) is a SEPA direct debit: its camt bank
+    transaction code has domain PMNT and family RDDT or IDDT. A line without a code (a CSV
+    import) is never one, so the Grundsteuer mode is never inferred from it (D126)."""
+    if not isinstance(raw, dict):
+        return False
+    code = raw.get("bank_transaction_code")
+    if not isinstance(code, dict):
+        return False
+    return code.get("domain") == DIRECT_DEBIT_DOMAIN and code.get("family") in DIRECT_DEBIT_FAMILIES
