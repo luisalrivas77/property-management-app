@@ -357,13 +357,21 @@ def archive_extras(
     if open_count:
         banner.append(questions_open_text(open_count))
     owners = list_owners(conn)
+    used: set[str] = set()
     for owner in owners:
         try:
             sheet = anlage_n_sheet(conn, owner.id, tax_year=tax_year)
         except (RuleError, NotFoundError) as exc:
             notes.append(f"Anlage N {owner.full_name}: nicht enthalten ({_left_out(exc)}).")
             continue
+        # Two owners whose names come out the same as a file name (no UNIQUE on full_name)
+        # must not share one ZIP path: an extractor would keep one sheet and drop the other.
+        # list_owners sorts by name then id, so the suffix is deterministic.
         name = anlage_n_sheet_filename(tax_year, owner.full_name)
+        stem, n = name.removesuffix(".pdf"), 2
+        while name in used:
+            name, n = f"{stem} ({n}).pdf", n + 1
+        used.add(name)
         files.append((f"{ANLAGE_N_DIR}/{name}", sheet.render(stamp)))
     try:
         estimate = household_return_estimate(conn, tax_year=tax_year, today=today)

@@ -211,6 +211,29 @@ def test_the_archive_gains_the_owners_sheets_and_the_gesamt_page(
     assert "Person A" not in _pdf_text(archive.read("ausfuellhilfe.pdf"))
 
 
+def test_two_owners_with_one_name_keep_both_sheets_in_the_archive(
+    client_a,
+    booked,  # noqa: F811
+    deps,  # noqa: F811
+    jobs,  # noqa: F811
+    ws_a,
+):
+    for _ in range(2):
+        owner = _owner(client_a, "Person A")
+        _pay(client_a, owner["id"], "60000.00")
+    archive = _archive(client_a, deps, jobs, ws_a, booked["pid"])
+    assert archive.testzip() is None
+    names = archive.namelist()
+    assert len(set(names)) == len(names)
+    sheets = [n for n in names if n.startswith("einkommensteuer/Anlage-N_2026_")]
+    assert sheets == [
+        "einkommensteuer/Anlage-N_2026_Person A.pdf",
+        "einkommensteuer/Anlage-N_2026_Person A (2).pdf",
+    ]
+    readme = archive.read("README.txt").decode("utf-8")
+    assert all(sheet in readme for sheet in sheets)
+
+
 def test_the_archive_builds_when_the_estimate_cannot(
     client_a,
     booked,  # noqa: F811
