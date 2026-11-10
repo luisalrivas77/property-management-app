@@ -1,7 +1,8 @@
 "use client";
 
 // Übersicht (§9.1): the household's properties at a glance (label, address, units, the
-// tenancy in force per unit, loans) and "Immobilie anlegen".
+// tenancy in force per unit, loans) and "Immobilie anlegen"; above them the card "Nächste
+// Termine" (phase-5.md §11, mockup 01) from GET /reminders.
 import Link from "next/link";
 
 import { api, ok } from "@/api/client";
@@ -10,6 +11,7 @@ import { useAuth } from "@/auth/AuthGate";
 import { currentTenancy, partyNames } from "@/components/entities";
 import { formatArea, formatDate, formatMoney, todayIso } from "@/components/format";
 import { PROPERTY_KIND } from "@/components/labels";
+import { NextDates } from "@/components/reminders";
 import { Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 
@@ -23,6 +25,8 @@ interface Overview {
   cards: PropertyCard[];
   tenants: Tenant[];
 }
+
+const loadReminders = () => ok(api.GET("/api/reminders"));
 
 async function loadOverview(): Promise<Overview> {
   const [properties, tenants] = await Promise.all([ok(api.GET("/api/properties")), ok(api.GET("/api/tenants"))]);
@@ -48,6 +52,7 @@ async function loadOverview(): Promise<Overview> {
 export default function OverviewPage() {
   const { me } = useAuth();
   const overview = useLoad(loadOverview);
+  const reminders = useLoad(loadReminders);
   const today = todayIso();
 
   return (
@@ -63,6 +68,7 @@ export default function OverviewPage() {
           Immobilie anlegen
         </Link>
       </div>
+      <Loading state={reminders}>{(list) => <NextDates reminders={list} onChanged={reminders.reload} />}</Loading>
       <Loading state={overview}>
         {({ cards, tenants }) =>
           cards.length === 0 ? (

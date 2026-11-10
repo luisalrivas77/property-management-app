@@ -37,6 +37,8 @@ type AllocationMethod = components["schemas"]["AllocationMethod"];
 type InboxItemKind = components["schemas"]["InboxItemKind"];
 type ReturnInputKind = components["schemas"]["ReturnInputKind"];
 type GrossSource = NonNullable<components["schemas"]["OwnerZve"]["gross_source"]>;
+type GrundsteuerRhythm = NonNullable<components["schemas"]["GrundsteuerSchedule"]["rhythm"]>;
+type GrundsteuerMode = NonNullable<components["schemas"]["GrundsteuerSchedule"]["payment_mode"]>;
 type HouseholdServiceClass = components["schemas"]["HouseholdServicesFact"]["service_class"];
 type HouseholdServiceSource = components["schemas"]["HouseholdServicesFact"]["source"];
 type QuestionSection = components["schemas"]["Question"]["section"];
@@ -835,3 +837,19 @@ function payslipGapText(p: Params): string {
 export function notModelledLabel(code: string): string {
   return NOT_MODELLED[code] ?? code;
 }
+
+/** The Grundsteuerbescheid's payment rhythm (phase-5.md D126). */
+export const GRUNDSTEUER_RHYTHM: Record<GrundsteuerRhythm, string> = {
+  quarterly: "vierteljährlich",
+  half_yearly: "halbjährlich",
+  yearly_august: "jährlich zum 15. August",
+  yearly_july: "jährlich zum 1. Juli",
+};
+
+/** The Grundsteuer reminder's mode (D126): the row's choice, or "automatisch" (inferred from a
+ * direct-debit line, never from a transfer). */
+export const GRUNDSTEUER_MODE: Record<GrundsteuerMode | "auto", string> = {
+  remind: "Erinnern",
+  sepa_mandate: "Lastschrift prüfen",
+  auto: "automatisch",
+};

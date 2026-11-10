@@ -75,7 +75,7 @@ bases:
   base_items:
     - &i_kv {code: purchase_contract, status: present, scope: {type: property, id: *P}, documents: [*D1]}
     - &i_split {code: price_split, status: present, scope: {type: property, id: *P}}
-    - &i_gst {code: grundsteuerbescheid, status: present, scope: {type: property, id: *P}, documents: [*D2]}
+    - &i_gst {code: grundsteuerbescheid, status: present, due_on: 2026-01-15, scope: {type: property, id: *P}, documents: [*D2]}
     - &i_lease {code: lease, status: present, scope: {type: tenancy, id: *T1, unit_label: Haus,
                 tenancy_start: 2023-01-01}, documents: [*D3]}
 

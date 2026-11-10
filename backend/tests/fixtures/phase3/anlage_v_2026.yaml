@@ -406,7 +406,6 @@ bases:
        scope: {type: acquisition_cost, id: *C2, cost_kind: notary, cost_amount: "4200.00"}}
     - {code: acquisition_cost_evidence, status: present, documents: [*D_GB],
        scope: {type: acquisition_cost, id: *C3, cost_kind: land_registry, cost_amount: "1300.00"}}
-    - {code: grundsteuerbescheid, status: present, scope: {type: property, id: *P}, documents: [*D_GSB]}
     - {code: loan_contract, status: present, scope: {type: loan, id: *L1, lender: Beispielbank},
        documents: [*D_LV]}
     - {code: zinsbescheinigung, status: present, due_on: 2027-02-28,

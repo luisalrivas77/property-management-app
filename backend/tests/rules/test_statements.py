@@ -63,3 +63,37 @@ def test_reconcile(case):
         first_booking_on=case.file.first_booking_on,
     )
     assert result == case.expect.result
+
+
+# --- is_direct_debit (phase 5 D126): the code shapes seen on the real account on 10 Nov 2026,
+# with synthetic numbers in the proprietary code
+
+
+def _code(domain=None, family=None, sub_family=None, proprietary=None) -> dict:
+    codes = {
+        "domain": domain,
+        "family": family,
+        "sub_family": sub_family,
+        "proprietary": proprietary,
+    }
+    return {"bank_transaction_code": {k: v for k, v in codes.items() if v is not None}}
+
+
+@pytest.mark.rule
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ({**_code("PMNT", "RDDT", "ESDD", "NDDT+105+0001+000"), "amount": "-100.00"}, True),
+        (_code("PMNT", "IDDT"), True),
+        (_code("PMNT", "ICDT", "ESCT", "NTRF+116+0002+000"), False),  # owner's transfer
+        (_code("PMNT", "RCDT", "ESCT"), False),  # incoming rent
+        (_code("PMNT", "RRCT", "ESCT"), False),  # incoming rent, the other shape
+        (_code("ACMT", "RDDT"), False),
+        (_code(proprietary="NDDT+105+0001+000"), False),
+        ({"purpose": "LASTSCHRIFT Grundsteuer"}, False),  # a CSV line carries no code
+        ({}, False),
+        (None, False),
+    ],
+)
+def test_is_direct_debit(raw, expected):
+    assert rules.is_direct_debit(raw) is expected

@@ -87,6 +87,7 @@ from hausbuch.schemas.proposal import (
     PrefillContext,
     ProposalRecord,
 )
+from hausbuch.schemas.tax import GRUNDSTEUER_SUM_TOLERANCE
 
 from .extraction_parse import _MONTHS
 from .extraction_parse import house_number_key as _house_number_key
@@ -218,6 +219,153 @@ def build_proposal(
         case _:  # statement, unknown: typing only
             pass
     return b.records
+
+
+# --- The Grundsteuer schedule (phase 5 D126) --------------------------------------------
+
+GRUNDSTEUER_SCHEDULE_KEY = "tax_input:grundsteuer_schedule"
+GRUNDSTEUER_SLOTS = 4  # a Bescheid states at most four Fälligkeiten (§28 GrStG)
+_DUE_DAY = re.compile(r"^\s*(\d{1,2})\.\s*(\d{1,2})\.?\s*(\d{4})?\s*$")
+_NO_YEAR_NOTE = (
+    "Das erste Jahr des Bescheids wurde nicht gelesen; bitte das Jahr und die Fälligkeiten "
+    "eintragen."
+)
+_SUM_NOTE = "Die Raten ergeben nicht den Jahresbetrag; bitte die Beträge prüfen."
+
+
+def grundsteuer_schedule_record(
+    extraction: _Typing, context: PrefillContext
+) -> ProposalRecord | None:
+    """A Grundsteuerbescheid's schedule as a `tax_input:grundsteuer_schedule` record (phase 5
+    D126), for a property found (a tax input belongs to one); None otherwise.
+
+    Fields: tax_year (the Bescheid's first year), value.annual_amount (the Jahresbetrag),
+    value.due_on_<n> and value.amount_<n> per Fälligkeit read ("15.02." becomes the date in the
+    first year, keeping the quote), and value.rhythm from the number of dates. An instalment's
+    amount is the Vierteljahresbetrag when the Bescheid states one, else the Jahresbetrag over
+    the number of dates, rounded to cents (derived). Without dates, four empty slots are
+    proposed for the user to type. The apply turns the slots into the schedule's instalments
+    (services/proposals). Kept out of build_proposal so phase 2's prefill fixture, which pins
+    a Bescheid's records to typing and link:property, stays as it is (step 3 as-built)."""
+    if _resolve_property(extraction, context) is None:
+        return None
+    ev = _field_of(extraction)
+    year_ev = ev("tax_year")
+    year = year_ev.value if isinstance(year_ev.value, int) else None
+    dates_ev = ev("due_dates")
+    days = _due_days(dates_ev.value)
+    notes: list[str] = []
+    fields: dict[str, ExtractedValue] = {
+        "tax_year": year_ev,
+        "value.annual_amount": ev("yearly_amount"),
+    }
+    if year is None and dates_ev.value is not None:
+        notes.append(_NO_YEAR_NOTE)
+    dates: list[ExtractedValue] = []
+    for month, day in days:
+        due = _safe_date(year, month, day) if year is not None else None
+        if due is None:
+            dates.append(_unmapped(dates_ev))
+        else:
+            dates.append(dates_ev.model_copy(update={"value": due.isoformat()}))
+    dates.sort(key=lambda d: (d.value is None, d.value or ""))
+    amount = _instalment_amount(ev("installment_amount"), ev("yearly_amount"), dates_ev, len(dates))
+    for n, due in enumerate(dates or [ExtractedValue.missing()] * GRUNDSTEUER_SLOTS, start=1):
+        fields[f"value.due_on_{n}"] = due
+        fields[f"value.amount_{n}"] = amount if dates else ExtractedValue.missing()
+    fields["value.rhythm"] = _derived(_rhythm(days), [("due_dates", dates_ev)])
+    yearly = _decimal(ev("yearly_amount").value)
+    each = _decimal(amount.value)
+    if (
+        yearly is not None
+        and each is not None
+        and dates
+        and abs(each * len(dates) - yearly) > GRUNDSTEUER_SUM_TOLERANCE
+    ):
+        notes.append(_SUM_NOTE)
+    return ProposalRecord(
+        key=GRUNDSTEUER_SCHEDULE_KEY,
+        entity_type="tax_input",
+        mode="create",
+        fields=fields,
+        notes=notes,
+    )
+
+
+def grundsteuer_schedule_value(values: dict[str, Any]) -> dict[str, Any]:
+    """The apply's `value` of a grundsteuer_schedule record from the confirmed slots
+    ({annual_amount, rhythm, due_on_<n>, amount_<n>}): the filled slots as instalments in date
+    order; a slot with neither date nor amount is dropped, a half-filled one kept (the schema
+    then refuses it). Never computes an amount."""
+    out = {k: v for k, v in values.items() if not re.match(r"^(due_on|amount)_\d+$", k)}
+    slots = sorted(
+        {int(m.group(2)) for k in values if (m := re.match(r"^(due_on|amount)_(\d+)$", k))}
+    )
+    instalments = [
+        {"due_on": values.get(f"due_on_{n}"), "amount": values.get(f"amount_{n}")}
+        for n in slots
+        if values.get(f"due_on_{n}") is not None or values.get(f"amount_{n}") is not None
+    ]
+    instalments.sort(key=lambda i: str(i["due_on"]))
+    return out | {"instalments": instalments}
+
+
+def _field_of(extraction: _Typing) -> Callable[[str], ExtractedValue]:
+    def ev(name: str) -> ExtractedValue:
+        value = getattr(extraction, name, None)
+        return value if isinstance(value, ExtractedValue) else ExtractedValue.missing()
+
+    return ev
+
+
+def _due_days(value: Any) -> list[tuple[int, int]]:
+    """(month, day) per Fälligkeit read: "15.02." or "15.02.2027"; a list or one text."""
+    items = value if isinstance(value, list) else re.split(r"[;,]|\bund\b", str(value or ""))
+    out: list[tuple[int, int]] = []
+    for item in items:
+        m = _DUE_DAY.match(str(item))
+        if m is not None and (int(m.group(2)), int(m.group(1))) not in out:
+            out.append((int(m.group(2)), int(m.group(1))))
+    return out[:GRUNDSTEUER_SLOTS]
+
+
+def _safe_date(year: int, month: int, day: int) -> date | None:
+    try:
+        return date(year, month, day)
+    except ValueError:
+        return None
+
+
+def _unmapped(source: ExtractedValue) -> ExtractedValue:
+    """A value that does not map: proposed missing, its quote kept."""
+    checks = ["cited"] if source.source is not None else []
+    return ExtractedValue(value=None, source=source.source, checks=checks, confidence="low")
+
+
+def _instalment_amount(
+    stated: ExtractedValue, yearly: ExtractedValue, dates: ExtractedValue, n: int
+) -> ExtractedValue:
+    if stated.value is not None and _decimal(stated.value) is not None:
+        return stated
+    total = _decimal(yearly.value)
+    if total is None or n == 0:
+        return _derived(None, [("yearly_amount", yearly)])
+    each = (total / n).quantize(_CENTS, rounding=ROUND_HALF_UP)
+    return _derived(str(each), [("yearly_amount", yearly), ("due_dates", dates)])
+
+
+def _rhythm(days: list[tuple[int, int]]) -> str | None:
+    """The Bescheid's rhythm (§28 GrStG), informational: four dates quarterly, two
+    half-yearly, one on 15 Aug or 1 Jul yearly."""
+    if len(days) == 4:
+        return "quarterly"
+    if len(days) == 2:
+        return "half_yearly"
+    if days == [(8, 15)]:
+        return "yearly_august"
+    if days == [(7, 1)]:
+        return "yearly_july"
+    return None
 
 
 # --- The builder -----------------------------------------------------------------------

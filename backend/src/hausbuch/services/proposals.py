@@ -40,7 +40,13 @@ from hausbuch.rules.errors import (
 )
 from hausbuch.rules.extraction_parse import extraction_kind
 from hausbuch.rules.loan_schedule import build_schedule
-from hausbuch.rules.prefill import build_proposal, replaced_pay_row, return_input_value
+from hausbuch.rules.prefill import (
+    build_proposal,
+    grundsteuer_schedule_record,
+    grundsteuer_schedule_value,
+    replaced_pay_row,
+    return_input_value,
+)
 from hausbuch.schemas.ai import ClassifyOutput, ExtractedValue
 from hausbuch.schemas.api import (
     AcquisitionCostPatch,
@@ -392,6 +398,12 @@ def record_read_result(
 
     context = prefill_context(ctx.conn, document_id, classification)
     records = build_proposal(built_kind, extraction, context)
+    if built_kind is ExtractionKind.GRUNDSTEUERBESCHEID:
+        # Phase 5 D126: the Bescheid's schedule, for a property found (step 3 as-built: a
+        # separate rule so phase 2's prefill fixture stays as it is).
+        schedule = grundsteuer_schedule_record(extraction, context)
+        if schedule is not None:
+            records.append(schedule)
     targeted = [r for r in records if r.mode != "create"]
     updated = _set(
         ctx,
@@ -965,6 +977,8 @@ class _Apply:
         if kind not in _PREFILL_TAX_INPUTS:
             raise ValueError(f"record {record.key!r} cannot be applied in this step")
         given = _undot({f: values[f] for f in _PREFILL_TAX_INPUTS[kind] if f in values})
+        if kind is TaxInputKind.GRUNDSTEUER_SCHEDULE:
+            given["value"] = grundsteuer_schedule_value(given.get("value", {}))
         if kind is TaxInputKind.INTEREST_CERTIFIED:
             if given.get("loan_id") is None:
                 linked = self.entity("link:loan")
@@ -1139,6 +1153,14 @@ class _OwnerRef(Schema):
 _PREFILL_TAX_INPUTS = {
     TaxInputKind.INTEREST_CERTIFIED: ("tax_year", "loan_id", "value.amount"),
     TaxInputKind.RUECKLAGE_SPENT: ("tax_year", "value.amount"),
+    # phase 5 D126: the Bescheid's schedule, one date and amount per slot (rules.prefill)
+    TaxInputKind.GRUNDSTEUER_SCHEDULE: (
+        "tax_year",
+        "value.annual_amount",
+        "value.rhythm",
+        "value.payment_mode",
+        *(f"value.{field}_{n}" for n in range(1, 5) for field in ("due_on", "amount")),
+    ),
 }
 
 

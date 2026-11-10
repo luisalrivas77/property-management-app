@@ -5756,6 +5756,126 @@
         }
       }
     },
+    "/api/reminders": {
+      "get": {
+        "summary": "Reminder List",
+        "description": "Today is the day in Europe/Berlin. An instance stays listed while it is open, also\nafter its due day; one hidden by an acknowledgement or cleared by the data is not.",
+        "operationId": "reminder_list_api_reminders_get",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Reminder"
+                  },
+                  "title": "Response Reminder List Api Reminders Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reminders/{reminder_id}/ack": {
+      "post": {
+        "summary": "Reminder Ack",
+        "description": "422 reminder.unknown for an id that is not a reminder's; 422 reminder.scope_invalid\nwhen its scope is not this workspace's property, loan, tenancy, owner or account of the\nkind's scope type.",
+        "operationId": "reminder_ack_api_reminders__reminder_id__ack_post",
+        "parameters": [
+          {
+            "name": "reminder_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 160,
+              "title": "Reminder Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReminderAckCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReminderAck"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/workspace/settings": {
       "get": {
         "summary": "Workspace Settings Get",
@@ -16886,6 +17006,232 @@
         ],
         "title": "RelatedDocument",
         "description": "GET /properties/{id}/documents and GET /units/{id}/documents: a document linked to the\ntarget or to one of its children (units, tenancies, loans), with every such link."
+      },
+      "Reminder": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Id"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ReminderKind"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ReminderScope"
+          },
+          "scope_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Id"
+          },
+          "due_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Due On"
+          },
+          "visible_from": {
+            "type": "string",
+            "format": "date",
+            "title": "Visible From"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "action",
+              "info"
+            ],
+            "title": "Severity"
+          },
+          "cleared_by": {
+            "type": "string",
+            "enum": [
+              "ack",
+              "auto"
+            ],
+            "title": "Cleared By"
+          },
+          "label_code": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Label Code"
+          },
+          "label_args": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Label Args"
+          },
+          "email_leads": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Email Leads"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "scope",
+          "due_on",
+          "visible_from",
+          "severity",
+          "cleared_by",
+          "label_code"
+        ],
+        "title": "Reminder"
+      },
+      "ReminderAck": {
+        "properties": {
+          "reminder_key": {
+            "$ref": "#/components/schemas/ReminderKind"
+          },
+          "scope_type": {
+            "$ref": "#/components/schemas/ReminderScope"
+          },
+          "scope_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Id"
+          },
+          "due_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due On"
+          },
+          "action": {
+            "$ref": "#/components/schemas/ReminderAckAction"
+          },
+          "snoozed_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snoozed Until"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Recorded At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reminder_key",
+          "scope_type",
+          "action",
+          "recorded_at"
+        ],
+        "title": "ReminderAck",
+        "description": "A reminder_ack row (append-only, §6.3)."
+      },
+      "ReminderAckAction": {
+        "type": "string",
+        "enum": [
+          "done",
+          "snoozed",
+          "muted",
+          "unmuted"
+        ],
+        "title": "ReminderAckAction",
+        "description": "reminder_ack.action (migration 0019, §6.3)."
+      },
+      "ReminderAckCreate": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/ReminderAckAction"
+          },
+          "snoozed_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snoozed Until"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "title": "ReminderAckCreate",
+        "description": "POST /reminders/{reminder_id}/ack (§6.3)."
+      },
+      "ReminderKind": {
+        "type": "string",
+        "enum": [
+          "grundsteuer.instalment",
+          "checklist.due",
+          "tax.return_deadline",
+          "tax.questionnaire_open",
+          "tax.wage_certificate_missing",
+          "loan.fixed_rate_end",
+          "loan.special_termination",
+          "property.speculation_end",
+          "tenancy.settlement_deadline",
+          "tenancy.rent_missing",
+          "bank.sync_stale"
+        ],
+        "title": "ReminderKind",
+        "description": "The catalogue's eleven kinds (§6.2); the value is the reminder key."
+      },
+      "ReminderScope": {
+        "type": "string",
+        "enum": [
+          "workspace",
+          "property",
+          "loan",
+          "tenancy",
+          "owner",
+          "account"
+        ],
+        "title": "ReminderScope",
+        "description": "reminder_ack.scope_type (migration 0019). WORKSPACE is §6.2's \"household\"."
       },
       "RenovationTreatment": {
         "properties": {

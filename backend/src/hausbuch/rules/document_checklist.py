@@ -4,7 +4,9 @@ Spec amendment 3 (docs/phases/phase-1.md, 6 Nov 2026). The requirement catalogue
 data: each entry names its scope, the document type or subtype that satisfies it, the link
 targets that count, its tax-year rule and its due date. Phase 3 adds entries, not code paths
 (docs/phases/phase-3.md §8, D64): `cost_receipt` per confirmed allocation of the year that
-needs a Beleg, and `market_rent` per Wohnung let in the year.
+needs a Beleg, and `market_rent` per Wohnung let in the year. Phase 5 (D126) gives the
+Grundsteuerbescheid a due date (15 January) and limits it to the first full year of ownership
+onwards; `checklist.due` reminders read that date (rules/reminders.py).
 
 Matching: an entry with a subtype matches on the subtype, one with only a type on the type;
 an untyped document matches nothing. A match must be linked to one of the entry's accepted
@@ -68,7 +70,7 @@ class Satisfier(Enum):
 # Y -> due date. None = "always": due as soon as the item exists.
 DueRule = Callable[[int], date] | None
 # Whether the item exists for this property, scope entity and tax year.
-Applies = Callable[[ChecklistFacts, object], bool]
+Applies = Callable[[ChecklistFacts, object, int], bool]
 
 
 @dataclass(frozen=True)
@@ -84,16 +86,23 @@ class Requirement:
     applies: Applies | None = None
 
 
-def _etw_only(facts: ChecklistFacts, _: object) -> bool:
+def _etw_only(facts: ChecklistFacts, _: object, __: int) -> bool:
     return facts.kind is PropertyKind.ETW
 
 
-def _started_after_purchase(facts: ChecklistFacts, tenancy: object) -> bool:
+def _first_full_year_on(facts: ChecklistFacts, _: object, tax_year: int) -> bool:
+    """Phase 5 D126: the Grundsteuer is assessed on the conditions of 1 January (§9 Abs. 1
+    GrStG) and owed by the owner on that day (§10 Abs. 1), so the buyer's first Bescheid is
+    for the year after the Übergang; the purchase year's is the seller's."""
+    return tax_year > facts.purchase_date.year
+
+
+def _started_after_purchase(facts: ChecklistFacts, tenancy: object, _: int) -> bool:
     assert isinstance(tenancy, ChecklistTenancy)
     return tenancy.start_date >= facts.purchase_date
 
 
-def _has_deposit(_: ChecklistFacts, tenancy: object) -> bool:
+def _has_deposit(_: ChecklistFacts, tenancy: object, __: int) -> bool:
     assert isinstance(tenancy, ChecklistTenancy)
     return tenancy.deposit_form is not DepositForm.NONE
 
@@ -109,7 +118,7 @@ RECEIPT_CATEGORIES = frozenset(
 )
 
 
-def _needs_receipt(_: ChecklistFacts, allocation: object) -> bool:
+def _needs_receipt(_: ChecklistFacts, allocation: object, __: int) -> bool:
     """A cost of a named category; a 0.00 row is never evidence (D70)."""
     assert isinstance(allocation, ChecklistAllocation)
     return allocation.category in RECEIPT_CATEGORIES and allocation.amount != 0
@@ -142,6 +151,10 @@ CATALOGUE: tuple[Requirement, ...] = (
         subtype=DocumentSubtype.GRUNDSTEUERBESCHEID,
         targets=_PROPERTY_OR_UNIT,  # issued per flat for an ETW (spec amendment 3, revised)
         tax_year=TaxYearRule.AT_MOST,
+        # Phase 5 D126: expected from the first full year of ownership, by 15 January (a day
+        # the spec chose: Bescheide are usually sent in January; not a statutory date).
+        due=lambda y: date(y, 1, 15),
+        applies=_first_full_year_on,
     ),
     Requirement(
         RequirementCode.LOAN_CONTRACT,
@@ -243,7 +256,7 @@ def build_checklist(facts: ChecklistFacts, tax_year: int, today: date) -> list[C
     items: list[ChecklistItem] = []
     for requirement in CATALOGUE:
         for entity, scope in ctx.scopes(requirement.scope):
-            if requirement.applies is not None and not requirement.applies(facts, entity):
+            if requirement.applies is not None and not requirement.applies(facts, entity, tax_year):
                 continue
             items.append(ctx.item(requirement, entity, scope))
     return items
