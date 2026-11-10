@@ -9,6 +9,10 @@ services only, in the caller's one transaction (D14, §6.5), reject_proposal rec
 Statuses (§3.1): queued -> running -> ready | failed | blocked_tenant_data; ready ->
 applied | rejected | superseded (a re-run). The job's two functions are no-ops once the
 proposal left queued/running (a re-run superseded it while the job ran).
+
+Phase 4b (docs/phases/phase-4b.md §8.2): a pay document's return_input record is written
+through services/return_inputs.create_input after the links, for an owner of this workspace,
+replacing the current row rules.prefill.replaced_pay_row names.
 """
 
 from collections.abc import Callable
@@ -19,9 +23,10 @@ from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, JsonValue, ValidationError
-from sqlalchemy import Connection, insert, null, select, update
+from sqlalchemy import Connection, exists, insert, null, select, update
 
 from hausbuch.db.tables import proposal as proposal_table
+from hausbuch.db.tables import return_input as return_input_table
 from hausbuch.db.tables import workspace as workspace_table
 from hausbuch.jobs import enqueue
 from hausbuch.rules.errors import (
@@ -31,7 +36,7 @@ from hausbuch.rules.errors import (
 )
 from hausbuch.rules.extraction_parse import extraction_kind
 from hausbuch.rules.loan_schedule import build_schedule
-from hausbuch.rules.prefill import build_proposal
+from hausbuch.rules.prefill import build_proposal, replaced_pay_row, return_input_value
 from hausbuch.schemas.ai import ClassifyOutput, ExtractedValue
 from hausbuch.schemas.api import (
     AcquisitionCostPatch,
@@ -51,6 +56,7 @@ from hausbuch.schemas.api import (
 )
 from hausbuch.schemas.common import Schema
 from hausbuch.schemas.document import DocumentTyping
+from hausbuch.schemas.employment import RETURN_INPUT_VALUES, ReturnInputCreate
 from hausbuch.schemas.enums import (
     ActorType,
     DocumentSubtype,
@@ -85,6 +91,7 @@ from hausbuch.schemas.proposal import (
     ExistingDepositReceipt,
     ExistingLoan,
     ExistingOwner,
+    ExistingPayRow,
     ExistingProperty,
     ExistingTenancy,
     ExistingTenant,
@@ -117,8 +124,8 @@ _DECIDED = (ProposalStatus.APPLIED, ProposalStatus.REJECTED)
 
 # §6.5: property -> corrections -> unit -> ownership -> price split -> costs -> loan ->
 # tenants -> tenancy (with the rent row) -> typing -> links -> tax inputs (phase 3 §9: after
-# the links, so a certificate's figure follows the loan or property the user linked). By the
-# key's prefix.
+# the links, so a certificate's figure follows the loan or property the user linked) ->
+# return inputs (phase 4b §8.2: after link:owner, for the same reason). By the key's prefix.
 _APPLY_ORDER = {
     "property": 0,
     "correction": 1,
@@ -134,7 +141,9 @@ _APPLY_ORDER = {
     "typing": 11,
     "link": 12,
     "tax_input": 13,
+    "return_input": 14,
 }
+_PAY_KINDS = ("wage_certificate", "payslip")
 # The record whose entity a link record points at when the proposal had no target yet.
 _LINK_SOURCE = {
     LinkTarget.PROPERTY: "property",
@@ -458,7 +467,40 @@ def prefill_context(
         tenants=[
             ExistingTenant(id=t.id, full_name=t.full_name) for t in tenants.list_tenants(conn)
         ],
+        pay_rows=[row for row, _ in _current_pay_rows(conn)],
     )
+
+
+def _current_pay_rows(
+    conn: Connection, *, owner_id: UUID | None = None
+) -> list[tuple[ExistingPayRow, dict[str, Any]]]:
+    """The workspace's current pay-document rows (neither withdrawn nor superseded), each
+    with its stored value. Read under the caller's row-level security: this workspace only."""
+    later = return_input_table.alias("later")
+    query = select(return_input_table).where(
+        return_input_table.c.kind.in_(_PAY_KINDS),
+        return_input_table.c.withdrawn.is_(False),
+        ~exists().where(later.c.supersedes_id == return_input_table.c.id),
+    )
+    if owner_id is not None:
+        query = query.where(return_input_table.c.owner_id == owner_id)
+    rows = conn.execute(query.order_by(return_input_table.c.recorded_at, return_input_table.c.id))
+    out = []
+    for r in rows:
+        value = dict(r.value)
+        row = ExistingPayRow(
+            id=r.id,
+            owner_id=r.owner_id,
+            kind=r.kind,
+            tax_year=r.tax_year,
+            employer=value.get("employer") or "",
+            period_month=value.get("period_month"),
+            period_from=value.get("period_from"),
+            period_to=value.get("period_to"),
+            document_id=r.document_id,
+        )
+        out.append((row, value))
+    return out
 
 
 # --- Deciding ------------------------------------------------------------------------------
@@ -894,6 +936,61 @@ class _Apply:
             data = data.model_copy(update={"supersedes_id": row.id})
         return tax_inputs.create_tax_input(self.ctx, property_id, data).id
 
+    def _return_input(self, record: ProposalRecord, values: dict[str, Any]) -> UUID:
+        """A pay document's row (phase 4b §8.2) through services/return_inputs.create_input,
+        with this document as its evidence. Only the record's own fields are taken from the
+        values (never a supersedes_id, a withdrawal, a note or an unread list: unread is
+        computed by return_input_value, Q-O29). The owner is the confirmed owner_id, else the
+        owner linked in this apply, and must be an owner of this workspace (read under RLS).
+        The current row it replaces is the one rules.prefill.replaced_pay_row names (the
+        review's note says the same); the same value from the same document again writes
+        nothing."""
+        kind = record.key.split(":", 1)[1]
+        if kind not in _PAY_KINDS:
+            raise ValueError(f"record {record.key!r} cannot be applied in this step")
+        given = {f: values[f] for f in record.fields if f in values}
+        linked = self.entity("link:owner")
+        chosen = given.get("owner_id")
+        if chosen is not None and linked is not None and str(chosen) != str(linked):
+            raise ValueError(f"record {record.key!r} names another owner than link:owner")
+        owner_ref = chosen if chosen is not None else linked
+        if owner_ref is None:
+            raise ValueError(f"record {record.key!r} needs the owner the pay belongs to")
+        owner_id = _validate(record.key, _OwnerRef, {"owner_id": str(owner_ref)}).owner_id
+        if owners.get_owner(self.ctx.conn, owner_id) is None:
+            raise NotFoundError(EntityType.OWNER, owner_id)
+        data = _validate(
+            record.key,
+            ReturnInputCreate,
+            {
+                "owner_id": str(owner_id),
+                "kind": kind,
+                "tax_year": given.get("tax_year"),
+                "document_id": str(self.document_id),
+                "value": return_input_value(kind, given),
+            },
+        )
+        current = _current_pay_rows(self.ctx.conn, owner_id=owner_id)
+        replaced = replaced_pay_row(
+            kind,
+            [row for row, _ in current],
+            owner_id=owner_id,
+            tax_year=data.tax_year,
+            document_id=self.document_id,
+            value={f"value.{k}": v for k, v in data.value.model_dump(mode="json").items()},
+        )
+        if replaced is not None:
+            stored = next(value for row, value in current if row.id == replaced.id)
+            same = RETURN_INPUT_VALUES[data.kind].model_validate(stored) == data.value
+            if same and replaced.document_id == data.document_id:
+                return replaced.id
+            data = data.model_copy(update={"supersedes_id": replaced.id})
+        # Step 1's service (coder A, phase 4b §12): imported here so this module loads
+        # without it while the two steps are built in parallel.
+        from hausbuch.services import return_inputs
+
+        return return_inputs.create_input(self.ctx, data).id
+
     _HANDLERS: dict[str, Callable[["_Apply", ProposalRecord, dict[str, Any]], UUID]] = {
         "property": _property,
         "correction": _correction,
@@ -909,6 +1006,7 @@ class _Apply:
         "typing": _typing,
         "link": _link,
         "tax_input": _tax_input,
+        "return_input": _return_input,
     }
 
 
@@ -918,6 +1016,10 @@ class _LinkValues(Schema):
 
 class _LoanRef(Schema):
     loan_id: UUID
+
+
+class _OwnerRef(Schema):
+    owner_id: UUID
 
 
 # The tax inputs a pre-fill proposes (rules.prefill, phase 3 §9) and the fields the apply

@@ -793,18 +793,16 @@ class _Builder:
                 "ein Betrag, bitte eintragen; ein leeres Feld wird als 0 übernommen und als "
                 "nicht gelesen vermerkt."
             )
-        same = self._current_pay_rows("wage_certificate", owner, tax_year)
-        employer = _norm(self.ev("employer_name").value)
-        if any(row.document_id == self.ctx.document_id for row in same):
+        replaced = self._replaced("wage_certificate", owner, tax_year, fields)
+        if replaced is not None and replaced.document_id == self.ctx.document_id:
             notes.append(
                 "Diese Lohnsteuerbescheinigung ist schon übernommen; geänderte Werte ersetzen "
                 "den Eintrag."
             )
-        elif any(_norm(row.employer) == employer for row in same):
+        elif replaced is not None:
             notes.append(
-                "Für dieses Jahr gibt es von diesem Arbeitgeber schon eine "
-                "Lohnsteuerbescheinigung. Ist diese eine berichtigte, bitte die alte unter "
-                "Einkommensteuer zurückziehen."
+                "Für diesen Zeitraum gibt es von diesem Arbeitgeber schon eine "
+                "Lohnsteuerbescheinigung; diese ersetzt sie (eine berichtigte Bescheinigung)."
             )
         self.add("return_input:wage_certificate", "return_input", "create", fields, notes=notes)
 
@@ -835,11 +833,7 @@ class _Builder:
             notes.append(
                 _projection_note(on, fields["value.gross.month"], fields["value.gross.ytd"])
             )
-            employer = _norm(self.ev("employer_name").value)
-            if any(
-                row.period_month == on and _norm(row.employer) == employer
-                for row in self._current_pay_rows("payslip", owner, tax_year)
-            ):
+            if self._replaced("payslip", owner, tax_year, fields) is not None:
                 notes.append(
                     f"Für {MONTH_NAMES[on.month - 1]} {on.year} gibt es von diesem Arbeitgeber "
                     "schon eine Gehaltsabrechnung; diese ersetzt sie."
@@ -872,18 +866,24 @@ class _Builder:
                 return _derived(on.year, [(name, source)])
         return ExtractedValue.missing()
 
-    def _current_pay_rows(
-        self, kind: str, owner: ExtractedValue, tax_year: ExtractedValue
-    ) -> list[ExistingPayRow]:
+    def _replaced(
+        self,
+        kind: str,
+        owner: ExtractedValue,
+        tax_year: ExtractedValue,
+        fields: dict[str, ExtractedValue],
+    ) -> ExistingPayRow | None:
+        """The current row the proposed one would replace, as the apply decides it."""
         if owner.value is None or tax_year.value is None:
-            return []
-        return [
-            row
-            for row in self.ctx.pay_rows
-            if row.kind == kind
-            and str(row.owner_id) == owner.value
-            and row.tax_year == tax_year.value
-        ]
+            return None
+        return replaced_pay_row(
+            kind,
+            self.ctx.pay_rows,
+            owner_id=UUID(str(owner.value)),
+            tax_year=int(tax_year.value),
+            document_id=self.ctx.document_id,
+            value={name: v.value for name, v in fields.items()},
+        )
 
 
 # --- Matching existing records ----------------------------------------------------------
@@ -1381,6 +1381,50 @@ def _projection_note(on: date, month: ExtractedValue, ytd: ExtractedValue) -> st
     )
 
 
+def employer_key(name: Any) -> str:
+    """An employer's name compared: casefolded, whitespace collapsed."""
+    return _norm(name)
+
+
+def replaced_pay_row(
+    kind: str,
+    rows: Sequence[ExistingPayRow],
+    *,
+    owner_id: UUID,
+    tax_year: int,
+    document_id: UUID,
+    value: dict[str, Any],
+) -> ExistingPayRow | None:
+    """The current row a new pay row replaces (its supersedes_id), from the `value.*` fields
+    proposed or confirmed. A payslip: the row of the same owner, year, employer and month
+    (§8.2). A certificate: the row read from the same document, else the row of the same
+    employer whose period overlaps this one (a corrected certificate; two periods of one
+    employer that do not overlap are two certificates, both kept). Several candidates: None,
+    nothing is guessed (the new row is added, the user withdraws the old one by hand)."""
+    mine = [r for r in rows if r.kind == kind and r.owner_id == owner_id and r.tax_year == tax_year]
+    employer = employer_key(value.get("value.employer") or "")
+    if kind == "payslip":
+        month = _iso_date(_month_start(value.get("value.period_month")))
+        found = [
+            r for r in mine if r.period_month == month and employer_key(r.employer) == employer
+        ]
+    else:
+        found = [r for r in mine if r.document_id == document_id]
+        start = _iso_date(value.get("value.period_from"))
+        end = _iso_date(value.get("value.period_to"))
+        if not found and start is not None and end is not None:
+            found = [
+                r
+                for r in mine
+                if employer_key(r.employer) == employer
+                and r.period_from is not None
+                and r.period_to is not None
+                and r.period_from <= end
+                and start <= r.period_to
+            ]
+    return found[0] if len(found) == 1 else None
+
+
 def return_input_value(kind: str, values: dict[str, Any]) -> dict[str, Any]:
     """The `value` of a return_input row from the user's confirmed values of its record (the
     `value.*` fields, dotted; any other key is ignored), as ReturnInputCreate reads it.
@@ -1412,4 +1456,4 @@ def return_input_value(kind: str, values: dict[str, Any]) -> dict[str, Any]:
     return nested
 
 
-__all__ = ["build_proposal", "return_input_value"]
+__all__ = ["build_proposal", "employer_key", "replaced_pay_row", "return_input_value"]

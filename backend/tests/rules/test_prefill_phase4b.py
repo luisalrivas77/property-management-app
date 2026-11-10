@@ -2,6 +2,7 @@
 §8.2, D105, Q-O29) and return_input_value, the mapping from the confirmed values to a row's
 value. All names, employers and figures are invented."""
 
+from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
@@ -13,6 +14,7 @@ from hausbuch.rules.prefill import (
     _month_start,
     _tax_class_parts,
     build_proposal,
+    replaced_pay_row,
     return_input_value,
 )
 from hausbuch.schemas.ai import ClassifyOutput, ExtractedValue, SourceRef
@@ -214,18 +216,77 @@ def test_the_tax_year_comes_from_the_period_when_not_stated():
     assert records["typing"].fields["tax_year"].value == 2026
 
 
-def test_a_certificate_already_taken_over_or_of_the_same_employer_gets_a_note():
-    row_same_doc = ExistingPayRow(
-        id=UUID(int=7),
-        owner_id=OWNER_A.id,
-        kind="wage_certificate",
-        tax_year=2026,
-        employer="Muster GmbH",
-        document_id=DOC,
+CERT_ROW = ExistingPayRow(
+    id=UUID(int=7),
+    owner_id=OWNER_A.id,
+    kind="wage_certificate",
+    tax_year=2026,
+    employer="Muster GmbH",
+    period_from=date(2026, 1, 1),
+    period_to=date(2026, 12, 31),
+    document_id=DOC,
+)
+CERT_VALUE = {
+    "value.employer": "MUSTER  gmbh",
+    "value.period_from": "2026-01-01",
+    "value.period_to": "2026-12-31",
+}
+
+
+def _replaced(row, value=CERT_VALUE, kind="wage_certificate"):
+    return replaced_pay_row(
+        kind, [row], owner_id=OWNER_A.id, tax_year=2026, document_id=DOC, value=value
     )
-    notes = _cert_records(pay_rows=[row_same_doc])["return_input:wage_certificate"].notes
+
+
+def test_a_certificate_replaces_the_row_of_its_own_document_first():
+    assert _replaced(CERT_ROW) == CERT_ROW
+    # the same document wins even when the employer was corrected in the review
+    assert _replaced(CERT_ROW, CERT_VALUE | {"value.employer": "Beispiel AG"}) == CERT_ROW
+
+
+def test_a_corrected_certificate_replaces_the_same_employers_overlapping_one():
+    other_doc = CERT_ROW.model_copy(update={"document_id": UUID(int=8)})
+    assert _replaced(other_doc) == other_doc
+    # a second period of one employer that does not overlap is a second certificate
+    first_half = other_doc.model_copy(update={"period_to": date(2026, 6, 30)})
+    assert _replaced(first_half, CERT_VALUE | {"value.period_from": "2026-07-01"}) is None
+    # another employer, another owner, another year: nothing replaced
+    assert _replaced(other_doc, CERT_VALUE | {"value.employer": "Beispiel AG"}) is None
+    assert _replaced(other_doc.model_copy(update={"owner_id": OWNER_B.id})) is None
+    assert _replaced(other_doc.model_copy(update={"tax_year": 2025})) is None
+    # a payslip row is never replaced by a certificate
+    assert _replaced(other_doc.model_copy(update={"kind": "payslip"})) is None
+
+
+def test_two_candidates_replace_nothing():
+    a = CERT_ROW.model_copy(update={"document_id": UUID(int=8)})
+    b = CERT_ROW.model_copy(update={"id": UUID(int=9), "document_id": UUID(int=10)})
+    got = replaced_pay_row(
+        "wage_certificate",
+        [a, b],
+        owner_id=OWNER_A.id,
+        tax_year=2026,
+        document_id=DOC,
+        value=CERT_VALUE,
+    )
+    assert got is None
+
+
+def test_a_payslip_replaces_the_same_employers_row_of_the_same_month():
+    row = CERT_ROW.model_copy(
+        update={"kind": "payslip", "period_month": date(2026, 7, 1), "document_id": UUID(int=8)}
+    )
+    value = {"value.employer": "Muster GmbH", "value.period_month": "2026-07-01"}
+    assert _replaced(row, value, "payslip") == row
+    assert _replaced(row, value | {"value.period_month": "2026-06-01"}, "payslip") is None
+    assert _replaced(row, value | {"value.employer": "Beispiel AG"}, "payslip") is None
+
+
+def test_the_certificate_notes_follow_the_replaced_row():
+    notes = _cert_records(pay_rows=[CERT_ROW])["return_input:wage_certificate"].notes
     assert any("schon übernommen" in n for n in notes)
-    other_doc = row_same_doc.model_copy(update={"document_id": UUID(int=8)})
+    other_doc = CERT_ROW.model_copy(update={"document_id": UUID(int=8)})
     notes = _cert_records(pay_rows=[other_doc])["return_input:wage_certificate"].notes
     assert any("berichtigte" in n for n in notes)
     other_owner = other_doc.model_copy(update={"owner_id": OWNER_B.id})

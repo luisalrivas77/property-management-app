@@ -178,8 +178,9 @@ class ExistingTenant(Schema):
 
 
 class ExistingPayRow(Schema):
-    """A current return_input row of a pay document (phase 4b §8.2): what a certificate or a
-    payslip of the same owner, employer (and month) would supersede. No figure, no name."""
+    """A current return_input row of a pay document (phase 4b §8.2): what a new certificate
+    or payslip of the same owner would supersede (rules.prefill.replaced_pay_row). The
+    employer's name and the dates only: no figure, no person's name."""
 
     id: UUID
     owner_id: UUID
@@ -187,6 +188,8 @@ class ExistingPayRow(Schema):
     tax_year: int
     employer: str
     period_month: date | None = None  # a payslip's month
+    period_from: date | None = None  # a certificate's period (Nr. 1)
+    period_to: date | None = None
     document_id: UUID | None = None
 
 
