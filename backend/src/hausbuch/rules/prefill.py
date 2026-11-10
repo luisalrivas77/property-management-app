@@ -6,9 +6,25 @@ whether it creates, patches, corrects or leaves an existing record unchanged, co
 derived values (building share, the Rate from the Tilgungssatz, a loan's interest-only flag,
 ownership shares, the prepayment sum, rent model, the tenancy's unit, an invoice's tax year:
 D36) and writes notes.
-A financing invoice (Grundschuld, Hypothek, Darlehen) is decided here, not by the
-classifier: it proposes no Nebenkosten row (D35). Nothing it returns reaches a
+A financing invoice (Grundschuld, Grundpfandrecht, Hypothek, Darlehen) is decided here, not
+by the classifier: it proposes no Nebenkosten row (D35). Nothing it returns reaches a
 domain table: only the user's apply does, through the phase 1 services (D14).
+
+Phase 2 D135 (every cost document into every record it implies): an invoice's or Bescheid's
+cost lines, when they sum to its total (extraction_parse.derive_fields), are sorted by
+sort_bill: a line naming a financing term is loan_fees, one naming a purchase term
+(Auflassungsvormerkung, Eigentumsumschreibung, Eintragung des Eigentümers, Eigentümerwechsel,
+Kaufvertrag) acquisition_cost; on a financing bill without a purchase line the other lines are
+loan_fees too; every other line keeps the category the reading gave it. The Umsatzsteuer is
+shared over the parts by their net amounts (largest remainder, to the cent). The
+acquisition_cost part becomes the Nebenkosten row (create, or patch the row whose Beleg this
+is, or a row of that kind without one); every deductible part (categories.TAX_TREATMENT)
+becomes a tax_input:private_cost:<category> record {tax_year, value.cost_class,
+value.category, value.label, value.amount} unless context.paid_from_rental_account (a
+rental-account line pays the bill: the bank line's split books it). A whole financing bill
+without readable lines proposes one loan_fees record of its total. A part of an undecided
+category (renovation, other_expense) is named in a note, never proposed. The catalogue's
+invoices (utility bill, §35a, work expenses) are not sorted.
 
 Every value inside a record (`fields[*].value`, `current`) is JSON: dates as ISO strings,
 decimals as strings, fractions as {numerator, denominator}, ids as strings. The result never
@@ -78,6 +94,8 @@ from uuid import UUID
 from pydantic import JsonValue
 
 from hausbuch.schemas.ai import ConfidenceLevel, ExtractedValue
+from hausbuch.schemas.allocation import AllocationCategory, TaxTreatment
+from hausbuch.schemas.common import Fraction
 from hausbuch.schemas.employment import CERTIFICATE_AMOUNTS, PAYSLIP_FIGURES
 from hausbuch.schemas.employment import employer_key as _shared_employer_key
 from hausbuch.schemas.enums import (
@@ -101,10 +119,13 @@ from hausbuch.schemas.proposal import (
 )
 from hausbuch.schemas.tax import GRUNDSTEUER_SUM_TOLERANCE
 
-from .extraction_parse import _MONTHS
+from .categories import CATEGORY_LABEL, TAX_TREATMENT
+from .extraction_parse import _MONTHS, cost_lines_balance
+from .extraction_parse import cost_lines as parse_cost_lines
 from .extraction_parse import house_number_key as _house_number_key
 from .extraction_parse import street_key as _street_key
 from .hand_fields import HAND_FIELD_MAP, HAND_FIELDS, hand_values
+from .tax.rounding import split_cents
 
 _CONFIDENCE_ORDER: dict[ConfidenceLevel, int] = {"low": 0, "medium": 1, "high": 2}
 _SIX_PLACES = Decimal("0.000001")
@@ -135,7 +156,16 @@ _HANDOVER_WINDOW_DAYS = 31
 # An invoice whose subject or title names one of these is a financing cost (D35). Deliberately
 # not finanzierung / kaufvertrag / zwangsvollstreckungsunterwerfung: a Kaufvertrag bill names
 # its Finanzierungsvollmacht, a Grundschuld bill the Kaufvertrag it finances.
-_FINANCING_TERMS = ("grundschuld", "hypothek", "darlehen")
+_FINANCING_TERMS = ("grundschuld", "grundpfandrecht", "hypothek", "darlehen")
+# A cost line naming one of these is a cost of the purchase (D135), unless it names a
+# financing term too (a Grundschuld line may name the Kaufvertrag it secures).
+_PURCHASE_TERMS = (
+    "auflassungsvormerkung",
+    "eigentumsumschreibung",
+    "eintragung des eigentümers",
+    "eigentümerwechsel",
+    "kaufvertrag",
+)
 _FINANCING_NOTE = (
     "Diese Rechnung betrifft die Finanzierung (Grundschuld, Hypothek oder Darlehen). Solche "
     "Kosten sind Geldbeschaffungskosten: im Jahr der Zahlung als Werbungskosten abziehbar, "
@@ -188,6 +218,138 @@ _FINANCING_BELEG_NOTE = (
     "Diese Rechnung ist schon als Beleg eines Nebenkosten-Eintrags hinterlegt. Der Eintrag "
     "gehört zu den Darlehenskosten: bitte ihn aus den Nebenkosten entfernen."
 )
+# D135: where each part of a bill counts, named in its tax_input:private_cost record's hint.
+_ANLAGE_V_PLACE = {
+    AllocationCategory.LOAN_INTEREST: "unter den Schuldzinsen",
+    AllocationCategory.LOAN_FEES: "unter den Geldbeschaffungskosten",
+    AllocationCategory.HAUSGELD_UMLAGEFAEHIG: "unter den umlagefähigen laufenden Kosten",
+    AllocationCategory.HAUSGELD_VERWALTUNG: "unter den nicht umlagefähigen Kosten",
+    AllocationCategory.PROPERTY_MANAGEMENT: "unter den nicht umlagefähigen Kosten",
+    AllocationCategory.GRUNDSTEUER: "unter den umlagefähigen laufenden Kosten",
+    AllocationCategory.INSURANCE: "unter den umlagefähigen laufenden Kosten",
+    AllocationCategory.ELECTRICITY: "unter den umlagefähigen laufenden Kosten",
+    AllocationCategory.REPAIRS: "unter dem Erhaltungsaufwand",
+    AllocationCategory.PROFESSIONAL_FEES: "unter den sonstigen Werbungskosten",
+    AllocationCategory.BANK_FEES: "unter den nicht umlagefähigen Kosten",
+}
+# The categories a privately paid part may carry: the deductible ones (D24 rule data).
+PRIVATE_COST_CATEGORIES = tuple(
+    c for c in AllocationCategory if TAX_TREATMENT[c] is TaxTreatment.DEDUCTIBLE
+)
+if set(_ANLAGE_V_PLACE) != set(PRIVATE_COST_CATEGORIES):  # pragma: no cover
+    raise RuntimeError("every deductible category needs its Anlage V place")
+_PAID_PRIVATELY_HINT = (
+    "Von einem anderen Konto bezahlt: zählt so in der Anlage V {place}. Kam die Zahlung vom "
+    "Mietkonto, diesen Teil überspringen."
+)
+_SPLIT_NOTE = (
+    "Hausbuch hat die Positionen dieser Rechnung nach Art der Kosten aufgeteilt (die "
+    "Umsatzsteuer anteilig): {parts}. Der Teil für den Kauf gehört zu den Nebenkosten und "
+    "damit zur AfA-Grundlage, die übrigen Teile zählen im Jahr der Zahlung."
+)
+_UNDECIDED_NOTE = (
+    "Nicht vorgeschlagen: {parts}. Ob das sofort abziehbar ist oder zu den Herstellungskosten "
+    "gehört, entscheidet sich erst bei der Steuer (15-%-Grenze); bitte bei Bedarf von Hand "
+    "erfassen."
+)
+_PAID_FROM_ACCOUNT_NOTE = (
+    "Eine Zahlung dieser Rechnung vom Mietkonto wurde gefunden; ihre Aufteilung wird beim "
+    "Abgleich des Kontoauszugs vorgeschlagen. Darum kein Eintrag „von einem anderen Konto "
+    "bezahlt“."
+)
+
+
+# --- A bill's cost lines (D135) -------------------------------------------------------
+
+
+class BillSort:
+    """How a bill is booked (D135). financing: the whole bill is a financing cost (D35, or
+    every line is). parts: the gross euro part per category in taxonomy order, VAT shared,
+    summing to the total; empty when the lines were not used (missing, not summing, a line
+    without a category): the bill is then booked whole, as before."""
+
+    def __init__(self, financing: bool, parts: dict[AllocationCategory, Decimal]) -> None:
+        self.financing = financing
+        self.parts = parts
+
+    @property
+    def by_lines(self) -> bool:
+        return bool(self.parts)
+
+
+def sort_bill(
+    *,
+    kind: ExtractionKind | None,
+    subject: Any,
+    title: Any,
+    cost_lines: ExtractedValue,
+    amount_total: ExtractedValue,
+) -> BillSort:
+    """The sorting of one invoice or Bescheid (D135); pure, for the proposal and for the
+    bank line's split (services.matching). subject and title are the reading's values."""
+    if kind is ExtractionKind.INVOICE:
+        whole_financing = names_financing(subject, title)
+    elif kind is ExtractionKind.BESCHEID:
+        whole_financing = names_financing(title)
+    else:
+        return BillSort(False, {})
+    parts = _line_parts(cost_lines, amount_total, whole_financing)
+    if parts and set(parts) == {AllocationCategory.LOAN_FEES}:
+        return BillSort(True, parts)
+    return BillSort(whole_financing and not parts, parts)
+
+
+def _line_parts(
+    read: ExtractedValue, total: ExtractedValue, whole_financing: bool
+) -> dict[AllocationCategory, Decimal]:
+    if read.value is None or "validates" not in read.checks:
+        return {}
+    lines = parse_cost_lines(read.value)
+    if lines is None or not cost_lines_balance(lines, total.value):
+        return {}
+    any_purchase = any(_names(line.text, _PURCHASE_TERMS) for line in lines if not line.vat)
+    net: dict[AllocationCategory, Decimal] = {}
+    vat = Decimal(0)
+    for line in lines:
+        if line.vat:
+            vat += line.amount
+            continue
+        if _names(line.text, _FINANCING_TERMS):
+            category = AllocationCategory.LOAN_FEES
+        elif _names(line.text, _PURCHASE_TERMS):
+            category = AllocationCategory.ACQUISITION_COST
+        elif whole_financing and not any_purchase:
+            category = AllocationCategory.LOAN_FEES
+        else:
+            category = line.category
+        if category is None:
+            return {}  # a line nobody could place: the bill stays whole
+        net[category] = net.get(category, Decimal(0)) + line.amount
+    if not net or any(amount <= 0 for amount in net.values()):
+        return {}
+    ordered = [c for c in AllocationCategory if c in net]
+    gross = [net[c] for c in ordered]
+    if vat:
+        whole = sum(gross, Decimal(0))
+        shares = [
+            Fraction(numerator=int(net[c] * 100), denominator=int(whole * 100)) for c in ordered
+        ]
+        gross = [g + v for g, v in zip(gross, split_cents(vat, shares), strict=True)]
+    # The parts sum to the lines; the total may differ by the tolerated cent: the last part
+    # takes it, so the parts are exactly the bill.
+    stated = _decimal(total.value)
+    if stated is not None:
+        gross[-1] += stated - sum(gross, Decimal(0))
+    return dict(zip(ordered, gross, strict=True))
+
+
+def _names(text: str, terms: Sequence[str]) -> bool:
+    t = _norm(text)
+    return any(term in t for term in terms)
+
+
+def _parts_text(parts: Iterable[tuple[AllocationCategory, Decimal]]) -> str:
+    return ", ".join(f"{CATEGORY_LABEL[c]} {_euro_de(a)}" for c, a in parts)
 
 
 # --- Entry point ---------------------------------------------------------------------
@@ -402,13 +564,19 @@ class _Builder:
         # Nebenkosten or financing cost of the purchase.
         self.catalogue_invoice = context.classification.subtype in _CATALOGUE_INVOICES
         # A Grundbuchamt Kostenrechnung may be typed bescheid, which has no subject (D35, F1).
-        self.financing = not self.catalogue_invoice and (
-            (
-                kind is ExtractionKind.INVOICE
-                and names_financing(self.ev("subject").value, self.ev("title").value)
+        # Its cost lines decide whether it is whole or split by kind of cost (D135).
+        self.bill = (
+            BillSort(False, {})
+            if self.catalogue_invoice
+            else sort_bill(
+                kind=kind,
+                subject=self.ev("subject").value,
+                title=self.ev("title").value,
+                cost_lines=self.ev("cost_lines"),
+                amount_total=self.ev("amount_total"),
             )
-            or (kind is ExtractionKind.BESCHEID and names_financing(self.ev("title").value))
         )
+        self.financing = self.bill.financing
 
     # -- values
 
@@ -474,6 +642,14 @@ class _Builder:
             notes.append(_FINANCING_NOTE)
             if any(cost.document_id == self.ctx.document_id for cost in self.ctx.costs):
                 notes.append(_FINANCING_BELEG_NOTE)
+        parts = self.bill.parts
+        if len(parts) > 1:
+            notes.append(_SPLIT_NOTE.format(parts=_parts_text(parts.items())))
+        undecided = [(c, a) for c, a in parts.items() if c not in _BOOKED_FROM_LINES]
+        if undecided:
+            notes.append(_UNDECIDED_NOTE.format(parts=_parts_text(undecided)))
+        if self.ctx.paid_from_rental_account and self._private_parts():
+            notes.append(_PAID_FROM_ACCOUNT_NOTE)
         self.add("typing", "typing", "create", fields, notes=notes)
 
     def hand_fields(self) -> None:
@@ -689,25 +865,93 @@ class _Builder:
         prop = _resolve_property(self.x, self.ctx)
         if prop is None:
             return
+        parts = self.bill.parts
         if self.financing:
             # D35: no cost record at all (not even unchanged or patch); the note on typing
             # says why. The loan is linked only when it is not a guess.
             self.link_property(prop)
-            loans = [loan for loan in self.ctx.loans if loan.property_id == prop.id]
-            if len(loans) == 1:
-                self.link("link:loan", loans[0].id)
+            self._link_only_loan(prop)
+            self._private_costs()
+            return
+        if self.bill.by_lines:
+            # D135: the purchase part is the Nebenkosten row; each deductible part a cost paid
+            # from another account.
+            purchase = parts.get(AllocationCategory.ACQUISITION_COST)
+            if purchase is not None:
+                self._cost(prop, self._part_value(purchase))
+            self.link_property(prop)
+            if AllocationCategory.LOAN_FEES in parts:
+                self._link_only_loan(prop)
+            self._private_costs()
             return
         if self.ctx.classification.subtype is DocumentSubtype.COST_BASIS_EVIDENCE:
-            self._cost(prop)
+            self._cost(prop, self.ev("amount_total"))
         self.link_property(prop)
 
-    def _cost(self, prop: ExistingProperty) -> None:
+    def _link_only_loan(self, prop: ExistingProperty) -> None:
+        loans = [loan for loan in self.ctx.loans if loan.property_id == prop.id]
+        if len(loans) == 1:
+            self.link("link:loan", loans[0].id)
+
+    def _part_value(self, amount: Decimal) -> ExtractedValue:
+        """A part of the bill: the total itself (the same value, so typing does not ask for it
+        twice, D132) when it is the whole bill, else computed from the lines."""
+        total = self.ev("amount_total")
+        if _decimal(total.value) == amount:
+            return total
+        return _derived(
+            str(amount.quantize(_CENTS)),
+            [("cost_lines", self.ev("cost_lines")), ("amount_total", total)],
+        )
+
+    def _private_parts(self) -> list[tuple[AllocationCategory, Decimal | None]]:
+        """The parts a cost paid from another account stands for: the deductible parts of the
+        lines, or the whole financing bill (amount None: its total as read)."""
+        if self.bill.by_lines:
+            return [(c, a) for c, a in self.bill.parts.items() if c in PRIVATE_COST_CATEGORIES]
+        if self.financing:
+            return [(AllocationCategory.LOAN_FEES, None)]
+        return []
+
+    def _private_costs(self) -> None:
+        """D135: a tax_input:private_cost:<category> record per deductible part, unless a
+        rental-account line pays the bill. tax_year: the bill's year (due_on, else its
+        date, D36); label: the title, else the sender."""
+        if self.ctx.paid_from_rental_account:
+            return
+        total = self.ev("amount_total")
+        tax_year = self._invoice_tax_year() or ExtractedValue.missing()
+        label = _label_value(self.ev("title"), self.ev("sender"))
+        for category, amount in self._private_parts():
+            if amount is None:
+                value = total.model_copy()  # its own object: typing keeps Betrag gesamt (D132)
+            else:
+                value = self._part_value(amount)
+                if value is total:
+                    value = total.model_copy()
+            klass = "financing" if category is AllocationCategory.LOAN_FEES else "other"
+            confidence = total.confidence if total.value is not None else "low"
+            self.add(
+                f"tax_input:private_cost:{category.value}",
+                "tax_input",
+                "create",
+                {
+                    "tax_year": tax_year,
+                    "value.cost_class": _code_value(klass, "high"),
+                    "value.category": _code_value(category.value, confidence),
+                    "value.label": label,
+                    "value.amount": value,
+                },
+                notes=[_PAID_PRIVATELY_HINT.format(place=_ANLAGE_V_PLACE[category])],
+            )
+
+    def _cost(self, prop: ExistingProperty, amount: ExtractedValue) -> None:
         sender = self.ev("sender")
         if sender.value is None:
             kind_value = _code_value(AcquisitionCostKind.OTHER.value, "low")
         else:
             kind_value = _mapped(sender, _cost_kind)
-        amount, note = self.ev("amount_total"), self.ev("reference")
+        note = self.ev("reference")
         stated = {f: v for f, v in (("amount", amount), ("note", note)) if v.value is not None}
 
         # 1. A row whose Beleg is this document: never a second row for the same Beleg.
@@ -1399,6 +1643,21 @@ def _unit_by_label(units: Sequence[ExistingUnit], label: str) -> tuple[ExistingU
         if _may_be_inside(_label_key(u.label), key) and _contains(key, _label_key(u.label))
     ]
     return (inside[0], False) if len(inside) == 1 else (None, False)
+
+
+# The parts of a split bill a record books (D135): the purchase part and the deductible ones.
+_BOOKED_FROM_LINES = frozenset({AllocationCategory.ACQUISITION_COST, *PRIVATE_COST_CATEGORIES})
+_LABEL_MAX = 120  # PrivateCostValue.label
+
+
+def _label_value(title: ExtractedValue, sender: ExtractedValue) -> ExtractedValue:
+    """A private cost's label: the document's title, else its sender, cut to 120 characters
+    (a copy, so the typing record keeps its own hand fields, D132); neither read, proposed
+    empty for the user to type."""
+    for read in (title, sender):
+        if isinstance(read.value, str) and read.value.strip():
+            return read.model_copy(update={"value": read.value[:_LABEL_MAX].rstrip()})
+    return ExtractedValue.missing()
 
 
 def names_financing(*texts: Any) -> bool:

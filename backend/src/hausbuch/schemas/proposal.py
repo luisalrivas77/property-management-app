@@ -248,3 +248,8 @@ class PrefillContext(Schema):
     # (services.documents.hand_fields), for a proposal with no reading of its own (typing
     # only, or blocked by the tenant gate), whose typing record then carries them.
     hand_fields: HandFields | None = None
+    # Phase 2 D135: a line of a rental account pays this bill (an allocation carries the
+    # document, or a line matches it by amount, date and IBAN or reference;
+    # services.matching.paid_from_rental_account), so no cost paid from another account is
+    # proposed for it.
+    paid_from_rental_account: bool = False

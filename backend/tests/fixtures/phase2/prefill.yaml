@@ -14,7 +14,8 @@
 #   typing (typing), property (property), correction:<field> (property), unit (unit),
 #   price_split (price_split), ownership (ownership), cost:<kind> (acquisition_cost),
 #   loan (loan), tenant:<n> (tenant), tenancy (tenancy), rent (rent_schedule),
-#   deposit_received (deposit_received), link:property / link:loan / link:tenancy (link).
+#   deposit_received (deposit_received), link:property / link:loan / link:tenancy (link),
+#   tax_input:private_cost:<category> (tax_input, D135).
 # Fields are named by the *Create / *Patch field ("address.city" for a nested one). Not fields:
 # what apply supplies itself: the document (Beleg, evidence, rent document_id), the id of a
 # record created in the same apply, a split's source (purchase_contract), the property a
@@ -54,11 +55,37 @@
 #            invoice's amount_total in its cost record) or a new record's card asks for
 #            (a new cost row's note <- reference; a new loan's lender and contract_number).
 # Financing invoices (D35): an invoice whose subject or title, or a Bescheid whose title,
-#   contains grundschuld, hypothek or darlehen (casefolded, anywhere) proposes no cost:<kind> record (not create, patch or
+#   contains grundschuld, grundpfandrecht, hypothek or darlehen (casefolded, anywhere) proposes no cost:<kind> record (not create, patch or
 #   unchanged) and no subtype in typing, whatever the classifier said; typing's notes contain
 #   "Geldbeschaffungskosten", plus "aus den Nebenkosten" when a cost row already has this
 #   document as its Beleg; link:property as usual; link:loan when the property has exactly
-#   one loan in the context.
+#   one loan in the context. D135: plus tax_input:private_cost:loan_fees for the whole bill
+#   (below) unless context.paid_from_rental_account.
+# Cost lines (D135, 10 Nov 2026): an invoice's or Bescheid's cost_lines (items
+#   "text | amount | code") are used when the value has the check validates and the lines
+#   sum to amount_total within 0.01; otherwise the bill is booked whole, as above. Each line
+#   that is not the Umsatzsteuer (code vat, or a text naming umsatzsteuer / mehrwertsteuer /
+#   ust / mwst) takes, in this order: loan_fees when its text names a financing term;
+#   acquisition_cost when it names a purchase term (auflassungsvormerkung,
+#   eigentumsumschreibung, eintragung des eigentümers, eigentümerwechsel, kaufvertrag);
+#   loan_fees when the bill is a financing bill (above) and no line names a purchase term;
+#   else the line's own code. A line left without a category: the bill stays whole. The
+#   Umsatzsteuer is shared over the categories by their net sums (largest remainder, cents);
+#   the last category takes any cent between the lines and the total. Every line loan_fees:
+#   the bill is a financing bill (no subtype, the note). Otherwise:
+#   - the acquisition_cost part is the cost:<kind> record, by the cost rules below, with
+#     amount = that part (amount_total itself when it is the whole bill, else derived from
+#     [cost_lines, amount_total]);
+#   - link:property; link:loan as for a financing bill when a loan_fees part exists;
+#   - each deductible part (categories.TAX_TREATMENT deductible) is a create record
+#     tax_input:private_cost:<category> {tax_year (the invoice tax year, D36), value.cost_class
+#     (financing for loan_fees, else other; code), value.category (code), value.label (the
+#     title, else the sender; copied), value.amount (the part, as above; the whole bill's
+#     total copied)}, notes contain "anderen Konto" and "Mietkonto"; none when
+#     context.paid_from_rental_account, then typing's notes contain "vom Mietkonto";
+#   - typing's notes contain "aufgeteilt" when there are two parts or more, and "Nicht
+#     vorgeschlagen" naming a part of an undecided category (renovation, other_expense).
+#   The catalogue's invoices are not sorted.
 #
 # Matching existing records (casefold, whitespace collapsed; never by a tenant whose name was
 # erased):
@@ -608,7 +635,7 @@ cases:
       amount_total: {v: "612.88", p: 2, q: "Rechnungsbetrag 612,88 €"}
       reference: {v: RE26/00001, p: 1, q: "Rechnungsnr. RE26/00001"}
     expect:
-      keys: [typing, link:property, link:loan]
+      keys: [typing, link:property, link:loan, "tax_input:private_cost:loan_fees"]
       records:
         - key: typing
           entity_type: typing
@@ -626,6 +653,12 @@ cases:
           mode: create
           target_id: *L
           values: {}
+        - key: tax_input:private_cost:loan_fees
+          entity_type: tax_input
+          mode: create
+          values: {tax_year: 2026, value.cost_class: financing, value.category: loan_fees, value.label: Notarrechnung Grundschuldbestellung, value.amount: "612.88"}
+          derived: {tax_year: [document_date]}
+          notes_contain: ["Geldbeschaffungskosten", "anderen Konto", "Mietkonto"]
 
   - id: notar_invoice_grundschuld_by_title_only
     description: D35. The classifier left the subtype empty (the prompt's exclusion worked) and no subject was read; the model-written title alone names the Grundschuld. No loan in the workspace, so no loan link.
@@ -638,7 +671,7 @@ cases:
       <<: *GRUNDSCHULD_INVOICE
       subject: {value: null, confidence: low}
     expect:
-      keys: [typing, link:property]
+      keys: [typing, link:property, "tax_input:private_cost:loan_fees"]
       records:
         - key: typing
           entity_type: typing
@@ -661,7 +694,7 @@ cases:
         - {id: *L2, property_id: *P, lender: Förderbank Beispiel, contract_number: "KfW-77"}
     extraction: *GRUNDSCHULD_INVOICE
     expect:
-      keys: [typing, link:property]
+      keys: [typing, link:property, "tax_input:private_cost:loan_fees"]
       records:
         - key: typing
           entity_type: typing
@@ -806,13 +839,250 @@ cases:
       amount_total: {v: "250.00", p: 1, q: "Gesamtbetrag 250,00 €"}
       reference: {v: KR 4711/26, p: 1, q: "Kostenrechnung KR 4711/26"}
     expect:
-      keys: [typing, link:property, link:loan]
+      keys: [typing, link:property, link:loan, "tax_input:private_cost:loan_fees"]
       records:
         - key: typing
           entity_type: typing
           mode: create
           values: {type: bescheid, title: Kostenrechnung Grundschuldeintragung, document_date: "2026-04-10", amount_total: "250.00", counterparty: "Amtsgericht Berlin-Mitte Grundbuchamt", reference: "KR 4711/26"}
           notes_contain: ["Geldbeschaffungskosten"]
+        - key: tax_input:private_cost:loan_fees
+          entity_type: tax_input
+          mode: create
+          values: {tax_year: 2026, value.cost_class: financing, value.category: loan_fees, value.label: Kostenrechnung Grundschuldeintragung, value.amount: "250.00"}
+          derived: {tax_year: [document_date]}
+          notes_contain: ["Geldbeschaffungskosten"]
+
+  - id: notar_invoice_mixed_kaufvertrag_and_grundschuld_split
+    description: D135. One notary bill for the Kaufvertrag and the Grundschuld, paid from another account. The lines' terms decide (the subject names a Grundschuld, but a line names the Kaufvertrag); the Umsatzsteuer of 190.00 is shared 4:1, so the Nebenkosten row is 952.00 and the Geldbeschaffungskosten 238.00, a cost paid from another account.
+    kind: invoice
+    context:
+      document_id: *DOC
+      classification: {type: invoice, subtype: cost_basis_evidence, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      loans:
+        - {id: *L, property_id: *P, lender: Beispielbank AG, contract_number: "600123456"}
+    extraction: &MIXED_INVOICE
+      title: {v: Notarrechnung Kaufvertrag und Grundschuld, p: 1, q: "Kaufvertrag und Grundschuldbestellung"}
+      subject: {v: Kaufvertrag und Grundschuldbestellung, p: 1, q: "zur Urkunde 1236/2026 (Kaufvertrag und Grundschuldbestellung)"}
+      document_date: {v: "2026-03-05", p: 1, q: "Kostenrechnung Nr. 2026-0458 vom 05.03.2026"}
+      due_on: {v: "2026-03-19", p: 1, q: "Zahlbar bis 19.03.2026"}
+      sender: {v: Notarin Dr. Anna Beispiel, p: 1, q: "Dr. Anna Beispiel, Notarin in Berlin"}
+      amount_total: {v: "1190.00", p: 1, q: "Gesamtbetrag 1.190,00 EUR"}
+      reference: {v: "2026-0458", p: 1, q: "Kostenrechnung Nr. 2026-0458"}
+      cost_lines:
+        value: ["Beurkundung Kaufvertrag | 800,00 EUR | acquisition_cost", "Beurkundung Grundschuld | 200,00 EUR | acquisition_cost", "Umsatzsteuer 19 % | 190,00 EUR | vat"]
+        source: {page: 1, quote: "Beurkundung Kaufvertrag 800,00 EUR Beurkundung Grundschuld 200,00 EUR Umsatzsteuer 19 % 190,00 EUR"}
+        checks: [cited, validates]
+        confidence: medium
+    expect:
+      keys: [typing, cost:notary, link:property, link:loan, "tax_input:private_cost:loan_fees"]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: invoice, subtype: cost_basis_evidence, title: Notarrechnung Kaufvertrag und Grundschuld, document_date: "2026-03-05", tax_year: 2026, amount_total: "1190.00", counterparty: "Notarin Dr. Anna Beispiel", notes: "Kaufvertrag und Grundschuldbestellung"}
+          derived: {tax_year: [due_on]}
+          notes_contain: ["aufgeteilt", "Anschaffungsnebenkosten 952,00 €", "Geldbeschaffungskosten 238,00 €"]
+        - key: cost:notary
+          entity_type: acquisition_cost
+          mode: create
+          values: {kind: notary, amount: "952.00", note: "2026-0458"}
+          derived: {amount: [cost_lines, amount_total]}
+        - key: link:loan
+          entity_type: link
+          mode: create
+          target_id: *L
+          values: {}
+        - key: tax_input:private_cost:loan_fees
+          entity_type: tax_input
+          mode: create
+          values: {tax_year: 2026, value.cost_class: financing, value.category: loan_fees, value.label: Notarrechnung Kaufvertrag und Grundschuld, value.amount: "238.00"}
+          derived: {tax_year: [due_on], value.amount: [cost_lines, amount_total]}
+          notes_contain: ["Geldbeschaffungskosten", "anderen Konto"]
+
+  - id: notar_invoice_mixed_patches_the_hand_typed_row
+    description: D135. Luis had typed the whole mixed bill as a notary Nebenkosten row without attaching it; the row is patched down to the purchase part (cost rule 2) and the Grundschuld part becomes a cost paid from another account.
+    kind: invoice
+    context:
+      document_id: *DOC
+      classification: {type: invoice, subtype: cost_basis_evidence, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      costs:
+        - {id: *C1, property_id: *P, kind: notary, amount: "1190.00", document_id: null, note: null}
+      loans:
+        - {id: *L, property_id: *P, lender: Beispielbank AG, contract_number: "600123456"}
+    extraction: *MIXED_INVOICE
+    expect:
+      keys: [typing, cost:notary, link:property, link:loan, "tax_input:private_cost:loan_fees"]
+      records:
+        - key: cost:notary
+          entity_type: acquisition_cost
+          mode: patch
+          target_id: *C1
+          values: {amount: "952.00", note: "2026-0458"}
+          derived: {amount: [cost_lines, amount_total]}
+          current: {amount: "1190.00", note: null}
+        - key: tax_input:private_cost:loan_fees
+          entity_type: tax_input
+          mode: create
+          values: {tax_year: 2026, value.cost_class: financing, value.category: loan_fees, value.label: Notarrechnung Kaufvertrag und Grundschuld, value.amount: "238.00"}
+          derived: {tax_year: [due_on], value.amount: [cost_lines, amount_total]}
+
+  - id: notar_invoice_grundschuld_lines_whole_financing
+    description: D135. A Grundschuld bill whose lines name no term of their own (Beurkundungsgebühr, Auslagen); the subject makes it a financing bill, so every line is loan_fees and the whole total is one cost paid from another account, copied from the total.
+    kind: invoice
+    context:
+      document_id: *DOC
+      classification: {type: invoice, subtype: null, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+    extraction:
+      <<: *GRUNDSCHULD_INVOICE
+      cost_lines:
+        value: ["Beurkundungsgebühr | 475,00 € | acquisition_cost", "Auslagen | 40,03 € | acquisition_cost", "Umsatzsteuer 19 % | 97,85 € | vat"]
+        source: {page: 2, quote: "Beurkundungsgebühr 475,00 € Auslagen 40,03 € Umsatzsteuer 19 % 97,85 €"}
+        checks: [cited, validates]
+        confidence: medium
+    expect:
+      keys: [typing, link:property, "tax_input:private_cost:loan_fees"]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: invoice, title: Notarrechnung Grundschuldbestellung, document_date: "2026-03-20", tax_year: 2026, amount_total: "612.88", counterparty: "Notarin Dr. Anna Beispiel", reference: "RE26/00001", notes: "Grundschuld-/Hypothekenbestellung mit ZV-Unterwerfung"}
+          derived: {tax_year: [document_date]}
+          notes_contain: ["Geldbeschaffungskosten"]
+        - key: tax_input:private_cost:loan_fees
+          entity_type: tax_input
+          mode: create
+          values: {tax_year: 2026, value.cost_class: financing, value.category: loan_fees, value.label: Notarrechnung Grundschuldbestellung, value.amount: "612.88"}
+          derived: {tax_year: [document_date]}
+
+  - id: notar_invoice_grundschuld_paid_from_rental_account
+    description: D135. The same Grundschuld bill, but a rental-account line pays it (context.paid_from_rental_account); the bank line books it, so no cost paid from another account is proposed and typing says why.
+    kind: invoice
+    context:
+      document_id: *DOC
+      classification: {type: invoice, subtype: null, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      paid_from_rental_account: true
+    extraction: *GRUNDSCHULD_INVOICE
+    expect:
+      keys: [typing, link:property]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: invoice, title: Notarrechnung Grundschuldbestellung, document_date: "2026-03-20", tax_year: 2026, amount_total: "612.88", counterparty: "Notarin Dr. Anna Beispiel", reference: "RE26/00001", notes: "Grundschuld-/Hypothekenbestellung mit ZV-Unterwerfung"}
+          derived: {tax_year: [document_date]}
+          notes_contain: ["Geldbeschaffungskosten", "vom Mietkonto"]
+
+  - id: invoice_cost_lines_do_not_sum_stays_whole
+    description: D135. The lines read sum to 1,990.00, not the total 2,312.45 (the reading lost a line), so derive_fields took validates away; the bill is booked whole as before (one Nebenkosten row of the total) and nothing is proposed as paid from another account.
+    kind: invoice
+    context:
+      document_id: *DOC
+      classification: {type: invoice, subtype: cost_basis_evidence, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+    extraction:
+      <<: *NOTAR_INVOICE
+      cost_lines:
+        value: ["Beurkundung Kaufvertrag | 1.600,00 € | acquisition_cost", "Grundschuldbestellung | 390,00 € | loan_fees"]
+        source: {page: 2, quote: "Beurkundung Kaufvertrag 1.600,00 € Grundschuldbestellung 390,00 €"}
+        checks: [cited]
+        confidence: low
+    expect:
+      keys: [typing, cost:notary, link:property]
+      records:
+        - key: cost:notary
+          entity_type: acquisition_cost
+          mode: create
+          values: {kind: notary, amount: "2312.45", note: UR 1234/2026}
+
+  - id: repair_invoice_paid_from_another_account
+    description: D135. A plumber's repair of the let flat, paid from a private account. No term decides its lines, so the reading's code (repairs) does; the whole bill is one cost paid from another account in the Erhaltungsaufwand, and no Nebenkosten row although the classifier filed it as cost_basis_evidence.
+    kind: invoice
+    context:
+      document_id: *DOC
+      classification: {type: invoice, subtype: cost_basis_evidence, contains_tenant_data: false, language: de, confidence: medium}
+      properties: [*PROP_LINDEN]
+    extraction: &REPAIR_INVOICE
+      title: {v: Rechnung Reparatur Sanitär, p: 1, q: "Reparatur in der vermieteten Wohnung"}
+      document_date: {v: "2026-06-10", p: 1, q: "Rechnung Nr. R-2026-0815 vom 10.06.2026"}
+      due_on: {v: "2026-06-24", p: 1, q: "Zahlbar bis 24.06.2026"}
+      sender: {v: Sanitär Beispiel GmbH, p: 1, q: "Sanitär Beispiel GmbH, Werkstraße 3"}
+      amount_total: {v: "297.50", p: 1, q: "Rechnungsbetrag 297,50 EUR"}
+      amount_net: {v: "250.00", p: 1, q: "Netto 250,00 EUR"}
+      reference: {v: R-2026-0815, p: 1, q: "Rechnung Nr. R-2026-0815"}
+      cost_lines:
+        value: ["Arbeitszeit Monteur, 3 Stunden | 180,00 EUR | repairs", "Material: Ventil und Dichtungen | 70,00 EUR | repairs", "Umsatzsteuer 19 % | 47,50 EUR | vat"]
+        source: {page: 1, quote: "Arbeitszeit Monteur, 3 Stunden 180,00 EUR Material: Ventil und Dichtungen 70,00 EUR Umsatzsteuer 19 % 47,50 EUR"}
+        checks: [cited, validates]
+        confidence: medium
+    expect:
+      keys: [typing, link:property, "tax_input:private_cost:repairs"]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: invoice, subtype: cost_basis_evidence, title: Rechnung Reparatur Sanitär, document_date: "2026-06-10", tax_year: 2026, amount_total: "297.50", counterparty: "Sanitär Beispiel GmbH", reference: R-2026-0815, notes: null}
+          derived: {tax_year: [due_on]}
+        - key: tax_input:private_cost:repairs
+          entity_type: tax_input
+          mode: create
+          values: {tax_year: 2026, value.cost_class: other, value.category: repairs, value.label: Rechnung Reparatur Sanitär, value.amount: "297.50"}
+          derived: {tax_year: [due_on]}
+          notes_contain: ["Erhaltungsaufwand", "anderen Konto"]
+
+  - id: repair_invoice_paid_from_rental_account
+    description: D135. The same repair bill, paid from the rental account; the bank line books it (repairs), so nothing is proposed beyond typing and the property link.
+    kind: invoice
+    context:
+      document_id: *DOC
+      classification: {type: invoice, subtype: null, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      paid_from_rental_account: true
+    extraction: *REPAIR_INVOICE
+    expect:
+      keys: [typing, link:property]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: invoice, title: Rechnung Reparatur Sanitär, document_date: "2026-06-10", tax_year: 2026, amount_total: "297.50", counterparty: "Sanitär Beispiel GmbH", reference: R-2026-0815, notes: null}
+          derived: {tax_year: [due_on]}
+          notes_contain: ["vom Mietkonto"]
+
+  - id: repair_and_renovation_invoice_names_the_undecided_part
+    description: D135. A bill with a repair line and a renovation line (the reading's codes), paid from another account. The repair part (with its share of the Umsatzsteuer) is a cost paid from another account; the renovation part is undecided until the 15 % test and is only named in a note.
+    kind: invoice
+    context:
+      document_id: *DOC
+      classification: {type: invoice, subtype: null, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+    extraction:
+      <<: *REPAIR_INVOICE
+      amount_total: {v: "1190.00", p: 1, q: "Rechnungsbetrag 1.190,00 EUR"}
+      amount_net: {v: "1000.00", p: 1, q: "Netto 1.000,00 EUR"}
+      cost_lines:
+        value: ["Reparatur Wasserhahn | 200,00 EUR | repairs", "Neues Badezimmer | 800,00 EUR | renovation", "Umsatzsteuer 19 % | 190,00 EUR | vat"]
+        source: {page: 1, quote: "Reparatur Wasserhahn 200,00 EUR Neues Badezimmer 800,00 EUR Umsatzsteuer 19 % 190,00 EUR"}
+        checks: [cited, validates]
+        confidence: medium
+    expect:
+      keys: [typing, link:property, "tax_input:private_cost:repairs"]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: invoice, title: Rechnung Reparatur Sanitär, document_date: "2026-06-10", tax_year: 2026, amount_total: "1190.00", counterparty: "Sanitär Beispiel GmbH", reference: R-2026-0815, notes: null}
+          derived: {tax_year: [due_on]}
+          notes_contain: ["aufgeteilt", "Nicht vorgeschlagen: Renovierung oder Modernisierung 952,00 €"]
+        - key: tax_input:private_cost:repairs
+          entity_type: tax_input
+          mode: create
+          values: {tax_year: 2026, value.cost_class: other, value.category: repairs, value.label: Rechnung Reparatur Sanitär, value.amount: "238.00"}
+          derived: {tax_year: [due_on], value.amount: [cost_lines, amount_total]}
 
   - id: darlehen_rate_derived_from_tilgungssatz
     description: The contract states Sollzins and anfängliche Tilgung but no Rate; 300,000 x (3.6 % + 2 %) / 12 = 1,400.00.
