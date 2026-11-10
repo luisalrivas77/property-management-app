@@ -54,6 +54,10 @@ def equipment_amount(item: EquipmentFact, tax_year: int, rs: AnlageNRuleSet) -> 
     for i, (year, n) in enumerate(plan):
         slices[year] = base - done if i == len(plan) - 1 else cents(base * n / months)
         done += slices[year]
+    if tax_year not in slices:
+        # Outside the plan nothing counts, whatever the disposal date: a disposal after the
+        # life ended must not add a slice the plan never had.
+        return NOT_ZERO
     disposed = item.disposed_on
     if disposed is not None:
         if tax_year > disposed.year:
@@ -63,7 +67,7 @@ def equipment_amount(item: EquipmentFact, tax_year: int, rs: AnlageNRuleSet) -> 
                 return slices[tax_year]
             start = item.bought_on.month if tax_year == bought else 1
             return cents(base * (disposed.month - start + 1) / months)
-    return slices.get(tax_year, NOT_ZERO)
+    return slices[tax_year]
 
 
 def spans_years(item: EquipmentFact, rs: AnlageNRuleSet) -> bool:

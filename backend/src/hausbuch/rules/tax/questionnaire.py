@@ -18,8 +18,10 @@ once.
 - `extraordinary_threshold`: the zumutbare Belastung (§33 Abs. 3 EStG) over the bands.
 """
 
+import calendar
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
+from datetime import date
 from decimal import Decimal
 from enum import Enum
 from uuid import UUID
@@ -67,19 +69,23 @@ def slots(questionnaire: Questionnaire, owners: Sequence[UUID], properties: Sequ
     return out
 
 
+def _plus_years(day: date, years: int) -> date:
+    """`day` moved by `years`; 29 Feb becomes 28 Feb in a year without it."""
+    year = day.year + years
+    return day.replace(year=year, day=min(day.day, calendar.monthrange(year, day.month)[1]))
+
+
 def shift(value, years: int = 1):
     """A carried value's dates move to the new year (a route's period, an item's purchase)."""
     if isinstance(value, CommuteFact):
         return value.model_copy(
             update={
-                "period_from": value.period_from.replace(year=value.period_from.year + years),
-                "period_to": value.period_to.replace(year=value.period_to.year + years),
+                "period_from": _plus_years(value.period_from, years),
+                "period_to": _plus_years(value.period_to, years),
             }
         )
     if isinstance(value, EquipmentFact):
-        return value.model_copy(
-            update={"bought_on": value.bought_on.replace(year=value.bought_on.year + years)}
-        )
+        return value.model_copy(update={"bought_on": _plus_years(value.bought_on, years)})
     return value
 
 

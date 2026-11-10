@@ -90,6 +90,7 @@ from hausbuch.schemas.employment import (
     ReturnInputCreate,
     ReturnInputFact,
     WorkRoomFact,
+    employer_key,
     return_input_amounts,
 )
 from hausbuch.schemas.enums import DocumentType, EntityType, IncomeInputKind, ReturnInputKind
@@ -443,7 +444,10 @@ def _same_question(row: ReturnInput, data: ReturnInputCreate) -> bool:
     if data.kind is K.PAYSLIP:
         a, b = row.value, data.value
         assert isinstance(a, Payslip) and isinstance(b, Payslip)
-        return (a.employer, a.period_month) == (b.employer, b.period_month)
+        return (employer_key(a.employer), a.period_month) == (
+            employer_key(b.employer),
+            b.period_month,
+        )
     return False  # the item kinds: any number of rows
 
 

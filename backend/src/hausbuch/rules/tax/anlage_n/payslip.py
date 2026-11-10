@@ -17,7 +17,12 @@ from datetime import date
 from decimal import Decimal
 
 from hausbuch.rules.tax._common import warning
-from hausbuch.schemas.employment import Payslip, ReturnInputFact, WageCertificate
+from hausbuch.schemas.employment import (
+    Payslip,
+    ReturnInputFact,
+    WageCertificate,
+    employer_key,
+)
 from hausbuch.schemas.enums import ReturnInputKind
 from hausbuch.schemas.tax import DraftWarning, WarningCode
 
@@ -124,11 +129,13 @@ def _pay(certificates: list[tuple], payslips: list[tuple], tax_year: int) -> Pay
         real=[c for _, c in certificates],
         real_rows=[r for r, _ in certificates if r is not None],
     )
-    certified = {c.employer for _, c in certificates}
+    # Grouped and compared by employer_key; the projection keeps the latest slip's spelling.
+    certified = {employer_key(c.employer) for _, c in certificates}
     by_employer: dict[str, list[tuple]] = defaultdict(list)
     for row, slip in payslips:
-        if slip.employer not in certified:
-            by_employer[slip.employer].append((row, slip))
+        key = employer_key(slip.employer)
+        if key not in certified:
+            by_employer[key].append((row, slip))
     for employer in sorted(by_employer):
         pairs = by_employer[employer]
         cert, warnings = projected_certificate([p for _, p in pairs], tax_year)

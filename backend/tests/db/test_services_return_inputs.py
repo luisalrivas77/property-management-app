@@ -164,6 +164,35 @@ def test_a_certificate_needs_its_kind_of_document(world):
     _refused(world, RETURN_INPUT_SCOPE_INVALID, **_certificate(owner.id, doc))
 
 
+def _payslip(owner_id, document_id, employer: str) -> dict:
+    return {
+        "owner_id": owner_id,
+        "kind": "payslip",
+        "tax_year": 2026,
+        "document_id": document_id,
+        "value": {
+            "period_month": "2026-07-01",
+            "employer": employer,
+            "tax_class": 4,
+            "months_remaining_paid": 5,
+            "gross": {"month": "5000.00", "ytd": "35000.00"},
+        },
+    }
+
+
+def test_one_payslip_per_employer_and_month_however_the_name_is_spelled(world):
+    owner = _owner(world)
+
+    def slip(employer: str) -> dict:
+        return _payslip(owner.id, _document(world, "gehaltsabrechnung"), employer)
+
+    first = _create(world, **slip("Muster GmbH"))
+    _refused(world, RETURN_INPUT_NOT_CURRENT, **slip("MUSTER GMBH"))
+    assert first.value.employer == "Muster GmbH"  # the stored spelling is kept
+    other = _create(world, **slip("Beispiel AG"))
+    assert world.query(list_return_inputs, tax_year=2026) == [first, other]
+
+
 def test_a_child_event_carries_months_never_the_birth_date(world):
     _create(world, **_child())
     (event,) = _events(world, EventType.WORKSPACE_RETURN_INPUT_RECORDED)

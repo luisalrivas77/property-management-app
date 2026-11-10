@@ -3,7 +3,9 @@ work_room, equipment, telecom, anlage_n, vorsorge .yaml). Fields a case leaves o
 not asserted; route lines (`commute.route_N.*`) are not compared in anlage_n.yaml (commute.yaml
 asserts the amounts)."""
 
+from datetime import date
 from decimal import Decimal
+from uuid import UUID
 
 import anlage_n_compare as cmp
 import pytest
@@ -20,6 +22,17 @@ from hausbuch.rules.tax.anlage_n.payslip import pay_certificates
 from hausbuch.rules.tax.anlage_n.telecom import telecom_line
 from hausbuch.rules.tax.anlage_n.vorsorge import vorsorge
 from hausbuch.rules.tax.anlage_n.work_room import work_room_line
+from hausbuch.rules.tax.questionnaire import _in_force
+from hausbuch.schemas.common import Fraction
+from hausbuch.schemas.employment import (
+    EquipmentFact,
+    MonthAndYtd,
+    Payslip,
+    ReturnInputFact,
+    WageCertificate,
+    employer_key,
+)
+from hausbuch.schemas.enums import ReturnInputKind
 
 ZERO = Decimal("0")
 
@@ -160,3 +173,64 @@ def test_rule_set_falls_back_to_the_latest_earlier_year():
     with pytest.raises(RuleError) as info:
         rules_for(2025)
     assert info.value.code == TAX_NO_RULE_SET
+
+
+# --- Review fixes (PR #109) --------------------------------------------------------------
+
+
+def _slip(month: int, employer: str) -> Payslip:
+    return Payslip(
+        period_month=date(2026, month, 1),
+        employer=employer,
+        tax_class=4,
+        months_remaining_paid=12 - month,
+        gross=MonthAndYtd(month=Decimal("5000.00"), ytd=Decimal("5000.00") * month),
+    )
+
+
+@pytest.mark.rule
+def test_one_employer_however_its_name_is_spelled():
+    """employer_key: a spelling change mid-year must not project the pay twice."""
+    slips = [_slip(m, "Muster GmbH") for m in range(1, 7)] + [_slip(7, "Muster  GmbH")]
+    got = pay_certificates([], slips, 2026)
+    (cert,) = got.projected
+    assert cert.gross == Decimal("60000.00")
+    assert cert.employer == "Muster  GmbH"  # the stored spelling of the latest slip
+    assert got.warnings == []
+    certified = WageCertificate(
+        period_from=date(2026, 1, 1),
+        period_to=date(2026, 12, 31),
+        employer="MUSTER GMBH",
+        tax_class=4,
+        gross=Decimal("61000.00"),
+    )
+    got = pay_certificates([certified], slips, 2026)
+    assert got.projected == []
+    assert (got.gross_source, got.certificates) == ("certificate", [certified])
+    assert employer_key("  Muster \t GmbH ") == "muster gmbh"
+
+
+@pytest.mark.rule
+def test_a_disposal_after_the_plan_ended_adds_no_slice():
+    phone = EquipmentFact(
+        label="Smartphone",
+        item_class="phone",
+        gross=Decimal("1199.00"),
+        bought_on=date(2025, 3, 15),
+        professional_share=Fraction(numerator=1, denominator=2),
+    )
+    rs = rules_for(2026)
+    disposed = phone.model_copy(update={"disposed_on": date(2031, 5, 1)})
+    for year in range(2025, 2031):
+        assert equipment_amount(disposed, year, rs) == equipment_amount(phone, year, rs), year
+    assert equipment_amount(disposed, 2030, rs) == Decimal("19.98")
+    assert equipment_amount(disposed, 2031, rs) == Decimal("0.00")
+    row = ReturnInputFact(
+        id=UUID(int=1),
+        owner_id=UUID(int=2),
+        kind=ReturnInputKind.WORK_EQUIPMENT,
+        tax_year=2025,
+        value=disposed,
+    )
+    assert _in_force(row, 2030, rs)
+    assert not _in_force(row, 2031, rs)

@@ -16,8 +16,9 @@ from hausbuch.rules.tax.questionnaire import (
     prefill,
     progress,
     reminders,
+    shift,
 )
-from hausbuch.schemas.employment import EquipmentFact, ReturnInputFact
+from hausbuch.schemas.employment import CommuteFact, EquipmentFact, ReturnInputFact
 from hausbuch.schemas.enums import ReturnInputKind as K
 
 CASES = load("questionnaire").cases
@@ -119,6 +120,27 @@ def test_a_spanning_item_is_never_copied_but_a_subscription_is():
     assert copied == [UUID(int=11)], "only the subscription is copied"
     assert by_key["owner.subscriptions"].proposed_rows[0].value.bought_on == date(2026, 3, 1)
     assert [r.id for r in by_key["owner.equipment_prior"].reconfirm_rows] == [UUID(int=10)]
+
+
+@pytest.mark.rule
+def test_a_leap_day_moves_to_the_28th_of_february():
+    route = CommuteFact(
+        kind="first_workplace",
+        workplace_label="Büro",
+        period_from=date(2028, 2, 29),
+        period_to=date(2028, 12, 31),
+        days_per_week=5,
+        days=200,
+        km=10,
+        km_car=10,
+    )
+    moved = shift(route)
+    assert (moved.period_from, moved.period_to) == (date(2029, 2, 28), date(2029, 12, 31))
+    item = EquipmentFact(
+        label="Abo", item_class="subscription", gross=Decimal("120.00"), bought_on=date(2028, 2, 29)
+    )
+    assert shift(item).bought_on == date(2029, 2, 28)
+    assert shift(item, 4).bought_on == date(2032, 2, 29)
 
 
 @pytest.mark.rule
