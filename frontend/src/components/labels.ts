@@ -39,6 +39,13 @@ type ReturnInputKind = components["schemas"]["ReturnInputKind"];
 type GrossSource = NonNullable<components["schemas"]["OwnerZve"]["gross_source"]>;
 type HouseholdServiceClass = components["schemas"]["HouseholdServicesFact"]["service_class"];
 type HouseholdServiceSource = components["schemas"]["HouseholdServicesFact"]["source"];
+type QuestionSection = components["schemas"]["Question"]["section"];
+type QuestionnaireAnswerValue = components["schemas"]["QuestionnaireAnswerValue"];
+type CommuteKind = components["schemas"]["CommuteFact"]["kind"];
+type ItemClass = components["schemas"]["EquipmentFact"]["item_class"];
+type OtherExpenseClass = components["schemas"]["OtherExpenseFact"]["expense_class"];
+type WorkRoomPrefer = NonNullable<components["schemas"]["WorkRoomFact"]["prefer"]>;
+type PrivateCostClass = components["schemas"]["PrivateCostValue"]["cost_class"];
 
 type Confidence = ExtractedValue["confidence"];
 type Check = NonNullable<ExtractedValue["checks"]>[number];
@@ -427,6 +434,64 @@ export const HOUSEHOLD_SERVICE_CLASS: Record<HouseholdServiceClass, string> = {
 export const HOUSEHOLD_SERVICE_SOURCE: Record<HouseholdServiceSource, string> = {
   own_invoice: "eigene Rechnung",
   nebenkostenabrechnung: "Nebenkostenabrechnung der eigenen Wohnung",
+};
+
+/** The section of a Jahresfrage (Question.section, D110). */
+export const QUESTION_SECTION: Record<QuestionSection, string> = {
+  einkommen: "Einkommen",
+  werbungskosten: "Werbungskosten",
+  haushalt: "Haushalt",
+  kinder: "Kinder",
+  immobilie: "Immobilie",
+};
+
+/** A Jahresfrage's coded answer (questionnaire_answer.answer, D110). */
+export const QUESTIONNAIRE_ANSWER: Record<QuestionnaireAnswerValue, string> = {
+  yes: "Ja",
+  no: "Nein",
+  not_applicable: "Trifft nicht zu",
+};
+
+/** A commute route's kind (CommuteFact.kind). */
+export const COMMUTE_KIND: Record<CommuteKind, string> = {
+  first_workplace: "Erste Tätigkeitsstätte",
+  collection_point: "Sammelpunkt",
+};
+
+/** A work item's class (EquipmentFact.item_class, D108). */
+export const ITEM_CLASS: Record<ItemClass, string> = {
+  computer: "Computer",
+  software: "Software",
+  phone: "Telefon",
+  furniture: "Möbel",
+  tools: "Werkzeug",
+  subscription: "Abonnement",
+  other: "Sonstiges",
+};
+
+/** An other Werbungskosten item's class (OtherExpenseFact.expense_class). */
+export const OTHER_EXPENSE_CLASS: Record<OtherExpenseClass, string> = {
+  account_fee: "Kontoführungsgebühren",
+  application: "Bewerbungskosten",
+  ferry_flight: "Fähr- oder Flugkosten zur Arbeit",
+  other: "Sonstiges",
+};
+
+/** The Arbeitszimmer's choice between the flat amount and the actual costs (D106). */
+export const WORK_ROOM_PREFER: Record<WorkRoomPrefer, string> = {
+  flat: "Jahrespauschale",
+  actual: "Tatsächliche Kosten",
+};
+
+/** A privately paid rental cost's class (PrivateCostValue.cost_class, D111). */
+export const PRIVATE_COST_CLASS: Record<PrivateCostClass, string> = {
+  travel: "Fahrten zur Wohnung",
+  postage: "Porto",
+  advertising: "Anzeigen",
+  association: "Vermieterverein",
+  legal_insurance: "Rechtsschutzversicherung",
+  software: "Software",
+  other: "Sonstiges",
 };
 
 // --- The Anlage V draft (phase-3.md §11) ----------------------------------------------

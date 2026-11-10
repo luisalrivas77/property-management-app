@@ -1,0 +1,114 @@
+/* Jahresfragen (/tax/<year>/fragen): one question per screen, one column, large answer buttons.
+ * Phone first; the card stays narrow on a desktop so a question reads as one line of thought. */
+
+.fragen {
+  max-width: 640px;
+}
+
+.fragen-back {
+  margin: 0 0 8px;
+}
+
+.fragen-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: 20px 16px;
+}
+
+.fragen-card > * + * {
+  margin-top: 1rem;
+}
+
+.fragen-progress progress {
+  display: block;
+  width: 100%;
+  height: 8px;
+  margin-top: 6px;
+  accent-color: var(--accent);
+}
+
+.fragen-progress-head {
+  justify-content: space-between;
+}
+
+.fragen-group {
+  margin-bottom: 0;
+  font-weight: 700;
+  color: var(--text-2);
+}
+
+.fragen-question {
+  margin-top: 4px;
+  font-size: 22px;
+  line-height: 1.3;
+}
+
+.fragen-why {
+  color: var(--text-2);
+}
+
+/* The answers: full-width buttons stacked on a phone, side by side from tablet width. */
+.fragen-answers {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.fragen-answers > button,
+.fragen-answers > a.button-link {
+  min-height: 52px;
+  font-size: 16px;
+}
+
+@media (min-width: 640px) {
+  .fragen-answers {
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+  }
+}
+
+.fragen-nav {
+  justify-content: space-between;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+/* An entered item: a fieldset per row; its fields in one column. */
+.fragen-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+
+.fragen-item legend {
+  padding: 0 6px;
+  font-weight: 700;
+}
+
+.fragen-item .grid {
+  grid-template-columns: 1fr;
+}
+
+.fragen-carried {
+  margin-left: 8px;
+}
+
+.fragen-standing {
+  padding-left: 1.2rem;
+}
+
+.fragen-standing button.link {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.fragen-standing > li + li {
+  margin-top: 0.75rem;
+}
+
+@media (min-width: 640px) {
+  .fragen-card {
+    padding: 24px 28px;
+  }
+}
