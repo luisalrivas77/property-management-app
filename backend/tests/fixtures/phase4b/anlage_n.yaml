@@ -333,7 +333,7 @@ cases:
     result: '58770.00'
     warnings: [*provisional, {code: anlage_n.church_mismatch}]
 - id: tax_class_6_warning
-  description: a second job in tax class VI beside A's certificate → both summed, a warning
+  description: a second job in tax class VI beside A's certificate → its own column (Kz 111/141), pay 66,000.00 in all, a warning
   tax_year: 2026
   facts:
     owner_id: 0000000a-0000-4000-8000-000000000001
@@ -350,6 +350,15 @@ cases:
     gross: '66000.00'
     wk_applied: '1230.00'
     result: '64770.00'
+    lines:
+    - {key: pay.gross, amount: '60000.00'}
+    - {key: pay.income_tax, amount: '9200.00'}
+    - {key: pay.gross_class_6, amount: '6000.00'}
+    - {key: pay.income_tax_class_6, amount: '1000.00'}
+    - {key: commute.employer_tax_free, amount: '600.00'}
+    - {key: wk.itemised, amount: '0.00'}
+    - {key: wk.allowance, amount: '1230.00'}
+    - {key: wk.applied, amount: '1230.00'}
     warnings: [*provisional, {code: anlage_n.tax_class_6}]
 - id: work_room_and_day_rate_error
   description: A's work room covers 12 months, so a Tagespauschale row is refused (D106)

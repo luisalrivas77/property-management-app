@@ -449,7 +449,7 @@ export const WARNING_TEXT: Record<WarningCode, (params: Params) => string> = {
   "anlage_n.church_mismatch": () =>
     "Die Kirchensteuermerkmale der Bescheinigung passen nicht zur Angabe beim Eigentümer.",
   "anlage_n.tax_class_6": () =>
-    "Steuerklasse 6: ein zweites Arbeitsverhältnis. Beide Bescheinigungen werden zusammengezählt.",
+    "Steuerklasse 6: ein zweites Arbeitsverhältnis. Es steht in der eigenen Spalte für Steuerklasse 6.",
   "anlage_n.periods_overlap": () => "Zwei Bescheinigungen desselben Arbeitgebers überschneiden sich im Zeitraum.",
   "anlage_n.days_implausible": () =>
     "Die Zahl der Arbeitstage passt nicht zu den Tagen pro Woche und dem Zeitraum.",

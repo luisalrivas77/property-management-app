@@ -20,6 +20,11 @@ PINNED_2025 = {
     "pay.soli": (None, 7, "150"),
     "pay.church_tax": (None, 8, "142"),
     "pay.church_tax_spouse": (None, 9, "144"),
+    "pay.gross_class_6": (None, 5, "111"),
+    "pay.income_tax_class_6": (None, 6, "141"),
+    "pay.soli_class_6": (None, 7, "151"),
+    "pay.church_tax_class_6": (None, 8, "143"),
+    "pay.church_tax_spouse_class_6": (None, 9, "145"),
     "pay.replacement_benefits": (None, 20, "119"),
     "commute.route_1.kind": (None, 27, None),
     "commute.route_1.absent_days": (None, 28, None),
@@ -107,7 +112,7 @@ def test_the_2026_mapping_is_a_provisional_copy_of_2025():
 def test_every_line_the_draft_writes_is_mapped():
     lines = anlage_n(2026).form.lines
     assert set(lines) == set(ANLAGE_N_LINE_KEYS)
-    assert len(ANLAGE_N_LINE_KEYS) == 57
+    assert len(ANLAGE_N_LINE_KEYS) == 62
 
 
 def test_the_2025_zeilen_and_kennzahlen_are_pinned():

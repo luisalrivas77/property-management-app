@@ -423,6 +423,8 @@ def test_phase4b_cases_cover_the_spec():
         ("anlage_n", "owner_a_remote_work_room", ("expect", "result"), "57224.11"),
         ("anlage_n", "owner_b_commute_day_rate", ("expect", "lines", 3, "amount"), "0.00"),
         ("anlage_n", "union_beside_allowance", ("expect", "wk_applied"), "1230.00"),
+        # the Steuerklasse-6 pay summed into the first column (the draft before F4)
+        ("anlage_n", "tax_class_6_warning", ("expect", "lines", 0, "amount"), "66000.00"),
         ("vorsorge", "low_pay_15k_av_counts", ("expect", "other"), "0.00"),
         ("children", "kindergeld_wins_62k", ("expect", "assessed", "est_without"), "9975"),
         ("children", "soli_after_35a_credit", ("expect", "assessed", "soli"), "2014.67"),

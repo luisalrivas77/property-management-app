@@ -19,11 +19,14 @@ Comparison rules for the rule tests (step 1):
 - Amounts compare exactly. Warnings compare as a multiset of codes; the params an expectation
   names must match, others are free (phase 3's WarningExpect).
 - anlage_n.yaml `lines`: exactly the money lines the draft emits, by key, with their amounts:
-  `pay.gross`, `wk.itemised`, `wk.allowance` and `wk.applied` always; the other pay lines,
-  `commute.employer_tax_free`/`_flat_taxed`, `dues.associations`, `equipment.total`,
-  `work_room.amount`, `training.total`, `other.total` (telecom plus the other expenses) when
-  not zero; `home_office.days_*` carry the day counts. Route lines (`commute.route_N.*`) are
-  not asserted here (commute.yaml asserts the amounts). Zeilen and Kennzahlen never are.
+  `pay.gross`, `wk.itemised`, `wk.allowance` and `wk.applied` always; the pay lines take the
+  Steuerklasse-1–5 certificates and the `pay.*_class_6` lines the Steuerklasse-6 ones (the
+  form's two columns, D99), while `gross` is the sum of both; the other pay lines, the
+  `_class_6` lines, `commute.employer_tax_free`/`_flat_taxed`, `dues.associations`,
+  `equipment.total`, `work_room.amount`, `training.total`, `other.total` (telecom plus the
+  other expenses) when not zero; `home_office.days_*` carry the day counts. Route lines
+  (`commute.route_N.*`) are not asserted here (commute.yaml asserts the amounts). Zeilen and
+  Kennzahlen never are.
 - An `expect` field left out (None) is not asserted; an `error` names the RuleError code.
 
 Interpretations written down in step 0 (each a place to push back in the step 1 review):
@@ -472,15 +475,23 @@ def _draft_n(facts: OwnerReturnFacts, year: int) -> dict:
     if room is not None and not routes:
         warnings.append(("anlage_n.first_workplace_check", {}))
 
-    def total(field: str) -> Decimal:
-        return sum((getattr(c, field) for c in certs), ZERO)
+    def total(field: str, of: list[WageCertificate] = certs) -> Decimal:
+        return sum((getattr(c, field) for c in of), ZERO)
 
-    lines: dict[str, Decimal] = {"pay.gross": gross}
+    # two columns (D99): Steuerklasse 1–5 on the plain lines, Steuerklasse 6 on the _class_6 ones
+    sixth = [c for c in certs if c.tax_class == 6]
+    first = [c for c in certs if c.tax_class != 6]
+    lines: dict[str, Decimal] = {"pay.gross": total("gross", first) if certs else gross}
     optional = {
-        "pay.income_tax": total("income_tax"),
-        "pay.soli": total("soli"),
-        "pay.church_tax": total("church_tax"),
-        "pay.church_tax_spouse": total("church_tax_spouse"),
+        "pay.income_tax": total("income_tax", first),
+        "pay.soli": total("soli", first),
+        "pay.church_tax": total("church_tax", first),
+        "pay.church_tax_spouse": total("church_tax_spouse", first),
+        "pay.gross_class_6": total("gross", sixth),
+        "pay.income_tax_class_6": total("income_tax", sixth),
+        "pay.soli_class_6": total("soli", sixth),
+        "pay.church_tax_class_6": total("church_tax", sixth),
+        "pay.church_tax_spouse_class_6": total("church_tax_spouse", sixth),
         "pay.replacement_benefits": total("replacement_benefits"),
         "commute.employer_tax_free": total("employer_commute_tax_free"),
         "commute.employer_flat_taxed": total("employer_commute_flat_taxed"),

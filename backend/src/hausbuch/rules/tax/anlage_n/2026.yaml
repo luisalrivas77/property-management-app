@@ -48,7 +48,7 @@ form:
   source_url: "https://www.formulare-bfinv.de/"
 
   lines:
-    # --- Angaben zum Arbeitslohn (Steuerklasse 1–5 column) -------------------------------
+    # --- Angaben zum Arbeitslohn (two columns: Steuerklasse 1–5, Steuerklasse 6) ---------
     header.tax_class:
       {key: header.tax_class, zeile: 4, kennzahl: "168", kind: header, rounding: none,
        label: "Steuerklasse"}
@@ -67,6 +67,22 @@ form:
     pay.church_tax_spouse:
       {key: pay.church_tax_spouse, zeile: 9, kennzahl: "144", kind: header, rounding: none,
        label: "Kirchensteuer des Ehegatten"}
+    # the same Zeilen, second column: Steuerklasse 6 (a second job's certificate, D99)
+    pay.gross_class_6:
+      {key: pay.gross_class_6, zeile: 5, kennzahl: "111", kind: income, rounding: none,
+       label: "Bruttoarbeitslohn (Steuerklasse 6)"}
+    pay.income_tax_class_6:
+      {key: pay.income_tax_class_6, zeile: 6, kennzahl: "141", kind: header, rounding: none,
+       label: "Lohnsteuer (Steuerklasse 6)"}
+    pay.soli_class_6:
+      {key: pay.soli_class_6, zeile: 7, kennzahl: "151", kind: header, rounding: none,
+       label: "Solidaritätszuschlag (Steuerklasse 6)"}
+    pay.church_tax_class_6:
+      {key: pay.church_tax_class_6, zeile: 8, kennzahl: "143", kind: header, rounding: none,
+       label: "Kirchensteuer des Arbeitnehmers (Steuerklasse 6)"}
+    pay.church_tax_spouse_class_6:
+      {key: pay.church_tax_spouse_class_6, zeile: 9, kennzahl: "145", kind: header, rounding: none,
+       label: "Kirchensteuer des Ehegatten (Steuerklasse 6)"}
     pay.replacement_benefits:
       {key: pay.replacement_benefits, zeile: 20, kennzahl: "119", kind: header, rounding: none,
        label: "Kurzarbeitergeld, Zuschuss zum Mutterschaftsgeld und ähnliche (laut Nr. 15 der Lohnsteuerbescheinigung)"}

@@ -282,8 +282,8 @@ WARNING_TEXT: dict[WarningCode, Callable[[dict[str, str]], str]] = {
         "Die Kirchensteuermerkmale der Bescheinigung passen nicht zur Angabe beim Eigentümer."
     ),
     WarningCode.ANLAGE_N_TAX_CLASS_6: lambda p: (
-        "Steuerklasse 6: ein zweites Arbeitsverhältnis. Beide Bescheinigungen werden "
-        "zusammengezählt."
+        "Steuerklasse 6: ein zweites Arbeitsverhältnis. Es steht in der eigenen Spalte "
+        "für Steuerklasse 6."
     ),
     WarningCode.ANLAGE_N_PERIODS_OVERLAP: lambda p: (
         "Zwei Bescheinigungen desselben Arbeitgebers überschneiden sich im Zeitraum."

@@ -115,6 +115,12 @@ ANLAGE_N_LINE_KEYS: tuple[str, ...] = (
     "pay.soli",
     "pay.church_tax",
     "pay.church_tax_spouse",
+    # the form's second column: a Steuerklasse-6 certificate (a second job), D99
+    "pay.gross_class_6",
+    "pay.income_tax_class_6",
+    "pay.soli_class_6",
+    "pay.church_tax_class_6",
+    "pay.church_tax_spouse_class_6",
     "pay.replacement_benefits",
     *(
         f"commute.route_{r}.{field}"
