@@ -13,8 +13,10 @@ Spec: docs/phases/phase-5.md §8 (D117, D119, D121-D123, D125, D126).
 - `inbound_mail_attachment`: the documents (and imports) an accepted mail produced. Append-only.
 - `reminder_ack` (D122, §6.3): done / snoozed / muted / unmuted; scope_id is polymorphic (no
   FK), null exactly for the workspace scope. Append-only.
-- `notification` (D123): one row per reminder instance, lead, channel and recipient
-  (UNIQUE), written in the same transaction as the send's result. Append-only.
+- `notification` (D123): one row per send attempt for a reminder instance, lead, channel and
+  recipient, written in the same transaction as the send's result. A failed send is retried on
+  a later run, at most three attempts (`attempt` 1-3, unique per item); at most one `sent` row
+  per item (partial unique index). Append-only.
 - `statement_import.balance_source` gains `bank` (D117). 0006 wrote the CHECK inline, so
   Postgres named it statement_import_balance_source_check; it is dropped by name without IF
   EXISTS, so a wrong name fails loudly. `(balance_source = 'none') = (declared_closing IS NULL)`
@@ -188,8 +190,9 @@ CREATE TABLE bank_sync (
     CHECK (requested_from <= requested_to),
     CHECK ((requested_from IS NULL) = (requested_to IS NULL)),
     CHECK (lines_new <= lines_total),
-    -- D127: an import exists only for a run that found new lines.
-    CHECK (import_id IS NULL OR status IN ('importing', 'done')),
+    -- D127: an import exists only for a run that found new lines; a run that fails after its
+    -- import was written keeps the link to the lines it stored. nothing_new never has one.
+    CHECK (import_id IS NULL OR status IN ('importing', 'done', 'failed')),
     CHECK (status <> 'nothing_new' OR lines_new = 0),
     CHECK ((status IN ({_sql_list(FINAL_SYNC_STATUSES)})) = (finished_at IS NOT NULL)),
     CHECK (finished_at >= started_at)
@@ -262,11 +265,18 @@ CREATE TABLE notification (
     sent_at            timestamptz NOT NULL DEFAULT now(),
     status             text NOT NULL CHECK (status IN ({_sql_list(NOTIFICATION_STATUSES)})),
     error_code         text CHECK (char_length(error_code) <= 64),
+    -- A failed send is retried on a later run, up to three attempts in all.
+    attempt            smallint NOT NULL CHECK (attempt BETWEEN 1 AND 3),
     UNIQUE (workspace_id, id),
-    UNIQUE (workspace_id, reminder_id, lead_days, channel, recipient_user_id),
+    -- Two rows never claim one attempt.
+    UNIQUE (workspace_id, reminder_id, lead_days, channel, recipient_user_id, attempt),
     FOREIGN KEY (workspace_id, recipient_user_id) REFERENCES app_user (workspace_id, id),
     CHECK ((status = 'failed') = (error_code IS NOT NULL))
 );
+-- One successful send per reminder instance, lead, channel and recipient.
+CREATE UNIQUE INDEX notification_sent_once
+    ON notification (workspace_id, reminder_id, lead_days, channel, recipient_user_id)
+    WHERE status = 'sent';
 """
 
 APPEND_ONLY_TRIGGERS = "".join(

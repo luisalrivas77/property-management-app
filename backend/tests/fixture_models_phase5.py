@@ -66,6 +66,7 @@ from hausbuch.schemas.enums import BalanceSource
 from hausbuch.schemas.inbound_mail import InboundMailFacts, InboundPolicy, MailDecision, MailPart
 from hausbuch.schemas.reminders import (
     HORIZON_DAYS,
+    MAX_NOTIFICATION_ATTEMPTS,
     NotificationDue,
     Reminder,
     ReminderFacts,
@@ -787,18 +788,28 @@ def _due_notifications(
     today: date,
     recipients: list[UUID],
 ) -> list[NotificationDue]:
-    done = {(s.reminder_id, s.lead_days, s.recipient_user_id) for s in sent}
+    # A sent row stops the item, lead and recipient; failed rows count the attempts used.
+    done = {(s.reminder_id, s.lead_days, s.recipient_user_id) for s in sent if s.status == "sent"}
+    tried: dict[tuple[str, int, UUID], int] = {}
+    for s in sent:
+        key = (s.reminder_id, s.lead_days, s.recipient_user_id)
+        tried[key] = max(tried.get(key, 0), s.attempt)
     out = []
     for r in reminders:
         reached = [lead for lead in r.email_leads if r.due_on - timedelta(days=lead) <= today]
         if not reached:
             continue
         lead = min(reached)  # the latest send day reached; earlier leads are never sent late
-        out += [
-            NotificationDue(reminder_id=r.id, lead_days=lead, recipient_user_id=user)
-            for user in recipients
-            if (r.id, lead, user) not in done
-        ]
+        for user in recipients:
+            key = (r.id, lead, user)
+            attempt = tried.get(key, 0) + 1
+            if key in done or attempt > MAX_NOTIFICATION_ATTEMPTS:
+                continue
+            out.append(
+                NotificationDue(
+                    reminder_id=r.id, lead_days=lead, recipient_user_id=user, attempt=attempt
+                )
+            )
     return sorted(out, key=lambda n: (n.reminder_id, str(n.recipient_user_id)))
 
 
@@ -811,6 +822,17 @@ class NotificationCase(Lenient):
 
     @model_validator(mode="after")
     def _recompute(self) -> Self:
+        # The table's two unique indexes: one row per attempt, at most one sent row per item.
+        rows = [(s.reminder_id, s.lead_days, s.recipient_user_id, s.attempt) for s in self.sent]
+        if len(set(rows)) != len(rows):
+            raise ValueError(f"{self.id}: two sent rows claim one attempt")
+        sent = [
+            (s.reminder_id, s.lead_days, s.recipient_user_id)
+            for s in self.sent
+            if s.status == "sent"
+        ]
+        if len(set(sent)) != len(sent):
+            raise ValueError(f"{self.id}: two sent rows for one item")
         for r in self.reminders:
             if tuple(r.email_leads) != _row(r).email:
                 raise ValueError(f"{self.id}: {r.id}'s email_leads are not §6.2's")

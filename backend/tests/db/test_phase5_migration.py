@@ -187,6 +187,7 @@ def _notification(ws, user, **overrides) -> dict:
         "channel": "email",
         "recipient_user_id": user,
         "status": "sent",
+        "attempt": 1,
     } | overrides
 
 
@@ -331,8 +332,28 @@ def test_a_sync_outside_its_checks_is_refused(scope, change):
 
 
 def test_a_sync_import_is_only_for_a_run_with_new_lines(scope):
+    """D127: importing and done carry their import; a run that failed after writing it keeps
+    the link to the lines it stored; queued and nothing_new never have one."""
     conn, a, ids = scope
     statement = _import(conn, a, ids["account"])
+    for status, finished in (
+        ("importing", None),
+        ("done", "2026-11-09T08:00:00Z"),
+        ("failed", "2026-11-09T08:00:00Z"),
+    ):
+        _insert(
+            conn,
+            "bank_sync",
+            _sync(
+                a,
+                ids["account"],
+                ids["connection"],
+                status=status,
+                import_id=statement,
+                finished_at=finished,
+                **({"error_code": "statement.not_reconciled"} if status == "failed" else {}),
+            ),
+        )
     for status, finished in (("queued", None), ("nothing_new", "2026-11-09T08:00:00Z")):
         with pytest.raises(errors.CheckViolation), conn.transaction():
             _insert(
@@ -442,14 +463,25 @@ def test_reminder_ack_shapes(scope):
 
 
 def test_a_notification_is_sent_once_per_item_lead_and_recipient(scope):
+    """At most one sent row per item, lead, channel and recipient; a failed send is retried
+    with the next attempt, three in all, and two rows never claim one attempt."""
     conn, a, ids = scope
     row = _notification(a, ids["user"])
     _insert(conn, "notification", row)
     _insert(conn, "notification", row | {"lead_days": 14})
-    with pytest.raises(errors.UniqueViolation), conn.transaction():
-        _insert(
-            conn, "notification", row | {"status": "failed", "error_code": "notification.failed"}
-        )
+    with pytest.raises(errors.UniqueViolation), conn.transaction():  # a second success
+        _insert(conn, "notification", row | {"attempt": 2})
+
+    failed = row | {"lead_days": 7, "status": "failed", "error_code": "notification.failed"}
+    _insert(conn, "notification", failed)
+    _insert(conn, "notification", failed | {"attempt": 2})
+    with pytest.raises(errors.UniqueViolation), conn.transaction():  # attempt 2 claimed twice
+        _insert(conn, "notification", failed | {"attempt": 2})
+    _insert(conn, "notification", row | {"lead_days": 7, "attempt": 3})  # the retry succeeded
+    for attempt in (0, 4):
+        with pytest.raises(errors.CheckViolation), conn.transaction():
+            _insert(conn, "notification", failed | {"lead_days": 3, "attempt": attempt})
+
     for bad in (
         row | {"lead_days": 0, "status": "failed"},  # a failure names its code
         row | {"lead_days": 0, "error_code": "notification.failed"},  # a success names none

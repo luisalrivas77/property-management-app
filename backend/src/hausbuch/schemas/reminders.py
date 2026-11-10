@@ -90,6 +90,9 @@ class NotificationStatus(StrEnum):
     FAILED = "failed"
 
 
+MAX_NOTIFICATION_ATTEMPTS = 3  # a failed mail is retried on later runs, at most 3 attempts
+
+
 # --- Output (§9) -------------------------------------------------------------------------
 
 
@@ -119,11 +122,13 @@ class Reminder(Schema):
 
 
 class NotificationDue(Schema):
-    """rules.reminders.due_notifications output: one mail line per item, lead and member."""
+    """rules.reminders.due_notifications output: one mail line per item, lead and member,
+    with the attempt its notification row will carry (1, or one more than the failed rows)."""
 
     reminder_id: ReminderId
     lead_days: int
     recipient_user_id: UUID
+    attempt: int = Field(ge=1, le=MAX_NOTIFICATION_ATTEMPTS)
 
 
 class ReminderAckCreate(Schema):
@@ -306,11 +311,13 @@ class ReminderFacts(Schema):
 
 
 class SentNotification(Schema):
-    """A notification row as due_notifications reads it. A failed row counts as sent: the
-    UNIQUE constraint on an append-only table allows one row per item, lead and recipient
-    (§8), so a failed mail is not retried by the rule (reported as a step 0 spec finding)."""
+    """A notification row as due_notifications reads it. A `sent` row stops the item, lead
+    and recipient; a `failed` row does not: the item is due again with the next attempt, up
+    to MAX_NOTIFICATION_ATTEMPTS rows in all (migration 0019: one row per attempt, at most
+    one `sent`)."""
 
     reminder_id: ReminderId
     lead_days: int
     recipient_user_id: UUID
+    attempt: int = Field(ge=1, le=MAX_NOTIFICATION_ATTEMPTS)
     status: NotificationStatus = NotificationStatus.SENT

@@ -144,7 +144,8 @@ class BankConnection(MutableRecord):
 
 class BankSync(MutableRecord):
     """One run (bank_sync, §4.2). lines_* are null until the preview ran; import_id is set
-    only for a run that imported (status done)."""
+    once the run wrote its import (status importing or done), and a run that failed after
+    that keeps it (status failed); never for nothing_new (D127)."""
 
     account_id: UUID
     connection_id: UUID

@@ -827,4 +827,5 @@ notification = Table(
     _timestamp("sent_at"),
     _text("status"),
     _text("error_code", nullable=True),
+    Column("attempt", SmallInteger, nullable=False),
 )

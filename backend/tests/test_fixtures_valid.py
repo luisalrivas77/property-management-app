@@ -602,6 +602,9 @@ PHASE5_CASES = {
         "info_kind_never_mailed",
         "two_recipients_two_rows",
         "sepa_mode_sends_after_due_only_if_open",
+        # The PR #125 review's retry decision: a failed send is retried, three attempts in all.
+        "failed_send_retried_next_day",
+        "third_failure_gives_up",
     },
 }
 
@@ -691,6 +694,14 @@ def test_phase5_cases_cover_the_spec():
             60,
         ),
         ("notification_schedule", "sepa_not_before_due_plus_3", ("today",), "2027-05-18"),
+        ("notification_schedule", "failed_send_retried_next_day", ("expect", 0, "attempt"), 1),
+        (
+            "notification_schedule",
+            "retry_that_succeeded_not_repeated",
+            ("sent", 1, "status"),
+            "failed",
+        ),
+        ("notification_schedule", "third_failure_gives_up", ("today",), "2027-07-19"),
     ],
 )
 def test_phase5_fixtures_check_their_contract(name, case_id, path, slip):
