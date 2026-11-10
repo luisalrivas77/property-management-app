@@ -88,7 +88,7 @@ export default function OwnersPage() {
           )
         }
       </Loading>
-      <h2>Einkommen</h2>
+      <h2 id="einkommen">Einkommen</h2>
       <div className="card">
         <Loading state={owners}>
           {(list) =>

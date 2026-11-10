@@ -63,7 +63,7 @@ export default function UnitPage() {
             />
             <h2>Mietverhältnisse</h2>
             <UnitTenancies unitId={unit.id} tenants={tenants} />
-            <h2>Ortsübliche Miete</h2>
+            <h2 id="ortsuebliche-miete">Ortsübliche Miete</h2>
             <MarketRentSection propertyId={property.id} unitId={unit.id} perUnit={property.kind === "mfh"} />
             <h2>Verlauf</h2>
             <UnitHistory propertyId={property.id} unitId={unit.id} />

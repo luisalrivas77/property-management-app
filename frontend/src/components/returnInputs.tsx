@@ -432,7 +432,7 @@ function KindBlock({
   const canAdd = !kind.single || rows.length === 0;
 
   return (
-    <div className="tax-input-block" role="group" aria-labelledby={headingId}>
+    <div className="tax-input-block" role="group" aria-labelledby={headingId} id={`eingabe-${kind.kind}`}>
       <h3 id={headingId}>{title}</h3>
       {rows.length > 0 ? (
         <ul className="tax-input-rows">

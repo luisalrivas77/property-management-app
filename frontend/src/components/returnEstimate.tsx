@@ -18,7 +18,8 @@ import type { components } from "@/api/types";
 import { formatDate, formatMoney, formatPercent } from "./format";
 import { notModelledLabel, RETURN_STATUS, WARNING_TEXT } from "./labels";
 import { SourcesButton } from "./tax";
-import { questionnaireHref } from "./taxYear";
+import { questionnaireHref, taxFormHref } from "./taxYear";
+import { WarningActionView, WhatToDo } from "./todos";
 import { useLoad, type Loaded } from "./useLoad";
 
 export type ReturnEstimate = components["schemas"]["ReturnEstimate"];
@@ -79,7 +80,14 @@ export function ReturnEstimateCard({ year, state }: { year: number; state: Loade
       </section>
     );
   }
-  return <EstimateView estimate={state.data} owners={owners.data ?? []} properties={properties.data ?? []} />;
+  return (
+    <EstimateView
+      estimate={state.data}
+      owners={owners.data ?? []}
+      properties={properties.data ?? []}
+      onChanged={state.reload}
+    />
+  );
 }
 
 /** Why a refund or back-payment arises, from the two owners' Steuerklassen (Q-O18): the class
@@ -103,7 +111,17 @@ function ownerName(owners: Owner[], id: string | null | undefined): string {
   return owners.find((o) => o.id === id)?.full_name ?? "Eigentümer";
 }
 
-function EstimateView({ estimate, owners, properties }: { estimate: ReturnEstimate; owners: Owner[]; properties: Property[] }) {
+function EstimateView({
+  estimate,
+  owners,
+  properties,
+  onChanged,
+}: {
+  estimate: ReturnEstimate;
+  owners: Owner[];
+  properties: Property[];
+  onChanged: () => void;
+}) {
   const year = estimate.tax_year;
   const result = estimate.result;
   const headline = isZeroAmount(result)
@@ -169,6 +187,8 @@ function EstimateView({ estimate, owners, properties }: { estimate: ReturnEstima
                 {warning.severity === "warning" ? "Prüfen" : "Hinweis"}
               </span>{" "}
               {WARNING_TEXT[warning.code](warning.params ?? {})}
+              <WhatToDo warning={warning} />
+              <WarningActionView warning={warning} ctx={{ year }} onChanged={onChanged} />
             </li>
           ))}
         </ul>
@@ -362,6 +382,14 @@ function Missing({ items, owners, year }: { items: MissingItem[]; owners: Owner[
             {item.kind === "document"
               ? `Lohnsteuerbescheinigung ${year} ${ownerName(owners, item.owner_id)}: kommt meist bis Ende Februar ${year + 1}`
               : `Bescheid über Lohnersatzleistungen ${ownerName(owners, item.owner_id)} noch nicht eingetragen`}
+            {" · "}
+            <Link
+              href={`${taxFormHref("n", { year, propertyId: null, ownerId: item.owner_id ?? null })}#${
+                item.kind === "document" ? "tax-n-documents" : "eingabe-replacement_income"
+              }`}
+            >
+              {item.kind === "document" ? "hochladen, sobald sie da ist" : "eintragen"}
+            </Link>
           </li>
         ))}
       </ul>
