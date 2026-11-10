@@ -166,6 +166,90 @@ def test_a_category_changed_on_the_card_brings_its_class(
     assert (row.value.category, row.value.cost_class) == (AllocationCategory(category), cost_class)
 
 
+def _reread(run, job, ws, doc, values):
+    rerun = run(ws, proposals.rerun_proposal, doc.id)
+    return job(
+        ws,
+        proposals.record_read_result,
+        rerun.id,
+        classification=INVOICE,
+        classify_call_id=run(ws, _ai_call, doc.id, "classify"),
+        values=values,
+        extract_call_id=run(ws, _ai_call, doc.id, "extract"),
+    )
+
+
+def _in_force(read, ws, prop):
+    return [r for r in _private(read, ws, prop) if not r.withdrawn]
+
+
+@pytest.mark.parametrize("how", ["read_as_insurance", "changed_on_the_card"])
+def test_a_bill_applied_again_under_another_category_replaces_its_row(
+    world, run, read, job, blob_store, enqueued, how
+):
+    """Review F2: the bill read again (the model now codes it insurance, or the user changes
+    Kategorie on the card) replaces its repairs row instead of adding a second one."""
+    ws, prop = world.ws, world.property_id
+    doc, ready, _ = _read_ready(run, job, ws, blob_store, enqueued, INVOICE, _repair(), b"%PDF i")
+    _apply(run, ws, ready)
+    [first] = _private(read, ws, prop)
+    assert first.value.category == AllocationCategory.REPAIRS
+
+    if how == "read_as_insurance":
+        values = _repair() | {
+            "cost_lines": _v(
+                [
+                    "Arbeitszeit Monteur | 180,00 EUR | insurance",
+                    "Material | 70,00 EUR | insurance",
+                    "Umsatzsteuer 19 % | 47,50 EUR | vat",
+                ],
+                checks=("cited", "validates"),
+            )
+        }
+        again = _reread(run, job, ws, doc, values)
+        assert "tax_input:private_cost:insurance" in {r.key for r in again.records}
+        _apply(run, ws, again)
+    else:
+        again = _reread(run, job, ws, doc, _repair())
+        key = "tax_input:private_cost:repairs"
+        body = _accept_all(again, **{key: {"value.category": "insurance"}})
+        run(ws, proposals.apply_proposal, again.id, body, iban_key=TEST_IBAN_KEY)
+
+    [row] = _in_force(read, ws, prop)
+    assert (row.value.category, row.document_id, row.supersedes_id) == (
+        AllocationCategory.INSURANCE,
+        doc.id,
+        first.id,
+    )
+
+
+def test_a_mixed_bill_applied_again_keeps_its_two_rows(world, run, read, job, blob_store, enqueued):
+    """Review F2: the rows of a bill's other parts are claimed by their own records, so a
+    repeat writes nothing and the two rows stay."""
+    ws, prop = world.ws, world.property_id
+    values = _repair(total="357.00") | {
+        "cost_lines": _v(
+            [
+                "Schätzgebühr Bank | 200,00 EUR | loan_fees",
+                "Reparatur Tür | 100,00 EUR | repairs",
+                "Umsatzsteuer 19 % | 57,00 EUR | vat",
+            ],
+            checks=("cited", "validates"),
+        )
+    }
+    doc, ready, _ = _read_ready(run, job, ws, blob_store, enqueued, INVOICE, values, b"%PDF m")
+    keys = {r.key for r in ready.records}
+    assert {"tax_input:private_cost:loan_fees", "tax_input:private_cost:repairs"} <= keys
+    _apply(run, ws, ready)
+    before = {r.value.category: r.id for r in _private(read, ws, prop)}
+    assert set(before) == {AllocationCategory.LOAN_FEES, AllocationCategory.REPAIRS}
+
+    _apply(run, ws, _reread(run, job, ws, doc, values))
+    after = {r.value.category: r.id for r in _in_force(read, ws, prop)}
+    assert after == before
+    assert len(read(ws, list_tax_inputs, prop, include_history=True)) == 2
+
+
 def test_a_bill_a_bank_line_pays_proposes_no_private_cost(
     world, run, read, job, blob_store, enqueued
 ):

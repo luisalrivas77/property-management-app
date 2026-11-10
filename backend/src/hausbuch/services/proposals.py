@@ -123,7 +123,7 @@ from hausbuch.schemas.proposal import (
     ProposalApplyRecord,
     ProposalRecord,
 )
-from hausbuch.schemas.tax import TaxInputCreate, TaxInputKind
+from hausbuch.schemas.tax import TaxInput, TaxInputCreate, TaxInputKind
 from hausbuch.schemas.tenancy import InitialRent, TenancyCreate, TenantCreate
 
 from . import (
@@ -1058,8 +1058,8 @@ class _Apply:
         question with the same value and document: nothing is written; another value or
         document: the new row supersedes it (a corrected certificate). A cost paid from
         another account (tax_input:private_cost:<category>, phase 2 D135) is one of any number
-        per property and year: the row it replaces is the current one of the same year,
-        document and category (the same bill applied again), never another bill's."""
+        per property and year: the row it replaces is _replaced_private_cost's, never another
+        bill's."""
         kind = TaxInputKind(record.key.split(":")[1])
         if kind not in _PREFILL_TAX_INPUTS:
             raise ValueError(f"record {record.key!r} cannot be applied in this step")
@@ -1098,19 +1098,38 @@ class _Apply:
             self.ctx.conn, property_id, kind, tax_year=data.tax_year, loan_id=data.loan_id
         )
         if kind is TaxInputKind.PRIVATE_COST:
-            category = getattr(data.value, "category", None)
-            current = [
-                r
-                for r in current
-                if r.document_id == data.document_id
-                and getattr(r.value, "category", None) == category
-            ][-1:]
+            current = self._replaced_private_cost(record, data, current)
         if current:
             (row,) = current  # one per year (and loan): create_tax_input refuses a second
             if row.value == data.value and row.document_id == data.document_id:
                 return row.id
             data = data.model_copy(update={"supersedes_id": row.id})
         return tax_inputs.create_tax_input(self.ctx, property_id, data).id
+
+    def _replaced_private_cost(
+        self, record: ProposalRecord, data: TaxInputCreate, current: list[TaxInput]
+    ) -> list[TaxInput]:
+        """The current private_cost row this record replaces (phase 2 D135), as a list of at
+        most one: a row of the same year from this document that no other private-cost
+        record of this proposal claims by its key's category; the one of the category
+        applied, else the latest. So a bill read again and applied under another category
+        replaces its row instead of adding a second, while a mixed bill's rows of other
+        records stay. A row without a document (typed by hand, D111) is never replaced."""
+        prefix = "tax_input:private_cost:"
+        claimed = {
+            key.removeprefix(prefix)
+            for key in self.records
+            if key.startswith(prefix) and key != record.key
+        }
+        mine = [
+            r
+            for r in current
+            if r.document_id == data.document_id
+            and getattr(r.value, "category", None) not in claimed
+        ]
+        category = getattr(data.value, "category", None)
+        same = [r for r in mine if getattr(r.value, "category", None) == category]
+        return (same or mine)[-1:]
 
     def _return_input(self, record: ProposalRecord, values: dict[str, Any]) -> UUID:
         """A pay document's row (phase 4b §8.2) through services/return_inputs.create_input,
