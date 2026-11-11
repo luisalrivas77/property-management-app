@@ -166,6 +166,20 @@ _PURCHASE_TERMS = (
     "eigentümerwechsel",
     "kaufvertrag",
 )
+# Entries in the land register a purchase needs: a bill line naming one is a Grundbuch cost
+# when the sender, subject and title name no kind (the row's kind, 11 Nov 2026).
+_LAND_REGISTRY_ENTRIES = (
+    "auflassungsvormerkung",
+    "eigentumsumschreibung",
+    "eintragung des eigentümers",
+)
+# The loan link of a bill that is only partly a loan cost (D135): which part it is for.
+_LOAN_PART_LINK_NOTE = (
+    "Nur der Teil für die Finanzierung (Geldbeschaffungskosten, z. B. die Grundschuld) "
+    "betrifft das Darlehen; darum wird die Rechnung auch mit dem Darlehen verknüpft. Der "
+    "Anteil für den Kauf bleibt bei den Nebenkosten des Objekts und hat mit dem Darlehen "
+    "nichts zu tun."
+)
 _FINANCING_NOTE = (
     "Diese Rechnung betrifft die Finanzierung (Grundschuld, Hypothek oder Darlehen). Solche "
     "Kosten sind Geldbeschaffungskosten: im Jahr der Zahlung als Werbungskosten abziehbar, "
@@ -899,17 +913,17 @@ class _Builder:
                 self._cost(prop, self._part_value(purchase))
             self.link_property(prop)
             if AllocationCategory.LOAN_FEES in parts:
-                self._link_only_loan(prop)
+                self._link_only_loan(prop, notes=[_LOAN_PART_LINK_NOTE])
             self._private_costs()
             return
         if self.ctx.classification.subtype is DocumentSubtype.COST_BASIS_EVIDENCE:
             self._cost(prop, self.ev("amount_total"))
         self.link_property(prop)
 
-    def _link_only_loan(self, prop: ExistingProperty) -> None:
+    def _link_only_loan(self, prop: ExistingProperty, notes: Sequence[str] = ()) -> None:
         loans = [loan for loan in self.ctx.loans if loan.property_id == prop.id]
         if len(loans) == 1:
-            self.link("link:loan", loans[0].id)
+            self.add("link:loan", "link", "create", {}, target_id=loans[0].id, notes=notes)
 
     def _part_value(self, amount: Decimal) -> ExtractedValue:
         """A part of the bill: the total itself (the same value, so typing does not ask for it
@@ -986,12 +1000,26 @@ class _Builder:
         )
         return {"value.performed_on": performed, "value.amount_net": amount_net}
 
-    def _cost(self, prop: ExistingProperty, amount: ExtractedValue) -> None:
+    def _cost_kind_value(self) -> ExtractedValue:
+        """The Nebenkosten row's kind: the first of the sender, the subject, the title and the
+        bill's purchase lines that names one, keeping that value's quote. A Grundbuch bill is
+        often sent by a Landesjustizkasse, which names no kind; its subject ("Kostenrechnung in
+        der Grundbuchsache") or its lines (Auflassungsvormerkung) do (11 Nov 2026). None:
+        "Sonstige", at the sender's confidence, low without a sender."""
+        for name in ("sender", "subject", "title"):
+            read = self.ev(name)
+            if read.value is not None and _cost_kind(read.value) is not AcquisitionCostKind.OTHER:
+                return _mapped(read, _cost_kind)
+        lines = self.ev("cost_lines")
+        if lines.value is not None and _purchase_lines_kind(lines.value) is not None:
+            return _mapped(lines, _purchase_lines_kind)
         sender = self.ev("sender")
         if sender.value is None:
-            kind_value = _code_value(AcquisitionCostKind.OTHER.value, "low")
-        else:
-            kind_value = _mapped(sender, _cost_kind)
+            return _code_value(AcquisitionCostKind.OTHER.value, "low")
+        return _mapped(sender, _cost_kind)
+
+    def _cost(self, prop: ExistingProperty, amount: ExtractedValue) -> None:
+        kind_value = self._cost_kind_value()
         note = self.ev("reference")
         stated = {f: v for f, v in (("amount", amount), ("note", note)) if v.value is not None}
 
@@ -1941,6 +1969,26 @@ def _cost_kind(sender: Any) -> AcquisitionCostKind:
     if "makler" in t:
         return AcquisitionCostKind.BROKER
     return AcquisitionCostKind.OTHER
+
+
+def _purchase_lines_kind(read: Any) -> AcquisitionCostKind | None:
+    """The kind the bill's purchase lines name: a line naming the land register, or a land
+    register entry of the purchase (Auflassungsvormerkung, Eigentumsumschreibung), is a
+    Grundbuch cost. Only when every such line agrees; financing lines never decide it."""
+    lines = parse_cost_lines(read)
+    if not lines:
+        return None
+    kinds = set()
+    for line in lines:
+        if line.vat or _names(line.text, _FINANCING_TERMS):
+            continue
+        if _cost_kind(line.text) is AcquisitionCostKind.LAND_REGISTRY or _names(
+            line.text, _LAND_REGISTRY_ENTRIES
+        ):
+            kinds.add(AcquisitionCostKind.LAND_REGISTRY)
+        elif _names(line.text, _PURCHASE_TERMS):
+            return None  # a purchase line of another kind (a Kaufvertrag fee): not decided here
+    return kinds.pop() if len(kinds) == 1 else None
 
 
 def _deposit_form(clause: Any) -> DepositForm | None:

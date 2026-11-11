@@ -76,7 +76,8 @@
 #   - the acquisition_cost part is the cost:<kind> record, by the cost rules below, with
 #     amount = that part (amount_total itself when it is the whole bill, else derived from
 #     [cost_lines, amount_total]);
-#   - link:property; link:loan as for a financing bill when a loan_fees part exists;
+#   - link:property; link:loan as for a financing bill when a loan_fees part exists, its
+#     notes containing "Darlehen" and "Kauf" (only the financing part concerns the loan);
 #   - each deductible part (categories.TAX_TREATMENT deductible) is a create record
 #     tax_input:private_cost:<category> {tax_year (the invoice tax year, D36), value.cost_class
 #     (financing for loan_fees, else other; code), value.category (code), value.label (the
@@ -118,7 +119,14 @@
 #             label; tests/rules/test_prefill.py checks it). Several candidates, or none: no
 #             unit (unit_id null, never a guess); the review then picks it. No label
 #             stated: the property's only unit, else none.
-#   cost      checked in this order:
+#   cost      its kind: the first of sender, subject and title whose text names one
+#             (grunderwerbsteuer, notar, grundbuch or amtsgericht, makler; that value's
+#             quote kept), else the bill's lines when every purchase line names the land
+#             register or a land-register entry (auflassungsvormerkung,
+#             eigentumsumschreibung, eintragung des eigentümers; lines naming a financing
+#             term ignored) -> land_registry, cost_lines' quote kept; else other (11 Nov
+#             2026: a Grundbuch bill sent by a Landesjustizkasse names no kind in its
+#             sender). Then checked in this order:
 #             1. a row whose Beleg is this document (document_id = context.document_id; Luis
 #                typed the cost and attached the invoice himself) -> that row is the target,
 #                whatever its kind (kind is not compared or proposed): mode unchanged when
@@ -928,6 +936,79 @@ cases:
           mode: create
           values: {tax_year: 2026, value.cost_class: financing, value.category: loan_fees, value.label: Notarrechnung Kaufvertrag und Grundschuld, value.amount: "238.00"}
           derived: {tax_year: [due_on], value.amount: [cost_lines, amount_total]}
+
+  - id: grundbuch_bill_from_justizkasse_patches_the_land_registry_row
+    description: Luis's real case (11 Nov 2026), anonymised. A Grundbuch Kostenrechnung sent by a Landesjustizkasse, whose name says no kind; the subject names the Grundbuchsache, so the purchase part (Auflassungsvormerkung and the printout) patches the Grundbuch row typed by hand without a Beleg, never a second "Sonstige" row beside it. The Grundpfandrecht is a loan cost paid from another account, and the loan link says it is for that part only.
+    kind: invoice
+    context:
+      document_id: *DOC
+      classification: {type: invoice, subtype: cost_basis_evidence, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      costs:
+        - {id: *C1, property_id: *P, kind: land_registry, amount: "905.00", document_id: null, note: null}
+      loans:
+        - {id: *L, property_id: *P, lender: Beispielbank AG, contract_number: "600123456"}
+    extraction: &JUSTIZKASSE_BILL
+      title: {v: Kostenrechnung Grundbuchsache, p: 1, q: "Kostenrechnung in der Grundbuchsache"}
+      subject: {v: Kostenrechnung in der Grundbuchsache, p: 1, q: "Kostenrechnung in der Grundbuchsache"}
+      document_date: {v: "2026-04-20", p: 1, q: "Datum 20.04.2026"}
+      sender: {v: Landesjustizkasse Musterstadt, p: 1, q: "Landesjustizkasse Musterstadt"}
+      amount_total: {v: "905.00", p: 1, q: "Gesamtbetrag 905,00 EUR"}
+      cost_lines:
+        value: ["Auflassungsvormerkung Nr. 14150 KV GNotKG | 300,00 EUR | acquisition_cost", "Grundpfandrecht Nr. 14121 KV GNotKG | 600,00 EUR | loan_fees", "Grundbuchausdruck Nr. 17002 KV GNotKG | 5,00 EUR | acquisition_cost"]
+        source: {page: 1, quote: "Auflassungsvormerkung 300,00 EUR Grundpfandrecht 600,00 EUR Grundbuchausdruck 5,00 EUR"}
+        checks: [cited, validates]
+        confidence: medium
+    expect:
+      keys: [typing, cost:land_registry, link:property, link:loan, "tax_input:private_cost:loan_fees"]
+      records:
+        - key: cost:land_registry
+          entity_type: acquisition_cost
+          mode: patch
+          target_id: *C1
+          values: {amount: "305.00"}
+          derived: {amount: [cost_lines, amount_total]}
+          current: {amount: "905.00"}
+        - key: link:loan
+          entity_type: link
+          mode: create
+          target_id: *L
+          values: {}
+          notes_contain: ["Darlehen", "Kauf"]
+        - key: tax_input:private_cost:loan_fees
+          entity_type: tax_input
+          mode: create
+          values: {tax_year: 2026, value.cost_class: financing, value.category: loan_fees, value.label: Kostenrechnung Grundbuchsache, value.amount: "600.00"}
+          derived: {tax_year: [document_date], value.amount: [cost_lines, amount_total]}
+
+  - id: grundbuch_bill_kind_from_its_lines
+    description: 11 Nov 2026. Neither sender, subject nor title names a kind; the purchase line names an Auflassungsvormerkung, a land-register entry, so the new Nebenkosten row is a Grundbuch row derived from the lines, not "Sonstige".
+    kind: invoice
+    context:
+      document_id: *DOC
+      classification: {type: invoice, subtype: cost_basis_evidence, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      loans:
+        - {id: *L, property_id: *P, lender: Beispielbank AG, contract_number: "600123456"}
+    extraction:
+      title: {v: Kostenrechnung, p: 1, q: "Kostenrechnung"}
+      subject: {v: Kassenzeichen 123, p: 1, q: "Kassenzeichen 123"}
+      document_date: {v: "2026-04-20", p: 1, q: "Datum 20.04.2026"}
+      sender: {v: Landesjustizkasse Musterstadt, p: 1, q: "Landesjustizkasse Musterstadt"}
+      amount_total: {v: "900.00", p: 1, q: "Gesamtbetrag 900,00 EUR"}
+      cost_lines:
+        value: ["Auflassungsvormerkung Nr. 14150 KV GNotKG | 300,00 EUR | acquisition_cost", "Grundpfandrecht Nr. 14121 KV GNotKG | 600,00 EUR | loan_fees"]
+        source: {page: 1, quote: "Auflassungsvormerkung 300,00 EUR Grundpfandrecht 600,00 EUR"}
+        checks: [cited, validates]
+        confidence: medium
+    expect:
+      keys: [typing, cost:land_registry, link:property, link:loan, "tax_input:private_cost:loan_fees"]
+      records:
+        - key: cost:land_registry
+          entity_type: acquisition_cost
+          mode: create
+          values: {kind: land_registry, amount: "300.00"}
+          derived: {amount: [cost_lines, amount_total]}
 
   - id: notar_invoice_grundschuld_lines_whole_financing
     description: D135. A Grundschuld bill whose lines name no term of their own (Beurkundungsgebühr, Auslagen); the subject makes it a financing bill, so every line is loan_fees and the whole total is one cost paid from another account, copied from the total.
