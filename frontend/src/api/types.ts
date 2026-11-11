@@ -5033,6 +5033,10 @@ export interface components {
             operating_costs_prepayment?: components["schemas"]["ExtractedValue"];
             /** @description Heizkostenvorauszahlung, only when the lease states it as its own amount */
             heating_costs_prepayment?: components["schemas"]["ExtractedValue"];
+            /** @description the sentence(s) on how the Neben- or Betriebskosten are paid, as printed: a Vorauszahlung that is abgerechnet each year, a Pauschale with no Abrechnung (also 'eine gesonderte Abrechnung erfolgt nicht'), or one Inklusiv- or Warmmiete that includes them */
+            operating_costs_clause?: components["schemas"]["ExtractedValue"];
+            /** @description when the monthly rent is due, as printed (e.g. 'spätestens am dritten Werktag eines jeden Monats', 'im Voraus zum 1. eines Monats') */
+            rent_due_clause?: components["schemas"]["ExtractedValue"];
         };
         /**
          * Levers

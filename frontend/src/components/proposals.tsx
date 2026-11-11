@@ -86,6 +86,7 @@ import {
   RECORD_MODE,
   RENT_MODEL,
 } from "./labels";
+import { OPERATING_COSTS_TERMS } from "./taxInputs";
 import { Notice } from "./ui";
 
 const POLL_MS = 2_000;
@@ -395,6 +396,18 @@ const FIELDS: Record<string, Record<string, FieldSpec>> = {
     ),
     deposit_bank: text("Bank des Kautionskontos", "Die Bank, bei der die Kaution angelegt ist, z. B. laut Kontoeröffnung oder Sparbuch."),
     deposit_iban: text("IBAN des Kautionskontos", "Die IBAN des Kontos, auf dem die Kaution liegt. Gespeichert wird sie nur maskiert."),
+    // D152: both read from the lease's clauses and mapped by Hausbuch, never by the model.
+    operating_costs_terms: choice(
+      "Nebenkosten laut Mietvertrag",
+      OPERATING_COSTS_TERMS,
+      "Wie der Mietvertrag die Nebenkosten regelt: als Vorauszahlung mit jährlicher Abrechnung, als Pauschale ohne Abrechnung, oder gar nicht gesondert (eine Warmmiete, in der alles enthalten ist). Hausbuch liest es aus der Nebenkosten-Klausel des Mietvertrags. Davon hängt ab, in welcher Zeile der Anlage V die Beträge stehen und ob eine Nebenkostenabrechnung fällig wird. Leer gelassen: Vorauszahlung.",
+    ),
+    rent_due_day: {
+      label: "Miete fällig am Tag",
+      kind: "count",
+      description:
+        "Der Tag im Monat, an dem die Miete laut Mietvertrag fällig ist; „spätestens am dritten Werktag“ steht hier als 3. Er entscheidet, ob eine Miete, die um den Jahreswechsel gezahlt wird, steuerlich ins alte oder ins neue Jahr gehört (Zehn-Tage-Regel, § 11 EStG). Leer gelassen: der 3.",
+    },
   },
   rent: {
     cold_rent: money(
@@ -574,6 +587,8 @@ const CREATE_FIELDS: Readonly<Record<string, readonly string[]>> = {
     "deposit_form",
     "deposit_bank",
     "deposit_iban",
+    "operating_costs_terms",
+    "rent_due_day",
   ],
   // InitialRent
   rent: ["cold_rent", "operating_costs_prepayment", "effective_from"],
@@ -641,6 +656,8 @@ const DERIVED_INPUT: Record<string, string> = {
   postal_code: "PLZ",
   unit_label: "WE-Nummer",
   rent_clause: "Mietklausel",
+  operating_costs_clause: "Nebenkosten-Klausel des Mietvertrags",
+  rent_due_clause: "Fälligkeitsklausel des Mietvertrags",
   amount: "Kautionsbetrag",
   fee_net: "Vergütung laut Vertrag (netto)",
   monthly_fee: "Vergütungsklausel (z. B. „zzgl. MwSt.“)",
