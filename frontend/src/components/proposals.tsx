@@ -654,6 +654,34 @@ function lookup(map: Readonly<Record<string, string>>, key: string): string {
   return map[key] ?? key;
 }
 
+/** A payment proof read without a bill (phase 3 D149): the record that links it to one of the
+ * bills the code offers (options.target_id, the draft's bills still waiting for a proof), or to
+ * none („keine dieser Rechnungen“, the record skipped). */
+const PROOF_LINK_KEY = "link:document";
+
+function isProofLink(record: ProposalRecord): boolean {
+  return record.key === PROOF_LINK_KEY;
+}
+
+/** The proof's bill as the form stands: the picked bill's id, "" for none. */
+function pickedBill(state: RecordState | undefined): string {
+  return state && !state.skip ? (state.fields.target_id?.raw ?? "") : "";
+}
+
+/** The year moves (private_cost_year:<n>) the code proposed for the bill it pre-selected
+ * apply only while that bill stays picked: when the user picks another bill or none, they are
+ * hidden and sent as skipped (the backend refuses a move of a bill the proof is not linked to). */
+function proofMovesDeclined(records: ProposalRecord[], state: Record<string, RecordState>): boolean {
+  const link = records.find(isProofLink);
+  if (!link) return false;
+  const proposed = scalar(link.fields?.target_id?.value);
+  return proposed === "" || pickedBill(state[link.key]) !== proposed;
+}
+
+function isYearMove(record: ProposalRecord): boolean {
+  return prefixOf(record.key)[0] === "private_cost_year";
+}
+
 function prefixOf(key: string): [string, string] {
   const at = key.indexOf(":");
   return at < 0 ? [key, ""] : [key.slice(0, at), key.slice(at + 1)];
@@ -742,6 +770,7 @@ function recordTitle(record: ProposalRecord): string {
     case "deposit_received":
       return EVENT_TYPE["tenancy.deposit_received"];
     case "link":
+      if (rest === "document") return "Welche Rechnung dieser Nachweis bezahlt";
       return `Verknüpfung: ${lookup(LINK_TARGET, rest)}`;
     case "tax_input":
       if (rest.startsWith("private_cost:")) {
@@ -979,7 +1008,8 @@ export function isPendingReview(proposal: Proposal): boolean {
   return proposal.status === "ready" || (proposal.status === "blocked_tenant_data" && (proposal.records ?? []).length > 0);
 }
 
-/** A pending proposal that proposes a link (link:property, link:loan, link:tenancy): its card is
+/** A pending proposal that proposes a link (link:property, link:loan, link:tenancy, and a payment
+ * proof's bill, link:document, D149): its card is
  * then the one place to link, and the page hides its own link form (D132). */
 export function proposesLink(proposal: Proposal): boolean {
   return isPendingReview(proposal) && (proposal.records ?? []).some((record) => record.entity_type === "link");
@@ -1241,6 +1271,7 @@ function appliedLabel(entity: AppliedEntity): string {
     case "typing":
       return "Dokument typisiert";
     case "link":
+      if (rest === "document") return "als Zahlungsnachweis der Rechnung zugeordnet";
       return `verknüpft mit ${lookup(LINK_TARGET, rest)}`;
     case "property":
       return `Immobilie ${verb}`;
@@ -1300,6 +1331,8 @@ function entityHref(entity: AppliedEntity, propertyId: string | null): string | 
       return `/properties/${id}?tab=eigentuemer`;
     case "income_input":
       return "/owners"; // the Eigentümer page's Einkommen section, "zvE laut Bescheid"
+    case "document":
+      return `/documents/${id}`; // a payment proof's bill (D149)
     default:
       return null;
   }
@@ -1323,8 +1356,10 @@ function initialState(records: ProposalRecord[]): Record<string, RecordState> {
   for (const record of records) {
     const fields: Record<string, FieldState> = {};
     for (const [name, value] of rowsOf(record)) fields[name] = { raw: value ? toRaw(specFor(record, name), value.value) : "", take: true };
-    // An unchanged record would write nothing: it is sent as skipped.
-    state[record.key] = { skip: record.mode === "unchanged", fields };
+    // An unchanged record would write nothing: it is sent as skipped. A proof's bill the code
+    // could not pick (D149) starts at „keine dieser Rechnungen“: nothing is linked unless picked.
+    const noBill = isProofLink(record) && (fields.target_id?.raw ?? "") === "";
+    state[record.key] = { skip: record.mode === "unchanged" || noBill, fields };
   }
   return state;
 }
@@ -1336,9 +1371,12 @@ function buildApply(
 ): { ok: true; records: ProposalApplyRecord[] } | { ok: false; messages: FieldMessages } {
   const messages: FieldMessages = {};
   const out: ProposalApplyRecord[] = [];
+  const movesDeclined = proofMovesDeclined(records, state);
   for (const record of records) {
     const recordState = state[record.key];
-    if (!recordState || recordState.skip || record.mode === "unchanged") {
+    const declined =
+      (isProofLink(record) && pickedBill(recordState) === "") || (movesDeclined && isYearMove(record));
+    if (!recordState || recordState.skip || record.mode === "unchanged" || declined) {
       out.push({ key: record.key, skip: true });
       continue;
     }
@@ -1458,6 +1496,7 @@ function ProposalReview({
         {records.map((record) => {
           const recordState = state[record.key];
           if (!recordState) return null;
+          if (isYearMove(record) && proofMovesDeclined(records, state)) return null;
           return (
             <RecordCard
               key={record.key}
@@ -1520,7 +1559,8 @@ function RecordCard({
   const skipId = useId();
   const title = recordTitle(record);
   const unchanged = record.mode === "unchanged";
-  const fields = visibleRows(record, state);
+  const proofLink = isProofLink(record);
+  const fields = proofLink ? [] : visibleRows(record, state);
   const notes = record.notes ?? [];
 
   return (
@@ -1529,7 +1569,7 @@ function RecordCard({
         <h3 id={headingId}>{title}</h3>
         <span className={record.mode === "correction" ? "corrected" : record.mode === "create" ? "badge" : "tag"}>{RECORD_MODE[record.mode]}</span>
         <span className="spacer" />
-        {unchanged ? null : (
+        {unchanged || proofLink ? null : (
           <label className="inline" htmlFor={skipId}>
             <input
               id={skipId}
@@ -1558,7 +1598,9 @@ function RecordCard({
           ))}
         </ul>
       ) : null}
-      {record.entity_type === "link" ? (
+      {proofLink ? (
+        <BillPicker record={record} state={state} onChange={onChange} />
+      ) : record.entity_type === "link" ? (
         <p className="proposal-link">
           Das Dokument wird verknüpft mit: <strong>{linkTarget(record, directory)}</strong>
         </p>
@@ -1613,6 +1655,52 @@ function linkTarget(record: ProposalRecord, directory: Directory | null): string
     default:
       return lookup(LINK_TARGET, target);
   }
+}
+
+/** The bills a payment proof may pay (phase 3 D149), each named by the code with its title,
+ * date and amount and whether the proof's amount fits it, plus „keine dieser Rechnungen“. One
+ * click picks; with „Übernehmen“ the proof is linked to the picked bill as the to-do's upload
+ * links it, and nothing is linked for none. */
+function BillPicker({
+  record,
+  state,
+  onChange,
+}: {
+  record: ProposalRecord;
+  state: RecordState;
+  onChange: (change: (current: RecordState) => RecordState) => void;
+}) {
+  const name = useId();
+  const picked = pickedBill(state);
+  const offered = record.options?.target_id ?? [];
+  function pick(bill: string) {
+    onChange((current) => {
+      const field = current.fields.target_id ?? { raw: "", take: true };
+      return { ...current, skip: bill === "", fields: { ...current.fields, target_id: { ...field, raw: bill } } };
+    });
+  }
+  return (
+    <>
+      <p className="proposal-link">Dieser Zahlungsnachweis bezahlt:</p>
+      <div className="proposal-options" role="radiogroup" aria-label="Welche Rechnung dieser Nachweis bezahlt">
+        {offered.map((option) => (
+          <span key={option.value} className="row">
+            <label className="inline">
+              <input type="radio" name={name} checked={picked === option.value} onChange={() => pick(option.value)} />
+              {option.label}
+            </label>
+            <Link href={`/documents/${option.value}`} target="_blank" rel="noopener">
+              Rechnung ansehen
+            </Link>
+          </span>
+        ))}
+        <label className="inline">
+          <input type="radio" name={name} checked={picked === ""} onChange={() => pick("")} />
+          keine dieser Rechnungen
+        </label>
+      </div>
+    </>
+  );
 }
 
 /** The values the code offers for a field it could not fill by itself (D139: the dwellings of a

@@ -1227,6 +1227,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/documents/{document_id}/payment-proof": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Document Payment Proof
+         * @description Phase 3 D149, the to-do „Vorhandenen Nachweis zuordnen“: this document, a payment proof
+         *     already stored, pays the bill `bill_id`. Linked as the upload from the to-do links it
+         *     (D143): to the bill and the bill's properties; a link that exists is kept. 404 for an
+         *     unknown document or bill, 422 when it is the bill itself or is not a payment proof.
+         */
+        post: operations["document_payment_proof_api_documents__document_id__payment_proof_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/documents/{document_id}/links/{target_type}/{target_id}": {
         parameters: {
             query?: never;
@@ -5861,6 +5884,18 @@ export interface components {
             };
             /** Label */
             label: string;
+        };
+        /**
+         * PaymentProofBody
+         * @description Phase 3 D149: the bill an existing payment proof pays (the to-do's „Vorhandenen
+         *     Nachweis zuordnen“).
+         */
+        PaymentProofBody: {
+            /**
+             * Bill Id
+             * Format: uuid
+             */
+            bill_id: string;
         };
         /**
          * PaymentProofExtraction
@@ -11446,6 +11481,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DocumentLink"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    document_payment_proof_api_documents__document_id__payment_proof_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PaymentProofBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Document"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
