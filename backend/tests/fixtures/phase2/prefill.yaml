@@ -154,7 +154,10 @@
 #             ([amount_total], or [cost_lines, amount_total] for a part), note (code)
 #             "Grunderwerbsteuer, weiterer Bescheid (z. B. des Miteigentümers)"}, notes
 #             contain "anderen Käufers"; the apply creates it without a Beleg. B >= A (within
-#             0.01) or no row: as above.
+#             0.01) or no row: as above. Only while no notice has been processed: when the
+#             property holds another real_estate_transfer_tax row (not the one found) with a
+#             Beleg, or whose note is that label, the row is patched as in 1 or 2 (no
+#             other_notice record).
 #   loan      contract_number with whitespace removed, and lender -> patch with every stated
 #             field except the two keys and signed_on (LoanPatch has none: a contract date is
 #             set when the loan is created); current null (the context does not hold loan
@@ -1009,6 +1012,53 @@ cases:
           target_id: *C1
           values: {amount: "17340.00", note: GrESt 27/123/45678}
           current: {amount: "8670.00", note: null}
+
+  - id: grunderwerbsteuer_second_bescheid_after_an_odd_total_is_a_plain_patch
+    description: D145 (from the review). The typed total was 60 € too high (17,400 € instead of 17,340 €); the first notice left a rest row of 8,730 €. The second buyer's notice of 8,670 € patches that rest row to 8,670 € and splits nothing off, because a notice was already processed on the property (the other row has a Beleg). No 60 € row for a notice that does not exist.
+    kind: bescheid
+    context:
+      document_id: *DOC
+      classification: {type: bescheid, subtype: cost_basis_evidence, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      costs:
+        - {id: *C1, property_id: *P, kind: real_estate_transfer_tax, amount: "8670.00", document_id: *DOC_OTHER, note: GrESt 27/123/45677}
+        - {id: *C4, property_id: *P, kind: real_estate_transfer_tax, amount: "8730.00", note: "Grunderwerbsteuer, weiterer Bescheid (z. B. des Miteigentümers)"}
+    extraction: *GREST_HALF
+    expect:
+      keys: [typing, cost:real_estate_transfer_tax, link:property]
+      records:
+        - key: cost:real_estate_transfer_tax
+          entity_type: acquisition_cost
+          mode: patch
+          target_id: *C4
+          values: {amount: "8670.00", note: GrESt 27/123/45678}
+          current: {amount: "8730.00", note: "Grunderwerbsteuer, weiterer Bescheid (z. B. des Miteigentümers)"}
+
+  - id: grunderwerbsteuer_lower_reread_with_a_rest_row_is_a_plain_patch
+    description: D145 (from the review). The first notice was applied (its row of 8,670 € has it as Beleg, the rest row of 8,670 € waits). The same document read again at 8,600 € patches its row to 8,600 € as before D145 (the reading wins) and splits off no phantom 70 € row.
+    kind: bescheid
+    context:
+      document_id: *DOC
+      classification: {type: bescheid, subtype: cost_basis_evidence, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      costs:
+        - {id: *C1, property_id: *P, kind: real_estate_transfer_tax, amount: "8670.00", document_id: *DOC, note: GrESt 27/123/45678}
+        - {id: *C4, property_id: *P, kind: real_estate_transfer_tax, amount: "8670.00", note: "Grunderwerbsteuer, weiterer Bescheid (z. B. des Miteigentümers)"}
+    extraction:
+      title: {v: Grunderwerbsteuerbescheid, p: 1, q: "Bescheid über Grunderwerbsteuer"}
+      document_date: {v: "2026-04-02", p: 1, q: "Berlin, den 02.04.2026"}
+      sender: {v: Finanzamt Berlin Grunderwerbsteuerstelle, p: 1, q: "Finanzamt für Körperschaften - Grunderwerbsteuerstelle"}
+      amount_total: {v: "8600.00", p: 1, q: "Die Steuer wird festgesetzt auf 8.600,00 €"}
+      reference: {v: GrESt 27/123/45678, p: 1, q: "Steuernummer GrESt 27/123/45678"}
+    expect:
+      keys: [typing, cost:real_estate_transfer_tax, link:property]
+      records:
+        - key: cost:real_estate_transfer_tax
+          entity_type: acquisition_cost
+          mode: patch
+          target_id: *C1
+          values: {amount: "8600.00"}
+          current: {amount: "8670.00"}
 
   - id: bescheid_grundbuchamt_grundschuld_is_financing
     description: D35 (review F1, 7 Nov 2026). A Grundbuchamt bill for entering the Grundschuld, typed bescheid by the classifier; a Bescheid has no subject, so its title decides. No Nebenkosten row; the subtype financing_invoice (D138).
