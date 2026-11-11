@@ -1519,7 +1519,16 @@ class _Builder:
                 self._tenant(n)
         unit, exact = self._lease_unit()
         tenancy = None
-        if unit is not None:
+        notes: list[str] = []
+        # D153: a lease already linked to its tenancy (confirmed before) is re-read onto that
+        # tenancy; a unit label or start date the reading states otherwise (a typo in the
+        # lease) never turns the re-read into a second tenancy.
+        linked = _first(t for t in self.ctx.tenancies if t.id == self.ctx.linked_tenancy_id)
+        if linked is not None:
+            tenancy = linked
+            if unit is not None and unit.id != linked.unit_id:
+                notes.append(_LINKED_UNIT_NOTE.format(label=self.ev("unit_label").value))
+        elif unit is not None:
             start = self.ev("start_date").value
             tenancy = _first(
                 t
@@ -1581,6 +1590,7 @@ class _Builder:
                 fields,
                 target_id=tenancy.id,
                 current={f: stored[f] for f in differing} or None,
+                notes=notes,
             )
         self.link("link:tenancy", None if tenancy is None else tenancy.id)
 
@@ -2619,6 +2629,13 @@ def _deposit_form(clause: Any) -> DepositForm | None:
     ) or re.search(r"\bbar\b", t):
         return DepositForm.CASH_ACCOUNT
     return None
+
+
+# D153: a re-read lease whose unit label names another unit than its linked tenancy's.
+_LINKED_UNIT_NOTE = (
+    "Der Mietvertrag nennt „{label}“, das Mietverhältnis ist aber einer anderen Einheit"
+    " zugeordnet. Die Zuordnung bleibt; ist sie falsch, im Mietverhältnis ändern."
+)
 
 
 # D152: how the lease agrees the Nebenkosten (phase 3 D72) and when the rent is due (D67).

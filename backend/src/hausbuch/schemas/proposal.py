@@ -315,6 +315,9 @@ class PrefillContext(Schema):
     # services.matching.paid_from_rental_account), so no cost paid from another account is
     # proposed for it.
     paid_from_rental_account: bool = False
+    # Phase 2 D153: the one tenancy the document is linked to (a lease confirmed before);
+    # a re-read lease patches it, whatever unit label or start date the reading states.
+    linked_tenancy_id: UUID | None = None
     # Phase 3 D143: for a payment proof, the bill it was uploaded for (its document link).
     proof_bill: ExistingProofBill | None = None
     # Phase 3 D149: for a payment proof linked to no bill, the bills that still wait for a

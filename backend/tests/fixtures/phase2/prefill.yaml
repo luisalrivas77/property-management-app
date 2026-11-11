@@ -2303,6 +2303,46 @@ cases:
             rent_due_day: [rent_due_clause]
           current: {operating_costs_terms: prepayment, rent_due_day: 3}
 
+  - id: mietvertrag_reread_linked_tenancy_despite_unit_typo
+    description: >-
+      D153: a lease linked to its tenancy (confirmed before) is read again, and it names
+      „WE 3“ and a start of 1 July while its tenancy is on WE 4 from 1 October (a typo in the
+      lease; the household's room lease printed the wrong room). The re-read patches the
+      linked tenancy, never a second tenancy on WE 3, and the card says the unit stays.
+    kind: lease
+    context:
+      document_id: *DOC
+      classification: *CL_LEASE
+      properties: [*PROP_LINDEN]
+      units:
+        - {id: *U, property_id: *P, label: WE 3}
+        - {id: *U2, property_id: *P, label: WE 4}
+      tenancies:
+        - {id: *T1, unit_id: *U, start_date: 2026-07-01, operating_costs_terms: flat_rate, rent_due_day: 1}
+        - {id: *T2, unit_id: *U2, start_date: 2026-10-01}
+      linked_tenancy_id: *T2
+    extraction:
+      <<: *LEASE
+      deposit_amount: {value: null, confidence: low}
+      deposit_clause: {value: null, confidence: low}
+      operating_costs_clause: {v: "Nebenkostenpauschale inkl. Heizung und Strom; eine gesonderte Abrechnung erfolgt nicht.", p: 3, q: "Nebenkostenpauschale inkl. Heizung und Strom; eine gesonderte Abrechnung erfolgt nicht."}
+      rent_due_clause: {v: "im Voraus zum 1. eines jeden Monats", p: 3, q: "Die Miete ist im Voraus zum 1. eines jeden Monats zu zahlen."}
+    expect:
+      keys: [typing, tenant:1, tenancy, link:tenancy]
+      records:
+        - key: tenancy
+          entity_type: tenancy
+          mode: patch
+          target_id: *T2
+          values:
+            operating_costs_terms: flat_rate
+            rent_due_day: 1
+          derived:
+            operating_costs_terms: [operating_costs_clause]
+            rent_due_day: [rent_due_clause]
+          current: {operating_costs_terms: prepayment, rent_due_day: 3}
+          notes_contain: ["„WE 3“", "Zuordnung bleibt"]
+
   - id: mietvertrag_reread_terms_already_stored
     description: >-
       D152: the same lease read again after the tenancy was set to flat_rate and due day 1:
