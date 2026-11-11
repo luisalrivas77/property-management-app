@@ -1019,6 +1019,19 @@ export function warningEntry(
 }
 
 /** A checklist row as a to-do entry (missing and incomplete only). */
+/** A checklist requirement whose gap a draft warning already shows as a to-do, with the same
+ * action: the price split (afa.no_split) and the Mietspiegel value (reduced_rent.no_market_rent).
+ * The warning's entry stands for both, so the gap is listed once. */
+const COVERING_WARNING: Partial<Record<DocumentChecklistItem["code"], string>> = {
+  price_split: "afa.no_split",
+  market_rent: "reduced_rent.no_market_rent",
+};
+
+export function coveredByWarning(item: DocumentChecklistItem, warnings: readonly DraftWarning[]): boolean {
+  const code = COVERING_WARNING[item.code];
+  return code !== undefined && warnings.some((w) => w.code === code);
+}
+
 export function checklistEntry(
   item: DocumentChecklistItem,
   year: number,
@@ -1062,7 +1075,8 @@ export function questionEntry(question: OpenQuestion, year: number, text: string
 /**
  * Was noch fehlt on the Anlage V tab: the draft's to-do warnings, the checklist's missing and
  * incomplete documents and the property's open Jahresfragen, each with its action. The
- * checklist's price split is left out while afa.no_split stands for it (one gap, one entry).
+ * checklist's price split and market rent are left out while a draft warning stands for them
+ * (one gap, one entry; see `coveredByWarning`).
  * `refresh` reloads the checklist and the questions after an action changed them.
  */
 export function AnlageVTodos({
@@ -1100,14 +1114,13 @@ export function AnlageVTodos({
 
   const ctx: GuideContext = { year, propertyId, draft, payments };
   const warnings = draft.warnings ?? [];
-  const hasNoSplit = warnings.some((w) => w.code === "afa.no_split");
   const entries: TodoEntry[] = [];
   warnings.forEach((warning, index) => {
     const entry = warningEntry(warning, ctx, `w-${warning.code}-${index}`, onChanged);
     if (entry) entries.push(entry);
   });
   for (const item of checklist.data?.items ?? []) {
-    if (hasNoSplit && item.code === "price_split") continue;
+    if (coveredByWarning(item, warnings)) continue;
     const entry = checklistEntry(item, year, { propertyId, payments });
     if (entry) entries.push(entry);
   }

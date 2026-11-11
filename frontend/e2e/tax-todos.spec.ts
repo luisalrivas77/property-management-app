@@ -80,3 +80,61 @@ test("a missing price split is a to-do with its button, and recording one closes
   await expect(todos).toBeVisible();
   await expect(todos.getByRole("listitem").filter({ hasText: GAP })).toHaveCount(0);
 });
+
+// One gap, one entry: a let flat without a Mietspiegel value is shown by the draft's warning
+// ("Ortsübliche Miete fehlt", with its button), and the checklist's Ortsübliche Miete is not
+// listed beside it, neither on the Anlage V tab nor on Übersicht.
+test("a missing market rent is one to-do, not two", async ({ page, signedIn }) => {
+  void signedIn;
+  const label = "Wohnung Mietspiegel";
+  const property = await apiCall<{ id: string }>(page, "POST", "/api/properties", {
+    label,
+    kind: "etw",
+    address: { ...address, house_number: "11" },
+    build_year: 1994,
+    notarized_on: "2024-03-15",
+    purchase_date: "2024-05-01",
+    purchase_price: "289000.00",
+  });
+  const unit = await apiCall<{ id: string }>(page, "POST", "/api/units", {
+    property_id: property.id,
+    label: "WE 1",
+    floor_area_m2: "60.00",
+    rooms: null,
+    mea: null,
+  });
+  const tenant = await apiCall<{ id: string }>(page, "POST", "/api/tenants", {
+    full_name: "Erika Muster",
+    email: null,
+    phone: null,
+    iban: null,
+  });
+  await apiCall(page, "POST", "/api/tenancies", {
+    unit_id: unit.id,
+    parties: [{ tenant_id: tenant.id, role: "primary" }],
+    signed_on: null,
+    start_date: "2024-07-01",
+    end_date: null,
+    fixed_term_until: null,
+    rent_model: "fixed",
+    deposit_amount: "0.00",
+    deposit_form: "none",
+    deposit_bank: null,
+    deposit_iban: null,
+    initial_rent: { cold_rent: "950.00", operating_costs_prepayment: "220.00", effective_from: null, document_id: null },
+  });
+
+  await page.goto(`/tax/${YEAR}?immobilie=${property.id}`);
+  const todos = page.getByRole("region", { name: "Was noch fehlt" });
+  const gap = todos.getByRole("listitem").filter({ hasText: "Ortsübliche Miete fehlt" });
+  await expect(gap).toHaveCount(1);
+  await expect(gap.getByRole("link", { name: "Mietspiegel-Wert eintragen" })).toBeVisible();
+  await expect(todos.getByRole("listitem").filter({ hasText: "Grundsteuerbescheid: fehlt" })).toBeVisible();
+  await expect(todos.getByRole("listitem").filter({ hasText: "Ortsübliche Miete: fehlt" })).toHaveCount(0);
+
+  await page.goto("/");
+  const overview = page.getByRole("region", { name: "Was noch fehlt" });
+  const mine = overview.getByRole("listitem").filter({ hasText: label });
+  await expect(mine.filter({ hasText: "Ortsübliche Miete fehlt" })).toHaveCount(1);
+  await expect(mine.filter({ hasText: "Ortsübliche Miete" })).toHaveCount(1);
+});
