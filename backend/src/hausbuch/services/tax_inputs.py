@@ -328,15 +328,6 @@ def _check_scope(conn: Connection, prop: Row, data: TaxInputCreate) -> Row | Non
     return None
 
 
-def _rule_set_for(tax_year: int):
-    """The rule set whose AfA rates judge a useful life from `tax_year`: that year's, else the
-    latest earlier one, else the earliest there is (the rates by build year are the same in
-    every rule set so far)."""
-    years = registry.available_years()
-    earlier = [y for y in years if y <= tax_year]
-    return registry.rule_set(max(earlier) if earlier else min(years))
-
-
 def _check_useful_life(prop: Row, data: TaxInputCreate) -> None:
     """D79: a useful life shorter than what is left of the statutory one on 1 January of its
     first year (statutory_months_left), from the purchase year at the earliest. A withdrawal
@@ -348,7 +339,7 @@ def _check_useful_life(prop: Row, data: TaxInputCreate) -> None:
         raise _scope_invalid(
             f"a useful life applies from the purchase year {prop.purchase_date.year} on"
         )
-    rate = _rule_set_for(data.tax_year).afa_rate(prop.build_year)
+    rate = registry.afa_rule_set(data.tax_year).afa_rate(prop.build_year)
     left = statutory_months_left(rate, prop.purchase_date, data.tax_year)
     if data.value.years * 12 >= left:
         statutory = f"{left / 12:.2f}".rstrip("0").rstrip(".")  # 40, 50, 33.33 from purchase

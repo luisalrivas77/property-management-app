@@ -77,6 +77,16 @@ def rule_set_or_latest(tax_year: int) -> RuleSet:
     return rule_set(earlier[-1])
 
 
+def afa_rule_set(tax_year: int) -> RuleSet:
+    """The rule set whose AfA rates judge a useful life from `tax_year` (phase 3 D79; the
+    service's check and the pre-fill of a Gutachten, phase 2 D147): that year's, else the
+    latest earlier one, else the earliest there is (the rates by build year are the same in
+    every rule set so far)."""
+    years = available_years()
+    earlier = [y for y in years if y <= tax_year]
+    return rule_set(max(earlier) if earlier else min(years))
+
+
 @cache
 def tariff(tax_year: int) -> Tariff:
     """The validated tariff of `tax_year`; for a year without a file, the latest earlier file

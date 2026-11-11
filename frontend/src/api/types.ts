@@ -4422,7 +4422,8 @@ export interface components {
          *     property's address for the property, WEG, running-costs and tenancy groups, the lender and
          *     contract number for the loan group. A request asks only those (asked_fields); an
          *     owner's home address is never asked. A Wohnflächenberechnung (building_records) is also
-         *     asked its list of dwellings (D139).
+         *     asked its list of dwellings (D139), a Gutachten (appraisal) its remaining useful life and
+         *     Stichtag (D147).
          */
         GeneralExtraction: {
             /** @description a short German title, two to six words naming what the document is */
@@ -4437,6 +4438,10 @@ export interface components {
             postal_code?: components["schemas"]["ExtractedValue"];
             /** @description every dwelling the document lists, one item per Wohnung, each written `label | Wohnfläche | MEA | Lage`: the dwelling's label as printed (e.g. WE 3, Wohnung Nr. 3), its Wohnfläche in m² as printed, its Miteigentumsanteil as printed (e.g. 85/1000) and its location in the building (e.g. 2. OG links), unbekannt for a part the row does not state; one item for a document about one flat; never a single room, a sum or a total row */
             dwellings?: components["schemas"]["ExtractedValue"];
+            /** @description the Restnutzungsdauer or tatsächliche Nutzungsdauer of the building the Gutachten concludes, in years as written (e.g. 21 Jahre); never the Gesamtnutzungsdauer, the building's age or a life the Gutachten only quotes from a table */
+            remaining_useful_life?: components["schemas"]["ExtractedValue"];
+            /** @description the Wertermittlungsstichtag or Bewertungsstichtag the remaining life is stated for; never the date the Gutachten was written or signed */
+            valuation_date?: components["schemas"]["ExtractedValue"];
             /** @description the bank that gave the loan */
             lender?: components["schemas"]["ExtractedValue"];
             /** @description Darlehensnummer / Vertragsnummer; when none is printed, the loan's Kontonummer. The number only, without its label */

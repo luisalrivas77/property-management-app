@@ -2977,6 +2977,299 @@ cases:
           mode: create
           values: {type: statement, subtype: depot_statement, title: Depotauszug 30.09.2026, document_date: "2026-09-30", amount_total: null, period_start: null, period_end: null, counterparty: null, reference: null, notes: null}
 
+  # --- D147: a Gutachten (appraisal) proposes the shorter useful life (§7 Abs. 4 S. 2 EStG) ---
+  # An appraisal is in the property group (address asked, link:property by address, else the
+  # only property) and is also asked remaining_useful_life (decimal, years as written) and
+  # valuation_date (the Stichtag). With the property found and a life above 0 read, a record
+  # tax_input:useful_life (create) {tax_year, value.years}, both derived from
+  # [remaining_useful_life, valuation_date]. The life counts from the handover (purchase_date):
+  # a Stichtag before it takes off the whole calendar months between them (a month counts once
+  # its day of the month is reached); rounded UP to whole years. A Stichtag on or after the
+  # handover in the purchase year, or none: as read (rounded up), from the purchase year. A
+  # Stichtag in a later year than the handover: as read, from the Stichtag's year (phase 3 D79
+  # restarts the life in a row's first year). The record's note states the figure, the
+  # Stichtag and how the years follow. Not shorter than the statutory life left on 1 January of
+  # that year (services.tax_inputs' check: 12 / AfA rate of the build year, less the months
+  # owned), or no life left: no record, a note on typing. No life read: nothing, no note.
+  # Records: typing, link:property, tax_input:useful_life.
+
+  - id: appraisal_stichtag_before_handover_rounded_up
+    description: >-
+      D147. A Restnutzungsdauer-Gutachten for the Lindenstraße flat (handover 01.05.2026): 24
+      years at 15.03.2025; 13 whole months passed (the 1st of May is before the 15th), 288 - 13
+      = 275 months, rounded up to 23 years from 2026.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: &CL_GUTACHTEN {type: other, subtype: appraisal, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN, *PROP_KASTANIEN]
+    extraction:
+      title: &GA_TITLE {v: Gutachten Restnutzungsdauer, p: 1, q: "Gutachten zum Nachweis einer kürzeren Nutzungsdauer"}
+      document_date: &GA_DATE {v: "2025-04-02", p: 1, q: "Berlin, 02.04.2025"}
+      street: &GA_STREET {v: Lindenstraße, p: 1, q: "Bewertungsobjekt: Lindenstraße 12, 10115 Berlin"}
+      house_number: &GA_NUMBER {v: "12", p: 1, q: "Bewertungsobjekt: Lindenstraße 12, 10115 Berlin"}
+      postal_code: &GA_PLZ {v: "10115", p: 1, q: "Bewertungsobjekt: Lindenstraße 12, 10115 Berlin"}
+      remaining_useful_life: {v: "24", p: 4, q: "Restnutzungsdauer: 24 Jahre"}
+      valuation_date: {v: "2025-03-15", p: 1, q: "Wertermittlungsstichtag: 15.03.2025"}
+    expect:
+      keys: [typing, link:property, tax_input:useful_life]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: other, subtype: appraisal, title: Gutachten Restnutzungsdauer, document_date: "2025-04-02", amount_total: null, period_start: null, period_end: null, counterparty: null, reference: null, notes: null}
+        - key: link:property
+          entity_type: link
+          mode: create
+          target_id: *P
+          values: {}
+        - key: tax_input:useful_life
+          entity_type: tax_input
+          mode: create
+          values: {tax_year: 2026, value.years: 23}
+          derived: {tax_year: [remaining_useful_life, valuation_date], value.years: [remaining_useful_life, valuation_date]}
+          notes_contain:
+            - "Das Gutachten nennt 24 Jahre zum 15.03.2025; bis zur Übergabe am 01.05.2026 sind 1 Jahr und 1 Monat vergangen, daher 23 Jahre ab 2026."
+            - aufgerundet
+            - gesetzlichen 50 Jahre
+
+  - id: appraisal_stichtag_before_handover_decimal_life
+    description: >-
+      D147. A life written with a decimal (21,5 years at 20.11.2025): 5 whole months to the
+      handover, 258 - 5 = 253 months, rounded up to 22 years.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: *CL_GUTACHTEN
+      properties: [*PROP_LINDEN]
+    extraction:
+      title: *GA_TITLE
+      document_date: *GA_DATE
+      street: *GA_STREET
+      house_number: *GA_NUMBER
+      postal_code: *GA_PLZ
+      remaining_useful_life: {v: "21.5", p: 4, q: "Restnutzungsdauer: 21,5 Jahre"}
+      valuation_date: {v: "2025-11-20", p: 1, q: "Bewertungsstichtag 20.11.2025"}
+    expect:
+      keys: [typing, link:property, tax_input:useful_life]
+      records:
+        - key: tax_input:useful_life
+          entity_type: tax_input
+          mode: create
+          values: {tax_year: 2026, value.years: 22}
+          derived: {tax_year: [remaining_useful_life, valuation_date], value.years: [remaining_useful_life, valuation_date]}
+          notes_contain: ["21,5 Jahre zum 20.11.2025", "5 Monate vergangen", "daher 22 Jahre ab 2026", aufgerundet]
+
+  - id: appraisal_stichtag_after_handover_as_read
+    description: >-
+      D147. The Stichtag (15.06.2026) is after the handover in the purchase year: the 30 years
+      as read, from 2026, nothing to round.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: *CL_GUTACHTEN
+      properties: [*PROP_LINDEN, *PROP_KASTANIEN]
+    extraction:
+      title: *GA_TITLE
+      document_date: {v: "2026-07-01", p: 1, q: "Berlin, 01.07.2026"}
+      street: *GA_STREET
+      house_number: *GA_NUMBER
+      postal_code: *GA_PLZ
+      remaining_useful_life: {v: "30", p: 4, q: "Restnutzungsdauer 30 Jahre"}
+      valuation_date: {v: "2026-06-15", p: 1, q: "Wertermittlungsstichtag: 15.06.2026"}
+    expect:
+      keys: [typing, link:property, tax_input:useful_life]
+      records:
+        - key: tax_input:useful_life
+          entity_type: tax_input
+          mode: create
+          values: {tax_year: 2026, value.years: 30}
+          derived: {tax_year: [remaining_useful_life, valuation_date], value.years: [remaining_useful_life, valuation_date]}
+          notes_contain: ["Das Gutachten nennt 30 Jahre zum 15.06.2026, nach der Übergabe am 01.05.2026; daher 30 Jahre ab 2026."]
+
+  - id: appraisal_stichtag_in_a_later_year
+    description: >-
+      D147. A Gutachten obtained years after the purchase (Kastanienallee, handover 01.08.2019,
+      built 1908: 40 years): 18 years at 10.04.2025 apply from 2025, where the life restarts
+      (phase 3 D79); 480 - 65 owned months = 415 months left of the statutory life, so 18 is
+      shorter.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: *CL_GUTACHTEN
+      properties: [*PROP_LINDEN, *PROP_KASTANIEN]
+    extraction:
+      title: *GA_TITLE
+      document_date: {v: "2025-04-28", p: 1, q: "Berlin, 28.04.2025"}
+      street: {v: Kastanienallee, p: 1, q: "Kastanienallee 5, 10435 Berlin"}
+      house_number: {v: "5", p: 1, q: "Kastanienallee 5, 10435 Berlin"}
+      postal_code: {v: "10435", p: 1, q: "Kastanienallee 5, 10435 Berlin"}
+      remaining_useful_life: {v: "18", p: 3, q: "Restnutzungsdauer: 18 Jahre"}
+      valuation_date: {v: "2025-04-10", p: 1, q: "Wertermittlungsstichtag: 10.04.2025"}
+    expect:
+      keys: [typing, link:property, tax_input:useful_life]
+      records:
+        - key: link:property
+          entity_type: link
+          mode: create
+          target_id: *P2
+          values: {}
+        - key: tax_input:useful_life
+          entity_type: tax_input
+          mode: create
+          values: {tax_year: 2025, value.years: 18}
+          derived: {tax_year: [remaining_useful_life, valuation_date], value.years: [remaining_useful_life, valuation_date]}
+          notes_contain: ["in einem späteren Jahr als die Übergabe am 01.08.2019", "daher 18 Jahre ab 2025", gesetzlichen AfA, "34 Jahre und 7 Monate"]
+
+  - id: appraisal_without_stichtag_as_read
+    description: >-
+      D147. No Stichtag read: the 35 years as read from the handover year, derived from both
+      inputs (the missing Stichtag makes it low confidence); the note asks to check the Stichtag.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: *CL_GUTACHTEN
+      properties: [*PROP_LINDEN]
+    extraction:
+      title: *GA_TITLE
+      document_date: *GA_DATE
+      street: *GA_STREET
+      house_number: *GA_NUMBER
+      postal_code: *GA_PLZ
+      remaining_useful_life: {v: "35", p: 4, q: "Restnutzungsdauer: 35 Jahre"}
+    expect:
+      keys: [typing, link:property, tax_input:useful_life]
+      records:
+        - key: tax_input:useful_life
+          entity_type: tax_input
+          mode: create
+          values: {tax_year: 2026, value.years: 35}
+          derived: {tax_year: [remaining_useful_life, valuation_date], value.years: [remaining_useful_life, valuation_date]}
+          notes_contain: [Bewertungsstichtag wurde nicht gelesen, "daher 35 Jahre ab der Übergabe am 01.05.2026 (2026)", früheren Stichtag]
+
+  - id: appraisal_not_shorter_than_statutory
+    description: >-
+      D147. 55 years from 2026 is not shorter than the 50 years of a building completed in 1994:
+      no record, the typing record says why.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: *CL_GUTACHTEN
+      properties: [*PROP_LINDEN]
+    extraction:
+      title: *GA_TITLE
+      document_date: *GA_DATE
+      street: *GA_STREET
+      house_number: *GA_NUMBER
+      postal_code: *GA_PLZ
+      remaining_useful_life: {v: "55", p: 4, q: "Restnutzungsdauer: 55 Jahre"}
+      valuation_date: {v: "2026-05-01", p: 1, q: "Wertermittlungsstichtag: 01.05.2026"}
+    expect:
+      keys: [typing, link:property]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: other, subtype: appraisal, title: Gutachten Restnutzungsdauer, document_date: "2025-04-02", amount_total: null, period_start: null, period_end: null, counterparty: null, reference: null, notes: null}
+          notes_contain: ["daraus folgen 55 Jahre ab 2026", nicht kürzer, "noch 50 Jahre", gesetzlichen Satz]
+
+  - id: appraisal_life_used_up_before_handover
+    description: >-
+      D147. One year at 10.01.2024; 27 whole months passed by the handover: nothing left, no
+      record, a note to check the Gutachten.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: *CL_GUTACHTEN
+      properties: [*PROP_LINDEN]
+    extraction:
+      title: *GA_TITLE
+      document_date: *GA_DATE
+      street: *GA_STREET
+      house_number: *GA_NUMBER
+      postal_code: *GA_PLZ
+      remaining_useful_life: {v: "1", p: 4, q: "Restnutzungsdauer: 1 Jahr"}
+      valuation_date: {v: "2024-01-10", p: 1, q: "Wertermittlungsstichtag: 10.01.2024"}
+    expect:
+      keys: [typing, link:property]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: other, subtype: appraisal, title: Gutachten Restnutzungsdauer, document_date: "2025-04-02", amount_total: null, period_start: null, period_end: null, counterparty: null, reference: null, notes: null}
+          notes_contain: ["nennt 1 Jahr zum 10.01.2024", "2 Jahre und 3 Monate vergangen", mehr als diese Restnutzungsdauer]
+
+  - id: appraisal_without_remaining_life
+    description: D147. A Verkehrswertgutachten that states no remaining life links its property and proposes nothing else.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: *CL_GUTACHTEN
+      properties: [*PROP_LINDEN, *PROP_KASTANIEN]
+    extraction:
+      title: {v: Verkehrswertgutachten, p: 1, q: "Gutachten über den Verkehrswert"}
+      document_date: *GA_DATE
+      street: *GA_STREET
+      house_number: *GA_NUMBER
+      postal_code: *GA_PLZ
+      valuation_date: {v: "2025-03-15", p: 1, q: "Wertermittlungsstichtag: 15.03.2025"}
+    expect:
+      keys: [typing, link:property]
+      records:
+        - key: link:property
+          entity_type: link
+          mode: create
+          target_id: *P
+          values: {}
+
+  - id: appraisal_unreadable_life
+    description: D147. A remaining life that is no number proposes no record and says where it can be typed.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: *CL_GUTACHTEN
+      properties: [*PROP_LINDEN]
+    extraction:
+      title: *GA_TITLE
+      document_date: *GA_DATE
+      street: *GA_STREET
+      house_number: *GA_NUMBER
+      postal_code: *GA_PLZ
+      remaining_useful_life: {value: "rund zwei Jahrzehnte", source: {page: 4, quote: "Restnutzungsdauer rund zwei Jahrzehnte"}, checks: [cited, value_in_quote], confidence: low}
+      valuation_date: {v: "2025-03-15", p: 1, q: "Wertermittlungsstichtag: 15.03.2025"}
+    expect:
+      keys: [typing, link:property]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: other, subtype: appraisal, title: Gutachten Restnutzungsdauer, document_date: "2025-04-02", amount_total: null, period_start: null, period_end: null, counterparty: null, reference: null, notes: null}
+          notes_contain: [nicht als Zahl lesen, Kürzere Nutzungsdauer (Gutachten)]
+
+  - id: appraisal_without_property
+    description: D147. A Gutachten for an address that is neither property; typing only, with the no-property note, no useful life.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: *CL_GUTACHTEN
+      properties: [*PROP_LINDEN, *PROP_KASTANIEN]
+    extraction:
+      title: *GA_TITLE
+      document_date: *GA_DATE
+      street: {v: Birkenweg, p: 1, q: "Bewertungsobjekt: Birkenweg 3, 10999 Berlin"}
+      house_number: {v: "3", p: 1, q: "Bewertungsobjekt: Birkenweg 3, 10999 Berlin"}
+      postal_code: {v: "10999", p: 1, q: "Bewertungsobjekt: Birkenweg 3, 10999 Berlin"}
+      remaining_useful_life: {v: "24", p: 4, q: "Restnutzungsdauer: 24 Jahre"}
+      valuation_date: {v: "2025-03-15", p: 1, q: "Wertermittlungsstichtag: 15.03.2025"}
+    expect:
+      keys: [typing]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: other, subtype: appraisal, title: Gutachten Restnutzungsdauer, document_date: "2025-04-02", amount_total: null, period_start: null, period_end: null, counterparty: null, reference: null, notes: null}
+          notes_contain: [kein Objekt gefunden]
+
   # --- Kautionsnachweis (D42) ------------------------------------------------------------
 
   - id: kautionsnachweis_tenancy_found_by_amount
