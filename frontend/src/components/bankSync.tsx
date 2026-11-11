@@ -8,7 +8,10 @@
 //   in plain words, and the run history. While a run is queued, running, waiting for the
 //   pushTAN approval or importing, the card polls GET /syncs/{id} every 2 s; a run waiting for
 //   the approval shows the five minutes the job waits for it (counted from when the run
-//   entered that state, its updated_at). Every count shown is the API's; nothing is summed.
+//   entered that state, its updated_at). Once those five minutes are over the button is
+//   enabled again as "Erneut abrufen" (a run whose job is gone, after a redeploy mid-wait,
+//   would otherwise stay locked), the card polls every 10 s for one more minute, then stops.
+//   Every count shown is the API's; nothing is summed.
 import Link from "next/link";
 import { useCallback, useEffect, useId, useState, type FormEvent } from "react";
 
@@ -28,11 +31,28 @@ const LIVE: readonly SyncStatus[] = ["queued", "running", "needs_approval", "imp
 const POLL_MS = 2000;
 /** The job waits this long for the approval (HAUSBUCH_SYNC_APPROVAL_TIMEOUT_S' default). */
 const APPROVAL_WINDOW_MS = 5 * 60 * 1000;
+/** After the window: a slower poll, long enough for the job to record its timeout. */
+const EXPIRED_POLL_MS = 10_000;
+const EXPIRED_POLL_FOR_MS = 60_000;
 /** The bank's SCA exemption lasts about 180 days (§3); shown as an estimate only. */
 const SCA_DAYS = 180;
 
 export function isLiveRun(run: BankSync): boolean {
   return LIVE.includes(run.status);
+}
+
+/** When a needs_approval run's wait ends (ms since the epoch), else null. */
+function approvalEndsAt(run: BankSync): number | null {
+  return run.status === "needs_approval" ? new Date(run.updated_at).getTime() + APPROVAL_WINDOW_MS : null;
+}
+
+/** How often the card polls the run: every 2 s while it is live, every 10 s for a minute
+ * after an approval's five minutes are over, then never (a row whose job is gone). */
+function pollInterval(run: BankSync | null, now: number): number | null {
+  if (!run || !isLiveRun(run)) return null;
+  const endsAt = approvalEndsAt(run);
+  if (endsAt === null || now < endsAt) return POLL_MS;
+  return now < endsAt + EXPIRED_POLL_FOR_MS ? EXPIRED_POLL_MS : null;
 }
 
 /** The eight digits of a German IBAN's Bankleitzahl (its characters 5–12), or null. */
@@ -74,11 +94,16 @@ export function BankSyncCard({ account, onImported }: { account: Account; onImpo
   const latest = state.data?.syncs[0] ?? null;
   const current = newer(polled, latest);
   const currentId = current?.id ?? null;
-  const live = current ? isLiveRun(current) : false;
+  const now = useNow(current?.status === "needs_approval");
+  const endsAt = current ? approvalEndsAt(current) : null;
+  const expired = endsAt !== null && now >= endsAt;
+  // A run waiting for an approval past its five minutes can be started again.
+  const busy = current ? isLiveRun(current) && !expired : false;
+  const pollMs = pollInterval(current, now);
   const { reload } = state;
 
   useEffect(() => {
-    if (!currentId || !live) return;
+    if (!currentId || pollMs === null) return;
     let cancelled = false;
     const timer = window.setTimeout(() => {
       ok(api.GET("/api/syncs/{sync_id}", { params: { path: { sync_id: currentId } } })).then(
@@ -97,12 +122,12 @@ export function BankSyncCard({ account, onImported }: { account: Account; onImpo
           if (!cancelled) setPollError(error);
         },
       );
-    }, POLL_MS);
+    }, pollMs);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [currentId, live, tick, reload, onImported]);
+  }, [currentId, pollMs, tick, reload, onImported]);
 
   async function start() {
     setStarting(true);
@@ -132,8 +157,8 @@ export function BankSyncCard({ account, onImported }: { account: Account; onImpo
         <>
           <ConnectionFacts connection={state.data.connection} />
           <div className="row">
-            <button type="button" onClick={() => void start()} disabled={starting || live}>
-              {starting ? "Startet …" : live ? "Abruf läuft …" : "Jetzt abrufen"}
+            <button type="button" onClick={() => void start()} disabled={starting || busy}>
+              {starting ? "Startet …" : busy ? "Abruf läuft …" : expired ? "Erneut abrufen" : "Jetzt abrufen"}
             </button>
             <ActionDialog label="Zugang ändern" title="Bankabruf: Zugang ändern">
               {(close) => (
@@ -148,7 +173,7 @@ export function BankSyncCard({ account, onImported }: { account: Account; onImpo
             </ActionDialog>
           </div>
           <ErrorNotice error={startError} />
-          {current ? <RunNow run={current} accountId={account.id} /> : null}
+          {current ? <RunNow run={current} accountId={account.id} now={now} /> : null}
           <ErrorNotice error={pollError} />
           {state.data.syncs.length > 0 ? <RunHistory runs={state.data.syncs} /> : null}
         </>
@@ -202,8 +227,7 @@ function useNow(on: boolean): number {
   return now;
 }
 
-function ApprovalWait({ run }: { run: BankSync }) {
-  const now = useNow(true);
+function ApprovalWait({ run, now }: { run: BankSync; now: number }) {
   const left = Math.max(0, new Date(run.updated_at).getTime() + APPROVAL_WINDOW_MS - now);
   const minutes = Math.floor(left / 60_000);
   const seconds = Math.floor((left % 60_000) / 1000);
@@ -215,7 +239,7 @@ function ApprovalWait({ run }: { run: BankSync }) {
       <p>
         {left > 0
           ? `Noch ${minutes}:${String(seconds).padStart(2, "0")} Minuten; danach bricht Hausbuch den Abruf ab.`
-          : "Die fünf Minuten sind um; der Abruf wird gleich als abgebrochen gemeldet."}
+          : "Die Freigabe wurde nicht innerhalb von fünf Minuten bestätigt. „Erneut abrufen“ drücken und die neue Anfrage in der App freigeben."}
       </p>
     </div>
   );
@@ -229,10 +253,10 @@ function linesSentence(run: BankSync): string {
 }
 
 /** The current (or last) run in plain words. */
-function RunNow({ run, accountId }: { run: BankSync; accountId: string }) {
+function RunNow({ run, accountId, now }: { run: BankSync; accountId: string; now: number }) {
   switch (run.status) {
     case "needs_approval":
-      return <ApprovalWait run={run} />;
+      return <ApprovalWait run={run} now={now} />;
     case "queued":
       return <p role="status">Der Abruf ist angestoßen und startet gleich …</p>;
     case "running":
