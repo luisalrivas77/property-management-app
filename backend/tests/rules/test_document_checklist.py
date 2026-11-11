@@ -9,7 +9,7 @@ rules = pytest.importorskip("hausbuch.rules.document_checklist", reason="rule no
 FX = load("document_checklist")
 assert isinstance(FX, ChecklistFixture)
 
-_LISTS = ("acquisition_costs", "loans", "units", "tenancies", "documents")
+_LISTS = ("acquisition_costs", "loans", "units", "tenancies", "documents", "allocations")
 
 
 @pytest.mark.rule

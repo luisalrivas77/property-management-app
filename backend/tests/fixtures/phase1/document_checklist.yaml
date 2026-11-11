@@ -19,8 +19,11 @@
 #   lease                      per ten.  subtype lease linked to the tenancy               always
 #   handover_protocol          per ten.  subtype handover_protocol linked to the tenancy;
 #                                        only if the tenancy started on/after purchase_date always
-#   deposit_record             per ten.  subtype deposit_record linked to the tenancy; only
-#                                        if deposit_form != none                           always
+#   deposit_record             per ten.  subtype deposit_record linked to the tenancy, or (phase
+#                                        3 D142) the tenancy's deposit lines; only if
+#                                        deposit_form != none, and not for a tenancy that
+#                                        ended before purchase_date unless a deposit line
+#                                        is linked to it                                   always
 #   wirtschaftsplan            property  ETW only; type wirtschaftsplan, tax_year = Y,
 #                                        linked to P or one of its units                1 Jan Y
 #   hausgeldabrechnung         property  ETW only; type hausgeldabrechnung, tax_year = Y,
@@ -48,6 +51,18 @@
 #   tenancy_start; acquisition_cost -> cost_kind and cost_amount; property -> none.
 # Every case must give the same result for any order of the facts' lists (the rule test
 #   shuffles them).
+# Deposits (phase 3 D142, 11 Nov 2026; docs/phases/phase-3.md §8): a deposit line is a
+#   confirmed allocation of category deposit_in with a non-zero amount; "linked" = its
+#   tenancy_id is the tenancy. deposit_record is present by a linked document (documents
+#   listed), else when the linked lines sum to at least the tenancy's deposit_amount (any
+#   positive sum when deposit_amount is null or 0; documents empty). bank_lines: the linked
+#   lines, oldest first (booking_date, then id), whatever the status. A tenancy whose end_date
+#   is before purchase_date gets no item unless a deposit line is linked to it (§566a BGB: the
+#   seller settled it). deposit_offers, on a missing item only: the property's unlinked
+#   deposit lines with a positive amount and a transaction, oldest first, for which this
+#   tenancy is a candidate; candidates of a line = the tenancies of the year's items with
+#   deposit_form cash_account, an item, no linked document of the kind, no linked deposit
+#   line, and end_date null or >= the line's booking_date, by start_date then id.
 
 ids:
   property: &P 0000000b-0000-4000-8000-000000000001
@@ -70,6 +85,12 @@ ids:
   doc_2: &D2 00000d0c-0000-4000-8000-000000000002
   doc_3: &D3 00000d0c-0000-4000-8000-000000000003
   doc_4: &D4 00000d0c-0000-4000-8000-000000000004
+  allocation_1: &A1 000000a1-0000-4000-8000-000000000001
+  allocation_2: &A2 000000a1-0000-4000-8000-000000000002
+  allocation_3: &A3 000000a1-0000-4000-8000-000000000003
+  transaction_1: &X1 0000007a-0000-4000-8000-000000000001
+  transaction_2: &X2 0000007a-0000-4000-8000-000000000002
+  transaction_3: &X3 0000007a-0000-4000-8000-000000000003
 
 # Shared facts, merged into cases with <<. Bought (Übergang) on 1 May 2024, still owned.
 bases:
@@ -712,3 +733,178 @@ cases:
       - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
       - {code: price_split, status: missing, scope: {type: property, id: *P}}
       - {code: grundsteuerbescheid, status: missing, due_on: 2025-01-15, scope: {type: property, id: *P}}
+
+  # --- Phase 3 D142: a bank line proves a deposit -------------------------------------------
+  # The deposits of tenancies taken over with the property reach the buyer as one bank line
+  # from the seller at the handover. A deposit line linked to the tenancy is its proof; the
+  # unlinked rest is offered on the missing items, with the tenancies it could be split to.
+
+  - id: deposit_proven_by_a_bank_line_and_the_rest_offered
+    description: >
+      T1's 1,000 line is linked to it: present, no documents, the line in bank_lines. A 2,000
+      line from the same handover is unlinked: T2 and T3 (1,000 each, cash) are missing and
+      both are offered that line with both as candidates. The rent part of the same bank line
+      is not a deposit line.
+    tax_year: 2024
+    today: 2024-11-06
+    facts:
+      <<: *efh
+      units: [{id: *U1, label: WE 1}]
+      tenancies:
+        - {id: *T1, unit_id: *U1, start_date: 2023-01-01, deposit_form: cash_account, deposit_amount: "1000.00"}
+        - {id: *T2, unit_id: *U1, start_date: 2023-02-01, deposit_form: cash_account, deposit_amount: "1000.00"}
+        - {id: *T3, unit_id: *U1, start_date: 2023-03-01, deposit_form: cash_account, deposit_amount: "1000.00"}
+      allocations:
+        - {id: *A1, category: deposit_in, amount: "1000.00", booking_date: 2024-05-03, tax_year: 2024,
+           tenancy_id: *T1, transaction_id: *X1}
+        - {id: *A2, category: deposit_in, amount: "2000.00", booking_date: 2024-05-03, tax_year: 2024,
+           transaction_id: *X2}
+        - {id: *A3, category: rent_cold, amount: "122.00", booking_date: 2024-05-03, tax_year: 2024,
+           transaction_id: *X2}
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - {code: lease, status: missing, scope: {type: tenancy, id: *T1, unit_label: WE 1, tenancy_start: 2023-01-01}}
+      - {code: lease, status: missing, scope: {type: tenancy, id: *T2, unit_label: WE 1, tenancy_start: 2023-02-01}}
+      - {code: lease, status: missing, scope: {type: tenancy, id: *T3, unit_label: WE 1, tenancy_start: 2023-03-01}}
+      - code: deposit_record
+        status: present
+        scope: {type: tenancy, id: *T1, unit_label: WE 1, tenancy_start: 2023-01-01}
+        bank_lines:
+          - {allocation_id: *A1, transaction_id: *X1, booking_date: 2024-05-03, amount: "1000.00"}
+      - code: deposit_record
+        status: missing
+        scope: {type: tenancy, id: *T2, unit_label: WE 1, tenancy_start: 2023-02-01}
+        deposit_offers: &offer_a2
+          - allocation_id: *A2
+            transaction_id: *X2
+            booking_date: 2024-05-03
+            amount: "2000.00"
+            candidates:
+              - {tenancy_id: *T2, unit_id: *U1, deposit_amount: "1000.00"}
+              - {tenancy_id: *T3, unit_id: *U1, deposit_amount: "1000.00"}
+      - code: deposit_record
+        status: missing
+        scope: {type: tenancy, id: *T3, unit_label: WE 1, tenancy_start: 2023-03-01}
+        deposit_offers: *offer_a2
+
+  - id: deposit_lines_below_the_deposit_stay_missing
+    description: >
+      T1's linked lines (600 and a 0.00 row, which is never evidence) do not reach its 1,000:
+      missing, the 600 line listed. T1 has a linked line, so it is no candidate of the
+      unlinked 400 line, which T2 (deposit amount 0, any positive line proves it) is offered.
+      T3's deposit is a Bürgschaft: no money moves, so it is offered nothing.
+    tax_year: 2024
+    today: 2024-11-06
+    facts:
+      <<: *efh
+      units: [{id: *U1, label: WE 1}]
+      tenancies:
+        - {id: *T1, unit_id: *U1, start_date: 2023-01-01, deposit_form: cash_account, deposit_amount: "1000.00"}
+        - {id: *T2, unit_id: *U1, start_date: 2023-02-01, deposit_form: cash_account, deposit_amount: "0.00"}
+        - {id: *T3, unit_id: *U1, start_date: 2023-03-01, deposit_form: surety, deposit_amount: "800.00"}
+      allocations:
+        - {id: *A1, category: deposit_in, amount: "600.00", booking_date: 2024-05-03, tax_year: 2024,
+           tenancy_id: *T1, transaction_id: *X1}
+        - {id: *A2, category: deposit_in, amount: "0.00", booking_date: 2024-05-02, tax_year: 2024,
+           tenancy_id: *T1, transaction_id: *X2}
+        - {id: *A3, category: deposit_in, amount: "400.00", booking_date: 2024-05-10, tax_year: 2024,
+           transaction_id: *X3}
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - {code: lease, status: missing, scope: {type: tenancy, id: *T1, unit_label: WE 1, tenancy_start: 2023-01-01}}
+      - {code: lease, status: missing, scope: {type: tenancy, id: *T2, unit_label: WE 1, tenancy_start: 2023-02-01}}
+      - {code: lease, status: missing, scope: {type: tenancy, id: *T3, unit_label: WE 1, tenancy_start: 2023-03-01}}
+      - code: deposit_record
+        status: missing
+        scope: {type: tenancy, id: *T1, unit_label: WE 1, tenancy_start: 2023-01-01}
+        bank_lines:
+          - {allocation_id: *A1, transaction_id: *X1, booking_date: 2024-05-03, amount: "600.00"}
+      - code: deposit_record
+        status: missing
+        scope: {type: tenancy, id: *T2, unit_label: WE 1, tenancy_start: 2023-02-01}
+        deposit_offers:
+          - allocation_id: *A3
+            transaction_id: *X3
+            booking_date: 2024-05-10
+            amount: "400.00"
+            candidates:
+              - {tenancy_id: *T2, unit_id: *U1, deposit_amount: "0.00"}
+      - code: deposit_record
+        status: missing
+        scope: {type: tenancy, id: *T3, unit_label: WE 1, tenancy_start: 2023-03-01}
+
+  - id: tenancy_ended_before_the_handover_has_no_deposit_item
+    description: >
+      T1 ended two days before the handover (1 May 2024): the seller held and settled its
+      deposit, so it has no deposit_record item (its lease item stays). T2 has its
+      Kautionsnachweis linked and T3 ended on 31 May 2024, before the 15 June line: neither is
+      a candidate, so T4 alone is offered the line.
+    tax_year: 2024
+    today: 2024-11-06
+    facts:
+      <<: *efh
+      units: [{id: *U1, label: WE 1}]
+      tenancies:
+        - {id: *T1, unit_id: *U1, start_date: 2020-01-01, end_date: 2024-04-29, deposit_form: cash_account,
+           deposit_amount: "900.00"}
+        - {id: *T2, unit_id: *U1, start_date: 2021-01-01, deposit_form: cash_account, deposit_amount: "1000.00"}
+        - {id: *T3, unit_id: *U1, start_date: 2022-01-01, end_date: 2024-05-31, deposit_form: cash_account,
+           deposit_amount: "1000.00"}
+        - {id: *T4, unit_id: *U1, start_date: 2023-01-01, deposit_form: cash_account, deposit_amount: "1000.00"}
+      documents:
+        - {id: *D1, type: letter, subtype: deposit_record, received_at: 2024-06-01T09:00:00Z,
+           links: [{target_type: tenancy, target_id: *T2}]}
+      allocations:
+        - {id: *A1, category: deposit_in, amount: "3000.00", booking_date: 2024-06-15, tax_year: 2024,
+           transaction_id: *X1}
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - {code: lease, status: missing, scope: {type: tenancy, id: *T1, unit_label: WE 1, tenancy_start: 2020-01-01}}
+      - {code: lease, status: missing, scope: {type: tenancy, id: *T2, unit_label: WE 1, tenancy_start: 2021-01-01}}
+      - {code: lease, status: missing, scope: {type: tenancy, id: *T3, unit_label: WE 1, tenancy_start: 2022-01-01}}
+      - {code: lease, status: missing, scope: {type: tenancy, id: *T4, unit_label: WE 1, tenancy_start: 2023-01-01}}
+      - code: deposit_record
+        status: present
+        scope: {type: tenancy, id: *T2, unit_label: WE 1, tenancy_start: 2021-01-01}
+        documents: [*D1]
+      - code: deposit_record
+        status: missing
+        scope: {type: tenancy, id: *T3, unit_label: WE 1, tenancy_start: 2022-01-01}
+      - code: deposit_record
+        status: missing
+        scope: {type: tenancy, id: *T4, unit_label: WE 1, tenancy_start: 2023-01-01}
+        deposit_offers:
+          - allocation_id: *A1
+            transaction_id: *X1
+            booking_date: 2024-06-15
+            amount: "3000.00"
+            candidates:
+              - {tenancy_id: *T4, unit_id: *U1, deposit_amount: "1000.00"}
+
+  - id: tenancy_ended_before_the_handover_keeps_its_item_with_a_linked_line
+    description: >
+      the same T1, but a 900 deposit line is linked to it: the money came in, so the item
+      stays, present by the line
+    tax_year: 2024
+    today: 2024-11-06
+    facts:
+      <<: *efh
+      units: [{id: *U1, label: WE 1}]
+      tenancies:
+        - {id: *T1, unit_id: *U1, start_date: 2020-01-01, end_date: 2024-04-29, deposit_form: cash_account,
+           deposit_amount: "900.00"}
+      allocations:
+        - {id: *A1, category: deposit_in, amount: "900.00", booking_date: 2024-05-03, tax_year: 2024,
+           tenancy_id: *T1, transaction_id: *X1}
+    expect:
+      - {code: purchase_contract, status: missing, scope: {type: property, id: *P}}
+      - {code: price_split, status: missing, scope: {type: property, id: *P}}
+      - {code: lease, status: missing, scope: {type: tenancy, id: *T1, unit_label: WE 1, tenancy_start: 2020-01-01}}
+      - code: deposit_record
+        status: present
+        scope: {type: tenancy, id: *T1, unit_label: WE 1, tenancy_start: 2020-01-01}
+        bank_lines:
+          - {allocation_id: *A1, transaction_id: *X1, booking_date: 2024-05-03, amount: "900.00"}
