@@ -537,16 +537,25 @@ def scrub_identifiers(text: str, *, reference_year: int | None = None) -> str:
 # Phase 3 D143: on a payment proof, the payer's side of the transfer. The value after one of
 # these labels (the account holder's or payer's name, an account number, a bank code, a
 # mandate or creditor id, a customer number) goes, up to a tab, two spaces, the payee's label
-# or the line's end, so a row "Auftraggeber: A  Empfänger: B" keeps the payee.
+# or the line's end, so a row "Auftraggeber: A  Empfänger: B" keeps the payee. A label alone on
+# its line (an optional colon) takes the whole next non-blank line, the layout of a bank's
+# Umsatzdetail. "Von:", "An:" and "für" are not labels: they are too common in a proof's text
+# (a period "von 01.01. an", a purpose "für Rechnung ...") and would scrub what is kept.
 _PAYER_LABEL = (
     r"auftraggeber(?:in)?|konto-?inhaber(?:in)?|inhaber(?:in)?|zahlungspflichtige[rn]?"
     r"|einzahler(?:in)?|absender(?:in)?|name[ \t]+des[ \t]+konto-?inhabers"
     r"|konto-?(?:nummer|nr\.?)|kto\.?-?nr\.?|konto|bic|swift|blz|bankleitzahl"
     r"|mandats-?referenz|gläubiger-?id(?:entifikationsnummer)?|kunden-?(?:nummer|nr\.?)"
+    r"|kd\.?-?nr\.?"
+)
+_PAYER_LABEL_ONLY = re.compile(
+    rf"{_H}*{_LABEL_START}(?:{_PAYER_LABEL}){_LABEL_END}{_H}*:?{_H}*", re.IGNORECASE
 )
 _PAYER_LABELLED = re.compile(
     rf"{_LABEL_START}(?P<label>{_PAYER_LABEL}){_LABEL_END}(?P<sep>{_H}*:?{_H}*)"
-    r"(?P<value>(?:(?![ \t]{2}|\t|empfänger|zahlungsempfänger|begünstigter)[^\n])+)",
+    # The value starts with neither a space, a colon nor a full stop, so a label alone on its
+    # line ("Auftraggeber:", "Kd.-Nr.") is left to _under_payer_labels, not cut to "Kd.-Nr…".
+    r"(?P<value>(?=[^\s:.])(?:(?![ \t]{2}|\t|empfänger|zahlungsempfänger|begünstigter)[^\n])+)",
     re.IGNORECASE,
 )
 
@@ -556,8 +565,24 @@ def scrub_payment_proof(text: str, *, reference_year: int | None = None) -> str:
     removes (IBANs, long account numbers, addresses, a birth date), and the value after a
     payer-side label (_PAYER_LABEL). The payee, the amount, the dates and the purpose stay.
     Pure and idempotent; lines are kept."""
-    text = scrub_identifiers(text, reference_year=reference_year)
+    text = _under_payer_labels(scrub_identifiers(text, reference_year=reference_year))
     return _PAYER_LABELLED.sub(lambda m: f"{m.group('label')}{m.group('sep')}{SCRUBBED}", text)
+
+
+def _under_payer_labels(text: str) -> str:
+    """The first non-blank line under a line holding only a payer-side label (and a colon),
+    scrubbed whole; its indent is kept."""
+    lines = text.split("\n")
+    out = list(lines)
+    for index, line in enumerate(lines):
+        if not _PAYER_LABEL_ONLY.fullmatch(line):
+            continue
+        for below in range(index + 1, len(lines)):
+            if lines[below].strip():
+                value = lines[below]
+                out[below] = value[: len(value) - len(value.lstrip())] + SCRUBBED
+                break
+    return "\n".join(out)
 
 
 def scrubber(kind: ExtractionKind, *, reference_year: int | None) -> Callable[[str], str]:
