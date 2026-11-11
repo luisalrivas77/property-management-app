@@ -188,6 +188,12 @@ const PROPERTY_FIELDS: Record<string, FieldSpec> = {
     "Kaufpreis (€)",
     "Der Kaufpreis laut Kaufvertrag, ohne Nebenkosten wie Grunderwerbsteuer, Notar oder Makler; die stehen als eigene Einträge unter „Nebenkosten“.",
   ),
+  living_area_m2: {
+    label: "Wohnfläche (m²)",
+    kind: "area",
+    description:
+      "Die Wohnfläche der ganzen Wohnung in Quadratmetern, laut Wohnflächenberechnung oder Kaufvertrag. Sie steht in der Anlage V (Zeile 13) und wird für den Vergleich Ihrer Miete mit dem Mietspiegel gebraucht.",
+  },
 };
 
 /** By record key prefix, then by the *Create / *Patch field name the backend uses. */
@@ -502,6 +508,7 @@ const CREATE_FIELDS: Readonly<Record<string, readonly string[]>> = {
     "notarized_on",
     "purchase_date",
     "purchase_price",
+    "living_area_m2",
   ],
   // UnitCreate
   unit: ["label", "floor_area_m2", "rooms", "mea"],
@@ -1556,6 +1563,34 @@ function linkTarget(record: ProposalRecord, directory: Directory | null): string
   }
 }
 
+/** The values the code offers for a field it could not fill by itself (D139: the dwellings of a
+ * Wohnflächenberechnung); one click puts the value into the field, which stays editable. */
+function FieldOptions({
+  label,
+  options,
+  raw,
+  disabled,
+  onPick,
+}: {
+  label: string;
+  options: { raw: string; label: string }[];
+  raw: string;
+  disabled: boolean;
+  onPick: (raw: string) => void;
+}) {
+  const name = useId();
+  return (
+    <div className="proposal-options" role="radiogroup" aria-label={`${label}: Vorschläge aus dem Dokument`}>
+      {options.map((option, index) => (
+        <label key={`${index}:${option.raw}`} className="inline">
+          <input type="radio" name={name} checked={raw !== "" && raw === option.raw} disabled={disabled} onChange={() => onPick(option.raw)} />
+          {option.label}
+        </label>
+      ))}
+    </div>
+  );
+}
+
 function FieldRow({
   record,
   name,
@@ -1702,7 +1737,18 @@ function FieldRow({
         </FieldDescription>
       ) : null}
       <div className={existing && !unchanged ? "proposal-row-body with-current" : "proposal-row-body"}>
-        <div>{input}</div>
+        <div>
+          {input}
+          {!unchanged && record.options?.[name]?.length ? (
+            <FieldOptions
+              label={spec.label}
+              options={record.options[name].map((option) => ({ raw: toRaw(spec, option.value), label: option.label }))}
+              raw={state?.raw ?? ""}
+              disabled={inputDisabled}
+              onPick={(raw) => onChange({ raw })}
+            />
+          ) : null}
+        </div>
         {existing && !unchanged ? (
           <CurrentValue
             name={`${record.key}.${name}`}
