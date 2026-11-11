@@ -299,6 +299,13 @@ class LinkBody(Schema):
     target_id: UUID
 
 
+class PaymentProofBody(Schema):
+    """Phase 3 D149: the bill an existing payment proof pays (the to-do's „Vorhandenen
+    Nachweis zuordnen“)."""
+
+    bill_id: UUID
+
+
 # --- Create requests that carry one extra argument of the service -------------------
 
 

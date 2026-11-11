@@ -68,6 +68,12 @@
 #                        row with the lowest id), amount (the bill's amount as above), and
 #                        proof_amount (the sum of the proofs' amounts) only when a proof exists
 #                        and none matches ("Betrag passt nicht"). Refs: the bill and its rows.
+#   facts.unlinked_proofs (D149) the payment_proof documents linked to no bill, of this
+#                        property or of none: {proof_document_id, amount}. When exactly one
+#                        with an amount fits a bill that raises payment_proof.missing (within
+#                        0.01 of its combined total, of its private part alone, or of one of its
+#                        acquisition cost rows; rules.proof_match), that warning also carries
+#                        proof_offer (the proof's id) and proof_offer_amount (its amount).
 # Case A's notary bill (C2, D_NOTAR) is stored but no allocation paid it, so it raises the to-do.
 
 ids:
@@ -186,6 +192,8 @@ ids:
   # phase 3 D143: payment_proof documents linked to a bill
   doc_proof_notary: &D_PN 00000d0c-0000-4000-8000-000000000010
   doc_proof_repair: &D_PPR 00000d0c-0000-4000-8000-000000000011
+  # phase 3 D149: a payment_proof document linked to no bill
+  doc_proof_unlinked: &D_PU 00000d0c-0000-4000-8000-000000000012
 
 bases:
   property: &property
@@ -1077,6 +1085,37 @@ cases:
         - {code: payment_proof.missing,
            params: {document: *D_PR, source: private_cost, label: Rechnung Reparatur Sanitär,
                     amount: "595.00", proof_amount: "500.00"}}
+
+  # D149: a payment proof stored without a bill (uploaded through the normal upload, its
+  # proposal's bill choice skipped) whose amount fits the repair bill: the bill's to-do
+  # offers it („Vorhandenen Nachweis zuordnen“) by the params proof_offer (the proof's id)
+  # and proof_offer_amount; a stored proof of 120.00 fits no bill and is offered nowhere,
+  # nor is anything offered on the notary bill (4,200.00). The figures do not change.
+  - id: private_repair_unlinked_proof_offered_on_its_todo
+    description: >
+      private_repair_below_limit_stays_in_maintenance plus two payment proofs linked to no
+      bill, of 595.00 and 120.00 → the repair's to-do offers the 595.00 one; the notary's
+      to-do offers none
+    tax_year: 2026
+    rule_set_year: 2026
+    facts:
+      <<: *facts
+      tax_inputs: [*inputs_a_tiles, *input_certified, *input_private_repair]
+      unlinked_proofs:
+        - {proof_document_id: *D_PPR, amount: "595.00"}
+        - {proof_document_id: *D_PU, amount: "120.00"}
+    expect:
+      <<: *expect_private_repair
+      warnings:
+        - *w_notary_proof
+        - {code: hausgeld.abrechnung_pending}
+        - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
+        - {code: reduced_rent.no_market_rent}
+        - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
+        - {code: draft.form_provisional}
+        - {code: payment_proof.missing,
+           params: {document: *D_PR, source: private_cost, label: Rechnung Reparatur Sanitär,
+                    amount: "595.00", proof_offer: *D_PPR, proof_offer_amount: "595.00"}}
 
   # Review fix (D143): one notary bill split into the purchase part (acquisition cost row C2,
   # 4,200.00) and the Grundschuld part entered as paid from another account (a private_cost

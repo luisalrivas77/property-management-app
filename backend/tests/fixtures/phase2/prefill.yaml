@@ -207,7 +207,23 @@
 #   same value in the new year (append-only, D143). An acquisition cost row is never moved (it
 #   has no year). An amount that does not match: no year record, typing's notes contain
 #   "passt nicht"; an amount not read: no year record, typing's notes contain "nicht gelesen".
-#   No proof_bill (typed by hand, not from the to-do): typing only.
+#   (Until D149 a proof without a proof_bill was typing only; see below.)
+# Zahlungsnachweis, uploaded anywhere (phase 3 D149, 11 Nov 2026): the classifier types it
+#   other / payment_proof too. Every payment_proof's typing gets tax_year = the year of paid_on,
+#   else of document_date, derived from that field (the year the money left, §11 EStG; as D146
+#   files a Grunderwerbsteuerbescheid). On the to-do path the typing's notes name the bill:
+#   "Zahlungsnachweis für: <title> vom <date>, <amount>" plus " – Betrag passt" (or "passt
+#   nicht") once compared. Without a proof_bill, context.proof_candidates holds the bills that
+#   still wait for a proof (each an ExistingProofBill with title and document_date); none: typing
+#   only, its notes contain "Keine Rechnung wartet". Otherwise a record link:document {entity_type
+#   link, mode create, fields target_id} offers every candidate in options.target_id ({value: the
+#   bill's id, label: "<title> vom <date>, <amount> – Betrag passt / passt zu einem Teil der
+#   Rechnung / passt nicht"}), candidates by date then id. A candidate fits (rules.proof_match)
+#   when the proof's magnitude is within 0.01 of its combined total or its private part alone
+#   (whole), or of one of its acquisition cost rows (part: one buyer's Grunderwerbsteuer, D145).
+#   Exactly one fits: target_id is its id derived from [amount], the notes name it, and a whole
+#   fit proposes the year moves as on the to-do path; several or none: target_id null and the
+#   notes ask to pick one or „keine dieser Rechnungen“.
 #
 # expect: keys = the exact set of record keys returned. records = the records checked in
 # detail: entity_type, mode, target_id; values = every field of the record with its value (the
@@ -238,6 +254,11 @@ ids:
   # phase 3 D143: two private_cost rows of one bill (DOC_OTHER) a payment proof (DOC) pays
   private_cost_1: &PC1 000000f1-0000-4000-8000-000000000101
   private_cost_2: &PC2 000000f1-0000-4000-8000-000000000102
+  # phase 3 D149: bills that wait for a proof, offered to a proof uploaded without a bill
+  bill_painter: &DOC_BILL_A 0000000d-0000-4000-8000-000000000102
+  bill_caretaker: &DOC_BILL_B 0000000d-0000-4000-8000-000000000103
+  bill_grest: &DOC_BILL_C 0000000d-0000-4000-8000-000000000104
+  private_cost_3: &PC3 000000f1-0000-4000-8000-000000000103
 
 shared:
   classify_kaufvertrag: &CL_KV {type: contract, subtype: purchase_contract, contains_tenant_data: false, language: de, confidence: high}
@@ -3498,7 +3519,8 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: other, subtype: payment_proof, title: Überweisung Hausmeisterdienst, document_date: "2027-01-08", amount_total: "-476.00", counterparty: Hausmeisterdienst Muster GmbH}
+          values: {type: other, subtype: payment_proof, title: Überweisung Hausmeisterdienst, document_date: "2027-01-08", amount_total: "-476.00", counterparty: Hausmeisterdienst Muster GmbH, tax_year: 2027}
+          derived: {tax_year: [paid_on]}
         - key: private_cost_year:1
           entity_type: tax_input
           mode: patch
@@ -3536,7 +3558,8 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: other, subtype: payment_proof, title: Überweisung Hausmeisterdienst, amount_total: "400.00", counterparty: Hausmeisterdienst Muster GmbH}
+          values: {type: other, subtype: payment_proof, title: Überweisung Hausmeisterdienst, amount_total: "400.00", counterparty: Hausmeisterdienst Muster GmbH, tax_year: 2027}
+          derived: {tax_year: [paid_on]}
           notes_contain: ["passt nicht", "400,00", "476,00"]
 
   - id: payment_proof_same_year_no_move
@@ -3558,7 +3581,8 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: other, subtype: payment_proof, amount_total: "476.00", counterparty: null}
+          values: {type: other, subtype: payment_proof, amount_total: "476.00", counterparty: null, tax_year: 2026}
+          derived: {tax_year: [paid_on]}
 
   - id: payment_proof_of_a_nebenkosten_row_never_moves
     description: >
@@ -3583,7 +3607,8 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: other, subtype: payment_proof, amount_total: "2380.00", counterparty: Notarin Beispiel}
+          values: {type: other, subtype: payment_proof, amount_total: "2380.00", counterparty: Notarin Beispiel, tax_year: 2027}
+          derived: {tax_year: [paid_on]}
 
   - id: payment_proof_of_a_split_bill_matches_its_total
     description: >
@@ -3613,7 +3638,8 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: other, subtype: payment_proof, amount_total: "-2630.00", counterparty: Notarin Beispiel}
+          values: {type: other, subtype: payment_proof, amount_total: "-2630.00", counterparty: Notarin Beispiel, tax_year: 2027}
+          derived: {tax_year: [paid_on]}
         - key: private_cost_year:1
           entity_type: tax_input
           mode: patch
@@ -3644,7 +3670,8 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: other, subtype: payment_proof, amount_total: "-250.00", counterparty: null}
+          values: {type: other, subtype: payment_proof, amount_total: "-250.00", counterparty: null, tax_year: 2027}
+          derived: {tax_year: [paid_on]}
         - key: private_cost_year:1
           entity_type: tax_input
           mode: patch
@@ -3675,5 +3702,250 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: other, subtype: payment_proof, amount_total: "2380.00", counterparty: null}
+          values: {type: other, subtype: payment_proof, amount_total: "2380.00", counterparty: null, tax_year: 2027}
+          derived: {tax_year: [paid_on]}
           notes_contain: ["passt nicht", "2.380,00", "2.630,00"]
+
+  # --- Zahlungsnachweis, hochgeladen ohne Rechnung (phase 3 D149) -----------------------
+
+  - id: payment_proof_names_its_bill_from_the_todo
+    description: >
+      D149. Uploaded from the Hausmeisterdienst bill's to-do (proof_bill with its title and
+      date): the typing names the bill and says the amount fits, then moves the rows as D143.
+    kind: payment_proof
+    context:
+      document_id: *DOC
+      classification: *CL_PROOF
+      properties: [*PROP_LINDEN]
+      proof_bill:
+        document_id: *DOC_OTHER
+        title: Rechnung Hausmeisterdienst
+        document_date: 2026-11-15
+        private_costs:
+          - {id: *PC1, tax_year: 2026, label: Rechnung Hausmeisterdienst, amount: "357.00"}
+          - {id: *PC2, tax_year: 2026, label: Rechnung Hausmeisterdienst, amount: "119.00"}
+    extraction:
+      paid_on: {v: "2026-12-20", p: 1, q: "Buchungstag 20.12.2026"}
+      amount: {v: "-476.00", p: 1, q: "-476,00 EUR"}
+    expect:
+      keys: [typing]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: other, subtype: payment_proof, amount_total: "-476.00", counterparty: null, tax_year: 2026}
+          derived: {tax_year: [paid_on]}
+          notes_contain: ["Zahlungsnachweis für: Rechnung Hausmeisterdienst vom 15.11.2026, 476,00 € – Betrag passt"]
+
+  - id: payment_proof_upload_one_bill_fits
+    description: >
+      D149. A bank's one-transaction summary uploaded through the normal upload: two bills
+      wait for a proof; only the painter's (595.00, a private_cost row of 2026) fits the
+      595.00 paid on 14.01.2027, so it is pre-selected, both are offered, and its row is
+      proposed for 2027 as on the to-do (D143). Steuerjahr 2027 from paid_on.
+    kind: payment_proof
+    context:
+      document_id: *DOC
+      classification: *CL_PROOF
+      properties: [*PROP_LINDEN]
+      proof_candidates: &PROOF_CANDIDATES
+        - document_id: *DOC_BILL_A
+          title: Rechnung Malerarbeiten
+          document_date: 2026-12-03
+          private_costs:
+            - {id: *PC3, tax_year: 2026, label: Rechnung Malerarbeiten, amount: "595.00"}
+        - document_id: *DOC_BILL_B
+          title: Rechnung Hausmeisterdienst
+          document_date: 2026-11-15
+          private_costs:
+            - {id: *PC1, tax_year: 2026, label: Rechnung Hausmeisterdienst, amount: "357.00"}
+            - {id: *PC2, tax_year: 2026, label: Rechnung Hausmeisterdienst, amount: "119.00"}
+    extraction:
+      document_date: {v: "2027-01-15", p: 1, q: "Created on 15.01.2027"}
+      paid_on: {v: "2027-01-14", p: 1, q: "Booking date: 14.01.2027"}
+      amount: {v: "595.00", p: 1, q: "Amount: 595.00 EUR"}
+      payee: {v: Malerbetrieb Beispiel GmbH, p: 1, q: "Recipient: Malerbetrieb Beispiel GmbH"}
+    expect:
+      keys: [typing, link:document, private_cost_year:1]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: other, subtype: payment_proof, document_date: "2027-01-15", tax_year: 2027, amount_total: "595.00", counterparty: Malerbetrieb Beispiel GmbH}
+          derived: {tax_year: [paid_on]}
+        - key: link:document
+          entity_type: link
+          mode: create
+          values: {target_id: *DOC_BILL_A}
+          derived: {target_id: [amount]}
+          notes_contain: ["Zahlungsnachweis für: Rechnung Malerarbeiten vom 03.12.2026, 595,00 € – Betrag passt"]
+          options:
+            target_id:
+              - {value: *DOC_BILL_B, label: "Rechnung Hausmeisterdienst vom 15.11.2026, 476,00 € – Betrag passt nicht"}
+              - {value: *DOC_BILL_A, label: "Rechnung Malerarbeiten vom 03.12.2026, 595,00 € – Betrag passt"}
+        - key: private_cost_year:1
+          entity_type: tax_input
+          mode: patch
+          target_id: *PC3
+          values: {tax_year: 2027}
+          derived: {tax_year: [paid_on, amount]}
+          current: {tax_year: 2026}
+          notes_contain: ["§11", "Rechnung Malerarbeiten", "2027"]
+
+  - id: payment_proof_upload_two_bills_fit
+    description: >
+      D149. Two waiting bills have the proof's 595.00: neither is pre-selected, both are
+      offered with „Betrag passt“, the note asks which one; no year is moved before the user
+      picks.
+    kind: payment_proof
+    context:
+      document_id: *DOC
+      classification: *CL_PROOF
+      properties: [*PROP_LINDEN]
+      proof_candidates:
+        - document_id: *DOC_BILL_A
+          title: Rechnung Malerarbeiten
+          document_date: 2026-12-03
+          private_costs:
+            - {id: *PC3, tax_year: 2026, label: Rechnung Malerarbeiten, amount: "595.00"}
+        - document_id: *DOC_BILL_B
+          title: Rechnung Hausmeisterdienst
+          document_date: 2026-11-15
+          private_costs:
+            - {id: *PC1, tax_year: 2026, label: Rechnung Hausmeisterdienst, amount: "595.00"}
+    extraction:
+      paid_on: {v: "2027-01-14", p: 1, q: "Booking date: 14.01.2027"}
+      amount: {v: "-595.00", p: 1, q: "-595,00 EUR"}
+    expect:
+      keys: [typing, link:document]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: other, subtype: payment_proof, tax_year: 2027, amount_total: "-595.00", counterparty: null}
+          derived: {tax_year: [paid_on]}
+        - key: link:document
+          entity_type: link
+          mode: create
+          values: {target_id: null}
+          notes_contain: ["2 offene Rechnungen haben diesen Betrag", "keine dieser Rechnungen"]
+          options:
+            target_id:
+              - {value: *DOC_BILL_B, label: "Rechnung Hausmeisterdienst vom 15.11.2026, 595,00 € – Betrag passt"}
+              - {value: *DOC_BILL_A, label: "Rechnung Malerarbeiten vom 03.12.2026, 595,00 € – Betrag passt"}
+
+  - id: payment_proof_upload_no_bill_fits
+    description: >
+      D149. No waiting bill has the proof's 300.00: every one is offered as a pick-list with
+      „Betrag passt nicht“, nothing is pre-selected, and the note says no open bill has this
+      amount and that the bill or a second Grunderwerbsteuerbescheid may still be missing.
+    kind: payment_proof
+    context:
+      document_id: *DOC
+      classification: *CL_PROOF
+      properties: [*PROP_LINDEN]
+      proof_candidates: *PROOF_CANDIDATES
+    extraction:
+      paid_on: {v: "2027-01-14", p: 1, q: "Booking date: 14.01.2027"}
+      amount: {v: "300.00", p: 1, q: "300,00 EUR"}
+    expect:
+      keys: [typing, link:document]
+      records:
+        - key: link:document
+          entity_type: link
+          mode: create
+          values: {target_id: null}
+          notes_contain: ["Keine offene Rechnung hat den Betrag 300,00 €", "Grunderwerbsteuerbescheid", "keine dieser Rechnungen"]
+          options:
+            target_id:
+              - {value: *DOC_BILL_B, label: "Rechnung Hausmeisterdienst vom 15.11.2026, 476,00 € – Betrag passt nicht"}
+              - {value: *DOC_BILL_A, label: "Rechnung Malerarbeiten vom 03.12.2026, 595,00 € – Betrag passt nicht"}
+
+  - id: payment_proof_upload_fits_one_buyers_row
+    description: >
+      D149 with D145. One document holds both buyers' Grunderwerbsteuerbescheide (two rows of
+      5,500.00 with it as Beleg, 11,000.00 in all); the proof pays 5,500.00, one buyer's
+      share. It fits one row only, so the bill is pre-selected with „Betrag passt zu einem
+      Teil der Rechnung“ and a note that the other share's proof is still needed; a
+      Nebenkosten row has no year, so nothing is moved.
+    kind: payment_proof
+    context:
+      document_id: *DOC
+      classification: *CL_PROOF
+      properties: [*PROP_LINDEN]
+      proof_candidates:
+        - document_id: *DOC_BILL_C
+          title: Grunderwerbsteuerbescheide
+          document_date: 2026-04-20
+          acquisition_costs:
+            - {id: *C1, property_id: *P, kind: real_estate_transfer_tax, amount: "5500.00", document_id: *DOC_BILL_C}
+            - {id: *C4, property_id: *P, kind: real_estate_transfer_tax, amount: "5500.00", document_id: *DOC_BILL_C}
+        - document_id: *DOC_BILL_A
+          title: Rechnung Malerarbeiten
+          document_date: 2026-12-03
+          private_costs:
+            - {id: *PC3, tax_year: 2026, label: Rechnung Malerarbeiten, amount: "595.00"}
+    extraction:
+      paid_on: {v: "2026-05-02", p: 1, q: "Ausgeführt am 02.05.2026"}
+      amount: {v: "-5500.00", p: 1, q: "Betrag -5.500,00 EUR"}
+    expect:
+      keys: [typing, link:document]
+      records:
+        - key: link:document
+          entity_type: link
+          mode: create
+          values: {target_id: *DOC_BILL_C}
+          derived: {target_id: [amount]}
+          notes_contain: ["Zahlungsnachweis für: Grunderwerbsteuerbescheide vom 20.04.2026, 11.000,00 € – Betrag passt zu einem Teil der Rechnung", "übrigen Betrag"]
+          options:
+            target_id:
+              - {value: *DOC_BILL_C, label: "Grunderwerbsteuerbescheide vom 20.04.2026, 11.000,00 € – Betrag passt zu einem Teil der Rechnung"}
+              - {value: *DOC_BILL_A, label: "Rechnung Malerarbeiten vom 03.12.2026, 595,00 € – Betrag passt nicht"}
+
+  - id: payment_proof_upload_amount_unread_offers_every_bill
+    description: >
+      D149. The proof's amount was not read: every waiting bill is offered without a verdict,
+      nothing is pre-selected, the note says the amount was not read.
+    kind: payment_proof
+    context:
+      document_id: *DOC
+      classification: *CL_PROOF
+      properties: [*PROP_LINDEN]
+      proof_candidates: *PROOF_CANDIDATES
+    extraction:
+      paid_on: {v: "2027-01-14", p: 1, q: "Booking date: 14.01.2027"}
+    expect:
+      keys: [typing, link:document]
+      records:
+        - key: link:document
+          entity_type: link
+          mode: create
+          values: {target_id: null}
+          notes_contain: ["nicht gelesen"]
+          options:
+            target_id:
+              - {value: *DOC_BILL_B, label: "Rechnung Hausmeisterdienst vom 15.11.2026, 476,00 €"}
+              - {value: *DOC_BILL_A, label: "Rechnung Malerarbeiten vom 03.12.2026, 595,00 €"}
+
+  - id: payment_proof_upload_no_waiting_bill_dates_by_document_date
+    description: >
+      D149. No bill waits for a proof: typing only, with a note that a bill's to-do can take
+      this proof later. paid_on was not read, so the Steuerjahr comes from the document's
+      date.
+    kind: payment_proof
+    context:
+      document_id: *DOC
+      classification: *CL_PROOF
+      properties: [*PROP_LINDEN]
+    extraction:
+      document_date: {v: "2027-02-03", p: 1, q: "Erstellt am 03.02.2027"}
+      amount: {v: "120.00", p: 1, q: "120,00 EUR"}
+    expect:
+      keys: [typing]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: other, subtype: payment_proof, document_date: "2027-02-03", tax_year: 2027, amount_total: "120.00", counterparty: null}
+          derived: {tax_year: [document_date]}
+          notes_contain: ["Keine Rechnung wartet", "Vorhandenen Nachweis zuordnen"]

@@ -178,6 +178,8 @@ PHASE3_CASES = {
         "notary_bill_proof_amount_unread_counts",
         "private_repair_proof_matches_no_todo",
         "private_repair_proof_amount_mismatch",
+        # D149: a stored proof offered on the to-do of the bill it fits
+        "private_repair_unlinked_proof_offered_on_its_todo",
     },
 }
 
