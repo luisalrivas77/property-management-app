@@ -723,10 +723,11 @@ values; it is not a step, and the container never reads it.
 the code. `bank.refused` means the bank said no, and that is not always the PIN: it can
 be the login (a wrong Anmeldename or PIN), an approval declined in the S-pushTAN app, or
 the bank refusing the first setup of the connection. The card in Zu prüfen shows the
-bank's four-digit code ("Code der Bank 9xxx"); look it up before acting. Codes such as
-9340, 9910, 9930, 9931 and 9942 are the ones python-fints itself treats as a PIN or login
-error; any other code points at the approval or the setup, and the bank's own FinTS
-support can say what it means. **Three wrong PINs lock the online-banking login** at the
+bank's four-digit code ("Code der Bank 9xxx"); look it up before acting. The codes
+9340, 9910, 9930, 9931 and 9942 are always a PIN or login error, and python-fints treats
+any 9xxx answer while the dialog is still opening as one too, so a code at the login
+usually means the login; only a code after the dialog was open points at the approval or
+the setup. The bank's own FinTS support can say what a code means. **Three wrong PINs lock the online-banking login** at the
 bank, so never retry a `bank.refused` blindly: find the cause first, and if it was the
 PIN, correct it in the container before the next try. `bank.not_configured` means
 the two variables are missing or the product id is too long. `bank.unreachable` (three tries
