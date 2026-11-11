@@ -147,8 +147,6 @@ const PRIVATE_COST_CATEGORY: Readonly<Record<string, string>> = Object.fromEntri
   ).map((c) => [c, ALLOCATION_CATEGORY[c]]),
 );
 
-/** A cost paid from another account's amount (D135): one row per bill and category, so it
- * replaces only the same bill's earlier row, never another bill's. */
 /** A Gutachten's shorter useful life (tax_input:useful_life, D147): the years and the first year,
  * both computed by Hausbuch from the Gutachten's Restnutzungsdauer and Stichtag. */
 const USEFUL_LIFE_FIELDS: Readonly<Record<string, FieldSpec>> = {
@@ -156,7 +154,7 @@ const USEFUL_LIFE_FIELDS: Readonly<Record<string, FieldSpec>> = {
     label: "Nutzungsdauer laut Gutachten (Jahre)",
     kind: "count",
     description:
-      "Die Restnutzungsdauer des Gebäudes laut Gutachten, gezählt ab der Übergabe: liegt der Stichtag des Gutachtens davor, zieht Hausbuch die vollen Monate bis zur Übergabe ab und rundet auf ganze Jahre auf (die längere Nutzungsdauer ist die vorsichtige Wahl). Mit „Übernehmen“ wird die AfA des Gebäudes über diese Jahre gerechnet statt über die gesetzliche Nutzungsdauer (§ 7 Abs. 4 Satz 2 EStG); sie muss kürzer sein als die gesetzliche.",
+      "Die Restnutzungsdauer des Gebäudes laut Gutachten, umgerechnet auf den Beginn: die Übergabe, oder der 1. Januar des Stichtag-Jahres, wenn das Gutachten erst in einem späteren Jahr erstellt wurde. Liegt der Stichtag vor diesem Beginn, zieht Hausbuch die vollen Monate dazwischen ab; liegt er danach, rechnet es sie hinzu. Dann rundet es auf ganze Jahre auf (die längere Nutzungsdauer ist die vorsichtige Wahl). Mit „Übernehmen“ wird die AfA des Gebäudes über diese Jahre gerechnet statt über die gesetzliche Nutzungsdauer (§ 7 Abs. 4 Satz 2 EStG); sie muss kürzer sein als die gesetzliche.",
   },
   tax_year: {
     label: "Gilt ab Steuerjahr",
@@ -166,6 +164,8 @@ const USEFUL_LIFE_FIELDS: Readonly<Record<string, FieldSpec>> = {
   },
 };
 
+/** A cost paid from another account's amount (D135): one row per bill and category, so it
+ * replaces only the same bill's earlier row, never another bill's. */
 const PRIVATE_COST_AMOUNT: FieldSpec = {
   label: "Betrag (€)",
   kind: "money",
