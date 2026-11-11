@@ -6,7 +6,10 @@ parties, so no tenant personal data reaches the facts or the response (D5).
 
 Phase 3 (docs/phases/phase-3.md §8) adds the property's confirmed allocations of the
 categories that need a Beleg, each with the tax year it counts in, and every `market_rent`
-tax input row (history included: the rule decides which row is in force).
+tax input row (history included: the rule decides which row is in force). Phase 3 D142 adds
+the property's confirmed `deposit_in` allocations (with their tenancy and bank line) and each
+tenancy's deposit amount, so a bank line can prove a deposit and a missing proof can offer one.
+The Anlage V draft reuses these facts (services/tax.py), so Dokumente and Steuern agree.
 """
 
 from collections.abc import Callable
@@ -20,7 +23,7 @@ from hausbuch.db.tables import property_price_split as split_table
 from hausbuch.db.tables import tenancy as tenancy_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.rules import document_checklist as rule
-from hausbuch.schemas.allocation import AllocationStatus
+from hausbuch.schemas.allocation import AllocationCategory, AllocationStatus
 from hausbuch.schemas.checklist import (
     ChecklistAllocation,
     ChecklistCost,
@@ -113,6 +116,7 @@ def checklist_facts(
             tenancy_table.c.start_date,
             tenancy_table.c.end_date,
             tenancy_table.c.deposit_form,
+            tenancy_table.c.deposit_amount,
         ).where(tenancy_table.c.unit_id.in_([u.id for u in units]))
     )
 
@@ -135,8 +139,10 @@ def checklist_facts(
             booking_date=row["booking_date"],
             tax_year=allocation_year(row),
             document_id=row["document_id"],
+            tenancy_id=row["tenancy_id"],
+            transaction_id=row["transaction_id"],
         )
-        for row in _receipt_allocations(conn, property_id)
+        for row in _checklist_allocations(conn, property_id)
     ]
     referenced = [c.document_id for c in costs] + [a.document_id for a in allocations]
     if split is not None:
@@ -184,12 +190,19 @@ def checklist_facts(
     return facts, documents
 
 
-def _receipt_allocations(conn: Connection, property_id: UUID) -> list[dict]:
-    """The property's confirmed allocations of the categories that need a Beleg, with their
-    transaction's booking date. 0.00 rows are left to the rule, which skips them (D70)."""
+# What the checklist reads of the ledger: the Beleg categories (§8) and the deposits (D142).
+_CHECKLIST_CATEGORIES = rule.RECEIPT_CATEGORIES | {AllocationCategory.DEPOSIT_IN}
+
+
+def _checklist_allocations(conn: Connection, property_id: UUID) -> list[dict]:
+    """The property's confirmed allocations of the categories that need a Beleg, and its
+    confirmed deposit_in allocations (D142), with their transaction's booking date. 0.00 rows
+    are left to the rule, which skips them (D70); so is telling the two kinds apart."""
     rows = conn.execute(
         select(
             allocation_table.c.id,
+            allocation_table.c.transaction_id,
+            allocation_table.c.tenancy_id,
             allocation_table.c.category,
             allocation_table.c.amount,
             allocation_table.c.recurring,
@@ -203,7 +216,7 @@ def _receipt_allocations(conn: Connection, property_id: UUID) -> list[dict]:
         .where(
             allocation_table.c.property_id == property_id,
             allocation_table.c.status == AllocationStatus.CONFIRMED.value,
-            allocation_table.c.category.in_([c.value for c in rule.RECEIPT_CATEGORIES]),
+            allocation_table.c.category.in_(sorted(c.value for c in _CHECKLIST_CATEGORIES)),
         )
         .order_by(transaction_table.c.booking_date, allocation_table.c.id)
     )

@@ -223,3 +223,140 @@ test("an Einnahme ohne Zuordnung is booked as rent from its to-do", async ({ pag
   expect(stored.allocations.map((a) => a.status)).toEqual(["confirmed", "confirmed"]);
   expect(stored.allocations.map((a) => a.category).sort()).toEqual(["other_income", "rent_cold"]);
 });
+
+// D142: a deposit paid into the account proves it. The camt sample's "Partei D" credit (28 Sep
+// 2026) is booked as 600,00 € Kaution erhalten without a tenancy plus the rest as rent; three
+// rooms, each with a 200,00 € cash deposit, get a Kautionsnachweis to-do with „Kaution aus
+// Bankumsatz zuordnen“ (on Übersicht too). The deposits sum to the line exactly, so one click
+// splits it to all three through the inbox's answer command; the rent part is sent back as it
+// was, the three to-dos close without a reload, and Unterlagen lists the bank line as proof.
+test("one deposit line is split to three tenancies from the to-do", async ({ page, signedIn }) => {
+  void signedIn;
+  const label = "Wohnung Kautionen";
+  const property = await apiCall<{ id: string }>(page, "POST", "/api/properties", {
+    label,
+    kind: "etw",
+    address: { ...address, house_number: "15" },
+    build_year: 1994,
+    notarized_on: "2024-03-15",
+    purchase_date: "2024-05-01",
+    purchase_price: "289000.00",
+  });
+  const rooms: { tenancy: string; unit: string }[] = [];
+  for (const [index, start] of ["2024-07-01", "2024-08-01", "2024-09-01"].entries()) {
+    const unit = await apiCall<{ id: string }>(page, "POST", "/api/units", {
+      property_id: property.id,
+      label: `Zimmer ${index + 1}`,
+      floor_area_m2: "18.00",
+      rooms: null,
+      mea: null,
+    });
+    const tenant = await apiCall<{ id: string }>(page, "POST", "/api/tenants", {
+      full_name: `Mieterin ${index + 1}`,
+      email: null,
+      phone: null,
+      iban: null,
+    });
+    const tenancy = await apiCall<{ id: string }>(page, "POST", "/api/tenancies", {
+      unit_id: unit.id,
+      parties: [{ tenant_id: tenant.id, role: "primary" }],
+      signed_on: null,
+      start_date: start,
+      end_date: null,
+      fixed_term_until: null,
+      rent_model: "fixed",
+      deposit_amount: "200.00",
+      deposit_form: "cash_account",
+      deposit_bank: null,
+      deposit_iban: null,
+      initial_rent: { cold_rent: "400.00", operating_costs_prepayment: "80.00", effective_from: null, document_id: null },
+    });
+    rooms.push({ tenancy: tenancy.id, unit: unit.id });
+  }
+  const account = await apiCall<{ id: string }>(page, "POST", "/api/accounts", {
+    label: "Mietkonto",
+    bank: "Sparkasse",
+    iban: "DE50100000000000000001",
+    opening_balance: "0.00",
+    opening_balance_on: "2026-03-31",
+  });
+  await page.goto(`/accounts/${account.id}`);
+  await page.getByLabel("Kontoauszug hochladen").setInputFiles(SAMPLE);
+  await expect(page.getByRole("status").filter({ hasText: "Importiert: camt052.zip" })).toContainText("abgestimmt");
+  const lines = await apiCall<{ id: string; amount: string }[]>(page, "GET", `/api/accounts/${account.id}/transactions`);
+  const line = lines.find((l) => l.amount === "740.18");
+  expect(line, "the sample's Partei D credit").toBeDefined();
+  const transactionId = line?.id ?? "";
+  const allocationsPath = `/api/transactions/${transactionId}/allocations`;
+  const put = await page.request.fetch(allocationsPath, {
+    method: "PUT",
+    data: {
+      allocation_set: {
+        transaction_id: transactionId,
+        allocations: [
+          { amount: "600.00", category: "deposit_in", property_id: property.id, recurring: false },
+          { amount: "140.18", category: "rent_cold", property_id: property.id, recurring: false },
+        ],
+        method: "user",
+        confidence: "1",
+      },
+      learn_rule: false,
+      same_amount_only: false,
+    },
+    headers: { Origin: new URL(page.url()).origin },
+  });
+  expect(put.status()).toBe(200);
+
+  // Übersicht offers the same button beside the property's name.
+  await page.goto("/");
+  const overview = page.getByRole("region", { name: "Was noch fehlt" });
+  const first = overview.getByRole("listitem").filter({ hasText: "Kautionsnachweis · Zimmer 1, ab 01.07.2024: fehlt" });
+  await expect(first).toContainText(label);
+  await expect(first.getByRole("button", { name: "Kaution aus Bankumsatz zuordnen" })).toBeVisible();
+
+  await page.goto(`/tax/${YEAR}?immobilie=${property.id}`);
+  const todos = page.getByRole("region", { name: "Was noch fehlt" });
+  const deposits = todos.getByRole("listitem").filter({ hasText: "Kautionsnachweis" });
+  await expect(deposits).toHaveCount(3);
+  await deposits.first().getByRole("button", { name: "Kaution aus Bankumsatz zuordnen" }).click();
+  const dialog = page.getByRole("dialog", { name: "Kaution zuordnen" });
+  await expect(dialog).toContainText(
+    "Die Zahlung vom 28.09.2026 (Kaution erhalten, 600,00 €) auf 3 Mietverhältnisse aufteilen: je 200,00 €?",
+  );
+  await expect(dialog).toContainText("Zimmer 3, ab 01.09.2024 · 200,00 €");
+  const saved = page.waitForResponse((r) => r.url().endsWith(allocationsPath) && r.request().method() === "PUT");
+  await dialog.getByRole("button", { name: "Übernehmen" }).click();
+  const response = await saved;
+  expect(response.status()).toBe(200);
+  // The reply holds what was stored (Playwright cannot read the body of a request the API
+  // client sends as a Request object, so the stored rows are checked instead) and no rule.
+  const reply = (await response.json()) as {
+    allocations: { amount: string; category: string; tenancy_id: string | null; unit_id: string | null }[];
+    rule: unknown;
+  };
+  expect(reply.rule).toBeNull();
+  const rows = reply.allocations.map((a) => [a.amount, a.category, a.tenancy_id ?? null, a.unit_id ?? null].join(" "));
+  expect(rows.sort()).toEqual(
+    [...rooms.map(({ tenancy, unit }) => `200.00 deposit_in ${tenancy} ${unit}`), "140.18 rent_cold  "].sort(),
+  );
+
+  // No page.reload(): the three to-dos close, and Unterlagen names the bank line as the proof.
+  await expect(deposits).toHaveCount(0);
+  const unterlagen = page.getByRole("region", { name: "Unterlagen für die Steuererklärung" });
+  const proven = unterlagen.getByRole("listitem").filter({ hasText: "Kautionsnachweis · Zimmer 2" });
+  await expect(proven).toContainText("Nachgewiesen durch die Zahlung auf dem Konto");
+  await expect(proven.getByRole("link", { name: "Bankumsatz vom 28.09.2026 · 200,00 €" })).toHaveAttribute(
+    "href",
+    `/inbox?umsatz=${transactionId}`,
+  );
+
+  const stored = await apiCall<{ allocations: { category: string; tenancy_id: string | null; status: string }[] }>(
+    page,
+    "GET",
+    allocationsPath,
+  );
+  expect(stored.allocations.map((a) => a.status)).toEqual(["confirmed", "confirmed", "confirmed", "confirmed"]);
+  expect(stored.allocations.filter((a) => a.category === "deposit_in").map((a) => a.tenancy_id).sort()).toEqual(
+    rooms.map(({ tenancy }) => tenancy).sort(),
+  );
+});

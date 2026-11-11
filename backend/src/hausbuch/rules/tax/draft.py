@@ -322,6 +322,9 @@ def _coverage(facts: DraftFacts, tax_year: int) -> Coverage:
 def _missing_documents(facts: DraftFacts, rule_set: RuleSet, tax_year: int) -> list[ChecklistItem]:
     if facts.checklist is None or facts.today is None:
         return []
+    # D142: a deposit line counts only with the property set, as the checklist service reads
+    # it (an account line without a property cannot be split to a tenancy of it), so the
+    # Dokumente checklist and this list agree.
     allocations = [
         ChecklistAllocation(
             id=a.allocation_id,
@@ -330,8 +333,11 @@ def _missing_documents(facts: DraftFacts, rule_set: RuleSet, tax_year: int) -> l
             booking_date=a.booking_date,
             tax_year=tax_year_of(a, rule_set).year,
             document_id=a.document_id,
+            tenancy_id=a.tenancy_id,
+            transaction_id=a.transaction_id,
         )
         for a in facts.allocations
+        if a.category is not C.DEPOSIT_IN or a.property_id == facts.property.id
     ]
     market_rents = [
         ChecklistMarketRent(

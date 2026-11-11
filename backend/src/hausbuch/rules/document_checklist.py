@@ -6,13 +6,17 @@ targets that count, its tax-year rule and its due date. Phase 3 adds entries, no
 (docs/phases/phase-3.md §8, D64): `cost_receipt` per confirmed allocation of the year that
 needs a Beleg, and `market_rent` per Wohnung let in the year. Phase 5 (D126) gives the
 Grundsteuerbescheid a due date (15 January) and limits it to the first full year of ownership
-onwards; `checklist.due` reminders read that date (rules/reminders.py).
+onwards; `checklist.due` reminders read that date (rules/reminders.py). Phase 3 D142 (11 Nov
+2026) lets a bank line prove a deposit: `deposit_record` is present when a Kautionsnachweis is
+linked to the tenancy, or when the confirmed `deposit_in` allocations linked to the tenancy reach
+its deposit amount; it does not exist for a tenancy that ended before the handover unless a
+deposit line is linked to it; and a missing one offers the property's unlinked deposit lines.
 
 Matching: an entry with a subtype matches on the subtype, one with only a type on the type;
 an untyped document matches nothing. A match must be linked to one of the entry's accepted
 targets for that scope (P itself, P's units, the loan, the tenancy). Two entries are
 satisfied by a reference instead of a link: an acquisition cost row's document_id, and the
-selected price split (by its source).
+selected price split (by its source). `deposit_record` also by the tenancy's deposit lines.
 
 Status: present (at least one match, all listed oldest first) > incomplete (only documents
 of the right kind on the right target without a tax year, for "tax_year = Y" entries) >
@@ -22,13 +26,17 @@ expected (due_on > today) > missing.
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 from enum import Enum, auto
 from uuid import UUID
 
 from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.checklist import (
     ChecklistAllocation,
+    ChecklistBankLine,
     ChecklistCost,
+    ChecklistDepositCandidate,
+    ChecklistDepositOffer,
     ChecklistDocument,
     ChecklistFacts,
     ChecklistItem,
@@ -65,6 +73,7 @@ class Satisfier(Enum):
     PRICE_SPLIT = auto()  # by the selected split's source
     ALLOCATION_DOCUMENT = auto()  # the allocation's document_id (phase 3, D64)
     TAX_INPUT = auto()  # a market_rent tax input in force for the Wohnung (phase 3, D64)
+    DEPOSIT = auto()  # a linked document, else the tenancy's deposit lines (phase 3, D142)
 
 
 # Y -> due date. None = "always": due as soon as the item exists.
@@ -102,9 +111,54 @@ def _started_after_purchase(facts: ChecklistFacts, tenancy: object, _: int) -> b
     return tenancy.start_date >= facts.purchase_date
 
 
-def _has_deposit(_: ChecklistFacts, tenancy: object, __: int) -> bool:
+def _deposit_lines(facts: ChecklistFacts, tenancy_id: UUID | None) -> list[ChecklistAllocation]:
+    """The confirmed deposit_in allocations linked to the tenancy (None: linked to none), oldest
+    first; a 0.00 row is never evidence (D70)."""
+    return sorted(
+        (
+            a
+            for a in facts.allocations
+            if a.category is AllocationCategory.DEPOSIT_IN
+            and a.amount != 0
+            and a.tenancy_id == tenancy_id
+        ),
+        key=lambda a: (a.booking_date, a.id),
+    )
+
+
+def _ended_before_handover(facts: ChecklistFacts, tenancy: ChecklistTenancy) -> bool:
+    return tenancy.end_date is not None and tenancy.end_date < facts.purchase_date
+
+
+def _has_deposit(facts: ChecklistFacts, tenancy: object, _: int) -> bool:
+    """A tenancy with a deposit, unless it ended before the handover (D142): the seller held
+    that deposit and settled it (§566a BGB binds the buyer only for tenancies existing at the
+    transfer). A deposit line linked to such a tenancy keeps its item: the money came in."""
     assert isinstance(tenancy, ChecklistTenancy)
-    return tenancy.deposit_form is not DepositForm.NONE
+    if tenancy.deposit_form is DepositForm.NONE:
+        return False
+    return not _ended_before_handover(facts, tenancy) or bool(_deposit_lines(facts, tenancy.id))
+
+
+def _deposit_paid(tenancy: ChecklistTenancy, lines: list[ChecklistAllocation]) -> bool:
+    """The linked lines reach the deposit amount (any positive sum when none is recorded)."""
+    total = sum((a.amount for a in lines), Decimal(0))
+    if not lines or total <= 0:
+        return False
+    return (
+        tenancy.deposit_amount is None
+        or tenancy.deposit_amount <= 0
+        or (total >= tenancy.deposit_amount)
+    )
+
+
+def _bank_line(allocation: ChecklistAllocation) -> ChecklistBankLine:
+    return ChecklistBankLine(
+        allocation_id=allocation.id,
+        transaction_id=allocation.transaction_id,
+        booking_date=allocation.booking_date,
+        amount=allocation.amount,
+    )
 
 
 # The categories whose payments need a Beleg in the return's paperwork (§8).
@@ -186,6 +240,7 @@ CATALOGUE: tuple[Requirement, ...] = (
     Requirement(
         RequirementCode.DEPOSIT_RECORD,
         ChecklistScopeType.TENANCY,
+        satisfier=Satisfier.DEPOSIT,
         subtype=DocumentSubtype.DEPOSIT_RECORD,
         targets=_TENANCY,
         applies=_has_deposit,
@@ -270,6 +325,7 @@ class _Context:
         self.unit_ids = frozenset(u.id for u in facts.units)
         self.unit_labels = {u.id: u.label for u in facts.units}
         self.documents = sorted(facts.documents, key=lambda d: (d.received_at, d.id))
+        self._offers: list[ChecklistDepositOffer] | None = None
 
     # Scopes ------------------------------------------------------------------------
 
@@ -375,6 +431,9 @@ class _Context:
         self, requirement: Requirement, entity: object, scope: ChecklistScope
     ) -> ChecklistItem:
         due_on = None if requirement.due is None else requirement.due(self.tax_year)
+        if requirement.satisfier is Satisfier.DEPOSIT:
+            assert isinstance(entity, ChecklistTenancy)
+            return self._by_deposit(requirement, entity, scope, due_on)
         match requirement.satisfier:
             case Satisfier.LINK:
                 status, documents = self._by_link(requirement, entity, due_on)
@@ -389,6 +448,8 @@ class _Context:
             case Satisfier.TAX_INPUT:
                 assert entity is None or isinstance(entity, UUID)
                 status, documents = self._by_market_rent(entity, due_on)
+            case Satisfier.DEPOSIT:  # handled above
+                raise AssertionError("unreachable")
         return ChecklistItem(
             code=requirement.code, status=status, scope=scope, due_on=due_on, documents=documents
         )
@@ -450,6 +511,67 @@ class _Context:
             return ChecklistStatus.PRESENT, []
         return self._absent(due_on), []
 
+    def _by_deposit(
+        self,
+        requirement: Requirement,
+        tenancy: ChecklistTenancy,
+        scope: ChecklistScope,
+        due_on: date | None,
+    ) -> ChecklistItem:
+        """D142: present by a linked Kautionsnachweis (listed in documents), else by the
+        tenancy's deposit lines reaching its deposit (no documents; the lines are listed in
+        bank_lines either way). A missing item offers the unlinked deposit lines this tenancy
+        is a split candidate of."""
+        status, documents = self._by_link(requirement, tenancy, due_on)
+        lines = _deposit_lines(self.facts, tenancy.id)
+        if status is not ChecklistStatus.PRESENT and _deposit_paid(tenancy, lines):
+            status, documents = ChecklistStatus.PRESENT, []
+        offers = []
+        if status is ChecklistStatus.MISSING:
+            offers = [o for o in self._deposit_offers() if tenancy.id in _candidate_ids(o)]
+        return ChecklistItem(
+            code=requirement.code,
+            status=status,
+            scope=scope,
+            due_on=due_on,
+            documents=documents,
+            bank_lines=[_bank_line(a) for a in lines],
+            deposit_offers=offers,
+        )
+
+    def _deposit_offers(self) -> list[ChecklistDepositOffer]:
+        """The property's unlinked deposit lines (positive, with a bank line), oldest first,
+        each with the tenancies of this year's items it could be split to: a cash deposit, the
+        proof missing (no document linked, no deposit line linked), not ended before the
+        line's booking date. A Bürgschaft moves no money, so it is never a candidate."""
+        if self._offers is not None:
+            return self._offers
+        requirement = _BY_CODE[RequirementCode.DEPOSIT_RECORD]
+        open_tenancies = [
+            t
+            for t, _ in self.scopes(ChecklistScopeType.TENANCY)
+            if isinstance(t, ChecklistTenancy)
+            and t.deposit_form is DepositForm.CASH_ACCOUNT
+            and _has_deposit(self.facts, t, self.tax_year)
+            and not _deposit_lines(self.facts, t.id)
+            and self._by_link(requirement, t, None)[0] is not ChecklistStatus.PRESENT
+        ]
+        self._offers = [
+            ChecklistDepositOffer(
+                **_bank_line(line).model_dump(),
+                candidates=[
+                    ChecklistDepositCandidate(
+                        tenancy_id=t.id, unit_id=t.unit_id, deposit_amount=t.deposit_amount
+                    )
+                    for t in open_tenancies
+                    if t.end_date is None or t.end_date >= line.booking_date
+                ],
+            )
+            for line in _deposit_lines(self.facts, None)
+            if line.amount > 0 and line.transaction_id is not None
+        ]
+        return self._offers
+
     def _year_counts(self, requirement: Requirement, document: ChecklistDocument) -> bool:
         match requirement.tax_year:
             case TaxYearRule.ANY:
@@ -463,6 +585,10 @@ class _Context:
         if due_on is not None and due_on > self.today:
             return ChecklistStatus.EXPECTED
         return ChecklistStatus.MISSING
+
+
+def _candidate_ids(offer: ChecklistDepositOffer) -> set[UUID]:
+    return {c.tenancy_id for c in offer.candidates}
 
 
 def _is_kind(document: ChecklistDocument, requirement: Requirement) -> bool:
