@@ -861,12 +861,20 @@ cases:
     expect:
       keys: [typing, cost:real_estate_transfer_tax, link:property]
       records:
+        # D146: the Bescheid states no year; it is filed by its due date, like an invoice (D36).
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: bescheid, subtype: cost_basis_evidence, title: Grunderwerbsteuerbescheid, document_date: "2026-04-02", counterparty: Finanzamt Berlin Grunderwerbsteuerstelle, tax_year: 2026}
+          derived: {tax_year: [due_on]}
+        # D146: the card says that the Bescheid becomes this row's Beleg.
         - key: cost:real_estate_transfer_tax
           entity_type: acquisition_cost
           mode: patch
           target_id: *C1
           values: {amount: "17340.00", note: GrESt 27/123/45678}
           current: {amount: "17340.00", note: null}
+          notes_contain: ["als Beleg dieses Nebenkosten-Eintrags"]
 
   - id: grunderwerbsteuer_one_buyers_bescheid_keeps_the_total
     description: D145 (Luis's real case, 11 Nov 2026, invented figures). Two spouses bought the flat for 289,000 € half each; the Finanzamt sent each a Bescheid on 144,500 €. The row typed by hand holds both (17,340 €); this notice assesses 8,670 €. The row takes this notice and its amount, and the other 8,670 € become their own row without a Beleg, so the total stays 17,340 €.
@@ -895,7 +903,8 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: bescheid, subtype: cost_basis_evidence, title: Grunderwerbsteuerbescheid, document_date: "2026-04-02", counterparty: Finanzamt Berlin Grunderwerbsteuerstelle}
+          values: {type: bescheid, subtype: cost_basis_evidence, title: Grunderwerbsteuerbescheid, document_date: "2026-04-02", counterparty: Finanzamt Berlin Grunderwerbsteuerstelle, tax_year: 2026}
+          derived: {tax_year: [due_on]}
         - key: cost:real_estate_transfer_tax
           entity_type: acquisition_cost
           mode: patch
