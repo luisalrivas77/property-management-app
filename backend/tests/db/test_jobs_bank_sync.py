@@ -406,6 +406,8 @@ def test_a_9xxx_answer_is_refused_with_its_code_only(bank):
     sync = bank.start()
     assert bank.job(sync.id, _good(refuse_at={"accounts": "9942"})) == "failed"
     _failed(bank, sync.id, E.BANK_REFUSED)
+    (card,) = [i for i in bank.read(bank.ws, review.inbox, now=T1) if i.sync_id == sync.id]
+    assert "(bank.refused, Code der Bank 9942)" in card.reasoning  # tells PIN from approval
     (failed,) = bank.events(EventType.ACCOUNT_SYNC_FAILED)
     assert failed == {
         "sync_id": str(sync.id),

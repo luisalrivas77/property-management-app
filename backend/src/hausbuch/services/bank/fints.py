@@ -297,8 +297,13 @@ class FintsSession:
         return self._tan_mechanism
 
     @contextmanager
-    def _mapped(self) -> Iterator[None]:
-        """Every python-fints failure as a BankError, raised from None (no chained text)."""
+    def _mapped(self, *, codes_refuse: bool = True) -> Iterator[None]:
+        """Every python-fints failure as a BankError, raised from None (no chained text).
+
+        A 9xxx code the bank sent inside the block refuses it even when python-fints raised
+        nothing, except with codes_refuse=False: the bootstrap fetch_tan_mechanisms only, a
+        dialog python-fints runs in bootstrap mode where it tolerates a 9xxx answer (an
+        exception there still maps as everywhere, so a PIN error stays bank.refused)."""
         seen = len(self._client.refused_codes)
         try:
             yield
@@ -306,7 +311,7 @@ class FintsSession:
             raise
         except Exception as exc:  # the type decides the code; the text is dropped
             raise self._error(exc, seen) from None
-        if len(self._client.refused_codes) > seen:
+        if codes_refuse and len(self._client.refused_codes) > seen:
             raise BankError(E.BANK_REFUSED, self._client.refused_codes[seen]) from None
 
     def _error(self, exc: Exception, seen: int) -> BankError:
@@ -331,9 +336,12 @@ class FintsSession:
             return BankError(E.BANK_REFUSED)
         return BankError(E.BANK_FAILED)
 
+    def _seeded(self) -> bool:
+        return self._restored and self._tan_mechanism is not None
+
     def _choose_mechanism(self) -> None:
         c = self._client
-        if self._restored and self._tan_mechanism is not None:
+        if self._seeded():
             # The restored state has the bank's parameters but not the allowed list (private
             # data), so the init's HKTAN would find no mechanism: seed it with the stored one.
             c.allowed_security_functions = [self._tan_mechanism]
@@ -341,8 +349,7 @@ class FintsSession:
                 raise BankError(E.BANK_TAN_NOT_DECOUPLED)
             c.set_tan_mechanism(self._tan_mechanism)
             return
-        c.fetch_tan_mechanisms()  # a dialog without TAN: system id and the allowed list
-        mechanisms = c.get_tan_mechanisms()
+        mechanisms = c.get_tan_mechanisms()  # filled by open()'s bootstrap
         decoupled = [sf for sf, p in mechanisms.items() if _is_decoupled(p)]
         if not decoupled:
             raise BankError(E.BANK_TAN_NOT_DECOUPLED)
@@ -353,7 +360,12 @@ class FintsSession:
     def open(self) -> Approval | None:
         """Choose the decoupled mechanism and open the standing dialog. Returns the approval
         the bank asks for at login, or None when it serves without one."""
-        with self._mapped():
+        if not self._seeded():
+            with self._mapped(codes_refuse=False):
+                # a dialog without TAN, in python-fints' bootstrap mode: the system id and the
+                # allowed list; a code it tolerates here does not refuse the run (PR #160)
+                self._client.fetch_tan_mechanisms()
+        with self._mapped():  # the codes counted from here: the bootstrap's are behind us
             self._choose_mechanism()
             self._client.init_tan_response = None
             self._client.__enter__()

@@ -154,7 +154,7 @@ export const RULE_CODE_TEXT: Record<string, string> = {
     "Die gespeicherte Verbindung zur Bank passte nicht mehr und wurde verworfen; der nächste Abruf fragt wieder nach einer Freigabe.",
   "bank.unreachable": "Die Bank war nicht erreichbar. Später erneut abrufen; hält es an, die FinTS-Adresse prüfen.",
   "bank.refused":
-    "Die Bank hat den Abruf abgelehnt. Anmeldename und PIN prüfen; nach drei falschen PINs sperrt die Bank den Zugang.",
+    "Die Bank hat den Abruf abgelehnt: wegen Anmeldename oder PIN, einer in der App abgelehnten Freigabe oder der ersten Einrichtung; der Code der Bank steht unter Zu prüfen. Nicht einfach erneut abrufen: nach drei falschen PINs sperrt die Bank den Zugang.",
   "bank.unsupported_format": "Die Bank liefert Umsätze in keinem Format, das Hausbuch lesen kann. Kontoauszüge weiter als Datei hochladen.",
   "bank.failed": "Der Abruf ist an einem unerwarteten Fehler gescheitert. Erneut abrufen; hält es an, als Datei hochladen.",
   "tax_export.too_large":

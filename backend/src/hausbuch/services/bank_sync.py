@@ -415,8 +415,11 @@ _FAILED_CARD = {
         "Später erneut abrufen; hält es an, die FinTS-Adresse prüfen.",
     ),
     E.BANK_REFUSED: (
-        "Die Bank hat den Abruf abgelehnt.",
-        "Anmeldename und PIN prüfen; nach drei falschen PINs sperrt die Bank den Zugang.",
+        "Die Bank hat den Abruf abgelehnt: wegen der Anmeldung (Anmeldename oder PIN), einer"
+        " in der S-pushTAN-App abgelehnten Freigabe oder weil sie die erste Einrichtung"
+        " nicht zulässt. Der vierstellige Code der Bank sagt, was davon.",
+        "Nicht einfach erneut abrufen: nach drei falschen PINs sperrt die Bank den Zugang."
+        " Erst den Code im Runbook (Schritt 14) nachsehen und die Ursache beheben.",
     ),
     E.BANK_UNSUPPORTED_FORMAT: (
         "Die Bank liefert Umsätze in keinem Format, das Hausbuch lesen kann.",
@@ -431,6 +434,20 @@ _FAILED_DEFAULT = (
     "Der letzte Bankabruf ist fehlgeschlagen.",
     "Erneut abrufen; hält es an, die Datei als Kontoauszug hochladen.",
 )
+
+
+def _response_code(conn: Connection, row: Row) -> str | None:
+    """The bank's four digits of a 9xxx answer, kept on the run's sync_failed event only."""
+    return conn.execute(
+        select(event_table.c.payload["response_code"].astext)
+        .where(
+            event_table.c.type == EventType.ACCOUNT_SYNC_FAILED.value,
+            event_table.c.entity_id == row.account_id,
+            event_table.c.payload["sync_id"].astext == str(row.id),
+        )
+        .order_by(event_table.c.recorded_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
 
 
 def bank_sync_items(conn: Connection) -> list[InboxItem]:
@@ -452,11 +469,15 @@ def bank_sync_items(conn: Connection) -> list[InboxItem]:
     for row in conn.execute(latest):
         if row.status == _S.FAILED.value:
             reasoning, question = _FAILED_CARD.get(row.error_code, _FAILED_DEFAULT)
+            shown = row.error_code
+            response_code = _response_code(conn, row)
+            if response_code is not None:
+                shown = f"{row.error_code}, Code der Bank {response_code}"
             items.append(
                 InboxItem(
                     kind=InboxItemKind.BANK_SYNC_FAILED,
                     created_at=row.finished_at,
-                    reasoning=f"{reasoning} ({row.error_code})",
+                    reasoning=f"{reasoning} ({shown})",
                     question=question,
                     account_id=row.account_id,
                     sync_id=row.id,

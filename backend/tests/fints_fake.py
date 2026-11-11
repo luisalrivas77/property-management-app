@@ -46,11 +46,14 @@ class Script:
     )
     streams: list[bytes] = field(default_factory=list)
     balance: Decimal | None = None
-    # step name -> exception raised there; step names: open, poll, accounts, transactions,
-    # balance, state.
+    # step name -> exception raised there; step names: bootstrap (fetch_tan_mechanisms),
+    # open, poll, accounts, transactions, balance, state.
     fail_at: dict[str, BaseException] = field(default_factory=dict)
     # step name -> 9xxx answer code the bank sends there.
     refuse_at: dict[str, str] = field(default_factory=dict)
+    # 9xxx codes the bank sends during the bootstrap that python-fints tolerates there
+    # (recorded, nothing raised).
+    bootstrap_codes: list[str] = field(default_factory=list)
     state: bytes = FAKE_STATE
 
 
@@ -92,6 +95,12 @@ class FakeClient:
 
     def fetch_tan_mechanisms(self):
         self.calls.append("fetch_tan_mechanisms")
+        self.refused_codes.extend(self.script.bootstrap_codes)
+        if "bootstrap" in self.script.refuse_at:
+            self.refused_codes.append(self.script.refuse_at["bootstrap"])
+            raise Exception(f"Error response: {self.login_name!r}")  # noqa: TRY002
+        if "bootstrap" in self.script.fail_at:
+            raise self.script.fail_at["bootstrap"]
         self.allowed_security_functions = list(self.script.mechanisms)
         return self.selected_security_function
 

@@ -468,6 +468,37 @@ def test_a_9xxx_answer_is_refused_with_its_four_digits_only():
     assert LOGIN not in str(raised.value)
 
 
+def test_a_code_the_bootstrap_tolerates_does_not_refuse_the_login():
+    """python-fints runs fetch_tan_mechanisms in bootstrap mode and lets a 9xxx answer pass
+    there; only the codes after it count (PR #160 review)."""
+    session, client = _session(Script(bootstrap_codes=["9955"], approval_polls=0))
+    assert isinstance(session.open(), F.Approval)
+    assert client.calls[:2] == ["fetch_tan_mechanisms", "open"]
+    assert session.tan_mechanism == DECOUPLED
+
+
+def test_a_code_after_the_bootstrap_still_refuses_the_login():
+    session, _ = _session(Script(bootstrap_codes=["9955"], refuse_at={"open": "9942"}))
+    with pytest.raises(F.BankError) as raised:
+        session.open()
+    assert (raised.value.code, raised.value.response_code) == (E.BANK_REFUSED, "9942")
+
+
+def test_a_pin_error_in_the_bootstrap_is_refused():
+    session, _ = _session(Script(refuse_at={"bootstrap": "9931"}))
+    with pytest.raises(F.BankError) as raised:
+        session.open()
+    assert (raised.value.code, raised.value.response_code) == (E.BANK_REFUSED, "9931")
+    assert LOGIN not in str(raised.value)
+
+
+def test_a_pin_exception_in_the_bootstrap_without_a_code_is_refused():
+    session, _ = _session(Script(fail_at={"bootstrap": FinTSClientPINError("PIN wrong?")}))
+    with pytest.raises(F.BankError) as raised:
+        session.open()
+    assert (raised.value.code, raised.value.response_code) == (E.BANK_REFUSED, None)
+
+
 def test_a_write_refusal_is_never_turned_into_a_bank_code():
     session, _ = _session(Script(fail_at={"accounts": F.WriteRefused("HKCCS")}))
     session.open()
