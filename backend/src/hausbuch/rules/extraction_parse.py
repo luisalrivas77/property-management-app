@@ -1003,6 +1003,115 @@ def checked_cost_lines(values: dict[str, ExtractedValue]) -> ExtractedValue | No
     return read.model_copy(update={"checks": checks, "confidence": "low"})
 
 
+# --- A Wohnflächenberechnung's dwellings (phase 2 D139) -------------------------------------
+
+
+# D139 guard: a Grundriss or a single flat's Wohnflächenberechnung lists rooms, and the
+# household's units are rooms ("Zimmer 1"), so a room row would match a unit by its label.
+# A row whose label starts with a room word is never a Wohnung. A total row is dropped only
+# beside other rows: alone, it is the one flat's Wohnfläche.
+_ROOM_WORDS = frozenset(
+    {
+        "zimmer",
+        "schlafzimmer",
+        "wohnzimmer",
+        "kinderzimmer",
+        "arbeitszimmer",
+        "küche",
+        "bad",
+        "wc",
+        "flur",
+        "diele",
+        "abstellraum",
+        "balkon",
+        "loggia",
+        "terrasse",
+        "keller",
+    }
+)
+_TOTAL_WORDS = frozenset({"summe", "gesamt", "insgesamt", "total", "wohnfläche gesamt"})
+_FIRST_WORD = re.compile(r"\w+")
+
+
+def _first_word(label: str) -> str:
+    match = _FIRST_WORD.match(label.casefold())
+    return match.group(0) if match else ""
+
+
+def _is_total(label: str) -> bool:
+    return label.casefold().rstrip(" :") in _TOTAL_WORDS
+
+
+@dataclass(frozen=True)
+class Dwelling:
+    """One dwelling of a Wohnflächenberechnung as read: its label as printed, its Wohnfläche
+    (a decimal string with two places, as property.living_area_m2 stores it), its MEA
+    ({numerator, denominator}) and its location when the row states them."""
+
+    label: str
+    area: str
+    mea: dict[str, int] | None
+    location: str | None
+
+
+def dwellings(items: object) -> list[Dwelling]:
+    """The stored dwellings value (a list of `label | Wohnfläche | MEA | Lage` texts) as
+    Dwellings, in the document's order. A row without a label or a readable positive area
+    (at most two decimal places) is left out; an unreadable MEA or an unstated part is None.
+    A room row (its label's first word Zimmer, Küche, Bad, ...) is left out, and a total row
+    (Summe, Gesamt, ...) too when other rows remain (D139). Not a list: []. Pure."""
+    if not isinstance(items, list):
+        return []
+    out = [row for item in items if not _is_room(item) and (row := _dwelling(item)) is not None]
+    flats = [row for row in out if not _is_total(row.label)]
+    return flats if flats else out
+
+
+def lone_dwelling(items: object) -> bool:
+    """True when the list names exactly one Wohnung (D139 rule (a)): dwellings() keeps one row
+    and every other item is a room or a total row the guard leaves out. An item left out as
+    unreadable (no label, no readable area) counts against it, since it may be another flat.
+    Pure."""
+    if not isinstance(items, list) or len(dwellings(items)) != 1:
+        return False
+    rest = [item for item in items if not _is_room(item)]
+    return all(_dwelling(item) is not None for item in rest)
+
+
+def _is_room(item: object) -> bool:
+    return isinstance(item, str) and _first_word(_collapse(item.split("|")[0])) in _ROOM_WORDS
+
+
+def _dwelling(item: object) -> Dwelling | None:
+    """One row of the list, or None when it has no label or no readable area."""
+    if not isinstance(item, str):
+        return None
+    parts = [_collapse(part) for part in item.split("|")]
+    parts += [""] * (4 - len(parts))
+    label, raw_area, raw_mea, location = parts[:4]
+    if not label or label.casefold() == UNKNOWN:
+        return None
+    try:
+        area = Decimal(normalize_value(raw_area, "decimal"))
+    except (_Invalid, InvalidOperation):
+        return None
+    if area <= 0 or area.as_tuple().exponent < -2:  # type: ignore[operator]
+        return None
+    mea = None
+    if raw_mea and raw_mea.casefold() != UNKNOWN:
+        try:
+            mea = normalize_value(raw_mea, "fraction")
+        except _Invalid:
+            mea = None
+    known = location and location.casefold() != UNKNOWN
+    return Dwelling(
+        label=label,
+        area=str(area.quantize(Decimal("0.01"))),
+        mea=mea,
+        location=location if known else None,
+    )
+
+
 def derive_fields(
     kind: ExtractionKind, values: dict[str, ExtractedValue]
 ) -> dict[str, ExtractedValue]:

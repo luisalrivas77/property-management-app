@@ -47,7 +47,7 @@ from hausbuch.schemas.proposal import ProposalApplyBody, ProposalApplyRecord
 from hausbuch.schemas.tenancy import TenancyCreate, TenancyParty, TenantCreate
 from hausbuch.services import proposals
 from hausbuch.services.context import Actor, new_command
-from hausbuch.services.documents import get_document, list_links, upload_document
+from hausbuch.services.documents import get_document, link_document, list_links, upload_document
 from hausbuch.services.errors import ConflictError, NotFoundError, RuleViolationError
 from hausbuch.services.events import list_events
 from hausbuch.services.loans import list_loans
@@ -1199,3 +1199,75 @@ def test_an_apply_keeping_an_erased_tenant_conflicts(
     with pytest.raises(ConflictError):
         run(ws, proposals.apply_proposal, proposal_id, body, iban_key=TEST_IBAN_KEY)
     assert read(ws, proposals.get_proposal, proposal_id).status is ProposalStatus.READY
+
+
+def test_the_context_carries_the_contracts_mea_and_we_label_for_a_wohnflaechenberechnung(
+    run, read, job, fresh_workspaces, blob_store, enqueued
+):
+    """D139: once the Kaufvertrag's proposal is applied (its document linked to the property),
+    the next reading's context states the contract's MEA and WE label on that property, so a
+    Wohnflächenberechnung's row can be picked by them; the ETW's Wohnfläche from the contract
+    lands on the property too."""
+    ws, _ = fresh_workspaces
+    _, ready, _ = _read_ready(
+        run, job, ws, blob_store, enqueued, PURCHASE, PURCHASE_VALUES, b"%PDF contract facts"
+    )
+    run(ws, proposals.apply_proposal, ready.id, _accept_all(ready), iban_key=TEST_IBAN_KEY)
+    [prop] = read(ws, list_properties)
+    assert prop.living_area_m2 == Decimal("68.40")
+
+    wfb = _upload(run, ws, blob_store, b"%PDF wohnflaechenberechnung")
+    building_records = ClassifyOutput(
+        type=DocumentType.OTHER,
+        subtype=DocumentSubtype.BUILDING_RECORDS,
+        contains_tenant_data=False,
+        language="de",
+        confidence="high",
+    )
+    context = read(ws, proposals.prefill_context, wfb.id, building_records)
+    [existing] = context.properties
+    assert existing.id == prop.id
+    assert existing.contract_mea is not None
+    assert existing.contract_mea.model_dump() == {"numerator": 85, "denominator": 1000}
+    assert existing.contract_unit_label == "WE 3"
+    assert existing.living_area_m2 == Decimal("68.40")
+
+
+def test_two_contracts_stating_different_meas_give_the_context_no_contract_mea(
+    run, read, job, fresh_workspaces, blob_store, enqueued
+):
+    """D139: a second Kaufvertrag linked to the same property states another MEA, so the
+    context leaves the contract's MEA out and a Wohnflächenberechnung's row is never picked
+    by a guess; the WE label both state alike stays."""
+    ws, _ = fresh_workspaces
+    _, ready, _ = _read_ready(
+        run, job, ws, blob_store, enqueued, PURCHASE, PURCHASE_VALUES, b"%PDF first contract"
+    )
+    run(ws, proposals.apply_proposal, ready.id, _accept_all(ready), iban_key=TEST_IBAN_KEY)
+    [prop] = read(ws, list_properties)
+
+    other_mea = PURCHASE_VALUES | {"mea": _v({"numerator": 62, "denominator": 1000})}
+    second, ready2, _ = _read_ready(
+        run, job, ws, blob_store, enqueued, PURCHASE, other_mea, b"%PDF second contract"
+    )
+    # Only its typing, then a link by hand: the second document is a typed Kaufvertrag on
+    # the same property, whatever else its suggestion proposed.
+    typing_only = ProposalApplyBody(
+        records=[r for r in _accept_all(ready2).records if r.key == "typing"]
+    )
+    run(ws, proposals.apply_proposal, ready2.id, typing_only, iban_key=TEST_IBAN_KEY)
+    run(ws, link_document, second.id, LinkTarget.PROPERTY, prop.id)
+
+    wfb = _upload(run, ws, blob_store, b"%PDF wohnflaechenberechnung two contracts")
+    building_records = ClassifyOutput(
+        type=DocumentType.OTHER,
+        subtype=DocumentSubtype.BUILDING_RECORDS,
+        contains_tenant_data=False,
+        language="de",
+        confidence="high",
+    )
+    context = read(ws, proposals.prefill_context, wfb.id, building_records)
+    [existing] = context.properties
+    assert existing.id == prop.id
+    assert existing.contract_mea is None
+    assert existing.contract_unit_label == "WE 3"

@@ -161,7 +161,11 @@ def test_the_general_reading_asks_only_its_groups_fields(subtype, type_, retenti
         "loan": ("title", "document_date", "lender", "contract_number"),
         None: ("title", "document_date"),
     }[link]
+    # D139: a Wohnflächenberechnung also lists its dwellings; no other subtype asks them.
+    if subtype is S.BUILDING_RECORDS:
+        expected = (*expected, "dwellings")
     assert asked == expected
+    assert ("\ndwellings:" in field_list(K.GENERAL, subtype)) == (subtype is S.BUILDING_RECORDS)
     text = field_list(K.GENERAL, subtype)
     for name in ADDRESS + ("lender", "contract_number"):
         assert (f"\n{name}:" in text) == (name in expected), name

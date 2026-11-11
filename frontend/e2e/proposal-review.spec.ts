@@ -573,3 +573,83 @@ test("one form: a tenant document's typing-only proposal hides the page's form t
   await expect(page.getByRole("form", { name: "Verknüpfung hinzufügen" })).toBeVisible();
   await expect(page.getByText(LINK_POINTER)).toHaveCount(0);
 });
+
+/** A Wohnflächenberechnung listing several Wohnungen, none of which the code could pick (D139). */
+const DWELLING_RECORDS = [
+  {
+    key: "property",
+    entity_type: "property",
+    mode: "patch",
+    target_id: PROPERTY_ID,
+    fields: { living_area_m2: { ...missing, source: { page: 2, quote: "WE 2 1. OG links 68,40 m² 85/1000" }, checks: ["cited"] } },
+    current: { living_area_m2: null },
+    options: {
+      living_area_m2: [
+        { value: "68.40", label: "WE 2 · 1. OG links · MEA 85/1000 · 68,40 m²" },
+        { value: "61.40", label: "WE 3 · 1. OG rechts · MEA 85/1000 · 61,40 m²" },
+      ],
+    },
+    notes: ["Welche Wohnung ist Ihre? Die Wohnflächenberechnung nennt 2 Wohnungen; bitte Ihre unten anklicken, dann „Übernehmen“."],
+  },
+];
+
+test("a Wohnflächenberechnung of several flats: one click picks the household's Wohnfläche", async ({ page, signedIn }) => {
+  void signedIn;
+  const documentId = await uploadPdf(page, "Wohnflaechenberechnung.pdf");
+  const mock: Mock = {
+    list: [proposal(documentId, { kind: "general", target_mode: "patch", records: DWELLING_RECORDS })],
+    poll: null,
+    polls: 0,
+    applies: [],
+    apply: () => ({ status: 409, json: { error: "conflict", code: "proposal.already_decided", message: "already decided" } }),
+  };
+  await mockProposals(page, mock);
+
+  await page.goto(`/documents/${documentId}`);
+  const form = vorschlag(page).getByRole("form", { name: "Vorschlag prüfen" });
+  const property = form.getByRole("region", { name: "Immobilie", exact: true });
+  await expect(property).toContainText("Welche Wohnung ist Ihre?");
+  const area = property.getByLabel("Wohnfläche (m²)", { exact: true });
+  await expect(area).toHaveValue("");
+
+  await property
+    .getByRole("radiogroup", { name: "Wohnfläche (m²): Vorschläge aus dem Dokument" })
+    .getByLabel("WE 3 · 1. OG rechts · MEA 85/1000 · 61,40 m²")
+    .check();
+  await expect(area).toHaveValue("61,40");
+  await form.getByRole("button", { name: "Übernehmen" }).click();
+  await expect(form.getByText("Über diesen Vorschlag wurde schon entschieden (übernommen oder verworfen).")).toBeVisible();
+
+  const sent = (mock.applies[0] as { records: { key: string; values: { living_area_m2?: string } }[] }).records;
+  expect(sent).toHaveLength(1);
+  expect(sent[0]?.key).toBe("property");
+  expect(Number(sent[0]?.values.living_area_m2)).toBe(61.4);
+});
+
+test("a Wohnflächenberechnung of several flats: Übernehmen without a click keeps the stored Wohnfläche", async ({ page, signedIn }) => {
+  void signedIn;
+  const documentId = await uploadPdf(page, "Wohnflaechenberechnung-ohne-Klick.pdf");
+  const records = DWELLING_RECORDS.map((record) => ({ ...record, current: { living_area_m2: "68.40" } }));
+  const mock: Mock = {
+    list: [proposal(documentId, { kind: "general", target_mode: "patch", records })],
+    poll: null,
+    polls: 0,
+    applies: [],
+    apply: () => ({ status: 409, json: { error: "conflict", code: "proposal.already_decided", message: "already decided" } }),
+  };
+  await mockProposals(page, mock);
+
+  await page.goto(`/documents/${documentId}`);
+  const form = vorschlag(page).getByRole("form", { name: "Vorschlag prüfen" });
+  const property = form.getByRole("region", { name: "Immobilie", exact: true });
+  await expect(property).toContainText("Welche Wohnung ist Ihre?");
+  await expect(property.getByLabel("Wohnfläche (m²)", { exact: true })).toHaveValue("");
+  await form.getByRole("button", { name: "Übernehmen" }).click();
+  await expect(form.getByText("Über diesen Vorschlag wurde schon entschieden (übernommen oder verworfen).")).toBeVisible();
+
+  // No option picked: the empty field is never sent, so the stored 68,40 m² stays (D139).
+  const sent = (mock.applies[0] as { records: { key: string; values?: Record<string, unknown> }[] }).records;
+  expect(sent).toHaveLength(1);
+  expect(sent[0]?.key).toBe("property");
+  expect(sent[0]?.values ?? {}).not.toHaveProperty("living_area_m2");
+});

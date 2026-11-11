@@ -9,10 +9,10 @@ import tax_fixture_compare as cmp
 from fixture_models_phase3 import DraftFixture, load
 
 from hausbuch.rules.tax.draft import draft
-from hausbuch.rules.tax.field_sheet import field_sheet
+from hausbuch.rules.tax.field_sheet import UNIT_ROWS, field_sheet
 from hausbuch.rules.tax.registry import rule_set
 from hausbuch.schemas.checklist import RequirementCode
-from hausbuch.schemas.tax import AnlageVDraft, PrivateCostValue, TaxInputFact
+from hausbuch.schemas.tax import AnlageVDraft, DraftFacts, PrivateCostValue, TaxInputFact
 
 DRAFT = load("anlage_v_2026")
 assert isinstance(DRAFT, DraftFixture)
@@ -200,3 +200,38 @@ def test_a_private_financing_cost_joins_the_financing_line_at_its_share():
         PrivateCostValue.model_validate(
             {"cost_class": "financing", "label": "Notar", "trips": 2, "km_round_trip": 10}
         )
+
+
+@pytest.mark.rule
+def test_a_flat_without_wohnflaeche_or_units_drafts_with_no_area():
+    """Rent booked on an ETW with no Wohnfläche and no units (phase 2 D139, 11 Nov 2026): the
+    draft and its field sheet compute, the flat's row has no area (it crashed on an area of
+    0), and the to-do asks for the Wohnfläche once."""
+    facts = DraftFacts.model_validate(
+        {
+            "property": {
+                "id": str(uuid4()),
+                "label": "Wohnung Beispielweg",
+                "kind": "etw",
+                "build_year": 1998,
+                "purchase_date": "2024-05-01",
+                "purchase_price": "300000.00",
+            },
+            "allocations": [
+                {
+                    "allocation_id": str(uuid4()),
+                    "booking_date": "2026-09-28",
+                    "amount": "740.18",
+                    "category": "rent_cold",
+                }
+            ],
+        }
+    )
+    got = draft(facts, 2026, rule_set(2026))
+    [row] = got.unit_rows
+    assert (row.area_m2, row.area_source, row.amount) == (None, "units", Decimal("740.18"))
+    assert got.header.living_area_m2 is None
+    codes = [w.code.value for w in got.warnings]
+    assert codes.count("income.living_area_missing") == 1
+    sheet = [r.amount for r in field_sheet(got, rule_set(2026)) if r.key == UNIT_ROWS]
+    assert sheet == [Decimal("740.18")]

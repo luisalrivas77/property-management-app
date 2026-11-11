@@ -291,7 +291,7 @@ export const WARNING_GUIDE: Partial<Record<WarningCode, Guide>> = {
     todo: true,
     title: () => "Wohnfläche der Wohnung fehlt",
     text: () =>
-      "Die Wohnfläche der ganzen Wohnung eintragen; sie steht im Kaufvertrag oder in der Wohnflächenberechnung. Die Flächen der Zimmer reichen nicht, weil Küche, Bad und Flur fehlen.",
+      "Die Wohnfläche der ganzen Wohnung fehlt. Entweder die Wohnflächenberechnung hochladen: Hausbuch liest sie und schlägt die Fläche Ihrer Wohnung zum Übernehmen vor. Oder die Fläche hier eintragen; sie steht im Kaufvertrag oder in der Wohnflächenberechnung. Die Flächen der Zimmer reichen nicht, weil Küche, Bad und Flur fehlen.",
     action: () => ({ kind: "living_area" }),
   },
   "umlagen.mixed_terms": {
@@ -869,7 +869,8 @@ function PreHandoverAction({
   );
 }
 
-/** income.living_area_missing: the flat's Wohnfläche through PATCH /properties/{id} (D71). */
+/** income.living_area_missing: the flat's Wohnfläche through PATCH /properties/{id} (D71), or
+ * the Wohnflächenberechnung uploaded and read, whose suggestion proposes it (D139). */
 function LivingAreaAction({ propertyId, onChanged }: { propertyId: string; onChanged?: () => void }) {
   const id = useId();
   const [raw, setRaw] = useState("");
@@ -901,33 +902,36 @@ function LivingAreaAction({ propertyId, onChanged }: { propertyId: string; onCha
     }
   }
   return (
-    <form
-      className="row todo-inline-form"
-      onSubmit={(event) => {
-        event.preventDefault();
-        void save();
-      }}
-    >
-      <label htmlFor={id} className="inline">
-        Wohnfläche (m²)
-        <input
-          id={id}
-          inputMode="decimal"
-          value={raw}
-          onChange={(event) => setRaw(event.target.value)}
-          aria-invalid={message ? true : undefined}
-        />
-      </label>
-      <button type="submit" disabled={busy || raw.trim() === ""}>
-        {busy ? "Speichert …" : "Wohnfläche speichern"}
-      </button>
-      {message ? (
-        <span className="field-errors" role="alert">
-          {message}
-        </span>
-      ) : null}
-      <ErrorNotice error={error} />
-    </form>
+    <>
+      <ReadUpload label="Wohnflächenberechnung hochladen" onUploaded={onChanged} />
+      <form
+        className="row todo-inline-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void save();
+        }}
+      >
+        <label htmlFor={id} className="inline">
+          Wohnfläche (m²)
+          <input
+            id={id}
+            inputMode="decimal"
+            value={raw}
+            onChange={(event) => setRaw(event.target.value)}
+            aria-invalid={message ? true : undefined}
+          />
+        </label>
+        <button type="submit" disabled={busy || raw.trim() === ""}>
+          {busy ? "Speichert …" : "Wohnfläche speichern"}
+        </button>
+        {message ? (
+          <span className="field-errors" role="alert">
+            {message}
+          </span>
+        ) : null}
+        <ErrorNotice error={error} />
+      </form>
+    </>
   );
 }
 

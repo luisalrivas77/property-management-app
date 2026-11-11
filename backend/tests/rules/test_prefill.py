@@ -38,6 +38,8 @@ def _check(records: list[ProposalRecord], expect: PrefillExpect) -> None:
             assert got.derived_from == e.derived.get(name, []), (e.key, name)
             assert ("derived" in got.checks) == (name in e.derived), (e.key, name)
         assert r.current == e.current, e.key
+        options = {f: [o.model_dump() for o in opts] for f, opts in r.options.items()}
+        assert options == e.options, e.key
         for text in e.notes_contain:
             assert any(text in note for note in r.notes), (e.key, text)
 

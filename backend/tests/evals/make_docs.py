@@ -34,6 +34,9 @@ class Doc:
     # words the text itself, so a real reading is checked on the amounts and on each code
     # given here (None: any code; vat: the Umsatzsteuer line); the lines must sum to the total.
     expected_cost_lines: list[tuple[str, str, str | None]] = field(default_factory=list)
+    # A Wohnflächenberechnung's dwellings (phase 2 D139), in document order: (label,
+    # Wohnfläche, MEA as printed or None). Checked on the parsed rows, never summed.
+    expected_dwellings: list[tuple[str, str, str | None]] = field(default_factory=list)
 
 
 DOCS: list[Doc] = [
@@ -753,6 +756,47 @@ DOCS: list[Doc] = [
             "house_number": "7",
             "postal_code": "10115",
         },
+    ),
+    # D139: a WEG's Wohnflächenberechnung lists every Wohnung of the building, with a total
+    # row that must never be read as a dwelling; vs the Teilungserklärung, which lists the
+    # same units with their MEA. Its dwellings are checked row by row (expected_dwellings).
+    Doc(
+        name="wohnflaechenberechnung",
+        type="other",
+        subtype="building_records",
+        kind="general",
+        pages=[
+            [
+                "Architekturbüro Beispiel",
+                "",
+                "Wohnflächenberechnung nach der Wohnflächenverordnung (WoFlV)",
+                "Wohnungseigentümergemeinschaft Lindenstraße 7, 10115 Berlin",
+                "Aufgestellt am 02.03.1998",
+                "",
+                "Wohnung   Lage            Wohnfläche   MEA",
+                "WE 1      EG links        48,20 m²     62/1000",
+                "WE 2      EG rechts       52,10 m²     67/1000",
+                "WE 3      1. OG links     68,40 m²     85/1000",
+                "WE 4      1. OG rechts    58,80 m²     79/1000",
+                "WE 5      DG              74,90 m²     103/1000",
+                "Summe                     302,40 m²",
+                "",
+                "Balkone und Terrassen sind zu einem Viertel angerechnet.",
+            ]
+        ],
+        expected={
+            "document_date": "1998-03-02",
+            "street": "Lindenstraße",
+            "house_number": "7",
+            "postal_code": "10115",
+        },
+        expected_dwellings=[
+            ("WE 1", "48.20", "62/1000"),
+            ("WE 2", "52.10", "67/1000"),
+            ("WE 3", "68.40", "85/1000"),
+            ("WE 4", "58.80", "79/1000"),
+            ("WE 5", "74.90", "103/1000"),
+        ],
     ),
     # Vorauszahlungsbescheid vs Einkommensteuerbescheid: it names the assessment it follows.
     # The Steuernummer and the couple's address are invented; the general reading asks

@@ -448,6 +448,18 @@ class IncomeTaxAssessmentExtraction(_Typing):
     )
 
 
+# Phase 2 D139: a Wohnflächenberechnung of a WEG lists every dwelling of the building; code
+# (rules.prefill) picks the household's row by the flat's MEA or WE label, never by a sum.
+DWELLINGS_MEANING = (
+    "every dwelling the document lists, one item per Wohnung, each written `label | "
+    "Wohnfläche | MEA | Lage`: the dwelling's label as printed (e.g. WE 3, Wohnung Nr. 3), "
+    "its Wohnfläche in m² as printed, its Miteigentumsanteil as printed (e.g. 85/1000) and its "
+    "location in the building (e.g. 2. OG links), unbekannt for a part the row does not "
+    "state; one item for a document about one flat; never a single room, a sum or a total "
+    "row"
+)
+
+
 # Phase 2 D130, D131 (§6.2, §6.2.1): the general reading and the Verwaltervertrag. Neither
 # proposes a record, only typing and at most one link, so no field the model reads is a euro
 # figure. The hand_ev fields hold what a person types under "Felder (von Hand)" (D37): every
@@ -459,11 +471,15 @@ class GeneralExtraction(_Typing):
     own, plus the one field set its subtype's group needs to find its link (D131): the
     property's address for the property, WEG, running-costs and tenancy groups, the lender and
     contract number for the loan group. A request asks only those (asked_fields); an
-    owner's home address is never asked."""
+    owner's home address is never asked. A Wohnflächenberechnung (building_records) is also
+    asked its list of dwellings (D139)."""
 
     street: ExtractedValue = ev("text", "street of the property the document concerns")
     house_number: ExtractedValue = ev("text", "house number of that property")
     postal_code: ExtractedValue = ev("text", "five-digit PLZ of that property")
+    # D139: asked of a Wohnflächenberechnung (building_records) only. Code picks the
+    # household's row and proposes its area as the property's living_area_m2 (phase 3 D71).
+    dwellings: ExtractedValue = ev("text_list", DWELLINGS_MEANING)
     lender: ExtractedValue = ev("text", "the bank that gave the loan")
     contract_number: ExtractedValue = ev(
         "text",
@@ -556,6 +572,11 @@ _LINK_FIELDS: dict[GeneralLink, tuple[str, ...]] = {
     "loan": ("lender", "contract_number"),
     "tenancy": _ADDRESS,
 }
+# A subtype's own fields beyond its group's link fields (D139): a Wohnflächenberechnung's
+# list of dwellings. Every other subtype's request stays as it was.
+_SUBTYPE_FIELDS: dict[DocumentSubtype, tuple[str, ...]] = {
+    DocumentSubtype.BUILDING_RECORDS: ("dwellings",),
+}
 
 
 EXTRACTION_MODELS: dict[ExtractionKind, type[_Typing]] = {
@@ -582,14 +603,17 @@ EXTRACTION_MODELS: dict[ExtractionKind, type[_Typing]] = {
 def asked_fields(kind: ExtractionKind, subtype: DocumentSubtype | None = None) -> tuple[str, ...]:
     """The fields an extract request asks for, in the model's order: every field of the kind
     but those only typed by hand (hand_ev), except for the general reading, which asks title
-    and date plus the link fields of the subtype's group (D131). The job keeps only these, so
-    a line the model volunteered (an address on a Vorauszahlungsbescheid) is never stored."""
+    and date plus the link fields of the subtype's group (D131) and the subtype's own fields
+    (D139: a Wohnflächenberechnung's dwellings). The job keeps only these, so a line the
+    model volunteered (an address on a Vorauszahlungsbescheid) is never stored."""
     model = EXTRACTION_MODELS[kind]
     names = tuple(name for name in model.model_fields if not is_hand_only(model, name))
     if kind is not ExtractionKind.GENERAL:
         return names
     link = GENERAL_LINK.get(subtype) if subtype is not None else None
     wanted = {"title", "document_date", *(_LINK_FIELDS[link] if link is not None else ())}
+    if subtype is not None:
+        wanted.update(_SUBTYPE_FIELDS.get(subtype, ()))
     return tuple(name for name in names if name in wanted)
 
 

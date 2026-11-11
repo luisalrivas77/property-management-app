@@ -167,7 +167,10 @@
 #   one tenancy: typing only, typing's notes contain "Mietverhältnis". A receipt already recorded
 #   on that tenancy with the same amount and date: mode unchanged, target_id = the tenancy,
 #   values and current = amount and received_on.
-# Kaufvertrag: no price_split without land_value; ownership only when every buyer is an owner
+# Kaufvertrag: an ETW's floor_area_m2 is also proposed as the property's living_area_m2 (D139,
+# 11 Nov 2026: in the create, or compared like every property field on a match, so a
+# differing stored area is proposed for change); the unit keeps it as before. No price_split
+# without land_value; ownership only when every buyer is an owner
 # by name and the clause is understood; purchase_date null with the Übergang clause quoted in
 # the property's notes when the contract ties it to the payment; no property label is proposed
 # (PropertyCreate.label is the user's name for it).
@@ -210,6 +213,7 @@ shared:
     notarized_on: 2026-03-10
     purchase_date: 2026-05-01
     purchase_price: "289000.00"
+    living_area_m2: "68.40"
   property_kastanien: &PROP_KASTANIEN
     id: *P2
     kind: etw
@@ -279,6 +283,7 @@ cases:
             notarized_on: "2026-03-12"
             purchase_date: "2026-05-01"
             purchase_price: "289000.00"
+            living_area_m2: "68.40"
         - key: unit
           entity_type: unit
           mode: create
@@ -328,6 +333,7 @@ cases:
             address.city: Berlin
             purchase_date: "2026-05-01"
             purchase_price: "289000.00"
+            living_area_m2: "68.40"
           current:
             kind: etw
             address.street: Lindenstraße
@@ -336,6 +342,7 @@ cases:
             address.city: Berlin
             purchase_date: "2026-05-01"
             purchase_price: "289000.00"
+            living_area_m2: "68.40"
         - key: correction:notarized_on
           entity_type: property
           mode: correction
@@ -387,6 +394,7 @@ cases:
             address.city: Berlin
             purchase_date: "2026-05-01"
             purchase_price: "289000.00"
+            living_area_m2: "68.40"
           current:
             kind: etw
             address.street: Lindenstraße
@@ -395,6 +403,7 @@ cases:
             address.city: Berlin
             purchase_date: "2026-05-01"
             purchase_price: "289000.00"
+            living_area_m2: "68.40"
         - key: link:property
           entity_type: link
           mode: create
@@ -431,6 +440,7 @@ cases:
             notarized_on: "2026-03-12"
             purchase_date: "2026-05-01"
             purchase_price: "289000.00"
+            living_area_m2: "68.40"
         - key: link:property
           entity_type: link
           mode: create
@@ -466,6 +476,7 @@ cases:
             address.city: Berlin
             purchase_date: "2026-05-01"
             purchase_price: "289000.00"
+            living_area_m2: "68.40"
           current:
             kind: etw
             address.street: Lindenstraße
@@ -473,6 +484,7 @@ cases:
             address.city: Berlin
             purchase_date: "2026-05-01"
             purchase_price: "289000.00"
+            living_area_m2: "68.40"
         - key: link:property
           entity_type: link
           mode: create
@@ -548,6 +560,7 @@ cases:
             notarized_on: "2026-03-12"
             purchase_date: "2026-05-01"
             purchase_price: "289000.00"
+            living_area_m2: "68.40"
         - key: link:property
           entity_type: link
           mode: create
@@ -583,6 +596,7 @@ cases:
             notarized_on: "2026-03-12"
             purchase_date: null
             purchase_price: "289000.00"
+            living_area_m2: "68.40"
           notes_contain: ["Tag der vollständigen Kaufpreiszahlung"]
 
   - id: kaufvertrag_no_land_share
@@ -1982,7 +1996,8 @@ cases:
   # most one link (property by address, else the only property; loan by lender and contract
   # number, else the only loan; tenancy by address and a date within the tenancy: start <=
   # document_date <= end, an open tenancy has no end, exactly one fits). No match: typing
-  # only, typing's notes name what was not found. Never a record.
+  # only, typing's notes name what was not found. Never a record, except a
+  # Wohnflächenberechnung's property Wohnfläche (D139, below).
 
   - id: general_letter_typing_only
     description: D130. A letter without a subtype gets the general reading; typing only, no link, no note.
@@ -2152,6 +2167,335 @@ cases:
           mode: create
           values: {type: letter, subtype: quote, title: Kostenvoranschlag Malerarbeiten, document_date: "2026-10-02", amount_total: null, period_start: null, period_end: null, counterparty: null, reference: null, notes: null}
           notes_contain: [kein Objekt gefunden]
+
+  # --- D139: a Wohnflächenberechnung (building_records) proposes the property's Wohnfläche ---
+  # The reading asks `dwellings` (every Wohnung the document lists, `label | Wohnfläche | MEA |
+  # Lage`). With the property found (as above), the household's row is: (a) the document's
+  # only row; else (b) the one row whose MEA equals a known MEA of the flat (a unit's on the
+  # property, or ExistingProperty.contract_mea from its Kaufvertrag reading), compared as
+  # ratios; else (c) the one row whose label equals a unit's label or contract_unit_label
+  # (casefold, whitespace collapsed). Found: a property record (patch when the stored
+  # living_area_m2 is empty or differs, unchanged when equal), living_area_m2 derived from
+  # [dwellings], its notes naming the row and "Zeile 13". Otherwise (two rows fit one key, or
+  # none): a patch with living_area_m2 empty (null), current the stored area (null or not),
+  # and every row offered in `options` ({value, label}: "WE 1 · EG links · MEA 62/1000 ·
+  # 48,20 m²"), notes "Welche Wohnung ist Ihre?" (and "Ohne Klick bleibt" when an area is
+  # stored: an empty field is not sent, so the stored area stays). Rows are never summed.
+  # Records: typing, property, link:property.
+
+  - id: building_records_single_dwelling_patch_on_empty
+    description: D139 (a). A Wohnflächenberechnung of one flat at the Kastanienallee, whose area is empty; patch with its area.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: &CL_WFB {type: other, subtype: building_records, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN, *PROP_KASTANIEN]
+    extraction:
+      title: {v: Wohnflächenberechnung Kastanienallee 5, p: 1, q: "Wohnflächenberechnung"}
+      document_date: {v: "2019-05-20", p: 1, q: "Berlin, 20.05.2019"}
+      street: {v: Kastanienallee, p: 1, q: "Kastanienallee 5, 10435 Berlin"}
+      house_number: {v: "5", p: 1, q: "Kastanienallee 5, 10435 Berlin"}
+      postal_code: {v: "10435", p: 1, q: "Kastanienallee 5, 10435 Berlin"}
+      dwellings: {v: ["Wohnung | 58,80 m² | unbekannt | unbekannt"], p: 1, q: "Wohnfläche gesamt 58,80 m²"}
+    expect:
+      keys: [typing, property, link:property]
+      records:
+        - key: property
+          entity_type: property
+          mode: patch
+          target_id: *P2
+          values: {living_area_m2: "58.80"}
+          derived: {living_area_m2: [dwellings]}
+          current: {living_area_m2: null}
+          notes_contain: [die einzige Wohnung, Zeile 13, Mietspiegel]
+        - key: link:property
+          entity_type: link
+          mode: create
+          target_id: *P2
+          values: {}
+
+  - id: building_records_matched_by_contract_mea
+    description: >-
+      D139 (b). The WEG's list of four Wohnungen, no address on it, the workspace's only
+      property; the Kaufvertrag's MEA (17/200, the same share as 85/1000) picks WE 2.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: *CL_WFB
+      properties:
+        - id: *P2
+          kind: etw
+          address: {street: Kastanienallee, house_number: "5", postal_code: "10435", city: Berlin}
+          build_year: 1908
+          notarized_on: 2019-06-03
+          purchase_date: 2019-08-01
+          purchase_price: "240000.00"
+          contract_mea: {numerator: 17, denominator: 200}
+    extraction:
+      title: {v: Wohnflächenberechnung WEG, p: 1, q: "Wohnflächenberechnung"}
+      document_date: {v: "1998-03-02", p: 1, q: "02.03.1998"}
+      dwellings: &WFB_ROWS {v: ["WE 1 | 48,20 m² | 62/1000 | EG links", "WE 2 | 68,40 m² | 85/1000 | 1. OG links", "WE 3 | 58,80 m² | 79/1000 | 1. OG rechts", "WE 4 | 74,90 m² | 103/1000 | 2. OG"], p: 2, q: "WE 1 EG links 48,20 m² 62/1000 WE 2 1. OG links 68,40 m² 85/1000 WE 3 1. OG rechts 58,80 m² 79/1000 WE 4 2. OG 74,90 m² 103/1000"}
+    expect:
+      keys: [typing, property, link:property]
+      records:
+        - key: property
+          entity_type: property
+          mode: patch
+          target_id: *P2
+          values: {living_area_m2: "68.40"}
+          derived: {living_area_m2: [dwellings]}
+          current: {living_area_m2: null}
+          notes_contain: ["WE 2 · 1. OG links · MEA 85/1000 · 68,40 m²", Miteigentumsanteil, Zeile 13]
+        - key: link:property
+          entity_type: link
+          mode: create
+          target_id: *P2
+          values: {}
+
+  - id: building_records_matched_by_unit_mea_unchanged
+    description: D139 (b). The flat's unit holds the MEA 85/1000 and the property already holds 68,40 m²; unchanged.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: *CL_WFB
+      properties: [*PROP_LINDEN, *PROP_KASTANIEN]
+      units:
+        - {id: *U, property_id: *P, label: WE 2, mea: {numerator: 85, denominator: 1000}}
+        - {id: *U2, property_id: *P2, label: WE 4, mea: {numerator: 103, denominator: 1000}}
+    extraction:
+      title: {v: Wohnflächenberechnung Lindenstraße 12, p: 1, q: "Wohnflächenberechnung"}
+      document_date: {v: "1998-03-02", p: 1, q: "02.03.1998"}
+      street: {v: Lindenstraße, p: 1, q: "Lindenstraße 12, 10115 Berlin"}
+      house_number: {v: "12", p: 1, q: "Lindenstraße 12, 10115 Berlin"}
+      postal_code: {v: "10115", p: 1, q: "Lindenstraße 12, 10115 Berlin"}
+      dwellings: *WFB_ROWS
+    expect:
+      keys: [typing, property, link:property]
+      records:
+        - key: property
+          entity_type: property
+          mode: unchanged
+          target_id: *P
+          values: {living_area_m2: "68.40"}
+          derived: {living_area_m2: [dwellings]}
+          current: {living_area_m2: "68.40"}
+        - key: link:property
+          entity_type: link
+          mode: create
+          target_id: *P
+          values: {}
+
+  - id: building_records_matched_by_label
+    description: >-
+      D139 (c). The list states no MEA; the rooms of the let flat have none either, but the
+      Kaufvertrag names the flat "we 3" (compared casefolded), which picks WE 3.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: *CL_WFB
+      properties:
+        - id: *P2
+          kind: etw
+          address: {street: Kastanienallee, house_number: "5", postal_code: "10435", city: Berlin}
+          build_year: 1908
+          notarized_on: 2019-06-03
+          purchase_date: 2019-08-01
+          purchase_price: "240000.00"
+          contract_unit_label: we 3
+      units:
+        - {id: *U, property_id: *P2, label: Zimmer 1}
+        - {id: *U2, property_id: *P2, label: Zimmer 2}
+    extraction:
+      title: {v: Wohnflächenberechnung WEG, p: 1, q: "Wohnflächenberechnung"}
+      document_date: {v: "1998-03-02", p: 1, q: "02.03.1998"}
+      dwellings: {v: ["WE 1 | 48,20 m² | unbekannt | EG links", "WE 2 | 68,40 m² | unbekannt | 1. OG links", "WE 3 | 58,80 m² | unbekannt | 1. OG rechts"], p: 2, q: "WE 1 EG links 48,20 m² WE 2 1. OG links 68,40 m² WE 3 1. OG rechts 58,80 m²"}
+    expect:
+      keys: [typing, property, link:property]
+      records:
+        - key: property
+          entity_type: property
+          mode: patch
+          target_id: *P2
+          values: {living_area_m2: "58.80"}
+          derived: {living_area_m2: [dwellings]}
+          current: {living_area_m2: null}
+          notes_contain: ["WE 3 · 1. OG rechts · 58,80 m²", Bezeichnung]
+
+  - id: building_records_ambiguous_offers_the_rows
+    description: >-
+      D139 (d). Two Wohnungen share the flat's MEA and nothing else names it; the area is
+      empty, so the field is proposed empty with every row as a one-click option.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: *CL_WFB
+      properties:
+        - id: *P2
+          kind: etw
+          address: {street: Kastanienallee, house_number: "5", postal_code: "10435", city: Berlin}
+          build_year: 1908
+          notarized_on: 2019-06-03
+          purchase_date: 2019-08-01
+          purchase_price: "240000.00"
+          contract_mea: {numerator: 85, denominator: 1000}
+    extraction:
+      title: {v: Wohnflächenberechnung WEG, p: 1, q: "Wohnflächenberechnung"}
+      document_date: {v: "1998-03-02", p: 1, q: "02.03.1998"}
+      dwellings: {v: ["WE 1 | 48,20 m² | 62/1000 | EG links", "WE 2 | 68,40 m² | 85/1000 | 1. OG links", "WE 3 | 61,40 m² | 85/1000 | 1. OG rechts"], p: 2, q: "WE 1 EG links 48,20 m² 62/1000 WE 2 1. OG links 68,40 m² 85/1000 WE 3 1. OG rechts 61,40 m² 85/1000"}
+    expect:
+      keys: [typing, property, link:property]
+      records:
+        - key: property
+          entity_type: property
+          mode: patch
+          target_id: *P2
+          values: {living_area_m2: null}
+          current: {living_area_m2: null}
+          notes_contain: ["Welche Wohnung ist Ihre?", Zeile 13]
+          options:
+            living_area_m2:
+              - {value: "48.20", label: "WE 1 · EG links · MEA 62/1000 · 48,20 m²"}
+              - {value: "68.40", label: "WE 2 · 1. OG links · MEA 85/1000 · 68,40 m²"}
+              - {value: "61.40", label: "WE 3 · 1. OG rechts · MEA 85/1000 · 61,40 m²"}
+
+  - id: building_records_no_key_offers_the_rows_over_the_stored_area
+    description: >-
+      D139 (d) with an area stored: nothing names the flat in the list, so the rows are
+      offered as with an empty area, current the stored 68,40 m². An empty field is not
+      sent, so applying it unclicked leaves the stored area; a note says so.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: *CL_WFB
+      properties: [*PROP_LINDEN]
+    extraction:
+      title: {v: Wohnflächenberechnung WEG, p: 1, q: "Wohnflächenberechnung"}
+      document_date: {v: "1998-03-02", p: 1, q: "02.03.1998"}
+      dwellings: *WFB_ROWS
+    expect:
+      keys: [typing, property, link:property]
+      records:
+        - key: property
+          entity_type: property
+          mode: patch
+          target_id: *P
+          values: {living_area_m2: null}
+          current: {living_area_m2: "68.40"}
+          notes_contain: ["Welche Wohnung ist Ihre?", 4 Wohnungen, Ohne Klick bleibt, Zeile 13]
+          options:
+            living_area_m2:
+              - {value: "48.20", label: "WE 1 · EG links · MEA 62/1000 · 48,20 m²"}
+              - {value: "68.40", label: "WE 2 · 1. OG links · MEA 85/1000 · 68,40 m²"}
+              - {value: "58.80", label: "WE 3 · 1. OG rechts · MEA 79/1000 · 58,80 m²"}
+              - {value: "74.90", label: "WE 4 · 2. OG · MEA 103/1000 · 74,90 m²"}
+
+  - id: building_records_address_matches_no_property
+    description: D139. A Wohnflächenberechnung of another building (verified postal code); no link and no Wohnfläche.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: *CL_WFB
+      properties: [*PROP_LINDEN, *PROP_KASTANIEN]
+    extraction:
+      title: {v: Wohnflächenberechnung Birkenweg 3, p: 1, q: "Wohnflächenberechnung"}
+      document_date: {v: "1998-03-02", p: 1, q: "02.03.1998"}
+      street: {v: Birkenweg, p: 1, q: "Birkenweg 3, 10999 Berlin"}
+      house_number: {v: "3", p: 1, q: "Birkenweg 3, 10999 Berlin"}
+      postal_code: {v: "10999", p: 1, q: "Birkenweg 3, 10999 Berlin"}
+      dwellings: {v: ["Wohnung | 58,80 m² | unbekannt | unbekannt"], p: 1, q: "Wohnfläche gesamt 58,80 m²"}
+    expect:
+      keys: [typing]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: other, subtype: building_records, title: Wohnflächenberechnung Birkenweg 3, document_date: "1998-03-02", amount_total: null, period_start: null, period_end: null, counterparty: null, reference: null, notes: null}
+          notes_contain: [kein Objekt gefunden]
+
+  - id: building_records_mfh_proposes_no_area
+    description: >-
+      D139, ETW/EFH only. The property is an MFH whose units hold the MEAs of the list; its
+      flats are its units, so the list is linked and no Wohnfläche is proposed.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: *CL_WFB
+      properties:
+        - {<<: *PROP_LINDEN, kind: mfh, living_area_m2: null}
+      units:
+        - {id: *U, property_id: *P, label: WE 1, mea: {numerator: 62, denominator: 1000}}
+        - {id: *U2, property_id: *P, label: WE 2, mea: {numerator: 85, denominator: 1000}}
+    extraction:
+      title: {v: Wohnflächenberechnung Lindenstraße 12, p: 1, q: "Wohnflächenberechnung"}
+      document_date: {v: "1998-03-02", p: 1, q: "02.03.1998"}
+      street: {v: Lindenstraße, p: 1, q: "Lindenstraße 12, 10115 Berlin"}
+      house_number: {v: "12", p: 1, q: "Lindenstraße 12, 10115 Berlin"}
+      postal_code: {v: "10115", p: 1, q: "Lindenstraße 12, 10115 Berlin"}
+      dwellings: *WFB_ROWS
+    expect:
+      keys: [typing, link:property]
+      records:
+        - key: link:property
+          entity_type: link
+          mode: create
+          target_id: *P
+          values: {}
+
+  - id: building_records_rooms_and_their_total_patch_the_flat
+    description: >-
+      D139 guard and (a). A single flat's Wohnflächenberechnung lists its rooms and their
+      total; the rooms are never a Wohnung, so the total is the one row and is proposed.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: *CL_WFB
+      properties:
+        - {<<: *PROP_LINDEN, living_area_m2: null}
+    extraction:
+      title: {v: Wohnflächenberechnung Lindenstraße 12, p: 1, q: "Wohnflächenberechnung"}
+      document_date: {v: "1998-03-02", p: 1, q: "02.03.1998"}
+      street: {v: Lindenstraße, p: 1, q: "Lindenstraße 12, 10115 Berlin"}
+      house_number: {v: "12", p: 1, q: "Lindenstraße 12, 10115 Berlin"}
+      postal_code: {v: "10115", p: 1, q: "Lindenstraße 12, 10115 Berlin"}
+      dwellings:
+        v: ["Zimmer 1 | 14,20 m² | unbekannt | unbekannt", "Küche | 8,10 m² | unbekannt | unbekannt", "Summe | 61,40 m² | unbekannt | unbekannt"]
+        p: 1
+        q: "Summe 61,40 m²"
+    expect:
+      keys: [typing, property, link:property]
+      records:
+        - key: property
+          entity_type: property
+          mode: patch
+          target_id: *P
+          values: {living_area_m2: "61.40"}
+          derived: {living_area_m2: [dwellings]}
+          current: {living_area_m2: null}
+
+  - id: building_records_no_dwelling_readable
+    description: >-
+      D139. The reading holds a list but no row is a Wohnung with a readable area; nothing is
+      proposed and the typing record says the area can be typed on the to-do.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: *CL_WFB
+      properties: [*PROP_LINDEN]
+    extraction:
+      title: {v: Wohnflächenberechnung Lindenstraße 12, p: 1, q: "Wohnflächenberechnung"}
+      document_date: {v: "1998-03-02", p: 1, q: "02.03.1998"}
+      street: {v: Lindenstraße, p: 1, q: "Lindenstraße 12, 10115 Berlin"}
+      house_number: {v: "12", p: 1, q: "Lindenstraße 12, 10115 Berlin"}
+      postal_code: {v: "10115", p: 1, q: "Lindenstraße 12, 10115 Berlin"}
+      dwellings: {v: ["unbekannt"], p: 1, q: "Wohnfläche"}
+    expect:
+      keys: [typing, link:property]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: other, subtype: building_records, title: Wohnflächenberechnung Lindenstraße 12, document_date: "1998-03-02", amount_total: null, period_start: null, period_end: null, counterparty: null, reference: null, notes: null}
+          notes_contain: [keine Wohnung mit ihrer Wohnfläche]
 
   - id: catalogue_loan_group_by_contract_number
     description: D131, loan. A Konditionsanpassung names the lender and the number of one of two loans.

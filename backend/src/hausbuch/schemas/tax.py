@@ -1154,12 +1154,14 @@ class RoomRent(Schema):
 
 class UnitRow(Schema):
     """One Z13 row per Wohnung (D71): the flat (wohnung = property) with its rooms listed, or an
-    MFH unit (wohnung = unit). pre_handover: the part booked before the handover (D63)."""
+    MFH unit (wohnung = unit). pre_handover: the part booked before the handover (D63).
+    area_m2 None: an ETW or EFH with no Wohnfläche and no units, so no area is known; the
+    to-do income.living_area_missing asks for it (phase 2 D139)."""
 
     wohnung: Literal["property", "unit"]
     id: UUID
     label: str
-    area_m2: Area
+    area_m2: Area | None = None
     area_source: Literal["living_area", "units"]
     amount: Money
     pre_handover: Money = Decimal("0")

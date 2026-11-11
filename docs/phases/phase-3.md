@@ -470,7 +470,9 @@ provisional + warning.
   `included` tenancies, sorted and joined by commas; the fixture has one). No `living_area_m2` → the row's area is Σ the units' m² and the
   draft warns `income.living_area_missing` (D71).
 - Unit rows: an ETW or EFH has one row for the property (`area_source: living_area`, or `units` when the area is missing); an MFH
-  one row per unit (`area_source: units`).
+  one row per unit (`area_source: units`). With neither a `living_area_m2` nor a unit, the flat's row has no area (`area_m2`
+  null) and the same warning (phase 2 D139, 11 Nov 2026: an area of 0 had made the draft fail with a validation error
+  for such a flat with booked rent; fixture `umlagen.yaml` `living_area_and_units_missing_no_area`).
 - `deposit_in` / `deposit_out`: nothing (a kept deposit, Z25, is out of scope).
 
 ### 5.8 Verbilligte Vermietung (`verbilligt.py`)

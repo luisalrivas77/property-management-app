@@ -74,13 +74,14 @@ def let_in(tenancy: TaxTenancy, tax_year: int) -> bool:
 
 
 def flat_row(facts: DraftFacts, amount: Decimal, sources: list[SourceRef], **extra) -> UnitRow:
-    """The one row of an ETW or EFH (D71), or of an MFH line without a unit."""
+    """The one row of an ETW or EFH (D71), or of an MFH line without a unit. No Wohnfläche
+    and no units: no area (None, never 0); area_source units raises the to-do."""
     area, source = flat_area(facts)
     return UnitRow(
         wohnung="property",
         id=facts.property.id,
         label=facts.property.label,
-        area_m2=area,
+        area_m2=area if area > 0 else None,
         area_source=source,
         amount=amount,
         sources=unique(sources),

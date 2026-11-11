@@ -461,6 +461,8 @@ class RecordExpect(Schema):
     derived: dict[str, list[str]] = Field(default_factory=dict)
     current: dict[str, JsonValue] | None = None
     notes_contain: list[str] = Field(default_factory=list)
+    # D139: the one-click values offered per field, as {value, label}; checked always.
+    options: dict[str, list[dict[str, str]]] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _consistent(self) -> Self:
