@@ -30,11 +30,13 @@ from .enums import (
     AcquisitionCostKind,
     EntityType,
     ExtractionKind,
+    OperatingCostsTerms,
     PropertyKind,
     ProposalStatus,
     ProposalTargetMode,
 )
 from .property import Address
+from .tenancy import RentDueDay
 
 RecordEntity = (
     EntityType
@@ -222,6 +224,10 @@ class ExistingTenancy(Schema):
     # A Kautionsnachweis is matched to its tenancy by these (D42).
     deposit_amount: NonNegativeMoney | None = None
     deposit_receipts: list[ExistingDepositReceipt] = Field(default_factory=list)
+    # A re-read lease proposes these only when they differ from the stored ones (D152); the
+    # defaults are the tenancy's own (phase 3 D67, D72).
+    rent_due_day: RentDueDay = 3
+    operating_costs_terms: OperatingCostsTerms = OperatingCostsTerms.PREPAYMENT
 
 
 class ExistingTenant(Schema):

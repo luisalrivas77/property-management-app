@@ -6,9 +6,9 @@
  "sdk_version": "2.6.0",
  "classify": {
   "prompt_version": "1a1f1775ce7fd623",
-  "request_sha256": "c036ccf32729db8c1d9c23e72863f6a45b632f071ccec86cce5b9d7b28bef551",
+  "request_sha256": "899ee654f750bb227dd735b865a4db8a300cbf55f0223fd47e2e28376e647454",
   "message": {
-   "id": "msg_011CgwiiMMLCjCFNAsEZ2sxP",
+   "id": "msg_011CgwuusEGEX2GZsLXZS3M3",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 8593,
+    "input_tokens": 8651,
     "output_tokens": 42,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -46,9 +46,9 @@
  "extract": [
   {
    "prompt_version": "5a4e4a41623c9f1a",
-   "request_sha256": "45a0d3231bb8f0f0c4c174e130bb0033a3945b34f2097b03e4fd969889d71c4b",
+   "request_sha256": "cf58b30921441a2ee16885988fc4a0797bcfd5feee9fbab1e6c864e5cd07c611",
    "message": {
-    "id": "msg_011Cgwii5pw4fND29kdbdGoH",
+    "id": "msg_011CgwuuZyBdVSN6xJjRLWe4",
     "container": null,
     "content": [
      {
@@ -73,7 +73,7 @@
      },
      {
       "citations": null,
-      "text": " → Wohnraummietvertrag\ndocument_date: ",
+      "text": "\ndocument_date: ",
       "type": "text"
      },
      {
@@ -259,7 +259,7 @@
      {
       "citations": [
        {
-        "cited_text": "§ 3 Miete\r\nNettokaltmiete: 980,00 EUR\r\nBetriebskostenvorauszahlung: 180,00 EUR\r\nHeizkostenvorauszahlung: 70,00 EUR\r\n§ 4 Kaution: 2.940,00 EUR als Barkaution.\r\n",
+        "cited_text": "§ 4 Kaution: 2.940,00 EUR als Barkaution.\r\n",
         "document_index": 0,
         "document_title": null,
         "end_page_number": 3,
@@ -279,7 +279,7 @@
      {
       "citations": [
        {
-        "cited_text": "§ 3 Miete\r\nNettokaltmiete: 980,00 EUR\r\nBetriebskostenvorauszahlung: 180,00 EUR\r\nHeizkostenvorauszahlung: 70,00 EUR\r\n§ 4 Kaution: 2.940,00 EUR als Barkaution.\r\n",
+        "cited_text": "§ 4 Kaution: 2.940,00 EUR als Barkaution.\r\n",
         "document_index": 0,
         "document_title": null,
         "end_page_number": 3,
@@ -288,7 +288,7 @@
         "type": "page_location"
        }
       ],
-      "text": "Barkaution",
+      "text": "2.940,00 EUR als Barkaution.",
       "type": "text"
      },
      {
@@ -299,7 +299,7 @@
      {
       "citations": [
        {
-        "cited_text": "§ 3 Miete\r\nNettokaltmiete: 980,00 EUR\r\nBetriebskostenvorauszahlung: 180,00 EUR\r\nHeizkostenvorauszahlung: 70,00 EUR\r\n§ 4 Kaution: 2.940,00 EUR als Barkaution.\r\n",
+        "cited_text": "§ 3 Miete\r\nNettokaltmiete: 980,00 EUR\r\nBetriebskostenvorauszahlung: 180,00 EUR\r\nHeizkostenvorauszahlung: 70,00 EUR\r\nÜber die Vorauszahlungen wird jährlich abgerechnet.\r\n",
         "document_index": 0,
         "document_title": null,
         "end_page_number": 3,
@@ -319,7 +319,7 @@
      {
       "citations": [
        {
-        "cited_text": "§ 3 Miete\r\nNettokaltmiete: 980,00 EUR\r\nBetriebskostenvorauszahlung: 180,00 EUR\r\nHeizkostenvorauszahlung: 70,00 EUR\r\n§ 4 Kaution: 2.940,00 EUR als Barkaution.\r\n",
+        "cited_text": "§ 3 Miete\r\nNettokaltmiete: 980,00 EUR\r\nBetriebskostenvorauszahlung: 180,00 EUR\r\nHeizkostenvorauszahlung: 70,00 EUR\r\nÜber die Vorauszahlungen wird jährlich abgerechnet.\r\n",
         "document_index": 0,
         "document_title": null,
         "end_page_number": 3,
@@ -339,7 +339,7 @@
      {
       "citations": [
        {
-        "cited_text": "§ 3 Miete\r\nNettokaltmiete: 980,00 EUR\r\nBetriebskostenvorauszahlung: 180,00 EUR\r\nHeizkostenvorauszahlung: 70,00 EUR\r\n§ 4 Kaution: 2.940,00 EUR als Barkaution.\r\n",
+        "cited_text": "§ 3 Miete\r\nNettokaltmiete: 980,00 EUR\r\nBetriebskostenvorauszahlung: 180,00 EUR\r\nHeizkostenvorauszahlung: 70,00 EUR\r\nÜber die Vorauszahlungen wird jährlich abgerechnet.\r\n",
         "document_index": 0,
         "document_title": null,
         "end_page_number": 3,
@@ -349,6 +349,46 @@
        }
       ],
       "text": "70,00 €",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\noperating_costs_clause: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "§ 3 Miete\r\nNettokaltmiete: 980,00 EUR\r\nBetriebskostenvorauszahlung: 180,00 EUR\r\nHeizkostenvorauszahlung: 70,00 EUR\r\nÜber die Vorauszahlungen wird jährlich abgerechnet.\r\n",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "Über die Vorauszahlungen wird jährlich abgerechnet.",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nrent_due_clause: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Die Miete ist spätestens am dritten Werktag eines Monats zu zahlen.\r\n",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "Die Miete ist spätestens am dritten Werktag eines Monats zu zahlen.",
       "type": "text"
      }
     ],
@@ -367,8 +407,8 @@
      "cache_creation_input_tokens": 0,
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
-     "input_tokens": 5820,
-     "output_tokens": 616,
+     "input_tokens": 6105,
+     "output_tokens": 728,
      "output_tokens_details": {
       "thinking_tokens": 0
      },

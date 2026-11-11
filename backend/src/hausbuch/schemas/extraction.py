@@ -177,6 +177,19 @@ class LeaseExtraction(_Typing):
     heating_costs_prepayment: ExtractedValue = ev(
         "money", "Heizkostenvorauszahlung, only when the lease states it as its own amount"
     )
+    # Phase 2 D152: code maps both clauses (rules.prefill), never the model.
+    operating_costs_clause: ExtractedValue = ev(
+        "text",
+        "the sentence(s) on how the Neben- or Betriebskosten are paid, as printed: a"
+        " Vorauszahlung that is abgerechnet each year, a Pauschale with no Abrechnung (also"
+        " 'eine gesonderte Abrechnung erfolgt nicht'), or one Inklusiv- or Warmmiete that"
+        " includes them",
+    )
+    rent_due_clause: ExtractedValue = ev(
+        "text",
+        "when the monthly rent is due, as printed (e.g. 'spätestens am dritten Werktag eines"
+        " jeden Monats', 'im Voraus zum 1. eines Monats')",
+    )
 
 
 class HandoverProtocolExtraction(_Typing):

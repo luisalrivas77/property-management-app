@@ -122,6 +122,7 @@ from hausbuch.schemas.enums import (
     DepositForm,
     DocumentSubtype,
     ExtractionKind,
+    OperatingCostsTerms,
     PropertyKind,
     RentModel,
 )
@@ -1536,6 +1537,7 @@ class _Builder:
             _rent_model(self.ev("rent_clause").value), [("rent_clause", self.ev("rent_clause"))]
         )
         deposit_form = self._deposit_form()
+        terms, terms_notes = self._lease_terms()
         if tenancy is None:
             fields = {"unit_id": unit_value, "start_date": self.ev("start_date")}
             for name in ("signed_on", "fixed_term_until"):
@@ -1546,7 +1548,8 @@ class _Builder:
                 fields["deposit_amount"] = self.ev("deposit_amount")
             if deposit_form is not None:
                 fields["deposit_form"] = deposit_form
-            self.add("tenancy", "tenancy", "create", fields)
+            fields |= terms
+            self.add("tenancy", "tenancy", "create", fields, notes=terms_notes)
             self._initial_rent()
         else:
             fields = {}
@@ -1558,9 +1561,56 @@ class _Builder:
                 fields["deposit_amount"] = self.ev("deposit_amount")
             if deposit_form is not None:
                 fields["deposit_form"] = deposit_form
+            # D152: a re-read lease proposes the terms only where they differ from the stored
+            # ones; a clause code could not map changes nothing on a tenancy that exists.
+            stored: dict[str, JsonValue] = {
+                "operating_costs_terms": tenancy.operating_costs_terms.value,
+                "rent_due_day": tenancy.rent_due_day,
+            }
+            differing = {
+                f: v
+                for f, v in terms.items()
+                if v.value is not None and not _same(v.value, stored[f])
+            }
+            fields |= differing
             mode = "patch" if fields else "unchanged"
-            self.add("tenancy", "tenancy", mode, fields, target_id=tenancy.id)
+            self.add(
+                "tenancy",
+                "tenancy",
+                mode,
+                fields,
+                target_id=tenancy.id,
+                current={f: stored[f] for f in differing} or None,
+            )
         self.link("link:tenancy", None if tenancy is None else tenancy.id)
+
+    def _lease_terms(self) -> tuple[dict[str, ExtractedValue], list[str]]:
+        """D152: the tenancy's Nebenkosten arrangement and rent due day, mapped by code from
+        the lease's clauses (never the model), each keeping the clause's page and quote. A
+        clause not stated proposes nothing (the tenancy's default stays); a clause code cannot
+        map proposes the value as missing, with a note naming it, so the review picks."""
+        fields: dict[str, ExtractedValue] = {}
+        notes: list[str] = []
+        clause = self.ev("operating_costs_clause")
+        if clause.value is not None:
+            terms = _operating_costs_terms(clause.value)
+            amount = _decimal(self.ev("operating_costs_prepayment").value)
+            if terms is OperatingCostsTerms.INCLUDED and amount is not None and amount > 0:
+                # An all-in rent next to a separate Nebenkosten amount contradicts itself.
+                terms = None
+                notes.append(_TERMS_WITH_AMOUNT_NOTE)
+            elif terms is None:
+                notes.append(_TERMS_UNCLEAR_NOTE)
+            fields["operating_costs_terms"] = _from_clause(
+                None if terms is None else terms.value, "operating_costs_clause", clause
+            )
+        due = self.ev("rent_due_clause")
+        if due.value is not None:
+            day = _rent_due_day(due.value)
+            if day is None:
+                notes.append(_DUE_DAY_UNCLEAR_NOTE)
+            fields["rent_due_day"] = _from_clause(day, "rent_due_clause", due)
+        return fields, notes
 
     def _tenant(self, n: int) -> None:
         name = self.ev(f"tenant_{n}_full_name")
@@ -2569,6 +2619,118 @@ def _deposit_form(clause: Any) -> DepositForm | None:
     ) or re.search(r"\bbar\b", t):
         return DepositForm.CASH_ACCOUNT
     return None
+
+
+# D152: how the lease agrees the Nebenkosten (phase 3 D72) and when the rent is due (D67).
+# The notes the tenancy record carries when a clause is stated but code cannot map it.
+_TERMS_UNCLEAR_NOTE = (
+    "Die Nebenkosten-Klausel des Mietvertrags ist nicht eindeutig (Vorauszahlung mit"
+    " Abrechnung, Pauschale ohne Abrechnung oder in der Miete enthalten); bitte wählen."
+)
+_TERMS_WITH_AMOUNT_NOTE = (
+    "Der Mietvertrag nennt eine Inklusiv- oder Warmmiete und daneben einen eigenen"
+    " Nebenkosten-Betrag; bitte wählen, wie die Nebenkosten vereinbart sind."
+)
+_DUE_DAY_UNCLEAR_NOTE = (
+    "Aus der Fälligkeitsklausel des Mietvertrags geht kein Tag eindeutig hervor; bitte den"
+    " Tag eintragen, an dem die Miete fällig ist."
+)
+# "keine (gesonderte) Abrechnung", "Abrechnung erfolgt nicht", "wird nicht abgerechnet".
+_LEASE_NO_SETTLEMENT = re.compile(
+    r"\bkeine\b[^.;]{0,60}?abrechnung"
+    r"|abrechnung\w*(?:\s+[^\s.;]+){0,3}?\s+(?:erfolgt|findet)\s+nicht"
+    r"|abrechnung\w*\s+entfällt"
+    r"|nicht\s+(?:gesondert\s+)?abgerechnet"
+    r"|ohne\s+(?:\w+\s+)?abrechnung"
+)
+_LEASE_SETTLEMENT = re.compile(r"abrechn|abgerechnet|abzurechnen")
+_LEASE_PREPAYMENT = re.compile(r"vorauszahlung|abschlag|vorschuss")
+# A Pauschale on the Nebenkosten; a "Pauschalmiete" is an all-in rent, not one.
+_LEASE_FLAT_RATE = re.compile(r"pauschal(?!miete)")
+_LEASE_INCLUDED = re.compile(
+    r"warmmiete|inklusivmiete|inklusiv-|pauschalmiete|bruttomiete|\ball-?in\b"
+    r"|in der miete enthalten|mit der miete abgegolten|abgegolten"
+    r"|nicht gesondert vereinbart|enthält (?:sämtliche|alle) (?:neben|betriebs)"
+)
+
+
+def _operating_costs_terms(clause: Any) -> OperatingCostsTerms | None:
+    """D152: the arrangement a lease's Nebenkosten clause names, or None when it names none
+    or contradicts itself. A Pauschale, or a clause saying no Abrechnung takes place, is
+    flat_rate; an Inklusiv- or Warmmiete that includes them is included; a Vorauszahlung or
+    Abschlag (by law settled yearly, §556 Abs. 3 BGB) is prepayment. "inkl." alone decides
+    nothing: "Nebenkosten inkl. Heizung und Strom" names what a Pauschale covers."""
+    t = _norm(clause)
+    no_settlement = bool(_LEASE_NO_SETTLEMENT.search(t))
+    settlement = not no_settlement and bool(_LEASE_SETTLEMENT.search(t))
+    prepayment = bool(_LEASE_PREPAYMENT.search(t))
+    flat = bool(_LEASE_FLAT_RATE.search(t))
+    included = bool(_LEASE_INCLUDED.search(t))
+    if flat:
+        # A Pauschale next to a Vorauszahlung that is settled: two arrangements at once.
+        return None if prepayment and settlement else OperatingCostsTerms.FLAT_RATE
+    if no_settlement:
+        return OperatingCostsTerms.INCLUDED if included else OperatingCostsTerms.FLAT_RATE
+    if included:
+        return None if prepayment or settlement else OperatingCostsTerms.INCLUDED
+    if prepayment:
+        return OperatingCostsTerms.PREPAYMENT
+    return None
+
+
+_LEASE_ORDINALS = {
+    "ersten": 1,
+    "zweiten": 2,
+    "dritten": 3,
+    "vierten": 4,
+    "fünften": 5,
+    "sechsten": 6,
+    "siebten": 7,
+    "siebenten": 7,
+    "achten": 8,
+    "neunten": 9,
+    "zehnten": 10,
+}
+_LEASE_ORDINAL = "|".join(sorted(_LEASE_ORDINALS, key=len, reverse=True))
+# "dritten Werktag", "3. Werktag", "am 5.", "bis zum 5. eines Monats", "zum ersten des
+# Monats", "Monatsersten". A number followed by more digits ("01.05.2026") is a date, not a day.
+_LEASE_DUE_DAY = re.compile(
+    rf"\b(?P<word>{_LEASE_ORDINAL})\b|\b(?P<num>\d{{1,2}})\.(?!\d)|(?P<first>monatsersten)"
+)
+_LEASE_DUE_CONTEXT = re.compile(r"(?:\bzum|\bam|\bbis|\bspätestens)\s+$")
+_LEASE_WORKING_DAY = re.compile(r"\s*(?:werk|bank|arbeits)tag")
+
+
+def _rent_due_day(clause: Any) -> int | None:
+    """D152: the day of the month a lease's due clause names, 1 to 28 (tenancy.rent_due_day).
+    The n-th Werktag is stored as day n (phase 3 D67: the default 3 stands for §556b BGB's
+    third Werktag). None when it names no day, or two different ones."""
+    t = _norm(clause)
+    days: set[int] = set()
+    for m in _LEASE_DUE_DAY.finditer(t):
+        if m["first"]:
+            days.add(1)
+            continue
+        day = _LEASE_ORDINALS[m["word"]] if m["word"] else int(m["num"])
+        if _LEASE_WORKING_DAY.match(t, m.end()) or _LEASE_DUE_CONTEXT.search(t, 0, m.start()):
+            days.add(day)
+    if len(days) != 1:
+        return None
+    (day,) = days
+    return day if 1 <= day <= 28 else None
+
+
+def _from_clause(value: JsonValue | None, name: str, clause: ExtractedValue) -> ExtractedValue:
+    """D152: a value code mapped from a clause: derived from it, and keeping its page and
+    quote so the review shows the clause; missing (low) when the clause did not map."""
+    return ExtractedValue(
+        value=value,
+        source=clause.source,
+        derived_from=[name],
+        checks=(["cited"] if clause.source is not None else [])
+        + (["derived", "validates"] if value is not None else ["derived"]),
+        confidence=clause.confidence if value is not None else "low",
+    )
 
 
 def _rent_model(clause: Any) -> str:

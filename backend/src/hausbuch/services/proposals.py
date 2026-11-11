@@ -682,6 +682,8 @@ def prefill_context(
                 start_date=t.start_date,
                 end_date=t.end_date,
                 deposit_amount=t.deposit_amount,
+                rent_due_day=t.rent_due_day,
+                operating_costs_terms=t.operating_costs_terms,
                 deposit_receipts=[
                     ExistingDepositReceipt(
                         amount=DepositReceived.model_validate(e.payload).amount,

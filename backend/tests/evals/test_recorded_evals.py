@@ -99,6 +99,8 @@ def _check(doc: Doc, recording: dict) -> None:
         _check_dwellings(doc, result, real=not recording["synthetic"])
     if doc.expected_useful_life:
         _check_useful_life(doc, result)
+    if doc.expected_lease_terms:
+        _check_lease_terms(doc, result)
 
 
 def _check_cost_lines(doc: Doc, read, *, real: bool) -> None:
@@ -195,6 +197,24 @@ def _check_useful_life(doc: Doc, result) -> None:
     assert got == (tax_year, years), f"{doc.name}: useful life {got}"
 
 
+def _check_lease_terms(doc: Doc, result) -> None:
+    """D152: the clauses come back cited, and code maps them to the new tenancy's
+    Nebenkosten arrangement and rent due day."""
+    prefill = pytest.importorskip("hausbuch.rules.prefill", reason="proposals chunk not merged")
+    uncited = [name for name in doc.clauses if result.values[name].source is None]
+    assert uncited == [], f"{doc.name}: clauses without a page and quote: {uncited}"
+    extraction = EXTRACTION_MODELS[ExtractionKind.LEASE].model_validate(result.values)
+    context = PrefillContext(document_id=uuid.uuid4(), classification=result.classification)
+    records = prefill.build_proposal(ExtractionKind.LEASE, extraction, context)
+    [tenancy] = [r for r in records if r.key == "tenancy"]
+    got = tuple(
+        tenancy.fields[name].value if name in tenancy.fields else None
+        for name in ("operating_costs_terms", "rent_due_day")
+    )
+    clauses = {name: result.values[name].value for name in doc.clauses}
+    assert got == doc.expected_lease_terms, f"{doc.name}: lease terms {got} from {clauses}"
+
+
 def _build_proposal(doc: Doc, result) -> None:
     prefill = pytest.importorskip("hausbuch.rules.prefill", reason="proposals chunk not merged")
 
@@ -266,6 +286,7 @@ def _as_written(doc: Doc) -> dict[str, str]:
         found[name] = doc.as_written.get(name) or _written(lines, expected, kind)
     for name in doc.expected_missing:
         found[name] = "unbekannt"
+    found |= doc.clauses
     if doc.expected_dwellings:
         found["dwellings"] = _dwellings_as_written(doc)
     if doc.expected_cost_lines:

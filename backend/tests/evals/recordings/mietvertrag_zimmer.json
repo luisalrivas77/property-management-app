@@ -6,9 +6,9 @@
  "sdk_version": "2.6.0",
  "classify": {
   "prompt_version": "1a1f1775ce7fd623",
-  "request_sha256": "623572d77d5062f6991e28c8268e3d7b7a1f64b8d453a7c82da4623529461ed6",
+  "request_sha256": "1a3d8aabbada1c97e06ca2a99d805383a357254699276208337f979827b910fb",
   "message": {
-   "id": "msg_011Cgwiihbysxmj2BMXoJKsd",
+   "id": "msg_011CgwuvK9yXq7Lm3VSirAZG",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 8690,
+    "input_tokens": 8725,
     "output_tokens": 42,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -46,9 +46,9 @@
  "extract": [
   {
    "prompt_version": "5a4e4a41623c9f1a",
-   "request_sha256": "c76d135040003d9f2ba082dcf0d91984b15fc2c9561c21c65eed994bd5c14aad",
+   "request_sha256": "2037fabc335e4900f8f6e056e176a2bb5edf2fd9ac0b2a72e4a266656fb00f8c",
    "message": {
-    "id": "msg_011CgwiiSoFPb2gQoNJfWa9i",
+    "id": "msg_011Cgwuuy7yehWyLdHviYn2M",
     "container": null,
     "content": [
      {
@@ -68,12 +68,12 @@
         "type": "page_location"
        }
       ],
-      "text": "Mietvertrag über ein möbliertes Zimmer",
+      "text": "Mietvertrag möbliertes Zimmer",
       "type": "text"
      },
      {
       "citations": null,
-      "text": " → Mietvertrag möbliertes Zimmer\ndocument_date: ",
+      "text": "\ndocument_date: ",
       "type": "text"
      },
      {
@@ -288,7 +288,7 @@
         "type": "page_location"
        }
       ],
-      "text": "Barkaution",
+      "text": "840,00 EUR als Barkaution.",
       "type": "text"
      },
      {
@@ -333,7 +333,42 @@
      },
      {
       "citations": null,
-      "text": "\nheating_costs_prepayment: unbekannt",
+      "text": "\nheating_costs_prepayment: unbekannt\noperating_costs_clause: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Betriebs-, Heiz-, Warmwasser, Strom 90,00 Euro\r\nEine gesonderte Neben- oder Betriebskostenabrechnung erfolgt nicht.\r\n",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "Nebenkosten inkl. Betriebs-, Heiz-, Warmwasser, Strom 90,00 Euro. Eine gesonderte Neben- oder Betriebskostenabrechnung erfolgt nicht.",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nrent_due_clause: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Die Miete ist im Voraus bis zum 1. eines jeden Monats zu zahlen.\r\n",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "Die Miete ist im Voraus bis zum 1. eines jeden Monats zu zahlen.",
       "type": "text"
      }
     ],
@@ -352,8 +387,8 @@
      "cache_creation_input_tokens": 0,
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
-     "input_tokens": 5949,
-     "output_tokens": 620,
+     "input_tokens": 6195,
+     "output_tokens": 777,
      "output_tokens_details": {
       "thinking_tokens": 0
      },
