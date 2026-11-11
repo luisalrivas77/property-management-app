@@ -544,8 +544,9 @@ cases:
     description: >
       case A with pre_handover_income = rent (Luis, Q1): the 850.00 the seller forwarded join
       the flat's rent row (5,950.00, of which 850.00 before the handover), the block is empty
-      and its warning gone; the two lines raise no income.other_review either (D140: a line before
-      the handover is vorab's question, and here it is answered)
+      and its warning gone. The two lines are still booked other_income, so each raises
+      income.other_review marked counted_as_rent, whose to-do books it as Kaltmiete (D140 as
+      amended 11 Nov 2026); the figures are the same either way
     tax_year: 2026
     rule_set_year: 2026
     facts:
@@ -587,6 +588,9 @@ cases:
       warnings:
         - *w_unpaid
         - {code: hausgeld.abrechnung_pending}
+        - &w_counted {code: income.other_review,
+                      params: {amount: "425.00", counterparty_iban: "DE12 **** 0002", counted_as_rent: "1"}}
+        - *w_counted
         - {code: reduced_rent.no_market_rent}
         - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
         - {code: draft.form_provisional}

@@ -335,6 +335,52 @@ def test_an_other_income_part_rebooked_as_rent_lands_on_the_rent_row(client_a, b
     assert categories == {"200.00": "other_income", "41.58": "rent_cold"}
 
 
+def test_a_line_counted_as_rent_before_the_handover_gets_a_to_do_to_book_it(client_a, booked):
+    """D140 as amended (11 Nov 2026): the handover moves to 1 Jul 2026, so the 30 Jun
+    other_income line is before it. Undecided: the pre-handover question only. After "Als Miete
+    zählen": the draft counts it as rent and, since its bank line still says Sonstige Einnahme,
+    raises income.other_review marked counted_as_rent. Booked as rent_cold (the to-do's button):
+    the to-do is gone and no figure changes."""
+    pid, line, income_id = booked["pid"], booked["income"], booked["income_id"]
+    ok(
+        client_a.post(
+            f"/api/properties/{pid}/corrections/purchase-date", json={"new_date": "2026-07-01"}
+        )
+    )
+
+    def view():
+        body = ok(_draft(client_a, pid, tax_year=2026))
+        codes = [w["code"] for w in body["warnings"]]
+        reviews = [w for w in body["warnings"] if w["code"] == "income.other_review"]
+        return body, codes, reviews
+
+    _, codes, reviews = view()
+    assert "income.pre_handover" in codes and reviews == []
+
+    create(
+        client_a,
+        f"/api/properties/{pid}/tax-inputs",
+        {"property_id": pid, "kind": "pre_handover_income", "value": {"treatment": "rent"}},
+    )
+    decided, codes, reviews = view()
+    assert "income.pre_handover" not in codes
+    (review,) = reviews
+    assert (review["params"]["amount"], review["params"]["counted_as_rent"]) == ("241.58", "1")
+    assert [(r["kind"], r["id"]) for r in review["refs"]] == [("allocation", income_id)]
+    (row,) = decided["unit_rows"]
+    assert (row["amount"], row["pre_handover"]) == ("241.58", "241.58")
+
+    _rebook_as_rent(client_a, line["id"], income_id)
+    rebooked, codes, reviews = view()
+    assert reviews == [] and "income.pre_handover" not in codes
+    (after,) = rebooked["unit_rows"]
+    assert (after["amount"], after["pre_handover"]) == ("241.58", "241.58")
+    assert rebooked["totals"] == decided["totals"]
+    assert [ln for ln in rebooked["lines"] if ln["key"] != "income.rent_total"] == [
+        ln for ln in decided["lines"] if ln["key"] != "income.rent_total"
+    ]
+
+
 # --- GET …/anlage-v/sources: what the sources drawer shows --------------------------------
 
 

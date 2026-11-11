@@ -667,7 +667,9 @@ export const WARNING_TEXT: Record<WarningCode, (params: Params) => string> = {
   "hausgeld.abrechnung_pending": () =>
     "Die Hausgeldabrechnung fehlt noch: was die WEG aus der Rücklage ausgegeben hat, ist vorläufig nicht enthalten.",
   "income.other_review": (p) =>
-    `Sonstige Einnahme ${money(p)}${p.counterparty_iban ? ` von ${p.counterparty_iban}` : ""} prüfen.`,
+    p.counted_as_rent === "1"
+      ? `Einnahme ${money(p)}${p.counterparty_iban ? ` von ${p.counterparty_iban}` : ""} vor der Übergabe: zählt als Miete, ist aber als Sonstige Einnahme gebucht.`
+      : `Sonstige Einnahme ${money(p)}${p.counterparty_iban ? ` von ${p.counterparty_iban}` : ""} prüfen.`,
   "income.pre_handover": (p) =>
     `${p.count ?? "Einige"} ${p.count === "1" ? "Einnahme" : "Einnahmen"} vor dem Übergang (${money(p)}): noch nicht festgelegt, wie sie zählen.`,
   "income.living_area_missing": () =>
