@@ -2,13 +2,13 @@
  "format": 1,
  "doc": "grunderwerbsteuerbescheid",
  "synthetic": false,
- "recorded_on": "2026-11-10",
+ "recorded_on": "2026-11-11",
  "sdk_version": "2.6.0",
  "classify": {
   "prompt_version": "de0ab828a4c10d64",
   "request_sha256": "c9da4a0d2109896d8cfcf0c8e663b48528b324f8678d92081b19c1996c98ee9d",
   "message": {
-   "id": "msg_011CguyLb4THcKUM6o8QPZyv",
+   "id": "msg_011CgwJV3HUGGGHDbEh3fbbP",
    "container": null,
    "content": [
     {
@@ -46,9 +46,9 @@
  "extract": [
   {
    "prompt_version": "5a4e4a41623c9f1a",
-   "request_sha256": "f1b23f27743a25c13ffc6d48cfd12f5c5cb891c10aaac4bcc6956d8f52629299",
+   "request_sha256": "04de8deefb777fa49b2849698b7cb79c45c4df72034069b3ade20b9fbe05eaf8",
    "message": {
-    "id": "msg_011CguyLSmtEBwyp7EN4Zt6Y",
+    "id": "msg_011CgwJUtQwCjHgjs99HTqKE",
     "container": null,
     "content": [
      {
@@ -188,7 +188,7 @@
         "type": "page_location"
        }
       ],
-      "text": "Festgesetzte Grunderwerbsteuer | 19.500,00 € | acquisition_cost",
+      "text": "Grunderwerbsteuer 6,0 % von 325.000,00 € | 19.500,00 € | acquisition_cost",
       "type": "text"
      }
     ],
@@ -207,8 +207,8 @@
      "cache_creation_input_tokens": 0,
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
-     "input_tokens": 3885,
-     "output_tokens": 275,
+     "input_tokens": 4057,
+     "output_tokens": 283,
      "output_tokens_details": {
       "thinking_tokens": 0
      },

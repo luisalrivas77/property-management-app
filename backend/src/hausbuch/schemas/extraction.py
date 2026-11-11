@@ -222,6 +222,25 @@ COST_LINES_MEANING = (
     "and its land register entry, loan_fees for a Grundschuld or loan, vat for the "
     "Umsatzsteuer line); never a subtotal (Netto, Zwischensumme) or the total"
 )
+# Phase 2 D145 (11 Nov 2026): one captured PDF can hold several Bescheide, e.g. the
+# Grunderwerbsteuerbescheid the Finanzamt sends each buyer of a joint purchase on that buyer's
+# share. Only the Bescheid request says so, so every other request stays byte-identical.
+_SEVERAL_BESCHEIDE = (
+    "when the document holds several Bescheide (e.g. one per buyer of a joint purchase)"
+)
+BESCHEID_AMOUNT_MEANING = (
+    "the amount assessed; "
+    + _SEVERAL_BESCHEIDE
+    + ", the sum of their assessed amounts, the one value you add up yourself"
+)
+BESCHEID_COST_LINES_MEANING = (
+    COST_LINES_MEANING
+    + "; "
+    + _SEVERAL_BESCHEIDE
+    + ", each Bescheid's assessed amount is its own line, its text naming that Bescheid only "
+    "as Bescheid 1, Bescheid 2 and so on, or by its share or base (e.g. 3,5 % von 150.000), "
+    "never by a person's name, an identification number or a Steuernummer"
+)
 
 
 class InvoiceExtraction(_Typing):
@@ -245,12 +264,12 @@ class BescheidExtraction(_Typing):
     """A Bescheid other than Grundsteuer, e.g. the Grunderwerbsteuerbescheid."""
 
     sender: ExtractedValue = ev("text", "name of the authority, without the address")
-    amount_total: ExtractedValue = ev("money", "the amount assessed")
+    amount_total: ExtractedValue = ev("money", BESCHEID_AMOUNT_MEANING)  # phase 2 D145
     reference: ExtractedValue = ev("text", "Aktenzeichen / Steuernummer reference")
     iban: ExtractedValue = ev("iban", "the authority's IBAN, if stated")
     due_on: ExtractedValue = ev("date", "fällig am")
     tax_year: ExtractedValue = ev("year", "the year it concerns, if stated")
-    cost_lines: ExtractedValue = ev("text_list", COST_LINES_MEANING)  # phase 2 D135
+    cost_lines: ExtractedValue = ev("text_list", BESCHEID_COST_LINES_MEANING)  # D135, D145
 
 
 class GrundsteuerbescheidExtraction(_Typing):
