@@ -59,6 +59,8 @@ export type GuideAction =
   | { kind: "upload"; label: string }
   /** afa.no_split: select a recorded split, or upload the Kaufvertrag. */
   | { kind: "split" }
+  /** income.other_review (D140): open the payment, or re-book it as Kaltmiete after a confirm. */
+  | { kind: "rebook_rent"; href: string; fact: AllocationFact }
   /** income.pre_handover: record the D63 input "counts as rent". */
   | { kind: "pre_handover" }
   /** income.living_area_missing: type the flat's Wohnfläche (PATCH /properties/{id}). */
@@ -103,6 +105,17 @@ const payment =
   };
 
 const inbox = () => link("/inbox", "Zu prüfen öffnen");
+
+/** income.other_review (D140): the payment's bank line plus "Als Miete buchen" for the cited
+ * allocation. Null until the payments are loaded (Übersicht then links to Steuern). */
+const otherIncome = (warning: DraftWarning, ctx: GuideContext): GuideAction | null => {
+  for (const ref of warning.refs ?? []) {
+    if (ref.kind !== "allocation" || !ref.id) continue;
+    const fact = ctx.payments?.get(ref.id);
+    if (fact?.transaction_id) return { kind: "rebook_rent", href: `/inbox?umsatz=${fact.transaction_id}`, fact };
+  }
+  return null;
+};
 
 /** The unit page whose "Ortsübliche Miete" section takes the Mietspiegel value: the checked
  * unit of an MFH, else any room of the flat (the flat's value is one for all its rooms). */
@@ -244,8 +257,8 @@ export const WARNING_GUIDE: Partial<Record<WarningCode, Guide>> = {
     todo: true,
     title: () => "Einnahme ohne Zuordnung",
     text: () =>
-      "Die Zahlung öffnen und sagen, was sie war, zum Beispiel Miete, Kaution oder eine Erstattung. Dann zählt sie richtig.",
-    action: payment("Zahlung öffnen"),
+      "War es Miete, zum Beispiel vom Verkäufer weitergeleitete Miete, „Als Miete buchen“ wählen. Sonst die Zahlung öffnen und sagen, was sie war, zum Beispiel Kaution oder eine Erstattung. Dann zählt sie richtig.",
+    action: otherIncome,
   },
   "income.pre_handover": {
     todo: true,
@@ -522,6 +535,13 @@ export function WarningActionView({
       return <ReadUpload label={action.label} onUploaded={onChanged} />;
     case "split":
       return ctx.propertyId ? <SplitAction propertyId={ctx.propertyId} onChanged={onChanged} /> : null;
+    case "rebook_rent":
+      return (
+        <>
+          <Link href={action.href}>Zahlung öffnen</Link>
+          <RebookAsRentAction fact={action.fact} onChanged={onChanged} />
+        </>
+      );
     case "pre_handover":
       return ctx.propertyId ? <PreHandoverAction propertyId={ctx.propertyId} onChanged={onChanged} /> : null;
     case "living_area":
@@ -584,6 +604,97 @@ function SplitAction({ propertyId, onChanged }: { propertyId: string; onChanged?
       </button>
       <ErrorNotice error={error} />
     </>
+  );
+}
+
+type AllocationDraft = components["schemas"]["AllocationDraft"];
+
+/** income.other_review (D140): book the cited allocation as Kaltmiete through the existing
+ * answer command (PUT /transactions/{id}/allocations, the inbox's path), after the user confirms
+ * the sentence naming its date and amount. Only that allocation's category changes: the line's
+ * other parts, its property, period, recurring flag and Beleg are sent back as they are, so the
+ * sum still holds; the server supersedes the old rows and records transaction.reallocated. No
+ * rule is learned (a later payment from the same payer is asked again). */
+function RebookAsRentAction({ fact, onChanged }: { fact: AllocationFact; onChanged?: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const [gone, setGone] = useState(false);
+  const transactionId = fact.transaction_id;
+  if (!transactionId) return null;
+  async function confirm(close: () => void) {
+    if (!transactionId) return;
+    setBusy(true);
+    setError(null);
+    setGone(false);
+    try {
+      const view = await ok(
+        api.GET("/api/transactions/{transaction_id}/allocations", {
+          params: { path: { transaction_id: transactionId } },
+        }),
+      );
+      const rows = view.allocations;
+      // Changed since the draft loaded (another answer superseded it): never guess by amount.
+      if (!rows.some((row) => row.id === fact.allocation_id)) {
+        setGone(true);
+        return;
+      }
+      const drafts: AllocationDraft[] = rows.map((row) => ({
+        amount: row.amount,
+        category: row.id === fact.allocation_id ? "rent_cold" : row.category,
+        property_id: row.property_id,
+        unit_id: row.unit_id,
+        tenancy_id: row.tenancy_id,
+        loan_id: row.loan_id,
+        service_period_start: row.service_period_start,
+        service_period_end: row.service_period_end,
+        recurring: row.recurring,
+        document_id: row.document_id,
+      }));
+      await ok(
+        api.PUT("/api/transactions/{transaction_id}/allocations", {
+          params: { path: { transaction_id: transactionId } },
+          // The server reads only the rows: method and confidence become the person's.
+          body: {
+            allocation_set: { transaction_id: transactionId, allocations: drafts, method: "user", confidence: "1" },
+            learn_rule: false,
+            same_amount_only: false,
+          },
+        }),
+      );
+      close();
+      onChanged?.();
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <ActionDialog label="Als Miete buchen" title="Einnahme als Miete buchen" buttonClass="">
+      {(close) => (
+        <>
+          <p>
+            Die Zahlung vom {formatDate(fact.booking_date)} über {formatMoney(fact.amount)} wird als Kaltmiete gebucht
+            und zählt dann in der Zeile der Miete statt bei den sonstigen Einnahmen. Die Änderung wird mit Datum
+            gespeichert und lässt sich bei der Zahlung wieder ändern.
+          </p>
+          {gone ? (
+            <p className="field-errors" role="alert">
+              Diese Zahlung wurde inzwischen anders zugeordnet. Bitte die Zahlung öffnen und dort prüfen.
+            </p>
+          ) : null}
+          <ErrorNotice error={error} />
+          <div className="row">
+            <button type="button" disabled={busy || gone} onClick={() => void confirm(close)}>
+              {busy ? "Speichert …" : "Ja, als Miete buchen"}
+            </button>
+            <button type="button" className="secondary" onClick={close}>
+              Abbrechen
+            </button>
+          </div>
+        </>
+      )}
+    </ActionDialog>
   );
 }
 
