@@ -48,7 +48,14 @@ jobs:
         run: npm ci
       - name: Chromium for Playwright
         working-directory: frontend
-        run: npx playwright install --with-deps chromium
+        # The browser itself comes from Playwright's CDN; its system libraries come from apt,
+        # which the runner image already carries. When Ubuntu's mirror is unreachable (seen on
+        # 11 Nov 2026: DNS failures for azure.archive.ubuntu.com on every run), apt is given
+        # three minutes and then skipped; a library truly missing still fails the tests visibly.
+        run: |
+          npx playwright install chromium
+          timeout 180 npx playwright install-deps chromium \
+            || echo "::warning::apt mirror unreachable; using the runner image's libraries"
       - name: E2E database
         run: scripts/e2e-db.sh up
       - name: Playwright tests

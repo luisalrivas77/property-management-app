@@ -8,7 +8,7 @@ import csv
 import io
 import re
 import zipfile
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -24,15 +24,22 @@ from hausbuch.schemas.tax import AnlageVDraft, TaxInputFact, WarningCode
 from hausbuch.services.tax_export_files import (
     WARNING_TEXT,
     ArchiveDocument,
+    ArchiveStatement,
+    BankLine,
     ExportStamp,
+    StatementSource,
     archive_document_ids,
     draft_json,
     finanzamt_copy,
     lines_csv,
+    names_payee,
+    payment_groups,
     payments_csv,
     render_archive,
     render_field_sheet,
+    render_payment_proofs,
     safe_filename,
+    year_allocations,
 )
 
 FIXTURE = load("anlage_v_2026")
@@ -222,7 +229,13 @@ def test_archive_holds_every_document_and_lists_the_copies():
     archive = zipfile.ZipFile(io.BytesIO(_archive(documents)))
     assert archive.testzip() is None
     names = archive.namelist()
-    assert names[:4] == ["ausfuellhilfe.pdf", "anlage-v-2026.csv", "zahlungen.csv", "README.txt"]
+    assert names[:5] == [
+        "ausfuellhilfe.pdf",
+        "anlage-v-2026.csv",
+        "zahlungen.csv",
+        "zahlungsnachweise.pdf",
+        "README.txt",
+    ]
     for document in documents:
         assert archive.read(document.path) == document.data  # untouched
         assert archive.getinfo(document.path).compress_type == zipfile.ZIP_STORED
@@ -264,3 +277,230 @@ def test_payments_csv_numbers_the_belege():
 )
 def test_safe_filename(name, safe):
     assert safe_filename(name) == safe
+
+
+# --- D144: the payment proofs and the bank's statements ------------------------------------
+
+SPLIT_TX = UUID("00000000-0000-4000-8000-0000000000a1")
+STATEMENT_SHA = "ab" * 32  # an invented SHA-256
+SPLIT_LINE = BankLine(
+    transaction_id=SPLIT_TX,
+    booking_date=date(2026, 7, 2),
+    value_date=date(2026, 7, 3),
+    amount=Decimal("1030.00"),
+    account_bank="Beispielbank",
+    account_iban_masked="DE00 **** 9999",
+    counterparty_iban_masked="DE11 **** 0001",
+    bank_reference="REF-BEISPIEL-0702",
+    # An incoming line never prints these, even when a caller passes them (D144).
+    counterparty_name="Mieterin Beispiel",
+    purpose="Miete Juli Beispielweg",
+    statement=StatementSource(
+        document_id=UUID(int=50),
+        format="pdf",
+        received_on=date(2026, 7, 31),
+        first_booking_on=date(2026, 7, 1),
+        last_booking_on=date(2026, 7, 31),
+        sha256=STATEMENT_SHA,
+    ),
+)
+
+
+def _split_facts():
+    """The fixture's July rent and prepayment as two parts of one bank line, every other
+    payment its own line."""
+    july = {
+        a.allocation_id
+        for a in CASE.facts.allocations
+        if a.booking_date == date(2026, 7, 2)
+        and a.category.value in ("rent_cold", "operating_costs_prepayment")
+    }
+    assert len(july) == 2
+    allocations = [
+        a.model_copy(
+            update={"transaction_id": SPLIT_TX if a.allocation_id in july else UUID(int=i)}
+        )
+        for i, a in enumerate(CASE.facts.allocations, start=1000)
+    ]
+    return CASE.facts.model_copy(update={"allocations": allocations})
+
+
+def _statement(n: int, data: bytes) -> ArchiveStatement:
+    return ArchiveStatement(
+        document_id=UUID(int=50 + n),
+        number=f"{n:02d}",
+        first_booking_on=date(2026, n, 1),
+        last_booking_on=date(2026, n, 28),
+        data=data,
+    )
+
+
+def _fee_line(facts) -> BankLine:
+    """The fixture's notary fee (-480,00) as an outgoing bank line."""
+    (fee,) = [a for a in facts.allocations if a.amount == Decimal("-480.00")]
+    return _fee_line_of(fee)
+
+
+def _fee_line_of(fee) -> BankLine:
+    return BankLine(
+        transaction_id=fee.transaction_id,
+        booking_date=fee.booking_date,
+        value_date=fee.booking_date,
+        amount=fee.amount,
+        account_bank="Beispielbank",
+        account_iban_masked="DE00 **** 9999",
+        counterparty_iban_masked="DE22 **** 0003",
+        counterparty_name="Notariat Beispielstadt",
+        # A full IBAN typed into the purpose: printed masked, never in full (D144).
+        purpose="Rechnung 4711 Grundschuld, IBAN DE89370400440532013000",
+    )
+
+
+def _proofs(facts, drafted, numbers) -> bytes:
+    fee = _fee_line(facts)
+    return render_payment_proofs(
+        drafted,
+        RULES,
+        facts,
+        STAMP,
+        property_label="Wohnung Beispielweg",
+        bank_lines={SPLIT_TX: SPLIT_LINE, fee.transaction_id: fee},
+        beleg_numbers=numbers,
+    )
+
+
+def test_payment_proofs_list_each_bank_line_once_with_its_parts_and_belege():
+    facts = _split_facts()
+    drafted = draft(facts, CASE.tax_year, RULES)
+    ids = archive_document_ids(drafted, facts)
+    numbers = {document_id: f"{n:03d}" for n, document_id in enumerate(ids, start=1)}
+    data = _proofs(facts, drafted, numbers)
+    assert data == _proofs(facts, drafted, numbers)  # reproducible
+    text = _pdf_text(data)
+    flat = " ".join(text.split())
+    assert "Zahlungsnachweise 2026 – Wohnung Beispielweg" in flat
+    assert "Auszug aus den Umsatzdaten der Bank, erstellt von Hausbuch am 15.01.2027" in flat
+    assert "keine Steuerberatung" in flat
+    # The split line: once, with its line amount, both parts, the account and the statement.
+    assert flat.count("REF-BEISPIEL-0702") == 1
+    assert flat.count("1.030,00 €") == 2  # the entry's heading and its Betrag row
+    assert "850,00 €" in flat and "180,00 €" in flat
+    assert "Zeile 13" in flat  # the rent part, by its Zeile on the form
+    assert "Beispielbank, IBAN DE00 **** 9999" in flat and "DE11 **** 0001" in flat
+    assert STATEMENT_SHA in text.replace("\n", "")
+    assert "PDF-Kontoauszug der Bank, hochgeladen am 31.07.2026" in flat
+    # D144: a payment out names its payee and purpose; a payment in shows neither.
+    assert "Empfänger Notariat Beispielstadt" in flat
+    assert "Verwendungszweck Rechnung 4711 Grundschuld, IBAN DE89 **** 3000" in flat
+    assert "DE89370400440532013000" not in text.replace("\n", "").replace(" ", "")
+    assert "Mieterin Beispiel" not in flat and "Miete Juli" not in flat
+    # One entry per bank line: the year's allocations less the one merged into the split.
+    groups = payment_groups(drafted, facts)
+    assert len(groups) == len(year_allocations(drafted, facts)) - 1
+    assert f"{len(groups)} Zahlungen" in flat
+    # The Belege are named by their numbers in dokumente/.
+    paid = {numbers[a.document_id] for g in groups for a in g if a.document_id in numbers}
+    assert paid and all(number in flat for number in paid)
+    assert FULL_IBAN.search(text) is None
+
+
+def test_the_archive_carries_the_proofs_and_the_bank_statements_untouched():
+    statements = [_statement(7, _pdf()), _statement(8, _pdf(annotation=True))]
+    documents = [ArchiveDocument(UUID(int=1), "001", "Kaufvertrag.pdf", _pdf())]
+    data = render_archive(
+        DRAFT,
+        RULES,
+        CASE.facts,
+        STAMP,
+        property_label="Wohnung Beispielweg",
+        documents=documents,
+        statements=statements,
+    )
+    archive = zipfile.ZipFile(io.BytesIO(data))
+    names = archive.namelist()
+    assert names[:5] == [
+        "ausfuellhilfe.pdf",
+        "anlage-v-2026.csv",
+        "zahlungen.csv",
+        "zahlungsnachweise.pdf",
+        "README.txt",
+    ]
+    assert names[-2:] == [s.path for s in statements]
+    assert statements[0].path == "kontoauszuege/07 Kontoauszug 2026-07-01 bis 2026-07-28.pdf"
+    for statement in statements:
+        assert archive.read(statement.path) == statement.data
+        assert archive.getinfo(statement.path).compress_type == zipfile.ZIP_STORED
+    readme = archive.read("README.txt").decode("utf-8")
+    assert "kontoauszuege/  2 Kontoauszüge der Bank, unverändert" in readme
+    assert "zahlungsnachweise.pdf listet jede Zahlung" in readme
+    assert "laut ELSTER-Hilfe prüfen" in readme and "maskiert" in readme
+    assert "(2 enthalten)" in readme and "nicht enthalten" not in readme
+
+
+def test_statements_left_out_are_named_in_the_readme():
+    data = render_archive(
+        DRAFT,
+        RULES,
+        CASE.facts,
+        STAMP,
+        property_label="Wohnung Beispielweg",
+        documents=[],
+        statements_left_out=3,
+    )
+    archive = zipfile.ZipFile(io.BytesIO(data))
+    assert not any(n.startswith("kontoauszuege/") for n in archive.namelist())
+    readme = archive.read("README.txt").decode("utf-8")
+    assert "3 Kontoauszug/Kontoauszüge der Bank nicht enthalten" in readme
+    assert "größer als 100 MiB" in readme
+
+
+@pytest.mark.parametrize(
+    ("category", "tenancy"),
+    [
+        ("deposit_out", True),  # the deposit paid back to a tenant
+        ("operating_costs_settlement", True),  # a refund to a tenant
+        ("owner_transfer_out", False),  # money to an owner's own account
+        ("loan_fees", True),  # a cost, but tied to a tenancy
+    ],
+)
+def test_a_payment_out_that_is_no_cost_to_a_third_party_names_no_one(category, tenancy):
+    """D144: payee and purpose only for costs paid to third parties."""
+    facts = _split_facts()
+    (tenancy_id,) = {a.tenancy_id for a in facts.allocations if a.tenancy_id is not None}
+    allocations = [
+        a.model_copy(update={"category": category, "tenancy_id": tenancy_id if tenancy else None})
+        if a.amount == Decimal("-480.00")
+        else a
+        for a in facts.allocations
+    ]
+    facts = facts.model_copy(update={"allocations": allocations})
+    drafted = draft(facts, CASE.tax_year, RULES)
+    (paid,) = [a for a in facts.allocations if a.amount == Decimal("-480.00")]
+    assert not names_payee(_fee_line_of(paid), [paid])
+    flat = " ".join(_pdf_text(_proofs(facts, drafted, {})).split())
+    assert "-480,00 €" in flat  # the payment is listed ...
+    assert "Notariat" not in flat and "Rechnung 4711" not in flat  # ... naming no one
+    assert "Verwendungszweck Rechnung" not in flat and "IBAN DE89" not in flat
+
+
+@pytest.mark.parametrize(
+    ("category", "named"),
+    [
+        ("renovation", True),  # a tradesman, before the 15 % test settles the treatment
+        ("hausgeld_ruecklage", True),  # the WEG, until it spends the Rücklage
+        ("other_expense", True),  # another cost paid to a third party
+        ("uncategorized", False),  # nobody knows yet what it is
+    ],
+)
+def test_a_cost_whose_treatment_is_settled_later_still_names_its_payee(category, named):
+    """D144: a renovation or Rücklage payment is a cost to a third party; uncategorized is not."""
+    facts = _split_facts()
+    allocations = [
+        a.model_copy(update={"category": category, "tenancy_id": None})
+        if a.amount == Decimal("-480.00")
+        else a
+        for a in facts.allocations
+    ]
+    facts = facts.model_copy(update={"allocations": allocations})
+    (paid,) = [a for a in facts.allocations if a.amount == Decimal("-480.00")]
+    assert names_payee(_fee_line_of(paid), [paid]) is named

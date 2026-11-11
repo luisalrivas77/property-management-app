@@ -9235,6 +9235,127 @@
         "title": "CarriedField",
         "description": "A field of another record of the same proposal (D132): its record key and field name,\ndotted as the apply body names it (\"tax_input:interest_certified\", \"value.amount\")."
       },
+      "ChecklistBankLine": {
+        "properties": {
+          "allocation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Allocation Id"
+          },
+          "transaction_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transaction Id"
+          },
+          "booking_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Booking Date"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "allocation_id",
+          "booking_date",
+          "amount"
+        ],
+        "title": "ChecklistBankLine",
+        "description": "A confirmed allocation as a checklist item cites it (D142): no counterparty, no purpose\ntext (D5); the frontend labels it by date and amount and opens its bank line."
+      },
+      "ChecklistDepositCandidate": {
+        "properties": {
+          "tenancy_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Tenancy Id"
+          },
+          "unit_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Unit Id"
+          },
+          "deposit_amount": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deposit Amount"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "tenancy_id",
+          "unit_id"
+        ],
+        "title": "ChecklistDepositCandidate",
+        "description": "A tenancy an unlinked deposit line could be split to (D142): it has a deposit (cash),\nits proof is missing, it did not end before the line's booking date and no deposit line is\nlinked to it yet. unit_id: the allocation row's unit (it must be the tenancy's)."
+      },
+      "ChecklistDepositOffer": {
+        "properties": {
+          "allocation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Allocation Id"
+          },
+          "transaction_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transaction Id"
+          },
+          "booking_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Booking Date"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/ChecklistDepositCandidate"
+            },
+            "type": "array",
+            "title": "Candidates"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "allocation_id",
+          "booking_date",
+          "amount"
+        ],
+        "title": "ChecklistDepositOffer",
+        "description": "An unlinked `deposit_in` line of the property, offered on a missing deposit_record item\nwhose tenancy is among `candidates` (D142). candidates: every such tenancy of the year's\nitems, by tenancy start then id; the frontend proposes a split only from these."
+      },
       "ChecklistDocumentRef": {
         "properties": {
           "id": {
@@ -9329,6 +9450,20 @@
             ],
             "title": "Due On"
           },
+          "bank_lines": {
+            "items": {
+              "$ref": "#/components/schemas/ChecklistBankLine"
+            },
+            "type": "array",
+            "title": "Bank Lines"
+          },
+          "deposit_offers": {
+            "items": {
+              "$ref": "#/components/schemas/ChecklistDepositOffer"
+            },
+            "type": "array",
+            "title": "Deposit Offers"
+          },
           "documents": {
             "items": {
               "type": "string",
@@ -9346,7 +9481,7 @@
           "scope"
         ],
         "title": "ChecklistItem",
-        "description": "build_checklist's output. documents: the satisfying documents (present) or the ones\nlacking a tax year (incomplete), oldest first; empty otherwise."
+        "description": "build_checklist's output. documents: the satisfying documents (present) or the ones\nlacking a tax year (incomplete), oldest first; empty otherwise (also for a deposit proven\nby its bank lines only, D142, which lists them in bank_lines)."
       },
       "ChecklistScope": {
         "properties": {
@@ -10401,6 +10536,20 @@
               }
             ],
             "title": "Due On"
+          },
+          "bank_lines": {
+            "items": {
+              "$ref": "#/components/schemas/ChecklistBankLine"
+            },
+            "type": "array",
+            "title": "Bank Lines"
+          },
+          "deposit_offers": {
+            "items": {
+              "$ref": "#/components/schemas/ChecklistDepositOffer"
+            },
+            "type": "array",
+            "title": "Deposit Offers"
           },
           "documents": {
             "items": {

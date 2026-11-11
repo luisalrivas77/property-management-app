@@ -16,7 +16,13 @@ The flow:
    queues the job `tax_export` (lock `export:{id}`) with a new export id and returns it.
 2. The job (jobs/tax_export.py → write_export) computes the draft again, renders the bytes
    (services/tax_export_files.py), stores the blob, then writes document_file, the tax_export
-   row and the event. A second run for the same id finds the row and writes nothing.
+   row and the event. A second run for the same id finds the row and writes nothing. An
+   archive also carries zahlungsnachweise.pdf (bank_lines: the year's bank transactions with
+   the statement file each came from) and the bank's own PDF statements of the year under
+   kontoauszuege/ (statement_files, D144). Under the limit the statements are the first thing
+   left out, never a Beleg: they fill what the Belege and the Anlage N pages leave, and if the
+   finished ZIP is still over, the newest are dropped and it is rendered again; README.txt
+   names how many were left out. The POST's check sums the Belege only.
 3. GET /tax-exports/{id} (export_state): `ready` with a short-lived signed download URL once
    the row exists; before that the job's status: `queued` while it waits or runs, `failed`
    with `tax_export.failed` when it failed, or with `tax_export.too_large` when it ended
@@ -47,11 +53,14 @@ from uuid import UUID, uuid4
 from sqlalchemy import Connection, func, insert, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import document as document_table
 from hausbuch.db.tables import document_file as file_table
 from hausbuch.db.tables import owner as owner_table
 from hausbuch.db.tables import property_ as property_table
+from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import tax_export as tax_export_table
+from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.jobs.enqueue import TAX_EXPORT_TASK, enqueue_tax_export, export_lock
 from hausbuch.rules.errors import (
     TAX_EXPORT_FAILED,
@@ -62,6 +71,7 @@ from hausbuch.rules.errors import (
 from hausbuch.rules.tax import registry
 from hausbuch.rules.tax.draft import draft as compute_draft
 from hausbuch.rules.tax.questionnaire import reminders as questionnaire_reminders
+from hausbuch.schemas.bank import StatementFormat
 from hausbuch.schemas.common import Schema
 from hausbuch.schemas.employment import AnlageNDraft, AnlageNRuleSet, QuestionnaireAnswer
 from hausbuch.schemas.enums import EntityType
@@ -107,7 +117,10 @@ from .tax_export_files import (
     PDF_MEDIA_TYPE,
     ZIP_MEDIA_TYPE,
     ArchiveDocument,
+    ArchiveStatement,
+    BankLine,
     ExportStamp,
+    StatementSource,
     archive_document_ids,
     archive_filename,
     draft_json,
@@ -115,6 +128,7 @@ from .tax_export_files import (
     render_archive,
     render_field_sheet,
     safe_filename,
+    year_allocations,
 )
 
 # An archive over 100 MiB is split by hand (D77): it is built in memory in a 512 MB container.
@@ -122,7 +136,9 @@ MAX_ARCHIVE_BYTES = 100 << 20
 DOWNLOAD_TTL_S = 300
 TAX_EXPORT = "tax_export"  # NotFoundError's entity name: the row's events sit on the property
 _DOMAIN = b"hausbuch.tax_export.download.v1\x00"  # domain separation under the session key
-_ARCHIVE_OVERHEAD = 1 << 20  # sheet, CSVs, README and the ZIP's own headers, generously
+# The generated files (sheet, CSVs, zahlungsnachweise.pdf, README) and the ZIP's own headers,
+# generously: a year's payment proofs are tens of kilobytes.
+_ARCHIVE_OVERHEAD = 1 << 20
 
 ANLAGE_N_DIR = "einkommensteuer"  # the archive's folder for the Anlage N pages (D104)
 ExportStatus = Literal["queued", "ready", "failed"]
@@ -414,6 +430,154 @@ def _archive_documents(
     ]
 
 
+def bank_lines(conn: Connection, draft: AnlageVDraft, facts: DraftFacts) -> dict[UUID, BankLine]:
+    """The bank transactions behind the payments zahlungsnachweise.pdf lists (D144): each
+    line's dates and amount, its account's bank and masked IBAN, the bank's own reference and
+    the statement import it came from, with that original's SHA-256. For an outgoing line
+    (amount < 0) also the payee's name and the purpose text, an exception to D5 for this one
+    file (Luis, 11 Nov 2026: a proof of payment shows who was paid); an incoming line's name
+    and purpose are never kept, and no line's end-to-end reference is read."""
+    ids = {a.transaction_id for a in year_allocations(draft, facts) if a.transaction_id}
+    if not ids:
+        return {}
+    t, ac, si, d = transaction_table.c, account_table.c, import_table.c, document_table.c
+    rows = conn.execute(
+        select(
+            t.id,
+            t.booking_date,
+            t.value_date,
+            t.amount,
+            t.counterparty_iban_masked,
+            t.bank_reference,
+            t.counterparty_name,
+            t.purpose,
+            ac.bank,
+            ac.iban_masked,
+            si.document_id,
+            si.format,
+            si.first_booking_on,
+            si.last_booking_on,
+            d.received_at,
+            d.file_sha256,
+        )
+        .select_from(
+            transaction_table.join(account_table, ac.id == t.account_id)
+            .outerjoin(import_table, si.id == t.import_id)
+            .outerjoin(document_table, d.id == si.document_id)
+        )
+        .where(t.id.in_(ids))
+    ).all()
+    out: dict[UUID, BankLine] = {}
+    for r in rows:
+        source = None
+        if r.document_id is not None and r.file_sha256 is not None:
+            source = StatementSource(
+                document_id=r.document_id,
+                format=r.format,
+                received_on=_local_date(r.received_at),
+                first_booking_on=r.first_booking_on,
+                last_booking_on=r.last_booking_on,
+                sha256=bytes(r.file_sha256).hex(),
+            )
+        out[r.id] = BankLine(
+            transaction_id=r.id,
+            booking_date=r.booking_date,
+            value_date=r.value_date,
+            amount=r.amount,
+            account_bank=r.bank,
+            account_iban_masked=r.iban_masked,
+            counterparty_iban_masked=r.counterparty_iban_masked,
+            bank_reference=r.bank_reference,
+            statement=source,
+            counterparty_name=r.counterparty_name if r.amount < 0 else None,
+            purpose=r.purpose if r.amount < 0 else None,
+        )
+    return out
+
+
+@dataclass(frozen=True)
+class StatementFile:
+    """A PDF statement of the bank the archive may carry (D144), before it is read."""
+
+    document_id: UUID
+    number: str
+    first_booking_on: date
+    last_booking_on: date
+    size: int
+
+
+def statement_files(
+    conn: Connection, facts: DraftFacts, tax_year: int, *, skip: set[UUID]
+) -> list[StatementFile]:
+    """The bank's own PDF statements of the year (D144): documents imported as a PDF
+    statement on an account that carries the property's payments, whose bookings overlap the
+    tax year, and that are PDFs; each once, oldest first, numbered 01…. An import without
+    booking dates (nothing read from it) is left out: its period is unknown. `skip`: the
+    documents already in dokumente/."""
+    accounts = [c.account_id for c in facts.coverage]
+    if not accounts:
+        return []
+    si, d, f = import_table.c, document_table.c, file_table.c
+    first, last = func.min(si.first_booking_on), func.max(si.last_booking_on)
+    rows = conn.execute(
+        select(si.document_id, first.label("first"), last.label("last"), f.size_bytes)
+        .select_from(
+            import_table.join(document_table, d.id == si.document_id).join(
+                file_table, (f.workspace_id == d.workspace_id) & (f.sha256 == d.file_sha256)
+            )
+        )
+        .where(
+            si.account_id.in_(accounts),
+            si.format == StatementFormat.PDF.value,
+            f.media_type == PDF_MEDIA_TYPE,
+            si.first_booking_on.is_not(None),
+            si.last_booking_on.is_not(None),
+            si.first_booking_on <= date(tax_year, 12, 31),
+            si.last_booking_on >= date(tax_year, 1, 1),
+        )
+        .group_by(si.document_id, f.size_bytes)
+        .order_by(first, last, si.document_id)
+    ).all()
+    kept = [r for r in rows if r.document_id not in skip]
+    return [
+        StatementFile(
+            document_id=r.document_id,
+            number=f"{n:02d}",
+            first_booking_on=r.first,
+            last_booking_on=r.last,
+            size=int(r.size_bytes),
+        )
+        for n, r in enumerate(kept, start=1)
+    ]
+
+
+def _fitting(files: list[StatementFile], budget: int) -> list[StatementFile]:
+    """The statements that fit the bytes left under the cap, oldest first; the rest are left
+    out (D144: the bank's statements go before any Beleg)."""
+    kept: list[StatementFile] = []
+    for file in files:
+        if file.size > budget:
+            break
+        kept.append(file)
+        budget -= file.size
+    return kept
+
+
+def _archive_statements(
+    conn: Connection, store: BlobStore, files: list[StatementFile]
+) -> list[ArchiveStatement]:
+    return [
+        ArchiveStatement(
+            document_id=file.document_id,
+            number=file.number,
+            first_booking_on=file.first_booking_on,
+            last_booking_on=file.last_booking_on,
+            data=read_original(conn, store, file.document_id),
+        )
+        for file in files
+    ]
+
+
 def write_export(
     ctx: CommandContext,
     store: BlobStore,
@@ -481,17 +645,40 @@ def write_export(
         label = require_row(conn, property_table, EntityType.PROPERTY, property_id).label
         documents = _archive_documents(conn, store, archive_document_ids(built.draft, built.facts))
         extras = archive_extras(conn, stamp, tax_year=tax_year, today=today)
-        data = render_archive(
-            built.draft,
-            built.rule_set,
-            built.facts,
-            stamp,
-            property_label=label,
-            documents=documents,
-            extra_files=extras.files,
-            banner=extras.banner,
-            notes=extras.notes,
+        lines = bank_lines(conn, built.draft, built.facts)
+        # D144: the bank's statements fill what the cap leaves after the Belege, never the
+        # other way round; whatever does not fit is named in README.txt.
+        candidates = statement_files(
+            conn, built.facts, tax_year, skip={d.document_id for d in documents}
         )
+        budget = (
+            MAX_ARCHIVE_BYTES
+            - _ARCHIVE_OVERHEAD
+            - sum(len(d.data) for d in documents)
+            - sum(len(x) for _, x in extras.files)
+        )
+        statements = _archive_statements(conn, store, _fitting(candidates, budget))
+        while True:
+            data = render_archive(
+                built.draft,
+                built.rule_set,
+                built.facts,
+                stamp,
+                property_label=label,
+                documents=documents,
+                extra_files=extras.files,
+                banner=extras.banner,
+                notes=extras.notes,
+                bank_lines=lines,
+                statements=statements,
+                statements_left_out=len(candidates) - len(statements),
+            )
+            if len(data) <= MAX_ARCHIVE_BYTES or not statements:
+                break
+            excess = len(data) - MAX_ARCHIVE_BYTES
+            data = b""  # release the over-cap ZIP before the next one is built (512 MB box)
+            while statements and excess > 0:  # still over: drop the newest statements
+                excess -= len(statements.pop().data)
         if len(data) > MAX_ARCHIVE_BYTES:
             return "too_large"
         media_type = ZIP_MEDIA_TYPE

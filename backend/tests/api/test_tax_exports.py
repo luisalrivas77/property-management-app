@@ -1,9 +1,10 @@
 """Exports of the Anlage V draft over HTTP (docs/phases/phase-3.md §10, §12, D59, D65): POST
 queues the job, the job (run here directly, as the worker would) writes the row, file and
 event, GET reports the state with a signed download URL, the list shows the history. Also:
-another workspace sees none of it, the sheet and the CSVs carry no name, full IBAN or purpose
-text (D5), the archive holds every linked original untouched, and an archive over the limit
-is refused."""
+another workspace sees none of it, the sheet, the CSVs and the payment proofs carry no name,
+full IBAN or purpose text (D5), the archive holds every linked original and the bank's PDF
+statements untouched (D144), and an archive over the limit is refused, the statements left
+out before any Beleg."""
 
 import csv
 import hashlib
@@ -231,9 +232,7 @@ def test_a_second_run_writes_nothing(client_a, booked, deps, jobs, ws_a):
     assert len(_exported_events(client_a, pid)) == 1
 
 
-def test_the_sheet_and_the_csvs_carry_no_name_iban_or_purpose_text(
-    client_a, booked, deps, jobs, ws_a
-):
+def test_no_export_carries_an_incoming_name_or_purpose_text(client_a, booked, deps, jobs, ws_a):
     pid = booked["pid"]
     create(client_a, "/api/owners", {"full_name": "Luis Rivas"})
     _typed(
@@ -252,21 +251,32 @@ def test_the_sheet_and_the_csvs_carry_no_name_iban_or_purpose_text(
         "ausfuellhilfe.pdf": _pdf_text(archive.read("ausfuellhilfe.pdf")),
         "anlage-v-2026.csv": archive.read("anlage-v-2026.csv").decode("utf-8"),
         "zahlungen.csv": archive.read("zahlungen.csv").decode("utf-8"),
+        "zahlungsnachweise.pdf": _pdf_text(archive.read("zahlungsnachweise.pdf")),
     }
-    secrets = (
+    # Never in any export file: the incoming line's name, purpose text and IBAN (the camt
+    # fixture's "Partei A" pays 241,58), the tenant, the owner, booking texts, full IBANs.
+    incoming = (
         TENANT_NAME,
         "Luis Rivas",
-        "Partei A",  # the counterparties' names, purpose texts and IBANs (camt fixture)
-        "Partei B",
-        "Verwendungszweck",
+        "Partei A",
+        "Verwendungszweck 2",
         "ÜBERWEISUNG",
         SAMPLE_IBAN,
         COUNTERPARTY_IBAN,
         "DE86100000000000001002",
     )
+    # The outgoing line (the repair, -360,18 to "Partei B"): its payee and purpose only in
+    # zahlungsnachweise.pdf (D144), never in the field sheet or the CSVs.
+    outgoing = ("Partei B", "Verwendungszweck 3")
     for where, content in texts.items():
-        for secret in secrets:
+        for secret in incoming:
             assert secret not in content, (where, secret)
+        if where != "zahlungsnachweise.pdf":
+            for secret in (*outgoing, "Verwendungszweck", "Empfänger"):
+                assert secret not in content, (where, secret)
+    proofs = " ".join(texts["zahlungsnachweise.pdf"].split())
+    assert "Empfänger Partei B" in proofs and "Verwendungszweck Verwendungszweck 3" in proofs
+    assert proofs.count("Empfänger Partei") == 1  # the payment in shows no name
     rows = list(csv.reader(io.StringIO(texts["zahlungen.csv"].lstrip("﻿")), delimiter=";"))
     assert {"-360,18", "241,58"} <= {r[1] for r in rows[1:]}
     assert all(r[-1] == "" or "*" in r[-1] for r in rows[1:])  # a masked IBAN at most
@@ -304,7 +314,13 @@ def test_the_archive_holds_every_linked_original(client_a, booked, deps, jobs, w
     archive = zipfile.ZipFile(io.BytesIO(data))
     assert archive.testzip() is None
     names = archive.namelist()
-    assert names[:4] == ["ausfuellhilfe.pdf", "anlage-v-2026.csv", "zahlungen.csv", "README.txt"]
+    assert names[:5] == [
+        "ausfuellhilfe.pdf",
+        "anlage-v-2026.csv",
+        "zahlungen.csv",
+        "zahlungsnachweise.pdf",
+        "README.txt",
+    ]
     originals = {n: archive.read(n) for n in names if n.startswith("dokumente/")}
     assert contract_bytes in originals.values() and lease_bytes in originals.values()
     (contract_path,) = [n for n, d in originals.items() if d == contract_bytes]
@@ -334,6 +350,96 @@ def test_an_archive_over_the_limit_is_refused(client_a, booked, jobs, ws_a, monk
     assert jobs(ws_a) == []
     # The field sheet carries no originals and is not limited.
     assert _request(client_a, pid).status_code == 202
+
+
+def _pdf_statement(client, dbname, ws, data: bytes, first: str, last: str) -> str:
+    """A PDF statement of the rental account: the file uploaded as a document and its import
+    row written directly (reading a PDF statement takes the model, which this test skips)."""
+    document = ok(upload(client, data, filename="kontoauszug.pdf"), 201)
+    with _admin(dbname) as conn:
+        (account_id,) = conn.execute(
+            "SELECT account_id FROM statement_import WHERE workspace_id = %s LIMIT 1", (ws,)
+        ).fetchone()
+        conn.execute(
+            "INSERT INTO statement_import (workspace_id, account_id, document_id, format,"
+            " first_booking_on, last_booking_on) VALUES (%s, %s, %s, 'pdf', %s, %s)",
+            (ws, account_id, document["id"], first, last),
+        )
+    return document["id"]
+
+
+# Invented statement bytes, big enough that the limit below can hold the Beleg but not them.
+STATEMENT = b"%PDF-1.7 Kontoauszug Beispielbank\n" + bytes(range(256)) * 800
+
+
+def test_the_archive_carries_payment_proofs_and_the_bank_statements(
+    client_a, booked, deps, jobs, ws_a, dbname
+):
+    pid = booked["pid"]
+    _pdf_statement(client_a, dbname, ws_a, STATEMENT, "2026-04-01", "2026-04-30")
+    _pdf_statement(client_a, dbname, ws_a, b"%PDF-1.7 Auszug 2025", "2025-11-01", "2025-11-30")
+    archive = zipfile.ZipFile(
+        io.BytesIO(_download(client_a, _export(client_a, deps, jobs, ws_a, pid, "archive")))
+    )
+    statements = [n for n in archive.namelist() if n.startswith("kontoauszuege/")]
+    assert statements == ["kontoauszuege/01 Kontoauszug 2026-04-01 bis 2026-04-30.pdf"]
+    assert archive.read(statements[0]) == STATEMENT  # untouched; the 2025 one is not the year's
+    proofs = _pdf_text(archive.read("zahlungsnachweise.pdf"))
+    flat = " ".join(proofs.split())
+    assert "Zahlungsnachweise 2026" in flat
+    assert "-360,18 €" in flat and "241,58 €" in flat
+    assert "Sparkasse, IBAN DE50 **** 0001" in flat  # the account, masked as stored
+    camt_sha = hashlib.sha256(ZIP).hexdigest()
+    assert camt_sha in proofs.replace("\n", "")  # the bank file each line came from
+    assert "camt-XML der Bank" in flat
+    readme = archive.read("README.txt").decode("utf-8")
+    assert "kontoauszuege/  1 Kontoauszüge der Bank, unverändert" in readme
+    assert hashlib.sha256(STATEMENT).hexdigest() in readme
+
+
+def test_the_limit_leaves_out_the_bank_statements_before_any_beleg(
+    client_a, booked, deps, jobs, ws_a, dbname, monkeypatch
+):
+    pid = booked["pid"]
+    contract = b"%PDF-1.7 Kaufvertrag Grenze"
+    _typed(
+        client_a,
+        contract,
+        type_="contract",
+        subtype="purchase_contract",
+        title="Kaufvertrag",
+        target=("property", pid),
+    )
+    _pdf_statement(client_a, dbname, ws_a, STATEMENT, "2026-04-01", "2026-04-30")
+    limit = tax_export_service._ARCHIVE_OVERHEAD + len(contract) + len(STATEMENT) // 2
+    monkeypatch.setattr(tax_export_service, "MAX_ARCHIVE_BYTES", limit)
+    archive = zipfile.ZipFile(
+        io.BytesIO(_download(client_a, _export(client_a, deps, jobs, ws_a, pid, "archive")))
+    )
+    names = archive.namelist()
+    assert contract in [archive.read(n) for n in names if n.startswith("dokumente/")]
+    assert not any(n.startswith("kontoauszuege/") for n in names)
+    readme = archive.read("README.txt").decode("utf-8")
+    assert "1 Kontoauszug/Kontoauszüge der Bank nicht enthalten" in readme
+
+
+def test_a_statement_that_overflows_the_rendered_archive_is_dropped(
+    client_a, booked, deps, jobs, ws_a, dbname, monkeypatch
+):
+    """The backstop: when the finished ZIP is still over the limit, the statements go first
+    and the archive is rendered again without them."""
+    pid = booked["pid"]
+    _pdf_statement(client_a, dbname, ws_a, STATEMENT, "2026-04-01", "2026-04-30")
+    whole = _download(client_a, _export(client_a, deps, jobs, ws_a, pid, "archive"))
+    assert STATEMENT in whole
+    monkeypatch.setattr(tax_export_service, "_ARCHIVE_OVERHEAD", 0)
+    monkeypatch.setattr(tax_export_service, "_fitting", lambda files, budget: files)
+    monkeypatch.setattr(tax_export_service, "MAX_ARCHIVE_BYTES", len(whole) - len(STATEMENT) // 2)
+    archive = zipfile.ZipFile(
+        io.BytesIO(_download(client_a, _export(client_a, deps, jobs, ws_a, pid, "archive")))
+    )
+    assert not any(n.startswith("kontoauszuege/") for n in archive.namelist())
+    assert "nicht enthalten: das Archiv wäre größer" in archive.read("README.txt").decode()
 
 
 def test_a_job_that_outgrew_the_limit_reads_as_too_large(

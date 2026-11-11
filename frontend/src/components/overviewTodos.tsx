@@ -126,7 +126,7 @@ function buildEntries(data: OverviewTodosData, reminders: Reminder[], onChanged:
     });
     for (const item of items) {
       if (coveredByWarning(item, warnings)) continue;
-      const entry = checklistEntry(item, year, { propertyId: property.id }, property.label);
+      const entry = checklistEntry(item, year, { propertyId: property.id, items, onChanged }, property.label);
       if (entry) entries.push(entry);
     }
   }
