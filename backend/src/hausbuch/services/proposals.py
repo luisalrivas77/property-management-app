@@ -42,6 +42,7 @@ from hausbuch.rules.extraction_parse import extraction_kind
 from hausbuch.rules.hand_fields import HAND_FIELDS
 from hausbuch.rules.loan_schedule import build_schedule
 from hausbuch.rules.prefill import (
+    OTHER_NOTICE,
     build_proposal,
     grundsteuer_schedule_record,
     grundsteuer_schedule_value,
@@ -840,7 +841,7 @@ class _Apply:
 
     def _unit(self, record: ProposalRecord, values: dict[str, Any]) -> UUID:
         if record.mode == "create":
-            data = {"property_id": str(self.property_id(record.key))} | values
+            data: dict[str, Any] = {"property_id": str(self.property_id(record.key))} | values
             return units.create_unit(self.ctx, _validate(record.key, UnitCreate, data)).id
         target = _target(record)
         patch = _validate(record.key, UnitPatch, values)
@@ -867,10 +868,12 @@ class _Apply:
 
     def _cost(self, record: ProposalRecord, values: dict[str, Any]) -> UUID:
         if record.mode == "create":
-            data = {
-                "property_id": str(self.property_id(record.key)),
-                "document_id": str(self.document_id),
-            } | values
+            data: dict[str, Any] = {"property_id": str(self.property_id(record.key))}
+            # D145: the rest of a Grunderwerbsteuer row that one buyer's notice did not cover
+            # belongs to the other notice, so it is created without this document as its Beleg.
+            if not record.key.endswith(f":{OTHER_NOTICE}"):
+                data["document_id"] = str(self.document_id)
+            data |= values
             created = properties.add_acquisition_cost(
                 self.ctx, _validate(record.key, AcquisitionCostCreate, data)
             )

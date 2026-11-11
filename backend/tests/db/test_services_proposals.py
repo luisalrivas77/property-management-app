@@ -42,7 +42,13 @@ from hausbuch.schemas.enums import (
     TenancyRole,
 )
 from hausbuch.schemas.events import EventType
-from hausbuch.schemas.property import Address, PriceSplitCreate, PropertyCreate, UnitCreate
+from hausbuch.schemas.property import (
+    AcquisitionCostCreate,
+    Address,
+    PriceSplitCreate,
+    PropertyCreate,
+    UnitCreate,
+)
 from hausbuch.schemas.proposal import ProposalApplyBody, ProposalApplyRecord
 from hausbuch.schemas.tenancy import TenancyCreate, TenancyParty, TenantCreate
 from hausbuch.services import proposals
@@ -52,6 +58,7 @@ from hausbuch.services.errors import ConflictError, NotFoundError, RuleViolation
 from hausbuch.services.events import list_events
 from hausbuch.services.loans import list_loans
 from hausbuch.services.properties import (
+    add_acquisition_cost,
     create_property,
     get_property,
     list_acquisition_costs,
@@ -551,6 +558,79 @@ def test_a_cost_invoice_creates_the_cost_with_this_document_as_beleg(
         "UR 123/2024",
     )
     assert [lk.target_id for lk in read(ws, list_links, doc.id)] == [prop.id]
+
+
+GREST = ClassifyOutput(
+    type=DocumentType.BESCHEID,
+    subtype=DocumentSubtype.COST_BASIS_EVIDENCE,
+    contains_tenant_data=False,
+    language="de",
+    confidence="high",
+)
+
+
+def _grest_values(reference: str) -> dict:
+    return {
+        "title": _v("Grunderwerbsteuerbescheid"),
+        "document_date": _v("2024-04-02"),
+        "sender": _v("Finanzamt Berlin Grunderwerbsteuerstelle"),
+        "amount_total": _v("8670.00"),
+        "reference": _v(reference),
+    }
+
+
+def test_one_buyers_grunderwerbsteuer_notices_keep_the_total(
+    run, read, job, fresh_workspaces, blob_store, enqueued
+):
+    """D145: the first buyer's notice takes the hand-typed row's half and leaves the other
+    half as a row without a Beleg; the second buyer's notice then fills that row. The total
+    stays 17,340.00 throughout, and each row ends with its own notice as its Beleg."""
+    ws, _ = fresh_workspaces
+    prop = run(ws, create_property, FLAT)
+    typed = run(
+        ws,
+        add_acquisition_cost,
+        AcquisitionCostCreate(
+            property_id=prop.id,
+            kind=AcquisitionCostKind.REAL_ESTATE_TRANSFER_TAX,
+            amount=Decimal("17340.00"),
+        ),
+    )
+    first, ready, _ = _read_ready(
+        run, job, ws, blob_store, enqueued, GREST, _grest_values("GrESt 1"), b"%PDF grest 1"
+    )
+    assert {r.key for r in ready.records} == {
+        "typing",
+        "cost:real_estate_transfer_tax",
+        "cost:real_estate_transfer_tax:other_notice",
+        "link:property",
+    }
+    run(ws, proposals.apply_proposal, ready.id, _accept_all(ready), iban_key=TEST_IBAN_KEY)
+
+    rows = {c.id: c for c in read(ws, list_acquisition_costs, prop.id)}
+    assert len(rows) == 2
+    [rest] = [c for c in rows.values() if c.id != typed.id]
+    assert (rows[typed.id].amount, rows[typed.id].document_id) == (Decimal("8670.00"), first.id)
+    assert (rest.amount, rest.document_id) == (Decimal("8670.00"), None)
+    assert rest.kind is AcquisitionCostKind.REAL_ESTATE_TRANSFER_TAX
+    assert rest.note == "Grunderwerbsteuer, weiterer Bescheid (z. B. des Miteigentümers)"
+
+    second, ready, _ = _read_ready(
+        run, job, ws, blob_store, enqueued, GREST, _grest_values("GrESt 2"), b"%PDF grest 2"
+    )
+    [cost] = [r for r in ready.records if r.key.startswith("cost:")]
+    assert (cost.key, cost.mode, cost.target_id) == (
+        "cost:real_estate_transfer_tax",
+        "patch",
+        rest.id,
+    )
+    run(ws, proposals.apply_proposal, ready.id, _accept_all(ready), iban_key=TEST_IBAN_KEY)
+
+    rows = {c.id: c for c in read(ws, list_acquisition_costs, prop.id)}
+    assert {c.id: (c.amount, c.document_id) for c in rows.values()} == {
+        typed.id: (Decimal("8670.00"), first.id),
+        rest.id: (Decimal("8670.00"), second.id),
+    }
 
 
 def test_a_loan_contract_creates_the_loan_on_the_only_property(
