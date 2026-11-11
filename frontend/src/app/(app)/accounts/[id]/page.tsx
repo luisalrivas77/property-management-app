@@ -4,7 +4,8 @@
 // the imports with their reconciliation status, the closing-balance form for a CSV), Umsätze
 // (with a booking-date filter, or the lines of one import), and mögliche Doppelbuchungen
 // (the same payment imported in two formats, D22). An owner account takes no statements, so
-// it shows its facts only.
+// it shows its facts only. Kontoauszüge starts with the Bankabruf card (phase-5.md §11): the
+// FinTS connection and its runs; a run that imports reloads the imports below.
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useState, type FormEvent } from "react";
@@ -12,6 +13,7 @@ import { Suspense, useCallback, useState, type FormEvent } from "react";
 import { api, ok } from "@/api/client";
 import type { Account } from "@/api/schemas";
 import { DuplicatesList, ImportsTable, openDuplicateCount, StatementUpload, TransactionsTable } from "@/components/accounts";
+import { BankSyncCard } from "@/components/bankSync";
 import { formatDate, formatMoney } from "@/components/format";
 import { Breadcrumbs, Facts, Loading, TabBar, type Tab } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
@@ -91,6 +93,7 @@ function AccountDetail() {
                 <TabBar tabs={tabs} current={tab} href={(key) => `/accounts/${id}?tab=${key}`} />
                 {tab === "kontoauszuege" ? (
                   <div className="stack">
+                    <BankSyncCard account={data} onImported={statements.reload} />
                     <StatementUpload accountId={id} onImported={statements.reload} />
                     {openCount > 0 ? (
                       <div className="notice notice-warn">
