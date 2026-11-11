@@ -19,6 +19,11 @@ through the same conversion as production (hausbuch.ai.client.message_to_respons
 are rebuilt exactly as jobs.document_read builds them (first three pages for classify, one
 request per chunk of HAUSBUCH_AI_MAX_PAGES pages for extract).
 
+A document typed by code before its reading (a payment proof, phase 3 D143) is never sent to
+the classifier: its recording has `"classify": null` and `"pretyped": {"type": ..., "subtype":
+...}`, and the replay takes the job's own classification for that typing
+(jobs.document_read.pretyped_classification).
+
 `synthetic_recording` builds a recording in the same shape from a document's own text, for
 the harness's own tests. It is marked `"synthetic": true`, is never written to recordings/,
 and is not, and does not pretend to be, real API output.
@@ -44,9 +49,11 @@ from hausbuch.evals.reading import (
     extract_requests_for,
     merged_values,
 )
+from hausbuch.jobs.document_read import pretyped_classification
 from hausbuch.rules.extraction_parse import PropertyAddress, extraction_kind
 from hausbuch.schemas.ai import ClassifyOutput, ExtractedValue
-from hausbuch.schemas.enums import DocumentSubtype, ExtractionKind
+from hausbuch.schemas.document import DocumentTyping
+from hausbuch.schemas.enums import DocumentSubtype, DocumentType, ExtractionKind
 from hausbuch.settings import Settings
 
 __all__ = ["eval_settings"]  # re-exported: test_recorded_evals and record.py import it here
@@ -64,13 +71,33 @@ EVAL_PROPERTIES = (
 
 @dataclass(frozen=True)
 class Requests:
-    classify: ModelRequest
+    classify: ModelRequest | None  # None: typed by code, never classified (D143)
     extract: list[tuple[int, ModelRequest]]  # (page offset, request)
+
+
+def pretyped(doc: Doc) -> dict | None:
+    """The typing code gives `doc` before its reading, as the recording stores it, or None
+    for a document the classifier types (every one but a payment proof, D143)."""
+    typing = DocumentTyping(
+        type=DocumentType(doc.type),
+        subtype=DocumentSubtype(doc.subtype) if doc.subtype is not None else None,
+    )
+    if pretyped_classification(typing) is None:
+        return None
+    return {"type": doc.type, "subtype": doc.subtype}
+
+
+def _pretyped_classification(typing: dict) -> ClassifyOutput:
+    classification = pretyped_classification(DocumentTyping.model_validate(typing))
+    assert classification is not None, f"not a document typed by code: {typing}"
+    return classification
 
 
 def build_requests(doc: Doc, settings: Settings) -> Requests:
     data = doc_pdf(doc)
-    classify = classify_request_for(settings, data, documents.PDF)
+    classify = (
+        None if pretyped(doc) is not None else classify_request_for(settings, data, documents.PDF)
+    )
     # The general reading asks the fields of the subtype's group (D131), so the subtype goes
     # in as the job passes the classified one.
     subtype = DocumentSubtype(doc.subtype) if doc.subtype is not None else None
@@ -93,7 +120,10 @@ class Replay:
 
 def replay(recording: dict) -> Replay:
     """Classification and merged values from a recording, as the job would compute them."""
-    classification = parse_classification(response_of(recording["classify"]).text)
+    if recording["classify"] is None:
+        classification = _pretyped_classification(recording["pretyped"])
+    else:
+        classification = parse_classification(response_of(recording["classify"]).text)
     kind = extraction_kind(classification.type, classification.subtype)
     chunks = (
         chunk_values(
@@ -113,7 +143,11 @@ def stale_reasons(recording: dict, requests: Requests) -> list[str]:
     """Why a recording no longer matches what the code would send (prompt or document
     changed): such a recording must be re-recorded with record.py."""
     reasons = []
-    entries = [("classify", recording["classify"], requests.classify)]
+    entries = []
+    if (recording["classify"] is None) != (requests.classify is None):
+        reasons.append("classify: the document is typed by code now, or no longer")
+    elif requests.classify is not None:
+        entries.append(("classify", recording["classify"], requests.classify))
     entries += [
         (f"extract[{i}]", entry, request)
         for i, (entry, (_, request)) in enumerate(
@@ -202,19 +236,23 @@ def synthetic_recording(doc: Doc, requests: Requests, as_written: dict[str, str]
         )
     classify = requests.classify
     (offset, extract), *_ = requests.extract
+    typed = pretyped(doc)
     return {
         "format": FORMAT,
         "doc": doc.name,
         "synthetic": True,
         "recorded_on": date(2026, 11, 6).isoformat(),
         "sdk_version": "synthetic",
-        "classify": {
+        "classify": None
+        if classify is None
+        else {
             "prompt_version": classify.prompt_version,
             "request_sha256": classify.sha256().hex(),
             "message": _message(
                 classify.model, [{"type": "text", "text": classify_json, "citations": None}]
             ),
         },
+        **({"pretyped": typed} if typed is not None else {}),
         "extract": [
             {
                 "prompt_version": extract.prompt_version,
