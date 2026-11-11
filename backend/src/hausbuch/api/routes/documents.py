@@ -46,7 +46,7 @@ from hausbuch.services.documents import (
     unlink_document,
     upload_document,
 )
-from hausbuch.services.proposals import proposal_for_upload
+from hausbuch.services.proposals import attach_stored_proof, proposal_for_upload
 from hausbuch.storage import BlobStore
 
 from ..deps import Cmd, SettingsDep, StoreDep, domain_router, found, require
@@ -254,9 +254,12 @@ def document_link(document_id: UUID, body: LinkBody, cmd: Cmd) -> DocumentLink:
 def document_payment_proof(document_id: UUID, body: PaymentProofBody, cmd: Cmd) -> Document:
     """Phase 3 D149, the to-do „Vorhandenen Nachweis zuordnen“: this document, a payment proof
     already stored, pays the bill `bill_id`. Linked as the upload from the to-do links it
-    (D143): to the bill and the bill's properties; a link that exists is kept. 404 for an
-    unknown document or bill, 422 when it is the bill itself or is not a payment proof."""
-    return cmd.run(attach_payment_proof, document_id, body.bill_id)
+    (D143): to the bill and the bill's properties; a link that exists is kept. When the
+    proof's reading shows the bill's privately paid rows were paid in another year, a
+    suggestion to move them waits on the proof's page (review F1, nothing moved yet). 404 for
+    an unknown document or bill, 422 when it is the bill itself, is not typed as a payment
+    proof (an untyped document too)."""
+    return cmd.run(attach_stored_proof, document_id, body.bill_id)
 
 
 @router.delete("/documents/{document_id}/links/{target_type}/{target_id}", status_code=204)

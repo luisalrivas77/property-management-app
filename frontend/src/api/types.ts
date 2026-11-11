@@ -1240,8 +1240,11 @@ export interface paths {
          * Document Payment Proof
          * @description Phase 3 D149, the to-do „Vorhandenen Nachweis zuordnen“: this document, a payment proof
          *     already stored, pays the bill `bill_id`. Linked as the upload from the to-do links it
-         *     (D143): to the bill and the bill's properties; a link that exists is kept. 404 for an
-         *     unknown document or bill, 422 when it is the bill itself or is not a payment proof.
+         *     (D143): to the bill and the bill's properties; a link that exists is kept. When the
+         *     proof's reading shows the bill's privately paid rows were paid in another year, a
+         *     suggestion to move them waits on the proof's page (review F1, nothing moved yet). 404 for
+         *     an unknown document or bill, 422 when it is the bill itself, is not typed as a payment
+         *     proof (an untyped document too).
          */
         post: operations["document_payment_proof_api_documents__document_id__payment_proof_post"];
         delete?: never;

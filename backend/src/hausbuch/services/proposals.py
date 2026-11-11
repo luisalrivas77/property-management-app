@@ -29,6 +29,7 @@ from uuid import UUID
 from pydantic import BaseModel, JsonValue, ValidationError
 from sqlalchemy import Connection, exists, insert, null, select, update
 
+from hausbuch.db.tables import document_extraction as extraction_table
 from hausbuch.db.tables import property_acquisition_cost as cost_table
 from hausbuch.db.tables import proposal as proposal_table
 from hausbuch.db.tables import return_input as return_input_table
@@ -71,7 +72,12 @@ from hausbuch.schemas.api import (
     UnitPatch,
 )
 from hausbuch.schemas.common import Schema, TaxYear
-from hausbuch.schemas.document import DocumentTyping, ManualDocumentFields
+from hausbuch.schemas.document import (
+    Document,
+    DocumentExtraction,
+    DocumentTyping,
+    ManualDocumentFields,
+)
 from hausbuch.schemas.employment import (
     RETURN_INPUT_VALUES,
     ReturnInput,
@@ -82,6 +88,7 @@ from hausbuch.schemas.employment import (
 from hausbuch.schemas.enums import (
     ActorType,
     DocumentSubtype,
+    DocumentType,
     EntityType,
     ExtractionKind,
     IncomeInputKind,
@@ -322,6 +329,120 @@ def rerun_proposal(
         _set(ctx, old.id, status=ProposalStatus.SUPERSEDED, error_code=None)
         append_event(ctx, EventType.PROPOSAL_SUPERSEDED, old.id, _noted(old))
     return request_read(ctx, document_id, contains_tenant_data=contains_tenant_data)
+
+
+# --- A payment proof linked after its reading (phase 3 D149) ------------------------------
+
+
+def attach_stored_proof(ctx: CommandContext, proof_id: UUID, bill_id: UUID) -> Document:
+    """POST /documents/{id}/payment-proof, the to-do „Vorhandenen Nachweis zuordnen“: link a
+    payment proof stored before to the bill it pays (documents.attach_payment_proof with
+    `existing`: an untyped document is refused), then, in the same transaction, propose
+    moving the bill's privately paid rows to the year the proof says it was paid
+    (propose_proof_years). A ready suggestion of the proof that still offers bills to pick
+    (link:document) is superseded: the bill is chosen now."""
+    document = documents.attach_payment_proof(ctx, proof_id, bill_id, existing=True)
+    if propose_proof_years(ctx, proof_id) is None:
+        stale = [
+            p
+            for p in list_document_proposals(ctx.conn, proof_id)
+            if p.status is ProposalStatus.READY and any(r.key == PROOF_LINK_KEY for r in p.records)
+        ]
+        for old in stale:
+            _set(ctx, old.id, status=ProposalStatus.SUPERSEDED, error_code=None)
+            append_event(ctx, EventType.PROPOSAL_SUPERSEDED, old.id, _noted(old))
+    return document
+
+
+def propose_proof_years(
+    ctx: CommandContext, proof_id: UUID, *, proposed_rows: frozenset[UUID] = frozenset()
+) -> Proposal | None:
+    """Phase 3 D149 (review F1): a payment proof was linked to its bill after its reading
+    (a bill picked on its suggestion, or „Vorhandenen Nachweis zuordnen“), so the reading's
+    D143 proposal to move the bill's private_cost rows to the year paid never ran. Rebuilds it
+    from the stored reading, without a model call: build_proposal over the proof's latest
+    payment_proof extraction, with the bill now found through the link (prefill_context's
+    proof_bill), so the to-do's own rule decides (the amount fits the bill as a whole and
+    paid_on is read). Only its private_cost_year records are kept, the first carrying the
+    note that names the bill; nothing is stored when there are none (the years agree, the
+    amount does not fit, paid_on is unread, or the proof has no such reading).
+
+    `proposed_rows`: the private_cost rows the applied suggestion already proposed to move
+    (applied or declined there); when the bill has one of them, nothing is proposed again.
+
+    The new proposal is `ready` (kind payment_proof, the reading's extraction and AI call),
+    the proof's other undecided proposals superseded, so the proof has one suggestion. The
+    user confirms it on the proof's page (principle 3); nothing is moved here."""
+    bill = _proof_bill(ctx.conn, proof_id)
+    if bill is None or any(r.id in proposed_rows for r in bill.private_costs):
+        return None
+    reading = _payment_proof_reading(ctx.conn, proof_id)
+    if reading is None:
+        return None
+    classification = ClassifyOutput(
+        type=DocumentType.OTHER,
+        subtype=DocumentSubtype.PAYMENT_PROOF,
+        contains_tenant_data=False,
+        language="de",
+        confidence="high",
+    )
+    built = build_proposal(
+        ExtractionKind.PAYMENT_PROOF,
+        reading.fields,  # type: ignore[arg-type]
+        prefill_context(ctx.conn, proof_id, classification),
+    )
+    notes = built[0].notes if built and built[0].key == "typing" else []
+    records = [r for r in built if _prefix(r.key) == "private_cost_year"]
+    if not records:
+        return None
+    records[0] = records[0].model_copy(update={"notes": [*notes, *records[0].notes]})
+    pending = ctx.conn.execute(
+        select(proposal_table)
+        .where(proposal_table.c.document_id == proof_id)
+        .where(proposal_table.c.status.in_([s.value for s in _RERUN_SUPERSEDES]))
+        .order_by(proposal_table.c.created_at, proposal_table.c.id)
+        .with_for_update()
+    ).all()
+    for row in pending:
+        old = _to_proposal(row)
+        _set(ctx, old.id, status=ProposalStatus.SUPERSEDED, error_code=None)
+        append_event(ctx, EventType.PROPOSAL_SUPERSEDED, old.id, _noted(old))
+    row = ctx.conn.execute(
+        insert(proposal_table)
+        .values(
+            workspace_id=ctx.workspace_id,
+            document_id=proof_id,
+            status=ProposalStatus.READY.value,
+            kind=ExtractionKind.PAYMENT_PROOF.value,
+            extraction_id=reading.id,
+            ai_call_id=reading.ai_call_id,
+            target_mode=ProposalTargetMode.PATCH.value,
+            targets=[
+                {"key": r.key, "entity_type": str(r.entity_type), "target_id": str(r.target_id)}
+                for r in records
+            ],
+            fields=[r.model_dump(mode="json") for r in records],
+            created_at=ctx.now,
+            updated_at=ctx.now,
+        )
+        .returning(*proposal_table.c)
+    ).one()
+    proposal = _to_proposal(row)
+    append_event(ctx, EventType.PROPOSAL_CREATED, proposal.id, ProposalNoted(document_id=proof_id))
+    return proposal
+
+
+def _payment_proof_reading(conn: Connection, document_id: UUID) -> DocumentExtraction | None:
+    """The document's latest payment_proof extraction (a manual version written on top holds
+    the hand fields only, not paid_on), or None."""
+    row = conn.execute(
+        select(extraction_table)
+        .where(extraction_table.c.document_id == document_id)
+        .where(extraction_table.c.kind == ExtractionKind.PAYMENT_PROOF.value)
+        .order_by(extraction_table.c.version.desc())
+        .limit(1)
+    ).one_or_none()
+    return None if row is None else DocumentExtraction.model_validate(dict(row._mapping))
 
 
 # --- The job's two seams -----------------------------------------------------------------
@@ -808,6 +929,7 @@ def apply_proposal(
 
     applied = [run.applied[r.key] for r in current.records]
     decisions = {r.key: _decisions(r, given.get(r.key)) for r in current.records}
+    linked_bill = run.entity(PROOF_LINK_KEY)
     updated = _set(
         ctx,
         proposal_id,
@@ -838,6 +960,18 @@ def apply_proposal(
             ],
         ),
     )
+    if linked_bill is not None:
+        # D149 (review F1): a bill the user picked was not the one the moves were built for;
+        # the D143 moves for it are proposed now, after this proposal is applied.
+        propose_proof_years(
+            ctx,
+            current.document_id,
+            proposed_rows=frozenset(
+                r.target_id
+                for r in current.records
+                if _prefix(r.key) == "private_cost_year" and r.target_id is not None
+            ),
+        )
     return ProposalApplyResult(proposal=updated, applied=applied)
 
 

@@ -13,6 +13,7 @@
 // Miete, the Hausgeldabrechnung), a warning can be a check with nothing to change (the 15 %
 // limit crossed). The "Was noch fehlt" lists (Anlage V tab, Übersicht) show the to-dos only.
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { type ReactNode, useCallback, useId, useState } from "react";
 
 import { api, ok } from "@/api/client";
@@ -189,7 +190,7 @@ export const WARNING_GUIDE: Partial<Record<WarningCode, Guide>> = {
     },
     text: (p) =>
       p.proof_offer
-        ? `Ein schon hochgeladener Zahlungsnachweis${p.proof_offer_amount ? ` über ${formatMoney(p.proof_offer_amount)}` : ""} ist noch keiner Rechnung zugeordnet und passt zu dieser. Mit „Vorhandenen Nachweis zuordnen“ wird er ihr zugeordnet (vorher wird nachgefragt); ist es nicht der richtige, den passenden Beleg hochladen.`
+        ? `Ein schon hochgeladener Zahlungsnachweis${p.proof_offer_amount ? ` über ${formatMoney(p.proof_offer_amount)}` : ""} ist noch keiner Rechnung zugeordnet und passt zu dieser. Mit „Vorhandenen Nachweis zuordnen“ wird er ihr zugeordnet (vorher wird nachgefragt); wurde die Rechnung laut Nachweis in einem anderen Jahr bezahlt, schlägt die App danach das richtige Jahr vor. Ist es nicht der richtige Nachweis, den passenden Beleg hochladen.`
         : p.proof_amount
         ? `Der hochgeladene Nachweis lautet über ${formatMoney(p.proof_amount)}, die Rechnung über ${formatMoney(p.amount)}. Wurde in Teilen bezahlt, auch den Beleg der übrigen Zahlung hochladen; die Rechnung zählt bis dahin trotzdem mit.`
         : "Die Rechnung zählt schon mit; nur der Beleg fehlt, dass sie bezahlt wurde. Im Online-Banking den Überweisungsbeleg oder die Umsatzdetails dieser einen Zahlung als PDF speichern und hier hochladen, nicht den ganzen Kontoauszug. Die App liest Datum und Betrag; wurde die Rechnung in einem anderen Jahr bezahlt, schlägt sie das richtige Jahr vor.",
@@ -612,8 +613,9 @@ export function WarningActionView({
 /** payment_proof.missing with an offer (phase 3 D149): a payment proof already stored and
  * linked to no bill fits this bill's amount. „Vorhandenen Nachweis zuordnen“ asks first, then
  * links it through POST /documents/{id}/payment-proof, as the to-do's upload links a new one
- * (to the bill and its property). It moves no year: a privately paid bill paid in another year
- * is moved by the reading of a proof uploaded from this to-do. */
+ * (to the bill and its property). When the proof's reading shows a privately paid bill was
+ * paid in another year, the server then proposes moving it to that year (review F1), as a
+ * suggestion on the proof's page, which opens; nothing is moved before the user confirms it. */
 function AttachProofAction({
   proof,
   billId,
@@ -623,6 +625,7 @@ function AttachProofAction({
   billId: string;
   onChanged?: () => void;
 }) {
+  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   async function confirm(close: () => void) {
@@ -635,7 +638,13 @@ function AttachProofAction({
           body: { bill_id: billId },
         }),
       );
+      // A suggestion to move the bill to the year paid waits on the proof's page: open it.
+      const list = await ok(api.GET("/api/documents/{document_id}/proposals", { params: { path: { document_id: proof.id } } }));
       close();
+      if (list[0]?.status === "ready") {
+        router.push(`/documents/${proof.id}`);
+        return;
+      }
       onChanged?.();
     } catch (caught) {
       setError(caught);
@@ -649,7 +658,8 @@ function AttachProofAction({
         <>
           <p>
             Der schon hochgeladene Zahlungsnachweis{proof.amount ? ` über ${formatMoney(proof.amount)}` : ""} wird dieser Rechnung zugeordnet und
-            gilt dann als Beleg, dass sie bezahlt wurde. <Link href={`/documents/${proof.id}`}>Nachweis ansehen</Link>
+            gilt dann als Beleg, dass sie bezahlt wurde. Wurde sie laut Nachweis in einem anderen Jahr bezahlt, öffnet sich danach der
+            Nachweis mit dem Vorschlag, sie in diesem Jahr zu zählen. <Link href={`/documents/${proof.id}`}>Nachweis ansehen</Link>
           </p>
           <ErrorNotice error={error} />
           <div className="row">

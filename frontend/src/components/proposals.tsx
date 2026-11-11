@@ -1124,7 +1124,10 @@ export function ProposalSection({
     );
   } else if (proposal.status === "ready") {
     body = (
-      <ProposalReview
+      <>
+        {/* The apply just made, when it led to this new suggestion (D149, review F1). */}
+        {applied && applied.proposal.id !== proposal.id ? <AppliedSummary result={applied} /> : null}
+        <ProposalReview
         key={proposal.id}
         proposal={proposal}
         detail={detail}
@@ -1134,11 +1137,15 @@ export function ProposalSection({
           if ("applied" in result) {
             setApplied(result);
             onApplied();
+            // A payment proof linked to a bill the user picked (D149, review F1): the server may
+            // have proposed moving that bill to the year paid; the list shows it next.
+            if (result.applied.some((a) => a.key === PROOF_LINK_KEY && !a.skipped)) reload();
           }
         }}
         onRerun={() => void rerun("Das Dokument neu auslesen? Dieser Vorschlag wird ersetzt.")}
         busy={busy}
       />
+      </>
     );
   } else if (proposal.status === "blocked_tenant_data") {
     const hasTyping = (proposal.records ?? []).length > 0;

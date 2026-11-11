@@ -24,7 +24,12 @@ from hausbuch.schemas.enums import DocumentSubtype, DocumentType, LinkTarget, Pr
 from hausbuch.schemas.proposal import ProposalApplyBody
 from hausbuch.schemas.tax import TaxInputKind
 from hausbuch.services import proposals
-from hausbuch.services.documents import attach_payment_proof, get_document, list_links
+from hausbuch.services.documents import (
+    NotAPaymentProofError,
+    attach_payment_proof,
+    get_document,
+    list_links,
+)
 from hausbuch.services.tax_inputs import list_tax_inputs
 
 pytestmark = pytest.mark.db
@@ -154,3 +159,113 @@ def test_the_bills_todo_offers_a_stored_proof_that_fits_and_links_it(
     run(ws, attach_payment_proof, proof.id, painter.id)
     assert [w.params["document"] for w in _proof_warnings(read, world)] == [str(caretaker.id)]
     assert Decimal(warnings[str(painter.id)]["amount"]) == Decimal("595.00")
+
+
+# --- Review F1: the year move after a link made later (D149) -----------------------------
+
+
+def _current(read, ws, proof):
+    """The proof's newest proposal (the one its page shows)."""
+    return read(ws, proposals.list_document_proposals, proof.id)[0]
+
+
+def _private_years(read, world, bill):
+    rows = read(world.ws, list_tax_inputs, world.property_id, kind=TaxInputKind.PRIVATE_COST)
+    return sorted(r.tax_year for r in rows if r.document_id == bill.id)
+
+
+def test_a_stored_proof_linked_from_the_todo_proposes_the_year_paid(
+    world, run, read, job, blob_store
+):
+    ws = world.ws
+    painter, _, _ = _two_bills(run, world, blob_store)
+    proof = _upload(run, ws, blob_store, b"%PDF Transaction Summary")
+    ready = _read_classified(run, job, ws, proof, _values("595.00"))
+    run(ws, proposals.apply_proposal, ready.id, _typing_only(ready), iban_key=TEST_IBAN_KEY)
+
+    # „Vorhandenen Nachweis zuordnen“: linked, and the move waits as a suggestion.
+    run(ws, proposals.attach_stored_proof, proof.id, painter.id)
+    assert _private_years(read, world, painter) == [2026]  # nothing moved yet
+    proposal = _current(read, ws, proof)
+    assert proposal.status is ProposalStatus.READY
+    assert [r.key for r in proposal.records] == ["private_cost_year:1"]
+    (move,) = proposal.records
+    assert move.fields["tax_year"].value == 2027
+    assert move.notes[0].startswith("Zahlungsnachweis für:")
+    assert proposal.extraction_id is not None  # rebuilt from the stored reading
+
+    run(ws, proposals.apply_proposal, proposal.id, _accept_all(proposal), iban_key=TEST_IBAN_KEY)
+    assert _private_years(read, world, painter) == [2027]
+
+
+def test_a_bill_picked_among_two_that_fit_proposes_the_year_paid(world, run, read, job, blob_store):
+    ws = world.ws
+    first, _ = _bill(run, world, blob_store, data=b"%PDF Maler A", amounts=("595.00",))
+    second, _ = _bill(run, world, blob_store, data=b"%PDF Maler B", amounts=("595.00",))
+    proof = _upload(run, ws, blob_store, b"%PDF Transaction Summary")
+    ready = _read_classified(run, job, ws, proof, _values("595.00"))
+    # Two bills fit: none pre-selected, so no move was built.
+    assert {r.key for r in ready.records} == {"typing", PROOF_LINK_KEY}
+
+    body = _accept_all(ready, **{PROOF_LINK_KEY: {"target_id": str(second.id)}})
+    run(ws, proposals.apply_proposal, ready.id, body, iban_key=TEST_IBAN_KEY)
+    proposal = _current(read, ws, proof)
+    assert proposal.status is ProposalStatus.READY
+    (move,) = proposal.records
+    assert move.key == "private_cost_year:1" and move.fields["tax_year"].value == 2027
+
+    run(ws, proposals.apply_proposal, proposal.id, _accept_all(proposal), iban_key=TEST_IBAN_KEY)
+    assert _private_years(read, world, second) == [2027]
+    assert _private_years(read, world, first) == [2026]
+
+
+def test_no_suggestion_when_the_years_agree_or_the_move_was_already_proposed(
+    world, run, read, job, blob_store
+):
+    ws = world.ws
+    painter, _, _ = _two_bills(run, world, blob_store)
+    # Paid in the bill's own year: linking proposes nothing.
+    proof = _upload(run, ws, blob_store, b"%PDF Transaction Summary 2026")
+    ready = _read_classified(run, job, ws, proof, _values("595.00", paid_on="2026-12-01"))
+    run(ws, proposals.apply_proposal, ready.id, _typing_only(ready), iban_key=TEST_IBAN_KEY)
+    run(ws, proposals.attach_stored_proof, proof.id, painter.id)
+    assert _current(read, ws, proof).status is ProposalStatus.APPLIED
+
+    # The pre-selected bill picked with its move declined: not asked again.
+    other = _upload(run, ws, blob_store, b"%PDF Transaction Summary 2027")
+    painter2, _ = _bill(run, world, blob_store, data=b"%PDF Maler 2", amounts=("812.00",))
+    ready = _read_classified(run, job, ws, other, _values("812.00"))
+    assert "private_cost_year:1" in {r.key for r in ready.records}
+    full = _accept_all(ready)
+    declined = [r.model_copy(update={"skip": r.key == "private_cost_year:1"}) for r in full.records]
+    run(
+        ws,
+        proposals.apply_proposal,
+        ready.id,
+        ProposalApplyBody(records=declined),
+        iban_key=TEST_IBAN_KEY,
+    )
+    assert _current(read, ws, other).status is ProposalStatus.APPLIED
+    assert _private_years(read, world, painter2) == [2026]
+
+
+def test_a_move_sent_with_the_link_skipped_is_refused(world, run, read, job, blob_store):
+    ws = world.ws
+    _two_bills(run, world, blob_store)
+    proof = _upload(run, ws, blob_store, b"%PDF Transaction Summary")
+    ready = _read_classified(run, job, ws, proof, _values("595.00"))
+    full = _accept_all(ready)
+    body = ProposalApplyBody(
+        records=[r.model_copy(update={"skip": r.key == PROOF_LINK_KEY}) for r in full.records]
+    )
+    with pytest.raises(ValueError, match="not the one this proof is linked to"):
+        run(ws, proposals.apply_proposal, ready.id, body, iban_key=TEST_IBAN_KEY)
+
+
+def test_an_untyped_document_is_not_a_stored_proof(world, run, read, blob_store):
+    ws = world.ws
+    painter, _, _ = _two_bills(run, world, blob_store)
+    untyped = _upload(run, ws, blob_store, b"%PDF irgendein Dokument")
+    with pytest.raises(NotAPaymentProofError):
+        run(ws, proposals.attach_stored_proof, untyped.id, painter.id)
+    assert read(ws, list_links, untyped.id) == []
