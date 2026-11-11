@@ -290,6 +290,31 @@ def test_one_deposit_line_split_to_three_tenancies(world):
     ] * 3
 
 
+def test_a_deposit_paid_in_an_earlier_year_still_proves_it(world):
+    """A deposit is paid once, at the start: its line proves the deposit in every later year,
+    on Dokumente and on Steuern alike."""
+    tenancy, unit = _deposit_tenancy(world, date(2023, 1, 1), "Mieterin A")
+    tx = world.line(date(2025, 12, 1), "1000.00", name="Mieterin A")
+    _book(
+        world,
+        tx,
+        [
+            AllocationDraft(
+                amount=Decimal("1000.00"),
+                category=AllocationCategory.DEPOSIT_IN,
+                property_id=world.property_id,
+                unit_id=unit,
+                tenancy_id=tenancy,
+            )
+        ],
+    )
+    (item,) = _deposit_items(world)
+    assert (item.scope.id, item.status, item.documents) == (tenancy, ChecklistStatus.PRESENT, [])
+    assert [(b.transaction_id, b.booking_date) for b in item.bank_lines] == [
+        (tx, date(2025, 12, 1))
+    ]
+
+
 def test_a_deposit_line_without_the_property_is_not_offered(world):
     """An account line booked deposit_in without a property cannot be split to a tenancy of
     it (the command needs the property): neither list offers it."""
