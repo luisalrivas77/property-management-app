@@ -736,7 +736,7 @@ export function depositSplit(item: DocumentChecklistItem): DepositSplit | null {
     if (amounts.every((cents) => cents !== null && cents > 0n)) {
       const known = amounts as bigint[];
       if (known.reduce((sum, cents) => sum + cents, 0n) === line) {
-        return { offer, parts: candidates.map((candidate, i) => ({ candidate, cents: known[i] })), rest: 0n };
+        return { offer, parts: candidates.map((candidate, i) => ({ candidate, cents: known[i] ?? 0n })), rest: 0n };
       }
     }
     const mine = deposit(own);
@@ -793,12 +793,13 @@ function DepositSplitAction({
   const [gone, setGone] = useState(false);
   const { offer, parts, rest } = split;
   const payment = `Zahlung vom ${formatDate(offer.booking_date)} (${ALLOCATION_CATEGORY.deposit_in}, ${formatMoney(offer.amount)})`;
-  const each = parts.every((part) => part.cents === parts[0].cents) ? centsToString(parts[0].cents) : null;
+  const first = parts[0]?.cents ?? 0n;
+  const each = parts.every((part) => part.cents === first) ? centsToString(first) : null;
   const question =
     parts.length > 1
       ? `Die ${payment} auf ${parts.length} Mietverhältnisse aufteilen${each ? `: je ${formatMoney(each)}` : ""}?`
       : rest > 0n
-        ? `Von der ${payment} ${formatMoney(centsToString(parts[0].cents))} diesem Mietverhältnis zuordnen? Der Rest von ${formatMoney(centsToString(rest))} bleibt als Kaution ohne Mietverhältnis stehen.`
+        ? `Von der ${payment} ${formatMoney(centsToString(first))} diesem Mietverhältnis zuordnen? Der Rest von ${formatMoney(centsToString(rest))} bleibt als Kaution ohne Mietverhältnis stehen.`
         : `Die ${payment} diesem Mietverhältnis zuordnen?`;
   async function confirm(close: () => void) {
     setBusy(true);
