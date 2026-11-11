@@ -35,6 +35,7 @@ from uuid import UUID
 
 from hausbuch.db.session import workspace_transaction
 from hausbuch.rules import errors as E
+from hausbuch.rules.bank_sync import REFUSED_CODES_LOGGED
 from hausbuch.rules.errors import RuleError
 from hausbuch.schemas.enums import ActorType
 from hausbuch.services import bank_sync as service
@@ -270,6 +271,8 @@ def _bank_error(
     fields = run.log | {"code": exc.code}
     if exc.response_code is not None:
         fields["response_code"] = exc.response_code
+    if len(exc.response_codes) > 1:  # codes only, never the bank's text (D119)
+        fields["response_codes"] = list(exc.response_codes[:REFUSED_CODES_LOGGED])
     try:
         retry = exc.code == E.BANK_UNREACHABLE and not run.awaiting_approval
         if retry and attempt < MAX_UNREACHABLE_RETRIES:

@@ -185,3 +185,17 @@ def test_window_starts_after_the_anchor_even_with_an_old_last_booking():
 
     facts = SyncWindowFacts(opening_balance_on=date(2026, 10, 1), last_booking_on=date(2026, 10, 5))
     assert rules.request_window(facts, date(2026, 11, 11)).start == date(2026, 10, 2)
+
+
+@pytest.mark.parametrize(
+    ("codes", "deciding"),
+    [
+        (["9050", "9942"], "9942"),  # the message-level code first, the reason after it
+        (["9800", "9050", "9931", "9010"], "9931"),
+        (["9050"], "9050"),  # nothing more specific: the general code is still shown
+        (["9942"], "9942"),
+        ([], None),
+    ],
+)
+def test_the_deciding_code_skips_the_general_ones(codes, deciding):
+    assert rules.deciding_code(codes) == deciding

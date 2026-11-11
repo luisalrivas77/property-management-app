@@ -189,6 +189,22 @@ def refused_code(code: object) -> str | None:
     return text if _REFUSED.match(text) else None
 
 
+# Answer codes that only say "something failed" (9000 partly failed, 9050 the message has
+# errors, 9800 dialog aborted): the bank sends the reason as another code in the same answer.
+GENERAL_REFUSALS = frozenset({"9000", "9050", "9800"})
+# At most this many codes go into the log line.
+REFUSED_CODES_LOGGED = 6
+
+
+def deciding_code(codes: list[str]) -> str | None:
+    """The code that says why the bank refused: the first one that is not merely general
+    (a message-level 9050 comes before the segment's 9942), else the first. None for none."""
+    for code in codes:
+        if code not in GENERAL_REFUSALS:
+            return code
+    return codes[0] if codes else None
+
+
 def product_id_usable(product_id: str | None) -> bool:
     """The DK registration number fits HKVVB's product name: set, not blank, at most 25
     characters, no surrounding blanks. Anything else fails a sync with bank.not_configured;
