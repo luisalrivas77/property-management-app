@@ -1164,11 +1164,24 @@ class _Builder:
     ) -> bool:
         """D145: a Grunderwerbsteuerbescheid that assesses less than the Grunderwerbsteuer row
         it would patch is one buyer's notice of a joint purchase (the Finanzamt sends one per
-        buyer, each on that buyer's share), never a reason to lower the row."""
+        buyer, each on that buyer's share), never a reason to lower the row.
+
+        Only while no notice has been processed on the property: once another transfer-tax
+        row has a Beleg or is a waiting rest row, the row is patched as before (the reading
+        wins), so a typed total that was a little off, or a lower re-read, never splits off a
+        rest row for a notice that does not exist (D145, from the review)."""
         if self.kind is not ExtractionKind.BESCHEID:
             return False
         transfer_tax = AcquisitionCostKind.REAL_ESTATE_TRANSFER_TAX
         if kind_value.value != transfer_tax.value or row.kind is not transfer_tax:
+            return False
+        if any(
+            c.id != row.id
+            and c.property_id == row.property_id
+            and c.kind is transfer_tax
+            and (c.document_id is not None or c.note == _OTHER_NOTICE_LABEL)
+            for c in self.ctx.costs
+        ):
             return False
         read = _decimal(amount.value)
         return read is not None and read > 0 and row.amount - read > _CENTS
