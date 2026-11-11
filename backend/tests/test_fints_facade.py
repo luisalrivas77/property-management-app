@@ -527,6 +527,40 @@ def test_the_trace_prints_no_field_of_a_segment_off_its_whitelist():
     assert {"HIBPA", "HIUPA", "HITANS", "HICAZS"} == fints_trace._RECEIVED_FACTS
 
 
+def _segment(kind: str, number: int, version: int, **fields) -> SimpleNamespace:
+    header = SimpleNamespace(type=kind, number=number, version=version, reference=None)
+    return SimpleNamespace(header=header, **fields)
+
+
+def test_the_trace_reads_the_banks_public_parameters():
+    """HIBPA's and HIUPA's versions, the offered TAN methods with whether each is decoupled,
+    and the camt formats: what Q-O34 and Q-O35 ask of the first real sync."""
+    twostep = [
+        SimpleNamespace(security_function="912", name="chipTAN", decoupled_max_poll_number=None),
+        SimpleNamespace(security_function="946", name="pushTAN 2.0", decoupled_max_poll_number=9),
+    ]
+    camt = ["urn:iso:std:iso:20022:tech:xsd:camt.052.001.08"]
+    segments = [
+        _segment("HIBPA", 5, 3, bpd_version=88),
+        _segment("HIUPA", 6, 4, upd_version=12, user_identifier=LOGIN),
+        _segment("HITANS", 7, 7, parameter=SimpleNamespace(twostep_parameters=twostep)),
+        _segment("HICAZS", 8, 1, parameter=SimpleNamespace(supported_camt_formats=camt)),
+        _segment("HISPA", 9, 3, accounts=[IBAN]),
+    ]
+    received = fints_trace.describe_received(segments, {}, (LOGIN,))
+    assert received["facts"] == {
+        "bpd_version": "88",
+        "upd_version": "12",
+        "tan_methods": [
+            "912 chipTAN (not decoupled, HITANS7)",
+            "946 pushTAN 2.0 (decoupled, HITANS7)",
+        ],
+        "camt_formats": camt,
+    }
+    assert received["received"][-1] == "HISPA:9v3"
+    assert LOGIN not in repr(received) and IBAN not in repr(received)
+
+
 def test_the_trace_names_whether_a_tan_medium_is_set_never_the_name():
     for name, shown in ((None, "absent"), ("", "empty"), ("Mein Handy", "set")):
         hktan = HKTAN7(tan_process="4", segment_type="HKIDN", tan_medium_name=name)
