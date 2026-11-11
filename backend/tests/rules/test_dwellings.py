@@ -79,3 +79,27 @@ def test_a_row_without_a_label_or_a_readable_area_is_left_out():
     assert dwellings(["WE 2 | 0 m² | 85/1000 | 1. OG", "WE 3 | 61,405 m² | | "]) == []
     assert dwellings("WE 1 | 48,20 m²") == []
     assert dwellings(None) == []
+
+
+def test_a_list_of_rooms_is_no_dwelling():
+    # The household's units are rooms ("Zimmer 1"): a Grundriss's room list must never match
+    # one by its label (D139 guard).
+    rows = dwellings(
+        [
+            "Zimmer 1 | 14,20 m² | |",
+            "Küche | 8,10 m² | |",
+            "Bad/WC | 4,60 m² | |",
+            "flur | 6,30 m² | |",
+        ]
+    )
+    assert rows == []
+
+
+def test_a_total_beside_a_flat_is_left_out():
+    rows = dwellings(["WE 1 | 48,20 m² | 62/1000 | EG", "Summe: | 48,20 m² | |"])
+    assert [row.label for row in rows] == ["WE 1"]
+
+
+def test_a_lone_total_is_the_one_flats_wohnflaeche():
+    rows = dwellings(["Zimmer 1 | 14,20 m² | |", "Summe | 61,40 m² | |"])
+    assert rows == [Dwelling("Summe", "61.40", None, None)]

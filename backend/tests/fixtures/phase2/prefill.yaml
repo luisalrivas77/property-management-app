@@ -2412,6 +2412,60 @@ cases:
           values: {type: other, subtype: building_records, title: Wohnflächenberechnung Birkenweg 3, document_date: "1998-03-02", amount_total: null, period_start: null, period_end: null, counterparty: null, reference: null, notes: null}
           notes_contain: [kein Objekt gefunden]
 
+  - id: building_records_mfh_proposes_no_area
+    description: >-
+      D139, ETW/EFH only. The property is an MFH whose units hold the MEAs of the list; its
+      flats are its units, so the list is linked and no Wohnfläche is proposed.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: *CL_WFB
+      properties:
+        - {<<: *PROP_LINDEN, kind: mfh, living_area_m2: null}
+      units:
+        - {id: *U, property_id: *P, label: WE 1, mea: {numerator: 62, denominator: 1000}}
+        - {id: *U2, property_id: *P, label: WE 2, mea: {numerator: 85, denominator: 1000}}
+    extraction:
+      title: {v: Wohnflächenberechnung Lindenstraße 12, p: 1, q: "Wohnflächenberechnung"}
+      document_date: {v: "1998-03-02", p: 1, q: "02.03.1998"}
+      street: {v: Lindenstraße, p: 1, q: "Lindenstraße 12, 10115 Berlin"}
+      house_number: {v: "12", p: 1, q: "Lindenstraße 12, 10115 Berlin"}
+      postal_code: {v: "10115", p: 1, q: "Lindenstraße 12, 10115 Berlin"}
+      dwellings: *WFB_ROWS
+    expect:
+      keys: [typing, link:property]
+      records:
+        - key: link:property
+          entity_type: link
+          mode: create
+          target_id: *P
+          values: {}
+
+  - id: building_records_no_dwelling_readable
+    description: >-
+      D139. The reading holds a list but no row is a Wohnung with a readable area; nothing is
+      proposed and the typing record says the area can be typed on the to-do.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: *CL_WFB
+      properties: [*PROP_LINDEN]
+    extraction:
+      title: {v: Wohnflächenberechnung Lindenstraße 12, p: 1, q: "Wohnflächenberechnung"}
+      document_date: {v: "1998-03-02", p: 1, q: "02.03.1998"}
+      street: {v: Lindenstraße, p: 1, q: "Lindenstraße 12, 10115 Berlin"}
+      house_number: {v: "12", p: 1, q: "Lindenstraße 12, 10115 Berlin"}
+      postal_code: {v: "10115", p: 1, q: "Lindenstraße 12, 10115 Berlin"}
+      dwellings: {v: ["unbekannt"], p: 1, q: "Wohnfläche"}
+    expect:
+      keys: [typing, link:property]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: other, subtype: building_records, title: Wohnflächenberechnung Lindenstraße 12, document_date: "1998-03-02", amount_total: null, period_start: null, period_end: null, counterparty: null, reference: null, notes: null}
+          notes_contain: [keine Wohnung mit ihrer Wohnfläche]
+
   - id: catalogue_loan_group_by_contract_number
     description: D131, loan. A Konditionsanpassung names the lender and the number of one of two loans.
     kind: general

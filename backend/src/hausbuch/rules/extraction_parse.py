@@ -1006,6 +1006,42 @@ def checked_cost_lines(values: dict[str, ExtractedValue]) -> ExtractedValue | No
 # --- A Wohnflächenberechnung's dwellings (phase 2 D139) -------------------------------------
 
 
+# D139 guard: a Grundriss or a single flat's Wohnflächenberechnung lists rooms, and the
+# household's units are rooms ("Zimmer 1"), so a room row would match a unit by its label.
+# A row whose label starts with a room word is never a Wohnung. A total row is dropped only
+# beside other rows: alone, it is the one flat's Wohnfläche.
+_ROOM_WORDS = frozenset(
+    {
+        "zimmer",
+        "schlafzimmer",
+        "wohnzimmer",
+        "kinderzimmer",
+        "arbeitszimmer",
+        "küche",
+        "bad",
+        "wc",
+        "flur",
+        "diele",
+        "abstellraum",
+        "balkon",
+        "loggia",
+        "terrasse",
+        "keller",
+    }
+)
+_TOTAL_WORDS = frozenset({"summe", "gesamt", "insgesamt", "total", "wohnfläche gesamt"})
+_FIRST_WORD = re.compile(r"\w+")
+
+
+def _first_word(label: str) -> str:
+    match = _FIRST_WORD.match(label.casefold())
+    return match.group(0) if match else ""
+
+
+def _is_total(label: str) -> bool:
+    return label.casefold().rstrip(" :") in _TOTAL_WORDS
+
+
 @dataclass(frozen=True)
 class Dwelling:
     """One dwelling of a Wohnflächenberechnung as read: its label as printed, its Wohnfläche
@@ -1022,7 +1058,8 @@ def dwellings(items: object) -> list[Dwelling]:
     """The stored dwellings value (a list of `label | Wohnfläche | MEA | Lage` texts) as
     Dwellings, in the document's order. A row without a label or a readable positive area
     (at most two decimal places) is left out; an unreadable MEA or an unstated part is None.
-    Not a list: []. Pure."""
+    A room row (its label's first word Zimmer, Küche, Bad, ...) is left out, and a total row
+    (Summe, Gesamt, ...) too when other rows remain (D139). Not a list: []. Pure."""
     if not isinstance(items, list):
         return []
     out = []
@@ -1032,7 +1069,7 @@ def dwellings(items: object) -> list[Dwelling]:
         parts = [_collapse(part) for part in item.split("|")]
         parts += [""] * (4 - len(parts))
         label, raw_area, raw_mea, location = parts[:4]
-        if not label or label.casefold() == UNKNOWN:
+        if not label or label.casefold() == UNKNOWN or _first_word(label) in _ROOM_WORDS:
             continue
         try:
             area = Decimal(normalize_value(raw_area, "decimal"))
@@ -1055,7 +1092,8 @@ def dwellings(items: object) -> list[Dwelling]:
                 location=location if known else None,
             )
         )
-    return out
+    flats = [row for row in out if not _is_total(row.label)]
+    return flats if flats else out
 
 
 def derive_fields(

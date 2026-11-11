@@ -219,6 +219,11 @@ _DWELLING_PICK_NOTE = (
     "Welche Wohnung ist Ihre? Die Wohnflächenberechnung nennt {count} Wohnungen; bitte Ihre "
     "unten anklicken, dann „Übernehmen“. "
 )
+_NO_DWELLING_NOTE = (
+    "Aus dieser Unterlage ließ sich keine Wohnung mit ihrer Wohnfläche lesen. Fehlt die "
+    "Wohnfläche, lässt sie sich bei der Aufgabe „Wohnfläche der Wohnung fehlt“ unter Steuern "
+    "eintragen."
+)
 _DWELLING_KEPT_NOTE = "Ohne Klick bleibt die eingetragene Wohnfläche, wie sie ist. "
 # A catalogue document whose link was not found (D131): typing only, and what to do.
 _NO_PROPERTY_NOTE = (
@@ -1387,7 +1392,12 @@ class _Builder:
         if group == "property":
             prop = _resolve_property(self.x, self.ctx)
             if prop is not None:
-                if subtype is DocumentSubtype.BUILDING_RECORDS:
+                # D139: one Wohnung (ETW, EFH, as tax._common.is_flat); an MFH's flats are
+                # its units, so a building's list proposes nothing there.
+                if (
+                    subtype is DocumentSubtype.BUILDING_RECORDS
+                    and prop.kind is not PropertyKind.MFH
+                ):
                     self._living_area(prop)
                 self.link("link:property", prop.id)
             else:
@@ -1428,6 +1438,8 @@ class _Builder:
         read = self.ev("dwellings")
         rows = parse_dwellings(read.value)
         if not rows:
+            if read.value:
+                self.records[0].notes.append(_NO_DWELLING_NOTE)
             return
         only = isinstance(read.value, list) and len(read.value) == 1
         picked = _pick_dwelling(rows, prop, self.ctx.units, only=only)

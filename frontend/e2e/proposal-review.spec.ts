@@ -625,3 +625,30 @@ test("a Wohnflächenberechnung of several flats: one click picks the household's
   expect(sent[0]?.key).toBe("property");
   expect(Number(sent[0]?.values.living_area_m2)).toBe(61.4);
 });
+
+test("a Wohnflächenberechnung of several flats: Übernehmen without a click keeps the stored Wohnfläche", async ({ page, signedIn }) => {
+  void signedIn;
+  const documentId = await uploadPdf(page, "Wohnflaechenberechnung-ohne-Klick.pdf");
+  const records = DWELLING_RECORDS.map((record) => ({ ...record, current: { living_area_m2: "68.40" } }));
+  const mock: Mock = {
+    list: [proposal(documentId, { kind: "general", target_mode: "patch", records })],
+    poll: null,
+    polls: 0,
+    applies: [],
+    apply: () => ({ status: 409, json: { error: "conflict", code: "proposal.already_decided", message: "already decided" } }),
+  };
+  await mockProposals(page, mock);
+
+  await page.goto(`/documents/${documentId}`);
+  const form = vorschlag(page).getByRole("form", { name: "Vorschlag prüfen" });
+  const property = form.getByRole("region", { name: "Immobilie", exact: true });
+  await expect(property).toContainText("Welche Wohnung ist Ihre?");
+  await form.getByRole("button", { name: "Übernehmen" }).click();
+  await expect(form.getByText("Über diesen Vorschlag wurde schon entschieden (übernommen oder verworfen).")).toBeVisible();
+
+  // No option picked: the empty field is never sent, so the stored 68,40 m² stays (D139).
+  const sent = (mock.applies[0] as { records: { key: string; values?: Record<string, unknown> }[] }).records;
+  expect(sent).toHaveLength(1);
+  expect(sent[0]?.key).toBe("property");
+  expect(sent[0]?.values ?? {}).not.toHaveProperty("living_area_m2");
+});
