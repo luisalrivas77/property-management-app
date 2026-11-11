@@ -24,7 +24,6 @@ kept_both queues `match_transaction` for the later line, which waited for the de
 """
 
 import hmac
-import re
 from collections.abc import Sequence
 from datetime import date
 from decimal import Decimal
@@ -44,7 +43,7 @@ from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.jobs import enqueue
 from hausbuch.rules import statements as rules
 from hausbuch.rules.errors import RuleError
-from hausbuch.rules.iban import mask_iban, normalize_iban
+from hausbuch.rules.iban import mask_ibans_in_text
 from hausbuch.schemas.api import InboxItem, InboxItemKind
 from hausbuch.schemas.bank import (
     DeclareBalanceBody,
@@ -98,7 +97,6 @@ _TRANSACTION_COLUMNS = [
     for name in Transaction.model_fields
     if name != "line_hash" and name not in _COMPUTED_TRANSACTION_FIELDS
 ] + [transaction_table.c.line_hash]
-_IBAN_LIKE = re.compile(r"[A-Za-z]{2}[0-9]{2}(?: ?[A-Za-z0-9]){11,32}")
 
 
 # --- Import ----------------------------------------------------------------------------
@@ -774,17 +772,7 @@ def _scrub(value: JsonValue) -> JsonValue:
         return [_scrub(item) for item in value]
     if not isinstance(value, str):
         return value
-    whole = _masked(value)
-    if whole is not None:
-        return whole
-    return _IBAN_LIKE.sub(lambda m: _masked(m.group(0)) or m.group(0), value)
-
-
-def _masked(text: str) -> str | None:
-    try:
-        return mask_iban(normalize_iban(text))
-    except RuleError:
-        return None
+    return mask_ibans_in_text(value)
 
 
 def _stored_lines(

@@ -64,6 +64,27 @@ def mask_iban(normalized: str) -> str:
     return f"{normalized[:4]} **** {normalized[-4:]}"
 
 
+_IBAN_LIKE = re.compile(r"[A-Za-z]{2}[0-9]{2}(?: ?[A-Za-z0-9]){11,32}")
+
+
+def _masked(text: str) -> str | None:
+    try:
+        return mask_iban(normalize_iban(text))
+    except RuleError:
+        return None
+
+
+def mask_ibans_in_text(text: str) -> str:
+    """Free text with every IBAN in it masked: the whole text when it is one IBAN, else each
+    IBAN-like run that normalizes (a valid IBAN) replaced by its mask; anything that does not
+    normalize is left as it is. Used for a statement line's `raw` before it is stored and for
+    the purpose text a payment proof prints (phase 3 D144)."""
+    whole = _masked(text)
+    if whole is not None:
+        return whole
+    return _IBAN_LIKE.sub(lambda m: _masked(m.group(0)) or m.group(0), text)
+
+
 def iban_hmac(normalized: str, key: bytes) -> bytes:
     """HMAC-SHA256 over the normalized IBAN as ASCII (32 bytes), for matching without storing
     the plaintext."""

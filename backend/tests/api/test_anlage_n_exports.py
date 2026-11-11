@@ -194,7 +194,13 @@ def test_the_archive_gains_the_owners_sheets_and_the_gesamt_page(
     archive = _archive(client_a, deps, jobs, ws_a, booked["pid"])
     assert archive.testzip() is None
     names = archive.namelist()
-    assert names[:4] == ["ausfuellhilfe.pdf", "anlage-v-2026.csv", "zahlungen.csv", "README.txt"]
+    assert names[:5] == [
+        "ausfuellhilfe.pdf",
+        "anlage-v-2026.csv",
+        "zahlungen.csv",
+        "zahlungsnachweise.pdf",
+        "README.txt",
+    ]
     sheet = "einkommensteuer/Anlage-N_2026_Person A.pdf"
     total = "einkommensteuer/Gesamt_2026_Schaetzung.pdf"
     assert sheet in names and total in names
@@ -208,7 +214,8 @@ def test_the_archive_gains_the_owners_sheets_and_the_gesamt_page(
     # The Anlage V sheet and the CSVs still name no owner.
     for name in ("anlage-v-2026.csv", "zahlungen.csv"):
         assert "Person" not in archive.read(name).decode("utf-8")
-    assert "Person A" not in _pdf_text(archive.read("ausfuellhilfe.pdf"))
+    for name in ("ausfuellhilfe.pdf", "zahlungsnachweise.pdf"):
+        assert "Person A" not in _pdf_text(archive.read(name))
 
 
 def test_two_owners_with_one_name_keep_both_sheets_in_the_archive(

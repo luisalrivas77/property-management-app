@@ -76,3 +76,22 @@ def test_hmac_is_32_bytes_and_keyed():
 def test_mask_and_hmac_refuse_non_normalized_input(fn):
     with pytest.raises(ValueError):
         fn("de89 3704 0044 0532 0130 00")
+
+
+@pytest.mark.parametrize(
+    ("text", "masked"),
+    [
+        ("DE89370400440532013000", "DE89 **** 3000"),  # the whole text one IBAN
+        ("de89 3704 0044 0532 0130 00", "DE89 **** 3000"),  # spaced, lower case
+        (
+            "Rechnung 4711, IBAN DE89370400440532013000",
+            "Rechnung 4711, IBAN DE89 **** 3000",
+        ),
+        ("Rechnung 4711 Grundschuld", "Rechnung 4711 Grundschuld"),  # nothing to mask
+        ("Ref DE00123456789012345678", "Ref DE00123456789012345678"),  # bad checksum: kept
+        ("", ""),
+    ],
+)
+def test_mask_ibans_in_text(text, masked):
+    """The free-text mask phase 2's `raw` scrub and the D144 payment proofs share."""
+    assert rules.mask_ibans_in_text(text) == masked
