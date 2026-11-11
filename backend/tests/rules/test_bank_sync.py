@@ -187,18 +187,53 @@ def test_window_starts_after_the_anchor_even_with_an_old_last_booking():
     assert rules.request_window(facts, date(2026, 11, 11)).start == date(2026, 10, 2)
 
 
+def _answers(*codes: str) -> list[rules.BankAnswer]:
+    """`"m9050"` a message-level answer (HIRMG), `"9942"` a segment-level one (HIRMS)."""
+    return [
+        rules.BankAnswer(rules.MESSAGE_LEVEL, c[1:])
+        if c.startswith("m")
+        else rules.BankAnswer(rules.SEGMENT_LEVEL, c, "HKVVB:4")
+        for c in codes
+    ]
+
+
 @pytest.mark.parametrize(
     ("codes", "deciding"),
     [
-        (["9050", "9942"], "9942"),  # the message-level code first, the reason after it
-        (["9800", "9050", "9931", "9010"], "9931"),
-        (["9050"], "9050"),  # nothing more specific: the general code is still shown
+        (["m9050", "9942"], "9942"),  # the message-level code first, the reason after it
+        (["m9800", "m9050", "m9931", "m9010"], "9931"),
+        (["m9050"], "9050"),  # nothing more specific: the general code is still shown
         (["9942"], "9942"),
         ([], None),
+        # D151: 9010 and 9999 are general too, and a segment's reason beats the message's
+        (["m9010", "9010"], "9010"),
+        (["m9999", "m9010", "9942"], "9942"),
+        (["m9931", "9942"], "9931"),  # a lock decides over a PIN error
+        (["m9930", "9340"], "9930"),
+        (["m9800", "3938"], "3938"),  # a lock warning decides over a general code
+        (["m9050", "m9010", "3938"], "3938"),
+        (["m9050", "3920", "9010"], "9050"),  # only general codes: the first 9xxx
+        (["3920", "3076"], None),  # warnings alone refuse nothing
+        (["3938"], "3938"),  # python-fints raises on it: access temporarily locked
+        (["3938", "9931"], "3938"),  # the first lock code
     ],
 )
 def test_the_deciding_code_skips_the_general_ones(codes, deciding):
-    assert rules.deciding_code(codes) == deciding
+    assert rules.deciding_code(_answers(*codes)) == deciding
+
+
+def test_the_first_real_refusal_decides_on_the_product_registration():
+    """The answer to the first real dialog init (11 Nov 2026): HIRMG 9050, 9800, 9010, then
+    HIRMS for HKVVB 3991, 3079, 9078, 9010. The app kept 9010; the reason is 9078."""
+    answers = _answers("m9050", "m9800", "m9010", "3991", "3079", "9078", "9010")
+    assert rules.deciding_code(answers) == "9078"
+
+
+def test_an_answer_describes_its_level_and_segment():
+    message = rules.BankAnswer("message", "9050", None, "Fehler")
+    assert message.describe() == "9050 → message: Fehler"
+    assert rules.BankAnswer("segment", "9078", "HKVVB:4", "x").describe() == "9078 → HKVVB:4: x"
+    assert rules.BankAnswer("segment", "9078").describe() == "9078 → unknown: "
 
 
 def test_a_bank_text_loses_the_login_and_long_numbers():

@@ -435,9 +435,149 @@ _FAILED_DEFAULT = (
     "Erneut abrufen; hält es an, die Datei als Kontoauszug hochladen.",
 )
 
+# What a bank.refused card says for the bank's code (D151): the code's meaning from the DK's
+# list of answer codes (FinTS Rückmeldungscodes), in plain words, and what to do
+# (principle 7). A code not listed keeps the general bank.refused text with its number.
+_PIN_WARNING = "Nicht einfach erneut abrufen: nach drei falschen PINs sperrt die Bank den Zugang."
+_CHECK_PIN = (
+    "Die PIN im Container (HAUSBUCH_FINTS_PIN) mit der PIN des Online-Bankings vergleichen"
+    " und korrigieren (Runbook Schritt 14), erst dann erneut abrufen. " + _PIN_WARNING
+)
+# Hausbuch drops a stored connection (system id, chosen approval method) only when the FinTS
+# address or the login changes (update_connection), so that is the way to drop it by hand.
+_DROP_CONNECTION = (
+    "Die gespeicherte Verbindung verwerfen: im Bankabruf „Zugang ändern“ den Anmeldenamen"
+    " einmal ändern und dann wieder auf den richtigen setzen (nur eine neue Adresse oder ein"
+    " neuer Anmeldename verwirft sie). Der nächste Abruf meldet Hausbuch neu an und fragt"
+    " dafür in der S-pushTAN-App nach einer Freigabe."
+)
+_METHOD_NOT_ALLOWED = (
+    "Die Bank lässt das Freigabeverfahren nicht (mehr) zu, mit dem Hausbuch sich anmeldet.",
+    "Im Online-Banking prüfen, dass S-pushTAN für diesen Zugang eingerichtet und aktiv ist."
+    " Danach: " + _DROP_CONNECTION,
+)
+_OUTDATED = (
+    "Die Bank lehnt eine Version des Bankprotokolls ab, die Hausbuch verwendet.",
+    "Das liegt nicht an den Zugangsdaten: Hausbuch braucht eine Aktualisierung (python-fints)."
+    " Bis dahin Kontoauszüge als Datei hochladen.",
+)
+_REFUSED_CARD: dict[str, tuple[str, str]] = {
+    # the product registration
+    "9078": (
+        "Die Bank lässt Hausbuch nicht an: sie kennt die Produkt-ID nicht, mit der Hausbuch"
+        " sich anmeldet (die Registrierungsnummer der Deutschen Kreditwirtschaft). Entweder"
+        " steht im Container eine andere Nummer, oder die Registrierung ist bei dieser Bank"
+        " noch nicht angekommen. Der Code betrifft die Produkt-ID, nicht die PIN.",
+        "Die Produkt-ID im Container (HAUSBUCH_FINTS_PRODUCT_ID) Zeichen für Zeichen mit der"
+        " Nummer aus der E-Mail der Deutschen Kreditwirtschaft vergleichen und bei einer"
+        " Abweichung korrigieren (Runbook Schritt 14). Stimmt sie, einige Tage warten und"
+        " dann erneut abrufen: eine neue Registrierung erreicht die Banken erst nach einiger"
+        " Zeit.",
+    ),
+    # the PIN
+    "9942": ("Die Bank hat die PIN abgelehnt.", _CHECK_PIN),
+    "9340": (
+        "Die Bank hat die Anmeldung abgelehnt, weil ihre Signatur nicht stimmt; beim Verfahren"
+        " mit PIN und Freigabe-App heißt das: die PIN ist falsch.",
+        _CHECK_PIN,
+    ),
+    "9910": (
+        "Die Bank meldet die PIN als falsch oder den Zugang als gesperrt.",
+        "Einmal selbst im Online-Banking der Bank anmelden. Geht das nicht, ist der Zugang"
+        " gesperrt: die Bank entsperrt ihn (oft mit einem neuen PIN-Brief), danach die neue"
+        " PIN in den Container. Geht es, die PIN im Container korrigieren. " + _PIN_WARNING,
+    ),
+    # a locked access
+    "9930": (
+        "Die Bank hat die PIN gesperrt.",
+        "Die Sperre im Online-Banking oder bei der Bank aufheben lassen und danach die PIN im"
+        " Container prüfen. Bis dahin nicht erneut abrufen.",
+    ),
+    "9931": (
+        "Die Bank hat den Zugang nach zu vielen Fehlversuchen gesperrt.",
+        "Die Bank anrufen und den Zugang entsperren lassen; danach die PIN im Container"
+        " prüfen. Bis dahin nicht erneut abrufen.",
+    ),
+    "3938": (
+        "Die Bank hat den Zugang vorläufig gesperrt, meist nach falschen PINs.",
+        "Einmal selbst im Online-Banking der Bank anmelden und die Sperre dort aufheben;"
+        " danach die PIN im Container prüfen. Bis dahin nicht erneut abrufen.",
+    ),
+    "9333": (
+        "Die Bank hat diesen Zugang für Online-Banking mit PIN noch nicht freigeschaltet.",
+        "Einmal mit den Daten aus dem PIN-Brief im Online-Banking der Bank anmelden (dabei"
+        " wird meist die Start-PIN geändert) oder die Bank bitten, den Zugang freizuschalten;"
+        " dann die gültige PIN in den Container und erneut abrufen.",
+    ),
+    # the approval in the S-pushTAN app
+    "9951": (
+        "Die Freigabe ist bei der Bank abgelaufen, bevor sie in der S-pushTAN-App bestätigt war.",
+        "Erneut abrufen und die Anfrage gleich in der App freigeben.",
+    ),
+    "9941": (
+        "Die Bank hat die Freigabe nicht angenommen, etwa weil sie in der S-pushTAN-App"
+        " abgelehnt wurde; der Code kann auch eine ungültige Signatur, also die PIN, meinen.",
+        "Kam in der App keine Anfrage an, zuerst die PIN im Container prüfen. "
+        + _PIN_WARNING
+        + " Kam eine Anfrage an: erneut abrufen und sie in der App freigeben, nicht ablehnen.",
+    ),
+    "9980": (
+        "Die Bank hat den Freigabe-Vorgang abgebrochen.",
+        "Erneut abrufen und die Anfrage in der App freigeben. Kommt der Code wieder, im"
+        " Online-Banking nachsehen, ob die Bank eine Änderung des Freigabeverfahrens verlangt.",
+    ),
+    "9075": (
+        "Die Bank verlangt für diesen Abruf eine Freigabe in der S-pushTAN-App.",
+        "Erneut abrufen und die Anfrage in der App freigeben. Kommt keine Anfrage, im"
+        " Online-Banking prüfen, dass S-pushTAN eingerichtet ist.",
+    ),
+    # the approval method
+    "9955": _METHOD_NOT_ALLOWED,
+    "9361": _METHOD_NOT_ALLOWED,
+    "9958": _METHOD_NOT_ALLOWED,
+    "9380": (
+        "Die Bank lässt das Freigabeverfahren, mit dem Hausbuch sich anmeldet, oder diesen"
+        " Abruf für den Zugang nicht zu.",
+        "Im Online-Banking prüfen, dass S-pushTAN aktiv ist und der Zugang Umsätze abrufen"
+        " darf. Danach: " + _DROP_CONNECTION,
+    ),
+    # the customer system id (the stored connection)
+    "9391": (
+        "Die Bank verlangt eine neue Kundensystem-ID, die Kennung, unter der sie Hausbuch"
+        " wiedererkennt.",
+        _DROP_CONNECTION,
+    ),
+    "9210": (
+        "Die Bank hat eine Angabe der Anfrage als ungültig abgelehnt. Der Code hat viele"
+        " Bedeutungen; nach einem früheren erfolgreichen Abruf ist es meist die gespeicherte"
+        " Kundensystem-ID, die Kennung, unter der die Bank Hausbuch wiedererkennt.",
+        _DROP_CONNECTION + " Welche Angabe gemeint war, steht im Container-Log"
+        " (bank_answers, Runbook Schritt 14).",
+    ),
+    # the bank's side
+    "9997": ("Die Bank führt gerade Wartungsarbeiten durch.", "Später erneut abrufen."),
+    "9311": ("Das PIN/TAN-System der Bank ist gerade nicht verfügbar.", "Später erneut abrufen."),
+    "9185": _OUTDATED,
+    "9180": _OUTDATED,
+}
+
+
+def failed_card_text(error_code: str | None, response_code: str | None) -> tuple[str, str]:
+    """A bank_sync_failed card's reasoning and question: for bank.refused with a known bank
+    code the code's own text (D151), else the error code's; the reasoning ends with the error
+    code and the bank's code, e.g. "(bank.refused, Code der Bank 9078)"."""
+    reasoning, question = _FAILED_CARD.get(error_code or "", _FAILED_DEFAULT)
+    if error_code == E.BANK_REFUSED and response_code in _REFUSED_CARD:
+        reason, question = _REFUSED_CARD[response_code]
+        reasoning = f"Die Bank hat den Abruf abgelehnt. {reason}"
+    shown = error_code
+    if response_code is not None:
+        shown = f"{error_code}, Code der Bank {response_code}"
+    return f"{reasoning} ({shown})", question
+
 
 def _response_code(conn: Connection, row: Row) -> str | None:
-    """The bank's four digits of a 9xxx answer, kept on the run's sync_failed event only."""
+    """The bank's deciding code (9xxx, or 3938), kept on the run's sync_failed event only."""
     return conn.execute(
         select(event_table.c.payload["response_code"].astext)
         .where(
@@ -468,16 +608,12 @@ def bank_sync_items(conn: Connection) -> list[InboxItem]:
     items: list[InboxItem] = []
     for row in conn.execute(latest):
         if row.status == _S.FAILED.value:
-            reasoning, question = _FAILED_CARD.get(row.error_code, _FAILED_DEFAULT)
-            shown = row.error_code
-            response_code = _response_code(conn, row)
-            if response_code is not None:
-                shown = f"{row.error_code}, Code der Bank {response_code}"
+            reasoning, question = failed_card_text(row.error_code, _response_code(conn, row))
             items.append(
                 InboxItem(
                     kind=InboxItemKind.BANK_SYNC_FAILED,
                     created_at=row.finished_at,
-                    reasoning=f"{reasoning} ({shown})",
+                    reasoning=reasoning,
                     question=question,
                     account_id=row.account_id,
                     sync_id=row.id,

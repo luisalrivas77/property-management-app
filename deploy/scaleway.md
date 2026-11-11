@@ -723,15 +723,33 @@ values; it is not a step, and the container never reads it.
 the code. `bank.refused` means the bank said no, and that is not always the PIN: it can
 be the login (a wrong Anmeldename or PIN), an approval declined in the S-pushTAN app, or
 the bank refusing the first setup of the connection. The card in Zu prüfen shows the
-bank's four-digit code ("Code der Bank 9xxx"); look it up before acting. A bank answers a
-refusal with a general code first (9050 "Nachricht enthält Fehler", 9000, 9800) and the reason
-after it; the card shows the reason, and the container log's `bank sync failed` line lists
-every code of the answer as `response_codes`, and since 11 Nov 2026 (PR #181, with Luis's consent) the bank's own answer texts as `bank_answers`, each with the login, the customer id and the PIN replaced by `<hidden>` and every number of five or more digits blanked, at most 160 characters; never in an event or the database. Read them with `scw container container logs <api container id> region=fr-par time-span=1h entry-count=1000 -o json`. Since 11 Nov 2026 evening (PR #183, D148) every exchange is also traced: one `fints session` record per run (bootstrap or restored, security function, product id length, host) and one `fints exchange` record per message (`sent`, `settings`, `http_status`, `received`, `answers` such as `9010 → HKVVB:4: …`, `facts`, or `exc_chain` for a transport failure), all redacted; filter the log on `fints` to read a run end to end. Before 11
-Nov 2026 only the first code was kept, so the first real sync showed only 9050. The codes
-9340, 9910, 9930, 9931 and 9942 are always a PIN or login error, and python-fints treats
-any 9xxx answer while the dialog is still opening as one too, so a code at the login
-usually means the login; only a code after the dialog was open points at the approval or
-the setup. The bank's own FinTS support can say what a code means. **Three wrong PINs lock the online-banking login** at the
+bank's four-digit code ("Code der Bank 9xxx") and, for the codes it knows (D151, 11 Nov
+2026: the product registration 9078, the PIN and lock codes 9942, 9340, 9910, 9930, 9931 and
+3938, the approval codes 9951, 9941, 9980 and 9075, the approval method, the customer system
+id 9210 and 9391, outages and an outdated protocol version), what the code means and what to
+do; any other code keeps the general text, so look it up before acting. A bank answers a
+refusal on two levels: for the whole message (HIRMG) with general codes (9050 "Nachricht
+enthält Fehler", 9000, 9010, 9800, 9999), and for each segment (HIRMS) with the reason. The
+app keeps every answer of both levels and shows a lock code first (9930, 9931 or 3938,
+whatever its level, so a locked access is never shown as a wrong PIN, where fetching again
+would only spend another try); otherwise the first specific 9xxx code, a segment's before
+the message's; only when every code is general does it show the first one. The container log's `bank sync failed` line
+lists the codes as `response_codes` (3xxx and 9xxx, at most 12), and since 11 Nov 2026
+(PR #181, with Luis's consent) the bank's own answer texts as `bank_answers`, each as
+`9078 → HKVVB:4: text` (or `9050 → message: text` for a message-level answer), with the
+login, the customer id and the PIN replaced by `<hidden>` and every number of five or more
+digits blanked, at most 160 characters; never in an event or the database. Read them with `scw container container logs <api container id> region=fr-par time-span=1h entry-count=1000 -o json`. Since 11 Nov 2026 evening (PR #183, D148) every exchange is also traced: one `fints session` record per run (bootstrap or restored, security function, product id length, host) and one `fints exchange` record per message (`sent`, `settings`, `http_status`, `received`, `answers` such as `9010 → HKVVB:4: …`, `facts`, or `exc_chain` for a transport failure), all redacted; filter the log on `fints` to read a run end to end. Before 11
+Nov 2026 only the first code was kept, so the first real sync showed only 9050; until D151
+the app kept the first non-general code python-fints had seen, which stopped at the message
+level's 9010 and showed 9010 for an answer whose reason was 9078 (product id not
+registered). The codes 9340, 9942 and 9941 mean the PIN or the signature was wrong, 9910 a
+wrong PIN or a locked access, 9930, 9931 and 3938 a locked access. python-fints blocks the
+PIN after 9340, 9910, 9930, 9931 or 9942 (it is not retried within the run), but it does not
+treat every 9xxx at the opening as a PIN error, so read the code; a code about the login or
+the PIN is the one place where retrying costs a try. 9210 and 9391 can mean the stored
+customer system id is stale: Hausbuch drops the stored connection only when the FinTS
+address or the login changes, so change the login in „Zugang ändern“ once and back to drop
+it (there is no reset button yet). The bank's own FinTS support can say what a code means. **Three wrong PINs lock the online-banking login** at the
 bank, so never retry a `bank.refused` blindly: find the cause first, and if it was the
 PIN, correct it in the container before the next try. `bank.not_configured` means
 the two variables are missing or the product id is too long. `bank.unreachable` (three tries

@@ -456,6 +456,20 @@ def test_a_9xxx_answer_is_refused_with_its_code_only(bank):
     }
 
 
+def test_the_segments_reason_decides_over_the_general_codes(bank):
+    """D151: the first real refusal's answer (HIRMG 9050, 9800, 9010; HIRMS 3079, 9078,
+    9010) is kept as 9078, and the card names the product id, not the PIN."""
+    sync = bank.start()
+    script = _good(refuse_at={"open": "m9050,m9800,m9010,3079,9078,9010"})
+    assert bank.job(sync.id, script) == "failed"
+    _failed(bank, sync.id, E.BANK_REFUSED)
+    (card,) = [i for i in bank.read(bank.ws, review.inbox, now=T1) if i.sync_id == sync.id]
+    assert "Produkt-ID" in card.reasoning
+    assert "(bank.refused, Code der Bank 9078)" in card.reasoning
+    (failed,) = bank.events(EventType.ACCOUNT_SYNC_FAILED)
+    assert failed["response_code"] == "9078"
+
+
 def test_an_unreachable_bank_is_retried_twice_then_fails(bank):
     sync = bank.start()
     script = _good(fail_at={"open": FinTSConnectionError("down")})

@@ -19,11 +19,15 @@ tests/fixture_models_phase5.py, whose reference functions these must equal).
 - `balance_drift`, `declared_closing`: D117.
 - `blz_from_iban`, `refused_code`, `product_id_usable`, `is_stale`: small helpers the service,
   the job and the card share.
+- `BankAnswer`, `deciding_code`, `redact_bank_text`: the bank's answers and which of them says
+  why a run was refused (D151).
 """
 
 import io
 import re
 import zipfile
+from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
@@ -189,11 +193,44 @@ def refused_code(code: object) -> str | None:
     return text if _REFUSED.match(text) else None
 
 
-# Answer codes that only say "something failed" (9000 partly failed, 9050 the message has
-# errors, 9800 dialog aborted): the bank sends the reason as another code in the same answer.
-GENERAL_REFUSALS = frozenset({"9000", "9050", "9800"})
-# At most this many codes go into the log line.
-REFUSED_CODES_LOGGED = 6
+# Answer codes that only say "something failed" without a reason (D151, from the DK's list
+# of answer codes, Rückmeldungscodes 3.0/4.x of 3 Feb 2026): 9000 status unclear, 9010
+# processing not possible (its examples range from "too large" to "system not available"),
+# 9050 the message is partly faulty, 9800 dialog aborted, 9999 not processed for technical
+# reasons. The bank sends the reason as another code of the same answer, usually at the
+# segment level (HIRMS).
+GENERAL_REFUSALS = frozenset({"9000", "9010", "9050", "9800", "9999"})
+# A warning (3xxx) that still ends the run: python-fints raises on 3938 "access temporarily
+# locked" (FinTSClientTemporaryAuthError).
+REFUSING_WARNINGS = frozenset({"3938"})
+# The codes that say the access is locked (9930 locked, 9931 locked after wrong PINs, 3938
+# temporarily locked). One decides over every other code, whatever its level (D151 review,
+# 11 Nov 2026): the DK list scopes the lock codes to the message and a PIN error to the
+# element, so an answer can carry both, and the card must then say "locked, wait" rather than
+# "fix the PIN and fetch again", which would only spend another try on a locked access.
+LOCK_CODES = frozenset({"9930", "9931", "3938"})
+# At most this many answers go into the log line (the first real refusal had seven).
+REFUSED_CODES_LOGGED = 12
+
+MESSAGE_LEVEL = "message"  # HIRMG: about the whole message
+SEGMENT_LEVEL = "segment"  # HIRMS: about one segment of ours
+
+
+@dataclass(frozen=True)
+class BankAnswer:
+    """One answer of the bank (D151): its level, its four-digit code, for a segment-level
+    answer the segment of ours it refers to (`HKVVB:4`, else `segment 7` or `unknown`), and
+    its text redacted by `redact_bank_text` (empty when not kept)."""
+
+    level: str
+    code: str
+    segment: str | None = None
+    text: str = ""
+
+    def describe(self) -> str:
+        """`9078 → HKVVB:4: text`, as the trace and the job's log print it."""
+        target = MESSAGE_LEVEL if self.level == MESSAGE_LEVEL else self.segment or "unknown"
+        return f"{self.code} → {target}: {self.text}"
 
 
 # A bank answer's text in the log (Luis, 11 Nov 2026, after the first syncs were refused with
@@ -216,13 +253,25 @@ def redact_bank_text(text: object, *hidden: str | None) -> str:
     return out[:BANK_TEXT_MAX]
 
 
-def deciding_code(codes: list[str]) -> str | None:
-    """The code that says why the bank refused: the first one that is not merely general
-    (a message-level 9050 comes before the segment's 9942), else the first. None for none."""
-    for code in codes:
-        if code not in GENERAL_REFUSALS:
-            return code
-    return codes[0] if codes else None
+def deciding_code(answers: Sequence[BankAnswer]) -> str | None:
+    """The code that says why the bank refused (D151), in this order:
+
+    1. a lock code (LOCK_CODES, 3938 included), whatever its level: a locked access decides
+       over a PIN error or any other reason sent with it (review, 11 Nov 2026);
+    2. the first 9xxx code that is not merely general, a segment-level one before any
+       message-level one (the bank sends HIRMG's 9050/9800/9010 first and the segment's
+       reason, e.g. 9078 or 9942, after it);
+    3. the first general 9xxx code;
+    None when there is none of these."""
+    lock = next((a.code for a in answers if a.code in LOCK_CODES), None)
+    if lock is not None:
+        return lock
+    refusals = [a for a in answers if refused_code(a.code) is not None]
+    for level in (SEGMENT_LEVEL, MESSAGE_LEVEL):
+        for answer in refusals:
+            if answer.level == level and answer.code not in GENERAL_REFUSALS:
+                return answer.code
+    return refusals[0].code if refusals else None
 
 
 def product_id_usable(product_id: str | None) -> bool:

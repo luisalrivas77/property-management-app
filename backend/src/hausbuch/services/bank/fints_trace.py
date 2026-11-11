@@ -26,6 +26,12 @@ dialog id, an IBAN or account number, a balance, camt content, a TAN challenge. 
 print their header only. A transport failure prints the exception chain as class names only,
 never an exception's text.
 
+The same parse is the facade's only source of the bank's answers (D151, 11 Nov 2026):
+`log_exchange` returns them as `BankAnswer`s, level, code, segment and redacted text, and
+`_GuardedConnection` keeps them before python-fints sees the message. python-fints walks HIRMG
+first and raises on a message-level 9010 before it reaches any HIRMS answer, so a hook inside
+python-fints never saw the segment's reason (the first real refusal: 9078 behind 9010).
+
 The trace's context (the sync id, the session step) is a ContextVar that FintsSession sets
 around each call, so the connection can tag its record without knowing the job.
 """
@@ -39,7 +45,12 @@ from urllib.parse import urlsplit
 
 from fints import version as FINTS_VERSION
 
-from hausbuch.rules.bank_sync import redact_bank_text
+from hausbuch.rules.bank_sync import (
+    MESSAGE_LEVEL,
+    SEGMENT_LEVEL,
+    BankAnswer,
+    redact_bank_text,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -168,23 +179,28 @@ def describe_sent(segments: Any) -> dict[str, Any]:
 _PARAMETER_CODES = frozenset({"3920"})
 
 
-def _answers(segment: Any, sent: dict[int, str], hidden: tuple[str | None, ...]) -> list[str]:
-    kind = str(segment.header.type)
-    if kind == "HIRMG":
-        target = "message"
+def _answers(
+    segment: Any, sent: dict[int, str], hidden: tuple[str | None, ...]
+) -> list[tuple[BankAnswer, str]]:
+    """The answers of one HIRMG or HIRMS segment, each as the BankAnswer the facade keeps for
+    the error (D151) and the line the trace prints (the same text, plus the parameters)."""
+    if str(segment.header.type) == "HIRMG":
+        level, target = MESSAGE_LEVEL, None
     else:
         reference = segment.header.reference
         target = sent.get(int(reference), f"segment {reference}") if reference else "unknown"
+        level = SEGMENT_LEVEL
     out = []
     for response in segment.responses or ():
-        code = _text(response.code)
-        line = f"{code} → {target}: {redact_bank_text(response.text, *hidden)}"
+        code = _text(response.code) or ""
+        answer = BankAnswer(level, code, target, redact_bank_text(response.text, *hidden))
+        line = answer.describe()
         parameters = list(response.parameters or ())
         if parameters and code in _PARAMETER_CODES:
             line += f" [{', '.join(redact_bank_text(p, *hidden) for p in parameters)}]"
         elif parameters:  # 3072 carries the new login, 3040 a touchdown point: count only
             line += f" [{len(parameters)} parameter{'s' if len(parameters) > 1 else ''}]"
-        out.append(line)
+        out.append((answer, line))
     return out
 
 
@@ -234,21 +250,32 @@ def _received_fact(segment: Any, facts: dict[str, Any], hidden: tuple[str | None
 _RECEIVED_FACTS = frozenset({"HIBPA", "HIUPA", "HITANS", "HICAZS"})
 
 
-def describe_received(
+def read_received(
     segments: Any, sent: dict[int, str], hidden: tuple[str | None, ...]
-) -> dict[str, Any]:
-    received, answers, facts = [], [], {}
+) -> tuple[dict[str, Any], list[BankAnswer]]:
+    """The received message's trace fields, and every HIRMG and HIRMS answer in the order the
+    bank sent them (HIRMG first), whatever python-fints later does with them (D151)."""
+    received, lines, answers, facts = [], [], [], {}
     for segment in walk(segments):
         received.append(label(segment))
         kind = str(segment.header.type)
         try:
             if kind in ("HIRMG", "HIRMS"):
-                answers.extend(_answers(segment, sent, hidden))
+                for answer, line in _answers(segment, sent, hidden):
+                    answers.append(answer)
+                    lines.append(line)
             elif kind in _RECEIVED_FACTS:
                 _received_fact(segment, facts, hidden)
         except Exception as exc:  # never fail a run over its trace
             facts.setdefault("trace_errors", []).append(f"{label(segment)} {type(exc).__name__}")
-    return {"received": received, "answers": answers} | ({"facts": facts} if facts else {})
+    fields = {"received": received, "answers": lines} | ({"facts": facts} if facts else {})
+    return fields, answers
+
+
+def describe_received(
+    segments: Any, sent: dict[int, str], hidden: tuple[str | None, ...]
+) -> dict[str, Any]:
+    return read_received(segments, sent, hidden)[0]
 
 
 # --- Exceptions ------------------------------------------------------------------------------
@@ -287,15 +314,19 @@ def log_exchange(
     response: Any = None,
     error: BaseException | None = None,
     hidden: Hidden,
-) -> None:
-    """The one record of an exchange. Never raises: a trace that fails says so by class."""
+) -> list[BankAnswer]:
+    """The one record of an exchange; returns the bank's answers, redacted exactly as the
+    record prints them, for the facade's error (D151: one parser for both). Never raises: a
+    trace that fails says so by class (and returns the answers read so far)."""
     fields: dict[str, Any] = {"event": "fints_exchange"} | context() | {"exchange": exchange}
+    answers: list[BankAnswer] = []
     try:
         fields |= describe_sent(segments)
         fields |= {k: v for k, v in http.items() if v is not None}
         if response is not None:
             secrets = (*hidden(), *_secrets_in(segments), *_secrets_in(response.segments))
-            fields |= describe_received(response.segments, segment_map(segments), secrets)
+            received, answers = read_received(response.segments, segment_map(segments), secrets)
+            fields |= received
         if error is not None:
             fields["outcome"] = "failed"
             fields["exc_chain"] = exc_chain(error)
@@ -304,6 +335,7 @@ def log_exchange(
     except Exception as exc:
         fields["trace_error"] = type(exc).__name__
     logger.info("fints exchange", extra={"fields": fields})
+    return answers
 
 
 def client_facts(client: Any, *, restored: bool, tan_mechanism: str | None) -> dict[str, Any]:

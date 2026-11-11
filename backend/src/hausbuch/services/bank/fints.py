@@ -59,9 +59,12 @@ facts the bank's public parameters and our segment headers already state.
 
 Errors: every failure leaves this module as `BankError(code, response_code)` with a fixed
 message. A python-fints exception's text is never kept (the generic Exception it raises for
-a 9xxx answer to HKTAN holds the whole response); the code comes from the exception's type
-and from the 9xxx answer codes `_ReadOnlyClient._process_response` records as the bank
-sends them.
+a 9xxx answer to HKTAN holds the whole response); the code comes from the bank's answers,
+else from the exception's type. The answers are read from the raw response by the trace's
+parser in `_GuardedConnection.send`, before python-fints processes it (D151, 11 Nov 2026):
+python-fints walks HIRMG before HIRMS and raises on a message-level 9010, so a hook in its
+`_process_response` saw 9050/9800/9010 and never the segment's 9078 that said why.
+`rules.deciding_code` picks the reason: the first specific 9xxx code, segment level first.
 
 Only checked against the real bank in step 1 (§16 Q-O34 to Q-O36): after a restored state
 `allowed_security_functions` is empty (python-fints keeps it only with private data), so
@@ -97,12 +100,7 @@ from fints.exceptions import (
 from fints.models import SEPAAccount
 
 from hausbuch.rules import errors as E
-from hausbuch.rules.bank_sync import (
-    REFUSED_CODES_LOGGED,
-    deciding_code,
-    redact_bank_text,
-    refused_code,
-)
+from hausbuch.rules.bank_sync import BankAnswer, deciding_code, refused_code
 
 from . import fints_trace
 from .fints_trace import trace_context
@@ -139,38 +137,49 @@ _ANSWER_CODE = re.compile(r"[0-9]{4}")
 
 
 class BankError(Exception):
-    """A sync failure as a bank.* code, plus the four digits of a 9xxx answer for
-    bank.refused: `response_code` the one that says why (rules.deciding_code), and
-    `response_codes` every 9xxx code of the answer, in order, for the log. The message is
-    the code: never the bank's or the library's text."""
+    """A sync failure as a bank.* code, plus for bank.refused the bank's answers:
+    `response_code` the one that says why (rules.deciding_code, D151), `answers` every 3xxx
+    and 9xxx answer of the failed step in the order the bank sent them, message level first,
+    each with its level, the segment it refers to and its redacted text (for the log only,
+    never an event or the database), and `response_codes` their codes. The message is the
+    code: never the bank's or the library's text."""
 
     def __init__(
         self,
         code: str,
         response_code: str | None = None,
         *,
-        codes: tuple[str, ...] = (),
-        answers: tuple[str, ...] = (),
+        answers: tuple[BankAnswer, ...] = (),
         exc_chain: str | None = None,
     ):
         super().__init__(code)
         self.code = code
         self.response_code = response_code
-        self.response_codes = codes or ((response_code,) if response_code else ())
-        # The bank's 3xxx/9xxx answers as "code text", redacted (rules.redact_bank_text):
-        # for the log only, never an event or the database.
         self.answers = answers
+        self.response_codes = tuple(a.code for a in answers) or (
+            (response_code,) if response_code else ()
+        )
         # A failure that carried no 9xxx code: the python-fints exception and its causes as
         # class names only (D148), e.g. no FinTS endpoint, or an answer it could not parse.
         self.exc_chain = exc_chain
 
 
-def _refused(codes: list[str], answers: list[str] | None = None) -> BankError:
-    """bank.refused with the deciding code and every code seen (phase 5, 11 Nov 2026: the
-    first real sync kept only the general 9050 and lost the bank's reason), and the bank's
-    redacted answers for the log."""
+def _is_warning_or_error(answer: BankAnswer) -> bool:
+    return len(answer.code) == 4 and answer.code[0] in "39"
+
+
+def _refusal_in(answers: list[BankAnswer]) -> bool:
+    return any(refused_code(a.code) is not None for a in answers)
+
+
+def _refused(answers: list[BankAnswer]) -> BankError:
+    """bank.refused with the deciding code and every warning and error the bank sent (phase
+    5, 11 Nov 2026: the first real sync kept only the message-level 9050/9800/9010 and lost
+    the segment's 9078, D151)."""
     return BankError(
-        E.BANK_REFUSED, deciding_code(codes), codes=tuple(codes), answers=tuple(answers or ())
+        E.BANK_REFUSED,
+        deciding_code(answers),
+        answers=tuple(a for a in answers if _is_warning_or_error(a)),
     )
 
 
@@ -260,7 +269,10 @@ def _no_hidden() -> tuple[str | None, ...]:
 
 class _GuardedConnection(FinTSHTTPSConnection):
     """python-fints' HTTPS connection with a timeout, the segment whitelist and the trace
-    (D148): one INFO record per exchange, written after the answer or the failure."""
+    (D148): one INFO record per exchange, written after the answer or the failure. It keeps
+    every answer of every received message in `answers` (D151), parsed by the trace before
+    python-fints processes the message, so an answer python-fints never reaches (every HIRMS
+    answer once it raised on a HIRMG 9010) is kept too."""
 
     def __init__(
         self,
@@ -273,6 +285,7 @@ class _GuardedConnection(FinTSHTTPSConnection):
         self.session = _TimeoutSession(timeout_s)
         self._hidden = hidden
         self._exchanges = 0
+        self.answers: list[BankAnswer] = []
 
     def send(self, msg: Any) -> Any:
         refused = sorted({t for t in _segment_types(msg.segments) if t not in ALLOWED_SEGMENTS})
@@ -285,11 +298,13 @@ class _GuardedConnection(FinTSHTTPSConnection):
         except Exception as exc:  # traced by class names only, then re-raised unchanged
             self._trace(msg, error=exc)
             raise
-        self._trace(msg, response=response)
+        self.answers.extend(self._trace(msg, response=response))
         return response
 
-    def _trace(self, msg: Any, *, response: Any = None, error: Exception | None = None) -> None:
-        fints_trace.log_exchange(
+    def _trace(
+        self, msg: Any, *, response: Any = None, error: Exception | None = None
+    ) -> list[BankAnswer]:
+        return fints_trace.log_exchange(
             exchange=self._exchanges,
             segments=msg.segments,
             http=dict(getattr(self.session, "last_http", {})),
@@ -308,18 +323,19 @@ def _refuse(name: str) -> Callable[..., Any]:
 
 
 class _ReadOnlyClient(FinTS3PinTanClient):
-    """FinTS3PinTanClient without its writes, with the guarded connection, recording every
-    9xxx answer code the bank sends (the codes only)."""
+    """FinTS3PinTanClient without its writes, with the guarded connection, whose answers
+    (every HIRMG and HIRMS answer of the session, redacted, D151) it shows as
+    `bank_answers`."""
 
     def __init__(self, *args: Any, timeout_s: float = HTTP_TIMEOUT_S, **kwargs: Any):
         super().__init__(*args, **kwargs)
         self.connection = _GuardedConnection(
             self.connection.url, timeout_s, hidden=self._hidden_values
         )
-        self.refused_codes: list[str] = []
-        # every 3xxx and 9xxx answer as "code text", redacted (a warning such as 3920 can
-        # name what the bank wanted instead)
-        self.answers: list[str] = []
+
+    @property
+    def bank_answers(self) -> list[BankAnswer]:
+        return self.connection.answers
 
     def _hidden_values(self) -> tuple[str | None, ...]:
         """What a bank text must never show in the log: the login, the customer id, the PIN
@@ -333,16 +349,6 @@ class _ReadOnlyClient(FinTS3PinTanClient):
             getattr(self, "product_name", None),
             None if system_id in (None, fints_trace.SYSTEM_ID_UNASSIGNED) else str(system_id),
         )
-
-    def _process_response(self, dialog: Any, segment: Any, response: Any) -> None:
-        raw = str(getattr(response, "code", None) or "")
-        code = refused_code(raw)
-        if code is not None:
-            self.refused_codes.append(code)
-        if len(raw) == 4 and raw[0] in "39":
-            text = redact_bank_text(getattr(response, "text", ""), *self._hidden_values())
-            self.answers.append(f"{raw} {text}".strip())
-        super()._process_response(dialog, segment, response)
 
     def supported_camt_formats(self) -> list[str]:
         """The camt messages HICAZS (the bank's parameters) lists, as the bank spells them."""
@@ -443,25 +449,28 @@ class FintsSession:
         nothing, except with codes_refuse=False: the bootstrap fetch_tan_mechanisms only, a
         dialog python-fints runs in bootstrap mode where it tolerates a 9xxx answer (an
         exception there still maps as everywhere, so a PIN error stays bank.refused)."""
-        seen = len(self._client.refused_codes)
+        seen = len(self._client.bank_answers)
         try:
             yield
         except (BankError, WriteRefused):
             raise
         except Exception as exc:  # the type decides the code; the exception's text is dropped
-            error = self._error(exc, seen)
-            if not error.response_codes:  # not the bank's 9xxx: what python-fints raised (D148)
-                error.exc_chain = fints_trace.exc_chain(exc)
-            if error.code == E.BANK_REFUSED and not error.answers:
-                error.answers = tuple(self._answers())
+            answers = self._client.bank_answers[seen:]
+            error = self._error(exc, answers)
+            if error.response_code is None:  # not the bank's code: what python-fints raised
+                error.exc_chain = fints_trace.exc_chain(exc)  # (D148)
+                if error.code == E.BANK_REFUSED:  # its warnings may still say why
+                    error.answers = tuple(a for a in answers if _is_warning_or_error(a))
             raise error from None
-        if codes_refuse and len(self._client.refused_codes) > seen:
-            raise _refused(self._client.refused_codes[seen:], self._answers()) from None
+        answers = self._client.bank_answers[seen:]
+        if codes_refuse and _refusal_in(answers):
+            raise _refused(answers) from None
 
-    def _error(self, exc: Exception, seen: int) -> BankError:
-        codes = self._client.refused_codes[seen:]
-        if codes:
-            return _refused(codes, self._answers())
+    def _error(self, exc: Exception, answers: list[BankAnswer]) -> BankError:
+        """The bank's answers decide when one of them refuses (a 9xxx code, or 3938 that
+        python-fints raises on); else the exception's type."""
+        if deciding_code(answers) is not None:
+            return _refused(answers)
         if isinstance(exc, FinTSDialogInitError) and isinstance(
             exc.__cause__, FinTSConnectionError | requests.RequestException | OSError
         ):
@@ -479,10 +488,6 @@ class FintsSession:
         if isinstance(exc, FinTSError):
             return BankError(E.BANK_REFUSED)
         return BankError(E.BANK_FAILED)
-
-    def _answers(self) -> list[str]:
-        """The bank's redacted 3xxx/9xxx answers of this session, the last few."""
-        return list(getattr(self._client, "answers", [])[-REFUSED_CODES_LOGGED:])
 
     def _seeded(self) -> bool:
         return self._restored and self._tan_mechanism is not None
