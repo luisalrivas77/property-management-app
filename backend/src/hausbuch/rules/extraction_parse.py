@@ -1062,38 +1062,54 @@ def dwellings(items: object) -> list[Dwelling]:
     (Summe, Gesamt, ...) too when other rows remain (D139). Not a list: []. Pure."""
     if not isinstance(items, list):
         return []
-    out = []
-    for item in items:
-        if not isinstance(item, str):
-            continue
-        parts = [_collapse(part) for part in item.split("|")]
-        parts += [""] * (4 - len(parts))
-        label, raw_area, raw_mea, location = parts[:4]
-        if not label or label.casefold() == UNKNOWN or _first_word(label) in _ROOM_WORDS:
-            continue
-        try:
-            area = Decimal(normalize_value(raw_area, "decimal"))
-        except (_Invalid, InvalidOperation):
-            continue
-        if area <= 0 or area.as_tuple().exponent < -2:  # type: ignore[operator]
-            continue
-        mea = None
-        if raw_mea and raw_mea.casefold() != UNKNOWN:
-            try:
-                mea = normalize_value(raw_mea, "fraction")
-            except _Invalid:
-                mea = None
-        known = location and location.casefold() != UNKNOWN
-        out.append(
-            Dwelling(
-                label=label,
-                area=str(area.quantize(Decimal("0.01"))),
-                mea=mea,
-                location=location if known else None,
-            )
-        )
+    out = [row for item in items if not _is_room(item) and (row := _dwelling(item)) is not None]
     flats = [row for row in out if not _is_total(row.label)]
     return flats if flats else out
+
+
+def lone_dwelling(items: object) -> bool:
+    """True when the list names exactly one Wohnung (D139 rule (a)): dwellings() keeps one row
+    and every other item is a room or a total row the guard leaves out. An item left out as
+    unreadable (no label, no readable area) counts against it, since it may be another flat.
+    Pure."""
+    if not isinstance(items, list) or len(dwellings(items)) != 1:
+        return False
+    rest = [item for item in items if not _is_room(item)]
+    return all(_dwelling(item) is not None for item in rest)
+
+
+def _is_room(item: object) -> bool:
+    return isinstance(item, str) and _first_word(_collapse(item.split("|")[0])) in _ROOM_WORDS
+
+
+def _dwelling(item: object) -> Dwelling | None:
+    """One row of the list, or None when it has no label or no readable area."""
+    if not isinstance(item, str):
+        return None
+    parts = [_collapse(part) for part in item.split("|")]
+    parts += [""] * (4 - len(parts))
+    label, raw_area, raw_mea, location = parts[:4]
+    if not label or label.casefold() == UNKNOWN:
+        return None
+    try:
+        area = Decimal(normalize_value(raw_area, "decimal"))
+    except (_Invalid, InvalidOperation):
+        return None
+    if area <= 0 or area.as_tuple().exponent < -2:  # type: ignore[operator]
+        return None
+    mea = None
+    if raw_mea and raw_mea.casefold() != UNKNOWN:
+        try:
+            mea = normalize_value(raw_mea, "fraction")
+        except _Invalid:
+            mea = None
+    known = location and location.casefold() != UNKNOWN
+    return Dwelling(
+        label=label,
+        area=str(area.quantize(Decimal("0.01"))),
+        mea=mea,
+        location=location if known else None,
+    )
 
 
 def derive_fields(

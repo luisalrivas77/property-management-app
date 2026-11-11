@@ -2441,6 +2441,37 @@ cases:
           target_id: *P
           values: {}
 
+  - id: building_records_rooms_and_their_total_patch_the_flat
+    description: >-
+      D139 guard and (a). A single flat's Wohnflächenberechnung lists its rooms and their
+      total; the rooms are never a Wohnung, so the total is the one row and is proposed.
+    kind: general
+    context:
+      document_id: *DOC
+      classification: *CL_WFB
+      properties:
+        - {<<: *PROP_LINDEN, living_area_m2: null}
+    extraction:
+      title: {v: Wohnflächenberechnung Lindenstraße 12, p: 1, q: "Wohnflächenberechnung"}
+      document_date: {v: "1998-03-02", p: 1, q: "02.03.1998"}
+      street: {v: Lindenstraße, p: 1, q: "Lindenstraße 12, 10115 Berlin"}
+      house_number: {v: "12", p: 1, q: "Lindenstraße 12, 10115 Berlin"}
+      postal_code: {v: "10115", p: 1, q: "Lindenstraße 12, 10115 Berlin"}
+      dwellings:
+        v: ["Zimmer 1 | 14,20 m² | unbekannt | unbekannt", "Küche | 8,10 m² | unbekannt | unbekannt", "Summe | 61,40 m² | unbekannt | unbekannt"]
+        p: 1
+        q: "Summe 61,40 m²"
+    expect:
+      keys: [typing, property, link:property]
+      records:
+        - key: property
+          entity_type: property
+          mode: patch
+          target_id: *P
+          values: {living_area_m2: "61.40"}
+          derived: {living_area_m2: [dwellings]}
+          current: {living_area_m2: null}
+
   - id: building_records_no_dwelling_readable
     description: >-
       D139. The reading holds a list but no row is a Wohnung with a readable area; nothing is

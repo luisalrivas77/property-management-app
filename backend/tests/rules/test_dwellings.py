@@ -3,7 +3,13 @@ them of `building_records` only, keeps them with their page and quote through th
 scrub, and rules.extraction_parse.dwellings reads each row. The pick of the household's row is
 in tests/fixtures/phase2/prefill.yaml. All values are invented."""
 
-from hausbuch.rules.extraction_parse import Dwelling, PropertyAddress, dwellings, parse_lines
+from hausbuch.rules.extraction_parse import (
+    Dwelling,
+    PropertyAddress,
+    dwellings,
+    lone_dwelling,
+    parse_lines,
+)
 from hausbuch.schemas.ai import CitedTextBlock, PageCitation
 from hausbuch.schemas.enums import DocumentSubtype, ExtractionKind
 
@@ -103,3 +109,14 @@ def test_a_total_beside_a_flat_is_left_out():
 def test_a_lone_total_is_the_one_flats_wohnflaeche():
     rows = dwellings(["Zimmer 1 | 14,20 m² | |", "Summe | 61,40 m² | |"])
     assert rows == [Dwelling("Summe", "61.40", None, None)]
+
+
+def test_one_wohnung_beside_rooms_and_totals_is_the_lone_dwelling():
+    assert lone_dwelling(["WE 1 | 48,20 m² | 62/1000 | EG"])
+    assert lone_dwelling(["Zimmer 1 | 14,20 m² | |", "Summe | 61,40 m² | |"])
+    assert lone_dwelling(["WE 1 | 48,20 m² | |", "Summe | 48,20 m² | |"])
+    # Two flats, or an unreadable row that may be another flat: not alone.
+    assert not lone_dwelling(["WE 1 | 48,20 m² | |", "WE 2 | 68,40 m² | |"])
+    assert not lone_dwelling(["WE 1 | 48,20 m² | |", "WE 2 | unbekannt | |"])
+    assert not lone_dwelling(["Zimmer 1 | 14,20 m² | |"])
+    assert not lone_dwelling(None)

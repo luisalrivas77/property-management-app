@@ -126,6 +126,7 @@ from .extraction_parse import _MONTHS, Dwelling, cost_lines_balance
 from .extraction_parse import cost_lines as parse_cost_lines
 from .extraction_parse import dwellings as parse_dwellings
 from .extraction_parse import house_number_key as _house_number_key
+from .extraction_parse import lone_dwelling as _lone_dwelling
 from .extraction_parse import street_key as _street_key
 from .hand_fields import HAND_FIELD_MAP, HAND_FIELDS, hand_values
 from .tax.rounding import split_cents
@@ -1441,7 +1442,7 @@ class _Builder:
             if read.value:
                 self.records[0].notes.append(_NO_DWELLING_NOTE)
             return
-        only = isinstance(read.value, list) and len(read.value) == 1
+        only = _lone_dwelling(read.value)
         picked = _pick_dwelling(rows, prop, self.ctx.units, only=only)
         if picked is not None:
             row, why = picked

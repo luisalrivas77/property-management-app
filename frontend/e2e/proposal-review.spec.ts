@@ -643,6 +643,7 @@ test("a Wohnflächenberechnung of several flats: Übernehmen without a click kee
   const form = vorschlag(page).getByRole("form", { name: "Vorschlag prüfen" });
   const property = form.getByRole("region", { name: "Immobilie", exact: true });
   await expect(property).toContainText("Welche Wohnung ist Ihre?");
+  await expect(property.getByLabel("Wohnfläche (m²)", { exact: true })).toHaveValue("");
   await form.getByRole("button", { name: "Übernehmen" }).click();
   await expect(form.getByText("Über diesen Vorschlag wurde schon entschieden (übernommen oder verworfen).")).toBeVisible();
 
