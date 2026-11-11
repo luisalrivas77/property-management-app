@@ -7,6 +7,8 @@ facts and the export's id and time in, bytes out; no database, no blob store, no
   (Z33 asks for it in the first year), the warnings and open items, the Formularstand, the
   rule set version, the export id, the SHA-256 of the draft snapshot and the disclaimer.
 - lines_csv, payments_csv, readme_text, render_archive: the yearly archive (ZIP).
+- render_payment_proofs: zahlungsnachweise.pdf, the year's bank lines with their statement
+  file's SHA-256 and the Belege they pay (D144).
 
 Privacy (D5, §6 invariant). The sheet and both CSVs are built from the draft, the draft facts
 and the rule set only, which carry no tenant or owner name, no full IBAN and no purpose text: a
@@ -14,6 +16,9 @@ counterparty is at most its masked IBAN (zahlungen.csv), the owners are the form
 and "Person B" with their shares, and a Beleg is named in zahlungen.csv by its number in
 dokumente/, never by its title (a title can name a tenant). The originals in dokumente/ are
 the documents themselves, untouched (principle 6), and README.txt lists them by file name.
+zahlungsnachweise.pdf follows the CSV's rule (D144): the bank line's dates, amount, the bank's
+references and masked IBANs, never the counterparty's name or the purpose text; the bank's
+own PDF statements in kontoauszuege/ are untouched originals, named by their booking dates.
 
 Determinism. The same inputs give the same bytes: reportlab runs in invariant mode (fixed
 creation date and document id), only the standard Helvetica fonts are used, every ZIP entry
@@ -29,7 +34,7 @@ import io
 import json
 import re
 import zipfile
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
@@ -1008,6 +1013,261 @@ def payments_csv(draft: AnlageVDraft, facts: DraftFacts, beleg_numbers: dict[UUI
     return _csv(rows)
 
 
+# --- The payment proofs (PDF, D144) --------------------------------------------------------
+
+PROOF_FILENAME = "zahlungsnachweise.pdf"
+STATEMENT_FORMAT = {
+    "camt": "camt-XML der Bank",
+    "csv_camt": "CSV-Umsatzdatei der Bank",
+    "pdf": "PDF-Kontoauszug der Bank",
+}
+PROOF_NOTICE = (
+    "Ein Entwurf zum Prüfen, keine Steuerberatung. Diese Übersicht ist kein Dokument der Bank: "
+    "Hausbuch druckt sie aus den Umsatzdaten, die die Bank geliefert hat. Maßgeblich sind die "
+    "Originaldateien der Bank."
+)
+
+
+@dataclass(frozen=True)
+class StatementSource:
+    """The bank file a line was imported from: its format, upload date, the dates of its
+    bookings and the SHA-256 of the stored original (principle 6). No file name: a bank's
+    export name can carry the account number."""
+
+    document_id: UUID
+    format: str  # statement_import.format
+    received_on: date
+    first_booking_on: date | None
+    last_booking_on: date | None
+    sha256: str  # hex
+
+
+@dataclass(frozen=True)
+class BankLine:
+    """One bank transaction as zahlungsnachweise.pdf prints it: the line's own amount (all
+    parts), its dates, the account (bank and masked IBAN as stored), the bank's own reference
+    and the statement it came from. The counterparty is its masked IBAN only, as in
+    zahlungen.csv: no name and no purpose text (D5); nor the end-to-end reference, which the
+    payer types and which can carry a name as the purpose text can."""
+
+    transaction_id: UUID
+    booking_date: date
+    value_date: date | None
+    amount: Decimal
+    account_bank: str
+    account_iban_masked: str
+    counterparty_iban_masked: str | None = None
+    bank_reference: str | None = None  # the bank's own (camt AcctSvcrRef / NtryRef)
+    statement: StatementSource | None = None
+
+
+@dataclass(frozen=True)
+class ArchiveStatement:
+    """A PDF statement of the bank, carried untouched under kontoauszuege/ (D144). Named by its
+    booking dates, never by its uploaded name (which can carry the account number)."""
+
+    document_id: UUID
+    number: str  # "01"
+    first_booking_on: date
+    last_booking_on: date
+    data: bytes
+
+    @property
+    def path(self) -> str:
+        return (
+            f"kontoauszuege/{self.number} Kontoauszug {self.first_booking_on.isoformat()} bis "
+            f"{self.last_booking_on.isoformat()}.pdf"
+        )
+
+
+def _reference(value: str | None) -> str | None:
+    """A bank reference worth printing: not empty, not camt's NOTPROVIDED placeholder."""
+    text = " ".join((value or "").split())
+    return None if not text or text.upper() == "NOTPROVIDED" else text
+
+
+def payment_groups(draft: AnlageVDraft, facts: DraftFacts) -> list[list]:
+    """The payments of zahlungen.csv grouped per bank transaction, so a split line appears once
+    with its parts; in booking order (the first part's position). An allocation without a
+    transaction id stands alone."""
+    groups: dict[UUID, list] = {}
+    for a in year_allocations(draft, facts):
+        groups.setdefault(a.transaction_id or a.allocation_id, []).append(a)
+    return list(groups.values())
+
+
+def _counted_in(key: str, rule_set: RuleSet) -> str:
+    """Where a part counts, for a reader of the form: "Zeile 78: <label>" for a form line,
+    else the block's own words (zahlungen.csv prints the key)."""
+    line = rule_set.form.lines.get(key)
+    if line is None:
+        return key
+    zeile = line.zeile_from if line.zeile_from is not None else line.zeile
+    return line.label if zeile is None else f"Zeile {zeile}: {line.label}"
+
+
+def render_payment_proofs(
+    draft: AnlageVDraft,
+    rule_set: RuleSet,
+    facts: DraftFacts,
+    stamp: ExportStamp,
+    *,
+    property_label: str,
+    bank_lines: Mapping[UUID, BankLine],
+    beleg_numbers: Mapping[UUID, str],
+    statement_paths: Mapping[UUID, str] | None = None,
+) -> bytes:
+    """zahlungsnachweise.pdf (D144): one entry per bank transaction the year's draft counts
+    (the payments of zahlungen.csv, grouped per transaction), each with its dates, the line's
+    amount, the masked counterparty IBAN, the account, the bank's references, the statement
+    file it came from with its SHA-256, the parts booked and the Belege it pays. A line whose
+    bank data is missing (`bank_lines` has no entry) prints what the draft knows. The same
+    inputs give the same bytes."""
+    statement_paths = statement_paths or {}
+    created = _local(stamp.created_at)
+    title = f"Zahlungsnachweise {draft.tax_year} – {property_label}"
+    where = _where(draft)
+    groups = payment_groups(draft, facts)
+    story: list = [_para(title, _H1)]
+    story.append(
+        _para(
+            f"Auszug aus den Umsatzdaten der Bank, erstellt von Hausbuch am {created:%d.%m.%Y}. "
+            "Die Originaldateien der Bank sind unverändert gespeichert; ihre "
+            "SHA-256-Prüfsumme steht bei jeder Zahlung."
+        )
+    )
+    story.append(
+        _para(
+            "Namen und Verwendungszweck stehen nicht in dieser Übersicht (Datenschutz); sie "
+            "stehen im Kontoauszug der Bank und im Beleg. IBANs sind maskiert, weil Hausbuch "
+            "nur maskierte IBANs speichert. Die Belegnummern sind die Nummern in dokumente/ "
+            "und in zahlungen.csv.",
+            _SMALL,
+        )
+    )
+    story.append(_para(PROOF_NOTICE, _SMALL))
+    story.append(_para(f"{len(groups)} Zahlungen", _H2))
+    if not groups:
+        story.append(_para("Keine Zahlungen in diesem Jahr."))
+    for n, parts in enumerate(groups, start=1):
+        first = parts[0]
+        line = bank_lines.get(first.transaction_id) if first.transaction_id else None
+        booked = sum((a.amount for a in parts), Decimal("0"))
+        amount = line.amount if line is not None else booked
+        booking = line.booking_date if line is not None else first.booking_date
+        value = line.value_date if line is not None else first.value_date
+        block: list = [
+            Paragraph(
+                f"<b>{n}. {escape(_date(booking))} · {escape(_money(amount))}</b>",
+                _BODY,
+            )
+        ]
+        rows: list[list] = [["Buchungstag / Wertstellung", f"{_date(booking)} / {_date(value)}"]]
+        rows.append(["Betrag der Buchung", _money(amount)])
+        counterparty = (
+            line.counterparty_iban_masked if line is not None else first.counterparty_iban_masked
+        )
+        rows.append(["Empfänger/Auftraggeber (IBAN)", counterparty or "–"])
+        if line is not None:
+            rows.append(["Konto", f"{line.account_bank}, IBAN {line.account_iban_masked}"])
+            reference = _reference(line.bank_reference)
+            if reference:
+                rows.append(["Referenz der Bank", reference])
+            source = line.statement
+            if source is not None:
+                kind = STATEMENT_FORMAT.get(source.format, source.format)
+                text = f"{kind}, hochgeladen am {_date(source.received_on)}"
+                if source.first_booking_on and source.last_booking_on:
+                    text += (
+                        f", Buchungen {_date(source.first_booking_on)} bis "
+                        f"{_date(source.last_booking_on)}"
+                    )
+                path = statement_paths.get(source.document_id)
+                if path:
+                    text += f"; im Archiv: {path}"
+                rows.append(["Bankdatei", text])
+        else:
+            rows.append(["Konto", "– (Bankdaten nicht gefunden)"])
+        belege = sorted(
+            {beleg_numbers[a.document_id] for a in parts if a.document_id in beleg_numbers}
+        )
+        rows.append(["Beleg Nr.", ", ".join(belege) if belege else "–"])
+        table = Table(
+            [[_para(label, _CELL), _para(text, _CELL)] for label, text in rows],
+            colWidths=[48 * mm, 132 * mm],
+        )
+        table.setStyle(
+            TableStyle(
+                [
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("TOPPADDING", (0, 0), (-1, -1), 1),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+                ]
+            )
+        )
+        block.append(table)
+        if line is not None and line.statement is not None:
+            block.append(_para(f"SHA-256 der Bankdatei: {line.statement.sha256}", _SMALL))
+        part_rows: list[list] = [["Gebucht als", "Betrag", "Zählt in", "Beleg Nr."]]
+        for a in parts:
+            part_rows.append(
+                [
+                    _para(CATEGORY_LABEL[a.category], _CELL),
+                    Paragraph(escape(_money(a.amount)), _NUM),
+                    _para(_counted_in(where.get(a.allocation_id, NOT_ON_FORM), rule_set), _CELL),
+                    "" if a.document_id is None else beleg_numbers.get(a.document_id, ""),
+                ]
+            )
+        if line is not None and booked != line.amount:
+            part_rows.append(
+                [
+                    _para(
+                        "übrige Teile der Buchung (andere Immobilie oder noch nicht bestätigt)",
+                        _CELL,
+                    ),
+                    Paragraph(escape(_money(line.amount - booked)), _NUM),
+                    "",
+                    "",
+                ]
+            )
+        part_table = Table(part_rows, colWidths=[78 * mm, 30 * mm, 50 * mm, 22 * mm])
+        part_table.setStyle(_GRID)
+        block += [part_table, Spacer(1, 5)]
+        story.append(KeepTogether(block))
+
+    meta = [
+        f"Export {stamp.export_id}, erstellt {created:%d.%m.%Y %H:%M} Uhr",
+        f"SHA-256 des Entwurfs: {draft_sha256(draft)}",
+    ]
+    story.append(KeepTogether([_para("Herkunft", _H2), *(_para(m, _SMALL) for m in meta)]))
+
+    footer = f"Zahlungsnachweise {draft.tax_year} · Export {stamp.export_id} · {created:%d.%m.%Y}"
+
+    def on_page(canvas, doc) -> None:
+        canvas.saveState()
+        canvas.setFont("Helvetica", 7)
+        canvas.drawString(15 * mm, 10 * mm, footer)
+        canvas.drawRightString(A4[0] - 15 * mm, 10 * mm, f"Seite {doc.page}")
+        canvas.restoreState()
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=15 * mm,
+        rightMargin=15 * mm,
+        topMargin=16 * mm,
+        bottomMargin=16 * mm,
+        title=title,
+        author="Hausbuch",
+        creator="Hausbuch",
+        subject=f"Zahlungsnachweise {draft.tax_year}",
+        invariant=1,
+    )
+    doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
+    return buffer.getvalue()
+
+
 # --- Documents and the archive ------------------------------------------------------------
 
 
@@ -1122,6 +1382,8 @@ def readme_text(
     banner: Sequence[str] = (),
     notes: Sequence[str] = (),
     income_tax: bool = False,
+    statements: Sequence[ArchiveStatement] = (),
+    statements_left_out: int = 0,
 ) -> bytes:
     created = _local(stamp.created_at)
     h = draft.header
@@ -1153,6 +1415,33 @@ def readme_text(
         *_file_list(files),
         f"  dokumente/  {len(documents)} Originale, unverändert",
         *(f"    {d.path}  SHA-256 {hashlib.sha256(d.data).hexdigest()}" for d in documents),
+    ]
+    if statements:
+        lines.append(f"  kontoauszuege/  {len(statements)} Kontoauszüge der Bank, unverändert")
+        lines += [f"    {s.path}  SHA-256 {hashlib.sha256(s.data).hexdigest()}" for s in statements]
+    lines += [
+        "",
+        "Zahlungsnachweise",
+        f"  {PROOF_FILENAME} listet jede Zahlung des Jahres vom Mietkonto mit Buchungstag, "
+        "Wertstellung, Betrag, Konto, Referenz der Bank und den Belegen, die sie bezahlt. Hausbuch "
+        "druckt sie aus den Umsatzdaten der Bank; sie ist kein Dokument der Bank. Bei jeder "
+        "Zahlung steht die SHA-256-Prüfsumme der Bankdatei, aus der sie stammt; die Datei ist "
+        "unverändert in Hausbuch gespeichert.",
+        "  Die IBANs sind maskiert gedruckt, weil Hausbuch nur maskierte IBANs speichert; Namen "
+        "und Verwendungszweck stehen im Kontoauszug der Bank und im Beleg.",
+        "  Die Kontoauszüge der Bank liegen unter kontoauszuege/, soweit sie als PDF gespeichert "
+        "sind" + (f" ({len(statements)} enthalten)." if statements else " (keine gespeichert)."),
+    ]
+    if statements_left_out:
+        lines.append(
+            f"  {statements_left_out} Kontoauszug/Kontoauszüge der Bank nicht enthalten: das "
+            "Archiv wäre größer als 100 MiB. Belege gehen vor; die Kontoauszüge bitte einzeln "
+            "aus Hausbuch (Dokumente) herunterladen."
+        )
+    lines += [
+        "  Für die Belegnachreichung in ELSTER muss jede Datei ein PDF sein; Grenzen für Seiten "
+        "und Dateigröße (von Nutzern berichtet: etwa 100 Seiten oder 10 MB je Datei) bitte laut "
+        "ELSTER-Hilfe prüfen.",
         "",
         "Für das Finanzamt eine Kopie nötig",
     ]
@@ -1220,19 +1509,35 @@ def render_archive(
     extra_files: Sequence[tuple[str, bytes]] = (),
     banner: Sequence[str] = (),
     notes: Sequence[str] = (),
+    bank_lines: Mapping[UUID, BankLine] | None = None,
+    statements: Sequence[ArchiveStatement] = (),
+    statements_left_out: int = 0,
 ) -> bytes:
     """The yearly archive (ZIP): ausfuellhilfe.pdf, anlage-v-<year>.csv, zahlungen.csv,
-    README.txt, the `extra_files` (phase 4b D104: each owner's Anlage N sheet and the Gesamt
-    page, already rendered) and dokumente/ with the untouched originals (stored, not
+    zahlungsnachweise.pdf (D144), README.txt, the `extra_files` (phase 4b D104: each owner's
+    Anlage N sheet and the Gesamt page, already rendered), dokumente/ with the untouched
+    originals and kontoauszuege/ with the bank's own PDF statements (D144; both stored, not
     recompressed). `banner`: lines printed at the top of README.txt (the open Jahresfragen);
-    `notes`: its Einkommensteuer section (what was left out and why)."""
+    `notes`: its Einkommensteuer section (what was left out and why); `statements_left_out`:
+    how many statements the size cap left out (README says so)."""
     copies = sum(1 for d in documents if d.finanzamt_copy is not None)
     sheet = render_field_sheet(draft, rule_set, facts, stamp, finanzamt_copies=copies)
     numbers = {d.document_id: d.number for d in documents}
+    proofs = render_payment_proofs(
+        draft,
+        rule_set,
+        facts,
+        stamp,
+        property_label=property_label,
+        bank_lines=bank_lines or {},
+        beleg_numbers=numbers,
+        statement_paths={s.document_id: s.path for s in statements},
+    )
     files = [
         ("ausfuellhilfe.pdf", sheet),
         (f"anlage-v-{draft.tax_year}.csv", lines_csv(draft, rule_set)),
         ("zahlungen.csv", payments_csv(draft, facts, numbers)),
+        (PROOF_FILENAME, proofs),
     ]
     readme = readme_text(
         draft,
@@ -1244,6 +1549,8 @@ def render_archive(
         banner=banner,
         notes=notes,
         income_tax=bool(extra_files or notes),
+        statements=statements,
+        statements_left_out=statements_left_out,
     )
     when = _zip_time(stamp.created_at)
     buffer = io.BytesIO()
@@ -1255,4 +1562,6 @@ def render_archive(
             _add(archive, path, data, when, stored=False)
         for document in documents:
             _add(archive, document.path, document.data, when, stored=True)
+        for statement in statements:
+            _add(archive, statement.path, statement.data, when, stored=True)
     return buffer.getvalue()
