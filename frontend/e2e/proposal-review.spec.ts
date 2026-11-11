@@ -620,7 +620,8 @@ test("a Wohnflächenberechnung of several flats: one click picks the household's
   await form.getByRole("button", { name: "Übernehmen" }).click();
   await expect(form.getByText("Über diesen Vorschlag wurde schon entschieden (übernommen oder verworfen).")).toBeVisible();
 
-  const [sent] = (mock.applies[0] as { records: { key: string; values: { living_area_m2: string } }[] }).records;
-  expect(sent.key).toBe("property");
-  expect(Number(sent.values.living_area_m2)).toBe(61.4);
+  const sent = (mock.applies[0] as { records: { key: string; values: { living_area_m2?: string } }[] }).records;
+  expect(sent).toHaveLength(1);
+  expect(sent[0]?.key).toBe("property");
+  expect(Number(sent[0]?.values.living_area_m2)).toBe(61.4);
 });

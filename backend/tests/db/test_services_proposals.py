@@ -1227,6 +1227,7 @@ def test_the_context_carries_the_contracts_mea_and_we_label_for_a_wohnflaechenbe
     context = read(ws, proposals.prefill_context, wfb.id, building_records)
     [existing] = context.properties
     assert existing.id == prop.id
-    assert existing.contract_mea == {"numerator": 85, "denominator": 1000}
+    assert existing.contract_mea is not None
+    assert existing.contract_mea.model_dump() == {"numerator": 85, "denominator": 1000}
     assert existing.contract_unit_label == "WE 3"
     assert existing.living_area_m2 == Decimal("68.40")

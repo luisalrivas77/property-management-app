@@ -1635,6 +1635,7 @@ function FieldRow({
     [spec.description && descriptionOpen ? descriptionId : null, hint ? hintId : null, errors.length > 0 ? errorId : null].filter(Boolean).join(" ") ||
     undefined;
   const inputDisabled = disabled || (existing && !take);
+  const offered = record.options?.[name];
 
   let input: ReactNode;
   if (unchanged || spec.kind === "fixed") {
@@ -1739,10 +1740,10 @@ function FieldRow({
       <div className={existing && !unchanged ? "proposal-row-body with-current" : "proposal-row-body"}>
         <div>
           {input}
-          {!unchanged && record.options?.[name]?.length ? (
+          {!unchanged && offered?.length ? (
             <FieldOptions
               label={spec.label}
-              options={record.options[name].map((option) => ({ raw: toRaw(spec, option.value), label: option.label }))}
+              options={offered.map((option) => ({ raw: toRaw(spec, option.value), label: option.label }))}
               raw={state?.raw ?? ""}
               disabled={inputDisabled}
               onPick={(raw) => onChange({ raw })}
