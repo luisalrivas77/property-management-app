@@ -232,9 +232,7 @@ def test_a_second_run_writes_nothing(client_a, booked, deps, jobs, ws_a):
     assert len(_exported_events(client_a, pid)) == 1
 
 
-def test_the_sheet_and_the_csvs_carry_no_name_iban_or_purpose_text(
-    client_a, booked, deps, jobs, ws_a
-):
+def test_no_export_carries_an_incoming_name_or_purpose_text(client_a, booked, deps, jobs, ws_a):
     pid = booked["pid"]
     create(client_a, "/api/owners", {"full_name": "Luis Rivas"})
     _typed(
@@ -255,20 +253,30 @@ def test_the_sheet_and_the_csvs_carry_no_name_iban_or_purpose_text(
         "zahlungen.csv": archive.read("zahlungen.csv").decode("utf-8"),
         "zahlungsnachweise.pdf": _pdf_text(archive.read("zahlungsnachweise.pdf")),
     }
-    secrets = (
+    # Never in any export file: the incoming line's name, purpose text and IBAN (the camt
+    # fixture's "Partei A" pays 241,58), the tenant, the owner, booking texts, full IBANs.
+    incoming = (
         TENANT_NAME,
         "Luis Rivas",
-        "Partei A",  # the counterparties' names, purpose texts and IBANs (camt fixture)
-        "Partei B",
-        "Verwendungszweck",
+        "Partei A",
+        "Verwendungszweck 2",
         "ÜBERWEISUNG",
         SAMPLE_IBAN,
         COUNTERPARTY_IBAN,
         "DE86100000000000001002",
     )
+    # The outgoing line (the repair, -360,18 to "Partei B"): its payee and purpose only in
+    # zahlungsnachweise.pdf (D144), never in the field sheet or the CSVs.
+    outgoing = ("Partei B", "Verwendungszweck 3")
     for where, content in texts.items():
-        for secret in secrets:
+        for secret in incoming:
             assert secret not in content, (where, secret)
+        if where != "zahlungsnachweise.pdf":
+            for secret in (*outgoing, "Verwendungszweck", "Empfänger"):
+                assert secret not in content, (where, secret)
+    proofs = " ".join(texts["zahlungsnachweise.pdf"].split())
+    assert "Empfänger Partei B" in proofs and "Verwendungszweck Verwendungszweck 3" in proofs
+    assert proofs.count("Empfänger Partei") == 1  # the payment in shows no name
     rows = list(csv.reader(io.StringIO(texts["zahlungen.csv"].lstrip("﻿")), delimiter=";"))
     assert {"-360,18", "241,58"} <= {r[1] for r in rows[1:]}
     assert all(r[-1] == "" or "*" in r[-1] for r in rows[1:])  # a masked IBAN at most

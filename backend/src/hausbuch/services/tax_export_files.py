@@ -16,8 +16,11 @@ counterparty is at most its masked IBAN (zahlungen.csv), the owners are the form
 and "Person B" with their shares, and a Beleg is named in zahlungen.csv by its number in
 dokumente/, never by its title (a title can name a tenant). The originals in dokumente/ are
 the documents themselves, untouched (principle 6), and README.txt lists them by file name.
-zahlungsnachweise.pdf follows the CSV's rule (D144): the bank line's dates, amount, the bank's
-references and masked IBANs, never the counterparty's name or the purpose text; the bank's
+zahlungsnachweise.pdf follows the CSV's rule for every incoming line (D144): the bank line's
+dates, amount, the bank's own reference and masked IBANs, never the counterparty's name or the
+purpose text. Outgoing lines (amount < 0) also print the payee's name and the purpose text, an
+exception to D5 for this one file (Luis, 11 Nov 2026: a proof of payment must show who was
+paid); a payment out whose text names a tenant shows it, which was accepted. The bank's
 own PDF statements in kontoauszuege/ are untouched originals, named by their booking dates.
 
 Determinism. The same inputs give the same bytes: reportlab runs in invariant mode (fixed
@@ -1046,9 +1049,11 @@ class StatementSource:
 class BankLine:
     """One bank transaction as zahlungsnachweise.pdf prints it: the line's own amount (all
     parts), its dates, the account (bank and masked IBAN as stored), the bank's own reference
-    and the statement it came from. The counterparty is its masked IBAN only, as in
-    zahlungen.csv: no name and no purpose text (D5); nor the end-to-end reference, which the
-    payer types and which can carry a name as the purpose text can."""
+    and the statement it came from. The counterparty is its masked IBAN, as in zahlungen.csv;
+    for an outgoing line (amount < 0) also the payee's name and the purpose text (D144, an
+    exception to D5 for this file only; the loader fills them for outgoing lines only and the
+    renderer prints them for outgoing lines only). Never the end-to-end reference, which the
+    payer types and which can carry a name."""
 
     transaction_id: UUID
     booking_date: date
@@ -1059,6 +1064,12 @@ class BankLine:
     counterparty_iban_masked: str | None = None
     bank_reference: str | None = None  # the bank's own (camt AcctSvcrRef / NtryRef)
     statement: StatementSource | None = None
+    counterparty_name: str | None = None  # outgoing lines only (D144)
+    purpose: str | None = None  # outgoing lines only (D144)
+
+    @property
+    def outgoing(self) -> bool:
+        return self.amount < 0
 
 
 @dataclass(frozen=True)
@@ -1138,8 +1149,10 @@ def render_payment_proofs(
     )
     story.append(
         _para(
-            "Namen und Zahlungszweck stehen nicht in dieser Übersicht (Datenschutz); sie "
-            "stehen im Kontoauszug der Bank und im Beleg. IBANs sind maskiert, weil Hausbuch "
+            "Bei Zahlungen vom Konto stehen Empfänger und Verwendungszweck dabei. Bei "
+            "Zahlungseingängen (etwa Mieten) stehen Name und Verwendungszweck nicht in dieser "
+            "Übersicht (Datenschutz); sie stehen im Kontoauszug der Bank. IBANs sind maskiert, "
+            "weil Hausbuch "
             "nur maskierte IBANs speichert. Die Belegnummern sind die Nummern in dokumente/ "
             "und in zahlungen.csv.",
             _SMALL,
@@ -1167,7 +1180,12 @@ def render_payment_proofs(
         counterparty = (
             line.counterparty_iban_masked if line is not None else first.counterparty_iban_masked
         )
-        rows.append(["Empfänger/Auftraggeber (IBAN)", counterparty or "–"])
+        if line is not None and line.outgoing:  # D144: who was paid, and for what
+            name = " ".join((line.counterparty_name or "").split())
+            purpose = " ".join((line.purpose or "").split())
+            rows.append(["Empfänger", name or "–"])
+            rows.append(["Verwendungszweck", purpose or "–"])
+        rows.append(["Gegenkonto (IBAN)", counterparty or "–"])
         if line is not None:
             rows.append(["Konto", f"{line.account_bank}, IBAN {line.account_iban_masked}"])
             reference = _reference(line.bank_reference)
@@ -1427,8 +1445,10 @@ def readme_text(
         "druckt sie aus den Umsatzdaten der Bank; sie ist kein Dokument der Bank. Bei jeder "
         "Zahlung steht die SHA-256-Prüfsumme der Bankdatei, aus der sie stammt; die Datei ist "
         "unverändert in Hausbuch gespeichert.",
-        "  Die IBANs sind maskiert gedruckt, weil Hausbuch nur maskierte IBANs speichert; Namen "
-        "und Zahlungszweck stehen im Kontoauszug der Bank und im Beleg.",
+        "  Bei Zahlungen vom Konto (Ausgaben) stehen Empfänger und Verwendungszweck dabei, damit "
+        "der Nachweis zeigt, wer bezahlt wurde; bei Zahlungseingängen (etwa Mieten) nur die "
+        "maskierte IBAN, Name und Verwendungszweck stehen dort im Kontoauszug der Bank. Die "
+        "IBANs sind maskiert gedruckt, weil Hausbuch nur maskierte IBANs speichert.",
         "  Die Kontoauszüge der Bank liegen unter kontoauszuege/, soweit sie als PDF gespeichert "
         "sind" + (f" ({len(statements)} enthalten)." if statements else " (keine gespeichert)."),
     ]

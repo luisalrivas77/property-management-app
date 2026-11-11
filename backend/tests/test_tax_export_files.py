@@ -291,6 +291,9 @@ SPLIT_LINE = BankLine(
     account_iban_masked="DE00 **** 9999",
     counterparty_iban_masked="DE11 **** 0001",
     bank_reference="REF-BEISPIEL-0702",
+    # An incoming line never prints these, even when a caller passes them (D144).
+    counterparty_name="Mieterin Beispiel",
+    purpose="Miete Juli Beispielweg",
     statement=StatementSource(
         document_id=UUID(int=50),
         format="pdf",
@@ -331,14 +334,31 @@ def _statement(n: int, data: bytes) -> ArchiveStatement:
     )
 
 
+def _fee_line(facts) -> BankLine:
+    """The fixture's notary fee (-480,00) as an outgoing bank line."""
+    (fee,) = [a for a in facts.allocations if a.category.value == "loan_fees"]
+    return BankLine(
+        transaction_id=fee.transaction_id,
+        booking_date=fee.booking_date,
+        value_date=fee.booking_date,
+        amount=fee.amount,
+        account_bank="Beispielbank",
+        account_iban_masked="DE00 **** 9999",
+        counterparty_iban_masked="DE22 **** 0003",
+        counterparty_name="Notariat Beispielstadt",
+        purpose="Rechnung 4711 Grundschuld",
+    )
+
+
 def _proofs(facts, drafted, numbers) -> bytes:
+    fee = _fee_line(facts)
     return render_payment_proofs(
         drafted,
         RULES,
         facts,
         STAMP,
         property_label="Wohnung Beispielweg",
-        bank_lines={SPLIT_TX: SPLIT_LINE},
+        bank_lines={SPLIT_TX: SPLIT_LINE, fee.transaction_id: fee},
         beleg_numbers=numbers,
     )
 
@@ -363,6 +383,10 @@ def test_payment_proofs_list_each_bank_line_once_with_its_parts_and_belege():
     assert "Beispielbank, IBAN DE00 **** 9999" in flat and "DE11 **** 0001" in flat
     assert STATEMENT_SHA in text.replace("\n", "")
     assert "PDF-Kontoauszug der Bank, hochgeladen am 31.07.2026" in flat
+    # D144: a payment out names its payee and purpose; a payment in shows neither.
+    assert "Empfänger Notariat Beispielstadt" in flat
+    assert "Verwendungszweck Rechnung 4711 Grundschuld" in flat
+    assert "Mieterin Beispiel" not in flat and "Miete Juli" not in flat
     # One entry per bank line: the year's allocations less the one merged into the split.
     groups = payment_groups(drafted, facts)
     assert len(groups) == len(year_allocations(drafted, facts)) - 1

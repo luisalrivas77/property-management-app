@@ -431,8 +431,10 @@ def _archive_documents(
 def bank_lines(conn: Connection, draft: AnlageVDraft, facts: DraftFacts) -> dict[UUID, BankLine]:
     """The bank transactions behind the payments zahlungsnachweise.pdf lists (D144): each
     line's dates and amount, its account's bank and masked IBAN, the bank's own reference and
-    the statement import it came from, with that original's SHA-256. Never the counterparty's
-    name, the purpose text or the end-to-end reference (D5)."""
+    the statement import it came from, with that original's SHA-256. For an outgoing line
+    (amount < 0) also the payee's name and the purpose text, an exception to D5 for this one
+    file (Luis, 11 Nov 2026: a proof of payment shows who was paid); an incoming line's name
+    and purpose are never kept, and no line's end-to-end reference is read."""
     ids = {a.transaction_id for a in year_allocations(draft, facts) if a.transaction_id}
     if not ids:
         return {}
@@ -445,6 +447,8 @@ def bank_lines(conn: Connection, draft: AnlageVDraft, facts: DraftFacts) -> dict
             t.amount,
             t.counterparty_iban_masked,
             t.bank_reference,
+            t.counterparty_name,
+            t.purpose,
             ac.bank,
             ac.iban_masked,
             si.document_id,
@@ -483,6 +487,8 @@ def bank_lines(conn: Connection, draft: AnlageVDraft, facts: DraftFacts) -> dict
             counterparty_iban_masked=r.counterparty_iban_masked,
             bank_reference=r.bank_reference,
             statement=source,
+            counterparty_name=r.counterparty_name if r.amount < 0 else None,
+            purpose=r.purpose if r.amount < 0 else None,
         )
     return out
 
