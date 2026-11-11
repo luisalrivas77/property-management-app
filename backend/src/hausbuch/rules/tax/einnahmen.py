@@ -6,8 +6,10 @@ Income booked on or after the handover only; what came in before it is §5.10's 
   row, its rooms listed under it), an MFH has one row per unit. income.rent_total is their sum.
 - operating_costs_prepayment → income.umlagen, a Pauschale (flat_rate) included.
 - operating_costs_settlement → income.umlagen_settlement, sign kept.
-- other_income → income.other; every other_income allocation of the year, whatever its date,
-  raises income.other_review.
+- other_income → income.other; every other_income allocation booked on or after the handover
+  raises income.other_review (D140). One booked before it is vorab.py's: its
+  income.pre_handover warning asks the question while it is undecided, and once the
+  pre_handover_income input says rent it is rent, so it raises no second to-do.
 - Z24 (umlagen_not_agreed) is ticked when every tenancy let in the year is `included`; mixed
   terms warn instead (D72).
 """
@@ -159,7 +161,7 @@ def lines(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> RuleLines:
                 [SourceRef(kind="property", id=facts.property.id)],
             )
         )
-    for a in year:  # whatever its date (§5.7)
+    for a in after:  # before the handover: vorab.py's question, not this one (D140)
         if a.category is C.OTHER_INCOME:
             params = {"amount": money_str(a.amount)}
             if a.counterparty_iban_masked is not None:

@@ -30,7 +30,8 @@
 #   result.surplus      6,180.00 − 14,128.66                        −7,948.66 → −7,950
 #   owners A / B        ½ each                             −3,974.33 / −3,974.33 → −3,975 each
 # Not on the form: the January 2027 rent booked 29 Dec (850.00 + 180.00, moved to 2027 by the
-#   ten-day rule, D54); the seller's forwarded 2 × 425.00 before the handover (block, D63);
+#   ten-day rule, D54); the seller's forwarded 2 × 425.00 before the handover (block, D63; its
+#   income.pre_handover warning is the one question about them, no income.other_review, D140);
 #   the deposit; owner transfer, loan payout, purchase price and the two acquisition_cost
 #   payments (pass-through or capitalised via the property record, D55); Rücklage 600.00 and
 #   Tilgung 1,508.77 (tracked); the two 0.00 rows (D70); two proposed lines (−89.90, open).
@@ -403,7 +404,6 @@ bases:
     - {allocation_id: *N01, booking_date: 2026-12-29, category: operating_costs_prepayment,
        amount: "180.00", tax_year: 2027, rule: short_period_shift}
   w_unpaid: &w_unpaid {code: afa.cost_row_unpaid, params: {kind: notary, amount: "4200.00"}}
-  w_other: &w_other {code: income.other_review, params: {amount: "425.00", counterparty_iban: "DE12 **** 0002"}}
   missing_documents: &missing_documents
     - {code: purchase_contract, status: present, scope: {type: property, id: *P}, documents: [*D_KV]}
     - {code: price_split, status: present, scope: {type: property, id: *P}, documents: [*D_KV]}
@@ -488,8 +488,6 @@ cases:
       warnings:
         - *w_unpaid
         - {code: hausgeld.abrechnung_pending}
-        - *w_other
-        - *w_other
         - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
         - {code: reduced_rent.no_market_rent}
         - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
@@ -535,8 +533,6 @@ cases:
       warnings:
         - *w_unpaid
         - {code: hausgeld.abrechnung_pending}
-        - *w_other
-        - *w_other
         - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
         - {code: renovation.undecided, params: {amount: "4760.00"}}
         - {code: reduced_rent.no_market_rent}
@@ -548,7 +544,8 @@ cases:
     description: >
       case A with pre_handover_income = rent (Luis, Q1): the 850.00 the seller forwarded join
       the flat's rent row (5,950.00, of which 850.00 before the handover), the block is empty
-      and its warning gone; the two other_income warnings stay (they are per allocation)
+      and its warning gone; the two lines raise no income.other_review either (D140: a line before
+      the handover is vorab's question, and here it is answered)
     tax_year: 2026
     rule_set_year: 2026
     facts:
@@ -590,8 +587,6 @@ cases:
       warnings:
         - *w_unpaid
         - {code: hausgeld.abrechnung_pending}
-        - *w_other
-        - *w_other
         - {code: reduced_rent.no_market_rent}
         - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
         - {code: draft.form_provisional}
@@ -671,8 +666,6 @@ cases:
       warnings:
         - *w_unpaid
         - {code: hausgeld.abrechnung_pending}
-        - *w_other
-        - *w_other
         - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
         - {code: reduced_rent.no_market_rent}
         - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
@@ -716,8 +709,6 @@ cases:
       warnings:
         - *w_unpaid
         - {code: hausgeld.abrechnung_pending}
-        - *w_other
-        - *w_other
         - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
         - {code: reduced_rent.no_market_rent}
         - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
@@ -768,8 +759,6 @@ cases:
       warnings:
         - *w_unpaid
         - {code: hausgeld.abrechnung_pending}
-        - *w_other
-        - *w_other
         - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
         - {code: reduced_rent.no_market_rent}
         - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
@@ -817,8 +806,6 @@ cases:
       warnings:
         - *w_unpaid
         - {code: hausgeld.abrechnung_pending}
-        - *w_other
-        - *w_other
         - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
         - {code: reduced_rent.no_market_rent}
         - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
@@ -875,8 +862,6 @@ cases:
       warnings:
         - *w_unpaid
         - {code: hausgeld.abrechnung_pending}
-        - *w_other
-        - *w_other
         - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
         - {code: reduced_rent.no_market_rent}
         - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
@@ -944,8 +929,6 @@ cases:
       warnings:
         - *w_unpaid
         - {code: hausgeld.abrechnung_pending}
-        - *w_other
-        - *w_other
         - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
         - {code: reduced_rent.no_market_rent}
         - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}

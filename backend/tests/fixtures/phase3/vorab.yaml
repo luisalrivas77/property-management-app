@@ -12,8 +12,9 @@
 #     (the sum) and count.
 #   Costs before the handover are not touched here: they stay in their lines (vorab entstandene
 #   Werbungskosten; schuldzinsen.yaml financing_costs_before_handover has the line).
-#   income.other_review for an other_income line comes from einnahmen (§5.7), whatever its
-#   date, not from here.
+#   An other_income line before the handover raises no income.other_review (D140, 11 Nov
+#   2026): income.pre_handover is its one question while undecided, and with the input it is
+#   rent. einnahmen raises income.other_review only for lines on or after the handover.
 
 rule_set_year: 2026
 
