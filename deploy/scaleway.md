@@ -723,7 +723,11 @@ values; it is not a step, and the container never reads it.
 the code. `bank.refused` means the bank said no, and that is not always the PIN: it can
 be the login (a wrong Anmeldename or PIN), an approval declined in the S-pushTAN app, or
 the bank refusing the first setup of the connection. The card in Zu prüfen shows the
-bank's four-digit code ("Code der Bank 9xxx"); look it up before acting. The codes
+bank's four-digit code ("Code der Bank 9xxx"); look it up before acting. A bank answers a
+refusal with a general code first (9050 "Nachricht enthält Fehler", 9000, 9800) and the reason
+after it; the card shows the reason, and the container log's `bank sync failed` line lists
+every code of the answer as `response_codes` (codes only, never the bank's text). Before 11
+Nov 2026 only the first code was kept, so the first real sync showed only 9050. The codes
 9340, 9910, 9930, 9931 and 9942 are always a PIN or login error, and python-fints treats
 any 9xxx answer while the dialog is still opening as one too, so a code at the login
 usually means the login; only a code after the dialog was open points at the approval or

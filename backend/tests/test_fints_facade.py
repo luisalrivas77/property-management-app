@@ -468,6 +468,17 @@ def test_a_9xxx_answer_is_refused_with_its_four_digits_only():
     assert LOGIN not in str(raised.value)
 
 
+def test_a_general_code_before_the_reason_keeps_the_reason():
+    """The bank's message-level 9050 comes before the segment's own code (the first real
+    sync, 11 Nov 2026, kept only the 9050)."""
+    session, _ = _session(Script(refuse_at={"accounts": "9050,9942"}))
+    session.open()
+    with pytest.raises(F.BankError) as raised:
+        session.accounts()
+    assert (raised.value.code, raised.value.response_code) == (E.BANK_REFUSED, "9942")
+    assert raised.value.response_codes == ("9050", "9942")
+
+
 def test_a_code_the_bootstrap_tolerates_does_not_refuse_the_login():
     """python-fints runs fetch_tan_mechanisms in bootstrap mode and lets a 9xxx answer pass
     there; only the codes after it count (PR #160 review)."""

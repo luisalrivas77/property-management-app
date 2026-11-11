@@ -77,7 +77,8 @@ class FakeClient:
     def _step(self, name: str) -> None:
         self.calls.append(name)
         if name in self.script.refuse_at:
-            self.refused_codes.append(self.script.refuse_at[name])
+            # "9050,9942": the message-level code, then the segment's own, as banks send them
+            self.refused_codes.extend(self.script.refuse_at[name].split(","))
             # python-fints' own text quotes the whole response, here with the login in it.
             raise Exception(f"Error response: {self.login_name!r}")  # noqa: TRY002
         if name in self.script.fail_at:

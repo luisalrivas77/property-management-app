@@ -69,7 +69,7 @@ from fints.exceptions import (
 from fints.models import SEPAAccount
 
 from hausbuch.rules import errors as E
-from hausbuch.rules.bank_sync import refused_code
+from hausbuch.rules.bank_sync import deciding_code, refused_code
 
 FINTS_LOGGER = "fints"
 HTTP_TIMEOUT_S = 60
@@ -104,12 +104,21 @@ _ANSWER_CODE = re.compile(r"[0-9]{4}")
 
 class BankError(Exception):
     """A sync failure as a bank.* code, plus the four digits of a 9xxx answer for
-    bank.refused. The message is the code: never the bank's or the library's text."""
+    bank.refused: `response_code` the one that says why (rules.deciding_code), and
+    `response_codes` every 9xxx code of the answer, in order, for the log. The message is
+    the code: never the bank's or the library's text."""
 
-    def __init__(self, code: str, response_code: str | None = None):
+    def __init__(self, code: str, response_code: str | None = None, *, codes: tuple[str, ...] = ()):
         super().__init__(code)
         self.code = code
         self.response_code = response_code
+        self.response_codes = codes or ((response_code,) if response_code else ())
+
+
+def _refused(codes: list[str]) -> BankError:
+    """bank.refused with the deciding code and every code seen (phase 5, 11 Nov 2026: the
+    first real sync kept only the general 9050 and lost the bank's reason)."""
+    return BankError(E.BANK_REFUSED, deciding_code(codes), codes=tuple(codes))
 
 
 class WriteRefused(RuntimeError):
@@ -312,12 +321,12 @@ class FintsSession:
         except Exception as exc:  # the type decides the code; the text is dropped
             raise self._error(exc, seen) from None
         if codes_refuse and len(self._client.refused_codes) > seen:
-            raise BankError(E.BANK_REFUSED, self._client.refused_codes[seen]) from None
+            raise _refused(self._client.refused_codes[seen:]) from None
 
     def _error(self, exc: Exception, seen: int) -> BankError:
         codes = self._client.refused_codes[seen:]
         if codes:
-            return BankError(E.BANK_REFUSED, codes[0])
+            return _refused(codes)
         if isinstance(exc, FinTSDialogInitError) and isinstance(
             exc.__cause__, FinTSConnectionError | requests.RequestException | OSError
         ):
