@@ -201,8 +201,14 @@ def refused_code(code: object) -> str | None:
 # segment level (HIRMS).
 GENERAL_REFUSALS = frozenset({"9000", "9010", "9050", "9800", "9999"})
 # A warning (3xxx) that still ends the run: python-fints raises on 3938 "access temporarily
-# locked" (FinTSClientTemporaryAuthError). It decides only when no 9xxx code was sent.
+# locked" (FinTSClientTemporaryAuthError).
 REFUSING_WARNINGS = frozenset({"3938"})
+# The codes that say the access is locked (9930 locked, 9931 locked after wrong PINs, 3938
+# temporarily locked). One decides over every other code, whatever its level (D151 review,
+# 11 Nov 2026): the DK list scopes the lock codes to the message and a PIN error to the
+# element, so an answer can carry both, and the card must then say "locked, wait" rather than
+# "fix the PIN and fetch again", which would only spend another try on a locked access.
+LOCK_CODES = frozenset({"9930", "9931", "3938"})
 # At most this many answers go into the log line (the first real refusal had seven).
 REFUSED_CODES_LOGGED = 12
 
@@ -248,18 +254,24 @@ def redact_bank_text(text: object, *hidden: str | None) -> str:
 
 
 def deciding_code(answers: Sequence[BankAnswer]) -> str | None:
-    """The code that says why the bank refused (D151): the first 9xxx code that is not
-    merely general, a segment-level one before any message-level one (the bank sends HIRMG's
-    9050/9800/9010 first and the segment's reason, e.g. 9078 or 9942, after it); else the
-    first 9xxx code; else a refusing warning (3938); None when there is none of these."""
+    """The code that says why the bank refused (D151), in this order:
+
+    1. a lock code (LOCK_CODES, 3938 included), whatever its level: a locked access decides
+       over a PIN error or any other reason sent with it (review, 11 Nov 2026);
+    2. the first 9xxx code that is not merely general, a segment-level one before any
+       message-level one (the bank sends HIRMG's 9050/9800/9010 first and the segment's
+       reason, e.g. 9078 or 9942, after it);
+    3. the first general 9xxx code;
+    None when there is none of these."""
+    lock = next((a.code for a in answers if a.code in LOCK_CODES), None)
+    if lock is not None:
+        return lock
     refusals = [a for a in answers if refused_code(a.code) is not None]
     for level in (SEGMENT_LEVEL, MESSAGE_LEVEL):
         for answer in refusals:
             if answer.level == level and answer.code not in GENERAL_REFUSALS:
                 return answer.code
-    if refusals:
-        return refusals[0].code
-    return next((a.code for a in answers if a.code in REFUSING_WARNINGS), None)
+    return refusals[0].code if refusals else None
 
 
 def product_id_usable(product_id: str | None) -> bool:

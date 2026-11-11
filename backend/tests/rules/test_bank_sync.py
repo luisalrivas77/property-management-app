@@ -208,11 +208,14 @@ def _answers(*codes: str) -> list[rules.BankAnswer]:
         # D151: 9010 and 9999 are general too, and a segment's reason beats the message's
         (["m9010", "9010"], "9010"),
         (["m9999", "m9010", "9942"], "9942"),
-        (["m9931", "9942"], "9942"),
+        (["m9931", "9942"], "9931"),  # a lock decides over a PIN error
+        (["m9930", "9340"], "9930"),
+        (["m9800", "3938"], "3938"),  # a lock warning decides over a general code
+        (["m9050", "m9010", "3938"], "3938"),
         (["m9050", "3920", "9010"], "9050"),  # only general codes: the first 9xxx
         (["3920", "3076"], None),  # warnings alone refuse nothing
         (["3938"], "3938"),  # python-fints raises on it: access temporarily locked
-        (["3938", "9931"], "9931"),  # a 9xxx code still decides first
+        (["3938", "9931"], "3938"),  # the first lock code
     ],
 )
 def test_the_deciding_code_skips_the_general_ones(codes, deciding):

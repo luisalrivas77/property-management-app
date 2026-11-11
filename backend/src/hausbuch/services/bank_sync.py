@@ -517,8 +517,9 @@ _REFUSED_CARD: dict[str, tuple[str, str]] = {
     "9941": (
         "Die Bank hat die Freigabe nicht angenommen, etwa weil sie in der S-pushTAN-App"
         " abgelehnt wurde; der Code kann auch eine ungültige Signatur, also die PIN, meinen.",
-        "Erneut abrufen und die Anfrage in der App freigeben, nicht ablehnen. Kam in der App"
-        " keine Anfrage an, zuerst die PIN im Container prüfen. " + _PIN_WARNING,
+        "Kam in der App keine Anfrage an, zuerst die PIN im Container prüfen. "
+        + _PIN_WARNING
+        + " Kam eine Anfrage an: erneut abrufen und sie in der App freigeben, nicht ablehnen.",
     ),
     "9980": (
         "Die Bank hat den Freigabe-Vorgang abgebrochen.",

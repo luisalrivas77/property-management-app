@@ -730,9 +730,10 @@ id 9210 and 9391, outages and an outdated protocol version), what the code means
 do; any other code keeps the general text, so look it up before acting. A bank answers a
 refusal on two levels: for the whole message (HIRMG) with general codes (9050 "Nachricht
 enthält Fehler", 9000, 9010, 9800, 9999), and for each segment (HIRMS) with the reason. The
-app keeps every answer of both levels and shows the first specific 9xxx code, a segment's
-before the message's; only when every code is general does it show the first one, and 3938
-(access temporarily locked) when no 9xxx came. The container log's `bank sync failed` line
+app keeps every answer of both levels and shows a lock code first (9930, 9931 or 3938,
+whatever its level, so a locked access is never shown as a wrong PIN, where fetching again
+would only spend another try); otherwise the first specific 9xxx code, a segment's before
+the message's; only when every code is general does it show the first one. The container log's `bank sync failed` line
 lists the codes as `response_codes` (3xxx and 9xxx, at most 12), and since 11 Nov 2026
 (PR #181, with Luis's consent) the bank's own answer texts as `bank_answers`, each as
 `9078 → HKVVB:4: text` (or `9050 → message: text` for a message-level answer), with the
