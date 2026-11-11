@@ -39,7 +39,12 @@ _NUMBER = re.compile(r"[+-]?[0-9][0-9.,]*[0-9]|[+-]?[0-9]")
 _THOUSANDS_ONLY = re.compile(r"[+-]?[0-9]{1,3}(\.[0-9]{3})+")
 # A minus written apart from the number (D129 review): "./. 5.000", "- 5.000,00", "−5.000"
 # (U+2212) at the start of the value, or "5.000,00-" at its end.
-_SEPARATE_SIGN = re.compile(r"(?:\./\.|[-\u2212]) ?(?=[0-9])")
+# A banking app's English view puts the euro sign between the minus and the digits:
+# "−€5,687.00" (phase 3 D150 follow-up, 11 Nov 2026: a payment proof's amount was not read).
+_SEPARATE_SIGN = re.compile(r"(?:\./\.|[-\u2212]) ?(?:€ ?)?(?=[0-9])")
+# English grouping: commas for thousands and a decimal point, "5,687.00" or "1,234,567.5".
+# Only with both separators; "5,687" alone stays German (5.687).
+_ENGLISH_GROUPED = re.compile(r"[+-]?[0-9]{1,3}(,[0-9]{3})+\.[0-9]{1,2}")
 _TRAILING_MINUS = re.compile(r"[0-9]-$")
 _NUMERIC_DATE = re.compile(r"([0-9]{1,2})\.\s?([0-9]{1,2})\.\s?([0-9]{4})")
 _ISO_DATE = re.compile(r"([0-9]{4})-([0-9]{2})-([0-9]{2})")
@@ -313,6 +318,9 @@ def _decimal(raw: str) -> Decimal:
     """The first number in the text, German form first: a comma is the decimal separator and
     dots group thousands; without a comma, dots in groups of three are thousands.
 
+    English grouping with both separators ("5,687.00") is read too, as a banking app's
+    English view prints it.
+
     A negative may also be written with the sign apart from the digits, as an
     Einkommensteuerbescheid prints a negative zvE ("./. 5.000"), or as "- 5.000,00", "−5.000"
     or "5.000,00-". Only a sign at the very start (at most one space before the digits) or at
@@ -328,7 +336,9 @@ def _decimal(raw: str) -> Decimal:
     if match is None:
         raise _Invalid("no number")
     token = match.group()
-    if "," in token:
+    if _ENGLISH_GROUPED.fullmatch(token):
+        token = token.replace(",", "")
+    elif "," in token:
         if token.count(",") > 1:
             raise _Invalid("more than one decimal comma")
         whole, frac = token.split(",")
