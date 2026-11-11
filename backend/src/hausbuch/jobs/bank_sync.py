@@ -17,9 +17,11 @@ the run's token, so a person's restart in between makes this job stop without wr
 Failures: bank.unreachable is retried by Procrastinate, at most MAX_UNREACHABLE_RETRIES
 times (RetryLater), the row back to queued meanwhile, except while the job waits for an
 approval, where it records `failed` at once; every other failure records `failed`
-with its code and waits for a person. A 9xxx answer is bank.refused with its four digits on
-the event. A WriteRefused (a bug: a write segment reached the wire guard) fails the run as
-bank.failed and is re-raised so the job shows failed in Procrastinate too.
+with its code and waits for a person. A 9xxx answer is bank.refused with the four digits of
+the code that says why on the event (rules.deciding_code, D151; 3938 when python-fints
+raised on that warning alone). A WriteRefused (a bug: a write segment reached the wire
+guard) fails the run as bank.failed and is re-raised so the job shows failed in
+Procrastinate too.
 
 Logging: one line per run with the sync id, the outcome, codes and exception class names;
 the camt formats the bank offers at INFO (they answer §16 Q-O34 on the first real run). The
@@ -275,8 +277,10 @@ def _bank_error(
         fields["response_code"] = exc.response_code
     if len(exc.response_codes) > 1:
         fields["response_codes"] = list(exc.response_codes[:REFUSED_CODES_LOGGED])
-    if exc.answers:  # the bank's text, login and long numbers blanked (Luis, 11 Nov 2026)
-        fields["bank_answers"] = list(exc.answers)
+    if exc.answers:  # the bank's text, login and long numbers blanked (Luis, 11 Nov 2026),
+        # as "9078 → HKVVB:4: text": level and segment included (D151)
+        answers = exc.answers[:REFUSED_CODES_LOGGED]
+        fields["bank_answers"] = [answer.describe() for answer in answers]
     if exc.exc_chain:  # no 9xxx code: what python-fints raised, class names only (D148)
         fields["exc_chain"] = exc.exc_chain
     try:

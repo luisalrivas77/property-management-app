@@ -4,8 +4,9 @@ It has exactly the methods FintsSession calls, with the real client's parameter 
 and defaults (tests/test_fints_facade.py checks this), and plays one `Script`: whether the
 bank asks for a pushTAN at login and how many polls answer "not yet" (3956), the accounts,
 the camt formats HICAZS lists, the booked streams, the HKSAL balance, and a failure at a
-named step (a python-fints exception, or a 9xxx answer the client records before raising a
-generic Exception whose text quotes the login, as python-fints does).
+named step (a python-fints exception, or 9xxx answers the client keeps in `bank_answers`,
+as the real client's guarded connection does, before raising a generic Exception whose text
+quotes the login, as python-fints does).
 
 Every bank code, login, IBAN and URL here is synthetic."""
 
@@ -17,6 +18,8 @@ from typing import Any
 
 from fints.client import NeedTANResponse
 from fints.models import SEPAAccount
+
+from hausbuch.rules.bank_sync import MESSAGE_LEVEL, SEGMENT_LEVEL, BankAnswer
 
 FAKE_IBAN = "DE50100000000000000001"
 FAKE_STATE = b"fake-client-state"
@@ -49,7 +52,9 @@ class Script:
     # step name -> exception raised there; step names: bootstrap (fetch_tan_mechanisms),
     # open, poll, accounts, transactions, balance, state.
     fail_at: dict[str, BaseException] = field(default_factory=dict)
-    # step name -> 9xxx answer code the bank sends there.
+    # step name -> the answer codes the bank sends there, comma-separated: "9942" one
+    # segment-level answer (HIRMS), "m9050,9942" a message-level one (HIRMG) and then the
+    # segment's own, as banks send them.
     refuse_at: dict[str, str] = field(default_factory=dict)
     # 9xxx codes the bank sends during the bootstrap that python-fints tolerates there
     # (recorded, nothing raised).
@@ -64,7 +69,8 @@ class FakeClient:
         self.script = script
         self.init = init
         self.calls: list[str] = []
-        self.refused_codes: list[str] = []
+        # what the real client's guarded connection keeps from every answer (D151)
+        self.bank_answers: list[BankAnswer] = []
         self.allowed_security_functions: list[str] = []
         self.selected_security_function: str | None = None
         self.init_tan_response: Any = None
@@ -74,11 +80,17 @@ class FakeClient:
 
     # --- the scripted failures ------------------------------------------------------------
 
+    def _answer(self, codes: str) -> None:
+        for code in codes.split(","):
+            if code.startswith("m"):
+                self.bank_answers.append(BankAnswer(MESSAGE_LEVEL, code[1:]))
+            else:
+                self.bank_answers.append(BankAnswer(SEGMENT_LEVEL, code, "HKCAZ:5"))
+
     def _step(self, name: str) -> None:
         self.calls.append(name)
         if name in self.script.refuse_at:
-            # "9050,9942": the message-level code, then the segment's own, as banks send them
-            self.refused_codes.extend(self.script.refuse_at[name].split(","))
+            self._answer(self.script.refuse_at[name])
             # python-fints' own text quotes the whole response, here with the login in it.
             raise Exception(f"Error response: {self.login_name!r}")  # noqa: TRY002
         if name in self.script.fail_at:
@@ -96,9 +108,10 @@ class FakeClient:
 
     def fetch_tan_mechanisms(self):
         self.calls.append("fetch_tan_mechanisms")
-        self.refused_codes.extend(self.script.bootstrap_codes)
+        for code in self.script.bootstrap_codes:
+            self._answer(code)
         if "bootstrap" in self.script.refuse_at:
-            self.refused_codes.append(self.script.refuse_at["bootstrap"])
+            self._answer(self.script.refuse_at["bootstrap"])
             raise Exception(f"Error response: {self.login_name!r}")  # noqa: TRY002
         if "bootstrap" in self.script.fail_at:
             raise self.script.fail_at["bootstrap"]

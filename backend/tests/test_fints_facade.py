@@ -7,7 +7,6 @@ the fake client's signatures against the real client's. No network: the HTTP pos
 patched. Every bank code, login, PIN, URL and product id is synthetic."""
 
 import base64
-import contextlib
 import inspect
 import io
 import json
@@ -462,31 +461,41 @@ def test_the_trace_of_a_bootstrap_logs_no_secret(debug_log):
     json.dumps(init)  # the production formatter's JSON
 
 
-def test_a_refused_init_names_the_segment_the_bank_refused(debug_log):
-    """The first real syncs (11 Nov 2026): 9050 and 9800 for the message, 9010 for one of our
-    segments. The trace resolves HIRMS's reference to the segment we sent."""
-    session = _real_session()
-    numbers = {}
+def _refusing_bank(numbers: dict, hirmg: list[Response], hirms: dict[str, list[Response]]):
+    """A bank that answers the first message with `hirmg` for the whole message and, per
+    segment type we sent (`HKVVB`), the HIRMS answers referring to it."""
 
     def bank(method, url, data=None, **kwargs):
         sent = FinTSInstituteMessage(segments=base64.b64decode(data))
-        numbers["HKVVB"] = sent.find_segment_first("HKVVB").header.number
-        hirms = HIRMS2(responses=[_answer("9010", "Initialisierung fehlgeschlagen.")])
-        hirms.header.reference = numbers["HKVVB"]
-        hirmg = HIRMG2(
-            responses=[
-                _answer("9050", "Die Nachricht enthält Fehler."),
-                _answer("9800", "Dialog abgebrochen"),
-            ]
-        )
-        return _bank_answer(_institute_answer(hirmg, hirms))
+        segments = []
+        for kind, responses in hirms.items():
+            numbers[kind] = sent.find_segment_first(kind).header.number
+            segment = HIRMS2(responses=responses)
+            segment.header.reference = numbers[kind]
+            segments.append(segment)
+        return _bank_answer(_institute_answer(HIRMG2(responses=hirmg), *segments))
 
+    return bank
+
+
+def test_a_refused_init_names_the_segment_the_bank_refused(debug_log):
+    """The first real syncs (11 Nov 2026): 9050 and 9800 for the message, 9010 for one of our
+    segments. The trace resolves HIRMS's reference to the segment we sent. Every code is
+    general (D151), so the first one is shown."""
+    session = _real_session()
+    numbers: dict[str, int] = {}
+    bank = _refusing_bank(
+        numbers,
+        [_answer("9050", "Die Nachricht enthält Fehler."), _answer("9800", "Dialog abgebrochen")],
+        {"HKVVB": [_answer("9010", "Initialisierung fehlgeschlagen.")]},
+    )
     with (
         mock.patch.object(requests.Session, "request", side_effect=bank),
         pytest.raises(F.BankError) as raised,
     ):
         session.open()
-    assert (raised.value.code, raised.value.response_code) == (E.BANK_REFUSED, "9010")
+    assert (raised.value.code, raised.value.response_code) == (E.BANK_REFUSED, "9050")
+    assert raised.value.response_codes == ("9050", "9800", "9010")
     assert raised.value.exc_chain is None  # the bank's code decided it
 
     [record] = _trace_records(debug_log)
@@ -496,6 +505,97 @@ def test_a_refused_init_names_the_segment_the_bank_refused(debug_log):
         f"9010 → HKVVB:{numbers['HKVVB']}: Initialisierung fehlgeschlagen.",
     ]
     _assert_nothing_secret(debug_log)
+
+
+def test_the_first_real_refusal_is_the_product_registration(debug_log):
+    """The real answer to the first dialog init (11 Nov 2026), rebuilt: HIRMG 9050, 9800,
+    9010; HIRMS for HKVVB 3991, 3079, 9078, 9010. python-fints raises on the HIRMG 9010
+    before it reaches any HIRMS answer; the guarded connection kept them all (D151), so the
+    run is refused for 9078 with all seven codes in order. The texts echo every secret."""
+    session = _real_session()
+    numbers: dict[str, int] = {}
+    bank = _refusing_bank(
+        numbers,
+        [
+            _answer("9050", "Die Nachricht enthält Fehler."),
+            _answer("9800", "Dialog abgebrochen"),
+            _answer("9010", f"Initialisierung fehlgeschlagen für {LOGIN}"),
+        ],
+        {
+            "HKVVB": [
+                _answer("3991", "Kundensystem-ID erzeugt"),
+                _answer("3079", "Bitte wenden Sie sich an den Hersteller"),
+                _answer("9078", f"Banking-Programm {PRODUCT_ID.lower()} ist nicht registriert"),
+                _answer("9010", f"Der Auftrag mit PIN {PIN} wurde nicht ausgeführt"),
+            ]
+        },
+    )
+    with (
+        mock.patch.object(requests.Session, "request", side_effect=bank),
+        pytest.raises(F.BankError) as raised,
+    ):
+        session.open()
+    error = raised.value
+    assert (error.code, error.response_code) == (E.BANK_REFUSED, "9078")
+    assert error.response_codes == ("9050", "9800", "9010", "3991", "3079", "9078", "9010")
+    hkvvb = f"HKVVB:{numbers['HKVVB']}"
+    assert [(a.level, a.segment) for a in error.answers] == [("message", None)] * 3 + [
+        ("segment", hkvvb)
+    ] * 4
+    assert error.answers[5].describe() == (
+        f"9078 → {hkvvb}: Banking-Programm <hidden> ist nicht registriert"
+    )
+    assert error.exc_chain is None
+
+    _assert_nothing_secret(debug_log)
+    everything = repr(error.answers) + repr(error.response_codes) + str(error)
+    assert not [s for s in NEVER_LOGGED if s in everything]
+    assert PRODUCT_ID.lower() not in everything
+
+
+def test_a_pin_error_behind_a_message_level_9050_decides(debug_log):
+    """The bank puts its general 9050 first and the PIN error on the identification segment:
+    the PIN error decides, so the card says the PIN, not "message has errors"."""
+    session = _real_session()
+    bank = _refusing_bank(
+        {},
+        [_answer("9050", "Teilweise fehlerhaft"), _answer("9800", "Dialog abgebrochen")],
+        {"HKIDN": [_answer("9942", f"PIN für {LOGIN} ungültig")]},
+    )
+    with (
+        mock.patch.object(requests.Session, "request", side_effect=bank),
+        pytest.raises(F.BankError) as raised,
+    ):
+        session.open()
+    assert (raised.value.code, raised.value.response_code) == (E.BANK_REFUSED, "9942")
+    assert raised.value.response_codes == ("9050", "9800", "9942")
+    assert raised.value.answers[-1].text == "PIN für <hidden> ungültig"
+    _assert_nothing_secret(debug_log)
+
+
+def test_the_guarded_connection_keeps_every_answer_redacted():
+    """The connection keeps the answers of every exchange, success codes too, with the
+    login, the PIN and the product id hidden (the product id is not all digits, so the
+    long-number mask alone would miss it, D148)."""
+    client = _client()
+    answer = _institute_answer(
+        HIRMG2(responses=[_answer("0010", "Nachricht entgegengenommen")]),
+        HIRMS2(
+            responses=[
+                _answer("3920", "Zugelassene Verfahren", ["946"]),
+                _answer("9010", f"Auftrag für {LOGIN} mit {PIN} abgelehnt"),
+                _answer("9078", f"Produkt {PRODUCT_ID.lower()} nicht zugelassen"),
+            ]
+        ),
+    )
+    with mock.patch.object(requests.Session, "request", return_value=_bank_answer(answer)):
+        client.connection.send(_message(client))
+    assert [(a.level, a.code, a.text) for a in client.bank_answers] == [
+        ("message", "0010", "Nachricht entgegengenommen"),
+        ("segment", "3920", "Zugelassene Verfahren"),
+        ("segment", "9010", "Auftrag für <hidden> mit <hidden> abgelehnt"),
+        ("segment", "9078", "Produkt <hidden> nicht zugelassen"),
+    ]
 
 
 def test_a_transport_failure_logs_class_names_only_and_is_unreachable(debug_log):
@@ -780,7 +880,7 @@ def test_a_9xxx_answer_is_refused_with_its_four_digits_only():
 def test_a_general_code_before_the_reason_keeps_the_reason():
     """The bank's message-level 9050 comes before the segment's own code (the first real
     sync, 11 Nov 2026, kept only the 9050)."""
-    session, _ = _session(Script(refuse_at={"accounts": "9050,9942"}))
+    session, _ = _session(Script(refuse_at={"accounts": "m9050,9942"}))
     session.open()
     with pytest.raises(F.BankError) as raised:
         session.accounts()
@@ -844,34 +944,7 @@ def test_an_unreadable_state_blob_is_state_rejected():
     assert raised.value.code == E.BANK_STATE_REJECTED
 
 
-def test_the_client_keeps_the_banks_answers_redacted():
-    client = object.__new__(F._ReadOnlyClient)
-    client.refused_codes, client.answers = [], []
-    client.user_id, client.customer_id = LOGIN, LOGIN
-    client.pin = SimpleNamespace(value=PIN)
-    answers = (
-        ("3920", "Zugelassene Verfahren"),
-        ("9010", f"Auftrag für {LOGIN} mit {PIN} abgelehnt"),
-    )
-    for code, text in answers:
-        with contextlib.suppress(Exception):  # python-fints' own handling needs a dialog
-            client._process_response(None, None, SimpleNamespace(code=code, text=text))
-    assert client.refused_codes == ["9010"]
-    assert client.answers == [
-        "3920 Zugelassene Verfahren",
-        "9010 Auftrag für <hidden> mit <hidden> abgelehnt",
-    ]
-
-
-def test_a_bank_text_quoting_the_product_id_keeps_it_hidden():
-    """The product id is not all digits, so the long-number mask would miss it (D148)."""
-    client = object.__new__(F._ReadOnlyClient)
-    client.refused_codes, client.answers = [], []
-    client.user_id, client.customer_id = LOGIN, LOGIN
-    client.pin = SimpleNamespace(value=PIN)
-    client.product_name = PRODUCT_ID
-    client.system_id = "0"
-    text = f"Produkt {PRODUCT_ID.lower()} nicht zugelassen"
-    with contextlib.suppress(Exception):
-        client._process_response(None, None, SimpleNamespace(code="9078", text=text))
-    assert client.answers == ["9078 Produkt <hidden> nicht zugelassen"]
+def test_the_client_no_longer_records_answers_inside_python_fints():
+    """D151: the answers come from the guarded connection only; a hook in python-fints'
+    `_process_response` would miss every HIRMS answer once python-fints raised on HIRMG."""
+    assert "_process_response" not in F._ReadOnlyClient.__dict__

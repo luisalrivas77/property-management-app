@@ -766,11 +766,12 @@ class BankSyncCompleted(Schema):
 
 class BankSyncFailed(Schema):
     """account.sync_failed. `response_code` (step 1) is the four digits of a 9xxx answer for
-    bank.refused, never the bank's text (§4.3)."""
+    bank.refused, never the bank's text (§4.3); or 3938 (access temporarily locked), the one
+    warning python-fints ends a run on, when the bank sent no 9xxx code (D151)."""
 
     sync_id: UUID
     error_code: str = Field(pattern=r"^(bank|statement)\.[a-z_]+$", max_length=64)
-    response_code: str | None = Field(default=None, pattern=r"^9[0-9]{3}$")
+    response_code: str | None = Field(default=None, pattern=r"^(9[0-9]{3}|3938)$")
 
 
 class DocumentReceivedByEmail(Schema):
