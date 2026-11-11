@@ -925,6 +925,7 @@ cases:
             - {kind: allocation, id: *PA}
             - {kind: allocation, id: *TL}
             - {kind: tax_input, id: *TI9}
+            - {kind: document, id: *D_PR}
         - *line_interest
         - *line_financing
         - {key: wk.maintenance, amount: "0.00", amount_rounded: 0, provisional: true}

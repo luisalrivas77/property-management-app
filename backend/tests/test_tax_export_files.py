@@ -133,6 +133,18 @@ def test_field_sheet_explains_a_shorter_useful_life():
     assert "Zeile 33" in flat  # the afa.useful_life_report warning text
 
 
+def test_a_private_repair_in_the_basis_is_listed_and_its_bill_archived():
+    """D137: a repair paid from another account that crossed the 15 % limit is a row of the
+    AfA annex (label and gross), and its bill, which no payment carries, is in the archive."""
+    case = next(c for c in FIXTURE.cases if c.id == "private_repair_crossing_moves_to_basis")
+    drafted = draft(case.facts, case.tax_year, rule_set(case.rule_set_year))
+    (row,) = [r for r in case.facts.tax_inputs if r.kind == "private_cost"]
+    flat = " ".join(_pdf_text(render_field_sheet(drafted, RULES, case.facts, STAMP)).split())
+    assert "von einem anderen Konto bezahlt: Dachreparatur (Steuerjahr 2026)" in flat
+    assert "41.650,00" in flat
+    assert row.document_id in archive_document_ids(drafted, case.facts)
+
+
 def test_every_warning_code_has_a_sheet_text():
     """A draft warning without a text would fail the export at render time."""
     assert set(WARNING_TEXT) == set(WarningCode)

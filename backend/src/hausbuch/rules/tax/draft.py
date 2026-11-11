@@ -128,6 +128,22 @@ def _additions(facts: DraftFacts, rule_set: RuleSet, limit) -> list[BasisAdditio
     return list(out.values())
 
 
+def _with_bills(line, facts: DraftFacts, additions: list[BasisAddition], tax_year: int):
+    """D137: a private cost row in the basis brings its bill along as a source (an allocation's
+    Beleg reaches the archive through its payment; a tax input has none)."""
+    rows = {r.id: r for r in facts.tax_inputs}
+    docs = [
+        SourceRef(kind="document", id=rows[b.tax_input_id].document_id)
+        for b in additions
+        if b.tax_year <= tax_year
+        and b.tax_input_id in rows
+        and rows[b.tax_input_id].document_id is not None
+    ]
+    if not docs:
+        return line
+    return line.model_copy(update={"sources": unique([*line.sources, *docs])})
+
+
 MOVABLE_LABELS = {"einbaukueche": "Einbauküche"}
 
 
@@ -373,7 +389,7 @@ def draft(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> AnlageVDraft:
         rule_set,
     )
     building = afa_facts(facts, _additions(facts, rule_set, limit))
-    afa_line = afa(building, tax_year, rule_set)
+    afa_line = _with_bills(afa(building, tax_year, rule_set), facts, building.additions, tax_year)
     book = LineBook()
     if afa_line.amount:
         book.add("wk.afa", afa_line.amount, afa_line.sources)
