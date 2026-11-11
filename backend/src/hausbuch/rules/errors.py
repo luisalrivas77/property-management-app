@@ -134,6 +134,9 @@ BANK_BALANCE_DRIFT = "bank.balance_drift"  # info card: HKSAL differs from the l
 BANK_UNSUPPORTED_FORMAT = "bank.unsupported_format"  # HICAZS lists no camt format we read
 BANK_WINDOW_INVALID = "bank.window_invalid"  # the request window would start after it ends
 BANK_URL_NOT_HTTPS = "bank.url_not_https"  # also raised by schemas/bank_sync.py
+# Step 1: a sync that failed inside the app (neither the bank's refusal nor the network);
+# the log line names the exception class, the row this code.
+BANK_FAILED = "bank.failed"
 EMAIL_ACCEPTED = "email.accepted"  # MailDecision.code of an accepted mail (step 0 choice)
 EMAIL_SENDER_NOT_ALLOWED = "email.sender_not_allowed"
 EMAIL_AUTH_FAILED = "email.auth_failed"  # Gmail's own header says neither dkim nor spf pass

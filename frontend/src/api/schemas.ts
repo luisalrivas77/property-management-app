@@ -123,6 +123,14 @@ export type ImportStatus = Schemas["ImportStatus"];
 export type BalanceSource = Schemas["BalanceSource"];
 export type DeclareBalanceBody = Schemas["DeclareBalanceBody"];
 export type Transaction = Schemas["Transaction"];
+
+// the FinTS sync of an account (phase 5 step 1, §10)
+export type BankConnection = Schemas["BankConnection"];
+export type BankConnectionCreate = Schemas["BankConnectionCreate"];
+export type BankConnectionPatch = Schemas["BankConnectionPatch"];
+export type BankSync = Schemas["BankSync"];
+export type SyncStatus = Schemas["SyncStatus"];
+export type SyncTrigger = Schemas["SyncTrigger"];
 export type TransactionAllocationStatus = Schemas["TransactionAllocationStatus"];
 export type PossibleDuplicate = Schemas["PossibleDuplicate"];
 export type DuplicateStatus = Schemas["DuplicateStatus"];

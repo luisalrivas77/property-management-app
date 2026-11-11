@@ -92,6 +92,7 @@ class SyncEvent(StrEnum):
     IMPORTED = "imported"  # upload_document + import_statement finished
     ERROR = "error"  # any bank.* failure the job records on the row
     WORKER_LOST = "worker_lost"  # the worker stopped (a redeploy) while the row was open
+    RETRY = "retry"  # step 1: bank.unreachable, the job asks Procrastinate to run it again
 
 
 # --- Records (§4.2) ----------------------------------------------------------------------
@@ -138,7 +139,9 @@ class BankConnection(MutableRecord):
     auto_sync: bool = False
     sca_confirmed_at: datetime | None = None  # the last approval; validity shown as an estimate
     last_sync_at: datetime | None = None  # the last successful run
-    last_booking_on: date | None = None  # the last booking day a successful run brought
+    # The last booking day a successful run brought from the bank, imported or already
+    # stored (D141).
+    last_booking_on: date | None = None
     state_present: bool = False  # client_data stored (and MAC'd)
 
 
@@ -189,6 +192,9 @@ class SyncPreview(Schema):
     lines_total: int = Field(ge=0)
     lines_new: int = Field(ge=0)
     closing_balance: Money | None = None
+    # The latest booking day among the file's booked lines, stored or not (D141: a run that
+    # brings nothing new still moves the connection's last_booking_on there).
+    last_booking_on: date | None = None
 
 
 class SyncTransition(Schema):
