@@ -195,8 +195,9 @@
 #   uploaded from a bill's „Zahlungsnachweis fehlt“ to-do (type other, subtype payment_proof,
 #   never the classifier) and linked to that bill; context.proof_bill holds the bill: its id,
 #   the acquisition cost rows that carry it as Beleg and its private_cost rows in force
-#   ({id, tax_year, label, amount}). The bill's amount is the sum of the private_cost rows'
-#   amounts when it has any, else the sum of the acquisition cost rows' amounts. Typing carries
+#   ({id, tax_year, label, amount}). The bill's amount is its combined total: the sum of the
+#   acquisition cost rows' amounts plus the private_cost rows' amounts (a bill split into a
+#   purchase part and a part paid from another account was paid as one). Typing carries
 #   the hand fields amount_total (<- amount) and counterparty (<- payee). The proof's amount
 #   (its magnitude) matches when it equals the bill's amount within 0.01; then, with paid_on
 #   stated, each private_cost row whose tax_year is not paid_on's year gets a record
@@ -3234,3 +3235,64 @@ cases:
           entity_type: typing
           mode: create
           values: {type: other, subtype: payment_proof, amount_total: "2380.00", counterparty: Notarin Beispiel}
+
+  - id: payment_proof_of_a_split_bill_matches_its_total
+    description: >
+      D143 review fix. The notary's bill is split into its purchase part (a Nebenkosten row,
+      2,380.00) and its Grundschuld part entered as paid from another account (a private_cost
+      row of 2026, 250.00); one transfer of 2,630.00 on 12.01.2027 paid both. The proof
+      matches the combined total, so the private row is proposed for 2027; the Nebenkosten
+      row is never moved.
+    kind: payment_proof
+    context:
+      document_id: *DOC
+      classification: *CL_PROOF
+      properties: [*PROP_LINDEN]
+      proof_bill: &PROOF_BILL_SPLIT
+        document_id: *DOC_OTHER
+        acquisition_costs:
+          - {id: *C2, property_id: *P, kind: notary, amount: "2380.00", document_id: *DOC_OTHER}
+        private_costs:
+          - {id: *PC1, tax_year: 2026, label: Notar Grundschuld, amount: "250.00"}
+    extraction:
+      paid_on: {v: "2027-01-12", p: 1, q: "Ausgeführt am 12.01.2027"}
+      amount: {v: "-2630.00", p: 1, q: "Betrag -2.630,00 EUR"}
+      payee: {v: Notarin Beispiel, p: 1, q: "Empfänger Notarin Beispiel"}
+    expect:
+      keys: [typing, private_cost_year:1]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: other, subtype: payment_proof, amount_total: "-2630.00", counterparty: Notarin Beispiel}
+        - key: private_cost_year:1
+          entity_type: tax_input
+          mode: patch
+          target_id: *PC1
+          values: {tax_year: 2027}
+          derived: {tax_year: [paid_on, amount]}
+          current: {tax_year: 2026}
+          notes_contain: ["§11", "Notar Grundschuld", "2027"]
+
+  - id: payment_proof_of_one_part_of_a_split_bill_names_the_total
+    description: >
+      D143 review fix. The same split bill, but the proof states 2,380.00 (the purchase part
+      only): it does not match the combined 2,630.00, so nothing is moved and typing names
+      the combined total.
+    kind: payment_proof
+    context:
+      document_id: *DOC
+      classification: *CL_PROOF
+      properties: [*PROP_LINDEN]
+      proof_bill: *PROOF_BILL_SPLIT
+    extraction:
+      paid_on: {v: "2027-01-12", p: 1, q: "Ausgeführt am 12.01.2027"}
+      amount: {v: "2380.00", p: 1, q: "2.380,00 EUR"}
+    expect:
+      keys: [typing]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: other, subtype: payment_proof, amount_total: "2380.00", counterparty: null}
+          notes_contain: ["passt nicht", "2.380,00", "2.630,00"]

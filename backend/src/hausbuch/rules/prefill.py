@@ -772,8 +772,9 @@ class _Builder:
 
     def payment_proof(self) -> None:
         """A payment proof uploaded from its bill's to-do (context.proof_bill). Its amount (a
-        magnitude) is compared with the bill's: the sum of the bill's private_cost rows in
-        force, else of its acquisition cost rows. When they match within 0.01 and paid_on is
+        magnitude) is compared with the bill's combined total: the amounts of its acquisition
+        cost rows plus those of its private_cost rows in force (a bill split into both parts
+        was paid as one). When they match within 0.01 and paid_on is
         read, every private_cost row of another year than paid_on's is proposed for the year
         paid (private_cost_year:<n>, §11 Abs. 2 EStG); the apply withdraws the row and
         creates its value in that year. An acquisition cost row has no year and is never
@@ -782,10 +783,7 @@ class _Builder:
         if bill is None:
             return  # typed by hand, not from a bill's to-do
         private = sorted(bill.private_costs, key=lambda r: str(r.id))
-        if private:
-            amounts = [r.amount for r in private]
-        else:
-            amounts = [c.amount for c in bill.acquisition_costs]
+        amounts = [r.amount for r in private] + [c.amount for c in bill.acquisition_costs]
         if not amounts or any(a is None for a in amounts):
             return  # no amount to compare with (a private cost without one)
         expected = sum((a for a in amounts if a is not None), Decimal(0))

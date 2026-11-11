@@ -59,7 +59,9 @@
 #                        proof's amount, or the sum of the proofs' amounts, equals the bill's
 #                        amount within 0.01: an acquisition cost row's amount; for private costs
 #                        the sum of value.amount (gross, before the share) of the bill's rows in
-#                        force in every year.
+#                        force in every year. A part also counts as proven when a proof matches
+#                        the bill's combined total (its acquisition cost rows plus its
+#                        private_cost rows in force): a bill split into both is paid as one.
 #   otherwise            payment_proof.missing (warning), one per bill and source, params:
 #                        document (the bill's id), source (acquisition_cost | private_cost),
 #                        kind (the row's AcquisitionCostKind) or label (the label of the bill's
@@ -1075,3 +1077,100 @@ cases:
         - {code: payment_proof.missing,
            params: {document: *D_PR, source: private_cost, label: Rechnung Reparatur Sanitär,
                     amount: "595.00", proof_amount: "500.00"}}
+
+  # Review fix (D143): one notary bill split into the purchase part (acquisition cost row C2,
+  # 4,200.00) and the Grundschuld part entered as paid from another account (a private_cost
+  # of 250.00 whose document is the same bill). The bill was paid in one transfer of
+  # 4,450.00: a proof of that combined total proves both parts; a proof of one part alone
+  # proves only that part. Each part keeps its own warning and params.
+  - id: notary_bill_split_no_proof_two_todos
+    description: >
+      private_financing_cost_in_financing with the Grundschuld part's bill being the notary
+      bill D_NOTAR → no proof: two payment_proof.missing, the purchase part's (4,200.00) and
+      the Grundschuld part's (250.00); figures as in private_financing_cost_in_financing, the
+      bill among the financing line's sources
+    tax_year: 2026
+    rule_set_year: 2026
+    facts: &facts_notary_split
+      <<: *facts
+      tax_inputs:
+        - *inputs_a_tiles
+        - *input_certified
+        - {id: *TI7, property_id: *P, kind: private_cost, tax_year: 2026, document_id: *D_NOTAR,
+           value: {cost_class: financing, label: Notar Grundschuld, amount: "250.00"}}
+    expect: &expect_notary_split
+      lines:
+        - *line_rent
+        - *line_umlagen
+        - {key: income.total, amount: "6180.00", amount_rounded: 6180}
+        - *line_afa
+        - *line_interest
+        - key: wk.financing_costs
+          amount: "730.00"
+          amount_rounded: 730
+          sources: [{kind: allocation, id: *LF}, {kind: document, id: *D_LF},
+                    {kind: tax_input, id: *TI7}, {kind: document, id: *D_NOTAR}]
+        - {key: wk.maintenance, amount: "5950.00", amount_rounded: 5950, provisional: true}
+        - *line_allocable
+        - *line_non_allocable
+        - {key: wk.total, amount: "14378.66", amount_rounded: 14380}
+        - {key: result.surplus, amount: "-8198.66", amount_rounded: -8200}
+        - {key: result.owner_a, amount: "-4099.33", amount_rounded: -4100}
+        - {key: result.owner_b, amount: "-4099.33", amount_rounded: -4100}
+      totals: {income: "6180.00", costs: "14378.66", result: "-8198.66", income_rounded: 6180,
+               costs_rounded: 14380, result_rounded: -8200}
+      owners:
+        - {owner_id: *OA, amount: "-4099.33", amount_rounded: -4100}
+        - {owner_id: *OB, amount: "-4099.33", amount_rounded: -4100}
+      warnings:
+        - *w_notary_proof
+        - {code: hausgeld.abrechnung_pending}
+        - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
+        - {code: reduced_rent.no_market_rent}
+        - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
+        - {code: draft.form_provisional}
+        - {code: payment_proof.missing,
+           params: {document: *D_NOTAR, source: private_cost, label: Notar Grundschuld,
+                    amount: "250.00"}}
+
+  - id: notary_bill_split_proof_of_total_no_todo
+    description: >
+      notary_bill_split_no_proof_two_todos plus a payment proof of 4,450.00 (the whole bill)
+      → neither part raises payment_proof.missing; figures unchanged
+    tax_year: 2026
+    rule_set_year: 2026
+    facts:
+      <<: *facts_notary_split
+      payment_proofs:
+        - {proof_document_id: *D_PN, bill_document_id: *D_NOTAR, amount: "4450.00"}
+    expect:
+      <<: *expect_notary_split
+      warnings:
+        - {code: hausgeld.abrechnung_pending}
+        - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
+        - {code: reduced_rent.no_market_rent}
+        - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
+        - {code: draft.form_provisional}
+
+  - id: notary_bill_split_proof_of_purchase_part_only
+    description: >
+      notary_bill_split_no_proof_two_todos plus a payment proof of 4,200.00 (the purchase
+      part only) → the purchase part is proven; the Grundschuld part's to-do stays and names
+      the proof's amount; figures unchanged
+    tax_year: 2026
+    rule_set_year: 2026
+    facts:
+      <<: *facts_notary_split
+      payment_proofs:
+        - {proof_document_id: *D_PN, bill_document_id: *D_NOTAR, amount: "4200.00"}
+    expect:
+      <<: *expect_notary_split
+      warnings:
+        - {code: hausgeld.abrechnung_pending}
+        - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
+        - {code: reduced_rent.no_market_rent}
+        - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
+        - {code: draft.form_provisional}
+        - {code: payment_proof.missing,
+           params: {document: *D_NOTAR, source: private_cost, label: Notar Grundschuld,
+                    amount: "250.00", proof_amount: "4200.00"}}
