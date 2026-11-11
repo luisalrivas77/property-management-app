@@ -18,8 +18,10 @@ from procrastinate.retry import BaseRetryStrategy, RetryDecision
 
 from hausbuch.schemas.tax import TaxExportKind
 
+from .bank_sync import run_bank_sync
 from .document_read import TASK_NAME, JobDeps, RetryLater, run_document_read
 from .enqueue import (
+    BANK_SYNC_TASK,
     MATCH_IMPORT_TASK,
     MATCH_TRANSACTION_TASK,
     REMATCH_TASK,
@@ -137,6 +139,18 @@ def tax_export(
     )
 
 
+def bank_sync(context: JobContext, *, workspace_id: str, sync_id: str) -> None:
+    """Phase 5 §4.3: one FinTS run. Retried (RetryLater) only for bank.unreachable."""
+    deps: JobDeps = context.additional_context[DEPS_KEY]
+    assert context.job is not None
+    run_bank_sync(
+        deps,
+        workspace_id=UUID(workspace_id),
+        sync_id=UUID(sync_id),
+        attempt=context.job.attempts,
+    )
+
+
 def scrub_proposals(context: JobContext, *, timestamp: int) -> None:
     """D19/D41, daily. `timestamp` is the scheduled time Procrastinate's periodic deferrer
     passes; the cutoff uses the process clock (deps.clock) instead."""
@@ -163,6 +177,7 @@ def register_tasks(app: procrastinate.App) -> procrastinate.App:
     app.task(name=REMATCH_TASK, pass_context=True, retry=retry)(rematch_on_evidence)
     app.task(name=REMATCH_WAITING_TASK, pass_context=True, retry=retry)(rematch_waiting)
     app.task(name=TAX_EXPORT_TASK, pass_context=True, retry=retry)(tax_export)
+    app.task(name=BANK_SYNC_TASK, pass_context=True, retry=retry)(bank_sync)
     # No retry: a failed scrub runs again the next day. No queueing lock (jobs/enqueue.py
     # says why); Procrastinate's periodic_defers table already defers one job per schedule
     # however many instances run a deferrer, and a duplicate run would scrub nothing.

@@ -219,3 +219,29 @@ def enqueue_tax_export(
         kind=kind,
         created_by="" if created_by is None else str(created_by),
     )
+
+
+# --- Phase 5 step 1: the FinTS sync (docs/phases/phase-5.md §4.3) ---------------------------
+#
+# Locked by `account:{id}`: one dialog per account at a time, also when a person restarts a
+# run whose old job is still polling (that job sees the new token and stops). Ids only: the
+# PIN and the product id come from Settings inside the job, never through the queue (D119).
+
+BANK_SYNC_TASK = "bank_sync"
+
+
+def account_lock(account_id: UUID) -> str:
+    return f"account:{account_id}"
+
+
+def enqueue_bank_sync(
+    conn: Connection, *, workspace_id: UUID, account_id: UUID, sync_id: UUID
+) -> None:
+    """Queue `bank_sync` for one run, in the caller's transaction."""
+    _defer(
+        conn,
+        BANK_SYNC_TASK,
+        account_lock(account_id),
+        workspace_id=str(workspace_id),
+        sync_id=str(sync_id),
+    )

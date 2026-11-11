@@ -1,0 +1,542 @@
+"""The FinTS sync end to end against Postgres, with the scripted fake client
+(docs/phases/phase-5.md §4, D115-D120, D127): services.bank_sync's commands and
+jobs.bank_sync.run_bank_sync, as hausbuch_app under RLS.
+
+The bank's streams are the daily reports of phase 2's anonymised camt ZIP (22 bookings,
+closing -3.028,51) for a synthetic IBAN; the PIN, login and product id are invented."""
+
+import io
+import zipfile
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
+
+import pytest
+from db.db_support import TEST_IBAN_KEY
+from fints.exceptions import FinTSConnectionError
+from fints_fake import DECOUPLED, FAKE_STATE, Script, factory, fake_account
+from sqlalchemy import func, insert, select, text, update
+from test_bank_parsers import CAMT, build
+
+from hausbuch.db.session import workspace_transaction
+from hausbuch.db.tables import bank_connection as connection_table
+from hausbuch.db.tables import bank_sync as sync_table
+from hausbuch.db.tables import document as document_table
+from hausbuch.db.tables import event as event_table
+from hausbuch.db.tables import statement_import as import_table
+from hausbuch.db.tables import transaction as transaction_table
+from hausbuch.jobs import bank_sync as job
+from hausbuch.jobs.document_read import JobDeps, RetryLater
+from hausbuch.rules import errors as E
+from hausbuch.rules.errors import RuleError
+from hausbuch.schemas.api import InboxItemKind
+from hausbuch.schemas.bank import AccountCreate
+from hausbuch.schemas.bank_sync import BankConnectionCreate, BankConnectionPatch, SyncStatus
+from hausbuch.schemas.enums import AccountSource, BalanceSource, DocumentSource, ImportStatus
+from hausbuch.schemas.events import EventType
+from hausbuch.services import bank_sync as service
+from hausbuch.services import review
+from hausbuch.services.accounts import create_account, get_account
+from hausbuch.settings import Settings
+
+pytestmark = pytest.mark.db
+
+T0 = datetime(2026, 11, 11, 9, 0, tzinfo=UTC)
+T1 = T0 + timedelta(seconds=5)
+IBAN = "DE50100000000000000001"
+OTHER_IBAN = "DE89370400440532013000"
+CLOSING = Decimal("-3028.51")
+PIN = "PIN-4711-secret"
+PRODUCT_ID = "PRODUCTID0123456789ABCDEF"
+LOGIN = "loginname-xyz"
+URL = "https://fints.example.org/fints"
+SECRETS = (PIN, PRODUCT_ID, LOGIN)
+
+ZIP = build(next(c for c in CAMT.cases if c.id == "sparkasse_zip_of_daily_reports").input)
+with zipfile.ZipFile(io.BytesIO(ZIP)) as _archive:
+    STREAMS = [_archive.read(name) for name in sorted(_archive.namelist())]
+
+
+def _settings(tmp_path, **overrides) -> Settings:
+    values = {
+        "database_url": "postgresql+psycopg://hausbuch_app@localhost/unused",
+        "iban_hmac_key": TEST_IBAN_KEY,
+        "session_key": bytes(range(1, 33)),
+        "rp_id": "testserver",
+        "origin": "https://testserver",
+        "blob_store": "local",
+        "blob_root": tmp_path / "blobs",
+        "fints_pin": PIN,
+        "fints_product_id": PRODUCT_ID,
+    } | overrides
+    return Settings(**values)
+
+
+class Bank:
+    """One account with a connection, plus helpers to start and run syncs."""
+
+    def __init__(self, run, read, app_engine, blob_store, tmp_path, ws):
+        self.run, self.read, self.engine, self.ws = run, read, app_engine, ws
+        self.settings = _settings(tmp_path)
+        self.deps = JobDeps(app_engine, self.settings, blob_store, None, clock=lambda: T1)
+        self.account = run(
+            ws,
+            create_account,
+            AccountCreate(
+                label="Mietkonto",
+                bank="Sparkasse",
+                iban=IBAN,
+                opening_balance=Decimal("0.00"),
+                opening_balance_on=date(2026, 3, 31),
+            ),
+            iban_key=TEST_IBAN_KEY,
+            now=T0,
+        )
+        self.connection = run(
+            ws,
+            service.create_connection,
+            BankConnectionCreate(
+                account_id=self.account.id, bank_code="10000000", fints_url=URL, login_name=LOGIN
+            ),
+            now=T0,
+        )
+        self.clients: list = []
+        self.clock = [0.0]
+
+    def start(self, now=T0, settings=None):
+        return self.run(
+            self.ws,
+            service.start_sync,
+            self.account.id,
+            settings=settings or self.settings,
+            now=now,
+        )
+
+    def job(self, sync_id, script: Script, *, attempt=0, at=T1, on_sleep=None):
+        deps = JobDeps(self.engine, self.settings, self.deps.blob_store, None, clock=lambda: at)
+
+        def sleep(seconds):
+            self.clock[0] += seconds
+            if on_sleep is not None:
+                on_sleep()
+
+        network = job.Network(
+            client_factory=factory(script, self.clients),
+            sleep=sleep,
+            monotonic=lambda: self.clock[0],
+        )
+        return job.run_bank_sync(
+            deps, workspace_id=self.ws, sync_id=sync_id, attempt=attempt, network=network
+        )
+
+    def sync(self, sync_id):
+        return self.read(self.ws, service.get_sync, sync_id)
+
+    def rows(self, table, *where):
+        with workspace_transaction(self.engine, self.ws) as conn:
+            return conn.execute(select(table).where(*where)).all()
+
+    def events(self, type_):
+        return [
+            e.payload
+            for e in self.rows(event_table, event_table.c.type == type_.value)
+            if e.entity_id == self.account.id
+        ]
+
+    def connection_row(self):
+        return self.rows(connection_table, connection_table.c.account_id == self.account.id)[0]
+
+
+@pytest.fixture
+def bank(run, read, app_engine, blob_store, tmp_path, fresh_workspaces):
+    ws, _ = fresh_workspaces
+    return Bank(run, read, app_engine, blob_store, tmp_path, ws)
+
+
+def _good(**overrides) -> Script:
+    return Script(**({"streams": list(STREAMS), "balance": CLOSING} | overrides))
+
+
+# --- The connection --------------------------------------------------------------------------
+
+
+def test_a_connection_makes_the_account_fints_and_masks_the_login(bank):
+    assert bank.connection.login_masked == "lo***yz"
+    assert bank.connection.state_present is False
+    assert bank.read(bank.ws, get_account, bank.account.id).source is AccountSource.FINTS
+    (created,) = bank.events(EventType.ACCOUNT_CONNECTION_CREATED)
+    assert created["login_masked"] == "lo***yz" and LOGIN not in str(created)
+
+
+def test_a_second_connection_of_the_account_is_a_conflict(bank):
+    from hausbuch.services.errors import ConflictError
+
+    with pytest.raises(ConflictError):
+        bank.run(
+            bank.ws,
+            service.create_connection,
+            BankConnectionCreate(
+                account_id=bank.account.id, bank_code="10000000", fints_url=URL, login_name="x"
+            ),
+            now=T0,
+        )
+
+
+def test_an_owner_account_gets_no_connection(run, fresh_workspaces):
+    ws, _ = fresh_workspaces
+    owner = run(
+        ws,
+        create_account,
+        AccountCreate(
+            label="Privat",
+            bank="Bank",
+            iban=OTHER_IBAN,
+            opening_balance=Decimal("0"),
+            opening_balance_on=date(2026, 1, 1),
+            is_owner_account=True,
+        ),
+        iban_key=TEST_IBAN_KEY,
+        now=T0,
+    )
+    with pytest.raises(RuleError):
+        run(
+            ws,
+            service.create_connection,
+            BankConnectionCreate(
+                account_id=owner.id, bank_code="10000000", fints_url=URL, login_name=LOGIN
+            ),
+            now=T0,
+        )
+
+
+def test_a_new_login_drops_the_stored_state(bank):
+    sync = bank.start()
+    assert bank.job(sync.id, _good(approval_polls=0)) == "done"
+    assert bank.connection_row().client_data is not None
+
+    patched = bank.run(
+        bank.ws,
+        service.update_connection,
+        bank.account.id,
+        BankConnectionPatch(login_name="another-login"),
+        now=T1,
+    )
+    assert patched.state_present is False and patched.tan_mechanism is None
+    updated = bank.events(EventType.ACCOUNT_CONNECTION_UPDATED)[-1]
+    assert updated["changed"] == ["login_name", "tan_mechanism"]
+    assert "another-login" not in str(updated)
+
+
+# --- Starting ---------------------------------------------------------------------------------
+
+
+def test_a_start_queues_a_row_and_a_job_with_ids_only(bank):
+    sync = bank.start()
+    assert (sync.status, sync.requested_from, sync.requested_to) == (
+        SyncStatus.QUEUED,
+        date(2026, 4, 1),
+        date(2026, 11, 11),
+    )
+    with workspace_transaction(bank.engine, bank.ws) as conn:
+        args = conn.execute(
+            text("SELECT args, lock FROM procrastinate_jobs WHERE lock = :lock"),
+            {"lock": f"account:{bank.account.id}"},
+        ).all()
+    assert [a.args for a in args] == [{"workspace_id": str(bank.ws), "sync_id": str(sync.id)}]
+
+
+def test_a_second_start_while_one_is_queued_is_refused(bank):
+    bank.start()
+    with pytest.raises(RuleError) as raised:
+        bank.start()
+    assert raised.value.code == E.BANK_SYNC_RUNNING
+
+
+def test_a_stale_queued_row_is_restarted(bank):
+    first = bank.start()
+    later = T0 + timedelta(seconds=bank.settings.sync_approval_timeout_s + 301)
+    again = bank.start(now=later)
+    assert again.id == first.id and again.started_at == later
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [{"fints_pin": None, "fints_product_id": None}, {"fints_product_id": "A" * 26}],
+    ids=["no_pin", "product_id_too_long"],
+)
+def test_a_start_without_pin_or_usable_product_id_is_not_configured(bank, tmp_path, overrides):
+    with pytest.raises(RuleError) as raised:
+        bank.start(settings=_settings(tmp_path, **overrides))
+    assert raised.value.code == E.BANK_NOT_CONFIGURED
+
+
+def test_a_fifth_manual_start_within_the_hour_is_rate_limited(bank):
+    for minute in range(4):
+        sync = bank.start(now=T0 + timedelta(minutes=minute))
+        script = _good(accounts=[fake_account(OTHER_IBAN)])
+        at = T0 + timedelta(minutes=minute, seconds=5)
+        assert bank.job(sync.id, script, at=at) == "failed"
+    with pytest.raises(RuleError) as raised:
+        bank.start(now=T0 + timedelta(minutes=10))
+    assert raised.value.code == E.BANK_RATE_LIMITED
+    assert bank.start(now=T0 + timedelta(minutes=61)).status is SyncStatus.QUEUED
+
+
+# --- The first sync and the ones after it ---------------------------------------------------
+
+
+def test_the_first_sync_waits_for_the_approval_and_imports_the_zip(bank):
+    sync = bank.start()
+    assert bank.job(sync.id, _good(approval_polls=2)) == "done"
+
+    done = bank.sync(sync.id)
+    assert (done.status, done.lines_total, done.lines_new) == (SyncStatus.DONE, 22, 22)
+    assert done.balance_source is BalanceSource.FILE and done.finished_at == T1
+    (imported,) = bank.rows(import_table, import_table.c.id == done.import_id)
+    assert imported.status == ImportStatus.RECONCILED.value
+    (document,) = bank.rows(document_table, document_table.c.id == imported.document_id)
+    assert document.source == DocumentSource.BANK_SYNC.value
+    assert document.original_filename == "fints-20260401-20261111.zip"
+    assert len(bank.rows(transaction_table)) == 22
+
+    client = bank.clients[0]
+    assert client.init["pin"] == PIN and client.init["product_id"] == PRODUCT_ID
+    assert client.init["client_data"] is None
+    assert client.calls.count("poll") == 3 and client.calls[-1] == "state"
+    assert client.window[:2] == (date(2026, 4, 1), date(2026, 11, 11))
+
+    connection = bank.connection_row()
+    assert bytes(connection.client_data) == FAKE_STATE
+    assert connection.tan_mechanism == DECOUPLED and connection.sca_confirmed_at == T1
+    assert (connection.last_sync_at, connection.last_booking_on) == (T1, imported.last_booking_on)
+    assert service.verified_state(service.state_key(bank.settings.session_key), connection)
+
+    assert len(bank.events(EventType.ACCOUNT_SYNC_APPROVAL_NEEDED)) == 1
+    (completed,) = bank.events(EventType.ACCOUNT_SYNC_COMPLETED)
+    assert completed["reconciled"] is True and completed["lines_new"] == 22
+
+
+def test_the_new_lines_go_through_import_statement_unchanged(bank, monkeypatch):
+    calls = []
+    real = service.import_statement
+
+    def spy(ctx, store, account_id, data, **kwargs):
+        calls.append((account_id, kwargs["media_type"]))
+        return real(ctx, store, account_id, data, **kwargs)
+
+    monkeypatch.setattr(service, "import_statement", spy)
+    sync = bank.start()
+    bank.job(sync.id, _good())
+    assert calls == [(bank.account.id, "application/zip")]
+
+
+def test_a_later_sync_reuses_the_state_and_stores_nothing_when_nothing_is_new(bank):
+    first = bank.start()
+    bank.job(first.id, _good(approval_polls=0))
+    documents = len(bank.rows(document_table))
+
+    later = T1 + timedelta(minutes=1)
+    second = bank.start(now=later)
+    outcome = bank.job(second.id, _good(approval_polls=0), at=later + timedelta(seconds=5))
+
+    assert outcome == "nothing_new"
+    row = bank.sync(second.id)
+    assert (row.status, row.lines_new, row.import_id) == (SyncStatus.NOTHING_NEW, 0, None)
+    assert row.balance_checked is True and row.error_code == E.BANK_NOTHING_NEW
+    assert len(bank.rows(document_table)) == documents
+    assert len(bank.rows(import_table)) == 1
+    assert bank.clients[1].init["client_data"] == FAKE_STATE  # restored, no approval asked
+    assert "poll" not in bank.clients[1].calls
+
+
+def test_a_balance_that_moved_without_new_lines_is_a_drift_card(bank):
+    first = bank.start()
+    bank.job(first.id, _good())
+    later = T1 + timedelta(minutes=1)
+    second = bank.start(now=later)
+    bank.job(second.id, _good(balance=CLOSING + 1), at=later + timedelta(seconds=5))
+
+    assert bank.sync(second.id).error_code == E.BANK_BALANCE_DRIFT
+    cards = [i for i in bank.read(bank.ws, review.inbox, now=T1) if i.sync_id == second.id]
+    assert [c.kind for c in cards] == [InboxItemKind.BANK_BALANCE_DRIFT]
+
+
+def test_a_first_sync_with_no_booked_stream_compares_with_the_anchor(bank):
+    sync = bank.start()
+    assert bank.job(sync.id, _good(streams=[], balance=Decimal("0.00"))) == "nothing_new"
+    row = bank.sync(sync.id)
+    assert (row.lines_total, row.balance_checked, row.error_code) == (0, True, E.BANK_NOTHING_NEW)
+
+
+# --- Failures ---------------------------------------------------------------------------------
+
+
+def _failed(bank, sync_id, code):
+    row = bank.sync(sync_id)
+    assert (row.status, row.error_code) == (SyncStatus.FAILED, code)
+    assert row.finished_at is not None
+    cards = [i for i in bank.read(bank.ws, review.inbox, now=T1) if i.sync_id == sync_id]
+    assert [c.kind for c in cards] == [InboxItemKind.BANK_SYNC_FAILED]
+    assert code in cards[0].reasoning
+    return row
+
+
+def test_an_approval_that_never_comes_times_out_and_ends_the_dialog(bank):
+    sync = bank.start()
+    assert bank.job(sync.id, _good(approval_polls=0, never_confirms=True)) == "failed"
+    _failed(bank, sync.id, E.BANK_APPROVAL_TIMEOUT)
+    assert bank.clients[0].calls[-1] == "close"
+    assert bank.clock[0] >= bank.settings.sync_approval_timeout_s
+    assert bank.connection_row().client_data is None
+
+
+def test_an_account_the_login_does_not_hold_is_not_found(bank):
+    sync = bank.start()
+    assert bank.job(sync.id, _good(accounts=[fake_account(OTHER_IBAN)])) == "failed"
+    _failed(bank, sync.id, E.BANK_ACCOUNT_NOT_FOUND)
+
+
+def test_a_bank_without_a_readable_camt_format_is_unsupported(bank):
+    sync = bank.start()
+    script = _good(camt_formats=["urn:iso:std:iso:20022:tech:xsd:camt.054.001.02"])
+    assert bank.job(sync.id, script) == "failed"
+    _failed(bank, sync.id, E.BANK_UNSUPPORTED_FORMAT)
+
+
+def test_a_9xxx_answer_is_refused_with_its_code_only(bank):
+    sync = bank.start()
+    assert bank.job(sync.id, _good(refuse_at={"accounts": "9942"})) == "failed"
+    _failed(bank, sync.id, E.BANK_REFUSED)
+    (failed,) = bank.events(EventType.ACCOUNT_SYNC_FAILED)
+    assert failed == {
+        "sync_id": str(sync.id),
+        "error_code": E.BANK_REFUSED,
+        "response_code": "9942",
+    }
+
+
+def test_an_unreachable_bank_is_retried_twice_then_fails(bank):
+    sync = bank.start()
+    script = _good(fail_at={"open": FinTSConnectionError("down")})
+    for attempt in (0, 1):
+        with pytest.raises(RetryLater):
+            bank.job(sync.id, script, attempt=attempt)
+        assert bank.sync(sync.id).status is SyncStatus.QUEUED
+    assert bank.job(sync.id, script, attempt=2) == "failed"
+    _failed(bank, sync.id, E.BANK_UNREACHABLE)
+    assert all(c.calls[-1] == "open" or "close" in c.calls for c in bank.clients)
+
+
+def test_a_state_whose_mac_fails_is_dropped_and_the_run_fails(bank):
+    first = bank.start()
+    bank.job(first.id, _good())
+    with workspace_transaction(bank.engine, bank.ws) as conn:
+        conn.execute(
+            update(connection_table)
+            .where(connection_table.c.account_id == bank.account.id)
+            .values(client_data=b"tampered")
+        )
+    later = T1 + timedelta(minutes=1)
+    second = bank.start(now=later)
+    assert bank.job(second.id, _good(), at=later + timedelta(seconds=5)) == "skipped"
+    row = bank.sync(second.id)
+    assert (row.status, row.error_code) == (SyncStatus.FAILED, E.BANK_STATE_REJECTED)
+    assert bank.connection_row().client_data is None
+    assert len(bank.clients) == 1  # no dialog was opened with the rejected state
+
+
+def test_a_job_whose_settings_lost_the_pin_records_not_configured(bank, tmp_path):
+    sync = bank.start()
+    bank.settings = _settings(tmp_path, fints_pin=None, fints_product_id=None)
+    assert bank.job(sync.id, _good()) == "skipped"
+    assert bank.sync(sync.id).error_code == E.BANK_NOT_CONFIGURED
+
+
+# --- Approvals, restarts and the schedule ---------------------------------------------------
+
+
+def test_a_redeploy_mid_approval_leaves_a_restartable_row(bank):
+    sync = bank.start()
+    plan = bank.run(bank.ws, service.begin_run, sync.id, attempt=0, settings=bank.settings, now=T1)
+    bank.run(bank.ws, service.approval_needed, plan, now=T1)
+    # The worker died while polling; the stalled job is retried (attempt 1).
+    assert bank.job(sync.id, _good(), attempt=1) == "skipped"
+    assert bank.sync(sync.id).status is SyncStatus.NEEDS_APPROVAL
+
+    later = T1 + timedelta(seconds=30)
+    restarted = bank.start(now=later)
+    assert restarted.id == sync.id and restarted.status is SyncStatus.NEEDS_APPROVAL
+    assert bank.job(sync.id, _good(approval_polls=0), at=later) == "done"
+
+
+def test_a_restart_while_polling_stops_the_old_job(bank):
+    sync = bank.start()
+    restarts = []
+
+    def restart():
+        if not restarts:
+            restarts.append(bank.start(now=T1 + timedelta(seconds=1)))
+
+    outcome = bank.job(sync.id, _good(approval_polls=5), on_sleep=restart)
+    assert outcome == "superseded"
+    assert bank.clients[0].calls[-1] == "close"
+    row = bank.sync(sync.id)
+    assert row.status is SyncStatus.NEEDS_APPROVAL and row.started_at == T1 + timedelta(seconds=1)
+    assert bank.job(sync.id, _good(approval_polls=0), at=T1 + timedelta(seconds=2)) == "done"
+
+
+def test_a_scheduled_run_that_meets_a_demand_ends_the_dialog_and_waits(bank):
+    with workspace_transaction(bank.engine, bank.ws) as conn:
+        sync_id = conn.execute(
+            insert(sync_table)
+            .values(
+                workspace_id=bank.ws,
+                account_id=bank.account.id,
+                connection_id=bank.connection.id,
+                trigger="scheduled",
+                status="queued",
+                requested_from=date(2026, 4, 1),
+                requested_to=date(2026, 11, 11),
+                started_at=T0,
+                created_at=T0,
+                updated_at=T0,
+            )
+            .returning(sync_table.c.id)
+        ).scalar_one()
+    assert bank.job(sync_id, _good(approval_polls=0)) == "needs_approval"
+    assert "poll" not in bank.clients[0].calls and bank.clients[0].calls[-1] == "close"
+    assert bank.sync(sync_id).status is SyncStatus.NEEDS_APPROVAL
+
+    restarted = bank.start(now=T1 + timedelta(seconds=10))  # the card's button
+    assert restarted.id == sync_id and restarted.trigger.value == "manual"
+    assert bank.job(sync_id, _good(approval_polls=0), at=T1 + timedelta(seconds=20)) == "done"
+
+
+# --- Secrets ----------------------------------------------------------------------------------
+
+
+def test_no_secret_reaches_a_sync_row_an_event_or_a_document_row(bank):
+    sync = bank.start()
+    bank.job(sync.id, _good(approval_polls=0))
+    second = bank.start(now=T1 + timedelta(minutes=1))
+    bank.job(second.id, _good(refuse_at={"balance": "9800"}), at=T1 + timedelta(minutes=2))
+
+    rows = [
+        *bank.rows(sync_table),
+        *bank.rows(event_table),
+        *bank.rows(document_table),
+        *bank.rows(import_table),
+    ]
+    text_of = repr([tuple(r) for r in rows])
+    assert not [s for s in SECRETS if s in text_of]
+    connection = bank.connection_row()
+    assert not [s for s in (PIN, PRODUCT_ID) if s.encode() in bytes(connection.client_data)]
+    with workspace_transaction(bank.engine, bank.ws) as conn:
+        args = conn.execute(text("SELECT args FROM procrastinate_jobs")).scalars().all()
+    assert not [s for s in SECRETS if s in repr(args)]
+    assert (
+        bank.read(
+            bank.ws,
+            lambda c: c.execute(select(func.count()).select_from(sync_table)).scalar_one(),
+        )
+        == 2
+    )
