@@ -1146,6 +1146,9 @@ class DraftFacts(Schema):
     # Phase 3 D149: the payment proofs linked to no bill, offered on a bill's to-do when one
     # fits its amount.
     unlinked_proofs: list[UnlinkedProofFact] = Field(default_factory=list)
+    # Phase 3 D150: per bill (document id), the amounts of the cost lines its current reading
+    # states; the rules use them only when they sum to the bill's combined total.
+    bill_parts: dict[UUID, list[Money]] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _consistent(self) -> Self:

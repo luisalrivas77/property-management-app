@@ -8,8 +8,10 @@ magnitude (a bank shows a transfer as negative), within 0.01:
   a part paid from another account was paid as one), or, for such a split bill, its private
   part alone (the purchase part paid another way), as the draft accepts either (D143);
 - PART: one of its acquisition cost rows alone (one buyer's share of a Grunderwerbsteuer that
-  one document sets for both buyers, D145; or the purchase part of a split bill): the proof
-  of the rest is still needed.
+  one document sets for both buyers, D145; or the purchase part of a split bill), or one of
+  the bill's parts: the cost lines its reading states, when they sum to the combined total
+  (one buyer's notice in a document holding both, read as one row, D150): the proof of the
+  rest is still needed.
 
 The pre-fill compares a proof with its bill (D143) and with the bills that still wait for a
 proof (D149); the draft offers an unlinked proof on a bill's to-do by the same test (D149)."""
@@ -31,11 +33,30 @@ def bill_total(acquisition: Sequence[Decimal], private: Sequence[Decimal]) -> De
     return sum(acquisition, Decimal(0)) + sum(private, Decimal(0))
 
 
+def bill_parts(
+    lines: Sequence[Decimal], acquisition: Sequence[Decimal], private: Sequence[Decimal]
+) -> list[Decimal]:
+    """D150: the bill's parts: the amounts of the cost lines its reading states (`lines`),
+    only when they sum to the bill's combined total within 0.01; otherwise none (a reading
+    that disagrees with the rows says nothing about how the bill was paid). A credit line
+    (negative) or a line of 0.00 is no part anyone pays."""
+    if not lines or (not acquisition and not private):
+        return []
+    if not _close(sum(lines, Decimal(0)), bill_total(acquisition, private)):
+        return []
+    return [line for line in lines if line > 0]
+
+
 def proof_fit(
-    amount: Decimal, acquisition: Sequence[Decimal], private: Sequence[Decimal]
+    amount: Decimal,
+    acquisition: Sequence[Decimal],
+    private: Sequence[Decimal],
+    *,
+    parts: Sequence[Decimal] = (),
 ) -> Fit | None:
-    """How a proof of `amount` fits the bill whose rows have these amounts; None when it
-    fits none of them (or the bill has no amount at all)."""
+    """How a proof of `amount` fits the bill whose rows have these amounts and whose reading
+    states these cost lines (`parts`, used only when they sum to the total, bill_parts);
+    None when it fits none of them (or the bill has no amount at all)."""
     if not acquisition and not private:
         return None
     paid = abs(amount)
@@ -45,6 +66,8 @@ def proof_fit(
     if any(_close(paid, total) for total in whole):
         return Fit.WHOLE
     if any(_close(paid, row) for row in acquisition):
+        return Fit.PART
+    if any(_close(paid, part) for part in bill_parts(parts, acquisition, private)):
         return Fit.PART
     return None
 

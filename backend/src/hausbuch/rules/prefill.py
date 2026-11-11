@@ -880,7 +880,8 @@ class _Builder:
         """D149: a payment proof linked to no bill. The bills that still wait for a proof
         (context.proof_candidates) are offered on a link:document record {entity_type link,
         mode create, fields target_id}, each as a one-click option labelled with the bill's
-        title, date and amount and whether the proof's amount fits it (rules.proof_match).
+        title, date and amount and whether the proof's amount fits it (rules.proof_match, with
+        the bill's parts: its cost lines, D150).
         Exactly one fits: target_id is it (derived from the amount), and the private_cost rows
         it would move to the year paid are proposed as on the to-do (D143); several fit, or
         none: target_id is empty, the user picks one or none. No candidate at all: typing
@@ -896,7 +897,9 @@ class _Builder:
         for bill in candidates:
             amounts = _bill_amounts(bill)
             fits[bill.document_id] = (
-                None if read is None or amounts is None else proof_fit(read, *amounts)
+                None
+                if read is None or amounts is None
+                else proof_fit(read, *amounts, parts=bill.parts)
             )
         matched = [b for b in candidates if fits[b.document_id] is not None]
         chosen = matched[0] if len(matched) == 1 else None

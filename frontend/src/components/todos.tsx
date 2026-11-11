@@ -191,6 +191,8 @@ export const WARNING_GUIDE: Partial<Record<WarningCode, Guide>> = {
     text: (p) =>
       p.proof_offer
         ? `Ein schon hochgeladener Zahlungsnachweis${p.proof_offer_amount ? ` über ${formatMoney(p.proof_offer_amount)}` : ""} ist noch keiner Rechnung zugeordnet und passt zu dieser. Mit „Vorhandenen Nachweis zuordnen“ wird er ihr zugeordnet (vorher wird nachgefragt); wurde die Rechnung laut Nachweis in einem anderen Jahr bezahlt, schlägt die App danach das richtige Jahr vor. Ist es nicht der richtige Nachweis, den passenden Beleg hochladen.`
+        : p.proof_rest
+        ? `Ein Teil ist nachgewiesen; es fehlt noch der Nachweis über ${formatMoney(p.proof_rest)}. Den Überweisungsbeleg oder die Umsatzdetails dieser Zahlung als PDF hier hochladen; die Rechnung zählt bis dahin trotzdem mit.`
         : p.proof_amount
         ? `Der hochgeladene Nachweis lautet über ${formatMoney(p.proof_amount)}, die Rechnung über ${formatMoney(p.amount)}. Wurde in Teilen bezahlt, auch den Beleg der übrigen Zahlung hochladen; die Rechnung zählt bis dahin trotzdem mit.`
         : "Die Rechnung zählt schon mit; nur der Beleg fehlt, dass sie bezahlt wurde. Im Online-Banking den Überweisungsbeleg oder die Umsatzdetails dieser einen Zahlung als PDF speichern und hier hochladen, nicht den ganzen Kontoauszug. Die App liest Datum und Betrag; wurde die Rechnung in einem anderen Jahr bezahlt, schlägt sie das richtige Jahr vor.",
