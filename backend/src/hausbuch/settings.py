@@ -70,6 +70,7 @@ DEFAULT_TEM_REGION = "fr-par"  # D123: Scaleway Transactional Email
 _MEDIA_TYPE = re.compile(r"[a-z]+/[a-z0-9.+-]+")
 _LABEL = r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?"
 _HOST = re.compile(rf"{_LABEL}(\.{_LABEL})*")
+_REGION = re.compile(r"[a-z]{2}-[a-z]{3}")  # a Scaleway region (fr-par), part of the TEM URL
 
 
 class SettingsError(ValueError):
@@ -192,6 +193,8 @@ class Settings:
             raise SettingsError(
                 "HAUSBUCH_TEM_SECRET_KEY needs HAUSBUCH_TEM_PROJECT_ID and HAUSBUCH_MAIL_FROM"
             )
+        if not _REGION.fullmatch(self.tem_region):
+            raise SettingsError("HAUSBUCH_TEM_REGION must be a Scaleway region such as fr-par")
 
     def _check_ai(self) -> None:
         if self.ai_enabled and not self.anthropic_api_key:
