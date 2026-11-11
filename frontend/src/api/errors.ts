@@ -152,7 +152,7 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "bank.account_not_found": "Unter diesem Zugang führt die Bank kein Konto mit der IBAN dieses Kontos. Anmeldename und BLZ prüfen.",
   "bank.state_rejected":
     "Die gespeicherte Verbindung zur Bank passte nicht mehr und wurde verworfen; der nächste Abruf fragt wieder nach einer Freigabe.",
-  "bank.unreachable": "Die Bank war dreimal nicht erreichbar. Später erneut abrufen; hält es an, die FinTS-Adresse prüfen.",
+  "bank.unreachable": "Die Bank war nicht erreichbar. Später erneut abrufen; hält es an, die FinTS-Adresse prüfen.",
   "bank.refused":
     "Die Bank hat den Abruf abgelehnt. Anmeldename und PIN prüfen; nach drei falschen PINs sperrt die Bank den Zugang.",
   "bank.unsupported_format": "Die Bank liefert Umsätze in keinem Format, das Hausbuch lesen kann. Kontoauszüge weiter als Datei hochladen.",

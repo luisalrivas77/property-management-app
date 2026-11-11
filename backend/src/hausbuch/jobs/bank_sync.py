@@ -15,7 +15,8 @@ the run's token, so a person's restart in between makes this job stop without wr
 3. finish_run: the state stored with its MAC, then nothing_new, or the ZIP imported → done.
 
 Failures: bank.unreachable is retried by Procrastinate, at most MAX_UNREACHABLE_RETRIES
-times (RetryLater), the row back to queued meanwhile; every other failure records `failed`
+times (RetryLater), the row back to queued meanwhile, except while the job waits for an
+approval, where it records `failed` at once; every other failure records `failed`
 with its code and waits for a person. A 9xxx answer is bank.refused with its four digits on
 the event. A WriteRefused (a bug: a write segment reached the wire guard) fails the run as
 bank.failed and is re-raised so the job shows failed in Procrastinate too.
@@ -76,6 +77,10 @@ class Network:
 class _Run:
     plan: RunPlan
     approved: bool = False
+    # Between needs_approval and approval_confirmed: a bank.unreachable there fails the run
+    # instead of a retry (the table has no needs_approval → queued move, and a retry would
+    # ask the phone a second time); a person restarts it.
+    awaiting_approval: bool = False
     log: dict[str, Any] = field(default_factory=dict)
 
 
@@ -237,6 +242,7 @@ def _await(
     if write(service.approval_needed, plan):
         session.close()
         raise _Stop("needs_approval")
+    run.awaiting_approval = True
     deadline = net.monotonic() + deps.settings.sync_approval_timeout_s
     pending: Approval | Confirmed = approval
     while isinstance(pending, Approval):
@@ -252,6 +258,7 @@ def _await(
             raise Superseded
         pending = session.poll(pending)
     write(service.approval_confirmed, plan)
+    run.awaiting_approval = False
     run.approved = True
     return pending.value
 
@@ -264,7 +271,8 @@ def _bank_error(
     if exc.response_code is not None:
         fields["response_code"] = exc.response_code
     try:
-        if exc.code == E.BANK_UNREACHABLE and attempt < MAX_UNREACHABLE_RETRIES:
+        retry = exc.code == E.BANK_UNREACHABLE and not run.awaiting_approval
+        if retry and attempt < MAX_UNREACHABLE_RETRIES:
             write(service.retry_run, plan)
             wait_s = UNREACHABLE_WAITS_S[attempt]
             logger.warning("bank sync retried", extra={"fields": fields | {"retry_in_s": wait_s}})

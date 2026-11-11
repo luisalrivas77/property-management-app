@@ -411,7 +411,7 @@ _FAILED_CARD = {
         "Erneut abrufen; die Bank fragt dann wieder nach einer Freigabe.",
     ),
     E.BANK_UNREACHABLE: (
-        "Die Bank war dreimal nicht erreichbar.",
+        "Die Bank war nicht erreichbar.",
         "Später erneut abrufen; hält es an, die FinTS-Adresse prüfen.",
     ),
     E.BANK_REFUSED: (

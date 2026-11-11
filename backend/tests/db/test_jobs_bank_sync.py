@@ -426,6 +426,31 @@ def test_an_unreachable_bank_is_retried_twice_then_fails(bank):
     assert all(c.calls[-1] == "open" or "close" in c.calls for c in bank.clients)
 
 
+def test_an_unreachable_bank_during_the_approval_wait_fails_without_a_retry(bank):
+    """No needs_approval → queued move exists, and a retry would ask the phone again: the
+    run fails as bank.unreachable at once, whatever the attempt (PR #160 review)."""
+    sync = bank.start()
+    script = _good(approval_polls=10)
+    sleeps = [0]
+
+    def cut_after_three_polls():
+        sleeps[0] += 1
+        if sleeps[0] == 4:
+            script.fail_at["poll"] = FinTSConnectionError("down")
+
+    assert bank.job(sync.id, script, on_sleep=cut_after_three_polls) == "failed"
+    _failed(bank, sync.id, E.BANK_UNREACHABLE)
+    calls = bank.clients[0].calls
+    assert calls.count("poll") == 4
+    assert calls[-1] == "close"
+    (failed,) = bank.events(EventType.ACCOUNT_SYNC_FAILED)
+    assert failed == {
+        "sync_id": str(sync.id),
+        "error_code": E.BANK_UNREACHABLE,
+        "response_code": None,
+    }
+
+
 def test_a_state_whose_mac_fails_is_dropped_and_the_run_fails(bank):
     first = bank.start()
     bank.job(first.id, _good())
