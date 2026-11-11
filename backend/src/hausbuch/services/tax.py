@@ -49,6 +49,7 @@ from hausbuch.db.tables import tenancy as tenancy_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.rules import document_checklist as checklist_rule
 from hausbuch.rules.errors import TAX_YEAR_NOT_AVAILABLE, RuleError
+from hausbuch.rules.extraction_parse import cost_lines as parse_cost_lines
 from hausbuch.rules.hand_fields import HAND_FIELD_MAP, hand_values
 from hausbuch.rules.loan_schedule import build_schedule
 from hausbuch.rules.matching import LOAN_WINDOW_DAYS
@@ -217,6 +218,7 @@ def draft_facts(
         tax_inputs=tax_inputs,
         payment_proofs=_payment_proofs(conn, bills),
         unlinked_proofs=_unlinked_proofs(conn, property_id),
+        bill_parts=bill_parts(conn, bills),
         checklist=checklist,
         today=today,
         coverage=_coverage(conn, accounts),
@@ -359,6 +361,35 @@ def _unlinked_proofs(conn: Connection, property_id: UUID) -> list[UnlinkedProofF
         UnlinkedProofFact(proof_document_id=row.id, amount=_proof_amount(conn, row.id))
         for row in rows
     ]
+
+
+def bill_parts(conn: Connection, bills: set[UUID]) -> dict[UUID, list[Decimal]]:
+    """Phase 3 D150: per bill, the amounts of the cost lines its current reading states
+    (bill_lines); a bill without lines is left out. The draft (DraftFacts.bill_parts) and the
+    pre-fill (ExistingProofBill.parts) load them here."""
+    out: dict[UUID, list[Decimal]] = {}
+    for bill in sorted(bills, key=str):
+        lines = bill_lines(conn, bill)
+        if lines:
+            out[bill] = lines
+    return out
+
+
+def bill_lines(conn: Connection, document_id: UUID) -> list[Decimal]:
+    """Phase 3 D150: the amounts of the cost lines a bill's current reading states (an
+    invoice's or Bescheid's cost_lines, phase 2 D135, parsed as the pre-fill parses them),
+    each signed as read; empty without such a reading, for a reading typed by hand, or when
+    a line does not parse. Whether they are the bill's parts (they sum to its total) is
+    rules.proof_match.bill_parts's test."""
+    extraction = current_extraction(conn, document_id)
+    if extraction is None or extraction.kind not in (
+        ExtractionKind.INVOICE,
+        ExtractionKind.BESCHEID,
+    ):
+        return []
+    read = getattr(extraction.fields, "cost_lines", None)
+    lines = None if read is None else parse_cost_lines(read.value)
+    return [] if lines is None else [line.amount.quantize(_CENT) for line in lines]
 
 
 def _proof_amount(conn: Connection, document_id: UUID) -> Decimal | None:

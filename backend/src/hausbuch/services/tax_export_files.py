@@ -169,6 +169,27 @@ def _proof_bill(params: dict[str, str]) -> str:
     return f"die Rechnung „{params.get('label', '?')}“"
 
 
+def _proof_missing_text(p: dict[str, str]) -> str:
+    """D143: a bill without its proof of payment; with proof_rest (D150) the linked proofs
+    each pay one part of the bill and the proof of the rest is still missing; with only
+    proof_amount the linked proof's amount does not fit."""
+    upload = " Den Überweisungsbeleg oder die Umsatzdetails als PDF hochladen."
+    if p.get("proof_rest"):
+        return (
+            f"Zahlungsnachweis fehlt: {_proof_bill(p)} über {_p(p)} zählt. Ein Teil ist "
+            f"nachgewiesen; es fehlt noch der Nachweis über {_p(p, 'proof_rest')}." + upload
+        )
+    mismatch = (
+        f" (der Nachweis lautet über {_p(p, 'proof_amount')}, der Betrag passt nicht)"
+        if p.get("proof_amount")
+        else ""
+    )
+    return (
+        f"Zahlungsnachweis fehlt: {_proof_bill(p)} über {_p(p)} zählt, aber nichts zeigt, "
+        f"dass sie bezahlt wurde{mismatch}." + upload
+    )
+
+
 def _p(params: dict[str, str], name: str = "amount") -> str:
     raw = params.get(name)
     if raw is None:
@@ -344,17 +365,8 @@ WARNING_TEXT: dict[WarningCode, Callable[[dict[str, str]], str]] = {
         "Mietkonto bezahlt: sie zählt nur einmal, mit der Buchung vom Mietkonto. Die Angabe "
         "bitte zurückziehen."
     ),
-    # Phase 3 D143.
-    WarningCode.PAYMENT_PROOF_MISSING: lambda p: (
-        f"Zahlungsnachweis fehlt: {_proof_bill(p)} über {_p(p)} zählt, aber nichts zeigt, "
-        "dass sie bezahlt wurde"
-        + (
-            f" (der Nachweis lautet über {_p(p, 'proof_amount')}, der Betrag passt nicht)"
-            if p.get("proof_amount")
-            else ""
-        )
-        + ". Den Überweisungsbeleg oder die Umsatzdetails als PDF hochladen."
-    ),
+    # Phase 3 D143, D150.
+    WarningCode.PAYMENT_PROOF_MISSING: lambda p: _proof_missing_text(p),
     WarningCode.ANLAGE_N_CERTIFICATE_MISSING: lambda p: (
         "Keine Lohnsteuerbescheinigung für dieses Jahr: die Zahlen beruhen auf "
         "Gehaltsabrechnungen oder der Schätzung."

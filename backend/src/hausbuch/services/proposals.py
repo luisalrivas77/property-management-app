@@ -767,7 +767,8 @@ def _proof_candidates(conn: Connection, document_id: UUID, today: date) -> list[
 
 def _bill_facts(conn: Connection, bill: UUID) -> ExistingProofBill:
     """A bill's acquisition cost rows (it as Beleg) and private_cost rows in force, and its
-    title (else the file's name) and date for the card (D143, D149)."""
+    title (else the file's name) and date for the card (D143, D149), and the cost lines its
+    reading states, for a proof of one of them (D150, services.tax.bill_lines)."""
     document = documents.get_document(conn, bill)
     typing = None if document is None else document.typing
     rows = tax_inputs.current_of_document(conn, bill, TaxInputKind.PRIVATE_COST)
@@ -795,6 +796,7 @@ def _bill_facts(conn: Connection, bill: UUID) -> ExistingProofBill:
         title=(None if typing is None else typing.title)
         or (None if document is None else document.original_filename),
         document_date=None if typing is None else typing.document_date,
+        parts=tax.bill_lines(conn, bill),  # D150: its cost lines
     )
 
 
