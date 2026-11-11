@@ -152,6 +152,16 @@ interface FieldSpec {
   hint?: string;
   /** The empty form's value, for the year asked. */
   initial?: (year: number) => string;
+  /** Shown only for an item whose stored value passes (otherwise neither asked nor saved). */
+  when?: (base: Value) => boolean;
+}
+
+/** Phase 3 D137: a cost paid from another account in a category the 15 % test counts. Rows
+ * typed here have no category; those read from a bill (D135) carry repairs. */
+const COUNTS_FOR_15_PERCENT = (base: Value) => base.category === "repairs" || base.category === "renovation";
+
+function shown(spec: FieldSpec, item: Item): boolean {
+  return !spec.when || spec.when(item.base);
 }
 
 /** The return_input kinds the flow cannot type: their document is read instead (D96, D105). */
@@ -258,6 +268,22 @@ const FORMS: Record<string, FieldSpec[]> = {
     { name: "trips", label: "Fahrten", type: "int", optional: true },
     { name: "km_round_trip", label: "Kilometer je Fahrt (hin und zurück)", type: "int", optional: true },
     { name: "share", label: "Anteil für die Vermietung", type: "fraction", initial: () => "1/1" },
+    {
+      name: "performed_on",
+      label: "Leistungsdatum",
+      type: "date",
+      optional: true,
+      when: COUNTS_FOR_15_PERCENT,
+      hint: "Wann die Reparatur gemacht wurde, laut Rechnung. Hausbuch braucht es für die 15-%-Grenze in den ersten drei Jahren nach dem Kauf; ohne Datum zählt die Rechnung vorsichtshalber mit.",
+    },
+    {
+      name: "amount_net",
+      label: "Netto (€)",
+      type: "money",
+      optional: true,
+      when: COUNTS_FOR_15_PERCENT,
+      hint: "Der Betrag ohne Umsatzsteuer, laut Rechnung. Die 15-%-Grenze rechnet netto; ohne Angabe schätzt Hausbuch Betrag ÷ 1,19.",
+    },
   ],
 };
 
@@ -503,6 +529,10 @@ function buildValue(item: Item, prefix: string, messages: FieldMessages): Value 
   let fine = true;
   for (const spec of FORMS[item.kind] ?? []) {
     const raw = item.raw[spec.name] ?? "";
+    if (!shown(spec, item)) {
+      delete value[spec.name];
+      continue;
+    }
     if (raw.trim() === "" && spec.type !== "bool") {
       delete value[spec.name];
       if (!spec.optional) {
@@ -1062,7 +1092,9 @@ function tableOf(item: Item): "return_inputs" | "tax_inputs" {
 }
 
 function fieldKeys(items: Item[]): string[] {
-  return items.flatMap((item, at) => (FORMS[item.kind] ?? []).map((spec) => `${prefixOf(items, at)}.${spec.name}`));
+  return items.flatMap((item, at) =>
+    (FORMS[item.kind] ?? []).filter((spec) => shown(spec, item)).map((spec) => `${prefixOf(items, at)}.${spec.name}`),
+  );
 }
 
 function ItemForm({
@@ -1094,7 +1126,7 @@ function ItemForm({
         {index + 1}
       </legend>
       <div className="grid">
-        {(FORMS[item.kind] ?? []).map((spec) => {
+        {(FORMS[item.kind] ?? []).filter((spec) => shown(spec, item)).map((spec) => {
           const raw = item.raw[spec.name] ?? "";
           const carried = item.carried !== null && raw !== "" && raw === item.carried[spec.name];
           const label = (

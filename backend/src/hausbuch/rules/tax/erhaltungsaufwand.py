@@ -47,7 +47,11 @@ CATEGORIES = frozenset({C.REPAIRS, C.RENOVATION})
 def _moved_by_limit(limit: LimitStatus | None) -> set[UUID]:
     if limit is None:
         return set()
-    return {b.allocation_id for b in limit.basis_additions if b.reason == "limit_exceeded"}
+    return {
+        b.allocation_id
+        for b in limit.basis_additions
+        if b.reason == "limit_exceeded" and b.allocation_id is not None
+    }
 
 
 def _costs(

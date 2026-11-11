@@ -64,8 +64,9 @@ export type GuideAction =
   /** income.living_area_missing: type the flat's Wohnfläche (PATCH /properties/{id}). */
   | { kind: "living_area" };
 
-/** Was tun, in plain words: what to upload, open or confirm, not the law. */
-type GuideText = (params: Params) => string;
+/** Was tun, in plain words: what to upload, open or confirm, not the law. The warning is
+ * passed too, for a text that depends on what it cites (a payment or a tax input). */
+type GuideText = (params: Params, warning?: DraftWarning) => string;
 type GuideActionOf = (warning: DraftWarning, ctx: GuideContext) => GuideAction | null;
 
 /** A to-do (listed under "Was noch fehlt") always has a short title and an action; a note or a
@@ -187,9 +188,27 @@ export const WARNING_GUIDE: Partial<Record<WarningCode, Guide>> = {
   },
   "limit.estimated_net": {
     todo: false,
+    text: (_p, warning) =>
+      (warning?.refs ?? []).some((r) => r.kind === "tax_input")
+        ? "Diese Kosten wurden von einem anderen Konto bezahlt. Für eine genaue Rechnung in den Jahresfragen bei diesem Eintrag den Nettobetrag von der Rechnung eintragen; ohne ihn rechnet die App mit 19 % Umsatzsteuer."
+        : "Für eine genaue Rechnung die Rechnung zur Zahlung hochladen und verknüpfen; ohne sie rechnet die App mit 19 % Umsatzsteuer.",
+    // A cost paid from another account (D137) has no bank line: its net is typed in the Jahresfragen.
+    action: (warning, ctx) =>
+      payment("Zahlung öffnen")(warning, ctx) ?? ((warning.refs ?? []).some((r) => r.kind === "tax_input") ? questions(warning, ctx) : null),
+  },
+  "limit.private_cost_undated": {
+    todo: true,
+    title: (p) => `Wann wurde ${p.label ? `„${p.label}“` : "die Reparatur"} gemacht?`,
     text: () =>
-      "Für eine genaue Rechnung die Rechnung zur Zahlung hochladen und verknüpfen; ohne sie rechnet die App mit 19 % Umsatzsteuer.",
-    action: payment("Zahlung öffnen"),
+      "Diese Reparatur wurde von einem anderen Konto bezahlt. In den ersten drei Jahren nach dem Kauf zählen Reparaturen nur bis zu einer Grenze sofort als Kosten, darüber werden sie über die Jahre abgeschrieben. Ohne das Datum der Arbeit zählt die App sie vorsichtshalber mit. In den Jahresfragen bei diesem Eintrag das Datum der Arbeit von der Rechnung eintragen, und den Nettobetrag, wenn er dort steht.",
+    action: questions,
+  },
+  "limit.private_cost_after_window": {
+    todo: true,
+    title: (p) => `Wann wurde ${p.label ? `„${p.label}“` : "die Reparatur"} gemacht?`,
+    text: () =>
+      "Diese Reparatur wurde von einem anderen Konto bezahlt und ist kurz nach dem Ende der ersten drei Jahre nach dem Kauf datiert, oft mit dem Rechnungsdatum. Wurde die Arbeit noch in diesen drei Jahren gemacht, zählt sie zur 15-%-Grenze. In den Jahresfragen bei diesem Eintrag das Leistungsdatum von der Rechnung eintragen.",
+    action: questions,
   },
   "anschaffungsnah.performance_date_check": {
     todo: true,
@@ -478,7 +497,7 @@ export function WhatToDo({ warning }: { warning: DraftWarning }) {
   if (!guide) return null;
   return (
     <p className="todo-text">
-      <strong>Was tun:</strong> {guide.text(warning.params ?? {})}
+      <strong>Was tun:</strong> {guide.text(warning.params ?? {}, warning)}
     </p>
   );
 }
@@ -993,7 +1012,7 @@ export function warningEntry(
   return {
     key,
     title: guide.title?.(warning.params ?? {}) ?? "Offener Punkt",
-    text: guide.text(warning.params ?? {}),
+    text: guide.text(warning.params ?? {}, warning),
     action: <WarningActionView warning={warning} ctx={ctx} onChanged={onChanged} />,
     context,
   };

@@ -14,13 +14,22 @@ warnings depend on the year.
 - exceeded is strict (used_net > limit). When exceeded, every counted cost not elected
   herstellung becomes a basis addition (limit_exceeded) at its gross amount in the year paid;
   a herstellung cost keeps its own addition (erhaltungsaufwand.herstellung_additions).
+- D137: a private_cost row of a counted category (only repairs: a private cost never carries
+  renovation) counts the same way, at gross = amount × share and net = amount_net × share
+  (else estimated). Its tested date is performed_on; without one it is counted when its tax year
+  is a window year (conservative) and raises limit.private_cost_undated, which an undated row
+  paid within 90 days after the window also raises. A row whose document is the Beleg of a
+  confirmed allocation is left out (D135). In the running sum a row stands on the last day of
+  its tax year, after the allocations of that day. When exceeded it becomes a limit_exceeded
+  addition like an allocation, and draft._private_costs no longer books it.
 """
 
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 
 from hausbuch.schemas.allocation import AllocationCategory as C
 from hausbuch.schemas.tax import (
+    LIMIT_15_CATEGORIES,
     BasisAddition,
     CountedCost,
     DraftWarning,
@@ -32,11 +41,21 @@ from hausbuch.schemas.tax import (
     WarningCode,
 )
 
-from ._common import ZERO, add_years, by_allocation, warning, with_years
+from ._common import (
+    ZERO,
+    add_years,
+    by_allocation,
+    in_force,
+    input_sources,
+    paid_bills,
+    shared,
+    warning,
+    with_years,
+)
 from .afa import basis
 from .rounding import cents, money_str, one_decimal
 
-CATEGORIES = frozenset({C.REPAIRS, C.RENOVATION})
+CATEGORIES = LIMIT_15_CATEGORIES
 # A cost booked this long after the window with no service period asks when the work was done.
 PERFORMANCE_CHECK_DAYS = 90
 
@@ -51,7 +70,7 @@ def limit_status(facts: LimitFacts, tax_year: int, rule_set: RuleSet) -> LimitSt
     treatments = by_allocation(facts.tax_inputs, TaxInputKind.RENOVATION_TREATMENT)
     vat = Decimal(1) + rule_set.default_vat_rate
 
-    counted: list[CountedCost] = []
+    counted: list[tuple[date, int, CountedCost]] = []  # (order date, 0 allocation | 1 input, …)
     warnings: list[DraftWarning] = []
     late: list = []  # (allocation, year) for the performance date check
     costs = sorted(
@@ -87,23 +106,33 @@ def limit_status(facts: LimitFacts, tax_year: int, rule_set: RuleSet) -> LimitSt
                     )
                 )
         counted.append(
-            CountedCost(
-                allocation_id=a.allocation_id,
-                booking_date=a.booking_date,
-                tax_year=year,
-                gross=gross,
-                net=net,
-                net_source=source,
+            (
+                a.booking_date,
+                0,
+                CountedCost(
+                    allocation_id=a.allocation_id,
+                    booking_date=a.booking_date,
+                    tax_year=year,
+                    gross=gross,
+                    net=net,
+                    net_source=source,
+                ),
             )
         )
 
-    used = sum((c.net for c in counted), ZERO) + Decimal("0.00")
+    private, private_warnings = _private_costs(facts, tax_year, rule_set, start, end)
+    counted += private
+    warnings += private_warnings
+    # allocations by booking date as before; a private cost on 31 Dec of its year (D137)
+    counted_costs = [c for _, _, c in sorted(counted, key=lambda x: (x[0], x[1], _id(x[2])))]
+
+    used = sum((c.net for c in counted_costs), ZERO) + Decimal("0.00")
     exceeded = limit is not None and used > limit
     exceeded_in_year = None
     additions: list[BasisAddition] = []
     if exceeded:
         running = ZERO
-        for c in counted:
+        for c in counted_costs:
             running += c.net
             if running > limit:
                 exceeded_in_year = c.tax_year
@@ -117,12 +146,13 @@ def limit_status(facts: LimitFacts, tax_year: int, rule_set: RuleSet) -> LimitSt
             and (t := treatments.get(a.allocation_id)) is not None
             and t.value.treatment == "herstellung"
         }
-        for c in counted:
+        for c in counted_costs:
             if c.allocation_id in herstellung:
                 continue  # its own herstellung addition already (D74)
             additions.append(
                 BasisAddition(
                     allocation_id=c.allocation_id,
+                    tax_input_id=c.tax_input_id,
                     tax_year=c.tax_year,
                     amount=c.gross,
                     reason="limit_exceeded",
@@ -136,7 +166,7 @@ def limit_status(facts: LimitFacts, tax_year: int, rule_set: RuleSet) -> LimitSt
             warnings.append(
                 warning(
                     WarningCode.LIMIT_EXCEEDED,
-                    [SourceRef(kind="allocation", id=b.allocation_id) for b in additions],
+                    [b.source_ref() for b in additions],
                     exceeded_in_year=str(exceeded_in_year),
                 )
             )
@@ -145,7 +175,7 @@ def limit_status(facts: LimitFacts, tax_year: int, rule_set: RuleSet) -> LimitSt
             warnings.append(
                 warning(
                     WarningCode.LIMIT_PRIOR_YEAR_AMENDMENT,
-                    [SourceRef(kind="allocation", id=b.allocation_id) for b in moved],
+                    [b.source_ref() for b in moved],
                     exceeded_in_year=str(exceeded_in_year),
                     amount=money_str(sum((b.amount for b in moved), ZERO)),
                 )
@@ -168,7 +198,7 @@ def limit_status(facts: LimitFacts, tax_year: int, rule_set: RuleSet) -> LimitSt
         limit=limit,
         window_start=start,
         window_end=end,
-        counted=counted,
+        counted=counted_costs,
         used_net=used,
         ratio_percent=None if not limit else one_decimal(used / limit * 100),
         exceeded=exceeded,
@@ -176,3 +206,89 @@ def limit_status(facts: LimitFacts, tax_year: int, rule_set: RuleSet) -> LimitSt
         basis_additions=additions,
         warnings=warnings,
     )
+
+
+def _id(c: CountedCost) -> str:
+    return str(c.allocation_id or c.tax_input_id)
+
+
+def _private_costs(
+    facts: LimitFacts, tax_year: int, rule_set: RuleSet, start: date, end: date
+) -> tuple[list[tuple[date, int, CountedCost]], list[DraftWarning]]:
+    """D137: the private_cost rows of a counted category, as (order date, 1, cost), and the
+    warnings of the drafted year (estimated net, no date of the work, a date just after the
+    window)."""
+    vat = Decimal(1) + rule_set.default_vat_rate
+    paid = paid_bills(facts.allocations)
+    late_until = end + timedelta(days=PERFORMANCE_CHECK_DAYS)
+    out: list[tuple[date, int, CountedCost]] = []
+    warnings: list[DraftWarning] = []
+    for row in in_force(facts.tax_inputs, TaxInputKind.PRIVATE_COST):
+        v = row.value
+        if v.category not in CATEGORIES or row.tax_year is None or v.amount is None:
+            continue
+        if row.document_id is not None and paid.get(row.document_id):
+            continue  # a bank line paid the bill: the allocation counts (D135)
+        gross = shared(v.amount, row)
+        if not gross:
+            continue  # D70: nothing to count
+        year = row.tax_year
+        if v.performed_on is not None:
+            inside = start <= v.performed_on <= end
+            # The bill's date is proposed for the work date and is only its upper bound: a
+            # date within 90 days after the window is not counted, but asked (as D76 asks it).
+            if end < v.performed_on <= late_until and year == tax_year:
+                warnings.append(
+                    warning(
+                        WarningCode.LIMIT_PRIVATE_COST_AFTER_WINDOW,
+                        input_sources(row),
+                        label=v.label,
+                        performed_on=v.performed_on.isoformat(),
+                        amount=money_str(gross),
+                    )
+                )
+        else:
+            # Paid in a window year: counted, since the work may have been done inside it.
+            # Paid later but within the 90 days after the window: not counted, but asked (D76).
+            inside = start.year <= year <= end.year
+            near = end.year < year and date(year, 1, 1) <= late_until
+            if (inside or near) and year == tax_year:
+                warnings.append(
+                    warning(
+                        WarningCode.LIMIT_PRIVATE_COST_UNDATED,
+                        input_sources(row),
+                        label=v.label,
+                        amount=money_str(gross),
+                    )
+                )
+        if not inside:
+            continue
+        if v.amount_net is not None:
+            net, source = min(shared(v.amount_net, row), gross), "invoice"
+        else:
+            net, source = cents(gross / vat), "estimated"
+            if year == tax_year:
+                warnings.append(
+                    warning(
+                        WarningCode.LIMIT_ESTIMATED_NET,
+                        input_sources(row),
+                        gross=money_str(gross),
+                        net=money_str(net),
+                    )
+                )
+        if not net:
+            continue
+        out.append(
+            (
+                date(year, 12, 31),
+                1,
+                CountedCost(
+                    tax_input_id=row.id,
+                    tax_year=year,
+                    gross=gross,
+                    net=net,
+                    net_source=source,
+                ),
+            )
+        )
+    return out, warnings

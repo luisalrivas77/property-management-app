@@ -245,6 +245,16 @@ WARNING_TEXT: dict[WarningCode, Callable[[dict[str, str]], str]] = {
         "Für mindestens eine Rechnung fehlt der Nettobetrag; die 15 %-Grenze rechnet dort mit "
         "geschätzter Umsatzsteuer."
     ),
+    WarningCode.LIMIT_PRIVATE_COST_UNDATED: lambda p: (
+        f"Für eine von einem anderen Konto bezahlte Reparatur ({p.get('label', '')}) fehlt das "
+        "Leistungsdatum; sie zählt vorsichtshalber zur 15 %-Grenze der ersten drei Jahre nach "
+        "dem Kauf."
+    ),
+    WarningCode.LIMIT_PRIVATE_COST_AFTER_WINDOW: lambda p: (
+        f"Eine von einem anderen Konto bezahlte Reparatur ({p.get('label', '')}) ist kurz nach "
+        "dem Dreijahresfenster datiert: wann wurde die Arbeit ausgeführt? Eine Leistung im "
+        "Fenster zählt zur 15 %-Grenze."
+    ),
     WarningCode.ANSCHAFFUNGSNAH_PERFORMANCE_DATE_CHECK: lambda p: (
         f"Kosten von {_p(p)}, bezahlt kurz nach dem Dreijahresfenster: wann wurde die Arbeit "
         "ausgeführt? Ein Leistungszeitraum im Fenster zählt zur 15 %-Grenze."
@@ -642,6 +652,21 @@ def _afa_annex(draft: AnlageVDraft, facts: DraftFacts) -> list:
                         _money(abs(a.amount)),
                     ]
                 )
+        # D137: a repair paid from another account that joined the basis (the 15 % crossing)
+        private = {r.id: r for r in facts.tax_inputs}
+        limit = draft.limit_15
+        for b in [] if limit is None else limit.basis_additions:
+            row = private.get(b.tax_input_id) if b.tax_input_id is not None else None
+            if row is None or b.tax_year > draft.tax_year:
+                continue
+            label = getattr(row.value, "label", None) or "Kosten"
+            rows.append(
+                [
+                    f"+ nachträgliche Herstellungskosten, von einem anderen Konto bezahlt: "
+                    f"{label} (Steuerjahr {row.tax_year})",
+                    _money(b.amount),
+                ]
+            )
         rows.append(["+ nachträgliche Herstellungskosten gesamt", _money(afa.additions)])
     if afa.method == "useful_life":  # D79: the book value over the remaining useful life
         rows.append(

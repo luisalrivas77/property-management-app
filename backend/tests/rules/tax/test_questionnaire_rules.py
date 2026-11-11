@@ -20,6 +20,7 @@ from hausbuch.rules.tax.questionnaire import (
 )
 from hausbuch.schemas.employment import CommuteFact, EquipmentFact, ReturnInputFact
 from hausbuch.schemas.enums import ReturnInputKind as K
+from hausbuch.schemas.tax import TaxInputFact
 
 CASES = load("questionnaire").cases
 
@@ -120,6 +121,62 @@ def test_a_spanning_item_is_never_copied_but_a_subscription_is():
     assert copied == [UUID(int=11)], "only the subscription is copied"
     assert by_key["owner.subscriptions"].proposed_rows[0].value.bought_on == date(2026, 3, 1)
     assert [r.id for r in by_key["owner.equipment_prior"].reconfirm_rows] == [UUID(int=10)]
+
+
+@pytest.mark.rule
+def test_a_cost_read_from_a_bill_is_never_copied_but_a_typed_one_is():
+    """Phase 3 D137 review F2: a private cost read from a bill (its document, a category) is
+    one-off; a copy confirmed next year would be deducted again and counted twice in the 15 %
+    test. A typed recurring cost (postage) and the trips are still copied."""
+    prop, bill = UUID(int=2), UUID(int=3)
+
+    def row(n: int, value: dict, document_id=None) -> TaxInputFact:
+        return TaxInputFact(
+            id=UUID(int=20 + n),
+            property_id=prop,
+            kind="private_cost",
+            tax_year=2025,
+            document_id=document_id,
+            value=value,
+        )
+
+    rows = [
+        row(0, {"cost_class": "postage", "label": "Porto", "amount": "12.00"}),
+        row(1, {"cost_class": "travel", "label": "Fahrten", "trips": 4, "km_round_trip": 30}),
+        row(
+            2,
+            {
+                "cost_class": "other",
+                "label": "Reparatur",
+                "amount": "297.50",
+                "category": "repairs",
+            },
+            bill,
+        ),
+        row(
+            3,
+            {
+                "cost_class": "financing",
+                "label": "Notar",
+                "amount": "390.00",
+                "category": "loan_fees",
+            },
+            bill,
+        ),
+        row(4, {"cost_class": "postage", "label": "Porto laut Beleg", "amount": "5.00"}, bill),
+    ]
+    slots = prefill(
+        2026,
+        registry.questionnaire(2026),
+        [],
+        [],
+        [],
+        [prop],
+        prior_tax_rows=rows,
+        rule_set=rules_for(2026),
+    )
+    copied = sorted(r.carried_from_id for s in slots for r in s.proposed_rows if r.carried_from_id)
+    assert copied == [UUID(int=20), UUID(int=21)]
 
 
 @pytest.mark.rule

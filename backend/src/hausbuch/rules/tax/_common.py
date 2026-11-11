@@ -26,6 +26,7 @@ from hausbuch.schemas.tax import (
     WarningCode,
 )
 
+from .rounding import cents
 from .tax_year import tax_year_of
 
 ZERO = Decimal("0")
@@ -76,6 +77,23 @@ def input_sources(row: TaxInputFact) -> list[SourceRef]:
     if row.document_id is not None:
         refs.append(SourceRef(kind="document", id=row.document_id))
     return refs
+
+
+def paid_bills(allocations: Iterable[AllocationFact]) -> dict[UUID, list[AllocationFact]]:
+    """The confirmed allocations per Beleg (phase 2 D135): a private_cost row whose document is
+    one of these bills was paid from the rental account after all, so neither the draft nor the
+    15 % test counts it (D137)."""
+    out: dict[UUID, list[AllocationFact]] = {}
+    for a in allocations:
+        if a.document_id is not None:
+            out.setdefault(a.document_id, []).append(a)
+    return out
+
+
+def shared(amount: Decimal, row: TaxInputFact) -> Decimal:
+    """A private_cost amount at the row's share, to the cent (phase 4b D111)."""
+    share = row.value.share
+    return cents(amount * share.numerator / share.denominator)
 
 
 def unique(refs: Iterable[SourceRef]) -> list[SourceRef]:

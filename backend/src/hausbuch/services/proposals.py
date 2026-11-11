@@ -123,7 +123,7 @@ from hausbuch.schemas.proposal import (
     ProposalApplyRecord,
     ProposalRecord,
 )
-from hausbuch.schemas.tax import TaxInput, TaxInputCreate, TaxInputKind
+from hausbuch.schemas.tax import LIMIT_15_CATEGORIES, TaxInput, TaxInputCreate, TaxInputKind
 from hausbuch.schemas.tenancy import InitialRent, TenancyCreate, TenantCreate
 
 from . import (
@@ -1071,6 +1071,11 @@ class _Apply:
             # The class follows the category the user confirmed or changed on the card
             # (financing exactly for loan_fees, D135), so changing one never contradicts the other.
             value["cost_class"] = "financing" if value["category"] == "loan_fees" else "other"
+            if value["category"] not in {c.value for c in LIMIT_15_CATEGORIES}:
+                # phase 3 D137: the work date and the net go only with a cost the 15 % test
+                # counts; a part moved to another category drops them
+                value.pop("performed_on", None)
+                value.pop("amount_net", None)
         if kind is TaxInputKind.INTEREST_CERTIFIED:
             if given.get("loan_id") is None:
                 linked = self.entity("link:loan")
@@ -1279,6 +1284,9 @@ _PREFILL_TAX_INPUTS = {
         "value.category",
         "value.label",
         "value.amount",
+        # phase 3 D137: on a repair, the work date and the net for the 15 % test
+        "value.performed_on",
+        "value.amount_net",
     ),
     # phase 5 D126: the Bescheid's schedule, one date and amount per slot (rules.prefill)
     TaxInputKind.GRUNDSTEUER_SCHEDULE: (

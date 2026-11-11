@@ -2944,13 +2944,13 @@ export interface components {
          * @description Herstellungskosten added to the AfA basis in the year paid, accruing from 1 January of
          *     that year (§5.2). The amount is gross: input VAT a VAT-exempt landlord cannot deduct is part
          *     of the Herstellungskosten (§9b Abs. 1 EStG); only the 15 % test itself is net (§5.3).
+         *     Since D137 it may be a private_cost row (tax_input_id) moved by the 15 % crossing.
          */
         BasisAddition: {
-            /**
-             * Allocation Id
-             * Format: uuid
-             */
-            allocation_id: string;
+            /** Allocation Id */
+            allocation_id?: string | null;
+            /** Tax Input Id */
+            tax_input_id?: string | null;
             /** Tax Year */
             tax_year: number;
             /** Amount */
@@ -3318,18 +3318,18 @@ export interface components {
              */
             same_amount_only: boolean;
         };
-        /** CountedCost */
+        /**
+         * CountedCost
+         * @description A cost the 15 % test counts: an allocation (booking_date set), or since D137 a
+         *     private_cost row (tax_input_id, no booking_date: the row has a tax year, not a bank line).
+         */
         CountedCost: {
-            /**
-             * Allocation Id
-             * Format: uuid
-             */
-            allocation_id: string;
-            /**
-             * Booking Date
-             * Format: date
-             */
-            booking_date: string;
+            /** Allocation Id */
+            allocation_id?: string | null;
+            /** Tax Input Id */
+            tax_input_id?: string | null;
+            /** Booking Date */
+            booking_date?: string | null;
             /** Tax Year */
             tax_year: number;
             /** Gross */
@@ -5804,6 +5804,11 @@ export interface components {
          *     for loan_fees); the draft then books it on that category's line of the rule set's
          *     category_lines, as a confirmed allocation of the category would land. The label is free
          *     text: it stays in the row and never enters the event payload (only amounts and codes do).
+         *
+         *     Phase 3 D137: a row whose category the 15 % test counts (LIMIT_15_CATEGORIES) may carry
+         *     performed_on (when the work was done, the date tested against the window, D76) and
+         *     amount_net (the bill's net for this part, before share; at most amount); a row without
+         *     them is counted conservatively. Other rows carry neither.
          */
         PrivateCostValue: {
             /**
@@ -5829,6 +5834,10 @@ export interface components {
              */
             share: components["schemas"]["Fraction"];
             category?: components["schemas"]["AllocationCategory"] | null;
+            /** Performed On */
+            performed_on?: string | null;
+            /** Amount Net */
+            amount_net?: string | null;
         };
         /**
          * ProgressionInfo
@@ -8262,7 +8271,7 @@ export interface components {
          * WarningCode
          * @enum {string}
          */
-        WarningCode: "year_end_straddle" | "afa.no_split" | "afa.cost_row_unpaid" | "afa.acquisition_cost_without_row" | "afa.purchase_price_mismatch" | "afa.useful_life_report" | "afa.movable_asset_no_evidence" | "afa.movable_asset_exceeds_building" | "limit.exceeded" | "limit.prior_year_amendment" | "limit.estimated_net" | "anschaffungsnah.performance_date_check" | "renovation.undecided" | "interest.certificate_mismatch" | "hausgeld.abrechnung_pending" | "income.other_review" | "income.pre_handover" | "income.living_area_missing" | "umlagen.mixed_terms" | "reduced_rent.no_market_rent" | "reduced_rent.prognosis_needed" | "reduced_rent.partial" | "draft.open_lines_excluded" | "draft.form_provisional" | "draft.allocation_without_property" | "archive.finanzamt_copy_needed" | "tax.travel_frequency" | "tax.private_cost_paid_from_account" | "anlage_n.certificate_missing" | "anlage_n.church_mismatch" | "anlage_n.tax_class_6" | "anlage_n.periods_overlap" | "anlage_n.days_implausible" | "anlage_n.home_office_capped" | "anlage_n.too_many_routes" | "anlage_n.receipt_missing" | "anlage_n.form_provisional" | "anlage_n.payslip_gap" | "anlage_n.payslip_no_ytd" | "anlage_n.work_room_records" | "anlage_n.work_room_centre" | "anlage_n.work_room_partial" | "anlage_n.first_workplace_check" | "return.progression_provisional" | "return.benefit_possible_double" | "return.children_mismatch" | "return.kindergeld_apply" | "return.child_over_18" | "return.childcare_until_14" | "return.donation_over_cap" | "return.filing_required" | "return.questionnaire_open" | "return.not_modelled" | "questionnaire_provisional" | "tax_export.questions_open";
+        WarningCode: "year_end_straddle" | "afa.no_split" | "afa.cost_row_unpaid" | "afa.acquisition_cost_without_row" | "afa.purchase_price_mismatch" | "afa.useful_life_report" | "afa.movable_asset_no_evidence" | "afa.movable_asset_exceeds_building" | "limit.exceeded" | "limit.prior_year_amendment" | "limit.estimated_net" | "limit.private_cost_undated" | "limit.private_cost_after_window" | "anschaffungsnah.performance_date_check" | "renovation.undecided" | "interest.certificate_mismatch" | "hausgeld.abrechnung_pending" | "income.other_review" | "income.pre_handover" | "income.living_area_missing" | "umlagen.mixed_terms" | "reduced_rent.no_market_rent" | "reduced_rent.prognosis_needed" | "reduced_rent.partial" | "draft.open_lines_excluded" | "draft.form_provisional" | "draft.allocation_without_property" | "archive.finanzamt_copy_needed" | "tax.travel_frequency" | "tax.private_cost_paid_from_account" | "anlage_n.certificate_missing" | "anlage_n.church_mismatch" | "anlage_n.tax_class_6" | "anlage_n.periods_overlap" | "anlage_n.days_implausible" | "anlage_n.home_office_capped" | "anlage_n.too_many_routes" | "anlage_n.receipt_missing" | "anlage_n.form_provisional" | "anlage_n.payslip_gap" | "anlage_n.payslip_no_ytd" | "anlage_n.work_room_records" | "anlage_n.work_room_centre" | "anlage_n.work_room_partial" | "anlage_n.first_workplace_check" | "return.progression_provisional" | "return.benefit_possible_double" | "return.children_mismatch" | "return.kindergeld_apply" | "return.child_over_18" | "return.childcare_until_14" | "return.donation_over_cap" | "return.filing_required" | "return.questionnaire_open" | "return.not_modelled" | "questionnaire_provisional" | "tax_export.questions_open";
         /** WerbungskostenComponents */
         WerbungskostenComponents: {
             commute?: components["schemas"]["CommuteComponent"] | null;

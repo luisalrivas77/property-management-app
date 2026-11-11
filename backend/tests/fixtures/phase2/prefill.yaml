@@ -1111,8 +1111,8 @@ cases:
         - key: tax_input:private_cost:repairs
           entity_type: tax_input
           mode: create
-          values: {tax_year: 2026, value.cost_class: other, value.category: repairs, value.label: Rechnung Reparatur Sanitär, value.amount: "297.50"}
-          derived: {tax_year: [due_on]}
+          values: {tax_year: 2026, value.cost_class: other, value.category: repairs, value.label: Rechnung Reparatur Sanitär, value.amount: "297.50", value.performed_on: "2026-06-10", value.amount_net: "250.00"}
+          derived: {tax_year: [due_on], value.amount_net: [cost_lines, amount_total]}
           notes_contain: ["Erhaltungsaufwand", "anderen Konto"]
 
   - id: repair_invoice_paid_from_rental_account
@@ -1162,8 +1162,8 @@ cases:
         - key: tax_input:private_cost:repairs
           entity_type: tax_input
           mode: create
-          values: {tax_year: 2026, value.cost_class: other, value.category: repairs, value.label: Rechnung Reparatur Sanitär, value.amount: "238.00"}
-          derived: {tax_year: [due_on], value.amount: [cost_lines, amount_total]}
+          values: {tax_year: 2026, value.cost_class: other, value.category: repairs, value.label: Rechnung Reparatur Sanitär, value.amount: "238.00", value.performed_on: "2026-06-10", value.amount_net: "200.00"}
+          derived: {tax_year: [due_on], value.amount: [cost_lines, amount_total], value.amount_net: [cost_lines, amount_total]}
 
   - id: darlehen_rate_derived_from_tilgungssatz
     description: The contract states Sollzins and anfängliche Tilgung but no Rate; 300,000 x (3.6 % + 2 %) / 12 = 1,400.00.
