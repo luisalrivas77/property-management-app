@@ -633,6 +633,47 @@ def test_one_buyers_grunderwerbsteuer_notices_keep_the_total(
     }
 
 
+def test_a_grunderwerbsteuer_rest_row_without_its_lowering_patch_is_refused(
+    run, read, job, fresh_workspaces, blob_store, enqueued
+):
+    """D145 review: the rest row is right only together with the patch that lowers the row
+    to this notice. With the old amount kept ("behalten") or the patch card skipped while
+    the rest card stays ticked, the apply is refused: nothing is written, the row stays
+    17,340.00 without a Beleg, and the proposal stays ready."""
+    ws, _ = fresh_workspaces
+    prop = run(ws, create_property, FLAT)
+    typed = run(
+        ws,
+        add_acquisition_cost,
+        AcquisitionCostCreate(
+            property_id=prop.id,
+            kind=AcquisitionCostKind.REAL_ESTATE_TRANSFER_TAX,
+            amount=Decimal("17340.00"),
+        ),
+    )
+    _, ready, _ = _read_ready(
+        run, job, ws, blob_store, enqueued, GREST, _grest_values("GrESt 1"), b"%PDF grest 1"
+    )
+    patch_key = "cost:real_estate_transfer_tax"
+    accepted = _accept_all(ready).records
+
+    def with_patch(**change):
+        return ProposalApplyBody(
+            records=[r.model_copy(update=change) if r.key == patch_key else r for r in accepted]
+        )
+
+    [patch] = [r for r in accepted if r.key == patch_key]
+    kept = with_patch(values={f: v for f, v in patch.values.items() if f != "amount"})
+    for body in (kept, with_patch(skip=True)):
+        with pytest.raises(RuleViolationError) as refused:
+            run(ws, proposals.apply_proposal, ready.id, body, iban_key=TEST_IBAN_KEY)
+        assert refused.value.code == proposals.PROPOSAL_OTHER_NOTICE_WITHOUT_PATCH
+
+    [row] = read(ws, list_acquisition_costs, prop.id)
+    assert (row.id, row.amount, row.document_id) == (typed.id, Decimal("17340.00"), None)
+    assert read(ws, proposals.get_proposal, ready.id).status is ProposalStatus.READY
+
+
 def test_a_loan_contract_creates_the_loan_on_the_only_property(
     run, read, job, fresh_workspaces, blob_store, enqueued
 ):

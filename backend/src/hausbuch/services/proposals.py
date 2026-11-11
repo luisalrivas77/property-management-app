@@ -143,6 +143,9 @@ from .context import CommandContext
 from .errors import NotFoundError, RuleViolationError
 from .events import append_event
 
+# D145 review: a Grunderwerbsteuer rest row applied without the patch that lowers its row.
+PROPOSAL_OTHER_NOTICE_WITHOUT_PATCH = "proposal.other_notice_without_patch"
+
 # Undecided and still in the job's hands: a re-run supersedes these, the job may write them.
 _IN_FLIGHT = (ProposalStatus.QUEUED, ProposalStatus.RUNNING)
 _SUPERSEDABLE = (ProposalStatus.QUEUED, ProposalStatus.RUNNING, ProposalStatus.READY)
@@ -871,7 +874,9 @@ class _Apply:
             data: dict[str, Any] = {"property_id": str(self.property_id(record.key))}
             # D145: the rest of a Grunderwerbsteuer row that one buyer's notice did not cover
             # belongs to the other notice, so it is created without this document as its Beleg.
-            if not record.key.endswith(f":{OTHER_NOTICE}"):
+            if record.key.endswith(f":{OTHER_NOTICE}"):
+                self._require_lowered_row(record.key)
+            else:
                 data["document_id"] = str(self.document_id)
             data |= values
             created = properties.add_acquisition_cost(
@@ -885,6 +890,17 @@ class _Apply:
         )
         properties.update_acquisition_cost(self.ctx, target, **patch.changes())
         return target
+
+    def _require_lowered_row(self, key: str) -> None:
+        """D145 review: the rest row is right only together with its companion patch that
+        lowers the row to this notice. Kept the old amount (Betrag "behalten") or the patch
+        card skipped while the rest card stays ticked would count the rest twice, so the
+        apply is refused and nothing is written. Read from the answers, not the apply order."""
+        companion = self.given.get(key.removesuffix(f":{OTHER_NOTICE}"))
+        if companion is None or companion.skip or companion.values.get("amount") is None:
+            raise RuleViolationError(
+                [PROPOSAL_OTHER_NOTICE_WITHOUT_PATCH], f"record {key!r} without its patch"
+            )
 
     def _loan(self, record: ProposalRecord, values: dict[str, Any]) -> UUID:
         if record.mode == "create":
