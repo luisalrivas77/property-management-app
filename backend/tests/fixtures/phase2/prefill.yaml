@@ -2177,10 +2177,11 @@ cases:
   # (casefold, whitespace collapsed). Found: a property record (patch when the stored
   # living_area_m2 is empty or differs, unchanged when equal), living_area_m2 derived from
   # [dwellings], its notes naming the row and "Zeile 13". Otherwise (two rows fit one key, or
-  # none): with no area stored, a patch with living_area_m2 empty (null) and every row
-  # offered in `options` ({value, label}: "WE 1 · EG links · MEA 62/1000 · 48,20 m²"), notes
-  # "Welche Wohnung ist Ihre?"; with an area stored, no property record, typing's notes
-  # contain "bleibt". Rows are never summed. Records: typing, property, link:property.
+  # none): a patch with living_area_m2 empty (null), current the stored area (null or not),
+  # and every row offered in `options` ({value, label}: "WE 1 · EG links · MEA 62/1000 ·
+  # 48,20 m²"), notes "Welche Wohnung ist Ihre?" (and "Ohne Klick bleibt" when an area is
+  # stored: an empty field is not sent, so the stored area stays). Rows are never summed.
+  # Records: typing, property, link:property.
 
   - id: building_records_single_dwelling_patch_on_empty
     description: D139 (a). A Wohnflächenberechnung of one flat at the Kastanienallee, whose area is empty; patch with its area.
@@ -2357,10 +2358,11 @@ cases:
               - {value: "68.40", label: "WE 2 · 1. OG links · MEA 85/1000 · 68,40 m²"}
               - {value: "61.40", label: "WE 3 · 1. OG rechts · MEA 85/1000 · 61,40 m²"}
 
-  - id: building_records_no_key_keeps_the_stored_area
+  - id: building_records_no_key_offers_the_rows_over_the_stored_area
     description: >-
-      D139 (d) with an area stored: nothing names the flat in the list, so no record is
-      proposed (an empty field would clear the stored 68,40 m²); a note says it stays.
+      D139 (d) with an area stored: nothing names the flat in the list, so the rows are
+      offered as with an empty area, current the stored 68,40 m². An empty field is not
+      sent, so applying it unclicked leaves the stored area; a note says so.
     kind: general
     context:
       document_id: *DOC
@@ -2371,13 +2373,21 @@ cases:
       document_date: {v: "1998-03-02", p: 1, q: "02.03.1998"}
       dwellings: *WFB_ROWS
     expect:
-      keys: [typing, link:property]
+      keys: [typing, property, link:property]
       records:
-        - key: typing
-          entity_type: typing
-          mode: create
-          values: {type: other, subtype: building_records, title: Wohnflächenberechnung WEG, document_date: "1998-03-02", amount_total: null, period_start: null, period_end: null, counterparty: null, reference: null, notes: null}
-          notes_contain: [4 Wohnungen, bleibt]
+        - key: property
+          entity_type: property
+          mode: patch
+          target_id: *P
+          values: {living_area_m2: null}
+          current: {living_area_m2: "68.40"}
+          notes_contain: ["Welche Wohnung ist Ihre?", 4 Wohnungen, Ohne Klick bleibt, Zeile 13]
+          options:
+            living_area_m2:
+              - {value: "48.20", label: "WE 1 · EG links · MEA 62/1000 · 48,20 m²"}
+              - {value: "68.40", label: "WE 2 · 1. OG links · MEA 85/1000 · 68,40 m²"}
+              - {value: "58.80", label: "WE 3 · 1. OG rechts · MEA 79/1000 · 58,80 m²"}
+              - {value: "74.90", label: "WE 4 · 2. OG · MEA 103/1000 · 74,90 m²"}
 
   - id: building_records_address_matches_no_property
     description: D139. A Wohnflächenberechnung of another building (verified postal code); no link and no Wohnfläche.

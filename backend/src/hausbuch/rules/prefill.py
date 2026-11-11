@@ -219,11 +219,7 @@ _DWELLING_PICK_NOTE = (
     "Welche Wohnung ist Ihre? Die Wohnflächenberechnung nennt {count} Wohnungen; bitte Ihre "
     "unten anklicken, dann „Übernehmen“. "
 )
-_DWELLING_KEPT_NOTE = (
-    "Die Wohnflächenberechnung nennt {count} Wohnungen, und keine passt eindeutig zu Ihrer. "
-    "Die eingetragene Wohnfläche der Immobilie bleibt; ändern lässt sie sich auf der Seite "
-    "der Immobilie."
-)
+_DWELLING_KEPT_NOTE = "Ohne Klick bleibt die eingetragene Wohnfläche, wie sie ist. "
 # A catalogue document whose link was not found (D131): typing only, and what to do.
 _NO_PROPERTY_NOTE = (
     "Zu diesem Dokument wurde kein Objekt gefunden: die Adresse passt zu keinem oder zu "
@@ -1425,10 +1421,10 @@ class _Builder:
         household's row is (a) the only one, else (b) the one row whose MEA equals the flat's
         (a unit's on the property, or the Kaufvertrag's), else (c) the one row whose label
         equals a unit's or the Kaufvertrag's WE label (_norm); found, a patch or unchanged
-        record by _match_record, derived from [dwellings]. Otherwise (d): with no area
-        stored, a patch with the field empty and every row offered as an option (one click
-        in the review); with an area stored, no record (an empty apply would clear it), a
-        note on typing. Rows are never summed."""
+        record by _match_record, derived from [dwellings]. Otherwise (d): a patch with the
+        field empty, current the stored area, and every row offered as an option (one click
+        in the review). An empty field is not sent, so applying it unclicked changes no
+        stored area. Rows are never summed."""
         read = self.ev("dwellings")
         rows = parse_dwellings(read.value)
         if not rows:
@@ -1447,9 +1443,8 @@ class _Builder:
                 notes=[note + _LIVING_AREA_USE],
             )
             return
-        if prop.living_area_m2 is not None:
-            self.records[0].notes.append(_DWELLING_KEPT_NOTE.format(count=len(rows)))
-            return
+        stored = _property_current(prop)["living_area_m2"]
+        kept = _DWELLING_KEPT_NOTE if stored is not None else ""
         checks = ["cited"] if read.source is not None else []
         empty = ExtractedValue(value=None, source=read.source, checks=checks, confidence="low")
         self.add(
@@ -1458,8 +1453,8 @@ class _Builder:
             "patch",
             {"living_area_m2": empty},
             target_id=prop.id,
-            current={"living_area_m2": None},
-            notes=[_DWELLING_PICK_NOTE.format(count=len(rows)) + _LIVING_AREA_USE],
+            current={"living_area_m2": stored},
+            notes=[_DWELLING_PICK_NOTE.format(count=len(rows)) + kept + _LIVING_AREA_USE],
         )
         self.records[-1].options["living_area_m2"] = [
             FieldOption(value=row.area, label=_dwelling_label(row)) for row in rows
