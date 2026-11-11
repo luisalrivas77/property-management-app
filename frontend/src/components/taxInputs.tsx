@@ -462,7 +462,7 @@ function MarketRentForm({
   const [validFrom, setValidFrom] = useState(old?.valid_from ?? todayIso());
   const [source, setSource] = useState<MarketRentSource>(old?.source ?? "mietspiegel");
   const [documentId, setDocumentId] = useState<string | null>(replaces?.document_id ?? null);
-  const [note, setNote] = useState("");
+  const [note, setNote] = useState(replaces?.note ?? "");
   const [busy, setBusy] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
   const form = useFormErrors(useMemo(() => [...MARKET_KEYS], []));
