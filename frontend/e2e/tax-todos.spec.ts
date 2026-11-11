@@ -330,12 +330,12 @@ test("one deposit line is split to three tenancies from the to-do", async ({ pag
   expect(response.status()).toBe(200);
   // The reply holds what was stored (Playwright cannot read the body of a request the API
   // client sends as a Request object, so the stored rows are checked instead) and no rule.
-  const stored = (await response.json()) as {
+  const reply = (await response.json()) as {
     allocations: { amount: string; category: string; tenancy_id: string | null; unit_id: string | null }[];
     rule: unknown;
   };
-  expect(stored.rule).toBeNull();
-  const rows = stored.allocations.map((a) => [a.amount, a.category, a.tenancy_id ?? null, a.unit_id ?? null].join(" "));
+  expect(reply.rule).toBeNull();
+  const rows = reply.allocations.map((a) => [a.amount, a.category, a.tenancy_id ?? null, a.unit_id ?? null].join(" "));
   expect(rows.sort()).toEqual(
     [...rooms.map(({ tenancy, unit }) => `200.00 deposit_in ${tenancy} ${unit}`), "140.18 rent_cold  "].sort(),
   );
