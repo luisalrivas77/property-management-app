@@ -1564,7 +1564,10 @@ function RecordCard({
   const notes = record.notes ?? [];
 
   return (
-    <section className={state.skip && !unchanged ? "card proposal-card proposal-skipped" : "card proposal-card"} aria-labelledby={headingId}>
+    <section
+      className={state.skip && !unchanged && !proofLink ? "card proposal-card proposal-skipped" : "card proposal-card"}
+      aria-labelledby={headingId}
+    >
       <div className="row card-head proposal-card-head">
         <h3 id={headingId}>{title}</h3>
         <span className={record.mode === "correction" ? "corrected" : record.mode === "create" ? "badge" : "tag"}>{RECORD_MODE[record.mode]}</span>
