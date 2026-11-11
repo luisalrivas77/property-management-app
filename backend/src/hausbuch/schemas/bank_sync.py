@@ -92,6 +92,7 @@ class SyncEvent(StrEnum):
     IMPORTED = "imported"  # upload_document + import_statement finished
     ERROR = "error"  # any bank.* failure the job records on the row
     WORKER_LOST = "worker_lost"  # the worker stopped (a redeploy) while the row was open
+    RETRY = "retry"  # step 1: bank.unreachable, the job asks Procrastinate to run it again
 
 
 # --- Records (§4.2) ----------------------------------------------------------------------
