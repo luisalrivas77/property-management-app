@@ -10,10 +10,16 @@ import Link from "next/link";
 import { useCallback, useId, useState } from "react";
 
 import { api, ok } from "@/api/client";
-import type { AllocationFact, ChecklistDocumentRef, ChecklistStatus, DocumentChecklistItem } from "@/api/schemas";
-import { formatDate } from "@/components/format";
+import type {
+  AllocationFact,
+  ChecklistBankLine,
+  ChecklistDocumentRef,
+  ChecklistStatus,
+  DocumentChecklistItem,
+} from "@/api/schemas";
+import { formatDate, formatMoney } from "@/components/format";
 import { DOCUMENT_SUBTYPE, DOCUMENT_TYPE } from "@/components/labels";
-import { REQUIREMENT_GUIDE, requirementFix, requirementTodo } from "@/components/todos";
+import { REQUIREMENT_GUIDE, checklistAction, requirementTodo } from "@/components/todos";
 import { Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 
@@ -38,6 +44,11 @@ function refLabel(ref: ChecklistDocumentRef): string {
   return `${kind} · ${date}`;
 }
 
+/** "Bankumsatz vom 04.05.2026 · 1.000,00 €": a deposit paid into the account (D142). */
+function bankLineLabel(line: ChecklistBankLine): string {
+  return `Bankumsatz vom ${formatDate(line.booking_date)} · ${formatMoney(line.amount)}`;
+}
+
 function hintFor(item: DocumentChecklistItem): string {
   const base = REQUIREMENT_GUIDE[item.code].hint;
   if (item.status === "incomplete") return "Steuerjahr am Dokument eintragen";
@@ -45,22 +56,29 @@ function hintFor(item: DocumentChecklistItem): string {
   if (item.code === "price_split" && item.status === "present" && item.documents.length === 0) {
     return "Ergebnis der BMF-Arbeitshilfe gespeichert";
   }
+  if (item.code === "deposit_record" && item.status === "present" && item.documents.length === 0) {
+    return "Nachgewiesen durch die Zahlung auf dem Konto";
+  }
   return base;
 }
 
 /** `year`, when given, fixes the tax year and hides the selector (the Steuern screen, whose
  * own selector sets it). `refresh` reloads the list after an action elsewhere on the screen;
- * `payments` (the draft's cited payments) lets a missing receipt open its bank line. */
+ * `payments` (the draft's cited payments) lets a missing receipt open its bank line;
+ * `onChanged` is called after a row's action changed the ledger (a deposit linked to its bank
+ * line, D142), else the list reloads itself. */
 export function ChecklistTab({
   propertyId,
   year: fixedYear,
   refresh = 0,
   payments,
+  onChanged,
 }: {
   propertyId: string;
   year?: number;
   refresh?: number;
   payments?: Map<string, AllocationFact>;
+  onChanged?: () => void;
 }) {
   const [chosenYear, setYear] = useState<number | null>(null);
   const year = fixedYear ?? chosenYear;
@@ -117,6 +135,8 @@ export function ChecklistTab({
                   year={data.tax_year}
                   propertyId={propertyId}
                   payments={payments}
+                  items={data.items}
+                  onChanged={onChanged ?? checklist.reload}
                 />
               ))}
             </ul>
@@ -133,14 +153,19 @@ function ChecklistRow({
   year,
   propertyId,
   payments,
+  items,
+  onChanged,
 }: {
   item: DocumentChecklistItem;
   year: number;
   propertyId: string;
   payments?: Map<string, AllocationFact>;
+  items: readonly DocumentChecklistItem[];
+  onChanged: () => void;
 }) {
   const guide = REQUIREMENT_GUIDE[item.code];
-  const fix = requirementFix(item, { propertyId, payments });
+  const action = checklistAction(item, { propertyId, payments, items, onChanged });
+  const bankLines = item.bank_lines ?? [];
   const todo = requirementTodo(item);
   return (
     <li className={`checklist-item checklist-${item.status}`}>
@@ -158,14 +183,23 @@ function ChecklistRow({
             <strong>Was tun:</strong> {todo}
           </p>
         ) : null}
-        {item.documents.length > 0 || fix ? (
+        {item.documents.length > 0 || bankLines.length > 0 || action ? (
           <p className="checklist-links">
             {item.documents.map((ref) => (
               <Link key={ref.id} href={`/documents/${ref.id}`}>
                 {refLabel(ref)}
               </Link>
             ))}
-            {fix ? <Link href={fix.href}>{fix.label}</Link> : null}
+            {bankLines.map((line) =>
+              line.transaction_id ? (
+                <Link key={line.allocation_id} href={`/inbox?umsatz=${line.transaction_id}`}>
+                  {bankLineLabel(line)}
+                </Link>
+              ) : (
+                <span key={line.allocation_id}>{bankLineLabel(line)}</span>
+              ),
+            )}
+            {action}
           </p>
         ) : null}
       </div>
