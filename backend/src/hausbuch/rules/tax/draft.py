@@ -283,7 +283,8 @@ PROOF_TOLERANCE = proof_match.TOLERANCE
 class _ProofNeed:
     """One part of a bill that needs a proof of payment in a year (D143): the acquisition
     cost rows that carry it, or its private_cost rows. acquisition and private: the amounts
-    of all the bill's rows (rules.proof_match), whichever part this is."""
+    of all the bill's rows (rules.proof_match), whichever part this is; parts: the cost lines
+    its reading states (D150, facts.bill_parts; used only when they sum to the total)."""
 
     bill: UUID
     source: str
@@ -293,6 +294,7 @@ class _ProofNeed:
     name: dict[str, str]
     acquisition: list[Decimal]
     private: list[Decimal]
+    parts: list[Decimal]
 
 
 def _proven(amount: Decimal, proofs: list[Decimal | None]) -> bool:
@@ -314,6 +316,9 @@ def _proof_warning(
     if _proven(need.amount, proofs) or _proven(need.combined, proofs):
         return []
     extra = {"proof_amount": money_str(sum(proofs, ZERO))} if proofs else {}
+    rest = _proof_rest(need, proofs)
+    if rest is not None:
+        extra["proof_rest"] = money_str(rest)
     offer = _proof_offer(need, unlinked)
     if offer is not None:
         assert offer.amount is not None  # _proof_offer offers read amounts only
@@ -334,6 +339,24 @@ def _proof_warning(
     ]
 
 
+def _proof_rest(need: _ProofNeed, proofs: list[Decimal | None]) -> Decimal | None:
+    """D150: what is still to be proven of a bill not yet proven, when every linked proof pays
+    one of its parts (rules.proof_match.bill_parts: the cost lines its reading states, summing
+    to the combined total) and together they pay less than that total: the combined total
+    minus their sum. None when no proof is linked, the bill has no parts, or a proof pays
+    none of them (then the amount does not fit, "Betrag passt nicht")."""
+    parts = proof_match.bill_parts(need.parts, need.acquisition, need.private)
+    read = [p for p in proofs if p is not None]
+    if not parts or not read or len(read) != len(proofs):
+        return None
+    if not all(any(abs(p - part) <= PROOF_TOLERANCE for part in parts) for p in read):
+        return None
+    paid = sum(read, ZERO)
+    if paid >= need.combined - PROOF_TOLERANCE:
+        return None
+    return need.combined - paid
+
+
 def _proof_offer(need: _ProofNeed, unlinked: list[UnlinkedProofFact]) -> UnlinkedProofFact | None:
     """D149: the one payment proof linked to no bill whose read amount fits this bill
     (rules.proof_match, as the pre-fill proposes a bill for a proof); None when none or
@@ -342,7 +365,8 @@ def _proof_offer(need: _ProofNeed, unlinked: list[UnlinkedProofFact]) -> Unlinke
         p
         for p in unlinked
         if p.amount is not None
-        and proof_match.proof_fit(p.amount, need.acquisition, need.private) is not None
+        and proof_match.proof_fit(p.amount, need.acquisition, need.private, parts=need.parts)
+        is not None
     ]
     return fitting[0] if len(fitting) == 1 else None
 
@@ -374,6 +398,9 @@ def _proof_needs(facts: DraftFacts, tax_year: int) -> list[_ProofNeed]:
         if r.value.amount is not None:
             combined[r.document_id] = combined.get(r.document_id, ZERO) + r.value.amount
 
+    def parts(bill: UUID) -> list[Decimal]:
+        return list(facts.bill_parts.get(bill, []))
+
     def amounts(bill: UUID) -> tuple[list[Decimal], list[Decimal], bool]:
         rows = [r for r in private if r.document_id == bill]
         known = all(r.value.amount is not None for r in rows)
@@ -401,6 +428,7 @@ def _proof_needs(facts: DraftFacts, tax_year: int) -> list[_ProofNeed]:
                     name={"kind": rows[0].kind.value},
                     acquisition=acquisition if known else [],
                     private=private_amounts if known else [],
+                    parts=parts(bill),
                 )
             )
 
@@ -418,6 +446,7 @@ def _proof_needs(facts: DraftFacts, tax_year: int) -> list[_ProofNeed]:
                 name={"label": rows[0].value.label},
                 acquisition=acquisition if known else [],
                 private=private_amounts if known else [],
+                parts=parts(bill),
             )
         )
     return out
@@ -454,7 +483,9 @@ def _payment_proofs(facts: DraftFacts, tax_year: int) -> list[DraftWarning]:
     one per part of the bill (_proof_needs); a proof of the combined total proves both parts.
     D149: when exactly one payment proof linked to no bill (facts.unlinked_proofs) fits the
     bill by its amount, the warning offers it (params proof_offer, proof_offer_amount), for
-    the to-do's „Vorhandenen Nachweis zuordnen“."""
+    the to-do's „Vorhandenen Nachweis zuordnen“. D150: when the linked proofs each pay one of
+    the bill's parts but not all of it, the warning says what is still missing (proof_rest,
+    _proof_rest)."""
     proofs = _proofs_by_bill(facts)
     unlinked = sorted(facts.unlinked_proofs, key=lambda p: str(p.proof_document_id))
     out: list[DraftWarning] = []

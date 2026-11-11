@@ -278,6 +278,9 @@ class ExistingProofBill(Schema):
     # (else the file's name) and date; None when the bill has neither.
     title: str | None = None
     document_date: date | None = None
+    # D150: the amounts of the cost lines the bill's current reading states (empty without a
+    # reading or lines); rules.proof_match uses them only when they sum to the bill's total.
+    parts: list[Money] = Field(default_factory=list)
 
 
 class PrefillContext(Schema):

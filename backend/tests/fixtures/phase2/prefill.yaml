@@ -220,7 +220,10 @@
 #   bill's id, label: "<title> vom <date>, <amount> – Betrag passt / passt zu einem Teil der
 #   Rechnung / passt nicht"}), candidates by date then id. A candidate fits (rules.proof_match)
 #   when the proof's magnitude is within 0.01 of its combined total or its private part alone
-#   (whole), or of one of its acquisition cost rows (part: one buyer's Grunderwerbsteuer, D145).
+#   (whole), or of one of its acquisition cost rows (part: one buyer's Grunderwerbsteuer, D145),
+#   or of one of its parts (part, D150): ExistingProofBill.parts, the amounts of the cost lines
+#   the bill's reading states, used only when they sum to its combined total within 0.01 (a
+#   credit line or one of 0.00 is no part).
 #   Exactly one fits: target_id is its id derived from [amount], the notes name it, and a whole
 #   fit proposes the year moves as on the to-do path; several or none: target_id null and the
 #   notes ask to pick one or „keine dieser Rechnungen“.
@@ -3901,6 +3904,79 @@ cases:
             target_id:
               - {value: *DOC_BILL_C, label: "Grunderwerbsteuerbescheide vom 20.04.2026, 11.000,00 € – Betrag passt zu einem Teil der Rechnung"}
               - {value: *DOC_BILL_A, label: "Rechnung Malerarbeiten vom 03.12.2026, 595,00 € – Betrag passt nicht"}
+
+  - id: payment_proof_upload_fits_one_line_of_the_bill
+    description: >
+      D150. One document holds both buyers' Grunderwerbsteuerbescheide, read as two cost
+      lines of 5,687.00 (parts), but the property has ONE row of 11,374.00 with it as Beleg.
+      The proof pays 5,687.00, one buyer's notice: it fits one line of the bill (the lines
+      sum to the row), so the bill is pre-selected with „Betrag passt zu einem Teil der
+      Rechnung“ and the note that the rest's proof is still needed; nothing is moved.
+    kind: payment_proof
+    context:
+      document_id: *DOC
+      classification: *CL_PROOF
+      properties: [*PROP_LINDEN]
+      proof_candidates:
+        - document_id: *DOC_BILL_C
+          title: Grunderwerbsteuerbescheide
+          document_date: 2026-04-20
+          acquisition_costs:
+            - {id: *C1, property_id: *P, kind: real_estate_transfer_tax, amount: "11374.00", document_id: *DOC_BILL_C}
+          parts: ["5687.00", "5687.00"]
+        - document_id: *DOC_BILL_A
+          title: Rechnung Malerarbeiten
+          document_date: 2026-12-03
+          private_costs:
+            - {id: *PC3, tax_year: 2026, label: Rechnung Malerarbeiten, amount: "595.00"}
+    extraction:
+      paid_on: {v: "2026-05-02", p: 1, q: "Ausgeführt am 02.05.2026"}
+      amount: {v: "-5687.00", p: 1, q: "Betrag -5.687,00 EUR"}
+    expect:
+      keys: [typing, link:document]
+      records:
+        - key: link:document
+          entity_type: link
+          mode: create
+          values: {target_id: *DOC_BILL_C}
+          derived: {target_id: [amount]}
+          notes_contain: ["Zahlungsnachweis für: Grunderwerbsteuerbescheide vom 20.04.2026, 11.374,00 € – Betrag passt zu einem Teil der Rechnung", "übrigen Betrag"]
+          options:
+            target_id:
+              - {value: *DOC_BILL_C, label: "Grunderwerbsteuerbescheide vom 20.04.2026, 11.374,00 € – Betrag passt zu einem Teil der Rechnung"}
+              - {value: *DOC_BILL_A, label: "Rechnung Malerarbeiten vom 03.12.2026, 595,00 € – Betrag passt nicht"}
+
+  - id: payment_proof_upload_lines_not_summing_are_no_parts
+    description: >
+      D150. The same bill, but its reading's lines (5,687.00 and 5,600.00) do not sum to the
+      row's 11,374.00: they are no parts, so the 5,687.00 proof fits no bill and nothing is
+      pre-selected (as before D150).
+    kind: payment_proof
+    context:
+      document_id: *DOC
+      classification: *CL_PROOF
+      properties: [*PROP_LINDEN]
+      proof_candidates:
+        - document_id: *DOC_BILL_C
+          title: Grunderwerbsteuerbescheide
+          document_date: 2026-04-20
+          acquisition_costs:
+            - {id: *C1, property_id: *P, kind: real_estate_transfer_tax, amount: "11374.00", document_id: *DOC_BILL_C}
+          parts: ["5687.00", "5600.00"]
+    extraction:
+      paid_on: {v: "2026-05-02", p: 1, q: "Ausgeführt am 02.05.2026"}
+      amount: {v: "-5687.00", p: 1, q: "Betrag -5.687,00 EUR"}
+    expect:
+      keys: [typing, link:document]
+      records:
+        - key: link:document
+          entity_type: link
+          mode: create
+          values: {target_id: null}
+          notes_contain: ["Keine offene Rechnung hat den Betrag 5.687,00 €"]
+          options:
+            target_id:
+              - {value: *DOC_BILL_C, label: "Grunderwerbsteuerbescheide vom 20.04.2026, 11.374,00 € – Betrag passt nicht"}
 
   - id: payment_proof_upload_amount_unread_offers_every_bill
     description: >
