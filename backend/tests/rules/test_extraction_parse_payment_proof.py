@@ -59,3 +59,36 @@ def test_the_scrub_is_idempotent():
     text = "Auftraggeber\nAna Testkauf\nKundennummer: 7788123\nEmpfänger: Notar Dr. Max Beispiel"
     once = scrub_payment_proof(text)
     assert scrub_payment_proof(once) == once
+
+
+@pytest.mark.parametrize(
+    ("text", "want"),
+    [
+        ("Account holder: Ana Testkauf", f"Account holder: {SCRUBBED}"),
+        (
+            "Sender: Ana Testkauf  Recipient: Notar Dr. Max Beispiel",
+            f"Sender: {SCRUBBED}  Recipient: Notar Dr. Max Beispiel",
+        ),
+        (
+            "Payer Ana Testkauf Payee Notar Dr. Max Beispiel",
+            f"Payer {SCRUBBED}Payee Notar Dr. Max Beispiel",
+        ),
+        ("Customer number: 7788123", f"Customer number: {SCRUBBED}"),
+        ("Account\nAna Testkauf", f"Account\n{SCRUBBED}"),
+    ],
+)
+def test_the_payers_english_labels_count_too(text, want):
+    """D149: a bank's one-transaction summary also comes in English ("Transaction Summary")."""
+    assert scrub_payment_proof(text) == want
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Transaction Summary\nTransfer executed on 05.01.2027",
+        "Recipient: Notar Dr. Max Beispiel\nAmount: -1,309.00 EUR\nReference: Invoice 2026-0456",
+        "From 01.01.2027 to 31.01.2027",
+    ],
+)
+def test_english_lines_without_a_payer_label_are_untouched(text):
+    assert scrub_payment_proof(text) == text

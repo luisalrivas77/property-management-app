@@ -5,10 +5,10 @@
  "recorded_on": "2026-11-11",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "77cb7da29af32068",
-  "request_sha256": "5cdab4de94f6723982ac59831287bded5eaa72b08be4768d33daeece651bfe3e",
+  "prompt_version": "1a1f1775ce7fd623",
+  "request_sha256": "c036ccf32729db8c1d9c23e72863f6a45b632f071ccec86cce5b9d7b28bef551",
   "message": {
-   "id": "msg_011CgwXCdamdLvzbpp2kJvg9",
+   "id": "msg_011CgwiiMMLCjCFNAsEZ2sxP",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 8315,
+    "input_tokens": 8593,
     "output_tokens": 42,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -48,7 +48,7 @@
    "prompt_version": "5a4e4a41623c9f1a",
    "request_sha256": "45a0d3231bb8f0f0c4c174e130bb0033a3945b34f2097b03e4fd969889d71c4b",
    "message": {
-    "id": "msg_011CgwXCN58FqY1jNTFCFeSR",
+    "id": "msg_011Cgwii5pw4fND29kdbdGoH",
     "container": null,
     "content": [
      {
@@ -73,7 +73,7 @@
      },
      {
       "citations": null,
-      "text": " → Mietvertrag Wohnraum\ndocument_date: ",
+      "text": " → Wohnraummietvertrag\ndocument_date: ",
       "type": "text"
      },
      {
@@ -368,7 +368,7 @@
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
      "input_tokens": 5820,
-     "output_tokens": 618,
+     "output_tokens": 616,
      "output_tokens_details": {
       "thinking_tokens": 0
      },

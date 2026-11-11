@@ -77,7 +77,10 @@ class Requests:
 
 def pretyped(doc: Doc) -> dict | None:
     """The typing code gives `doc` before its reading, as the recording stores it, or None
-    for a document the classifier types (every one but a payment proof, D143)."""
+    for a document the classifier types (every one but a payment proof uploaded from its
+    bill's to-do, D143; one uploaded anywhere else is classified, D149)."""
+    if not doc.typed_by_code:
+        return None
     typing = DocumentTyping(
         type=DocumentType(doc.type),
         subtype=DocumentSubtype(doc.subtype) if doc.subtype is not None else None,

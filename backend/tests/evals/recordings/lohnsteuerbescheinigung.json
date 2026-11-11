@@ -5,10 +5,10 @@
  "recorded_on": "2026-11-11",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "77cb7da29af32068",
-  "request_sha256": "46d5eaed621f53f639f68d6e36d6c2fa4fa235ada073db3ceda3e5bd49698dcb",
+  "prompt_version": "1a1f1775ce7fd623",
+  "request_sha256": "5be02b33a686190b2db3af3969b9891ae55a14028e5d9cb3ec3bdffe48af9be5",
   "message": {
-   "id": "msg_011CgwXFpqGer7f7N7DzTGwD",
+   "id": "msg_011CgwimbQG6EEKR33zes6ux",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 8849,
+    "input_tokens": 9127,
     "output_tokens": 52,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -48,7 +48,7 @@
    "prompt_version": "5a4e4a41623c9f1a",
    "request_sha256": "d00e2a6b6bcb095febf665386b0071844cb4c45d9dccb09ffed0da639f72c9bb",
    "message": {
-    "id": "msg_011CgwXFXPHjTsgBK2vnw63Y",
+    "id": "msg_011CgwimHXyMNYh5Ee131boW",
     "container": null,
     "content": [
      {
@@ -68,7 +68,7 @@
         "type": "page_location"
        }
       ],
-      "text": "Lohnsteuerbescheinigung",
+      "text": "Lohnsteuerbescheinigung 2026",
       "type": "text"
      },
      {
@@ -248,7 +248,7 @@
         "type": "page_location"
        }
       ],
-      "text": "60.000,00",
+      "text": "60.000,00 €",
       "type": "text"
      },
      {
@@ -268,7 +268,7 @@
         "type": "page_location"
        }
       ],
-      "text": "9.192,00",
+      "text": "9.192,00 €",
       "type": "text"
      },
      {
@@ -288,7 +288,7 @@
         "type": "page_location"
        }
       ],
-      "text": "735,36",
+      "text": "735,36 €",
       "type": "text"
      },
      {
@@ -308,7 +308,7 @@
         "type": "page_location"
        }
       ],
-      "text": "1.200,00",
+      "text": "1.200,00 €",
       "type": "text"
      },
      {
@@ -328,7 +328,7 @@
         "type": "page_location"
        }
       ],
-      "text": "480,00",
+      "text": "480,00 €",
       "type": "text"
      },
      {
@@ -348,7 +348,7 @@
         "type": "page_location"
        }
       ],
-      "text": "5.580,00",
+      "text": "5.580,00 €",
       "type": "text"
      },
      {
@@ -368,7 +368,7 @@
         "type": "page_location"
        }
       ],
-      "text": "5.580,00",
+      "text": "5.580,00 €",
       "type": "text"
      },
      {
@@ -388,7 +388,7 @@
         "type": "page_location"
        }
       ],
-      "text": "4.890,00",
+      "text": "4.890,00 €",
       "type": "text"
      },
      {
@@ -408,7 +408,7 @@
         "type": "page_location"
        }
       ],
-      "text": "1.080,00",
+      "text": "1.080,00 €",
       "type": "text"
      },
      {
@@ -428,7 +428,7 @@
         "type": "page_location"
        }
       ],
-      "text": "780,00",
+      "text": "780,00 €",
       "type": "text"
      }
     ],
@@ -448,7 +448,7 @@
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
      "input_tokens": 7106,
-     "output_tokens": 728,
+     "output_tokens": 751,
      "output_tokens_details": {
       "thinking_tokens": 0
      },

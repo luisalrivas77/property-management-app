@@ -5,10 +5,10 @@
  "recorded_on": "2026-11-11",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "77cb7da29af32068",
-  "request_sha256": "8698b9a0ae70dc640aa0ebf4fb56afbdc65e714871a6ea4be1a756f3aa5b63b4",
+  "prompt_version": "1a1f1775ce7fd623",
+  "request_sha256": "0d36ed06f609e1ebfdb62f18a8f3da8f4301dab1149085cac50cf74256d57cba",
   "message": {
-   "id": "msg_011CgwXHtni7yikCV2aUZkYm",
+   "id": "msg_011CgwiohPixMCovtEQtsoft",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 8481,
+    "input_tokens": 8759,
     "output_tokens": 43,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -48,7 +48,7 @@
    "prompt_version": "5a4e4a41623c9f1a",
    "request_sha256": "b22e6a28979f77bcc0c15206b1c8c43215410babd5314c67a0d9db119ba6104e",
    "message": {
-    "id": "msg_011CgwXHmJWUHJ6nkmSG6Sk9",
+    "id": "msg_011CgwioZjbpjcxJQvvwAx4E",
     "container": null,
     "content": [
      {
@@ -68,7 +68,7 @@
         "type": "page_location"
        }
       ],
-      "text": "Gutachten zur kürzeren tatsächlichen Nutzungsdauer",
+      "text": "Gutachten zur kürzeren Nutzungsdauer",
       "type": "text"
      },
      {
@@ -208,7 +208,7 @@
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
      "input_tokens": 5704,
-     "output_tokens": 229,
+     "output_tokens": 222,
      "output_tokens_details": {
       "thinking_tokens": 0
      },

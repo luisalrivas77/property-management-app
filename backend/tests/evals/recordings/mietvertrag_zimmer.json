@@ -5,10 +5,10 @@
  "recorded_on": "2026-11-11",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "77cb7da29af32068",
-  "request_sha256": "b16c929e11d65c94ab821e091f8d770d011355679a884f2df0307d6efcf4a9a3",
+  "prompt_version": "1a1f1775ce7fd623",
+  "request_sha256": "623572d77d5062f6991e28c8268e3d7b7a1f64b8d453a7c82da4623529461ed6",
   "message": {
-   "id": "msg_011CgwXCykDiTv4GSGr2tRVJ",
+   "id": "msg_011Cgwiihbysxmj2BMXoJKsd",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 8412,
+    "input_tokens": 8690,
     "output_tokens": 42,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -48,7 +48,7 @@
    "prompt_version": "5a4e4a41623c9f1a",
    "request_sha256": "c76d135040003d9f2ba082dcf0d91984b15fc2c9561c21c65eed994bd5c14aad",
    "message": {
-    "id": "msg_011CgwXCjFq6XVhUfTvmMUkC",
+    "id": "msg_011CgwiiSoFPb2gQoNJfWa9i",
     "container": null,
     "content": [
      {
@@ -68,12 +68,12 @@
         "type": "page_location"
        }
       ],
-      "text": "Mietvertrag möbliertes Zimmer",
+      "text": "Mietvertrag über ein möbliertes Zimmer",
       "type": "text"
      },
      {
       "citations": null,
-      "text": "\ndocument_date: ",
+      "text": " → Mietvertrag möbliertes Zimmer\ndocument_date: ",
       "type": "text"
      },
      {
@@ -353,7 +353,7 @@
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
      "input_tokens": 5949,
-     "output_tokens": 599,
+     "output_tokens": 620,
      "output_tokens_details": {
       "thinking_tokens": 0
      },

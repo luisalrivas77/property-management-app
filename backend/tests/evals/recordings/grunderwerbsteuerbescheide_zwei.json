@@ -5,10 +5,10 @@
  "recorded_on": "2026-11-11",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "77cb7da29af32068",
-  "request_sha256": "0247e96aaa992feedd1a9618efb69508ba94c48144317a10b1e23f5c51032361",
+  "prompt_version": "1a1f1775ce7fd623",
+  "request_sha256": "937d635b1d015dc2dde54612143298c2534d4daf492fdab7ff747cbd7783fbc7",
   "message": {
-   "id": "msg_011CgwXEfjYxNam2tBCj7rjk",
+   "id": "msg_011CgwikQ1Nzf1iUgRi1fXNt",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 8516,
+    "input_tokens": 8794,
     "output_tokens": 51,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -48,7 +48,7 @@
    "prompt_version": "5a4e4a41623c9f1a",
    "request_sha256": "c39f26cb8c8d72bf86be0c6e5651023061c421ca671917927a00ad5d4a08ba2c",
    "message": {
-    "id": "msg_011CgwXEVZNcnxRADKkZtnzr",
+    "id": "msg_011CgwikESfNYyjhy82BaZgN",
     "container": null,
     "content": [
      {
@@ -113,47 +113,7 @@
      },
      {
       "citations": null,
-      "text": "\namount_total: 16.800,00 €\nreference: ",
-      "type": "text"
-     },
-     {
-      "citations": [
-       {
-        "cited_text": "Finanzamt Musterstadt\r\nHerrn Jonas Beispielkauf, Birkenweg 3, 12345 Musterstadt\r\nBescheid über Grunderwerbsteuer\r\nSteuernummer 12/345/67891, vom 25.03.2026\r\nErwerbsvorgang: Kaufvertrag vom 12.02.2026, Urkunde 2345/2026\r\nErwerb eines Miteigentumsanteils zur Hälfte\r\nGegenleistung (anteilig): 140.000,00 EUR\r\nDie Steuer wird festgesetzt auf 6,0 % von 140.000 = 8.400,00 EUR\r\nfällig am 28.04.2026",
-        "document_index": 0,
-        "document_title": null,
-        "end_page_number": 2,
-        "file_id": null,
-        "start_page_number": 1,
-        "type": "page_location"
-       }
-      ],
-      "text": "12/345/67891",
-      "type": "text"
-     },
-     {
-      "citations": null,
-      "text": "; ",
-      "type": "text"
-     },
-     {
-      "citations": [
-       {
-        "cited_text": "Finanzamt Musterstadt\r\nFrau Lea Beispielkauf, Birkenweg 3, 12345 Musterstadt\r\nBescheid über Grunderwerbsteuer\r\nSteuernummer 12/345/67892, vom 25.03.2026\r\nErwerbsvorgang: Kaufvertrag vom 12.02.2026, Urkunde 2345/2026\r\nErwerb eines Miteigentumsanteils zur Hälfte\r\nGegenleistung (anteilig): 140.000,00 EUR\r\nDie Steuer wird festgesetzt auf 6,0 % von 140.000 = 8.400,00 EUR\r\nfällig am 28.04.2026",
-        "document_index": 0,
-        "document_title": null,
-        "end_page_number": 3,
-        "file_id": null,
-        "start_page_number": 2,
-        "type": "page_location"
-       }
-      ],
-      "text": "12/345/67892",
-      "type": "text"
-     },
-     {
-      "citations": null,
-      "text": "\niban: unbekannt\ndue_on: ",
+      "text": "\namount_total: 16.800,00 €\nreference: unbekannt\niban: unbekannt\ndue_on: ",
       "type": "text"
      },
      {
@@ -188,7 +148,7 @@
         "type": "page_location"
        }
       ],
-      "text": "Bescheid 1: 6,0 % von 140.000 | 8.400,00 € | acquisition_cost",
+      "text": "Bescheid 1, 6,0 % von 140.000 | 8.400,00 EUR | acquisition_cost",
       "type": "text"
      },
      {
@@ -208,7 +168,7 @@
         "type": "page_location"
        }
       ],
-      "text": "Bescheid 2: 6,0 % von 140.000 | 8.400,00 € | acquisition_cost",
+      "text": "Bescheid 2, 6,0 % von 140.000 | 8.400,00 EUR | acquisition_cost",
       "type": "text"
      }
     ],
@@ -228,7 +188,7 @@
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
      "input_tokens": 5941,
-     "output_tokens": 342,
+     "output_tokens": 300,
      "output_tokens_details": {
       "thinking_tokens": 0
      },

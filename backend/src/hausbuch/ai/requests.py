@@ -40,7 +40,7 @@ from hausbuch.rules.extraction_parse import CODE_ONLY_SUBTYPES, accepted_subtype
 from hausbuch.schemas.ai import AiJob, ClassifyOutput, ConfidenceLevel
 from hausbuch.schemas.allocation import LlmMatchOutput
 from hausbuch.schemas.common import Schema
-from hausbuch.schemas.enums import DocumentSubtype, ExtractionKind
+from hausbuch.schemas.enums import DocumentSubtype, DocumentType, ExtractionKind
 from hausbuch.schemas.extraction import EXTRACTION_MODELS, ValueKind, asked_fields, value_kind
 from hausbuch.settings import Settings
 
@@ -173,6 +173,10 @@ def parse_classification(text: str) -> ClassifyOutput:
             data[key] = None if key == "subtype" and value in ("", "null", "none") else value
     classification = ClassifyOutput.model_validate(data)
     subtype = accepted_subtype(classification.type, classification.subtype)
+    if subtype is DocumentSubtype.PAYMENT_PROOF and classification.type is not DocumentType.OTHER:
+        # Phase 3 D149: a receipt for one payment is typed other / payment_proof, as the
+        # upload from a bill's to-do types it (D143), whatever type the model put beside it.
+        return classification.model_copy(update={"type": DocumentType.OTHER})
     if subtype is classification.subtype:
         return classification
     return classification.model_copy(update={"subtype": subtype})
