@@ -33,11 +33,11 @@ from recordings import (
     synthetic_recording,
 )
 
-from hausbuch.rules.extraction_parse import cost_lines, normalize_value
+from hausbuch.rules.extraction_parse import cost_lines, dwellings, normalize_value
 from hausbuch.rules.iban import normalize_iban
-from hausbuch.schemas.enums import ExtractionKind
+from hausbuch.schemas.enums import ExtractionKind, PropertyKind
 from hausbuch.schemas.extraction import EXTRACTION_MODELS, value_kind
-from hausbuch.schemas.proposal import PrefillContext
+from hausbuch.schemas.proposal import ExistingProperty, PrefillContext
 
 SETTINGS = eval_settings()
 # Documents about the owners only, which must never set contains_tenant_data (classify.md).
@@ -49,6 +49,7 @@ OWNERS_ONLY = (
     "depotauszug",
     "grundbuchauszug",
     "verwaltervertrag",
+    "wohnflaechenberechnung",
 )
 
 
@@ -81,6 +82,8 @@ def _check(doc: Doc, recording: dict) -> None:
     assert uncited == [], f"{doc.name}: values without a page and quote: {uncited}"
     if doc.expected_cost_lines:
         _check_cost_lines(doc, result.values["cost_lines"], real=not recording["synthetic"])
+    if doc.expected_dwellings:
+        _check_dwellings(doc, result, real=not recording["synthetic"])
 
 
 def _check_cost_lines(doc: Doc, read, *, real: bool) -> None:
@@ -96,6 +99,51 @@ def _check_cost_lines(doc: Doc, read, *, real: bool) -> None:
     assert [a for a, _ in got] == [a for a, _ in want], f"{doc.name}: cost lines {read.value}"
     wrong = [(g, w) for (_, g), (_, w) in zip(got, want, strict=True) if w and g != w]
     assert wrong == [], f"{doc.name}: cost line codes (got, expected): {wrong}"
+
+
+def _check_dwellings(doc: Doc, result, *, real: bool) -> None:
+    """D139: every Wohnung of the list, in order, with its Wohnfläche and MEA as printed and
+    no total row; then the pre-fill picks the household's row by the contract's MEA (each
+    expected row in turn) and proposes that row's Wohnfläche, never a sum."""
+    read = result.values["dwellings"]
+    if real:
+        assert read.source is not None, f"{doc.name}: dwellings without a page and quote"
+    rows = dwellings(read.value)
+    got = [
+        (
+            " ".join(row.label.split()),
+            row.area,
+            row.mea and f"{row.mea['numerator']}/{row.mea['denominator']}",
+        )
+        for row in rows
+    ]
+    assert got == doc.expected_dwellings, f"{doc.name}: dwellings {read.value}"
+    prefill = pytest.importorskip("hausbuch.rules.prefill", reason="proposals chunk not merged")
+    extraction = EXTRACTION_MODELS[ExtractionKind.GENERAL].model_validate(result.values)
+    for _, area, mea in doc.expected_dwellings:
+        assert mea is not None
+        numerator, denominator = (int(part) for part in mea.split("/"))
+        flat = ExistingProperty(
+            id=uuid.uuid4(),
+            kind=PropertyKind.ETW,
+            address={
+                "street": doc.expected["street"],
+                "house_number": doc.expected["house_number"],
+                "postal_code": doc.expected["postal_code"],
+                "city": "Berlin",
+            },
+            build_year=1998,
+            notarized_on="2026-02-12",
+            purchase_date="2026-04-01",
+            purchase_price="289000.00",
+            contract_mea={"numerator": numerator, "denominator": denominator},
+        )
+        context = PrefillContext(
+            document_id=uuid.uuid4(), classification=result.classification, properties=[flat]
+        )
+        records = prefill.build_proposal(ExtractionKind.GENERAL, extraction, context)
+        [prop] = [r for r in records if r.key == "property"]
+        assert prop.fields["living_area_m2"].value == area, f"{doc.name}: picked for {mea}"
 
 
 def _build_proposal(doc: Doc, result) -> None:
@@ -167,12 +215,23 @@ def _as_written(doc: Doc) -> dict[str, str]:
         found[name] = _written(lines, expected, kind)
     for name in doc.expected_missing:
         found[name] = "unbekannt"
+    if doc.expected_dwellings:
+        found["dwellings"] = _dwellings_as_written(doc)
     if doc.expected_cost_lines:
         found["cost_lines"] = "; ".join(
             f"{text} | {amount} | {code or 'other_expense'}"
             for text, amount, code in doc.expected_cost_lines
         )
     return found
+
+
+def _dwellings_as_written(doc: Doc) -> str:
+    """Each expected dwelling as `label | Wohnfläche | MEA | Lage`, the area and MEA as the
+    document prints them (the area with its decimal comma), the location left unbekannt."""
+    return "; ".join(
+        f"{label} | {area.replace('.', ',')} m² | {mea or 'unbekannt'} | unbekannt"
+        for label, area, mea in doc.expected_dwellings
+    )
 
 
 def _written(lines: list[str], expected, kind: str) -> str:

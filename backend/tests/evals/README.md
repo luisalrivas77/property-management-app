@@ -44,6 +44,14 @@ was first classified as a §35a household-services invoice of the owners' own ho
 `classify.md` now says that subtype is never a bill for the rented-out flat; all twenty-three
 were recorded again on 10 Nov 2026.
 
+A Wohnflächenberechnung (phase 2 D139) adds `wohnflaechenberechnung`: a WEG's list of five
+Wohnungen with their Lage, Wohnfläche and MEA, and a Summe row that must never come back as a
+dwelling. Only `building_records` is asked `dwellings`, so no other request changed and no
+other document was recorded again; this one was recorded on 11 Nov 2026. Its
+`expected_dwellings` are checked row by row on the parsed rows (label, area, MEA), and the
+pre-fill is run once per row with that row's MEA as the Kaufvertrag's, which must propose
+exactly that row's Wohnfläche.
+
 - `test_recorded_evals.py` runs in CI on every push. It replays every recording in
   `recordings/` through the same code the `document_read` job uses (SDK message conversion,
   `parse_classification`, `rules.extraction_parse.parse_lines`, the chunk merge) and checks
@@ -56,7 +64,7 @@ were recorded again on 10 Nov 2026.
   text (`recordings.synthetic_recording`, `"synthetic": true`). They are built in memory,
   never written to `recordings/`, and are not API output.
 
-## Recording (Luis, once per prompt or model change; about $0.25–0.50 for all twenty-three)
+## Recording (Luis, once per prompt or model change; about $0.25–0.50 for all twenty-four)
 
 Needs the `hausbuch-evals` key (deploy/scaleway.md step 13), from your computer:
 
