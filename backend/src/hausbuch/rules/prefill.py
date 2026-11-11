@@ -327,6 +327,10 @@ _ONE_NOTICE_NOTE = (
     "Bescheid als Beleg, und die übrigen {rest} stehen im nächsten Eintrag „Grunderwerbsteuer, "
     "weiterer Bescheid“, zusammen weiter {row}."
 )
+# D146: a card that attaches this document to a cost row says so; the Beleg is not a field.
+_COST_BELEG_NOTE = (
+    "Beim Übernehmen wird dieses Dokument als Beleg dieses Nebenkosten-Eintrags gespeichert."
+)
 _OTHER_NOTICE_NOTE = (
     "Die übrigen {rest} gehören vermutlich zum Bescheid des anderen Käufers. Der Eintrag "
     "bleibt ohne Beleg, bis dieser Bescheid hochgeladen ist; er wird ihm dann zugeordnet, und "
@@ -729,6 +733,17 @@ class _Builder:
             if self.stated(name):
                 fields[name] = self.ev(name)
         if self.kind is ExtractionKind.INVOICE:
+            tax_year = self._invoice_tax_year()
+            if tax_year is not None:
+                fields["tax_year"] = tax_year
+        # D146: a Bescheid that proves a purchase cost (the Grunderwerbsteuerbescheid) states
+        # no year of its own; it is filed like an invoice, by its due date, else its date (D36).
+        if (
+            self.kind is ExtractionKind.BESCHEID
+            and fields.get("subtype") is not None
+            and fields["subtype"].value == DocumentSubtype.COST_BASIS_EVIDENCE.value
+            and "tax_year" not in fields
+        ):
             tax_year = self._invoice_tax_year()
             if tax_year is not None:
                 fields["tax_year"] = tax_year
@@ -1148,6 +1163,7 @@ class _Builder:
                 stated,
                 target_id=row.id,
                 current={f: existing[f] for f in stated},
+                notes=[_COST_BELEG_NOTE],
             )
             return
 
@@ -1157,7 +1173,7 @@ class _Builder:
             fields["note"] = note
         # The new row's card asks for its note, stated or not (D132).
         self.carried["reference"] = CarriedField(key=f"cost:{kind}", field="note")
-        self.add(f"cost:{kind}", "acquisition_cost", "create", fields)
+        self.add(f"cost:{kind}", "acquisition_cost", "create", fields, notes=[_COST_BELEG_NOTE])
 
     def _one_buyers_notice(
         self, row: ExistingCost, amount: ExtractedValue, kind_value: ExtractedValue
