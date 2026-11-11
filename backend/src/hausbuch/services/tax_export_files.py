@@ -1138,7 +1138,7 @@ def render_payment_proofs(
     )
     story.append(
         _para(
-            "Namen und Verwendungszweck stehen nicht in dieser Übersicht (Datenschutz); sie "
+            "Namen und Zahlungszweck stehen nicht in dieser Übersicht (Datenschutz); sie "
             "stehen im Kontoauszug der Bank und im Beleg. IBANs sind maskiert, weil Hausbuch "
             "nur maskierte IBANs speichert. Die Belegnummern sind die Nummern in dokumente/ "
             "und in zahlungen.csv.",
@@ -1428,7 +1428,7 @@ def readme_text(
         "Zahlung steht die SHA-256-Prüfsumme der Bankdatei, aus der sie stammt; die Datei ist "
         "unverändert in Hausbuch gespeichert.",
         "  Die IBANs sind maskiert gedruckt, weil Hausbuch nur maskierte IBANs speichert; Namen "
-        "und Verwendungszweck stehen im Kontoauszug der Bank und im Beleg.",
+        "und Zahlungszweck stehen im Kontoauszug der Bank und im Beleg.",
         "  Die Kontoauszüge der Bank liegen unter kontoauszuege/, soweit sie als PDF gespeichert "
         "sind" + (f" ({len(statements)} enthalten)." if statements else " (keine gespeichert)."),
     ]
