@@ -481,3 +481,26 @@ def test_a_payment_out_that_is_no_cost_to_a_third_party_names_no_one(category, t
     assert "-480,00 €" in flat  # the payment is listed ...
     assert "Notariat" not in flat and "Rechnung 4711" not in flat  # ... naming no one
     assert "Verwendungszweck Rechnung" not in flat and "IBAN DE89" not in flat
+
+
+@pytest.mark.parametrize(
+    ("category", "named"),
+    [
+        ("renovation", True),  # a tradesman, before the 15 % test settles the treatment
+        ("hausgeld_ruecklage", True),  # the WEG, until it spends the Rücklage
+        ("other_expense", True),  # another cost paid to a third party
+        ("uncategorized", False),  # nobody knows yet what it is
+    ],
+)
+def test_a_cost_whose_treatment_is_settled_later_still_names_its_payee(category, named):
+    """D144: a renovation or Rücklage payment is a cost to a third party; uncategorized is not."""
+    facts = _split_facts()
+    allocations = [
+        a.model_copy(update={"category": category, "tenancy_id": None})
+        if a.amount == Decimal("-480.00")
+        else a
+        for a in facts.allocations
+    ]
+    facts = facts.model_copy(update={"allocations": allocations})
+    (paid,) = [a for a in facts.allocations if a.amount == Decimal("-480.00")]
+    assert names_payee(_fee_line_of(paid), [paid]) is named

@@ -1103,6 +1103,11 @@ _LOAN_PAYMENTS = frozenset(
         AllocationCategory.LOAN_INTEREST,
         AllocationCategory.LOAN_PRINCIPAL,
         AllocationCategory.LOAN_FEES,
+        # Costs paid to a third party whose tax treatment is decided later (the 15 % test,
+        # the WEG's spending of the Rücklage): still a payment to a tradesman or the WEG.
+        AllocationCategory.RENOVATION,
+        AllocationCategory.HAUSGELD_RUECKLAGE,
+        AllocationCategory.OTHER_EXPENSE,
     }
 )
 
