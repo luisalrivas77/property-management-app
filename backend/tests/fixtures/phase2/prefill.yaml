@@ -141,6 +141,20 @@
 #             3. otherwise create (a row of that kind with a different Beleg is another bill:
 #                two notary invoices are real).
 #             current = the row's values of the record's fields (note null when it has none).
+#             In 2, among several rows without a Beleg the one whose amount equals the
+#             reading's within 0.01 wins, then the smallest id (D145: a second buyer's notice
+#             fills the row the first one left waiting).
+#             D145 (11 Nov 2026), one buyer's Grunderwerbsteuerbescheid: when the kind is
+#             bescheid, the cost kind is real_estate_transfer_tax, the row found by 1 or 2 is a
+#             real_estate_transfer_tax row too, and the amount read B is more than 0.01 below
+#             the row's amount A, the row is never lowered alone: cost:real_estate_transfer_tax
+#             patches it to B (fields as in 1 or 2; notes contain "nicht gesenkt") and
+#             cost:real_estate_transfer_tax:other_notice creates the rest {kind (code,
+#             real_estate_transfer_tax), amount = A - B derived from the fields B came from
+#             ([amount_total], or [cost_lines, amount_total] for a part), note (code)
+#             "Grunderwerbsteuer, weiterer Bescheid (z. B. des Miteigentümers)"}, notes
+#             contain "anderen Käufers"; the apply creates it without a Beleg. B >= A (within
+#             0.01) or no row: as above.
 #   loan      contract_number with whitespace removed, and lender -> patch with every stated
 #             field except the two keys and signed_on (LoanPatch has none: a contract date is
 #             set when the loan is created); current null (the context does not hold loan
@@ -192,6 +206,8 @@ ids:
   owner_2: &O2 00000010-0000-4000-8000-000000000002
   cost_grest: &C1 00000011-0000-4000-8000-000000000001
   cost_notary: &C2 00000011-0000-4000-8000-000000000002
+  cost_grest_odd: &C3 00000011-0000-4000-8000-000000000003
+  cost_grest_rest: &C4 00000011-0000-4000-8000-000000000004
   document_other: &DOC_OTHER 0000000d-0000-4000-8000-000000000101
   loan: &L 0000000f-0000-4000-8000-000000000001
   loan_2: &L2 0000000f-0000-4000-8000-000000000002
@@ -848,6 +864,151 @@ cases:
           target_id: *C1
           values: {amount: "17340.00", note: GrESt 27/123/45678}
           current: {amount: "17340.00", note: null}
+
+  - id: grunderwerbsteuer_one_buyers_bescheid_keeps_the_total
+    description: D145 (Luis's real case, 11 Nov 2026, invented figures). Two spouses bought the flat for 289,000 € half each; the Finanzamt sent each a Bescheid on 144,500 €. The row typed by hand holds both (17,340 €); this notice assesses 8,670 €. The row takes this notice and its amount, and the other 8,670 € become their own row without a Beleg, so the total stays 17,340 €.
+    kind: bescheid
+    context:
+      document_id: *DOC
+      classification: {type: bescheid, subtype: cost_basis_evidence, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      costs:
+        - {id: *C1, property_id: *P, kind: real_estate_transfer_tax, amount: "17340.00"}
+    extraction: &GREST_HALF
+      title: {v: Grunderwerbsteuerbescheid, p: 1, q: "Bescheid über Grunderwerbsteuer"}
+      document_date: {v: "2026-04-02", p: 1, q: "Berlin, den 02.04.2026"}
+      sender: {v: Finanzamt Berlin Grunderwerbsteuerstelle, p: 1, q: "Finanzamt für Körperschaften - Grunderwerbsteuerstelle"}
+      amount_total: {v: "8670.00", p: 1, q: "Die Steuer wird festgesetzt auf 6,0 % von 144.500 = 8.670,00 €"}
+      reference: {v: GrESt 27/123/45678, p: 1, q: "Steuernummer GrESt 27/123/45678"}
+      due_on: {v: "2026-05-02", p: 1, q: "fällig am 02.05.2026"}
+      cost_lines:
+        value: ["Grunderwerbsteuer (Die Steuer wird festgesetzt auf 6,0 % von 144.500) | 8.670,00 € | acquisition_cost"]
+        source: {page: 1, quote: "Die Steuer wird festgesetzt auf 6,0 % von 144.500 = 8.670,00 €"}
+        checks: [cited, validates]
+        confidence: high
+    expect:
+      keys: [typing, cost:real_estate_transfer_tax, "cost:real_estate_transfer_tax:other_notice", link:property]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: bescheid, subtype: cost_basis_evidence, title: Grunderwerbsteuerbescheid, document_date: "2026-04-02", counterparty: Finanzamt Berlin Grunderwerbsteuerstelle}
+        - key: cost:real_estate_transfer_tax
+          entity_type: acquisition_cost
+          mode: patch
+          target_id: *C1
+          values: {amount: "8670.00", note: GrESt 27/123/45678}
+          current: {amount: "17340.00", note: null}
+          notes_contain: ["nicht gesenkt", "8.670,00 €", "17.340,00 €"]
+        - key: cost:real_estate_transfer_tax:other_notice
+          entity_type: acquisition_cost
+          mode: create
+          values: {kind: real_estate_transfer_tax, amount: "8670.00", note: "Grunderwerbsteuer, weiterer Bescheid (z. B. des Miteigentümers)"}
+          derived: {amount: [amount_total]}
+          notes_contain: ["anderen Käufers", "überspringen"]
+
+  - id: grunderwerbsteuer_one_buyers_bescheid_already_its_beleg
+    description: D145. The same notice, already attached by hand as the Beleg of the row holding both buyers' tax (cost rule 1). Only the amount differs; the row takes 8,670 € and the rest becomes its own row without a Beleg.
+    kind: bescheid
+    context:
+      document_id: *DOC
+      classification: {type: bescheid, subtype: cost_basis_evidence, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      costs:
+        - {id: *C1, property_id: *P, kind: real_estate_transfer_tax, amount: "17340.00", document_id: *DOC, note: GrESt 27/123/45678}
+    extraction: *GREST_HALF
+    expect:
+      keys: [typing, cost:real_estate_transfer_tax, "cost:real_estate_transfer_tax:other_notice", link:property]
+      records:
+        - key: cost:real_estate_transfer_tax
+          entity_type: acquisition_cost
+          mode: patch
+          target_id: *C1
+          values: {amount: "8670.00"}
+          current: {amount: "17340.00"}
+          notes_contain: ["nicht gesenkt"]
+        - key: cost:real_estate_transfer_tax:other_notice
+          entity_type: acquisition_cost
+          mode: create
+          values: {kind: real_estate_transfer_tax, amount: "8670.00", note: "Grunderwerbsteuer, weiterer Bescheid (z. B. des Miteigentümers)"}
+          derived: {amount: [amount_total]}
+
+  - id: grunderwerbsteuer_second_bescheid_fills_the_waiting_row
+    description: D145. The other buyer's notice arrives after the first was applied. Of the two Grunderwerbsteuer rows without a Beleg, the one of the same amount (the rest the first notice left) takes it, not the one with the smaller id; the amount stays, and no row is lowered or created.
+    kind: bescheid
+    context:
+      document_id: *DOC
+      classification: {type: bescheid, subtype: cost_basis_evidence, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      costs:
+        - {id: *C1, property_id: *P, kind: real_estate_transfer_tax, amount: "8670.00", document_id: *DOC_OTHER, note: GrESt 27/123/45670}
+        - {id: *C3, property_id: *P, kind: real_estate_transfer_tax, amount: "120.00"}
+        - {id: *C4, property_id: *P, kind: real_estate_transfer_tax, amount: "8670.00", note: "Grunderwerbsteuer, weiterer Bescheid (z. B. des Miteigentümers)"}
+    extraction: *GREST_HALF
+    expect:
+      keys: [typing, cost:real_estate_transfer_tax, link:property]
+      records:
+        - key: cost:real_estate_transfer_tax
+          entity_type: acquisition_cost
+          mode: patch
+          target_id: *C4
+          values: {amount: "8670.00", note: GrESt 27/123/45678}
+          current: {amount: "8670.00", note: "Grunderwerbsteuer, weiterer Bescheid (z. B. des Miteigentümers)"}
+
+  - id: grunderwerbsteuer_one_document_two_bescheide
+    description: D145. Both buyers' notices captured into one PDF are read as two cost lines whose sum is the total; the row typed by hand already holds that sum, so it only gains this document as its Beleg.
+    kind: bescheid
+    context:
+      document_id: *DOC
+      classification: {type: bescheid, subtype: cost_basis_evidence, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      costs:
+        - {id: *C1, property_id: *P, kind: real_estate_transfer_tax, amount: "17340.00"}
+    extraction:
+      title: {v: Grunderwerbsteuerbescheid, p: 1, q: "Bescheid über Grunderwerbsteuer"}
+      document_date: {v: "2026-04-02", p: 1, q: "Berlin, den 02.04.2026"}
+      sender: {v: Finanzamt Berlin Grunderwerbsteuerstelle, p: 1, q: "Finanzamt für Körperschaften - Grunderwerbsteuerstelle"}
+      amount_total: {v: "17340.00", p: 1, q: "8.670,00 €"}
+      due_on: {v: "2026-05-02", p: 1, q: "fällig am 02.05.2026"}
+      cost_lines:
+        value: ["Bescheid 1: 6,0 % von 144.500 | 8.670,00 € | acquisition_cost", "Bescheid 2: 6,0 % von 144.500 | 8.670,00 € | acquisition_cost"]
+        source: {page: 1, quote: "Die Steuer wird festgesetzt auf 6,0 % von 144.500 = 8.670,00 €"}
+        checks: [cited, validates]
+        confidence: high
+    expect:
+      keys: [typing, cost:real_estate_transfer_tax, link:property]
+      records:
+        - key: cost:real_estate_transfer_tax
+          entity_type: acquisition_cost
+          mode: patch
+          target_id: *C1
+          values: {amount: "17340.00"}
+          current: {amount: "17340.00"}
+
+  - id: grunderwerbsteuer_bescheid_above_the_row_patches_it_up
+    description: D145 leaves B >= A as before. The row typed by hand holds one buyer's half; a notice for the whole tax patches it up, with no second row.
+    kind: bescheid
+    context:
+      document_id: *DOC
+      classification: {type: bescheid, subtype: cost_basis_evidence, contains_tenant_data: false, language: de, confidence: high}
+      properties: [*PROP_LINDEN]
+      costs:
+        - {id: *C1, property_id: *P, kind: real_estate_transfer_tax, amount: "8670.00"}
+    extraction:
+      title: {v: Grunderwerbsteuerbescheid, p: 1, q: "Bescheid über Grunderwerbsteuer"}
+      document_date: {v: "2026-04-02", p: 1, q: "Berlin, den 02.04.2026"}
+      sender: {v: Finanzamt Berlin Grunderwerbsteuerstelle, p: 1, q: "Finanzamt für Körperschaften - Grunderwerbsteuerstelle"}
+      amount_total: {v: "17340.00", p: 1, q: "Die Grunderwerbsteuer wird festgesetzt auf 17.340,00 €"}
+      reference: {v: GrESt 27/123/45678, p: 1, q: "Steuernummer GrESt 27/123/45678"}
+    expect:
+      keys: [typing, cost:real_estate_transfer_tax, link:property]
+      records:
+        - key: cost:real_estate_transfer_tax
+          entity_type: acquisition_cost
+          mode: patch
+          target_id: *C1
+          values: {amount: "17340.00", note: GrESt 27/123/45678}
+          current: {amount: "8670.00", note: null}
 
   - id: bescheid_grundbuchamt_grundschuld_is_financing
     description: D35 (review F1, 7 Nov 2026). A Grundbuchamt bill for entering the Grundschuld, typed bescheid by the classifier; a Bescheid has no subject, so its title decides. No Nebenkosten row; the subtype financing_invoice (D138).
