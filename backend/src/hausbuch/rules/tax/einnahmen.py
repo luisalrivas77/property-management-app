@@ -6,8 +6,13 @@ Income booked on or after the handover only; what came in before it is §5.10's 
   row, its rooms listed under it), an MFH has one row per unit. income.rent_total is their sum.
 - operating_costs_prepayment → income.umlagen, a Pauschale (flat_rate) included.
 - operating_costs_settlement → income.umlagen_settlement, sign kept.
-- other_income → income.other; every other_income allocation of the year, whatever its date,
-  raises income.other_review.
+- other_income → income.other; every other_income allocation booked on or after the handover
+  raises income.other_review (D140). One booked before it is vorab.py's: while undecided its
+  income.pre_handover warning is the one question. Once the pre_handover_income input says
+  rent, the draft already counts it as rent (vorab sums every income category before the
+  handover alike), but its bank line still says Sonstige Einnahme: it raises
+  income.other_review with `counted_as_rent: "1"`, whose to-do books it as Kaltmiete (D140,
+  amended 11 Nov 2026). A line before the handover booked rent_cold raises nothing.
 - Z24 (umlagen_not_agreed) is ticked when every tenancy let in the year is `included`; mixed
   terms warn instead (D72).
 """
@@ -26,12 +31,23 @@ from hausbuch.schemas.tax import (
     RuleLines,
     RuleSet,
     SourceRef,
+    TaxInputKind,
     TaxTenancy,
     UnitRow,
     WarningCode,
 )
 
-from ._common import ZERO, LineBook, flat_area, is_flat, of_year, sources_of, unique, warning
+from ._common import (
+    ZERO,
+    LineBook,
+    flat_area,
+    in_force,
+    is_flat,
+    of_year,
+    sources_of,
+    unique,
+    warning,
+)
 from .rounding import money_str
 
 ROUTES = {
@@ -159,16 +175,25 @@ def lines(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> RuleLines:
                 [SourceRef(kind="property", id=facts.property.id)],
             )
         )
-    for a in year:  # whatever its date (§5.7)
-        if a.category is C.OTHER_INCOME:
-            params = {"amount": money_str(a.amount)}
-            if a.counterparty_iban_masked is not None:
-                params["counterparty_iban"] = a.counterparty_iban_masked
-            warnings.append(
-                warning(
-                    WarningCode.INCOME_OTHER_REVIEW,
-                    [SourceRef(kind="allocation", id=a.allocation_id)],
-                    **params,
-                )
+    # Before the handover (D140): vorab.py's question while undecided; once counted as rent, a
+    # line still booked other_income gets a to-do that books it as rent too (marked).
+    counted_as_rent = bool(in_force(facts.tax_inputs, TaxInputKind.PRE_HANDOVER_INCOME))
+    for a in year:
+        if a.category is not C.OTHER_INCOME:
+            continue
+        before = a.booking_date < handover
+        if before and not counted_as_rent:
+            continue
+        params = {"amount": money_str(a.amount)}
+        if a.counterparty_iban_masked is not None:
+            params["counterparty_iban"] = a.counterparty_iban_masked
+        if before:
+            params["counted_as_rent"] = "1"
+        warnings.append(
+            warning(
+                WarningCode.INCOME_OTHER_REVIEW,
+                [SourceRef(kind="allocation", id=a.allocation_id)],
+                **params,
             )
+        )
     return RuleLines(tax_year=tax_year, lines=book.lines(), unit_rows=rows, warnings=warnings)

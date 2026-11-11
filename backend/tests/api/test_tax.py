@@ -228,6 +228,159 @@ def test_the_real_draft_shows_confirmed_lines_with_their_sources(client_a, booke
     assert earlier["totals"]["income"] == "0.00"
 
 
+# --- D140: "Als Miete buchen" on an Einnahme ohne Zuordnung ---------------------------------
+
+_DRAFT_FIELDS = (
+    "amount",
+    "category",
+    "property_id",
+    "unit_id",
+    "tenancy_id",
+    "loan_id",
+    "service_period_start",
+    "service_period_end",
+    "recurring",
+    "document_id",
+)
+
+
+def _rebook_as_rent(client, transaction_id: str, allocation_id: str) -> dict:
+    """What the to-do's button does (todos.tsx, D140): read the line's current rows, change
+    the category of the cited allocation only, and send the whole set back through the
+    existing answer command, without a learned rule."""
+    view = ok(client.get(f"/api/transactions/{transaction_id}/allocations"))
+    rows = view["allocations"]
+    assert allocation_id in {row["id"] for row in rows}
+    drafts = [
+        {name: row[name] for name in _DRAFT_FIELDS}
+        | ({"category": "rent_cold"} if row["id"] == allocation_id else {})
+        for row in rows
+    ]
+    body = {
+        "allocation_set": {
+            "transaction_id": transaction_id,
+            "allocations": drafts,
+            "method": "user",
+            "confidence": "1.000",
+        },
+        "learn_rule": False,
+    }
+    return ok(client.put(f"/api/transactions/{transaction_id}/allocations", json=body))
+
+
+def test_an_other_income_part_rebooked_as_rent_lands_on_the_rent_row(client_a, booked):
+    """The income line split in two other_income parts (the second with a service period);
+    the button re-books one part as rent_cold without a tenancy: it moves to the flat's Z13
+    row, Sonstige Einnahmen keep the other part with its to-do, and the change is a new
+    transaction.reallocated event over the superseded rows (append-only)."""
+    pid, line = booked["pid"], booked["income"]
+    split = {
+        "allocation_set": {
+            "transaction_id": line["id"],
+            "allocations": [
+                {"amount": "200.00", "category": "other_income", "property_id": pid},
+                {
+                    "amount": "41.58",
+                    "category": "other_income",
+                    "property_id": pid,
+                    "service_period_start": "2026-06-01",
+                    "service_period_end": "2026-06-30",
+                },
+            ],
+            "method": "user",
+            "confidence": "1.000",
+        },
+        "learn_rule": False,
+    }
+    before = ok(client_a.put(f"/api/transactions/{line['id']}/allocations", json=split))
+    part = next(a for a in before["allocations"] if a["amount"] == "41.58")
+    draft = ok(_draft(client_a, pid, tax_year=2026))
+    reviews = [w for w in draft["warnings"] if w["code"] == "income.other_review"]
+    assert sorted(w["params"]["amount"] for w in reviews) == ["200.00", "41.58"]
+
+    after = _rebook_as_rent(client_a, line["id"], part["id"])
+    rows = {a["amount"]: a for a in after["allocations"]}
+    assert set(rows) == {"200.00", "41.58"}
+    rent = rows["41.58"]
+    assert (rent["category"], rent["status"], rent["tenancy_id"]) == (
+        "rent_cold",
+        "confirmed",
+        None,
+    )
+    assert (rent["property_id"], rent["service_period_start"], rent["service_period_end"]) == (
+        pid,
+        "2026-06-01",
+        "2026-06-30",
+    )
+    assert rows["200.00"]["category"] == "other_income"
+    assert after["rule"] is None  # no rule books the payer's later lines as rent
+
+    body = ok(_draft(client_a, pid, tax_year=2026))
+    by_key = {line_["key"]: line_ for line_ in body["lines"]}
+    assert by_key["income.rent_total"]["amount"] == "41.58"
+    assert ("allocation", rent["id"]) in _ids(by_key["income.rent_total"])
+    assert by_key["income.other"]["amount"] == "200.00"
+    (row,) = body["unit_rows"]
+    assert (row["wohnung"], row["id"], row["amount"]) == ("property", pid, "41.58")
+    reviews = [w for w in body["warnings"] if w["code"] == "income.other_review"]
+    assert [w["params"]["amount"] for w in reviews] == ["200.00"]
+    assert body["totals"]["income"] == "241.58"  # moved between lines, not added
+
+    events = ok(client_a.get(f"/api/events?entity_id={line['id']}"))
+    reallocated = [e for e in events if e["type"] == "transaction.reallocated"]
+    assert len(reallocated) == 2  # the split, then the re-booking
+    last = max(reallocated, key=lambda e: e["seq"])
+    assert set(last["payload"]["supersedes"]) == {a["id"] for a in before["allocations"]}
+    categories = {p["amount"]: p["category"] for p in last["payload"]["allocations"]}
+    assert categories == {"200.00": "other_income", "41.58": "rent_cold"}
+
+
+def test_a_line_counted_as_rent_before_the_handover_gets_a_to_do_to_book_it(client_a, booked):
+    """D140 as amended (11 Nov 2026): the handover moves to 1 Jul 2026, so the 30 Jun
+    other_income line is before it. Undecided: the pre-handover question only. After "Als Miete
+    zählen": the draft counts it as rent and, since its bank line still says Sonstige Einnahme,
+    raises income.other_review marked counted_as_rent. Booked as rent_cold (the to-do's button):
+    the to-do is gone and no figure changes."""
+    pid, line, income_id = booked["pid"], booked["income"], booked["income_id"]
+    ok(
+        client_a.post(
+            f"/api/properties/{pid}/corrections/purchase-date", json={"new_date": "2026-07-01"}
+        )
+    )
+
+    def view():
+        body = ok(_draft(client_a, pid, tax_year=2026))
+        codes = [w["code"] for w in body["warnings"]]
+        reviews = [w for w in body["warnings"] if w["code"] == "income.other_review"]
+        return body, codes, reviews
+
+    _, codes, reviews = view()
+    assert "income.pre_handover" in codes and reviews == []
+
+    create(
+        client_a,
+        f"/api/properties/{pid}/tax-inputs",
+        {"property_id": pid, "kind": "pre_handover_income", "value": {"treatment": "rent"}},
+    )
+    decided, codes, reviews = view()
+    assert "income.pre_handover" not in codes
+    (review,) = reviews
+    assert (review["params"]["amount"], review["params"]["counted_as_rent"]) == ("241.58", "1")
+    assert [(r["kind"], r["id"]) for r in review["refs"]] == [("allocation", income_id)]
+    (row,) = decided["unit_rows"]
+    assert (row["amount"], row["pre_handover"]) == ("241.58", "241.58")
+
+    _rebook_as_rent(client_a, line["id"], income_id)
+    rebooked, codes, reviews = view()
+    assert reviews == [] and "income.pre_handover" not in codes
+    (after,) = rebooked["unit_rows"]
+    assert (after["amount"], after["pre_handover"]) == ("241.58", "241.58")
+    assert rebooked["totals"] == decided["totals"]
+    assert [ln for ln in rebooked["lines"] if ln["key"] != "income.rent_total"] == [
+        ln for ln in decided["lines"] if ln["key"] != "income.rent_total"
+    ]
+
+
 # --- GET …/anlage-v/sources: what the sources drawer shows --------------------------------
 
 
