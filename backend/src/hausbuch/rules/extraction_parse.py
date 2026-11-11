@@ -767,11 +767,13 @@ _CATALOGUE_INVOICES = (
     DocumentSubtype.HOUSEHOLD_SERVICES_INVOICE,
     DocumentSubtype.WORK_EXPENSE_INVOICE,
 )
-# The subtypes that existed before the catalogue, read by their own kind or by their type.
+# The subtypes read by their type's reader: three that existed before the catalogue, and a
+# financing bill (D138), an invoice or Bescheid whose cost lines are sorted like any other.
 _READ_BY_TYPE = (
     DocumentSubtype.PRICE_SPLIT_EVIDENCE,
     DocumentSubtype.APPRAISAL,
     DocumentSubtype.COST_BASIS_EVIDENCE,
+    DocumentSubtype.FINANCING_INVOICE,
 )
 _BY_SUBTYPE: dict[DocumentSubtype, ExtractionKind] = {
     DocumentSubtype.PURCHASE_CONTRACT: ExtractionKind.PURCHASE_CONTRACT,
@@ -831,6 +833,9 @@ _BEFORE_CATALOGUE = frozenset(
     }
 )
 CATALOGUE_SUBTYPES = frozenset(set(DocumentSubtype) - _BEFORE_CATALOGUE)
+# Subtypes only code sets, never the classifier (D138): left out of the classify schema
+# (ai.requests.classify_schema), and dropped should a model answer one anyway.
+CODE_ONLY_SUBTYPES = frozenset({DocumentSubtype.FINANCING_INVOICE})
 # The types with a reader of their own that no catalogue subtype overrides (D131, decided 10
 # Nov 2026 after the first eval recording read an owner's Lohnsteuerbescheinigung as an
 # Arbeitgeberbescheinigung, which subtype-first routing would have read for title and date
@@ -853,7 +858,10 @@ def accepted_subtype(
     so the type's reader, the retention and the proposal's typing follow the type. A
     subtype of the tenancy group is kept: it is the tenant gate's signal, and a tenant's
     payslip read as the owners' would propose an owner's pay (D131, PR #128 review). The
-    subtypes from before the catalogue are kept as they always were."""
+    subtypes from before the catalogue are kept as they always were. A subtype only code sets
+    (D138) is never taken from the model."""
+    if subtype in CODE_ONLY_SUBTYPES:
+        return None
     if subtype in CATALOGUE_SUBTYPES and type_ in DEDICATED_TYPES and subtype not in TENANCY_GROUP:
         return None
     return subtype

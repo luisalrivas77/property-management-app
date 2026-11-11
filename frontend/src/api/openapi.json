@@ -10065,6 +10065,7 @@
           "repayment_schedule",
           "loan_terms_change",
           "loan_statement",
+          "financing_invoice",
           "lease_amendment",
           "rent_increase",
           "termination_notice",

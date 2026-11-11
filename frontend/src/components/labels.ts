@@ -165,6 +165,7 @@ export const DOCUMENT_SUBTYPE: Record<DocumentSubtype, string> = {
   repayment_schedule: "Tilgungsplan",
   loan_terms_change: "Prolongation, Konditionsanpassung",
   loan_statement: "Darlehenskontoauszug",
+  financing_invoice: "Rechnung zur Finanzierung (Grundschuld, Darlehen)",
   // Mietverhältnis
   lease: "Mietvertrag",
   lease_amendment: "Nachtrag zum Mietvertrag",

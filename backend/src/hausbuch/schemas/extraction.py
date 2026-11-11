@@ -534,6 +534,7 @@ LOAN_GROUP = (
     DocumentSubtype.REPAYMENT_SCHEDULE,
     DocumentSubtype.LOAN_TERMS_CHANGE,
     DocumentSubtype.LOAN_STATEMENT,
+    DocumentSubtype.FINANCING_INVOICE,  # D138: read by its type's reader, not the general one
 )
 TENANCY_GROUP = (
     DocumentSubtype.LEASE_AMENDMENT,
