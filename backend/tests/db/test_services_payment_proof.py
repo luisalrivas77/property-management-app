@@ -39,9 +39,11 @@ from hausbuch.schemas.tax import TaxInputCreate, TaxInputKind, WarningCode
 from hausbuch.services import proposals
 from hausbuch.services.documents import (
     NotAPaymentProofError,
+    ProofReadPendingError,
     SelfLinkError,
     attach_payment_proof,
     current_extraction,
+    get_document,
     list_links,
     type_document,
     upload_document,
@@ -157,8 +159,8 @@ def test_a_proof_is_typed_and_linked_to_its_bill_and_property(world, run, read, 
     assert len(read(ws, list_links, proof.id)) == 2
 
 
-def test_the_upload_refuses_the_bill_itself_an_unknown_bill_and_another_document(
-    world, run, blob_store
+def test_the_upload_refuses_the_bill_itself_an_unknown_bill_another_document_and_a_pending_read(
+    world, run, read, blob_store
 ):
     ws = world.ws
     bill, _ = _bill(run, world, blob_store)
@@ -171,6 +173,27 @@ def test_the_upload_refuses_the_bill_itself_an_unknown_bill_and_another_document
     run(ws, type_document, contract.id, DocumentTyping(type=DocumentType.CONTRACT, subtype=None))
     with pytest.raises(NotAPaymentProofError):
         run(ws, attach_payment_proof, contract.id, bill.id)
+
+    # Review fix: the same bytes stored untyped with a read still queued are refused, so the
+    # running job's classification never retypes a document the user just made a proof.
+    pending = _upload(run, ws, blob_store, b"%PDF Kontoauszug")
+    queued = run(ws, proposals.request_read, pending.id)
+    assert queued.status is ProposalStatus.QUEUED
+    with pytest.raises(ProofReadPendingError, match="wird gerade gelesen"):
+        run(ws, attach_payment_proof, pending.id, bill.id)
+    assert read(ws, get_document, pending.id).typing is None
+    assert read(ws, list_links, pending.id) == []
+
+    # Still accepted: an untyped document with no read pending, and a typed proof linked to a
+    # second bill.
+    second, _ = _bill(run, world, blob_store, data=b"%PDF Rechnung Zwei")
+    run(ws, attach_payment_proof, proof.id, bill.id)
+    linked = run(ws, attach_payment_proof, proof.id, second.id)
+    assert linked.typing.subtype is DocumentSubtype.PAYMENT_PROOF
+    bills = {
+        k.target_id for k in read(ws, list_links, proof.id) if k.target_type is LinkTarget.DOCUMENT
+    }
+    assert bills == {bill.id, second.id}
 
 
 # --- the draft --------------------------------------------------------------------------

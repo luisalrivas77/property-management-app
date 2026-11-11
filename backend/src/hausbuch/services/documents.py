@@ -28,6 +28,7 @@ from hausbuch.db.tables import loan as loan_table
 from hausbuch.db.tables import property_ as property_table
 from hausbuch.db.tables import property_acquisition_cost as cost_table
 from hausbuch.db.tables import property_price_split as split_table
+from hausbuch.db.tables import proposal as proposal_table
 from hausbuch.db.tables import tax_input as tax_input_table
 from hausbuch.db.tables import tenancy as tenancy_table
 from hausbuch.db.tables import unit as unit_table
@@ -56,6 +57,7 @@ from hausbuch.schemas.enums import (
     ExtractionKind,
     ExtractionSource,
     LinkTarget,
+    ProposalStatus,
 )
 from hausbuch.schemas.events import (
     DocumentField,
@@ -128,6 +130,19 @@ class NotAPaymentProofError(ValueError):
         super().__init__(
             f"document {document_id} is already stored as another kind of document, not as a "
             "payment proof"
+        )
+
+
+class ProofReadPendingError(ValueError):
+    """The uploaded file is stored untyped and its read is queued or running (phase 3 D143
+    review fix): typing it now would change the document under the running job, whose
+    classification would then type it again."""
+
+    def __init__(self, document_id: UUID) -> None:
+        self.document_id = document_id
+        super().__init__(
+            "Dieses Dokument wird gerade gelesen. Bitte kurz warten und dann erneut als "
+            "Zahlungsnachweis hochladen."
         )
 
 
@@ -507,7 +522,8 @@ def attach_payment_proof(ctx: CommandContext, proof_id: UUID, bill_id: UUID) -> 
     kept, so the same file uploaded again, or from a second bill's to-do, links once more.
 
     NotFoundError for an unknown bill; SelfLinkError when the file is the bill itself;
-    NotAPaymentProofError when the file is stored typed as anything else."""
+    NotAPaymentProofError when the file is stored typed as anything else;
+    ProofReadPendingError when it is stored untyped with a read queued or running."""
     if proof_id == bill_id:
         raise SelfLinkError(proof_id)
     if _select_document(ctx.conn, bill_id, for_update=False) is None:
@@ -516,6 +532,8 @@ def attach_payment_proof(ctx: CommandContext, proof_id: UUID, bill_id: UUID) -> 
     if proof is None:
         raise NotFoundError(EntityType.DOCUMENT, proof_id)
     if proof.typing is None:
+        if _read_pending(ctx.conn, proof_id):
+            raise ProofReadPendingError(proof_id)
         proof = type_document(ctx, proof_id, PAYMENT_PROOF_TYPING)
     elif proof.typing.subtype is not DocumentSubtype.PAYMENT_PROOF:
         raise NotAPaymentProofError(proof_id)
@@ -525,6 +543,23 @@ def attach_payment_proof(ctx: CommandContext, proof_id: UUID, bill_id: UUID) -> 
         with contextlib.suppress(DuplicateLinkError):
             link_document(ctx, proof_id, target_type, target_id)
     return proof
+
+
+def _read_pending(conn: Connection, document_id: UUID) -> bool:
+    """Whether the document has a read queued or running (a proposal job state; read
+    from the table, since services/proposals imports this module)."""
+    return bool(
+        conn.scalar(
+            select(
+                exists().where(
+                    proposal_table.c.document_id == document_id,
+                    proposal_table.c.status.in_(
+                        [ProposalStatus.QUEUED.value, ProposalStatus.RUNNING.value]
+                    ),
+                )
+            )
+        )
+    )
 
 
 def _bill_properties(conn: Connection, bill_id: UUID) -> set[UUID]:
