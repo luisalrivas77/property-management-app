@@ -6,6 +6,7 @@
 #   rent_cold → one unit row per Wohnung (D71): an ETW or EFH has one row for the property
 #     (wohnung property, its label, area = living_area_m2 with area_source living_area, or the
 #     sum of the units' m² with area_source units and warning income.living_area_missing),
+#     no area (null) when neither is known, with the same warning (D139),
 #     its rooms listed under it with their rents; an MFH has one row per unit (wohnung unit,
 #     the unit's m², area_source units). income.rent_total = Σ rows, sources = the allocations.
 #   operating_costs_prepayment → income.umlagen, whatever the terms (a flat_rate Pauschale is
@@ -318,6 +319,23 @@ cases:
         unit_rows:
           - {wohnung: property, id: *P, label: Wohnung Beispielweg, area_m2: "30.50",
              area_source: units, amount: "930.00"}
+        warnings: [{code: income.living_area_missing}]
+
+  - id: living_area_and_units_missing_no_area
+    description: >
+      no Wohnfläche and no units yet, rent booked without a tenancy (phase 2 D139, 11 Nov
+      2026: this crashed the draft with an area of 0): the row has no area and warns
+    facts:
+      property: {<<: *etw, living_area_m2: null}
+      allocations:
+        - {allocation_id: *R12, booking_date: 2026-12-02, amount: "740.18", category: rent_cold}
+    expect:
+      - tax_year: 2026
+        lines:
+          - {key: income.rent_total, amount: "740.18"}
+        unit_rows:
+          - {wohnung: property, id: *P, label: Wohnung Beispielweg, area_m2: null,
+             area_source: units, amount: "740.18", sources: [{kind: allocation, id: *R12}]}
         warnings: [{code: income.living_area_missing}]
 
   - id: other_income_with_review_warning

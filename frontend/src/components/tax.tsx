@@ -498,8 +498,14 @@ function UnitRows({ draft, propertyId }: { draft: AnlageVDraft; propertyId: stri
         <li key={row.id}>
           <div className="row">
             <span>
-              {row.label} · {formatDecimal(row.area_m2, 2)} m²
-              {row.area_source === "units" ? " (Summe der Einheiten)" : ""}
+              {row.area_m2 != null ? (
+                <>
+                  {row.label} · {formatDecimal(row.area_m2, 2)} m²
+                  {row.area_source === "units" ? " (Summe der Einheiten)" : ""}
+                </>
+              ) : (
+                `${row.label} · Wohnfläche fehlt`
+              )}
             </span>
             <span className="spacer" />
             <span className="num">{formatMoney(row.amount)}</span>

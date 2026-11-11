@@ -485,6 +485,8 @@ def _sheet_label(row: FieldSheetRow, index: int, draft: AnlageVDraft, rule_set: 
     form_line = rule_set.form.lines[row.key]
     if row.key == UNIT_ROWS:
         unit = draft.unit_rows[index]
+        if unit.area_m2 is None:
+            return f"{form_line.label}: {unit.label}, Wohnfläche fehlt"
         area = f"{unit.area_m2:.2f}".replace(".", ",")
         return f"{form_line.label}: {unit.label}, {area} m²"
     if row.key in ("result.owner_a", "result.owner_b"):

@@ -8029,6 +8029,8 @@ export interface components {
          * UnitRow
          * @description One Z13 row per Wohnung (D71): the flat (wohnung = property) with its rooms listed, or an
          *     MFH unit (wohnung = unit). pre_handover: the part booked before the handover (D63).
+         *     area_m2 None: an ETW or EFH with no Wohnfläche and no units, so no area is known; the
+         *     to-do income.living_area_missing asks for it (phase 2 D139).
          */
         UnitRow: {
             /**
@@ -8044,7 +8046,7 @@ export interface components {
             /** Label */
             label: string;
             /** Area M2 */
-            area_m2: string;
+            area_m2?: string | null;
             /**
              * Area Source
              * @enum {string}
