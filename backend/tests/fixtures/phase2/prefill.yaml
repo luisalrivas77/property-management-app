@@ -191,6 +191,22 @@
 # by name and the clause is understood; purchase_date null with the Übergang clause quoted in
 # the property's notes when the contract ties it to the payment; no property label is proposed
 # (PropertyCreate.label is the user's name for it).
+# Zahlungsnachweis (phase 3 D143, 11 Nov 2026): a payment_proof is typed by code when it is
+#   uploaded from a bill's „Zahlungsnachweis fehlt“ to-do (type other, subtype payment_proof,
+#   never the classifier) and linked to that bill; context.proof_bill holds the bill: its id,
+#   the acquisition cost rows that carry it as Beleg and its private_cost rows in force
+#   ({id, tax_year, label, amount}). The bill's amount is the sum of the private_cost rows'
+#   amounts when it has any, else the sum of the acquisition cost rows' amounts. Typing carries
+#   the hand fields amount_total (<- amount) and counterparty (<- payee). The proof's amount
+#   (its magnitude) matches when it equals the bill's amount within 0.01; then, with paid_on
+#   stated, each private_cost row whose tax_year is not paid_on's year gets a record
+#   private_cost_year:<n> (n from 1, rows by id) {entity_type tax_input, mode patch, target_id
+#   the row, fields tax_year = paid_on's year derived from [paid_on, amount], current
+#   {tax_year: the row's}}, notes contain "§11"; the apply withdraws the row and creates the
+#   same value in the new year (append-only, D143). An acquisition cost row is never moved (it
+#   has no year). An amount that does not match: no year record, typing's notes contain
+#   "passt nicht"; an amount not read: no year record, typing's notes contain "nicht gelesen".
+#   No proof_bill (typed by hand, not from the to-do): typing only.
 #
 # expect: keys = the exact set of record keys returned. records = the records checked in
 # detail: entity_type, mode, target_id; values = every field of the record with its value (the
@@ -218,9 +234,18 @@ ids:
   tenancy_1: &T1 00000013-0000-4000-8000-000000000001
   tenancy_2: &T2 00000013-0000-4000-8000-000000000002
   tenancy_3: &T3 00000013-0000-4000-8000-000000000003
+  # phase 3 D143: two private_cost rows of one bill (DOC_OTHER) a payment proof (DOC) pays
+  private_cost_1: &PC1 000000f1-0000-4000-8000-000000000101
+  private_cost_2: &PC2 000000f1-0000-4000-8000-000000000102
 
 shared:
   classify_kaufvertrag: &CL_KV {type: contract, subtype: purchase_contract, contains_tenant_data: false, language: de, confidence: high}
+  classify_payment_proof: &CL_PROOF {type: other, subtype: payment_proof, contains_tenant_data: false, language: de, confidence: high}
+  proof_bill_two_parts: &PROOF_BILL
+    document_id: *DOC_OTHER
+    private_costs:
+      - {id: *PC1, tax_year: 2026, label: Rechnung Hausmeisterdienst, amount: "357.00"}
+      - {id: *PC2, tax_year: 2026, label: Rechnung Hausmeisterdienst, amount: "119.00"}
   owners: &OWNERS
     - {id: *O1, full_name: Max Beispiel}
     - {id: *O2, full_name: Erika Beispiel}
@@ -3096,3 +3121,116 @@ cases:
           mode: create
           target_id: *T1
           values: {}
+
+  # --- Zahlungsnachweis (phase 3 D143) ---------------------------------------------------
+
+  - id: payment_proof_moves_private_cost_to_paid_year
+    description: >
+      D143. A bill of 2026 (two private_cost parts, 357.00 + 119.00) paid on 08.01.2027 from a
+      private account; the proof's 476.00 equals the bill, so both rows are proposed for 2027
+      (Abflussprinzip, §11 EStG). The minus sign of the bank's amount does not matter.
+    kind: payment_proof
+    context:
+      document_id: *DOC
+      classification: *CL_PROOF
+      properties: [*PROP_LINDEN]
+      proof_bill: *PROOF_BILL
+    extraction:
+      title: {v: Überweisung Hausmeisterdienst, p: 1, q: "Überweisung"}
+      document_date: {v: "2027-01-08", p: 1, q: "Ausgeführt am 08.01.2027"}
+      paid_on: {v: "2027-01-08", p: 1, q: "Ausgeführt am 08.01.2027"}
+      amount: {v: "-476.00", p: 1, q: "Betrag -476,00 EUR"}
+      payee: {v: Hausmeisterdienst Muster GmbH, p: 1, q: "Empfänger Hausmeisterdienst Muster GmbH"}
+      purpose: {v: Rechnung 2026-118, p: 1, q: "Verwendungszweck Rechnung 2026-118"}
+    expect:
+      keys: [typing, private_cost_year:1, private_cost_year:2]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: other, subtype: payment_proof, title: Überweisung Hausmeisterdienst, document_date: "2027-01-08", amount_total: "-476.00", counterparty: Hausmeisterdienst Muster GmbH}
+        - key: private_cost_year:1
+          entity_type: tax_input
+          mode: patch
+          target_id: *PC1
+          values: {tax_year: 2027}
+          derived: {tax_year: [paid_on, amount]}
+          current: {tax_year: 2026}
+          notes_contain: ["§11", "2027"]
+        - key: private_cost_year:2
+          entity_type: tax_input
+          mode: patch
+          target_id: *PC2
+          values: {tax_year: 2027}
+          derived: {tax_year: [paid_on, amount]}
+          current: {tax_year: 2026}
+
+  - id: payment_proof_amount_mismatch_keeps_year
+    description: >
+      D143. The proof states 400.00 for the 476.00 bill: no year is changed, typing says the
+      amount does not match (the draft's to-do stays, Betrag passt nicht).
+    kind: payment_proof
+    context:
+      document_id: *DOC
+      classification: *CL_PROOF
+      properties: [*PROP_LINDEN]
+      proof_bill: *PROOF_BILL
+    extraction:
+      title: {v: Überweisung Hausmeisterdienst, p: 1, q: "Überweisung"}
+      paid_on: {v: "2027-01-08", p: 1, q: "Ausgeführt am 08.01.2027"}
+      amount: {v: "400.00", p: 1, q: "Betrag 400,00 EUR"}
+      payee: {v: Hausmeisterdienst Muster GmbH, p: 1, q: "Empfänger Hausmeisterdienst Muster GmbH"}
+    expect:
+      keys: [typing]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: other, subtype: payment_proof, title: Überweisung Hausmeisterdienst, amount_total: "400.00", counterparty: Hausmeisterdienst Muster GmbH}
+          notes_contain: ["passt nicht", "400,00", "476,00"]
+
+  - id: payment_proof_same_year_no_move
+    description: >
+      D143. The bill was paid on 20.12.2026, the year its rows already count in: nothing to
+      move, typing only.
+    kind: payment_proof
+    context:
+      document_id: *DOC
+      classification: *CL_PROOF
+      properties: [*PROP_LINDEN]
+      proof_bill: *PROOF_BILL
+    extraction:
+      paid_on: {v: "2026-12-20", p: 1, q: "Buchungstag 20.12.2026"}
+      amount: {v: "476.00", p: 1, q: "476,00 EUR"}
+    expect:
+      keys: [typing]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: other, subtype: payment_proof, amount_total: "476.00", counterparty: null}
+
+  - id: payment_proof_of_a_nebenkosten_row_never_moves
+    description: >
+      D143. A proof for the notary's bill, a Nebenkosten row (no year of its own): matched by
+      the row's amount, nothing is moved, typing only.
+    kind: payment_proof
+    context:
+      document_id: *DOC
+      classification: *CL_PROOF
+      properties: [*PROP_LINDEN]
+      proof_bill:
+        document_id: *DOC_OTHER
+        acquisition_costs:
+          - {id: *C2, property_id: *P, kind: notary, amount: "2380.00", document_id: *DOC_OTHER}
+    extraction:
+      paid_on: {v: "2027-01-12", p: 1, q: "Ausgeführt am 12.01.2027"}
+      amount: {v: "2380.00", p: 1, q: "2.380,00 EUR"}
+      payee: {v: Notarin Beispiel, p: 1, q: "Empfänger Notarin Beispiel"}
+    expect:
+      keys: [typing]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: other, subtype: payment_proof, amount_total: "2380.00", counterparty: Notarin Beispiel}

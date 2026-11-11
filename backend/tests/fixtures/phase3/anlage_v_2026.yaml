@@ -38,6 +38,35 @@
 # Coverage: the December lines are confirmed, so their statements reconciled; the last
 #   reconciled day is 30 Dec (the last bank-fee line), which leaves December not fully
 #   covered: 5 of 6 months.
+#
+# Proof of payment (D143, 11 Nov 2026; Luis: "each invoice should have its respective payment
+# proof"). Every bill the draft counts needs a proof that it was paid; a bill without one STILL
+# COUNTS, the draft only raises a to-do:
+#   proven by the bank   a bill carried by a confirmed allocation (allocation.document_id): its
+#                        bank line is the proof; an acquisition cost row whose paid_by is not
+#                        empty; a private_cost row whose bill a bank line paid is not counted at
+#                        all (D135, tax.private_cost_paid_from_account).
+#   needs a proof        the document of an acquisition cost row (checked in the purchase year
+#                        only, the year the Nebenkosten were paid), and the document of the
+#                        private_cost rows in force in the tax year (a row the 15 % crossing
+#                        moved into the AfA basis included). A row without a document is left
+#                        to acquisition_cost_evidence and afa.cost_row_unpaid; a private cost
+#                        without a document (trips, a membership) has no bill to prove.
+#   facts.payment_proofs the payment_proof documents linked to a bill (document_link target
+#                        document): {proof_document_id, bill_document_id, amount}, amount the
+#                        proof's current reading (null: not read or no amount stated).
+#   proven               when one proof's amount is null (the user saw the proof), or one
+#                        proof's amount, or the sum of the proofs' amounts, equals the bill's
+#                        amount within 0.01: an acquisition cost row's amount; for private costs
+#                        the sum of value.amount (gross, before the share) of the bill's rows in
+#                        force in every year.
+#   otherwise            payment_proof.missing (warning), one per bill and source, params:
+#                        document (the bill's id), source (acquisition_cost | private_cost),
+#                        kind (the row's AcquisitionCostKind) or label (the label of the bill's
+#                        row with the lowest id), amount (the bill's amount as above), and
+#                        proof_amount (the sum of the proofs' amounts) only when a proof exists
+#                        and none matches ("Betrag passt nicht"). Refs: the bill and its rows.
+# Case A's notary bill (C2, D_NOTAR) is stored but no allocation paid it, so it raises the to-do.
 
 ids:
   property: &P 0000000b-0000-4000-8000-000000000001
@@ -152,6 +181,9 @@ ids:
   # phase 3 D137: a repair paid from another account, and its bill
   input_private_repair: &TI9 000000f1-0000-4000-8000-000000000009
   doc_private_repair: &D_PR 00000d0c-0000-4000-8000-00000000000f
+  # phase 3 D143: payment_proof documents linked to a bill
+  doc_proof_notary: &D_PN 00000d0c-0000-4000-8000-000000000010
+  doc_proof_repair: &D_PPR 00000d0c-0000-4000-8000-000000000011
 
 bases:
   property: &property
@@ -403,7 +435,11 @@ bases:
        tax_year: 2027, rule: short_period_shift}
     - {allocation_id: *N01, booking_date: 2026-12-29, category: operating_costs_prepayment,
        amount: "180.00", tax_year: 2027, rule: short_period_shift}
-  w_unpaid: &w_unpaid {code: afa.cost_row_unpaid, params: {kind: notary, amount: "4200.00"}}
+  # D143: the notary bill is stored, no allocation paid it and no proof is linked (before D143
+  # this was the info afa.cost_row_unpaid {kind: notary, amount: "4200.00"}).
+  w_notary_proof: &w_notary_proof
+    {code: payment_proof.missing,
+     params: {document: *D_NOTAR, source: acquisition_cost, kind: notary, amount: "4200.00"}}
   missing_documents: &missing_documents
     - {code: purchase_contract, status: present, scope: {type: property, id: *P}, documents: [*D_KV]}
     - {code: price_split, status: present, scope: {type: property, id: *P}, documents: [*D_KV]}
@@ -486,7 +522,7 @@ cases:
       pre_handover: [*F1, *F2]
       excluded_open: {count: 2, sum: "-89.90"}
       warnings:
-        - *w_unpaid
+        - *w_notary_proof
         - {code: hausgeld.abrechnung_pending}
         - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
         - {code: reduced_rent.no_market_rent}
@@ -531,7 +567,7 @@ cases:
         - {owner_id: *OB, amount: "-1594.33", amount_rounded: -1595}
       excluded_open: {count: 3, sum: "-4849.90"}
       warnings:
-        - *w_unpaid
+        - *w_notary_proof
         - {code: hausgeld.abrechnung_pending}
         - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
         - {code: renovation.undecided, params: {amount: "4760.00"}}
@@ -586,7 +622,7 @@ cases:
         - {owner_id: *OB, amount: "-3549.33", amount_rounded: -3550}
       pre_handover: []
       warnings:
-        - *w_unpaid
+        - *w_notary_proof
         - {code: hausgeld.abrechnung_pending}
         - &w_counted {code: income.other_review,
                       params: {amount: "425.00", counterparty_iban: "DE12 **** 0002", counted_as_rent: "1"}}
@@ -668,7 +704,7 @@ cases:
         - {owner_id: *OA, amount: "-4055.33", amount_rounded: -4056}
         - {owner_id: *OB, amount: "-4055.33", amount_rounded: -4056}
       warnings:
-        - *w_unpaid
+        - *w_notary_proof
         - {code: hausgeld.abrechnung_pending}
         - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
         - {code: reduced_rent.no_market_rent}
@@ -711,7 +747,7 @@ cases:
         - {owner_id: *OA, amount: "-4334.33", amount_rounded: -4335}
         - {owner_id: *OB, amount: "-4334.33", amount_rounded: -4335}
       warnings:
-        - *w_unpaid
+        - *w_notary_proof
         - {code: hausgeld.abrechnung_pending}
         - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
         - {code: reduced_rent.no_market_rent}
@@ -761,7 +797,7 @@ cases:
         - {owner_id: *OA, amount: "-4099.33", amount_rounded: -4100}
         - {owner_id: *OB, amount: "-4099.33", amount_rounded: -4100}
       warnings:
-        - *w_unpaid
+        - *w_notary_proof
         - {code: hausgeld.abrechnung_pending}
         - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
         - {code: reduced_rent.no_market_rent}
@@ -808,7 +844,7 @@ cases:
         - {owner_id: *OA, amount: "-3974.33", amount_rounded: -3975}
         - {owner_id: *OB, amount: "-3974.33", amount_rounded: -3975}
       warnings:
-        - *w_unpaid
+        - *w_notary_proof
         - {code: hausgeld.abrechnung_pending}
         - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
         - {code: reduced_rent.no_market_rent}
@@ -833,10 +869,11 @@ cases:
       tax_inputs:
         - *inputs_a_tiles
         - *input_certified
-        - {id: *TI9, property_id: *P, kind: private_cost, tax_year: 2026, document_id: *D_PR,
+        - &input_private_repair
+          {id: *TI9, property_id: *P, kind: private_cost, tax_year: 2026, document_id: *D_PR,
            value: {cost_class: other, category: repairs, label: Rechnung Reparatur Sanitär,
                    amount: "595.00", performed_on: 2026-11-20, amount_net: "500.00"}}
-    expect:
+    expect: &expect_private_repair
       lines:
         - *line_rent
         - *line_umlagen
@@ -864,12 +901,15 @@ cases:
         - {owner_id: *OA, amount: "-4271.83", amount_rounded: -4273}
         - {owner_id: *OB, amount: "-4271.83", amount_rounded: -4272}
       warnings:
-        - *w_unpaid
+        - *w_notary_proof
         - {code: hausgeld.abrechnung_pending}
         - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
         - {code: reduced_rent.no_market_rent}
         - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
         - {code: draft.form_provisional}
+        - {code: payment_proof.missing,
+           params: {document: *D_PR, source: private_cost, label: Rechnung Reparatur Sanitär,
+                    amount: "595.00"}}
       limit_15:
         <<: *limit_15
         counted: [*PA, *TL, *TI9]
@@ -931,16 +971,107 @@ cases:
         - {owner_id: *OB, amount: "-1237.33", amount_rounded: -1238}
       afa: {amount: "2816.00", basis: "234000.00", months: 6, method_code: 2}
       warnings:
-        - *w_unpaid
+        - *w_notary_proof
         - {code: hausgeld.abrechnung_pending}
         - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
         - {code: reduced_rent.no_market_rent}
         - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
         - {code: draft.form_provisional}
         - {code: limit.exceeded, params: {exceeded_in_year: "2026"}}
+        - {code: payment_proof.missing,
+           params: {document: *D_PR, source: private_cost, label: Dachreparatur,
+                    amount: "41650.00"}}
       limit_15:
         <<: *limit_15
         counted: [*PA, *TL, *TI9]
         used_net: "40000.00"
         ratio_percent: "114.0"
         exceeded: true
+
+  # Phase 3 D143 (11 Nov 2026): a bill the draft counts without a bank line needs a proof of
+  # payment; a linked payment_proof document whose amount matches, or whose amount was not
+  # read, ends the to-do; an amount that does not match keeps it, naming the proof's amount.
+  # The figures never change: a cost without its proof still counts.
+  - id: notary_bill_proof_linked_no_todo
+    description: >
+      case A plus a payment proof of 4,200.00 linked to the notary bill → no
+      payment_proof.missing; every figure as in case A
+    tax_year: 2026
+    rule_set_year: 2026
+    facts:
+      <<: *facts
+      payment_proofs:
+        - {proof_document_id: *D_PN, bill_document_id: *D_NOTAR, amount: "4200.00"}
+    expect:
+      <<: *expect_a
+      warnings:
+        - {code: hausgeld.abrechnung_pending}
+        - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
+        - {code: reduced_rent.no_market_rent}
+        - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
+        - {code: draft.form_provisional}
+
+  - id: notary_bill_proof_amount_unread_counts
+    description: >
+      case A plus a payment proof linked to the notary bill whose amount was not read → the
+      proof counts (the user linked it from the to-do and saw it); no payment_proof.missing
+    tax_year: 2026
+    rule_set_year: 2026
+    facts:
+      <<: *facts
+      payment_proofs:
+        - {proof_document_id: *D_PN, bill_document_id: *D_NOTAR, amount: null}
+    expect:
+      <<: *expect_a
+      warnings:
+        - {code: hausgeld.abrechnung_pending}
+        - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
+        - {code: reduced_rent.no_market_rent}
+        - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
+        - {code: draft.form_provisional}
+
+  - id: private_repair_proof_matches_no_todo
+    description: >
+      private_repair_below_limit_stays_in_maintenance plus a payment proof of 595.00 linked to
+      the repair bill → its payment_proof.missing ends (the notary's stays); figures unchanged
+    tax_year: 2026
+    rule_set_year: 2026
+    facts:
+      <<: *facts
+      tax_inputs: [*inputs_a_tiles, *input_certified, *input_private_repair]
+      payment_proofs:
+        - {proof_document_id: *D_PPR, bill_document_id: *D_PR, amount: "595.00"}
+    expect:
+      <<: *expect_private_repair
+      warnings:
+        - *w_notary_proof
+        - {code: hausgeld.abrechnung_pending}
+        - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
+        - {code: reduced_rent.no_market_rent}
+        - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
+        - {code: draft.form_provisional}
+
+  - id: private_repair_proof_amount_mismatch
+    description: >
+      private_repair_below_limit_stays_in_maintenance plus a payment proof of 500.00 (the net,
+      not the 595.00 paid) → the to-do stays and names the proof's amount (Betrag passt nicht);
+      the repair still counts in full
+    tax_year: 2026
+    rule_set_year: 2026
+    facts:
+      <<: *facts
+      tax_inputs: [*inputs_a_tiles, *input_certified, *input_private_repair]
+      payment_proofs:
+        - {proof_document_id: *D_PPR, bill_document_id: *D_PR, amount: "500.00"}
+    expect:
+      <<: *expect_private_repair
+      warnings:
+        - *w_notary_proof
+        - {code: hausgeld.abrechnung_pending}
+        - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
+        - {code: reduced_rent.no_market_rent}
+        - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
+        - {code: draft.form_provisional}
+        - {code: payment_proof.missing,
+           params: {document: *D_PR, source: private_cost, label: Rechnung Reparatur Sanitär,
+                    amount: "595.00", proof_amount: "500.00"}}
