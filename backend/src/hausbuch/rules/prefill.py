@@ -2636,18 +2636,18 @@ _DUE_DAY_UNCLEAR_NOTE = (
     " Tag eintragen, an dem die Miete fällig ist."
 )
 # "keine (gesonderte) Abrechnung", "Abrechnung erfolgt nicht", "wird nicht abgerechnet".
-_NO_SETTLEMENT = re.compile(
+_LEASE_NO_SETTLEMENT = re.compile(
     r"\bkeine\b[^.;]{0,60}?abrechnung"
     r"|abrechnung\w*(?:\s+[^\s.;]+){0,3}?\s+(?:erfolgt|findet)\s+nicht"
     r"|abrechnung\w*\s+entfällt"
     r"|nicht\s+(?:gesondert\s+)?abgerechnet"
     r"|ohne\s+(?:\w+\s+)?abrechnung"
 )
-_SETTLEMENT = re.compile(r"abrechn|abgerechnet|abzurechnen")
-_PREPAYMENT = re.compile(r"vorauszahlung|abschlag|vorschuss")
+_LEASE_SETTLEMENT = re.compile(r"abrechn|abgerechnet|abzurechnen")
+_LEASE_PREPAYMENT = re.compile(r"vorauszahlung|abschlag|vorschuss")
 # A Pauschale on the Nebenkosten; a "Pauschalmiete" is an all-in rent, not one.
-_FLAT_RATE = re.compile(r"pauschal(?!miete)")
-_INCLUDED = re.compile(
+_LEASE_FLAT_RATE = re.compile(r"pauschal(?!miete)")
+_LEASE_INCLUDED = re.compile(
     r"warmmiete|inklusivmiete|inklusiv-|pauschalmiete|bruttomiete|\ball-?in\b"
     r"|in der miete enthalten|mit der miete abgegolten|abgegolten"
     r"|nicht gesondert vereinbart|enthält (?:sämtliche|alle) (?:neben|betriebs)"
@@ -2661,11 +2661,11 @@ def _operating_costs_terms(clause: Any) -> OperatingCostsTerms | None:
     Abschlag (by law settled yearly, §556 Abs. 3 BGB) is prepayment. "inkl." alone decides
     nothing: "Nebenkosten inkl. Heizung und Strom" names what a Pauschale covers."""
     t = _norm(clause)
-    no_settlement = bool(_NO_SETTLEMENT.search(t))
-    settlement = not no_settlement and bool(_SETTLEMENT.search(t))
-    prepayment = bool(_PREPAYMENT.search(t))
-    flat = bool(_FLAT_RATE.search(t))
-    included = bool(_INCLUDED.search(t))
+    no_settlement = bool(_LEASE_NO_SETTLEMENT.search(t))
+    settlement = not no_settlement and bool(_LEASE_SETTLEMENT.search(t))
+    prepayment = bool(_LEASE_PREPAYMENT.search(t))
+    flat = bool(_LEASE_FLAT_RATE.search(t))
+    included = bool(_LEASE_INCLUDED.search(t))
     if flat:
         # A Pauschale next to a Vorauszahlung that is settled: two arrangements at once.
         return None if prepayment and settlement else OperatingCostsTerms.FLAT_RATE
@@ -2678,7 +2678,7 @@ def _operating_costs_terms(clause: Any) -> OperatingCostsTerms | None:
     return None
 
 
-_ORDINALS = {
+_LEASE_ORDINALS = {
     "ersten": 1,
     "zweiten": 2,
     "dritten": 3,
@@ -2691,14 +2691,14 @@ _ORDINALS = {
     "neunten": 9,
     "zehnten": 10,
 }
-_ORDINAL = "|".join(sorted(_ORDINALS, key=len, reverse=True))
+_LEASE_ORDINAL = "|".join(sorted(_LEASE_ORDINALS, key=len, reverse=True))
 # "dritten Werktag", "3. Werktag", "am 5.", "bis zum 5. eines Monats", "zum ersten des
 # Monats", "Monatsersten". A number followed by more digits ("01.05.2026") is a date, not a day.
-_DUE_DAY = re.compile(
-    rf"\b(?P<word>{_ORDINAL})\b|\b(?P<num>\d{{1,2}})\.(?!\d)|(?P<first>monatsersten)"
+_LEASE_DUE_DAY = re.compile(
+    rf"\b(?P<word>{_LEASE_ORDINAL})\b|\b(?P<num>\d{{1,2}})\.(?!\d)|(?P<first>monatsersten)"
 )
-_DUE_CONTEXT = re.compile(r"(?:\bzum|\bam|\bbis|\bspätestens)\s+$")
-_WORKING_DAY = re.compile(r"\s*(?:werk|bank|arbeits)tag")
+_LEASE_DUE_CONTEXT = re.compile(r"(?:\bzum|\bam|\bbis|\bspätestens)\s+$")
+_LEASE_WORKING_DAY = re.compile(r"\s*(?:werk|bank|arbeits)tag")
 
 
 def _rent_due_day(clause: Any) -> int | None:
@@ -2707,12 +2707,12 @@ def _rent_due_day(clause: Any) -> int | None:
     third Werktag). None when it names no day, or two different ones."""
     t = _norm(clause)
     days: set[int] = set()
-    for m in _DUE_DAY.finditer(t):
+    for m in _LEASE_DUE_DAY.finditer(t):
         if m["first"]:
             days.add(1)
             continue
-        day = _ORDINALS[m["word"]] if m["word"] else int(m["num"])
-        if _WORKING_DAY.match(t, m.end()) or _DUE_CONTEXT.search(t, 0, m.start()):
+        day = _LEASE_ORDINALS[m["word"]] if m["word"] else int(m["num"])
+        if _LEASE_WORKING_DAY.match(t, m.end()) or _LEASE_DUE_CONTEXT.search(t, 0, m.start()):
             days.add(day)
     if len(days) != 1:
         return None
