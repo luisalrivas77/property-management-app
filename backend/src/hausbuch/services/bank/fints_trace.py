@@ -11,10 +11,14 @@ version (`HKVVB:4v3`); a value is printed only for the segments and fields liste
   HKTAN's version, process, segment type and whether a TAN medium name is absent, empty or
   set (never the name); HNSHK's security function (its key name holds the login);
 - received: every answer of HIRMG (the whole message) and HIRMS (the customer segment its
-  header refers to, resolved by number), its text and parameters through
-  `rules.bank_sync.redact_bank_text` with the login, customer id, PIN, product id and system id
-  hidden; HIBPA's BPD version; HIUPA's UPD version (not its user id); HITANS's security
-  functions with their names and whether each is decoupled; HICAZS's camt formats.
+  header refers to, resolved by number), its text through `rules.bank_sync.redact_bank_text`
+  with the login, customer id, PIN, product id, the system id and the dialog id hidden (the
+  last two also taken from the message itself: HISYN and HNHBK of the sent and received
+  message, since python-fints stores them only after the trace has run); its parameters
+  printed only for 3920 (the allowed security functions), for every other code counted
+  (`[2 parameters]`: 3072 carries the new login, 3040 a touchdown point); HIBPA's BPD
+  version; HIUPA's UPD version (not its user id); HITANS's security functions with their
+  names and whether each is decoupled; HICAZS's camt formats.
 
 Never, at any level: the PIN, the login, the customer id, the product id, the system id, a
 dialog id, an IBAN or account number, a balance, camt content, a TAN challenge. Data segments
@@ -158,6 +162,12 @@ def describe_sent(segments: Any) -> dict[str, Any]:
     return {"sent": sent, "settings": settings}
 
 
+# Answer codes whose parameters are printed: 3920's are the allowed security functions
+# (three-digit codes). Every other code's parameters are counted only: 3072 carries the new
+# login and customer id, 3040 a touchdown point that may be an account number (D148 review).
+_PARAMETER_CODES = frozenset({"3920"})
+
+
 def _answers(segment: Any, sent: dict[int, str], hidden: tuple[str | None, ...]) -> list[str]:
     kind = str(segment.header.type)
     if kind == "HIRMG":
@@ -167,12 +177,34 @@ def _answers(segment: Any, sent: dict[int, str], hidden: tuple[str | None, ...])
         target = sent.get(int(reference), f"segment {reference}") if reference else "unknown"
     out = []
     for response in segment.responses or ():
-        line = f"{_text(response.code)} → {target}: {redact_bank_text(response.text, *hidden)}"
-        parameters = [redact_bank_text(p, *hidden) for p in (response.parameters or ())]
-        if parameters:
-            line += f" [{', '.join(parameters)}]"
+        code = _text(response.code)
+        line = f"{code} → {target}: {redact_bank_text(response.text, *hidden)}"
+        parameters = list(response.parameters or ())
+        if parameters and code in _PARAMETER_CODES:
+            line += f" [{', '.join(redact_bank_text(p, *hidden) for p in parameters)}]"
+        elif parameters:  # 3072 carries the new login, 3040 a touchdown point: count only
+            line += f" [{len(parameters)} parameter{'s' if len(parameters) > 1 else ''}]"
         out.append(line)
     return out
+
+
+def _secrets_in(segments: Any) -> tuple[str, ...]:
+    """The system id (HISYN) and dialog id (HNHBK) a message carries, other than "0": python-fints
+    stores them only after the trace has run, and the dialog id never on the client."""
+    found = []
+    for segment in walk(segments):
+        kind = str(segment.header.type)
+        value = (
+            getattr(segment, "system_id", None)
+            if kind == "HISYN"
+            else getattr(segment, "dialog_id", None)
+            if kind == "HNHBK"
+            else None
+        )
+        text = _text(value)
+        if text and text != SYSTEM_ID_UNASSIGNED:
+            found.append(text)
+    return tuple(found)
 
 
 def _tan_methods(segment: Any, hidden: tuple[str | None, ...]) -> list[str]:
@@ -262,7 +294,7 @@ def log_exchange(
         fields |= describe_sent(segments)
         fields |= {k: v for k, v in http.items() if v is not None}
         if response is not None:
-            secrets = hidden()
+            secrets = (*hidden(), *_secrets_in(segments), *_secrets_in(response.segments))
             fields |= describe_received(response.segments, segment_map(segments), secrets)
         if error is not None:
             fields["outcome"] = "failed"

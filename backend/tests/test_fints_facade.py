@@ -319,6 +319,9 @@ ACCOUNT_NUMBER = "0532013000"
 SYSTEM_ID = "SYSID-0001-SECRET"
 DIALOG_ID = "DIALOG-77-SECRET"
 NEVER_LOGGED = (*SECRETS, IBAN, ACCOUNT_NUMBER, SYSTEM_ID, DIALOG_ID)
+NEW_LOGIN = "newalias-abc"  # 3072's parameters: the replaced login and customer id
+NEW_CUSTOMER = "kd-alpha-77"
+TOUCHDOWN = "0532-0130-00"  # 3040's touchdown point, an account number in dash groups
 
 
 def _answer(code: str, text: str, parameters: list[str] | None = None) -> Response:
@@ -384,12 +387,13 @@ def _trace_records(log, message: str = "fints exchange") -> list[dict]:
     ]
 
 
-def _assert_nothing_secret(log) -> None:
+def _assert_nothing_secret(log, *more: str) -> None:
+    never = (*NEVER_LOGGED, *more)
     text = log.getvalue()
-    assert not [s for s in NEVER_LOGGED if s in text]
+    assert not [s for s in never if s in text]
     for record in log.records:  # the arguments and the fields, each on its own
         for part in (repr(record.args), repr(getattr(record, "fields", None))):
-            assert not [s for s in NEVER_LOGGED if s in part]
+            assert not [s for s in never if s in part]
 
 
 def test_the_trace_of_a_bootstrap_logs_no_secret(debug_log):
@@ -397,20 +401,37 @@ def test_the_trace_of_a_bootstrap_logs_no_secret(debug_log):
     carry the login, the PIN, the product id, the system id, a dialog id, an IBAN and an
     account number: every record of every logger, at DEBUG, holds none of them."""
     session = _real_session()
-    answer = _institute_answer(
-        HIRMG2(responses=[_answer("3060", f"Produkt {PRODUCT_ID} beachten")]),
-        HIRMS2(responses=[_answer("3920", f"Verfahren für {LOGIN} PIN {PIN}", ["946"])]),
+    # Exchange 1 (HKSYN): the system id is assigned in this very answer, and a 0020 text
+    # echoes it before python-fints has stored it. 3072 carries a new login and customer id
+    # as parameters, 3040 a dash-grouped account number as its touchdown point.
+    first = _institute_answer(
+        HIRMG2(
+            responses=[
+                _answer("3060", f"Produkt {PRODUCT_ID} beachten"),
+                _answer("0020", f"System-ID {SYSTEM_ID} vergeben"),
+            ]
+        ),
+        HIRMS2(
+            responses=[
+                _answer("3920", f"Verfahren für {LOGIN} PIN {PIN}", ["946"]),
+                _answer("3072", "Benutzerkennung und Kunden-ID ersetzt", [NEW_LOGIN, NEW_CUSTOMER]),
+                _answer("3040", "Es liegen weitere Informationen vor", [TOUCHDOWN]),
+            ]
+        ),
         HISYN4(system_id=SYSTEM_ID),
         *_account_data(),
     )
+    # Exchange 2 (HKEND): an answer text echoing the dialog id, which no client field holds.
+    second = _institute_answer(HIRMG2(responses=[_answer("0100", f"Dialog {DIALOG_ID} beendet")]))
+    answers = iter([_bank_answer(first), _bank_answer(second)])
     with (
-        mock.patch.object(requests.Session, "request", return_value=_bank_answer(answer)),
+        mock.patch.object(requests.Session, "request", side_effect=lambda *a, **k: next(answers)),
         pytest.raises(F.BankError) as raised,
     ):
         session.open()
     assert raised.value.code == E.BANK_TAN_NOT_DECOUPLED  # no HITANS offered: the run stops
 
-    _assert_nothing_secret(debug_log)
+    _assert_nothing_secret(debug_log, NEW_LOGIN, NEW_CUSTOMER, TOUCHDOWN)
     [facts] = _trace_records(debug_log, "fints session")
     assert facts["mode"] == "bootstrap" and facts["system_id"] == "0"
     assert facts["product_id"] == "set (25 chars)" and facts["host"] == "fints.example.org"
@@ -430,6 +451,11 @@ def test_the_trace_of_a_bootstrap_logs_no_secret(debug_log):
     assert set(settings) == {"HKIDN", "HKVVB", "HKSYN", "HNSHK"}
     assert init["http_status"] == 200 and init["http_bytes"] > 0 and init["outcome"] == "answered"
     assert "3060 → message: Produkt <hidden> beachten" in init["answers"]
+    assert "0020 → message: System-ID <hidden> vergeben" in init["answers"]
+    assert any(a.startswith("3920 ") and a.endswith(" [946]") for a in init["answers"])
+    assert any(a.startswith("3072 ") and a.endswith(" [2 parameters]") for a in init["answers"])
+    assert any(a.startswith("3040 ") and a.endswith(" [1 parameter]") for a in init["answers"])
+    assert end["answers"] == ["0100 → message: Dialog <hidden> beendet"]
     assert "HIUPD:" in " ".join(init["received"]) and init["facts"] == {"upd_version": "7"}
     assert "HKEND" in {e.split(":")[0] for e in end["sent"]}
     assert [k.split(":")[0] for k in end["settings"]] == ["HNSHK"]  # HKEND: its header only

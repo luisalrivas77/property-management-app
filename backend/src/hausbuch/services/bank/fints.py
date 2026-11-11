@@ -39,13 +39,15 @@ whether the system id is assigned; HKVVB's BPD/UPD versions, language, product v
 product id's length only; HKSYN's mode; HKTAN's version, process, segment type and whether a
 TAN medium is named; HNSHK's security function), the HTTP status, size and time, and every
 HIRMG/HIRMS answer as `9010 → HKVVB:4: text`, its HIRMS reference resolved to the segment we
-sent, the text and parameters redacted (login, customer id, PIN, product id and system id
-hidden, numbers of five digits or more blanked). From the bank's parameters: the BPD and UPD
-versions, the offered security functions with their names and whether each is decoupled, and
-the camt formats. A transport failure logs the exception chain as class names only and is
-re-raised unchanged. `open()` adds one record of the session's facts (bootstrap or restored,
-the security function, whether the system id is assigned, BPD/UPD versions, the python-fints
-version, the product id's length, the product version, the URL's host). Each record carries
+sent, the text redacted (login, customer id, PIN, product id, system id and dialog id hidden,
+numbers of five digits or more blanked), the parameters printed only for 3920 and otherwise
+counted (3072 carries a new login, 3040 a touchdown point). From the bank's parameters: the
+BPD and UPD versions, the offered security functions with their names and whether each is
+decoupled, and the camt formats. A transport failure logs the exception chain as class names
+only and is re-raised unchanged. `open()` adds one record of the session's facts (bootstrap
+or restored, the security function, whether the system id is assigned, BPD/UPD versions, the
+python-fints version, the product id's length, the product version, the URL's host). Each
+record carries
 the step (`bootstrap`, `open`, `poll`, `accounts`, `transactions`, `balance`, `close`), the
 exchange's number in the session and the job's `log_fields` (the sync id).
 It never logs, at any level: the PIN, the login, the customer id, the product id, the system
