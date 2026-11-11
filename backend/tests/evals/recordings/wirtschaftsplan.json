@@ -2,13 +2,13 @@
  "format": 1,
  "doc": "wirtschaftsplan",
  "synthetic": false,
- "recorded_on": "2026-11-10",
+ "recorded_on": "2026-11-11",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "de0ab828a4c10d64",
-  "request_sha256": "49161fb65f354dd84b212593b617712462a7979c6e4b6c39c1c66097dff209a7",
+  "prompt_version": "77cb7da29af32068",
+  "request_sha256": "990e572579e9f118ae5e0b0281b0bb09952fb42e6e8c2449dc1b0ad6ebd329f4",
   "message": {
-   "id": "msg_011CguyLrWdhuhLbUBLdd3Cq",
+   "id": "msg_011CgwXExqTRgLv87ZJ17nsZ",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 6535,
+    "input_tokens": 6670,
     "output_tokens": 48,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -48,7 +48,7 @@
    "prompt_version": "5a4e4a41623c9f1a",
    "request_sha256": "f5de905f1b6d9a047964bc4cabc91e379bf106400a64816f7e7beaf4e644e8c0",
    "message": {
-    "id": "msg_011CguyLfUN9u44GpFC2T8Rf",
+    "id": "msg_011CgwXEn7HhTR2RmCkYo5Ee",
     "container": null,
     "content": [
      {

@@ -5,10 +5,10 @@
  "recorded_on": "2026-11-11",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "de0ab828a4c10d64",
-  "request_sha256": "ec6819db98966d4fb855317085edd6aa9823f04261156a184ed39ada9a79d9cd",
+  "prompt_version": "77cb7da29af32068",
+  "request_sha256": "0247e96aaa992feedd1a9618efb69508ba94c48144317a10b1e23f5c51032361",
   "message": {
-   "id": "msg_011CgwJVKZWxDX9ypCBKCWAn",
+   "id": "msg_011CgwXEfjYxNam2tBCj7rjk",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 8381,
+    "input_tokens": 8516,
     "output_tokens": 51,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -48,7 +48,7 @@
    "prompt_version": "5a4e4a41623c9f1a",
    "request_sha256": "c39f26cb8c8d72bf86be0c6e5651023061c421ca671917927a00ad5d4a08ba2c",
    "message": {
-    "id": "msg_011CgwJV9KNkUoEiq9V2VRCy",
+    "id": "msg_011CgwXEVZNcnxRADKkZtnzr",
     "container": null,
     "content": [
      {
@@ -188,7 +188,7 @@
         "type": "page_location"
        }
       ],
-      "text": "Bescheid 1, 6,0 % von 140.000 | 8.400,00 € | acquisition_cost",
+      "text": "Bescheid 1: 6,0 % von 140.000 | 8.400,00 € | acquisition_cost",
       "type": "text"
      },
      {
@@ -208,7 +208,7 @@
         "type": "page_location"
        }
       ],
-      "text": "Bescheid 2, 6,0 % von 140.000 | 8.400,00 € | acquisition_cost",
+      "text": "Bescheid 2: 6,0 % von 140.000 | 8.400,00 € | acquisition_cost",
       "type": "text"
      }
     ],
@@ -228,7 +228,7 @@
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
      "input_tokens": 5941,
-     "output_tokens": 343,
+     "output_tokens": 342,
      "output_tokens_details": {
       "thinking_tokens": 0
      },

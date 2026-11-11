@@ -82,6 +82,15 @@ invoices (utility bill, household services, work expenses) are read as invoices 
 no Nebenkosten row: typing with the tax year from the invoice date, and the property link for
 a utility bill.
 
+Phase 2 D147: a Gutachten (appraisal) is in the property group, and with its property found and
+a remaining useful life read it proposes tax_input:useful_life {tax_year, value.years}, both
+derived by code from [remaining_useful_life, valuation_date] (_useful_life): the life counts
+from the handover, a Stichtag before it takes off the whole months between them; a Stichtag in
+a later year than the handover starts the life on 1 January of its own year; a Stichtag after
+that start adds the whole months from the start to it; rounded up to whole years. A
+life not shorter than the statutory one left (the check of services.tax_inputs, D79), or none
+left, proposes no record and says why on the typing record.
+
 Phase 2 D132 (one pre-filled form, Luis 10 Nov 2026): the typing record also carries the
 document's hand-entry fields (rules.hand_fields: amount_total, period_start, period_end,
 counterparty, reference, notes, as the kind maps them) under their hand-field names, each
@@ -97,7 +106,7 @@ document's reading as well. The apply writes them as the document's hand fields
 import re
 from collections.abc import Callable, Iterable, Sequence
 from datetime import date
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
 
@@ -139,6 +148,8 @@ from .extraction_parse import house_number_key as _house_number_key
 from .extraction_parse import lone_dwelling as _lone_dwelling
 from .extraction_parse import street_key as _street_key
 from .hand_fields import HAND_FIELD_MAP, HAND_FIELDS, hand_values
+from .tax import registry as tax_registry
+from .tax.afa import statutory_months_left
 from .tax.rounding import split_cents
 
 _CONFIDENCE_ORDER: dict[ConfidenceLevel, int] = {"low": 0, "medium": 1, "high": 2}
@@ -236,6 +247,54 @@ _NO_DWELLING_NOTE = (
     "eintragen."
 )
 _DWELLING_KEPT_NOTE = "Ohne Klick bleibt die eingetragene Wohnfläche, wie sie ist. "
+# D147: a Gutachten's remaining useful life (§7 Abs. 4 S. 2 EStG) as the shorter useful life.
+_LIFE_BEFORE_NOTE = (
+    "Das Gutachten nennt {life} zum {stichtag}; bis zur Übergabe am {handover} sind {elapsed} "
+    "vergangen, daher {years} ab {year}."
+)
+_LIFE_ON_HANDOVER_NOTE = (
+    "Das Gutachten nennt {life} zum Tag der Übergabe ({handover}), daher {years} ab {year}."
+)
+_LIFE_AFTER_NOTE = (
+    "Das Gutachten nennt {life} zum {stichtag}, nach der Übergabe am {handover}; die Zeit von "
+    "der Übergabe bis zum Stichtag ({added}) kommt hinzu, daher {years} ab {year}."
+)
+_LIFE_AFTER_SAME_MONTH_NOTE = (
+    "Das Gutachten nennt {life} zum {stichtag}, weniger als einen Monat nach der Übergabe am "
+    "{handover}, daher {years} ab {year}."
+)
+_LIFE_LATER_NOTE = (
+    "Das Gutachten nennt {life} zum {stichtag}, in einem späteren Jahr als die Übergabe am "
+    "{handover}. Die kürzere Nutzungsdauer beginnt am 1. Januar {year}{added_clause}, daher "
+    "{years} ab {year}. Bis dahin bleibt es bei der gesetzlichen AfA."
+)
+_LIFE_LATER_ADDED = "; die Zeit vom 1. Januar bis zum Stichtag ({added}) kommt hinzu"
+_LIFE_NO_STICHTAG_NOTE = (
+    "Das Gutachten nennt {life}; ein Bewertungsstichtag wurde nicht gelesen, daher {years} ab "
+    "der Übergabe am {handover} ({year}). Bitte prüfen, ob das Gutachten auf einen früheren "
+    "Stichtag rechnet: dann ist die Zeit bis zur Übergabe abzuziehen."
+)
+_LIFE_ROUNDED = " Auf ganze Jahre aufgerundet: die längere Nutzungsdauer ist die vorsichtige Wahl."
+_LIFE_USE = (
+    " Mit „Übernehmen“ wird die AfA des Gebäudes ab {year} über diese Nutzungsdauer gerechnet "
+    "statt über die gesetzlichen {statutory}, die dann noch bleiben."
+)
+_LIFE_NOT_SHORTER_NOTE = (
+    "Das Gutachten nennt {life}; daraus folgen {years} ab {year}. Das ist nicht kürzer als die "
+    "gesetzliche Nutzungsdauer, {rest}, daher wird keine kürzere Nutzungsdauer vorgeschlagen "
+    "und die AfA bleibt beim gesetzlichen Satz."
+)
+_LIFE_STATUTORY_LEFT = "die dann noch {statutory} beträgt"
+_LIFE_STATUTORY_NONE = "von der dann keine Zeit mehr bleibt"
+_LIFE_USED_UP_NOTE = (
+    "Das Gutachten nennt {life} zum {stichtag}; bis zur Übergabe am {handover} sind {elapsed} "
+    "vergangen, mehr als diese Restnutzungsdauer. Daher wird keine Nutzungsdauer vorgeschlagen; "
+    "bitte das Gutachten prüfen."
+)
+_LIFE_UNREADABLE_NOTE = (
+    "Die Restnutzungsdauer des Gutachtens ließ sich nicht als Zahl lesen. Sie lässt sich unter "
+    "Steuern bei „Kürzere Nutzungsdauer (Gutachten)“ eintragen."
+)
 # A catalogue document whose link was not found (D131): typing only, and what to do.
 _NO_PROPERTY_NOTE = (
     "Zu diesem Dokument wurde kein Objekt gefunden: die Adresse passt zu keinem oder zu "
@@ -1592,6 +1651,8 @@ class _Builder:
                 ):
                     self._living_area(prop)
                 self.link("link:property", prop.id)
+                if subtype is DocumentSubtype.APPRAISAL:
+                    self._useful_life(prop)  # D147: after its link, as a certificate's figure
             else:
                 self.records[0].notes.append(_NO_PROPERTY_NOTE)
         elif group == "loan":
@@ -1663,6 +1724,86 @@ class _Builder:
         self.records[-1].options["living_area_m2"] = [
             FieldOption(value=row.area, label=_dwelling_label(row)) for row in rows
         ]
+
+    def _useful_life(self, prop: ExistingProperty) -> None:
+        """D147: a Gutachten's remaining useful life as tax_input:useful_life (phase 3 D79),
+        computed by code. The life counts from the handover (purchase_date, the AfA start): a
+        Stichtag before it takes off the whole months between them (_whole_months). A Stichtag
+        in a later year than the handover starts the life on 1 January of that year, where D79
+        restarts it. A Stichtag after that start (the handover, or that 1 January) adds the
+        whole months from the start to it, since the life was stated for a later day; one on
+        the start, or none read, takes the figure as read. Rounded up to whole years (the
+        longer life is the conservative one). Not shorter than the statutory life left on 1
+        January of that year (the service's check), or nothing left: no record, a note on the
+        typing record. Not stated: nothing."""
+        life_read = self.ev("remaining_useful_life")
+        stichtag_read = self.ev("valuation_date")
+        if life_read.value is None:
+            return
+        life = _decimal(life_read.value)
+        if life is None or life <= 0:
+            self.records[0].notes.append(_LIFE_UNREADABLE_NOTE)
+            return
+        handover = prop.purchase_date
+        stichtag = _iso_date(stichtag_read.value)
+        months = life * 12
+        year = handover.year
+        facts = {
+            "life": _years_de(life),
+            "stichtag": "" if stichtag is None else f"{stichtag:%d.%m.%Y}",
+            "handover": f"{handover:%d.%m.%Y}",
+        }
+        if stichtag is not None and stichtag < handover:
+            elapsed = _whole_months(stichtag, handover)
+            months -= elapsed
+            facts["elapsed"] = _span_de(elapsed)
+            if months <= 0:
+                self.records[0].notes.append(_LIFE_USED_UP_NOTE.format(**facts))
+                return
+            note = _LIFE_BEFORE_NOTE
+        elif stichtag is None:
+            note = _LIFE_NO_STICHTAG_NOTE
+        else:
+            later = stichtag.year > handover.year
+            start = date(stichtag.year, 1, 1) if later else handover
+            added = _whole_months(start, stichtag)
+            months += added
+            facts["added"] = _span_de(added)
+            if later:
+                year = stichtag.year
+                note = _LIFE_LATER_NOTE
+                facts["added_clause"] = _LIFE_LATER_ADDED.format(**facts) if added else ""
+            elif stichtag == handover:
+                note = _LIFE_ON_HANDOVER_NOTE
+            elif added:
+                note = _LIFE_AFTER_NOTE
+            else:
+                note = _LIFE_AFTER_SAME_MONTH_NOTE
+        years = int((months / 12).to_integral_value(rounding=ROUND_CEILING))
+        rate = tax_registry.afa_rule_set(year).afa_rate(prop.build_year)
+        left = statutory_months_left(rate, handover, year)
+        facts |= {"years": _years_de(Decimal(years)), "year": year}
+        statutory = _span_de(int(left))
+        if years * 12 >= left:
+            rest = (
+                _LIFE_STATUTORY_LEFT.format(statutory=statutory)
+                if left > 0
+                else _LIFE_STATUTORY_NONE
+            )
+            self.records[0].notes.append(_LIFE_NOT_SHORTER_NOTE.format(**facts, rest=rest))
+            return
+        text = note.format(**facts)
+        if years * 12 != months:
+            text += _LIFE_ROUNDED
+        text += _LIFE_USE.format(year=year, statutory=statutory)
+        inputs = [("remaining_useful_life", life_read), ("valuation_date", stichtag_read)]
+        self.add(
+            "tax_input:useful_life",
+            "tax_input",
+            "create",
+            {"tax_year": _derived(year, inputs), "value.years": _derived(years, inputs)},
+            notes=[text],
+        )
 
     def _tenancy_at_date(self) -> UUID | None:
         """The one tenancy on the property found by address whose term holds the document's
@@ -2550,6 +2691,30 @@ _PROOF_YEAR_NOTE = (
     "„{label}“ zählt bisher im Jahr {old}, wurde aber am {paid} bezahlt: Kosten zählen im Jahr "
     "der Zahlung (§11 Abs. 2 EStG), also {new}."
 )
+
+
+def _whole_months(start: date, end: date) -> int:
+    """The calendar months from `start` to `end` that have passed in full: a month counts once
+    its day of the month is reached (30.05.2024 to 02.10.2026: 28, D147)."""
+    months = (end.year - start.year) * 12 + end.month - start.month
+    return months - 1 if end.day < start.day else months
+
+
+def _years_de(years: Decimal) -> str:
+    """21 -> "21 Jahre", 1 -> "1 Jahr", 21.5 -> "21,5 Jahre"."""
+    text = format(years.normalize(), "f").replace(".", ",")
+    return f"{text} Jahr" if years == 1 else f"{text} Jahre"
+
+
+def _span_de(months: int) -> str:
+    """28 -> "2 Jahre und 4 Monate", 12 -> "1 Jahr", 5 -> "5 Monate"."""
+    years, rest = divmod(months, 12)
+    parts = []
+    if years:
+        parts.append("1 Jahr" if years == 1 else f"{years} Jahre")
+    if rest or not years:
+        parts.append("1 Monat" if rest == 1 else f"{rest} Monate")
+    return " und ".join(parts)
 
 
 def _euro_de(amount: Decimal) -> str:

@@ -96,7 +96,7 @@ const IN_FLIGHT: readonly ProposalStatus[] = ["queued", "running"];
 /** "unit" / "tenancy" / "loan": the id of one of the workspace's units / tenancies / loans,
  * picked from a list.
  * "bool": a checkbox; ticked is sent as true, unticked is left out (the *Create default, false). */
-type FieldKind = "text" | "money" | "date" | "year" | "rate" | "area" | "fraction" | "enum" | "fixed" | "unit" | "tenancy" | "loan" | "bool";
+type FieldKind = "text" | "money" | "date" | "year" | "count" | "rate" | "area" | "fraction" | "enum" | "fixed" | "unit" | "tenancy" | "loan" | "bool";
 
 /** The kinds picked from the workspace's records. */
 type PickKind = "unit" | "tenancy" | "loan";
@@ -146,6 +146,23 @@ const PRIVATE_COST_CATEGORY: Readonly<Record<string, string>> = Object.fromEntri
     ] as const
   ).map((c) => [c, ALLOCATION_CATEGORY[c]]),
 );
+
+/** A Gutachten's shorter useful life (tax_input:useful_life, D147): the years and the first year,
+ * both computed by Hausbuch from the Gutachten's Restnutzungsdauer and Stichtag. */
+const USEFUL_LIFE_FIELDS: Readonly<Record<string, FieldSpec>> = {
+  "value.years": {
+    label: "Nutzungsdauer laut Gutachten (Jahre)",
+    kind: "count",
+    description:
+      "Die Restnutzungsdauer des Gebäudes laut Gutachten, umgerechnet auf den Beginn: die Übergabe, oder der 1. Januar des Stichtag-Jahres, wenn das Gutachten erst in einem späteren Jahr erstellt wurde. Liegt der Stichtag vor diesem Beginn, zieht Hausbuch die vollen Monate dazwischen ab; liegt er danach, rechnet es sie hinzu. Dann rundet es auf ganze Jahre auf (die längere Nutzungsdauer ist die vorsichtige Wahl). Mit „Übernehmen“ wird die AfA des Gebäudes über diese Jahre gerechnet statt über die gesetzliche Nutzungsdauer (§ 7 Abs. 4 Satz 2 EStG); sie muss kürzer sein als die gesetzliche.",
+  },
+  tax_year: {
+    label: "Gilt ab Steuerjahr",
+    kind: "year",
+    description:
+      "Das erste Jahr, für das die kürzere Nutzungsdauer gilt: das Jahr der Übergabe, oder das Jahr des Stichtags, wenn das Gutachten erst Jahre nach dem Kauf erstellt wurde. Davor bleibt es bei der gesetzlichen AfA.",
+  },
+};
 
 /** A cost paid from another account's amount (D135): one row per bill and category, so it
  * replaces only the same bill's earlier row, never another bill's. */
@@ -604,6 +621,7 @@ const TAX_INPUT_TITLE: Record<string, string> = {
   interest_certified: "Zinsbescheinigung: gezahlte Zinsen",
   ruecklage_spent: "Hausgeldabrechnung: Entnahme aus der Rücklage",
   grundsteuer_schedule: "Grundsteuerbescheid: Jahresbetrag und Fälligkeiten",
+  useful_life: "Gutachten: kürzere Nutzungsdauer des Gebäudes",
 };
 
 /** The extraction fields a derived value names in `derived_from`. */
@@ -628,6 +646,8 @@ const DERIVED_INPUT: Record<string, string> = {
   monthly_fee: "Vergütungsklausel (z. B. „zzgl. MwSt.“)",
   cost_lines: "Rechnungspositionen",
   amount_total: "Gesamtbetrag",
+  remaining_useful_life: "Restnutzungsdauer laut Gutachten",
+  valuation_date: "Bewertungsstichtag des Gutachtens",
 };
 
 function lookup(map: Readonly<Record<string, string>>, key: string): string {
@@ -642,6 +662,7 @@ function prefixOf(key: string): [string, string] {
 function specFor(record: ProposalRecord, name: string): FieldSpec {
   if (name === "amount_total" && isHandField(record, name) && record.fields?.subtype?.value === "management_contract") return MANAGEMENT_FEE;
   if (name === "value.amount" && record.key.startsWith("tax_input:private_cost:")) return PRIVATE_COST_AMOUNT;
+  if (record.key === "tax_input:useful_life" && USEFUL_LIFE_FIELDS[name]) return USEFUL_LIFE_FIELDS[name];
   return FIELDS[prefixOf(record.key)[0]]?.[name] ?? text(name);
 }
 
@@ -773,6 +794,13 @@ function toRaw(spec: FieldSpec, value: unknown): string {
   }
 }
 
+/** A whole number of at least 1, e.g. a useful life in years (D147). */
+function toCount(raw: string): Parsed<number> {
+  const text = raw.trim();
+  if (!/^\d+$/.test(text) || Number(text) < 1) return { ok: false, message: "Bitte eine ganze Zahl ab 1 eingeben." };
+  return { ok: true, value: Number(text) };
+}
+
 /** The input's text as the value to send; null for an empty input. */
 function fromRaw(spec: FieldSpec, raw: string): Parsed<unknown> {
   if (raw.trim() === "") return { ok: true, value: null };
@@ -785,6 +813,8 @@ function fromRaw(spec: FieldSpec, raw: string): Parsed<unknown> {
       return toDecimalString(raw, spec.decimals ?? 2);
     case "year":
       return toYear(raw);
+    case "count":
+      return toCount(raw);
     case "fraction":
       return toFraction(raw);
     case "bool":
@@ -1714,11 +1744,11 @@ function FieldRow({
     } else if (spec.kind === "date") {
       input = <input type="date" {...common} onChange={(e) => onChange({ raw: e.target.value })} />;
     } else {
-      const numeric = spec.kind === "money" || spec.kind === "rate" || spec.kind === "area" || spec.kind === "year";
+      const numeric = spec.kind === "money" || spec.kind === "rate" || spec.kind === "area" || spec.kind === "year" || spec.kind === "count";
       input = (
         <input
           type="text"
-          inputMode={numeric ? (spec.kind === "year" ? "numeric" : "decimal") : undefined}
+          inputMode={numeric ? (spec.kind === "year" || spec.kind === "count" ? "numeric" : "decimal") : undefined}
           autoComplete="off"
           {...common}
           onChange={(e) => onChange({ raw: e.target.value })}

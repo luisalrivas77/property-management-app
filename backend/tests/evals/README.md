@@ -61,6 +61,17 @@ as the total. Only Bescheid requests changed, so only `grunderwerbsteuerbescheid
 again, with the new document, on 11 Nov 2026. The sum is printed nowhere, so the model writes
 it without a citation (`Doc.as_written`); the cited lines summing to it is its check.
 
+A Restnutzungsdauer-Gutachten (phase 2 D147) adds `restnutzungsdauer_gutachten`: a
+Sachverständigengutachten proving a shorter remaining useful life (§7 Abs. 4 S. 2 EStG), which
+must be classified `appraisal`, never `building_records`. It prints the Gesamtnutzungsdauer
+and the building's age next to the life it concludes, and a report date apart from the
+Wertermittlungsstichtag, so only the right ones pass. Its `expected_useful_life` runs the
+pre-fill for a flat at its address with a known build year and handover and checks the
+proposed useful life (first tax year and whole years, computed by code). `classify.md`
+changed, so every document was recorded again on 11 Nov 2026; on the first run the
+Mieterselbstauskunft came back as type `letter` (its subtype right), so its line now says its
+type is `other` even when it reads like a letter, and all twenty-six were recorded again.
+
 - `test_recorded_evals.py` runs in CI on every push. It replays every recording in
   `recordings/` through the same code the `document_read` job uses (SDK message conversion,
   `parse_classification`, `rules.extraction_parse.parse_lines`, the chunk merge) and checks
@@ -73,7 +84,7 @@ it without a citation (`Doc.as_written`); the cited lines summing to it is its c
   text (`recordings.synthetic_recording`, `"synthetic": true`). They are built in memory,
   never written to `recordings/`, and are not API output.
 
-## Recording (Luis, once per prompt or model change; about $0.25–0.50 for all twenty-four)
+## Recording (Luis, once per prompt or model change; about $0.25–0.50 for all twenty-six)
 
 Needs the `hausbuch-evals` key (deploy/scaleway.md step 13), from your computer:
 

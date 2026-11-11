@@ -1,0 +1,223 @@
+{
+ "format": 1,
+ "doc": "restnutzungsdauer_gutachten",
+ "synthetic": false,
+ "recorded_on": "2026-11-11",
+ "sdk_version": "2.6.0",
+ "classify": {
+  "prompt_version": "77cb7da29af32068",
+  "request_sha256": "8698b9a0ae70dc640aa0ebf4fb56afbdc65e714871a6ea4be1a756f3aa5b63b4",
+  "message": {
+   "id": "msg_011CgwXHtni7yikCV2aUZkYm",
+   "container": null,
+   "content": [
+    {
+     "citations": null,
+     "text": "{\"type\":\"other\",\"subtype\":\"appraisal\",\"contains_tenant_data\":false,\"language\":\"de\",\"confidence\":\"high\"}",
+     "type": "text"
+    }
+   ],
+   "diagnostics": null,
+   "model": "claude-haiku-5-5",
+   "role": "assistant",
+   "stop_details": null,
+   "stop_reason": "end_turn",
+   "stop_sequence": null,
+   "type": "message",
+   "usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": "us",
+    "input_tokens": 8481,
+    "output_tokens": 43,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": "standard"
+   }
+  }
+ },
+ "extract": [
+  {
+   "prompt_version": "5a4e4a41623c9f1a",
+   "request_sha256": "b22e6a28979f77bcc0c15206b1c8c43215410babd5314c67a0d9db119ba6104e",
+   "message": {
+    "id": "msg_011CgwXHmJWUHJ6nkmSG6Sk9",
+    "container": null,
+    "content": [
+     {
+      "citations": null,
+      "text": "title: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Sachverständigenbüro Beispiel\r\nGutachten zum Nachweis einer kürzeren tatsächlichen Nutzungsdauer\r\ngemäß § 7 Abs. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Gutachten zur kürzeren tatsächlichen Nutzungsdauer",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ndocument_date: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Berlin, den 10.02.2026\r\nDipl.-Ing. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "10.02.2026",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nstreet: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "3\r\nLindenstraße 7, 10115 Berlin\r\nBaujahr des Gebäudes: 1968\r\nWertermittlungsstichtag: 15.01.2026\r\nTag der Ortsbesichtigung: 22.01.2026",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Lindenstraße",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nhouse_number: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "3\r\nLindenstraße 7, 10115 Berlin\r\nBaujahr des Gebäudes: 1968\r\nWertermittlungsstichtag: 15.01.2026\r\nTag der Ortsbesichtigung: 22.01.2026",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "7",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\npostal_code: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "3\r\nLindenstraße 7, 10115 Berlin\r\nBaujahr des Gebäudes: 1968\r\nWertermittlungsstichtag: 15.01.2026\r\nTag der Ortsbesichtigung: 22.01.2026",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "10115",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nremaining_useful_life: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Ergebnis: Die tatsächliche Restnutzungsdauer des Gebäudes\r\nbeträgt zum Wertermittlungsstichtag 21 Jahre.\r\n",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 3,
+        "file_id": null,
+        "start_page_number": 2,
+        "type": "page_location"
+       }
+      ],
+      "text": "21 Jahre",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\nvaluation_date: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "3\r\nLindenstraße 7, 10115 Berlin\r\nBaujahr des Gebäudes: 1968\r\nWertermittlungsstichtag: 15.01.2026\r\nTag der Ortsbesichtigung: 22.01.2026",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "15.01.2026",
+      "type": "text"
+     }
+    ],
+    "diagnostics": null,
+    "model": "claude-sonnet-5-5",
+    "role": "assistant",
+    "stop_details": null,
+    "stop_reason": "end_turn",
+    "stop_sequence": null,
+    "type": "message",
+    "usage": {
+     "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+     },
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "inference_geo": "us",
+     "input_tokens": 5704,
+     "output_tokens": 229,
+     "output_tokens_details": {
+      "thinking_tokens": 0
+     },
+     "server_tool_use": null,
+     "service_tier": "standard",
+     "speed": "standard"
+    }
+   },
+   "page_offset": 0
+  }
+ ]
+}

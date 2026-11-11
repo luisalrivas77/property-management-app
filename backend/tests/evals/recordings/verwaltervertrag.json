@@ -2,13 +2,13 @@
  "format": 1,
  "doc": "verwaltervertrag",
  "synthetic": false,
- "recorded_on": "2026-11-10",
+ "recorded_on": "2026-11-11",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "de0ab828a4c10d64",
-  "request_sha256": "f2910567adafd8c61194cf4122c8848555fdde58b1b6336a27f079c91d29b1ea",
+  "prompt_version": "77cb7da29af32068",
+  "request_sha256": "261ba9d1362c13b586f56ec398e656a9400ce247d4d817063ed1dfc91b8de4d1",
   "message": {
-   "id": "msg_011CguyNtWkZZ38FZRc8y5V3",
+   "id": "msg_011CgwXGuxP7YT2AhfGVp7rp",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 6635,
+    "input_tokens": 6770,
     "output_tokens": 44,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -48,7 +48,7 @@
    "prompt_version": "5a4e4a41623c9f1a",
    "request_sha256": "1907774f6619ef98e7e471e0eb58d9f05e02bb985cd512ee9882a3e04afd78d3",
    "message": {
-    "id": "msg_011CguyNiYivjhHKm7531FNS",
+    "id": "msg_011CgwXGjkxWJUHqMv5yoqFL",
     "container": null,
     "content": [
      {

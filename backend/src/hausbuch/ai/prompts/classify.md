@@ -28,14 +28,15 @@ Wirtschaftsplan and Hausgeldabrechnung take their own `type` and subtype null.
 The property and its purchase:
 - `purchase_contract`: Kaufvertrag über eine Immobilie (notarial purchase contract)
 - `price_split_evidence`: Kaufpreisaufteilung, or the result of the BMF Arbeitshilfe
-- `appraisal`: Wertgutachten / Verkehrswertgutachten
+- `appraisal` (other): Wertgutachten / Verkehrswertgutachten, a Gutachten zur (Rest-)Nutzungsdauer or Nachweis einer kürzeren
+  Nutzungsdauer (§7 Abs. 4 S. 2 EStG), any Sachverständigengutachten on the building's value or remaining life
 - `cost_basis_evidence`: an invoice or Bescheid for a cost of buying the property (notary, Grundbuchamt, Grunderwerbsteuer, broker) or of renovating it. Not for an invoice about financing: a notary or Grundbuchamt bill for a Grundschuld or Hypothek (Grundschuldbestellung, Hypothekenbestellung, its Eintragung or Löschung), or a fee for a loan (Darlehen): those take subtype null
 - `grundsteuerbescheid`: the property's Grundsteuerbescheid
 - `land_register_extract` (letter): Grundbuchauszug
 - `declaration_of_division` (contract): Teilungserklärung, Gemeinschaftsordnung
 - `land_charge_deed` (contract): Grundschuldbestellungsurkunde (the notarial deed itself, not its notary bill)
 - `energy_certificate` (other): Energieausweis
-- `building_records` (other): Grundriss, Wohnflächenberechnung, Baubeschreibung, Baugenehmigung
+- `building_records` (other): Grundriss, Wohnflächenberechnung, Baubeschreibung, Baugenehmigung; never a Gutachten (that is `appraisal`)
 - `insurance_policy` (contract): Versicherungsschein: Wohngebäude, Haus- und Grundbesitzerhaftpflicht, Mietausfall, Rechtsschutz
 - `management_contract` (contract): Verwaltervertrag, Mietverwaltungsvertrag (a contract with a letting manager, or the WEG's contract with its Verwalter)
 - `service_contract` (contract): Strom-, Gas-, Wasser- oder Internetvertrag, Wartungsvertrag (Heizung, Rauchmelder)
@@ -58,7 +59,7 @@ The tenancy:
 - `deposit_record`: Kautionsnachweis, a record of the rent deposit
 - `rent_increase` (letter): Mieterhöhung, Staffel- oder Indexmietanpassung
 - `termination_notice` (letter): Kündigung, Mietaufhebungsvertrag
-- `tenant_self_disclosure` (other): Mieterselbstauskunft, Schufa-Auskunft, Einkommensnachweis eines Mieters. An Einkommensteuerbescheid, a payslip or a Schufa-Auskunft that a tenant or a rental applicant handed in as proof of income is this subtype, never the owners' own document
+- `tenant_self_disclosure` (other): Mieterselbstauskunft, Schufa-Auskunft, Einkommensnachweis eines Mieters. An Einkommensteuerbescheid, a payslip or a Schufa-Auskunft that a tenant or a rental applicant handed in as proof of income is this subtype, never the owners' own document; its `type` is `other`, also when it reads like a letter or has proofs attached
 - `landlord_confirmation` (letter): Wohnungsgeberbestätigung
 - `operating_costs_statement` (letter): Betriebskostenabrechnung an den Mieter
 - `tenant_correspondence` (letter): Mängelanzeige, Schreiben von oder an einen Mieter

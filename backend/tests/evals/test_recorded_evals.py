@@ -54,6 +54,7 @@ OWNERS_ONLY = (
     "verwaltervertrag",
     "wohnflaechenberechnung",
     "zahlungsnachweis",
+    "restnutzungsdauer_gutachten",
 )
 
 
@@ -95,6 +96,8 @@ def _check(doc: Doc, recording: dict) -> None:
         _check_cost_lines(doc, result.values["cost_lines"], real=not recording["synthetic"])
     if doc.expected_dwellings:
         _check_dwellings(doc, result, real=not recording["synthetic"])
+    if doc.expected_useful_life:
+        _check_useful_life(doc, result)
 
 
 def _check_cost_lines(doc: Doc, read, *, real: bool) -> None:
@@ -159,6 +162,36 @@ def _check_dwellings(doc: Doc, result, *, real: bool) -> None:
         records = prefill.build_proposal(ExtractionKind.GENERAL, extraction, context)
         [prop] = [r for r in records if r.key == "property"]
         assert prop.fields["living_area_m2"].value == area, f"{doc.name}: picked for {mea}"
+
+
+def _check_useful_life(doc: Doc, result) -> None:
+    """D147: the pre-fill turns the Gutachten's life and Stichtag into the shorter useful life
+    for a flat at its address, counted from the handover and rounded up to whole years."""
+    prefill = pytest.importorskip("hausbuch.rules.prefill", reason="proposals chunk not merged")
+    assert doc.expected_useful_life is not None
+    build_year, handover, tax_year, years = doc.expected_useful_life
+    extraction = EXTRACTION_MODELS[ExtractionKind.GENERAL].model_validate(result.values)
+    flat = ExistingProperty(
+        id=uuid.uuid4(),
+        kind=PropertyKind.ETW,
+        address={
+            "street": doc.expected["street"],
+            "house_number": doc.expected["house_number"],
+            "postal_code": doc.expected["postal_code"],
+            "city": "Berlin",
+        },
+        build_year=build_year,
+        notarized_on="2026-02-12",
+        purchase_date=handover,
+        purchase_price="289000.00",
+    )
+    context = PrefillContext(
+        document_id=uuid.uuid4(), classification=result.classification, properties=[flat]
+    )
+    records = prefill.build_proposal(ExtractionKind.GENERAL, extraction, context)
+    [life] = [r for r in records if r.key == "tax_input:useful_life"]
+    got = (life.fields["tax_year"].value, life.fields["value.years"].value)
+    assert got == (tax_year, years), f"{doc.name}: useful life {got}"
 
 
 def _build_proposal(doc: Doc, result) -> None:

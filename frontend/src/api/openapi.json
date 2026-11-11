@@ -12341,6 +12341,16 @@
             "description": "every dwelling the document lists, one item per Wohnung, each written `label | Wohnfläche | MEA | Lage`: the dwelling's label as printed (e.g. WE 3, Wohnung Nr. 3), its Wohnfläche in m² as printed, its Miteigentumsanteil as printed (e.g. 85/1000) and its location in the building (e.g. 2. OG links), unbekannt for a part the row does not state; one item for a document about one flat; never a single room, a sum or a total row",
             "value_kind": "text_list"
           },
+          "remaining_useful_life": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the Restnutzungsdauer or tatsächliche Nutzungsdauer of the building the Gutachten concludes, in years as written (e.g. 21 Jahre); never the Gesamtnutzungsdauer, the building's age or a life the Gutachten only quotes from a table",
+            "value_kind": "decimal"
+          },
+          "valuation_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the Wertermittlungsstichtag or Bewertungsstichtag the remaining life is stated for; never the date the Gutachten was written or signed",
+            "value_kind": "date"
+          },
           "lender": {
             "$ref": "#/components/schemas/ExtractedValue",
             "description": "the bank that gave the loan",
@@ -12379,7 +12389,7 @@
         "additionalProperties": false,
         "type": "object",
         "title": "GeneralExtraction",
-        "description": "The general reading (D130): title and date for every document without a reader of its\nown, plus the one field set its subtype's group needs to find its link (D131): the\nproperty's address for the property, WEG, running-costs and tenancy groups, the lender and\ncontract number for the loan group. A request asks only those (asked_fields); an\nowner's home address is never asked. A Wohnflächenberechnung (building_records) is also\nasked its list of dwellings (D139)."
+        "description": "The general reading (D130): title and date for every document without a reader of its\nown, plus the one field set its subtype's group needs to find its link (D131): the\nproperty's address for the property, WEG, running-costs and tenancy groups, the lender and\ncontract number for the loan group. A request asks only those (asked_fields); an\nowner's home address is never asked. A Wohnflächenberechnung (building_records) is also\nasked its list of dwellings (D139), a Gutachten (appraisal) its remaining useful life and\nStichtag (D147)."
       },
       "GrundsteuerInstalment": {
         "properties": {

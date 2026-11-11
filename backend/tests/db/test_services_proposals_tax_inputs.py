@@ -14,12 +14,13 @@ from sqlalchemy import func, select
 
 from hausbuch.db.tables import tax_input as tax_input_table
 from hausbuch.schemas.ai import ClassifyOutput
-from hausbuch.schemas.enums import DocumentType, PropertyKind
+from hausbuch.schemas.enums import DocumentSubtype, DocumentType, PropertyKind
 from hausbuch.schemas.loan import LoanCreate
 from hausbuch.schemas.property import Address, PropertyCreate
 from hausbuch.schemas.proposal import ProposalApplyBody, ProposalApplyRecord
 from hausbuch.schemas.tax import TaxInputKind
 from hausbuch.services import proposals
+from hausbuch.services.errors import RuleViolationError
 from hausbuch.services.loans import create_loan
 from hausbuch.services.properties import create_property
 from hausbuch.services.tax_inputs import list_tax_inputs
@@ -257,3 +258,105 @@ def test_a_hausgeldabrechnung_of_an_unknown_address_proposes_no_figure(
     elsewhere = HAUSGELD_VALUES | {"street": _v("Bahnhofstraße")}
     _, ready, _ = _read_ready(run, job, ws, blob_store, enqueued, HAUSGELD, elsewhere, b"%PDF x")
     assert [r.key for r in ready.records] == ["typing"]
+
+
+# --- A Restnutzungsdauer-Gutachten (phase 2 D147) -------------------------------------------
+
+GUTACHTEN = ClassifyOutput(
+    type=DocumentType.OTHER,
+    subtype=DocumentSubtype.APPRAISAL,
+    contains_tenant_data=False,
+    language="de",
+    confidence="high",
+)
+GUTACHTEN_VALUES = {
+    "title": _v("Gutachten Restnutzungsdauer"),
+    "document_date": _v("2024-04-10"),
+    "street": _v("Lindenstraße"),
+    "house_number": _v("12"),
+    "postal_code": _v("10115"),
+    "remaining_useful_life": _v("24", page=4, quote="Restnutzungsdauer: 24 Jahre"),
+    "valuation_date": _v("2024-03-15", page=1, quote="Wertermittlungsstichtag: 15.03.2024"),
+}
+
+
+def test_a_gutachten_proposes_the_shorter_useful_life_with_itself_as_evidence(
+    run, read, job, fresh_workspaces, blob_store, enqueued
+):
+    """FLAT was handed over on 02.05.2024 and completed in 1994 (50 years): 24 years at
+    15.03.2024 less one whole month is 287 months, rounded up to 24 years from 2024."""
+    ws, _ = fresh_workspaces
+    prop = run(ws, create_property, FLAT).id
+    doc, ready, _ = _read_ready(
+        run, job, ws, blob_store, enqueued, GUTACHTEN, GUTACHTEN_VALUES, b"%PDF ga"
+    )
+    records = {r.key: r for r in ready.records}
+    assert list(records) == ["typing", "link:property", "tax_input:useful_life"]
+    proposed = records["tax_input:useful_life"]
+    assert {f: v.value for f, v in proposed.fields.items()} == {
+        "tax_year": 2024,
+        "value.years": 24,
+    }
+    assert proposed.fields["value.years"].derived_from == [
+        "remaining_useful_life",
+        "valuation_date",
+    ]
+    assert records["link:property"].target_id == prop
+    assert _rows(read, ws) == 0  # the read writes nothing (D14)
+
+    result = _apply(run, ws, ready)
+    [row] = read(ws, list_tax_inputs, prop)
+    assert (row.kind, row.tax_year, row.document_id, row.value.years) == (
+        TaxInputKind.USEFUL_LIFE,
+        2024,
+        doc.id,
+        24,
+    )
+    assert {a.key: a.entity_id for a in result.applied}["tax_input:useful_life"] == row.id
+
+
+def test_a_gutachten_read_again_writes_nothing_and_a_changed_life_supersedes(
+    run, read, job, fresh_workspaces, blob_store, enqueued
+):
+    ws, _ = fresh_workspaces
+    prop = run(ws, create_property, FLAT).id
+    doc, first, _ = _read_ready(
+        run, job, ws, blob_store, enqueued, GUTACHTEN, GUTACHTEN_VALUES, b"%PDF ga1"
+    )
+    _apply(run, ws, first)
+    [original] = read(ws, list_tax_inputs, prop)
+
+    def reread():
+        rerun = run(ws, proposals.rerun_proposal, doc.id)
+        return job(
+            ws,
+            proposals.record_read_result,
+            rerun.id,
+            classification=GUTACHTEN,
+            classify_call_id=run(ws, _ai_call, doc.id, "classify"),
+            values=GUTACHTEN_VALUES,
+            extract_call_id=run(ws, _ai_call, doc.id, "extract"),
+        )
+
+    # The same Gutachten applied again: the same row, nothing new.
+    result = _apply(run, ws, reread())
+    assert {a.key: a.entity_id for a in result.applied}["tax_input:useful_life"] == original.id
+    assert _rows(read, ws) == 1
+
+    # A life the user raises to the statutory 50 years is refused, as on Steuern; nothing
+    # is written.
+    again = reread()
+    raised = _accept_all(again, **{"tax_input:useful_life": {"value.years": 50}})
+    with pytest.raises(RuleViolationError) as exc:
+        _apply(run, ws, again, raised)
+    assert exc.value.code == "tax_input.useful_life_not_shorter"
+    assert _rows(read, ws) == 1
+
+    # A life the user corrects to 26 years supersedes the first row.
+    _apply(run, ws, again, _accept_all(again, **{"tax_input:useful_life": {"value.years": 26}}))
+    [current] = read(ws, list_tax_inputs, prop)
+    assert (current.value.years, current.document_id, current.supersedes_id) == (
+        26,
+        doc.id,
+        original.id,
+    )

@@ -515,7 +515,8 @@ class GeneralExtraction(_Typing):
     property's address for the property, WEG, running-costs and tenancy groups, the lender and
     contract number for the loan group. A request asks only those (asked_fields); an
     owner's home address is never asked. A Wohnflächenberechnung (building_records) is also
-    asked its list of dwellings (D139)."""
+    asked its list of dwellings (D139), a Gutachten (appraisal) its remaining useful life and
+    Stichtag (D147)."""
 
     street: ExtractedValue = ev("text", "street of the property the document concerns")
     house_number: ExtractedValue = ev("text", "house number of that property")
@@ -523,6 +524,19 @@ class GeneralExtraction(_Typing):
     # D139: asked of a Wohnflächenberechnung (building_records) only. Code picks the
     # household's row and proposes its area as the property's living_area_m2 (phase 3 D71).
     dwellings: ExtractedValue = ev("text_list", DWELLINGS_MEANING)
+    # D147: asked of a Gutachten (appraisal) only. Code derives the shorter useful life
+    # (§7 Abs. 4 S. 2 EStG, phase 3 D79) from both and proposes it as a tax input.
+    remaining_useful_life: ExtractedValue = ev(
+        "decimal",
+        "the Restnutzungsdauer or tatsächliche Nutzungsdauer of the building the Gutachten "
+        "concludes, in years as written (e.g. 21 Jahre); never the Gesamtnutzungsdauer, the "
+        "building's age or a life the Gutachten only quotes from a table",
+    )
+    valuation_date: ExtractedValue = ev(
+        "date",
+        "the Wertermittlungsstichtag or Bewertungsstichtag the remaining life is stated for; "
+        "never the date the Gutachten was written or signed",
+    )
     lender: ExtractedValue = ev("text", "the bank that gave the loan")
     contract_number: ExtractedValue = ev(
         "text",
@@ -577,6 +591,7 @@ _PROPERTY_GROUPS = (
     DocumentSubtype.LAND_CHARGE_DEED,
     DocumentSubtype.ENERGY_CERTIFICATE,
     DocumentSubtype.BUILDING_RECORDS,
+    DocumentSubtype.APPRAISAL,  # D147: from before the catalogue, linked like its group
     DocumentSubtype.INSURANCE_POLICY,
     DocumentSubtype.MANAGEMENT_CONTRACT,
     DocumentSubtype.SERVICE_CONTRACT,
@@ -615,10 +630,12 @@ _LINK_FIELDS: dict[GeneralLink, tuple[str, ...]] = {
     "loan": ("lender", "contract_number"),
     "tenancy": _ADDRESS,
 }
-# A subtype's own fields beyond its group's link fields (D139): a Wohnflächenberechnung's
-# list of dwellings. Every other subtype's request stays as it was.
+# A subtype's own fields beyond its group's link fields: a Wohnflächenberechnung's list of
+# dwellings (D139), a Gutachten's remaining useful life and its Stichtag (D147). Every other
+# subtype's request stays as it was.
 _SUBTYPE_FIELDS: dict[DocumentSubtype, tuple[str, ...]] = {
     DocumentSubtype.BUILDING_RECORDS: ("dwellings",),
+    DocumentSubtype.APPRAISAL: ("remaining_useful_life", "valuation_date"),
 }
 
 
@@ -648,8 +665,9 @@ def asked_fields(kind: ExtractionKind, subtype: DocumentSubtype | None = None) -
     """The fields an extract request asks for, in the model's order: every field of the kind
     but those only typed by hand (hand_ev), except for the general reading, which asks title
     and date plus the link fields of the subtype's group (D131) and the subtype's own fields
-    (D139: a Wohnflächenberechnung's dwellings). The job keeps only these, so a line the
-    model volunteered (an address on a Vorauszahlungsbescheid) is never stored."""
+    (D139: a Wohnflächenberechnung's dwellings; D147: a Gutachten's remaining useful life).
+    The job keeps only these, so a line the model volunteered (an address on a
+    Vorauszahlungsbescheid) is never stored."""
     model = EXTRACTION_MODELS[kind]
     names = tuple(name for name in model.model_fields if not is_hand_only(model, name))
     if kind is not ExtractionKind.GENERAL:

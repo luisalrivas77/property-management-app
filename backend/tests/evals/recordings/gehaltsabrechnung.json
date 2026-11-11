@@ -2,13 +2,13 @@
  "format": 1,
  "doc": "gehaltsabrechnung",
  "synthetic": false,
- "recorded_on": "2026-11-10",
+ "recorded_on": "2026-11-11",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "de0ab828a4c10d64",
-  "request_sha256": "fe8c72ab15f8865d90b3270a2bbd7884c34b91493fa1d801b9522c18bfb98f56",
+  "prompt_version": "77cb7da29af32068",
+  "request_sha256": "3e825e2c03a8ea1f3a8bd1bfba98342077231f1ddab2ee3e3b4d4e9539a0e276",
   "message": {
-   "id": "msg_011CguyN6S5Q5aDW9YJ2ZJJ2",
+   "id": "msg_011CgwXGC8SjXVm2kF3BHyo6",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 6792,
+    "input_tokens": 6927,
     "output_tokens": 49,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -48,7 +48,7 @@
    "prompt_version": "5a4e4a41623c9f1a",
    "request_sha256": "a8623201a54f18f6f969c449edcea45e1a04ce43d00af0b580ce442edf2470fe",
    "message": {
-    "id": "msg_011CguyMnruMFuhFEPyMrzBm",
+    "id": "msg_011CgwXFuChePBEYAgc38U1m",
     "container": null,
     "content": [
      {

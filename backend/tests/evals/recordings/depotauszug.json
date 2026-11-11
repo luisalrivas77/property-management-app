@@ -2,13 +2,13 @@
  "format": 1,
  "doc": "depotauszug",
  "synthetic": false,
- "recorded_on": "2026-11-10",
+ "recorded_on": "2026-11-11",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "de0ab828a4c10d64",
-  "request_sha256": "eb9d43f58aa2cbc4dde4232c71178a2943a2d40c3fc63fbe53002ba821658e3b",
+  "prompt_version": "77cb7da29af32068",
+  "request_sha256": "6d5d1751d8252b3b7e3865f7766f8c0ca75be31716df1173fcf429db04112aa6",
   "message": {
-   "id": "msg_011CguyPi1FdZaP5n91n4Csg",
+   "id": "msg_011CgwXJHpYn3STT8D1NpS3x",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 6544,
+    "input_tokens": 6679,
     "output_tokens": 45,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -48,7 +48,7 @@
    "prompt_version": "5a4e4a41623c9f1a",
    "request_sha256": "b5fc5bb6ad71eead1ea543b2f3d852fbaf118eabeef82156885902e72059f449",
    "message": {
-    "id": "msg_011CguyPZjRoahW8mvYrDY5X",
+    "id": "msg_011CgwXJAsLq63TAPoUGoBuj",
     "container": null,
     "content": [
      {

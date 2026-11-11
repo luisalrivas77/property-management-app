@@ -1449,6 +1449,9 @@ _PREFILL_TAX_INPUTS = {
         "value.payment_mode",
         *(f"value.{field}_{n}" for n in range(1, 5) for field in ("due_on", "amount")),
     ),
+    # phase 2 D147: a Gutachten's shorter useful life (phase 3 D79), the years and first year
+    # derived by code (rules.prefill._useful_life); the Gutachten is the row's document
+    TaxInputKind.USEFUL_LIFE: ("tax_year", "value.years"),
 }
 
 

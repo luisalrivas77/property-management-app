@@ -2,13 +2,13 @@
  "format": 1,
  "doc": "zinsbescheinigung",
  "synthetic": false,
- "recorded_on": "2026-11-10",
+ "recorded_on": "2026-11-11",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "de0ab828a4c10d64",
-  "request_sha256": "0cfd1fc33f87f34d41495cb2d50e4c69fecb1548aa3bb7e6c265d8dd6156c742",
+  "prompt_version": "77cb7da29af32068",
+  "request_sha256": "7fc73523a3302abfab305f192fb92819eadcab35e93f719cb8180c798b9be9aa",
   "message": {
-   "id": "msg_011CguyM3kZZFyx2yMcgiH8Y",
+   "id": "msg_011CgwXFA1v4ZbkgsQc5aBx5",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 6591,
+    "input_tokens": 6726,
     "output_tokens": 48,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -48,7 +48,7 @@
    "prompt_version": "5a4e4a41623c9f1a",
    "request_sha256": "a44b3676c73a52a1bef18cd444caafa269a6cfc197b112404e2d9b73b803cfb0",
    "message": {
-    "id": "msg_011CguyLw8hSX644UXYJmyUG",
+    "id": "msg_011CgwXF3AuDozDmVjc8upWi",
     "container": null,
     "content": [
      {
@@ -73,7 +73,7 @@
      },
      {
       "citations": null,
-      "text": "\ndocument_date: unbekannt\nlender: ",
+      "text": " Darlehen\ndocument_date: unbekannt\nlender: ",
       "type": "text"
      },
      {
@@ -168,7 +168,7 @@
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
      "input_tokens": 3700,
-     "output_tokens": 166,
+     "output_tokens": 171,
      "output_tokens_details": {
       "thinking_tokens": 0
      },

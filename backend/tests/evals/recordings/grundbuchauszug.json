@@ -2,13 +2,13 @@
  "format": 1,
  "doc": "grundbuchauszug",
  "synthetic": false,
- "recorded_on": "2026-11-10",
+ "recorded_on": "2026-11-11",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "de0ab828a4c10d64",
-  "request_sha256": "6675e5ccc7162f1aa32d33cc4f3a1cfa083f79fff0199d4225fdf8f438810fc1",
+  "prompt_version": "77cb7da29af32068",
+  "request_sha256": "30b2da5fac4c3d76729c4a1f0cd908e84a4106b1068e1d77a85ab08270036da8",
   "message": {
-   "id": "msg_011CguyPGmTU9A3MFvkpHmJ1",
+   "id": "msg_011CgwXHGdapWcQDr7sSTPi2",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 6632,
+    "input_tokens": 6767,
     "output_tokens": 46,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -48,7 +48,7 @@
    "prompt_version": "5a4e4a41623c9f1a",
    "request_sha256": "2577eec1300ce66dbcd38fdffbeba47b6eb91950cdfbe5f9705f66958e4cb681",
    "message": {
-    "id": "msg_011CguyPATT2gmaJeGmYCLPD",
+    "id": "msg_011CgwXH9SjXiPoj2ftaWxed",
     "container": null,
     "content": [
      {

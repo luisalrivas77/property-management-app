@@ -829,11 +829,11 @@ _CATALOGUE_INVOICES = (
     DocumentSubtype.HOUSEHOLD_SERVICES_INVOICE,
     DocumentSubtype.WORK_EXPENSE_INVOICE,
 )
-# The subtypes read by their type's reader: three that existed before the catalogue, and a
-# financing bill (D138), an invoice or Bescheid whose cost lines are sorted like any other.
+# The subtypes read by their type's reader: two that existed before the catalogue, and a
+# financing bill (D138), an invoice or Bescheid whose cost lines are sorted like any other. An
+# appraisal is read by the general reading whatever its type (D147): no reader read it as a bill.
 _READ_BY_TYPE = (
     DocumentSubtype.PRICE_SPLIT_EVIDENCE,
-    DocumentSubtype.APPRAISAL,
     DocumentSubtype.COST_BASIS_EVIDENCE,
     DocumentSubtype.FINANCING_INVOICE,
 )

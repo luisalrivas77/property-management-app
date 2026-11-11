@@ -2,13 +2,13 @@
  "format": 1,
  "doc": "rechnung_notar_grundschuld",
  "synthetic": false,
- "recorded_on": "2026-11-10",
+ "recorded_on": "2026-11-11",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "de0ab828a4c10d64",
-  "request_sha256": "f3956856fde2a2a6936fd712e8d038e46bbd7bd2597dacb14b4c73048b081c96",
+  "prompt_version": "77cb7da29af32068",
+  "request_sha256": "4c9936283f17ebd0c6e1067bab480a5c7f0b5b14d0616f90f0e0682fd9a3304f",
   "message": {
-   "id": "msg_011CguyKn6T7j5zUP1ZTrNtX",
+   "id": "msg_011CgwXDYd9VxKcU9SA7fnLx",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 6572,
+    "input_tokens": 6707,
     "output_tokens": 42,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -48,7 +48,7 @@
    "prompt_version": "5a4e4a41623c9f1a",
    "request_sha256": "7271b2e726bf718f0de9087e748be9966a79e99013916db44c1171f5fb4109c9",
    "message": {
-    "id": "msg_011CguyKb89qVy86ojLLhYu2",
+    "id": "msg_011CgwXDMPyCyzFKu6K1eZsv",
     "container": null,
     "content": [
      {
