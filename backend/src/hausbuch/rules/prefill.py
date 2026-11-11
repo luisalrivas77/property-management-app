@@ -774,7 +774,8 @@ class _Builder:
         """A payment proof uploaded from its bill's to-do (context.proof_bill). Its amount (a
         magnitude) is compared with the bill's combined total: the amounts of its acquisition
         cost rows plus those of its private_cost rows in force (a bill split into both parts
-        was paid as one). When they match within 0.01 and paid_on is
+        was paid as one), or, for such a split bill, with its private part alone, as the draft
+        accepts either. When they match within 0.01 and paid_on is
         read, every private_cost row of another year than paid_on's is proposed for the year
         paid (private_cost_year:<n>, §11 Abs. 2 EStG); the apply withdraws the row and
         creates its value in that year. An acquisition cost row has no year and is never
@@ -793,7 +794,11 @@ class _Builder:
         if read is None:
             typing.notes.append(_PROOF_UNREAD_NOTE.format(bill=_euro_de(expected)))
             return
-        if abs(abs(read) - expected) > _PROOF_TOLERANCE:
+        # The privately paid part alone also matches (a split bill whose purchase part was
+        # paid another way), as the draft accepts it (rules/tax/draft._payment_proofs).
+        private_total = sum((r.amount for r in private if r.amount is not None), Decimal(0))
+        totals = [expected] + ([private_total] if private and bill.acquisition_costs else [])
+        if all(abs(abs(read) - total) > _PROOF_TOLERANCE for total in totals):
             typing.notes.append(
                 _PROOF_MISMATCH_NOTE.format(proof=_euro_de(abs(read)), bill=_euro_de(expected))
             )

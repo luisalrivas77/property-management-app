@@ -3274,11 +3274,43 @@ cases:
           current: {tax_year: 2026}
           notes_contain: ["§11", "Notar Grundschuld", "2027"]
 
+  - id: payment_proof_of_the_private_part_of_a_split_bill_moves_it
+    description: >
+      D143 review fix. The same split bill, but the proof shows only the Grundschuld part,
+      250.00, paid privately on 12.01.2027 (the purchase part was paid another way). The draft
+      accepts a proof of the private part alone, so the pre-fill does too: the private row is
+      proposed for 2027.
+    kind: payment_proof
+    context:
+      document_id: *DOC
+      classification: *CL_PROOF
+      properties: [*PROP_LINDEN]
+      proof_bill: *PROOF_BILL_SPLIT
+    extraction:
+      paid_on: {v: "2027-01-12", p: 1, q: "Ausgeführt am 12.01.2027"}
+      amount: {v: "-250.00", p: 1, q: "Betrag -250,00 EUR"}
+    expect:
+      keys: [typing, private_cost_year:1]
+      records:
+        - key: typing
+          entity_type: typing
+          mode: create
+          values: {type: other, subtype: payment_proof, amount_total: "-250.00", counterparty: null}
+        - key: private_cost_year:1
+          entity_type: tax_input
+          mode: patch
+          target_id: *PC1
+          values: {tax_year: 2027}
+          derived: {tax_year: [paid_on, amount]}
+          current: {tax_year: 2026}
+          notes_contain: ["§11", "Notar Grundschuld", "2027"]
+
   - id: payment_proof_of_one_part_of_a_split_bill_names_the_total
     description: >
       D143 review fix. The same split bill, but the proof states 2,380.00 (the purchase part
-      only): it does not match the combined 2,630.00, so nothing is moved and typing names
-      the combined total.
+      only): it matches neither the combined 2,630.00 nor the private part's 250.00, so
+      nothing is moved and typing names the combined total (the draft still counts it for the
+      purchase part's to-do).
     kind: payment_proof
     context:
       document_id: *DOC
