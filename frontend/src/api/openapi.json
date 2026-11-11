@@ -3222,7 +3222,7 @@
     "/api/documents": {
       "post": {
         "summary": "Document Upload",
-        "description": "201 with a new document; 200 with the existing one when these bytes are already in\nthe vault. 413 past HAUSBUCH_MAX_UPLOAD_BYTES, 415 outside the allow-list.\n\n`ai` (default HAUSBUCH_AI_ENABLED) also queues a pre-fill proposal and answers with a\nDocumentUploadResult (the document plus the proposal to poll, §6.1); without it the\nanswer is the Document, as in phase 1. For bytes already in the vault the document's\nlatest proposal is returned instead of a new read. `contains_tenant_data` with the\nworkspace's ai_tenant_documents off stores the proposal blocked, unread (D16).",
+        "description": "201 with a new document; 200 with the existing one when these bytes are already in\nthe vault. 413 past HAUSBUCH_MAX_UPLOAD_BYTES, 415 outside the allow-list.\n\n`ai` (default HAUSBUCH_AI_ENABLED) also queues a pre-fill proposal and answers with a\nDocumentUploadResult (the document plus the proposal to poll, §6.1); without it the\nanswer is the Document, as in phase 1. For bytes already in the vault the document's\nlatest proposal is returned instead of a new read. `contains_tenant_data` with the\nworkspace's ai_tenant_documents off stores the proposal blocked, unread (D16).\n\n`proof_for` (phase 3 D143, the to-do „Zahlungsnachweis hochladen“): the id of the bill\nthis file proves was paid. The document is typed other / payment_proof by code and\nlinked to the bill and its property in the same transaction, and its reading skips the\nclassifier. 404 for an unknown bill, 422 when the file is the bill itself or is stored\nas another kind of document.",
         "operationId": "document_upload_api_documents_post",
         "requestBody": {
           "required": true,
@@ -9170,6 +9170,18 @@
             "type": "boolean",
             "title": "Contains Tenant Data",
             "default": false
+          },
+          "proof_for": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proof For"
           }
         },
         "type": "object",
@@ -10700,6 +10712,9 @@
               },
               {
                 "$ref": "#/components/schemas/ManagementContractExtraction"
+              },
+              {
+                "$ref": "#/components/schemas/PaymentProofExtraction"
               }
             ],
             "title": "Fields"
@@ -10837,6 +10852,7 @@
           "utility_bill",
           "quote",
           "chimney_sweep_notice",
+          "payment_proof",
           "prepayment_notice",
           "tax_return_copy",
           "donation_receipt",
@@ -12152,7 +12168,8 @@
           "gehaltsabrechnung",
           "einkommensteuerbescheid",
           "general",
-          "management_contract"
+          "management_contract",
+          "payment_proof"
         ],
         "title": "ExtractionKind",
         "description": "document_extraction.kind and proposal.kind (migration 0005): which field set an\nextraction holds. `manual` is phase 1's ManualDocumentFields; the others are the per-type\nmodels in schemas/extraction.py."
@@ -13920,7 +13937,8 @@
           "unit",
           "tenant",
           "tenancy",
-          "loan"
+          "loan",
+          "document"
         ],
         "title": "LinkTarget",
         "description": "What a document can be linked to (document_link has one FK column per target)."
@@ -15768,6 +15786,44 @@
         ],
         "title": "PasskeyVerifyRequest",
         "description": "POST /auth/passkeys/verify: a further passkey for the signed-in user."
+      },
+      "PaymentProofExtraction": {
+        "properties": {
+          "title": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "a short German title, two to six words naming what the document is",
+            "value_kind": "text"
+          },
+          "document_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the date the document carries",
+            "value_kind": "date"
+          },
+          "paid_on": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the day the payment was made: Ausführungsdatum, Buchungstag or Wertstellung of the transfer",
+            "value_kind": "date"
+          },
+          "amount": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the amount transferred, as stated; never a balance, a limit or a fee",
+            "value_kind": "money"
+          },
+          "payee": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the payee (Empfänger, Zahlungsempfänger) only; never the payer, the account holder or any other person",
+            "value_kind": "text"
+          },
+          "purpose": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the Verwendungszweck as stated, without any account details",
+            "value_kind": "text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PaymentProofExtraction",
+        "description": "Zahlungsnachweis (other / payment_proof; phase-3.md D143): the proof that a bill was\npaid, uploaded from the bill's to-do. Only these fields, besides the title and date every\nreading carries: no IBAN, no account number and no name but the payee is ever asked for,\nand the quotes are scrubbed of identifiers (jobs.document_read)."
       },
       "Payslip": {
         "properties": {
@@ -22747,6 +22803,7 @@
           "archive.finanzamt_copy_needed",
           "tax.travel_frequency",
           "tax.private_cost_paid_from_account",
+          "payment_proof.missing",
           "anlage_n.certificate_missing",
           "anlage_n.church_mismatch",
           "anlage_n.tax_class_6",

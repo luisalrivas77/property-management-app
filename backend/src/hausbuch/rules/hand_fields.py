@@ -50,6 +50,8 @@ HAND_FIELD_MAP: dict[ExtractionKind, dict[HandField, str]] = {
         "reference": "contract_number",
         "notes": "notes",
     },
+    # Phase 3 D143: a payment proof's amount and payee.
+    ExtractionKind.PAYMENT_PROOF: {"amount_total": "amount", "counterparty": "payee"},
     ExtractionKind.MANAGEMENT_CONTRACT: {
         "amount_total": "amount_total",
         "period_start": "start_date",

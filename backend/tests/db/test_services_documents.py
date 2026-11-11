@@ -629,9 +629,11 @@ def test_link_and_unlink_with_their_events(app_engine, workspaces, blob_store):
 def test_every_target_type_can_be_linked(app_engine, workspaces, blob_store, target_type):
     a, _ = workspaces
     doc = _upload(app_engine, blob_store, a, _bytes())
+    bill = _upload(app_engine, blob_store, a, _bytes())  # phase 3 D143: a proof's bill
     with _seed(app_engine, a) as raw:
         prop = insert_property(raw, a)
         target_id = {
+            LinkTarget.DOCUMENT: lambda: bill.id,
             LinkTarget.OWNER: lambda: _insert_owner(raw, a),
             LinkTarget.PROPERTY: lambda: prop,
             LinkTarget.UNIT: lambda: insert_unit(raw, a, prop),

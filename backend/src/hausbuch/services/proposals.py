@@ -29,6 +29,7 @@ from uuid import UUID
 from pydantic import BaseModel, JsonValue, ValidationError
 from sqlalchemy import Connection, exists, insert, null, select, update
 
+from hausbuch.db.tables import property_acquisition_cost as cost_table
 from hausbuch.db.tables import proposal as proposal_table
 from hausbuch.db.tables import return_input as return_input_table
 from hausbuch.db.tables import workspace as workspace_table
@@ -66,7 +67,7 @@ from hausbuch.schemas.api import (
     TenantPatch,
     UnitPatch,
 )
-from hausbuch.schemas.common import Schema
+from hausbuch.schemas.common import Schema, TaxYear
 from hausbuch.schemas.document import DocumentTyping, ManualDocumentFields
 from hausbuch.schemas.employment import (
     RETURN_INPUT_VALUES,
@@ -113,6 +114,8 @@ from hausbuch.schemas.proposal import (
     ExistingLoan,
     ExistingOwner,
     ExistingPayRow,
+    ExistingPrivateCost,
+    ExistingProofBill,
     ExistingProperty,
     ExistingTenancy,
     ExistingTenant,
@@ -179,6 +182,8 @@ _APPLY_ORDER = {
     "tax_input": 13,
     "return_input": 14,
     "income_input": 15,
+    # phase 3 D143: a payment proof moves its bill's private_cost rows to the year paid
+    "private_cost_year": 16,
 }
 _PAY_KINDS = ("wage_certificate", "payslip")
 # The record whose entity a link record points at when the proposal had no target yet.
@@ -322,7 +327,7 @@ def record_read_result(
     proposal_id: UUID,
     *,
     classification: ClassifyOutput,
-    classify_call_id: UUID,
+    classify_call_id: UUID | None,
     values: dict[str, ExtractedValue] | None,
     extract_call_id: UUID | None,
     blocked_tenant_data: bool = False,
@@ -343,6 +348,8 @@ def record_read_result(
     without a classify call.
 
     Appends document.classified and, with values, document.extracted (the job does not).
+    `classify_call_id` None: no classify call was made, because code had typed the document
+    (a payment proof, phase 3 D143); then no document.classified is appended.
     A no-op returning the proposal as stored when it is no longer queued or running.
 
     An invoice or Bescheid read: whether a bank line already pays it
@@ -371,18 +378,19 @@ def record_read_result(
         or classification.contains_tenant_data
         or classification.subtype in _TENANT_SUBTYPES
     )
-    append_event(
-        ctx,
-        EventType.DOCUMENT_CLASSIFIED,
-        document_id,
-        DocumentClassified(
-            ai_call_id=classify_call_id,
-            type=classification.type,
-            subtype=classification.subtype,
-            confidence=classification.confidence,
-            contains_tenant_data=classification.contains_tenant_data,
-        ),
-    )
+    if classify_call_id is not None:
+        append_event(
+            ctx,
+            EventType.DOCUMENT_CLASSIFIED,
+            document_id,
+            DocumentClassified(
+                ai_call_id=classify_call_id,
+                type=classification.type,
+                subtype=classification.subtype,
+                confidence=classification.confidence,
+                contains_tenant_data=classification.contains_tenant_data,
+            ),
+        )
 
     # The document's lock (after the proposal's, the order every path takes) before the
     # extraction is read for the context: no typing can add a version between that read and
@@ -559,6 +567,45 @@ def prefill_context(
                 document_date=_document_date(conn, row.document_id),
             )
             for row in _current_bescheid_rows(conn)
+        ],
+        proof_bill=_proof_bill(conn, document_id),
+    )
+
+
+def _proof_bill(conn: Connection, document_id: UUID) -> ExistingProofBill | None:
+    """Phase 3 D143: the bill a payment proof is linked to (document_link target document),
+    with the acquisition cost rows that carry it as Beleg and its private_cost rows in force,
+    for build_proposal to compare amounts and years. None for any other document, and for a
+    proof linked to several bills (Q-O54: compared with none of them)."""
+    bills = [
+        link.target_id
+        for link in documents.list_links(conn, document_id)
+        if link.target_type is LinkTarget.DOCUMENT
+    ]
+    if len(bills) != 1:
+        return None
+    (bill,) = bills
+    rows = tax_inputs.current_of_document(conn, bill, TaxInputKind.PRIVATE_COST)
+    costs = conn.execute(
+        select(cost_table).where(cost_table.c.document_id == bill).order_by(cost_table.c.id)
+    ).all()
+    return ExistingProofBill(
+        document_id=bill,
+        acquisition_costs=[
+            ExistingCost.model_validate(
+                {k: v for k, v in c._mapping.items() if k in ExistingCost.model_fields}
+            )
+            for c in costs
+        ],
+        private_costs=[
+            ExistingPrivateCost(
+                id=r.id,
+                tax_year=r.tax_year,
+                label=r.value.label,  # type: ignore[union-attr]
+                amount=r.value.amount,  # type: ignore[union-attr]
+            )
+            for r in rows
+            if r.tax_year is not None
         ],
     )
 
@@ -1106,6 +1153,51 @@ class _Apply:
             documents.link_document(self.ctx, self.document_id, target_type, target)
         return target
 
+    def _private_cost_year(self, record: ProposalRecord, values: dict[str, Any]) -> UUID:
+        """Phase 3 D143: a payment proof shows its bill's private_cost row was paid in
+        another year; the row counts in the year paid (§11 Abs. 2 EStG). A correction keeps
+        its row's year (tax_inputs' _check_supersedes), so the move is two append-only writes:
+        the row withdrawn (its value repeated), then the same value created in the new year,
+        its document still the bill. The year asked is the user's (the record's tax_year).
+        Nothing is written when the row is in that year already; NotFoundError when the row
+        is not a private_cost of this workspace; 422 when it is no longer current."""
+        if record.target_id is None:
+            raise ValueError(f"record {record.key!r} names no tax input")
+        year = _validate(record.key, _TaxYearValue, {"tax_year": values.get("tax_year")}).tax_year
+        row = tax_inputs.get_tax_input(self.ctx.conn, record.target_id)
+        if row is None or row.kind is not TaxInputKind.PRIVATE_COST:
+            raise NotFoundError(tax_inputs.TAX_INPUT, record.target_id)
+        if row.tax_year == year:
+            return row.id
+        current = tax_inputs.find_current(
+            self.ctx.conn, row.property_id, row.kind, tax_year=row.tax_year
+        )
+        if row.id not in {r.id for r in current}:
+            raise ValueError(
+                f"record {record.key!r}: tax input {row.id} was changed since the proposal"
+            )
+        base = row.model_dump(
+            mode="json",
+            include={
+                "property_id",
+                "kind",
+                "tax_year",
+                "unit_id",
+                "loan_id",
+                "allocation_id",
+                "document_id",
+                "value",
+                "note",
+            },
+        )
+        tax_inputs.create_tax_input(
+            self.ctx,
+            row.property_id,
+            TaxInputCreate.model_validate(base | {"supersedes_id": str(row.id), "withdrawn": True}),
+        )
+        moved = TaxInputCreate.model_validate(base | {"tax_year": year})
+        return tax_inputs.create_tax_input(self.ctx, row.property_id, moved).id
+
     def _tax_input(self, record: ProposalRecord, values: dict[str, Any]) -> UUID:
         """A certificate's figure (phase 3 §9) through services/tax_inputs, with this document
         as its evidence. The certified interest belongs to the loan's property; the Rücklage
@@ -1313,11 +1405,16 @@ class _Apply:
         "tax_input": _tax_input,
         "return_input": _return_input,
         "income_input": _income_input,
+        "private_cost_year": _private_cost_year,
     }
 
 
 class _LinkValues(Schema):
     target_id: UUID
+
+
+class _TaxYearValue(Schema):
+    tax_year: TaxYear
 
 
 class _LoanRef(Schema):

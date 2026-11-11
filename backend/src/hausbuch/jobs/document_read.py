@@ -58,9 +58,10 @@ from hausbuch.rules.extraction_parse import (
     extraction_kind,
     parse_lines,
     scrub_general_answer,
-    scrub_identifiers,
+    scrubber,
 )
 from hausbuch.schemas.ai import ClassifyOutput, ExtractedValue
+from hausbuch.schemas.document import DocumentTyping
 from hausbuch.schemas.enums import ActorType, DocumentSubtype, ExtractionKind, ProposalStatus
 from hausbuch.schemas.extraction import EXTRACTION_MODELS, asked_fields
 from hausbuch.services import documents as document_service
@@ -140,6 +141,9 @@ class _Original:
     # The workspace's property addresses: the only addresses a general reading keeps
     # (PR #135 review, F2), loaded here and never taken from the model's answer.
     properties: tuple[PropertyAddress, ...] = ()
+    # Phase 3 D143: a document code typed (a payment proof uploaded from its bill's to-do) is
+    # read as that kind without a classify call (pretyped_classification).
+    pretyped: ClassifyOutput | None = None
 
 
 def run_document_read(
@@ -246,7 +250,24 @@ def _load(
         media_type = document_service.document_media_type(conn, document_id)
         data = document_service.read_original(conn, deps.blob_store, document_id)
         properties = property_addresses(conn)
-    return _Original(target, media_type or "", data, allowed, tenant, properties)
+        document = document_service.get_document(conn, document_id)
+    pretyped = pretyped_classification(None if document is None else document.typing)
+    return _Original(target, media_type or "", data, allowed, tenant, properties, pretyped)
+
+
+def pretyped_classification(typing: DocumentTyping | None) -> ClassifyOutput | None:
+    """Phase 3 D143: a payment proof is typed by code at its upload (the classifier never
+    answers the subtype, CODE_ONLY_SUBTYPES), so its reading starts at the extraction, with
+    this classification in place of a classify call. None for every other document."""
+    if typing is None or typing.subtype is not DocumentSubtype.PAYMENT_PROOF:
+        return None
+    return ClassifyOutput(
+        type=typing.type,
+        subtype=typing.subtype,
+        contains_tenant_data=False,
+        language="de",
+        confidence="high",
+    )
 
 
 def property_addresses(conn) -> tuple[PropertyAddress, ...]:
@@ -323,10 +344,18 @@ def _read(
     except documents.DocumentInputError as exc:
         raise _Stop(exc.code) from None
 
-    block = documents.document_block(first, original.media_type, citations=False)
-    classification, classify_id = _classify(
-        deps, workspace_id, document_id, original.proposal_id, classify_request(settings, block)
-    )
+    classify_id: UUID | None = None
+    if original.pretyped is not None:
+        classification = original.pretyped  # D143: no classify call
+    else:
+        block = documents.document_block(first, original.media_type, citations=False)
+        classification, classify_id = _classify(
+            deps,
+            workspace_id,
+            document_id,
+            original.proposal_id,
+            classify_request(settings, block),
+        )
 
     tenant = classification.contains_tenant_data or classification.subtype in TENANT_SUBTYPES
     if tenant and not original.tenant_documents_allowed:  # gate 3
@@ -459,7 +488,7 @@ def _extract_chunk(
     # contract number that is no identifier (D131; PR #135 review).
     scrub: Callable[[str], str] | None = None
     if kind in SCRUBBED_KINDS:
-        scrub = partial(scrub_identifiers, reference_year=year)
+        scrub = scrubber(kind, reference_year=year)
     elif kind in GENERAL_SCRUBBED_KINDS:
         scrub = partial(
             scrub_general_answer,
@@ -598,7 +627,7 @@ def _finish(
     workspace_id: UUID,
     proposal_id: UUID,
     classification: ClassifyOutput,
-    classify_id: UUID,
+    classify_id: UUID | None,
     *,
     ok: bool = False,
     values: dict[str, ExtractedValue] | None = None,

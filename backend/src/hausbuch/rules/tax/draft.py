@@ -273,6 +273,98 @@ def _private_costs(
     return warnings
 
 
+PROOF_TOLERANCE = Decimal("0.01")
+
+
+def _proven(amount: Decimal, proofs: list[Decimal | None]) -> bool:
+    """D143: a bill is proven by a proof whose amount was not read (the user saw the proof), or
+    by one proof's amount or the proofs' sum equal to the bill's within 0.01."""
+    if any(p is None for p in proofs):
+        return True
+    read = [p for p in proofs if p is not None]
+    return any(abs(p - amount) <= PROOF_TOLERANCE for p in read) or (
+        bool(read) and abs(sum(read, ZERO) - amount) <= PROOF_TOLERANCE
+    )
+
+
+def _proof_warning(
+    bill: UUID,
+    source: str,
+    amount: Decimal,
+    proofs: list[Decimal | None],
+    refs: list[SourceRef],
+    **name: str,
+) -> list[DraftWarning]:
+    if _proven(amount, proofs):
+        return []
+    extra = {"proof_amount": money_str(sum(proofs, ZERO))} if proofs else {}
+    return [
+        warning(
+            WarningCode.PAYMENT_PROOF_MISSING,
+            unique([SourceRef(kind="document", id=bill), *refs]),
+            document=str(bill),
+            source=source,
+            **name,
+            amount=money_str(amount),
+            **extra,
+        )
+    ]
+
+
+def _payment_proofs(facts: DraftFacts, tax_year: int) -> list[DraftWarning]:
+    """Phase 3 D143: every bill the draft counts has its proof of payment; a bill without one
+    still counts and raises payment_proof.missing (a to-do with „Zahlungsnachweis hochladen“).
+
+    A bill a confirmed allocation carries is proven by its bank line. The bills that need a
+    proof: an acquisition cost row's document, in the purchase year (the year the Nebenkosten
+    were paid), unless a bank line paid the row (paid_by) or the bill; and the document of the
+    year's private_cost rows in force, unless a bank line paid the bill (D135: then the rows
+    are not counted at all). A row without a document is left to acquisition_cost_evidence
+    and afa.cost_row_unpaid."""
+    paid_from_account = paid_bills(facts.allocations)
+    proofs: dict[UUID, list[Decimal | None]] = {}
+    for p in facts.payment_proofs:
+        proofs.setdefault(p.bill_document_id, []).append(p.amount)
+    out: list[DraftWarning] = []
+
+    purchase = facts.property.purchase_date
+    if purchase is not None and purchase.year == tax_year:
+        cost_bills: dict[UUID, list] = {}
+        for row in facts.cost_rows:
+            if row.document_id is not None:
+                cost_bills.setdefault(row.document_id, []).append(row)
+        for bill, rows in cost_bills.items():
+            if bill in paid_from_account or any(r.paid_by for r in rows):
+                continue
+            rows.sort(key=lambda r: str(r.id))
+            out += _proof_warning(
+                bill,
+                "acquisition_cost",
+                sum((r.amount for r in rows), ZERO),
+                proofs.get(bill, []),
+                [SourceRef(kind="acquisition_cost", id=r.id) for r in rows],
+                kind=rows[0].kind.value,
+            )
+
+    private = [
+        r
+        for r in in_force(facts.tax_inputs, TaxInputKind.PRIVATE_COST)
+        if r.document_id is not None and r.document_id not in paid_from_account
+    ]
+    counted = {r.document_id for r in private if r.tax_year == tax_year}
+    for bill in sorted(counted, key=str):
+        rows = sorted((r for r in private if r.document_id == bill), key=lambda r: str(r.id))
+        out += _proof_warning(
+            bill,
+            "private_cost",
+            sum((r.value.amount for r in rows if r.value.amount is not None), ZERO),
+            proofs.get(bill, []),
+            [SourceRef(kind="tax_input", id=r.id) for r in rows],
+            label=rows[0].value.label,
+        )
+    return out
+
+
 def _open(facts: DraftFacts, tax_year: int, rule_set: RuleSet, rules_open: OpenLines) -> OpenLines:
     open_cats = set(rule_set.form.open)
     rows = [
@@ -434,6 +526,7 @@ def draft(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> AnlageVDraft:
         warnings += r.warnings
     _generic(facts, tax_year, rule_set, book)
     warnings += _private_costs(facts, tax_year, rule_set, book, limit)
+    warnings += _payment_proofs(facts, tax_year)  # D143
 
     rows = _merge_rows(rows)
     if rows:

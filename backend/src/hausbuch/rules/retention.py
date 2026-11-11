@@ -36,7 +36,9 @@ _CLASS_BY_SUBTYPE: dict[DocumentSubtype, RetentionClass] = {
     DocumentSubtype.DEPOSIT_RECORD: RetentionClass.TENANCY_RECORDS,
     # The document catalogue (phase-2.md D130, D131, §6.2.1): records that back the purchase,
     # the AfA or a contract running for years (O), and the tenancy's papers (M). Every other
-    # catalogue subtype is a tax record, the default.
+    # catalogue subtype is a tax record, the default; so is a payment proof (phase 3 D143),
+    # except that one linked to a Nebenkosten bill is kept like the bill
+    # (services.documents.document_retention_input: cost_basis_reference).
     DocumentSubtype.LAND_REGISTER_EXTRACT: RetentionClass.OWNERSHIP_RECORDS,
     DocumentSubtype.DECLARATION_OF_DIVISION: RetentionClass.OWNERSHIP_RECORDS,
     DocumentSubtype.LAND_CHARGE_DEED: RetentionClass.OWNERSHIP_RECORDS,

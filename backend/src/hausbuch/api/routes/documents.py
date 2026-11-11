@@ -29,6 +29,7 @@ from hausbuch.schemas.enums import DocumentSource, EntityType, LinkTarget
 from hausbuch.schemas.proposal import Proposal
 from hausbuch.services.context import CommandContext
 from hausbuch.services.documents import (
+    attach_payment_proof,
     current_extraction,
     document_media_type,
     document_retention,
@@ -95,13 +96,18 @@ def _upload(
     *,
     ai: bool,
     contains_tenant_data: bool,
+    proof_for: UUID | None = None,
     **kwargs: Any,
 ) -> tuple[Document, bool, Proposal | None]:
     """upload_document, whether it registered a new document (dedup returns the
     workspace's existing one for the same bytes, D9), and with `ai` the proposal to poll,
-    queued (and its job enqueued) in the same transaction (§6.1)."""
+    queued (and its job enqueued) in the same transaction (§6.1). With `proof_for`, the
+    document is that bill's payment proof (phase 3 D143), typed and linked before the read
+    is queued."""
     document = upload_document(ctx, store, data, **kwargs)
     created = document.created_at == ctx.now
+    if proof_for is not None:
+        document = attach_payment_proof(ctx, document.id, proof_for)
     proposal = None
     if ai:
         proposal = proposal_for_upload(
@@ -137,6 +143,7 @@ async def document_upload(
     source: Annotated[DocumentSource, Form()] = DocumentSource.UPLOAD,
     ai: Annotated[bool | None, Form()] = None,
     contains_tenant_data: Annotated[bool, Form()] = False,
+    proof_for: Annotated[UUID | None, Form()] = None,
 ) -> Document | DocumentUploadResult:
     """201 with a new document; 200 with the existing one when these bytes are already in
     the vault. 413 past HAUSBUCH_MAX_UPLOAD_BYTES, 415 outside the allow-list.
@@ -145,7 +152,13 @@ async def document_upload(
     DocumentUploadResult (the document plus the proposal to poll, §6.1); without it the
     answer is the Document, as in phase 1. For bytes already in the vault the document's
     latest proposal is returned instead of a new read. `contains_tenant_data` with the
-    workspace's ai_tenant_documents off stores the proposal blocked, unread (D16)."""
+    workspace's ai_tenant_documents off stores the proposal blocked, unread (D16).
+
+    `proof_for` (phase 3 D143, the to-do „Zahlungsnachweis hochladen“): the id of the bill
+    this file proves was paid. The document is typed other / payment_proof by code and
+    linked to the bill and its property in the same transaction, and its reading skips the
+    classifier. 404 for an unknown bill, 422 when the file is the bill itself or is stored
+    as another kind of document."""
     media_type = upload_media_type(file.content_type, settings.upload_media_types)
     data = await file.read(settings.max_upload_bytes + 1)
     if len(data) > settings.max_upload_bytes:
@@ -160,6 +173,7 @@ async def document_upload(
         data,
         ai=use_ai,
         contains_tenant_data=contains_tenant_data,
+        proof_for=proof_for,
         media_type=media_type,
         source=source,
         original_filename=file.filename or None,

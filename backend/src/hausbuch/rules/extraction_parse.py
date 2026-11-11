@@ -11,9 +11,11 @@ confidence from the checks that passed. The confidence is never a number the mod
 """
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from functools import partial
 
 from hausbuch.schemas.ai import CitedTextBlock, ExtractedValue, SourceRef
 from hausbuch.schemas.allocation import AllocationCategory
@@ -114,8 +116,8 @@ def parse_lines(
     lines = _lines(blocks)
     if scrub:
         # Scrubbed together, so a value under a line of labels is seen; the scrub keeps lines.
-        texts = scrub_identifiers(
-            "\n".join(text for text, _ in lines), reference_year=reference_year
+        texts = scrubber(kind, reference_year=reference_year)(
+            "\n".join(text for text, _ in lines)
         ).split("\n")
         lines = [(text, contributors) for text, (_, contributors) in zip(texts, lines, strict=True)]
     # A line for a field the request did not ask (a hand-only field, or a link field the
@@ -141,7 +143,7 @@ def parse_lines(
         source = _source(blocks, contributors, page_offset)
         if scrub and source is not None:
             source = source.model_copy(
-                update={"quote": scrub_identifiers(source.quote, reference_year=reference_year)}
+                update={"quote": scrubber(kind, reference_year=reference_year)(source.quote)}
             )
         if general and source is not None:
             source = source.model_copy(
@@ -427,6 +429,8 @@ SCRUBBED_KINDS = frozenset(
         ExtractionKind.LOHNSTEUERBESCHEINIGUNG,
         ExtractionKind.GEHALTSABRECHNUNG,
         ExtractionKind.EINKOMMENSTEUERBESCHEID,
+        # Phase 3 D143: a payment proof from a private account (scrub_payment_proof).
+        ExtractionKind.PAYMENT_PROOF,
     }
 )
 SCRUBBED = "…"
@@ -528,6 +532,39 @@ def scrub_identifiers(text: str, *, reference_year: int | None = None) -> str:
     for pattern in _PATTERNS:
         text = pattern.sub(SCRUBBED, text)
     return text
+
+
+# Phase 3 D143: on a payment proof, the payer's side of the transfer. The value after one of
+# these labels (the account holder's or payer's name, an account number, a bank code, a
+# mandate or creditor id, a customer number) goes, up to a tab, two spaces, the payee's label
+# or the line's end, so a row "Auftraggeber: A  Empfänger: B" keeps the payee.
+_PAYER_LABEL = (
+    r"auftraggeber(?:in)?|konto-?inhaber(?:in)?|inhaber(?:in)?|zahlungspflichtige[rn]?"
+    r"|einzahler(?:in)?|absender(?:in)?|name[ \t]+des[ \t]+konto-?inhabers"
+    r"|konto-?(?:nummer|nr\.?)|kto\.?-?nr\.?|konto|bic|swift|blz|bankleitzahl"
+    r"|mandats-?referenz|gläubiger-?id(?:entifikationsnummer)?|kunden-?(?:nummer|nr\.?)"
+)
+_PAYER_LABELLED = re.compile(
+    rf"{_LABEL_START}(?P<label>{_PAYER_LABEL}){_LABEL_END}(?P<sep>{_H}*:?{_H}*)"
+    r"(?P<value>(?:(?![ \t]{2}|\t|empfänger|zahlungsempfänger|begünstigter)[^\n])+)",
+    re.IGNORECASE,
+)
+
+
+def scrub_payment_proof(text: str, *, reference_year: int | None = None) -> str:
+    """A payment proof's text scrubbed (phase 3 D143): every identifier scrub_identifiers
+    removes (IBANs, long account numbers, addresses, a birth date), and the value after a
+    payer-side label (_PAYER_LABEL). The payee, the amount, the dates and the purpose stay.
+    Pure and idempotent; lines are kept."""
+    text = scrub_identifiers(text, reference_year=reference_year)
+    return _PAYER_LABELLED.sub(lambda m: f"{m.group('label')}{m.group('sep')}{SCRUBBED}", text)
+
+
+def scrubber(kind: ExtractionKind, *, reference_year: int | None) -> Callable[[str], str]:
+    """The identifier scrub of a SCRUBBED_KINDS kind: a payment proof's own (D143), else
+    scrub_identifiers (D103, D129)."""
+    scrub = scrub_payment_proof if kind is ExtractionKind.PAYMENT_PROOF else scrub_identifiers
+    return partial(scrub, reference_year=reference_year)
 
 
 def _under_labels(text: str) -> str:
@@ -784,6 +821,7 @@ _BY_SUBTYPE: dict[DocumentSubtype, ExtractionKind] = {
     DocumentSubtype.GRUNDSTEUERBESCHEID: ExtractionKind.GRUNDSTEUERBESCHEID,
     DocumentSubtype.EINKOMMENSTEUERBESCHEID: ExtractionKind.EINKOMMENSTEUERBESCHEID,
     DocumentSubtype.MANAGEMENT_CONTRACT: ExtractionKind.MANAGEMENT_CONTRACT,  # D130
+    DocumentSubtype.PAYMENT_PROOF: ExtractionKind.PAYMENT_PROOF,  # phase 3 D143
     **dict.fromkeys(_CATALOGUE_INVOICES, ExtractionKind.INVOICE),
 }
 # Every other subtype of the catalogue (§6.2.1) is read by the general reading, whatever its
@@ -835,7 +873,8 @@ _BEFORE_CATALOGUE = frozenset(
 CATALOGUE_SUBTYPES = frozenset(set(DocumentSubtype) - _BEFORE_CATALOGUE)
 # Subtypes only code sets, never the classifier (D138): left out of the classify schema
 # (ai.requests.classify_schema), and dropped should a model answer one anyway.
-CODE_ONLY_SUBTYPES = frozenset({DocumentSubtype.FINANCING_INVOICE})
+# A payment proof (phase 3 D143) is typed by its upload from a bill's to-do, never classified.
+CODE_ONLY_SUBTYPES = frozenset({DocumentSubtype.FINANCING_INVOICE, DocumentSubtype.PAYMENT_PROOF})
 # The types with a reader of their own that no catalogue subtype overrides (D131, decided 10
 # Nov 2026 after the first eval recording read an owner's Lohnsteuerbescheinigung as an
 # Arbeitgeberbescheinigung, which subtype-first routing would have read for title and date

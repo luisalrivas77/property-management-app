@@ -6,6 +6,7 @@ the SHA-256 of what comes back. Typing and extracted fields are layers on top: d
 the current typing, document_extraction an append-only version per change (D9, phase-1.md).
 """
 
+import contextlib
 import hashlib
 import mimetypes
 import re
@@ -27,6 +28,7 @@ from hausbuch.db.tables import loan as loan_table
 from hausbuch.db.tables import property_ as property_table
 from hausbuch.db.tables import property_acquisition_cost as cost_table
 from hausbuch.db.tables import property_price_split as split_table
+from hausbuch.db.tables import tax_input as tax_input_table
 from hausbuch.db.tables import tenancy as tenancy_table
 from hausbuch.db.tables import unit as unit_table
 from hausbuch.jobs import enqueue
@@ -48,6 +50,8 @@ from hausbuch.schemas.document import (
 )
 from hausbuch.schemas.enums import (
     DocumentSource,
+    DocumentSubtype,
+    DocumentType,
     EntityType,
     ExtractionKind,
     ExtractionSource,
@@ -108,6 +112,23 @@ class DuplicateLinkError(ValueError):
 
     def __init__(self, document_id: UUID, target_type: LinkTarget, target_id: UUID) -> None:
         super().__init__(f"document {document_id} is already linked to {target_type} {target_id}")
+
+
+class SelfLinkError(ValueError):
+    """A document cannot be linked to itself (phase 3 D143; migration 0023's CHECK too)."""
+
+    def __init__(self, document_id: UUID) -> None:
+        super().__init__(f"document {document_id} cannot be linked to itself")
+
+
+class NotAPaymentProofError(ValueError):
+    """The uploaded file is already stored as another kind of document (phase 3 D143)."""
+
+    def __init__(self, document_id: UUID) -> None:
+        super().__init__(
+            f"document {document_id} is already stored as another kind of document, not as a "
+            "payment proof"
+        )
 
 
 class LinkNotFoundError(LookupError):
@@ -432,8 +453,10 @@ def _stored(value: Any, kind: str) -> Any:
 def link_document(
     ctx: CommandContext, document_id: UUID, target_type: LinkTarget, target_id: UUID
 ) -> DocumentLink:
-    """Link a document to the entity it proves."""
+    """Link a document to the entity it proves (a payment proof: to the bill, D143)."""
     target_type = _check_link_args(document_id, target_type, target_id)
+    if target_type is LinkTarget.DOCUMENT and target_id == document_id:
+        raise SelfLinkError(document_id)
     if _select_document(ctx.conn, document_id, for_update=False) is None:
         raise NotFoundError(EntityType.DOCUMENT, document_id)
     try:
@@ -467,6 +490,58 @@ def link_document(
         DocumentLinked(target_type=target_type, target_id=target_id),
     )
     return link
+
+
+PAYMENT_PROOF_TYPING = DocumentTyping(
+    type=DocumentType.OTHER, subtype=DocumentSubtype.PAYMENT_PROOF
+)
+
+
+def attach_payment_proof(ctx: CommandContext, proof_id: UUID, bill_id: UUID) -> Document:
+    """Phase 3 D143: the document just uploaded from a bill's to-do „Zahlungsnachweis
+    hochladen“ is that bill's payment proof. Types it other / payment_proof (code-only: the
+    reading job then skips the classifier, so a private account's statement is never read or
+    imported as a statement) and links it to the bill (target `document`) and to the bill's
+    properties (its property links, and the property of every tax input and acquisition cost
+    row whose document it is), in the caller's transaction. A link that exists already is
+    kept, so the same file uploaded again, or from a second bill's to-do, links once more.
+
+    NotFoundError for an unknown bill; SelfLinkError when the file is the bill itself;
+    NotAPaymentProofError when the file is stored typed as anything else."""
+    if proof_id == bill_id:
+        raise SelfLinkError(proof_id)
+    if _select_document(ctx.conn, bill_id, for_update=False) is None:
+        raise NotFoundError(EntityType.DOCUMENT, bill_id)
+    proof = _select_document(ctx.conn, proof_id, for_update=False)
+    if proof is None:
+        raise NotFoundError(EntityType.DOCUMENT, proof_id)
+    if proof.typing is None:
+        proof = type_document(ctx, proof_id, PAYMENT_PROOF_TYPING)
+    elif proof.typing.subtype is not DocumentSubtype.PAYMENT_PROOF:
+        raise NotAPaymentProofError(proof_id)
+    targets = [(LinkTarget.DOCUMENT, bill_id)]
+    targets += [(LinkTarget.PROPERTY, p) for p in sorted(_bill_properties(ctx.conn, bill_id))]
+    for target_type, target_id in targets:
+        with contextlib.suppress(DuplicateLinkError):
+            link_document(ctx, proof_id, target_type, target_id)
+    return proof
+
+
+def _bill_properties(conn: Connection, bill_id: UUID) -> set[UUID]:
+    linked = _scalars(
+        conn,
+        select(link_table.c.property_id).where(
+            link_table.c.document_id == bill_id, link_table.c.property_id.is_not(None)
+        ),
+    )
+    inputs = _scalars(
+        conn,
+        select(tax_input_table.c.property_id).where(tax_input_table.c.document_id == bill_id),
+    )
+    costs = _scalars(
+        conn, select(cost_table.c.property_id).where(cost_table.c.document_id == bill_id)
+    )
+    return linked | inputs | costs
 
 
 def unlink_document(
@@ -685,8 +760,10 @@ def document_retention_input(conn: Connection, document_id: UUID) -> DocumentRet
     )
     # Recorded as the evidence of an acquisition cost or a price split: the AfA basis and the
     # §23 gain are built from it, so it is an ownership record of that property (amendment 1).
+    # D143: a payment proof of such a bill (linked to it) is kept like the bill.
+    bills = {document_id} | ids[LinkTarget.DOCUMENT]
     cost_basis_properties = _scalars(
-        conn, select(cost_table.c.property_id).where(cost_table.c.document_id == document_id)
+        conn, select(cost_table.c.property_id).where(cost_table.c.document_id.in_(bills))
     ) | _scalars(
         conn,
         select(split_table.c.property_id).where(split_table.c.evidence_document_id == document_id),
@@ -747,8 +824,16 @@ def _check_link_args(document_id: UUID, target_type: LinkTarget, target_id: UUID
     return LinkTarget(target_type)
 
 
+def _link_column_name(target_type: LinkTarget) -> str:
+    """document_link's column of a target: <target>_id, except the document target's,
+    target_document_id (document_id is the link's own document; D143, migration 0023)."""
+    if target_type is LinkTarget.DOCUMENT:
+        return "target_document_id"
+    return f"{target_type.value}_id"
+
+
 def _link_column(target_type: LinkTarget):
-    return link_table.c[f"{target_type.value}_id"]
+    return link_table.c[_link_column_name(target_type)]
 
 
 def _scalars(conn: Connection, query) -> set[UUID]:
@@ -797,7 +882,7 @@ def _to_document(row) -> Document:
 def _to_link(row) -> DocumentLink:
     m = row._mapping
     for target_type in LinkTarget:
-        target_id = m[f"{target_type.value}_id"]
+        target_id = m[_link_column_name(target_type)]
         if target_id is not None:
             return DocumentLink(
                 id=m["id"],

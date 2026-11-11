@@ -119,4 +119,9 @@ def test_link_targets_match_document_link_columns(connect):
             WHERE table_name = 'document_link' AND column_name LIKE '%%\\_id'
         """)
         }
-    assert cols - {"id", "workspace_id", "document_id"} == {f"{t}_id" for t in E.LinkTarget}
+    # The document target's column is target_document_id (phase 3 D143, migration 0023):
+    # document_id is the link's own document.
+    expected = {
+        "target_document_id" if t is E.LinkTarget.DOCUMENT else f"{t}_id" for t in E.LinkTarget
+    }
+    assert cols - {"id", "workspace_id", "document_id"} == expected
