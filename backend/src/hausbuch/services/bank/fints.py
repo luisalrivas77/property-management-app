@@ -30,6 +30,33 @@ record to its FinTS answer code (`pin_fints_logging`), since python-fints at DEB
 messages (login and product id in clear) and at WARNING/ERROR the bank's answer text, which
 may quote the login.
 
+The trace (D148, 11 Nov 2026, after the first real syncs were refused in 0.4 s with only
+9050/9800/9010 in the log): always on, at INFO under the app's own logger
+`hausbuch.services.bank.fints_trace`, never under `fints.*` (whose pin is unchanged).
+`_GuardedConnection.send` writes one record per exchange: the segments sent and received as
+`HKVVB:4v3` (envelope included), a whitelist of non-secret settings (HKIDN's bank code and
+whether the system id is assigned; HKVVB's BPD/UPD versions, language, product version and the
+product id's length only; HKSYN's mode; HKTAN's version, process, segment type and whether a
+TAN medium is named; HNSHK's security function), the HTTP status, size and time, and every
+HIRMG/HIRMS answer as `9010 → HKVVB:4: text`, its HIRMS reference resolved to the segment we
+sent, the text redacted (login, customer id, PIN, product id, system id and dialog id hidden,
+numbers of five digits or more blanked), the parameters printed only for 3920 and otherwise
+counted (3072 carries a new login, 3040 a touchdown point). From the bank's parameters: the
+BPD and UPD versions, the offered security functions with their names and whether each is
+decoupled, and the camt formats. A transport failure logs the exception chain as class names
+only and is re-raised unchanged. `open()` adds one record of the session's facts (bootstrap
+or restored, the security function, whether the system id is assigned, BPD/UPD versions, the
+python-fints version, the product id's length, the product version, the URL's host). Each
+record carries
+the step (`bootstrap`, `open`, `poll`, `accounts`, `transactions`, `balance`, `close`), the
+exchange's number in the session and the job's `log_fields` (the sync id).
+It never logs, at any level: the PIN, the login, the customer id, the product id, the system
+id or a dialog id value, an IBAN, an account number, a balance, camt content or a TAN
+challenge. It is a whitelist: an unknown segment or field prints only its type, number and
+version, and the data segments (HISPA, HICAZ, HISAL, HITAN, HISYN, HIUPD) only that. D119's
+rule (no secret in a log, an event or the database) holds unchanged; the trace only adds
+facts the bank's public parameters and our segment headers already state.
+
 Errors: every failure leaves this module as `BankError(code, response_code)` with a fixed
 message. A python-fints exception's text is never kept (the generic Exception it raises for
 a 9xxx answer to HKTAN holds the whole response); the code comes from the exception's type
@@ -46,8 +73,9 @@ does; HKTAB is never sent).
 import functools
 import logging
 import re
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager, suppress
+import time
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import AbstractContextManager, contextmanager, suppress
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -75,6 +103,9 @@ from hausbuch.rules.bank_sync import (
     redact_bank_text,
     refused_code,
 )
+
+from . import fints_trace
+from .fints_trace import trace_context
 
 FINTS_LOGGER = "fints"
 HTTP_TIMEOUT_S = 60
@@ -120,6 +151,7 @@ class BankError(Exception):
         *,
         codes: tuple[str, ...] = (),
         answers: tuple[str, ...] = (),
+        exc_chain: str | None = None,
     ):
         super().__init__(code)
         self.code = code
@@ -128,6 +160,9 @@ class BankError(Exception):
         # The bank's 3xxx/9xxx answers as "code text", redacted (rules.redact_bank_text):
         # for the log only, never an event or the database.
         self.answers = answers
+        # A failure that carried no 9xxx code: the python-fints exception and its causes as
+        # class names only (D148), e.g. no FinTS endpoint, or an answer it could not parse.
+        self.exc_chain = exc_chain
 
 
 def _refused(codes: list[str], answers: list[str] | None = None) -> BankError:
@@ -198,27 +233,70 @@ def _segment_types(segments: Any) -> Iterator[str]:
 
 
 class _TimeoutSession(requests.Session):
+    """A session with a timeout that keeps the last post's outcome for the trace (D148): the
+    HTTP status, the answer's size in bytes and the time it took, never its content."""
+
     def __init__(self, timeout_s: float):
         super().__init__()
         self._timeout_s = timeout_s
+        self.last_http: dict[str, Any] = {}
 
     def request(self, *args: Any, **kwargs: Any) -> requests.Response:  # type: ignore[override]
         kwargs.setdefault("timeout", self._timeout_s)
-        return super().request(*args, **kwargs)
+        self.last_http = {}
+        started = time.perf_counter()
+        try:
+            response = super().request(*args, **kwargs)
+        finally:
+            self.last_http["http_ms"] = round((time.perf_counter() - started) * 1000)
+        self.last_http["http_status"] = response.status_code
+        self.last_http["http_bytes"] = len(response.content or b"")
+        return response
+
+
+def _no_hidden() -> tuple[str | None, ...]:
+    return ()
 
 
 class _GuardedConnection(FinTSHTTPSConnection):
-    """python-fints' HTTPS connection with a timeout and the segment whitelist."""
+    """python-fints' HTTPS connection with a timeout, the segment whitelist and the trace
+    (D148): one INFO record per exchange, written after the answer or the failure."""
 
-    def __init__(self, url: str, timeout_s: float = HTTP_TIMEOUT_S):
+    def __init__(
+        self,
+        url: str,
+        timeout_s: float = HTTP_TIMEOUT_S,
+        *,
+        hidden: fints_trace.Hidden = _no_hidden,
+    ):
         super().__init__(url)
         self.session = _TimeoutSession(timeout_s)
+        self._hidden = hidden
+        self._exchanges = 0
 
     def send(self, msg: Any) -> Any:
         refused = sorted({t for t in _segment_types(msg.segments) if t not in ALLOWED_SEGMENTS})
         if refused:
             raise WriteRefused(f"segment not allowed: {', '.join(refused)}")
-        return super().send(msg)
+        self._exchanges += 1
+        self.session.last_http = {}
+        try:
+            response = super().send(msg)
+        except Exception as exc:  # traced by class names only, then re-raised unchanged
+            self._trace(msg, error=exc)
+            raise
+        self._trace(msg, response=response)
+        return response
+
+    def _trace(self, msg: Any, *, response: Any = None, error: Exception | None = None) -> None:
+        fints_trace.log_exchange(
+            exchange=self._exchanges,
+            segments=msg.segments,
+            http=dict(getattr(self.session, "last_http", {})),
+            response=response,
+            error=error,
+            hidden=self._hidden,
+        )
 
 
 def _refuse(name: str) -> Callable[..., Any]:
@@ -235,11 +313,26 @@ class _ReadOnlyClient(FinTS3PinTanClient):
 
     def __init__(self, *args: Any, timeout_s: float = HTTP_TIMEOUT_S, **kwargs: Any):
         super().__init__(*args, **kwargs)
-        self.connection = _GuardedConnection(self.connection.url, timeout_s)
+        self.connection = _GuardedConnection(
+            self.connection.url, timeout_s, hidden=self._hidden_values
+        )
         self.refused_codes: list[str] = []
         # every 3xxx and 9xxx answer as "code text", redacted (a warning such as 3920 can
         # name what the bank wanted instead)
         self.answers: list[str] = []
+
+    def _hidden_values(self) -> tuple[str | None, ...]:
+        """What a bank text must never show in the log: the login, the customer id, the PIN
+        (should a bank echo it), the product id ("Produkt … nicht zugelassen"; it is not all
+        digits, so the long-number mask would miss it, D148) and an assigned system id."""
+        system_id = getattr(self, "system_id", None)
+        return (
+            getattr(self, "user_id", None),
+            getattr(self, "customer_id", None),
+            getattr(getattr(self, "pin", None), "value", None),
+            getattr(self, "product_name", None),
+            None if system_id in (None, fints_trace.SYSTEM_ID_UNASSIGNED) else str(system_id),
+        )
 
     def _process_response(self, dialog: Any, segment: Any, response: Any) -> None:
         raw = str(getattr(response, "code", None) or "")
@@ -247,12 +340,7 @@ class _ReadOnlyClient(FinTS3PinTanClient):
         if code is not None:
             self.refused_codes.append(code)
         if len(raw) == 4 and raw[0] in "39":
-            text = redact_bank_text(
-                getattr(response, "text", ""),
-                getattr(self, "user_id", None),
-                getattr(self, "customer_id", None),
-                getattr(getattr(self, "pin", None), "value", None),  # should a bank echo it
-            )
+            text = redact_bank_text(getattr(response, "text", ""), *self._hidden_values())
             self.answers.append(f"{raw} {text}".strip())
         super()._process_response(dialog, segment, response)
 
@@ -324,16 +412,28 @@ def _amount(balance: Any) -> Decimal:
 class FintsSession:
     """One FinTS dialog for one sync run. See the module docstring for the surface."""
 
-    def __init__(self, client: Any, *, tan_mechanism: str | None, restored: bool):
+    def __init__(
+        self,
+        client: Any,
+        *,
+        tan_mechanism: str | None,
+        restored: bool,
+        log_fields: Mapping[str, Any] | None = None,
+    ):
         pin_fints_logging()
         self._client = client
         self._tan_mechanism = tan_mechanism
         self._restored = restored
         self._entered = False
+        self._log_fields = dict(log_fields or {})
 
     @property
     def tan_mechanism(self) -> str | None:
         return self._tan_mechanism
+
+    def _traced(self, step: str) -> AbstractContextManager[None]:
+        """The trace's tag for the exchanges of `step` (D148), with the caller's fields."""
+        return trace_context(**self._log_fields, step=step)
 
     @contextmanager
     def _mapped(self, *, codes_refuse: bool = True) -> Iterator[None]:
@@ -350,6 +450,8 @@ class FintsSession:
             raise
         except Exception as exc:  # the type decides the code; the exception's text is dropped
             error = self._error(exc, seen)
+            if not error.response_codes:  # not the bank's 9xxx: what python-fints raised (D148)
+                error.exc_chain = fints_trace.exc_chain(exc)
             if error.code == E.BANK_REFUSED and not error.answers:
                 error.answers = tuple(self._answers())
             raise error from None
@@ -406,12 +508,17 @@ class FintsSession:
     def open(self) -> Approval | None:
         """Choose the decoupled mechanism and open the standing dialog. Returns the approval
         the bank asks for at login, or None when it serves without one."""
+        with self._traced("open"):
+            fints_trace.log_session(
+                self._client, restored=self._restored, tan_mechanism=self._tan_mechanism
+            )
         if not self._seeded():
-            with self._mapped(codes_refuse=False):
+            with self._traced("bootstrap"), self._mapped(codes_refuse=False):
                 # a dialog without TAN, in python-fints' bootstrap mode: the system id and the
                 # allowed list; a code it tolerates here does not refuse the run (PR #160)
                 self._client.fetch_tan_mechanisms()
-        with self._mapped():  # the codes counted from here: the bootstrap's are behind us
+        # the codes counted from here: the bootstrap's are behind us
+        with self._traced("open"), self._mapped():
             self._choose_mechanism()
             self._client.init_tan_response = None
             self._client.__enter__()
@@ -426,14 +533,14 @@ class FintsSession:
     def poll(self, approval: Approval) -> Approval | Confirmed:
         """One status query of a decoupled approval (HKTAN process S): the approval again
         while the bank answers 3956 (not yet), else Confirmed with the request's result."""
-        with self._mapped():
+        with self._traced("poll"), self._mapped():
             result = self._client.send_tan(approval._response, "")
         if isinstance(result, NeedTANResponse):
             return Approval(result, approval._finish)
         return Confirmed(approval._finish(result))
 
-    def _read(self, call: Callable[[], Any], finish: Callable[[Any], Any]) -> Any:
-        with self._mapped():
+    def _read(self, call: Callable[[], Any], finish: Callable[[Any], Any], step: str) -> Any:
+        with self._traced(step), self._mapped():
             result = call()
         if isinstance(result, NeedTANResponse):
             if not result.decoupled:
@@ -442,7 +549,7 @@ class FintsSession:
         return finish(result)
 
     def accounts(self) -> list[SEPAAccount] | Approval:
-        return self._read(self._client.get_sepa_accounts, list)
+        return self._read(self._client.get_sepa_accounts, list, "accounts")
 
     def camt_formats(self) -> list[str]:
         """The bank's camt messages the parser reads; bank.unsupported_format if none."""
@@ -468,6 +575,7 @@ class FintsSession:
                 supported_camt_messages=formats,
             ),
             booked,
+            "transactions",
         )
 
     def balance(self, account: SEPAAccount) -> Decimal | None | Approval:
@@ -475,6 +583,7 @@ class FintsSession:
         return self._read(
             functools.partial(self._client.get_balance, account),
             lambda balance: None if balance is None else _amount(balance),
+            "balance",
         )
 
     def close(self) -> None:
@@ -483,7 +592,7 @@ class FintsSession:
             return
         self._entered = False
         # The dialog is gone either way; nothing of a failure here is kept.
-        with suppress(Exception):
+        with self._traced("close"), suppress(Exception):
             self._client.__exit__(None, None, None)
 
     def state(self) -> bytes:
@@ -502,8 +611,10 @@ def open_session(
     client_data: bytes | None,
     tan_mechanism: str | None,
     client_factory: ClientFactory = make_client,
+    log_fields: Mapping[str, Any] | None = None,
 ) -> FintsSession:
-    """A session over a new read-only client. Building the client sends nothing."""
+    """A session over a new read-only client. Building the client sends nothing.
+    `log_fields` (the job's sync id) tag every trace record of the session (D148)."""
     try:
         client = client_factory(
             bank_code=bank_code,
@@ -517,4 +628,9 @@ def open_session(
         if client_data is None:
             raise BankError(E.BANK_FAILED) from None
         raise BankError(E.BANK_STATE_REJECTED) from None
-    return FintsSession(client, tan_mechanism=tan_mechanism, restored=client_data is not None)
+    return FintsSession(
+        client,
+        tan_mechanism=tan_mechanism,
+        restored=client_data is not None,
+        log_fields=log_fields,
+    )

@@ -22,7 +22,8 @@ the event. A WriteRefused (a bug: a write segment reached the wire guard) fails 
 bank.failed and is re-raised so the job shows failed in Procrastinate too.
 
 Logging: one line per run with the sync id, the outcome, codes and exception class names;
-the camt formats the bank offers at INFO (they answer §16 Q-O34 on the first real run).
+the camt formats the bank offers at INFO (they answer §16 Q-O34 on the first real run). The
+facade adds one trace record per FinTS exchange, tagged with the sync id (D148).
 Never the PIN, the product id, the login, an IBAN, an amount or any text from the bank.
 """
 
@@ -135,6 +136,7 @@ def run_bank_sync(
             client_data=plan.client_data,
             tan_mechanism=plan.tan_mechanism,
             client_factory=net.client_factory,
+            log_fields={"sync_id": str(sync_id), "attempt": attempt},
         )
         fetched = _fetch(deps, session, run, write, net, workspace_id)
         outcome = write(
@@ -275,6 +277,8 @@ def _bank_error(
         fields["response_codes"] = list(exc.response_codes[:REFUSED_CODES_LOGGED])
     if exc.answers:  # the bank's text, login and long numbers blanked (Luis, 11 Nov 2026)
         fields["bank_answers"] = list(exc.answers)
+    if exc.exc_chain:  # no 9xxx code: what python-fints raised, class names only (D148)
+        fields["exc_chain"] = exc.exc_chain
     try:
         retry = exc.code == E.BANK_UNREACHABLE and not run.awaiting_approval
         if retry and attempt < MAX_UNREACHABLE_RETRIES:
