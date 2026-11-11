@@ -37,6 +37,7 @@ export function RentSchedule({ tenancy, onChanged }: { tenancy: Tenancy; onChang
   }, [tenancy.id, today]);
   const schedule = useLoad(load);
   const [note, setNote] = useState<string | null>(null);
+  const latest = latestRow(schedule.data?.rows ?? []);
 
   function changed(message: string) {
     setNote(message);
@@ -111,6 +112,7 @@ export function RentSchedule({ tenancy, onChanged }: { tenancy: Tenancy; onChang
           {(close) => (
             <RentChangeForm
               tenancy={tenancy}
+              latest={latest}
               onDone={() => {
                 close();
                 changed("Mietänderung gespeichert.");
@@ -123,10 +125,20 @@ export function RentSchedule({ tenancy, onChanged }: { tenancy: Tenancy; onChang
   );
 }
 
-function RentChangeForm({ tenancy, onDone }: { tenancy: Tenancy; onDone: () => void }) {
+/** The row in force last: the latest effective_from among the rows no correction replaced. */
+function latestRow(rows: RentScheduleEntry[]): RentScheduleEntry | null {
+  const superseded = new Set(rows.map((row) => row.supersedes_id).filter(Boolean));
+  return rows
+    .filter((row) => !superseded.has(row.id))
+    .reduce<RentScheduleEntry | null>((best, row) => (best === null || row.effective_from >= best.effective_from ? row : best), null);
+}
+
+/** A rent change starts from the latest row's amounts, so changing one of them keeps the
+ * other (a blank NK-Vorauszahlung would otherwise be saved as 0 €). */
+function RentChangeForm({ tenancy, latest, onDone }: { tenancy: Tenancy; latest: RentScheduleEntry | null; onDone: () => void }) {
   const [effectiveFrom, setEffectiveFrom] = useState("");
-  const [cold, setCold] = useState("");
-  const [prepayment, setPrepayment] = useState("");
+  const [cold, setCold] = useState(latest ? decimalInput(latest.cold_rent) : "");
+  const [prepayment, setPrepayment] = useState(latest ? decimalInput(latest.operating_costs_prepayment) : "");
   const [reason, setReason] = useState<RentChangeReason>(tenancy.rent_model === "staffel" ? "staffel_step" : tenancy.rent_model === "index" ? "index_adjustment" : "rent_increase");
   const [documentId, setDocumentId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -164,6 +176,11 @@ function RentChangeForm({ tenancy, onDone }: { tenancy: Tenancy; onDone: () => v
 
   return (
     <form className="stack" onSubmit={submit} noValidate>
+      {latest ? (
+        <p className="muted">
+          Vorbelegt mit der Miete ab {formatDate(latest.effective_from)}. Nur ändern, was sich ändert.
+        </p>
+      ) : null}
       <Field
         id="rent-change-from"
         label="Gültig ab"

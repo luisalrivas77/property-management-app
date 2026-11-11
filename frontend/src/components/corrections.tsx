@@ -7,7 +7,7 @@ import { useState, type FormEvent } from "react";
 
 import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
 import { formatDate, formatMoney } from "./format";
-import { toMoneyString } from "./input";
+import { decimalInput, toMoneyString } from "./input";
 
 export interface CorrectionValues {
   new_date: string;
@@ -22,7 +22,7 @@ export function DateCorrectionForm({
   current,
   currentPrice,
   priceLabel = "Kaufpreis",
-  priceHint = "Leer lassen, wenn der Kaufpreis stimmt.",
+  priceHint = "Vorbelegt mit dem gespeicherten Kaufpreis; nur ändern, wenn er falsch ist.",
   description = "Das richtige Datum laut Dokument. Die Korrektur wird als eigener Eintrag gespeichert; der Verlauf zeigt das ursprüngliche Datum weiter an.",
   onSubmit,
   onDone,
@@ -42,21 +42,24 @@ export function DateCorrectionForm({
   onDone: () => void;
 }) {
   const [newDate, setNewDate] = useState(current);
-  const [price, setPrice] = useState("");
+  // Pre-filled with the stored amount; only a changed amount is sent (an emptied field keeps it).
+  const [price, setPrice] = useState(currentPrice !== undefined ? decimalInput(currentPrice) : "");
   const [busy, setBusy] = useState(false);
   const form = useFormErrors(KEYS);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const values = collector();
-    if (!newDate) values.messages.new_date = ["Bitte ein Datum eingeben."];
-    else if (newDate === current && price.trim() === "") values.messages.new_date = ["Das ist schon das gespeicherte Datum."];
     const purchasePrice = currentPrice !== undefined ? values.optional("purchase_price", price, toMoneyString) : undefined;
+    const changedPrice = currentPrice !== undefined && purchasePrice && purchasePrice !== currentPrice ? purchasePrice : null;
+    if (!newDate) values.messages.new_date = ["Bitte ein Datum eingeben."];
+    else if (newDate === current && changedPrice === null && values.ok)
+      values.messages.new_date = [currentPrice !== undefined ? "Datum und Betrag sind schon gespeichert." : "Das ist schon das gespeicherte Datum."];
     if (!values.ok || (purchasePrice === undefined && currentPrice !== undefined)) return form.invalid(values.messages);
     setBusy(true);
     form.clear();
     try {
-      await onSubmit(currentPrice !== undefined && purchasePrice ? { new_date: newDate, purchase_price: purchasePrice } : { new_date: newDate });
+      await onSubmit(changedPrice !== null ? { new_date: newDate, purchase_price: changedPrice } : { new_date: newDate });
       onDone();
     } catch (error) {
       form.fail(error);
@@ -78,9 +81,9 @@ export function DateCorrectionForm({
       {currentPrice !== undefined ? (
         <Field
           id={`${idPrefix}-price`}
-          label={`${priceLabel} korrigieren (€, optional)`}
+          label={`${priceLabel} (€)`}
           hint={priceHint}
-          description={`Nur ausfüllen, wenn auch der Betrag (${priceLabel}) falsch erfasst ist: der richtige Betrag laut Vertrag.`}
+          description={`Nur ändern, wenn auch der Betrag (${priceLabel}) falsch erfasst ist: der richtige Betrag laut Vertrag.`}
           errors={form.of("purchase_price")}
         >
           <input type="text" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} autoComplete="off" />

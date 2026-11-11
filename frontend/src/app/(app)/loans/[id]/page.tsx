@@ -59,7 +59,7 @@ export default function LoanPage() {
                       current={loan.terms.disbursed_on}
                       currentPrice={loan.terms.principal}
                       priceLabel="Darlehenssumme"
-                      priceHint="Leer lassen, wenn die Darlehenssumme stimmt."
+                      priceHint="Vorbelegt mit der gespeicherten Darlehenssumme; nur ändern, wenn sie falsch ist."
                       onSubmit={(values) =>
                         ok(
                           api.POST("/api/loans/{loan_id}/corrections/disbursement", {
