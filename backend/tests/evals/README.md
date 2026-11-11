@@ -52,6 +52,15 @@ other document was recorded again; this one was recorded on 11 Nov 2026. Its
 pre-fill is run once per row with that row's MEA as the Kaufvertrag's, which must propose
 exactly that row's Wohnfläche.
 
+Several Bescheide in one document (phase 2 D145) adds `grunderwerbsteuerbescheide_zwei`: the
+Grunderwerbsteuerbescheid of each of two buyers, one per page, captured into one PDF. The
+Bescheid request's `amount_total` and `cost_lines` now say that such a document is read as one
+line per Bescheid (named "Bescheid 1", "Bescheid 2" or by its share, never by a person's name
+or Steuernummer; `make_docs.GREST_IDENTIFIERS` are checked absent from the lines) with the sum
+as the total. Only Bescheid requests changed, so only `grunderwerbsteuerbescheid` was recorded
+again, with the new document, on 11 Nov 2026. The sum is printed nowhere, so the model writes
+it without a citation (`Doc.as_written`); the cited lines summing to it is its check.
+
 - `test_recorded_evals.py` runs in CI on every push. It replays every recording in
   `recordings/` through the same code the `document_read` job uses (SDK message conversion,
   `parse_classification`, `rules.extraction_parse.parse_lines`, the chunk merge) and checks

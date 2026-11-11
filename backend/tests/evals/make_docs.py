@@ -20,6 +20,12 @@ IBAN_A = "DE89 3704 0044 0532 0130 00"  # the standard example IBAN
 IBAN_B = "DE02 1203 0000 0000 2020 51"  # a published test IBAN
 
 
+# The two buyers of the two-notice Grunderwerbsteuer document (D145), invented; they, the
+# notices' Steuernummern and the buyers' street never appear in a cost line's text.
+GREST_BUYERS = ("Jonas Beispielkauf", "Lea Beispielkauf")
+GREST_IDENTIFIERS = ("Beispielkauf", "67891", "67892", "Birkenweg")
+
+
 @dataclass(frozen=True)
 class Doc:
     name: str
@@ -37,6 +43,10 @@ class Doc:
     # A Wohnflächenberechnung's dwellings (phase 2 D139), in document order: (label,
     # Wohnfläche, MEA as printed or None). Checked on the parsed rows, never summed.
     expected_dwellings: list[tuple[str, str, str | None]] = field(default_factory=list)
+    # Fields whose expected value the text never prints as such (phase 2 D145: the sum of two
+    # Bescheide), as the model writes it: field -> text. It has no passage to quote, so it may
+    # come back without a citation (the real recording does); its cost lines must sum to it.
+    as_written: dict[str, str] = field(default_factory=dict)
 
 
 DOCS: list[Doc] = [
@@ -400,6 +410,54 @@ DOCS: list[Doc] = [
         },
         expected_missing=["iban"],
         expected_cost_lines=[("Grunderwerbsteuer", "19500.00", "acquisition_cost")],
+    ),
+    Doc(
+        # Phase 2 D145: the Finanzamt sends each buyer of a joint purchase a Bescheid on that
+        # buyer's share, and both were captured into one PDF. Each notice is its own cost
+        # line, named without the buyer's name or Steuernummer; the total is their sum, which
+        # the document never prints.
+        name="grunderwerbsteuerbescheide_zwei",
+        type="bescheid",
+        subtype="cost_basis_evidence",
+        kind="bescheid",
+        pages=[
+            [
+                "Finanzamt Musterstadt",
+                f"Herrn {GREST_BUYERS[0]}, Birkenweg 3, 12345 Musterstadt",
+                "Bescheid über Grunderwerbsteuer",
+                "Steuernummer 12/345/67891, vom 25.03.2026",
+                "",
+                "Erwerbsvorgang: Kaufvertrag vom 12.02.2026, Urkunde 2345/2026",
+                "Erwerb eines Miteigentumsanteils zur Hälfte",
+                "Gegenleistung (anteilig): 140.000,00 EUR",
+                "Die Steuer wird festgesetzt auf 6,0 % von 140.000 = 8.400,00 EUR",
+                "fällig am 28.04.2026",
+            ],
+            [
+                "Finanzamt Musterstadt",
+                f"Frau {GREST_BUYERS[1]}, Birkenweg 3, 12345 Musterstadt",
+                "Bescheid über Grunderwerbsteuer",
+                "Steuernummer 12/345/67892, vom 25.03.2026",
+                "",
+                "Erwerbsvorgang: Kaufvertrag vom 12.02.2026, Urkunde 2345/2026",
+                "Erwerb eines Miteigentumsanteils zur Hälfte",
+                "Gegenleistung (anteilig): 140.000,00 EUR",
+                "Die Steuer wird festgesetzt auf 6,0 % von 140.000 = 8.400,00 EUR",
+                "fällig am 28.04.2026",
+            ],
+        ],
+        expected={
+            "sender": "Finanzamt Musterstadt",
+            "amount_total": "16800.00",
+            "due_on": "2026-04-28",
+            "document_date": "2026-03-25",
+        },
+        expected_missing=["iban"],
+        expected_cost_lines=[
+            ("Bescheid 1", "8400.00", "acquisition_cost"),
+            ("Bescheid 2", "8400.00", "acquisition_cost"),
+        ],
+        as_written={"amount_total": "16.800,00 EUR"},
     ),
     Doc(
         name="wirtschaftsplan",

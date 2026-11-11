@@ -3177,7 +3177,7 @@ export interface components {
             document_date?: components["schemas"]["ExtractedValue"];
             /** @description name of the authority, without the address */
             sender?: components["schemas"]["ExtractedValue"];
-            /** @description the amount assessed */
+            /** @description the amount assessed; when the document holds several Bescheide (e.g. one per buyer of a joint purchase), the sum of their assessed amounts, the one value you add up yourself */
             amount_total?: components["schemas"]["ExtractedValue"];
             /** @description Aktenzeichen / Steuernummer reference */
             reference?: components["schemas"]["ExtractedValue"];
@@ -3187,7 +3187,7 @@ export interface components {
             due_on?: components["schemas"]["ExtractedValue"];
             /** @description the year it concerns, if stated */
             tax_year?: components["schemas"]["ExtractedValue"];
-            /** @description every cost line of the bill, each written `text | amount | code`: the line's text and its amount as printed, then the code of the kind of cost it is, the only part you choose yourself, one of acquisition_cost, loan_fees, repairs, renovation, insurance, grundsteuer, property_management, hausgeld_umlagefaehig, hausgeld_verwaltung, electricity, professional_fees, bank_fees, other_expense, vat (acquisition_cost for the purchase and its land register entry, loan_fees for a Grundschuld or loan, vat for the Umsatzsteuer line); never a subtotal (Netto, Zwischensumme) or the total */
+            /** @description every cost line of the bill, each written `text | amount | code`: the line's text and its amount as printed, then the code of the kind of cost it is, the only part you choose yourself, one of acquisition_cost, loan_fees, repairs, renovation, insurance, grundsteuer, property_management, hausgeld_umlagefaehig, hausgeld_verwaltung, electricity, professional_fees, bank_fees, other_expense, vat (acquisition_cost for the purchase and its land register entry, loan_fees for a Grundschuld or loan, vat for the Umsatzsteuer line); never a subtotal (Netto, Zwischensumme) or the total; when the document holds several Bescheide (e.g. one per buyer of a joint purchase), each Bescheid's assessed amount is its own line, its text naming that Bescheid only as Bescheid 1, Bescheid 2 and so on, or by its share or base (e.g. 3,5 % von 150.000), never by a person's name, an identification number or a Steuernummer */
             cost_lines?: components["schemas"]["ExtractedValue"];
         };
         /** BescheidZve */

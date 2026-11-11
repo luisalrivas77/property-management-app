@@ -673,6 +673,14 @@ function visibleRows(record: ProposalRecord, state: RecordState): Row[] {
   });
 }
 
+/** A cost record's kind (cost:<kind>), and for cost:<kind>:other_notice the rest of a
+ * Grunderwerbsteuer row that belongs to the other buyer's notice (D145). */
+function costLabel(rest: string): string {
+  const [kind, part] = prefixOf(rest);
+  const label = lookup(ACQUISITION_COST_KIND, kind);
+  return part === "other_notice" ? `${label}, weiterer Bescheid` : label;
+}
+
 function recordTitle(record: ProposalRecord): string {
   const [prefix, rest] = prefixOf(record.key);
   switch (prefix) {
@@ -691,7 +699,7 @@ function recordTitle(record: ProposalRecord): string {
     case "ownership":
       return "Eigentumsanteile";
     case "cost":
-      return `Nebenkosten: ${lookup(ACQUISITION_COST_KIND, rest)}`;
+      return `Nebenkosten: ${costLabel(rest)}`;
     case "loan":
       return "Darlehen";
     case "tenant":
@@ -1203,7 +1211,7 @@ function appliedLabel(entity: AppliedEntity): string {
     case "ownership":
       return "Eigentumsanteile festgelegt";
     case "cost":
-      return `Nebenkosten (${lookup(ACQUISITION_COST_KIND, rest)}) ${entity.mode === "create" ? "erfasst" : "mit Beleg verknüpft"}`;
+      return `Nebenkosten (${costLabel(rest)}) ${entity.mode === "create" ? "erfasst" : "mit Beleg verknüpft"}`;
     case "loan":
       return `Darlehen ${verb}`;
     case "tenant":

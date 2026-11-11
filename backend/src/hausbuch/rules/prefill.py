@@ -27,15 +27,24 @@ without readable lines proposes one loan_fees record of its total. A part of an 
 category (renovation, other_expense) is named in a note, never proposed. The catalogue's
 invoices (utility bill, §35a, work expenses) are not sorted.
 
+Phase 2 D145 (Luis, 11 Nov 2026): the Finanzamt sends each buyer of a joint purchase a
+Grunderwerbsteuerbescheid on that buyer's share. A Bescheid reading whose kind is
+real_estate_transfer_tax and whose amount B is smaller than the Grunderwerbsteuer row A it
+would patch (cost rule 1 or 2) never lowers the row: the row is patched to B with this
+document as its Beleg, and a second record cost:real_estate_transfer_tax:other_notice creates
+the rest A − B without a Beleg ("Grunderwerbsteuer, weiterer Bescheid"), so the total stays A
+and the checklist asks for the other notice. Cost rule 2 prefers the document-less row whose
+amount equals the reading's within a cent, so the other notice later fills that row.
+
 Every value inside a record (`fields[*].value`, `current`) is JSON: dates as ISO strings,
 decimals as strings, fractions as {numerator, denominator}, ids as strings. The result never
 depends on the order of the context's lists (the fixture runs every case shuffled): where
 several existing records match, the one with the smallest id wins.
 
 Record keys, in this order when a kind proposes them: typing, property, correction:<field>,
-unit, price_split, ownership, cost:<kind>, loan, tenant:<n>, tenancy, rent, deposit_received,
-link:property / link:loan / link:tenancy / link:owner, tax_input:<kind>,
-return_input:<kind>.
+unit, price_split, ownership, cost:<kind>, cost:<kind>:other_notice, loan, tenant:<n>,
+tenancy, rent, deposit_received, link:property / link:loan / link:tenancy / link:owner,
+tax_input:<kind>, return_input:<kind>.
 
 Phase 3 (docs/phases/phase-3.md §9): a Zinsbescheinigung also proposes
 tax_input:interest_certified {tax_year, loan_id, value.amount}, a Hausgeldabrechnung
@@ -110,6 +119,7 @@ from hausbuch.schemas.enums import (
 from hausbuch.schemas.extraction import GENERAL_LINK, _Typing
 from hausbuch.schemas.proposal import (
     CarriedField,
+    ExistingCost,
     ExistingLoan,
     ExistingOwner,
     ExistingPayRow,
@@ -302,6 +312,26 @@ _PAID_FROM_ACCOUNT_NOTE = (
     "Eine Zahlung dieser Rechnung vom Mietkonto wurde gefunden; ihre Aufteilung wird beim "
     "Abgleich des Kontoauszugs vorgeschlagen. Darum kein Eintrag „von einem anderen Konto "
     "bezahlt“."
+)
+
+
+# D145: one buyer's Grunderwerbsteuerbescheid against a row that holds both buyers' tax. The
+# rest of the row becomes its own row without a Beleg, under this key suffix
+# (cost:<kind>:other_notice); the apply creates it without this document as its Beleg.
+OTHER_NOTICE = "other_notice"
+_OTHER_NOTICE_LABEL = "Grunderwerbsteuer, weiterer Bescheid (z. B. des Miteigentümers)"
+_ONE_NOTICE_NOTE = (
+    "Dieser Bescheid setzt {read} fest, eingetragen sind {row} Grunderwerbsteuer. Bei einem "
+    "gemeinsamen Kauf schickt das Finanzamt oft jedem Käufer einen eigenen Bescheid über "
+    "seinen Anteil. Darum wird der Eintrag nicht gesenkt: Er bekommt {read} und diesen "
+    "Bescheid als Beleg, und die übrigen {rest} stehen im nächsten Eintrag „Grunderwerbsteuer, "
+    "weiterer Bescheid“, zusammen weiter {row}."
+)
+_OTHER_NOTICE_NOTE = (
+    "Die übrigen {rest} gehören vermutlich zum Bescheid des anderen Käufers. Der Eintrag "
+    "bleibt ohne Beleg, bis dieser Bescheid hochgeladen ist; er wird ihm dann zugeordnet, und "
+    "bis dahin fragt die Liste der fehlenden Unterlagen danach. Ist die Grunderwerbsteuer "
+    "insgesamt nur {read}, diesen Eintrag überspringen."
 )
 
 
@@ -1076,6 +1106,11 @@ class _Builder:
 
         # 1. A row whose Beleg is this document: never a second row for the same Beleg.
         same_beleg = _first(c for c in self.ctx.costs if c.document_id == self.ctx.document_id)
+        if same_beleg is not None and self._one_buyers_notice(same_beleg, amount, kind_value):
+            existing = {"amount": _json(same_beleg.amount), "note": same_beleg.note}
+            differing = {f: v for f, v in stated.items() if not _same(v.value, existing[f])}
+            self._split_notice(same_beleg, amount, differing, existing)
+            return
         if same_beleg is not None:
             existing = {"amount": _json(same_beleg.amount), "note": same_beleg.note}
             differing = {f: v for f, v in stated.items() if not _same(v.value, existing[f])}
@@ -1098,11 +1133,14 @@ class _Builder:
                 for c in self.ctx.costs
                 if c.property_id == prop.id and c.kind.value == kind and c.document_id is None
             ),
-            key=lambda c: (not _same(amount.value, _json(c.amount)), c.id),
+            key=lambda c: (not _same_amount(amount.value, c.amount), c.id),
         )
         if without_beleg:
             row = without_beleg[0]
             existing = {"amount": _json(row.amount), "note": row.note}
+            if self._one_buyers_notice(row, amount, kind_value):
+                self._split_notice(row, amount, stated, existing)
+                return
             self.add(
                 f"cost:{kind}",
                 "acquisition_cost",
@@ -1120,6 +1158,80 @@ class _Builder:
         # The new row's card asks for its note, stated or not (D132).
         self.carried["reference"] = CarriedField(key=f"cost:{kind}", field="note")
         self.add(f"cost:{kind}", "acquisition_cost", "create", fields)
+
+    def _one_buyers_notice(
+        self, row: ExistingCost, amount: ExtractedValue, kind_value: ExtractedValue
+    ) -> bool:
+        """D145: a Grunderwerbsteuerbescheid that assesses less than the Grunderwerbsteuer row
+        it would patch is one buyer's notice of a joint purchase (the Finanzamt sends one per
+        buyer, each on that buyer's share), never a reason to lower the row.
+
+        Only while no notice has been processed on the property: once another transfer-tax
+        row has a Beleg or is a waiting rest row, the row is patched as before (the reading
+        wins), so a typed total that was a little off, or a lower re-read, never splits off a
+        rest row for a notice that does not exist (D145, from the review)."""
+        if self.kind is not ExtractionKind.BESCHEID:
+            return False
+        transfer_tax = AcquisitionCostKind.REAL_ESTATE_TRANSFER_TAX
+        if kind_value.value != transfer_tax.value or row.kind is not transfer_tax:
+            return False
+        if any(
+            c.id != row.id
+            and c.property_id == row.property_id
+            and c.kind is transfer_tax
+            and (c.document_id is not None or c.note == _OTHER_NOTICE_LABEL)
+            for c in self.ctx.costs
+        ):
+            return False
+        read = _decimal(amount.value)
+        return read is not None and read > 0 and row.amount - read > _CENTS
+
+    def _split_notice(
+        self,
+        row: ExistingCost,
+        amount: ExtractedValue,
+        fields: dict[str, ExtractedValue],
+        existing: dict[str, JsonValue],
+    ) -> None:
+        """D145: the row takes this notice (its amount, this document as its Beleg) and the
+        rest of the row becomes its own row without a Beleg, so the total stays as typed and
+        the checklist asks for the other notice. Both in the one form (D132)."""
+        read = _decimal(amount.value)
+        assert read is not None  # _one_buyers_notice
+        rest = row.amount - read
+        kind = row.kind.value
+        values = {
+            "row": _euro_de(row.amount),
+            "read": _euro_de(read),
+            "rest": _euro_de(rest),
+        }
+        self.add(
+            f"cost:{kind}",
+            "acquisition_cost",
+            "patch",
+            fields,
+            target_id=row.id,
+            current={f: existing[f] for f in fields},
+            notes=[_ONE_NOTICE_NOTE.format(**values)],
+        )
+        if amount is self.ev("amount_total"):
+            inputs = [("amount_total", amount)]
+        else:
+            inputs = [
+                ("cost_lines", self.ev("cost_lines")),
+                ("amount_total", self.ev("amount_total")),
+            ]
+        self.add(
+            f"cost:{kind}:{OTHER_NOTICE}",
+            "acquisition_cost",
+            "create",
+            {
+                "kind": _code_value(kind, "high"),
+                "amount": _derived(str(rest.quantize(_CENTS)), inputs),
+                "note": _code_value(_OTHER_NOTICE_LABEL, "high"),
+            },
+            notes=[_OTHER_NOTICE_NOTE.format(**values)],
+        )
 
     # -- Darlehensvertrag
 
@@ -2022,6 +2134,12 @@ def _same(proposed: JsonValue, existing: JsonValue) -> bool:
             return a == b
         return _norm(proposed) == _norm(existing)
     return False
+
+
+def _same_amount(proposed: JsonValue, existing: Decimal) -> bool:
+    """A read amount equal to a stored one within a cent (D145)."""
+    read = _decimal(proposed)
+    return read is not None and abs(read - existing) <= _CENTS
 
 
 # --- Mapping and deriving values -------------------------------------------------------

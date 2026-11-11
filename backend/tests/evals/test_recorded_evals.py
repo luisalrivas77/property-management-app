@@ -19,6 +19,7 @@ from make_docs import (
     DOCS,
     DOCS_BY_NAME,
     FAKE_IDENTIFIERS,
+    GREST_IDENTIFIERS,
     Doc,
     build_pdf,
     doc_pdf,
@@ -78,7 +79,14 @@ def _check(doc: Doc, recording: dict) -> None:
     assert wrong == {}, f"{doc.name}: fields read wrong (got, expected): {wrong}"
     stated = [name for name in doc.expected_missing if result.values[name].value is not None]
     assert stated == [], f"{doc.name}: fields not in the document came back: {stated}"
-    uncited = [name for name in doc.expected if result.values[name].source is None]
+    # A value the document never prints (as_written, D145: the sum of two Bescheide) has no
+    # passage to quote; its check is that the cited cost lines sum to it (derive_fields).
+    unprinted = doc.as_written
+    uncited = [
+        name
+        for name in doc.expected
+        if result.values[name].source is None and name not in unprinted
+    ]
     assert uncited == [], f"{doc.name}: values without a page and quote: {uncited}"
     if doc.expected_cost_lines:
         _check_cost_lines(doc, result.values["cost_lines"], real=not recording["synthetic"])
@@ -99,6 +107,10 @@ def _check_cost_lines(doc: Doc, read, *, real: bool) -> None:
     assert [a for a, _ in got] == [a for a, _ in want], f"{doc.name}: cost lines {read.value}"
     wrong = [(g, w) for (_, g), (_, w) in zip(got, want, strict=True) if w and g != w]
     assert wrong == [], f"{doc.name}: cost line codes (got, expected): {wrong}"
+    # D145: a notice's line names it as Bescheid 1, 2 or by its share, never by its addressee.
+    texts = " ".join(line.text for line in lines)
+    named = [fragment for fragment in GREST_IDENTIFIERS if fragment in texts]
+    assert named == [], f"{doc.name}: a cost line names {named}"
 
 
 def _check_dwellings(doc: Doc, result, *, real: bool) -> None:
@@ -212,7 +224,7 @@ def _as_written(doc: Doc) -> dict[str, str]:
     lines = [line for page in doc.pages for line in page]
     for name, expected in doc.expected.items():
         kind = value_kind(model, name)
-        found[name] = _written(lines, expected, kind)
+        found[name] = doc.as_written.get(name) or _written(lines, expected, kind)
     for name in doc.expected_missing:
         found[name] = "unbekannt"
     if doc.expected_dwellings:
