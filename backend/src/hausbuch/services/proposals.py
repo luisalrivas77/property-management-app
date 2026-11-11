@@ -499,6 +499,7 @@ def prefill_context(
         properties=[
             ExistingProperty.model_validate(
                 p.model_dump(include=set(ExistingProperty.model_fields))
+                | _contract_facts(conn, p.id)
             )
             for p in props
         ],
@@ -566,6 +567,42 @@ def _current_bescheid_rows(conn: Connection, *, tax_year: int | None = None) -> 
         for row in income_inputs.list_income_inputs(conn, tax_year=tax_year)
         if row.kind == IncomeInputKind.BESCHEID_ZVE and row.owner_id is None
     ]
+
+
+def _contract_facts(conn: Connection, property_id: UUID) -> dict[str, Any]:
+    """D139: the MEA and the WE label the property's Kaufvertrag states, from the current
+    reading of each purchase_contract document linked to it (a link exists once its proposal
+    was applied, or the user linked it). A fact two contracts state differently is left out,
+    so a Wohnflächenberechnung's row is never picked by a guess."""
+    meas: list[JsonValue] = []
+    labels: list[str] = []
+    for related in documents.list_related_documents(
+        conn, target_type=LinkTarget.PROPERTY, target_id=property_id
+    ):
+        typing = related.document.typing
+        if typing is None or typing.subtype is not DocumentSubtype.PURCHASE_CONTRACT:
+            continue
+        reading = documents.current_extraction(conn, related.document.id)
+        if reading is None or reading.kind is not ExtractionKind.PURCHASE_CONTRACT:
+            continue
+        mea, label = (getattr(reading.fields, name).value for name in ("mea", "unit_label"))
+        if isinstance(mea, dict):
+            meas.append(mea)
+        if isinstance(label, str) and label.strip():
+            labels.append(label)
+    facts: dict[str, Any] = {}
+    if meas and all(_same_share(m, meas[0]) for m in meas):
+        facts["contract_mea"] = meas[0]
+    if labels and len({" ".join(label.split()).casefold() for label in labels}) == 1:
+        facts["contract_unit_label"] = labels[0]
+    return facts
+
+
+def _same_share(a: Any, b: Any) -> bool:
+    try:
+        return a["numerator"] * b["denominator"] == b["numerator"] * a["denominator"]
+    except (KeyError, TypeError):
+        return False
 
 
 def _document_date(conn: Connection, document_id: UUID | None) -> date | None:

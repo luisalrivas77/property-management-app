@@ -4092,6 +4092,18 @@ export interface components {
             type: string;
         };
         /**
+         * FieldOption
+         * @description A value the review offers for one field with one click (D139): the field's value as
+         *     the apply body sends it and its label, e.g. "61.40" and "WE 3 · 2. OG links · 61,40 m²"
+         *     for a Wohnflächenberechnung's dwelling the code could not pick by itself.
+         */
+        FieldOption: {
+            /** Value */
+            value: string;
+            /** Label */
+            label: string;
+        };
+        /**
          * FilingCheck
          * @description §46 Abs. 2 EStG. deadline: 31 July of the following year (§149 Abs. 2 S. 1 AO), moved
          *     to the next working day when that is a Saturday, Sunday or a nationwide public holiday
@@ -4130,7 +4142,8 @@ export interface components {
          *     own, plus the one field set its subtype's group needs to find its link (D131): the
          *     property's address for the property, WEG, running-costs and tenancy groups, the lender and
          *     contract number for the loan group. A request asks only those (asked_fields); an
-         *     owner's home address is never asked.
+         *     owner's home address is never asked. A Wohnflächenberechnung (building_records) is also
+         *     asked its list of dwellings (D139).
          */
         GeneralExtraction: {
             /** @description a short German title, two to six words naming what the document is */
@@ -4143,6 +4156,8 @@ export interface components {
             house_number?: components["schemas"]["ExtractedValue"];
             /** @description five-digit PLZ of that property */
             postal_code?: components["schemas"]["ExtractedValue"];
+            /** @description every dwelling the document lists, one item per Wohnung, each written `label | Wohnfläche | MEA | Lage`: the dwelling's label as printed (e.g. WE 3, Wohnung Nr. 3), its Wohnfläche in m² as printed, its Miteigentumsanteil as printed (e.g. 85/1000) and its location in the building (e.g. 2. OG links), unbekannt for a part the row does not state; one item for a document about one flat; never a single room, a sum or a total row */
+            dwellings?: components["schemas"]["ExtractedValue"];
             /** @description the bank that gave the loan */
             lender?: components["schemas"]["ExtractedValue"];
             /** @description Darlehensnummer / Vertragsnummer; when none is printed, the loan's Kontonummer. The number only, without its label */
@@ -6117,6 +6132,10 @@ export interface components {
             };
             /** Hand Version */
             hand_version?: number | null;
+            /** Options */
+            options?: {
+                [key: string]: components["schemas"]["FieldOption"][];
+            };
         };
         /**
          * ProposalRerunBody

@@ -11450,6 +11450,28 @@
         "title": "FieldError",
         "description": "One validation error, whitelisted to these three keys: never input, ctx or url (§3.6)."
       },
+      "FieldOption": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Value"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Label"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value",
+          "label"
+        ],
+        "title": "FieldOption",
+        "description": "A value the review offers for one field with one click (D139): the field's value as\nthe apply body sends it and its label, e.g. \"61.40\" and \"WE 3 · 2. OG links · 61,40 m²\"\nfor a Wohnflächenberechnung's dwelling the code could not pick by itself."
+      },
       "FilingCheck": {
         "properties": {
           "required": {
@@ -11536,6 +11558,11 @@
             "description": "five-digit PLZ of that property",
             "value_kind": "text"
           },
+          "dwellings": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "every dwelling the document lists, one item per Wohnung, each written `label | Wohnfläche | MEA | Lage`: the dwelling's label as printed (e.g. WE 3, Wohnung Nr. 3), its Wohnfläche in m² as printed, its Miteigentumsanteil as printed (e.g. 85/1000) and its location in the building (e.g. 2. OG links), unbekannt for a part the row does not state; one item for a document about one flat; never a single room, a sum or a total row",
+            "value_kind": "text_list"
+          },
           "lender": {
             "$ref": "#/components/schemas/ExtractedValue",
             "description": "the bank that gave the loan",
@@ -11574,7 +11601,7 @@
         "additionalProperties": false,
         "type": "object",
         "title": "GeneralExtraction",
-        "description": "The general reading (D130): title and date for every document without a reader of its\nown, plus the one field set its subtype's group needs to find its link (D131): the\nproperty's address for the property, WEG, running-costs and tenancy groups, the lender and\ncontract number for the loan group. A request asks only those (asked_fields); an\nowner's home address is never asked."
+        "description": "The general reading (D130): title and date for every document without a reader of its\nown, plus the one field set its subtype's group needs to find its link (D131): the\nproperty's address for the property, WEG, running-costs and tenancy groups, the lender and\ncontract number for the loan group. A request asks only those (asked_fields); an\nowner's home address is never asked. A Wohnflächenberechnung (building_records) is also\nasked its list of dwellings (D139)."
       },
       "GrundsteuerInstalment": {
         "properties": {
@@ -16228,6 +16255,16 @@
               }
             ],
             "title": "Hand Version"
+          },
+          "options": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/FieldOption"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Options"
           }
         },
         "additionalProperties": false,

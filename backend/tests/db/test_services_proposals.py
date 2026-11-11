@@ -1199,3 +1199,34 @@ def test_an_apply_keeping_an_erased_tenant_conflicts(
     with pytest.raises(ConflictError):
         run(ws, proposals.apply_proposal, proposal_id, body, iban_key=TEST_IBAN_KEY)
     assert read(ws, proposals.get_proposal, proposal_id).status is ProposalStatus.READY
+
+
+def test_the_context_carries_the_contracts_mea_and_we_label_for_a_wohnflaechenberechnung(
+    run, read, job, fresh_workspaces, blob_store, enqueued
+):
+    """D139: once the Kaufvertrag's proposal is applied (its document linked to the property),
+    the next reading's context states the contract's MEA and WE label on that property, so a
+    Wohnflächenberechnung's row can be picked by them; the ETW's Wohnfläche from the contract
+    lands on the property too."""
+    ws, _ = fresh_workspaces
+    _, ready, _ = _read_ready(
+        run, job, ws, blob_store, enqueued, PURCHASE, PURCHASE_VALUES, b"%PDF contract facts"
+    )
+    run(ws, proposals.apply_proposal, ready.id, _accept_all(ready), iban_key=TEST_IBAN_KEY)
+    [prop] = read(ws, list_properties)
+    assert prop.living_area_m2 == Decimal("68.40")
+
+    wfb = _upload(run, ws, blob_store, b"%PDF wohnflaechenberechnung")
+    building_records = ClassifyOutput(
+        type=DocumentType.OTHER,
+        subtype=DocumentSubtype.BUILDING_RECORDS,
+        contains_tenant_data=False,
+        language="de",
+        confidence="high",
+    )
+    context = read(ws, proposals.prefill_context, wfb.id, building_records)
+    [existing] = context.properties
+    assert existing.id == prop.id
+    assert existing.contract_mea == {"numerator": 85, "denominator": 1000}
+    assert existing.contract_unit_label == "WE 3"
+    assert existing.living_area_m2 == Decimal("68.40")

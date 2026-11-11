@@ -1003,6 +1003,61 @@ def checked_cost_lines(values: dict[str, ExtractedValue]) -> ExtractedValue | No
     return read.model_copy(update={"checks": checks, "confidence": "low"})
 
 
+# --- A Wohnflächenberechnung's dwellings (phase 2 D139) -------------------------------------
+
+
+@dataclass(frozen=True)
+class Dwelling:
+    """One dwelling of a Wohnflächenberechnung as read: its label as printed, its Wohnfläche
+    (a decimal string with two places, as property.living_area_m2 stores it), its MEA
+    ({numerator, denominator}) and its location when the row states them."""
+
+    label: str
+    area: str
+    mea: dict[str, int] | None
+    location: str | None
+
+
+def dwellings(items: object) -> list[Dwelling]:
+    """The stored dwellings value (a list of `label | Wohnfläche | MEA | Lage` texts) as
+    Dwellings, in the document's order. A row without a label or a readable positive area
+    (at most two decimal places) is left out; an unreadable MEA or an unstated part is None.
+    Not a list: []. Pure."""
+    if not isinstance(items, list):
+        return []
+    out = []
+    for item in items:
+        if not isinstance(item, str):
+            continue
+        parts = [_collapse(part) for part in item.split("|")]
+        parts += [""] * (4 - len(parts))
+        label, raw_area, raw_mea, location = parts[:4]
+        if not label or label.casefold() == UNKNOWN:
+            continue
+        try:
+            area = Decimal(normalize_value(raw_area, "decimal"))
+        except (_Invalid, InvalidOperation):
+            continue
+        if area <= 0 or area.as_tuple().exponent < -2:  # type: ignore[operator]
+            continue
+        mea = None
+        if raw_mea and raw_mea.casefold() != UNKNOWN:
+            try:
+                mea = normalize_value(raw_mea, "fraction")
+            except _Invalid:
+                mea = None
+        known = location and location.casefold() != UNKNOWN
+        out.append(
+            Dwelling(
+                label=label,
+                area=str(area.quantize(Decimal("0.01"))),
+                mea=mea,
+                location=location if known else None,
+            )
+        )
+    return out
+
+
 def derive_fields(
     kind: ExtractionKind, values: dict[str, ExtractedValue]
 ) -> dict[str, ExtractedValue]:

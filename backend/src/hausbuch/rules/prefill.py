@@ -115,14 +115,16 @@ from hausbuch.schemas.proposal import (
     ExistingPayRow,
     ExistingProperty,
     ExistingUnit,
+    FieldOption,
     PrefillContext,
     ProposalRecord,
 )
 from hausbuch.schemas.tax import GRUNDSTEUER_SUM_TOLERANCE, LIMIT_15_CATEGORIES
 
 from .categories import CATEGORY_LABEL, TAX_TREATMENT
-from .extraction_parse import _MONTHS, cost_lines_balance
+from .extraction_parse import _MONTHS, Dwelling, cost_lines_balance
 from .extraction_parse import cost_lines as parse_cost_lines
+from .extraction_parse import dwellings as parse_dwellings
 from .extraction_parse import house_number_key as _house_number_key
 from .extraction_parse import street_key as _street_key
 from .hand_fields import HAND_FIELD_MAP, HAND_FIELDS, hand_values
@@ -200,6 +202,27 @@ _DEPOSIT_SEVERAL_NOTE = (
 _DEPOSIT_NONE_NOTE = (
     "Es gibt noch kein Mietverhältnis, zu dem die Kaution gehören könnte; bitte zuerst den "
     "Mietvertrag erfassen und den Eingang dann beim Mietverhältnis eintragen."
+)
+# A Wohnflächenberechnung's dwelling (D139): what the area is for, which row was taken and
+# why, or the question when no row could be picked.
+_LIVING_AREA_USE = (
+    "Die Wohnfläche der ganzen Wohnung zählt für die Anlage V (Zeile 13) und für den "
+    "Vergleich der Miete mit dem Mietspiegel."
+)
+_DWELLING_TAKEN_NOTE = "Wohnfläche aus der Zeile „{row}“ der Wohnflächenberechnung ({why}). "
+_DWELLING_WHY = {
+    "only": "die einzige Wohnung darin",
+    "mea": "erkannt am Miteigentumsanteil Ihrer Wohnung",
+    "label": "erkannt an der Bezeichnung Ihrer Wohnung",
+}
+_DWELLING_PICK_NOTE = (
+    "Welche Wohnung ist Ihre? Die Wohnflächenberechnung nennt {count} Wohnungen; bitte Ihre "
+    "unten anklicken, dann „Übernehmen“. "
+)
+_DWELLING_KEPT_NOTE = (
+    "Die Wohnflächenberechnung nennt {count} Wohnungen, und keine passt eindeutig zu Ihrer. "
+    "Die eingetragene Wohnfläche der Immobilie bleibt; ändern lässt sie sich auf der Seite "
+    "der Immobilie."
 )
 # A catalogue document whose link was not found (D131): typing only, and what to do.
 _NO_PROPERTY_NOTE = (
@@ -773,6 +796,10 @@ class _Builder:
             field: (_mapped(self.ev(src), _property_kind) if field == "kind" else self.ev(src))
             for field, src in _PROPERTY_FIELDS
         }
+        # D139: an ETW's contract states the flat's Wohnfläche, which is the property's too
+        # (phase 3 D71); the unit keeps it as before.
+        if proposed["kind"].value == PropertyKind.ETW.value and self.stated("floor_area_m2"):
+            proposed["living_area_m2"] = self.ev("floor_area_m2")
         notes = []
         purchase = self.ev("purchase_date")
         if purchase.value is None and purchase.source is not None:
@@ -1364,6 +1391,8 @@ class _Builder:
         if group == "property":
             prop = _resolve_property(self.x, self.ctx)
             if prop is not None:
+                if subtype is DocumentSubtype.BUILDING_RECORDS:
+                    self._living_area(prop)
                 self.link("link:property", prop.id)
             else:
                 self.records[0].notes.append(_NO_PROPERTY_NOTE)
@@ -1390,6 +1419,51 @@ class _Builder:
                 self.link("link:tenancy", tenancy)
             else:
                 self.records[0].notes.append(_NO_TENANCY_NOTE)
+
+    def _living_area(self, prop: ExistingProperty) -> None:
+        """D139: a Wohnflächenberechnung's dwelling as the property's living_area_m2. The
+        household's row is (a) the only one, else (b) the one row whose MEA equals the flat's
+        (a unit's on the property, or the Kaufvertrag's), else (c) the one row whose label
+        equals a unit's or the Kaufvertrag's WE label (_norm); found, a patch or unchanged
+        record by _match_record, derived from [dwellings]. Otherwise (d): with no area
+        stored, a patch with the field empty and every row offered as an option (one click
+        in the review); with an area stored, no record (an empty apply would clear it), a
+        note on typing. Rows are never summed."""
+        read = self.ev("dwellings")
+        rows = parse_dwellings(read.value)
+        if not rows:
+            return
+        only = isinstance(read.value, list) and len(read.value) == 1
+        picked = _pick_dwelling(rows, prop, self.ctx.units, only=only)
+        if picked is not None:
+            row, why = picked
+            note = _DWELLING_TAKEN_NOTE.format(row=_dwelling_label(row), why=_DWELLING_WHY[why])
+            self._match_record(
+                "property",
+                "property",
+                prop.id,
+                {"living_area_m2": _derived(row.area, [("dwellings", read)])},
+                _property_current(prop),
+                notes=[note + _LIVING_AREA_USE],
+            )
+            return
+        if prop.living_area_m2 is not None:
+            self.records[0].notes.append(_DWELLING_KEPT_NOTE.format(count=len(rows)))
+            return
+        checks = ["cited"] if read.source is not None else []
+        empty = ExtractedValue(value=None, source=read.source, checks=checks, confidence="low")
+        self.add(
+            "property",
+            "property",
+            "patch",
+            {"living_area_m2": empty},
+            target_id=prop.id,
+            current={"living_area_m2": None},
+            notes=[_DWELLING_PICK_NOTE.format(count=len(rows)) + _LIVING_AREA_USE],
+        )
+        self.records[-1].options["living_area_m2"] = [
+            FieldOption(value=row.area, label=_dwelling_label(row)) for row in rows
+        ]
 
     def _tenancy_at_date(self) -> UUID | None:
         """The one tenancy on the property found by address whose term holds the document's
@@ -1741,6 +1815,41 @@ _BOOKED_FROM_LINES = frozenset({AllocationCategory.ACQUISITION_COST, *PRIVATE_CO
 _LABEL_MAX = 120  # PrivateCostValue.label
 
 
+def _pick_dwelling(
+    rows: Sequence[Dwelling], prop: ExistingProperty, units: Sequence[ExistingUnit], *, only: bool
+) -> tuple[Dwelling, str] | None:
+    """The household's dwelling of a Wohnflächenberechnung and why (D139): the document's
+    only row; else the one row whose MEA equals a known MEA of the flat (a unit's on the
+    property, the Kaufvertrag's), compared as ratios; else the one row whose label equals a
+    known label (a unit's, the Kaufvertrag's WE label) by _norm. Two rows fitting one key,
+    or none: None."""
+    if only and len(rows) == 1:
+        return rows[0], "only"
+    own = [u for u in units if u.property_id == prop.id]
+    meas = [u.mea.model_dump() for u in own if u.mea is not None]
+    if prop.contract_mea is not None:
+        meas.append(prop.contract_mea.model_dump())
+    by_mea = [r for r in rows if r.mea is not None and any(_same(r.mea, m) for m in meas)]
+    if by_mea:
+        return (by_mea[0], "mea") if len(by_mea) == 1 else None
+    labels = {_norm(u.label) for u in own}
+    if prop.contract_unit_label is not None:
+        labels.add(_norm(prop.contract_unit_label))
+    by_label = [r for r in rows if _norm(r.label) in labels]
+    return (by_label[0], "label") if len(by_label) == 1 else None
+
+
+def _dwelling_label(row: Dwelling) -> str:
+    """ "WE 3 · 2. OG links · MEA 85/1000 · 61,40 m²": the parts the row states."""
+    parts = [row.label]
+    if row.location is not None:
+        parts.append(row.location)
+    if row.mea is not None:
+        parts.append(f"MEA {row.mea['numerator']}/{row.mea['denominator']}")
+    parts.append(row.area.replace(".", ",") + " m²")
+    return " · ".join(parts)
+
+
 def _label_value(title: ExtractedValue, sender: ExtractedValue) -> ExtractedValue:
     """A private cost's label: the document's title, else its sender, cut to 120 characters
     (a copy, so the typing record keeps its own hand fields, D132); neither read, proposed
@@ -1878,6 +1987,7 @@ def _property_current(prop: ExistingProperty) -> dict[str, JsonValue]:
         "notarized_on": d["notarized_on"],
         "purchase_date": d["purchase_date"],
         "purchase_price": d["purchase_price"],
+        "living_area_m2": d["living_area_m2"],
     }
 
 

@@ -15,7 +15,15 @@ from uuid import UUID
 from pydantic import Field, JsonValue, model_validator
 
 from .ai import ClassifyOutput, ExtractedValue
-from .common import Fraction, MutableRecord, NonNegativeMoney, PositiveMoney, Schema, Year
+from .common import (
+    Fraction,
+    LivingArea,
+    MutableRecord,
+    NonNegativeMoney,
+    PositiveMoney,
+    Schema,
+    Year,
+)
 from .document import HandField, HandFields
 from .enums import (
     AcquisitionCostKind,
@@ -52,6 +60,15 @@ class CarriedField(Schema):
     field: str = Field(min_length=1)
 
 
+class FieldOption(Schema):
+    """A value the review offers for one field with one click (D139): the field's value as
+    the apply body sends it and its label, e.g. "61.40" and "WE 3 · 2. OG links · 61,40 m²"
+    for a Wohnflächenberechnung's dwelling the code could not pick by itself."""
+
+    value: str = Field(min_length=1)
+    label: str = Field(min_length=1)
+
+
 class ProposalRecord(Schema):
     """One record the proposal would create or patch.
 
@@ -80,6 +97,10 @@ class ProposalRecord(Schema):
     # stale guard compares it with the current version. None with a reading of its own (its
     # extraction_id anchors it) and on a proposal stored before 10 Nov 2026.
     hand_version: int | None = Field(default=None, ge=0)
+    # D139: values the review offers for a field with one click, beside its own input (which
+    # stays editable, D132). Empty on every record but a Wohnflächenberechnung's property
+    # patch whose dwelling the code could not pick, and on a proposal stored before it.
+    options: dict[str, list[FieldOption]] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _target(self) -> Self:
@@ -143,6 +164,13 @@ class ExistingProperty(Schema):
     notarized_on: date
     purchase_date: date
     purchase_price: PositiveMoney
+    # Phase 3 D71; compared and proposed by a Wohnflächenberechnung or a Kaufvertrag (D139).
+    living_area_m2: LivingArea | None = None
+    # D139: what the property's Kaufvertrag reading states (a purchase_contract document
+    # linked to the property, its current reading of that kind), to pick the household's row
+    # of a Wohnflächenberechnung. None when not stated, or when two contracts disagree.
+    contract_mea: Fraction | None = None
+    contract_unit_label: str | None = None
 
 
 class ExistingUnit(Schema):
