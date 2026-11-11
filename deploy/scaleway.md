@@ -130,6 +130,9 @@ openssl rand -hex 24   # hausbuch_app database password
 **Never change `HAUSBUCH_IBAN_HMAC_KEY` once data exists.** Stored tenant IBANs are kept as
 keyed hashes, so a new key silently stops every IBAN match. `HAUSBUCH_SESSION_KEY` can be
 rotated by redeploying the API: that cancels passkey ceremonies in progress, not sessions.
+With the bank sync set up (step 14) it also costs one pushTAN approval: the stored FinTS
+connection is signed under a key derived from it, so the next sync discards it and asks again
+(D119).
 
 ## Step 1: Project and region
 
@@ -526,6 +529,8 @@ The last two columns are your computer's `~/.hausbuch-owner.env`, not anything a
 | `HAUSBUCH_RUN_WORKER` | `true` | — | — | — |
 | `HAUSBUCH_ANTHROPIC_API_KEY` | **secret** (step 13) | — | — | — |
 | `HAUSBUCH_AI_ENABLED` | `true` once step 13 is done (default `false`) | — | — | — |
+| `HAUSBUCH_FINTS_PIN` | **secret** (step 14), optional | — | — | — |
+| `HAUSBUCH_FINTS_PRODUCT_ID` | **secret** (step 14), optional | — | — | — |
 | `HAUSBUCH_INBOX_IMAP_USER` | **secret** (step 16), optional | — | — | — |
 | `HAUSBUCH_INBOX_IMAP_PASSWORD` | **secret** (step 16), optional | — | — | — |
 | `HAUSBUCH_INBOX_ADDRESS` | **secret** (step 16), optional | — | — | — |
@@ -658,6 +663,77 @@ image, **before** deploying that image (as with `0004`). `alembic current` must 
 
 The `hausbuch-evals` key is rotated the same way, minus the container steps: replace it in
 your computer's env file only.
+
+## Step 14: The bank sync of the rental account (phase 5, D115–D120)
+
+The API container can fetch the rental account's statements from the Sparkasse itself, over
+FinTS (the German banks' online-banking protocol), read-only: the app has no method that
+could send a transfer, and every transfer would still need an approval on the phone. A sync
+is started with **Jetzt abrufen** on the account page (Konten › the account › Bankabruf); a
+daily schedule comes with a later step. No migration is needed (the tables came with
+`0019`).
+
+Two values are secrets: the **online-banking PIN** and the app's **FinTS product id**, the
+registration number the Deutsche Kreditwirtschaft (DK) sends after the product registration.
+They are never in the database, a job, an event, a log line or the repository, and the page
+never asks for the PIN.
+
+**Where they live: the API container's own secret environment variables.** Serverless
+Containers cannot reference Secret Manager (their secrets are not linked with it), so the
+container's secret variables hold the values and are what the app reads (decided by Luis,
+11 Nov 2026). A copy in Secret Manager is optional, only as a recoverable record of the
+values; it is not a step, and the container never reads it.
+
+1. **Before you start**, have three things the page asks for and two the container needs:
+   - the **BLZ** (Bankleitzahl): eight digits, characters 5 to 12 of the account's IBAN;
+   - the **FinTS address** (an `https://` URL): a Sparkasse publishes it on its website,
+     usually on the online-banking help page under "FinTS" or "HBCI PIN/TAN" (finance
+     software settings); the DK's bank list has it too (next point);
+   - the **Anmeldename**: the login name or Legitimations-ID you use for online banking;
+   - the **PIN** of that login, and the **product id** from the DK's registration email (25
+     characters at most).
+2. **Subscribe to the DK's bank list** (the FinTS institute list the DK offers to
+   registered products, sent by email when it changes). It is how you learn that the
+   Sparkasse's FinTS address moved before a sync fails with `bank.unreachable`.
+3. **API container** (step 10): in **one update**, add `HAUSBUCH_FINTS_PIN` and
+   `HAUSBUCH_FINTS_PRODUCT_ID` as **secret environment variables**, then **redeploy**. Both
+   or neither: the container refuses to start with a PIN and no product id, or the reverse.
+   A product id that is longer than 25 characters does not stop the container; every sync
+   fails with `bank.not_configured` instead. `HAUSBUCH_RUN_WORKER` stays `true`: the sync is
+   a job of this container's worker.
+4. **The account page**: open Konten › the rental account. In the Bankabruf card, fill in
+   BLZ, FinTS-Adresse and Anmeldename and press **Bankabruf einrichten**. The page shows the
+   login shortened only (first two and last two characters).
+5. **The first sync**: press **Jetzt abrufen**. The S-pushTAN app on your phone asks for an
+   approval; approve it within five minutes, while the card counts down. The first sync
+   fetches everything since the day of the account's Anfangssaldo, stores the bank's camt
+   files as one ZIP (it appears in the imports list labelled "Bankabruf") and imports it
+   exactly like an uploaded file. Later syncs inside about 90 days need no approval. The
+   card shows "Freigabe gültig bis etwa …" as an estimate, never a guarantee.
+6. **Record the first real sync's answers** in phase-5.md (Q-O34 to Q-O36: which camt
+   format the bank offers and whether its file matches the export, whether a later sync
+   runs without an approval, whether the bank's references equal the export's). The
+   container log has one INFO line from `hausbuch.jobs.bank_sync` naming the camt formats
+   the bank offered; it holds no account data.
+
+**When a sync fails**, the card and Zu prüfen › Automatisch say why in plain words, with
+the code. `bank.refused` means the bank turned the login down: check the Anmeldename, and
+the PIN in the container. **Three wrong PINs lock the online-banking login** at the bank,
+so after one `bank.refused` correct the PIN before trying again. `bank.not_configured` means
+the two variables are missing or the product id is too long. `bank.unreachable` (three tries
+over about two and a half minutes) usually clears by itself; if it persists, compare the
+FinTS address with the bank's website and the DK list.
+
+**Rotation**: change the container variable and redeploy. A new **PIN** (changed in online
+banking) goes into `HAUSBUCH_FINTS_PIN` the same day, or every sync fails with
+`bank.refused`. A new **product id** (the DK re-registers a product version) goes into
+`HAUSBUCH_FINTS_PRODUCT_ID`. If you keep a copy in Secret Manager, add a new version there
+too. Changing the FinTS address or the Anmeldename on the page (Zugang ändern) drops the
+stored connection, so the next sync asks for an approval again; so does a new
+`HAUSBUCH_SESSION_KEY`.
+
+**To switch the sync off**, remove both variables in one update and redeploy: every start
+is then refused with `bank.not_configured` and the bank is never contacted.
 
 ## Step 16: Email-in from the Gmail label (phase 5, D121)
 
