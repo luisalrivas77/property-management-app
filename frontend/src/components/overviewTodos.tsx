@@ -22,6 +22,7 @@ import {
   REMINDER_GUIDE,
   TodoList,
   checklistEntry,
+  coveredByWarning,
   resolveAction,
   warningEntry,
   type GuideContext,
@@ -123,9 +124,8 @@ function buildEntries(data: OverviewTodosData, reminders: Reminder[], onChanged:
       const entry = entryWithFallback(warning, ctx, `${property.id}-w-${index}`, tax, onChanged, property.label);
       if (entry) entries.push(entry);
     });
-    const noSplit = warnings.some((w) => w.code === "afa.no_split");
     for (const item of items) {
-      if (noSplit && item.code === "price_split") continue;
+      if (coveredByWarning(item, warnings)) continue;
       const entry = checklistEntry(item, year, { propertyId: property.id }, property.label);
       if (entry) entries.push(entry);
     }
