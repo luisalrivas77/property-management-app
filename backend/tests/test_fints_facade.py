@@ -10,8 +10,10 @@ import base64
 import contextlib
 import inspect
 import io
+import json
 import logging
 import re
+import socket
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -28,14 +30,27 @@ from fints.exceptions import (
     FinTSNoResponseError,
     FinTSUnsupportedOperation,
 )
-from fints.formals import KTI1, Language2, SystemIDStatus
-from fints.segments.auth import HKIDN2, HKTAB5, HKVVB3
+from fints.formals import (
+    KTI1,
+    AccountInformation,
+    BankIdentifier,
+    Language2,
+    Response,
+    SystemIDStatus,
+    UPDUsage,
+)
+from fints.message import FinTSInstituteMessage
+from fints.segments.auth import HKIDN2, HKTAB5, HKTAN7, HKVVB3
+from fints.segments.bank import HIUPA4, HIUPD6
+from fints.segments.dialog import HIRMG2, HIRMS2, HISYN4
 from fints.segments.transfer import HKCCS1
 from fints.utils import decompress_datablob
 from fints_fake import CHIPTAN, DECOUPLED, FakeClient, Script, factory, fake_account
+from urllib3.exceptions import MaxRetryError, NameResolutionError
 
 from hausbuch.rules import errors as E
 from hausbuch.services.bank import fints as F
+from hausbuch.services.bank import fints_trace
 
 BANK_CODE = "10000000"
 LOGIN = "loginname-xyz"
@@ -219,8 +234,10 @@ class _Everything(logging.Handler):
     def __init__(self) -> None:
         super().__init__(logging.DEBUG)
         self.lines: list[str] = []
+        self.records: list[logging.LogRecord] = []
 
     def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)
         self.lines.append(f"{record.getMessage()} {record.__dict__!r}")
 
     def getvalue(self) -> str:
@@ -293,6 +310,237 @@ def test_configure_logging_pins_the_fints_loggers():
         root.handlers[:] = handlers
         root.setLevel(level)
         F.pin_fints_logging()
+
+
+# --- The trace (D148) -----------------------------------------------------------------------
+
+IBAN = "DE89370400440532013000"
+ACCOUNT_NUMBER = "0532013000"
+SYSTEM_ID = "SYSID-0001-SECRET"
+DIALOG_ID = "DIALOG-77-SECRET"
+NEVER_LOGGED = (*SECRETS, IBAN, ACCOUNT_NUMBER, SYSTEM_ID, DIALOG_ID)
+
+
+def _answer(code: str, text: str, parameters: list[str] | None = None) -> Response:
+    return Response(code=code, reference_element="", text=text, parameters=parameters)
+
+
+def _institute_answer(*segments, dialog_id: str = DIALOG_ID):
+    """The bank's answer as a real rendered message: the customer's identification (login,
+    product id) and signature (PIN) echoed inside the envelope, a dialog id, plus `segments`.
+    Everything a whitelist mistake could leak is on it."""
+    builder = _client()
+    dialog = builder._new_dialog()
+    dialog.open = True
+    dialog.dialog_id = dialog_id
+    message = dialog.new_customer_message()
+    message += HKIDN2(
+        builder.bank_identifier, builder.customer_id, SYSTEM_ID, SystemIDStatus.ID_NECESSARY
+    )
+    message += HKVVB3(0, 0, Language2.DE, builder.product_name, builder.product_version)
+    for segment in segments:
+        message += segment
+    dialog.finish_message(message)
+    return message
+
+
+def _account_data():
+    """The UPD a bank sends at login: the login, an IBAN, an account number."""
+    return [
+        HIUPA4(user_identifier=LOGIN, upd_version=7, upd_usage=UPDUsage.UPD_CONCLUSIVE),
+        HIUPD6(
+            account_information=AccountInformation(
+                ACCOUNT_NUMBER,
+                "",
+                BankIdentifier(BankIdentifier.COUNTRY_ALPHA_TO_NUMERIC["DE"], BANK_CODE),
+            ),
+            iban=IBAN,
+            customer_id=LOGIN,
+            account_type=1,
+            account_currency="EUR",
+            name_account_owner_1="Owner A",
+        ),
+    ]
+
+
+def _real_session() -> F.FintsSession:
+    return F.open_session(
+        bank_code=BANK_CODE,
+        login_name=LOGIN,
+        pin=PIN,
+        url=URL,
+        product_id=PRODUCT_ID,
+        client_data=None,
+        tan_mechanism=None,
+        log_fields={"sync_id": "sync-0001"},
+    )
+
+
+def _trace_records(log, message: str = "fints exchange") -> list[dict]:
+    return [
+        r.fields
+        for r in log.records
+        if r.name == "hausbuch.services.bank.fints_trace" and r.getMessage() == message
+    ]
+
+
+def _assert_nothing_secret(log) -> None:
+    text = log.getvalue()
+    assert not [s for s in NEVER_LOGGED if s in text]
+    for record in log.records:  # the arguments and the fields, each on its own
+        for part in (repr(record.args), repr(getattr(record, "fields", None))):
+            assert not [s for s in NEVER_LOGGED if s in part]
+
+
+def test_the_trace_of_a_bootstrap_logs_no_secret(debug_log):
+    """A real client through the bootstrap (HKSYN, then HKEND) against a bank whose answers
+    carry the login, the PIN, the product id, the system id, a dialog id, an IBAN and an
+    account number: every record of every logger, at DEBUG, holds none of them."""
+    session = _real_session()
+    answer = _institute_answer(
+        HIRMG2(responses=[_answer("3060", f"Produkt {PRODUCT_ID} beachten")]),
+        HIRMS2(responses=[_answer("3920", f"Verfahren für {LOGIN} PIN {PIN}", ["946"])]),
+        HISYN4(system_id=SYSTEM_ID),
+        *_account_data(),
+    )
+    with (
+        mock.patch.object(requests.Session, "request", return_value=_bank_answer(answer)),
+        pytest.raises(F.BankError) as raised,
+    ):
+        session.open()
+    assert raised.value.code == E.BANK_TAN_NOT_DECOUPLED  # no HITANS offered: the run stops
+
+    _assert_nothing_secret(debug_log)
+    [facts] = _trace_records(debug_log, "fints session")
+    assert facts["mode"] == "bootstrap" and facts["system_id"] == "0"
+    assert facts["product_id"] == "set (25 chars)" and facts["host"] == "fints.example.org"
+    assert facts["sync_id"] == "sync-0001" and facts["python_fints"]
+
+    init, end = _trace_records(debug_log)
+    assert (init["step"], init["exchange"], init["sync_id"]) == ("bootstrap", 1, "sync-0001")
+    assert end["exchange"] == 2
+    kinds = [entry.split(":")[0] for entry in init["sent"]]
+    assert kinds[:3] == ["HNHBK", "HNVSK", "HNVSD"]
+    assert {"HNSHK", "HKIDN", "HKVVB", "HKSYN", "HNSHA", "HNHBS"} <= set(kinds)
+    settings = {key.split(":")[0]: value for key, value in init["settings"].items()}
+    assert settings["HKIDN"] == {"bank_code": BANK_CODE, "system_id": "0", "system_id_status": "1"}
+    assert settings["HKVVB"]["product_id"] == "set (25 chars)"
+    assert settings["HKSYN"] == {"mode": "0"}
+    assert settings["HNSHK"] == {"security_function": "999"}
+    assert set(settings) == {"HKIDN", "HKVVB", "HKSYN", "HNSHK"}
+    assert init["http_status"] == 200 and init["http_bytes"] > 0 and init["outcome"] == "answered"
+    assert "3060 → message: Produkt <hidden> beachten" in init["answers"]
+    assert "HIUPD:" in " ".join(init["received"]) and init["facts"] == {"upd_version": "7"}
+    assert "HKEND" in {e.split(":")[0] for e in end["sent"]}
+    assert [k.split(":")[0] for k in end["settings"]] == ["HNSHK"]  # HKEND: its header only
+    json.dumps(init)  # the production formatter's JSON
+
+
+def test_a_refused_init_names_the_segment_the_bank_refused(debug_log):
+    """The first real syncs (11 Nov 2026): 9050 and 9800 for the message, 9010 for one of our
+    segments. The trace resolves HIRMS's reference to the segment we sent."""
+    session = _real_session()
+    numbers = {}
+
+    def bank(method, url, data=None, **kwargs):
+        sent = FinTSInstituteMessage(segments=base64.b64decode(data))
+        numbers["HKVVB"] = sent.find_segment_first("HKVVB").header.number
+        hirms = HIRMS2(responses=[_answer("9010", "Initialisierung fehlgeschlagen.")])
+        hirms.header.reference = numbers["HKVVB"]
+        hirmg = HIRMG2(
+            responses=[
+                _answer("9050", "Die Nachricht enthält Fehler."),
+                _answer("9800", "Dialog abgebrochen"),
+            ]
+        )
+        return _bank_answer(_institute_answer(hirmg, hirms))
+
+    with (
+        mock.patch.object(requests.Session, "request", side_effect=bank),
+        pytest.raises(F.BankError) as raised,
+    ):
+        session.open()
+    assert (raised.value.code, raised.value.response_code) == (E.BANK_REFUSED, "9010")
+    assert raised.value.exc_chain is None  # the bank's code decided it
+
+    [record] = _trace_records(debug_log)
+    assert record["answers"] == [
+        "9050 → message: Die Nachricht enthält Fehler.",
+        "9800 → message: Dialog abgebrochen",
+        f"9010 → HKVVB:{numbers['HKVVB']}: Initialisierung fehlgeschlagen.",
+    ]
+    _assert_nothing_secret(debug_log)
+
+
+def test_a_transport_failure_logs_class_names_only_and_is_unreachable(debug_log):
+    def unreachable(*args, **kwargs):
+        try:
+            try:
+                gai = socket.gaierror(-2, "Name or service not known")
+                raise NameResolutionError("fints.example.org", None, gai)
+            except NameResolutionError as reason:
+                raise MaxRetryError(None, URL, reason) from reason
+        except MaxRetryError as exc:
+            # as requests' adapter does: the MaxRetryError is the context, not the cause
+            raise requests.ConnectionError(exc)  # noqa: B904
+
+    session = _real_session()
+    with (
+        mock.patch.object(requests.Session, "request", side_effect=unreachable),
+        pytest.raises(F.BankError) as raised,
+    ):
+        session.open()
+    chain = "FinTSConnectionError ← ConnectionError ← MaxRetryError ← NameResolutionError"
+    assert raised.value.code == E.BANK_UNREACHABLE
+    assert raised.value.exc_chain.startswith(chain)
+
+    [record] = _trace_records(debug_log)
+    assert record["outcome"] == "failed" and record["exc_chain"].startswith(chain)
+    assert "http_status" not in record and "answers" not in record
+    text = debug_log.getvalue()
+    assert "Name or service" not in text and "Failed to resolve" not in text
+    assert "Could not connect" not in text
+
+
+def test_the_trace_prints_no_field_of_a_segment_off_its_whitelist():
+    """An unknown sent segment (a transfer, with an IBAN) and the received data segments (the
+    system id, the UPD with IBAN and account number) print their header only."""
+    client = _client()
+    transfer = HKCCS1(
+        account=KTI1(iban=IBAN, bic="TESTDEFFXXX"),
+        sepa_descriptor="urn:iso:std:iso:20022:tech:xsd:pain.001.001.03",
+        sepa_pain_message=b"<Document/>",
+    )
+    message = _message(client, transfer)
+    sent = fints_trace.describe_sent(message.segments)
+    assert any(entry.startswith("HKCCS:") for entry in sent["sent"])
+    assert not [key for key in sent["settings"] if key.startswith(("HKCCS", "HNSHA", "HNVSK"))]
+
+    answer = _institute_answer(HISYN4(system_id=SYSTEM_ID), *_account_data())
+    received = fints_trace.describe_received(
+        answer.segments, fints_trace.segment_map(message.segments), (LOGIN, PIN, PRODUCT_ID)
+    )
+    assert {"HISYN", "HIUPA", "HIUPD", "HKIDN"} <= {e.split(":")[0] for e in received["received"]}
+    everything = repr(sent) + repr(received)
+    assert not [s for s in NEVER_LOGGED if s in everything]
+    assert set(fints_trace._SENT_SETTINGS) == {"HKIDN", "HKVVB", "HKSYN", "HKTAN", "HNSHK"}
+    assert {"HIBPA", "HIUPA", "HITANS", "HICAZS"} == fints_trace._RECEIVED_FACTS
+
+
+def test_the_trace_names_whether_a_tan_medium_is_set_never_the_name():
+    for name, shown in ((None, "absent"), ("", "empty"), ("Mein Handy", "set")):
+        hktan = HKTAN7(tan_process="4", segment_type="HKIDN", tan_medium_name=name)
+        settings = fints_trace.describe_sent([hktan])["settings"]
+        assert list(settings.values()) == [
+            {"version": "7", "tan_process": "4", "segment_type": "HKIDN", "tan_medium": shown}
+        ]
+
+
+def test_the_session_facts_of_a_fake_client_are_logged_without_failing(debug_log):
+    session, _ = _session(Script(approval_polls=None))
+    session.open()
+    [facts] = _trace_records(debug_log, "fints session")
+    assert facts["mode"] == "bootstrap" and facts["product_id"] == "missing"
 
 
 # --- The state blob (D119) ------------------------------------------------------------------
@@ -553,3 +801,17 @@ def test_the_client_keeps_the_banks_answers_redacted():
         "3920 Zugelassene Verfahren",
         "9010 Auftrag für <hidden> mit <hidden> abgelehnt",
     ]
+
+
+def test_a_bank_text_quoting_the_product_id_keeps_it_hidden():
+    """The product id is not all digits, so the long-number mask would miss it (D148)."""
+    client = object.__new__(F._ReadOnlyClient)
+    client.refused_codes, client.answers = [], []
+    client.user_id, client.customer_id = LOGIN, LOGIN
+    client.pin = SimpleNamespace(value=PIN)
+    client.product_name = PRODUCT_ID
+    client.system_id = "0"
+    text = f"Produkt {PRODUCT_ID.lower()} nicht zugelassen"
+    with contextlib.suppress(Exception):
+        client._process_response(None, None, SimpleNamespace(code="9078", text=text))
+    assert client.answers == ["9078 Produkt <hidden> nicht zugelassen"]
