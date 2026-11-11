@@ -55,6 +55,12 @@ class Doc:
     # uploaded from its bill's to-do). A payment proof uploaded anywhere else is classified
     # (D149).
     typed_by_code: bool = False
+    # A lease's clauses (phase 2 D152), which the model quotes in its own cut, so they are not
+    # checked as text: field -> the printed fragment a synthetic recording cites. A reading is
+    # checked on what code maps from them: (operating_costs_terms, rent_due_day) on the new
+    # tenancy the pre-fill proposes.
+    clauses: dict[str, str] = field(default_factory=dict)
+    expected_lease_terms: tuple[str, int] | None = None
 
 
 DOCS: list[Doc] = [
@@ -177,11 +183,18 @@ DOCS: list[Doc] = [
                 "Nettokaltmiete: 980,00 EUR",
                 "Betriebskostenvorauszahlung: 180,00 EUR",
                 "Heizkostenvorauszahlung: 70,00 EUR",
+                "Über die Vorauszahlungen wird jährlich abgerechnet.",
+                "Die Miete ist spätestens am dritten Werktag eines Monats zu zahlen.",
                 "§ 4 Kaution: 2.940,00 EUR als Barkaution.",
                 "",
                 "Berlin, den 10.04.2026",
             ],
         ],
+        clauses={
+            "operating_costs_clause": "Über die Vorauszahlungen wird jährlich abgerechnet.",
+            "rent_due_clause": "spätestens am dritten Werktag eines Monats",
+        },
+        expected_lease_terms=("prepayment", 3),
         expected={
             "street": "Lindenstraße",
             "house_number": "7",
@@ -226,11 +239,19 @@ DOCS: list[Doc] = [
                 "Kaltmiete                         420,00 Euro",
                 "Nebenkosten inkl. Betriebs-, Heiz-, Warmwasser, Strom   90,00 Euro",
                 "Eine gesonderte Neben- oder Betriebskostenabrechnung erfolgt nicht.",
+                "Die Miete ist im Voraus bis zum 1. eines jeden Monats zu zahlen.",
                 "§ 4 Kaution: 840,00 EUR als Barkaution.",
                 "",
                 "Leipzig, den 20.05.2026",
             ],
         ],
+        clauses={
+            "operating_costs_clause": (
+                "Eine gesonderte Neben- oder Betriebskostenabrechnung erfolgt nicht."
+            ),
+            "rent_due_clause": "im Voraus bis zum 1. eines jeden Monats",
+        },
+        expected_lease_terms=("flat_rate", 1),
         expected={
             "street": "Kastanienweg",
             "house_number": "4",

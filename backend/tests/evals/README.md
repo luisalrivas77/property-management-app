@@ -72,6 +72,14 @@ changed, so every document was recorded again on 11 Nov 2026; on the first run t
 Mieterselbstauskunft came back as type `letter` (its subtype right), so its line now says its
 type is `other` even when it reads like a letter, and all twenty-six were recorded again.
 
+A lease's terms (phase 2 D152) add `operating_costs_clause` and `rent_due_clause` to the lease
+request. The model cuts a clause's text itself, so the clauses are not compared as text: they
+must come back cited, and the pre-fill must map them to the new tenancy's arrangement and due
+day (`expected_lease_terms`): `mietvertrag` a Vorauszahlung with a yearly Abrechnung, due by
+the third Werktag (prepayment, 3); `mietvertrag_zimmer` a Pauschale with no Abrechnung, due by
+the 1st (flat_rate, 1). Only the lease request changed, so only these two were recorded again,
+on 11 Nov 2026.
+
 - `test_recorded_evals.py` runs in CI on every push. It replays every recording in
   `recordings/` through the same code the `document_read` job uses (SDK message conversion,
   `parse_classification`, `rules.extraction_parse.parse_lines`, the chunk merge) and checks
