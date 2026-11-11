@@ -157,8 +157,14 @@ export function BankSyncCard({ account, onImported }: { account: Account; onImpo
   );
 }
 
-function addDays(timestamp: string, days: number): string {
-  return new Date(new Date(timestamp).getTime() + days * 86_400_000).toISOString().slice(0, 10);
+const localDay = new Intl.DateTimeFormat("de-DE", { dateStyle: "medium" });
+
+/** The local calendar day of a timestamp plus `days` (an evening approval in Berlin is
+ * already the next day in UTC). */
+function dayAfter(timestamp: string, days: number): string {
+  const day = new Date(timestamp);
+  day.setDate(day.getDate() + days);
+  return localDay.format(day);
 }
 
 function ConnectionFacts({ connection }: { connection: BankConnection }) {
@@ -171,7 +177,7 @@ function ConnectionFacts({ connection }: { connection: BankConnection }) {
         [
           "Freigabe",
           connection.sca_confirmed_at
-            ? `zuletzt am ${formatDate(connection.sca_confirmed_at.slice(0, 10))}, gültig bis etwa ${formatDate(addDays(connection.sca_confirmed_at, SCA_DAYS))} (geschätzt)`
+            ? `zuletzt am ${dayAfter(connection.sca_confirmed_at, 0)}, gültig bis etwa ${dayAfter(connection.sca_confirmed_at, SCA_DAYS)} (geschätzt)`
             : "noch keine: beim ersten Abruf fragt die Bank in der S-pushTAN-App nach einer Freigabe",
         ],
         [

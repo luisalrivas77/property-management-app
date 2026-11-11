@@ -708,8 +708,11 @@ values; it is not a step, and the container never reads it.
    approval; approve it within five minutes, while the card counts down. The first sync
    fetches everything since the day of the account's Anfangssaldo, stores the bank's camt
    files as one ZIP (it appears in the imports list labelled "Bankabruf") and imports it
-   exactly like an uploaded file. Later syncs inside about 90 days need no approval. The
-   card shows "Freigabe gültig bis etwa …" as an estimate, never a guarantee.
+   exactly like an uploaded file. A Sparkasse asks for a new approval about every 180 days;
+   until then a later sync, which fetches only from 14 days before the last booking day,
+   should need none (Q-O35 checks it). A sync whose window reaches more than 90 days back,
+   such as the first one, may ask for an approval whenever it runs. The card shows "Freigabe
+   gültig bis etwa …" as an estimate, never a guarantee.
 6. **Record the first real sync's answers** in phase-5.md (Q-O34 to Q-O36: which camt
    format the bank offers and whether its file matches the export, whether a later sync
    runs without an approval, whether the bank's references equal the export's). The
