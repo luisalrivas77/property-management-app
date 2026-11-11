@@ -443,8 +443,10 @@ cases:
 
   - id: private_repair_outside_window
     description: >
-      D137. A repair paid privately in 2029 whose work was done on 2 Jul 2029, the day after
-      the window's last day → not counted; only the painter's 1,000.00 (2.8 %)
+      D137. A repair paid privately in 2029 dated 2 Jul 2029, the day after the window's last
+      day → not counted; only the painter's 1,000.00 (2.8 %). The date may be the bill's (an
+      upper bound for the work), so within D76's 90 days the 2029 draft asks when the work was
+      done (limit.private_cost_after_window, amended 11 Nov 2026 after the D137 review)
     facts:
       afa: *afa
       allocations: [*painter]
@@ -452,6 +454,54 @@ cases:
         - {id: *I_PRIV, property_id: *P, kind: private_cost, tax_year: 2029, document_id: *D_REP,
            value: {cost_class: other, category: repairs, label: Fenster abdichten,
                    amount: "1190.00", performed_on: 2029-07-02, amount_net: "1000.00"}}
+    expect:
+      - <<: *window
+        tax_year: 2029
+        counted: [*c_painter]
+        used_net: "1000.00"
+        ratio_percent: "2.8"
+        exceeded: false
+        warnings:
+          - {code: limit.private_cost_after_window,
+             params: {label: Fenster abdichten, performed_on: "2029-07-02", amount: "1190.00"}}
+
+  - id: private_repair_dated_ten_days_after_window
+    description: >
+      D137 (review F1). A repair paid privately in 2029 dated 11 Jul 2029, ten days after the
+      window's last day: not counted, and the 2029 draft asks for the real Leistungsdatum; the
+      2028 draft (another tax year than the row's) carries no warning
+    facts:
+      afa: *afa
+      allocations: [*painter]
+      tax_inputs:
+        - {id: *I_PRIV, property_id: *P, kind: private_cost, tax_year: 2029, document_id: *D_REP,
+           value: {cost_class: other, category: repairs, label: Fenster abdichten,
+                   amount: "1190.00", performed_on: 2029-07-11, amount_net: "1000.00"}}
+    expect:
+      - &private_ten_days
+        <<: *window
+        tax_year: 2028
+        counted: [*c_painter]
+        used_net: "1000.00"
+        ratio_percent: "2.8"
+        exceeded: false
+      - <<: *private_ten_days
+        tax_year: 2029
+        warnings:
+          - {code: limit.private_cost_after_window,
+             params: {label: Fenster abdichten, performed_on: "2029-07-11", amount: "1190.00"}}
+
+  - id: private_repair_dated_long_after_window
+    description: >
+      D137 (review F1). Dated 30 Sep 2029, 91 days after the window's last day (beyond D76's
+      90 days): neither counted nor asked
+    facts:
+      afa: *afa
+      allocations: [*painter]
+      tax_inputs:
+        - {id: *I_PRIV, property_id: *P, kind: private_cost, tax_year: 2029, document_id: *D_REP,
+           value: {cost_class: other, category: repairs, label: Fenster abdichten,
+                   amount: "1190.00", performed_on: 2029-09-30, amount_net: "1000.00"}}
     expect:
       - <<: *window
         tax_year: 2029

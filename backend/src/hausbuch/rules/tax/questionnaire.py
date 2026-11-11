@@ -120,6 +120,13 @@ def _in_force(row: ReturnInputFact, tax_year: int, rs: AnlageNRuleSet) -> bool:
         return False
 
 
+def _recurring(row: TaxInputFact) -> bool:
+    """A row read from a bill (phase 2 D135: its document, a category) is a one-off cost: a
+    copy confirmed next year would deduct it twice and count it twice in the 15 % test (phase 3
+    D137 review F2). Hand-typed rows (postage, a membership, trips) are copied as before."""
+    return row.document_id is None and getattr(row.value, "category", None) is None
+
+
 def prefill(
     tax_year: int,
     questionnaire: Questionnaire,
@@ -210,6 +217,7 @@ def prefill(
                         and r.tax_year == prior_year
                         and r.property_id == prop
                         and wanted(r.value)
+                        and _recurring(r)
                     ):
                         proposed.append(
                             TaxInputCreate(

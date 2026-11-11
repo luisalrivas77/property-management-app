@@ -250,6 +250,11 @@ WARNING_TEXT: dict[WarningCode, Callable[[dict[str, str]], str]] = {
         "Leistungsdatum; sie zählt vorsichtshalber zur 15 %-Grenze der ersten drei Jahre nach "
         "dem Kauf."
     ),
+    WarningCode.LIMIT_PRIVATE_COST_AFTER_WINDOW: lambda p: (
+        f"Eine von einem anderen Konto bezahlte Reparatur ({p.get('label', '')}) ist kurz nach "
+        "dem Dreijahresfenster datiert: wann wurde die Arbeit ausgeführt? Eine Leistung im "
+        "Fenster zählt zur 15 %-Grenze."
+    ),
     WarningCode.ANSCHAFFUNGSNAH_PERFORMANCE_DATE_CHECK: lambda p: (
         f"Kosten von {_p(p)}, bezahlt kurz nach dem Dreijahresfenster: wann wurde die Arbeit "
         "ausgeführt? Ein Leistungszeitraum im Fenster zählt zur 15 %-Grenze."

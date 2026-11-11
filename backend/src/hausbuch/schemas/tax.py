@@ -24,7 +24,13 @@ from enum import StrEnum
 from typing import Any, Literal, Self
 from uuid import UUID
 
-from pydantic import Field, model_validator
+from pydantic import (
+    Field,
+    ValidationError,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 from .allocation import AllocationCategory, ServicePeriod
 from .checklist import ChecklistFacts, ChecklistItem
@@ -366,18 +372,21 @@ class PrivateCostValue(Schema):
     performed_on: date | None = None  # phase 3 D137
     amount_net: NonNegativeMoney | None = None  # phase 3 D137
 
+    @field_validator("amount_net")
+    @classmethod
+    def _net_within_amount(cls, net: Decimal | None, info: ValidationInfo) -> Decimal | None:
+        # A field validator, so a refusal names value.amount_net and the card shows it there.
+        amount = info.data.get("amount")
+        if net is not None and amount is not None and net > amount:
+            raise ValueError("Der Nettobetrag kann nicht höher sein als der Betrag.")
+        return net
+
     @model_validator(mode="after")
     def _by_class(self) -> Self:
         if (self.performed_on is not None or self.amount_net is not None) and (
             self.category not in LIMIT_15_CATEGORIES
         ):
             raise ValueError("a work date and a net go with a category the 15 % test counts")
-        if (
-            self.amount_net is not None
-            and self.amount is not None
-            and self.amount_net > self.amount
-        ):
-            raise ValueError("the net is at most the amount")
         if self.category is not None:
             if self.category not in PRIVATE_COST_CATEGORIES:
                 raise ValueError("a private cost's category is a deductible one")
@@ -496,7 +505,19 @@ def value_by_kind(data: Any) -> Any:
             model = TAX_INPUT_VALUES[TaxInputKind(data.get("kind"))]
         except ValueError:
             return data  # an unknown kind fails on its own field
-        return data | {"value": model.model_validate(data["value"])}
+        try:
+            return data | {"value": model.model_validate(data["value"])}
+        except ValidationError as exc:
+            # Each error names its field under value (value.amount_net), so a form shows the
+            # message at that field instead of above the form (phase 3 D137 review F4).
+            raise ValidationError.from_exception_data(
+                exc.title,
+                [
+                    {"type": e["type"], "loc": ("value", *e["loc"]), "input": e["input"]}
+                    | ({"ctx": e["ctx"]} if "ctx" in e else {})
+                    for e in exc.errors(include_url=False)
+                ],
+            ) from None
     return data
 
 
@@ -597,6 +618,9 @@ class WarningCode(StrEnum):
     LIMIT_ESTIMATED_NET = "limit.estimated_net"
     # D137: a private repair without the date of the work, counted or near the window's end
     LIMIT_PRIVATE_COST_UNDATED = "limit.private_cost_undated"
+    # D137: a private repair dated (by its bill) within 90 days after the window: not counted,
+    # but the real date of the work is asked, as D76 asks it of a payment
+    LIMIT_PRIVATE_COST_AFTER_WINDOW = "limit.private_cost_after_window"
     # A cost booked soon after the window with no service period: when was the work done? (D76)
     ANSCHAFFUNGSNAH_PERFORMANCE_DATE_CHECK = "anschaffungsnah.performance_date_check"
     RENOVATION_UNDECIDED = "renovation.undecided"
@@ -662,6 +686,7 @@ WARNING_SEVERITY: dict[WarningCode, Severity] = {
     W.LIMIT_PRIOR_YEAR_AMENDMENT: "warning",
     W.LIMIT_ESTIMATED_NET: "info",
     W.LIMIT_PRIVATE_COST_UNDATED: "warning",
+    W.LIMIT_PRIVATE_COST_AFTER_WINDOW: "warning",
     W.ANSCHAFFUNGSNAH_PERFORMANCE_DATE_CHECK: "warning",
     W.RENOVATION_UNDECIDED: "warning",
     W.INTEREST_CERTIFICATE_MISMATCH: "warning",

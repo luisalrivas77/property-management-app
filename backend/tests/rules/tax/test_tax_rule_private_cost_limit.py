@@ -11,7 +11,13 @@ from uuid import UUID
 import pytest
 from pydantic import ValidationError
 
-from hausbuch.schemas.tax import BasisAddition, CountedCost, PrivateCostValue, SourceRef
+from hausbuch.schemas.tax import (
+    BasisAddition,
+    CountedCost,
+    PrivateCostValue,
+    SourceRef,
+    TaxInputCreate,
+)
 
 ALLOCATION = UUID("00000a11-0000-4000-8000-000000000001")
 TAX_INPUT = UUID("000000f1-0000-4000-8000-000000000001")
@@ -65,3 +71,27 @@ def test_a_repair_may_carry_its_work_date_and_net():
 def test_a_work_date_or_net_is_refused_where_it_does_not_belong(value):
     with pytest.raises(ValidationError):
         PrivateCostValue(cost_class="other", label="Kosten", amount="119.00", **value)
+
+
+def test_a_net_above_the_amount_is_refused_at_the_net_field():
+    """Review F4: the 422 names amount_net, so the card shows the message at Netto."""
+    with pytest.raises(ValidationError) as refused:
+        _repair(amount_net="119.01")
+    (error,) = refused.value.errors()
+    assert error["loc"] == ("amount_net",)
+    assert "Der Nettobetrag kann nicht höher sein als der Betrag." in error["msg"]
+    # Inside a tax input row (the API body, the proposal's apply) it names value.amount_net.
+    with pytest.raises(ValidationError) as refused:
+        TaxInputCreate(
+            property_id=UUID(int=1),
+            kind="private_cost",
+            tax_year=2026,
+            value={
+                "cost_class": "other",
+                "label": "Reparatur",
+                "amount": "119.00",
+                "category": "repairs",
+                "amount_net": "119.01",
+            },
+        )
+    assert [e["loc"] for e in refused.value.errors()] == [("value", "amount_net")]

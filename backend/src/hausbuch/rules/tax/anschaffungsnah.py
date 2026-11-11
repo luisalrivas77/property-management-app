@@ -216,7 +216,8 @@ def _private_costs(
     facts: LimitFacts, tax_year: int, rule_set: RuleSet, start: date, end: date
 ) -> tuple[list[tuple[date, int, CountedCost]], list[DraftWarning]]:
     """D137: the private_cost rows of a counted category, as (order date, 1, cost), and the
-    warnings of the drafted year (estimated net, no date of the work)."""
+    warnings of the drafted year (estimated net, no date of the work, a date just after the
+    window)."""
     vat = Decimal(1) + rule_set.default_vat_rate
     paid = paid_bills(facts.allocations)
     late_until = end + timedelta(days=PERFORMANCE_CHECK_DAYS)
@@ -234,6 +235,18 @@ def _private_costs(
         year = row.tax_year
         if v.performed_on is not None:
             inside = start <= v.performed_on <= end
+            # The bill's date is proposed for the work date and is only its upper bound: a
+            # date within 90 days after the window is not counted, but asked (as D76 asks it).
+            if end < v.performed_on <= late_until and year == tax_year:
+                warnings.append(
+                    warning(
+                        WarningCode.LIMIT_PRIVATE_COST_AFTER_WINDOW,
+                        input_sources(row),
+                        label=v.label,
+                        performed_on=v.performed_on.isoformat(),
+                        amount=money_str(gross),
+                    )
+                )
         else:
             # Paid in a window year: counted, since the work may have been done inside it.
             # Paid later but within the 90 days after the window: not counted, but asked (D76).
