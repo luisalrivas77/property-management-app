@@ -4,6 +4,8 @@
 // split recorded but not selected (a state that exists only from before phase 2 D133, so it is
 // mocked here) the button selects it through the existing command; a real split, recorded
 // through the API, closes the to-do. Synthetic data only.
+import path from "node:path";
+
 import { apiCall, expect, test } from "./support";
 
 const YEAR = 2026;
@@ -137,4 +139,87 @@ test("a missing market rent is one to-do, not two", async ({ page, signedIn }) =
   const mine = overview.getByRole("listitem").filter({ hasText: label });
   await expect(mine.filter({ hasText: "Ortsübliche Miete fehlt" })).toHaveCount(1);
   await expect(mine.filter({ hasText: "Ortsübliche Miete" })).toHaveCount(1);
+});
+
+// D140: an Einnahme ohne Zuordnung (other_income) after the handover is a to-do with "Als Miete
+// buchen": the dialog names the payment's date and amount, and confirming re-books it as
+// Kaltmiete through the inbox's answer command. The camt sample's "Partei D" credit (28 Sep
+// 2026) is split into two other_income parts through the same command first: re-booking one
+// supersedes every row of the line, and the other part's to-do, which now cites a new row, still
+// offers the button without a page reload (the cited payments reload with the draft).
+const SAMPLE = path.resolve(import.meta.dirname, "..", "..", "backend", "tests", "fixtures", "phase2", "bank_samples", "camt052.zip");
+
+test("an Einnahme ohne Zuordnung is booked as rent from its to-do", async ({ page, signedIn }) => {
+  void signedIn;
+  const property = await apiCall<{ id: string }>(page, "POST", "/api/properties", {
+    label: "Wohnung Verkäufermiete",
+    kind: "etw",
+    address: { ...address, house_number: "13" },
+    build_year: 1994,
+    notarized_on: "2024-03-15",
+    purchase_date: "2024-05-01",
+    purchase_price: "289000.00",
+  });
+  // A room, so the flat's Z13 row has an area (Σ the rooms' m² while the Wohnfläche is missing).
+  await apiCall(page, "POST", "/api/units", {
+    property_id: property.id,
+    label: "Zimmer 1",
+    floor_area_m2: "18.00",
+    rooms: null,
+    mea: null,
+  });
+  const account = await apiCall<{ id: string }>(page, "POST", "/api/accounts", {
+    label: "Mietkonto",
+    bank: "Sparkasse",
+    iban: "DE50100000000000000001",
+    opening_balance: "0.00",
+    opening_balance_on: "2026-03-31",
+  });
+  await page.goto(`/accounts/${account.id}`);
+  await page.getByLabel("Kontoauszug hochladen").setInputFiles(SAMPLE);
+  await expect(page.getByRole("status").filter({ hasText: "Importiert: camt052.zip" })).toContainText("abgestimmt");
+  const lines = await apiCall<{ id: string; amount: string }[]>(page, "GET", `/api/accounts/${account.id}/transactions`);
+  const line = lines.find((l) => l.amount === "740.18");
+  expect(line, "the sample's Partei D credit").toBeDefined();
+  const transactionId = line?.id ?? "";
+  const allocationsPath = `/api/transactions/${transactionId}/allocations`;
+  const put = await page.request.fetch(allocationsPath, {
+    method: "PUT",
+    data: {
+      allocation_set: {
+        transaction_id: transactionId,
+        allocations: [
+          { amount: "700.00", category: "other_income", property_id: property.id, recurring: false },
+          { amount: "40.18", category: "other_income", property_id: property.id, recurring: false },
+        ],
+        method: "user",
+        confidence: "1",
+      },
+      learn_rule: false,
+      same_amount_only: false,
+    },
+    headers: { Origin: new URL(page.url()).origin },
+  });
+  expect(put.status()).toBe(200);
+
+  await page.goto(`/tax/${YEAR}?immobilie=${property.id}`);
+  const todos = page.getByRole("region", { name: "Was noch fehlt" });
+  const entry = todos.getByRole("listitem").filter({ hasText: "Einnahme ohne Zuordnung" });
+  await expect(entry).toHaveCount(2);
+  await expect(entry.first().getByRole("link", { name: "Zahlung öffnen" })).toHaveAttribute("href", `/inbox?umsatz=${transactionId}`);
+  await entry.first().getByRole("button", { name: "Als Miete buchen" }).click();
+  const dialog = page.getByRole("dialog", { name: "Einnahme als Miete buchen" });
+  await expect(dialog).toContainText("28.09.2026");
+  await expect(dialog).toContainText(/(700,00|40,18) €/);
+  await expect(dialog).toContainText("als Kaltmiete gebucht");
+  const saved = page.waitForResponse((r) => r.url().endsWith(allocationsPath) && r.request().method() === "PUT");
+  await dialog.getByRole("button", { name: "Ja, als Miete buchen" }).click();
+  expect((await saved).status()).toBe(200);
+  // No page.reload(): the remaining part's to-do keeps its button.
+  await expect(entry).toHaveCount(1);
+  await expect(entry.getByRole("button", { name: "Als Miete buchen" })).toBeVisible();
+
+  const stored = await apiCall<{ allocations: { amount: string; category: string; status: string }[] }>(page, "GET", allocationsPath);
+  expect(stored.allocations.map((a) => a.status)).toEqual(["confirmed", "confirmed"]);
+  expect(stored.allocations.map((a) => a.category).sort()).toEqual(["other_income", "rent_cold"]);
 });

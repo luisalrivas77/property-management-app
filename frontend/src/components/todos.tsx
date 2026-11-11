@@ -59,8 +59,12 @@ export type GuideAction =
   | { kind: "upload"; label: string }
   /** afa.no_split: select a recorded split, or upload the Kaufvertrag. */
   | { kind: "split" }
-  /** income.pre_handover: record the D63 input "counts as rent". */
-  | { kind: "pre_handover" }
+  /** income.other_review (D140): open the payment, or re-book it as Kaltmiete after a confirm.
+   * countedAsRent: a line before the handover the draft already counts as rent. */
+  | { kind: "rebook_rent"; href: string; fact: AllocationFact; countedAsRent: boolean }
+  /** income.pre_handover: record the D63 input "counts as rent" and book the cited other-income
+   * payments as Kaltmiete (D140). */
+  | { kind: "pre_handover"; facts: AllocationFact[] }
   /** income.living_area_missing: type the flat's Wohnfläche (PATCH /properties/{id}). */
   | { kind: "living_area" };
 
@@ -103,6 +107,32 @@ const payment =
   };
 
 const inbox = () => link("/inbox", "Zu prüfen öffnen");
+
+/** income.other_review (D140): the payment's bank line plus "Als Miete buchen" for the cited
+ * allocation. Null until the payments are loaded (Übersicht then links to Steuern). */
+const otherIncome = (warning: DraftWarning, ctx: GuideContext): GuideAction | null => {
+  for (const ref of warning.refs ?? []) {
+    if (ref.kind !== "allocation" || !ref.id) continue;
+    const fact = ctx.payments?.get(ref.id);
+    if (fact?.transaction_id) {
+      const countedAsRent = warning.params?.counted_as_rent === "1";
+      return { kind: "rebook_rent", href: `/inbox?umsatz=${fact.transaction_id}`, fact, countedAsRent };
+    }
+  }
+  return null;
+};
+
+/** income.pre_handover (D140): the payments the warning cites, so the dialog names each one. Null
+ * until the payments are loaded (Übersicht then links to Steuern). */
+const preHandover = (warning: DraftWarning, ctx: GuideContext): GuideAction | null => {
+  if (!ctx.propertyId || !ctx.payments) return null;
+  const facts: AllocationFact[] = [];
+  for (const ref of warning.refs ?? []) {
+    const fact = ref.kind === "allocation" && ref.id ? ctx.payments.get(ref.id) : undefined;
+    if (fact) facts.push(fact);
+  }
+  return { kind: "pre_handover", facts };
+};
 
 /** The unit page whose "Ortsübliche Miete" section takes the Mietspiegel value: the checked
  * unit of an MFH, else any room of the flat (the flat's value is one for all its rooms). */
@@ -242,17 +272,20 @@ export const WARNING_GUIDE: Partial<Record<WarningCode, Guide>> = {
   },
   "income.other_review": {
     todo: true,
-    title: () => "Einnahme ohne Zuordnung",
-    text: () =>
-      "Die Zahlung öffnen und sagen, was sie war, zum Beispiel Miete, Kaution oder eine Erstattung. Dann zählt sie richtig.",
-    action: payment("Zahlung öffnen"),
+    title: (p) =>
+      p.counted_as_rent === "1" ? "Als Miete gezählt, aber als Sonstige Einnahme gebucht" : "Einnahme ohne Zuordnung",
+    text: (p) =>
+      p.counted_as_rent === "1"
+        ? "Diese Zahlung zählt in der Steuer schon als Miete. Mit einem Klick auf „Als Miete buchen“ wird sie auch als Kaltmiete gebucht."
+        : "War es Miete, zum Beispiel vom Verkäufer weitergeleitete Miete, „Als Miete buchen“ wählen. Sonst die Zahlung öffnen und sagen, was sie war, zum Beispiel Kaution oder eine Erstattung. Dann zählt sie richtig.",
+    action: otherIncome,
   },
   "income.pre_handover": {
     todo: true,
     title: () => "Einnahmen vor der Übergabe",
     text: () =>
       "Diese Einnahmen kamen, bevor die Wohnung Ihnen übergeben wurde. Standen Sie in diesen Monaten schon als Vermieter im Mietvertrag, sind sie Ihre Miete: dann „Als Miete zählen“ wählen.",
-    action: () => ({ kind: "pre_handover" }),
+    action: preHandover,
   },
   "income.living_area_missing": {
     todo: true,
@@ -522,8 +555,17 @@ export function WarningActionView({
       return <ReadUpload label={action.label} onUploaded={onChanged} />;
     case "split":
       return ctx.propertyId ? <SplitAction propertyId={ctx.propertyId} onChanged={onChanged} /> : null;
+    case "rebook_rent":
+      return (
+        <>
+          <Link href={action.href}>Zahlung öffnen</Link>
+          <RebookAsRentAction fact={action.fact} countedAsRent={action.countedAsRent} onChanged={onChanged} />
+        </>
+      );
     case "pre_handover":
-      return ctx.propertyId ? <PreHandoverAction propertyId={ctx.propertyId} onChanged={onChanged} /> : null;
+      return ctx.propertyId ? (
+        <PreHandoverAction propertyId={ctx.propertyId} facts={action.facts} onChanged={onChanged} />
+      ) : null;
     case "living_area":
       return ctx.propertyId ? <LivingAreaAction propertyId={ctx.propertyId} onChanged={onChanged} /> : null;
   }
@@ -587,11 +629,140 @@ function SplitAction({ propertyId, onChanged }: { propertyId: string; onChanged?
   );
 }
 
-/** income.pre_handover: the D63 input "these lines count as rent" (the one reading decided),
- * recorded only after the user confirms the sentence in the dialog. */
-function PreHandoverAction({ propertyId, onChanged }: { propertyId: string; onChanged?: () => void }) {
+type AllocationDraft = components["schemas"]["AllocationDraft"];
+
+/** What a re-booking did: booked; nothing to change (the cited rows are booked otherwise
+ * already); or gone (a cited row is no longer current, so the line changed since it loaded). */
+type RebookResult = "booked" | "unchanged" | "gone";
+
+/** Book the cited other-income allocations of one bank line as Kaltmiete (D140), through the
+ * existing answer command (PUT /transactions/{id}/allocations, the inbox's path): read the
+ * line's current rows, change the category of the cited other_income rows only, send every row
+ * back with its other fields as they are (property, unit, tenancy, period, recurring flag,
+ * Beleg; the other parts of a split), so the sum still holds. The server supersedes the old
+ * rows and records transaction.reallocated. No rule is learned: a later payment from the same
+ * payer is asked again. A cited row that is no longer current is never guessed by amount. */
+async function rebookAsRent(transactionId: string, allocationIds: readonly string[]): Promise<RebookResult> {
+  const view = await ok(
+    api.GET("/api/transactions/{transaction_id}/allocations", {
+      params: { path: { transaction_id: transactionId } },
+    }),
+  );
+  const rows = view.allocations;
+  const current = new Set(rows.map((row) => row.id));
+  if (allocationIds.some((id) => !current.has(id))) return "gone";
+  const cited = new Set(allocationIds);
+  const change = (row: (typeof rows)[number]) => cited.has(row.id) && row.category === "other_income";
+  if (!rows.some(change)) return "unchanged";
+  const drafts: AllocationDraft[] = rows.map((row) => ({
+    amount: row.amount,
+    category: change(row) ? "rent_cold" : row.category,
+    property_id: row.property_id,
+    unit_id: row.unit_id,
+    tenancy_id: row.tenancy_id,
+    loan_id: row.loan_id,
+    service_period_start: row.service_period_start,
+    service_period_end: row.service_period_end,
+    recurring: row.recurring,
+    document_id: row.document_id,
+  }));
+  await ok(
+    api.PUT("/api/transactions/{transaction_id}/allocations", {
+      params: { path: { transaction_id: transactionId } },
+      // The server reads only the rows: method and confidence become the person's.
+      body: {
+        allocation_set: { transaction_id: transactionId, allocations: drafts, method: "user", confidence: "1" },
+        learn_rule: false,
+        same_amount_only: false,
+      },
+    }),
+  );
+  return "booked";
+}
+
+/** income.other_review (D140): book the cited allocation as Kaltmiete (rebookAsRent), after the
+ * user confirms the sentence naming its date and amount. */
+function RebookAsRentAction({
+  fact,
+  countedAsRent,
+  onChanged,
+}: {
+  fact: AllocationFact;
+  countedAsRent: boolean;
+  onChanged?: () => void;
+}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const [gone, setGone] = useState(false);
+  const transactionId = fact.transaction_id;
+  if (!transactionId) return null;
+  async function confirm(close: () => void) {
+    if (!transactionId) return;
+    setBusy(true);
+    setError(null);
+    setGone(false);
+    try {
+      if ((await rebookAsRent(transactionId, [fact.allocation_id])) === "gone") {
+        setGone(true);
+        return;
+      }
+      close();
+      onChanged?.();
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <ActionDialog label="Als Miete buchen" title="Einnahme als Miete buchen" buttonClass="">
+      {(close) => (
+        <>
+          <p>
+            {countedAsRent
+              ? `Die Zahlung vom ${formatDate(fact.booking_date)} über ${formatMoney(fact.amount)} zählt in der Steuer schon als Miete und wird jetzt auch als Kaltmiete gebucht. Die Steuerzahlen ändern sich dadurch nicht.`
+              : `Die Zahlung vom ${formatDate(fact.booking_date)} über ${formatMoney(fact.amount)} wird als Kaltmiete gebucht und zählt dann in der Zeile der Miete statt bei den sonstigen Einnahmen.`}{" "}
+            Die Änderung wird mit Datum gespeichert und lässt sich bei der Zahlung wieder ändern.
+          </p>
+          {gone ? (
+            <p className="field-errors" role="alert">
+              Diese Zahlung wurde inzwischen anders zugeordnet. Bitte die Zahlung öffnen und dort prüfen.
+            </p>
+          ) : null}
+          <ErrorNotice error={error} />
+          <div className="row">
+            <button type="button" disabled={busy || gone} onClick={() => void confirm(close)}>
+              {busy ? "Speichert …" : "Ja, als Miete buchen"}
+            </button>
+            <button type="button" className="secondary" onClick={close}>
+              Abbrechen
+            </button>
+          </div>
+        </>
+      )}
+    </ActionDialog>
+  );
+}
+
+/** income.pre_handover: the D63 input "these lines count as rent" (the one reading decided),
+ * recorded only after the user confirms the dialog, which lists every payment it covers (date,
+ * amount, masked IBAN). Then each cited other-income payment is booked as Kaltmiete too
+ * (rebookAsRent, one request per bank line; D140). The decision stays recorded when a
+ * re-booking fails: the dialog says so, and each such payment keeps its own to-do with
+ * "Als Miete buchen". */
+function PreHandoverAction({
+  propertyId,
+  facts,
+  onChanged,
+}: {
+  propertyId: string;
+  facts: AllocationFact[];
+  onChanged?: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const [notBooked, setNotBooked] = useState<number | null>(null);
+  const other = facts.filter((fact) => fact.category === "other_income" && fact.transaction_id);
   async function confirm(close: () => void) {
     setBusy(true);
     setError(null);
@@ -610,13 +781,32 @@ function PreHandoverAction({ propertyId, onChanged }: { propertyId: string; onCh
           },
         }),
       );
-      close();
-      onChanged?.();
     } catch (caught) {
       setError(caught);
-    } finally {
       setBusy(false);
+      return;
     }
+    const byLine = new Map<string, string[]>();
+    for (const fact of other) {
+      const line = fact.transaction_id as string;
+      byLine.set(line, [...(byLine.get(line) ?? []), fact.allocation_id]);
+    }
+    let failed = 0;
+    for (const [line, ids] of byLine) {
+      try {
+        if ((await rebookAsRent(line, ids)) === "gone") failed += ids.length;
+      } catch (caught) {
+        failed += ids.length;
+        setError(caught);
+      }
+    }
+    setBusy(false);
+    if (failed > 0) {
+      setNotBooked(failed);
+      return;
+    }
+    close();
+    onChanged?.();
   }
   return (
     <ActionDialog label="Als Miete zählen" title="Einnahmen vor der Übergabe" buttonClass="">
@@ -627,14 +817,51 @@ function PreHandoverAction({ propertyId, onChanged }: { propertyId: string; onCh
             im Mietvertrag standen, sind sie Ihre Mieteinnahmen und kommen in die Zeile der Miete. Die Entscheidung wird mit
             Datum gespeichert und lässt sich später ändern.
           </p>
+          {facts.length > 0 ? (
+            <>
+              <p>Das betrifft diese Zahlungen:</p>
+              <ul>
+                {facts.map((fact) => (
+                  <li key={fact.allocation_id}>
+                    {formatDate(fact.booking_date)} · {formatMoney(fact.amount)}
+                    {fact.counterparty_iban_masked ? ` · von ${fact.counterparty_iban_masked}` : ""}
+                    {fact.category === "other_income"
+                      ? " · wird als Kaltmiete gebucht"
+                      : ` · gebucht als ${ALLOCATION_CATEGORY[fact.category]}`}
+                  </li>
+                ))}
+              </ul>
+              <p>Ist eine davon keine Miete, zum Beispiel eine Gutschrift der Bank, erst bei der Zahlung richtig zuordnen.</p>
+            </>
+          ) : null}
+          {notBooked !== null ? (
+            <p className="field-errors" role="alert">
+              Die Entscheidung ist gespeichert. {notBooked === 1 ? "Eine Zahlung konnte" : `${notBooked} Zahlungen konnten`}{" "}
+              nicht als Kaltmiete gebucht werden; sie stehen unter „Was noch fehlt“ mit „Als Miete buchen“.
+            </p>
+          ) : null}
           <ErrorNotice error={error} />
           <div className="row">
-            <button type="button" disabled={busy} onClick={() => void confirm(close)}>
-              {busy ? "Speichert …" : "Ja, als Miete zählen"}
-            </button>
-            <button type="button" className="secondary" onClick={close}>
-              Abbrechen
-            </button>
+            {notBooked !== null ? (
+              <button
+                type="button"
+                onClick={() => {
+                  close();
+                  onChanged?.();
+                }}
+              >
+                Schließen
+              </button>
+            ) : (
+              <>
+                <button type="button" disabled={busy} onClick={() => void confirm(close)}>
+                  {busy ? "Speichert …" : "Ja, als Miete zählen"}
+                </button>
+                <button type="button" className="secondary" onClick={close}>
+                  Abbrechen
+                </button>
+              </>
+            )}
           </div>
         </>
       )}

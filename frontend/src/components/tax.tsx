@@ -226,12 +226,16 @@ function DraftView({ draft, propertyId, onChanged }: { draft: AnlageVDraft; prop
   );
   const payments = useLoad(loadPayments);
   // An action of a to-do (a split selected, a document read) changes the checklist and the
-  // questions too, which load on their own; the counter reloads them with the draft.
+  // questions too, which load on their own; the counter reloads them with the draft. The cited
+  // payments reload too: a re-booking (D140) supersedes every row of its bank line, so a to-do
+  // left on that line cites new allocation ids.
   const [refresh, setRefresh] = useState(0);
+  const reloadPayments = payments.reload;
   const changed = useCallback(() => {
     setRefresh((n) => n + 1);
+    reloadPayments();
     onChanged();
-  }, [onChanged]);
+  }, [onChanged, reloadPayments]);
   const ctx = { year: draft.tax_year, propertyId, draft, payments: payments.data };
 
   return (

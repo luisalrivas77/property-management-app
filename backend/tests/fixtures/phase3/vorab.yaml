@@ -12,8 +12,11 @@
 #     (the sum) and count.
 #   Costs before the handover are not touched here: they stay in their lines (vorab entstandene
 #   Werbungskosten; schuldzinsen.yaml financing_costs_before_handover has the line).
-#   income.other_review for an other_income line comes from einnahmen (§5.7), whatever its
-#   date, not from here.
+#   rent_cold and other_income before the handover count alike here. While undecided, an
+#   other_income line before the handover raises no income.other_review (D140, 11 Nov 2026):
+#   income.pre_handover is its one question. With the input it counts as rent, and einnahmen
+#   raises income.other_review marked counted_as_rent for a line still booked other_income, so
+#   its bank line can be booked as Kaltmiete too (umlagen.yaml).
 
 rule_set_year: 2026
 
@@ -76,6 +79,28 @@ cases:
       property: *etw
       units: *units
       allocations: [*fwd_may, *fwd_jun]
+      tax_inputs:
+        - {id: *I1, property_id: *P, kind: pre_handover_income, value: {treatment: rent}}
+    expect:
+      - tax_year: 2026
+        unit_rows:
+          - wohnung: property
+            id: *P
+            label: Wohnung Beispielweg
+            area_m2: "62.50"
+            area_source: living_area
+            amount: "850.00"
+            pre_handover: "850.00"
+            sources: [{kind: allocation, id: *A1}, {kind: allocation, id: *A2}, {kind: tax_input, id: *I1}]
+
+  - id: rebooked_as_rent_same_row
+    description: >
+      D140: the June line re-booked rent_cold (the to-do's "Als Miete buchen"): the row is the
+      same 850.00 as with both lines booked other_income, so re-booking changes no figure
+    facts:
+      property: *etw
+      units: *units
+      allocations: [*fwd_may, {<<: *fwd_jun, category: rent_cold}]
       tax_inputs:
         - {id: *I1, property_id: *P, kind: pre_handover_income, value: {treatment: rent}}
     expect:

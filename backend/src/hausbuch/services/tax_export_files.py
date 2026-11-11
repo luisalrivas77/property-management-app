@@ -272,7 +272,12 @@ WARNING_TEXT: dict[WarningCode, Callable[[dict[str, str]], str]] = {
         "Die Hausgeldabrechnung fehlt noch: was die WEG aus der Rücklage ausgegeben hat, ist "
         "vorläufig nicht enthalten."
     ),
-    WarningCode.INCOME_OTHER_REVIEW: lambda p: f"Sonstige Einnahme {_p(p)} prüfen.",
+    WarningCode.INCOME_OTHER_REVIEW: lambda p: (
+        f"Einnahme {_p(p)} vor der Übergabe zählt als Miete, "
+        "ist aber als Sonstige Einnahme gebucht."
+        if p.get("counted_as_rent") == "1"
+        else f"Sonstige Einnahme {_p(p)} prüfen."
+    ),
     WarningCode.INCOME_PRE_HANDOVER: lambda p: (
         f"{_count(p, 'Einnahme', 'Einnahmen')} vor dem Übergang ({_p(p)}): noch nicht "
         "festgelegt, wie sie zählen."

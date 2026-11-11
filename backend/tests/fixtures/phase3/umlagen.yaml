@@ -15,9 +15,13 @@
 #     mixed terms → not ticked, warning umlagen.mixed_terms naming the included tenancies.
 #   operating_costs_settlement → income.umlagen_settlement, sign kept (a refund is negative).
 #   other_income → income.other, warning income.other_review per allocation with params
-#     amount and counterparty_iban (masked). The warning is per allocation whatever its date:
-#     a line before the handover is raised here too (anlage_v_2026.yaml), its amount goes to
-#     vorab.
+#     amount and counterparty_iban (masked), for lines booked on or after the handover (D140,
+#     11 Nov 2026; a line booked on the handover day is after it). A line before the handover
+#     is vorab's: while no pre_handover_income input is in force it raises nothing here (the
+#     income.pre_handover warning is its question); with the input it already counts as rent,
+#     and if it is still booked other_income it raises income.other_review with the extra
+#     param counted_as_rent "1" (its to-do books it as Kaltmiete). A rent_cold line before the
+#     handover raises nothing. No line before the handover goes on a line here either way.
 #   deposit_in / deposit_out → nothing.
 # unit_rows compare like lines: exactly the rows with a non-zero amount; rooms and sources
 # are asserted only where listed.
@@ -48,6 +52,9 @@ ids:
   nk_2_dec: &M12 000000a1-0000-4000-8000-000000000332
   settlement: &S1 000000a1-0000-4000-8000-000000000341
   other: &O1 000000a1-0000-4000-8000-000000000351
+  other_before: &O2 000000a1-0000-4000-8000-000000000352
+  other_on_day: &O3 000000a1-0000-4000-8000-000000000353
+  pre_handover_input: &I1 000000f1-0000-4000-8000-000000000351
   deposit_in: &K1 000000a1-0000-4000-8000-000000000361
   deposit_out: &K2 000000a1-0000-4000-8000-000000000362
 
@@ -352,6 +359,64 @@ cases:
           - {key: income.other, amount: "75.00", sources: [{kind: allocation, id: *O1}]}
         warnings:
           - {code: income.other_review, params: {amount: "75.00", counterparty_iban: "DE89 **** 0001"}}
+
+  - id: other_income_before_handover_is_not_reviewed_here
+    description: >
+      D140: the seller forwarded 425.00 on 5 Jun, before the 1 Jul handover; the line is
+      vorab's (its income.pre_handover warning asks the question), so einnahmen books nothing
+      and raises no income.other_review. A line booked on the handover day itself is after it:
+      on income.other with its warning
+    facts:
+      property: *etw
+      units: *one_unit
+      allocations:
+        - {allocation_id: *O2, booking_date: 2026-06-05, amount: "425.00", category: other_income,
+           counterparty_iban_masked: "DE12 **** 0002"}
+        - {allocation_id: *O3, booking_date: 2026-07-01, amount: "850.00", category: other_income,
+           counterparty_iban_masked: "DE12 **** 0002"}
+    expect:
+      - tax_year: 2026
+        lines:
+          - {key: income.other, amount: "850.00", sources: [{kind: allocation, id: *O3}]}
+        warnings:
+          - {code: income.other_review, params: {amount: "850.00", counterparty_iban: "DE12 **** 0002"}}
+
+  - id: other_income_before_handover_decided_as_rent
+    description: >
+      D140 (amended 11 Nov 2026): with the pre_handover_income input (rent) the line before the
+      handover counts as rent (vorab puts it on the flat's row) and einnahmen books nothing, but
+      the bank line still says Sonstige Einnahme: income.other_review marked counted_as_rent
+    facts:
+      property: *etw
+      units: *one_unit
+      allocations:
+        - {allocation_id: *O2, booking_date: 2026-06-05, amount: "425.00", category: other_income,
+           counterparty_iban_masked: "DE12 **** 0002"}
+      tax_inputs:
+        - {id: *I1, property_id: *P, kind: pre_handover_income, value: {treatment: rent}}
+    expect:
+      - tax_year: 2026
+        lines: []
+        warnings:
+          - {code: income.other_review,
+             params: {amount: "425.00", counterparty_iban: "DE12 **** 0002", counted_as_rent: "1"}}
+
+  - id: rent_before_handover_decided_raises_nothing
+    description: >
+      D140: the same line once booked rent_cold (by the to-do's button or "Als Miete zählen"):
+      decided, before the handover, nothing here and no warning (vorab counts it as before)
+    facts:
+      property: *etw
+      units: *one_unit
+      allocations:
+        - {allocation_id: *O2, booking_date: 2026-06-05, amount: "425.00", category: rent_cold,
+           counterparty_iban_masked: "DE12 **** 0002"}
+      tax_inputs:
+        - {id: *I1, property_id: *P, kind: pre_handover_income, value: {treatment: rent}}
+    expect:
+      - tax_year: 2026
+        lines: []
+        warnings: []
 
   - id: deposit_not_income
     description: the Kaution paid in and paid back is neither income nor cost
