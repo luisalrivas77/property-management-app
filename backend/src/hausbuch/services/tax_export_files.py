@@ -162,6 +162,13 @@ def _percent(value: Decimal, places: int = 2) -> str:
     return f"{text.replace('.', ',')} %"
 
 
+def _proof_bill(params: dict[str, str]) -> str:
+    """D143: the bill a payment proof is missing for, by its Nebenkosten kind or its label."""
+    if params.get("source") == "acquisition_cost":
+        return f"die Rechnung „{_cost_kind(params.get('kind'))}“"
+    return f"die Rechnung „{params.get('label', '?')}“"
+
+
 def _p(params: dict[str, str], name: str = "amount") -> str:
     raw = params.get(name)
     if raw is None:
@@ -336,6 +343,17 @@ WARNING_TEXT: dict[WarningCode, Callable[[dict[str, str]], str]] = {
         "Eine Rechnung ist als von einem anderen Konto bezahlt eingetragen, wurde aber vom "
         "Mietkonto bezahlt: sie zählt nur einmal, mit der Buchung vom Mietkonto. Die Angabe "
         "bitte zurückziehen."
+    ),
+    # Phase 3 D143.
+    WarningCode.PAYMENT_PROOF_MISSING: lambda p: (
+        f"Zahlungsnachweis fehlt: {_proof_bill(p)} über {_p(p)} zählt, aber nichts zeigt, "
+        "dass sie bezahlt wurde"
+        + (
+            f" (der Nachweis lautet über {_p(p, 'proof_amount')}, der Betrag passt nicht)"
+            if p.get("proof_amount")
+            else ""
+        )
+        + ". Den Überweisungsbeleg oder die Umsatzdetails als PDF hochladen."
     ),
     WarningCode.ANLAGE_N_CERTIFICATE_MISSING: lambda p: (
         "Keine Lohnsteuerbescheinigung für dieses Jahr: die Zahlen beruhen auf "

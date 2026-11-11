@@ -388,3 +388,58 @@ def test_the_detail_shows_the_hand_fields_of_an_ai_reading(client_a, app_engine,
     body = response.json()
     assert (body["error"], body["code"]) == ("rule_violation", "document.extraction_stale")
     assert ok(client_a.get(base))["extraction"]["version"] == 2
+
+
+def test_a_payment_proof_uploaded_for_its_bill_closes_the_to_do(client_a):
+    """Phase 3 D143 over HTTP, the e2e case's flow: a Notar bill carried by a cost row and paid
+    by no bank line is a to-do in its purchase year; the file uploaded with `proof_for` is typed
+    as the bill's payment proof and linked to the bill and the property, and the to-do closes
+    (without AI the proof is unread, so it counts as seen). The bill itself, an unknown bill and
+    a document of another kind are refused."""
+    prop = new_property(client_a, notarized_on="2026-03-10", purchase_date="2026-07-01")
+    bill = ok(upload(client_a, b"%PDF-1.7 Notarrechnung D143", filename="notar.pdf"), 201)
+    create(
+        client_a,
+        "/api/acquisition-costs",
+        {
+            "property_id": prop["id"],
+            "kind": "notary",
+            "amount": "1785.00",
+            "document_id": bill["id"],
+        },
+    )
+
+    def proof_warnings() -> list[dict]:
+        path = f"/api/properties/{prop['id']}/anlage-v"
+        draft = ok(client_a.get(path, params={"tax_year": 2026}))
+        return [w for w in draft["warnings"] if w["code"] == "payment_proof.missing"]
+
+    [warning] = proof_warnings()
+    assert warning["params"] == {
+        "document": bill["id"],
+        "source": "acquisition_cost",
+        "kind": "notary",
+        "amount": "1785.00",
+    }
+
+    pdf = b"%PDF-1.7 Ueberweisung Notar D143"
+    refused = upload(client_a, b"%PDF-1.7 Notarrechnung D143", proof_for=bill["id"])
+    assert refused.status_code == 422  # the bill itself (its bytes are already the bill)
+    assert upload(client_a, pdf, proof_for=str(uuid4())).status_code == 404
+    other = ok(upload(client_a, b"%PDF-1.7 Kaufvertrag D143"), 201)
+    ok(
+        client_a.put(
+            f"/api/documents/{other['id']}/typing",
+            json={"typing": {"type": "contract", "subtype": "purchase_contract"}},
+        )
+    )
+    assert upload(client_a, b"%PDF-1.7 Kaufvertrag D143", proof_for=bill["id"]).status_code == 422
+
+    proof = ok(upload(client_a, pdf, filename="ueberweisung.pdf", proof_for=bill["id"]), 201)
+    assert proof["typing"]["type"] == "other"
+    assert proof["typing"]["subtype"] == "payment_proof"
+    detail = ok(client_a.get(f"/api/documents/{proof['id']}"))
+    assert sorted((link["target_type"], link["target_id"]) for link in detail["links"]) == sorted(
+        [("document", bill["id"]), ("property", prop["id"])]
+    )
+    assert proof_warnings() == []

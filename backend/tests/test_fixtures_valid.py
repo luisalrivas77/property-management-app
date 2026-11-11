@@ -67,6 +67,7 @@ PHASE3_CASES = {
         "herstellung_addition_2027",
         "no_split_empty_line",
         "cost_row_unpaid_warning",
+        "cost_row_with_bill_unpaid_no_warning",  # D143: the draft asks for the proof
         "acquisition_cost_without_row_not_added",
         "purchase_price_mismatch_warning",
         # D79: a shorter actual useful life (§7 Abs. 4 S. 2 EStG)
@@ -172,6 +173,11 @@ PHASE3_CASES = {
         "private_financing_cost_in_financing",
         # phase 2 D135: a private cost whose bill a bank line paid is not counted twice
         "private_cost_paid_from_account_not_counted",
+        # D143: every counted bill has its proof of payment
+        "notary_bill_proof_linked_no_todo",
+        "notary_bill_proof_amount_unread_counts",
+        "private_repair_proof_matches_no_todo",
+        "private_repair_proof_amount_mismatch",
     },
 }
 

@@ -1028,6 +1028,41 @@ DOCS: list[Doc] = [
             "postal_code": "10115",
         },
     ),
+    Doc(
+        # Phase 3 D143: the proof that rechnung_notar was paid, from a private account, in the
+        # next year. Typed by code at its upload (never classified), so its recording has no
+        # classify entry. The payer's name, IBAN and customer number never reach a stored
+        # value or quote (PROOF_IDENTIFIERS); the payee, amount, date and purpose do.
+        name="zahlungsnachweis",
+        type="other",
+        subtype="payment_proof",
+        kind="payment_proof",
+        pages=[
+            [
+                "Musterbank AG - Umsatzdetails",
+                "Ausgeführte Überweisung",
+                "",
+                "Auftraggeber: Ana Testkauf",
+                f"IBAN Auftraggeber: {IBAN_A}",
+                "Kundennummer: 7788123",
+                "",
+                "Empfänger: Notar Dr. Max Beispiel",
+                f"IBAN Empfänger: {IBAN_B}",
+                "Betrag: 1.309,00 EUR",
+                "Verwendungszweck: Kostenrechnung 2026-0456",
+                "Ausführungsdatum: 05.01.2027",
+                "",
+                "Erstellt am 06.01.2027",
+            ]
+        ],
+        expected={
+            "paid_on": "2027-01-05",
+            "amount": "1309.00",
+            "payee": "Notar Dr. Max Beispiel",
+            "purpose": "Kostenrechnung 2026-0456",
+            "document_date": "2027-01-06",
+        },
+    ),
 ]
 
 DOCS_BY_NAME = {doc.name: doc for doc in DOCS}
@@ -1057,6 +1092,12 @@ BESCHEID_IDENTIFIERS = (
     "34117",  # their postcode
     "Kassel",  # their town
     "2020 51",  # the IBAN's account digits
+)
+# The payer's side of the payment proof (phase 3 D143), likewise.
+PROOF_IDENTIFIERS = (
+    "Ana Testkauf",  # the payer (Auftraggeber)
+    "0532 0130",  # the payer's IBAN's account digits
+    "7788123",  # the payer's Kundennummer
 )
 
 

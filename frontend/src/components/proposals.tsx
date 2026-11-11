@@ -472,6 +472,16 @@ const FIELDS: Record<string, Record<string, FieldSpec>> = {
       "„Erinnern“: eine Woche vor jeder Rate. „Lastschrift prüfen“: drei Tage danach, falls die Abbuchung fehlt. Leer lassen: Hausbuch nimmt Lastschrift an, sobald eine Rate per Lastschrift abgebucht wurde.",
     ),
   },
+  // A payment proof's year move (phase 3 D143): private_cost_year:<n> patches one privately paid
+  // cost to the year it was paid in; applied as withdraw + create.
+  private_cost_year: {
+    tax_year: {
+      label: "Steuerjahr",
+      kind: "year",
+      description:
+        "Das Jahr, in dem die Rechnung laut Zahlungsnachweis bezahlt wurde. Kosten zählen im Jahr der Zahlung; mit „Übernehmen“ zählt die Rechnung in diesem Jahr statt im bisherigen.",
+    },
+  },
   // The Einkommensteuerbescheid's zvE (phase 4b D129): income_input:bescheid_zve, household-wide.
   income_input: {
     tax_year: {
@@ -740,6 +750,8 @@ function recordTitle(record: ProposalRecord): string {
       return lookup(TAX_INPUT_TITLE, rest);
     case "income_input":
       return "Einkommensteuerbescheid: zvE laut Bescheid";
+    case "private_cost_year":
+      return "Von einem anderen Konto bezahlt: Jahr der Zahlung";
     default:
       return record.key;
   }
@@ -1256,6 +1268,8 @@ function appliedLabel(entity: AppliedEntity): string {
       return `${lookup(TAX_INPUT_TITLE, rest)} als Steuerangabe erfasst`;
     case "income_input":
       return "zvE laut Bescheid erfasst";
+    case "private_cost_year":
+      return "Rechnung ins Jahr der Zahlung verschoben";
     default:
       return entity.key;
   }

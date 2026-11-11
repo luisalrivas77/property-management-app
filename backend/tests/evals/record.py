@@ -27,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import anthropic  # noqa: E402
 from make_docs import DOCS, DOCS_BY_NAME  # noqa: E402
-from recordings import FORMAT, RECORDINGS_DIR, build_requests, eval_settings  # noqa: E402
+from recordings import FORMAT, RECORDINGS_DIR, build_requests, eval_settings, pretyped  # noqa: E402
 
 from hausbuch.ai.client import ModelRequest  # noqa: E402
 from hausbuch.settings import DEFAULT_AI_INFERENCE_GEO  # noqa: E402
@@ -74,7 +74,9 @@ def main(argv: list[str]) -> int:
             "synthetic": False,
             "recorded_on": datetime.now(UTC).date().isoformat(),
             "sdk_version": anthropic.__version__,
-            "classify": _send(client, requests.classify),
+            # A document typed by code (a payment proof, D143) is never classified.
+            "classify": None if requests.classify is None else _send(client, requests.classify),
+            **({"pretyped": typed} if (typed := pretyped(doc)) is not None else {}),
             "extract": extract,
         }
         path = RECORDINGS_DIR / f"{name}.json"

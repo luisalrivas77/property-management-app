@@ -18,6 +18,7 @@ from .ai import ClassifyOutput, ExtractedValue
 from .common import (
     Fraction,
     LivingArea,
+    Money,
     MutableRecord,
     NonNegativeMoney,
     PositiveMoney,
@@ -255,6 +256,26 @@ class ExistingBescheidZve(Schema):
     document_date: date | None = None  # the earlier Bescheid's date, for the note
 
 
+class ExistingPrivateCost(Schema):
+    """Phase 3 D143: a private_cost tax input in force whose document is the bill a payment
+    proof was uploaded for. The year, the label and the gross amount (value.amount)."""
+
+    id: UUID
+    tax_year: int
+    label: str
+    amount: Money | None = None
+
+
+class ExistingProofBill(Schema):
+    """Phase 3 D143: the bill a payment proof is linked to: the acquisition cost rows that
+    carry it as Beleg and its private_cost rows in force, to compare the proof's amount with
+    and to move the rows to the year paid."""
+
+    document_id: UUID
+    acquisition_costs: list[ExistingCost] = Field(default_factory=list)
+    private_costs: list[ExistingPrivateCost] = Field(default_factory=list)
+
+
 class PrefillContext(Schema):
     """Everything build_proposal may look at. Lists are unordered: the result must not
     depend on their order (prefill.yaml runs every case shuffled too)."""
@@ -281,3 +302,5 @@ class PrefillContext(Schema):
     # services.matching.paid_from_rental_account), so no cost paid from another account is
     # proposed for it.
     paid_from_rental_account: bool = False
+    # Phase 3 D143: for a payment proof, the bill it was uploaded for (its document link).
+    proof_bill: ExistingProofBill | None = None

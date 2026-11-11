@@ -360,3 +360,62 @@ test("one deposit line is split to three tenancies from the to-do", async ({ pag
     rooms.map(({ tenancy }) => tenancy).sort(),
   );
 });
+
+// Phase 3 D143: a bill the draft counts without a bank line that paid it is a to-do
+// „Zahlungsnachweis fehlt“; the file uploaded from its button is typed as the payment proof by
+// the server and linked to the bill and the property, and the to-do closes. The e2e API runs
+// without AI, so the proof stays unread and counts as seen.
+test("a bill without a bank line asks for its payment proof, and the upload closes it", async ({ page, signedIn }) => {
+  void signedIn;
+  const origin = new URL(page.url()).origin;
+  const property = await apiCall<{ id: string }>(page, "POST", "/api/properties", {
+    label: "Wohnung Nachweis",
+    kind: "etw",
+    address: { ...address, house_number: "11" },
+    build_year: 1994,
+    notarized_on: "2026-03-10",
+    purchase_date: "2026-07-01",
+    purchase_price: "250000.00",
+  });
+  const bill = await page.request.post("/api/documents", {
+    multipart: {
+      file: { name: "Notarrechnung.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n% Notarrechnung D143\n%%EOF\n") },
+    },
+    headers: { Origin: origin },
+  });
+  expect(bill.status()).toBe(201);
+  const billId = ((await bill.json()) as { id: string }).id;
+  await apiCall(page, "POST", "/api/acquisition-costs", {
+    property_id: property.id,
+    kind: "notary",
+    amount: "1785.00",
+    document_id: billId,
+  });
+
+  await page.goto(`/tax/${YEAR}`);
+  const todos = page.getByRole("region", { name: "Was noch fehlt" });
+  const proof = todos.getByRole("listitem").filter({ hasText: "Zahlungsnachweis fehlt: Die Rechnung Notar" });
+  await expect(proof).toContainText("Überweisungsbeleg");
+  await proof.getByRole("button", { name: "Zahlungsnachweis hochladen" }).click();
+  const uploaded = page.waitForResponse((r) => r.url().endsWith("/api/documents") && r.request().method() === "POST");
+  await proof.getByLabel("Zahlungsnachweis hochladen").setInputFiles({
+    name: "Ueberweisung.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from("%PDF-1.4\n% Ueberweisung Notar D143\n%%EOF\n"),
+  });
+  const response = await uploaded;
+  expect(response.status()).toBe(201);
+  // The stored document, not the request body (an API-client request's body is not readable).
+  const proofId = ((await response.json()) as { id: string }).id;
+  const detail = await apiCall<{
+    document: { typing: { type: string; subtype: string | null } | null };
+    links: { target_type: string; target_id: string }[];
+  }>(page, "GET", `/api/documents/${proofId}`);
+  expect(detail.document.typing).toMatchObject({ type: "other", subtype: "payment_proof" });
+  expect(detail.links.map((l) => `${l.target_type} ${l.target_id}`).sort()).toEqual(
+    [`document ${billId}`, `property ${property.id}`].sort(),
+  );
+
+  // The proof is in: the bill keeps counting and its to-do is gone.
+  await expect(todos.getByRole("listitem").filter({ hasText: "Zahlungsnachweis fehlt" })).toHaveCount(0);
+});

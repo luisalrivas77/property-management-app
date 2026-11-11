@@ -641,6 +641,8 @@ class WarningCode(StrEnum):
     TAX_TRAVEL_FREQUENCY = "tax.travel_frequency"  # D111: more than 50 trips to the flat
     # Phase 2 D135: a cost entered as paid from another account whose bill a bank line paid
     TAX_PRIVATE_COST_PAID_FROM_ACCOUNT = "tax.private_cost_paid_from_account"
+    # Phase 3 D143: a counted bill no bank line paid and no matching payment proof proves
+    PAYMENT_PROOF_MISSING = "payment_proof.missing"
     ANLAGE_N_CERTIFICATE_MISSING = "anlage_n.certificate_missing"
     ANLAGE_N_CHURCH_MISMATCH = "anlage_n.church_mismatch"
     ANLAGE_N_TAX_CLASS_6 = "anlage_n.tax_class_6"
@@ -704,6 +706,7 @@ WARNING_SEVERITY: dict[WarningCode, Severity] = {
     W.ARCHIVE_FINANZAMT_COPY_NEEDED: "info",
     W.TAX_TRAVEL_FREQUENCY: "info",
     W.TAX_PRIVATE_COST_PAID_FROM_ACCOUNT: "warning",
+    W.PAYMENT_PROOF_MISSING: "warning",
     W.ANLAGE_N_CERTIFICATE_MISSING: "warning",
     W.ANLAGE_N_CHURCH_MISMATCH: "warning",
     W.ANLAGE_N_TAX_CLASS_6: "warning",
@@ -854,7 +857,9 @@ class AllocationFact(PaymentFacts):
 class AfaCostRow(Schema):
     """An acquisition cost row of the property record. paid_by: the confirmed acquisition_cost
     allocations the service paired with it (same document, else the same amount); empty =
-    `afa.cost_row_unpaid` (paid_on alone does not count: it may have been paid privately)."""
+    `afa.cost_row_unpaid` for a row without a document (paid_on alone does not count: it may
+    have been paid privately), and the draft's `payment_proof.missing` for a row with one
+    (D143)."""
 
     id: UUID
     kind: AcquisitionCostKind
@@ -1098,6 +1103,16 @@ class OpenLines(Schema):
     sum: Money = Decimal("0")
 
 
+class PaymentProofFact(Schema):
+    """Phase 3 D143: a payment_proof document linked to a bill (document_link target
+    `document`). amount: the magnitude its current reading states; None when it was not read
+    or states no amount (the proof then counts: the user linked it from the to-do)."""
+
+    proof_document_id: UUID
+    bill_document_id: UUID
+    amount: NonNegativeMoney | None = None
+
+
 class DraftFacts(Schema):
     """Everything draft() reads, built by services/tax.py. allocations: every confirmed
     allocation of the property, all years (the 15 % window, §82b and the AfA additions reach
@@ -1118,6 +1133,8 @@ class DraftFacts(Schema):
     today: date | None = None
     coverage: list[AccountCoverage] = Field(default_factory=list)
     pending: OpenLines = OpenLines(count=0)
+    # Phase 3 D143: every payment proof linked to a bill of the property.
+    payment_proofs: list[PaymentProofFact] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _consistent(self) -> Self:

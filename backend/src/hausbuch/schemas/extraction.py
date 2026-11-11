@@ -467,6 +467,30 @@ class IncomeTaxAssessmentExtraction(_Typing):
     )
 
 
+class PaymentProofExtraction(_Typing):
+    """Zahlungsnachweis (other / payment_proof; phase-3.md D143): the proof that a bill was
+    paid, uploaded from the bill's to-do. Only these fields, besides the title and date every
+    reading carries: no IBAN, no account number and no name but the payee is ever asked for,
+    and the quotes are scrubbed of identifiers (jobs.document_read)."""
+
+    paid_on: ExtractedValue = ev(
+        "date",
+        "the day the payment was made: Ausführungsdatum, Buchungstag or Wertstellung of the"
+        " transfer",
+    )
+    amount: ExtractedValue = ev(
+        "money", "the amount transferred, as stated; never a balance, a limit or a fee"
+    )
+    payee: ExtractedValue = ev(
+        "text",
+        "the payee (Empfänger, Zahlungsempfänger) only; never the payer, the account holder or"
+        " any other person",
+    )
+    purpose: ExtractedValue = ev(
+        "text", "the Verwendungszweck as stated, without any account details"
+    )
+
+
 # Phase 2 D139: a Wohnflächenberechnung of a WEG lists every dwelling of the building; code
 # (rules.prefill) picks the household's row by the flat's MEA or WE label, never by a sum.
 DWELLINGS_MEANING = (
@@ -633,6 +657,7 @@ EXTRACTION_MODELS: dict[ExtractionKind, type[_Typing]] = {
     ExtractionKind.EINKOMMENSTEUERBESCHEID: IncomeTaxAssessmentExtraction,
     ExtractionKind.GENERAL: GeneralExtraction,
     ExtractionKind.MANAGEMENT_CONTRACT: ManagementContractExtraction,
+    ExtractionKind.PAYMENT_PROOF: PaymentProofExtraction,
 }
 
 
@@ -672,4 +697,5 @@ AnyExtraction = (
     | IncomeTaxAssessmentExtraction
     | GeneralExtraction
     | ManagementContractExtraction
+    | PaymentProofExtraction
 )

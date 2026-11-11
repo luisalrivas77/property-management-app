@@ -90,7 +90,8 @@ def _warnings(facts: AfaFacts) -> list[DraftWarning]:
             warning(WarningCode.AFA_NO_SPLIT, [SourceRef(kind="property", id=facts.property_id)])
         )
     for row in facts.cost_rows:
-        if not row.paid_by:
+        # D143: a row with its bill but no bank line is the draft's payment_proof.missing.
+        if not row.paid_by and row.document_id is None:
             out.append(
                 warning(
                     WarningCode.AFA_COST_ROW_UNPAID,
