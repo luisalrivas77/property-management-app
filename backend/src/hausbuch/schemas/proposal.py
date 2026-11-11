@@ -274,6 +274,10 @@ class ExistingProofBill(Schema):
     document_id: UUID
     acquisition_costs: list[ExistingCost] = Field(default_factory=list)
     private_costs: list[ExistingPrivateCost] = Field(default_factory=list)
+    # D149: how the card names the bill ("<title> vom <date>, <amount>"): its typing's title
+    # (else the file's name) and date; None when the bill has neither.
+    title: str | None = None
+    document_date: date | None = None
 
 
 class PrefillContext(Schema):
@@ -304,3 +308,8 @@ class PrefillContext(Schema):
     paid_from_rental_account: bool = False
     # Phase 3 D143: for a payment proof, the bill it was uploaded for (its document link).
     proof_bill: ExistingProofBill | None = None
+    # Phase 3 D149: for a payment proof linked to no bill, the bills that still wait for a
+    # proof (the draft's payment_proof.missing, rules.tax.draft.bills_without_proof) of its
+    # property (of every property when it is linked to none), over every year the draft can
+    # be asked for; the pre-fill proposes the one its amount pays.
+    proof_candidates: list[ExistingProofBill] = Field(default_factory=list)

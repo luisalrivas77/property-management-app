@@ -7,7 +7,9 @@ that request and classify the document as it is.
 Answer with the JSON object the response format defines, and nothing else.
 
 `type`, the kind of document:
-- `statement`: a bank account statement (Kontoauszug, Umsatzliste), also a loan account's or a depot's statement
+- `statement`: a bank account statement (Kontoauszug, Umsatzliste): a list of an account's transactions over a
+  period, usually with an opening and a closing balance; also a loan account's or a depot's statement. A receipt
+  for one single payment is never a statement: it is `other` with subtype `payment_proof`
 - `invoice`: an invoice or cost statement (Rechnung, Kostenberechnung, Notarkostenrechnung)
 - `letter`: a letter, notice or protocol that is none of the others (Schreiben, Übergabeprotokoll, Kautionsnachweis)
 - `contract`: a contract (Kaufvertrag, Darlehensvertrag, Mietvertrag)
@@ -68,6 +70,11 @@ Running costs:
 - `utility_bill` (invoice): Jahresabrechnung Strom, Gas, Wasser
 - `quote` (letter): Kostenvoranschlag, Angebot
 - `chimney_sweep_notice` (bescheid): Feuerstättenbescheid, Schornsteinfegerbescheid
+- `payment_proof` (other): the receipt for one single payment, often from a private account: Überweisungsbeleg,
+  Zahlungsbestätigung, Ausführungsbestätigung, Umsatzdetails or Buchungsdetails of one transfer, a bank's one-transaction
+  summary (also in English, e.g. "Transaction Summary", "Transfer details") or a screenshot of one transfer in the
+  banking app. It shows one recipient, one amount, one date and a purpose, and no list of other transactions and no
+  balances. Not a bank statement (that lists many transactions over a period) and not the bill it pays
 
 Income tax:
 - `einkommensteuerbescheid`: the owners' Einkommensteuerbescheid from the Finanzamt ("Bescheid für 20xx über Einkommensteuer, Solidaritätszuschlag und Kirchensteuer"), also an Änderungsbescheid

@@ -13,6 +13,7 @@
 // Miete, the Hausgeldabrechnung), a warning can be a check with nothing to change (the 15 %
 // limit crossed). The "Was noch fehlt" lists (Anlage V tab, Übersicht) show the to-dos only.
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { type ReactNode, useCallback, useId, useState } from "react";
 
 import { api, ok } from "@/api/client";
@@ -59,8 +60,10 @@ export interface GuideContext {
 export type GuideAction =
   | { kind: "link"; href: string; label: string }
   /** Upload and read a document (ReadUpload): the reading proposes the missing figures.
-   * proofFor (payment_proof.missing, phase 3 D143): the upload is this bill's payment proof. */
-  | { kind: "upload"; label: string; proofFor?: string }
+   * proofFor (payment_proof.missing, phase 3 D143): the upload is this bill's payment proof.
+   * proofOffer (D149): a payment proof already stored, linked to no bill, whose amount fits this
+   * bill; „Vorhandenen Nachweis zuordnen“ links it after a confirm. */
+  | { kind: "upload"; label: string; proofFor?: string; proofOffer?: { id: string; amount: string | undefined } }
   /** afa.no_split: select a recorded split, or upload the Kaufvertrag. */
   | { kind: "split" }
   /** income.other_review (D140): open the payment, or re-book it as Kaltmiete after a confirm.
@@ -186,12 +189,21 @@ export const WARNING_GUIDE: Partial<Record<WarningCode, Guide>> = {
       return `Zahlungsnachweis fehlt: ${bill.charAt(0).toUpperCase()}${bill.slice(1)}`;
     },
     text: (p) =>
-      p.proof_amount
+      p.proof_offer
+        ? `Ein schon hochgeladener Zahlungsnachweis${p.proof_offer_amount ? ` über ${formatMoney(p.proof_offer_amount)}` : ""} ist noch keiner Rechnung zugeordnet und passt zu dieser. Mit „Vorhandenen Nachweis zuordnen“ wird er ihr zugeordnet (vorher wird nachgefragt); wurde die Rechnung laut Nachweis in einem anderen Jahr bezahlt, schlägt die App danach das richtige Jahr vor. Ist es nicht der richtige Nachweis, den passenden Beleg hochladen.`
+        : p.proof_amount
         ? `Der hochgeladene Nachweis lautet über ${formatMoney(p.proof_amount)}, die Rechnung über ${formatMoney(p.amount)}. Wurde in Teilen bezahlt, auch den Beleg der übrigen Zahlung hochladen; die Rechnung zählt bis dahin trotzdem mit.`
         : "Die Rechnung zählt schon mit; nur der Beleg fehlt, dass sie bezahlt wurde. Im Online-Banking den Überweisungsbeleg oder die Umsatzdetails dieser einen Zahlung als PDF speichern und hier hochladen, nicht den ganzen Kontoauszug. Die App liest Datum und Betrag; wurde die Rechnung in einem anderen Jahr bezahlt, schlägt sie das richtige Jahr vor.",
     action: (warning) =>
       warning.params?.document
-        ? { kind: "upload", label: "Zahlungsnachweis hochladen", proofFor: warning.params.document }
+        ? {
+            kind: "upload",
+            label: "Zahlungsnachweis hochladen",
+            proofFor: warning.params.document,
+            proofOffer: warning.params.proof_offer
+              ? { id: warning.params.proof_offer, amount: warning.params.proof_offer_amount }
+              : undefined,
+          }
         : null,
   },
   "afa.acquisition_cost_without_row": {
@@ -572,7 +584,14 @@ export function WarningActionView({
     case "link":
       return <Link href={action.href}>{action.label}</Link>;
     case "upload":
-      return <ReadUpload label={action.label} proofFor={action.proofFor} onUploaded={onChanged} />;
+      return (
+        <>
+          {action.proofOffer && action.proofFor ? (
+            <AttachProofAction proof={action.proofOffer} billId={action.proofFor} onChanged={onChanged} />
+          ) : null}
+          <ReadUpload label={action.label} proofFor={action.proofFor} onUploaded={onChanged} />
+        </>
+      );
     case "split":
       return ctx.propertyId ? <SplitAction propertyId={ctx.propertyId} onChanged={onChanged} /> : null;
     case "rebook_rent":
@@ -589,6 +608,72 @@ export function WarningActionView({
     case "living_area":
       return ctx.propertyId ? <LivingAreaAction propertyId={ctx.propertyId} onChanged={onChanged} /> : null;
   }
+}
+
+/** payment_proof.missing with an offer (phase 3 D149): a payment proof already stored and
+ * linked to no bill fits this bill's amount. „Vorhandenen Nachweis zuordnen“ asks first, then
+ * links it through POST /documents/{id}/payment-proof, as the to-do's upload links a new one
+ * (to the bill and its property). When the proof's reading shows a privately paid bill was
+ * paid in another year, the server then proposes moving it to that year (review F1), as a
+ * suggestion on the proof's page, which opens; nothing is moved before the user confirms it. */
+function AttachProofAction({
+  proof,
+  billId,
+  onChanged,
+}: {
+  proof: { id: string; amount: string | undefined };
+  billId: string;
+  onChanged?: () => void;
+}) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  async function confirm(close: () => void) {
+    setBusy(true);
+    setError(null);
+    try {
+      await ok(
+        api.POST("/api/documents/{document_id}/payment-proof", {
+          params: { path: { document_id: proof.id } },
+          body: { bill_id: billId },
+        }),
+      );
+      // A suggestion to move the bill to the year paid waits on the proof's page: open it.
+      const list = await ok(api.GET("/api/documents/{document_id}/proposals", { params: { path: { document_id: proof.id } } }));
+      close();
+      if (list[0]?.status === "ready") {
+        router.push(`/documents/${proof.id}`);
+        return;
+      }
+      onChanged?.();
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <ActionDialog label="Vorhandenen Nachweis zuordnen" title="Vorhandenen Zahlungsnachweis zuordnen" buttonClass="">
+      {(close) => (
+        <>
+          <p>
+            Der schon hochgeladene Zahlungsnachweis{proof.amount ? ` über ${formatMoney(proof.amount)}` : ""} wird dieser Rechnung zugeordnet und
+            gilt dann als Beleg, dass sie bezahlt wurde. Wurde sie laut Nachweis in einem anderen Jahr bezahlt, öffnet sich danach der
+            Nachweis mit dem Vorschlag, sie in diesem Jahr zu zählen. <Link href={`/documents/${proof.id}`}>Nachweis ansehen</Link>
+          </p>
+          <ErrorNotice error={error} />
+          <div className="row">
+            <button type="button" disabled={busy} onClick={() => void confirm(close)}>
+              {busy ? "Speichert …" : "Ja, zuordnen"}
+            </button>
+            <button type="button" className="secondary" onClick={close}>
+              Abbrechen
+            </button>
+          </div>
+        </>
+      )}
+    </ActionDialog>
+  );
 }
 
 /** afa.no_split. One Kaufvertrag split recorded (or one split of any source): a button that

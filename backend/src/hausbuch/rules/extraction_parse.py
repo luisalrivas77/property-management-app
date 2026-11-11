@@ -541,12 +541,18 @@ def scrub_identifiers(text: str, *, reference_year: int | None = None) -> str:
 # its line (an optional colon) takes the whole next non-blank line, the layout of a bank's
 # Umsatzdetail. "Von:", "An:" and "für" are not labels: they are too common in a proof's text
 # (a period "von 01.01. an", a purpose "für Rechnung ...") and would scrub what is kept.
+# D149 (11 Nov 2026): a bank's one-transaction summary also comes in English ("Transaction
+# Summary"), so the payer's English labels count too ("From" stays out, like "Von").
 _PAYER_LABEL = (
     r"auftraggeber(?:in)?|konto-?inhaber(?:in)?|inhaber(?:in)?|zahlungspflichtige[rn]?"
     r"|einzahler(?:in)?|absender(?:in)?|name[ \t]+des[ \t]+konto-?inhabers"
     r"|konto-?(?:nummer|nr\.?)|kto\.?-?nr\.?|konto|bic|swift|blz|bankleitzahl"
     r"|mandats-?referenz|gläubiger-?id(?:entifikationsnummer)?|kunden-?(?:nummer|nr\.?)"
     r"|kd\.?-?nr\.?"
+    r"|account[ \t]+holder|account[ \t]+(?:number|no\.?)|account|payer|sender"
+    r"|ordering[ \t]+(?:party|customer)|originator|debtor|from[ \t]+account"
+    r"|customer[ \t]+(?:number|no\.?|id)|sort[ \t]+code|bank[ \t]+code"
+    r"|mandate[ \t]+reference|creditor[ \t]+id"
 )
 _PAYER_LABEL_ONLY = re.compile(
     rf"{_H}*{_LABEL_START}(?:{_PAYER_LABEL}){_LABEL_END}{_H}*:?{_H}*", re.IGNORECASE
@@ -555,7 +561,8 @@ _PAYER_LABELLED = re.compile(
     rf"{_LABEL_START}(?P<label>{_PAYER_LABEL}){_LABEL_END}(?P<sep>{_H}*:?{_H}*)"
     # The value starts with neither a space, a colon nor a full stop, so a label alone on its
     # line ("Auftraggeber:", "Kd.-Nr.") is left to _under_payer_labels, not cut to "Kd.-Nr…".
-    r"(?P<value>(?=[^\s:.])(?:(?![ \t]{2}|\t|empfänger|zahlungsempfänger|begünstigter)[^\n])+)",
+    r"(?P<value>(?=[^\s:.])(?:(?![ \t]{2}|\t|empfänger|zahlungsempfänger|begünstigter"
+    r"|recipient|beneficiary|payee)[^\n])+)",
     re.IGNORECASE,
 )
 
@@ -898,8 +905,9 @@ _BEFORE_CATALOGUE = frozenset(
 CATALOGUE_SUBTYPES = frozenset(set(DocumentSubtype) - _BEFORE_CATALOGUE)
 # Subtypes only code sets, never the classifier (D138): left out of the classify schema
 # (ai.requests.classify_schema), and dropped should a model answer one anyway.
-# A payment proof (phase 3 D143) is typed by its upload from a bill's to-do, never classified.
-CODE_ONLY_SUBTYPES = frozenset({DocumentSubtype.FINANCING_INVOICE, DocumentSubtype.PAYMENT_PROOF})
+# A payment proof (phase 3 D143) was code-only until D149 (11 Nov 2026): one uploaded through
+# the normal upload is classified too, so it can be proposed for the bill it pays.
+CODE_ONLY_SUBTYPES = frozenset({DocumentSubtype.FINANCING_INVOICE})
 # The types with a reader of their own that no catalogue subtype overrides (D131, decided 10
 # Nov 2026 after the first eval recording read an owner's Lohnsteuerbescheinigung as an
 # Arbeitgeberbescheinigung, which subtype-first routing would have read for title and date

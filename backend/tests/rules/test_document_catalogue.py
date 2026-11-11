@@ -326,14 +326,23 @@ def test_a_financing_bill_is_in_the_loan_group_and_kept_as_a_bill(
     assert got.retain_until == date(2036, 12, 31)
 
 
-def test_the_classifier_never_answers_the_payment_proof():
-    """Phase 3 D143: a payment proof is typed by its upload from a bill's to-do only."""
+def test_the_classifier_answers_the_payment_proof_as_other():
+    """Phase 3 D149 (replaces D143's code-only rule): a receipt for one payment uploaded
+    anywhere is classified as other / payment_proof, whatever type the model put beside it,
+    and read by the payment proof's reader (its scrub follows the reader). The to-do's upload
+    still types it by code and skips the classifier (jobs.document_read)."""
     schema = classify_schema()
-    assert S.PAYMENT_PROOF.value not in json.dumps(schema)
-    assert S.PAYMENT_PROOF in CODE_ONLY_SUBTYPES
-    assert S.PAYMENT_PROOF.value not in load_prompt("classify").text
+    assert S.PAYMENT_PROOF.value in json.dumps(schema)
+    assert S.PAYMENT_PROOF not in CODE_ONLY_SUBTYPES
+    assert S.PAYMENT_PROOF.value in load_prompt("classify").text
     for type_ in (T.OTHER, T.STATEMENT, T.LETTER):
-        assert _classified(type_, S.PAYMENT_PROOF).subtype is None
+        classification = _classified(type_, S.PAYMENT_PROOF)
+        assert (classification.type, classification.subtype) == (T.OTHER, S.PAYMENT_PROOF)
+        assert extraction_kind(classification.type, classification.subtype) is K.PAYMENT_PROOF
+    # a payment proof is never a tenant document by its subtype: the classifier's
+    # contains_tenant_data decides, as for any other document (D16)
+    assert S.PAYMENT_PROOF not in _TENANT_SUBTYPES
+    assert S.PAYMENT_PROOF not in TENANCY_GROUP
 
 
 def test_the_classifier_never_answers_the_financing_bill():

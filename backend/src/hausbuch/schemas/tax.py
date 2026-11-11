@@ -1113,6 +1113,14 @@ class PaymentProofFact(Schema):
     amount: NonNegativeMoney | None = None
 
 
+class UnlinkedProofFact(Schema):
+    """Phase 3 D149: a payment_proof document linked to no bill, of this property or of none.
+    amount: the magnitude its current reading states; None when not read (never offered)."""
+
+    proof_document_id: UUID
+    amount: NonNegativeMoney | None = None
+
+
 class DraftFacts(Schema):
     """Everything draft() reads, built by services/tax.py. allocations: every confirmed
     allocation of the property, all years (the 15 % window, §82b and the AfA additions reach
@@ -1135,6 +1143,9 @@ class DraftFacts(Schema):
     pending: OpenLines = OpenLines(count=0)
     # Phase 3 D143: every payment proof linked to a bill of the property.
     payment_proofs: list[PaymentProofFact] = Field(default_factory=list)
+    # Phase 3 D149: the payment proofs linked to no bill, offered on a bill's to-do when one
+    # fits its amount.
+    unlinked_proofs: list[UnlinkedProofFact] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _consistent(self) -> Self:

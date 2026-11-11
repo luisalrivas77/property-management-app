@@ -5,10 +5,10 @@
  "recorded_on": "2026-11-11",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "77cb7da29af32068",
-  "request_sha256": "3654111135e4b60e054941e433789eca631e58240475e209ada782cbc540baed",
+  "prompt_version": "1a1f1775ce7fd623",
+  "request_sha256": "b35ce2c65ec5177102c87e5cb56a8fd3c1ae9b9c15d246047d6288da82d23649",
   "message": {
-   "id": "msg_011CgwXJUfQq7UFdSWZNAosc",
+   "id": "msg_011CgwipJHSn1tVyqJBNsvav",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 6706,
+    "input_tokens": 6984,
     "output_tokens": 46,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -48,7 +48,7 @@
    "prompt_version": "5a4e4a41623c9f1a",
    "request_sha256": "fef32f0d743ce0ebc8e46d53ada8856a535d18573219d2594aad07865695b86c",
    "message": {
-    "id": "msg_011CgwXJNBVHKMAAxVww4m5B",
+    "id": "msg_011CgwipBcrKt28rmNzv7pK5",
     "container": null,
     "content": [
      {
@@ -59,7 +59,16 @@
      {
       "citations": [
        {
-        "cited_text": "Nachtrag Nr. 1 zum Mietvertrag vom 01.05.2026\r\nzwischen Luis Testkauf (Vermieter)\r\nund Mia Mieterin (Mieterin)\r\nüber die Wohnung Lindenstraße 7, 10115 Berlin, WE 3, Zimmer 2\r\n§ 1 Ab dem 01.09.2026 darf die Mieterin den Kellerraum Nr. ",
+        "cited_text": "Nachtrag Nr. ",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       },
+       {
+        "cited_text": "§ 2 Alle übrigen Vereinbarungen des Mietvertrags bleiben unverändert.\r\n",
         "document_index": 0,
         "document_title": null,
         "end_page_number": 2,

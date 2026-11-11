@@ -83,6 +83,7 @@ from hausbuch.schemas.tax import (
     TaxRent,
     TaxTenancy,
     TaxUnit,
+    UnlinkedProofFact,
 )
 
 from .checklist import checklist_facts
@@ -215,6 +216,7 @@ def draft_facts(
         allocations=allocations,
         tax_inputs=tax_inputs,
         payment_proofs=_payment_proofs(conn, bills),
+        unlinked_proofs=_unlinked_proofs(conn, property_id),
         checklist=checklist,
         today=today,
         coverage=_coverage(conn, accounts),
@@ -331,6 +333,30 @@ def _payment_proofs(conn: Connection, bills: set[UUID]) -> list[PaymentProofFact
             bill_document_id=row.target_document_id,
             amount=_proof_amount(conn, row.document_id),
         )
+        for row in rows
+    ]
+
+
+def _unlinked_proofs(conn: Connection, property_id: UUID) -> list[UnlinkedProofFact]:
+    """D149: the payment_proof documents linked to no bill (no link of target `document`),
+    linked to this property or to no property at all, each with its read amount, for the
+    to-do's „Vorhandenen Nachweis zuordnen“."""
+    k, d = link_table.c, document_table.c
+    linked_to = select(link_table.c.document_id).where(k.document_id == d.id)
+    rows = conn.execute(
+        select(d.id)
+        .where(
+            d.subtype == DocumentSubtype.PAYMENT_PROOF.value,
+            ~exists(linked_to.where(k.target_document_id.is_not(None))),
+            or_(
+                exists(linked_to.where(k.property_id == property_id)),
+                ~exists(linked_to.where(k.property_id.is_not(None))),
+            ),
+        )
+        .order_by(d.id)
+    ).all()
+    return [
+        UnlinkedProofFact(proof_document_id=row.id, amount=_proof_amount(conn, row.id))
         for row in rows
     ]
 

@@ -443,3 +443,57 @@ def test_a_payment_proof_uploaded_for_its_bill_closes_the_to_do(client_a):
         [("document", bill["id"]), ("property", prop["id"])]
     )
     assert proof_warnings() == []
+
+
+def test_a_stored_proof_is_linked_to_its_bill_from_the_to_do(client_a):
+    """Phase 3 D149 over HTTP, „Vorhandenen Nachweis zuordnen“: a document already stored is
+    linked to the bill as the upload from the to-do links it (typed as a payment proof, linked
+    to the bill and the property), and the to-do closes. An unknown bill is 404, the bill
+    itself, a document of another kind and an untyped document are 422 (review F3: an untyped
+    file has no amount read, so it would prove any bill)."""
+    prop = new_property(client_a, notarized_on="2026-03-10", purchase_date="2026-07-01")
+    bill = ok(upload(client_a, b"%PDF-1.7 Notarrechnung D149", filename="notar.pdf"), 201)
+    create(
+        client_a,
+        "/api/acquisition-costs",
+        {
+            "property_id": prop["id"],
+            "kind": "notary",
+            "amount": "1785.00",
+            "document_id": bill["id"],
+        },
+    )
+    proof = ok(upload(client_a, b"%PDF-1.7 Ueberweisung D149", filename="summary.pdf"), 201)
+
+    def attach(document_id: str, bill_id: str):
+        return client_a.post(
+            f"/api/documents/{document_id}/payment-proof", json={"bill_id": bill_id}
+        )
+
+    assert attach(proof["id"], str(uuid4())).status_code == 404
+    assert attach(bill["id"], bill["id"]).status_code == 422
+    other = ok(upload(client_a, b"%PDF-1.7 Kaufvertrag D149"), 201)
+    ok(
+        client_a.put(
+            f"/api/documents/{other['id']}/typing",
+            json={"typing": {"type": "contract", "subtype": "purchase_contract"}},
+        )
+    )
+    assert attach(other["id"], bill["id"]).status_code == 422
+    assert attach(proof["id"], bill["id"]).status_code == 422  # still untyped
+    assert ok(client_a.get(f"/api/documents/{proof['id']}"))["links"] == []
+    ok(
+        client_a.put(
+            f"/api/documents/{proof['id']}/typing",
+            json={"typing": {"type": "other", "subtype": "payment_proof"}},
+        )
+    )
+
+    linked = ok(attach(proof["id"], bill["id"]))
+    assert linked["typing"]["subtype"] == "payment_proof"
+    detail = ok(client_a.get(f"/api/documents/{proof['id']}"))
+    assert sorted((link["target_type"], link["target_id"]) for link in detail["links"]) == sorted(
+        [("document", bill["id"]), ("property", prop["id"])]
+    )
+    draft = ok(client_a.get(f"/api/properties/{prop['id']}/anlage-v", params={"tax_year": 2026}))
+    assert [w for w in draft["warnings"] if w["code"] == "payment_proof.missing"] == []

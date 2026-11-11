@@ -132,6 +132,7 @@ from hausbuch.schemas.proposal import (
     ExistingLoan,
     ExistingOwner,
     ExistingPayRow,
+    ExistingProofBill,
     ExistingProperty,
     ExistingUnit,
     FieldOption,
@@ -148,6 +149,7 @@ from .extraction_parse import house_number_key as _house_number_key
 from .extraction_parse import lone_dwelling as _lone_dwelling
 from .extraction_parse import street_key as _street_key
 from .hand_fields import HAND_FIELD_MAP, HAND_FIELDS, hand_values
+from .proof_match import Fit, bill_total, proof_fit
 from .tax import registry as tax_registry
 from .tax.afa import statutory_months_left
 from .tax.rounding import split_cents
@@ -812,6 +814,12 @@ class _Builder:
             tax_year = self._pay_tax_year()
             if tax_year.value is not None:
                 fields["tax_year"] = tax_year
+        # D149: a payment proof is filed in the year the money left (§11 EStG): paid_on's
+        # year, else its date's, as D146 files a Grunderwerbsteuerbescheid by its due date.
+        if self.kind is ExtractionKind.PAYMENT_PROOF and "tax_year" not in fields:
+            tax_year = self._dated_year(("paid_on", "document_date"))
+            if tax_year is not None:
+                fields["tax_year"] = tax_year
         notes = []
         if self.financing:
             notes.append(_FINANCING_NOTE)
@@ -838,34 +846,95 @@ class _Builder:
         read, every private_cost row of another year than paid_on's is proposed for the year
         paid (private_cost_year:<n>, §11 Abs. 2 EStG); the apply withdraws the row and
         creates its value in that year. An acquisition cost row has no year and is never
-        moved. A mismatch or an unread amount moves nothing and says so on the typing."""
+        moved. A mismatch or an unread amount moves nothing and says so on the typing. The
+        typing names the bill first („Zahlungsnachweis für: <Titel> vom <Datum>, <Betrag>“,
+        with „Betrag passt“ or „Betrag passt nicht“ when the amount was compared, D149).
+        Without a proof_bill, the bills waiting for a proof are offered (_proof_candidates)."""
         bill = self.ctx.proof_bill
         if bill is None:
-            return  # typed by hand, not from a bill's to-do
-        private = sorted(bill.private_costs, key=lambda r: str(r.id))
-        amounts = [r.amount for r in private] + [c.amount for c in bill.acquisition_costs]
-        if not amounts or any(a is None for a in amounts):
-            return  # no amount to compare with (a private cost without one)
-        expected = sum((a for a in amounts if a is not None), Decimal(0))
-        amount_ev = self.ev("amount")
-        read = _decimal(amount_ev.value)
+            self._proof_candidates()  # D149: not uploaded from a bill's to-do
+            return
         typing = self.records[0]
+        amounts = _bill_amounts(bill)
+        read = _decimal(self.ev("amount").value)
+        if amounts is None:
+            typing.notes.append(_PROOF_FOR_NOTE.format(bill=_bill_label(bill)))
+            return  # no amount to compare with (a private cost without one)
+        expected = bill_total(*amounts)
         if read is None:
+            typing.notes.append(_PROOF_FOR_NOTE.format(bill=_bill_label(bill)))
             typing.notes.append(_PROOF_UNREAD_NOTE.format(bill=_euro_de(expected)))
             return
         # The privately paid part alone also matches (a split bill whose purchase part was
         # paid another way), as the draft accepts it (rules/tax/draft._payment_proofs).
-        private_total = sum((r.amount for r in private if r.amount is not None), Decimal(0))
-        totals = [expected] + ([private_total] if private and bill.acquisition_costs else [])
-        if all(abs(abs(read) - total) > _PROOF_TOLERANCE for total in totals):
+        if proof_fit(read, *amounts) is not Fit.WHOLE:
+            typing.notes.append(_PROOF_FOR_NOTE.format(bill=_bill_label(bill)) + _FIT_TEXT[None])
             typing.notes.append(
                 _PROOF_MISMATCH_NOTE.format(proof=_euro_de(abs(read)), bill=_euro_de(expected))
             )
             return
+        typing.notes.append(_PROOF_FOR_NOTE.format(bill=_bill_label(bill)) + _FIT_TEXT[Fit.WHOLE])
+        self._proof_years(bill)
+
+    def _proof_candidates(self) -> None:
+        """D149: a payment proof linked to no bill. The bills that still wait for a proof
+        (context.proof_candidates) are offered on a link:document record {entity_type link,
+        mode create, fields target_id}, each as a one-click option labelled with the bill's
+        title, date and amount and whether the proof's amount fits it (rules.proof_match).
+        Exactly one fits: target_id is it (derived from the amount), and the private_cost rows
+        it would move to the year paid are proposed as on the to-do (D143); several fit, or
+        none: target_id is empty, the user picks one or none. No candidate at all: typing
+        only, with a note that the bill's to-do will offer this proof."""
+        typing = self.records[0]
+        candidates = sorted(self.ctx.proof_candidates, key=_bill_order)
+        if not candidates:
+            typing.notes.append(_PROOF_NO_BILL_NOTE)
+            return
+        amount_ev = self.ev("amount")
+        read = _decimal(amount_ev.value)
+        fits: dict[UUID, Fit | None] = {}
+        for bill in candidates:
+            amounts = _bill_amounts(bill)
+            fits[bill.document_id] = (
+                None if read is None or amounts is None else proof_fit(read, *amounts)
+            )
+        matched = [b for b in candidates if fits[b.document_id] is not None]
+        chosen = matched[0] if len(matched) == 1 else None
+        if chosen is not None:
+            fit = fits[chosen.document_id]
+            target = _derived(str(chosen.document_id), [("amount", amount_ev)])
+            notes = [_PROOF_FOR_NOTE.format(bill=_bill_label(chosen)) + _FIT_TEXT[fit]]
+            if fit is Fit.PART:
+                notes.append(_PROOF_PART_NOTE)
+        else:
+            target = ExtractedValue.missing()
+            if read is None:
+                notes = [_PROOF_PICK_UNREAD_NOTE]
+            elif matched:
+                notes = [_PROOF_PICK_MANY_NOTE.format(count=len(matched))]
+            else:
+                notes = [_PROOF_PICK_NONE_NOTE.format(proof=_euro_de(abs(read)))]
+        self.add(PROOF_LINK_KEY, "link", "create", {"target_id": target}, notes=notes)
+        self.records[-1].options["target_id"] = [
+            FieldOption(
+                value=str(bill.document_id),
+                label=_bill_label(bill)
+                + (_FIT_TEXT[fits[bill.document_id]] if read is not None else ""),
+            )
+            for bill in candidates
+        ]
+        if chosen is not None and fits[chosen.document_id] is Fit.WHOLE:
+            self._proof_years(chosen)
+
+    def _proof_years(self, bill: ExistingProofBill) -> None:
+        """D143: with paid_on read, each private_cost row of the bill in another year than
+        paid_on's is proposed for the year paid (private_cost_year:<n>, rows by id)."""
+        amount_ev = self.ev("amount")
         paid_ev = self.ev("paid_on")
         paid_on = _iso_date(paid_ev.value)
         if paid_on is None:
             return
+        private = sorted(bill.private_costs, key=lambda r: str(r.id))
         n = 0
         for row in private:
             if row.tax_year == paid_on.year:
@@ -952,7 +1021,12 @@ class _Builder:
     def _invoice_tax_year(self) -> ExtractedValue | None:
         """The filing year of an invoice (D36): the year of due_on, else of document_date;
         neither stated, nothing. The year a cost counts in stays the payment's (D31)."""
-        for name in ("due_on", "document_date"):
+        return self._dated_year(("due_on", "document_date"))
+
+    def _dated_year(self, names: Sequence[str]) -> ExtractedValue | None:
+        """The year of the first of these date fields that is read, derived from it; None
+        when none is."""
+        for name in names:
             on = _iso_date(self.ev(name).value)
             if on is not None:
                 return _derived(on.year, [(name, self.ev(name))])
@@ -2677,7 +2751,6 @@ def _month_start(value: Any) -> str | None:
 
 
 # Phase 3 D143: the payment proof's notes.
-_PROOF_TOLERANCE = Decimal("0.01")
 _PROOF_UNREAD_NOTE = (
     "Der Betrag des Zahlungsnachweises wurde nicht gelesen; bitte prüfen, ob er der Rechnung "
     "über {bill} entspricht."
@@ -2691,6 +2764,65 @@ _PROOF_YEAR_NOTE = (
     "„{label}“ zählt bisher im Jahr {old}, wurde aber am {paid} bezahlt: Kosten zählen im Jahr "
     "der Zahlung (§11 Abs. 2 EStG), also {new}."
 )
+# Phase 3 D149: the bill a payment proof pays, named on the card and offered when the proof
+# was not uploaded from that bill's to-do. The link record's key (LinkTarget.DOCUMENT).
+PROOF_LINK_KEY = "link:document"
+_PROOF_FOR_NOTE = "Zahlungsnachweis für: {bill}"
+_FIT_TEXT: dict[Fit | None, str] = {
+    Fit.WHOLE: " – Betrag passt",
+    Fit.PART: " – Betrag passt zu einem Teil der Rechnung",
+    None: " – Betrag passt nicht",
+}
+_PROOF_PART_NOTE = (
+    "Der Betrag passt nur zu einem Teil dieser Rechnung, etwa zum Bescheid eines der beiden "
+    "Käufer. Der Nachweis über den übrigen Betrag fehlt dann noch; die Liste der fehlenden "
+    "Unterlagen fragt weiter danach."
+)
+_PROOF_PICK_MANY_NOTE = (
+    "{count} offene Rechnungen haben diesen Betrag. Bitte die Rechnung wählen, die dieser "
+    "Nachweis bezahlt, oder „keine dieser Rechnungen“."
+)
+_PROOF_PICK_NONE_NOTE = (
+    "Keine offene Rechnung hat den Betrag {proof}. Vielleicht ist die Rechnung noch nicht "
+    "hochgeladen, oder bei einem gemeinsamen Kauf fehlt noch der zweite "
+    "Grunderwerbsteuerbescheid. Bitte die Rechnung wählen, die dieser Nachweis bezahlt, oder "
+    "„keine dieser Rechnungen“."
+)
+_PROOF_PICK_UNREAD_NOTE = (
+    "Der Betrag des Zahlungsnachweises wurde nicht gelesen. Bitte die Rechnung wählen, die er "
+    "bezahlt, oder „keine dieser Rechnungen“."
+)
+_PROOF_NO_BILL_NOTE = (
+    "Keine Rechnung wartet gerade auf einen Zahlungsnachweis. Fehlt einer Rechnung später ihr "
+    "Nachweis und passt der Betrag, kann dieser Nachweis dort mit „Vorhandenen Nachweis "
+    "zuordnen“ zugeordnet werden."
+)
+
+
+def _bill_amounts(bill: ExistingProofBill) -> tuple[list[Decimal], list[Decimal]] | None:
+    """The amounts of a bill's acquisition cost rows and private_cost rows, as
+    rules.proof_match takes them; None when it has no row, or a private_cost row without an
+    amount (nothing to compare with)."""
+    private = [r.amount for r in bill.private_costs]
+    if (not private and not bill.acquisition_costs) or any(a is None for a in private):
+        return None
+    return [c.amount for c in bill.acquisition_costs], [a for a in private if a is not None]
+
+
+def _bill_label(bill: ExistingProofBill) -> str:
+    """ "Rechnung Malerarbeiten vom 03.12.2026, 595,00 €": the bill's title (else
+    "Rechnung"), its date and its combined total, each when known."""
+    label = bill.title or "Rechnung"
+    if bill.document_date is not None:
+        label += f" vom {bill.document_date.strftime('%d.%m.%Y')}"
+    amounts = _bill_amounts(bill)
+    if amounts is not None:
+        label += f", {_euro_de(bill_total(*amounts))}"
+    return label
+
+
+def _bill_order(bill: ExistingProofBill) -> tuple[date, str]:
+    return (bill.document_date or date.max, str(bill.document_id))
 
 
 def _whole_months(start: date, end: date) -> int:

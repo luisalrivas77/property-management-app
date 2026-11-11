@@ -11,7 +11,16 @@ rules = pytest.importorskip("hausbuch.rules.prefill", reason="phase 2 rule not i
 FX = load("prefill")
 assert isinstance(FX, PrefillFixture)
 
-LISTS = ("properties", "units", "owners", "costs", "loans", "tenancies", "tenants")
+LISTS = (
+    "properties",
+    "units",
+    "owners",
+    "costs",
+    "loans",
+    "tenancies",
+    "tenants",
+    "proof_candidates",
+)
 
 
 def _shuffled(context: PrefillContext, seed: int) -> PrefillContext:

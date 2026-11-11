@@ -51,6 +51,10 @@ class Doc:
     # at the document's address with this (build year, handover) must propose the shorter
     # useful life (first tax year, whole years), computed by code from the life and Stichtag.
     expected_useful_life: tuple[int, str, int, int] | None = None
+    # Typed by code before its reading, never classified (phase 3 D143: a payment proof
+    # uploaded from its bill's to-do). A payment proof uploaded anywhere else is classified
+    # (D149).
+    typed_by_code: bool = False
 
 
 DOCS: list[Doc] = [
@@ -1061,6 +1065,47 @@ DOCS: list[Doc] = [
             "payee": "Notar Dr. Max Beispiel",
             "purpose": "Kostenrechnung 2026-0456",
             "document_date": "2027-01-06",
+        },
+        typed_by_code=True,
+    ),
+    Doc(
+        # Phase 3 D149: a receipt for one transfer uploaded through the normal upload, which
+        # the classifier must type other / payment_proof, never statement: a bank's
+        # one-transaction summary in English, as a private account's online banking exports
+        # it (bank, people and numbers invented). It lists no other transaction and no
+        # balance. The payer's name, IBAN and customer number never reach a stored value or
+        # quote (PROOF_IDENTIFIERS), by the English labels (D149).
+        name="zahlungsnachweis_transaction_summary",
+        type="other",
+        subtype="payment_proof",
+        kind="payment_proof",
+        pages=[
+            [
+                "Beispielbank AG",
+                "Transaction Summary",
+                "",
+                "Account holder: Ana Testkauf",
+                f"Account: {IBAN_A}",
+                "Customer number: 7788123",
+                "",
+                "Type: Outgoing transfer",
+                "Recipient: Malerbetrieb Beispiel GmbH",
+                f"Recipient IBAN: {IBAN_B}",
+                "Amount: 595.00 EUR",
+                "Purpose: Rechnung R-2026-311 Malerarbeiten",
+                "Booking date: 14.01.2027",
+                "Value date: 14.01.2027",
+                "Status: Executed",
+                "",
+                "Created on 15.01.2027",
+            ]
+        ],
+        expected={
+            "paid_on": "2027-01-14",
+            "amount": "595.00",
+            "payee": "Malerbetrieb Beispiel GmbH",
+            "purpose": "Rechnung R-2026-311 Malerarbeiten",
+            "document_date": "2027-01-15",
         },
     ),
 ]

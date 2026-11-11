@@ -124,12 +124,15 @@ class SelfLinkError(ValueError):
 
 
 class NotAPaymentProofError(ValueError):
-    """The uploaded file is already stored as another kind of document (phase 3 D143)."""
+    """The uploaded file is already stored as another kind of document (phase 3 D143), or a
+    stored document offered as an existing proof is not typed as one (D149)."""
 
-    def __init__(self, document_id: UUID) -> None:
+    def __init__(self, document_id: UUID, *, untyped: bool = False) -> None:
         super().__init__(
-            f"document {document_id} is already stored as another kind of document, not as a "
-            "payment proof"
+            f"document {document_id} is not typed, so it is not a stored payment proof"
+            if untyped
+            else f"document {document_id} is already stored as another kind of document, not "
+            "as a payment proof"
         )
 
 
@@ -512,7 +515,9 @@ PAYMENT_PROOF_TYPING = DocumentTyping(
 )
 
 
-def attach_payment_proof(ctx: CommandContext, proof_id: UUID, bill_id: UUID) -> Document:
+def attach_payment_proof(
+    ctx: CommandContext, proof_id: UUID, bill_id: UUID, *, existing: bool = False
+) -> Document:
     """Phase 3 D143: the document just uploaded from a bill's to-do „Zahlungsnachweis
     hochladen“ is that bill's payment proof. Types it other / payment_proof (code-only: the
     reading job then skips the classifier, so a private account's statement is never read or
@@ -523,7 +528,12 @@ def attach_payment_proof(ctx: CommandContext, proof_id: UUID, bill_id: UUID) -> 
 
     NotFoundError for an unknown bill; SelfLinkError when the file is the bill itself;
     NotAPaymentProofError when the file is stored typed as anything else;
-    ProofReadPendingError when it is stored untyped with a read queued or running."""
+    ProofReadPendingError when it is stored untyped with a read queued or running.
+
+    `existing` (D149, „Vorhandenen Nachweis zuordnen“): the document is a proof stored
+    before, so it must already be typed as one; an untyped document is refused with
+    NotAPaymentProofError instead of being typed here (an untyped file has no amount read, and
+    the draft counts a proof without an amount as proving its bill)."""
     if proof_id == bill_id:
         raise SelfLinkError(proof_id)
     if _select_document(ctx.conn, bill_id, for_update=False) is None:
@@ -532,6 +542,8 @@ def attach_payment_proof(ctx: CommandContext, proof_id: UUID, bill_id: UUID) -> 
     if proof is None:
         raise NotFoundError(EntityType.DOCUMENT, proof_id)
     if proof.typing is None:
+        if existing:
+            raise NotAPaymentProofError(proof_id, untyped=True)
         if _read_pending(ctx.conn, proof_id):
             raise ProofReadPendingError(proof_id)
         proof = type_document(ctx, proof_id, PAYMENT_PROOF_TYPING)

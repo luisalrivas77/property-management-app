@@ -18,6 +18,7 @@ allocations and tax inputs and returns the draft with every line's sources:
    lines, the owners' parts by largest remainder.
 """
 
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from uuid import UUID
@@ -52,9 +53,11 @@ from hausbuch.schemas.tax import (
     TaxInputKind,
     TrackedAmount,
     UnitRow,
+    UnlinkedProofFact,
     WarningCode,
 )
 
+from .. import proof_match
 from ..document_checklist import build_checklist
 from . import einnahmen, erhaltungsaufwand, hausgeld, schuldzinsen, vorab
 from ._common import (
@@ -273,7 +276,23 @@ def _private_costs(
     return warnings
 
 
-PROOF_TOLERANCE = Decimal("0.01")
+PROOF_TOLERANCE = proof_match.TOLERANCE
+
+
+@dataclass(frozen=True)
+class _ProofNeed:
+    """One part of a bill that needs a proof of payment in a year (D143): the acquisition
+    cost rows that carry it, or its private_cost rows. acquisition and private: the amounts
+    of all the bill's rows (rules.proof_match), whichever part this is."""
+
+    bill: UUID
+    source: str
+    amount: Decimal
+    combined: Decimal
+    refs: list[SourceRef]
+    name: dict[str, str]
+    acquisition: list[Decimal]
+    private: list[Decimal]
 
 
 def _proven(amount: Decimal, proofs: list[Decimal | None]) -> bool:
@@ -288,51 +307,57 @@ def _proven(amount: Decimal, proofs: list[Decimal | None]) -> bool:
 
 
 def _proof_warning(
-    bill: UUID,
-    source: str,
-    amount: Decimal,
-    combined: Decimal,
-    proofs: list[Decimal | None],
-    refs: list[SourceRef],
-    **name: str,
+    need: _ProofNeed, proofs: list[Decimal | None], unlinked: list[UnlinkedProofFact]
 ) -> list[DraftWarning]:
     # A bill split into an acquisition cost part and a private_cost part was usually paid in
     # one transfer: a proof of the whole bill (combined) proves both parts.
-    if _proven(amount, proofs) or _proven(combined, proofs):
+    if _proven(need.amount, proofs) or _proven(need.combined, proofs):
         return []
     extra = {"proof_amount": money_str(sum(proofs, ZERO))} if proofs else {}
+    offer = _proof_offer(need, unlinked)
+    if offer is not None:
+        assert offer.amount is not None  # _proof_offer offers read amounts only
+        extra |= {
+            "proof_offer": str(offer.proof_document_id),
+            "proof_offer_amount": money_str(offer.amount),
+        }
     return [
         warning(
             WarningCode.PAYMENT_PROOF_MISSING,
-            unique([SourceRef(kind="document", id=bill), *refs]),
-            document=str(bill),
-            source=source,
-            **name,
-            amount=money_str(amount),
+            unique([SourceRef(kind="document", id=need.bill), *need.refs]),
+            document=str(need.bill),
+            source=need.source,
+            **need.name,
+            amount=money_str(need.amount),
             **extra,
         )
     ]
 
 
-def _payment_proofs(facts: DraftFacts, tax_year: int) -> list[DraftWarning]:
-    """Phase 3 D143: every bill the draft counts has its proof of payment; a bill without one
-    still counts and raises payment_proof.missing (a to-do with „Zahlungsnachweis hochladen“).
+def _proof_offer(need: _ProofNeed, unlinked: list[UnlinkedProofFact]) -> UnlinkedProofFact | None:
+    """D149: the one payment proof linked to no bill whose read amount fits this bill
+    (rules.proof_match, as the pre-fill proposes a bill for a proof); None when none or
+    several fit, or the bill has a private_cost row without an amount."""
+    fitting = [
+        p
+        for p in unlinked
+        if p.amount is not None
+        and proof_match.proof_fit(p.amount, need.acquisition, need.private) is not None
+    ]
+    return fitting[0] if len(fitting) == 1 else None
 
-    A bill a confirmed allocation carries is proven by its bank line. The bills that need a
-    proof: an acquisition cost row's document, in the purchase year (the year the Nebenkosten
-    were paid), unless a bank line paid the row (paid_by) or the bill; and the document of the
-    year's private_cost rows in force, unless a bank line paid the bill (D135: then the rows
-    are not counted at all). A row without a document is left to acquisition_cost_evidence
-    and afa.cost_row_unpaid.
 
-    A bill split into both kinds of rows keeps one warning per part, but a proof of the
-    combined total (the cost rows' amounts plus the private rows' value.amount) proves both."""
+def _proof_needs(facts: DraftFacts, tax_year: int) -> list[_ProofNeed]:
+    """D143: the parts of bills the draft counts in `tax_year` that need a proof of payment,
+    proven or not. A bill a confirmed allocation carries is proven by its bank line. The bills
+    that need a proof: an acquisition cost row's document, in the purchase year (the year the
+    Nebenkosten were paid), unless a bank line paid the row (paid_by) or the bill; and the
+    document of the year's private_cost rows in force, unless a bank line paid the bill (D135:
+    then the rows are not counted at all). A row without a document is left to
+    acquisition_cost_evidence and afa.cost_row_unpaid. A bill split into both kinds of rows
+    is one need per part; combined is the cost rows' amounts plus the private rows'
+    value.amount."""
     paid_from_account = paid_bills(facts.allocations)
-    proofs: dict[UUID, list[Decimal | None]] = {}
-    for p in facts.payment_proofs:
-        proofs.setdefault(p.bill_document_id, []).append(p.amount)
-    out: list[DraftWarning] = []
-
     cost_bills: dict[UUID, list] = {}
     for row in facts.cost_rows:
         if row.document_id is not None:
@@ -349,34 +374,92 @@ def _payment_proofs(facts: DraftFacts, tax_year: int) -> list[DraftWarning]:
         if r.value.amount is not None:
             combined[r.document_id] = combined.get(r.document_id, ZERO) + r.value.amount
 
+    def amounts(bill: UUID) -> tuple[list[Decimal], list[Decimal], bool]:
+        rows = [r for r in private if r.document_id == bill]
+        known = all(r.value.amount is not None for r in rows)
+        return (
+            [r.amount for r in cost_bills.get(bill, [])],
+            [r.value.amount for r in rows if r.value.amount is not None],
+            known,
+        )
+
+    out: list[_ProofNeed] = []
     purchase = facts.property.purchase_date
     if purchase is not None and purchase.year == tax_year:
         for bill, rows in cost_bills.items():
             if bill in paid_from_account or any(r.paid_by for r in rows):
                 continue
             rows.sort(key=lambda r: str(r.id))
-            out += _proof_warning(
-                bill,
-                "acquisition_cost",
-                sum((r.amount for r in rows), ZERO),
-                combined[bill],
-                proofs.get(bill, []),
-                [SourceRef(kind="acquisition_cost", id=r.id) for r in rows],
-                kind=rows[0].kind.value,
+            acquisition, private_amounts, known = amounts(bill)
+            out.append(
+                _ProofNeed(
+                    bill=bill,
+                    source="acquisition_cost",
+                    amount=sum((r.amount for r in rows), ZERO),
+                    combined=combined[bill],
+                    refs=[SourceRef(kind="acquisition_cost", id=r.id) for r in rows],
+                    name={"kind": rows[0].kind.value},
+                    acquisition=acquisition if known else [],
+                    private=private_amounts if known else [],
+                )
             )
 
     counted = {r.document_id for r in private if r.tax_year == tax_year}
     for bill in sorted(counted, key=str):
         rows = sorted((r for r in private if r.document_id == bill), key=lambda r: str(r.id))
-        out += _proof_warning(
-            bill,
-            "private_cost",
-            sum((r.value.amount for r in rows if r.value.amount is not None), ZERO),
-            combined.get(bill, ZERO),
-            proofs.get(bill, []),
-            [SourceRef(kind="tax_input", id=r.id) for r in rows],
-            label=rows[0].value.label,
+        acquisition, private_amounts, known = amounts(bill)
+        out.append(
+            _ProofNeed(
+                bill=bill,
+                source="private_cost",
+                amount=sum((r.value.amount for r in rows if r.value.amount is not None), ZERO),
+                combined=combined.get(bill, ZERO),
+                refs=[SourceRef(kind="tax_input", id=r.id) for r in rows],
+                name={"label": rows[0].value.label},
+                acquisition=acquisition if known else [],
+                private=private_amounts if known else [],
+            )
         )
+    return out
+
+
+def _proofs_by_bill(facts: DraftFacts) -> dict[UUID, list[Decimal | None]]:
+    proofs: dict[UUID, list[Decimal | None]] = {}
+    for p in facts.payment_proofs:
+        proofs.setdefault(p.bill_document_id, []).append(p.amount)
+    return proofs
+
+
+def bills_without_proof(facts: DraftFacts, tax_year: int) -> list[UUID]:
+    """Phase 3 D149: the bills whose payment_proof.missing the draft of `tax_year` raises
+    (the same test, _proof_needs and _proven), each once, by id: what a payment proof
+    uploaded without a bill may pay."""
+    proofs = _proofs_by_bill(facts)
+    return sorted(
+        {
+            need.bill
+            for need in _proof_needs(facts, tax_year)
+            if not (
+                _proven(need.amount, proofs.get(need.bill, []))
+                or _proven(need.combined, proofs.get(need.bill, []))
+            )
+        },
+        key=str,
+    )
+
+
+def _payment_proofs(facts: DraftFacts, tax_year: int) -> list[DraftWarning]:
+    """Phase 3 D143: every bill the draft counts has its proof of payment; a bill without one
+    still counts and raises payment_proof.missing (a to-do with „Zahlungsnachweis hochladen“),
+    one per part of the bill (_proof_needs); a proof of the combined total proves both parts.
+    D149: when exactly one payment proof linked to no bill (facts.unlinked_proofs) fits the
+    bill by its amount, the warning offers it (params proof_offer, proof_offer_amount), for
+    the to-do's „Vorhandenen Nachweis zuordnen“."""
+    proofs = _proofs_by_bill(facts)
+    unlinked = sorted(facts.unlinked_proofs, key=lambda p: str(p.proof_document_id))
+    out: list[DraftWarning] = []
+    for need in _proof_needs(facts, tax_year):
+        out += _proof_warning(need, proofs.get(need.bill, []), unlinked)
     return out
 
 

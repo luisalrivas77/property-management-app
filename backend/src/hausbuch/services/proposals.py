@@ -29,11 +29,13 @@ from uuid import UUID
 from pydantic import BaseModel, JsonValue, ValidationError
 from sqlalchemy import Connection, exists, insert, null, select, update
 
+from hausbuch.db.tables import document_extraction as extraction_table
 from hausbuch.db.tables import property_acquisition_cost as cost_table
 from hausbuch.db.tables import proposal as proposal_table
 from hausbuch.db.tables import return_input as return_input_table
 from hausbuch.db.tables import workspace as workspace_table
 from hausbuch.jobs import enqueue
+from hausbuch.rules.document_checklist import available_years
 from hausbuch.rules.errors import (
     AI_BLOCKED_TENANT_DATA,
     PROPOSAL_ALREADY_DECIDED,
@@ -44,12 +46,14 @@ from hausbuch.rules.hand_fields import HAND_FIELDS
 from hausbuch.rules.loan_schedule import build_schedule
 from hausbuch.rules.prefill import (
     OTHER_NOTICE,
+    PROOF_LINK_KEY,
     build_proposal,
     grundsteuer_schedule_record,
     grundsteuer_schedule_value,
     replaced_pay_row,
     return_input_value,
 )
+from hausbuch.rules.tax.draft import bills_without_proof
 from hausbuch.schemas.ai import ClassifyOutput, ExtractedValue
 from hausbuch.schemas.api import (
     AcquisitionCostPatch,
@@ -68,7 +72,12 @@ from hausbuch.schemas.api import (
     UnitPatch,
 )
 from hausbuch.schemas.common import Schema, TaxYear
-from hausbuch.schemas.document import DocumentTyping, ManualDocumentFields
+from hausbuch.schemas.document import (
+    Document,
+    DocumentExtraction,
+    DocumentTyping,
+    ManualDocumentFields,
+)
 from hausbuch.schemas.employment import (
     RETURN_INPUT_VALUES,
     ReturnInput,
@@ -79,6 +88,7 @@ from hausbuch.schemas.employment import (
 from hausbuch.schemas.enums import (
     ActorType,
     DocumentSubtype,
+    DocumentType,
     EntityType,
     ExtractionKind,
     IncomeInputKind,
@@ -137,11 +147,13 @@ from . import (
     matching,
     owners,
     properties,
+    tax,
     tax_inputs,
     tenancies,
     tenants,
     units,
 )
+from .checklist import checklist_facts
 from .context import CommandContext
 from .errors import NotFoundError, RuleViolationError
 from .events import append_event
@@ -319,6 +331,120 @@ def rerun_proposal(
     return request_read(ctx, document_id, contains_tenant_data=contains_tenant_data)
 
 
+# --- A payment proof linked after its reading (phase 3 D149) ------------------------------
+
+
+def attach_stored_proof(ctx: CommandContext, proof_id: UUID, bill_id: UUID) -> Document:
+    """POST /documents/{id}/payment-proof, the to-do „Vorhandenen Nachweis zuordnen“: link a
+    payment proof stored before to the bill it pays (documents.attach_payment_proof with
+    `existing`: an untyped document is refused), then, in the same transaction, propose
+    moving the bill's privately paid rows to the year the proof says it was paid
+    (propose_proof_years). A ready suggestion of the proof that still offers bills to pick
+    (link:document) is superseded: the bill is chosen now."""
+    document = documents.attach_payment_proof(ctx, proof_id, bill_id, existing=True)
+    if propose_proof_years(ctx, proof_id) is None:
+        stale = [
+            p
+            for p in list_document_proposals(ctx.conn, proof_id)
+            if p.status is ProposalStatus.READY and any(r.key == PROOF_LINK_KEY for r in p.records)
+        ]
+        for old in stale:
+            _set(ctx, old.id, status=ProposalStatus.SUPERSEDED, error_code=None)
+            append_event(ctx, EventType.PROPOSAL_SUPERSEDED, old.id, _noted(old))
+    return document
+
+
+def propose_proof_years(
+    ctx: CommandContext, proof_id: UUID, *, proposed_rows: frozenset[UUID] = frozenset()
+) -> Proposal | None:
+    """Phase 3 D149 (review F1): a payment proof was linked to its bill after its reading
+    (a bill picked on its suggestion, or „Vorhandenen Nachweis zuordnen“), so the reading's
+    D143 proposal to move the bill's private_cost rows to the year paid never ran. Rebuilds it
+    from the stored reading, without a model call: build_proposal over the proof's latest
+    payment_proof extraction, with the bill now found through the link (prefill_context's
+    proof_bill), so the to-do's own rule decides (the amount fits the bill as a whole and
+    paid_on is read). Only its private_cost_year records are kept, the first carrying the
+    note that names the bill; nothing is stored when there are none (the years agree, the
+    amount does not fit, paid_on is unread, or the proof has no such reading).
+
+    `proposed_rows`: the private_cost rows the applied suggestion already proposed to move
+    (applied or declined there); when the bill has one of them, nothing is proposed again.
+
+    The new proposal is `ready` (kind payment_proof, the reading's extraction and AI call),
+    the proof's other undecided proposals superseded, so the proof has one suggestion. The
+    user confirms it on the proof's page (principle 3); nothing is moved here."""
+    bill = _proof_bill(ctx.conn, proof_id)
+    if bill is None or any(r.id in proposed_rows for r in bill.private_costs):
+        return None
+    reading = _payment_proof_reading(ctx.conn, proof_id)
+    if reading is None:
+        return None
+    classification = ClassifyOutput(
+        type=DocumentType.OTHER,
+        subtype=DocumentSubtype.PAYMENT_PROOF,
+        contains_tenant_data=False,
+        language="de",
+        confidence="high",
+    )
+    built = build_proposal(
+        ExtractionKind.PAYMENT_PROOF,
+        reading.fields,  # type: ignore[arg-type]
+        prefill_context(ctx.conn, proof_id, classification),
+    )
+    notes = built[0].notes if built and built[0].key == "typing" else []
+    records = [r for r in built if _prefix(r.key) == "private_cost_year"]
+    if not records:
+        return None
+    records[0] = records[0].model_copy(update={"notes": [*notes, *records[0].notes]})
+    pending = ctx.conn.execute(
+        select(proposal_table)
+        .where(proposal_table.c.document_id == proof_id)
+        .where(proposal_table.c.status.in_([s.value for s in _RERUN_SUPERSEDES]))
+        .order_by(proposal_table.c.created_at, proposal_table.c.id)
+        .with_for_update()
+    ).all()
+    for row in pending:
+        old = _to_proposal(row)
+        _set(ctx, old.id, status=ProposalStatus.SUPERSEDED, error_code=None)
+        append_event(ctx, EventType.PROPOSAL_SUPERSEDED, old.id, _noted(old))
+    row = ctx.conn.execute(
+        insert(proposal_table)
+        .values(
+            workspace_id=ctx.workspace_id,
+            document_id=proof_id,
+            status=ProposalStatus.READY.value,
+            kind=ExtractionKind.PAYMENT_PROOF.value,
+            extraction_id=reading.id,
+            ai_call_id=reading.ai_call_id,
+            target_mode=ProposalTargetMode.PATCH.value,
+            targets=[
+                {"key": r.key, "entity_type": str(r.entity_type), "target_id": str(r.target_id)}
+                for r in records
+            ],
+            fields=[r.model_dump(mode="json") for r in records],
+            created_at=ctx.now,
+            updated_at=ctx.now,
+        )
+        .returning(*proposal_table.c)
+    ).one()
+    proposal = _to_proposal(row)
+    append_event(ctx, EventType.PROPOSAL_CREATED, proposal.id, ProposalNoted(document_id=proof_id))
+    return proposal
+
+
+def _payment_proof_reading(conn: Connection, document_id: UUID) -> DocumentExtraction | None:
+    """The document's latest payment_proof extraction (a manual version written on top holds
+    the hand fields only, not paid_on), or None."""
+    row = conn.execute(
+        select(extraction_table)
+        .where(extraction_table.c.document_id == document_id)
+        .where(extraction_table.c.kind == ExtractionKind.PAYMENT_PROOF.value)
+        .order_by(extraction_table.c.version.desc())
+        .limit(1)
+    ).one_or_none()
+    return None if row is None else DocumentExtraction.model_validate(dict(row._mapping))
+
+
 # --- The job's two seams -----------------------------------------------------------------
 
 
@@ -424,7 +550,16 @@ def record_read_result(
         ExtractionKind.INVOICE,
         ExtractionKind.BESCHEID,
     ) and matching.paid_from_rental_account(ctx.conn, document_id, iban_key=iban_key)
-    context = prefill_context(ctx.conn, document_id, classification, paid_from_rental_account=paid)
+    context = prefill_context(
+        ctx.conn,
+        document_id,
+        classification,
+        paid_from_rental_account=paid,
+        # D149: only a payment proof's reading looks for the bills it may pay
+        today=ctx.now.astimezone(documents.LOCAL_TIME_ZONE).date()
+        if built_kind is ExtractionKind.PAYMENT_PROOF
+        else None,
+    )
     records = build_proposal(built_kind, extraction, context)
     if extraction_id is None and records and records[0].key == "typing":
         # No reading of its own: the hand fields come from the current extraction, whose
@@ -500,9 +635,13 @@ def prefill_context(
     classification: ClassifyOutput,
     *,
     paid_from_rental_account: bool = False,
+    today: date | None = None,
 ) -> PrefillContext:
-    """The workspace's records as the plain facts build_proposal reads (§6.3)."""
+    """The workspace's records as the plain facts build_proposal reads (§6.3). `today` (the
+    local date) picks the years a payment proof's candidate bills are looked for in (D149);
+    without it, none are."""
     props = properties.list_properties(conn)
+    proof_bill = _proof_bill(conn, document_id)
     unit_rows = [u for p in props for u in units.list_units(conn, p.id)]
     return PrefillContext(
         document_id=document_id,
@@ -568,7 +707,14 @@ def prefill_context(
             )
             for row in _current_bescheid_rows(conn)
         ],
-        proof_bill=_proof_bill(conn, document_id),
+        proof_bill=proof_bill,
+        proof_candidates=(
+            _proof_candidates(conn, document_id, today)
+            if proof_bill is None
+            and today is not None
+            and classification.subtype is DocumentSubtype.PAYMENT_PROOF
+            else []
+        ),
     )
 
 
@@ -585,6 +731,45 @@ def _proof_bill(conn: Connection, document_id: UUID) -> ExistingProofBill | None
     if len(bills) != 1:
         return None
     (bill,) = bills
+    return _bill_facts(conn, bill)
+
+
+def _proof_candidates(conn: Connection, document_id: UUID, today: date) -> list[ExistingProofBill]:
+    """Phase 3 D149: for a payment proof linked to no bill, the bills that still wait for a
+    proof: those whose payment_proof.missing the property's draft raises in any year it can be
+    asked for (rules.tax.draft.bills_without_proof, the draft's own test), on the property the
+    proof is linked to, else on every property of the workspace. Empty for a proof linked to
+    a bill already (several bills, Q-O54)."""
+    links = documents.list_links(conn, document_id)
+    if any(link.target_type is LinkTarget.DOCUMENT for link in links):
+        return []
+    linked = sorted(
+        {link.target_id for link in links if link.target_type is LinkTarget.PROPERTY}, key=str
+    )
+    property_ids = linked or [p.id for p in properties.list_properties(conn)]
+    bills: set[UUID] = set()
+    for property_id in property_ids:
+        checklist, docs = checklist_facts(conn, property_id)
+        years = available_years(checklist, today)
+        facts = tax.draft_facts(
+            conn,
+            property_id,
+            tax_year=years[-1],
+            today=today,
+            checklist=checklist,
+            documents=docs,
+        )
+        for year in years:
+            bills.update(bills_without_proof(facts, year))
+    bills.discard(document_id)
+    return [_bill_facts(conn, bill) for bill in sorted(bills, key=str)]
+
+
+def _bill_facts(conn: Connection, bill: UUID) -> ExistingProofBill:
+    """A bill's acquisition cost rows (it as Beleg) and private_cost rows in force, and its
+    title (else the file's name) and date for the card (D143, D149)."""
+    document = documents.get_document(conn, bill)
+    typing = None if document is None else document.typing
     rows = tax_inputs.current_of_document(conn, bill, TaxInputKind.PRIVATE_COST)
     costs = conn.execute(
         select(cost_table).where(cost_table.c.document_id == bill).order_by(cost_table.c.id)
@@ -607,6 +792,9 @@ def _proof_bill(conn: Connection, document_id: UUID) -> ExistingProofBill | None
             for r in rows
             if r.tax_year is not None
         ],
+        title=(None if typing is None else typing.title)
+        or (None if document is None else document.original_filename),
+        document_date=None if typing is None else typing.document_date,
     )
 
 
@@ -741,6 +929,7 @@ def apply_proposal(
 
     applied = [run.applied[r.key] for r in current.records]
     decisions = {r.key: _decisions(r, given.get(r.key)) for r in current.records}
+    linked_bill = run.entity(PROOF_LINK_KEY)
     updated = _set(
         ctx,
         proposal_id,
@@ -771,6 +960,18 @@ def apply_proposal(
             ],
         ),
     )
+    if linked_bill is not None:
+        # D149 (review F1): a bill the user picked was not the one the moves were built for;
+        # the D143 moves for it are proposed now, after this proposal is applied.
+        propose_proof_years(
+            ctx,
+            current.document_id,
+            proposed_rows=frozenset(
+                r.target_id
+                for r in current.records
+                if _prefix(r.key) == "private_cost_year" and r.target_id is not None
+            ),
+        )
     return ProposalApplyResult(proposal=updated, applied=applied)
 
 
@@ -1148,6 +1349,14 @@ class _Apply:
         if target is None:
             raise ValueError(f"record {record.key!r} has no {target_type} to link to")
         target = _validate(record.key, _LinkValues, {"target_id": str(target)}).target_id
+        if target_type is LinkTarget.DOCUMENT:
+            # Phase 3 D149: a payment proof's bill, one of the bills the proposal offered,
+            # linked as the to-do's upload links it (D143): to the bill and its properties.
+            offered = {o.value for o in record.options.get("target_id", [])}
+            if str(target) not in offered:
+                raise ValueError(f"record {record.key!r}: that bill was not offered")
+            documents.attach_payment_proof(self.ctx, self.document_id, target)
+            return target
         # Already linked: the existing link is the one the apply asks for.
         with suppress(documents.DuplicateLinkError):
             documents.link_document(self.ctx, self.document_id, target_type, target)
@@ -1167,6 +1376,13 @@ class _Apply:
         row = tax_inputs.get_tax_input(self.ctx.conn, record.target_id)
         if row is None or row.kind is not TaxInputKind.PRIVATE_COST:
             raise NotFoundError(tax_inputs.TAX_INPUT, record.target_id)
+        # D149: a proof uploaded without a bill moves the rows of the bill it is linked to in
+        # this apply only (link:document, applied before), never of a bill the user did not
+        # pick.
+        if PROOF_LINK_KEY in self.records and self.entity(PROOF_LINK_KEY) != row.document_id:
+            raise ValueError(
+                f"record {record.key!r}: its bill is not the one this proof is linked to"
+            )
         if row.tax_year == year:
             return row.id
         current = tax_inputs.find_current(

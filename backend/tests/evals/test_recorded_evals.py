@@ -54,6 +54,7 @@ OWNERS_ONLY = (
     "verwaltervertrag",
     "wohnflaechenberechnung",
     "zahlungsnachweis",
+    "zahlungsnachweis_transaction_summary",
     "restnutzungsdauer_gutachten",
 )
 
@@ -240,6 +241,7 @@ SCRUBBED_DOCUMENTS = (
     | {"einkommensteuerbescheid": BESCHEID_IDENTIFIERS}
     | GENERAL_IDENTIFIERS
     | {"zahlungsnachweis": PROOF_IDENTIFIERS}
+    | {"zahlungsnachweis_transaction_summary": PROOF_IDENTIFIERS}
 )
 
 
@@ -349,11 +351,12 @@ def test_the_general_reading_stores_no_identifier_or_home_address(name):
     _assert_scrubbed(doc, printed)
 
 
-def test_the_payment_proof_stores_no_payer_identifier():
+@pytest.mark.parametrize("name", ["zahlungsnachweis", "zahlungsnachweis_transaction_summary"])
+def test_the_payment_proof_stores_no_payer_identifier(name):
     """Phase 3 D143: the payer's name, IBAN and customer number on a payment proof never reach
     the values or quotes the job stores, while the payee, the amount, the date and the purpose
-    still check out."""
-    doc = DOCS_BY_NAME["zahlungsnachweis"]
+    still check out; also on a classified one in English (D149)."""
+    doc = DOCS_BY_NAME[name]
     printed = _printed(doc, PROOF_IDENTIFIERS)
     assert set(printed) == set(PROOF_IDENTIFIERS)  # every one is on the page
     _assert_scrubbed(doc, printed)

@@ -3520,6 +3520,57 @@
         }
       }
     },
+    "/api/documents/{document_id}/payment-proof": {
+      "post": {
+        "summary": "Document Payment Proof",
+        "description": "Phase 3 D149, the to-do „Vorhandenen Nachweis zuordnen“: this document, a payment proof\nalready stored, pays the bill `bill_id`. Linked as the upload from the to-do links it\n(D143): to the bill and the bill's properties; a link that exists is kept. When the\nproof's reading shows the bill's privately paid rows were paid in another year, a\nsuggestion to move them waits on the proof's page (review F1, nothing moved yet). 404 for\nan unknown document or bill, 422 when it is the bill itself, is not typed as a payment\nproof (an untyped document too).",
+        "operationId": "document_payment_proof_api_documents__document_id__payment_proof_post",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Document Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PaymentProofBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Document"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/documents/{document_id}/links/{target_type}/{target_id}": {
       "delete": {
         "summary": "Document Unlink",
@@ -15796,6 +15847,22 @@
         ],
         "title": "PasskeyVerifyRequest",
         "description": "POST /auth/passkeys/verify: a further passkey for the signed-in user."
+      },
+      "PaymentProofBody": {
+        "properties": {
+          "bill_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Bill Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "bill_id"
+        ],
+        "title": "PaymentProofBody",
+        "description": "Phase 3 D149: the bill an existing payment proof pays (the to-do's „Vorhandenen\nNachweis zuordnen“)."
       },
       "PaymentProofExtraction": {
         "properties": {
