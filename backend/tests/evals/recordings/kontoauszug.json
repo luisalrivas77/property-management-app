@@ -2,13 +2,13 @@
  "format": 1,
  "doc": "kontoauszug",
  "synthetic": false,
- "recorded_on": "2026-11-10",
+ "recorded_on": "2026-11-11",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "de0ab828a4c10d64",
-  "request_sha256": "a07fb78d32afc9606a8ce740a3cd0c9211989c3f811d4796db5162a8ec1e7734",
+  "prompt_version": "77cb7da29af32068",
+  "request_sha256": "789be9e2a0a7f9fa653cc5faa989369d20461053edb4f78ce67ad282ed7bc64b",
   "message": {
-   "id": "msg_011CguyNeVszn5G89wo17TqN",
+   "id": "msg_011CgwXGfNnLWeFP4DQBJ6ZE",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 6530,
+    "input_tokens": 6665,
     "output_tokens": 41,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -48,7 +48,7 @@
    "prompt_version": "5a4e4a41623c9f1a",
    "request_sha256": "480f8dfb85cf314cf0f74605fe651937053544c65606cf369f6a13de5c08b267",
    "message": {
-    "id": "msg_011CguyNTX5sgWuRffdJJL2b",
+    "id": "msg_011CgwXGVEM6i8ud4syEQXsJ",
     "container": null,
     "content": [
      {
@@ -68,7 +68,7 @@
         "type": "page_location"
        }
       ],
-      "text": "Kontoauszug",
+      "text": "Kontoauszug Mai 2026",
       "type": "text"
      },
      {
@@ -208,7 +208,7 @@
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
      "input_tokens": 3655,
-     "output_tokens": 316,
+     "output_tokens": 322,
      "output_tokens_details": {
       "thinking_tokens": 0
      },

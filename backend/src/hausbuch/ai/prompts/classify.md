@@ -59,7 +59,7 @@ The tenancy:
 - `deposit_record`: Kautionsnachweis, a record of the rent deposit
 - `rent_increase` (letter): Mieterhöhung, Staffel- oder Indexmietanpassung
 - `termination_notice` (letter): Kündigung, Mietaufhebungsvertrag
-- `tenant_self_disclosure` (other): Mieterselbstauskunft, Schufa-Auskunft, Einkommensnachweis eines Mieters. An Einkommensteuerbescheid, a payslip or a Schufa-Auskunft that a tenant or a rental applicant handed in as proof of income is this subtype, never the owners' own document
+- `tenant_self_disclosure` (other): Mieterselbstauskunft, Schufa-Auskunft, Einkommensnachweis eines Mieters. An Einkommensteuerbescheid, a payslip or a Schufa-Auskunft that a tenant or a rental applicant handed in as proof of income is this subtype, never the owners' own document; its `type` is `other`, also when it reads like a letter or has proofs attached
 - `landlord_confirmation` (letter): Wohnungsgeberbestätigung
 - `operating_costs_statement` (letter): Betriebskostenabrechnung an den Mieter
 - `tenant_correspondence` (letter): Mängelanzeige, Schreiben von oder an einen Mieter

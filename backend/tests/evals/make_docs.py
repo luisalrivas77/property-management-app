@@ -47,6 +47,10 @@ class Doc:
     # Bescheide), as the model writes it: field -> text. It has no passage to quote, so it may
     # come back without a citation (the real recording does); its cost lines must sum to it.
     as_written: dict[str, str] = field(default_factory=dict)
+    # A Restnutzungsdauer-Gutachten (phase 2 D147): the pre-fill run on the reading for a flat
+    # at the document's address with this (build year, handover) must propose the shorter
+    # useful life (first tax year, whole years), computed by code from the life and Stichtag.
+    expected_useful_life: tuple[int, str, int, int] | None = None
 
 
 DOCS: list[Doc] = [
@@ -855,6 +859,53 @@ DOCS: list[Doc] = [
             ("WE 4", "58.80", "79/1000"),
             ("WE 5", "74.90", "103/1000"),
         ],
+    ),
+    # D147: a Gutachten proving a shorter remaining useful life (§7 Abs. 4 S. 2 EStG) is an
+    # appraisal, never a building record. It prints the Gesamtnutzungsdauer and the age next to
+    # the life it concludes, and a report date apart from the Stichtag, so only the right ones
+    # pass. 21 years at 15.01.2026, handover 01.04.2026: 2 whole months, 250 months, 21 years.
+    Doc(
+        name="restnutzungsdauer_gutachten",
+        type="other",
+        subtype="appraisal",
+        kind="general",
+        pages=[
+            [
+                "Sachverständigenbüro Beispiel",
+                "",
+                "Gutachten zum Nachweis einer kürzeren tatsächlichen Nutzungsdauer",
+                "gemäß § 7 Abs. 4 Satz 2 EStG",
+                "",
+                "Bewertungsobjekt: Eigentumswohnung Nr. 3",
+                "Lindenstraße 7, 10115 Berlin",
+                "Baujahr des Gebäudes: 1968",
+                "Wertermittlungsstichtag: 15.01.2026",
+                "Tag der Ortsbesichtigung: 22.01.2026",
+            ],
+            [
+                "3. Ermittlung der Restnutzungsdauer",
+                "",
+                "Übliche Gesamtnutzungsdauer (Anlage 1 ImmoWertV): 80 Jahre",
+                "Alter des Gebäudes am Stichtag: 58 Jahre",
+                "Wegen des Zustands von Dach, Fassade und Leitungen (siehe Abschnitt 2)",
+                "ist die Nutzungsdauer kürzer als nach dem Modell.",
+                "",
+                "Ergebnis: Die tatsächliche Restnutzungsdauer des Gebäudes",
+                "beträgt zum Wertermittlungsstichtag 21 Jahre.",
+                "",
+                "Berlin, den 10.02.2026",
+                "Dipl.-Ing. Max Beispielgutachter",
+            ],
+        ],
+        expected={
+            "document_date": "2026-02-10",
+            "street": "Lindenstraße",
+            "house_number": "7",
+            "postal_code": "10115",
+            "remaining_useful_life": "21",
+            "valuation_date": "2026-01-15",
+        },
+        expected_useful_life=(1968, "2026-04-01", 2026, 21),
     ),
     # Vorauszahlungsbescheid vs Einkommensteuerbescheid: it names the assessment it follows.
     # The Steuernummer and the couple's address are invented; the general reading asks

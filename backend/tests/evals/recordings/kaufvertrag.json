@@ -2,13 +2,13 @@
  "format": 1,
  "doc": "kaufvertrag",
  "synthetic": false,
- "recorded_on": "2026-11-10",
+ "recorded_on": "2026-11-11",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "de0ab828a4c10d64",
-  "request_sha256": "5468a62305c672fbf15f87c5fae0e9616f07d197d64d0022ff831d3c9a71b1de",
+  "prompt_version": "77cb7da29af32068",
+  "request_sha256": "c6dee8b76b0c6443869aa638bd54fbf0d40c6adcddb8238a1f6823cd8bcb3aca",
   "message": {
-   "id": "msg_011CguyJBJuqA3pLSGkPGeVa",
+   "id": "msg_011CgwXBwCeg2o6ttUXMhZuo",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 9906,
+    "input_tokens": 10041,
     "output_tokens": 46,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -48,7 +48,7 @@
    "prompt_version": "5a4e4a41623c9f1a",
    "request_sha256": "4156fd2b7537a64451ef799cffed38f77a1ae5939d2388ba77fc47e46320b6ef",
    "message": {
-    "id": "msg_011CguyHwUDNuT8KD5mBnpjV",
+    "id": "msg_011CgwXBhFkztyeLdBmrUCYd",
     "container": null,
     "content": [
      {
@@ -88,7 +88,7 @@
         "type": "page_location"
        }
       ],
-      "text": "12.02.2026",
+      "text": "12. Februar 2026",
       "type": "text"
      },
      {
@@ -208,7 +208,7 @@
         "type": "page_location"
        }
       ],
-      "text": "12.02.2026",
+      "text": "12. Februar 2026",
       "type": "text"
      },
      {
@@ -388,7 +388,7 @@
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
      "input_tokens": 7411,
-     "output_tokens": 522,
+     "output_tokens": 526,
      "output_tokens_details": {
       "thinking_tokens": 0
      },

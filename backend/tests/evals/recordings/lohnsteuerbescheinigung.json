@@ -2,13 +2,13 @@
  "format": 1,
  "doc": "lohnsteuerbescheinigung",
  "synthetic": false,
- "recorded_on": "2026-11-10",
+ "recorded_on": "2026-11-11",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "de0ab828a4c10d64",
-  "request_sha256": "efe182ffef883883a68b51314a723b83049a5d663b52d7f350e6cbb4d595d41d",
+  "prompt_version": "77cb7da29af32068",
+  "request_sha256": "46d5eaed621f53f639f68d6e36d6c2fa4fa235ada073db3ceda3e5bd49698dcb",
   "message": {
-   "id": "msg_011CguyMhHnsnQNJksntKasx",
+   "id": "msg_011CgwXFpqGer7f7N7DzTGwD",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 8714,
+    "input_tokens": 8849,
     "output_tokens": 52,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -48,7 +48,7 @@
    "prompt_version": "5a4e4a41623c9f1a",
    "request_sha256": "d00e2a6b6bcb095febf665386b0071844cb4c45d9dccb09ffed0da639f72c9bb",
    "message": {
-    "id": "msg_011CguyMQJ64GXpcEfHqDQRF",
+    "id": "msg_011CgwXFXPHjTsgBK2vnw63Y",
     "container": null,
     "content": [
      {
@@ -239,7 +239,7 @@
      {
       "citations": [
        {
-        "cited_text": "60.000,00\r\n4. ",
+        "cited_text": "Bruttoarbeitslohn einschl. Sachbezüge ohne 9. und 10. 60.000,00\r\n4. ",
         "document_index": 0,
         "document_title": null,
         "end_page_number": 3,
@@ -259,7 +259,7 @@
      {
       "citations": [
        {
-        "cited_text": "9.192,00\r\n6. ",
+        "cited_text": "Einbehaltene Lohnsteuer von 3. 9.192,00\r\n6. ",
         "document_index": 0,
         "document_title": null,
         "end_page_number": 3,
@@ -279,7 +279,7 @@
      {
       "citations": [
        {
-        "cited_text": "735,36\r\n15. ",
+        "cited_text": "Einbehaltene Kirchensteuer des Arbeitnehmers von 3. 735,36\r\n15. ",
         "document_index": 0,
         "document_title": null,
         "end_page_number": 3,
@@ -448,7 +448,7 @@
      "cache_read_input_tokens": 0,
      "inference_geo": "us",
      "input_tokens": 7106,
-     "output_tokens": 712,
+     "output_tokens": 728,
      "output_tokens_details": {
       "thinking_tokens": 0
      },

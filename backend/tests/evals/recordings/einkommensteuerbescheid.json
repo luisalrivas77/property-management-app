@@ -2,13 +2,13 @@
  "format": 1,
  "doc": "einkommensteuerbescheid",
  "synthetic": false,
- "recorded_on": "2026-11-10",
+ "recorded_on": "2026-11-11",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "de0ab828a4c10d64",
-  "request_sha256": "6abea5319ff3141c5be0f3f6eeeb8b52315503a570985876e46ea265a37bb61f",
+  "prompt_version": "77cb7da29af32068",
+  "request_sha256": "cf0a988e06a09bb4a8b935e994fd1100b6ae6e2a81f526f73e27091c55f89575",
   "message": {
-   "id": "msg_011CguyNMXg5bZncvJ4hMvAf",
+   "id": "msg_011CgwXGQRs8gDFsxTfnQxJt",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 8452,
+    "input_tokens": 8587,
     "output_tokens": 53,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -48,7 +48,7 @@
    "prompt_version": "5a4e4a41623c9f1a",
    "request_sha256": "ce435a5aa37d3fdb3b58ce86802b302d370677b08aa806a3862581d74f7f12b8",
    "message": {
-    "id": "msg_011CguyNCWT9qY3uQLMzBbT2",
+    "id": "msg_011CgwXGHEmT4ohN7BqJ3VxE",
     "container": null,
     "content": [
      {

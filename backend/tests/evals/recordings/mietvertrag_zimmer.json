@@ -2,13 +2,13 @@
  "format": 1,
  "doc": "mietvertrag_zimmer",
  "synthetic": false,
- "recorded_on": "2026-11-10",
+ "recorded_on": "2026-11-11",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "de0ab828a4c10d64",
-  "request_sha256": "6e9e89b1381e7fd6f7743d183a67f8d5ef2d10e5e5df04a438b18b839bd0676b",
+  "prompt_version": "77cb7da29af32068",
+  "request_sha256": "b16c929e11d65c94ab821e091f8d770d011355679a884f2df0307d6efcf4a9a3",
   "message": {
-   "id": "msg_011CguyKDyRDFr1qrjoevWZJ",
+   "id": "msg_011CgwXCykDiTv4GSGr2tRVJ",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 8277,
+    "input_tokens": 8412,
     "output_tokens": 42,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -48,7 +48,7 @@
    "prompt_version": "5a4e4a41623c9f1a",
    "request_sha256": "c76d135040003d9f2ba082dcf0d91984b15fc2c9561c21c65eed994bd5c14aad",
    "message": {
-    "id": "msg_011CguyJyBvr1cWHPa7QxfaP",
+    "id": "msg_011CgwXCjFq6XVhUfTvmMUkC",
     "container": null,
     "content": [
      {

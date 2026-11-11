@@ -2,13 +2,13 @@
  "format": 1,
  "doc": "schreiben",
  "synthetic": false,
- "recorded_on": "2026-11-10",
+ "recorded_on": "2026-11-11",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "de0ab828a4c10d64",
-  "request_sha256": "ef034bdc40d5b6dc2b66bb3253db9bf76516ea529a94d5510ad237f3e3edccb0",
+  "prompt_version": "77cb7da29af32068",
+  "request_sha256": "65001e859e501213bcfc16e64776203be298a830fb20574a30a3f3f740bf512b",
   "message": {
-   "id": "msg_011CguyP4wKBgCGR1PhkPnV5",
+   "id": "msg_011CgwXH4aHnau6FoJRssxoK",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 6489,
+    "input_tokens": 6624,
     "output_tokens": 41,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -48,7 +48,7 @@
    "prompt_version": "5a4e4a41623c9f1a",
    "request_sha256": "a4fe9b4c95e4ac891cf41b070040d53e1604040ee03ef6a2fa98f841f77dc88a",
    "message": {
-    "id": "msg_011CguyNycqYoLhzdj3FmRxa",
+    "id": "msg_011CgwXGzSzigT6G7XENLeuq",
     "container": null,
     "content": [
      {

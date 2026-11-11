@@ -2,13 +2,13 @@
  "format": 1,
  "doc": "vorauszahlungsbescheid",
  "synthetic": false,
- "recorded_on": "2026-11-10",
+ "recorded_on": "2026-11-11",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "de0ab828a4c10d64",
-  "request_sha256": "d91ea8482570598d65f46e0c74a23ad274342e67d918f7f6f97344317864ef9e",
+  "prompt_version": "77cb7da29af32068",
+  "request_sha256": "f926c3d6c59c5d7d404e61f64f2916c957b33bfec746b5d0bd062d6e9a8b2ec5",
   "message": {
-   "id": "msg_011CguyPTbpUxyw4n93qWkjV",
+   "id": "msg_011CgwXJ64N53nKt7mY9cZun",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 6594,
+    "input_tokens": 6729,
     "output_tokens": 49,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -48,7 +48,7 @@
    "prompt_version": "5a4e4a41623c9f1a",
    "request_sha256": "6e76dbc05f3961b1b53d350a8e90d824bfa3dc28d693138852270befecf2f242",
    "message": {
-    "id": "msg_011CguyPN9uEWD2JcHUfWt6P",
+    "id": "msg_011CgwXHzXyumAU1iUEU5Rwf",
     "container": null,
     "content": [
      {

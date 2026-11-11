@@ -2,18 +2,18 @@
  "format": 1,
  "doc": "rechnung_notar_gemischt",
  "synthetic": false,
- "recorded_on": "2026-11-10",
+ "recorded_on": "2026-11-11",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "de0ab828a4c10d64",
-  "request_sha256": "1cbc829a02994281de648fb967cb36011ccf14514d3a5425af94fe9513ab9755",
+  "prompt_version": "77cb7da29af32068",
+  "request_sha256": "b547c6e7a3679e5eaababe8548acac231751e32198afe36f6c467e107a548c83",
   "message": {
-   "id": "msg_011CguyL5QFpK859cxhBK9eM",
+   "id": "msg_011CgwXDsJo4QMdzQWiazPus",
    "container": null,
    "content": [
     {
      "citations": null,
-     "text": "{\"type\":\"invoice\",\"subtype\":\"cost_basis_evidence\",\"contains_tenant_data\":false,\"language\":\"de\",\"confidence\":\"medium\"}",
+     "text": "{\"type\":\"invoice\",\"subtype\":\"cost_basis_evidence\",\"contains_tenant_data\":false,\"language\":\"de\",\"confidence\":\"high\"}",
      "type": "text"
     }
    ],
@@ -32,8 +32,8 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 6582,
-    "output_tokens": 51,
+    "input_tokens": 6717,
+    "output_tokens": 50,
     "output_tokens_details": {
      "thinking_tokens": 0
     },
@@ -48,7 +48,7 @@
    "prompt_version": "5a4e4a41623c9f1a",
    "request_sha256": "d54eec1174aa941bad1dd830f78ae0fcb669fa8ef5708c99569c944aaa426627",
    "message": {
-    "id": "msg_011CguyKsHFBWr7D2msuUmaN",
+    "id": "msg_011CgwXDdAFCn6nEeNxGwhVh",
     "container": null,
     "content": [
      {

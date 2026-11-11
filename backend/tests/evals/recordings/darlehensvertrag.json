@@ -2,13 +2,13 @@
  "format": 1,
  "doc": "darlehensvertrag",
  "synthetic": false,
- "recorded_on": "2026-11-10",
+ "recorded_on": "2026-11-11",
  "sdk_version": "2.6.0",
  "classify": {
-  "prompt_version": "de0ab828a4c10d64",
-  "request_sha256": "ac8a0f86c10e869ac3cc9eada8e4ec84089be0f53c969bc5fe41f8f36a0bcec5",
+  "prompt_version": "77cb7da29af32068",
+  "request_sha256": "ac88cbd60e6b7be53cbc33347eea20f680629f2b8cb960fd6d9090fec9725689",
   "message": {
-   "id": "msg_011CguyJYMBbxJDiGQKeVSXV",
+   "id": "msg_011CgwXCHDfcq9KXkkUac8rF",
    "container": null,
    "content": [
     {
@@ -32,7 +32,7 @@
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "inference_geo": "us",
-    "input_tokens": 8243,
+    "input_tokens": 8378,
     "output_tokens": 45,
     "output_tokens_details": {
      "thinking_tokens": 0
@@ -48,7 +48,7 @@
    "prompt_version": "5a4e4a41623c9f1a",
    "request_sha256": "4394f3c61404c57f6c34d5f2a1d97391dc948e140462bf67f23609f8ceb07781",
    "message": {
-    "id": "msg_011CguyJFyCe3ZP1FNuLCmxf",
+    "id": "msg_011CgwXC2RB18FRcCf7vNRph",
     "container": null,
     "content": [
      {
