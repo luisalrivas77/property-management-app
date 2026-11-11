@@ -436,7 +436,7 @@ Items, for property P and tax year Y (P counts if owned on any day of Y):
 | `zinsbescheinigung` | per such loan | type `zinsbescheinigung`, `tax_year` = Y, linked to the loan | 28 Feb Y+1 |
 | `lease` | per tenancy of P's units overlapping Y | subtype `lease` linked to the tenancy | always |
 | `handover_protocol` | per such tenancy that started on or after P's `purchase_date` | subtype `handover_protocol` linked to the tenancy | always |
-| `deposit_record` | per such tenancy with `deposit_form` ≠ `none` | subtype `deposit_record` linked to the tenancy | always |
+| `deposit_record` | per such tenancy with `deposit_form` ≠ `none` (since phase 3 D142, 11 Nov 2026: not for a tenancy that ended before P's `purchase_date`) | subtype `deposit_record` linked to the tenancy, or (since phase 3 D142) the tenancy's confirmed `deposit_in` allocations covering its `deposit_amount` | always |
 | `wirtschaftsplan` | property, ETW only | type `wirtschaftsplan`, `tax_year` = Y, linked to P or one of its units | 1 Jan Y |
 | `hausgeldabrechnung` | property, ETW only | type `hausgeldabrechnung`, `tax_year` = Y, linked to P or one of its units | 30 Jun Y+1 |
 
