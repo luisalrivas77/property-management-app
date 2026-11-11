@@ -117,6 +117,7 @@ def test_after_the_import_the_preview_of_the_same_bytes_finds_nothing_new(
     preview = _preview(read, ws, account.id)
 
     assert (preview.lines_total, preview.lines_new) == (22, 0)
+    assert preview.last_booking_on == imported.last_booking_on  # D141: stored lines count
     assert _counts(app_engine, ws) == before
 
 

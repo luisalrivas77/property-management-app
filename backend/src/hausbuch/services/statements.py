@@ -313,6 +313,7 @@ def preview_import(
         lines_total=len(statement.lines),
         lines_new=sum(1 for h in hashes if h not in known),
         closing_balance=statement.closing_balance,
+        last_booking_on=max(line.booking_date for line in statement.lines),
     )
 
 

@@ -34,7 +34,7 @@ from hausbuch.schemas.bank_sync import BankConnectionCreate, BankConnectionPatch
 from hausbuch.schemas.enums import AccountSource, BalanceSource, DocumentSource, ImportStatus
 from hausbuch.schemas.events import EventType
 from hausbuch.services import bank_sync as service
-from hausbuch.services import review
+from hausbuch.services import review, statements
 from hausbuch.services.accounts import create_account, get_account
 from hausbuch.settings import Settings
 
@@ -346,6 +346,46 @@ def test_a_later_sync_reuses_the_state_and_stores_nothing_when_nothing_is_new(ba
     assert len(bank.rows(import_table)) == 1
     assert bank.clients[1].init["client_data"] == FAKE_STATE  # restored, no approval asked
     assert "poll" not in bank.clients[1].calls
+
+
+def test_a_sync_after_an_upload_brings_nothing_new_and_moves_the_window_on(bank):
+    """D141: the lines were uploaded as a file first; the sync finds all of them stored, but
+    the connection's last booking day still moves to the latest one the bank returned, so the
+    next window starts 14 days before it instead of at the anchor again."""
+    bank.run(
+        bank.ws,
+        statements.import_statement,
+        bank.deps.blob_store,
+        bank.account.id,
+        ZIP,
+        media_type="application/zip",
+        iban_key=TEST_IBAN_KEY,
+        now=T0,
+    )
+    assert bank.connection_row().last_booking_on is None
+    (uploaded,) = bank.rows(import_table)
+
+    sync = bank.start()
+    assert bank.job(sync.id, _good()) == "nothing_new"
+    row = bank.sync(sync.id)
+    assert (row.lines_total, row.lines_new, row.import_id) == (22, 0, None)
+    assert bank.connection_row().last_booking_on == uploaded.last_booking_on
+
+    later = T1 + timedelta(minutes=1)
+    second = bank.start(now=later)
+    assert second.requested_from == uploaded.last_booking_on - timedelta(days=14)
+
+
+def test_a_sync_with_no_booked_stream_keeps_the_last_booking_day(bank):
+    first = bank.start()
+    bank.job(first.id, _good())
+    before = bank.connection_row().last_booking_on
+    later = T1 + timedelta(minutes=1)
+    second = bank.start(now=later)
+    assert bank.job(second.id, _good(streams=[]), at=later + timedelta(seconds=5)) == (
+        "nothing_new"
+    )
+    assert bank.connection_row().last_booking_on == before
 
 
 def test_a_balance_that_moved_without_new_lines_is_a_drift_card(bank):

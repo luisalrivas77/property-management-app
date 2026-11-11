@@ -671,7 +671,15 @@ def finish_run(
     _store_state(ctx, plan, connection, fetched, settings)
     if not fetched.streams:
         move = rules.next_state(status, SyncEvent.STREAMS_EMPTY, plan.trigger)
-        _nothing_new(ctx, row, plan, move.status, lines_total=0, balance=fetched.balance)
+        _nothing_new(
+            ctx,
+            row,
+            plan,
+            move.status,
+            lines_total=0,
+            balance=fetched.balance,
+            last_booking_on=connection.last_booking_on,
+        )
         return move.status
     try:
         with ctx.conn.begin_nested():
@@ -688,6 +696,7 @@ def finish_run(
                     move.status,
                     lines_total=preview.lines_total,
                     balance=fetched.balance,
+                    last_booking_on=_later(connection.last_booking_on, preview.last_booking_on),
                 )
                 return move.status
             importing = rules.next_state(status, SyncEvent.NEW_LINES, plan.trigger).status
@@ -779,10 +788,13 @@ def _nothing_new(
     *,
     lines_total: int,
     balance: Decimal | None,
+    last_booking_on: date | None,
 ) -> None:
     """D127 and D117: no document, no import; HKSAL compared with the last reconciled closing
     (the anchor when the account has no line yet; skipped while the latest import is not
-    reconciled, which has its own card)."""
+    reconciled, which has its own card). D141: the connection's last_booking_on moves to the
+    latest booking day the bank returned (every line already stored, e.g. from an upload), so
+    the next window starts from there, not from the anchor."""
     reference = last_reconciled_closing(ctx.conn, plan.account_id)
     if reference is None and not account_has_lines(ctx.conn, plan.account_id):
         reference = ctx.conn.execute(
@@ -804,7 +816,7 @@ def _nothing_new(
     ctx.conn.execute(
         update(connection_table)
         .where(connection_table.c.id == plan.connection_id)
-        .values(last_sync_at=ctx.now, updated_at=ctx.now)
+        .values(last_sync_at=ctx.now, last_booking_on=last_booking_on, updated_at=ctx.now)
     )
     append_event(
         ctx,
