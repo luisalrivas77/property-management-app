@@ -18,9 +18,11 @@ dokumente/, never by its title (a title can name a tenant). The originals in dok
 the documents themselves, untouched (principle 6), and README.txt lists them by file name.
 zahlungsnachweise.pdf follows the CSV's rule for every incoming line (D144): the bank line's
 dates, amount, the bank's own reference and masked IBANs, never the counterparty's name or the
-purpose text. Outgoing lines (amount < 0) also print the payee's name and the purpose text, an
-exception to D5 for this one file (Luis, 11 Nov 2026: a proof of payment must show who was
-paid); a payment out whose text names a tenant shows it, which was accepted. The bank's
+purpose text. A cost paid to a third party (an outgoing line whose every part is a cost or a
+loan payment, none linked to a tenancy: names_payee) also prints the payee's name and the
+purpose text, IBANs in them masked: an exception to D5 for this one file (Luis, 11 Nov 2026:
+a proof of payment must show who was paid); a cost whose text names a tenant shows it, which
+was accepted. A deposit, a refund to a tenant or an owner transfer prints neither. The bank's
 own PDF statements in kontoauszuege/ are untouched originals, named by their booking dates.
 
 Determinism. The same inputs give the same bytes: reportlab runs in invariant mode (fixed
@@ -60,9 +62,11 @@ from reportlab.platypus import (
     TableStyle,
 )
 
-from hausbuch.rules.categories import CATEGORY_LABEL
+from hausbuch.rules.categories import CATEGORY_LABEL, tax_treatment
+from hausbuch.rules.iban import mask_ibans_in_text
 from hausbuch.rules.tax.field_sheet import UNIT_ROWS, FieldSheetRow, field_sheet
 from hausbuch.rules.tax.rounding import cents
+from hausbuch.schemas.allocation import AllocationCategory, TaxTreatment
 from hausbuch.schemas.checklist import ChecklistStatus, RequirementCode
 from hausbuch.schemas.employment import AnlageNDraft
 from hausbuch.schemas.enums import AcquisitionCostKind, PriceSplitSource
@@ -1052,8 +1056,8 @@ class BankLine:
     and the statement it came from. The counterparty is its masked IBAN, as in zahlungen.csv;
     for an outgoing line (amount < 0) also the payee's name and the purpose text (D144, an
     exception to D5 for this file only; the loader fills them for outgoing lines only and the
-    renderer prints them for outgoing lines only). Never the end-to-end reference, which the
-    payer types and which can carry a name."""
+    renderer prints them only for a cost paid to a third party, names_payee). Never the
+    end-to-end reference, which the payer types and which can carry a name."""
 
     transaction_id: UUID
     booking_date: date
@@ -1089,6 +1093,35 @@ class ArchiveStatement:
             f"kontoauszuege/{self.number} Kontoauszug {self.first_booking_on.isoformat()} bis "
             f"{self.last_booking_on.isoformat()}.pdf"
         )
+
+
+# D144: the parts of a payment out whose payee and purpose the proof prints: a cost paid to a
+# third party (Werbungskosten or capitalized), or a payment on the loan.
+_COST_TREATMENTS = frozenset({TaxTreatment.DEDUCTIBLE, TaxTreatment.CAPITALIZED})
+_LOAN_PAYMENTS = frozenset(
+    {
+        AllocationCategory.LOAN_INTEREST,
+        AllocationCategory.LOAN_PRINCIPAL,
+        AllocationCategory.LOAN_FEES,
+    }
+)
+
+
+def names_payee(line: BankLine, parts: Sequence) -> bool:
+    """Whether zahlungsnachweise.pdf prints the payee and the purpose text of a bank line
+    (D144, Luis 11 Nov 2026: for costs only): an outgoing line whose every booked part is a
+    cost paid to a third party, i.e. linked to no tenancy and of a deductible or capitalized
+    category or a loan payment. A deposit paid back, a refund to a tenant, an owner transfer
+    and anything income or pass-through print neither, exactly like an incoming line."""
+    return (
+        line.outgoing
+        and bool(parts)
+        and all(
+            a.tenancy_id is None
+            and (a.category in _LOAN_PAYMENTS or tax_treatment(a.category) in _COST_TREATMENTS)
+            for a in parts
+        )
+    )
 
 
 def _reference(value: str | None) -> str | None:
@@ -1149,9 +1182,11 @@ def render_payment_proofs(
     )
     story.append(
         _para(
-            "Bei Zahlungen vom Konto stehen Empfänger und Verwendungszweck dabei. Bei "
-            "Zahlungseingängen (etwa Mieten) stehen Name und Verwendungszweck nicht in dieser "
-            "Übersicht (Datenschutz); sie stehen im Kontoauszug der Bank. IBANs sind maskiert, "
+            "Bei bezahlten Kosten (Handwerker, Notar, Hausverwaltung, Bank) stehen Empfänger "
+            "und Verwendungszweck dabei. Bei Zahlungseingängen (etwa Mieten) und bei "
+            "Zahlungen an Mieter oder Eigentümer (Kaution, Erstattung, Entnahme) stehen Name "
+            "und Verwendungszweck nicht in dieser Übersicht (Datenschutz); sie stehen im "
+            "Kontoauszug der Bank. IBANs sind maskiert, auch im Verwendungszweck, "
             "weil Hausbuch "
             "nur maskierte IBANs speichert. Die Belegnummern sind die Nummern in dokumente/ "
             "und in zahlungen.csv.",
@@ -1180,9 +1215,11 @@ def render_payment_proofs(
         counterparty = (
             line.counterparty_iban_masked if line is not None else first.counterparty_iban_masked
         )
-        if line is not None and line.outgoing:  # D144: who was paid, and for what
-            name = " ".join((line.counterparty_name or "").split())
-            purpose = " ".join((line.purpose or "").split())
+        if line is not None and names_payee(line, parts):  # D144: who was paid, for what
+            # The purpose is the payer's free text: an IBAN typed into it is masked like
+            # every IBAN the archive prints.
+            name = mask_ibans_in_text(" ".join((line.counterparty_name or "").split()))
+            purpose = mask_ibans_in_text(" ".join((line.purpose or "").split()))
             rows.append(["Empfänger", name or "–"])
             rows.append(["Verwendungszweck", purpose or "–"])
         rows.append(["Gegenkonto (IBAN)", counterparty or "–"])
@@ -1445,9 +1482,10 @@ def readme_text(
         "druckt sie aus den Umsatzdaten der Bank; sie ist kein Dokument der Bank. Bei jeder "
         "Zahlung steht die SHA-256-Prüfsumme der Bankdatei, aus der sie stammt; die Datei ist "
         "unverändert in Hausbuch gespeichert.",
-        "  Bei Zahlungen vom Konto (Ausgaben) stehen Empfänger und Verwendungszweck dabei, damit "
-        "der Nachweis zeigt, wer bezahlt wurde; bei Zahlungseingängen (etwa Mieten) nur die "
-        "maskierte IBAN, Name und Verwendungszweck stehen dort im Kontoauszug der Bank. Die "
+        "  Bei bezahlten Kosten stehen Empfänger und Verwendungszweck dabei, damit der Nachweis "
+        "zeigt, wer bezahlt wurde; bei Zahlungseingängen (etwa Mieten) und Zahlungen an Mieter "
+        "oder Eigentümer nur die maskierte IBAN, Name und Verwendungszweck stehen dort im "
+        "Kontoauszug der Bank. Die "
         "IBANs sind maskiert gedruckt, weil Hausbuch nur maskierte IBANs speichert.",
         "  Die Kontoauszüge der Bank liegen unter kontoauszuege/, soweit sie als PDF gespeichert "
         "sind" + (f" ({len(statements)} enthalten)." if statements else " (keine gespeichert)."),

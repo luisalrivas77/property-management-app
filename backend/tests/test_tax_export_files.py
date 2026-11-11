@@ -32,6 +32,7 @@ from hausbuch.services.tax_export_files import (
     draft_json,
     finanzamt_copy,
     lines_csv,
+    names_payee,
     payment_groups,
     payments_csv,
     render_archive,
@@ -336,7 +337,11 @@ def _statement(n: int, data: bytes) -> ArchiveStatement:
 
 def _fee_line(facts) -> BankLine:
     """The fixture's notary fee (-480,00) as an outgoing bank line."""
-    (fee,) = [a for a in facts.allocations if a.category.value == "loan_fees"]
+    (fee,) = [a for a in facts.allocations if a.amount == Decimal("-480.00")]
+    return _fee_line_of(fee)
+
+
+def _fee_line_of(fee) -> BankLine:
     return BankLine(
         transaction_id=fee.transaction_id,
         booking_date=fee.booking_date,
@@ -346,7 +351,8 @@ def _fee_line(facts) -> BankLine:
         account_iban_masked="DE00 **** 9999",
         counterparty_iban_masked="DE22 **** 0003",
         counterparty_name="Notariat Beispielstadt",
-        purpose="Rechnung 4711 Grundschuld",
+        # A full IBAN typed into the purpose: printed masked, never in full (D144).
+        purpose="Rechnung 4711 Grundschuld, IBAN DE89370400440532013000",
     )
 
 
@@ -385,7 +391,8 @@ def test_payment_proofs_list_each_bank_line_once_with_its_parts_and_belege():
     assert "PDF-Kontoauszug der Bank, hochgeladen am 31.07.2026" in flat
     # D144: a payment out names its payee and purpose; a payment in shows neither.
     assert "Empfänger Notariat Beispielstadt" in flat
-    assert "Verwendungszweck Rechnung 4711 Grundschuld" in flat
+    assert "Verwendungszweck Rechnung 4711 Grundschuld, IBAN DE89 **** 3000" in flat
+    assert "DE89370400440532013000" not in text.replace("\n", "").replace(" ", "")
     assert "Mieterin Beispiel" not in flat and "Miete Juli" not in flat
     # One entry per bank line: the year's allocations less the one merged into the split.
     groups = payment_groups(drafted, facts)
@@ -445,3 +452,32 @@ def test_statements_left_out_are_named_in_the_readme():
     readme = archive.read("README.txt").decode("utf-8")
     assert "3 Kontoauszug/Kontoauszüge der Bank nicht enthalten" in readme
     assert "größer als 100 MiB" in readme
+
+
+@pytest.mark.parametrize(
+    ("category", "tenancy"),
+    [
+        ("deposit_out", True),  # the deposit paid back to a tenant
+        ("operating_costs_settlement", True),  # a refund to a tenant
+        ("owner_transfer_out", False),  # money to an owner's own account
+        ("loan_fees", True),  # a cost, but tied to a tenancy
+    ],
+)
+def test_a_payment_out_that_is_no_cost_to_a_third_party_names_no_one(category, tenancy):
+    """D144: payee and purpose only for costs paid to third parties."""
+    facts = _split_facts()
+    (tenancy_id,) = {a.tenancy_id for a in facts.allocations if a.tenancy_id is not None}
+    allocations = [
+        a.model_copy(update={"category": category, "tenancy_id": tenancy_id if tenancy else None})
+        if a.amount == Decimal("-480.00")
+        else a
+        for a in facts.allocations
+    ]
+    facts = facts.model_copy(update={"allocations": allocations})
+    drafted = draft(facts, CASE.tax_year, RULES)
+    (paid,) = [a for a in facts.allocations if a.amount == Decimal("-480.00")]
+    assert not names_payee(_fee_line_of(paid), [paid])
+    flat = " ".join(_pdf_text(_proofs(facts, drafted, {})).split())
+    assert "-480,00 €" in flat  # the payment is listed ...
+    assert "Notariat" not in flat and "Rechnung 4711" not in flat  # ... naming no one
+    assert "Verwendungszweck Rechnung" not in flat and "IBAN DE89" not in flat
