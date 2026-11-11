@@ -44,7 +44,8 @@
 #            amount, is proposed as missing with its quote. "bar" counts only as a whole word
 #            ("vereinbart" is not cash); Barzahlung, Bareinzahlung, Barsicherheit, Bargeld are.
 #   typing   type and subtype come from context.classification: value, no source, checks
-#            [validates], the classifier's confidence. subtype only when the classifier gave one.
+#            [validates], the classifier's confidence. subtype only when the classifier gave one,
+#            except on a financing bill (below, D138).
 #            An invoice's tax_year is derived (D36): the year of due_on, else of document_date
 #            (derived_from names the one used); neither stated -> not proposed.
 #            D132 (10 Nov 2026): typing also carries the kind's hand-entry fields
@@ -56,7 +57,10 @@
 #            (a new cost row's note <- reference; a new loan's lender and contract_number).
 # Financing invoices (D35): an invoice whose subject or title, or a Bescheid whose title,
 #   contains grundschuld, grundpfandrecht, hypothek or darlehen (casefolded, anywhere) proposes no cost:<kind> record (not create, patch or
-#   unchanged) and no subtype in typing, whatever the classifier said; typing's notes contain
+#   unchanged) and, in typing, subtype financing_invoice (D138, 11 Nov 2026; before it, no
+#   subtype) whatever the classifier said: a code value, no source, checks [validates],
+#   confidence that of the subject or title naming the term (the higher when both do), else of
+#   cost_lines when the lines alone make it a financing bill; typing's notes contain
 #   "Geldbeschaffungskosten", plus "aus den Nebenkosten" when a cost row already has this
 #   document as its Beleg; link:property as usual; link:loan when the property has exactly
 #   one loan in the context. D135: plus tax_input:private_cost:loan_fees for the whole bill
@@ -72,7 +76,7 @@
 #   else the line's own code. A line left without a category: the bill stays whole. The
 #   Umsatzsteuer is shared over the categories by their net sums (largest remainder, cents);
 #   the last category takes any cent between the lines and the total. Every line loan_fees:
-#   the bill is a financing bill (no subtype, the note). Otherwise:
+#   the bill is a financing bill (subtype financing_invoice, the note). Otherwise:
 #   - the acquisition_cost part is the cost:<kind> record, by the cost rules below, with
 #     amount = that part (amount_total itself when it is the whole bill, else derived from
 #     [cost_lines, amount_total]);
@@ -627,7 +631,7 @@ cases:
           values: {}
 
   - id: notar_invoice_grundschuld_is_financing
-    description: D35. Luis's real case, anonymised. The classifier wrongly says cost_basis_evidence; the subject names a Grundschuld, so code proposes no Nebenkosten row and no subtype, explains why, and links the property's only loan.
+    description: D35. Luis's real case, anonymised. The classifier wrongly says cost_basis_evidence; the subject names a Grundschuld, so code proposes no Nebenkosten row and, since D138, the subtype financing_invoice instead, explains why, and links the property's only loan.
     kind: invoice
     context:
       document_id: *DOC
@@ -648,7 +652,7 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: invoice, title: Notarrechnung Grundschuldbestellung, document_date: "2026-03-20", tax_year: 2026, amount_total: "612.88", counterparty: "Notarin Dr. Anna Beispiel", reference: "RE26/00001", notes: "Grundschuld-/Hypothekenbestellung mit ZV-Unterwerfung"}
+          values: {type: invoice, subtype: financing_invoice, title: Notarrechnung Grundschuldbestellung, document_date: "2026-03-20", tax_year: 2026, amount_total: "612.88", counterparty: "Notarin Dr. Anna Beispiel", reference: "RE26/00001", notes: "Grundschuld-/Hypothekenbestellung mit ZV-Unterwerfung"}
           derived: {tax_year: [document_date]}
           notes_contain: ["Geldbeschaffungskosten"]
         - key: link:property
@@ -684,7 +688,7 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: invoice, title: Notarrechnung Grundschuldbestellung, document_date: "2026-03-20", tax_year: 2026, amount_total: "612.88", counterparty: "Notarin Dr. Anna Beispiel", reference: "RE26/00001", notes: null}
+          values: {type: invoice, subtype: financing_invoice, title: Notarrechnung Grundschuldbestellung, document_date: "2026-03-20", tax_year: 2026, amount_total: "612.88", counterparty: "Notarin Dr. Anna Beispiel", reference: "RE26/00001", notes: null}
           derived: {tax_year: [document_date]}
           notes_contain: ["Geldbeschaffungskosten"]
 
@@ -707,7 +711,7 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: invoice, title: Notarrechnung Grundschuldbestellung, document_date: "2026-03-20", tax_year: 2026, amount_total: "612.88", counterparty: "Notarin Dr. Anna Beispiel", reference: "RE26/00001", notes: "Grundschuld-/Hypothekenbestellung mit ZV-Unterwerfung"}
+          values: {type: invoice, subtype: financing_invoice, title: Notarrechnung Grundschuldbestellung, document_date: "2026-03-20", tax_year: 2026, amount_total: "612.88", counterparty: "Notarin Dr. Anna Beispiel", reference: "RE26/00001", notes: "Grundschuld-/Hypothekenbestellung mit ZV-Unterwerfung"}
           derived: {tax_year: [document_date]}
           notes_contain: ["Geldbeschaffungskosten", "aus den Nebenkosten"]
 
@@ -832,7 +836,7 @@ cases:
           current: {amount: "17340.00", note: null}
 
   - id: bescheid_grundbuchamt_grundschuld_is_financing
-    description: D35 (review F1, 7 Nov 2026). A Grundbuchamt bill for entering the Grundschuld, typed bescheid by the classifier; a Bescheid has no subject, so its title decides. No Nebenkosten row, no subtype.
+    description: D35 (review F1, 7 Nov 2026). A Grundbuchamt bill for entering the Grundschuld, typed bescheid by the classifier; a Bescheid has no subject, so its title decides. No Nebenkosten row; the subtype financing_invoice (D138).
     kind: bescheid
     context:
       document_id: *DOC
@@ -852,7 +856,7 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: bescheid, title: Kostenrechnung Grundschuldeintragung, document_date: "2026-04-10", amount_total: "250.00", counterparty: "Amtsgericht Berlin-Mitte Grundbuchamt", reference: "KR 4711/26"}
+          values: {type: bescheid, subtype: financing_invoice, title: Kostenrechnung Grundschuldeintragung, document_date: "2026-04-10", amount_total: "250.00", counterparty: "Amtsgericht Berlin-Mitte Grundbuchamt", reference: "KR 4711/26"}
           notes_contain: ["Geldbeschaffungskosten"]
         - key: tax_input:private_cost:loan_fees
           entity_type: tax_input
@@ -1030,7 +1034,7 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: invoice, title: Notarrechnung Grundschuldbestellung, document_date: "2026-03-20", tax_year: 2026, amount_total: "612.88", counterparty: "Notarin Dr. Anna Beispiel", reference: "RE26/00001", notes: "Grundschuld-/Hypothekenbestellung mit ZV-Unterwerfung"}
+          values: {type: invoice, subtype: financing_invoice, title: Notarrechnung Grundschuldbestellung, document_date: "2026-03-20", tax_year: 2026, amount_total: "612.88", counterparty: "Notarin Dr. Anna Beispiel", reference: "RE26/00001", notes: "Grundschuld-/Hypothekenbestellung mit ZV-Unterwerfung"}
           derived: {tax_year: [document_date]}
           notes_contain: ["Geldbeschaffungskosten"]
         - key: tax_input:private_cost:loan_fees
@@ -1054,7 +1058,7 @@ cases:
         - key: typing
           entity_type: typing
           mode: create
-          values: {type: invoice, title: Notarrechnung Grundschuldbestellung, document_date: "2026-03-20", tax_year: 2026, amount_total: "612.88", counterparty: "Notarin Dr. Anna Beispiel", reference: "RE26/00001", notes: "Grundschuld-/Hypothekenbestellung mit ZV-Unterwerfung"}
+          values: {type: invoice, subtype: financing_invoice, title: Notarrechnung Grundschuldbestellung, document_date: "2026-03-20", tax_year: 2026, amount_total: "612.88", counterparty: "Notarin Dr. Anna Beispiel", reference: "RE26/00001", notes: "Grundschuld-/Hypothekenbestellung mit ZV-Unterwerfung"}
           derived: {tax_year: [document_date]}
           notes_contain: ["Geldbeschaffungskosten", "vom Mietkonto"]
 
