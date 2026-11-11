@@ -24,6 +24,7 @@ from uuid import UUID, uuid4
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from hausbuch.schemas.api import ErrorKind, ErrorResponse
+from hausbuch.services.bank.fints import pin_fints_logging
 
 from .errors import Rendered, render
 
@@ -173,3 +174,6 @@ def configure_logging(stream: TextIO = sys.stdout, level: int = logging.INFO) ->
         uvicorn_logger.handlers[:] = []
         uvicorn_logger.propagate = True
     logging.getLogger("uvicorn.access").disabled = True
+    # python-fints logs whole FinTS messages at DEBUG (login, product id) and the bank's text
+    # above it: pinned to WARNING and reduced to answer codes (phase 5 D119).
+    pin_fints_logging()
