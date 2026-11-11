@@ -642,11 +642,17 @@ def prefill_context(
     without it, none are."""
     props = properties.list_properties(conn)
     proof_bill = _proof_bill(conn, document_id)
+    linked_tenancies = {
+        link.target_id
+        for link in documents.list_links(conn, document_id)
+        if link.target_type is LinkTarget.TENANCY
+    }
     unit_rows = [u for p in props for u in units.list_units(conn, p.id)]
     return PrefillContext(
         document_id=document_id,
         classification=classification,
         paid_from_rental_account=paid_from_rental_account,
+        linked_tenancy_id=next(iter(linked_tenancies)) if len(linked_tenancies) == 1 else None,
         properties=[
             ExistingProperty.model_validate(
                 p.model_dump(include=set(ExistingProperty.model_fields))
