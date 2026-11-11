@@ -27,6 +27,7 @@ import hmac
 import re
 from collections.abc import Sequence
 from datetime import date
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -57,6 +58,7 @@ from hausbuch.schemas.bank import (
     Transaction,
     TransactionAllocationStatus,
 )
+from hausbuch.schemas.bank_sync import SyncPreview
 from hausbuch.schemas.common import TAX_YEAR_MIN
 from hausbuch.schemas.document import DocumentTyping
 from hausbuch.schemas.enums import (
@@ -159,8 +161,7 @@ def import_statement(
         )
 
     ibans = [_protect(line.counterparty_iban, iban_key) for line in statement.lines]
-    for_hash = [_for_hash(line, iban) for line, iban in zip(statement.lines, ibans, strict=True)]
-    hashes = rules.line_hashes(account_id, for_hash)
+    hashes = _line_hashes(account_id, statement.lines, iban_key)
     from_file = statement.closing_balance is not None
     imported = ctx.conn.execute(
         insert(import_table)
@@ -231,6 +232,25 @@ def declare_balances(
     """The closing (and optionally opening) balance Luis reads in online banking, for an
     import whose file states none (CSV). May be declared again to correct a typo; each
     declaration records statement.reconciled or .unreconciled."""
+    return _declare(ctx, import_id, body.closing_balance, body.opening_balance, BalanceSource.USER)
+
+
+def declare_bank_balance(
+    ctx: CommandContext, import_id: UUID, closing_balance: Decimal
+) -> StatementImport:
+    """Phase 5 D117: a FinTS sync's import whose camt states no closing balance is reconciled
+    against HKSAL's booked balance, read in the same dialog (balance_source bank). The sibling
+    of declare_balances; the bank states no opening balance."""
+    return _declare(ctx, import_id, closing_balance, None, BalanceSource.BANK)
+
+
+def _declare(
+    ctx: CommandContext,
+    import_id: UUID,
+    closing: Decimal,
+    opening: Decimal | None,
+    source: BalanceSource,
+) -> StatementImport:
     current = require_row(ctx.conn, import_table, EntityType.STATEMENT, import_id)
     account = _lock_account(ctx, current.account_id)
     current = require_row(ctx.conn, import_table, EntityType.STATEMENT, import_id, for_update=True)
@@ -240,9 +260,9 @@ def declare_balances(
         update(import_table)
         .where(import_table.c.id == import_id)
         .values(
-            declared_closing=body.closing_balance,
-            declared_opening=body.opening_balance,
-            balance_source=BalanceSource.USER.value,
+            declared_closing=closing,
+            declared_opening=opening,
+            balance_source=source.value,
             # Back to unchecked until _check stores the new result: a reconciled row must
             # never hold a declared balance its computed one does not match (0006 CHECK).
             status=ImportStatus.IMPORTED.value,
@@ -254,6 +274,87 @@ def declare_balances(
     # Compared with the row as it was before this declaration, not the reset one: an
     # identical declaration (a double click, a retry) must not count as becoming reconciled.
     return _check(ctx, account, row, announce=True, before=current)
+
+
+# --- Preview (phase 5 D127) --------------------------------------------------------------
+
+
+def preview_import(
+    conn: Connection,
+    account_id: UUID,
+    data: bytes,
+    *,
+    iban_key: bytes,
+    media_type: str = "application/zip",
+) -> SyncPreview:
+    """What import_statement would do with these bytes, without writing anything (D127): the
+    same parser, the same account check, the same line hash over the same fields, compared
+    with the account's stored hashes. A FinTS sync stores its ZIP (and imports it) only when
+    lines_new > 0. Raises the same RuleErrors import_statement raises before its first
+    write (owner account, unreadable file, another account's statement, no booked line)."""
+    account = require_row(conn, account_table, EntityType.ACCOUNT, account_id)
+    if account.is_owner_account:
+        raise RuleError(rules.OWNER_ACCOUNT, "owner accounts hold no statements")
+    statement = parse_statement(data, media_type).statement
+    _require_same_account(statement.account_iban, account.iban_hmac, iban_key)
+    if not statement.lines:
+        raise RuleError(rules.EMPTY, "the file holds no booked line")
+    hashes = list(dict.fromkeys(_line_hashes(account_id, statement.lines, iban_key)))
+    known = {
+        row.line_hash.hex()
+        for row in conn.execute(
+            select(transaction_table.c.line_hash).where(
+                transaction_table.c.account_id == account_id,
+                transaction_table.c.line_hash.in_([bytes.fromhex(h) for h in hashes]),
+            )
+        )
+    }
+    return SyncPreview(
+        lines_total=len(statement.lines),
+        lines_new=sum(1 for h in hashes if h not in known),
+        closing_balance=statement.closing_balance,
+        last_booking_on=max(line.booking_date for line in statement.lines),
+    )
+
+
+def _line_hashes(account_id: UUID, lines: Sequence[StatementLine], iban_key: bytes) -> list[str]:
+    """The line hashes import_statement stores, from the parsed lines."""
+    ibans = [_protect(line.counterparty_iban, iban_key) for line in lines]
+    return rules.line_hashes(
+        account_id, [_for_hash(line, iban) for line, iban in zip(lines, ibans, strict=True)]
+    )
+
+
+def last_reconciled_closing(conn: Connection, account_id: UUID) -> Decimal | None:
+    """Phase 5 D117: the closing balance a sync that brought nothing new compares HKSAL with.
+    The account's latest import (by last booking day, then creation) when it is reconciled:
+    its declared closing equals the stored window's sum. None when that import is not
+    reconciled (it already has its own card in Zu prüfen, so the drift check is skipped)
+    or the account has no import with lines (the caller compares with the anchor then)."""
+    row = conn.execute(
+        select(import_table.c.status, import_table.c.declared_closing)
+        .where(
+            import_table.c.account_id == account_id,
+            import_table.c.last_booking_on.is_not(None),
+        )
+        .order_by(
+            import_table.c.last_booking_on.desc(),
+            import_table.c.created_at.desc(),
+            import_table.c.id.desc(),
+        )
+        .limit(1)
+    ).one_or_none()
+    if row is None or row.status != ImportStatus.RECONCILED.value:
+        return None
+    return row.declared_closing
+
+
+def account_has_lines(conn: Connection, account_id: UUID) -> bool:
+    return bool(
+        conn.execute(
+            select(exists().where(transaction_table.c.account_id == account_id))
+        ).scalar_one()
+    )
 
 
 def recheck_account(ctx: CommandContext, account_id: UUID, *, skip: UUID | None = None) -> None:

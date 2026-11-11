@@ -1456,6 +1456,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/accounts/{account_id}/bank-connection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Bank Connection Get */
+        get: operations["bank_connection_get_api_accounts__account_id__bank_connection_get"];
+        put?: never;
+        /** Bank Connection Create */
+        post: operations["bank_connection_create_api_accounts__account_id__bank_connection_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Bank Connection Update */
+        patch: operations["bank_connection_update_api_accounts__account_id__bank_connection_patch"];
+        trace?: never;
+    };
+    "/api/accounts/{account_id}/syncs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Sync List */
+        get: operations["sync_list_api_accounts__account_id__syncs_get"];
+        put?: never;
+        /** Sync Start */
+        post: operations["sync_start_api_accounts__account_id__syncs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/syncs/{sync_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Sync Get */
+        get: operations["sync_get_api_syncs__sync_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/imports/{import_id}": {
         parameters: {
             query?: never;
@@ -2939,6 +2993,157 @@ export interface components {
          * @enum {string}
          */
         BalanceSource: "file" | "user" | "none" | "bank";
+        /**
+         * BankConnection
+         * @description GET /accounts/{id}/bank-connection: the login masked, the client state only as a flag
+         *     (client_data and its MAC never leave the database).
+         */
+        BankConnection: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /** Bank Code */
+            bank_code: string;
+            /** Fints Url */
+            fints_url: string;
+            /** Login Masked */
+            login_masked: string;
+            /** Tan Mechanism */
+            tan_mechanism?: string | null;
+            /**
+             * Auto Sync
+             * @default false
+             */
+            auto_sync: boolean;
+            /** Sca Confirmed At */
+            sca_confirmed_at?: string | null;
+            /** Last Sync At */
+            last_sync_at?: string | null;
+            /** Last Booking On */
+            last_booking_on?: string | null;
+            /**
+             * State Present
+             * @default false
+             */
+            state_present: boolean;
+        };
+        /**
+         * BankConnectionCreate
+         * @description POST /accounts/{id}/bank-connection. The PIN is never part of it (D119): it is the
+         *     container secret HAUSBUCH_FINTS_PIN.
+         */
+        BankConnectionCreate: {
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /** Bank Code */
+            bank_code: string;
+            /** Fints Url */
+            fints_url: string;
+            /** Login Name */
+            login_name: string;
+        };
+        /**
+         * BankConnectionPatch
+         * @description PATCH /accounts/{id}/bank-connection. A changed URL or login keeps the stored client
+         *     state only while its MAC verifies (step 1); null is not accepted for any field.
+         */
+        BankConnectionPatch: {
+            /** Auto Sync */
+            auto_sync?: boolean;
+            /** Fints Url */
+            fints_url?: string;
+            /** Login Name */
+            login_name?: string;
+        };
+        /**
+         * BankSync
+         * @description One run (bank_sync, §4.2). lines_* are null until the preview ran; import_id is set
+         *     once the run wrote its import (status importing or done), and a run that failed after
+         *     that keeps it (status failed); never for nothing_new (D127).
+         */
+        BankSync: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /**
+             * Connection Id
+             * Format: uuid
+             */
+            connection_id: string;
+            trigger: components["schemas"]["SyncTrigger"];
+            status: components["schemas"]["SyncStatus"];
+            /** Requested From */
+            requested_from?: string | null;
+            /** Requested To */
+            requested_to?: string | null;
+            /** Import Id */
+            import_id?: string | null;
+            /** Lines Total */
+            lines_total?: number | null;
+            /** Lines New */
+            lines_new?: number | null;
+            balance_source?: components["schemas"]["BalanceSource"] | null;
+            /**
+             * Balance Checked
+             * @default false
+             */
+            balance_checked: boolean;
+            /** Error Code */
+            error_code?: string | null;
+            /** Started At */
+            started_at?: string | null;
+            /** Finished At */
+            finished_at?: string | null;
+            /** Created By */
+            created_by?: string | null;
+        };
         /**
          * BasisAddition
          * @description Herstellungskosten added to the AfA basis in the year paid, accruing from 1 January of
@@ -7281,6 +7486,18 @@ export interface components {
             items?: components["schemas"]["AmountItem"][];
         };
         /**
+         * SyncStatus
+         * @description bank_sync.status (migration 0019, D118). done, nothing_new and failed are final.
+         * @enum {string}
+         */
+        SyncStatus: "queued" | "running" | "needs_approval" | "importing" | "done" | "nothing_new" | "failed";
+        /**
+         * SyncTrigger
+         * @description bank_sync.trigger (migration 0019): a person's button or the daily schedule (D120).
+         * @enum {string}
+         */
+        SyncTrigger: "manual" | "scheduled";
+        /**
          * TariffStamp
          * @description Which tariff a figure was computed with (shown with every projection).
          */
@@ -11617,6 +11834,200 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Transaction"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    bank_connection_get_api_accounts__account_id__bank_connection_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankConnection"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    bank_connection_create_api_accounts__account_id__bank_connection_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BankConnectionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankConnection"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    bank_connection_update_api_accounts__account_id__bank_connection_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BankConnectionPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankConnection"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    sync_list_api_accounts__account_id__syncs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankSync"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    sync_start_api_accounts__account_id__syncs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankSync"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    sync_get_api_syncs__sync_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sync_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankSync"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

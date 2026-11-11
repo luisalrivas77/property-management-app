@@ -253,7 +253,8 @@ def inbox(
     """Every item of §8.3, newest first. Texts quote no bank line, name or IBAN. With `today`,
     also last year's open Jahresfragen (phase 4b D110, `questionnaire_open`) and the reminders
     visible today (phase 5 §6, `reminder`); with `now`, the email-in cards (phase 5 §5.4:
-    email_received, email_failed)."""
+    email_received, email_failed) and the bank sync's (phase 5 §4.6, D117: bank_sync_failed,
+    bank_balance_drift)."""
     items = _proposal_items(conn) + import_inbox_items(conn) + _allocation_items(conn)
     if today is not None:
         items += _questionnaire_items(conn, today)
@@ -264,6 +265,9 @@ def inbox(
         from .inbound_mail import inbound_mail_items  # it imports the statement services
 
         items += inbound_mail_items(conn, now)
+        from .bank_sync import bank_sync_items  # it imports the statement services
+
+        items += bank_sync_items(conn)
     return sorted(items, key=lambda item: item.created_at, reverse=True)
 
 

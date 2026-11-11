@@ -23,6 +23,8 @@ import type {
   RetentionHold,
   StateCode,
   StatementFormat,
+  SyncStatus,
+  SyncTrigger,
   TaxSourceKind,
   TenancyRole,
   WarningCode,
@@ -392,6 +394,22 @@ export const BALANCE_SOURCE: Record<BalanceSource, string> = {
   user: "eingegeben (Online-Banking)",
   none: "noch keiner",
   bank: "vom Bankabruf (Kontostand der Bank)",
+};
+
+/** A FinTS sync's state (phase-5.md §4.2). */
+export const SYNC_STATUS: Record<SyncStatus, string> = {
+  queued: "wartet",
+  running: "läuft",
+  needs_approval: "wartet auf Freigabe",
+  importing: "importiert",
+  done: "importiert",
+  nothing_new: "nichts Neues",
+  failed: "fehlgeschlagen",
+};
+
+export const SYNC_TRIGGER: Record<SyncTrigger, string> = {
+  manual: "von Hand",
+  scheduled: "täglich",
 };
 
 export const DUPLICATE_STATUS: Record<DuplicateStatus, string> = {

@@ -102,6 +102,7 @@ def test_every_router_is_included_under_api(engine, tmp_path, monkeypatch):
         "documents",
         "proposals",
         "accounts",
+        "bank_sync",
         "statements",
         "allocations",
         "tax",

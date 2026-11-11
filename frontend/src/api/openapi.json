@@ -4252,6 +4252,264 @@
         }
       }
     },
+    "/api/accounts/{account_id}/bank-connection": {
+      "post": {
+        "summary": "Bank Connection Create",
+        "operationId": "bank_connection_create_api_accounts__account_id__bank_connection_post",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BankConnectionCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BankConnection"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Bank Connection Update",
+        "operationId": "bank_connection_update_api_accounts__account_id__bank_connection_patch",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BankConnectionPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BankConnection"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Bank Connection Get",
+        "operationId": "bank_connection_get_api_accounts__account_id__bank_connection_get",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BankConnection"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/accounts/{account_id}/syncs": {
+      "post": {
+        "summary": "Sync Start",
+        "operationId": "sync_start_api_accounts__account_id__syncs_post",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BankSync"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Sync List",
+        "operationId": "sync_list_api_accounts__account_id__syncs_get",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BankSync"
+                  },
+                  "title": "Response Sync List Api Accounts  Account Id  Syncs Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/syncs/{sync_id}": {
+      "get": {
+        "summary": "Sync Get",
+        "operationId": "sync_get_api_syncs__sync_id__get",
+        "parameters": [
+          {
+            "name": "sync_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Sync Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BankSync"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/imports/{import_id}": {
       "get": {
         "summary": "Import Get",
@@ -8393,6 +8651,360 @@
         ],
         "title": "BalanceSource",
         "description": "statement_import.balance_source: where the declared balances came from (D21)."
+      },
+      "BankConnection": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "bank_code": {
+            "type": "string",
+            "pattern": "^[0-9]{8}$",
+            "title": "Bank Code"
+          },
+          "fints_url": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 9,
+            "title": "Fints Url"
+          },
+          "login_masked": {
+            "type": "string",
+            "pattern": "^(.{2}\\*{3}.{2}|\\*{3})$",
+            "title": "Login Masked"
+          },
+          "tan_mechanism": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 8
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tan Mechanism"
+          },
+          "auto_sync": {
+            "type": "boolean",
+            "title": "Auto Sync",
+            "default": false
+          },
+          "sca_confirmed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sca Confirmed At"
+          },
+          "last_sync_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Sync At"
+          },
+          "last_booking_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Booking On"
+          },
+          "state_present": {
+            "type": "boolean",
+            "title": "State Present",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "workspace_id",
+          "created_at",
+          "updated_at",
+          "account_id",
+          "bank_code",
+          "fints_url",
+          "login_masked"
+        ],
+        "title": "BankConnection",
+        "description": "GET /accounts/{id}/bank-connection: the login masked, the client state only as a flag\n(client_data and its MAC never leave the database)."
+      },
+      "BankConnectionCreate": {
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "bank_code": {
+            "type": "string",
+            "pattern": "^[0-9]{8}$",
+            "title": "Bank Code"
+          },
+          "fints_url": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 9,
+            "title": "Fints Url"
+          },
+          "login_name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Login Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "account_id",
+          "bank_code",
+          "fints_url",
+          "login_name"
+        ],
+        "title": "BankConnectionCreate",
+        "description": "POST /accounts/{id}/bank-connection. The PIN is never part of it (D119): it is the\ncontainer secret HAUSBUCH_FINTS_PIN."
+      },
+      "BankConnectionPatch": {
+        "properties": {
+          "auto_sync": {
+            "type": "boolean",
+            "title": "Auto Sync"
+          },
+          "fints_url": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 9,
+            "title": "Fints Url"
+          },
+          "login_name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Login Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "BankConnectionPatch",
+        "description": "PATCH /accounts/{id}/bank-connection. A changed URL or login keeps the stored client\nstate only while its MAC verifies (step 1); null is not accepted for any field."
+      },
+      "BankSync": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "connection_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Connection Id"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/SyncTrigger"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SyncStatus"
+          },
+          "requested_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested From"
+          },
+          "requested_to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested To"
+          },
+          "import_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Import Id"
+          },
+          "lines_total": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lines Total"
+          },
+          "lines_new": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lines New"
+          },
+          "balance_source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BalanceSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "balance_checked": {
+            "type": "boolean",
+            "title": "Balance Checked",
+            "default": false
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "workspace_id",
+          "created_at",
+          "updated_at",
+          "account_id",
+          "connection_id",
+          "trigger",
+          "status"
+        ],
+        "title": "BankSync",
+        "description": "One run (bank_sync, §4.2). lines_* are null until the preview ran; import_id is set\nonce the run wrote its import (status importing or done), and a run that failed after\nthat keeps it (status failed); never for nothing_new (D127)."
       },
       "BasisAddition": {
         "properties": {
@@ -19434,6 +20046,29 @@
           "amount"
         ],
         "title": "SumComponent"
+      },
+      "SyncStatus": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "running",
+          "needs_approval",
+          "importing",
+          "done",
+          "nothing_new",
+          "failed"
+        ],
+        "title": "SyncStatus",
+        "description": "bank_sync.status (migration 0019, D118). done, nothing_new and failed are final."
+      },
+      "SyncTrigger": {
+        "type": "string",
+        "enum": [
+          "manual",
+          "scheduled"
+        ],
+        "title": "SyncTrigger",
+        "description": "bank_sync.trigger (migration 0019): a person's button or the daily schedule (D120)."
       },
       "TariffStamp": {
         "properties": {

@@ -347,6 +347,10 @@ function EntryTitle({ item, data }: { item: InboxItem; data: InboxData }) {
   if (item.kind === "email_inbox_failed") {
     return <strong>Posteingang per E-Mail</strong>;
   }
+  if (item.kind === "bank_sync_failed" || item.kind === "bank_balance_drift" || item.kind === "bank_approval_needed") {
+    const account = item.account_id ? data.accounts.get(item.account_id) : undefined;
+    return <strong>Bankabruf{account ? ` · ${account.label}` : ""}</strong>;
+  }
   if (item.kind === "reminder") {
     const reminder = item.reminder_id ? data.reminders.get(item.reminder_id) : undefined;
     return reminder ? (
@@ -433,6 +437,10 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
       if (imp) return <Link href={`/accounts/${imp.account_id}?tab=kontoauszuege`}>Kontoauszug ansehen</Link>;
       return item.document_id ? <Link href={`/documents/${item.document_id}`}>Dokument öffnen</Link> : null;
     }
+    case "bank_sync_failed":
+    case "bank_balance_drift":
+    case "bank_approval_needed":
+      return item.account_id ? <Link href={`/accounts/${item.account_id}?tab=kontoauszuege`}>Zum Bankabruf</Link> : null;
     case "reminder": {
       const reminder = item.reminder_id ? data.reminders.get(item.reminder_id) : undefined;
       if (!reminder) return null;
