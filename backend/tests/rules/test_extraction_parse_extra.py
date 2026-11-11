@@ -14,6 +14,13 @@ from hausbuch.schemas.enums import DocumentSubtype, DocumentType, ExtractionKind
         ("1234,5 €", "money", "1234.50"),
         ("-412,10 €", "money", "-412.10"),
         ("1234.56", "money", "1234.56"),
+        # A banking app's English view (a payment proof, 11 Nov 2026): euro sign after the
+        # minus, commas for thousands and a decimal point.
+        ("−€5,687.00", "money", "-5687.00"),
+        ("-€ 5,687.00", "money", "-5687.00"),
+        ("€5,687.00", "money", "5687.00"),
+        ("EUR 1,234,567.5", "money", "1234567.50"),
+        ("5.687,00 €", "money", "5687.00"),
         ("2 %", "rate", "0.02"),
         ("3,650 % p.a.", "rate", "0.0365"),
         ("1.3.2027", "date", "2027-03-01"),
@@ -100,3 +107,24 @@ def test_value_without_digits_is_never_in_quote():
 )
 def test_extraction_kind(type_, subtype, kind):
     assert extraction_kind(type_, subtype) == kind
+
+
+def test_a_payment_proof_amount_in_english_form_is_read_from_its_quote():
+    # 11 Nov 2026: the second of two Grunderwerbsteuer transfers was printed "−€5,687.00";
+    # its amount was not read, so the proof was not proposed for its bill's open part.
+    blocks = [
+        CitedTextBlock(text="amount: "),
+        CitedTextBlock(
+            text="−€5,687.00",
+            citations=[
+                PageCitation(
+                    cited_text="Freistaat Bayern −€5,687.00",
+                    document_index=0,
+                    start_page_number=1,
+                    end_page_number=2,
+                )
+            ],
+        ),
+    ]
+    amount = parse_lines(blocks, ExtractionKind.PAYMENT_PROOF, reference_year=2027)["amount"]
+    assert amount.value == "-5687.00" and amount.confidence == "high"
