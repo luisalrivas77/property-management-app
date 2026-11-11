@@ -7,7 +7,8 @@ derived values (building share, the Rate from the Tilgungssatz, a loan's interes
 ownership shares, the prepayment sum, rent model, the tenancy's unit, an invoice's tax year:
 D36) and writes notes.
 A financing invoice (Grundschuld, Grundpfandrecht, Hypothek, Darlehen) is decided here, not
-by the classifier: it proposes no Nebenkosten row (D35). Nothing it returns reaches a
+by the classifier: it proposes no Nebenkosten row (D35) and the subtype financing_invoice,
+which only code sets (D138). Nothing it returns reaches a
 domain table: only the user's apply does, through the phase 1 services (D14).
 
 Phase 2 D135 (every cost document into every record it implies): an invoice's or Bescheid's
@@ -180,13 +181,16 @@ _LOAN_PART_LINK_NOTE = (
     "Anteil für den Kauf bleibt bei den Nebenkosten des Objekts und hat mit dem Darlehen "
     "nichts zu tun."
 )
+# A whole financing bill (D35, D138): what it is and where it counts. One text for both ways it
+# can have been paid; a rental-account payment adds _PAID_FROM_ACCOUNT_NOTE.
 _FINANCING_NOTE = (
-    "Diese Rechnung betrifft die Finanzierung (Grundschuld, Hypothek oder Darlehen). Solche "
-    "Kosten sind Geldbeschaffungskosten: im Jahr der Zahlung als Werbungskosten abziehbar, "
-    "nicht Teil der Anschaffungsnebenkosten und damit nicht der AfA-Grundlage. Darum wird "
-    "kein Nebenkosten-Eintrag vorgeschlagen; die Zahlung wird beim Abgleich des Kontoauszugs "
-    "als Darlehenskosten gebucht. Enthält dieselbe Rechnung auch einen Anteil für den Kauf, "
-    "bitte diesen von Hand als Nebenkosten erfassen."
+    "Diese Rechnung gehört zur Finanzierung (Grundschuld, Hypothek oder Darlehen). Solche "
+    "Kosten sind Geldbeschaffungskosten: Sie zählen im Jahr der Zahlung als Werbungskosten und "
+    "gehören nicht zu den Nebenkosten des Kaufs, also nicht zur AfA-Grundlage. Darum schlägt "
+    "Hausbuch keinen Nebenkosten-Eintrag vor. Kam die Zahlung vom Mietkonto, schlägt Hausbuch "
+    "sie beim Abgleich des Kontoauszugs als Geldbeschaffungskosten vor; kam sie von einem "
+    "anderen Konto, zählt sie über die Karte „Von einem anderen Konto bezahlt“ in diesem "
+    "Vorschlag."
 )
 # A Kautionsnachweis whose tenancy cannot be told (D42): typing only, and why.
 _DEPOSIT_SEVERAL_NOTE = (
@@ -228,9 +232,12 @@ _CATALOGUE_INVOICES = (
     DocumentSubtype.HOUSEHOLD_SERVICES_INVOICE,
     DocumentSubtype.WORK_EXPENSE_INVOICE,
 )
+# The proposal never deletes: the row is removed with its own button (Objekt › Nebenkosten).
 _FINANCING_BELEG_NOTE = (
-    "Diese Rechnung ist schon als Beleg eines Nebenkosten-Eintrags hinterlegt. Der Eintrag "
-    "gehört zu den Darlehenskosten: bitte ihn aus den Nebenkosten entfernen."
+    "Diese Rechnung ist schon als Beleg eines Nebenkosten-Eintrags hinterlegt. Als "
+    "Geldbeschaffungskosten gehört sie nicht zu den Nebenkosten des Kaufs und zählte sonst "
+    "doppelt: bitte den Eintrag beim Objekt unter „Nebenkosten“ mit „Entfernen“ aus den "
+    "Nebenkosten nehmen."
 )
 # D135: where each part of a bill counts, named in its tax_input:private_cost record's hint.
 _ANLAGE_V_PLACE = {
@@ -655,8 +662,13 @@ class _Builder:
     def typing(self) -> None:
         c = self.ctx.classification
         fields = {"type": _code_value(c.type.value, c.confidence)}
-        # A financing invoice carries no subtype, whatever the classifier said (D35).
-        if c.subtype is not None and not self.financing:
+        # A financing bill is a financing_invoice, whatever the classifier said (D35, D138);
+        # code decides it, so the classifier's confidence does not apply.
+        if self.financing:
+            fields["subtype"] = _code_value(
+                DocumentSubtype.FINANCING_INVOICE.value, self._financing_confidence()
+            )
+        elif c.subtype is not None:
             fields["subtype"] = _code_value(c.subtype.value, c.confidence)
         for name in ("title", "document_date", "tax_year"):
             if self.stated(name):
@@ -683,6 +695,16 @@ class _Builder:
         if self.ctx.paid_from_rental_account and self._private_parts():
             notes.append(_PAID_FROM_ACCOUNT_NOTE)
         self.add("typing", "typing", "create", fields, notes=notes)
+
+    def _financing_confidence(self) -> ConfidenceLevel:
+        """How sure the financing decision is (D138): the confidence of the text that named
+        the financing term (an invoice's subject or title, a Bescheid's title; the higher when
+        both do), else of the cost lines that are all loan costs (sort_bill)."""
+        names = ("subject", "title") if self.kind is ExtractionKind.INVOICE else ("title",)
+        named = [self.ev(n).confidence for n in names if names_financing(self.ev(n).value)]
+        if named:
+            return max(named, key=_CONFIDENCE_ORDER.__getitem__)
+        return self.ev("cost_lines").confidence
 
     def hand_fields(self) -> None:
         """D132: the kind's hand-entry fields on the typing record (records[0]), once every

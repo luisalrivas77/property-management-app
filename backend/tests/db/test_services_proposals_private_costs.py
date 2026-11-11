@@ -23,10 +23,11 @@ from hausbuch.schemas.allocation import (
     AllocationMethod,
     AllocationSet,
 )
-from hausbuch.schemas.enums import DocumentType
+from hausbuch.schemas.enums import DocumentSubtype, DocumentType
 from hausbuch.schemas.events import EventType
 from hausbuch.schemas.tax import TaxInputKind
 from hausbuch.services import allocations, matching, proposals
+from hausbuch.services.documents import get_document
 from hausbuch.services.tax_inputs import list_tax_inputs
 
 pytestmark = pytest.mark.db
@@ -279,6 +280,35 @@ def test_a_bill_a_bank_line_pays_proposes_no_private_cost(
     assert not [k for k in keys if k.startswith("tax_input:")]
     typing = next(r for r in ready.records if r.key == "typing")
     assert any("vom Mietkonto" in n for n in typing.notes)
+
+
+def test_a_grundschuld_bill_is_stored_as_a_financing_bill(
+    world, run, read, job, blob_store, enqueued
+):
+    """D138: the classifier's cost_basis_evidence is replaced by financing_invoice, which the
+    apply stores on the document (migration 0022's CHECK takes it), beside the loan cost."""
+    ws, prop = world.ws, world.property_id
+    classified = INVOICE.model_copy(update={"subtype": DocumentSubtype.COST_BASIS_EVIDENCE})
+    values = {
+        "title": _v("Notarrechnung Grundschuldbestellung"),
+        "subject": _v("Grundschuld-/Hypothekenbestellung mit ZV-Unterwerfung"),
+        "document_date": _v("2026-03-20"),
+        "sender": _v("Notarin Beispiel"),
+        "amount_total": _v("612.88"),
+    }
+    doc, ready, _ = _read_ready(run, job, ws, blob_store, enqueued, classified, values, b"%PDF g")
+    typing = next(r for r in ready.records if r.key == "typing")
+    assert typing.fields["subtype"].value == "financing_invoice"
+    assert any("Von einem anderen Konto bezahlt" in n for n in typing.notes)
+
+    _apply(run, ws, ready)
+    stored = read(ws, get_document, doc.id)
+    assert stored.typing.subtype is DocumentSubtype.FINANCING_INVOICE
+    [row] = _private(read, ws, prop)
+    assert (row.value.category, row.value.amount) == (
+        AllocationCategory.LOAN_FEES,
+        Decimal("612.88"),
+    )
 
 
 # --- paid_from_rental_account -----------------------------------------------------------------

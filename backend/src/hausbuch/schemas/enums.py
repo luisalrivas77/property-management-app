@@ -135,6 +135,10 @@ class DocumentSubtype(StrEnum):
     REPAYMENT_SCHEDULE = "repayment_schedule"  # Tilgungsplan (other; ownership)
     LOAN_TERMS_CHANGE = "loan_terms_change"  # Prolongation, Konditionsanpassung (letter; own.)
     LOAN_STATEMENT = "loan_statement"  # Darlehenskontoauszug (statement)
+    # Phase 2 D138 (migration 0022): a whole financing bill (Grundschuld, Darlehen; invoice or
+    # bescheid, read by its type's reader; tax_records). Set by code (rules.prefill), never by
+    # the classifier: left out of the classify schema (ai.requests.classify_schema).
+    FINANCING_INVOICE = "financing_invoice"
     # Tenancy (tenant gate; retention tenancy_records; link:tenancy)
     LEASE_AMENDMENT = "lease_amendment"  # Nachtrag zum Mietvertrag (contract)
     RENT_INCREASE = "rent_increase"  # Mieterhöhung (letter)

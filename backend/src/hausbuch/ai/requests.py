@@ -36,7 +36,7 @@ from typing import Any
 
 import anthropic
 
-from hausbuch.rules.extraction_parse import accepted_subtype
+from hausbuch.rules.extraction_parse import CODE_ONLY_SUBTYPES, accepted_subtype
 from hausbuch.schemas.ai import AiJob, ClassifyOutput, ConfidenceLevel
 from hausbuch.schemas.allocation import LlmMatchOutput
 from hausbuch.schemas.common import Schema
@@ -93,8 +93,14 @@ def load_prompt(name: str) -> Prompt:
 @cache
 def classify_schema() -> dict:
     """The classify output schema: every DocumentType, the two phase 4b pay documents included
-    since phase 4b step 2 (D96) gave them their extraction."""
-    return anthropic.transform_schema(ClassifyOutput.model_json_schema())
+    since phase 4b step 2 (D96) gave them their extraction. Every DocumentSubtype but those
+    only code sets (D138, CODE_ONLY_SUBTYPES): the model never answers them, and the request,
+    so every recorded request hash, stays as it was (as phase 4b step 0's NOT_YET_CLASSIFIED
+    did for the pay documents)."""
+    schema = ClassifyOutput.model_json_schema()
+    subtype = schema["$defs"]["DocumentSubtype"]
+    subtype["enum"] = [v for v in subtype["enum"] if v not in CODE_ONLY_SUBTYPES]
+    return anthropic.transform_schema(schema)
 
 
 def classify_request(settings: Settings, document: dict) -> ModelRequest:

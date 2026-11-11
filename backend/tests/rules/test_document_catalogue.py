@@ -9,15 +9,20 @@ from datetime import date
 
 import pytest
 
-from hausbuch.ai.requests import field_list, parse_classification
-from hausbuch.rules.extraction_parse import CATALOGUE_SUBTYPES, TENANT_SUBTYPES, extraction_kind
+from hausbuch.ai.requests import classify_schema, field_list, load_prompt, parse_classification
+from hausbuch.rules.extraction_parse import (
+    CATALOGUE_SUBTYPES,
+    CODE_ONLY_SUBTYPES,
+    TENANT_SUBTYPES,
+    extraction_kind,
+)
 from hausbuch.rules.retention import document_retention
 from hausbuch.schemas.document import DocumentRetentionInput, RetentionPolicy
 from hausbuch.schemas.enums import DocumentSubtype as S
 from hausbuch.schemas.enums import DocumentType as T
 from hausbuch.schemas.enums import ExtractionKind as K
 from hausbuch.schemas.enums import RetentionClass
-from hausbuch.schemas.extraction import GENERAL_LINK, TENANCY_GROUP, asked_fields
+from hausbuch.schemas.extraction import GENERAL_LINK, LOAN_GROUP, TENANCY_GROUP, asked_fields
 from hausbuch.services.proposals import _TENANT_SUBTYPES
 
 OWN, TEN, TAX = (
@@ -90,11 +95,18 @@ EXISTING = [
     (S.COST_BASIS_EVIDENCE, T.BESCHEID, K.BESCHEID),
     (S.GRUNDSTEUERBESCHEID, T.BESCHEID, K.GRUNDSTEUERBESCHEID),
 ]
+# A financing bill (D138): in the catalogue's loan group, but read by its type's reader like
+# cost_basis_evidence, and set by code only. (subtype, type, retention, link, reader)
+FINANCING = [
+    (S.FINANCING_INVOICE, T.INVOICE, TAX, "loan", K.INVOICE),
+    (S.FINANCING_INVOICE, T.BESCHEID, TAX, "loan", K.BESCHEID),
+]
 ADDRESS = ("street", "house_number", "postal_code")
 
 
 def test_the_table_covers_every_subtype():
-    assert {row[0] for row in CATALOGUE} | {row[0] for row in EXISTING} == set(S)
+    tables = (CATALOGUE, EXISTING, FINANCING)
+    assert {row[0] for table in tables for row in table} == set(S)
     assert len(CATALOGUE) == 41  # 40 new subtypes and the Einkommensteuerbescheid
 
 
@@ -274,6 +286,43 @@ def test_a_catalogue_subtype_still_overrides_the_other_types(type_, subtype, rea
     assert extraction_kind(classification.type, classification.subtype) is reader
 
 
-def test_the_catalogue_is_the_forty_new_subtypes():
-    assert len(CATALOGUE_SUBTYPES) == 40
-    assert {row[0] for row in CATALOGUE} - {S.EINKOMMENSTEUERBESCHEID} == CATALOGUE_SUBTYPES
+def test_the_catalogue_is_the_forty_new_subtypes_and_the_financing_bill():
+    assert len(CATALOGUE_SUBTYPES) == 41  # 40 from D131, financing_invoice from D138
+    catalogue = {row[0] for row in CATALOGUE} - {S.EINKOMMENSTEUERBESCHEID}
+    assert catalogue | {S.FINANCING_INVOICE} == CATALOGUE_SUBTYPES
+
+
+# --- the financing bill (D138) ---------------------------------------------------------------
+
+
+@pytest.mark.parametrize(("subtype", "type_", "retention", "link", "reader"), FINANCING)
+def test_a_financing_bill_is_in_the_loan_group_and_kept_as_a_bill(
+    subtype, type_, retention, link, reader
+):
+    assert subtype in LOAN_GROUP
+    assert GENERAL_LINK[subtype] == link
+    # read by its type's reader, so its cost lines are sorted like any bill's (D135)
+    assert extraction_kind(type_, subtype) is reader
+    got = document_retention(
+        DocumentRetentionInput(
+            type=type_,
+            subtype=subtype,
+            received_on=date(2026, 11, 11),
+            tax_year=2026,
+            ownership_end_dates=[date(2040, 6, 30)],
+            tenancy_end_dates=[date(2030, 6, 30)],
+        ),
+        RetentionPolicy(),
+    )
+    assert got.retention_class is retention  # 10 years after the tax year
+    assert got.retain_until == date(2036, 12, 31)
+
+
+def test_the_classifier_never_answers_the_financing_bill():
+    schema = classify_schema()
+    assert S.FINANCING_INVOICE.value not in json.dumps(schema)
+    assert S.FINANCING_INVOICE in CODE_ONLY_SUBTYPES
+    assert S.FINANCING_INVOICE.value not in load_prompt("classify").text
+    # a model answer of it is dropped, whatever the type
+    for type_ in (T.INVOICE, T.BESCHEID, T.LETTER):
+        assert _classified(type_, S.FINANCING_INVOICE).subtype is None
