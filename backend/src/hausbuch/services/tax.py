@@ -26,6 +26,9 @@ What the facts hold, and what they leave out:
 - Pending: the lines of the tax year on those accounts, from reconciled imports and not
   merged away, that have no confirmed allocation yet (proposed, or not matched at all); a
   proposed line counts only when one of its proposed parts is of this property or of none.
+- Payment proofs (phase 3 D143): every document of subtype payment_proof linked to a bill
+  of an acquisition cost row or a private_cost row of the property (document_link target
+  document), with the amount of its current reading as a magnitude (None: not read).
 """
 
 from collections.abc import Sequence
@@ -37,6 +40,8 @@ from uuid import UUID
 from sqlalchemy import Connection, and_, exists, func, or_, select
 
 from hausbuch.db.tables import allocation as allocation_table
+from hausbuch.db.tables import document as document_table
+from hausbuch.db.tables import document_link as link_table
 from hausbuch.db.tables import property_price_split as split_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import tax_input as tax_input_table
@@ -44,6 +49,7 @@ from hausbuch.db.tables import tenancy as tenancy_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.rules import document_checklist as checklist_rule
 from hausbuch.rules.errors import TAX_YEAR_NOT_AVAILABLE, RuleError
+from hausbuch.rules.hand_fields import HAND_FIELD_MAP, hand_values
 from hausbuch.rules.loan_schedule import build_schedule
 from hausbuch.rules.matching import LOAN_WINDOW_DAYS
 from hausbuch.rules.tax import registry
@@ -68,6 +74,7 @@ from hausbuch.schemas.tax import (
     AnlageVDraft,
     DraftFacts,
     OpenLines,
+    PaymentProofFact,
     RuleSet,
     TaxInputFact,
     TaxLoan,
@@ -178,6 +185,10 @@ def draft_facts(
         loans={lo.id: lo for lo in loans},
     )
     ownership = get_ownership(conn, property_id)
+    cost_rows = _cost_rows(conn, property_id, allocations)
+    tax_inputs = _tax_inputs(conn, property_id)
+    bills = {r.document_id for r in cost_rows} | {r.document_id for r in tax_inputs}
+    bills.discard(None)
 
     return DraftFacts(
         property=TaxProperty(
@@ -199,10 +210,11 @@ def draft_facts(
         units=[TaxUnit(id=u.id, label=u.label, floor_area_m2=u.floor_area_m2) for u in units],
         tenancies=tenancies,
         split=_split(conn, prop.selected_price_split_id),
-        cost_rows=_cost_rows(conn, property_id, allocations),
+        cost_rows=cost_rows,
         loans=[TaxLoan(id=lo.id, lender=lo.lender) for lo in loans],
         allocations=allocations,
-        tax_inputs=_tax_inputs(conn, property_id),
+        tax_inputs=tax_inputs,
+        payment_proofs=_payment_proofs(conn, bills),
         checklist=checklist,
         today=today,
         coverage=_coverage(conn, accounts),
@@ -295,6 +307,48 @@ def _cost_rows(
         )
         for c in costs
     ]
+
+
+def _payment_proofs(conn: Connection, bills: set[UUID]) -> list[PaymentProofFact]:
+    """D143: the payment_proof documents linked to one of the bills, each with its reading's
+    amount as a magnitude (a transfer is often read as negative); None when the proof has no
+    reading yet or its amount was not read, which the draft counts as a proof."""
+    if not bills:
+        return []
+    k, d = link_table.c, document_table.c
+    rows = conn.execute(
+        select(k.document_id, k.target_document_id)
+        .join(document_table, d.id == k.document_id)
+        .where(
+            k.target_document_id.in_(bills),
+            d.subtype == DocumentSubtype.PAYMENT_PROOF.value,
+        )
+        .order_by(k.target_document_id, k.document_id)
+    ).all()
+    return [
+        PaymentProofFact(
+            proof_document_id=row.document_id,
+            bill_document_id=row.target_document_id,
+            amount=_proof_amount(conn, row.document_id),
+        )
+        for row in rows
+    ]
+
+
+def _proof_amount(conn: Connection, document_id: UUID) -> Decimal | None:
+    """A payment proof's amount: the reading's `amount`, or what a person typed as Betrag
+    (the hand field over either reading, rules.hand_fields)."""
+    extraction = current_extraction(conn, document_id)
+    if extraction is None:
+        return None
+    if extraction.kind is ExtractionKind.MANUAL:
+        amount = getattr(extraction.fields, "amount_total", None)
+    else:
+        mapping = HAND_FIELD_MAP.get(extraction.kind, {})
+        if "amount_total" not in mapping:
+            return None
+        amount = hand_values(extraction.fields, mapping).amount_total
+    return None if amount is None else abs(amount).quantize(_CENT)
 
 
 def _tax_inputs(conn: Connection, property_id: UUID) -> list[TaxInputFact]:

@@ -34,7 +34,7 @@ import { centsToString, toCents } from "./allocations";
 import { ReadUpload } from "./documents";
 import { formatDate, formatMoney, formatPercent } from "./format";
 import { toDecimalString } from "./input";
-import { ACQUISITION_COST_KIND, ALLOCATION_CATEGORY, PRICE_SPLIT_SOURCE } from "./labels";
+import { ACQUISITION_COST_KIND, ALLOCATION_CATEGORY, PRICE_SPLIT_SOURCE, proofBill } from "./labels";
 import { ActionDialog } from "./ui";
 import { useLoad } from "./useLoad";
 import { questionnaireHref, taxFormHref } from "./taxYear";
@@ -58,8 +58,9 @@ export interface GuideContext {
 
 export type GuideAction =
   | { kind: "link"; href: string; label: string }
-  /** Upload and read a document (ReadUpload): the reading proposes the missing figures. */
-  | { kind: "upload"; label: string }
+  /** Upload and read a document (ReadUpload): the reading proposes the missing figures.
+   * proofFor (payment_proof.missing, phase 3 D143): the upload is this bill's payment proof. */
+  | { kind: "upload"; label: string; proofFor?: string }
   /** afa.no_split: select a recorded split, or upload the Kaufvertrag. */
   | { kind: "split" }
   /** income.other_review (D140): open the payment, or re-book it as Kaltmiete after a confirm.
@@ -176,6 +177,22 @@ export const WARNING_GUIDE: Partial<Record<WarningCode, Guide>> = {
     text: () =>
       "Nichts zu tun, wenn Sie diese Kosten von einem anderen Konto bezahlt haben: sie zählen trotzdem. Kam die Zahlung vom Mietkonto, sie in Zu prüfen als Nebenkosten des Kaufs zuordnen.",
     action: propertyTab("nebenkosten", "Nebenkosten ansehen"),
+  },
+  // Phase 3 D143: a bill the draft counts without a bank line that paid it.
+  "payment_proof.missing": {
+    todo: true,
+    title: (p) => {
+      const bill = proofBill(p);
+      return `Zahlungsnachweis fehlt: ${bill.charAt(0).toUpperCase()}${bill.slice(1)}`;
+    },
+    text: (p) =>
+      p.proof_amount
+        ? `Der hochgeladene Nachweis lautet über ${formatMoney(p.proof_amount)}, die Rechnung über ${formatMoney(p.amount)}. Wurde in Teilen bezahlt, auch den Beleg der übrigen Zahlung hochladen; die Rechnung zählt bis dahin trotzdem mit.`
+        : "Die Rechnung zählt schon mit; nur der Beleg fehlt, dass sie bezahlt wurde. Im Online-Banking den Überweisungsbeleg oder die Umsatzdetails dieser einen Zahlung als PDF speichern und hier hochladen, nicht den ganzen Kontoauszug. Die App liest Datum und Betrag; wurde die Rechnung in einem anderen Jahr bezahlt, schlägt sie das richtige Jahr vor.",
+    action: (warning) =>
+      warning.params?.document
+        ? { kind: "upload", label: "Zahlungsnachweis hochladen", proofFor: warning.params.document }
+        : null,
   },
   "afa.acquisition_cost_without_row": {
     todo: true,
@@ -555,7 +572,7 @@ export function WarningActionView({
     case "link":
       return <Link href={action.href}>{action.label}</Link>;
     case "upload":
-      return <ReadUpload label={action.label} onUploaded={onChanged} />;
+      return <ReadUpload label={action.label} proofFor={action.proofFor} onUploaded={onChanged} />;
     case "split":
       return ctx.propertyId ? <SplitAction propertyId={ctx.propertyId} onChanged={onChanged} /> : null;
     case "rebook_rent":

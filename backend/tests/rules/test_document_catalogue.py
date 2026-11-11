@@ -62,6 +62,8 @@ CATALOGUE = [
     (S.UTILITY_BILL, T.INVOICE, TAX, "property", K.INVOICE),
     (S.QUOTE, T.LETTER, TAX, "property", K.GENERAL),
     (S.CHIMNEY_SWEEP_NOTICE, T.BESCHEID, TAX, "property", K.GENERAL),
+    # phase 3 D143: typed and linked to its bill by code (no group link), its own reader
+    (S.PAYMENT_PROOF, T.OTHER, TAX, None, K.PAYMENT_PROOF),
     # income tax
     (S.EINKOMMENSTEUERBESCHEID, T.BESCHEID, TAX, None, K.EINKOMMENSTEUERBESCHEID),
     (S.PREPAYMENT_NOTICE, T.BESCHEID, TAX, None, K.GENERAL),
@@ -107,7 +109,8 @@ ADDRESS = ("street", "house_number", "postal_code")
 def test_the_table_covers_every_subtype():
     tables = (CATALOGUE, EXISTING, FINANCING)
     assert {row[0] for table in tables for row in table} == set(S)
-    assert len(CATALOGUE) == 41  # 40 new subtypes and the Einkommensteuerbescheid
+    # 40 new subtypes, the Einkommensteuerbescheid and the payment proof (phase 3 D143)
+    assert len(CATALOGUE) == 42
 
 
 @pytest.mark.parametrize(("subtype", "type_", "retention", "link", "reader"), CATALOGUE)
@@ -291,7 +294,8 @@ def test_a_catalogue_subtype_still_overrides_the_other_types(type_, subtype, rea
 
 
 def test_the_catalogue_is_the_forty_new_subtypes_and_the_financing_bill():
-    assert len(CATALOGUE_SUBTYPES) == 41  # 40 from D131, financing_invoice from D138
+    # 40 from D131, financing_invoice from D138, payment_proof from phase 3 D143
+    assert len(CATALOGUE_SUBTYPES) == 42
     catalogue = {row[0] for row in CATALOGUE} - {S.EINKOMMENSTEUERBESCHEID}
     assert catalogue | {S.FINANCING_INVOICE} == CATALOGUE_SUBTYPES
 
@@ -320,6 +324,16 @@ def test_a_financing_bill_is_in_the_loan_group_and_kept_as_a_bill(
     )
     assert got.retention_class is retention  # 10 years after the tax year
     assert got.retain_until == date(2036, 12, 31)
+
+
+def test_the_classifier_never_answers_the_payment_proof():
+    """Phase 3 D143: a payment proof is typed by its upload from a bill's to-do only."""
+    schema = classify_schema()
+    assert S.PAYMENT_PROOF.value not in json.dumps(schema)
+    assert S.PAYMENT_PROOF in CODE_ONLY_SUBTYPES
+    assert S.PAYMENT_PROOF.value not in load_prompt("classify").text
+    for type_ in (T.OTHER, T.STATEMENT, T.LETTER):
+        assert _classified(type_, S.PAYMENT_PROOF).subtype is None
 
 
 def test_the_classifier_never_answers_the_financing_bill():

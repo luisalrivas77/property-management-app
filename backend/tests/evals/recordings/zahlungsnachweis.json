@@ -1,0 +1,169 @@
+{
+ "format": 1,
+ "doc": "zahlungsnachweis",
+ "synthetic": false,
+ "recorded_on": "2026-11-11",
+ "sdk_version": "2.6.0",
+ "classify": null,
+ "pretyped": {
+  "type": "other",
+  "subtype": "payment_proof"
+ },
+ "extract": [
+  {
+   "prompt_version": "5a4e4a41623c9f1a",
+   "request_sha256": "c040b3fdda89c69f323d78d3109df0c16b695bb5a4acf140cdde15efdf71c5a3",
+   "message": {
+    "id": "msg_011CgwV7hZ2BwZKxzg38yCVq",
+    "container": null,
+    "content": [
+     {
+      "citations": null,
+      "text": "title: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Musterbank AG - Umsatzdetails\r\nAusgeführte Überweisung\r\nAuftraggeber: Ana Testkauf\r\nIBAN Auftraggeber: DE89 3704 0044 0532 0130 00\r\nKundennummer: 7788123\r\nEmpfänger: Notar Dr. Max Beispiel\r\nIBAN Empfänger: DE02 1203 0000 0000 2020 51\r\nBetrag: 1.309,00 EUR\r\nVerwendungszweck: Kostenrechnung 2026-0456\r\nAusführungsdatum: 05.01.2027\r\nErstellt am 06.01.2027",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Überweisungsbeleg Notarkosten",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\ndocument_date: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Musterbank AG - Umsatzdetails\r\nAusgeführte Überweisung\r\nAuftraggeber: Ana Testkauf\r\nIBAN Auftraggeber: DE89 3704 0044 0532 0130 00\r\nKundennummer: 7788123\r\nEmpfänger: Notar Dr. Max Beispiel\r\nIBAN Empfänger: DE02 1203 0000 0000 2020 51\r\nBetrag: 1.309,00 EUR\r\nVerwendungszweck: Kostenrechnung 2026-0456\r\nAusführungsdatum: 05.01.2027\r\nErstellt am 06.01.2027",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "06.01.2027",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\npaid_on: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Musterbank AG - Umsatzdetails\r\nAusgeführte Überweisung\r\nAuftraggeber: Ana Testkauf\r\nIBAN Auftraggeber: DE89 3704 0044 0532 0130 00\r\nKundennummer: 7788123\r\nEmpfänger: Notar Dr. Max Beispiel\r\nIBAN Empfänger: DE02 1203 0000 0000 2020 51\r\nBetrag: 1.309,00 EUR\r\nVerwendungszweck: Kostenrechnung 2026-0456\r\nAusführungsdatum: 05.01.2027\r\nErstellt am 06.01.2027",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "05.01.2027",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\namount: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Musterbank AG - Umsatzdetails\r\nAusgeführte Überweisung\r\nAuftraggeber: Ana Testkauf\r\nIBAN Auftraggeber: DE89 3704 0044 0532 0130 00\r\nKundennummer: 7788123\r\nEmpfänger: Notar Dr. Max Beispiel\r\nIBAN Empfänger: DE02 1203 0000 0000 2020 51\r\nBetrag: 1.309,00 EUR\r\nVerwendungszweck: Kostenrechnung 2026-0456\r\nAusführungsdatum: 05.01.2027\r\nErstellt am 06.01.2027",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "1.309,00 EUR",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\npayee: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Musterbank AG - Umsatzdetails\r\nAusgeführte Überweisung\r\nAuftraggeber: Ana Testkauf\r\nIBAN Auftraggeber: DE89 3704 0044 0532 0130 00\r\nKundennummer: 7788123\r\nEmpfänger: Notar Dr. Max Beispiel\r\nIBAN Empfänger: DE02 1203 0000 0000 2020 51\r\nBetrag: 1.309,00 EUR\r\nVerwendungszweck: Kostenrechnung 2026-0456\r\nAusführungsdatum: 05.01.2027\r\nErstellt am 06.01.2027",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Notar Dr. Max Beispiel",
+      "type": "text"
+     },
+     {
+      "citations": null,
+      "text": "\npurpose: ",
+      "type": "text"
+     },
+     {
+      "citations": [
+       {
+        "cited_text": "Musterbank AG - Umsatzdetails\r\nAusgeführte Überweisung\r\nAuftraggeber: Ana Testkauf\r\nIBAN Auftraggeber: DE89 3704 0044 0532 0130 00\r\nKundennummer: 7788123\r\nEmpfänger: Notar Dr. Max Beispiel\r\nIBAN Empfänger: DE02 1203 0000 0000 2020 51\r\nBetrag: 1.309,00 EUR\r\nVerwendungszweck: Kostenrechnung 2026-0456\r\nAusführungsdatum: 05.01.2027\r\nErstellt am 06.01.2027",
+        "document_index": 0,
+        "document_title": null,
+        "end_page_number": 2,
+        "file_id": null,
+        "start_page_number": 1,
+        "type": "page_location"
+       }
+      ],
+      "text": "Kostenrechnung 2026-0456",
+      "type": "text"
+     }
+    ],
+    "diagnostics": null,
+    "model": "claude-sonnet-5-5",
+    "role": "assistant",
+    "stop_details": null,
+    "stop_reason": "end_turn",
+    "stop_sequence": null,
+    "type": "message",
+    "usage": {
+     "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+     },
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "inference_geo": "us",
+     "input_tokens": 3734,
+     "output_tokens": 207,
+     "output_tokens_details": {
+      "thinking_tokens": 0
+     },
+     "server_tool_use": null,
+     "service_tier": "standard",
+     "speed": "standard"
+    }
+   },
+   "page_offset": 0
+  }
+ ]
+}

@@ -499,6 +499,8 @@ def build_proposal(
             b.payslip()
         case ExtractionKind.EINKOMMENSTEUERBESCHEID:
             b.income_tax_assessment()
+        case ExtractionKind.PAYMENT_PROOF:
+            b.payment_proof()
         case _:  # statement, unknown: typing only
             pass
     b.hand_fields()
@@ -765,6 +767,67 @@ class _Builder:
         if self.ctx.paid_from_rental_account and self._private_parts():
             notes.append(_PAID_FROM_ACCOUNT_NOTE)
         self.add("typing", "typing", "create", fields, notes=notes)
+
+    # -- payment proof (phase 3 D143)
+
+    def payment_proof(self) -> None:
+        """A payment proof uploaded from its bill's to-do (context.proof_bill). Its amount (a
+        magnitude) is compared with the bill's combined total: the amounts of its acquisition
+        cost rows plus those of its private_cost rows in force (a bill split into both parts
+        was paid as one), or, for such a split bill, with its private part alone, as the draft
+        accepts either. When they match within 0.01 and paid_on is
+        read, every private_cost row of another year than paid_on's is proposed for the year
+        paid (private_cost_year:<n>, §11 Abs. 2 EStG); the apply withdraws the row and
+        creates its value in that year. An acquisition cost row has no year and is never
+        moved. A mismatch or an unread amount moves nothing and says so on the typing."""
+        bill = self.ctx.proof_bill
+        if bill is None:
+            return  # typed by hand, not from a bill's to-do
+        private = sorted(bill.private_costs, key=lambda r: str(r.id))
+        amounts = [r.amount for r in private] + [c.amount for c in bill.acquisition_costs]
+        if not amounts or any(a is None for a in amounts):
+            return  # no amount to compare with (a private cost without one)
+        expected = sum((a for a in amounts if a is not None), Decimal(0))
+        amount_ev = self.ev("amount")
+        read = _decimal(amount_ev.value)
+        typing = self.records[0]
+        if read is None:
+            typing.notes.append(_PROOF_UNREAD_NOTE.format(bill=_euro_de(expected)))
+            return
+        # The privately paid part alone also matches (a split bill whose purchase part was
+        # paid another way), as the draft accepts it (rules/tax/draft._payment_proofs).
+        private_total = sum((r.amount for r in private if r.amount is not None), Decimal(0))
+        totals = [expected] + ([private_total] if private and bill.acquisition_costs else [])
+        if all(abs(abs(read) - total) > _PROOF_TOLERANCE for total in totals):
+            typing.notes.append(
+                _PROOF_MISMATCH_NOTE.format(proof=_euro_de(abs(read)), bill=_euro_de(expected))
+            )
+            return
+        paid_ev = self.ev("paid_on")
+        paid_on = _iso_date(paid_ev.value)
+        if paid_on is None:
+            return
+        n = 0
+        for row in private:
+            if row.tax_year == paid_on.year:
+                continue
+            n += 1
+            self.add(
+                f"private_cost_year:{n}",
+                "tax_input",
+                "patch",
+                {"tax_year": _derived(paid_on.year, [("paid_on", paid_ev), ("amount", amount_ev)])},
+                target_id=row.id,
+                current={"tax_year": row.tax_year},
+                notes=[
+                    _PROOF_YEAR_NOTE.format(
+                        label=row.label,
+                        old=row.tax_year,
+                        paid=paid_on.strftime("%d.%m.%Y"),
+                        new=paid_on.year,
+                    )
+                ],
+            )
 
     def _financing_confidence(self) -> ConfidenceLevel:
         """How sure the financing decision is (D138): the confidence of the text that named
@@ -2470,6 +2533,23 @@ def _month_start(value: Any) -> str | None:
     if found is not None and found.group(1) in _MONTHS:
         return date(int(found.group(2)), _MONTHS[found.group(1)], 1).isoformat()
     return None
+
+
+# Phase 3 D143: the payment proof's notes.
+_PROOF_TOLERANCE = Decimal("0.01")
+_PROOF_UNREAD_NOTE = (
+    "Der Betrag des Zahlungsnachweises wurde nicht gelesen; bitte prüfen, ob er der Rechnung "
+    "über {bill} entspricht."
+)
+_PROOF_MISMATCH_NOTE = (
+    "Der Betrag des Zahlungsnachweises ({proof}) passt nicht zur Rechnung über {bill}; das "
+    "Steuerjahr bleibt, wie es ist. Fehlt ein Teil, bitte auch den Nachweis der übrigen "
+    "Zahlung hochladen."
+)
+_PROOF_YEAR_NOTE = (
+    "„{label}“ zählt bisher im Jahr {old}, wurde aber am {paid} bezahlt: Kosten zählen im Jahr "
+    "der Zahlung (§11 Abs. 2 EStG), also {new}."
+)
 
 
 def _euro_de(amount: Decimal) -> str:

@@ -183,6 +183,8 @@ export const DOCUMENT_SUBTYPE: Record<DocumentSubtype, string> = {
   utility_bill: "Abrechnung Strom, Gas, Wasser",
   quote: "Kostenvoranschlag, Angebot",
   chimney_sweep_notice: "Feuerstättenbescheid",
+  // Set by code at the upload from a bill's to-do (phase 3 D143), never by the classifier.
+  payment_proof: "Zahlungsnachweis (Überweisung, Kontoauszug)",
   // Einkommensteuer
   einkommensteuerbescheid: "Einkommensteuerbescheid",
   prepayment_notice: "Vorauszahlungsbescheid",
@@ -211,6 +213,8 @@ export const LINK_TARGET: Record<LinkTarget, string> = {
   tenant: "Mieter",
   tenancy: "Mietverhältnis",
   loan: "Darlehen",
+  // A payment proof's bill (phase 3 D143)
+  document: "Rechnung",
 };
 
 export const RETENTION_CLASS: Record<RetentionClass, string> = {
@@ -341,6 +345,7 @@ export const EXTRACTION_KIND: Record<ExtractionKind, string> = {
   einkommensteuerbescheid: "Einkommensteuerbescheid",
   general: "Titel und Datum",
   management_contract: "Verwaltervertrag",
+  payment_proof: "Zahlungsnachweis",
 };
 
 /** The confidence dot's text (computed by code from the checks, D15). */
@@ -648,6 +653,13 @@ type Params = Record<string, string>;
 /** An amount param ("4760.00") as "4.760,00 €"; "–" when the rule sent none. */
 const money = (params: Params, key = "amount") => formatMoney(params[key]);
 
+/** A payment_proof.missing bill (phase 3 D143): „die Rechnung Notar“ by the cost row's kind,
+ * or „die Rechnung „Dachreparatur““ by the privately paid cost's label. */
+export function proofBill(params: Params): string {
+  if (params.kind) return `die Rechnung ${ACQUISITION_COST_KIND[params.kind as AcquisitionCostKind] ?? params.kind}`;
+  return params.label ? `die Rechnung „${params.label}“` : "die Rechnung";
+}
+
 /** The German sentence of a draft warning, its params filled in (amounts as decimal strings,
  * dates ISO, phase-3.md §5). The rules send codes and params only; the text lives here. */
 export const WARNING_TEXT: Record<WarningCode, (params: Params) => string> = {
@@ -713,6 +725,8 @@ export const WARNING_TEXT: Record<WarningCode, (params: Params) => string> = {
     "Mehr als 50 Fahrten zur Immobilie im Jahr: bei fast täglicher Anwesenheit kann nur die halbe Pauschale gelten. Bitte prüfen.",
   "tax.private_cost_paid_from_account": (p) =>
     `${p.label ? `„${p.label}“ ist` : "Eine Rechnung ist"} als von einem anderen Konto bezahlt eingetragen, wurde aber vom Mietkonto bezahlt: sie zählt nur einmal, mit der Buchung vom Mietkonto. Die Angabe bitte zurückziehen.`,
+  "payment_proof.missing": (p) =>
+    `Zahlungsnachweis fehlt: ${proofBill(p)} über ${money(p)} zählt mit, aber nichts zeigt, dass sie bezahlt wurde${p.proof_amount ? ` (der hochgeladene Nachweis lautet über ${money(p, "proof_amount")}, der Betrag passt nicht)` : ""}.`,
   "anlage_n.certificate_missing": () =>
     "Keine Lohnsteuerbescheinigung für dieses Jahr: die Zahlen beruhen auf Gehaltsabrechnungen oder der Schätzung.",
   "anlage_n.church_mismatch": () =>

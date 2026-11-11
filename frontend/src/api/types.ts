@@ -1149,6 +1149,12 @@ export interface paths {
          *     answer is the Document, as in phase 1. For bytes already in the vault the document's
          *     latest proposal is returned instead of a new read. `contains_tenant_data` with the
          *     workspace's ai_tenant_documents off stores the proposal blocked, unread (D16).
+         *
+         *     `proof_for` (phase 3 D143, the to-do „Zahlungsnachweis hochladen“): the id of the bill
+         *     this file proves was paid. The document is typed other / payment_proof by code and
+         *     linked to the bill and its property in the same transaction, and its reading skips the
+         *     classifier. 404 for an unknown bill, 422 when the file is the bill itself or is stored
+         *     as another kind of document.
          */
         post: operations["document_upload_api_documents_post"];
         delete?: never;
@@ -3213,6 +3219,8 @@ export interface components {
              * @default false
              */
             contains_tenant_data: boolean;
+            /** Proof For */
+            proof_for?: string | null;
         };
         /** BridgeRow */
         BridgeRow: {
@@ -3858,7 +3866,7 @@ export interface components {
             version: number;
             source: components["schemas"]["ExtractionSource"];
             /** Fields */
-            fields: components["schemas"]["ManualDocumentFields"] | components["schemas"]["PurchaseContractExtraction"] | components["schemas"]["LoanContractExtraction"] | components["schemas"]["LeaseExtraction"] | components["schemas"]["HandoverProtocolExtraction"] | components["schemas"]["DepositRecordExtraction"] | components["schemas"]["InvoiceExtraction"] | components["schemas"]["BescheidExtraction"] | components["schemas"]["GrundsteuerbescheidExtraction"] | components["schemas"]["WirtschaftsplanExtraction"] | components["schemas"]["HausgeldabrechnungExtraction"] | components["schemas"]["ZinsbescheinigungExtraction"] | components["schemas"]["StatementExtraction"] | components["schemas"]["WageCertificateExtraction"] | components["schemas"]["PayslipExtraction"] | components["schemas"]["IncomeTaxAssessmentExtraction"] | components["schemas"]["GeneralExtraction"] | components["schemas"]["ManagementContractExtraction"];
+            fields: components["schemas"]["ManualDocumentFields"] | components["schemas"]["PurchaseContractExtraction"] | components["schemas"]["LoanContractExtraction"] | components["schemas"]["LeaseExtraction"] | components["schemas"]["HandoverProtocolExtraction"] | components["schemas"]["DepositRecordExtraction"] | components["schemas"]["InvoiceExtraction"] | components["schemas"]["BescheidExtraction"] | components["schemas"]["GrundsteuerbescheidExtraction"] | components["schemas"]["WirtschaftsplanExtraction"] | components["schemas"]["HausgeldabrechnungExtraction"] | components["schemas"]["ZinsbescheinigungExtraction"] | components["schemas"]["StatementExtraction"] | components["schemas"]["WageCertificateExtraction"] | components["schemas"]["PayslipExtraction"] | components["schemas"]["IncomeTaxAssessmentExtraction"] | components["schemas"]["GeneralExtraction"] | components["schemas"]["ManagementContractExtraction"] | components["schemas"]["PaymentProofExtraction"];
             /**
              * Schema Version
              * @default 1
@@ -3916,7 +3924,7 @@ export interface components {
          * @description Finer typing where retention or the AfA basis depends on it.
          * @enum {string}
          */
-        DocumentSubtype: "purchase_contract" | "price_split_evidence" | "appraisal" | "loan_contract" | "lease" | "handover_protocol" | "deposit_record" | "cost_basis_evidence" | "grundsteuerbescheid" | "einkommensteuerbescheid" | "land_register_extract" | "declaration_of_division" | "land_charge_deed" | "energy_certificate" | "building_records" | "insurance_policy" | "management_contract" | "service_contract" | "weg_minutes" | "weg_invitation" | "special_levy" | "repayment_schedule" | "loan_terms_change" | "loan_statement" | "financing_invoice" | "lease_amendment" | "rent_increase" | "termination_notice" | "tenant_self_disclosure" | "landlord_confirmation" | "operating_costs_statement" | "tenant_correspondence" | "utility_bill" | "quote" | "chimney_sweep_notice" | "prepayment_notice" | "tax_return_copy" | "donation_receipt" | "childcare_invoice" | "household_services_invoice" | "insurance_contribution_certificate" | "pension_contribution_certificate" | "benefit_notice" | "child_benefit_notice" | "employment_contract" | "employer_certificate" | "work_expense_invoice" | "depot_statement" | "depot_report" | "trade_confirmation" | "capital_income_tax_certificate";
+        DocumentSubtype: "purchase_contract" | "price_split_evidence" | "appraisal" | "loan_contract" | "lease" | "handover_protocol" | "deposit_record" | "cost_basis_evidence" | "grundsteuerbescheid" | "einkommensteuerbescheid" | "land_register_extract" | "declaration_of_division" | "land_charge_deed" | "energy_certificate" | "building_records" | "insurance_policy" | "management_contract" | "service_contract" | "weg_minutes" | "weg_invitation" | "special_levy" | "repayment_schedule" | "loan_terms_change" | "loan_statement" | "financing_invoice" | "lease_amendment" | "rent_increase" | "termination_notice" | "tenant_self_disclosure" | "landlord_confirmation" | "operating_costs_statement" | "tenant_correspondence" | "utility_bill" | "quote" | "chimney_sweep_notice" | "payment_proof" | "prepayment_notice" | "tax_return_copy" | "donation_receipt" | "childcare_invoice" | "household_services_invoice" | "insurance_contribution_certificate" | "pension_contribution_certificate" | "benefit_notice" | "child_benefit_notice" | "employment_contract" | "employer_certificate" | "work_expense_invoice" | "depot_statement" | "depot_report" | "trade_confirmation" | "capital_income_tax_certificate";
         /**
          * DocumentType
          * @description The classifier's output set (AI layer). Phase 1 sets it by hand.
@@ -4345,7 +4353,7 @@ export interface components {
          *     models in schemas/extraction.py.
          * @enum {string}
          */
-        ExtractionKind: "manual" | "purchase_contract" | "loan_contract" | "lease" | "handover_protocol" | "deposit_record" | "invoice" | "bescheid" | "grundsteuerbescheid" | "wirtschaftsplan" | "hausgeldabrechnung" | "zinsbescheinigung" | "statement" | "lohnsteuerbescheinigung" | "gehaltsabrechnung" | "einkommensteuerbescheid" | "general" | "management_contract";
+        ExtractionKind: "manual" | "purchase_contract" | "loan_contract" | "lease" | "handover_protocol" | "deposit_record" | "invoice" | "bescheid" | "grundsteuerbescheid" | "wirtschaftsplan" | "hausgeldabrechnung" | "zinsbescheinigung" | "statement" | "lohnsteuerbescheinigung" | "gehaltsabrechnung" | "einkommensteuerbescheid" | "general" | "management_contract" | "payment_proof";
         /**
          * ExtractionSource
          * @enum {string}
@@ -5084,7 +5092,7 @@ export interface components {
          * @description What a document can be linked to (document_link has one FK column per target).
          * @enum {string}
          */
-        LinkTarget: "owner" | "property" | "unit" | "tenant" | "tenancy" | "loan";
+        LinkTarget: "owner" | "property" | "unit" | "tenant" | "tenancy" | "loan" | "document";
         /**
          * LinkTargetRef
          * @description One entity a document is linked to (a document_link row without its own id).
@@ -5848,6 +5856,27 @@ export interface components {
             };
             /** Label */
             label: string;
+        };
+        /**
+         * PaymentProofExtraction
+         * @description Zahlungsnachweis (other / payment_proof; phase-3.md D143): the proof that a bill was
+         *     paid, uploaded from the bill's to-do. Only these fields, besides the title and date every
+         *     reading carries: no IBAN, no account number and no name but the payee is ever asked for,
+         *     and the quotes are scrubbed of identifiers (jobs.document_read).
+         */
+        PaymentProofExtraction: {
+            /** @description a short German title, two to six words naming what the document is */
+            title?: components["schemas"]["ExtractedValue"];
+            /** @description the date the document carries */
+            document_date?: components["schemas"]["ExtractedValue"];
+            /** @description the day the payment was made: Ausführungsdatum, Buchungstag or Wertstellung of the transfer */
+            paid_on?: components["schemas"]["ExtractedValue"];
+            /** @description the amount transferred, as stated; never a balance, a limit or a fee */
+            amount?: components["schemas"]["ExtractedValue"];
+            /** @description the payee (Empfänger, Zahlungsempfänger) only; never the payer, the account holder or any other person */
+            payee?: components["schemas"]["ExtractedValue"];
+            /** @description the Verwendungszweck as stated, without any account details */
+            purpose?: components["schemas"]["ExtractedValue"];
         };
         /**
          * Payslip
@@ -8583,7 +8612,7 @@ export interface components {
          * WarningCode
          * @enum {string}
          */
-        WarningCode: "year_end_straddle" | "afa.no_split" | "afa.cost_row_unpaid" | "afa.acquisition_cost_without_row" | "afa.purchase_price_mismatch" | "afa.useful_life_report" | "afa.movable_asset_no_evidence" | "afa.movable_asset_exceeds_building" | "limit.exceeded" | "limit.prior_year_amendment" | "limit.estimated_net" | "limit.private_cost_undated" | "limit.private_cost_after_window" | "anschaffungsnah.performance_date_check" | "renovation.undecided" | "interest.certificate_mismatch" | "hausgeld.abrechnung_pending" | "income.other_review" | "income.pre_handover" | "income.living_area_missing" | "umlagen.mixed_terms" | "reduced_rent.no_market_rent" | "reduced_rent.prognosis_needed" | "reduced_rent.partial" | "draft.open_lines_excluded" | "draft.form_provisional" | "draft.allocation_without_property" | "archive.finanzamt_copy_needed" | "tax.travel_frequency" | "tax.private_cost_paid_from_account" | "anlage_n.certificate_missing" | "anlage_n.church_mismatch" | "anlage_n.tax_class_6" | "anlage_n.periods_overlap" | "anlage_n.days_implausible" | "anlage_n.home_office_capped" | "anlage_n.too_many_routes" | "anlage_n.receipt_missing" | "anlage_n.form_provisional" | "anlage_n.payslip_gap" | "anlage_n.payslip_no_ytd" | "anlage_n.work_room_records" | "anlage_n.work_room_centre" | "anlage_n.work_room_partial" | "anlage_n.first_workplace_check" | "return.progression_provisional" | "return.benefit_possible_double" | "return.children_mismatch" | "return.kindergeld_apply" | "return.child_over_18" | "return.childcare_until_14" | "return.donation_over_cap" | "return.filing_required" | "return.questionnaire_open" | "return.not_modelled" | "questionnaire_provisional" | "tax_export.questions_open";
+        WarningCode: "year_end_straddle" | "afa.no_split" | "afa.cost_row_unpaid" | "afa.acquisition_cost_without_row" | "afa.purchase_price_mismatch" | "afa.useful_life_report" | "afa.movable_asset_no_evidence" | "afa.movable_asset_exceeds_building" | "limit.exceeded" | "limit.prior_year_amendment" | "limit.estimated_net" | "limit.private_cost_undated" | "limit.private_cost_after_window" | "anschaffungsnah.performance_date_check" | "renovation.undecided" | "interest.certificate_mismatch" | "hausgeld.abrechnung_pending" | "income.other_review" | "income.pre_handover" | "income.living_area_missing" | "umlagen.mixed_terms" | "reduced_rent.no_market_rent" | "reduced_rent.prognosis_needed" | "reduced_rent.partial" | "draft.open_lines_excluded" | "draft.form_provisional" | "draft.allocation_without_property" | "archive.finanzamt_copy_needed" | "tax.travel_frequency" | "tax.private_cost_paid_from_account" | "payment_proof.missing" | "anlage_n.certificate_missing" | "anlage_n.church_mismatch" | "anlage_n.tax_class_6" | "anlage_n.periods_overlap" | "anlage_n.days_implausible" | "anlage_n.home_office_capped" | "anlage_n.too_many_routes" | "anlage_n.receipt_missing" | "anlage_n.form_provisional" | "anlage_n.payslip_gap" | "anlage_n.payslip_no_ytd" | "anlage_n.work_room_records" | "anlage_n.work_room_centre" | "anlage_n.work_room_partial" | "anlage_n.first_workplace_check" | "return.progression_provisional" | "return.benefit_possible_double" | "return.children_mismatch" | "return.kindergeld_apply" | "return.child_over_18" | "return.childcare_until_14" | "return.donation_over_cap" | "return.filing_required" | "return.questionnaire_open" | "return.not_modelled" | "questionnaire_provisional" | "tax_export.questions_open";
         /** WerbungskostenComponents */
         WerbungskostenComponents: {
             commute?: components["schemas"]["CommuteComponent"] | null;

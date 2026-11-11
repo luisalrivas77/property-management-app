@@ -151,6 +151,11 @@ class DocumentSubtype(StrEnum):
     UTILITY_BILL = "utility_bill"  # Jahresabrechnung Strom, Gas, Wasser (invoice; invoice reader)
     QUOTE = "quote"  # Kostenvoranschlag, Angebot (letter)
     CHIMNEY_SWEEP_NOTICE = "chimney_sweep_notice"  # Feuerstättenbescheid (bescheid)
+    # Phase 3 D143 (migration 0023): the proof that a bill was paid (a transfer confirmation or
+    # a statement page; type other, tax_records). Set by code when it is uploaded from a bill's
+    # „Zahlungsnachweis fehlt“ to-do and linked to that bill, never by the classifier: left out
+    # of the classify schema (ai.requests.classify_schema).
+    PAYMENT_PROOF = "payment_proof"
     # Income tax (no link)
     PREPAYMENT_NOTICE = "prepayment_notice"  # Vorauszahlungsbescheid (bescheid)
     TAX_RETURN_COPY = "tax_return_copy"  # Steuererklärung, ELSTER-Protokoll (other)
@@ -211,6 +216,9 @@ class LinkTarget(StrEnum):
     TENANT = "tenant"
     TENANCY = "tenancy"
     LOAN = "loan"
+    # Phase 3 D143 (migration 0023, column target_document_id): a payment proof linked to the
+    # bill it proves was paid. Never the document itself (a CHECK), never rolled up.
+    DOCUMENT = "document"
 
 
 class RetentionClass(StrEnum):
@@ -265,6 +273,8 @@ class ExtractionKind(StrEnum):
     # every document without a reader of its own, and the Verwaltervertrag.
     GENERAL = "general"
     MANAGEMENT_CONTRACT = "management_contract"
+    # Phase 3 D143 (migration 0023): a payment proof's date, amount, payee and purpose.
+    PAYMENT_PROOF = "payment_proof"
 
 
 class ProposalStatus(StrEnum):

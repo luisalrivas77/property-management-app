@@ -18,8 +18,11 @@
 # Sources (asserted where listed): the property (price), the split and its evidence document,
 #   every cost row and its document, the allocation of every addition counted.
 # Warnings:
-#   afa.cost_row_unpaid               a cost row whose paid_by is empty (info; it may have been
-#                                     paid privately). params: kind, amount.
+#   afa.cost_row_unpaid               a cost row with no document whose paid_by is empty (info;
+#                                     it may have been paid privately). params: kind, amount.
+#                                     A row with a document raises nothing here: the draft's
+#                                     payment_proof.missing asks for its proof of payment
+#                                     instead (D143, anlage_v_2026.yaml).
 #   afa.acquisition_cost_without_row  a non-zero acquisition_cost allocation in no row's
 #                                     paid_by; NOT added to the basis. params: amount.
 #   afa.purchase_price_mismatch       only when at least one non-zero purchase_price allocation
@@ -252,7 +255,33 @@ cases:
          warnings: [{code: afa.no_split}]}
 
   - id: cost_row_unpaid_warning
-    description: the notary bill was paid privately, so no allocation pairs with its row
+    description: >
+      the notary row was typed without its bill and no allocation pairs with it (it may have
+      been paid privately); a row without a document keeps this info warning (D143 amended the
+      case: before it, the row carried its bill)
+    facts:
+      <<: *flat
+      cost_rows:
+        - {id: *C1, kind: real_estate_transfer_tax, amount: "19500.00", paid_on: 2026-04-20,
+           document_id: *D_GREST, paid_by: [*A_GREST]}
+        - {id: *C2, kind: notary, amount: "4200.00", paid_on: 2026-03-25}
+        - {id: *C3, kind: land_registry, amount: "1300.00", paid_on: 2026-05-12,
+           document_id: *D_GB, paid_by: [*A_GB]}
+      allocations:
+        - {allocation_id: *A_GREST, booking_date: 2026-04-20, amount: "-19500.00", category: acquisition_cost}
+        - {allocation_id: *A_GB, booking_date: 2026-05-12, amount: "-1300.00", category: acquisition_cost}
+        - {allocation_id: *A_PP, booking_date: 2026-06-30, amount: "-300000.00", category: purchase_price}
+    expect:
+      - {tax_year: 2026, amount: "2340.00", basis: "234000.00", rate: "0.02", months: 6, method_code: 2,
+         warnings: [{code: afa.cost_row_unpaid, params: {kind: notary, amount: "4200.00"}}]}
+
+  # D143 (11 Nov 2026): a row whose bill is stored but that no allocation paid is left to the
+  # draft, which asks for the bill's proof of payment (payment_proof.missing); the AfA rule
+  # raises nothing for it, so the to-do is not shown twice.
+  - id: cost_row_with_bill_unpaid_no_warning
+    description: >
+      the notary bill is stored but paid from another account: no afa.cost_row_unpaid (the
+      draft's payment_proof.missing asks for the proof instead); the basis is unchanged
     facts:
       <<: *flat
       cost_rows:
@@ -267,7 +296,7 @@ cases:
         - {allocation_id: *A_PP, booking_date: 2026-06-30, amount: "-300000.00", category: purchase_price}
     expect:
       - {tax_year: 2026, amount: "2340.00", basis: "234000.00", rate: "0.02", months: 6, method_code: 2,
-         warnings: [{code: afa.cost_row_unpaid, params: {kind: notary, amount: "4200.00"}}]}
+         warnings: []}
 
   - id: acquisition_cost_without_row_not_added
     description: >

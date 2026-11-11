@@ -87,6 +87,10 @@ export interface UploadOptions {
   /** The uploader says the document holds tenant data: the privacy gate (D16) blocks the
    * read until the workspace allows tenant documents. */
   containsTenantData: boolean;
+  /** Phase 3 D143: the upload is the payment proof of this bill (a document id); the server
+   * types it „Zahlungsnachweis“, links it to the bill and its property, and reads it without
+   * the classifier. */
+  proofFor?: string;
 }
 
 const MANUAL_UPLOAD: UploadOptions = {
@@ -114,6 +118,7 @@ export async function uploadDocument(
   form.append("source", "upload");
   if (!options.autoRead) form.append("ai", "false");
   if (options.containsTenantData) form.append("contains_tenant_data", "true");
+  if (options.proofFor) form.append("proof_for", options.proofFor);
   const { data, response } = await api.POST("/api/documents", {
     body: form as unknown as UploadBody,
   });
@@ -164,10 +169,13 @@ export function UploadControl({
   onUploaded,
   label = "Datei hochladen",
   prefill = false,
+  proofFor,
 }: {
   onUploaded: (result: Uploaded) => void;
   label?: string;
   prefill?: boolean;
+  /** Phase 3 D143: upload the payment proof of this bill (UploadOptions.proofFor). */
+  proofFor?: string;
 }) {
   const inputId = useId();
   const autoReadId = useId();
@@ -184,8 +192,12 @@ export function UploadControl({
     setBusy(true);
     setError(null);
     const options: UploadOptions = prefill
-      ? { autoRead, containsTenantData: autoRead && containsTenantData }
-      : MANUAL_UPLOAD;
+      ? {
+          autoRead,
+          containsTenantData: autoRead && containsTenantData,
+          proofFor,
+        }
+      : { ...MANUAL_UPLOAD, proofFor };
     try {
       for (const file of Array.from(files))
         onUploaded(await uploadDocument(file, options));
@@ -263,9 +275,12 @@ export function UploadControl({
 export function ReadUpload({
   label,
   onUploaded,
+  proofFor,
 }: {
   label: string;
   onUploaded?: () => void;
+  /** Phase 3 D143: the upload is the payment proof of this bill (a document id). */
+  proofFor?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [uploads, setUploads] = useState<Uploaded[]>([]);
@@ -285,6 +300,7 @@ export function ReadUpload({
         <UploadControl
           label={label}
           prefill
+          proofFor={proofFor}
           onUploaded={(result) => {
             setUploads((current) => [result, ...current].slice(0, 5));
             onUploaded?.();

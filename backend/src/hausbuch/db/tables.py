@@ -357,6 +357,8 @@ document_link = Table(
     _uuid("tenancy_id", nullable=True),
     _uuid("loan_id", nullable=True),
     _created_at(),
+    # Phase 3 D143 (migration 0023, appended): LinkTarget.DOCUMENT, a payment proof's bill.
+    _uuid("target_document_id", nullable=True),
 )
 
 # --- Event log ---------------------------------------------------------------

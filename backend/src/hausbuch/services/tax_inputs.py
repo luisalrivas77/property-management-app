@@ -165,6 +165,21 @@ def list_tax_inputs(
     return [_to_tax_input(r) for r in rows]
 
 
+def current_of_document(conn: Connection, document_id: UUID, kind: TaxInputKind) -> list[TaxInput]:
+    """The current rows of one kind whose evidence is the document, of every property and
+    year (oldest first): a payment proof's bill and its private_cost rows (phase 3 D143)."""
+    rows = conn.execute(
+        select(tax_input_table)
+        .where(
+            tax_input_table.c.document_id == document_id,
+            tax_input_table.c.kind == kind.value,
+            _is_current(),
+        )
+        .order_by(tax_input_table.c.recorded_at, tax_input_table.c.id)
+    ).all()
+    return [_to_tax_input(r) for r in rows]
+
+
 def get_tax_input(conn: Connection, tax_input_id: UUID) -> TaxInput | None:
     row = conn.execute(
         select(tax_input_table).where(tax_input_table.c.id == tax_input_id)

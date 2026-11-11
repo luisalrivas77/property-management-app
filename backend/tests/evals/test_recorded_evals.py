@@ -20,6 +20,7 @@ from make_docs import (
     DOCS_BY_NAME,
     FAKE_IDENTIFIERS,
     GREST_IDENTIFIERS,
+    PROOF_IDENTIFIERS,
     Doc,
     build_pdf,
     doc_pdf,
@@ -27,6 +28,7 @@ from make_docs import (
 from pypdf import PdfReader
 from recordings import (
     RECORDINGS_DIR,
+    Requests,
     build_requests,
     eval_settings,
     replay,
@@ -51,6 +53,7 @@ OWNERS_ONLY = (
     "grundbuchauszug",
     "verwaltervertrag",
     "wohnflaechenberechnung",
+    "zahlungsnachweis",
 )
 
 
@@ -203,6 +206,7 @@ SCRUBBED_DOCUMENTS = (
     {name: FAKE_IDENTIFIERS for name in PAY_DOCUMENTS}
     | {"einkommensteuerbescheid": BESCHEID_IDENTIFIERS}
     | GENERAL_IDENTIFIERS
+    | {"zahlungsnachweis": PROOF_IDENTIFIERS}
 )
 
 
@@ -310,6 +314,33 @@ def test_the_general_reading_stores_no_identifier_or_home_address(name):
     printed = _printed(doc, GENERAL_IDENTIFIERS[name])
     assert set(printed) == set(GENERAL_IDENTIFIERS[name])  # every one is on the page
     _assert_scrubbed(doc, printed)
+
+
+def test_the_payment_proof_stores_no_payer_identifier():
+    """Phase 3 D143: the payer's name, IBAN and customer number on a payment proof never reach
+    the values or quotes the job stores, while the payee, the amount, the date and the purpose
+    still check out."""
+    doc = DOCS_BY_NAME["zahlungsnachweis"]
+    printed = _printed(doc, PROOF_IDENTIFIERS)
+    assert set(printed) == set(PROOF_IDENTIFIERS)  # every one is on the page
+    _assert_scrubbed(doc, printed)
+
+
+def test_a_document_typed_by_code_is_never_classified():
+    """Phase 3 D143: a payment proof's requests have no classify call, and its replay takes
+    the job's own classification; a recording that gains or loses the classify call is
+    stale."""
+    doc = DOCS_BY_NAME["zahlungsnachweis"]
+    requests = build_requests(doc, SETTINGS)
+    assert requests.classify is None
+    recording = synthetic_recording(doc, requests, _as_written(doc))
+    assert recording["classify"] is None
+    assert recording["pretyped"] == {"type": "other", "subtype": "payment_proof"}
+    assert replay(recording).kind is ExtractionKind.PAYMENT_PROOF
+    notar = build_requests(DOCS_BY_NAME["rechnung_notar"], SETTINGS)
+    assert stale_reasons(recording, Requests(notar.classify, requests.extract)) == [
+        "classify: the document is typed by code now, or no longer"
+    ]
 
 
 def _printed(doc: Doc, fragments: tuple[str, ...]) -> list[str]:

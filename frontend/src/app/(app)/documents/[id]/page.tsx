@@ -449,7 +449,14 @@ function Links({
             const target = describe(l.target_type, l.target_id);
             return (
               <li key={l.id}>
-                {LINK_TARGET[l.target_type]}: {target ? <Link href={target.href}>{target.label}</Link> : <code>{shortId(l.target_id)}</code>}{" "}
+                {LINK_TARGET[l.target_type]}:{" "}
+                {target ? (
+                  <Link href={target.href}>{target.label}</Link>
+                ) : l.target_type === "document" ? (
+                  <Link href={`/documents/${l.target_id}`}>Dokument öffnen</Link>
+                ) : (
+                  <code>{shortId(l.target_id)}</code>
+                )}{" "}
                 <span className="muted">(seit {formatDate(l.created_at)})</span>
                 {editable ? (
                   <>
@@ -484,11 +491,14 @@ function Links({
                   setTargetId("");
                 }}
               >
-                {options(LINK_TARGET).map(([value, text]) => (
-                  <option key={value} value={value}>
-                    {text}
-                  </option>
-                ))}
+                {/* A link to a bill is made by its to-do's upload (phase 3 D143), not here. */}
+                {options(LINK_TARGET)
+                  .filter(([value]) => value !== "document")
+                  .map(([value, text]) => (
+                    <option key={value} value={value}>
+                      {text}
+                    </option>
+                  ))}
               </select>
             </Field>
             <Field
