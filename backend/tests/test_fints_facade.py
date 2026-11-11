@@ -7,6 +7,7 @@ the fake client's signatures against the real client's. No network: the HTTP pos
 patched. Every bank code, login, PIN, URL and product id is synthetic."""
 
 import base64
+import contextlib
 import inspect
 import io
 import logging
@@ -533,3 +534,22 @@ def test_an_unreadable_state_blob_is_state_rejected():
             client_factory=broken,
         )
     assert raised.value.code == E.BANK_STATE_REJECTED
+
+
+def test_the_client_keeps_the_banks_answers_redacted():
+    client = object.__new__(F._ReadOnlyClient)
+    client.refused_codes, client.answers = [], []
+    client.user_id, client.customer_id = LOGIN, LOGIN
+    client.pin = SimpleNamespace(value=PIN)
+    answers = (
+        ("3920", "Zugelassene Verfahren"),
+        ("9010", f"Auftrag für {LOGIN} mit {PIN} abgelehnt"),
+    )
+    for code, text in answers:
+        with contextlib.suppress(Exception):  # python-fints' own handling needs a dialog
+            client._process_response(None, None, SimpleNamespace(code=code, text=text))
+    assert client.refused_codes == ["9010"]
+    assert client.answers == [
+        "3920 Zugelassene Verfahren",
+        "9010 Auftrag für <hidden> mit <hidden> abgelehnt",
+    ]

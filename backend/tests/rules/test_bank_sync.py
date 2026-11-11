@@ -199,3 +199,11 @@ def test_window_starts_after_the_anchor_even_with_an_old_last_booking():
 )
 def test_the_deciding_code_skips_the_general_ones(codes, deciding):
     assert rules.deciding_code(codes) == deciding
+
+
+def test_a_bank_text_loses_the_login_and_long_numbers():
+    text = "Kunde MaxMuster1 unbekannt, Konto 1234567890 gesperrt, 3 Versuche"
+    out = rules.redact_bank_text(text, "maxmuster1", None)
+    assert out == "Kunde <hidden> unbekannt, Konto ##### gesperrt, 3 Versuche"
+    assert rules.redact_bank_text("x" * 500) == "x" * rules.BANK_TEXT_MAX
+    assert rules.redact_bank_text(None) == ""

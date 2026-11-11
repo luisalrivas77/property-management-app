@@ -69,7 +69,12 @@ from fints.exceptions import (
 from fints.models import SEPAAccount
 
 from hausbuch.rules import errors as E
-from hausbuch.rules.bank_sync import deciding_code, refused_code
+from hausbuch.rules.bank_sync import (
+    REFUSED_CODES_LOGGED,
+    deciding_code,
+    redact_bank_text,
+    refused_code,
+)
 
 FINTS_LOGGER = "fints"
 HTTP_TIMEOUT_S = 60
@@ -108,17 +113,30 @@ class BankError(Exception):
     `response_codes` every 9xxx code of the answer, in order, for the log. The message is
     the code: never the bank's or the library's text."""
 
-    def __init__(self, code: str, response_code: str | None = None, *, codes: tuple[str, ...] = ()):
+    def __init__(
+        self,
+        code: str,
+        response_code: str | None = None,
+        *,
+        codes: tuple[str, ...] = (),
+        answers: tuple[str, ...] = (),
+    ):
         super().__init__(code)
         self.code = code
         self.response_code = response_code
         self.response_codes = codes or ((response_code,) if response_code else ())
+        # The bank's 3xxx/9xxx answers as "code text", redacted (rules.redact_bank_text):
+        # for the log only, never an event or the database.
+        self.answers = answers
 
 
-def _refused(codes: list[str]) -> BankError:
+def _refused(codes: list[str], answers: list[str] | None = None) -> BankError:
     """bank.refused with the deciding code and every code seen (phase 5, 11 Nov 2026: the
-    first real sync kept only the general 9050 and lost the bank's reason)."""
-    return BankError(E.BANK_REFUSED, deciding_code(codes), codes=tuple(codes))
+    first real sync kept only the general 9050 and lost the bank's reason), and the bank's
+    redacted answers for the log."""
+    return BankError(
+        E.BANK_REFUSED, deciding_code(codes), codes=tuple(codes), answers=tuple(answers or ())
+    )
 
 
 class WriteRefused(RuntimeError):
@@ -219,11 +237,23 @@ class _ReadOnlyClient(FinTS3PinTanClient):
         super().__init__(*args, **kwargs)
         self.connection = _GuardedConnection(self.connection.url, timeout_s)
         self.refused_codes: list[str] = []
+        # every 3xxx and 9xxx answer as "code text", redacted (a warning such as 3920 can
+        # name what the bank wanted instead)
+        self.answers: list[str] = []
 
     def _process_response(self, dialog: Any, segment: Any, response: Any) -> None:
-        code = refused_code(getattr(response, "code", None))
+        raw = str(getattr(response, "code", None) or "")
+        code = refused_code(raw)
         if code is not None:
             self.refused_codes.append(code)
+        if len(raw) == 4 and raw[0] in "39":
+            text = redact_bank_text(
+                getattr(response, "text", ""),
+                getattr(self, "user_id", None),
+                getattr(self, "customer_id", None),
+                getattr(getattr(self, "pin", None), "value", None),  # should a bank echo it
+            )
+            self.answers.append(f"{raw} {text}".strip())
         super()._process_response(dialog, segment, response)
 
     def supported_camt_formats(self) -> list[str]:
@@ -318,15 +348,18 @@ class FintsSession:
             yield
         except (BankError, WriteRefused):
             raise
-        except Exception as exc:  # the type decides the code; the text is dropped
-            raise self._error(exc, seen) from None
+        except Exception as exc:  # the type decides the code; the exception's text is dropped
+            error = self._error(exc, seen)
+            if error.code == E.BANK_REFUSED and not error.answers:
+                error.answers = tuple(self._answers())
+            raise error from None
         if codes_refuse and len(self._client.refused_codes) > seen:
-            raise _refused(self._client.refused_codes[seen:]) from None
+            raise _refused(self._client.refused_codes[seen:], self._answers()) from None
 
     def _error(self, exc: Exception, seen: int) -> BankError:
         codes = self._client.refused_codes[seen:]
         if codes:
-            return _refused(codes)
+            return _refused(codes, self._answers())
         if isinstance(exc, FinTSDialogInitError) and isinstance(
             exc.__cause__, FinTSConnectionError | requests.RequestException | OSError
         ):
@@ -344,6 +377,10 @@ class FintsSession:
         if isinstance(exc, FinTSError):
             return BankError(E.BANK_REFUSED)
         return BankError(E.BANK_FAILED)
+
+    def _answers(self) -> list[str]:
+        """The bank's redacted 3xxx/9xxx answers of this session, the last few."""
+        return list(getattr(self._client, "answers", [])[-REFUSED_CODES_LOGGED:])
 
     def _seeded(self) -> bool:
         return self._restored and self._tan_mechanism is not None

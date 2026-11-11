@@ -196,6 +196,26 @@ GENERAL_REFUSALS = frozenset({"9000", "9050", "9800"})
 REFUSED_CODES_LOGGED = 6
 
 
+# A bank answer's text in the log (Luis, 11 Nov 2026, after the first syncs were refused with
+# 9010 and no text): the login and every run of five or more digits are blanked, the text cut.
+_LONG_NUMBER = re.compile(r"[0-9][0-9 ]{3,}[0-9]")
+BANK_TEXT_MAX = 160
+
+
+def redact_bank_text(text: object, *hidden: str | None) -> str:
+    """The bank's answer text with each of `hidden` (the login, the customer id) replaced,
+    case-insensitively, and every number of five digits or more blanked, at most
+    BANK_TEXT_MAX characters. The caller hides the PIN as well, should a bank ever echo it."""
+    out = str(text or "")
+    for value in hidden:
+        if value and value.strip():
+            out = re.sub(re.escape(value.strip()), "<hidden>", out, flags=re.IGNORECASE)
+    out = _LONG_NUMBER.sub(
+        lambda m: "#" * 5 if sum(c.isdigit() for c in m.group()) >= 5 else m.group(), out
+    )
+    return out[:BANK_TEXT_MAX]
+
+
 def deciding_code(codes: list[str]) -> str | None:
     """The code that says why the bank refused: the first one that is not merely general
     (a message-level 9050 comes before the segment's 9942), else the first. None for none."""
