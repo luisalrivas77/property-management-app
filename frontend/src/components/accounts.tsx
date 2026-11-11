@@ -244,7 +244,10 @@ export function ImportsTable({
                 </td>
                 <td>
                   <Link href={`/documents/${imp.document_id}`}>{document ? documentLabel(document) : "Datei"}</Link>
-                  <p className="cell-detail">{STATEMENT_FORMAT[imp.format]}</p>
+                  <p className="cell-detail">
+                    {document?.source === "bank_sync" ? "Bankabruf · " : ""}
+                    {STATEMENT_FORMAT[imp.format]}
+                  </p>
                 </td>
                 <td>
                   {lineCounts(imp)}

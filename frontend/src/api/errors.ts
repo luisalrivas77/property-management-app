@@ -138,6 +138,25 @@ export const RULE_CODE_TEXT: Record<string, string> = {
     "Das Szenario ist nicht mehr aktuell, oder es gibt schon ein Standard-Szenario. Bitte die Seite neu laden.",
   "scenario.scope_invalid": "Das Szenario passt nicht zu dieser Immobilie oder ihren Darlehen.",
   // exports of the draft (phase-3.md §10, §12)
+  // the FinTS sync (phase-5.md §4.4)
+  "bank.not_configured":
+    "Der Bankabruf ist auf dem Server nicht eingerichtet: PIN oder Produkt-ID fehlen in der Serverkonfiguration (Runbook Schritt 14).",
+  "bank.rate_limited": "Höchstens vier Abrufe pro Stunde von Hand. Bitte etwas später noch einmal.",
+  "bank.sync_running": "Für dieses Konto läuft schon ein Abruf.",
+  "bank.window_invalid":
+    "Der Abruf hätte nach heute begonnen: der Anfangssaldo des Kontos liegt heute oder später. Den Stichtag im Konto prüfen.",
+  "bank.url_not_https": "Die FinTS-Adresse muss mit https:// beginnen.",
+  "bank.tan_not_decoupled":
+    "Die Bank bietet für diesen Zugang keine Freigabe per App (pushTAN) an. Im Online-Banking S-pushTAN einrichten.",
+  "bank.approval_timeout": "Die Freigabe in der S-pushTAN-App kam nicht innerhalb von fünf Minuten.",
+  "bank.account_not_found": "Unter diesem Zugang führt die Bank kein Konto mit der IBAN dieses Kontos. Anmeldename und BLZ prüfen.",
+  "bank.state_rejected":
+    "Die gespeicherte Verbindung zur Bank passte nicht mehr und wurde verworfen; der nächste Abruf fragt wieder nach einer Freigabe.",
+  "bank.unreachable": "Die Bank war dreimal nicht erreichbar. Später erneut abrufen; hält es an, die FinTS-Adresse prüfen.",
+  "bank.refused":
+    "Die Bank hat den Abruf abgelehnt. Anmeldename und PIN prüfen; nach drei falschen PINs sperrt die Bank den Zugang.",
+  "bank.unsupported_format": "Die Bank liefert Umsätze in keinem Format, das Hausbuch lesen kann. Kontoauszüge weiter als Datei hochladen.",
+  "bank.failed": "Der Abruf ist an einem unerwarteten Fehler gescheitert. Erneut abrufen; hält es an, als Datei hochladen.",
   "tax_export.too_large":
     "Die Belege des Jahres sind zusammen größer als 100 MiB. Das Archiv bitte von Hand aufteilen; die Ausfüllhilfe geht weiterhin.",
   "tax_export.failed": "Der Export ist fehlgeschlagen. Bitte noch einmal versuchen.",
