@@ -184,7 +184,7 @@ export const DOCUMENT_SUBTYPE: Record<DocumentSubtype, string> = {
   quote: "Kostenvoranschlag, Angebot",
   chimney_sweep_notice: "Feuerstättenbescheid",
   // Set by code at the upload from a bill's to-do (phase 3 D143), never by the classifier.
-  payment_proof: "Zahlungsnachweis (Überweisung, Umsatz)",
+  payment_proof: "Zahlungsnachweis (Überweisung, Kontoauszug)",
   // Einkommensteuer
   einkommensteuerbescheid: "Einkommensteuerbescheid",
   prepayment_notice: "Vorauszahlungsbescheid",
