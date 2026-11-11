@@ -271,8 +271,10 @@ def _bank_error(
     fields = run.log | {"code": exc.code}
     if exc.response_code is not None:
         fields["response_code"] = exc.response_code
-    if len(exc.response_codes) > 1:  # codes only, never the bank's text (D119)
+    if len(exc.response_codes) > 1:
         fields["response_codes"] = list(exc.response_codes[:REFUSED_CODES_LOGGED])
+    if exc.answers:  # the bank's text, login and long numbers blanked (Luis, 11 Nov 2026)
+        fields["bank_answers"] = list(exc.answers)
     try:
         retry = exc.code == E.BANK_UNREACHABLE and not run.awaiting_approval
         if retry and attempt < MAX_UNREACHABLE_RETRIES:
