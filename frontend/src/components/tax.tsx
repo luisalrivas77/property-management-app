@@ -292,7 +292,13 @@ function DraftView({ draft, propertyId, onChanged }: { draft: AnlageVDraft; prop
           </div>
           <aside className="stack tax-side" aria-label="Offene Punkte und Unterlagen">
             <OpenPoints warnings={warnings} ctx={ctx} onChanged={changed} />
-            <ChecklistTab propertyId={propertyId} year={draft.tax_year} refresh={refresh} payments={payments.data} />
+            <ChecklistTab
+              propertyId={propertyId}
+              year={draft.tax_year}
+              refresh={refresh}
+              payments={payments.data}
+              onChanged={changed}
+            />
             <LimitCard limit={draft.limit_15 ?? null} />
             <HandOverCard key={draft.tax_year} propertyId={propertyId} taxYear={draft.tax_year} />
           </aside>

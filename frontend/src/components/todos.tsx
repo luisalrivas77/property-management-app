@@ -19,6 +19,8 @@ import { api, ok } from "@/api/client";
 import type {
   AllocationFact,
   AnlageVDraft,
+  ChecklistDepositCandidate,
+  ChecklistDepositOffer,
   ChecklistStatus,
   DocumentChecklistItem,
   DraftWarning,
@@ -28,6 +30,7 @@ import type {
 import type { components } from "@/api/types";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
+import { centsToString, toCents } from "./allocations";
 import { ReadUpload } from "./documents";
 import { formatDate, formatMoney, formatPercent } from "./format";
 import { toDecimalString } from "./input";
@@ -634,15 +637,37 @@ type AllocationDraft = components["schemas"]["AllocationDraft"];
 /** What a re-booking did: booked; nothing to change (the cited rows are booked otherwise
  * already); or gone (a cited row is no longer current, so the line changed since it loaded). */
 type RebookResult = "booked" | "unchanged" | "gone";
+type AllocationRow = components["schemas"]["Allocation"];
 
-/** Book the cited other-income allocations of one bank line as Kaltmiete (D140), through the
- * existing answer command (PUT /transactions/{id}/allocations, the inbox's path): read the
- * line's current rows, change the category of the cited other_income rows only, send every row
- * back with its other fields as they are (property, unit, tenancy, period, recurring flag,
- * Beleg; the other parts of a split), so the sum still holds. The server supersedes the old
- * rows and records transaction.reallocated. No rule is learned: a later payment from the same
- * payer is asked again. A cited row that is no longer current is never guessed by amount. */
-async function rebookAsRent(transactionId: string, allocationIds: readonly string[]): Promise<RebookResult> {
+/** A current row as the answer command takes it back, every field as it is. */
+function draftOf(row: AllocationRow): AllocationDraft {
+  return {
+    amount: row.amount,
+    category: row.category,
+    property_id: row.property_id,
+    unit_id: row.unit_id,
+    tenancy_id: row.tenancy_id,
+    loan_id: row.loan_id,
+    service_period_start: row.service_period_start,
+    service_period_end: row.service_period_end,
+    recurring: row.recurring,
+    document_id: row.document_id,
+  };
+}
+
+/** Re-book cited allocations of one bank line through the existing answer command (PUT
+ * /transactions/{id}/allocations, the inbox's path): read the line's current rows, let
+ * `rewrite` replace each cited row (null = keep it, "gone" = it is no longer what the to-do
+ * cited), send every other row back with its fields as they are (property, unit, tenancy,
+ * period, recurring flag, Beleg; the other parts of a split), so the sum still holds. The
+ * server supersedes the old rows and records transaction.reallocated. No rule is learned: a
+ * later payment from the same payer is asked again. A cited row that is no longer current is
+ * never guessed by amount. Shared by D140 (as rent) and D142 (a deposit to its tenancies). */
+async function rewriteLine(
+  transactionId: string,
+  allocationIds: readonly string[],
+  rewrite: (row: AllocationRow) => AllocationDraft[] | null | "gone",
+): Promise<RebookResult> {
   const view = await ok(
     api.GET("/api/transactions/{transaction_id}/allocations", {
       params: { path: { transaction_id: transactionId } },
@@ -652,20 +677,19 @@ async function rebookAsRent(transactionId: string, allocationIds: readonly strin
   const current = new Set(rows.map((row) => row.id));
   if (allocationIds.some((id) => !current.has(id))) return "gone";
   const cited = new Set(allocationIds);
-  const change = (row: (typeof rows)[number]) => cited.has(row.id) && row.category === "other_income";
-  if (!rows.some(change)) return "unchanged";
-  const drafts: AllocationDraft[] = rows.map((row) => ({
-    amount: row.amount,
-    category: change(row) ? "rent_cold" : row.category,
-    property_id: row.property_id,
-    unit_id: row.unit_id,
-    tenancy_id: row.tenancy_id,
-    loan_id: row.loan_id,
-    service_period_start: row.service_period_start,
-    service_period_end: row.service_period_end,
-    recurring: row.recurring,
-    document_id: row.document_id,
-  }));
+  const drafts: AllocationDraft[] = [];
+  let changed = false;
+  for (const row of rows) {
+    const next = cited.has(row.id) ? rewrite(row) : null;
+    if (next === "gone") return "gone";
+    if (next === null) {
+      drafts.push(draftOf(row));
+    } else {
+      changed = true;
+      drafts.push(...next);
+    }
+  }
+  if (!changed) return "unchanged";
   await ok(
     api.PUT("/api/transactions/{transaction_id}/allocations", {
       params: { path: { transaction_id: transactionId } },
@@ -678,6 +702,171 @@ async function rebookAsRent(transactionId: string, allocationIds: readonly strin
     }),
   );
   return "booked";
+}
+
+/** Book the cited other-income allocations of one bank line as Kaltmiete (D140): only the
+ * category of a cited other_income row changes. */
+function rebookAsRent(transactionId: string, allocationIds: readonly string[]): Promise<RebookResult> {
+  return rewriteLine(transactionId, allocationIds, (row) =>
+    row.category === "other_income" ? [{ ...draftOf(row), category: "rent_cold" }] : null,
+  );
+}
+
+/** A deposit line split to its tenancies (D142): the parts to link and what stays unlinked. */
+interface DepositSplit {
+  offer: ChecklistDepositOffer;
+  parts: { candidate: ChecklistDepositCandidate; cents: bigint }[];
+  rest: bigint;
+}
+
+/** The split "Kaution aus Bankumsatz zuordnen" proposes for a missing deposit item (D142), or
+ * null (no button; the tenancy link stays). For each offered line, oldest first, where this
+ * tenancy is a candidate: when every candidate's deposit is known and they sum exactly to the
+ * line, all of them in one click; else this tenancy alone, its deposit taken out of the line
+ * and the rest left unlinked, if the line covers it. Never anything else. */
+export function depositSplit(item: DocumentChecklistItem): DepositSplit | null {
+  const deposit = (candidate: ChecklistDepositCandidate) =>
+    candidate.deposit_amount ? toCents(candidate.deposit_amount) : null;
+  for (const offer of item.deposit_offers ?? []) {
+    const line = toCents(offer.amount);
+    const candidates = offer.candidates ?? [];
+    const own = candidates.find((candidate) => candidate.tenancy_id === item.scope.id);
+    if (line === null || line <= 0n || !offer.transaction_id || !own) continue;
+    const amounts = candidates.map(deposit);
+    if (amounts.every((cents) => cents !== null && cents > 0n)) {
+      const known = amounts as bigint[];
+      if (known.reduce((sum, cents) => sum + cents, 0n) === line) {
+        return { offer, parts: candidates.map((candidate, i) => ({ candidate, cents: known[i] })), rest: 0n };
+      }
+    }
+    const mine = deposit(own);
+    if (mine !== null && mine > 0n && mine <= line) {
+      return { offer, parts: [{ candidate: own, cents: mine }], rest: line - mine };
+    }
+  }
+  return null;
+}
+
+/** Link the offered deposit line to its tenancies (D142): the cited row, still an unlinked
+ * deposit_in of the offered amount, becomes one row per tenancy (its deposit, its tenancy and
+ * unit) plus the unlinked rest, each keeping the property, period, recurring flag and Beleg of
+ * the original; every other row of the line (a rent part, say) is sent back unchanged. */
+function assignDeposit(split: DepositSplit): Promise<RebookResult> {
+  const { offer, parts, rest } = split;
+  return rewriteLine(offer.transaction_id as string, [offer.allocation_id], (row) => {
+    if (row.category !== "deposit_in" || row.tenancy_id || toCents(row.amount) !== toCents(offer.amount)) {
+      return "gone";
+    }
+    const base = draftOf(row);
+    const rows: AllocationDraft[] = parts.map(({ candidate, cents }) => ({
+      ...base,
+      amount: centsToString(cents),
+      unit_id: candidate.unit_id,
+      tenancy_id: candidate.tenancy_id,
+    }));
+    if (rest > 0n) rows.push({ ...base, amount: centsToString(rest) });
+    return rows;
+  });
+}
+
+/** "WE 1, ab 01.01.2023": a tenancy as the to-do titles name it (scopeSuffix), from its own
+ * deposit item in the same checklist; never a tenant's name (D5). */
+function tenancyLabel(tenancyId: string, items: readonly DocumentChecklistItem[] | undefined): string {
+  const item = items?.find((i) => i.code === "deposit_record" && i.scope.id === tenancyId);
+  if (!item) return "Mietverhältnis";
+  return `${item.scope.unit_label ?? "Einheit"}, ab ${formatDate(item.scope.tenancy_start)}`;
+}
+
+/** deposit_record (D142): „Kaution aus Bankumsatz zuordnen“, a dialog naming the bank line and
+ * the tenancies it is split to, and one „Übernehmen“. */
+function DepositSplitAction({
+  split,
+  items,
+  onChanged,
+}: {
+  split: DepositSplit;
+  items?: readonly DocumentChecklistItem[];
+  onChanged?: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const [gone, setGone] = useState(false);
+  const { offer, parts, rest } = split;
+  const payment = `Zahlung vom ${formatDate(offer.booking_date)} (${ALLOCATION_CATEGORY.deposit_in}, ${formatMoney(offer.amount)})`;
+  const each = parts.every((part) => part.cents === parts[0].cents) ? centsToString(parts[0].cents) : null;
+  const question =
+    parts.length > 1
+      ? `Die ${payment} auf ${parts.length} Mietverhältnisse aufteilen${each ? `: je ${formatMoney(each)}` : ""}?`
+      : rest > 0n
+        ? `Von der ${payment} ${formatMoney(centsToString(parts[0].cents))} diesem Mietverhältnis zuordnen? Der Rest von ${formatMoney(centsToString(rest))} bleibt als Kaution ohne Mietverhältnis stehen.`
+        : `Die ${payment} diesem Mietverhältnis zuordnen?`;
+  async function confirm(close: () => void) {
+    setBusy(true);
+    setError(null);
+    setGone(false);
+    try {
+      if ((await assignDeposit(split)) === "gone") {
+        setGone(true);
+        return;
+      }
+      close();
+      onChanged?.();
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <ActionDialog label="Kaution aus Bankumsatz zuordnen" title="Kaution zuordnen" buttonClass="">
+      {(close) => (
+        <>
+          <p>{question}</p>
+          <ul>
+            {parts.map(({ candidate, cents }) => (
+              <li key={candidate.tenancy_id}>
+                {tenancyLabel(candidate.tenancy_id, items)} · {formatMoney(centsToString(cents))}
+              </li>
+            ))}
+          </ul>
+          <p>
+            Die Zahlung gilt dann als Nachweis der Kaution. Die Änderung wird mit Datum gespeichert und lässt sich bei der
+            Zahlung wieder ändern.
+          </p>
+          {gone ? (
+            <p className="field-errors" role="alert">
+              Diese Zahlung wurde inzwischen anders zugeordnet. Bitte die Zahlung öffnen und dort prüfen.
+            </p>
+          ) : null}
+          <ErrorNotice error={error} />
+          <div className="row">
+            <button type="button" disabled={busy || gone} onClick={() => void confirm(close)}>
+              {busy ? "Speichert …" : "Übernehmen"}
+            </button>
+            <button type="button" className="secondary" onClick={close}>
+              Abbrechen
+            </button>
+          </div>
+        </>
+      )}
+    </ActionDialog>
+  );
+}
+
+/** The action of a checklist row (the "Was noch fehlt" lists and Unterlagen), or null: for a
+ * missing deposit with an offered bank line, „Kaution aus Bankumsatz zuordnen“ first (D142);
+ * the row's fix link beside it. */
+export function checklistAction(item: DocumentChecklistItem, ctx: ChecklistContext): ReactNode {
+  const fix = requirementFix(item, ctx);
+  const split = item.status === "missing" && item.code === "deposit_record" ? depositSplit(item) : null;
+  const link = fix ? <Link href={fix.href}>{fix.label}</Link> : null;
+  if (!split) return link;
+  return (
+    <>
+      <DepositSplitAction split={split} items={ctx.items} onChanged={ctx.onChanged} />
+      {link}
+    </>
+  );
 }
 
 /** income.other_review (D140): book the cited allocation as Kaltmiete (rebookAsRent), after the
@@ -941,6 +1130,10 @@ export interface ChecklistContext {
   propertyId: string;
   /** The draft's cited payments by allocation id (a cost receipt opens its bank line). */
   payments?: Map<string, AllocationFact>;
+  /** The checklist's items: a deposit split names its tenancies by their items (D142). */
+  items?: readonly DocumentChecklistItem[];
+  /** Called after an action changed the ledger, so the checklist reloads (D142). */
+  onChanged?: () => void;
 }
 
 type Fix = { href: string; label: string };
@@ -1036,8 +1229,9 @@ export const REQUIREMENT_GUIDE: Record<RequirementCode, RequirementGuide> = {
   },
   deposit_record: {
     title: (item) => `Kautionsnachweis${scopeSuffix(item)}`,
-    hint: "Kautionskonto oder Bürgschaft",
-    missing: "Einen Nachweis der Kaution (Kautionskonto oder Bürgschaft) hochladen und beim Mietverhältnis verknüpfen.",
+    hint: "Kautionskonto, Bürgschaft oder die Zahlung auf dem Konto",
+    missing:
+      "Einen Nachweis der Kaution (Kautionskonto oder Bürgschaft) hochladen und beim Mietverhältnis verknüpfen. Ging die Kaution auf dem Konto ein, genügt die Zahlung: sie diesem Mietverhältnis zuordnen.",
     fix: tenancyFix,
   },
   wirtschaftsplan: {
@@ -1270,12 +1464,11 @@ export function checklistEntry(
   context?: string,
 ): TodoEntry | null {
   if (!isChecklistTodo(item)) return null;
-  const fix = requirementFix(item, ctx);
   return {
     key: `checklist-${ctx.propertyId}-${item.code}-${item.scope.id}`,
     title: `${REQUIREMENT_GUIDE[item.code].title(item, year)}: ${item.status === "incomplete" ? "Steuerjahr fehlt" : "fehlt"}`,
     text: requirementTodo(item),
-    action: fix ? <Link href={fix.href}>{fix.label}</Link> : null,
+    action: checklistAction(item, ctx),
     context,
   };
 }
@@ -1352,7 +1545,7 @@ export function AnlageVTodos({
   });
   for (const item of checklist.data?.items ?? []) {
     if (coveredByWarning(item, warnings)) continue;
-    const entry = checklistEntry(item, year, { propertyId, payments });
+    const entry = checklistEntry(item, year, { propertyId, payments, items: checklist.data?.items, onChanged });
     if (entry) entries.push(entry);
   }
   const text = new Map((questionnaire.data?.questions ?? []).map((q) => [q.key, q.question_de]));

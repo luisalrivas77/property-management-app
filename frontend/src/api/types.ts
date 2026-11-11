@@ -3238,6 +3238,71 @@ export interface components {
             field: string;
         };
         /**
+         * ChecklistBankLine
+         * @description A confirmed allocation as a checklist item cites it (D142): no counterparty, no purpose
+         *     text (D5); the frontend labels it by date and amount and opens its bank line.
+         */
+        ChecklistBankLine: {
+            /**
+             * Allocation Id
+             * Format: uuid
+             */
+            allocation_id: string;
+            /** Transaction Id */
+            transaction_id?: string | null;
+            /**
+             * Booking Date
+             * Format: date
+             */
+            booking_date: string;
+            /** Amount */
+            amount: string;
+        };
+        /**
+         * ChecklistDepositCandidate
+         * @description A tenancy an unlinked deposit line could be split to (D142): it has a deposit (cash),
+         *     its proof is missing, it did not end before the line's booking date and no deposit line is
+         *     linked to it yet. unit_id: the allocation row's unit (it must be the tenancy's).
+         */
+        ChecklistDepositCandidate: {
+            /**
+             * Tenancy Id
+             * Format: uuid
+             */
+            tenancy_id: string;
+            /**
+             * Unit Id
+             * Format: uuid
+             */
+            unit_id: string;
+            /** Deposit Amount */
+            deposit_amount?: string | null;
+        };
+        /**
+         * ChecklistDepositOffer
+         * @description An unlinked `deposit_in` line of the property, offered on a missing deposit_record item
+         *     whose tenancy is among `candidates` (D142). candidates: every such tenancy of the year's
+         *     items, by tenancy start then id; the frontend proposes a split only from these.
+         */
+        ChecklistDepositOffer: {
+            /**
+             * Allocation Id
+             * Format: uuid
+             */
+            allocation_id: string;
+            /** Transaction Id */
+            transaction_id?: string | null;
+            /**
+             * Booking Date
+             * Format: date
+             */
+            booking_date: string;
+            /** Amount */
+            amount: string;
+            /** Candidates */
+            candidates?: components["schemas"]["ChecklistDepositCandidate"][];
+        };
+        /**
          * ChecklistDocumentRef
          * @description A satisfying document, without its title or filename (either can name a tenant, D5):
          *     the frontend labels it by type and date and links to the document.
@@ -3263,7 +3328,8 @@ export interface components {
         /**
          * ChecklistItem
          * @description build_checklist's output. documents: the satisfying documents (present) or the ones
-         *     lacking a tax year (incomplete), oldest first; empty otherwise.
+         *     lacking a tax year (incomplete), oldest first; empty otherwise (also for a deposit proven
+         *     by its bank lines only, D142, which lists them in bank_lines).
          */
         ChecklistItem: {
             code: components["schemas"]["RequirementCode"];
@@ -3271,6 +3337,10 @@ export interface components {
             scope: components["schemas"]["ChecklistScope"];
             /** Due On */
             due_on?: string | null;
+            /** Bank Lines */
+            bank_lines?: components["schemas"]["ChecklistBankLine"][];
+            /** Deposit Offers */
+            deposit_offers?: components["schemas"]["ChecklistDepositOffer"][];
             /** Documents */
             documents?: string[];
         };
@@ -3735,6 +3805,10 @@ export interface components {
             scope: components["schemas"]["ChecklistScope"];
             /** Due On */
             due_on?: string | null;
+            /** Bank Lines */
+            bank_lines?: components["schemas"]["ChecklistBankLine"][];
+            /** Deposit Offers */
+            deposit_offers?: components["schemas"]["ChecklistDepositOffer"][];
             /** Documents */
             documents: components["schemas"]["ChecklistDocumentRef"][];
         };
