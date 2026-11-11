@@ -143,8 +143,10 @@ test("a missing market rent is one to-do, not two", async ({ page, signedIn }) =
 
 // D140: an Einnahme ohne Zuordnung (other_income) after the handover is a to-do with "Als Miete
 // buchen": the dialog names the payment's date and amount, and confirming re-books it as
-// Kaltmiete through the inbox's answer command, after which the to-do is gone. The camt sample's
-// "Partei D" credit (28 Sep 2026) is confirmed as other_income through the same command first.
+// Kaltmiete through the inbox's answer command. The camt sample's "Partei D" credit (28 Sep
+// 2026) is split into two other_income parts through the same command first: re-booking one
+// supersedes every row of the line, and the other part's to-do, which now cites a new row, still
+// offers the button without a page reload (the cited payments reload with the draft).
 const SAMPLE = path.resolve(import.meta.dirname, "..", "..", "backend", "tests", "fixtures", "phase2", "bank_samples", "camt052.zip");
 
 test("an Einnahme ohne Zuordnung is booked as rent from its to-do", async ({ page, signedIn }) => {
@@ -186,7 +188,10 @@ test("an Einnahme ohne Zuordnung is booked as rent from its to-do", async ({ pag
     data: {
       allocation_set: {
         transaction_id: transactionId,
-        allocations: [{ amount: "740.18", category: "other_income", property_id: property.id, recurring: false }],
+        allocations: [
+          { amount: "700.00", category: "other_income", property_id: property.id, recurring: false },
+          { amount: "40.18", category: "other_income", property_id: property.id, recurring: false },
+        ],
         method: "user",
         confidence: "1",
       },
@@ -200,18 +205,21 @@ test("an Einnahme ohne Zuordnung is booked as rent from its to-do", async ({ pag
   await page.goto(`/tax/${YEAR}?immobilie=${property.id}`);
   const todos = page.getByRole("region", { name: "Was noch fehlt" });
   const entry = todos.getByRole("listitem").filter({ hasText: "Einnahme ohne Zuordnung" });
-  await expect(entry).toHaveCount(1);
-  await expect(entry.getByRole("link", { name: "Zahlung öffnen" })).toHaveAttribute("href", `/inbox?umsatz=${transactionId}`);
-  await entry.getByRole("button", { name: "Als Miete buchen" }).click();
+  await expect(entry).toHaveCount(2);
+  await expect(entry.first().getByRole("link", { name: "Zahlung öffnen" })).toHaveAttribute("href", `/inbox?umsatz=${transactionId}`);
+  await entry.first().getByRole("button", { name: "Als Miete buchen" }).click();
   const dialog = page.getByRole("dialog", { name: "Einnahme als Miete buchen" });
   await expect(dialog).toContainText("28.09.2026");
-  await expect(dialog).toContainText("740,18 €");
+  await expect(dialog).toContainText(/(700,00|40,18) €/);
   await expect(dialog).toContainText("als Kaltmiete gebucht");
   const saved = page.waitForResponse((r) => r.url().endsWith(allocationsPath) && r.request().method() === "PUT");
   await dialog.getByRole("button", { name: "Ja, als Miete buchen" }).click();
   expect((await saved).status()).toBe(200);
-  await expect(entry).toHaveCount(0);
+  // No page.reload(): the remaining part's to-do keeps its button.
+  await expect(entry).toHaveCount(1);
+  await expect(entry.getByRole("button", { name: "Als Miete buchen" })).toBeVisible();
 
   const stored = await apiCall<{ allocations: { amount: string; category: string; status: string }[] }>(page, "GET", allocationsPath);
-  expect(stored.allocations.map((a) => [a.amount, a.category, a.status])).toEqual([["740.18", "rent_cold", "confirmed"]]);
+  expect(stored.allocations.map((a) => a.status)).toEqual(["confirmed", "confirmed"]);
+  expect(stored.allocations.map((a) => a.category).sort()).toEqual(["other_income", "rent_cold"]);
 });
