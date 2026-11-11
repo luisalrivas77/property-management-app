@@ -136,7 +136,9 @@ MAX_ARCHIVE_BYTES = 100 << 20
 DOWNLOAD_TTL_S = 300
 TAX_EXPORT = "tax_export"  # NotFoundError's entity name: the row's events sit on the property
 _DOMAIN = b"hausbuch.tax_export.download.v1\x00"  # domain separation under the session key
-_ARCHIVE_OVERHEAD = 1 << 20  # sheet, CSVs, README and the ZIP's own headers, generously
+# The generated files (sheet, CSVs, zahlungsnachweise.pdf, README) and the ZIP's own headers,
+# generously: a year's payment proofs are tens of kilobytes.
+_ARCHIVE_OVERHEAD = 1 << 20
 
 ANLAGE_N_DIR = "einkommensteuer"  # the archive's folder for the Anlage N pages (D104)
 ExportStatus = Literal["queued", "ready", "failed"]
@@ -674,6 +676,7 @@ def write_export(
             if len(data) <= MAX_ARCHIVE_BYTES or not statements:
                 break
             excess = len(data) - MAX_ARCHIVE_BYTES
+            data = b""  # release the over-cap ZIP before the next one is built (512 MB box)
             while statements and excess > 0:  # still over: drop the newest statements
                 excess -= len(statements.pop().data)
         if len(data) > MAX_ARCHIVE_BYTES:
