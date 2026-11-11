@@ -235,3 +235,25 @@ def test_a_flat_without_wohnflaeche_or_units_drafts_with_no_area():
     assert codes.count("income.living_area_missing") == 1
     sheet = [r.amount for r in field_sheet(got, rule_set(2026)) if r.key == UNIT_ROWS]
     assert sheet == [Decimal("740.18")]
+
+
+@pytest.mark.rule
+@pytest.mark.parametrize(
+    ("case_id", "proof_rest"),
+    [
+        ("notary_bill_parts_one_part_proven", "1200.00"),
+        ("notary_bill_parts_proof_fits_no_part", None),
+        ("notary_bill_parts_lines_not_summing_no_rest", None),
+        ("notary_bill_parts_unlinked_part_offered", None),
+        ("notary_bill_split_proof_of_purchase_part_only", None),
+    ],
+)
+def test_payment_proof_rest_only_for_a_proven_part(case_id, proof_rest):
+    """Phase 3 D150: the fixture compares params as a subset, so the absence of proof_rest
+    (a proof that fits no part, lines that are no parts, no proof linked) is asserted here."""
+    [case] = [c for c in DRAFT.cases if c.id == case_id]
+    got = [w for w in _run(case).warnings if w.code.value == "payment_proof.missing"]
+    rests = [w.params.get("proof_rest") for w in got if w.params.get("document")]
+    assert proof_rest in rests and all(r in (None, proof_rest) for r in rests)
+    if proof_rest is None:
+        assert all("proof_rest" not in w.params for w in got)

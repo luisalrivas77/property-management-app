@@ -725,8 +725,11 @@ export const WARNING_TEXT: Record<WarningCode, (params: Params) => string> = {
     "Mehr als 50 Fahrten zur Immobilie im Jahr: bei fast täglicher Anwesenheit kann nur die halbe Pauschale gelten. Bitte prüfen.",
   "tax.private_cost_paid_from_account": (p) =>
     `${p.label ? `„${p.label}“ ist` : "Eine Rechnung ist"} als von einem anderen Konto bezahlt eingetragen, wurde aber vom Mietkonto bezahlt: sie zählt nur einmal, mit der Buchung vom Mietkonto. Die Angabe bitte zurückziehen.`,
+  // Phase 3 D150: proof_rest when the linked proofs each pay one part of the bill.
   "payment_proof.missing": (p) =>
-    `Zahlungsnachweis fehlt: ${proofBill(p)} über ${money(p)} zählt mit, aber nichts zeigt, dass sie bezahlt wurde${p.proof_amount ? ` (der hochgeladene Nachweis lautet über ${money(p, "proof_amount")}, der Betrag passt nicht)` : ""}.`,
+    p.proof_rest
+      ? `Zahlungsnachweis fehlt: ${proofBill(p)} über ${money(p)} zählt mit. Ein Teil ist nachgewiesen; es fehlt noch der Nachweis über ${money(p, "proof_rest")}.`
+      : `Zahlungsnachweis fehlt: ${proofBill(p)} über ${money(p)} zählt mit, aber nichts zeigt, dass sie bezahlt wurde${p.proof_amount ? ` (der hochgeladene Nachweis lautet über ${money(p, "proof_amount")}, der Betrag passt nicht)` : ""}.`,
   "anlage_n.certificate_missing": () =>
     "Keine Lohnsteuerbescheinigung für dieses Jahr: die Zahlen beruhen auf Gehaltsabrechnungen oder der Schätzung.",
   "anlage_n.church_mismatch": () =>

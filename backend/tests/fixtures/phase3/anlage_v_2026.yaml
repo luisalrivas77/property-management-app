@@ -74,6 +74,14 @@
 #                        0.01 of its combined total, of its private part alone, or of one of its
 #                        acquisition cost rows; rules.proof_match), that warning also carries
 #                        proof_offer (the proof's id) and proof_offer_amount (its amount).
+#   facts.bill_parts     (D150) per bill, the amounts of the cost lines its current reading
+#                        states. They are the bill's parts only when they sum to its combined
+#                        total within 0.01 (a credit line or one of 0.00 is no part). A proof
+#                        of one part fits the bill (part) for proof_offer; and when the bill is
+#                        not proven but every linked proof's amount equals one of its parts and
+#                        their sum is below the combined total, payment_proof.missing also
+#                        carries proof_rest (the combined total minus that sum: "ein Teil ist
+#                        nachgewiesen").
 # Case A's notary bill (C2, D_NOTAR) is stored but no allocation paid it, so it raises the to-do.
 
 ids:
@@ -194,6 +202,8 @@ ids:
   doc_proof_repair: &D_PPR 00000d0c-0000-4000-8000-000000000011
   # phase 3 D149: a payment_proof document linked to no bill
   doc_proof_unlinked: &D_PU 00000d0c-0000-4000-8000-000000000012
+  # phase 3 D150: a second payment_proof document, the other part of a bill
+  doc_proof_notary_2: &D_PN2 00000d0c-0000-4000-8000-000000000013
 
 bases:
   property: &property
@@ -1213,3 +1223,130 @@ cases:
         - {code: payment_proof.missing,
            params: {document: *D_NOTAR, source: private_cost, label: Notar Grundschuld,
                     amount: "250.00", proof_amount: "4200.00"}}
+
+  # D150 (11 Nov 2026): a bill paid in parts. The notary bill's reading states two cost lines
+  # (facts.bill_parts: 3,000.00 and 1,200.00) that sum to its one row of 4,200.00, as one
+  # document holding both buyers' Grunderwerbsteuerbescheide is read as two lines while the
+  # property has one row of the total. A linked proof of one line proves a part: the to-do
+  # stays and says what is still missing (proof_rest); a proof of each line proves the bill
+  # (their sum, as D143); an unlinked proof of one line is offered on the to-do (D149). The
+  # figures never change.
+  - id: notary_bill_parts_one_part_proven
+    description: >
+      case A, the notary bill read as two lines of 3,000.00 and 1,200.00, plus a payment
+      proof of 3,000.00 linked to it → payment_proof.missing stays with proof_amount 3000.00
+      and proof_rest 1200.00 (one part proven, the rest's proof missing); figures as in case A
+    tax_year: 2026
+    rule_set_year: 2026
+    facts:
+      <<: *facts
+      bill_parts:
+        *D_NOTAR: ["3000.00", "1200.00"]
+      payment_proofs:
+        - {proof_document_id: *D_PN, bill_document_id: *D_NOTAR, amount: "3000.00"}
+    expect:
+      <<: *expect_a
+      warnings:
+        - {code: hausgeld.abrechnung_pending}
+        - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
+        - {code: reduced_rent.no_market_rent}
+        - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
+        - {code: draft.form_provisional}
+        - {code: payment_proof.missing,
+           params: {document: *D_NOTAR, source: acquisition_cost, kind: notary,
+                    amount: "4200.00", proof_amount: "3000.00", proof_rest: "1200.00"}}
+
+  - id: notary_bill_parts_both_parts_proven
+    description: >
+      notary_bill_parts_one_part_proven plus a second payment proof of 1,200.00 linked to the
+      bill → the two proofs sum to the bill: no payment_proof.missing; figures as in case A
+    tax_year: 2026
+    rule_set_year: 2026
+    facts:
+      <<: *facts
+      bill_parts:
+        *D_NOTAR: ["3000.00", "1200.00"]
+      payment_proofs:
+        - {proof_document_id: *D_PN, bill_document_id: *D_NOTAR, amount: "3000.00"}
+        - {proof_document_id: *D_PN2, bill_document_id: *D_NOTAR, amount: "1200.00"}
+    expect:
+      <<: *expect_a
+      warnings:
+        - {code: hausgeld.abrechnung_pending}
+        - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
+        - {code: reduced_rent.no_market_rent}
+        - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
+        - {code: draft.form_provisional}
+
+  - id: notary_bill_parts_proof_fits_no_part
+    description: >
+      the same bill with a linked proof of 2,000.00, which is none of its lines → the to-do
+      stays as a mismatch (proof_amount only, no proof_rest); figures as in case A
+    tax_year: 2026
+    rule_set_year: 2026
+    facts:
+      <<: *facts
+      bill_parts:
+        *D_NOTAR: ["3000.00", "1200.00"]
+      payment_proofs:
+        - {proof_document_id: *D_PN, bill_document_id: *D_NOTAR, amount: "2000.00"}
+    expect:
+      <<: *expect_a
+      warnings:
+        - {code: hausgeld.abrechnung_pending}
+        - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
+        - {code: reduced_rent.no_market_rent}
+        - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
+        - {code: draft.form_provisional}
+        - {code: payment_proof.missing,
+           params: {document: *D_NOTAR, source: acquisition_cost, kind: notary,
+                    amount: "4200.00", proof_amount: "2000.00"}}
+
+  - id: notary_bill_parts_lines_not_summing_no_rest
+    description: >
+      the bill's lines (3,000.00 and 1,000.00) do not sum to its row of 4,200.00: they are no
+      parts, so the linked 3,000.00 proof reads as a mismatch, as before D150
+    tax_year: 2026
+    rule_set_year: 2026
+    facts:
+      <<: *facts
+      bill_parts:
+        *D_NOTAR: ["3000.00", "1000.00"]
+      payment_proofs:
+        - {proof_document_id: *D_PN, bill_document_id: *D_NOTAR, amount: "3000.00"}
+    expect:
+      <<: *expect_a
+      warnings:
+        - {code: hausgeld.abrechnung_pending}
+        - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
+        - {code: reduced_rent.no_market_rent}
+        - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
+        - {code: draft.form_provisional}
+        - {code: payment_proof.missing,
+           params: {document: *D_NOTAR, source: acquisition_cost, kind: notary,
+                    amount: "4200.00", proof_amount: "3000.00"}}
+
+  - id: notary_bill_parts_unlinked_part_offered
+    description: >
+      the notary bill read as two lines, no proof linked, one payment proof of 1,200.00
+      linked to no bill → it fits one line, so the to-do offers it (proof_offer); figures as
+      in case A
+    tax_year: 2026
+    rule_set_year: 2026
+    facts:
+      <<: *facts
+      bill_parts:
+        *D_NOTAR: ["3000.00", "1200.00"]
+      unlinked_proofs:
+        - {proof_document_id: *D_PU, amount: "1200.00"}
+    expect:
+      <<: *expect_a
+      warnings:
+        - {code: hausgeld.abrechnung_pending}
+        - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
+        - {code: reduced_rent.no_market_rent}
+        - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
+        - {code: draft.form_provisional}
+        - {code: payment_proof.missing,
+           params: {document: *D_NOTAR, source: acquisition_cost, kind: notary,
+                    amount: "4200.00", proof_offer: *D_PU, proof_offer_amount: "1200.00"}}
