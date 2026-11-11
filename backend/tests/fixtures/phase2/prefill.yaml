@@ -43,6 +43,19 @@
 #            amount is stated but not a number. A clause that names no form, with no positive
 #            amount, is proposed as missing with its quote. "bar" counts only as a whole word
 #            ("vereinbart" is not cash); Barzahlung, Bareinzahlung, Barsicherheit, Bargeld are.
+#            D152 (11 Nov 2026): tenancy operating_costs_terms from operating_costs_clause
+#            (a Pauschale, or no Abrechnung -> flat_rate; an Inklusiv- or Warmmiete ->
+#            included, unless the lease also states an operating_costs_prepayment above 0;
+#            a Vorauszahlung or Abschlag -> prepayment) and rent_due_day from rent_due_clause
+#            (the day named, the n-th Werktag as day n, 1-28; tests/rules/
+#            test_prefill_lease_terms.py has the wordings). Each derived from its clause
+#            and keeping the clause's source (checks cited, derived and, with a value,
+#            validates; the clause's confidence). A clause not stated: the field is not
+#            proposed. A clause code cannot map: value null, confidence low, and a note on
+#            the tenancy record ("nicht eindeutig" / "kein Tag"). On a tenancy that exists
+#            (patch), a field is proposed only when its value is not null and differs from
+#            the context's (operating_costs_terms, rent_due_day of ExistingTenancy, defaults
+#            prepayment and 3), and current holds exactly those fields' stored values.
 #   typing   type and subtype come from context.classification: value, no source, checks
 #            [validates], the classifier's confidence. subtype only when the classifier gave one,
 #            except on a financing bill (below, D138).
@@ -2211,6 +2224,185 @@ cases:
           entity_type: link
           mode: create
           values: {}
+
+  - id: mietvertrag_flat_rate_and_due_day
+    description: >-
+      D152: a room lease's Nebenkostenpauschale that covers heating and electricity, with no
+      Abrechnung (Luis's room leases), and rent due by the third Werktag. The new tenancy is
+      proposed flat_rate and due day 3, each derived from its clause and citing it.
+    kind: lease
+    context:
+      document_id: *DOC
+      classification: *CL_LEASE
+      properties: [*PROP_LINDEN]
+      units:
+        - {id: *U, property_id: *P, label: WE 3}
+    extraction:
+      <<: *LEASE
+      operating_costs_prepayment: {v: "90.00", p: 3, q: "Nebenkosten inkl. Betriebs-, Heiz-, Warmwasser, Strom 90,00 Euro"}
+      operating_costs_clause: {v: "Nebenkosten inkl. Betriebs-, Heiz-, Warmwasser, Strom 90,00 Euro. Eine gesonderte Neben- oder Betriebskostenabrechnung erfolgt nicht.", p: 3, q: "Eine gesonderte Neben- oder Betriebskostenabrechnung erfolgt nicht."}
+      rent_due_clause: {v: "spätestens am dritten Werktag eines jeden Monats", p: 3, q: "Die Miete ist spätestens am dritten Werktag eines jeden Monats zu zahlen."}
+    expect:
+      keys: [typing, tenant:1, tenancy, rent, link:tenancy]
+      records:
+        - key: tenancy
+          entity_type: tenancy
+          mode: create
+          values:
+            unit_id: *U
+            start_date: "2026-07-01"
+            signed_on: "2026-06-10"
+            rent_model: fixed
+            deposit_amount: "3450.00"
+            deposit_form: cash_account
+            operating_costs_terms: flat_rate
+            rent_due_day: 3
+          derived:
+            unit_id: [street, house_number, postal_code, unit_label]
+            rent_model: [rent_clause]
+            operating_costs_terms: [operating_costs_clause]
+            rent_due_day: [rent_due_clause]
+        - key: rent
+          entity_type: rent_schedule
+          mode: create
+          values: {cold_rent: "1150.00", operating_costs_prepayment: "90.00", effective_from: "2026-07-01"}
+
+  - id: mietvertrag_reread_proposes_flat_rate
+    description: >-
+      D152: the lease of a tenancy stored with the defaults (prepayment, due day 3) is read
+      again („Neu auslesen“). Its Pauschale and its due day (the 1st) differ from the stored
+      values, so the patch proposes both, with the stored ones as current. The lease states
+      no deposit and no rent clause here, so nothing else is patched.
+    kind: lease
+    context:
+      document_id: *DOC
+      classification: *CL_LEASE
+      properties: [*PROP_LINDEN]
+      units:
+        - {id: *U, property_id: *P, label: WE 3}
+      tenancies:
+        - {id: *T1, unit_id: *U, start_date: 2026-07-01}
+    extraction:
+      <<: *LEASE
+      deposit_amount: {value: null, confidence: low}
+      deposit_clause: {value: null, confidence: low}
+      operating_costs_clause: {v: "Nebenkostenpauschale inkl. Heizung und Strom; eine gesonderte Abrechnung erfolgt nicht.", p: 3, q: "Nebenkostenpauschale inkl. Heizung und Strom; eine gesonderte Abrechnung erfolgt nicht."}
+      rent_due_clause: {v: "im Voraus zum 1. eines jeden Monats", p: 3, q: "Die Miete ist im Voraus zum 1. eines jeden Monats zu zahlen."}
+    expect:
+      keys: [typing, tenant:1, tenancy, link:tenancy]
+      records:
+        - key: tenancy
+          entity_type: tenancy
+          mode: patch
+          target_id: *T1
+          values:
+            operating_costs_terms: flat_rate
+            rent_due_day: 1
+          derived:
+            operating_costs_terms: [operating_costs_clause]
+            rent_due_day: [rent_due_clause]
+          current: {operating_costs_terms: prepayment, rent_due_day: 3}
+
+  - id: mietvertrag_reread_terms_already_stored
+    description: >-
+      D152: the same lease read again after the tenancy was set to flat_rate and due day 1:
+      the stored values agree, so neither is proposed and the tenancy is unchanged.
+    kind: lease
+    context:
+      document_id: *DOC
+      classification: *CL_LEASE
+      properties: [*PROP_LINDEN]
+      units:
+        - {id: *U, property_id: *P, label: WE 3}
+      tenancies:
+        - {id: *T1, unit_id: *U, start_date: 2026-07-01, operating_costs_terms: flat_rate, rent_due_day: 1}
+    extraction:
+      <<: *LEASE
+      deposit_amount: {value: null, confidence: low}
+      deposit_clause: {value: null, confidence: low}
+      operating_costs_clause: {v: "Nebenkostenpauschale inkl. Heizung und Strom; eine gesonderte Abrechnung erfolgt nicht.", p: 3, q: "Nebenkostenpauschale inkl. Heizung und Strom; eine gesonderte Abrechnung erfolgt nicht."}
+      rent_due_clause: {v: "im Voraus zum 1. eines jeden Monats", p: 3, q: "Die Miete ist im Voraus zum 1. eines jeden Monats zu zahlen."}
+    expect:
+      keys: [typing, tenant:1, tenancy, link:tenancy]
+      records:
+        - key: tenancy
+          entity_type: tenancy
+          mode: unchanged
+          target_id: *T1
+          values: {}
+
+  - id: mietvertrag_terms_unclear
+    description: >-
+      D152: the Nebenkosten clause names an amount but no arrangement, and the due clause no
+      day. Both are proposed as missing with the clause's quote and a note, so the review
+      picks; the amount alone never decides.
+    kind: lease
+    context:
+      document_id: *DOC
+      classification: *CL_LEASE
+      properties: [*PROP_LINDEN]
+      units:
+        - {id: *U, property_id: *P, label: WE 3}
+    extraction:
+      <<: *LEASE
+      operating_costs_clause: {v: "Nebenkosten 250,00 EUR monatlich", p: 3, q: "Nebenkosten 250,00 EUR monatlich"}
+      rent_due_clause: {v: "monatlich im Voraus", p: 3, q: "Die Miete ist monatlich im Voraus zu zahlen."}
+    expect:
+      keys: [typing, tenant:1, tenancy, rent, link:tenancy]
+      records:
+        - key: tenancy
+          entity_type: tenancy
+          mode: create
+          values:
+            unit_id: *U
+            start_date: "2026-07-01"
+            signed_on: "2026-06-10"
+            rent_model: fixed
+            deposit_amount: "3450.00"
+            deposit_form: cash_account
+            operating_costs_terms: null
+            rent_due_day: null
+          derived:
+            unit_id: [street, house_number, postal_code, unit_label]
+            rent_model: [rent_clause]
+            operating_costs_terms: [operating_costs_clause]
+            rent_due_day: [rent_due_clause]
+          notes_contain: ["nicht eindeutig", "kein Tag"]
+
+  - id: mietvertrag_warm_rent_with_an_amount_is_unclear
+    description: >-
+      D152: the clause calls the rent a Warmmiete, but the lease also states a separate
+      Nebenkosten amount (*LEASE's 250,00): an all-in rent next to its own amount contradicts
+      itself, so the arrangement is missing with a note.
+    kind: lease
+    context:
+      document_id: *DOC
+      classification: *CL_LEASE
+      properties: [*PROP_LINDEN]
+      units:
+        - {id: *U, property_id: *P, label: WE 3}
+    extraction:
+      <<: *LEASE
+      operating_costs_clause: {v: "Die Miete ist eine Warmmiete und enthält sämtliche Nebenkosten.", p: 3, q: "Die Miete ist eine Warmmiete und enthält sämtliche Nebenkosten."}
+    expect:
+      keys: [typing, tenant:1, tenancy, rent, link:tenancy]
+      records:
+        - key: tenancy
+          entity_type: tenancy
+          mode: create
+          values:
+            unit_id: *U
+            start_date: "2026-07-01"
+            signed_on: "2026-06-10"
+            rent_model: fixed
+            deposit_amount: "3450.00"
+            deposit_form: cash_account
+            operating_costs_terms: null
+          derived:
+            unit_id: [street, house_number, postal_code, unit_label]
+            rent_model: [rent_clause]
+            operating_costs_terms: [operating_costs_clause]
+          notes_contain: ["Warmmiete"]
 
   - id: grundsteuer_typing_and_link
     description: The Bescheid is typed and linked to the property by address; the amounts stay in the extraction for the matchers.
