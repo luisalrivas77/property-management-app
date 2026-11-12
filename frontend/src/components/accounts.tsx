@@ -160,7 +160,12 @@ function ImportResult({ result }: { result: Imported }) {
       <p>
         Importiert: {fileName} · {lineCounts(imp)} · {IMPORT_STATUS[imp.status]}
       </p>
-      {imp.status === "imported" ? (
+      {imp.status === "imported" && imp.stated_closing != null ? (
+        <p className="muted">
+          Die Datei nennt den Kontostand vom {formatDate(imp.stated_closing_on)}: unten „Endsaldo eingeben“, der Betrag ist schon
+          eingetragen – bitte mit dem Online-Banking vergleichen.
+        </p>
+      ) : imp.status === "imported" ? (
         <p className="muted">Die Datei enthält keinen Kontostand: unten „Endsaldo eingeben“ mit dem Saldo aus dem Online-Banking.</p>
       ) : null}
       {imp.error_code ? <p className="muted">{ruleCodeText(imp.error_code) ?? imp.error_code}</p> : null}
@@ -225,9 +230,12 @@ function ImportReason({ statementImport: imp }: { statementImport: StatementImpo
   );
 }
 
-/** A CSV export states no balance (D21): the closing balance typed from online banking. */
+/** Every import whose balances do not come from the file takes a closing balance typed from
+ * online banking (D21): a Sparkasse CSV, a DKB CSV (phase 6 D173 (3), its „Kontostand vom“
+ * pre-filled), a bank sync's. Mirrors services/statements._declare, which refuses only a
+ * balance_source of file. */
 function canDeclareBalance(imp: StatementImport): boolean {
-  return imp.format === "csv_camt" && imp.balance_source !== "file";
+  return imp.balance_source !== "file";
 }
 
 function period(imp: StatementImport): string {
