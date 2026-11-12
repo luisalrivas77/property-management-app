@@ -24,6 +24,7 @@ from pydantic import Field, JsonValue, model_validator
 from .allocation import AllocationCategory, TransferLeg, TransferLegSource
 from .common import (
     _STRING_ONLY,
+    Confidence,
     Money,
     MutableRecord,
     NonNegativeMoney,
@@ -375,7 +376,7 @@ class TransferMatch(Schema):
     past the window, transfer.unmatched_leg."""
 
     category: AllocationCategory | None = None
-    confidence: Decimal | None = None
+    confidence: Confidence | None = None
     link: TransferCandidate | None = None
     proposed_link: TransferCandidate | None = None
     card: str | None = None
