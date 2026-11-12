@@ -306,6 +306,7 @@ export function ImportsTable({
                   <ImportReason statementImport={imp} />
                 </td>
                 <td className="actions">
+                  <OpeningFromClosing statementImport={imp} onDone={onChanged} />
                   {canDeclareBalance(imp) ? (
                     <ActionDialog
                       label={imp.declared_closing == null ? "Endsaldo eingeben" : "Endsaldo korrigieren"}
@@ -329,6 +330,42 @@ export function ImportsTable({
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/** Principle 7: a new account's balance on its anchor day is rarely known, but its first
+ * export states today's. When the API offers the opening balance this import implies
+ * (derived_opening_balance: the account's earliest import, off by its closing only, nothing
+ * reconciled yet), one click takes it (POST /imports/{id}/opening-from-closing); the API
+ * computes it and re-checks every import of the account. */
+export function OpeningFromClosing({ statementImport: imp, onDone }: { statementImport: StatementImport; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  if (imp.derived_opening_balance == null) return null;
+
+  async function take() {
+    setBusy(true);
+    setError(null);
+    try {
+      await ok(api.POST("/api/imports/{import_id}/opening-from-closing", { params: { path: { import_id: imp.id } } }));
+      onDone();
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="stack">
+      <p className="cell-detail">
+        Der Kontostand am {formatDate(imp.derived_opening_balance_on)} war dann {formatMoney(imp.derived_opening_balance)}.
+      </p>
+      <button type="button" onClick={() => void take()} disabled={busy}>
+        {busy ? "Übernimmt …" : "Anfangssaldo daraus übernehmen"}
+      </button>
+      <ErrorNotice error={error} />
     </div>
   );
 }

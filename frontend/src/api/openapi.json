@@ -4819,6 +4819,47 @@
         }
       }
     },
+    "/api/imports/{import_id}/opening-from-closing": {
+      "post": {
+        "summary": "Import Opening From Closing",
+        "description": "„Anfangssaldo daraus übernehmen“: the account's opening balance becomes the one this\nimport implies (StatementImport.derived_opening_balance), and every import of the account\nis re-checked. 422 statement.opening_not_derivable when the import does not offer it.",
+        "operationId": "import_opening_from_closing_api_imports__import_id__opening_from_closing_post",
+        "parameters": [
+          {
+            "name": "import_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Import Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatementImport"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/possible-duplicates": {
       "get": {
         "summary": "Possible Duplicates List",
@@ -22111,6 +22152,30 @@
               }
             ],
             "title": "Stated Closing On"
+          },
+          "derived_opening_balance": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Derived Opening Balance"
+          },
+          "derived_opening_balance_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Derived Opening Balance On"
           }
         },
         "additionalProperties": false,

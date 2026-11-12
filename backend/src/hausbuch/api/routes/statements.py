@@ -12,6 +12,7 @@ from hausbuch.schemas.bank import (
     StatementImport,
 )
 from hausbuch.schemas.enums import DuplicateStatus, EntityType
+from hausbuch.services.accounts import opening_from_closing
 from hausbuch.services.statements import (
     declare_balances,
     get_import,
@@ -35,6 +36,14 @@ def import_balances(import_id: UUID, body: DeclareBalanceBody, cmd: Cmd) -> Stat
     import; may be sent again to correct it. 422 statement.balance_from_file for a camt
     import, whose balances come from the file."""
     return cmd.run(declare_balances, import_id, body)
+
+
+@router.post("/imports/{import_id}/opening-from-closing")
+def import_opening_from_closing(import_id: UUID, cmd: Cmd) -> StatementImport:
+    """„Anfangssaldo daraus übernehmen“: the account's opening balance becomes the one this
+    import implies (StatementImport.derived_opening_balance), and every import of the account
+    is re-checked. 422 statement.opening_not_derivable when the import does not offer it."""
+    return cmd.run(opening_from_closing, import_id)
 
 
 @router.get("/possible-duplicates")

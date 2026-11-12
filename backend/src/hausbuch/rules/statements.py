@@ -49,6 +49,9 @@ OWNER_ACCOUNT = "statement.owner_account"  # owner accounts never hold transacti
 BALANCE_FROM_FILE = "statement.balance_from_file"  # the file declares its own balances
 DUPLICATE_ACCOUNTS_DIFFER = "statement.duplicate_accounts_differ"
 DUPLICATE_EXCLUDES_BOTH = "statement.duplicate_excludes_both"
+# The account's opening balance cannot be derived from this import (no longer its earliest
+# unreconciled import with a typed closing, or another import already reconciles).
+OPENING_NOT_DERIVABLE = "statement.opening_not_derivable"
 
 # Unit separator between the hashed fields (line_hash.yaml).
 _SEP = "\x1f"

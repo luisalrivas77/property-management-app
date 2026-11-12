@@ -113,6 +113,26 @@ def test_csv_balances_and_duplicates_through_the_api(client_a):
     assert again.status_code == 409
 
 
+def test_the_opening_balance_is_taken_from_the_first_import(client_a, client_b):
+    """POST /imports/{id}/opening-from-closing: the anchor the first import implies (its
+    closing less its lines), offered on the read shape; 422 once it no longer applies, 404 in
+    another workspace."""
+    account = create(client_a, "/api/accounts", ACCOUNT)
+    imported = ok(_upload(client_a, account["id"], CSV_BYTES, "text/csv", "umsaetze.csv"), 201)
+    path = f"/api/imports/{imported['id']}"
+    ok(client_a.post(f"{path}/balances", json={"closing_balance": "-3000.00"}))
+    shown = ok(client_a.get(path))
+    assert shown["error_code"] == "statement.unreconciled"
+    assert shown["derived_opening_balance"] == "28.51"
+    assert shown["derived_opening_balance_on"] == "2026-03-31"
+    assert client_b.post(f"{path}/opening-from-closing").status_code == 404
+    taken = ok(client_a.post(f"{path}/opening-from-closing"))
+    assert taken["status"] == "reconciled" and taken["derived_opening_balance"] is None
+    assert ok(client_a.get(f"/api/accounts/{account['id']}"))["opening_balance"] == "28.51"
+    refused = ok(client_a.post(f"{path}/opening-from-closing"), 422)
+    assert refused["code"] == "statement.opening_not_derivable"
+
+
 def test_another_workspace_gets_404_and_empty_lists(client_a, client_b):
     account = create(client_a, "/api/accounts", ACCOUNT)
     imported = ok(_upload(client_a, account["id"]), 201)

@@ -1648,6 +1648,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/imports/{import_id}/opening-from-closing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Opening From Closing
+         * @description „Anfangssaldo daraus übernehmen“: the account's opening balance becomes the one this
+         *     import implies (StatementImport.derived_opening_balance), and every import of the account
+         *     is re-checked. 422 statement.opening_not_derivable when the import does not offer it.
+         */
+        post: operations["import_opening_from_closing_api_imports__import_id__opening_from_closing_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/possible-duplicates": {
         parameters: {
             query?: never;
@@ -8405,6 +8427,10 @@ export interface components {
             stated_closing?: string | null;
             /** Stated Closing On */
             stated_closing_on?: string | null;
+            /** Derived Opening Balance */
+            derived_opening_balance?: string | null;
+            /** Derived Opening Balance On */
+            derived_opening_balance_on?: string | null;
         };
         /** SumComponent */
         SumComponent: {
@@ -13421,6 +13447,37 @@ export interface operations {
                 "application/json": components["schemas"]["DeclareBalanceBody"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatementImport"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    import_opening_from_closing_api_imports__import_id__opening_from_closing_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                import_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

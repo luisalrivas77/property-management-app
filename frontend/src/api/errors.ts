@@ -90,6 +90,8 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "statement.empty": "Die Datei enthält keine gebuchten Umsätze.",
   "statement.owner_account": "Auf ein Privatkonto der Eigentümer werden keine Kontoauszüge importiert.",
   "statement.balance_from_file": "Dieser Auszug bringt seine Salden selbst mit; ein Saldo wird nicht eingegeben.",
+  "statement.opening_not_derivable":
+    "Der Anfangssaldo lässt sich aus diesem Auszug nicht mehr ableiten: ein früherer Auszug ist hinzugekommen, ein anderer geht schon auf, oder der Endsaldo wurde geändert. Bitte die Seite neu laden.",
   "statement.duplicate_accounts_differ": "Die beiden Umsätze gehören zu verschiedenen Konten.",
   "statement.duplicate_excludes_both": "Zusammenführen würde beide Umsätze aus dem Saldo nehmen; einer muss zählen.",
   // allocations and learned rules (phase-2.md §8, step 4)

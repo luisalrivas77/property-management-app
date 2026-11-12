@@ -178,6 +178,12 @@ class StatementImport(MutableRecord):
     # confirms and is never reconciled against on its own.
     stated_closing: Money | None = None
     stated_closing_on: date | None = None
+    # Principle 7: the account's opening balance this import implies (its closing less the
+    # stored lines since the anchor), on the anchor's day, offered as „Anfangssaldo daraus
+    # übernehmen“ only while it is the account's earliest import, unreconciled by its closing
+    # alone (statement.unreconciled, no opening in the file) and no import reconciles yet.
+    derived_opening_balance: Money | None = None
+    derived_opening_balance_on: date | None = None
 
 
 class DeclareBalanceBody(Schema):

@@ -582,7 +582,9 @@ def _record_duplicates(
 
 def get_import(conn: Connection, import_id: UUID) -> StatementImport | None:
     row = conn.execute(select(*_IMPORT_COLUMNS).where(import_table.c.id == import_id)).one_or_none()
-    return None if row is None else _with_stated(conn, [_to_import(row)])[0]
+    if row is None:
+        return None
+    return _with_derived(conn, _with_stated(conn, [_to_import(row)]))[0]
 
 
 def list_imports(conn: Connection, account_id: UUID) -> list[StatementImport]:
@@ -592,7 +594,78 @@ def list_imports(conn: Connection, account_id: UUID) -> list[StatementImport]:
         .where(import_table.c.account_id == account_id)
         .order_by(import_table.c.created_at.desc(), import_table.c.id)
     )
-    return _with_stated(conn, [_to_import(r) for r in rows])
+    return _with_derived(conn, _with_stated(conn, [_to_import(r) for r in rows]))
+
+
+def derived_opening(conn: Connection, account: Row, import_id: UUID) -> Decimal | None:
+    """The opening balance on the account's anchor day that makes this import reconcile
+    (principle 7: a new account's balance on its anchor day is rarely known, but its first
+    export states today's balance, so anchor + Σ lines = closing gives it): the import's
+    declared closing less the stored lines after the anchor day through its last booking day.
+
+    None unless the import is the account's earliest (no import with an earlier first booking
+    day), unreconciled by its closing only (statement.unreconciled with a declared closing
+    and no opening from the file, so not before_anchor or opening_mismatch), and no import of
+    the account is reconciled yet (a reconciled one already proves the anchor)."""
+    rows = conn.execute(
+        select(*_IMPORT_COLUMNS).where(import_table.c.account_id == account.id)
+    ).all()
+    row = next((r for r in rows if r.id == import_id), None)
+    if row is None or any(r.status == ImportStatus.RECONCILED.value for r in rows):
+        return None
+    if (
+        row.status != ImportStatus.UNRECONCILED.value
+        or row.error_code != rules.UNRECONCILED
+        or row.declared_closing is None
+        or row.declared_opening is not None
+        or row.first_booking_on is None
+        or row.last_booking_on is None
+    ):
+        return None
+    if any(
+        r.first_booking_on is not None and r.first_booking_on < row.first_booking_on for r in rows
+    ):
+        return None
+    sums = rules.window_sums(
+        _stored_lines(conn, account.id, through=row.last_booking_on),
+        anchor_on=account.opening_balance_on,
+        first_booking_on=row.first_booking_on,
+        last_booking_on=row.last_booking_on,
+    )
+    return (row.declared_closing - sums.stored_through).quantize(Decimal("0.01"))
+
+
+def _with_derived(conn: Connection, imports: list[StatementImport]) -> list[StatementImport]:
+    """derived_opening_balance on the imports that offer it (only an unreconciled import with
+    statement.unreconciled can, so the other accounts cost no query)."""
+    candidates = [i for i in imports if i.error_code == rules.UNRECONCILED]
+    if not candidates:
+        return imports
+    accounts = {
+        r.id: r
+        for r in conn.execute(
+            select(account_table).where(account_table.c.id.in_({i.account_id for i in candidates}))
+        )
+    }
+    derived: dict[UUID, tuple[Decimal, date]] = {}
+    for imp in candidates:
+        account = accounts.get(imp.account_id)
+        if account is None:
+            continue
+        opening = derived_opening(conn, account, imp.id)
+        if opening is not None:
+            derived[imp.id] = (opening, account.opening_balance_on)
+    return [
+        i
+        if i.id not in derived
+        else i.model_copy(
+            update={
+                "derived_opening_balance": derived[i.id][0],
+                "derived_opening_balance_on": derived[i.id][1],
+            }
+        )
+        for i in imports
+    ]
 
 
 def _stated_balances(
