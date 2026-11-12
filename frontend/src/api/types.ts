@@ -1404,7 +1404,8 @@ export interface paths {
         };
         /**
          * Accounts List
-         * @description Rental accounts first, then the owners' own accounts, each by label.
+         * @description Rental accounts first, then the household's private accounts, each by label; each
+         *     with its current owner shares, ownership_missing when none is set (phase 6 D157).
          */
         get: operations["accounts_list_api_accounts_get"];
         put?: never;

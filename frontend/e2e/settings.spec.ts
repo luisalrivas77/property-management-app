@@ -26,7 +26,9 @@ test("switching on Mieterdokumente is saved and recorded as one event", async ({
   await expect(page.getByRole("switch", { name: "Mieterdokumente von der KI lesen lassen" })).toBeChecked();
   await expect(page.getByRole("switch", { name: "KI-Zuordnungen automatisch bestätigen" })).not.toBeChecked();
 
-  const settings = await apiCall<{
+    ai_private_accounts: boolean;
+    ai_private_accounts_active: boolean;
+    ai_private_accounts_consented_by: string[];
     ai_private_accounts: boolean;
     ai_tenant_documents: boolean;
     auto_accept_llm: boolean;
@@ -36,6 +38,8 @@ test("switching on Mieterdokumente is saved and recorded as one event", async ({
   // reminder_emails_available: the e2e server has no Transactional Email settings.
   expect(settings).toEqual({
     ai_private_accounts: false,
+    ai_private_accounts_active: false,
+    ai_private_accounts_consented_by: [],
     ai_tenant_documents: true,
     auto_accept_llm: false,
     reminder_emails: false,
