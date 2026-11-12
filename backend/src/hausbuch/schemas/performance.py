@@ -10,6 +10,8 @@ Four groups:
 - The results of the pure rules in hausbuch.rules.performance and rules.tax.tariff (§5): the
   tax breakdown and effect (D82), the household zvE estimate (D84), the year figures of actual
   and projected years alike (D85, D86, D91), the sale (D88, D89) and the projection.
+- The Nebenkostenpauschale rise test (D155): the cost level when each Pauschale was set and
+  today, and per flat-rate tenancy its share of the rise and the to-do's verdict.
 
 Sign conventions: year figures are magnitudes as the screen shows them (rent in, costs out);
 `taxable_result`, `tax_effect.effect`, `umlagen_net`, `net_cash` and `flat_rate_gap_monthly`
@@ -24,6 +26,7 @@ from uuid import UUID
 
 from pydantic import Field, model_validator
 
+from .allocation import AllocationCategory
 from .common import (
     Fraction,
     Money,
@@ -43,6 +46,7 @@ from .tax import RuleSetStamp, SourceRef
 
 # Error codes the schemas raise inside a validation message; rules/errors.py holds the same
 # strings with the other phase 4 codes (schemas do not import rules).
+ZERO_MONEY = Decimal("0.00")
 INCOME_INPUT_SCOPE_INVALID = "income_input.scope_invalid"
 TARIFF_INVALID = "tariff.invalid"
 
@@ -626,3 +630,182 @@ class Projection(Schema):
     years: list[YearFigures]
     sale: SaleResult
     assumptions: list[Assumption] = Field(default_factory=list)
+
+
+# --- The Nebenkostenpauschale rise test (D155) -------------------------------------------
+
+# The categories the cost level reads, in the card's order: the three BetrKV items (§2 BetrKV)
+# whose rise §560 Abs. 1 BGB lets a landlord pass on to a Pauschale, then the flat's own
+# electricity, which is not a BetrKV item: it is shown on its own line and never counts toward
+# the rise (D155 (3)).
+FLAT_RATE_BETRKV = (
+    AllocationCategory.HAUSGELD_UMLAGEFAEHIG,
+    AllocationCategory.GRUNDSTEUER,
+    AllocationCategory.INSURANCE,
+)
+FLAT_RATE_CATEGORIES = (*FLAT_RATE_BETRKV, AllocationCategory.ELECTRICITY)
+# A rise above this per month and tenancy is a to-do (D155 (4)); 10.00 itself is not.
+FLAT_RATE_RAISE_ABOVE = Decimal("10.00")
+
+
+class RateBasis(StrEnum):
+    """How a category's monthly rate was found (D155 (2))."""
+
+    MONTHLY_PAYMENT = "monthly_payment"  # one payment, as a month's (Hausgeld, Strom, insurance)
+    YEARLY_PREMIUM = "yearly_premium"  # insurance: the only line within 6 months either side, ÷ 12
+    SCHEDULE = "schedule"  # the confirmed grundsteuer_schedule's yearly total ÷ 12
+    TWELVE_MONTHS = "twelve_months"  # Grundsteuer: Σ lines of 12 months ÷ 12
+    NONE = "none"  # nothing known: 0.00
+
+
+class CostRate(Schema):
+    """One category's monthly rate in force on a date (D155 (2)), with what it came from
+    (principle 2): the allocations of the payment or the 12 months, or the schedule's tax
+    input. `from_later`: nothing was known on or before the date, so the first payment (or the
+    first schedule, or the first 12 months of lines) after it stands for it, as the handover
+    month's payment does for a lease that began before the landlord paid anything."""
+
+    category: AllocationCategory
+    monthly: Money
+    basis: RateBasis
+    from_later: bool = False
+    sources: list[SourceRef] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _none_is_empty(self) -> Self:
+        if (self.basis is RateBasis.NONE) != (not self.sources):
+            raise ValueError("a rate has sources exactly when something was found")
+        if self.basis is RateBasis.NONE and (self.monthly != 0 or self.from_later):
+            raise ValueError("a rate from nothing is 0.00")
+        return self
+
+
+class CostLevel(Schema):
+    """The flat's costs per month in force on `as_of`: one rate per FLAT_RATE_CATEGORIES, in that
+    order; `betrkv` is the sum of the three BetrKV rates (electricity left out)."""
+
+    as_of: date
+    rates: list[CostRate]
+    betrkv: Money
+
+    @model_validator(mode="after")
+    def _shape(self) -> Self:
+        if tuple(r.category for r in self.rates) != FLAT_RATE_CATEGORIES:
+            raise ValueError("one rate per category, in FLAT_RATE_CATEGORIES order")
+        total = sum((r.monthly for r in self.rates if r.category in FLAT_RATE_BETRKV), ZERO_MONEY)
+        if self.betrkv != total:
+            raise ValueError("betrkv = Σ of the BetrKV rates")
+        return self
+
+
+class CategoryChange(Schema):
+    """A category's rate when the Pauschale was set and today, for the whole flat."""
+
+    category: AllocationCategory
+    then: Money
+    now: Money
+    change: Money
+
+    @model_validator(mode="after")
+    def _change(self) -> Self:
+        if self.change != self.now - self.then:
+            raise ValueError("change = now − then")
+        return self
+
+
+class FlatRateVerdict(StrEnum):
+    RAISE = "raise"  # „kann steigen“: the BetrKV rise for the tenancy is above 10.00 € a month
+    LOWER = "lower"  # „senken“: a fall of at least 0.01 € a month (§560 Abs. 3 BGB)
+    NONE = "none"
+
+
+class TenancyFlatRate(Schema):
+    """One flat_rate tenancy in force on `as_of` (D155 (3), (4)).
+
+    `pauschale` is the rent row in force today's operating_costs_prepayment; `set_on` the date
+    it was set (the latest rent-schedule row in force that changed it, else the tenancy's
+    start). `changes` per FLAT_RATE_CATEGORIES compare the levels on `set_on` and today;
+    `flat_rise` is Σ of the BetrKV changes; `rise` = flat_rise × pauschale ÷ Σ Pauschalen,
+    half-up to the cent (0.00 when the Pauschalen sum to 0). `share_percent` is that share for
+    display only, one decimal; the rise is never computed from it. `earliest_start` (raise
+    only) is the first day of the month after next from `as_of` (§560 Abs. 2 BGB);
+    `fell_on` (lower only) the date the cost fell (§560 Abs. 3 BGB): of the BetrKV categories
+    whose rate fell, the earliest date from which its rate today applies (the first line of the
+    unbroken run of lines at today's rate; a schedule's 1 January)."""
+
+    tenancy_id: UUID
+    unit_id: UUID
+    unit_label: str
+    pauschale: NonNegativeMoney
+    set_on: date
+    set_by: Literal["start", "rent_change"]
+    share_percent: Percent | None = None
+    changes: list[CategoryChange]
+    flat_rise: Money
+    rise: Money
+    verdict: FlatRateVerdict
+    earliest_start: date | None = None
+    fell_on: date | None = None
+
+    @model_validator(mode="after")
+    def _verdict(self) -> Self:
+        if tuple(c.category for c in self.changes) != FLAT_RATE_CATEGORIES:
+            raise ValueError("one change per category, in FLAT_RATE_CATEGORIES order")
+        betrkv = sum((c.change for c in self.changes if c.category in FLAT_RATE_BETRKV), ZERO_MONEY)
+        if self.flat_rise != betrkv:
+            raise ValueError("flat_rise = Σ of the BetrKV changes (electricity never counts)")
+        if self.rise > FLAT_RATE_RAISE_ABOVE:
+            verdict = FlatRateVerdict.RAISE
+        elif self.rise < 0:
+            verdict = FlatRateVerdict.LOWER
+        else:
+            verdict = FlatRateVerdict.NONE
+        if self.verdict is not verdict:
+            raise ValueError(f"the verdict of a rise of {self.rise} is {verdict}")
+        if (self.earliest_start is not None) != (verdict is FlatRateVerdict.RAISE):
+            raise ValueError("an earliest start exactly for a raise")
+        if (self.fell_on is not None) != (verdict is FlatRateVerdict.LOWER):
+            raise ValueError("a date the cost fell exactly for a lower")
+        return self
+
+
+class SettlementHint(Schema):
+    """A line of a monthly category that is not an instalment (an electricity Jahresabrechnung,
+    a Hausgeldabrechnung's back-payment): not a rate, shown as a hint that the next instalment
+    may rise. `amount` is the cost (a refund is negative)."""
+
+    category: AllocationCategory
+    allocation_id: UUID
+    booking_date: date
+    amount: Money
+
+
+class FlatRateCheck(Schema):
+    """GET /properties/{id}/flat-rate-check (D155): information, not advice; §560 BGB decides.
+
+    `levels` are the cost levels on every tenancy's set_on and on `as_of` (today), distinct and
+    ascending; `tenancies` the flat_rate tenancies in force on `as_of`; both empty without one.
+    `settlements` are the hints of the 12 months up to `as_of`."""
+
+    property_id: UUID
+    as_of: date
+    raise_above: Money = FLAT_RATE_RAISE_ABOVE
+    pauschalen_total: NonNegativeMoney
+    tenancies: list[TenancyFlatRate] = Field(default_factory=list)
+    levels: list[CostLevel] = Field(default_factory=list)
+    settlements: list[SettlementHint] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _levels(self) -> Self:
+        dates = [lv.as_of for lv in self.levels]
+        if dates != sorted(set(dates)):
+            raise ValueError("levels are distinct and ascending")
+        if self.tenancies:
+            if {t.set_on for t in self.tenancies} | {self.as_of} != set(dates):
+                raise ValueError("a level on each set_on and on `as_of`, no other")
+        elif self.levels:
+            raise ValueError("no levels without a flat_rate tenancy")
+        total = sum((t.pauschale for t in self.tenancies), ZERO_MONEY)
+        if self.pauschalen_total != total:
+            raise ValueError("pauschalen_total = Σ of the tenancies' Pauschalen")
+        return self

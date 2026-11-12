@@ -1,0 +1,744 @@
+# flat_rate_rise.yaml: rules/performance/flat_rate.py, the Nebenkostenpauschale rise test
+# (docs/phases/phase-4.md D155, §11 step 2c).
+#
+#   flat_rate_check(facts: DraftFacts, today: date) -> FlatRateCheck
+#
+# Synthetic numbers only (the repo is public). Loaded through tests/fixture_models_phase4.py:
+# every figure is checked against the schemas, and each expectation's own arithmetic is checked
+# on load (each rate from its sources, each change, each tenancy's share of the rise, the
+# verdict, the earliest start), so a hand slip fails before a rule test runs. Every field
+# compares exactly, sources included (principle 2).
+#
+# The rules, as written for this fixture (D155 (2)–(4); the interpretations are marked *):
+# - A line's reference date is its service period's start when the period is one calendar
+#   month*, else its booking date. A payment's rate is −Σ the allocations of the chosen line's
+#   transaction in the category (one line unless a payment was split*).
+# - hausgeld_umlagefaehig, electricity (monthly): the latest line with reference date on or
+#   before the date, else the first one after it (from_later). When the category has at least
+#   one `recurring` line, only recurring lines are rates and the others are settlements*
+#   (D155: "a settlement is not a rate"; shown as hints, those of the 12 months up to today).
+# - insurance: the latest line on or before the date, else the first after it; a yearly
+#   premium (÷ 12, half-up) when no other insurance line lies within 6 months either side of
+#   it* (D155: "one line in 12 months", read as a 12-month window centred on the line, so a
+#   monthly premium's first payment, followed by a second, is not mistaken for a yearly one),
+#   else the payment as a month's.
+# - grundsteuer: the confirmed grundsteuer_schedule in force for the date's year (the latest
+#   row with tax_year ≤ the year, as the reminders read it) ÷ 12; else Σ the lines of the 12
+#   months up to the date (reference date in (date − 12 months, date]) ÷ 12; else*, nothing
+#   being known on or before the date, the first schedule of a later year, else the first
+#   12 months of lines after the date (from_later); else 0.00. (*D155 says "else 0"; with 0 a
+#   Pauschale set before the first Grundsteuerbescheid would show the whole Grundsteuer as a
+#   rise the moment the Bescheid is confirmed: case grundsteuer_known_later_no_rise.)
+# - Per tenancy (flat_rate, in force today: start ≤ today and no end before today): its
+#   Pauschale = the rent row in force today; set_on = the latest rent row (in force, from its
+#   start through today) whose operating_costs_prepayment differs from the row before it,
+#   else the tenancy's start. flat_rise = Σ BetrKV rates today − Σ BetrKV rates on set_on;
+#   rise = flat_rise × Pauschale ÷ Σ Pauschalen of the flat_rate tenancies in force today,
+#   half-up to the cent; share_percent the share × 100, one decimal (display only).
+#   verdict raise when rise > 10.00, lower when rise ≤ −0.01, else none; earliest_start (raise
+#   only) = the first day of the month after next from today (§560 Abs. 2 BGB); fell_on
+#   (lower only) = the date the cost fell: of the BetrKV categories whose rate fell, the
+#   earliest date from which today's rate applies (the first line of the unbroken run of lines
+#   at today's rate, a schedule's 1 January)*.
+#   Electricity's change is shown and never counts (§2 BetrKV does not list it).
+
+ids:
+  property: &P 0155000b-0000-4000-8000-000000000001
+  z1: &Z1 0155000c-0000-4000-8000-000000000001
+  z2: &Z2 0155000c-0000-4000-8000-000000000002
+  z3: &Z3 0155000c-0000-4000-8000-000000000003
+  t1: &T1 0155000e-0000-4000-8000-000000000001
+  t2: &T2 0155000e-0000-4000-8000-000000000002
+  t3: &T3 0155000e-0000-4000-8000-000000000003
+  bescheid: &DB 01550d0c-0000-4000-8000-000000000001
+  schedule_2027: &S27 0155f100-0000-4000-8000-000000002027
+  schedule_2028: &S28 0155f100-0000-4000-8000-000000002028
+
+bases:
+  property: &property {id: *P, label: Wohnung Beispielweg, kind: etw, build_year: 1998,
+                       purchase_date: 2026-07-01, purchase_price: "300000.00"}
+  units: &units
+    - {id: *Z1, label: Zimmer 1, floor_area_m2: "18.00"}
+    - {id: *Z2, label: Zimmer 2, floor_area_m2: "22.00"}
+    - {id: *Z3, label: Zimmer 3, floor_area_m2: "12.00"}
+  none_gs: &none_gs {category: grundsteuer, monthly: "0.00", basis: none, from_later: false, sources: []}
+  none_ins: &none_ins {category: insurance, monthly: "0.00", basis: none, from_later: false, sources: []}
+  none_el: &none_el {category: electricity, monthly: "0.00", basis: none, from_later: false, sources: []}
+  same_gs: &same_gs {category: grundsteuer, then: "0.00", now: "0.00", change: "0.00"}
+  same_ins: &same_ins {category: insurance, then: "0.00", now: "0.00", change: "0.00"}
+  same_el: &same_el {category: electricity, then: "0.00", now: "0.00", change: "0.00"}
+  schedule_2027: &schedule_2027
+    id: *S27
+    property_id: *P
+    kind: grundsteuer_schedule
+    tax_year: 2027
+    document_id: *DB
+    value:
+      annual_amount: "480.00"
+      instalments:
+        - {due_on: 2027-02-15, amount: "120.00"}
+        - {due_on: 2027-05-15, amount: "120.00"}
+        - {due_on: 2027-08-15, amount: "120.00"}
+        - {due_on: 2027-11-15, amount: "120.00"}
+
+cases:
+- id: hausgeld_rise_three_rooms
+  description: >
+    A new Wirtschaftsplan raises the Hausgeld's umlagefähig part from 150.00 to 195.00 from
+    January; three rooms share the 45.00 by their Pauschalen 100 / 150 / 50 (of 300): 15.00
+    and 22.50 are to-dos, 7.50 is not. The yearly insurance premium (240.00 ÷ 12 = 20.00) is
+    unchanged; the Hausgeldabrechnung's back-payment of November is a hint, not a rate.
+  today: 2027-02-10
+  facts:
+    property: *property
+    units: *units
+    tenancies:
+      - {id: *T1, unit_id: *Z1, start_date: 2026-07-01, operating_costs_terms: flat_rate,
+         rents: [{effective_from: 2026-07-01, cold_rent: "400.00", operating_costs_prepayment: "100.00"}]}
+      - {id: *T2, unit_id: *Z2, start_date: 2026-07-01, operating_costs_terms: flat_rate,
+         rents: [{effective_from: 2026-07-01, cold_rent: "450.00", operating_costs_prepayment: "150.00"}]}
+      - {id: *T3, unit_id: *Z3, start_date: 2026-08-01, operating_costs_terms: flat_rate,
+         rents: [{effective_from: 2026-08-01, cold_rent: "300.00", operating_costs_prepayment: "50.00"}]}
+    allocations:
+      - {allocation_id: 0155a100-0000-4000-8000-000000000101, booking_date: 2026-07-01, amount: "-150.00", category: hausgeld_umlagefaehig, recurring: true}
+      - {allocation_id: 0155a100-0000-4000-8000-000000000107, booking_date: 2026-07-15, amount: "-240.00", category: insurance}
+      - {allocation_id: 0155a100-0000-4000-8000-000000000102, booking_date: 2026-08-01, amount: "-150.00", category: hausgeld_umlagefaehig, recurring: true}
+      - {allocation_id: 0155a100-0000-4000-8000-000000000104, booking_date: 2026-11-20, amount: "-310.00", category: hausgeld_umlagefaehig}
+      - {allocation_id: 0155a100-0000-4000-8000-000000000103, booking_date: 2026-12-01, amount: "-150.00", category: hausgeld_umlagefaehig, recurring: true}
+      - {allocation_id: 0155a100-0000-4000-8000-000000000105, booking_date: 2027-01-01, amount: "-195.00", category: hausgeld_umlagefaehig, recurring: true}
+      - {allocation_id: 0155a100-0000-4000-8000-000000000106, booking_date: 2027-02-01, amount: "-195.00", category: hausgeld_umlagefaehig, recurring: true}
+  expect:
+    property_id: *P
+    as_of: 2027-02-10
+    pauschalen_total: "300.00"
+    tenancies:
+      - tenancy_id: *T1
+        unit_id: *Z1
+        unit_label: Zimmer 1
+        pauschale: "100.00"
+        set_on: 2026-07-01
+        set_by: start
+        share_percent: "33.3"
+        changes: &changes_hausgeld_45
+          - {category: hausgeld_umlagefaehig, then: "150.00", now: "195.00", change: "45.00"}
+          - *same_gs
+          - {category: insurance, then: "20.00", now: "20.00", change: "0.00"}
+          - *same_el
+        flat_rise: "45.00"
+        rise: "15.00"
+        verdict: raise
+        earliest_start: 2027-04-01
+      - tenancy_id: *T2
+        unit_id: *Z2
+        unit_label: Zimmer 2
+        pauschale: "150.00"
+        set_on: 2026-07-01
+        set_by: start
+        share_percent: "50.0"
+        changes: *changes_hausgeld_45
+        flat_rise: "45.00"
+        rise: "22.50"
+        verdict: raise
+        earliest_start: 2027-04-01
+      - tenancy_id: *T3
+        unit_id: *Z3
+        unit_label: Zimmer 3
+        pauschale: "50.00"
+        set_on: 2026-08-01
+        set_by: start
+        share_percent: "16.7"
+        changes: *changes_hausgeld_45
+        flat_rise: "45.00"
+        rise: "7.50"
+        verdict: none
+    levels:
+      - as_of: 2026-07-01
+        rates:
+          - {category: hausgeld_umlagefaehig, monthly: "150.00", basis: monthly_payment,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000101, amount: "-150.00"}]}
+          - *none_gs
+          - {category: insurance, monthly: "20.00", basis: yearly_premium, from_later: true,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000107, amount: "-240.00"}]}
+          - *none_el
+        betrkv: "170.00"
+      - as_of: 2026-08-01
+        rates:
+          - {category: hausgeld_umlagefaehig, monthly: "150.00", basis: monthly_payment,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000102, amount: "-150.00"}]}
+          - *none_gs
+          - {category: insurance, monthly: "20.00", basis: yearly_premium,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000107, amount: "-240.00"}]}
+          - *none_el
+        betrkv: "170.00"
+      - as_of: 2027-02-10
+        rates:
+          - {category: hausgeld_umlagefaehig, monthly: "195.00", basis: monthly_payment,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000106, amount: "-195.00"}]}
+          - *none_gs
+          - {category: insurance, monthly: "20.00", basis: yearly_premium,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000107, amount: "-240.00"}]}
+          - *none_el
+        betrkv: "215.00"
+    settlements:
+      - {category: hausgeld_umlagefaehig, allocation_id: 0155a100-0000-4000-8000-000000000104,
+         booking_date: 2026-11-20, amount: "310.00"}
+
+- id: rise_exactly_ten_no_todo
+  description: >
+    The 10 € edge after the share: two rooms at 100.00 each, the Hausgeld from 150.00 to
+    170.00, so each room's rise is 20.00 × ½ = 10.00, which is not above 10 €: no to-do.
+  today: 2027-01-15
+  facts:
+    property: *property
+    units: *units
+    tenancies: &two_rooms
+      - {id: *T1, unit_id: *Z1, start_date: 2026-07-01, operating_costs_terms: flat_rate,
+         rents: [{effective_from: 2026-07-01, cold_rent: "400.00", operating_costs_prepayment: "100.00"}]}
+      - {id: *T2, unit_id: *Z2, start_date: 2026-07-01, operating_costs_terms: flat_rate,
+         rents: [{effective_from: 2026-07-01, cold_rent: "400.00", operating_costs_prepayment: "100.00"}]}
+    allocations:
+      - {allocation_id: 0155a100-0000-4000-8000-000000000201, booking_date: 2026-07-01, amount: "-150.00", category: hausgeld_umlagefaehig, recurring: true}
+      - {allocation_id: 0155a100-0000-4000-8000-000000000202, booking_date: 2027-01-01, amount: "-170.00", category: hausgeld_umlagefaehig, recurring: true}
+  expect:
+    property_id: *P
+    as_of: 2027-01-15
+    pauschalen_total: "200.00"
+    tenancies:
+      - &edge_room_1
+        tenancy_id: *T1
+        unit_id: *Z1
+        unit_label: Zimmer 1
+        pauschale: "100.00"
+        set_on: 2026-07-01
+        set_by: start
+        share_percent: "50.0"
+        changes: &changes_hausgeld_20
+          - {category: hausgeld_umlagefaehig, then: "150.00", now: "170.00", change: "20.00"}
+          - *same_gs
+          - *same_ins
+          - *same_el
+        flat_rise: "20.00"
+        rise: "10.00"
+        verdict: none
+      - <<: *edge_room_1
+        tenancy_id: *T2
+        unit_id: *Z2
+        unit_label: Zimmer 2
+    levels:
+      - as_of: 2026-07-01
+        rates:
+          - {category: hausgeld_umlagefaehig, monthly: "150.00", basis: monthly_payment,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000201, amount: "-150.00"}]}
+          - *none_gs
+          - *none_ins
+          - *none_el
+        betrkv: "150.00"
+      - as_of: 2027-01-15
+        rates:
+          - {category: hausgeld_umlagefaehig, monthly: "170.00", basis: monthly_payment,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000202, amount: "-170.00"}]}
+          - *none_gs
+          - *none_ins
+          - *none_el
+        betrkv: "170.00"
+    settlements: []
+
+- id: rise_ten_01_todo
+  description: >
+    The other side of the edge: the Hausgeld from 150.00 to 170.02, each room's rise 20.02 × ½
+    = 10.01, above 10 €: a to-do per room, from 1 March (today 15 January).
+  today: 2027-01-15
+  facts:
+    property: *property
+    units: *units
+    tenancies: *two_rooms
+    allocations:
+      - {allocation_id: 0155a100-0000-4000-8000-000000000301, booking_date: 2026-07-01, amount: "-150.00", category: hausgeld_umlagefaehig, recurring: true}
+      - {allocation_id: 0155a100-0000-4000-8000-000000000302, booking_date: 2027-01-01, amount: "-170.02", category: hausgeld_umlagefaehig, recurring: true}
+  expect:
+    property_id: *P
+    as_of: 2027-01-15
+    pauschalen_total: "200.00"
+    tenancies:
+      - &edge_up_room_1
+        tenancy_id: *T1
+        unit_id: *Z1
+        unit_label: Zimmer 1
+        pauschale: "100.00"
+        set_on: 2026-07-01
+        set_by: start
+        share_percent: "50.0"
+        changes:
+          - {category: hausgeld_umlagefaehig, then: "150.00", now: "170.02", change: "20.02"}
+          - *same_gs
+          - *same_ins
+          - *same_el
+        flat_rise: "20.02"
+        rise: "10.01"
+        verdict: raise
+        earliest_start: 2027-03-01
+      - <<: *edge_up_room_1
+        tenancy_id: *T2
+        unit_id: *Z2
+        unit_label: Zimmer 2
+    levels:
+      - as_of: 2026-07-01
+        rates:
+          - {category: hausgeld_umlagefaehig, monthly: "150.00", basis: monthly_payment,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000301, amount: "-150.00"}]}
+          - *none_gs
+          - *none_ins
+          - *none_el
+        betrkv: "150.00"
+      - as_of: 2027-01-15
+        rates:
+          - {category: hausgeld_umlagefaehig, monthly: "170.02", basis: monthly_payment,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000302, amount: "-170.02"}]}
+          - *none_gs
+          - *none_ins
+          - *none_el
+        betrkv: "170.02"
+    settlements: []
+
+- id: fall_lowers
+  description: >
+    Any fall is a to-do (§560 Abs. 3 BGB): the Hausgeld from 150.00 to 149.99, one room with
+    the whole share, a fall of 0.01: „senken“.
+  today: 2027-01-15
+  facts:
+    property: *property
+    units: *units
+    tenancies:
+      - {id: *T1, unit_id: *Z1, start_date: 2026-07-01, operating_costs_terms: flat_rate,
+         rents: [{effective_from: 2026-07-01, cold_rent: "400.00", operating_costs_prepayment: "120.00"}]}
+    allocations:
+      - {allocation_id: 0155a100-0000-4000-8000-000000000401, booking_date: 2026-07-01, amount: "-150.00", category: hausgeld_umlagefaehig, recurring: true}
+      - {allocation_id: 0155a100-0000-4000-8000-000000000402, booking_date: 2027-01-01, amount: "-149.99", category: hausgeld_umlagefaehig, recurring: true}
+  expect:
+    property_id: *P
+    as_of: 2027-01-15
+    pauschalen_total: "120.00"
+    tenancies:
+      - tenancy_id: *T1
+        unit_id: *Z1
+        unit_label: Zimmer 1
+        pauschale: "120.00"
+        set_on: 2026-07-01
+        set_by: start
+        share_percent: "100.0"
+        changes:
+          - {category: hausgeld_umlagefaehig, then: "150.00", now: "149.99", change: "-0.01"}
+          - *same_gs
+          - *same_ins
+          - *same_el
+        flat_rise: "-0.01"
+        rise: "-0.01"
+        verdict: lower
+        fell_on: 2027-01-01
+    levels:
+      - as_of: 2026-07-01
+        rates:
+          - {category: hausgeld_umlagefaehig, monthly: "150.00", basis: monthly_payment,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000401, amount: "-150.00"}]}
+          - *none_gs
+          - *none_ins
+          - *none_el
+        betrkv: "150.00"
+      - as_of: 2027-01-15
+        rates:
+          - {category: hausgeld_umlagefaehig, monthly: "149.99", basis: monthly_payment,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000402, amount: "-149.99"}]}
+          - *none_gs
+          - *none_ins
+          - *none_el
+        betrkv: "149.99"
+    settlements: []
+
+- id: electricity_rise_no_todo
+  description: >
+    The flat's electricity instalment rises from 60.00 to 90.00 and the supplier's
+    Jahresabrechnung asks for 140.00; the Hausgeld is unchanged. Electricity is not a BetrKV
+    item, so its 30.00 is shown and triggers nothing; the Jahresabrechnung is a hint. The
+    lease began on the handover, before the first electricity instalment (from_later).
+  today: 2027-01-20
+  facts:
+    property: *property
+    units: *units
+    tenancies:
+      - {id: *T1, unit_id: *Z1, start_date: 2026-07-01, operating_costs_terms: flat_rate,
+         rents: [{effective_from: 2026-07-01, cold_rent: "400.00", operating_costs_prepayment: "150.00"}]}
+    allocations:
+      - {allocation_id: 0155a100-0000-4000-8000-000000000501, booking_date: 2026-07-01, amount: "-150.00", category: hausgeld_umlagefaehig, recurring: true}
+      - {allocation_id: 0155a100-0000-4000-8000-000000000503, booking_date: 2026-07-05, amount: "-60.00", category: electricity, recurring: true}
+      - {allocation_id: 0155a100-0000-4000-8000-000000000502, booking_date: 2027-01-01, amount: "-150.00", category: hausgeld_umlagefaehig, recurring: true}
+      - {allocation_id: 0155a100-0000-4000-8000-000000000504, booking_date: 2027-01-05, amount: "-90.00", category: electricity, recurring: true}
+      - {allocation_id: 0155a100-0000-4000-8000-000000000505, booking_date: 2027-01-10, amount: "-140.00", category: electricity}
+  expect:
+    property_id: *P
+    as_of: 2027-01-20
+    pauschalen_total: "150.00"
+    tenancies:
+      - tenancy_id: *T1
+        unit_id: *Z1
+        unit_label: Zimmer 1
+        pauschale: "150.00"
+        set_on: 2026-07-01
+        set_by: start
+        share_percent: "100.0"
+        changes:
+          - {category: hausgeld_umlagefaehig, then: "150.00", now: "150.00", change: "0.00"}
+          - *same_gs
+          - *same_ins
+          - {category: electricity, then: "60.00", now: "90.00", change: "30.00"}
+        flat_rise: "0.00"
+        rise: "0.00"
+        verdict: none
+    levels:
+      - as_of: 2026-07-01
+        rates:
+          - {category: hausgeld_umlagefaehig, monthly: "150.00", basis: monthly_payment,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000501, amount: "-150.00"}]}
+          - *none_gs
+          - *none_ins
+          - {category: electricity, monthly: "60.00", basis: monthly_payment, from_later: true,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000503, amount: "-60.00"}]}
+        betrkv: "150.00"
+      - as_of: 2027-01-20
+        rates:
+          - {category: hausgeld_umlagefaehig, monthly: "150.00", basis: monthly_payment,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000502, amount: "-150.00"}]}
+          - *none_gs
+          - *none_ins
+          - {category: electricity, monthly: "90.00", basis: monthly_payment,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000504, amount: "-90.00"}]}
+        betrkv: "150.00"
+    settlements:
+      - {category: electricity, allocation_id: 0155a100-0000-4000-8000-000000000505,
+         booking_date: 2027-01-10, amount: "140.00"}
+
+- id: pauschale_changed_by_rent_row
+  description: >
+    The Pauschale was raised from 100.00 to 120.00 by a rent row from 1 October, after the
+    Hausgeld had risen in September; a later row changes only the cold rent. The comparison
+    starts on 1 October (165.00), not at the lease's start (150.00): the January rise to
+    180.00 is 15.00, a to-do from 1 March.
+  today: 2027-01-20
+  facts:
+    property: *property
+    units: *units
+    tenancies:
+      - {id: *T1, unit_id: *Z1, start_date: 2026-07-01, operating_costs_terms: flat_rate,
+         rents: [{effective_from: 2026-07-01, cold_rent: "400.00", operating_costs_prepayment: "100.00"},
+                 {effective_from: 2026-10-01, cold_rent: "400.00", operating_costs_prepayment: "120.00"},
+                 {effective_from: 2026-12-01, cold_rent: "420.00", operating_costs_prepayment: "120.00"}]}
+    allocations:
+      - {allocation_id: 0155a100-0000-4000-8000-000000000601, booking_date: 2026-07-01, amount: "-150.00", category: hausgeld_umlagefaehig, recurring: true}
+      - {allocation_id: 0155a100-0000-4000-8000-000000000602, booking_date: 2026-09-01, amount: "-165.00", category: hausgeld_umlagefaehig, recurring: true}
+      - {allocation_id: 0155a100-0000-4000-8000-000000000603, booking_date: 2026-10-01, amount: "-165.00", category: hausgeld_umlagefaehig, recurring: true}
+      - {allocation_id: 0155a100-0000-4000-8000-000000000604, booking_date: 2027-01-01, amount: "-180.00", category: hausgeld_umlagefaehig, recurring: true}
+  expect:
+    property_id: *P
+    as_of: 2027-01-20
+    pauschalen_total: "120.00"
+    tenancies:
+      - tenancy_id: *T1
+        unit_id: *Z1
+        unit_label: Zimmer 1
+        pauschale: "120.00"
+        set_on: 2026-10-01
+        set_by: rent_change
+        share_percent: "100.0"
+        changes:
+          - {category: hausgeld_umlagefaehig, then: "165.00", now: "180.00", change: "15.00"}
+          - *same_gs
+          - *same_ins
+          - *same_el
+        flat_rise: "15.00"
+        rise: "15.00"
+        verdict: raise
+        earliest_start: 2027-03-01
+    levels:
+      - as_of: 2026-10-01
+        rates:
+          - {category: hausgeld_umlagefaehig, monthly: "165.00", basis: monthly_payment,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000603, amount: "-165.00"}]}
+          - *none_gs
+          - *none_ins
+          - *none_el
+        betrkv: "165.00"
+      - as_of: 2027-01-20
+        rates:
+          - {category: hausgeld_umlagefaehig, monthly: "180.00", basis: monthly_payment,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000604, amount: "-180.00"}]}
+          - *none_gs
+          - *none_ins
+          - *none_el
+        betrkv: "180.00"
+    settlements: []
+
+- id: lease_before_first_payment
+  description: >
+    The lease began on 1 March, before the handover on 1 July, when the landlord paid nothing
+    yet: the handover month's Hausgeld (150.00) stands for the costs when the Pauschale was set
+    (from_later), so an unchanged Hausgeld is no rise (0.00 at the lease's start would have
+    made the whole Hausgeld one).
+  today: 2026-12-10
+  facts:
+    property: *property
+    units: *units
+    tenancies:
+      - {id: *T1, unit_id: *Z1, start_date: 2026-03-01, operating_costs_terms: flat_rate,
+         rents: [{effective_from: 2026-03-01, cold_rent: "400.00", operating_costs_prepayment: "100.00"}]}
+    allocations:
+      - {allocation_id: 0155a100-0000-4000-8000-000000000701, booking_date: 2026-07-01, amount: "-150.00", category: hausgeld_umlagefaehig, recurring: true}
+      - {allocation_id: 0155a100-0000-4000-8000-000000000702, booking_date: 2026-12-01, amount: "-150.00", category: hausgeld_umlagefaehig, recurring: true}
+  expect:
+    property_id: *P
+    as_of: 2026-12-10
+    pauschalen_total: "100.00"
+    tenancies:
+      - tenancy_id: *T1
+        unit_id: *Z1
+        unit_label: Zimmer 1
+        pauschale: "100.00"
+        set_on: 2026-03-01
+        set_by: start
+        share_percent: "100.0"
+        changes:
+          - {category: hausgeld_umlagefaehig, then: "150.00", now: "150.00", change: "0.00"}
+          - *same_gs
+          - *same_ins
+          - *same_el
+        flat_rise: "0.00"
+        rise: "0.00"
+        verdict: none
+    levels:
+      - as_of: 2026-03-01
+        rates:
+          - {category: hausgeld_umlagefaehig, monthly: "150.00", basis: monthly_payment, from_later: true,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000701, amount: "-150.00"}]}
+          - *none_gs
+          - *none_ins
+          - *none_el
+        betrkv: "150.00"
+      - as_of: 2026-12-10
+        rates:
+          - {category: hausgeld_umlagefaehig, monthly: "150.00", basis: monthly_payment,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000702, amount: "-150.00"}]}
+          - *none_gs
+          - *none_ins
+          - *none_el
+        betrkv: "150.00"
+    settlements: []
+
+- id: grundsteuer_from_schedule
+  description: >
+    Grundsteuer from the confirmed schedules: the 2027 Bescheid (480.00 a year, 40.00 a month)
+    is the first one known, so it stands for the lease's start in 2026 (from_later); a new
+    Bescheid for 2028 (744.00, 62.00 a month) is a rise of 22.00, a to-do from 1 May 2028.
+  today: 2028-03-01
+  facts:
+    property: *property
+    units: *units
+    tenancies:
+      - {id: *T1, unit_id: *Z1, start_date: 2026-07-01, operating_costs_terms: flat_rate,
+         rents: [{effective_from: 2026-07-01, cold_rent: "400.00", operating_costs_prepayment: "100.00"}]}
+    allocations:
+      - {allocation_id: 0155a100-0000-4000-8000-000000000801, booking_date: 2026-07-01, amount: "-150.00", category: hausgeld_umlagefaehig, recurring: true}
+      - {allocation_id: 0155a100-0000-4000-8000-000000000802, booking_date: 2028-02-01, amount: "-150.00", category: hausgeld_umlagefaehig, recurring: true}
+    tax_inputs:
+      - *schedule_2027
+      - id: *S28
+        property_id: *P
+        kind: grundsteuer_schedule
+        tax_year: 2028
+        document_id: *DB
+        value:
+          annual_amount: "744.00"
+          instalments:
+            - {due_on: 2028-02-15, amount: "186.00"}
+            - {due_on: 2028-05-15, amount: "186.00"}
+            - {due_on: 2028-08-15, amount: "186.00"}
+            - {due_on: 2028-11-15, amount: "186.00"}
+  expect:
+    property_id: *P
+    as_of: 2028-03-01
+    pauschalen_total: "100.00"
+    tenancies:
+      - tenancy_id: *T1
+        unit_id: *Z1
+        unit_label: Zimmer 1
+        pauschale: "100.00"
+        set_on: 2026-07-01
+        set_by: start
+        share_percent: "100.0"
+        changes:
+          - {category: hausgeld_umlagefaehig, then: "150.00", now: "150.00", change: "0.00"}
+          - {category: grundsteuer, then: "40.00", now: "62.00", change: "22.00"}
+          - *same_ins
+          - *same_el
+        flat_rise: "22.00"
+        rise: "22.00"
+        verdict: raise
+        earliest_start: 2028-05-01
+    levels:
+      - as_of: 2026-07-01
+        rates:
+          - {category: hausgeld_umlagefaehig, monthly: "150.00", basis: monthly_payment,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000801, amount: "-150.00"}]}
+          - {category: grundsteuer, monthly: "40.00", basis: schedule, from_later: true,
+             sources: [{kind: tax_input, id: *S27, amount: "480.00"}]}
+          - *none_ins
+          - *none_el
+        betrkv: "190.00"
+      - as_of: 2028-03-01
+        rates:
+          - {category: hausgeld_umlagefaehig, monthly: "150.00", basis: monthly_payment,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000802, amount: "-150.00"}]}
+          - {category: grundsteuer, monthly: "62.00", basis: schedule,
+             sources: [{kind: tax_input, id: *S28, amount: "744.00"}]}
+          - *none_ins
+          - *none_el
+        betrkv: "212.00"
+    settlements: []
+
+- id: grundsteuer_known_later_no_rise
+  description: >
+    The household's own situation (a flat bought in 2026, the first Grundsteuerbescheid for
+    2027): a Pauschale set in 2026, before any Grundsteuer was known, is compared with the
+    first Bescheid (40.00 a month either way), so confirming the Bescheid is no rise. Read
+    literally, D155 (2) gives 0.00 on the set date and would show a 40.00 rise (deviation).
+  today: 2027-06-01
+  facts:
+    property: *property
+    units: *units
+    tenancies:
+      - {id: *T1, unit_id: *Z1, start_date: 2026-07-01, operating_costs_terms: flat_rate,
+         rents: [{effective_from: 2026-07-01, cold_rent: "400.00", operating_costs_prepayment: "100.00"}]}
+    allocations:
+      - {allocation_id: 0155a100-0000-4000-8000-000000000901, booking_date: 2026-07-01, amount: "-150.00", category: hausgeld_umlagefaehig, recurring: true}
+      - {allocation_id: 0155a100-0000-4000-8000-000000000911, booking_date: 2027-02-15, amount: "-120.00", category: grundsteuer, recurring: true}
+      - {allocation_id: 0155a100-0000-4000-8000-000000000912, booking_date: 2027-05-15, amount: "-120.00", category: grundsteuer, recurring: true}
+      - {allocation_id: 0155a100-0000-4000-8000-000000000902, booking_date: 2027-06-01, amount: "-150.00", category: hausgeld_umlagefaehig, recurring: true}
+    tax_inputs:
+      - *schedule_2027
+  expect:
+    property_id: *P
+    as_of: 2027-06-01
+    pauschalen_total: "100.00"
+    tenancies:
+      - tenancy_id: *T1
+        unit_id: *Z1
+        unit_label: Zimmer 1
+        pauschale: "100.00"
+        set_on: 2026-07-01
+        set_by: start
+        share_percent: "100.0"
+        changes:
+          - {category: hausgeld_umlagefaehig, then: "150.00", now: "150.00", change: "0.00"}
+          - {category: grundsteuer, then: "40.00", now: "40.00", change: "0.00"}
+          - *same_ins
+          - *same_el
+        flat_rise: "0.00"
+        rise: "0.00"
+        verdict: none
+    levels:
+      - as_of: 2026-07-01
+        rates:
+          - {category: hausgeld_umlagefaehig, monthly: "150.00", basis: monthly_payment,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000901, amount: "-150.00"}]}
+          - {category: grundsteuer, monthly: "40.00", basis: schedule, from_later: true,
+             sources: [{kind: tax_input, id: *S27, amount: "480.00"}]}
+          - *none_ins
+          - *none_el
+        betrkv: "190.00"
+      - as_of: 2027-06-01
+        rates:
+          - {category: hausgeld_umlagefaehig, monthly: "150.00", basis: monthly_payment,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000902, amount: "-150.00"}]}
+          - {category: grundsteuer, monthly: "40.00", basis: schedule,
+             sources: [{kind: tax_input, id: *S27, amount: "480.00"}]}
+          - *none_ins
+          - *none_el
+        betrkv: "190.00"
+    settlements: []
+
+- id: grundsteuer_from_twelve_months_of_lines
+  description: >
+    No Grundsteuer schedule: the lines of the 12 months up to each date, ÷ 12. On the lease's
+    start (1 Dec 2026) the four 2026 instalments of 60.00 (20.00 a month); today (20 Nov
+    2027) the four 2027 instalments of 96.00 (32.00 a month): a rise of 12.00, a to-do from
+    1 Jan 2028. The monthly insurance premium's first payment comes after the lease's start
+    and is followed by a second within six months, so it is a month's rate (10.00), not a
+    yearly premium.
+  today: 2027-11-20
+  facts:
+    property: {<<: *property, purchase_date: 2026-01-01}
+    units: *units
+    tenancies:
+      - {id: *T1, unit_id: *Z1, start_date: 2026-12-01, operating_costs_terms: flat_rate,
+         rents: [{effective_from: 2026-12-01, cold_rent: "400.00", operating_costs_prepayment: "100.00"}]}
+    allocations:
+      - {allocation_id: 0155a100-0000-4000-8000-000000001011, booking_date: 2026-02-15, amount: "-60.00", category: grundsteuer}
+      - {allocation_id: 0155a100-0000-4000-8000-000000001012, booking_date: 2026-05-15, amount: "-60.00", category: grundsteuer}
+      - {allocation_id: 0155a100-0000-4000-8000-000000001013, booking_date: 2026-08-15, amount: "-60.00", category: grundsteuer}
+      - {allocation_id: 0155a100-0000-4000-8000-000000001014, booking_date: 2026-11-15, amount: "-60.00", category: grundsteuer}
+      - {allocation_id: 0155a100-0000-4000-8000-000000001001, booking_date: 2026-12-01, amount: "-150.00", category: hausgeld_umlagefaehig, recurring: true}
+      - {allocation_id: 0155a100-0000-4000-8000-000000001021, booking_date: 2026-12-03, amount: "-10.00", category: insurance, recurring: true}
+      - {allocation_id: 0155a100-0000-4000-8000-000000001022, booking_date: 2027-01-03, amount: "-10.00", category: insurance, recurring: true}
+      - {allocation_id: 0155a100-0000-4000-8000-000000001015, booking_date: 2027-02-15, amount: "-96.00", category: grundsteuer}
+      - {allocation_id: 0155a100-0000-4000-8000-000000001016, booking_date: 2027-05-15, amount: "-96.00", category: grundsteuer}
+      - {allocation_id: 0155a100-0000-4000-8000-000000001017, booking_date: 2027-08-15, amount: "-96.00", category: grundsteuer}
+      - {allocation_id: 0155a100-0000-4000-8000-000000001023, booking_date: 2027-10-03, amount: "-10.00", category: insurance, recurring: true}
+      - {allocation_id: 0155a100-0000-4000-8000-000000001002, booking_date: 2027-11-01, amount: "-150.00", category: hausgeld_umlagefaehig, recurring: true}
+      - {allocation_id: 0155a100-0000-4000-8000-000000001024, booking_date: 2027-11-03, amount: "-10.00", category: insurance, recurring: true}
+      - {allocation_id: 0155a100-0000-4000-8000-000000001018, booking_date: 2027-11-15, amount: "-96.00", category: grundsteuer}
+  expect:
+    property_id: *P
+    as_of: 2027-11-20
+    pauschalen_total: "100.00"
+    tenancies:
+      - tenancy_id: *T1
+        unit_id: *Z1
+        unit_label: Zimmer 1
+        pauschale: "100.00"
+        set_on: 2026-12-01
+        set_by: start
+        share_percent: "100.0"
+        changes:
+          - {category: hausgeld_umlagefaehig, then: "150.00", now: "150.00", change: "0.00"}
+          - {category: grundsteuer, then: "20.00", now: "32.00", change: "12.00"}
+          - {category: insurance, then: "10.00", now: "10.00", change: "0.00"}
+          - *same_el
+        flat_rise: "12.00"
+        rise: "12.00"
+        verdict: raise
+        earliest_start: 2028-01-01
+    levels:
+      - as_of: 2026-12-01
+        rates:
+          - {category: hausgeld_umlagefaehig, monthly: "150.00", basis: monthly_payment,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000001001, amount: "-150.00"}]}
+          - {category: grundsteuer, monthly: "20.00", basis: twelve_months,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000001011, amount: "-60.00"},
+                       {kind: allocation, id: 0155a100-0000-4000-8000-000000001012, amount: "-60.00"},
+                       {kind: allocation, id: 0155a100-0000-4000-8000-000000001013, amount: "-60.00"},
+                       {kind: allocation, id: 0155a100-0000-4000-8000-000000001014, amount: "-60.00"}]}
+          - {category: insurance, monthly: "10.00", basis: monthly_payment, from_later: true,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000001021, amount: "-10.00"}]}
+          - *none_el
+        betrkv: "180.00"
+      - as_of: 2027-11-20
+        rates:
+          - {category: hausgeld_umlagefaehig, monthly: "150.00", basis: monthly_payment,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000001002, amount: "-150.00"}]}
+          - {category: grundsteuer, monthly: "32.00", basis: twelve_months,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000001015, amount: "-96.00"},
+                       {kind: allocation, id: 0155a100-0000-4000-8000-000000001016, amount: "-96.00"},
+                       {kind: allocation, id: 0155a100-0000-4000-8000-000000001017, amount: "-96.00"},
+                       {kind: allocation, id: 0155a100-0000-4000-8000-000000001018, amount: "-96.00"}]}
+          - {category: insurance, monthly: "10.00", basis: monthly_payment,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000001024, amount: "-10.00"}]}
+          - *none_el
+        betrkv: "192.00"
+    settlements: []
