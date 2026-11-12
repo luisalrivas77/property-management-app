@@ -19,6 +19,7 @@
   account without shares is the to-do „Eigentümer festlegen“ (Account.ownership_missing).
 """
 
+import hmac
 from collections.abc import Sequence
 from datetime import date
 from decimal import Decimal
@@ -27,12 +28,13 @@ from typing import Any
 from uuid import UUID
 
 from pydantic import create_model
-from sqlalchemy import Connection, Row, insert, select, update
+from sqlalchemy import Connection, Row, and_, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import account_ownership as ownership_table
 from hausbuch.db.tables import allocation as allocation_table
+from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import owner as owner_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
@@ -44,8 +46,15 @@ from hausbuch.rules.errors import (
 )
 from hausbuch.rules.household import ownership as ownership_rules
 from hausbuch.rules.household.taxonomy import allowed_categories
-from hausbuch.rules.statements import OPENING_NOT_DERIVABLE
-from hausbuch.schemas.bank import Account, AccountCreate, StatementImport
+from hausbuch.rules.statements import NO_PAYMENT_IBAN, OPENING_NOT_DERIVABLE
+from hausbuch.schemas.bank import (
+    Account,
+    AccountCreate,
+    ConfirmPaymentIbanBody,
+    PaymentIbanProposal,
+    StatementFormat,
+    StatementImport,
+)
 from hausbuch.schemas.common import Schema
 from hausbuch.schemas.enums import (
     BANK_ACCOUNT_KINDS,
@@ -63,19 +72,23 @@ from hausbuch.schemas.events import (
     Updated,
 )
 from hausbuch.schemas.household import AccountOwnership, OwnershipShare, SetOwnershipBody
+from hausbuch.storage import BlobStore
 
+from .bank import card_pdf
 from .context import CommandContext
-from .errors import ConflictError, RuleViolationError, violated_constraint
+from .documents import read_original
+from .errors import ConflictError, NotFoundError, RuleViolationError, violated_constraint
 from .events import append_event, diff_changes
-from .iban import protect_iban
+from .iban import protect_iban, protect_ref
 from .lookup import require_row
 from .owners import UNSET, Unset
 from .statements import derived_opening, get_import, recheck_account
 
 # Every column the Account read shape has; the HMACs are for matching and never leave.
-_HMAC_COLUMNS = {"iban_hmac", "external_ref_hmac"}
+_HMAC_COLUMNS = {"iban_hmac", "external_ref_hmac", "payment_iban_hmac"}
 _READ_COLUMNS = [c for c in account_table.c if c.name not in _HMAC_COLUMNS]
 _IBAN_TAKEN = "account_workspace_id_iban_hmac_key"
+_REF_TAKEN = "account_workspace_id_external_ref_hmac_key"
 _ANCHOR_FIELDS = {"opening_balance", "opening_balance_on"}
 # Write-only inputs (stored masked + HMAC'd); an update cannot change them.
 _WRITE_ONLY = {"iban", "external_ref"}
@@ -95,12 +108,27 @@ _AccountFields = create_model(
 
 
 def create_account(ctx: CommandContext, data: AccountCreate, *, iban_key: bytes) -> Account:
-    if data.kind not in BANK_ACCOUNT_KINDS or data.iban is None:
+    """A bank account (by its IBAN) or, since phase 6 step 2b, a credit card (D176): no IBAN,
+    always private, its customer number optional (the first statement sets it) and stored
+    masked + HMAC'd. A depot, an exchange or a wallet is refused (account.kind_not_available)
+    until the step that builds it."""
+    if data.kind is AccountKind.CREDIT_CARD:
+        if data.purpose not in (None, AccountPurpose.PRIVATE):
+            raise RuleError(ACCOUNT_KIND_NOT_AVAILABLE, "a credit card is a private account")
+        purpose = AccountPurpose.PRIVATE
+        ref = protect_ref(data.external_ref, iban_key) if data.external_ref else None
+        identity = {
+            "external_ref_masked": ref.masked if ref else None,
+            "external_ref_hmac": ref.hmac if ref else None,
+        }
+    elif data.kind in BANK_ACCOUNT_KINDS and data.iban is not None:
+        iban = protect_iban(data.iban, iban_key)
+        purpose = data.purpose or (
+            AccountPurpose.PRIVATE if data.is_owner_account else AccountPurpose.RENTAL
+        )
+        identity = {"iban_masked": iban.masked, "iban_hmac": iban.hmac}
+    else:
         raise RuleError(ACCOUNT_KIND_NOT_AVAILABLE, f"accounts of kind {data.kind} come later")
-    iban = protect_iban(data.iban, iban_key)
-    purpose = data.purpose or (
-        AccountPurpose.PRIVATE if data.is_owner_account else AccountPurpose.RENTAL
-    )
     try:
         row = ctx.conn.execute(
             insert(account_table)
@@ -108,17 +136,18 @@ def create_account(ctx: CommandContext, data: AccountCreate, *, iban_key: bytes)
                 workspace_id=ctx.workspace_id,
                 **data.model_dump(exclude=_WRITE_ONLY | {"purpose"}),
                 purpose=purpose,
-                iban_masked=iban.masked,
-                iban_hmac=iban.hmac,
+                **identity,
                 created_at=ctx.now,
                 updated_at=ctx.now,
             )
             .returning(*_READ_COLUMNS)
         ).one()
     except IntegrityError as exc:
-        if violated_constraint(exc) == _IBAN_TAKEN:
+        constraint = violated_constraint(exc)
+        if constraint in (_IBAN_TAKEN, _REF_TAKEN):
             raise ConflictError(
-                "the workspace already has an account with that IBAN", constraint=_IBAN_TAKEN
+                "the workspace already has an account with that IBAN or number",
+                constraint=constraint,
             ) from exc
         raise
     created = _to_account(row, [])
@@ -136,6 +165,7 @@ def create_account(ctx: CommandContext, data: AccountCreate, *, iban_key: bytes)
             kind=created.kind,
             purpose=created.purpose,
             provider=created.provider,
+            external_ref_masked=created.external_ref_masked,
         ),
     )
     if created.is_owner_account:
@@ -205,7 +235,7 @@ def update_account(
         .values(**new_values, updated_at=ctx.now)
         .returning(*_READ_COLUMNS)
     ).one()
-    updated = _to_account(row, shares)
+    updated = _with_card_facts(ctx.conn, [_to_account(row, shares)])[0]
     plain = {name: change for name, change in changes.items() if name not in _KIND_FIELDS}
     if plain:
         append_event(ctx, EventType.ACCOUNT_UPDATED, account_id, Updated(changes=plain))
@@ -410,7 +440,8 @@ def get_account(conn: Connection, account_id: UUID) -> Account | None:
     row = conn.execute(select(*_READ_COLUMNS).where(account_table.c.id == account_id)).one_or_none()
     if row is None:
         return None
-    return _to_account(row, _current_shares(conn, [account_id]).get(account_id, []))
+    account = _to_account(row, _current_shares(conn, [account_id]).get(account_id, []))
+    return _with_card_facts(conn, [account])[0]
 
 
 def list_accounts(conn: Connection) -> list[Account]:
@@ -425,9 +456,116 @@ def list_accounts(conn: Connection) -> list[Account]:
         )
     ).all()
     shares = _current_shares(conn, [r.id for r in rows])
-    return [_to_account(r, shares.get(r.id, [])) for r in rows]
+    return _with_card_facts(conn, [_to_account(r, shares.get(r.id, [])) for r in rows])
 
 
 def _to_account(row: Row, shares: list[OwnershipShare]) -> Account:
     values: dict[str, Any] = {k: v for k, v in row._mapping.items() if k not in _HMAC_COLUMNS}
     return Account.model_validate(values | {"ownership": shares, "ownership_missing": not shares})
+
+
+# --- The credit card (phase 6 D176) ----------------------------------------------------------
+
+
+def confirm_payment_iban(
+    ctx: CommandContext,
+    store: BlobStore,
+    account_id: UUID,
+    body: ConfirmPaymentIbanBody,
+    *,
+    iban_key: bytes,
+) -> Account:
+    """POST /accounts/{id}/payment-iban (D176 (4)): a person confirms the payment IBAN a card
+    statement of this account prints. The IBAN is read again from the statement's immutable
+    original (principle 6), never from a request, and stored masked + HMAC'd, recorded as
+    account.updated. The same IBAN again is a no-op. Refused for an account that is no credit
+    card (account.kind_not_available) and for a statement that prints none
+    (statement.no_payment_iban); 404 for an import of another account."""
+    account = _lock(ctx, account_id)
+    if account.kind != AccountKind.CREDIT_CARD.value:
+        raise RuleError(ACCOUNT_KIND_NOT_AVAILABLE, "only a credit card has a payment IBAN")
+    imported = ctx.conn.execute(
+        select(import_table.c.document_id, import_table.c.format).where(
+            import_table.c.id == body.import_id, import_table.c.account_id == account_id
+        )
+    ).one_or_none()
+    if imported is None:
+        raise NotFoundError(EntityType.STATEMENT, body.import_id)
+    payment = None
+    if imported.format == StatementFormat.CARD_PDF.value:
+        data = read_original(ctx.conn, store, imported.document_id)
+        payment = card_pdf.parse_card_pdf(data).statement.payment_iban
+    if payment is None:
+        raise RuleError(NO_PAYMENT_IBAN, "the statement prints no payment IBAN")
+    iban = protect_iban(payment, iban_key)
+    if account.payment_iban_hmac is not None and hmac.compare_digest(
+        account.payment_iban_hmac, iban.hmac
+    ):
+        return _account(ctx.conn, account_id)
+    ctx.conn.execute(
+        update(account_table)
+        .where(account_table.c.id == account_id)
+        .values(payment_iban_masked=iban.masked, payment_iban_hmac=iban.hmac, updated_at=ctx.now)
+    )
+    append_event(
+        ctx,
+        EventType.ACCOUNT_UPDATED,
+        account_id,
+        Updated(
+            changes=diff_changes(
+                {"payment_iban_masked": account.payment_iban_masked},
+                {"payment_iban_masked": iban.masked},
+            )
+        ),
+    )
+    return _account(ctx.conn, account_id)
+
+
+def _with_card_facts(conn: Connection, accounts: list[Account]) -> list[Account]:
+    """A card account's last four digits and its payment IBAN proposal, from its card
+    statements' statement.imported events, the latest statement first (by its last booking,
+    then when it was imported). The proposal is the latest printed payment IBAN, offered
+    while it is not the confirmed one."""
+    cards = [a.id for a in accounts if a.kind is AccountKind.CREDIT_CARD]
+    if not cards:
+        return accounts
+    rows = conn.execute(
+        select(import_table.c.account_id, import_table.c.id, event_table.c.payload)
+        .join(
+            event_table,
+            and_(
+                event_table.c.entity_id == import_table.c.id,
+                event_table.c.type == EventType.STATEMENT_IMPORTED.value,
+            ),
+        )
+        .where(
+            import_table.c.account_id.in_(cards),
+            import_table.c.format == StatementFormat.CARD_PDF.value,
+        )
+        .order_by(
+            import_table.c.last_booking_on.desc().nulls_last(),
+            import_table.c.created_at.desc(),
+            event_table.c.seq.desc(),
+        )
+    ).all()
+    last4: dict[UUID, str] = {}
+    printed: dict[UUID, PaymentIbanProposal] = {}
+    for row in rows:
+        if (digits := row.payload.get("card_last4")) and row.account_id not in last4:
+            last4[row.account_id] = digits
+        masked = row.payload.get("payment_iban_masked")
+        if masked and row.account_id not in printed:
+            printed[row.account_id] = PaymentIbanProposal(
+                import_id=row.id, payment_iban_masked=masked
+            )
+    result = []
+    for account in accounts:
+        proposal = printed.get(account.id)
+        if proposal is not None and proposal.payment_iban_masked == account.payment_iban_masked:
+            proposal = None
+        result.append(
+            account.model_copy(
+                update={"card_last4": last4.get(account.id), "payment_iban_proposal": proposal}
+            )
+        )
+    return result

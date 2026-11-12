@@ -13,10 +13,17 @@ from sqlalchemy import Connection
 from starlette.concurrency import run_in_threadpool
 
 from hausbuch.schemas.api import AccountPatch
-from hausbuch.schemas.bank import Account, AccountCreate, StatementImport, Transaction
+from hausbuch.schemas.bank import (
+    Account,
+    AccountCreate,
+    ConfirmPaymentIbanBody,
+    StatementImport,
+    Transaction,
+)
 from hausbuch.schemas.enums import EntityType
 from hausbuch.schemas.household import AccountOwnership, SetOwnershipBody
 from hausbuch.services.accounts import (
+    confirm_payment_iban,
     create_account,
     get_account,
     get_account_ownership,
@@ -81,6 +88,17 @@ def account_ownership_set(account_id: UUID, body: SetOwnershipBody, cmd: Cmd) ->
     return cmd.run(set_account_ownership, account_id, body)
 
 
+@router.post("/accounts/{account_id}/payment-iban")
+def account_payment_iban_confirm(
+    account_id: UUID, body: ConfirmPaymentIbanBody, cmd: Cmd, store: StoreDep, settings: SettingsDep
+) -> Account:
+    """Confirm the payment IBAN a card statement prints (phase 6 D176 (4)): read again from
+    that import's original, stored masked + HMAC'd. 422 account.kind_not_available for an
+    account that is no credit card, statement.no_payment_iban for a statement that prints
+    none; 404 for an import of another account."""
+    return cmd.run(confirm_payment_iban, store, account_id, body, iban_key=settings.iban_hmac_key)
+
+
 def _import(
     ctx: CommandContext, store: BlobStore, account_id: UUID, data: bytes, **kwargs: Any
 ) -> tuple[StatementImport, bool]:
@@ -103,7 +121,8 @@ async def account_import(
     settings: SettingsDep,
     response: Response,
 ) -> StatementImport:
-    """Import a camt.052/053 file, a ZIP of camt reports or a Sparkasse CSV-CAMT export. The
+    """Import a camt.052/053 file, a ZIP of camt reports, a Sparkasse CSV-CAMT export, DKB's
+    CSV export or, onto a credit card account, the card's PDF statement (phase 6 D176). The
     format is sniffed from the bytes. 201 with a new import, 200 with the existing one for
     the same bytes; 422 rule_violation with a statement.* code when the file cannot be
     imported (nothing is stored then); 413 / 415 as for POST /documents."""

@@ -1,0 +1,48 @@
+"""A credit card statement's interest and fee lines (docs/phases/phase-6.md D176 (3); fixture
+tests/fixtures/phase6/card_pdf.yaml, case `interest`).
+
+The issuer's own charges („Zinsen für einen genutzten Kredit“, a fee) have no payee a learned
+rule could key on, so code books them to hh_interest_fees at confidence 1 (method
+matcher_card), on a credit card account only (the service's guard). A charge is a debit
+without a merchant whose kind word, or else its text, names interest or a fee; a purchase
+always carries its merchant (services/bank/card_pdf.py), so a shop with „Gebühr“ in its name
+is never one.
+"""
+
+from decimal import Decimal
+
+from hausbuch.schemas.allocation import (
+    AllocationCategory,
+    AllocationDraft,
+    AllocationMethod,
+    AllocationSet,
+    MatchTransaction,
+)
+
+_CATEGORY = AllocationCategory.HH_INTEREST_FEES
+_INTEREST = "zins"
+_FEE = "gebühr"
+REASONING = "Zinsen oder Gebühren der Kreditkarte, aus der Abrechnung gelesen."
+
+
+def is_interest_or_fee(tx: MatchTransaction) -> bool:
+    if tx.amount >= 0 or tx.counterparty_name is not None:
+        return False
+    kind = (tx.booking_text or "").casefold()
+    text = tx.purpose.casefold()
+    return any(
+        word.startswith(_INTEREST) or _FEE in word for word in (*kind.split(), *text.split())
+    )
+
+
+def interest_fee_set(tx: MatchTransaction) -> AllocationSet | None:
+    """The one-part set booking the line to hh_interest_fees, or None for any other line."""
+    if not is_interest_or_fee(tx):
+        return None
+    return AllocationSet(
+        transaction_id=tx.id,
+        allocations=[AllocationDraft(amount=tx.amount, category=_CATEGORY)],
+        method=AllocationMethod.MATCHER_CARD,
+        confidence=Decimal(1),
+        reasoning=REASONING,
+    )

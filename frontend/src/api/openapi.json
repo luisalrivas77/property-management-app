@@ -4197,10 +4197,61 @@
         }
       }
     },
+    "/api/accounts/{account_id}/payment-iban": {
+      "post": {
+        "summary": "Account Payment Iban Confirm",
+        "description": "Confirm the payment IBAN a card statement prints (phase 6 D176 (4)): read again from\nthat import's original, stored masked + HMAC'd. 422 account.kind_not_available for an\naccount that is no credit card, statement.no_payment_iban for a statement that prints\nnone; 404 for an import of another account.",
+        "operationId": "account_payment_iban_confirm_api_accounts__account_id__payment_iban_post",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmPaymentIbanBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/accounts/{account_id}/imports": {
       "post": {
         "summary": "Account Import",
-        "description": "Import a camt.052/053 file, a ZIP of camt reports or a Sparkasse CSV-CAMT export. The\nformat is sniffed from the bytes. 201 with a new import, 200 with the existing one for\nthe same bytes; 422 rule_violation with a statement.* code when the file cannot be\nimported (nothing is stored then); 413 / 415 as for POST /documents.",
+        "description": "Import a camt.052/053 file, a ZIP of camt reports, a Sparkasse CSV-CAMT export, DKB's\nCSV export or, onto a credit card account, the card's PDF statement (phase 6 D176). The\nformat is sniffed from the bytes. 201 with a new import, 200 with the existing one for\nthe same bytes; 422 rule_violation with a statement.* code when the file cannot be\nimported (nothing is stored then); 413 / 415 as for POST /documents.",
         "operationId": "account_import_api_accounts__account_id__imports_post",
         "parameters": [
           {
@@ -7608,6 +7659,40 @@
             ],
             "title": "External Ref Masked"
           },
+          "payment_iban_masked": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Z]{2}[0-9]{2} \\*{4} [A-Z0-9]{4}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Iban Masked"
+          },
+          "card_last4": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Card Last4"
+          },
+          "payment_iban_proposal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PaymentIbanProposal"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "ownership": {
             "items": {
               "$ref": "#/components/schemas/OwnershipShare"
@@ -7737,7 +7822,8 @@
           "bank_savings",
           "depot",
           "exchange",
-          "wallet"
+          "wallet",
+          "credit_card"
         ],
         "title": "AccountKind",
         "description": "account.kind (migration 0025, phase 6 D156). `wallet` is in the CHECK so phase 7 adds\nno migration for it; create_account refuses it (account.kind_not_available) until then,\nas AccountSource.AGGREGATOR is refused."
@@ -8656,6 +8742,7 @@
           "internal_transfer_out",
           "hh_cash",
           "hh_credit_card",
+          "hh_interest_fees",
           "security_purchase",
           "security_sale",
           "distribution",
@@ -8956,7 +9043,8 @@
           "document_match",
           "llm",
           "user",
-          "matcher_transfer"
+          "matcher_transfer",
+          "matcher_card"
         ],
         "title": "AllocationMethod",
         "description": "allocation.method (migration 0007): who proposed the allocation set."
@@ -11213,6 +11301,21 @@
         ],
         "title": "ConfirmAllocationsBody",
         "description": "PUT /transactions/{id}/allocations: the user's allocation set and the \"Künftig immer\nso zuordnen\" checkbox.\n\nOnly the set's allocations are read: the rows are written with method `user` and\nconfidence 1, whatever method, confidence, rule_id or ai_call_id the body carries. A set\nequal to the current proposed rows confirms those rows as they are (the proposer's method\nstays); one equal to the current confirmed rows changes nothing.\n\nlearn_rule: null = the server default (TransactionAllocations.learn_rule_default for this\nset); true for a set no rule can be learned from is refused with rule.not_learnable.\nThe patterns (case-insensitive regular expressions, refused with rule.invalid_pattern\nwhen they do not compile) narrow the rule, and let a line without an IBAN, or a\ncounterparty a matcher owns (D38), have one.\nsame_amount_only (D49): the answer to \"Gehören die auch zu …?\" when other amounts from\nthe same IBAN are waiting: true = the rule books only payments of this line's amount (the\nlatest confirmed one of its category, read from the ledger); ignored without learn_rule\nand for a rule whose split method checks the amount itself."
+      },
+      "ConfirmPaymentIbanBody": {
+        "properties": {
+          "import_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Import Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "import_id"
+        ],
+        "title": "ConfirmPaymentIbanBody"
       },
       "CostLevel": {
         "properties": {
@@ -17618,6 +17721,28 @@
         "title": "PasskeyVerifyRequest",
         "description": "POST /auth/passkeys/verify: a further passkey for the signed-in user."
       },
+      "PaymentIbanProposal": {
+        "properties": {
+          "import_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Import Id"
+          },
+          "payment_iban_masked": {
+            "type": "string",
+            "pattern": "^[A-Z]{2}[0-9]{2} \\*{4} [A-Z0-9]{4}$",
+            "title": "Payment Iban Masked"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "import_id",
+          "payment_iban_masked"
+        ],
+        "title": "PaymentIbanProposal",
+        "description": "The payment IBAN a card statement prints (D176 (4)), masked; POST\n/accounts/{id}/payment-iban with its import_id confirms it."
+      },
       "PaymentProofBody": {
         "properties": {
           "bill_id": {
@@ -21985,7 +22110,8 @@
           "csv_camt",
           "camt",
           "pdf",
-          "dkb_csv"
+          "dkb_csv",
+          "card_pdf"
         ],
         "title": "StatementFormat",
         "description": "statement_import.format (migration 0006)."

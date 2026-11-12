@@ -43,6 +43,8 @@ ENTITY_DECLARED = "statement.entity_declared"  # XML with a DTD / entity declara
 REPORT_UNBALANCED = "statement.report_unbalanced"  # a report's OPBD + Σ Ntry != CLBD
 CHAIN_BREAK = "statement.chain_break"  # a report's OPBD != the previous report's CLBD
 ACCOUNT_MISMATCH = "statement.account_mismatch"  # the file is another account's statement
+# Phase 6 D176 (4): a card statement that prints no payment IBAN has none to confirm.
+NO_PAYMENT_IBAN = "statement.no_payment_iban"
 UNSUPPORTED_CURRENCY = "statement.unsupported_currency"  # v1 is EUR only
 EMPTY = "statement.empty"  # no booked line in the file
 OWNER_ACCOUNT = "statement.owner_account"  # owner accounts never hold transactions

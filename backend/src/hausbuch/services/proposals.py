@@ -33,6 +33,7 @@ from hausbuch.db.tables import document_extraction as extraction_table
 from hausbuch.db.tables import property_acquisition_cost as cost_table
 from hausbuch.db.tables import proposal as proposal_table
 from hausbuch.db.tables import return_input as return_input_table
+from hausbuch.db.tables import statement_import as statement_import_table
 from hausbuch.db.tables import workspace as workspace_table
 from hausbuch.jobs import enqueue
 from hausbuch.rules.document_checklist import available_years
@@ -71,6 +72,7 @@ from hausbuch.schemas.api import (
     TenantPatch,
     UnitPatch,
 )
+from hausbuch.schemas.bank import StatementFormat
 from hausbuch.schemas.common import Schema, TaxYear
 from hausbuch.schemas.document import (
     Document,
@@ -233,6 +235,19 @@ _JSONB_COLUMNS = ("targets", "fields", "decisions", "applied_entities")
 # --- Creating proposals ------------------------------------------------------------------
 
 
+def _is_card_statement(conn: Connection, document_id: UUID) -> bool:
+    """The document is the original of a card statement import (phase 6 D176 (3))."""
+    return (
+        conn.execute(
+            select(statement_import_table.c.id).where(
+                statement_import_table.c.document_id == document_id,
+                statement_import_table.c.format == StatementFormat.CARD_PDF.value,
+            )
+        ).first()
+        is not None
+    )
+
+
 def request_read(
     ctx: CommandContext, document_id: UUID, *, contains_tenant_data: bool = False
 ) -> Proposal:
@@ -249,12 +264,17 @@ def request_read(
     A file the bank sync fetched (the camt ZIP, the bank's PDF statements, phase 5 D154) is
     never read by the model: refused with proposal.bank_file_not_read, so neither the
     document page's button nor a direct call sends a statement that names every tenant and
-    IBAN in clear."""
+    IBAN in clear. A credit card's PDF statement (phase 6 D176) is read by code only, so it
+    is refused the same way."""
     document = documents.get_document(ctx.conn, document_id)
     if document is None:
         raise NotFoundError(EntityType.DOCUMENT, document_id)
     if document.source is DocumentSource.BANK_SYNC:
         raise RuleViolationError([PROPOSAL_BANK_FILE_NOT_READ], "a bank sync file is never read")
+    if _is_card_statement(ctx.conn, document_id):
+        raise RuleViolationError(
+            [PROPOSAL_BANK_FILE_NOT_READ], "a card statement is read by code, never by the model"
+        )
     contains_tenant_data = contains_tenant_data or any(
         p.contains_tenant_data for p in list_document_proposals(ctx.conn, document_id)
     )

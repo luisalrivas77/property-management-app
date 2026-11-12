@@ -78,6 +78,7 @@ from hausbuch.db.tables import workspace as workspace_table
 from hausbuch.jobs import enqueue
 from hausbuch.rules import matching as matchers
 from hausbuch.rules.errors import ALLOCATION_CATEGORY_NOT_FOR_ACCOUNT, RuleError
+from hausbuch.rules.household import card as card_rules
 from hausbuch.rules.iban import iban_hmac, normalize_iban
 from hausbuch.rules.periods import service_period
 from hausbuch.rules.prefill import names_financing, sort_reading
@@ -108,6 +109,7 @@ from hausbuch.schemas.allocation import (
 from hausbuch.schemas.api import WaitingAmount
 from hausbuch.schemas.document import DocumentExtraction
 from hausbuch.schemas.enums import (
+    AccountKind,
     AccountPurpose,
     AllocationStatus,
     DocumentSubtype,
@@ -1009,7 +1011,7 @@ def match_line(
         account_purpose=line.account_purpose,
         account_id=line.account_id,
     )
-    found = deterministic_set(ctx.conn, line.tx, context)
+    found = _card_charge(line) or deterministic_set(ctx.conn, line.tx, context)
     if rematch and not line.waiting and found is not None and _copies_a_split(ctx.conn, found):
         # D51, review F1: an as_last_split copy reads the ledger, it is no new evidence, so a
         # re-match never replaces confirmed rows with it (a waiting line is still booked).
@@ -1031,6 +1033,14 @@ def match_line(
         if found.method in _MATCHERS and ai_available and not rematch and not line.private:
             return MatchPlan("explain", "routing.below_threshold", allocation_set=found)
     return write(ctx, line, found)
+
+
+def _card_charge(line: Line) -> AllocationSet | None:
+    """Phase 6 D176 (3): a card statement's interest or fee line, booked by code to
+    hh_interest_fees before any rule or model (it has no payee to learn); card accounts only."""
+    if line.account_kind != AccountKind.CREDIT_CARD.value:
+        return None
+    return card_rules.interest_fee_set(line.tx)
 
 
 def _copies_a_split(conn: Connection, found: AllocationSet) -> bool:

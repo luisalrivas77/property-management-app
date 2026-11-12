@@ -63,6 +63,7 @@ from hausbuch.schemas.bank_sync import SyncPreview
 from hausbuch.schemas.common import TAX_YEAR_MIN
 from hausbuch.schemas.document import DocumentTyping
 from hausbuch.schemas.enums import (
+    AccountKind,
     AllocationStatus,
     BalanceSource,
     DocumentSource,
@@ -76,6 +77,7 @@ from hausbuch.schemas.events import (
     StatementBalanceChecked,
     StatementDuplicateResolved,
     StatementImported,
+    Updated,
 )
 from hausbuch.storage import BlobStore
 
@@ -83,8 +85,8 @@ from .bank import parse_statement
 from .context import CommandContext
 from .documents import type_document, upload_document
 from .errors import ConflictError
-from .events import append_event
-from .iban import ProtectedIban, protect_iban
+from .events import append_event, diff_changes
+from .iban import ProtectedIban, protect_iban, protect_ref
 from .lookup import require_row
 
 POSSIBLE_DUPLICATE = "possible_duplicate"  # NotFoundError entity type: it has no events
@@ -126,7 +128,7 @@ def import_statement(
     account = require_row(ctx.conn, account_table, EntityType.ACCOUNT, account_id, for_update=True)
     outcome = parse_statement(data, media_type)
     statement = outcome.statement
-    _require_same_account(statement.account_iban, account.iban_hmac, iban_key)
+    _route(ctx.conn, account, statement, iban_key)
     if not statement.lines:
         raise RuleError(rules.EMPTY, "the file holds no booked line")
 
@@ -145,6 +147,7 @@ def import_statement(
     ).one_or_none()
     if existing is not None:
         return _to_import(existing)
+    _set_ref(ctx, account, statement.account_ref, iban_key)
 
     dates = [line.booking_date for line in statement.lines]
     first, last = min(dates), max(dates)
@@ -220,6 +223,8 @@ def import_statement(
             transaction_ids=new_ids,
             stated_closing=statement.stated_balance,
             stated_closing_on=statement.stated_balance_on,
+            card_last4=statement.card_last4,
+            payment_iban_masked=_masked(statement.payment_iban, iban_key),
         ),
         effective_date=last,
     )
@@ -301,7 +306,7 @@ def preview_import(
     write (unreadable file, another account's statement, no booked line)."""
     account = require_row(conn, account_table, EntityType.ACCOUNT, account_id)
     statement = parse_statement(data, media_type).statement
-    _require_same_account(statement.account_iban, account.iban_hmac, iban_key)
+    _route(conn, account, statement, iban_key)
     if not statement.lines:
         raise RuleError(rules.EMPTY, "the file holds no booked line")
     hashes = list(dict.fromkeys(_line_hashes(account_id, statement, iban_key)))
@@ -843,7 +848,21 @@ def _lock_account(ctx: CommandContext, account_id: UUID) -> Row:
     return require_row(ctx.conn, account_table, EntityType.ACCOUNT, account_id, for_update=True)
 
 
-def _require_same_account(file_iban: str | None, account_hmac: bytes, key: bytes) -> None:
+def _route(conn: Connection, account: Row, statement: ParsedStatement, key: bytes) -> None:
+    """Whether the file is this account's statement (D164). A card statement goes onto a
+    card account only, and a card account takes card statements only (phase 6 D176 (3)); a
+    card statement is routed by the issuer's customer number (account.external_ref), every
+    other file by its own IBAN when it names one."""
+    is_card = account.kind == AccountKind.CREDIT_CARD.value
+    if (statement.format is StatementFormat.CARD_PDF) != is_card:
+        raise RuleError(rules.ACCOUNT_MISMATCH, "the file is not a statement of this kind")
+    if is_card:
+        _require_same_ref(conn, account, statement.account_ref, key)
+    else:
+        _require_same_account(statement.account_iban, account.iban_hmac, key)
+
+
+def _require_same_account(file_iban: str | None, account_hmac: bytes | None, key: bytes) -> None:
     """The file's own account IBAN, when it names one, must be this account's."""
     if file_iban is None:
         return
@@ -851,8 +870,53 @@ def _require_same_account(file_iban: str | None, account_hmac: bytes, key: bytes
         theirs = protect_iban(file_iban, key).hmac
     except RuleError:
         theirs = b""
-    if not hmac.compare_digest(theirs, account_hmac):
+    if account_hmac is None or not hmac.compare_digest(theirs, account_hmac):
         raise RuleError(rules.ACCOUNT_MISMATCH, "the file is a statement of another account")
+
+
+def _require_same_ref(conn: Connection, account: Row, file_ref: str | None, key: bytes) -> None:
+    """A card statement names its customer number: it must be the account's, or, while the
+    account has none yet (its first import sets it, _set_ref), no other account's."""
+    if file_ref is None:
+        raise RuleError(rules.ACCOUNT_MISMATCH, "the file names no account reference")
+    theirs = protect_ref(file_ref, key).hmac
+    if account.external_ref_hmac is not None:
+        if not hmac.compare_digest(theirs, account.external_ref_hmac):
+            raise RuleError(rules.ACCOUNT_MISMATCH, "the file is a statement of another account")
+        return
+    other = conn.execute(
+        select(account_table.c.id).where(
+            account_table.c.external_ref_hmac == theirs, account_table.c.id != account.id
+        )
+    ).first()
+    if other is not None:
+        raise RuleError(rules.ACCOUNT_MISMATCH, "the file is a statement of another account")
+
+
+def _set_ref(ctx: CommandContext, account: Row, file_ref: str | None, key: bytes) -> None:
+    """Phase 6 D176 (3): the first card statement imported onto a card account without a
+    reference sets it (masked + HMAC'd, never in clear), recorded as account.updated. The
+    routing check (_route) ran first, under the account row's lock."""
+    if account.kind != AccountKind.CREDIT_CARD.value or account.external_ref_hmac is not None:
+        return
+    assert file_ref is not None  # _route refused a card statement without one
+    ref = protect_ref(file_ref, key)
+    ctx.conn.execute(
+        update(account_table)
+        .where(account_table.c.id == account.id)
+        .values(external_ref_masked=ref.masked, external_ref_hmac=ref.hmac, updated_at=ctx.now)
+    )
+    append_event(
+        ctx,
+        EventType.ACCOUNT_UPDATED,
+        account.id,
+        Updated(changes=diff_changes({}, {"external_ref_masked": ref.masked})),
+    )
+
+
+def _masked(raw: str | None, key: bytes) -> str | None:
+    protected = _protect(raw, key)
+    return protected.masked if protected is not None else None
 
 
 def _protect(raw: str | None, key: bytes) -> ProtectedIban | None:

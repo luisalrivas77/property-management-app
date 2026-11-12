@@ -52,11 +52,14 @@ class AccountCreate(Schema):
     # Phase 6 D156. kind: create_account accepts the bank kinds only until the steps that
     # build the depot (4) and the exchange (5); a wallet is refused until phase 7. purpose:
     # None derives it from is_owner_account (an owner account is private, any other the
-    # rental account), so a caller of phases 2-5 keeps its meaning until step 1.
+    # rental account), so a caller of phases 2-5 keeps its meaning until step 1. A credit card
+    # (step 2b, D176) is taken too; it is always a private account.
     kind: AccountKind = AccountKind.BANK_CURRENT
     purpose: AccountPurpose | None = None
     provider: str | None = Field(default=None, min_length=1, max_length=100)
-    # write-only: a depot's or exchange's own number, stored masked + HMAC'd (D156, D164)
+    # write-only: a depot's or exchange's own number, stored masked + HMAC'd (D156, D164); a
+    # credit card's is the issuer's customer number, set by its first statement when absent
+    # (D176 (3))
     external_ref: ExternalRefInput | None = None
 
     @model_validator(mode="after")
@@ -69,6 +72,18 @@ class AccountCreate(Schema):
         elif self.iban is not None:
             raise ValueError("only a bank account has an IBAN")
         return self
+
+
+class PaymentIbanProposal(Schema):
+    """The payment IBAN a card statement prints (D176 (4)), masked; POST
+    /accounts/{id}/payment-iban with its import_id confirms it."""
+
+    import_id: UUID
+    payment_iban_masked: MaskedIban
+
+
+class ConfirmPaymentIbanBody(Schema):
+    import_id: UUID
 
 
 class Account(MutableRecord):
@@ -85,6 +100,13 @@ class Account(MutableRecord):
     provider: str | None = None
     currency: Currency = Currency.EUR
     external_ref_masked: MaskedRef | None = None
+    # Phase 6 D176 (credit_card only): the issuer's IBAN for payments to the card, confirmed
+    # by a person (D176 (4), principle 3); the card's last four digits and the payment IBAN
+    # the latest statement prints, when it is not the confirmed one, both read from the
+    # card statements' statement.imported events.
+    payment_iban_masked: MaskedIban | None = None
+    card_last4: str | None = Field(default=None, pattern=r"^[0-9]{4}$")
+    payment_iban_proposal: PaymentIbanProposal | None = None
     # Phase 6 D157, §4.2: the current owner shares (the reason kept with them); none set is
     # the Konten screen's to-do „Eigentümer festlegen“, never an error.
     # ownership_missing is derived from ownership on every read (never set apart from it).
