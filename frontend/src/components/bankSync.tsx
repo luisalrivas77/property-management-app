@@ -574,7 +574,14 @@ function ConnectionCreateForm({ account, onCreated }: { account: Account; onCrea
       await ok(
         api.POST("/api/accounts/{account_id}/bank-connection", {
           params: { path: { account_id: account.id } },
-          body: { account_id: account.id, bank_code: bankCode.trim(), fints_url: url.trim(), login_name: login.trim() },
+          // The slot primary is HAUSBUCH_FINTS_PIN (phase 6 D163); the card offers others in step 3.
+          body: {
+            account_id: account.id,
+            bank_code: bankCode.trim(),
+            fints_url: url.trim(),
+            login_name: login.trim(),
+            credential_slot: "primary",
+          },
         }),
       );
       onCreated();

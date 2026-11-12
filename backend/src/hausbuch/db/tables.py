@@ -1,4 +1,4 @@
-"""SQLAlchemy Core tables for migrations 0001-0019.
+"""SQLAlchemy Core tables for migrations 0001-0025.
 
 The migration is the source of truth. This module mirrors its columns (name, type, nullability,
 whether a server default exists) and primary keys, so services can build typed queries; it
@@ -90,6 +90,8 @@ workspace = Table(
     Column("auto_accept_llm", Boolean, nullable=False, server_default=text("false")),
     # 0019 (phase 5, D123)
     Column("reminder_emails", Boolean, nullable=False, server_default=text("false")),
+    # 0025 (phase 6, D168)
+    Column("ai_private_accounts", Boolean, nullable=False, server_default=text("false")),
 )
 
 app_user = Table(
@@ -494,14 +496,21 @@ account = Table(
     _workspace_id(),
     _text("label"),
     _text("bank"),
-    _text("iban_masked"),
-    Column("iban_hmac", LargeBinary, nullable=False),
+    _text("iban_masked", nullable=True),  # nullable since 0025 (a depot has no IBAN)
+    Column("iban_hmac", LargeBinary, nullable=True),
     _text("source", server_default=text("'upload'")),
     _money("opening_balance"),
     _date("opening_balance_on"),
     Column("is_owner_account", Boolean, nullable=False, server_default=text("false")),
     _created_at(),
     _updated_at(),
+    # 0025 (phase 6, D156)
+    _text("kind", server_default=text("'bank_current'")),
+    _text("purpose", server_default=text("'private'")),
+    _text("provider", nullable=True),
+    _text("currency", server_default=text("'EUR'")),
+    _text("external_ref_masked", nullable=True),
+    Column("external_ref_hmac", LargeBinary, nullable=True),
 )
 
 statement_import = Table(
@@ -757,6 +766,8 @@ bank_connection = Table(
     _updated_at(),
     # 0024 (D154 (7))
     Column("fetch_statements", Boolean, nullable=False, server_default=text("false")),
+    # 0025 (phase 6, D163)
+    _text("credential_slot", server_default=text("'primary'")),
 )
 bank_sync = Table(
     "bank_sync",
@@ -844,4 +855,146 @@ notification = Table(
     _text("status"),
     _text("error_code", nullable=True),
     Column("attempt", SmallInteger, nullable=False),
+)
+
+
+# --- Phase 6 (0025): household accounts, assets, movements, prices --------------------------
+
+
+def _quantity(name: str, *, nullable: bool = False) -> Column:
+    return Column(name, Numeric(28, 10), nullable=nullable)
+
+
+account_ownership = Table(
+    "account_ownership",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("account_id"),
+    _uuid("owner_id"),
+    Column("share_numerator", Integer, nullable=False),
+    Column("share_denominator", Integer, nullable=False),
+    _text("reason", nullable=True),
+    _date("effective_from"),
+    _uuid("superseded_by", nullable=True),
+    _created_at(),
+)
+asset = Table(
+    "asset",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _text("kind"),
+    _text("symbol", nullable=True),
+    _text("isin", nullable=True),
+    _text("name"),
+    _text("currency", server_default=text("'EUR'")),
+    _text("coingecko_id", nullable=True),
+    _text("kraken_pair", nullable=True),
+    Column("decimals", Integer, nullable=False, server_default=text("8")),
+    _created_at(),
+    _updated_at(),
+)
+movement_import = Table(
+    "movement_import",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("account_id"),
+    _uuid("document_id"),
+    _text("format"),
+    Column("rows_total", Integer, nullable=False, server_default=text("0")),
+    Column("rows_new", Integer, nullable=False, server_default=text("0")),
+    Column("rows_skipped", Integer, nullable=False, server_default=text("0")),
+    _timestamp("first_at", nullable=True, default=False),
+    _timestamp("last_at", nullable=True, default=False),
+    _text("status", server_default=text("'imported'")),
+    _text("error_code", nullable=True),
+    _created_at(),
+    _updated_at(),
+)
+asset_movement = Table(
+    "asset_movement",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("account_id"),
+    _uuid("asset_id"),
+    _text("kind"),
+    _quantity("quantity"),
+    _money("eur_amount", nullable=True),
+    _money("fee_eur", nullable=True),
+    _quantity("fee_quantity", nullable=True),
+    _money("tax_withheld_eur", nullable=True),
+    _timestamp("occurred_at", default=False),
+    _text("external_ref", nullable=True),
+    _text("network", nullable=True),
+    _text("tx_hash", nullable=True),
+    _text("movement_hash", nullable=True),
+    _text("source"),
+    _uuid("document_id", nullable=True),
+    _uuid("transaction_id", nullable=True),
+    _text("status", server_default=text("'proposed'")),
+    _uuid("superseded_by", nullable=True),
+    _created_at(),
+)
+holding_statement = Table(
+    "holding_statement",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("account_id"),
+    _uuid("asset_id"),
+    _date("as_of"),
+    _quantity("declared_units"),
+    _money("declared_value_eur", nullable=True),
+    _text("source"),
+    _uuid("document_id", nullable=True),
+    _uuid("import_id", nullable=True),
+    Column("reconciled", Boolean, nullable=True),
+    _quantity("difference_units", nullable=True),
+    _created_at(),
+)
+transfer_link = Table(
+    "transfer_link",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _text("kind"),
+    _uuid("out_transaction_id", nullable=True),
+    _uuid("out_movement_id", nullable=True),
+    _uuid("in_transaction_id", nullable=True),
+    _uuid("in_movement_id", nullable=True),
+    _text("matched_by"),
+    _uuid("superseded_by", nullable=True),
+    _created_at(),
+)
+price = Table(
+    "price",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("asset_id"),
+    _date("on"),  # a reserved word: quoted in hand-written SQL ("on")
+    Column("price_eur", Numeric(20, 8), nullable=False),
+    _text("source"),
+    _timestamp("fetched_at"),
+    _uuid("document_id", nullable=True),
+    Column("raw", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    _created_at(),
+)
+valuation_snapshot = Table(
+    "valuation_snapshot",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("account_id"),
+    _uuid("asset_id", nullable=True),
+    _date("as_of"),
+    _quantity("units", nullable=True),
+    Column("price_eur", Numeric(20, 8), nullable=True),
+    _text("price_source", nullable=True),
+    _money("value_eur"),
+    _uuid("net_worth_run_id"),
+    _created_at(),
 )

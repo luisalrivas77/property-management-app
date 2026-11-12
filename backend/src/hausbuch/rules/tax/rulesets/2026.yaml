@@ -184,5 +184,35 @@ form:
     acquisition_cost: null        # likewise
     other_expense: null           # open until categorized (D59)
     uncategorized: null           # open until categorized (D59)
+    # Phase 6 (D159, D161, D165): the household's and the depot's codes are never on the
+    # Anlage V; a rental cost paid privately reaches it as a private_cost input only.
+    hh_salary: null
+    hh_child_benefit: null
+    hh_tax_refund: null
+    hh_capital_income: null
+    hh_other_income: null
+    hh_housing: null
+    hh_groceries: null
+    hh_family_child: null
+    hh_mobility: null
+    hh_insurance: null
+    hh_subscriptions: null
+    hh_leisure_travel: null
+    hh_health: null
+    hh_other: null
+    hh_donation: null
+    hh_household_services: null
+    hh_childcare: null
+    hh_property_cost: null
+    hh_tax_payment: null
+    internal_transfer_in: null
+    internal_transfer_out: null
+    hh_cash: null
+    hh_credit_card: null
+    security_purchase: null
+    security_sale: null
+    distribution: null
+    capital_income_tax: null
+    depot_fee: null
   tracked: [loan_principal, hausgeld_ruecklage]
   open: [other_expense, uncategorized]

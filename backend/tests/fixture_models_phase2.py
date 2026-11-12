@@ -8,12 +8,12 @@ any rule is implemented.
 from datetime import date
 from functools import cache
 from pathlib import Path
-from typing import Any, Literal, Self
+from typing import Annotated, Any, Literal, Self
 from uuid import UUID
 
 import yaml
 from fixture_models import Lenient
-from pydantic import Field, JsonValue, ValidationError, model_validator
+from pydantic import BeforeValidator, Field, JsonValue, ValidationError, model_validator
 
 from hausbuch.schemas.ai import CitedTextBlock, ExtractedValue, SourceRef
 from hausbuch.schemas.allocation import (
@@ -47,6 +47,18 @@ from hausbuch.schemas.extraction import EXTRACTION_MODELS, _Typing
 from hausbuch.schemas.proposal import PrefillContext, RecordEntity
 
 FIXTURES = Path(__file__).parent / "fixtures" / "phase2"
+
+
+def _phase2_context_keys(value: Any) -> Any:
+    """Phase 6 D162 renamed MatchContext.owner_account_hmacs to own_account_hmacs; the phase 2
+    fixture files keep their key, and this maps it (phase-6.md D162)."""
+    if isinstance(value, dict) and "owner_account_hmacs" in value:
+        value = dict(value)
+        value["own_account_hmacs"] = value.pop("owner_account_hmacs")
+    return value
+
+
+Phase2Context = Annotated[MatchContext, BeforeValidator(_phase2_context_keys)]
 
 
 @cache
@@ -174,7 +186,7 @@ class MatcherCase(Lenient):
 
 class MatchersFixture(Schema):
     ids: dict[str, str]
-    context: MatchContext
+    context: Phase2Context
     cases: list[MatcherCase]
 
 
@@ -203,7 +215,7 @@ class RejectedRule(Lenient):
 
 class RulesFixture(Schema):
     ids: dict[str, str]
-    context: MatchContext
+    context: Phase2Context
     rules: dict[str, MatchingRule]
     cases: list[RuleCase]
     rejected: list[RejectedRule] = Field(min_length=1)
@@ -243,7 +255,7 @@ class RuleHistoryCase(Lenient):
 
 class RuleHistoryFixture(Schema):
     ids: dict[str, str]
-    context: MatchContext
+    context: Phase2Context
     rules: dict[str, MatchingRule]
     history: dict[str, HistoryLine]  # named lines the cases reuse (YAML anchors)
     cases: list[RuleHistoryCase]
@@ -573,7 +585,7 @@ class MonthExpect(Schema):
 class MonthStatementFixture(Schema):
     ids: dict[str, str]
     balances: Balances
-    context: MatchContext
+    context: Phase2Context
     rules: list[MatchingRule]
     lines: list[MonthLine] = Field(min_length=12, max_length=12)
     expect: MonthExpect
@@ -648,7 +660,7 @@ class NoRuleCase(Lenient):
 
 class RepeatFixture(Schema):
     ids: dict[str, str]
-    context: MatchContext
+    context: Phase2Context
     cases: list[RepeatCase]
     no_rule: list[NoRuleCase] = Field(default_factory=list)
 

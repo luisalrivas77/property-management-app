@@ -146,7 +146,7 @@ export async function loadInbox(): Promise<InboxData> {
   ]);
   const perAccount = await Promise.all(
     accounts
-      .filter((account) => !account.is_owner_account)
+      .filter((account) => account.purpose === "rental")
       .map(async (account) => {
         const path = { params: { path: { account_id: account.id } } };
         const [imports, transactions] = await Promise.all([

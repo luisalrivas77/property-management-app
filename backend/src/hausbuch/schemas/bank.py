@@ -8,14 +8,28 @@ declared closing balance per import.
 
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Protocol, Self
+from typing import Annotated, Protocol, Self
 from uuid import UUID
 
 from pydantic import ConfigDict, Field, JsonValue, model_validator
 
 from .allocation import AllocationCategory
 from .common import IbanInput, MaskedIban, Money, MutableRecord, Record, Schema, Sha256Hex
-from .enums import AccountSource, BalanceSource, Currency, DuplicateStatus, ImportStatus
+from .enums import (
+    BANK_ACCOUNT_KINDS,
+    AccountKind,
+    AccountPurpose,
+    AccountSource,
+    BalanceSource,
+    Currency,
+    DuplicateStatus,
+    ImportStatus,
+)
+
+# Phase 6 D156: a depot or exchange's own number (a depot or customer number), masked to its
+# last four characters like an IBAN's tail and HMAC'd for the statement routing of D164.
+MaskedRef = Annotated[str, Field(pattern=r"^\*{4} [A-Z0-9]{4}$")]
+ExternalRefInput = Annotated[str, Field(min_length=4, max_length=64)]
 
 # --- Accounts ------------------------------------------------------------------------
 
@@ -26,22 +40,50 @@ class AccountCreate(Schema):
 
     label: str = Field(min_length=1, max_length=100)
     bank: str = Field(min_length=1)
-    iban: IbanInput  # write-only; stored as iban_masked + keyed HMAC
+    # write-only; stored as iban_masked + keyed HMAC. Required for a bank kind, refused for a
+    # depot, an exchange or a wallet (phase 6 D156).
+    iban: IbanInput | None = None
     opening_balance: Money  # the anchor (D21)
     opening_balance_on: date
     # One of the owners' private accounts: recognized by IBAN for owner transfers (phase 2
     # input point 1). It never holds transactions.
     is_owner_account: bool = False
+    # Phase 6 D156. kind: create_account accepts the bank kinds only until the steps that
+    # build the depot (4) and the exchange (5); a wallet is refused until phase 7. purpose:
+    # None derives it from is_owner_account (an owner account is private, any other the
+    # rental account), so a caller of phases 2-5 keeps its meaning until step 1.
+    kind: AccountKind = AccountKind.BANK_CURRENT
+    purpose: AccountPurpose | None = None
+    provider: str | None = Field(default=None, min_length=1, max_length=100)
+    # write-only: a depot's or exchange's own number, stored masked + HMAC'd (D156, D164)
+    external_ref: ExternalRefInput | None = None
+
+    @model_validator(mode="after")
+    def _identity(self) -> Self:
+        if self.kind in BANK_ACCOUNT_KINDS:
+            if self.iban is None:
+                raise ValueError("a bank account needs an IBAN")
+            if self.external_ref is not None:
+                raise ValueError("a bank account is identified by its IBAN, not external_ref")
+        elif self.iban is not None:
+            raise ValueError("only a bank account has an IBAN")
+        return self
 
 
 class Account(MutableRecord):
     label: str
     bank: str
-    iban_masked: MaskedIban
+    iban_masked: MaskedIban | None  # None for a depot, an exchange or a wallet (D156)
     source: AccountSource
     opening_balance: Money
     opening_balance_on: date
     is_owner_account: bool
+    # Phase 6 D156 (migration 0025)
+    kind: AccountKind = AccountKind.BANK_CURRENT
+    purpose: AccountPurpose = AccountPurpose.PRIVATE
+    provider: str | None = None
+    currency: Currency = Currency.EUR
+    external_ref_masked: MaskedRef | None = None
 
 
 # --- Parsing (BankSource) ------------------------------------------------------------
@@ -53,6 +95,10 @@ class StatementFormat(StrEnum):
     CSV_CAMT = "csv_camt"  # Sparkasse CSV-CAMT V2: no balances
     CAMT = "camt"  # camt.052 / .053 XML, one file or a ZIP of daily reports; balances (D33/D34)
     PDF = "pdf"  # Kontoauszug, read by the extract job
+    # Phase 6 D173 (migration 0025): DKB's web-banking CSV export, its own reader in step 1;
+    # no opening balance, its „Kontostand vom“ pre-fills the typed closing. MT940 only by the
+    # amendment D173 names.
+    DKB_CSV = "dkb_csv"
 
 
 class StatementLine(Schema):

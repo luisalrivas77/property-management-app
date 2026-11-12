@@ -65,6 +65,35 @@ per_category:
   - {category: other_income, decision: review}
   - {category: other_expense, decision: review}
   - {category: uncategorized, decision: review}
+  # Phase 6 (D159, D162, D165), added by the phase 6 spec PR; agrees with thresholds.yaml.
+  - {category: hh_salary, decision: auto_confirm}
+  - {category: hh_child_benefit, decision: auto_confirm}
+  - {category: hh_tax_refund, decision: review}
+  - {category: hh_capital_income, decision: review}
+  - {category: hh_other_income, decision: review}
+  - {category: hh_housing, decision: auto_confirm}
+  - {category: hh_groceries, decision: auto_confirm}
+  - {category: hh_family_child, decision: auto_confirm}
+  - {category: hh_mobility, decision: auto_confirm}
+  - {category: hh_insurance, decision: auto_confirm}
+  - {category: hh_subscriptions, decision: auto_confirm}
+  - {category: hh_leisure_travel, decision: auto_confirm}
+  - {category: hh_health, decision: auto_confirm}
+  - {category: hh_other, decision: review}
+  - {category: hh_donation, decision: review}
+  - {category: hh_household_services, decision: review}
+  - {category: hh_childcare, decision: review}
+  - {category: hh_property_cost, decision: review}
+  - {category: hh_tax_payment, decision: review}
+  - {category: internal_transfer_in, decision: review}
+  - {category: internal_transfer_out, decision: review}
+  - {category: hh_cash, decision: review}
+  - {category: hh_credit_card, decision: review}
+  - {category: security_purchase, decision: review}
+  - {category: security_sale, decision: review}
+  - {category: distribution, decision: review}
+  - {category: capital_income_tax, decision: review}
+  - {category: depot_fee, decision: review}
 
 cases:
   - id: rule_hit
@@ -315,3 +344,60 @@ cases:
         allocations:
           - {amount: "-4.95", category: bank_fees, recurring: true}
     expect: {decision: review, reason: routing.llm_not_accepted}
+
+  # --- Phase 6 (docs/phases/phase-6.md §14, D159, D162, D168), added by the phase 6 spec PR.
+  # route() reads no account purpose: a private line's set routes by the same rules. That the
+  # model may answer only the permitted set of the account's purpose is the allocation
+  # command's check (allocation.category_not_for_account, private_cost_link.yaml).
+
+  - id: phase6_hh_groceries_llm_accepted
+    description: A household spending answer of the model at 0.95 with auto_accept_llm on books like any recurring category (D159, threshold 0.9).
+    item:
+      import_status: reconciled
+      auto_accept_llm: true
+      allocation_set:
+        transaction_id: *TX
+        method: llm
+        confidence: "0.950"
+        allocations:
+          - {amount: "-54.37", category: hh_groceries}
+    expect: {decision: auto_confirm, reason: routing.above_threshold}
+
+  - id: phase6_hh_donation_llm_never_auto
+    description: A tax-relevant code never auto-confirms, whatever the confidence (D159); it proposes a return_input a person confirms.
+    item:
+      import_status: reconciled
+      auto_accept_llm: true
+      allocation_set:
+        transaction_id: *TX
+        method: llm
+        confidence: "0.990"
+        allocations:
+          - {amount: "-50.00", category: hh_donation}
+    expect: {decision: review, reason: routing.never_auto}
+
+  - id: phase6_internal_transfer_llm_never_auto
+    description: The model may propose a transfer code but only the transfer matcher books one (D40 extended, D162).
+    item:
+      import_status: reconciled
+      auto_accept_llm: true
+      allocation_set:
+        transaction_id: *TX
+        method: llm
+        confidence: "0.900"
+        allocations:
+          - {amount: "500.00", category: internal_transfer_in}
+    expect: {decision: review, reason: routing.never_auto}
+
+  - id: phase6_zero_bank_fee_on_a_private_account
+    description: The 0.00 account-fee line of a private account (bank_fees is reused for every bank kind) keeps D52 unchanged.
+    item:
+      import_status: reconciled
+      auto_accept_llm: false
+      allocation_set:
+        transaction_id: *TX
+        method: llm
+        confidence: "0.600"
+        allocations:
+          - {amount: "0.00", category: bank_fees, recurring: true}
+    expect: {decision: auto_confirm, reason: routing.zero_amount}

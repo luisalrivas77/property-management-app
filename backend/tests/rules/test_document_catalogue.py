@@ -30,6 +30,8 @@ OWN, TEN, TAX = (
     RetentionClass.TENANCY_RECORDS,
     RetentionClass.TAX_RECORDS,
 )
+# Phase 6 D169: kept while the position is held, then 10 years.
+HOLD = RetentionClass.HOLDING_RECORDS
 
 # (subtype, type, retention, link, reader)
 CATALOGUE = [
@@ -81,8 +83,12 @@ CATALOGUE = [
     # household finances
     (S.DEPOT_STATEMENT, T.STATEMENT, TAX, None, K.GENERAL),
     (S.DEPOT_REPORT, T.OTHER, TAX, None, K.GENERAL),
-    (S.TRADE_CONFIRMATION, T.LETTER, TAX, None, K.GENERAL),
+    (S.TRADE_CONFIRMATION, T.LETTER, HOLD, None, K.GENERAL),  # phase 6 D169
     (S.CAPITAL_INCOME_TAX_CERTIFICATE, T.LETTER, TAX, None, K.GENERAL),
+    # phase 6 (migration 0025): typed by code only until the readers of steps 4 and 5 (D165,
+    # D166), so the general reading routes them until then; retention by D169
+    (S.EXCHANGE_EXPORT, T.OTHER, HOLD, None, K.GENERAL),
+    (S.DISTRIBUTION_NOTE, T.LETTER, TAX, None, K.GENERAL),
 ]
 # The subtypes before the catalogue: (subtype, type, reader).
 EXISTING = [
@@ -109,8 +115,9 @@ ADDRESS = ("street", "house_number", "postal_code")
 def test_the_table_covers_every_subtype():
     tables = (CATALOGUE, EXISTING, FINANCING)
     assert {row[0] for table in tables for row in table} == set(S)
-    # 40 new subtypes, the Einkommensteuerbescheid and the payment proof (phase 3 D143)
-    assert len(CATALOGUE) == 42
+    # 40 new subtypes, the Einkommensteuerbescheid and the payment proof (phase 3 D143), and
+    # phase 6's exchange export and distribution note (migration 0025)
+    assert len(CATALOGUE) == 44
 
 
 @pytest.mark.parametrize(("subtype", "type_", "retention", "link", "reader"), CATALOGUE)
@@ -294,8 +301,9 @@ def test_a_catalogue_subtype_still_overrides_the_other_types(type_, subtype, rea
 
 
 def test_the_catalogue_is_the_forty_new_subtypes_and_the_financing_bill():
-    # 40 from D131, financing_invoice from D138, payment_proof from phase 3 D143
-    assert len(CATALOGUE_SUBTYPES) == 42
+    # 40 from D131, financing_invoice from D138, payment_proof from phase 3 D143,
+    # exchange_export and distribution_note from phase 6 (migration 0025)
+    assert len(CATALOGUE_SUBTYPES) == 44
     catalogue = {row[0] for row in CATALOGUE} - {S.EINKOMMENSTEUERBESCHEID}
     assert catalogue | {S.FINANCING_INVOICE} == CATALOGUE_SUBTYPES
 

@@ -49,6 +49,41 @@ TAX_TREATMENT = MappingProxyType(
         C.OTHER_INCOME: T.INCOME,
         C.OTHER_EXPENSE: T.UNDECIDED,
         C.UNCATEGORIZED: T.UNDECIDED,
+        # Phase 6 D159: the household's codes. PRIVATE is ignored by every rental tax rule.
+        C.HH_SALARY: T.PRIVATE,
+        C.HH_CHILD_BENEFIT: T.PRIVATE,
+        C.HH_TAX_REFUND: T.PRIVATE,
+        C.HH_CAPITAL_INCOME: T.PRIVATE,  # phase 8's KAP rules read the category
+        C.HH_OTHER_INCOME: T.PRIVATE,
+        C.HH_HOUSING: T.PRIVATE,
+        C.HH_GROCERIES: T.PRIVATE,
+        C.HH_FAMILY_CHILD: T.PRIVATE,
+        C.HH_MOBILITY: T.PRIVATE,
+        C.HH_INSURANCE: T.PRIVATE,
+        C.HH_SUBSCRIPTIONS: T.PRIVATE,
+        C.HH_LEISURE_TRAVEL: T.PRIVATE,
+        C.HH_HEALTH: T.PRIVATE,
+        C.HH_OTHER: T.PRIVATE,
+        # The tax-relevant spending (D159: "all hh_* codes except the tax-relevant ones get
+        # PRIVATE"): each reaches its form only through the input it proposes, so it is
+        # pass_through, never summed as a cost; hh_property_cost so by D161.
+        C.HH_DONATION: T.PASS_THROUGH,
+        C.HH_HOUSEHOLD_SERVICES: T.PASS_THROUGH,
+        C.HH_CHILDCARE: T.PASS_THROUGH,
+        C.HH_PROPERTY_COST: T.PASS_THROUGH,
+        C.HH_TAX_PAYMENT: T.PRIVATE,  # not modelled (phase 4b D95): a label, nothing proposed
+        # Movements between the household's own accounts and the cash it takes out (D162).
+        C.INTERNAL_TRANSFER_IN: T.PASS_THROUGH,
+        C.INTERNAL_TRANSFER_OUT: T.PASS_THROUGH,
+        C.HH_CASH: T.PRIVATE,
+        C.HH_CREDIT_CARD: T.PRIVATE,
+        # The depot's own bookings (D165 (1)); phase 8 reads distribution and
+        # capital_income_tax.
+        C.SECURITY_PURCHASE: T.PRIVATE,
+        C.SECURITY_SALE: T.PRIVATE,
+        C.DISTRIBUTION: T.PRIVATE,
+        C.CAPITAL_INCOME_TAX: T.PRIVATE,
+        C.DEPOT_FEE: T.PRIVATE,
     }
 )
 
@@ -92,6 +127,35 @@ CATEGORY_LABEL = MappingProxyType(
         C.OTHER_INCOME: "Sonstige Einnahme",
         C.OTHER_EXPENSE: "Sonstige Ausgabe",
         C.UNCATEGORIZED: "Noch offen (nicht zugeordnet)",
+        # Phase 6 (D159, D162, D165)
+        C.HH_SALARY: "Gehalt",
+        C.HH_CHILD_BENEFIT: "Kindergeld",
+        C.HH_TAX_REFUND: "Steuererstattung",
+        C.HH_CAPITAL_INCOME: "Zinsen und Dividenden",
+        C.HH_OTHER_INCOME: "Sonstige Einnahme (privat)",
+        C.HH_HOUSING: "Wohnen",
+        C.HH_GROCERIES: "Lebensmittel und Drogerie",
+        C.HH_FAMILY_CHILD: "Familie und Kind",
+        C.HH_MOBILITY: "Mobilität",
+        C.HH_INSURANCE: "Versicherungen",
+        C.HH_SUBSCRIPTIONS: "Abos und Verträge",
+        C.HH_LEISURE_TRAVEL: "Freizeit und Reisen",
+        C.HH_HEALTH: "Gesundheit",
+        C.HH_OTHER: "Sonstiges",
+        C.HH_DONATION: "Spende",
+        C.HH_HOUSEHOLD_SERVICES: "Haushaltsnahe Dienstleistung oder Handwerker",
+        C.HH_CHILDCARE: "Kinderbetreuung",
+        C.HH_PROPERTY_COST: "Kosten der Immobilie, privat bezahlt",
+        C.HH_TAX_PAYMENT: "Einkommensteuer (Vorauszahlung oder Nachzahlung)",
+        C.INTERNAL_TRANSFER_IN: "Übertrag von eigenem Konto",
+        C.INTERNAL_TRANSFER_OUT: "Übertrag auf eigenes Konto",
+        C.HH_CASH: "Bargeldabhebung",
+        C.HH_CREDIT_CARD: "Kreditkartenabrechnung",
+        C.SECURITY_PURCHASE: "Wertpapierkauf",
+        C.SECURITY_SALE: "Wertpapierverkauf",
+        C.DISTRIBUTION: "Ausschüttung oder Dividende",
+        C.CAPITAL_INCOME_TAX: "Kapitalertragsteuer und Vorabpauschale",
+        C.DEPOT_FEE: "Depot- und Verwaltergebühr",
     }
 )
 

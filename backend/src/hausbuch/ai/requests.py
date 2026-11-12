@@ -37,10 +37,11 @@ from typing import Any
 import anthropic
 
 from hausbuch.rules.extraction_parse import CODE_ONLY_SUBTYPES, accepted_subtype
+from hausbuch.rules.household.taxonomy import allowed_categories
 from hausbuch.schemas.ai import AiJob, ClassifyOutput, ConfidenceLevel
 from hausbuch.schemas.allocation import LlmMatchOutput
 from hausbuch.schemas.common import Schema
-from hausbuch.schemas.enums import DocumentSubtype, DocumentType, ExtractionKind
+from hausbuch.schemas.enums import AccountPurpose, DocumentSubtype, DocumentType, ExtractionKind
 from hausbuch.schemas.extraction import EXTRACTION_MODELS, ValueKind, asked_fields, value_kind
 from hausbuch.settings import Settings
 
@@ -194,7 +195,15 @@ class ExplainOutput(Schema):
 
 @cache
 def match_schema() -> dict:
-    return anthropic.transform_schema(LlmMatchOutput.model_json_schema())
+    """The categorize output schema: the rental account's categories only. Phase 6's
+    household, transfer and depot codes (D159) belong to private accounts, whose lines this
+    prompt never sees (D168: the rental prompt is unchanged), so the request, and every
+    recorded request hash, stays as it was."""
+    schema = LlmMatchOutput.model_json_schema()
+    rental = {c.value for c in allowed_categories(AccountPurpose.RENTAL)}
+    category = schema["$defs"]["AllocationCategory"]
+    category["enum"] = [v for v in category["enum"] if v in rental]
+    return anthropic.transform_schema(schema)
 
 
 @cache

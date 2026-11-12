@@ -47,3 +47,37 @@ thresholds:
   - {category: other_income, threshold: null}
   - {category: other_expense, threshold: null}
   - {category: uncategorized, threshold: null}
+  # Phase 6 (D159, D162, D165), added by the phase 6 spec PR: 0.9 for hh_salary,
+  # hh_child_benefit and the spending groups; null for the tax-relevant codes, hh_tax_refund,
+  # hh_other_income, hh_capital_income, hh_credit_card and the transfer codes (D159 lists
+  # them), hh_other (D159's null list names it although it is a spending group: the explicit
+  # list wins), the depot codes (D165 (1)) and hh_cash (not named by D159: reading, the
+  # conservative null).
+  - {category: hh_salary, threshold: "0.900"}
+  - {category: hh_child_benefit, threshold: "0.900"}
+  - {category: hh_tax_refund, threshold: null}
+  - {category: hh_capital_income, threshold: null}
+  - {category: hh_other_income, threshold: null}
+  - {category: hh_housing, threshold: "0.900"}
+  - {category: hh_groceries, threshold: "0.900"}
+  - {category: hh_family_child, threshold: "0.900"}
+  - {category: hh_mobility, threshold: "0.900"}
+  - {category: hh_insurance, threshold: "0.900"}
+  - {category: hh_subscriptions, threshold: "0.900"}
+  - {category: hh_leisure_travel, threshold: "0.900"}
+  - {category: hh_health, threshold: "0.900"}
+  - {category: hh_other, threshold: null}
+  - {category: hh_donation, threshold: null}
+  - {category: hh_household_services, threshold: null}
+  - {category: hh_childcare, threshold: null}
+  - {category: hh_property_cost, threshold: null}
+  - {category: hh_tax_payment, threshold: null}
+  - {category: internal_transfer_in, threshold: null}
+  - {category: internal_transfer_out, threshold: null}
+  - {category: hh_cash, threshold: null}
+  - {category: hh_credit_card, threshold: null}
+  - {category: security_purchase, threshold: null}
+  - {category: security_sale, threshold: null}
+  - {category: distribution, threshold: null}
+  - {category: capital_income_tax, threshold: null}
+  - {category: depot_fee, threshold: null}

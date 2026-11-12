@@ -107,6 +107,7 @@ from hausbuch.schemas.allocation import (
 from hausbuch.schemas.api import WaitingAmount
 from hausbuch.schemas.document import DocumentExtraction
 from hausbuch.schemas.enums import (
+    AccountPurpose,
     AllocationStatus,
     DocumentSubtype,
     DuplicateStatus,
@@ -259,12 +260,17 @@ def build_context(
 ) -> MatchContext:
     """Everything the matchers may look at, read from the workspace. `for_transaction`: the
     line being matched (a Beleg its own rows reference stays a candidate)."""
+    # The owners' accounts by purpose since migration 0025, which sets is_owner_account on
+    # every account (phase 6 D156); step 2's transfer matcher widens this to every account.
     owners = conn.execute(
-        select(account_table.c.iban_hmac).where(account_table.c.is_owner_account.is_(True))
+        select(account_table.c.iban_hmac).where(
+            account_table.c.purpose == AccountPurpose.PRIVATE.value,
+            account_table.c.iban_hmac.is_not(None),
+        )
     ).scalars()
     plans, documents = _evidence(conn, iban_key=iban_key, today=today, exclude_for=for_transaction)
     return MatchContext(
-        owner_account_hmacs=sorted({bytes(h).hex() for h in owners}),
+        own_account_hmacs=sorted({bytes(h).hex() for h in owners}),
         tenancies=_tenancies(conn),
         loans=_loans(conn),
         documents=documents,
@@ -1091,7 +1097,9 @@ def waiting_lines(conn: Connection, kind: str, entity_id: UUID) -> list[UUID]:
     elif kind == enqueue.TRIGGER_ACCOUNT:
         owner = conn.execute(
             select(account_table.c.iban_hmac).where(
-                account_table.c.id == entity_id, account_table.c.is_owner_account.is_(True)
+                account_table.c.id == entity_id,
+                account_table.c.purpose == AccountPurpose.PRIVATE.value,
+                account_table.c.iban_hmac.is_not(None),
             )
         ).scalar_one_or_none()
         if owner is None:

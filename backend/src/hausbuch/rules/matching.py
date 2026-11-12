@@ -104,7 +104,7 @@ class _Split:
 def match_owner_transfer(tx: MatchTransaction, context: MatchContext) -> AllocationSet | None:
     if tx.counterparty_iban_hmac is None:
         return None
-    if tx.counterparty_iban_hmac not in context.owner_account_hmacs:
+    if tx.counterparty_iban_hmac not in context.own_account_hmacs:
         return None
     return _as_set(tx, _owner_split(tx), AllocationMethod.MATCHER_OWNER)
 
@@ -807,7 +807,7 @@ def _month_end(day: date) -> date:
 def matcher_owns(hmac: str, context: MatchContext) -> bool:
     """Whether a deterministic matcher owns this counterparty (D38)."""
     return (
-        hmac in context.owner_account_hmacs
+        hmac in context.own_account_hmacs
         or any(hmac in t.tenant_iban_hmacs for t in context.tenancies)
         or any(hmac == loan.account_iban_hmac for loan in context.loans)
     )
@@ -844,3 +844,22 @@ def _eur(amount: Decimal) -> str:
     if cents != "00":
         text += f",{cents}"
     return f"{'-' if value < 0 else ''}{text} €"
+
+
+# --- Phase 6 (docs/phases/phase-6.md D160, D162; built in steps 1 and 2) ------------------
+
+PHASE6_RULES_STEP = "phase 6 step 1 (learned rules on a private account)"
+PHASE6_TRANSFERS_STEP = "phase 6 step 2 (internal transfers)"
+
+
+def merchant_pattern(name: str) -> str:
+    """D160: a card line's counterparty name to an anchored rule pattern: upper-cased; digits,
+    slashes, dots and the trailing location token (`//<Ort>/<Land>`) removed; whitespace
+    collapsed; regex-escaped; anchored at the start (fixture merchant_pattern.yaml)."""
+    raise NotImplementedError(PHASE6_RULES_STEP)
+
+
+def match_transfer(tx: MatchTransaction, context: MatchContext) -> AllocationSet | None:
+    """D162: a line whose counterparty is one of the household's own accounts, linked to the
+    open leg of the other side (fixture transfers.yaml)."""
+    raise NotImplementedError(PHASE6_TRANSFERS_STEP)
