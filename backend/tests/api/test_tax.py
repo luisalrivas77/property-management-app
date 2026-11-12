@@ -10,16 +10,29 @@ from uuid import UUID, uuid4
 import pytest
 from api_support import TOKEN_A, TOKEN_B, auth_for, create, flat, ok
 from db.db_support import _admin
+from db.matching_support import World
+from db.test_services_private_matching import NOW as PRIVATE_NOW
+from db.test_services_private_matching import Private
 from test_bank_parsers import CAMT, build
 
+from hausbuch.db.session import workspace_transaction
+from hausbuch.schemas.allocation import (
+    AllocationCategory,
+    AllocationDraft,
+    AllocationMethod,
+    AllocationSet,
+)
 from hausbuch.schemas.tax import (
     AnlageVDraft,
     Coverage,
     DraftHeader,
     DraftTotals,
     RuleSetStamp,
+    TaxInputCreate,
 )
+from hausbuch.services import allocations
 from hausbuch.services import tax as tax_service
+from hausbuch.services.tax_inputs import create_tax_input
 
 pytestmark = pytest.mark.db
 
@@ -442,3 +455,66 @@ def test_another_workspaces_property_has_no_sources(client_a, client_b, booked):
         assert response.status_code == 404
         assert response.json()["error"] == "not_found"
         assert booked["repair_id"] not in response.text
+
+
+# Phase 6 D161 (review F5): a bill of the flat paid from a private account. Its line is the
+# bill's proof and a source of the private_cost row's draft line, so the sources drawer must
+# resolve it too, as a payment with its masked IBAN only.
+CRAFTSMAN_IBAN = "DE19100000000000000074"  # Bundesbank test bank code 10000000
+
+
+def test_the_sources_resolve_a_private_line_the_draft_cites(client_a, app_engine, auth_a):
+    world = World(app_engine, auth_a.workspace_id, now=PRIVATE_NOW)
+    with workspace_transaction(world.engine, world.ws) as conn:
+        bill = world._document_row(conn, type="invoice", subtype=None, title="Rechnung")
+    row = world.cmd(
+        create_tax_input,
+        world.property_id,
+        TaxInputCreate.model_validate(
+            {
+                "property_id": str(world.property_id),
+                "kind": "private_cost",
+                "tax_year": 2026,
+                "document_id": str(bill),
+                "value": {"cost_class": "other", "label": "Rechnung Sanitär", "amount": "595.00"},
+            }
+        ),
+    )
+    line = Private(world).line(
+        date(2026, 9, 10), "-595.00", name="Sanitär Beispiel GmbH", iban=CRAFTSMAN_IBAN
+    )
+    world.cmd(
+        allocations.record_set,
+        AllocationSet(
+            transaction_id=line,
+            allocations=[
+                AllocationDraft(
+                    amount=Decimal("-595.00"),
+                    category=AllocationCategory.HH_PROPERTY_COST,
+                    property_id=world.property_id,
+                    document_id=bill,
+                )
+            ],
+            method=AllocationMethod.USER,
+            confidence=Decimal("1.000"),
+        ),
+        confirm=True,
+        auto=False,
+    )
+    pid = str(world.property_id)
+
+    draft = ok(_draft(client_a, pid, tax_year=2026))
+    [cost_line] = [ln for ln in draft["lines"] if ("tax_input", str(row.id)) in _ids(ln)]
+    cited = {s["id"] for s in cost_line["sources"] if s["kind"] == "allocation"}
+    assert len(cited) == 1  # the private line, never summed: the row's amount stands
+    assert cost_line["amount"] == "595.00"
+
+    response = _sources(client_a, pid, tax_year=2026)
+    rows = {r["allocation_id"]: r for r in ok(response)}
+    assert cited <= set(rows)
+    [proof] = [rows[i] for i in cited]
+    assert proof["transaction_id"] == str(line)
+    assert (proof["amount"], proof["category"]) == ("-595.00", "hh_property_cost")
+    assert proof["document_id"] == str(bill)
+    assert proof["counterparty_iban_masked"] is not None
+    assert CRAFTSMAN_IBAN not in response.text and "Sanitär Beispiel" not in response.text

@@ -135,7 +135,9 @@ def anlage_v_sources(
     allocations the draft reads (every year of the property, since the 15 % window, §82b and
     the ten-day rule reach across years), as AllocationFact: date, amount, category, period,
     transaction and Beleg ids and the masked counterparty IBAN only, never a name or purpose
-    text (D5). The same checks and errors as anlage_v_draft."""
+    text (D5). Also the private-account lines the draft takes as a bill's proof (phase 6
+    D161), so a proof the draft cites resolves here too. The same checks and errors as
+    anlage_v_draft."""
     _year_checked(conn, property_id, tax_year, today)
     units = list_units(conn, property_id)
     tenancies = _tenancies(conn, [u.id for u in units])
@@ -146,7 +148,7 @@ def anlage_v_sources(
         _accounts(conn, property_id),
         due_day={t.id: t.rent_due_day for t in tenancies},
         loans={lo.id: lo for lo in loans},
-    )
+    ) + _private_proofs(conn, property_id)
 
 
 def _year_checked(
@@ -624,7 +626,15 @@ def _private_proofs(conn: Connection, property_id: UUID) -> list[AllocationFact]
     a bill, as the draft reads them (account_purpose private: a proof, never a cost)."""
     a, t = allocation_table.c, transaction_table.c
     rows = conn.execute(
-        select(a.id, a.transaction_id, a.amount, a.document_id, t.booking_date, t.value_date)
+        select(
+            a.id,
+            a.transaction_id,
+            a.amount,
+            a.document_id,
+            t.booking_date,
+            t.value_date,
+            t.counterparty_iban_masked,
+        )
         .select_from(allocation_table.join(transaction_table, t.id == a.transaction_id))
         .join(account_table, account_table.c.id == t.account_id)
         .where(
@@ -649,6 +659,7 @@ def _private_proofs(conn: Connection, property_id: UUID) -> list[AllocationFact]
             property_id=property_id,
             document_id=r.document_id,
             account_purpose=AccountPurpose.PRIVATE,
+            counterparty_iban_masked=r.counterparty_iban_masked,
         )
         for r in rows
     ]
