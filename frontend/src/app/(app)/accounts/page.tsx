@@ -28,11 +28,19 @@ const GROUPS: { label: string; kinds: Account["kind"][] }[] = [
 ];
 
 async function loadAccounts() {
-  const [accounts, owners, loans] = await Promise.all([
+  const [accounts, owners, properties] = await Promise.all([
     ok(api.GET("/api/accounts")),
     ok(api.GET("/api/owners")),
-    ok(api.GET("/api/loans")),
+    ok(api.GET("/api/properties")),
   ]);
+  // No workspace-wide loan list exists; the loans are read per property, as on Übersicht.
+  const loans = (
+    await Promise.all(
+      properties.map((property) =>
+        ok(api.GET("/api/properties/{property_id}/loans", { params: { path: { property_id: property.id } } })),
+      ),
+    )
+  ).flat();
   const [rows, loanRows] = await Promise.all([
     Promise.all(
       accounts.map(

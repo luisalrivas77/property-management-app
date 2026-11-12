@@ -6,6 +6,7 @@ routes: status codes, the multipart import, the read shapes (no IBAN, no HMAC) a
 
 import pytest
 from api_support import create, ok
+from db.db_support import _admin
 from test_bank_parsers import CAMT, CSV, build
 
 pytestmark = pytest.mark.db
@@ -182,7 +183,18 @@ def test_a_patch_sets_kind_purpose_and_provider_as_one_event(client_a):
     assert ok(client_a.patch(url, json={"provider": None}))["provider"] is None
 
 
-def test_a_purpose_change_must_fit_the_bookings(client_a):
+@pytest.fixture
+def user_a(auth_a, dbname):
+    """client_a's user as a real app_user, so a confirmation's confirmed_by (FK) holds."""
+    with _admin(dbname) as conn:
+        conn.execute(
+            "INSERT INTO app_user (id, workspace_id, email, display_name)"
+            " VALUES (%s, %s, %s, 'Test')",
+            (auth_a.user_id, auth_a.workspace_id, f"{auth_a.user_id}@example.test"),
+        )
+
+
+def test_a_purpose_change_must_fit_the_bookings(client_a, user_a):
     """D159 for a change of purpose: the rental account holding a rental booking cannot
     become private; once the booking is a code both purposes allow, it can, and back."""
     account = create(client_a, "/api/accounts", ACCOUNT)

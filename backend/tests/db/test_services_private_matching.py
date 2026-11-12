@@ -37,7 +37,7 @@ from hausbuch.settings import Settings
 pytestmark = pytest.mark.db
 
 NOW = datetime(2026, 11, 12, 8, 0, tzinfo=UTC)
-PRIVATE_IBAN = "DE02100000000000000071"  # Bundesbank test bank code 10000000
+PRIVATE_IBAN = "DE03100000000000000071"  # Bundesbank test bank code 10000000
 OWNER_A = Actor(ActorType.USER, f"user:{uuid.UUID(int=0xA)}")
 OWNER_B = Actor(ActorType.USER, f"user:{uuid.UUID(int=0xB)}")
 NO_AI_TEXT = review._PRIVATE_NO_AI_REASON
