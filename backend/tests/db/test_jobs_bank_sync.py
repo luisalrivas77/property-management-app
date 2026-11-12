@@ -25,12 +25,18 @@ from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.jobs import bank_sync as job
+from hausbuch.jobs import bank_sync_schedule as schedule_job
 from hausbuch.jobs.document_read import JobDeps, RetryLater
 from hausbuch.rules import errors as E
 from hausbuch.rules.errors import RuleError
 from hausbuch.schemas.api import InboxItemKind
 from hausbuch.schemas.bank import AccountCreate
-from hausbuch.schemas.bank_sync import BankConnectionCreate, BankConnectionPatch, SyncStatus
+from hausbuch.schemas.bank_sync import (
+    BankConnectionCreate,
+    BankConnectionPatch,
+    SyncStatus,
+    SyncTrigger,
+)
 from hausbuch.schemas.enums import AccountSource, BalanceSource, DocumentSource, ImportStatus
 from hausbuch.schemas.events import EventType
 from hausbuch.services import bank_sync as service
@@ -50,6 +56,7 @@ PRODUCT_ID = "PRODUCTID0123456789ABCDEF"
 LOGIN = "loginname-xyz"
 URL = "https://fints.example.org/fints"
 SECRETS = (PIN, PRODUCT_ID, LOGIN)
+MORNING = datetime(2026, 11, 12, 6, 30, tzinfo=UTC)  # the daily run (D120: 06:30 UTC)
 
 ZIP = build(next(c for c in CAMT.cases if c.id == "sparkasse_zip_of_daily_reports").input)
 with zipfile.ZipFile(io.BytesIO(ZIP)) as _archive:
@@ -126,6 +133,26 @@ class Bank:
         )
         return job.run_bank_sync(
             deps, workspace_id=self.ws, sync_id=sync_id, attempt=attempt, network=network
+        )
+
+    def schedule(self, at=None, settings=None):
+        """One run of the daily task over this workspace (D120)."""
+        deps = JobDeps(
+            self.engine,
+            settings or self.settings,
+            self.deps.blob_store,
+            None,
+            clock=lambda: at or MORNING,
+        )
+        return schedule_job.run_bank_sync_scheduled(deps, workspace_ids=[self.ws])
+
+    def auto_sync(self, on=True, account_id=None):
+        self.run(
+            self.ws,
+            service.update_connection,
+            account_id or self.account.id,
+            BankConnectionPatch(auto_sync=on),
+            now=T0,
         )
 
     def sync(self, sync_id):
@@ -590,6 +617,174 @@ def test_a_scheduled_run_that_meets_a_demand_ends_the_dialog_and_waits(bank):
     restarted = bank.start(now=T1 + timedelta(seconds=10))  # the card's button
     assert restarted.id == sync_id and restarted.trigger.value == "manual"
     assert bank.job(sync_id, _good(approval_polls=0), at=T1 + timedelta(seconds=20)) == "done"
+
+
+# --- The daily schedule (D120, step 2) -------------------------------------------------------
+
+APPROVAL_SENTENCE = (
+    "Der automatische Abruf braucht eine Freigabe: jetzt abrufen und in der S-pushTAN-App"
+    " bestätigen"
+)
+
+
+def _approval_cards(bank, now=MORNING):
+    return [
+        i
+        for i in bank.read(bank.ws, review.inbox, now=now)
+        if i.kind is InboxItemKind.BANK_APPROVAL_NEEDED
+    ]
+
+
+def _bank_sync_jobs(bank):
+    with workspace_transaction(bank.engine, bank.ws) as conn:
+        return conn.execute(  # the job table has no RLS: this workspace's jobs only
+            text(
+                "SELECT args, lock FROM procrastinate_jobs"
+                " WHERE task_name = 'bank_sync' AND args->>'workspace_id' = :ws"
+            ),
+            {"ws": str(bank.ws)},
+        ).all()
+
+
+def test_the_schedule_queues_one_run_per_connection_with_auto_sync_on(bank):
+    other = bank.run(
+        bank.ws,
+        create_account,
+        AccountCreate(
+            label="Zweitkonto",
+            bank="Sparkasse",
+            iban=OTHER_IBAN,
+            opening_balance=Decimal("0.00"),
+            opening_balance_on=date(2026, 3, 31),
+        ),
+        iban_key=TEST_IBAN_KEY,
+        now=T0,
+    )
+    bank.run(
+        bank.ws,
+        service.create_connection,
+        BankConnectionCreate(
+            account_id=other.id, bank_code="10000000", fints_url=URL, login_name=LOGIN
+        ),
+        now=T0,
+    )
+    nothing = bank.schedule()
+    assert (nothing.status, dict(nothing.outcomes)) == ("done", {})
+    assert bank.rows(sync_table) == []
+
+    bank.auto_sync()  # only the first account's switch
+    result = bank.schedule()
+    assert dict(result.outcomes) == {"queued": 1} and not result.codes
+    (row,) = bank.rows(sync_table)
+    assert (row.account_id, row.trigger, row.status, row.created_by) == (
+        bank.account.id,
+        "scheduled",
+        "queued",
+        None,
+    )
+    # The manual start's window rule: the day after the anchor up to today in Berlin.
+    assert (row.requested_from, row.requested_to) == (date(2026, 4, 1), date(2026, 11, 12))
+    assert [(j.args, j.lock) for j in _bank_sync_jobs(bank)] == [
+        ({"workspace_id": str(bank.ws), "sync_id": str(row.id)}, f"account:{bank.account.id}")
+    ]
+    (started,) = bank.rows(
+        event_table,
+        event_table.c.type == EventType.ACCOUNT_SYNC_STARTED.value,
+        event_table.c.entity_id == bank.account.id,
+    )
+    assert started.payload["trigger"] == "scheduled"
+    assert (started.actor_type, started.actor_id) == ("system", schedule_job.SCHEDULE_TASK)
+
+
+def test_a_live_run_is_not_queued_twice(bank):
+    bank.auto_sync()
+    bank.start()
+    assert dict(bank.schedule().outcomes) == {"live": 1}
+    assert len(bank.rows(sync_table)) == 1 and len(_bank_sync_jobs(bank)) == 1
+
+
+def test_without_the_fints_secrets_the_schedule_queues_nothing(bank, tmp_path):
+    bank.auto_sync()
+    settings = _settings(tmp_path, fints_pin=None, fints_product_id=None)
+    assert bank.schedule(settings=settings).status == "not_configured"
+    assert bank.rows(sync_table) == [] and _bank_sync_jobs(bank) == []
+
+
+def test_a_scheduled_demand_ends_the_dialog_becomes_a_card_and_the_cards_sync_clears_it(bank):
+    bank.auto_sync()
+    bank.schedule()
+    (row,) = bank.rows(sync_table)
+    outcome = bank.job(row.id, _good(approval_polls=0), at=MORNING + timedelta(seconds=5))
+    assert outcome == "needs_approval"
+    calls = bank.clients[0].calls
+    assert "poll" not in calls and calls[-1] == "close"  # one request, the dialog ended
+    assert bank.clock[0] == 0  # never waited for the phone
+    waiting = bank.sync(row.id)
+    assert (waiting.status, waiting.trigger) == (SyncStatus.NEEDS_APPROVAL, SyncTrigger.SCHEDULED)
+    (approval,) = bank.events(EventType.ACCOUNT_SYNC_APPROVAL_NEEDED)
+    assert approval == {"sync_id": str(row.id), "trigger": "scheduled"}
+
+    (card,) = _approval_cards(bank)
+    assert (card.account_id, card.sync_id) == (bank.account.id, row.id)
+    assert APPROVAL_SENTENCE in card.reasoning
+
+    # The card's button: a manual start restarts the row, and its job polls the approval.
+    later = MORNING + timedelta(hours=1)
+    restarted = bank.start(now=later)
+    assert (restarted.id, restarted.trigger) == (row.id, SyncTrigger.MANUAL)
+    assert _approval_cards(bank, later) == []
+    assert bank.job(row.id, _good(approval_polls=1), at=later + timedelta(seconds=5)) == "done"
+    assert "poll" in bank.clients[1].calls
+    assert bank.connection_row().sca_confirmed_at == later + timedelta(seconds=5)
+    assert _approval_cards(bank, later) == []
+
+
+def test_the_next_morning_leaves_the_approval_alone_until_a_person_acts(bank):
+    bank.auto_sync()
+    bank.schedule()
+    (row,) = bank.rows(sync_table)
+    bank.job(row.id, _good(approval_polls=0), at=MORNING + timedelta(seconds=5))
+
+    next_morning = MORNING + timedelta(days=1)
+    assert dict(bank.schedule(at=next_morning).outcomes) == {"approval_needed": 1}
+    assert len(bank.rows(sync_table)) == 1 and len(_bank_sync_jobs(bank)) == 1
+    assert len(bank.clients) == 1  # no second dialog, so no second request on the phone
+    assert len(_approval_cards(bank, next_morning)) == 1
+
+    # A person acts: the manual sync is approved and imports; the schedule goes on.
+    later = next_morning + timedelta(hours=1)
+    bank.start(now=later)
+    assert bank.job(row.id, _good(approval_polls=0), at=later + timedelta(seconds=5)) == "done"
+    third = MORNING + timedelta(days=2)
+    assert dict(bank.schedule(at=third).outcomes) == {"queued": 1}
+    (new,) = bank.rows(sync_table, sync_table.c.status == "queued")
+    assert new.id != row.id and new.trigger == "scheduled"
+    # The stored state lets the bank serve the read without a request (Q-O35).
+    assert bank.job(new.id, _good(), at=third + timedelta(seconds=5)) == "nothing_new"
+    assert "poll" not in bank.clients[-1].calls
+
+
+def test_a_refused_run_is_not_tried_again_by_the_schedule(bank):
+    bank.auto_sync()
+    sync = bank.start()
+    assert bank.job(sync.id, _good(refuse_at={"accounts": "9942"})) == "failed"
+    assert dict(bank.schedule().outcomes) == {"failed": 1}
+    assert len(bank.rows(sync_table)) == 1  # a wrong PIN is not tried on the next morning
+
+
+def test_an_unreachable_bank_is_tried_again_the_next_morning(bank):
+    bank.auto_sync()
+    sync = bank.start()
+    script = _good(fail_at={"open": FinTSConnectionError("down")})
+    assert bank.job(sync.id, script, attempt=job.MAX_UNREACHABLE_RETRIES) == "failed"
+    assert dict(bank.schedule().outcomes) == {"queued": 1}
+
+
+def test_a_switched_off_connection_is_left_alone(bank):
+    bank.auto_sync()
+    bank.auto_sync(on=False)
+    assert dict(bank.schedule().outcomes) == {}
+    assert bank.connection_row().auto_sync is False
 
 
 # --- Secrets ----------------------------------------------------------------------------------

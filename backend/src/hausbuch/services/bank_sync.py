@@ -61,6 +61,7 @@ from hausbuch.schemas.bank_sync import (
     SyncEvent,
     SyncStatus,
     SyncTrigger,
+    SyncWindow,
     SyncWindowFacts,
     mask_login,
 )
@@ -271,13 +272,7 @@ def start_sync(ctx: CommandContext, account_id: UUID, *, settings: Settings) -> 
         raise RuleError(E.BANK_NOT_CONFIGURED, "the FinTS PIN or product id is not configured")
     if _manual_starts_last_hour(ctx, account_id) >= rules.MANUAL_STARTS_PER_HOUR:
         raise RuleError(E.BANK_RATE_LIMITED, "at most four manual syncs per hour")
-    window = rules.request_window(
-        SyncWindowFacts(
-            opening_balance_on=account.opening_balance_on,
-            last_booking_on=connection.last_booking_on,
-        ),
-        ctx.now.astimezone(LOCAL_TIME_ZONE).date(),
-    )
+    window = _window(ctx, account, connection)
     start = {
         "trigger": SyncTrigger.MANUAL.value,
         "requested_from": window.start,
@@ -314,22 +309,117 @@ def start_sync(ctx: CommandContext, account_id: UUID, *, settings: Settings) -> 
             .values(**start, connection_id=connection.id)
             .returning(sync_table)
         ).one()
+    _announce(ctx, row, SyncTrigger.MANUAL)
+    return _to_sync(row)
+
+
+def _window(ctx: CommandContext, account: Row, connection: Row) -> SyncWindow:
+    """D120's window on today's day in Europe/Berlin (bank.window_invalid when the anchor is
+    today or later)."""
+    return rules.request_window(
+        SyncWindowFacts(
+            opening_balance_on=account.opening_balance_on,
+            last_booking_on=connection.last_booking_on,
+        ),
+        ctx.now.astimezone(LOCAL_TIME_ZONE).date(),
+    )
+
+
+def _announce(ctx: CommandContext, row: Row, trigger: SyncTrigger) -> None:
+    """The run's bank.sync_started event and its job, in the caller's transaction."""
     append_event(
         ctx,
         EventType.ACCOUNT_SYNC_STARTED,
-        account_id,
+        row.account_id,
         BankSyncStarted(
             sync_id=row.id,
-            connection_id=connection.id,
-            trigger=SyncTrigger.MANUAL,
-            requested_from=window.start,
-            requested_to=window.end,
+            connection_id=row.connection_id,
+            trigger=trigger,
+            requested_from=row.requested_from,
+            requested_to=row.requested_to,
         ),
     )
     enqueue.enqueue_bank_sync(
-        ctx.conn, workspace_id=ctx.workspace_id, account_id=account_id, sync_id=row.id
+        ctx.conn, workspace_id=ctx.workspace_id, account_id=row.account_id, sync_id=row.id
     )
-    return _to_sync(row)
+
+
+# --- The daily run (D120, jobs/bank_sync_schedule.py) ----------------------------------------
+
+
+@dataclass(frozen=True)
+class ScheduledStart:
+    """What the daily run did with one connection: `queued` with its run, or why not
+    (rules.schedule_skip's reasons, or `off` when auto_sync was switched off meanwhile)."""
+
+    outcome: str
+    sync: BankSync | None = None
+
+
+SCHEDULE_QUEUED = "queued"
+SCHEDULE_OFF = "off"
+
+
+def auto_sync_accounts(conn: Connection) -> list[UUID]:
+    """The accounts whose connection has auto_sync on (the workspace's, under RLS)."""
+    return list(
+        conn.execute(
+            select(connection_table.c.account_id)
+            .where(connection_table.c.auto_sync.is_(True))
+            .order_by(connection_table.c.created_at, connection_table.c.account_id)
+        ).scalars()
+    )
+
+
+def queue_scheduled_sync(ctx: CommandContext, account_id: UUID) -> ScheduledStart:
+    """D120: queue one scheduled run of the account, through the same window, row, event and
+    job as a manual start, unless rules.schedule_skip says to leave it alone (a live run, an
+    approval the bank asked for, a failure waiting for a person). Never restarts a row: only a
+    person's start does that. No rate limit (it counts manual starts) and no created_by. The
+    caller checks that the PIN and product id are configured. Raises bank.window_invalid
+    when the anchor is today or later."""
+    account = require_row(ctx.conn, account_table, EntityType.ACCOUNT, account_id, for_update=True)
+    connection = _connection_row(ctx.conn, account_id)
+    if not connection.auto_sync:
+        return ScheduledStart(SCHEDULE_OFF)
+    live = _live_row(ctx.conn, account_id)
+    last = _latest_finished(ctx.conn, account_id)
+    skip = rules.schedule_skip(
+        None if live is None else _S(live.status),
+        None if last is None else _S(last.status),
+        None if last is None else last.error_code,
+    )
+    if skip is not None:
+        return ScheduledStart(skip)
+    window = _window(ctx, account, connection)
+    row = ctx.conn.execute(
+        insert(sync_table)
+        .values(
+            workspace_id=ctx.workspace_id,
+            account_id=account_id,
+            connection_id=connection.id,
+            trigger=SyncTrigger.SCHEDULED.value,
+            status=_S.QUEUED.value,
+            requested_from=window.start,
+            requested_to=window.end,
+            started_at=ctx.now,
+            created_by=None,
+            created_at=ctx.now,
+            updated_at=ctx.now,
+        )
+        .returning(sync_table)
+    ).one()
+    _announce(ctx, row, SyncTrigger.SCHEDULED)
+    return ScheduledStart(SCHEDULE_QUEUED, _to_sync(row))
+
+
+def _latest_finished(conn: Connection, account_id: UUID) -> Row | None:
+    return conn.execute(
+        select(sync_table)
+        .where(sync_table.c.account_id == account_id, sync_table.c.finished_at.is_not(None))
+        .order_by(sync_table.c.finished_at.desc(), sync_table.c.id.desc())
+        .limit(1)
+    ).one_or_none()
 
 
 def _manual_starts_last_hour(ctx: CommandContext, account_id: UUID) -> int:
@@ -590,11 +680,50 @@ def _response_code(conn: Connection, row: Row) -> str | None:
     ).scalar_one_or_none()
 
 
+# The bank_approval_needed card (D120): its first sentence is the spec's.
+APPROVAL_NEEDED_REASONING = (
+    "Der automatische Abruf braucht eine Freigabe: jetzt abrufen und in der S-pushTAN-App"
+    " bestätigen."
+)
+APPROVAL_NEEDED_QUESTION = (
+    "„Jetzt abrufen“ drücken und die Anfrage gleich in der S-pushTAN-App freigeben. Bis dahin"
+    " ruft Hausbuch dieses Konto nicht automatisch ab, damit keine weiteren Anfragen aufs"
+    " Handy kommen."
+)
+
+
 def bank_sync_items(conn: Connection) -> list[InboxItem]:
-    """The Zu prüfen cards of §4.6 and D117, computed on read from each account's latest
-    finished run: bank_sync_failed while it failed, bank_balance_drift while it brought
-    nothing new and HKSAL differed from the last reconciled closing. A later good run ends
-    either card. (bank_approval_needed, for a scheduled run, comes with step 2's schedule.)"""
+    """The Zu prüfen cards of §4.6, D117 and D120, computed on read:
+
+    - bank_approval_needed while a scheduled run waits at `needs_approval` (the bank asked
+      for an approval and the job ended the dialog). A person's start restarts that row as a
+      manual run, which ends the card;
+    - from each account's latest finished run: bank_sync_failed while it failed,
+      bank_balance_drift while it brought nothing new and HKSAL differed from the last
+      reconciled closing. A later good run ends either card."""
+    items = [
+        InboxItem(
+            kind=InboxItemKind.BANK_APPROVAL_NEEDED,
+            created_at=row.updated_at,
+            reasoning=APPROVAL_NEEDED_REASONING,
+            question=APPROVAL_NEEDED_QUESTION,
+            account_id=row.account_id,
+            sync_id=row.id,
+        )
+        for row in conn.execute(
+            select(sync_table)
+            .where(
+                sync_table.c.status == _S.NEEDS_APPROVAL.value,
+                sync_table.c.trigger == SyncTrigger.SCHEDULED.value,
+            )
+            .order_by(
+                sync_table.c.account_id,
+                sync_table.c.updated_at.desc(),
+                sync_table.c.id.desc(),
+            )
+            .distinct(sync_table.c.account_id)
+        )
+    ]
     latest = (
         select(sync_table)
         .where(sync_table.c.finished_at.is_not(None))
@@ -605,7 +734,6 @@ def bank_sync_items(conn: Connection) -> list[InboxItem]:
         )
         .distinct(sync_table.c.account_id)
     )
-    items: list[InboxItem] = []
     for row in conn.execute(latest):
         if row.status == _S.FAILED.value:
             reasoning, question = failed_card_text(row.error_code, _response_code(conn, row))

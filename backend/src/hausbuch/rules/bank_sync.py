@@ -114,6 +114,46 @@ def next_state(status: SyncStatus, event: SyncEvent, trigger: SyncTrigger) -> Sy
         raise ValueError(f"no transition from {status.value} on {event.value}") from None
 
 
+# --- The daily schedule (D120, step 2) -------------------------------------------------------
+
+# Why the daily run leaves a connection alone (its log counts them; nothing is written):
+SKIP_APPROVAL_NEEDED = "approval_needed"  # the bank asked for an approval; a person acts
+SKIP_LIVE = "live"  # a run of the account is queued, running or importing
+SKIP_FAILED = "failed"  # the latest run failed and waits for a person
+# The one failure the next morning may simply try again: the bank was not reachable (the
+# job already retried it twice). Every other failure waits for a person (§4.3), above all a
+# refusal: a wrong PIN tried on three mornings would lock the access.
+SCHEDULE_RETRIES_AFTER = frozenset({E.BANK_UNREACHABLE})
+
+
+def schedule_skip(
+    live_status: SyncStatus | None,
+    last_status: SyncStatus | None,
+    last_error_code: str | None,
+) -> str | None:
+    """Whether the daily run (D120) queues a run of a connection whose auto_sync is on: None
+    to queue one, else why not. `live_status` is the account's live run's status (None when
+    there is none); `last_status` and `last_error_code` are the latest finished run's.
+
+    - A live `needs_approval` row is a demand the bank made; for a scheduled run the job
+      already ended the dialog and the Zu prüfen card asks a person to start a manual sync
+      (which restarts that row). The next mornings leave it alone, so the phone gets one
+      request and then none until a person acts: every new dialog that meets the demand
+      would send another one. It is closed only by that manual start (or its 35-day
+      bank.sync_stale reminder says so).
+    - Any other live row is a run in progress (a dead job's row is retried by the worker's
+      stalled-job sweep, jobs/worker.py, so it does not stay live).
+    - A failed latest run waits for a person, except bank.unreachable; the next good run,
+      manual or scheduled, lets the schedule go on."""
+    if live_status is SyncStatus.NEEDS_APPROVAL:
+        return SKIP_APPROVAL_NEEDED
+    if live_status is not None:
+        return SKIP_LIVE
+    if last_status is SyncStatus.FAILED and last_error_code not in SCHEDULE_RETRIES_AFTER:
+        return SKIP_FAILED
+    return None
+
+
 def is_stale(updated_at: datetime, now: datetime, approval_timeout_s: int) -> bool:
     """A live row nobody has touched for longer than a run can take (the approval wait plus
     STALE_GRACE_S): its job is gone, so a person's start may take the row over."""

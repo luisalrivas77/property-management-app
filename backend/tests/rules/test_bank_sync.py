@@ -242,3 +242,36 @@ def test_a_bank_text_loses_the_login_and_long_numbers():
     assert out == "Kunde <hidden> unbekannt, Konto ##### gesperrt, 3 Versuche"
     assert rules.redact_bank_text("x" * 500) == "x" * rules.BANK_TEXT_MAX
     assert rules.redact_bank_text(None) == ""
+
+
+# --- The daily schedule (D120, step 2) -------------------------------------------------------
+
+
+def test_the_schedule_queues_when_nothing_is_live_and_nothing_failed():
+    assert rules.schedule_skip(None, None, None) is None  # the first run
+    for last in (S.DONE, S.NOTHING_NEW):
+        assert rules.schedule_skip(None, last, None) is None
+    assert rules.schedule_skip(None, S.NOTHING_NEW, "bank.balance_drift") is None
+
+
+def test_an_approval_the_bank_asked_for_waits_for_a_person():
+    # One request on the phone, then none until a person starts a manual sync.
+    assert rules.schedule_skip(S.NEEDS_APPROVAL, S.DONE, None) == rules.SKIP_APPROVAL_NEEDED
+
+
+@pytest.mark.parametrize("live", [S.QUEUED, S.RUNNING, S.IMPORTING])
+def test_a_live_run_is_never_queued_twice(live):
+    assert rules.schedule_skip(live, None, None) == rules.SKIP_LIVE
+
+
+@pytest.mark.parametrize(
+    "code",
+    ["bank.refused", "bank.approval_timeout", "bank.state_rejected", "bank.not_configured"],
+)
+def test_a_failure_waits_for_a_person(code):
+    # A wrong PIN tried on three mornings would lock the access.
+    assert rules.schedule_skip(None, S.FAILED, code) == rules.SKIP_FAILED
+
+
+def test_an_unreachable_bank_is_tried_again_the_next_morning():
+    assert rules.schedule_skip(None, S.FAILED, "bank.unreachable") is None
