@@ -21617,6 +21617,30 @@
               }
             ],
             "title": "Error Code"
+          },
+          "stated_closing": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stated Closing"
+          },
+          "stated_closing_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stated Closing On"
           }
         },
         "additionalProperties": false,

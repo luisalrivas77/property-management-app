@@ -37,6 +37,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
+from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import possible_duplicate as duplicate_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
@@ -216,12 +217,19 @@ def import_statement(
             first_booking_on=first,
             last_booking_on=last,
             transaction_ids=new_ids,
+            stated_closing=statement.stated_balance,
+            stated_closing_on=statement.stated_balance_on,
         ),
         effective_date=last,
     )
     checked = _check(ctx, account, row, announce=True, file_error=outcome.balance_error)
     recheck_account(ctx, account_id, skip=imported)
-    return checked
+    return checked.model_copy(
+        update={
+            "stated_closing": statement.stated_balance,
+            "stated_closing_on": statement.stated_balance_on,
+        }
+    )
 
 
 def declare_balances(
@@ -564,7 +572,7 @@ def _record_duplicates(
 
 def get_import(conn: Connection, import_id: UUID) -> StatementImport | None:
     row = conn.execute(select(*_IMPORT_COLUMNS).where(import_table.c.id == import_id)).one_or_none()
-    return None if row is None else _to_import(row)
+    return None if row is None else _with_stated(conn, [_to_import(row)])[0]
 
 
 def list_imports(conn: Connection, account_id: UUID) -> list[StatementImport]:
@@ -574,7 +582,43 @@ def list_imports(conn: Connection, account_id: UUID) -> list[StatementImport]:
         .where(import_table.c.account_id == account_id)
         .order_by(import_table.c.created_at.desc(), import_table.c.id)
     )
-    return [_to_import(r) for r in rows]
+    return _with_stated(conn, [_to_import(r) for r in rows])
+
+
+def _stated_balances(
+    conn: Connection, import_ids: Sequence[UUID]
+) -> dict[UUID, tuple[Decimal, date]]:
+    """Phase 6 D173 (3): the balance each import's file stated beside its lines, from its
+    statement.imported event (only a DKB CSV states one)."""
+    if not import_ids:
+        return {}
+    rows = conn.execute(
+        select(event_table.c.entity_id, event_table.c.payload).where(
+            event_table.c.type == EventType.STATEMENT_IMPORTED.value,
+            event_table.c.entity_id.in_(import_ids),
+            event_table.c.payload.has_key("stated_closing"),
+        )
+    )
+    found: dict[UUID, tuple[Decimal, date]] = {}
+    for row in rows:
+        closing, on = row.payload.get("stated_closing"), row.payload.get("stated_closing_on")
+        if closing is not None and on is not None:
+            found[row.entity_id] = (Decimal(str(closing)), date.fromisoformat(on))
+    return found
+
+
+def _with_stated(conn: Connection, imports: list[StatementImport]) -> list[StatementImport]:
+    stated = _stated_balances(
+        conn, [i.id for i in imports if i.balance_source != BalanceSource.FILE]
+    )
+    return [
+        i
+        if i.id not in stated
+        else i.model_copy(
+            update={"stated_closing": stated[i.id][0], "stated_closing_on": stated[i.id][1]}
+        )
+        for i in imports
+    ]
 
 
 def list_transactions(
@@ -645,6 +689,9 @@ def import_inbox_items(conn: Connection) -> list[InboxItem]:
                 [ImportStatus.UNRECONCILED.value, ImportStatus.IMPORTED.value]
             )
         )
+    ).all()
+    stated = _stated_balances(
+        conn, [r.id for r in rows if r.declared_closing is None and r.last_booking_on]
     )
     for row in rows:
         if row.status == ImportStatus.UNRECONCILED.value:
@@ -654,6 +701,26 @@ def import_inbox_items(conn: Connection) -> list[InboxItem]:
                     created_at=row.updated_at,
                     reasoning=_IMPORT_REASONS.get(row.error_code, _DEFAULT_REASON),
                     question=_IMPORT_QUESTIONS.get(row.error_code, _DEFAULT_QUESTION),
+                    document_id=row.document_id,
+                    import_id=row.id,
+                )
+            )
+        elif row.id in stated:
+            # Phase 6 D173 (3), Q-O75: the file's „Kontostand vom“ pre-fills the closing; the
+            # user confirms it is the balance after the file's last booking.
+            items.append(
+                InboxItem(
+                    kind=InboxItemKind.IMPORT_PENDING_BALANCE,
+                    created_at=row.created_at,
+                    reasoning=(
+                        f"Die Datei nennt den Kontostand vom {stated[row.id][1]:%d.%m.%Y}, "
+                        "aber keinen Saldo zu ihren Umsätzen. Hausbuch schlägt ihn als "
+                        "Endsaldo vor."
+                    ),
+                    question=(
+                        "Ist das der Saldo nach der letzten Buchung vom "
+                        f"{row.last_booking_on:%d.%m.%Y}?"
+                    ),
                     document_id=row.document_id,
                     import_id=row.id,
                 )

@@ -8222,6 +8222,10 @@ export interface components {
             status: components["schemas"]["ImportStatus"];
             /** Error Code */
             error_code: string | null;
+            /** Stated Closing */
+            stated_closing?: string | null;
+            /** Stated Closing On */
+            stated_closing_on?: string | null;
         };
         /** SumComponent */
         SumComponent: {

@@ -457,6 +457,10 @@ class StatementImported(Schema):
     first_booking_on: date | None = None
     last_booking_on: date | None = None
     transaction_ids: list[UUID] = Field(default_factory=list)  # the new lines
+    # Phase 6 D173 (3): the balance the file states beside its lines (DKB's „Kontostand
+    # vom“), the pre-fill of the closing the user confirms; absent for every other format.
+    stated_closing: Money | None = None
+    stated_closing_on: date | None = None
 
 
 class StatementBalanceChecked(Schema):
