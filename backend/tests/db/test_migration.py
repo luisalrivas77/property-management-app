@@ -66,6 +66,8 @@ MIGRATION_TABLES = {
     "inbound_mail_attachment",
     "reminder_ack",
     "notification",
+    # Phase 5 step 2b (docs/phases/phase-5.md D154, migration 0024)
+    "bank_statement",
 }
 # Procrastinate's own tables (0005): not RLS'd, no workspace_id (D20). The one exclusion.
 QUEUE_TABLE_PREFIX = "procrastinate_"
