@@ -63,4 +63,7 @@ def test_an_unknown_or_other_bank_is_not_dkb(name):
 
 def test_a_dkb_name_in_any_case_with_spaces_is_dkb():
     assert rules.is_dkb("  dkb ag")
+    assert rules.is_dkb("Deutsche Kreditbank AG")
+    assert rules.is_dkb("  deutsche\n  KREDITBANK  Aktiengesellschaft")
+    assert not rules.is_dkb("Sparkasse Musterstadt")
     assert not rules.auto_sync_allowed(" Dkb AG ", [False])

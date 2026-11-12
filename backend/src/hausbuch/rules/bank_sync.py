@@ -379,9 +379,13 @@ CLEAN_SYNCS_FOR_AUTO = 2  # D173 (5): two consecutive manual syncs without an ap
 
 
 def is_dkb(bank_name: str | None) -> bool:
-    """The BPD's bank name is DKB's: it starts with "DKB" (the BPD's exact spelling is
-    answered by the first real connection, D173 (7); step 0's reading)."""
-    return bank_name is not None and bank_name.strip().upper().startswith("DKB")
+    """The BPD's bank name is DKB's: it starts with "DKB", or it contains "DEUTSCHE
+    KREDITBANK" once its spaces are collapsed and it is upper-cased. Both spellings are
+    accepted until the first real dialog answers which one the BPD carries (D173 (7))."""
+    if bank_name is None:
+        return False
+    normalised = " ".join(bank_name.split()).upper()
+    return normalised.startswith("DKB") or "DEUTSCHE KREDITBANK" in normalised
 
 
 def approval_text(bank_name: str | None) -> str | None:
