@@ -411,16 +411,46 @@ def _on_bill(world: World, tx, doc) -> None:
     )
 
 
-def test_a_bill_a_private_line_pays_proposes_no_private_cost_and_says_where(
+@pytest.mark.parametrize("booked", [None, AllocationCategory.HH_OTHER])
+def test_a_bill_read_after_its_private_line_proposes_its_private_cost(
+    world, run, read, job, blob_store, enqueued, booked
+):
+    """Second review F-A: a private line that is only a document hit of the bill (still
+    waiting, or booked as something else) is no reason to drop the reading's private_cost: no
+    card would ever offer the rows. The reading proposes them, and says nothing of a payment."""
+    ws = world.ws
+    tx = _private_line(world, date(2026, 6, 14))  # a document hit by its reference
+    if booked is not None:
+        world.cmd(
+            allocations.record_set,
+            AllocationSet(
+                transaction_id=tx,
+                allocations=[AllocationDraft(amount=Decimal("-297.50"), category=booked)],
+                method=AllocationMethod.USER,
+                confidence=Decimal("1.000"),
+            ),
+            confirm=True,
+            auto=False,
+        )
+    doc, ready, _ = _read_ready(run, job, ws, blob_store, enqueued, INVOICE, _repair(), b"%PDF q")
+    assert not world.query(matching.paid_from_private_account, doc.id, iban_key=TEST_IBAN_KEY)
+    assert "tax_input:private_cost:repairs" in {r.key for r in ready.records}
+    typing = next(r for r in ready.records if r.key == "typing")
+    assert not any("Mietkonto" in n or "privaten Konto" in n for n in typing.notes)
+
+
+def test_a_bill_its_private_line_carries_proposes_no_private_cost_and_says_where(
     world, run, read, job, blob_store, enqueued
 ):
-    """Review F4 (ii): the line is a private account's, so the reading proposes no
-    private_cost (the line's card in Zu prüfen does) and never says „vom Mietkonto“."""
+    """Review F4 (ii): once a private line is booked hh_property_cost with the bill, a reading
+    of the bill proposes no private_cost (the line's card in Zu prüfen does) and never says
+    „vom Mietkonto“."""
     ws = world.ws
-    _private_line(world, date(2026, 6, 14))  # a document hit by its reference
-    doc, ready, _ = _read_ready(run, job, ws, blob_store, enqueued, INVOICE, _repair(), b"%PDF q")
+    doc, _first = _linked_bill(world, run, job, blob_store, enqueued, b"%PDF q2")
+    _private_line(world, date(2026, 6, 14), doc.id)
     assert not world.query(matching.paid_from_rental_account, doc.id, iban_key=TEST_IBAN_KEY)
     assert world.query(matching.paid_from_private_account, doc.id, iban_key=TEST_IBAN_KEY)
+    ready = _reread(run, job, ws, doc, _repair())
     assert not [r.key for r in ready.records if r.key.startswith("tax_input:")]
     typing = next(r for r in ready.records if r.key == "typing")
     assert not any("Mietkonto" in n for n in typing.notes)

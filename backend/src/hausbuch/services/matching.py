@@ -588,9 +588,12 @@ def paid_from_rental_account(
 def paid_from_private_account(
     conn: Connection, document_id: UUID, *, iban_key: bytes | None = None
 ) -> bool:
-    """Phase 6 D161 (review F4): the same test over the private accounts' lines. Such a bill
-    is still no D135 private cost of the reading: D161's path 2 card proposes its rows from
-    the line (services.property_costs), so they are never proposed twice."""
+    """Phase 6 D161 (review F4): a live private line is booked hh_property_cost with this
+    bill as its Beleg. Such a bill is no D135 private cost of the reading: D161's path 2 card
+    proposes its rows from the line (services.property_costs), so they are never proposed
+    twice. A bare document hit on a private line is not enough (second review F-A): that line
+    may be booked as something else, or still waiting, and then no card would ever offer the
+    rows, so the reading proposes them itself."""
     return _paid_from(conn, document_id, AccountPurpose.PRIVATE, iban_key)
 
 
@@ -601,17 +604,16 @@ def _paid_from(
     of_purpose = (
         select(t.id).join(account_table, acc.id == t.account_id).where(acc.purpose == purpose.value)
     )
-    carried = conn.execute(
-        select(
-            exists().where(
-                allocation_table.c.document_id == document_id,
-                allocation_table.c.status != AllocationStatus.SUPERSEDED.value,
-                allocation_table.c.transaction_id.in_(of_purpose),
-            )
-        )
-    ).scalar_one()
-    if carried:
-        return True
+    booked = [
+        allocation_table.c.document_id == document_id,
+        allocation_table.c.status != AllocationStatus.SUPERSEDED.value,
+        allocation_table.c.transaction_id.in_(of_purpose),
+    ]
+    if purpose is AccountPurpose.PRIVATE:
+        booked.append(allocation_table.c.category == AllocationCategory.HH_PROPERTY_COST.value)
+    carried = conn.execute(select(exists().where(*booked))).scalar_one()
+    if carried or purpose is AccountPurpose.PRIVATE:
+        return carried
     e = evidence_of(conn, document_id)
     if e is None or e.extraction.kind is ExtractionKind.GRUNDSTEUERBESCHEID:
         return False
