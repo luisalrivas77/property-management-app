@@ -19,6 +19,9 @@
 //   (email_failed) has no action, its question says to upload the attachments directly. A
 //   poll that cannot log in, find its label or reach Gmail (email_inbox_failed) has none
 //   either: its question says what to fix, and the card goes once a poll completes.
+// - a daily bank sync the bank asked to approve (bank_approval_needed, phase 5 D120):
+//   „Jetzt abrufen“ starts a manual sync and opens the account's Bankabruf card, where the
+//   approval wait is shown; a failed sync or a balance drift links to that card.
 // - a deadline reminder (reminder, phase 5 §6, §11) visible today: its label, the link to its
 //   scope (the Grundsteuer card to the schedule row on Steuern) and "Erledigt", which posts
 //   the acknowledgement. GET /inbox names the reminder's id only; the label comes from
@@ -32,12 +35,14 @@
 // once the jobs have had time to run; each reload updates the sidebar count (the page's own
 // notifyInboxChanged). It is outside the list, so the list holds only the lines.
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { api, ok } from "@/api/client";
 import type { Account, Document, PossibleDuplicate, StatementImport, Transaction } from "@/api/schemas";
 import type { components } from "@/api/types";
 import { ErrorNotice } from "@/lib/ErrorNotice";
+import { notifyInboxChanged } from "@/lib/inboxCount";
 
 import { BalanceForm, DuplicateCard } from "./accounts";
 import { documentLabel } from "./documents";
@@ -391,6 +396,37 @@ function EntryTitle({ item, data }: { item: InboxItem; data: InboxData }) {
   );
 }
 
+/** A daily sync the bank asked to approve (D120): „Jetzt abrufen“ starts a manual sync
+ * (POST /accounts/{id}/syncs restarts the waiting row) and opens the account's Bankabruf
+ * card, which shows the five-minute wait for the approval in the S-pushTAN app. */
+function BankApprovalStart({ accountId }: { accountId: string }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+
+  async function start() {
+    setBusy(true);
+    setError(null);
+    try {
+      await ok(api.POST("/api/accounts/{account_id}/syncs", { params: { path: { account_id: accountId } } }));
+      notifyInboxChanged();
+      router.push(`/accounts/${accountId}?tab=kontoauszuege`);
+    } catch (caught) {
+      setError(caught);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <button type="button" onClick={() => void start()} disabled={busy}>
+        {busy ? "Startet …" : "Jetzt abrufen"}
+      </button>
+      <ErrorNotice error={error} />
+    </>
+  );
+}
+
 function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxData; onChanged: () => void }) {
   switch (item.kind) {
     case "proposal":
@@ -439,8 +475,9 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
     }
     case "bank_sync_failed":
     case "bank_balance_drift":
-    case "bank_approval_needed":
       return item.account_id ? <Link href={`/accounts/${item.account_id}?tab=kontoauszuege`}>Zum Bankabruf</Link> : null;
+    case "bank_approval_needed":
+      return item.account_id ? <BankApprovalStart accountId={item.account_id} /> : null;
     case "reminder": {
       const reminder = item.reminder_id ? data.reminders.get(item.reminder_id) : undefined;
       if (!reminder) return null;

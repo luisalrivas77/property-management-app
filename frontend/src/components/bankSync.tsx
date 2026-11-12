@@ -11,7 +11,16 @@
 //   entered that state, its updated_at). Once those five minutes are over the button is
 //   enabled again as "Erneut abrufen" (a run whose job is gone, after a redeploy mid-wait,
 //   would otherwise stay locked), the card polls every 10 s for one more minute, then stops.
+//   A queued or running row untouched for the approval wait plus five more minutes (the API's
+//   rules.bank_sync.is_stale) has lost its job, for instance one that failed before its first
+//   write: the card says so, offers "Erneut abrufen" (the API restarts such a row) and stops
+//   polling the same way.
 //   Every count shown is the API's; nothing is summed.
+// - „Täglich automatisch abrufen“ (D120, step 2): the connection's `auto_sync`, PATCHed at
+//   once. The daily run (06:30 UTC) never waits for the phone: when the bank asks for an
+//   approval, the run stops at `needs_approval` with trigger `scheduled` and a card appears
+//   under „Zu prüfen“. Such a row is not a live wait here (no countdown, no polling, the
+//   button enabled): „Jetzt abrufen“ restarts it as a manual run, which then waits as above.
 import Link from "next/link";
 import { useCallback, useEffect, useId, useState, type FormEvent } from "react";
 
@@ -31,6 +40,10 @@ const LIVE: readonly SyncStatus[] = ["queued", "running", "needs_approval", "imp
 const POLL_MS = 2000;
 /** The job waits this long for the approval (HAUSBUCH_SYNC_APPROVAL_TIMEOUT_S' default). */
 const APPROVAL_WINDOW_MS = 5 * 60 * 1000;
+/** A queued or running row untouched this much longer than the approval wait has lost its
+ * job (rules.bank_sync.is_stale: the approval timeout plus STALE_GRACE_S); the API then
+ * restarts it (start_sync). */
+const STALE_GRACE_MS = 5 * 60 * 1000;
 /** After the window: a slower poll, long enough for the job to record its timeout. */
 const EXPIRED_POLL_MS = 10_000;
 const EXPIRED_POLL_FOR_MS = 60_000;
@@ -41,16 +54,37 @@ export function isLiveRun(run: BankSync): boolean {
   return LIVE.includes(run.status);
 }
 
-/** When a needs_approval run's wait ends (ms since the epoch), else null. */
+/** A daily run the bank asked to approve: its job already ended the dialog, nobody waits
+ * (D120); a person's „Jetzt abrufen“ restarts it. */
+function scheduledApproval(run: BankSync): boolean {
+  return run.status === "needs_approval" && run.trigger === "scheduled";
+}
+
+/** When a manual needs_approval run's wait ends (ms since the epoch), else null. */
 function approvalEndsAt(run: BankSync): number | null {
-  return run.status === "needs_approval" ? new Date(run.updated_at).getTime() + APPROVAL_WINDOW_MS : null;
+  return run.status === "needs_approval" && !scheduledApproval(run) ? new Date(run.updated_at).getTime() + APPROVAL_WINDOW_MS : null;
+}
+
+/** When a queued or running row counts as stuck (its job is gone), else null. Never for
+ * importing: the API does not restart that. */
+function staleAt(run: BankSync): number | null {
+  return run.status === "queued" || run.status === "running"
+    ? new Date(run.updated_at).getTime() + APPROVAL_WINDOW_MS + STALE_GRACE_MS
+    : null;
+}
+
+/** From when the button may start a still-live run again: a manual approval's five minutes
+ * are over, or a queued or running row is stuck. */
+function restartableAt(run: BankSync): number | null {
+  return approvalEndsAt(run) ?? staleAt(run);
 }
 
 /** How often the card polls the run: every 2 s while it is live, every 10 s for a minute
- * after an approval's five minutes are over, then never (a row whose job is gone). */
+ * after an approval's five minutes are over or a row turned stuck, then never (a row whose
+ * job is gone, or a daily run that waits for a person). */
 function pollInterval(run: BankSync | null, now: number): number | null {
-  if (!run || !isLiveRun(run)) return null;
-  const endsAt = approvalEndsAt(run);
+  if (!run || !isLiveRun(run) || scheduledApproval(run)) return null;
+  const endsAt = restartableAt(run);
   if (endsAt === null || now < endsAt) return POLL_MS;
   return now < endsAt + EXPIRED_POLL_FOR_MS ? EXPIRED_POLL_MS : null;
 }
@@ -94,11 +128,12 @@ export function BankSyncCard({ account, onImported }: { account: Account; onImpo
   const latest = state.data?.syncs[0] ?? null;
   const current = newer(polled, latest);
   const currentId = current?.id ?? null;
-  const now = useNow(current?.status === "needs_approval");
-  const endsAt = current ? approvalEndsAt(current) : null;
+  const endsAt = current ? restartableAt(current) : null;
+  const now = useNow(endsAt !== null);
   const expired = endsAt !== null && now >= endsAt;
-  // A run waiting for an approval past its five minutes can be started again.
-  const busy = current ? isLiveRun(current) && !expired : false;
+  // A run waiting for an approval past its five minutes can be started again, so can a stuck
+  // queued or running row, and so can a daily run the bank asked to approve (nobody waits).
+  const busy = current ? isLiveRun(current) && !expired && !scheduledApproval(current) : false;
   const pollMs = pollInterval(current, now);
   const { reload } = state;
 
@@ -156,6 +191,7 @@ export function BankSyncCard({ account, onImported }: { account: Account; onImpo
       ) : (
         <>
           <ConnectionFacts connection={state.data.connection} />
+          <AutoSyncSwitch connection={state.data.connection} onSaved={reload} />
           <div className="row">
             <button type="button" onClick={() => void start()} disabled={starting || busy}>
               {starting ? "Startet …" : busy ? "Abruf läuft …" : expired ? "Erneut abrufen" : "Jetzt abrufen"}
@@ -173,7 +209,7 @@ export function BankSyncCard({ account, onImported }: { account: Account; onImpo
             </ActionDialog>
           </div>
           <ErrorNotice error={startError} />
-          {current ? <RunNow run={current} accountId={account.id} now={now} /> : null}
+          {current ? <RunNow run={current} accountId={account.id} now={now} stuck={expired && staleAt(current) !== null} /> : null}
           <ErrorNotice error={pollError} />
           {state.data.syncs.length > 0 ? <RunHistory runs={state.data.syncs} /> : null}
         </>
@@ -216,7 +252,51 @@ function ConnectionFacts({ connection }: { connection: BankConnection }) {
   );
 }
 
-/** A clock that ticks every second while `on` (for the approval countdown). */
+/** The daily fetch (D120): the connection's auto_sync, saved as soon as it is ticked. */
+function AutoSyncSwitch({ connection, onSaved }: { connection: BankConnection; onSaved: () => void }) {
+  const id = useId();
+  const [saved, setSaved] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const on = saved ?? connection.auto_sync;
+
+  async function change(value: boolean) {
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await ok(
+        api.PATCH("/api/accounts/{account_id}/bank-connection", {
+          params: { path: { account_id: connection.account_id } },
+          body: { auto_sync: value },
+        }),
+      );
+      setSaved(updated.auto_sync);
+      onSaved();
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="field">
+      <label className="inline" htmlFor={id}>
+        <input id={id} type="checkbox" checked={on} disabled={busy} onChange={(e) => void change(e.target.checked)} /> Täglich
+        automatisch abrufen
+      </label>
+      <p className="muted hint">
+        Hausbuch fragt die Bank jeden Morgen gegen halb acht (im Sommer gegen halb neun) und holt nur die Umsätze seit dem
+        letzten Abruf, zur Sicherheit ab zwei Wochen davor; schon vorhandene erkennt Hausbuch und bucht sie nicht doppelt.
+        Verlangt die Bank dafür einmal eine Freigabe, erscheint unter „Zu prüfen“ eine Karte;
+        bis dahin ruft Hausbuch dieses Konto nicht automatisch ab, damit keine weiteren Anfragen aufs Handy kommen.
+      </p>
+      <ErrorNotice error={error} />
+    </div>
+  );
+}
+
+/** A clock that ticks every second while `on` (for the approval countdown and a stuck row). */
 function useNow(on: boolean): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -252,11 +332,33 @@ function linesSentence(run: BankSync): string {
   return known > 0 ? `${first}, ${known} schon vorhanden` : first;
 }
 
-/** The current (or last) run in plain words. */
-function RunNow({ run, accountId, now }: { run: BankSync; accountId: string; now: number }) {
+/** The current (or last) run in plain words; a daily run says so. */
+function RunNow({ run, accountId, now, stuck }: { run: BankSync; accountId: string; now: number; stuck: boolean }) {
+  const last = run.trigger === "scheduled" ? "Letzter automatischer Abruf" : "Letzter Abruf";
+  if (stuck) {
+    return (
+      <div className="notice notice-warn" role="status">
+        <p>
+          Der Abruf vom {formatDateTime(run.created_at)} kommt nicht voran, zum Beispiel nach einem Neustart des Servers.
+          „Erneut abrufen“ drücken, um ihn neu zu starten.
+        </p>
+      </div>
+    );
+  }
   switch (run.status) {
     case "needs_approval":
-      return <ApprovalWait run={run} now={now} />;
+      return scheduledApproval(run) ? (
+        <div className="notice notice-warn" role="status">
+          <p>
+            <strong>Der automatische Abruf braucht eine Freigabe: jetzt abrufen und in der S-pushTAN-App bestätigen.</strong>{" "}
+            Die Bank hat beim Abruf am {formatDateTime(run.updated_at)} nach einer Freigabe gefragt; Hausbuch hat ihn beendet,
+            weil niemand aufs Handy schaut. „Jetzt abrufen“ drücken und die neue Anfrage gleich in der App freigeben. Bis dahin
+            ruft Hausbuch dieses Konto nicht automatisch ab.
+          </p>
+        </div>
+      ) : (
+        <ApprovalWait run={run} now={now} />
+      );
     case "queued":
       return <p role="status">Der Abruf ist angestoßen und startet gleich …</p>;
     case "running":
@@ -267,7 +369,7 @@ function RunNow({ run, accountId, now }: { run: BankSync; accountId: string; now
       return (
         <div className="notice notice-ok" role="status">
           <p>
-            Letzter Abruf {formatDateTime(run.finished_at)}: {linesSentence(run)} importiert.{" "}
+            {last} {formatDateTime(run.finished_at)}: {linesSentence(run)} importiert.{" "}
             {run.import_id && (run.lines_new ?? 0) > 0 ? (
               <Link href={`/accounts/${accountId}?tab=umsaetze&import=${run.import_id}`}>Die neuen Umsätze anzeigen</Link>
             ) : null}
@@ -278,7 +380,7 @@ function RunNow({ run, accountId, now }: { run: BankSync; accountId: string; now
       return (
         <div className={run.error_code === "bank.balance_drift" ? "notice notice-warn" : "notice notice-info"} role="status">
           <p>
-            Letzter Abruf {formatDateTime(run.finished_at)}: nichts Neues, alle Umsätze der Bank waren schon da.
+            {last} {formatDateTime(run.finished_at)}: nichts Neues, alle Umsätze der Bank waren schon da.
             {run.error_code === "bank.balance_drift"
               ? " Der Kontostand der Bank weicht aber vom letzten abgeglichenen Saldo ab: fehlt ein Kontoauszug? Siehe „Zu prüfen“."
               : run.balance_checked
@@ -291,7 +393,7 @@ function RunNow({ run, accountId, now }: { run: BankSync; accountId: string; now
       return (
         <div className="notice notice-error" role="status">
           <p>
-            Letzter Abruf {formatDateTime(run.finished_at)} fehlgeschlagen:{" "}
+            {last} {formatDateTime(run.finished_at)} fehlgeschlagen:{" "}
             {(run.error_code && ruleCodeText(run.error_code)) || "Der Abruf ist fehlgeschlagen. Erneut abrufen."}
             {run.error_code ? <code className="error-code">{run.error_code}</code> : null}
           </p>

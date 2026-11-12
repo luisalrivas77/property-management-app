@@ -673,9 +673,9 @@ your computer's env file only.
 The API container can fetch the rental account's statements from the Sparkasse itself, over
 FinTS (the German banks' online-banking protocol), read-only: the app has no method that
 could send a transfer, and every transfer would still need an approval on the phone. A sync
-is started with **Jetzt abrufen** on the account page (Konten › the account › Bankabruf); a
-daily schedule comes with a later step. No migration is needed (the tables came with
-`0019`).
+is started with **Jetzt abrufen** on the account page (Konten › the account › Bankabruf), or
+every morning by itself once „Täglich automatisch abrufen“ is ticked (7 below). No
+migration is needed (the tables came with `0019`).
 
 Two values are secrets: the **online-banking PIN** and the app's **FinTS product id**, the
 registration number the Deutsche Kreditwirtschaft (DK) sends after the product registration.
@@ -722,6 +722,27 @@ values; it is not a step, and the container never reads it.
    runs without an approval, whether the bank's references equal the export's). The
    container log has one INFO line from `hausbuch.jobs.bank_sync` naming the camt formats
    the bank offered; it holds no account data.
+7. **The daily fetch** (D120, phase 5 step 2): once a manual sync has run without trouble,
+   tick **Täglich automatisch abrufen** in the Bankabruf card. Every morning at 06:30 UTC
+   (07:30 in Berlin in winter, 08:30 in summer) the worker then fetches the account the same
+   way as **Jetzt abrufen**: from 14 days before the last booking day up to today, the
+   lines already stored recognised and skipped. Nothing else to set: the PIN and product id
+   of point 3 are all it needs, and without them it does nothing (one log line,
+   `bank_sync_scheduled` with `not_configured`). Nobody watches the phone at that hour, so
+   **when the bank asks for an approval** (about every 180 days, or when the window reaches
+   more than 90 days back) the run does not wait: it ends at once, and Zu prüfen ›
+   Automatisch shows the card „Der automatische Abruf braucht eine Freigabe“. Press **Jetzt
+   abrufen** on that card and approve the request in the S-pushTAN app within five minutes,
+   as for a manual sync; the daily fetch then goes on by itself. Until someone does, the
+   daily fetch leaves that account alone, so the phone gets one request and not one every
+   morning. It also leaves the account alone after a failed sync (the failure card in Zu
+   prüfen says why), except when the bank was only unreachable: a wrong PIN is never tried
+   again by the schedule, since three wrong PINs lock the login. The run's line in the
+   container log, `bank sync schedule`, counts the accounts it queued and why it skipped
+   the others (`approval_needed`, `failed`, `live`); a sync that has not succeeded for 35
+   days also shows the reminder „Bankabruf … lange nicht erfolgreich“. If the container was
+   redeployed at 06:30 that morning's fetch is skipped and happens the next day. To stop
+   it, untick the box.
 
 **When a sync fails**, the card and Zu prüfen › Automatisch say why in plain words, with
 the code. `bank.refused` means the bank said no, and that is not always the PIN: it can

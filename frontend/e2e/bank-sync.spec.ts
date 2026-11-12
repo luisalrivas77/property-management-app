@@ -44,9 +44,10 @@ test("the Bankabruf card sets up a connection and explains a server without the 
   await expect(card.getByRole("table")).toHaveCount(0); // a refused start leaves no run
 });
 
-// A run waiting for the pushTAN approval, as the API would list it; the runs are mocked
-// because the e2e API holds no FinTS secrets and never reaches needs_approval itself.
-function approvalRun(accountId: string, connectionId: string, minutesAgo: number) {
+// A run waiting for the pushTAN approval (or queued, or running), as the API would list it;
+// the runs are mocked because the e2e API holds no FinTS secrets and never reaches these
+// states itself.
+function approvalRun(accountId: string, connectionId: string, minutesAgo: number, status = "needs_approval") {
   const entered = new Date(Date.now() - minutesAgo * 60_000).toISOString();
   return {
     id: "00000000-0000-4000-8000-0000000005a1",
@@ -56,7 +57,7 @@ function approvalRun(accountId: string, connectionId: string, minutesAgo: number
     account_id: accountId,
     connection_id: connectionId,
     trigger: "manual",
-    status: "needs_approval",
+    status,
     requested_from: "2026-04-01",
     requested_to: "2026-11-11",
     balance_checked: false,
@@ -64,7 +65,7 @@ function approvalRun(accountId: string, connectionId: string, minutesAgo: number
   };
 }
 
-async function openWithApprovalRun(page: Page, minutesAgo: number) {
+async function openWithApprovalRun(page: Page, minutesAgo: number, status = "needs_approval") {
   const accountId = await createAccountViaApi(page);
   const connection = await apiCall<{ id: string }>(page, "POST", `/api/accounts/${accountId}/bank-connection`, {
     account_id: accountId,
@@ -72,7 +73,7 @@ async function openWithApprovalRun(page: Page, minutesAgo: number) {
     fints_url: "https://fints.example.org/fints",
     login_name: "loginname-xyz",
   });
-  const run = approvalRun(accountId, connection.id, minutesAgo);
+  const run = approvalRun(accountId, connection.id, minutesAgo, status);
   await page.route(`**/api/accounts/${accountId}/syncs`, (route: Route) =>
     route.request().method() === "GET" ? route.fulfill({ json: [run] }) : route.fallback(),
   );
@@ -93,5 +94,21 @@ test("an approval wait inside its five minutes keeps the button locked", async (
   const card = await openWithApprovalRun(page, 1);
   await expect(card).toContainText("In der S-pushTAN-App freigeben.");
   await expect(card).toContainText(/Noch [34]:\d\d Minuten/);
+  await expect(card.getByRole("button", { name: "Abruf läuft …" })).toBeDisabled();
+});
+
+// A queued or running row untouched for the approval wait plus five minutes has lost its job
+// (the API's is_stale); the card offers a restart instead of locking the button for good.
+test("a running row stuck past ten minutes can be started again", async ({ page, signedIn }) => {
+  void signedIn;
+  const card = await openWithApprovalRun(page, 11, "running");
+  await expect(card).toContainText("kommt nicht voran");
+  await expect(card.getByRole("button", { name: "Erneut abrufen" })).toBeEnabled();
+});
+
+test("a running row inside ten minutes keeps the button locked", async ({ page, signedIn }) => {
+  void signedIn;
+  const card = await openWithApprovalRun(page, 1, "running");
+  await expect(card).toContainText("Hausbuch fragt die Bank nach den Umsätzen");
   await expect(card.getByRole("button", { name: "Abruf läuft …" })).toBeDisabled();
 });

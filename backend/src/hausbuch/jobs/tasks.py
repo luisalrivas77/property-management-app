@@ -19,6 +19,12 @@ from procrastinate.retry import BaseRetryStrategy, RetryDecision
 from hausbuch.schemas.tax import TaxExportKind
 
 from .bank_sync import run_bank_sync
+from .bank_sync_schedule import (
+    SCHEDULE_CRON,
+    SCHEDULE_LOCK,
+    SCHEDULE_TASK,
+    run_bank_sync_scheduled,
+)
 from .document_read import TASK_NAME, JobDeps, RetryLater, run_document_read
 from .enqueue import (
     BANK_SYNC_TASK,
@@ -173,6 +179,13 @@ def send_reminders(context: JobContext, *, timestamp: int) -> None:
     run_send_reminders(deps)
 
 
+def bank_sync_scheduled(context: JobContext, *, timestamp: int) -> None:
+    """D120, daily at 06:30: one scheduled bank_sync per account whose connection has
+    auto_sync on. Off (one log line) until the FinTS PIN and product id are set."""
+    deps: JobDeps = context.additional_context[DEPS_KEY]
+    run_bank_sync_scheduled(deps)
+
+
 def register_tasks(app: procrastinate.App) -> procrastinate.App:
     """The queued tasks, plus scrub_proposals as a periodic task: the worker's periodic
     deferrer queues it at SCRUB_CRON. Procrastinate skips a schedule missed by more than
@@ -201,4 +214,11 @@ def register_tasks(app: procrastinate.App) -> procrastinate.App:
     # so not even a run outside the worker can send a digest twice.
     notify = app.task(name=NOTIFY_TASK, pass_context=True, lock=NOTIFY_LOCK)(send_reminders)
     app.periodic(cron=NOTIFY_CRON, periodic_id=NOTIFY_TASK)(notify)
+    # No retry: the runs it queues are bank_sync jobs with their own retry, and a missed day
+    # is the next day's. lock= keeps one running job at a time; each account is queued under
+    # its account row's lock, and a live run is never queued twice (services.bank_sync).
+    schedule = app.task(name=SCHEDULE_TASK, pass_context=True, lock=SCHEDULE_LOCK)(
+        bank_sync_scheduled
+    )
+    app.periodic(cron=SCHEDULE_CRON, periodic_id=SCHEDULE_TASK)(schedule)
     return app
