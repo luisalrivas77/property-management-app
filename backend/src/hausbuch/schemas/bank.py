@@ -25,6 +25,7 @@ from .enums import (
     DuplicateStatus,
     ImportStatus,
 )
+from .household import OwnershipShare
 
 # Phase 6 D156: a depot or exchange's own number (a depot or customer number), masked to its
 # last four characters like an IBAN's tail and HMAC'd for the statement routing of D164.
@@ -84,6 +85,17 @@ class Account(MutableRecord):
     provider: str | None = None
     currency: Currency = Currency.EUR
     external_ref_masked: MaskedRef | None = None
+    # Phase 6 D157, §4.2: the current owner shares (the reason kept with them); none set is
+    # the Konten screen's to-do „Eigentümer festlegen“, never an error.
+    # ownership_missing is derived from ownership on every read (never set apart from it).
+    ownership: list[OwnershipShare] = Field(default_factory=list)
+    ownership_missing: bool = True
+
+    @model_validator(mode="after")
+    def _missing_follows_ownership(self) -> Self:
+        if self.ownership_missing != (not self.ownership):
+            raise ValueError("ownership_missing is true exactly when no share is set")
+        return self
 
 
 # --- Parsing (BankSource) ------------------------------------------------------------
@@ -129,6 +141,11 @@ class ParsedStatement(Schema):
     closing_balance: Money | None
     lines: list[StatementLine]
     warnings: list[str] = Field(default_factory=list)
+    # Phase 6 D173 (3): a balance the file states beside its lines without tying it to them
+    # (DKB's „Kontostand vom DD.MM.YYYY“). Never reconciled against: it only pre-fills the
+    # closing balance the user confirms, so the import waits at pending_balance.
+    stated_balance: Money | None = None
+    stated_balance_on: date | None = None
 
 
 class BankSource(Protocol):
@@ -156,6 +173,11 @@ class StatementImport(MutableRecord):
     computed_closing: Money | None
     status: ImportStatus
     error_code: str | None
+    # Phase 6 D173 (3): the balance the file states beside its lines (DKB's „Kontostand
+    # vom“), kept with the statement.imported event; it pre-fills the closing the user
+    # confirms and is never reconciled against on its own.
+    stated_closing: Money | None = None
+    stated_closing_on: date | None = None
 
 
 class DeclareBalanceBody(Schema):

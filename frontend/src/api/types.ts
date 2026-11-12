@@ -1404,7 +1404,8 @@ export interface paths {
         };
         /**
          * Accounts List
-         * @description Rental accounts first, then the owners' own accounts, each by label.
+         * @description Rental accounts first, then the household's private accounts, each by label; each
+         *     with its current owner shares, ownership_missing when none is set (phase 6 D157).
          */
         get: operations["accounts_list_api_accounts_get"];
         put?: never;
@@ -1435,9 +1436,38 @@ export interface paths {
         head?: never;
         /**
          * Account Update
-         * @description Moving the anchor re-checks every import of the account.
+         * @description Moving the anchor re-checks every import of the account. kind, purpose and provider
+         *     (phase 6 D156): 422 account.kind_not_available for a kind that is not a bank kind, 422
+         *     allocation.category_not_for_account for a purpose the account's bookings do not fit.
          */
         patch: operations["account_update_api_accounts__account_id__patch"];
+        trace?: never;
+    };
+    "/api/accounts/{account_id}/ownership": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Account Ownership
+         * @description The current owner shares as stored rows (with their effective_from), by owner;
+         *     empty when none is set (phase 6 D157).
+         */
+        get: operations["account_ownership_api_accounts__account_id__ownership_get"];
+        put?: never;
+        /**
+         * Account Ownership Set
+         * @description The full new set of owner shares (phase 6 D157): the current rows are superseded,
+         *     never deleted. 422 when the shares do not sum to exactly 1 or name an owner twice
+         *     (ownership.sum_not_one) or name no owner of the household (ownership.owner_missing).
+         */
+        post: operations["account_ownership_set_api_accounts__account_id__ownership_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/accounts/{account_id}/imports": {
@@ -2183,6 +2213,27 @@ export interface paths {
         patch: operations["workspace_settings_update_api_workspace_settings_patch"];
         trace?: never;
     };
+    "/api/workspace/settings/ai-consent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Workspace Ai Consent
+         * @description The signed-in member's own consent to `ai_private_accounts` (phase 6 D168); the switch
+         *     takes effect once two members have consented since it was switched on.
+         */
+        post: operations["workspace_ai_consent_api_workspace_settings_ai_consent_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/enroll/options": {
         parameters: {
             query?: never;
@@ -2485,6 +2536,13 @@ export interface components {
             currency: components["schemas"]["Currency"];
             /** External Ref Masked */
             external_ref_masked?: string | null;
+            /** Ownership */
+            ownership?: components["schemas"]["OwnershipShare"][];
+            /**
+             * Ownership Missing
+             * @default true
+             */
+            ownership_missing: boolean;
         };
         /** AccountCreate */
         AccountCreate: {
@@ -2523,6 +2581,51 @@ export interface components {
          */
         AccountKind: "bank_current" | "bank_savings" | "depot" | "exchange" | "wallet";
         /**
+         * AccountOwnership
+         * @description account_ownership row (append-only; a change is a new set under a new
+         *     effective_from, an old row's superseded_by names the row that replaced it).
+         */
+        AccountOwnership: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /**
+             * Owner Id
+             * Format: uuid
+             */
+            owner_id: string;
+            /** Share Numerator */
+            share_numerator: number;
+            /** Share Denominator */
+            share_denominator: number;
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Effective From
+             * Format: date
+             */
+            effective_from: string;
+            /** Superseded By */
+            superseded_by?: string | null;
+        };
+        /**
          * AccountPatch
          * @description PATCH /accounts/{id}. The IBAN cannot change: a different IBAN is another account.
          *     Moving the anchor (opening_balance, opening_balance_on) re-checks every import.
@@ -2541,6 +2644,10 @@ export interface components {
             opening_balance_on?: string;
             /** Is Owner Account */
             is_owner_account?: boolean;
+            kind?: components["schemas"]["AccountKind"];
+            purpose?: components["schemas"]["AccountPurpose"];
+            /** Provider */
+            provider?: string | null;
         };
         /**
          * AccountPurpose
@@ -6285,6 +6392,20 @@ export interface components {
             /** Effective Date */
             effective_date?: string | null;
         };
+        /** OwnershipShare */
+        OwnershipShare: {
+            /**
+             * Owner Id
+             * Format: uuid
+             */
+            owner_id: string;
+            /** Share Numerator */
+            share_numerator: number;
+            /** Share Denominator */
+            share_denominator: number;
+            /** Reason */
+            reason?: string | null;
+        };
         /**
          * Passkey
          * @description GET /auth/passkeys: one passkey of the signed-in user.
@@ -7956,6 +8077,17 @@ export interface components {
             idle_expires_at: string;
         };
         /**
+         * SetOwnershipBody
+         * @description POST /accounts/{id}/ownership: the full current set. Σ = 1 and each owner once are
+         *     checked here; that each owner exists is the service's (ownership.owner_missing).
+         */
+        SetOwnershipBody: {
+            /** Shares */
+            shares: components["schemas"]["OwnershipShare"][];
+            /** Effective From */
+            effective_from?: string | null;
+        };
+        /**
          * SettlementHint
          * @description A line of a monthly category that is not an instalment (an electricity Jahresabrechnung,
          *     a Hausgeldabrechnung's back-payment): not a rate, shown as a hint that the next instalment
@@ -8091,6 +8223,10 @@ export interface components {
             status: components["schemas"]["ImportStatus"];
             /** Error Code */
             error_code: string | null;
+            /** Stated Closing */
+            stated_closing?: string | null;
+            /** Stated Closing On */
+            stated_closing_on?: string | null;
         };
         /** SumComponent */
         SumComponent: {
@@ -9391,6 +9527,13 @@ export interface components {
              * @default false
              */
             ai_private_accounts: boolean;
+            /** Ai Private Accounts Consented By */
+            ai_private_accounts_consented_by?: string[];
+            /**
+             * Ai Private Accounts Active
+             * @default false
+             */
+            ai_private_accounts_active: boolean;
             /**
              * Reminder Emails Available
              * @default false
@@ -9405,6 +9548,8 @@ export interface components {
             auto_accept_llm?: boolean;
             /** Reminder Emails */
             reminder_emails?: boolean;
+            /** Ai Private Accounts */
+            ai_private_accounts?: boolean;
         };
         /**
          * YearFigures
@@ -12498,6 +12643,72 @@ export interface operations {
             };
         };
     };
+    account_ownership_api_accounts__account_id__ownership_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountOwnership"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    account_ownership_set_api_accounts__account_id__ownership_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetOwnershipBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Account"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     account_imports_api_accounts__account_id__imports_get: {
         parameters: {
             query?: never;
@@ -13958,6 +14169,35 @@ export interface operations {
                 "application/json": components["schemas"]["WorkspaceSettingsPatch"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSettings"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    workspace_ai_consent_api_workspace_settings_ai_consent_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

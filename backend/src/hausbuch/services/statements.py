@@ -37,6 +37,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
+from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import possible_duplicate as duplicate_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
@@ -48,6 +49,7 @@ from hausbuch.schemas.api import InboxItem, InboxItemKind
 from hausbuch.schemas.bank import (
     DeclareBalanceBody,
     LineForHash,
+    ParsedStatement,
     PossibleDuplicate,
     ReconcileStatus,
     StatementFormat,
@@ -61,7 +63,6 @@ from hausbuch.schemas.bank_sync import SyncPreview
 from hausbuch.schemas.common import TAX_YEAR_MIN
 from hausbuch.schemas.document import DocumentTyping
 from hausbuch.schemas.enums import (
-    AccountPurpose,
     AllocationStatus,
     BalanceSource,
     DocumentSource,
@@ -117,14 +118,12 @@ def import_statement(
     existing import and write nothing (the document is deduplicated on its bytes, D9); a
     different file overlapping stored lines adds only the lines not stored yet (D22).
 
-    Refused before anything is written (RuleError): an owner account, an unreadable file
-    (statement.* parser codes), another account's statement, a file without booked lines.
-    A camt file whose reports do not sum or chain (D34) is stored, unreconciled."""
+    Refused before anything is written (RuleError): an unreadable file (statement.* parser
+    codes), another account's statement (statement.account_mismatch: the file's own IBAN
+    routes it, phase 6 D164), a file without booked lines. A camt file whose reports do not
+    sum or chain (D34) is stored, unreconciled. Since phase 6 step 1 a private account
+    imports like the rental one (D156: the owner-account guard is gone)."""
     account = require_row(ctx.conn, account_table, EntityType.ACCOUNT, account_id, for_update=True)
-    # Since migration 0025 the household's accounts are keyed by purpose (phase 6 D156); the
-    # same accounts as before, until phase 6 step 1 removes this guard.
-    if account.purpose == AccountPurpose.PRIVATE.value:
-        raise RuleError(rules.OWNER_ACCOUNT, "owner accounts hold no statements")
     outcome = parse_statement(data, media_type)
     statement = outcome.statement
     _require_same_account(statement.account_iban, account.iban_hmac, iban_key)
@@ -162,7 +161,7 @@ def import_statement(
         )
 
     ibans = [_protect(line.counterparty_iban, iban_key) for line in statement.lines]
-    hashes = _line_hashes(account_id, statement.lines, iban_key)
+    hashes = _line_hashes(account_id, statement, iban_key)
     from_file = statement.closing_balance is not None
     imported = ctx.conn.execute(
         insert(import_table)
@@ -219,12 +218,19 @@ def import_statement(
             first_booking_on=first,
             last_booking_on=last,
             transaction_ids=new_ids,
+            stated_closing=statement.stated_balance,
+            stated_closing_on=statement.stated_balance_on,
         ),
         effective_date=last,
     )
     checked = _check(ctx, account, row, announce=True, file_error=outcome.balance_error)
     recheck_account(ctx, account_id, skip=imported)
-    return checked
+    return checked.model_copy(
+        update={
+            "stated_closing": statement.stated_balance,
+            "stated_closing_on": statement.stated_balance_on,
+        }
+    )
 
 
 def declare_balances(
@@ -292,15 +298,13 @@ def preview_import(
     same parser, the same account check, the same line hash over the same fields, compared
     with the account's stored hashes. A FinTS sync stores its ZIP (and imports it) only when
     lines_new > 0. Raises the same RuleErrors import_statement raises before its first
-    write (owner account, unreadable file, another account's statement, no booked line)."""
+    write (unreadable file, another account's statement, no booked line)."""
     account = require_row(conn, account_table, EntityType.ACCOUNT, account_id)
-    if account.purpose == AccountPurpose.PRIVATE.value:  # phase 6 D156, as import_statement
-        raise RuleError(rules.OWNER_ACCOUNT, "owner accounts hold no statements")
     statement = parse_statement(data, media_type).statement
     _require_same_account(statement.account_iban, account.iban_hmac, iban_key)
     if not statement.lines:
         raise RuleError(rules.EMPTY, "the file holds no booked line")
-    hashes = list(dict.fromkeys(_line_hashes(account_id, statement.lines, iban_key)))
+    hashes = list(dict.fromkeys(_line_hashes(account_id, statement, iban_key)))
     known = {
         row.line_hash.hex()
         for row in conn.execute(
@@ -318,11 +322,20 @@ def preview_import(
     )
 
 
-def _line_hashes(account_id: UUID, lines: Sequence[StatementLine], iban_key: bytes) -> list[str]:
-    """The line hashes import_statement stores, from the parsed lines."""
+def _line_hashes(account_id: UUID, statement: ParsedStatement, iban_key: bytes) -> list[str]:
+    """The line hashes import_statement stores, from the parsed lines. DKB's Kundenreferenz
+    is the counterparty's, not the bank's, so a DKB line hashes by its content and its
+    position among identical lines (phase 6 D173 (3), D22's fallback): two different lines
+    of one day, amount and customer reference both survive. The reference stays on the line."""
+    lines = statement.lines
+    own_ref = statement.format is not StatementFormat.DKB_CSV
     ibans = [_protect(line.counterparty_iban, iban_key) for line in lines]
     return rules.line_hashes(
-        account_id, [_for_hash(line, iban) for line, iban in zip(lines, ibans, strict=True)]
+        account_id,
+        [
+            _for_hash(line, iban, end_to_end=own_ref)
+            for line, iban in zip(lines, ibans, strict=True)
+        ],
     )
 
 
@@ -569,7 +582,7 @@ def _record_duplicates(
 
 def get_import(conn: Connection, import_id: UUID) -> StatementImport | None:
     row = conn.execute(select(*_IMPORT_COLUMNS).where(import_table.c.id == import_id)).one_or_none()
-    return None if row is None else _to_import(row)
+    return None if row is None else _with_stated(conn, [_to_import(row)])[0]
 
 
 def list_imports(conn: Connection, account_id: UUID) -> list[StatementImport]:
@@ -579,7 +592,43 @@ def list_imports(conn: Connection, account_id: UUID) -> list[StatementImport]:
         .where(import_table.c.account_id == account_id)
         .order_by(import_table.c.created_at.desc(), import_table.c.id)
     )
-    return [_to_import(r) for r in rows]
+    return _with_stated(conn, [_to_import(r) for r in rows])
+
+
+def _stated_balances(
+    conn: Connection, import_ids: Sequence[UUID]
+) -> dict[UUID, tuple[Decimal, date]]:
+    """Phase 6 D173 (3): the balance each import's file stated beside its lines, from its
+    statement.imported event (only a DKB CSV states one)."""
+    if not import_ids:
+        return {}
+    rows = conn.execute(
+        select(event_table.c.entity_id, event_table.c.payload).where(
+            event_table.c.type == EventType.STATEMENT_IMPORTED.value,
+            event_table.c.entity_id.in_(import_ids),
+            event_table.c.payload.has_key("stated_closing"),
+        )
+    )
+    found: dict[UUID, tuple[Decimal, date]] = {}
+    for row in rows:
+        closing, on = row.payload.get("stated_closing"), row.payload.get("stated_closing_on")
+        if closing is not None and on is not None:
+            found[row.entity_id] = (Decimal(str(closing)), date.fromisoformat(on))
+    return found
+
+
+def _with_stated(conn: Connection, imports: list[StatementImport]) -> list[StatementImport]:
+    stated = _stated_balances(
+        conn, [i.id for i in imports if i.balance_source != BalanceSource.FILE]
+    )
+    return [
+        i
+        if i.id not in stated
+        else i.model_copy(
+            update={"stated_closing": stated[i.id][0], "stated_closing_on": stated[i.id][1]}
+        )
+        for i in imports
+    ]
 
 
 def list_transactions(
@@ -650,6 +699,9 @@ def import_inbox_items(conn: Connection) -> list[InboxItem]:
                 [ImportStatus.UNRECONCILED.value, ImportStatus.IMPORTED.value]
             )
         )
+    ).all()
+    stated = _stated_balances(
+        conn, [r.id for r in rows if r.declared_closing is None and r.last_booking_on]
     )
     for row in rows:
         if row.status == ImportStatus.UNRECONCILED.value:
@@ -659,6 +711,26 @@ def import_inbox_items(conn: Connection) -> list[InboxItem]:
                     created_at=row.updated_at,
                     reasoning=_IMPORT_REASONS.get(row.error_code, _DEFAULT_REASON),
                     question=_IMPORT_QUESTIONS.get(row.error_code, _DEFAULT_QUESTION),
+                    document_id=row.document_id,
+                    import_id=row.id,
+                )
+            )
+        elif row.id in stated:
+            # Phase 6 D173 (3), Q-O75: the file's „Kontostand vom“ pre-fills the closing; the
+            # user confirms it is the balance after the file's last booking.
+            items.append(
+                InboxItem(
+                    kind=InboxItemKind.IMPORT_PENDING_BALANCE,
+                    created_at=row.created_at,
+                    reasoning=(
+                        f"Die Datei nennt den Kontostand vom {stated[row.id][1]:%d.%m.%Y}, "
+                        "aber keinen Saldo zu ihren Umsätzen. Hausbuch schlägt ihn als "
+                        "Endsaldo vor."
+                    ),
+                    question=(
+                        "Ist das der Saldo nach der letzten Buchung vom "
+                        f"{row.last_booking_on:%d.%m.%Y}?"
+                    ),
                     document_id=row.document_id,
                     import_id=row.id,
                 )
@@ -721,7 +793,9 @@ def _protect(raw: str | None, key: bytes) -> ProtectedIban | None:
         return None
 
 
-def _for_hash(line: StatementLine, iban: ProtectedIban | None) -> LineForHash:
+def _for_hash(
+    line: StatementLine, iban: ProtectedIban | None, *, end_to_end: bool = True
+) -> LineForHash:
     return LineForHash(
         booking_date=line.booking_date,
         value_date=line.value_date,
@@ -731,7 +805,7 @@ def _for_hash(line: StatementLine, iban: ProtectedIban | None) -> LineForHash:
         purpose=line.purpose,
         booking_text=line.booking_text,
         bank_reference=line.bank_reference,
-        end_to_end_ref=line.end_to_end_ref,
+        end_to_end_ref=line.end_to_end_ref if end_to_end else None,
     )
 
 

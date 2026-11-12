@@ -9,17 +9,20 @@ import pytest
 from hausbuch.ai.requests import (
     DATA_END,
     DATA_START,
+    HOUSEHOLD_MODEL_CODES,
     LLM_CONFIDENCE,
     MATCH_MAX_TOKENS,
+    categorize_household_request,
     categorize_request,
     explain_request,
     fenced,
+    household_match_schema,
     load_prompt,
     match_schema,
     parse_explain,
     parse_match,
 )
-from hausbuch.rules.household.taxonomy import allowed_categories
+from hausbuch.rules.household.taxonomy import DEPOT_CODES, allowed_categories
 from hausbuch.schemas.ai import AiJob
 from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.enums import AccountPurpose
@@ -139,3 +142,43 @@ def test_every_rental_category_is_defined_in_the_categorize_prompt():
     for category in AllocationCategory:
         defined = f"- `{category.value}`:" in prompt.text
         assert defined == (category in rental), category
+
+
+# The rental prompt's version as recorded on every categorize call before phase 6 (D168: the
+# rental prompt and its recorded request hash stay unchanged).
+RENTAL_PROMPT_VERSION = "daf309afe236c812"
+
+
+def test_the_rental_prompt_is_unchanged(settings):
+    assert load_prompt("categorize").version == RENTAL_PROMPT_VERSION
+    request = categorize_request(settings, {"betrag": "-1.00"}, hard=False)
+    assert request.prompt_version == RENTAL_PROMPT_VERSION
+    assert request.output_schema == match_schema()
+
+
+def test_the_household_prompt_offers_the_private_codes_but_the_depot_ones():
+    """D168: every code the household schema offers is defined in its prompt, one line each;
+    no rental code and no depot code (D165 (1): the depot is booked by code)."""
+    prompt = load_prompt("categorize_household")
+    assert prompt.text.startswith("You categorize one line of a German household's private")
+    offered = set(household_match_schema()["$defs"]["AllocationCategory"]["enum"])
+    assert offered == {c.value for c in HOUSEHOLD_MODEL_CODES}
+    assert allowed_categories(AccountPurpose.PRIVATE) - DEPOT_CODES == HOUSEHOLD_MODEL_CODES
+    for category in AllocationCategory:
+        defined = f"- `{category.value}`:" in prompt.text
+        assert defined == (category in HOUSEHOLD_MODEL_CODES), category
+    for word in ("landlord", "tenant", "Vermieter"):
+        assert word not in prompt.text
+
+
+def test_the_household_request_is_the_rental_one_with_its_own_prompt(settings):
+    rental = categorize_request(settings, {"betrag": "-1.00"}, hard=False)
+    household = categorize_household_request(settings, {"betrag": "-1.00"}, hard=False)
+    hard = categorize_household_request(settings, {"betrag": "-1.00"}, hard=True)
+    assert household.prompt_version == load_prompt("categorize_household").version
+    assert household.prompt_version != rental.prompt_version
+    assert household.output_schema == household_match_schema()
+    assert (household.model, hard.model) == (settings.ai_model_extract, settings.ai_model_hard)
+    body = household.body()
+    assert "thinking" not in body and body["output_config"]["effort"] == "low"
+    assert body["max_tokens"] == rental.body()["max_tokens"]

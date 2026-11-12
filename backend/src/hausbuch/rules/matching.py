@@ -58,6 +58,7 @@ from hausbuch.schemas.allocation import (
     MatchingRule,
     MatchingRuleCreate,
     MatchTransaction,
+    NameHistory,
     RentInForce,
     RuleMatcher,
     ServicePeriod,
@@ -65,12 +66,15 @@ from hausbuch.schemas.allocation import (
     TenancyFacts,
     WirtschaftsplanFacts,
 )
-from hausbuch.schemas.enums import AllocationStatus
+from hausbuch.schemas.enums import AccountPurpose, AllocationStatus
 from hausbuch.schemas.loan import ScheduleEntry
 
 from .categories import CATEGORY_LABEL
+from .errors import RULE_CONFLICTS, RULE_TOO_BROAD, RuleError
+from .household.taxonomy import HOUSEHOLD_CODES, TAX_RELEVANT, allowed_categories
 from .loan_schedule import build_schedule
 from .periods import months_in, service_period
+from .review import THRESHOLDS
 from .statements import norm
 
 EXACT = Decimal("1.000")
@@ -268,9 +272,17 @@ def rule_answer(
     whose category set has the strictly closest latest amount of all the history's sets, as a
     proposal (GUARDED_CONFIDENCE and a question; the service uses it only when no matcher
     answers); else None. `rules` oldest first; `history` may hold any lines, only those of the same
-    IBAN hash and sign whose current rows are all confirmed count."""
+    IBAN hash and sign whose current rows are all confirmed count.
+
+    Rules are the workspace's, not an account's (phase 6 D159): a hit whose categories the
+    line's account does not take (a household rule on a rental card line, a rental rule on a
+    private line) is no hit."""
+    allowed = allowed_categories(context.account_purpose)
     hits = [
-        (rule, s) for rule in rules if (s := apply_rule(rule, tx, context, history)) is not None
+        (rule, s)
+        for rule in rules
+        if (s := apply_rule(rule, tx, context, history)) is not None
+        and all(a.category in allowed for a in s.allocations)
     ]
     if not hits:
         return None
@@ -363,7 +375,10 @@ def _proposal(miss: _NearMiss) -> AllocationSet:
 
 
 def infer_rule(
-    tx: MatchTransaction, confirmed: AllocationSet, context: MatchContext
+    tx: MatchTransaction,
+    confirmed: AllocationSet,
+    context: MatchContext,
+    names: Sequence[NameHistory] = (),
 ) -> MatchingRuleCreate | None:
     """The rule a confirmed answer becomes ("Künftig immer so zuordnen"): the line's IBAN HMAC
     and amount sign, and a split method read from the confirmed allocations, never their
@@ -374,8 +389,34 @@ def infer_rule(
     amount; a rent part without one shared tenancy, review F2), or a single category or such
     a split is answered for a counterparty a matcher owns (an owner account, a tenant's or a
     loan account: D38). Rules run before the matchers, so an IBAN-only rule there would
-    pre-empt the exact rent / loan / owner split of every later line."""
-    if tx.counterparty_iban_hmac is None or tx.amount == 0:
+    pre-empt the exact rent / loan / owner split of every later line.
+
+    Phase 6 D160: on a private account a line without an IBAN may become a name-pattern rule
+    (_name_rule; `names` are the account's confirmed lines it is checked against; it raises
+    rule.too_broad or rule.conflicts). A private line with an IBAN learns the same one-category
+    rule on its IBAN, under the same limits; a tenant's or a lender's IBAN included, since a
+    household rule never hits a rental line (rule_answer drops a hit its account does not take)
+    and that rule is D158's "the counterparty is also a private one"."""
+    if tx.amount == 0:
+        return None
+    if context.account_purpose is AccountPurpose.PRIVATE:
+        if tx.counterparty_iban_hmac is None:
+            return _name_rule(tx, confirmed, names)
+        if len(confirmed.allocations) != 1:
+            return None
+        (only,) = confirmed.allocations
+        if not learnable_household(only.category):
+            return None
+        return MatchingRuleCreate(
+            matcher=RuleMatcher(
+                counterparty_iban_hmac=tx.counterparty_iban_hmac,
+                amount_sign="credit" if tx.amount > 0 else "debit",
+            ),
+            split_method=SplitMethod.SINGLE_CATEGORY,
+            category=only.category,
+            recurring=only.recurring,
+        )
+    if tx.counterparty_iban_hmac is None:
         return None
     allocs = confirmed.allocations
     sign = "credit" if tx.amount > 0 else "debit"
@@ -725,13 +766,11 @@ def rule_hits(matcher: RuleMatcher, tx: MatchTransaction) -> bool:
         return False
     if matcher.amount_sign == "debit" and not tx.amount < 0:
         return False
-    for pattern, text in (
-        (matcher.counterparty_name_pattern, tx.counterparty_name),
-        (matcher.purpose_pattern, tx.purpose),
-    ):
-        if pattern is not None and not _found(pattern, text):
-            return False
-    return True
+    name_pattern = matcher.counterparty_name_pattern
+    if name_pattern is not None and not _name_found(name_pattern, tx.counterparty_name):
+        return False
+    purpose_pattern = matcher.purpose_pattern
+    return purpose_pattern is None or _found(purpose_pattern, tx.purpose)
 
 
 def _found(pattern: str, text: str | None) -> bool:
@@ -852,11 +891,179 @@ PHASE6_RULES_STEP = "phase 6 step 1 (learned rules on a private account)"
 PHASE6_TRANSFERS_STEP = "phase 6 step 2 (internal transfers)"
 
 
+_LOCATION = re.compile(r"//[^/]*/[A-Za-z]{2}\s*$")  # a Sparkasse card line's //<Ort>/<Land>
+_NAME_DROPPED = re.compile(r"[0-9/.]")
+
+
 def merchant_pattern(name: str) -> str:
-    """D160: a card line's counterparty name to an anchored rule pattern: upper-cased; digits,
-    slashes, dots and the trailing location token (`//<Ort>/<Land>`) removed; whitespace
-    collapsed; regex-escaped; anchored at the start (fixture merchant_pattern.yaml)."""
-    raise NotImplementedError(PHASE6_RULES_STEP)
+    """D160: a card line's counterparty name to an anchored rule pattern: the trailing
+    location token (`//<Ort>/<Land>`) removed, upper-cased, digits, slashes and dots replaced by
+    a space, whitespace collapsed, regex-escaped with a space left plain, anchored at the start
+    (fixture merchant_pattern.yaml: "S.C.A." keeps "S C A", so a dropped character is a space)."""
+    return "^" + re.escape(_merchant_text(name)).replace("\\ ", " ")
+
+
+def _merchant_text(name: str) -> str:
+    """The name as merchant_pattern reads it, unescaped: what a name pattern is matched on
+    besides the collapsed name, since "S.C.A." becomes "S C A" in the pattern."""
+    text = _LOCATION.sub("", name).upper()
+    return " ".join(_NAME_DROPPED.sub(" ", text).split())
+
+
+def _name_found(pattern: str, name: str | None) -> bool:
+    """A counterparty name pattern holds on the collapsed name (a pattern a person typed, as
+    before) or on the name normalised like merchant_pattern (a learned name rule, D160, whose
+    dots and digits became spaces: "^NETFLIX INTERNATIONAL B V" on "Netflix International
+    B.V.")."""
+    if name is None:
+        return False
+    return _found(pattern, name) or _found(pattern, _merchant_text(name))
+
+
+def learnable_household(category: AllocationCategory) -> bool:
+    """D160: a household code with a threshold that is not tax-relevant. A tax-relevant code
+    proposes a return input a person confirms each time; a transfer or depot code is booked
+    by its matcher only; a code without a threshold (hh_other) is never booked unseen."""
+    return (
+        category in HOUSEHOLD_CODES
+        and category not in TAX_RELEVANT
+        and THRESHOLDS[category] is not None
+    )
+
+
+def _name_rule(
+    tx: MatchTransaction,
+    confirmed: AllocationSet,
+    names: Sequence[NameHistory],
+) -> MatchingRuleCreate | None:
+    """D160: on a private account, a single-category answer of a learnable household code for
+    a line without an IBAN becomes a rule on the merchant's name. Not for a split. Refused when
+    the account's confirmed lines the pattern hits carry two or more categories (rule.too_broad:
+    the name does not tell the kind, so the card asks for a purpose pattern) or one category
+    other than the answer's (rule.conflicts); too_broad is checked first."""
+    if len(confirmed.allocations) != 1:
+        return None
+    (only,) = confirmed.allocations
+    if not learnable_household(only.category):
+        return None
+    pattern = merchant_pattern(tx.counterparty_name or "")
+    if pattern == "^":
+        return None  # no name (or digits and dots only): nothing to match on
+    hits = {
+        h.category
+        for h in names
+        if h.transaction_id != tx.id and _name_found(pattern, h.counterparty_name)
+    }
+    if len(hits) >= 2:
+        raise RuleError(RULE_TOO_BROAD, "the name was confirmed under two categories")
+    if hits and hits != {only.category}:
+        raise RuleError(RULE_CONFLICTS, "the pattern hits a line confirmed otherwise")
+    return MatchingRuleCreate(
+        matcher=RuleMatcher(
+            counterparty_name_pattern=pattern,
+            amount_sign="credit" if tx.amount > 0 else "debit",
+        ),
+        split_method=SplitMethod.SINGLE_CATEGORY,
+        category=only.category,
+        recurring=only.recurring,
+    )
+
+
+# D158's question for a private line whose counterparty the rental account's matchers own.
+TENANT_QUESTION = "Diese Zahlung kommt von einem Mieter: gehört sie zum Mietobjekt?"
+LENDER_QUESTION = "Diese Zahlung geht an die Bank des Darlehens: gehört sie zum Mietobjekt?"
+
+
+def rental_counterparty_question(
+    tx: MatchTransaction, context: MatchContext
+) -> AllocationSet | None:
+    """D158: a private line from or to a tenant's IBAN or a loan's account is not booked as rent
+    or annuity (the rental matchers never run on a private account); it goes to review with the
+    question whether it belongs to the property, proposing hh_other_income (a credit) or
+    hh_property_cost (a debit) with the property, at GUARDED_CONFIDENCE so it never
+    auto-confirms. The model never sees such a line. None for any other counterparty, or one
+    that two properties share (no property to name)."""
+    hmac = tx.counterparty_iban_hmac
+    if hmac is None or tx.amount == 0:
+        return None
+    tenant = {t.property_id for t in context.tenancies if hmac in t.tenant_iban_hmacs}
+    lender = {loan.property_id for loan in context.loans if hmac == loan.account_iban_hmac}
+    if tenant:
+        properties, question, method = tenant, TENANT_QUESTION, AllocationMethod.MATCHER_RENT
+    elif lender:
+        properties, question, method = lender, LENDER_QUESTION, AllocationMethod.MATCHER_LOAN
+    else:
+        return None
+    if len(properties) != 1:
+        return None
+    (property_id,) = properties
+    category = (
+        AllocationCategory.HH_OTHER_INCOME if tx.amount > 0 else AllocationCategory.HH_PROPERTY_COST
+    )
+    draft = _draft(
+        tx.amount,
+        category,
+        service_period(tx.purpose, tx.booking_date, False),
+        False,
+        property_id=property_id,
+    )
+    return AllocationSet(
+        transaction_id=tx.id,
+        method=method,
+        confidence=GUARDED_CONFIDENCE,
+        allocations=[draft],
+        reasoning=(
+            "Das Gegenkonto gehört zum Mietobjekt; auf einem privaten Konto wird daraus "
+            "keine Miete oder Rate gebucht."
+        ),
+        question=question,
+    )
+
+
+def _allowed_set(found: AllocationSet | None, context: MatchContext) -> AllocationSet | None:
+    """D159: an answer whose categories the line's account does not take is no answer (a
+    property bill matched on a private line is D161's path, phase 6 step 2)."""
+    if found is None:
+        return None
+    allowed = allowed_categories(context.account_purpose)
+    return found if all(a.category in allowed for a in found.allocations) else None
+
+
+_RENTAL_ORDER: tuple[Callable[[MatchTransaction, MatchContext], AllocationSet | None], ...] = (
+    match_owner_transfer,
+    match_rent,
+    match_loan,
+    match_document,
+)
+# D158 on a private account: the transfer matcher (D162, phase 6 step 2) comes first once it is
+# built; then the document match; then the tenant / lender question before the model.
+_PRIVATE_ORDER: tuple[Callable[[MatchTransaction, MatchContext], AllocationSet | None], ...] = (
+    match_document,
+    rental_counterparty_question,
+)
+
+
+def deterministic_answer(
+    rules: Sequence[MatchingRule],
+    tx: MatchTransaction,
+    context: MatchContext,
+    history: Sequence[HistoryLine] = (),
+) -> AllocationSet | None:
+    """The deterministic order per account purpose (D158; fixture matching_order.yaml), before
+    the model. Rental: learned rules -> owner transfer -> rent -> loan -> document (Hausgeld is
+    a by_wirtschaftsplan rule), as in phase 2. Private: learned rules -> document -> D158's
+    question; the rent, loan, Hausgeld and owner-transfer matchers never run there. A standing
+    rule hit (confidence 1) wins at once; a rule's near-miss proposal (D49) only when no
+    matcher answers. Every answer is one the account's purpose takes (D159)."""
+    found = rule_answer(rules, tx, context, history)
+    if found is not None and found.confidence == EXACT:
+        return found
+    order = _PRIVATE_ORDER if context.account_purpose is AccountPurpose.PRIVATE else _RENTAL_ORDER
+    for matcher in order:
+        answer = _allowed_set(matcher(tx, context), context)
+        if answer is not None:
+            return answer
+    return found
 
 
 def match_transfer(tx: MatchTransaction, context: MatchContext) -> AllocationSet | None:

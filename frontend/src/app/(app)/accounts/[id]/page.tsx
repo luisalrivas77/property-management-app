@@ -3,9 +3,11 @@
 // Konto (phase-2.md §7): the account's facts, then tabs as ?tab=… links. Kontoauszüge (upload,
 // the imports with their reconciliation status, the closing-balance form for a CSV), Umsätze
 // (with a booking-date filter, or the lines of one import), and mögliche Doppelbuchungen
-// (the same payment imported in two formats, D22). An owner account takes no statements, so
-// it shows its facts only. Kontoauszüge starts with the Bankabruf card (phase-5.md §11): the
-// FinTS connection and its runs; a run that imports reloads the imports below.
+// (the same payment imported in two formats, D22). Since phase 6 (D156) a private account
+// imports like the rental one; its owners (D157) are a card under the facts, with the to-do
+// „Eigentümer festlegen“ while none is set. Kontoauszüge starts, on the rental account, with
+// the Bankabruf card (phase-5.md §11): the FinTS connection and its runs; a run that imports
+// reloads the imports below. The private accounts' FinTS connections come with phase 6 step 3.
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useState, type FormEvent } from "react";
@@ -15,8 +17,11 @@ import type { Account } from "@/api/schemas";
 import { DuplicatesList, ImportsTable, openDuplicateCount, StatementUpload, TransactionsTable } from "@/components/accounts";
 import { BankSyncCard } from "@/components/bankSync";
 import { formatDate, formatMoney } from "@/components/format";
+import { ACCOUNT_KIND, ACCOUNT_PURPOSE } from "@/components/labels";
 import { Breadcrumbs, Facts, Loading, TabBar, type Tab } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
+
+import { AccountOwnership } from "./AccountOwnership";
 
 type TabKey = "kontoauszuege" | "umsaetze" | "doppelbuchungen";
 
@@ -85,53 +90,51 @@ function AccountDetail() {
             <AccountFacts account={data} />
             {data.purpose === "private" ? (
               <p className="muted">
-                Privatkonto eines Eigentümers: Hausbuch erkennt Überweisungen von und an dieses Konto als Privateinlagen und
-                -entnahmen. Kontoauszüge werden hier nicht importiert.
+                Privatkonto: seine Umsätze bekommen Haushaltskategorien und zählen nie in die Anlage V. Überweisungen zwischen
+                diesem Konto und dem Mietkonto sind Privateinlagen und -entnahmen.
               </p>
-            ) : (
-              <>
-                <TabBar tabs={tabs} current={tab} href={(key) => `/accounts/${id}?tab=${key}`} />
-                {tab === "kontoauszuege" ? (
-                  <div className="stack">
-                    <BankSyncCard account={data} onImported={statements.reload} />
-                    <StatementUpload accountId={id} onImported={statements.reload} />
-                    {openCount > 0 ? (
-                      <div className="notice notice-warn">
-                        <p>
-                          {openCount === 1 ? "1 mögliche Doppelbuchung wartet" : `${openCount} mögliche Doppelbuchungen warten`} auf
-                          eine Entscheidung:{" "}
-                          <Link href={`/accounts/${id}?tab=doppelbuchungen`}>prüfen</Link>.
-                        </p>
-                      </div>
-                    ) : null}
-                    <h2>Importierte Kontoauszüge</h2>
-                    <Loading state={statements}>
-                      {(loaded) => (
-                        <ImportsTable
-                          accountId={id}
-                          imports={loaded.imports}
-                          documents={loaded.documentById}
-                          onChanged={statements.reload}
-                        />
-                      )}
-                    </Loading>
+            ) : null}
+            <AccountOwnership account={data} onSaved={account.reload} />
+            <TabBar tabs={tabs} current={tab} href={(key) => `/accounts/${id}?tab=${key}`} />
+            {tab === "kontoauszuege" ? (
+              <div className="stack">
+                {data.purpose === "rental" ? <BankSyncCard account={data} onImported={statements.reload} /> : null}
+                <StatementUpload accountId={id} onImported={statements.reload} />
+                {openCount > 0 ? (
+                  <div className="notice notice-warn">
+                    <p>
+                      {openCount === 1 ? "1 mögliche Doppelbuchung wartet" : `${openCount} mögliche Doppelbuchungen warten`} auf
+                      eine Entscheidung:{" "}
+                      <Link href={`/accounts/${id}?tab=doppelbuchungen`}>prüfen</Link>.
+                    </p>
                   </div>
                 ) : null}
-                {tab === "umsaetze" ? <TransactionsTab accountId={id} /> : null}
-                {tab === "doppelbuchungen" ? (
-                  <Loading state={statements}>
-                    {(loaded) => (
-                      <DuplicatesList
-                        duplicates={loaded.duplicates}
-                        transactions={loaded.transactionById}
-                        imports={loaded.importById}
-                        onDecided={statements.reload}
-                      />
-                    )}
-                  </Loading>
-                ) : null}
-              </>
-            )}
+                <h2>Importierte Kontoauszüge</h2>
+                <Loading state={statements}>
+                  {(loaded) => (
+                    <ImportsTable
+                      accountId={id}
+                      imports={loaded.imports}
+                      documents={loaded.documentById}
+                      onChanged={statements.reload}
+                    />
+                  )}
+                </Loading>
+              </div>
+            ) : null}
+            {tab === "umsaetze" ? <TransactionsTab accountId={id} /> : null}
+            {tab === "doppelbuchungen" ? (
+              <Loading state={statements}>
+                {(loaded) => (
+                  <DuplicatesList
+                    duplicates={loaded.duplicates}
+                    transactions={loaded.transactionById}
+                    imports={loaded.importById}
+                    onDecided={statements.reload}
+                  />
+                )}
+              </Loading>
+            ) : null}
           </>
         )}
       </Loading>
@@ -143,10 +146,11 @@ function AccountFacts({ account }: { account: Account }) {
   return (
     <Facts
       rows={[
-        ["Bank", account.bank],
+        ["Bank", account.provider ?? account.bank],
         ["IBAN", account.iban_masked ?? "–"],
         ["Anfangssaldo", `${formatMoney(account.opening_balance)} am ${formatDate(account.opening_balance_on)}`],
-        ["Art", account.purpose === "private" ? "Privatkonto Eigentümer" : "Mietkonto"],
+        ["Kontoart", ACCOUNT_KIND[account.kind]],
+        ["Wofür", ACCOUNT_PURPOSE[account.purpose]],
       ]}
     />
   );

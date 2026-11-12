@@ -43,6 +43,8 @@ from .document import (
     RetentionResult,
 )
 from .enums import (
+    AccountKind,
+    AccountPurpose,
     AcquisitionCostKind,
     DepositForm,
     LinkTarget,
@@ -177,6 +179,12 @@ class AccountPatch(Patch):
     opening_balance: Money = Field(default=None)
     opening_balance_on: date = Field(default=None)
     is_owner_account: bool = Field(default=None)
+    # Phase 6 D156: a bank account's kind stays a bank kind (its IBAN is its identity); a
+    # change of purpose re-checks the waiting lines and is refused while the account holds
+    # a booking of a category the new purpose does not allow (D159). provider: null clears.
+    kind: AccountKind = Field(default=None)
+    purpose: AccountPurpose = Field(default=None)
+    provider: str | None = Field(default=None, min_length=1, max_length=100)
 
 
 class LoanPatch(Patch):
@@ -386,9 +394,12 @@ class WorkspaceSettings(Schema):
     ai_tenant_documents: bool
     auto_accept_llm: bool
     reminder_emails: bool
-    # Phase 6 (migration 0025, D168): read here; the PATCH gains it with the consent flow of
-    # the step that builds the household prompt, so it cannot be switched on without consent.
+    # Phase 6 (migration 0025, D168): switching it on records the member's consent; the
+    # other member consents by POST /workspace/settings/ai-consent. Active (private lines
+    # reach the model) once two members consented since it was switched on.
     ai_private_accounts: bool = False
+    ai_private_accounts_consented_by: list[UUID] = Field(default_factory=list)
+    ai_private_accounts_active: bool = False
     # Not a workspace column: whether the process can send mail (TEM configured), set by the
     # route so the settings page can say when the switch has no effect yet.
     reminder_emails_available: bool = False
@@ -398,6 +409,7 @@ class WorkspaceSettingsPatch(Patch):
     ai_tenant_documents: bool = Field(default=None)
     auto_accept_llm: bool = Field(default=None)
     reminder_emails: bool = Field(default=None)
+    ai_private_accounts: bool = Field(default=None)
 
 
 class DocumentUploadResult(Schema):
@@ -531,7 +543,7 @@ class InboxItem(Schema):
     possible_duplicate_id: UUID | None = None
     transaction_id: UUID | None = None
     tax_year: int | None = None  # questionnaire_open: the year whose questions are open
-    account_id: UUID | None = None  # phase 5: the bank_* kinds
+    account_id: UUID | None = None  # phase 5: the bank_* kinds; phase 6: a private line
     sync_id: UUID | None = None  # phase 5: bank_approval_needed, bank_sync_failed
     reminder_id: str | None = Field(default=None, max_length=160)  # phase 5: reminder
 

@@ -1,6 +1,8 @@
 // German labels for the API's enums. Typed as Record<Enum, string>, so a value added to the
 // API (and to the generated types) fails the typecheck until it has a label here.
 import type {
+  AccountKind,
+  AccountPurpose,
   AccountSource,
   AcquisitionCostKind,
   BalanceSource,
@@ -409,6 +411,22 @@ export const ACCOUNT_SOURCE: Record<AccountSource, string> = {
   aggregator: "Kontoaggregator",
 };
 
+/** account.kind (phase 6 D156). Depot and exchange accounts come with steps 4 and 5, wallets
+ * with phase 7; the API refuses them until then. */
+export const ACCOUNT_KIND: Record<AccountKind, string> = {
+  bank_current: "Girokonto",
+  bank_savings: "Sparkonto oder Tagesgeld",
+  depot: "Depot",
+  exchange: "Börse (Krypto)",
+  wallet: "Wallet",
+};
+
+/** account.purpose (D156): the rental account feeds the Anlage V, a private one never does. */
+export const ACCOUNT_PURPOSE: Record<AccountPurpose, string> = {
+  rental: "Mietkonto (für die Immobilie)",
+  private: "Privatkonto",
+};
+
 export const STATEMENT_FORMAT: Record<StatementFormat, string> = {
   camt: "camt (XML)",
   csv_camt: "CSV-CAMT",
@@ -550,6 +568,54 @@ export const PRIVATE_ONLY_CATEGORIES: ReadonlySet<AllocationCategory> = new Set<
   "capital_income_tax",
   "depot_fee",
 ]);
+
+/** The household codes in the groups of rules/household/taxonomy.py (phase 6 D159), for the
+ * category picker of a private line; the API's allowed set per purpose decides. */
+const HOUSEHOLD_GROUPS: { label: string; categories: AllocationCategory[] }[] = [
+  { label: "Einnahmen", categories: ["hh_salary", "hh_child_benefit", "hh_tax_refund", "hh_capital_income", "hh_other_income"] },
+  {
+    label: "Ausgaben",
+    categories: [
+      "hh_housing",
+      "hh_groceries",
+      "hh_family_child",
+      "hh_mobility",
+      "hh_insurance",
+      "hh_subscriptions",
+      "hh_leisure_travel",
+      "hh_health",
+      "hh_other",
+    ],
+  },
+  {
+    label: "Steuerlich relevant",
+    categories: ["hh_donation", "hh_household_services", "hh_childcare", "hh_property_cost", "hh_tax_payment"],
+  },
+  { label: "Bewegungen", categories: ["internal_transfer_in", "internal_transfer_out", "hh_cash", "hh_credit_card"] },
+  { label: "Konto", categories: ["bank_fees", "uncategorized"] },
+];
+
+const DEPOT_GROUP: { label: string; categories: AllocationCategory[] } = {
+  label: "Depot",
+  categories: ["security_purchase", "security_sale", "distribution", "capital_income_tax", "depot_fee"],
+};
+
+/** The categories a line's account takes, in the picker's groups (D159, mirrors
+ * rules/household/taxonomy.allowed_categories): a rental line every phase 2-4 code; a private
+ * one the household and transfer codes, its bank fees and „noch offen“, and on a depot the
+ * depot's own codes too. */
+export function categoryGroups(
+  purpose: AccountPurpose,
+  kind: AccountKind,
+): { label: string | null; categories: [AllocationCategory, string][] }[] {
+  const labelled = (categories: AllocationCategory[]) =>
+    categories.map((category): [AllocationCategory, string] => [category, ALLOCATION_CATEGORY[category]]);
+  if (purpose === "rental") {
+    return [{ label: null, categories: options(ALLOCATION_CATEGORY).filter(([value]) => !PRIVATE_ONLY_CATEGORIES.has(value)) }];
+  }
+  const groups = kind === "depot" ? [...HOUSEHOLD_GROUPS, DEPOT_GROUP] : HOUSEHOLD_GROUPS;
+  return groups.map((group) => ({ label: group.label, categories: labelled(group.categories) }));
+}
 
 /** Who proposed an allocation set. */
 export const ALLOCATION_METHOD: Record<AllocationMethod, string> = {

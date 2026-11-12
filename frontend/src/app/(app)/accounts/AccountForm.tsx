@@ -1,25 +1,32 @@
 "use client";
 
 // Konto form (phase-2.md §7, D21): Bezeichnung, Bank, IBAN, Anfangssaldo and its date (the
-// balance anchor every import is reconciled against), and whether it is one of the owners'
-// private accounts (recognized by IBAN for owner transfers; it never holds statements).
-// Editing (AccountPatch) cannot change the IBAN: a different IBAN is another account. Moving
-// the anchor makes the API re-check every import of the account.
+// balance anchor every import is reconciled against), its Kontoart (Girokonto or Sparkonto) and
+// whether it is the rental account or a private one (phase 6 D156: both import statements; the
+// rental account's lines feed the Anlage V, a private account's never do). Editing
+// (AccountPatch) cannot change the IBAN: a different IBAN is another account. Moving the anchor
+// makes the API re-check every import of the account; a new purpose is refused while the
+// account holds bookings the new purpose does not take (D159). Depots, exchanges and wallets
+// come with their own steps.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
 import { ApiError } from "@/api/errors";
-import type { Account, AccountPatch } from "@/api/schemas";
+import type { Account, AccountKind, AccountPatch, AccountPurpose } from "@/api/schemas";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "@/components/form";
 import { decimalInput, toSignedMoneyString } from "@/components/input";
+import { ACCOUNT_KIND, ACCOUNT_PURPOSE } from "@/components/labels";
 import { Facts } from "@/components/ui";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
-const KEYS = ["label", "bank", "iban", "opening_balance", "opening_balance_on", "is_owner_account"] as const;
+const KEYS = ["label", "bank", "iban", "opening_balance", "opening_balance_on", "kind", "purpose"] as const;
 
-const CODE_FIELDS = { "iban.": "iban" };
+const CODE_FIELDS = { "iban.": "iban", "allocation.category_not_for_account": "purpose" };
+
+/** The kinds this form offers: the bank kinds (D156); the others come with steps 4, 5 and phase 7. */
+const BANK_KINDS: AccountKind[] = ["bank_current", "bank_savings"];
 
 export function AccountForm({ account }: { account?: Account }) {
   const router = useRouter();
@@ -29,19 +36,17 @@ export function AccountForm({ account }: { account?: Account }) {
   const [opening, setOpening] = useState(account ? decimalInput(account.opening_balance) : "0,00");
   const [openingOn, setOpeningOn] = useState(account?.opening_balance_on ?? "");
   // Phase 6 (D156, migration 0025): is_owner_account is true on every account, the rental one
-  // included; whether an account is a private one is its purpose.
-  const wasPrivate = account?.purpose === "private";
-  const [ownerAccount, setOwnerAccount] = useState(wasPrivate);
+  // included; whether an account is a private one is its purpose. A new account is private
+  // unless the person picks the rental purpose.
+  const [kind, setKind] = useState<AccountKind>(account?.kind ?? "bank_current");
+  const [purpose, setPurpose] = useState<AccountPurpose>(account?.purpose ?? "private");
   const [busy, setBusy] = useState(false);
   const form = useFormErrors(KEYS, CODE_FIELDS);
 
-  // A 409 means the IBAN is taken (create) or the account already has statements (edit,
-  // becoming an owner account); the generic conflict sentence would not say which.
+  // A 409 on create means the IBAN is taken; the generic conflict sentence would not say so.
   const conflictText = (error: unknown) =>
-    error instanceof ApiError && error.status === 409
-      ? account
-        ? "Ein Konto mit importierten Kontoauszügen kann kein Privatkonto der Eigentümer werden."
-        : "Ein Konto mit dieser IBAN gibt es in diesem Haushalt schon."
+    error instanceof ApiError && error.status === 409 && !account
+      ? "Ein Konto mit dieser IBAN gibt es in diesem Haushalt schon."
       : null;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -61,14 +66,16 @@ export function AccountForm({ account }: { account?: Account }) {
     form.clear();
     try {
       if (account) {
-        // The flag only when the person changed it, so editing the rental account keeps it.
-        const body: AccountPatch =
-          ownerAccount === wasPrivate ? common : { ...common, is_owner_account: ownerAccount };
+        // Kind and purpose only when the person changed them, so saving the other fields never
+        // records an account.kind_set event.
+        const body: AccountPatch = { ...common };
+        if (kind !== account.kind) body.kind = kind;
+        if (purpose !== account.purpose) body.purpose = purpose;
         await ok(api.PATCH("/api/accounts/{account_id}", { params: { path: { account_id: account.id } }, body }));
         router.push(`/accounts/${account.id}`);
       } else {
-        // A bank account (phase 6 D156); the other kinds come with their own steps.
-        const body = { ...common, iban: iban.trim(), is_owner_account: ownerAccount, kind: "bank_current" as const };
+        // Every own account is recognised by its IBAN (is_owner_account, D156); its purpose is sent.
+        const body = { ...common, iban: iban.trim(), is_owner_account: true, kind, purpose };
         const created = await ok(api.POST("/api/accounts", { body }));
         router.push(`/accounts/${created.id}`);
       }
@@ -129,17 +136,36 @@ export function AccountForm({ account }: { account?: Account }) {
           <input type="date" value={openingOn} onChange={(e) => setOpeningOn(e.target.value)} required />
         </Field>
       </div>
-      <label className="inline">
-        <input type="checkbox" checked={ownerAccount} onChange={(e) => setOwnerAccount(e.target.checked)} />
-        Privatkonto eines Eigentümers (keine Kontoauszüge; Überweisungen von und an dieses Konto sind Privateinlagen und -entnahmen)
-      </label>
-      {form.of("is_owner_account").length > 0 ? (
-        <ul className="field-errors">
-          {form.of("is_owner_account").map((message, index) => (
-            <li key={index}>{message}</li>
-          ))}
-        </ul>
-      ) : null}
+      <div className="grid">
+        <Field
+          id="account-kind"
+          label="Kontoart"
+          description="Girokonto oder Sparkonto (auch Tagesgeld). Depots und Börsenkonten kommen später dazu."
+          errors={form.of("kind")}
+        >
+          <select value={kind} onChange={(e) => setKind(e.target.value as AccountKind)}>
+            {BANK_KINDS.map((value) => (
+              <option key={value} value={value}>
+                {ACCOUNT_KIND[value]}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field
+          id="account-purpose"
+          label="Wofür"
+          description="Das Mietkonto ist das Konto, über das die Wohnung läuft: seine Umsätze gehen in die Anlage V. Ein Privatkonto bekommt Haushaltskategorien und zählt nie in die Anlage V; Überweisungen zwischen dem Mietkonto und einem Privatkonto sind Privateinlagen und -entnahmen."
+          errors={form.of("purpose")}
+        >
+          <select value={purpose} onChange={(e) => setPurpose(e.target.value as AccountPurpose)}>
+            {(Object.keys(ACCOUNT_PURPOSE) as AccountPurpose[]).map((value) => (
+              <option key={value} value={value}>
+                {ACCOUNT_PURPOSE[value]}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </div>
       {account ? (
         <>
           <Facts rows={[["IBAN", account.iban_masked ?? "–"]]} />

@@ -120,6 +120,12 @@ export type Account = Schemas["Account"];
 export type AccountCreate = Schemas["AccountCreate"];
 export type AccountPatch = Schemas["AccountPatch"];
 export type AccountSource = Schemas["AccountSource"];
+// every account of the household, its kind, purpose and owner shares (phase 6 D156, D157)
+export type AccountKind = Schemas["AccountKind"];
+export type AccountPurpose = Schemas["AccountPurpose"];
+export type AccountOwnership = Schemas["AccountOwnership"];
+export type OwnershipShare = Schemas["OwnershipShare"];
+export type SetOwnershipBody = Schemas["SetOwnershipBody"];
 export type StatementImport = Schemas["StatementImport"];
 export type StatementFormat = Schemas["StatementFormat"];
 export type ImportStatus = Schemas["ImportStatus"];

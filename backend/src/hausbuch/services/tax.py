@@ -12,7 +12,10 @@ What the facts hold, and what they leave out:
   years (the 15 % window, §82b and the AfA additions reach back), plus the confirmed lines
   without a property on the accounts that carry the property's allocations (the dedicated
   rental account's bank fees and owner transfers; property_id None, which the draft reports).
-  A line merged away as a duplicate is never read.
+  A line merged away as a duplicate is never read. Only lines of a rental-purpose account are
+  read (phase 6 D159, D161): a private account's line, even one booked with the property (a
+  tenant paying into it, a bill of the flat paid from it), adds no line, no coverage and no
+  open line to the draft until step 2 reads such a row as a bill's proof of payment.
 - due_on is resolved here, never guessed by the rule (§5.1 step 4): a loan line takes the
   schedule entry due nearest its booking date within 10 days (D39, as the matcher does); rent
   and its prepayment the tenancy's rent_due_day in the service period's first month (D67);
@@ -39,6 +42,7 @@ from uuid import UUID
 
 from sqlalchemy import Connection, and_, exists, func, or_, select
 
+from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import document as document_table
 from hausbuch.db.tables import document_link as link_table
@@ -60,6 +64,7 @@ from hausbuch.schemas.allocation import AllocationCategory, ServicePeriod
 from hausbuch.schemas.checklist import ChecklistFacts
 from hausbuch.schemas.document import Document
 from hausbuch.schemas.enums import (
+    AccountPurpose,
     AllocationStatus,
     DocumentSubtype,
     ExtractionKind,
@@ -479,14 +484,24 @@ def _grundsteuer_reference(
 # --- Accounts, allocations, coverage, pending -------------------------------------------
 
 
+def _rental_accounts():
+    """Phase 6 D159, D161: the accounts whose lines the draft reads, the rental-purpose ones."""
+    return select(account_table.c.id).where(account_table.c.purpose == AccountPurpose.RENTAL.value)
+
+
 def _accounts(conn: Connection, property_id: UUID) -> list[UUID]:
-    """The accounts that carry any current (not superseded) allocation of the property."""
+    """The rental-purpose accounts that carry any current (not superseded) allocation of the
+    property."""
     a, t = allocation_table.c, transaction_table.c
     return list(
         conn.execute(
             select(t.account_id)
             .select_from(transaction_table.join(allocation_table, a.transaction_id == t.id))
-            .where(a.property_id == property_id, a.status != _SUPERSEDED)
+            .where(
+                a.property_id == property_id,
+                a.status != _SUPERSEDED,
+                t.account_id.in_(_rental_accounts()),
+            )
             .distinct()
             .order_by(t.account_id)
         ).scalars()
@@ -528,6 +543,7 @@ def _allocations(
             a.status == _CONFIRMED,
             a.amount != 0,
             t.excluded_as_duplicate_of.is_(None),
+            t.account_id.in_(_rental_accounts()),
             in_scope,
         )
         .order_by(t.booking_date, t.id, a.recorded_at, a.id)

@@ -10,7 +10,9 @@ service_period(purpose, booking_date, recurring), first rule that applies:
   5. else None.
 The period stands on its own when the purpose states one: January's rent paid on 30 December
 is January's (the §11 ten-day rule in phase 3 reads both dates). Digits that belong to a longer
-number or a full date (01.03.2027) are not read as a month or a year.
+number or a full date (01.03.2027) are not read as a month or a year. A debit card's expiry
+in a Sparkasse card line ("Debitk.1 2028-12", phase 6 D160) is not a period the payment is
+for, so it is removed before reading.
 """
 
 import calendar
@@ -57,10 +59,12 @@ _MONTH = re.compile(
     re.IGNORECASE,
 )
 _YEAR = re.compile(_START + r"(\d{4})" + _END)
+# A card and its expiry month, as a Sparkasse card purpose ends: "Debitk.1 2028-12".
+_CARD_EXPIRY = re.compile(r"\b(?:Debitk|Kreditk)\.\s*\d+\s+\d{4}-\d{1,2}" + _END, re.IGNORECASE)
 
 
 def service_period(purpose: str, booking_date: date, recurring: bool) -> ServicePeriod | None:
-    text = purpose or ""
+    text = _CARD_EXPIRY.sub(" ", purpose or "")
     for m in _RANGE.finditer(text):
         first = _month(m.group(1), m.group(2))
         last = _month(m.group(3), m.group(4))

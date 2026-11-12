@@ -7,6 +7,8 @@ hausbuch.rules.errors.RuleError with a statement.* code; messages never quote fi
 - camt.py: camt.052 (BkToCstmrAcctRpt/Rpt) and camt.053 (BkToCstmrStmt/Stmt), one .xml file
   or a ZIP of daily reports. Balances come from the file.
 - csv_camt.py: Sparkasse CSV-CAMT (V2). No balances.
+- dkb_csv.py: DKB's CSV export (phase 6 D173 (3)). No balances; its „Kontostand vom“ is a
+  stated balance that only pre-fills the typed closing.
 - PDF Kontoauszug: read by the extraction job (step 1's StatementExtraction); not built in
   step 3, so a PDF is refused with statement.unknown_format for now.
 """
@@ -17,7 +19,7 @@ from hausbuch.rules.errors import RuleError
 from hausbuch.rules.statements import UNKNOWN_FORMAT
 from hausbuch.schemas.bank import BankSource, ParsedStatement, StatementFormat
 
-from . import camt, csv_camt
+from . import camt, csv_camt, dkb_csv
 
 __all__ = ["BankSource", "ParseOutcome", "detect_format", "parse_statement"]
 
@@ -47,9 +49,13 @@ def detect_format(data: bytes, media_type: str | None = None) -> StatementFormat
         return StatementFormat.CAMT
     if csv_camt.looks_like(head):
         return StatementFormat.CSV_CAMT
+    if dkb_csv.looks_like(head):
+        return StatementFormat.DKB_CSV
     if body.startswith(b"%PDF") or media_type == "application/pdf":
         return StatementFormat.PDF
-    raise RuleError(UNKNOWN_FORMAT, "not a camt.052/053 file, camt ZIP or Sparkasse CSV-CAMT")
+    raise RuleError(
+        UNKNOWN_FORMAT, "not a camt.052/053 file, camt ZIP, Sparkasse CSV-CAMT or DKB CSV"
+    )
 
 
 def parse_statement(data: bytes, media_type: str | None = None) -> ParseOutcome:
@@ -60,5 +66,7 @@ def parse_statement(data: bytes, media_type: str | None = None) -> ParseOutcome:
         return ParseOutcome(result.statement, result.balance_error)
     if fmt is StatementFormat.CSV_CAMT:
         return ParseOutcome(csv_camt.parse_csv_camt(data))
+    if fmt is StatementFormat.DKB_CSV:
+        return ParseOutcome(dkb_csv.parse_dkb_csv(data))
     # Step 1's extraction job reads PDF statements; the import path for them is not built.
     raise RuleError(UNKNOWN_FORMAT, "PDF statements are not imported yet; use camt or CSV-CAMT")

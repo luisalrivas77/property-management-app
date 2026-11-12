@@ -184,3 +184,7 @@ BANK_PIN_MISSING = "bank.pin_missing"  # the connection's slot has no secret (D1
 # Phase 6 step 3 (FinTS connections per login, DKB)
 BANK_HISTORY_MISSING = "bank.history_missing"  # a private account without a reconciled import
 BANK_AUTO_SYNC_WAITS = "bank.auto_sync_waits"  # DKB: two manual syncs without approval first
+# Phase 6 step 1 (D168): the second owner's own consent to ai_private_accounts.
+SETTINGS_CONSENT_SWITCH_OFF = "settings.consent_switch_off"  # nothing to consent to
+SETTINGS_CONSENT_ALREADY_RECORDED = "settings.consent_already_recorded"  # this member did
+SETTINGS_CONSENT_NOT_A_MEMBER = "settings.consent_not_a_member"  # only a signed-in member

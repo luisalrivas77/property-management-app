@@ -10,17 +10,20 @@ import io
 import zipfile
 from decimal import Decimal
 
+import fixture_models_phase6 as phase6
 import pytest
 from fixture_models_phase2 import BANK_SAMPLES, BankInput, ParserFixture, ZipMember, load
 
 from hausbuch.rules import statements as rules
 from hausbuch.rules.errors import RuleError
 from hausbuch.schemas.bank import StatementFormat
-from hausbuch.services.bank import camt, csv_camt, detect_format, parse_statement
+from hausbuch.services.bank import camt, csv_camt, detect_format, dkb_csv, parse_statement
 
 CAMT = load("camt")
 CSV = load("csv_camt")
+DKB = phase6.load("dkb_csv")
 assert isinstance(CAMT, ParserFixture) and isinstance(CSV, ParserFixture)
+assert isinstance(DKB, phase6.DkbFixture)
 
 
 def _sample_member(name: str) -> bytes:
@@ -117,6 +120,38 @@ def test_camt(case):
 @pytest.mark.parametrize("case", CSV.cases, ids=lambda c: c.id)
 def test_csv_camt(case):
     _check(case)
+
+
+@pytest.mark.rule
+@pytest.mark.parametrize("case", DKB.cases, ids=lambda c: c.id)
+def test_dkb_csv(case):
+    """dkb_csv.yaml (phase 6 D173 (3)): the parse, and the stated „Kontostand vom“ that
+    pre-fills the typed closing (the import's half is in tests/db/test_services_dkb_import.py)."""
+    if case.pending and not case.pending.startswith("phase 6 step 1"):
+        pytest.skip(case.pending)
+    _check(case)
+    statement = parse_statement(build(case.input), case.input.media_type).statement
+    if case.import_.prefilled_closing is not None:
+        assert (statement.stated_balance, statement.stated_balance_on) == (
+            case.import_.prefilled_closing,
+            case.import_.prefilled_on,
+        )
+    assert all(line.raw == {} and line.bank_reference is None for line in statement.lines)
+
+
+def test_a_dkb_file_is_not_a_sparkasse_csv_and_back():
+    dkb = build(DKB.cases[0].input)
+    sparkasse = build(next(c for c in CSV.cases if c.id == "sparkasse_export").input)
+    assert detect_format(dkb, "text/csv") is StatementFormat.DKB_CSV
+    assert not csv_camt.looks_like(dkb[:4096])
+    assert not dkb_csv.looks_like(sparkasse[:4096])
+
+
+def test_a_dkb_header_without_its_columns_is_the_files_error():
+    data = '\ufeff"Girokonto";"DE61 1000 0000 0000 0030 04"\n"Buchungsdatum";"Umsatztyp"\n'
+    with pytest.raises(RuleError) as caught:
+        dkb_csv.parse_dkb_csv(data.encode())
+    assert caught.value.code == rules.UNPARSABLE
 
 
 def test_formats_are_sniffed_from_the_bytes_not_the_media_type():

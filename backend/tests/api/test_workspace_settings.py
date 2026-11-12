@@ -6,12 +6,14 @@ also say whether reminder emails can be sent (`reminder_emails_available`, false
 test settings carry no Transactional Email key)."""
 
 import pytest
-from api_support import make_settings, ok
+from api_support import auth_for, client_for, make_settings, ok
 
 pytestmark = pytest.mark.db
 
 OFF = {
     "ai_private_accounts": False,
+    "ai_private_accounts_consented_by": [],
+    "ai_private_accounts_active": False,
     "ai_tenant_documents": False,
     "auto_accept_llm": False,
     "reminder_emails": False,
@@ -109,3 +111,60 @@ def test_reminder_emails_available_follows_the_mail_settings(client_a, api_app, 
     # The flag is never a setting a patch can send.
     response = client_a.patch("/api/workspace/settings", json={"reminder_emails_available": False})
     assert response.status_code == 422
+
+
+def _consents(client) -> list[dict]:
+    return [
+        event
+        for event in ok(client.get("/api/events?entity_type=workspace"))
+        if event["type"] == "workspace.ai_consent_recorded"
+    ]
+
+
+def test_private_accounts_need_both_members_consent(client_a, auth_a, api_app, sessions):
+    """Phase 6 D168: switching ai_private_accounts on records the switching member's consent;
+    the switch takes effect only once a second member consents by their own click. Switching
+    it off and on again asks both once more."""
+    sessions["token-a-second"] = second = auth_for(auth_a.workspace_id)
+    other = client_for(api_app, "token-a-second")
+
+    refused = client_a.post("/api/workspace/settings/ai-consent")
+    assert refused.status_code == 422
+    assert refused.json()["code"] == "settings.consent_switch_off"
+
+    on = ok(client_a.patch("/api/workspace/settings", json={"ai_private_accounts": True}))
+    assert on["ai_private_accounts"] is True
+    assert on["ai_private_accounts_consented_by"] == [str(auth_a.user_id)]
+    assert on["ai_private_accounts_active"] is False
+    [event] = _settings_events(client_a)
+    assert event["payload"] == {
+        "changes": {"ai_private_accounts": True},
+        "consented_by": str(auth_a.user_id),
+    }
+
+    again = client_a.post("/api/workspace/settings/ai-consent")
+    assert again.status_code == 422
+    assert again.json()["code"] == "settings.consent_already_recorded"
+
+    both = ok(other.post("/api/workspace/settings/ai-consent"))
+    assert both["ai_private_accounts_consented_by"] == [str(auth_a.user_id), str(second.user_id)]
+    assert both["ai_private_accounts_active"] is True
+    [consent] = _consents(client_a)
+    assert consent["payload"] == {
+        "setting": "ai_private_accounts",
+        "consented_by": str(second.user_id),
+    }
+
+    off = ok(client_a.patch("/api/workspace/settings", json={"ai_private_accounts": False}))
+    assert off == OFF
+    on_again = ok(other.patch("/api/workspace/settings", json={"ai_private_accounts": True}))
+    assert on_again["ai_private_accounts_consented_by"] == [str(second.user_id)]
+    assert on_again["ai_private_accounts_active"] is False
+    other.close()
+
+
+def test_a_consent_counts_only_in_its_own_workspace(client_a, client_b):
+    ok(client_a.patch("/api/workspace/settings", json={"ai_private_accounts": True}))
+    assert ok(client_b.get("/api/workspace/settings")) == OFF
+    refused = client_b.post("/api/workspace/settings/ai-consent")
+    assert refused.json()["code"] == "settings.consent_switch_off"

@@ -4,12 +4,17 @@ GET returns the three switches; PATCH sets the ones sent and appends one
 workspace.settings_changed event when anything changed. Any signed-in member of the workspace
 may change them. Both also say whether reminder emails can be sent at all
 (`reminder_emails_available`: the Transactional Email settings are present), so the page can
-say when the switch has no effect yet.
+say when the switch has no effect yet. Phase 6 D168: switching `ai_private_accounts` on
+records the member's consent; POST /workspace/settings/ai-consent records the other member's.
 """
 
 from hausbuch.schemas.api import WorkspaceSettings, WorkspaceSettingsPatch
 from hausbuch.services import mail
-from hausbuch.services.workspace_settings import get_settings, update_settings
+from hausbuch.services.workspace_settings import (
+    get_settings,
+    record_ai_consent,
+    update_settings,
+)
 from hausbuch.settings import Settings
 
 from ..deps import Cmd, SettingsDep, domain_router
@@ -28,6 +33,13 @@ def workspace_settings_update(
 ) -> WorkspaceSettings:
     """Only the settings sent change; a patch that changes nothing writes no event."""
     return _with_availability(cmd.run(update_settings, **body.changes()), settings)
+
+
+@router.post("/workspace/settings/ai-consent")
+def workspace_ai_consent(cmd: Cmd, settings: SettingsDep) -> WorkspaceSettings:
+    """The signed-in member's own consent to `ai_private_accounts` (phase 6 D168); the switch
+    takes effect once two members have consented since it was switched on."""
+    return _with_availability(cmd.run(record_ai_consent), settings)
 
 
 def _with_availability(current: WorkspaceSettings, settings: Settings) -> WorkspaceSettings:
