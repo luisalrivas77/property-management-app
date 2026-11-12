@@ -260,6 +260,7 @@ function AiSuggestions({ onChanged }: { onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [queued, setQueued] = useState<number | null>(null);
+  const [heldBack, setHeldBack] = useState(0);
 
   useEffect(() => {
     if (queued === null) return;
@@ -274,6 +275,7 @@ function AiSuggestions({ onChanged }: { onChanged: () => void }) {
     try {
       const result = await ok(api.POST("/api/inbox/ai-retry"));
       setQueued(result.queued);
+      setHeldBack(result.private_held_back);
     } catch (caught) {
       setError(caught);
     } finally {
@@ -290,7 +292,15 @@ function AiSuggestions({ onChanged }: { onChanged: () => void }) {
       </div>
       {queued !== null ? (
         <Notice>
-          {queued === 1 ? "1 Zahlung" : `${queued} Zahlungen`} an die KI geschickt. Die Vorschläge erscheinen in ein paar Minuten.
+          {queued === 1 ? "1 Zahlung" : `${queued} Zahlungen`} an die KI geschickt.
+          {queued > 0 ? " Die Vorschläge erscheinen in ein paar Minuten." : null}
+        </Notice>
+      ) : null}
+      {queued !== null && heldBack > 0 ? (
+        <Notice>
+          {heldBack === 1 ? "1 Zahlung privater Konten wurde" : `${heldBack} Zahlungen privater Konten wurden`} nicht geschickt: die KI
+          für private Konten ist ausgeschaltet. Einschalten unter <Link href="/settings">Einstellungen</Link> › „Private Konten mit KI
+          zuordnen“, dann hier noch einmal „KI-Vorschläge holen“.
         </Notice>
       ) : null}
       <ErrorNotice error={error} />

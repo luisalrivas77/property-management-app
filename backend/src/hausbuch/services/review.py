@@ -450,8 +450,10 @@ def request_ai_suggestions(ctx: CommandContext, *, ai_enabled: bool) -> AiRetryR
     """Queue match_transaction for every line the queue lists as unmatched (no current rows),
     in this transaction; returns how many (D50). The job runs the whole order again, the model
     last, so a line a rule or matcher now books costs no call. A line already queued gets a
-    second job, which is harmless: the first one's rows close it (Line.open_for). Refused with
-    ai.disabled when HAUSBUCH_AI_ENABLED is off, since the job would then never call the model.
+    second job, which is harmless: the first one's rows close it (Line.open_for). A private
+    line is held back and counted while `ai_private_accounts` is off (D168), so the screen can
+    say why nothing was sent. Refused with ai.disabled when HAUSBUCH_AI_ENABLED is off, since
+    the job would then never call the model.
     Writes no event: nothing is recorded but the jobs, and each model call gets its ai_call
     row (as _on_reconciled queues match_import without an event)."""
     if not ai_enabled:
@@ -462,11 +464,14 @@ def request_ai_suggestions(ctx: CommandContext, *, ai_enabled: bool) -> AiRetryR
         a.transaction_id == t.id, a.status != AllocationStatus.SUPERSEDED.value
     )
     listed = _listed_lines().where(~has_rows)
+    held_back = 0
     if not workspace_settings.private_ai_allowed(ctx.conn):  # D168: the model may not see them
-        listed = listed.where(account_table.c.purpose != AccountPurpose.PRIVATE.value)
+        is_private = account_table.c.purpose == AccountPurpose.PRIVATE.value
+        held_back = len(ctx.conn.execute(listed.where(is_private)).all())
+        listed = listed.where(~is_private)
     ids = list(ctx.conn.execute(listed.order_by(t.booking_date, t.id)).scalars())
     for transaction_id in ids:
         enqueue.enqueue_match_transaction(
             ctx.conn, workspace_id=ctx.workspace_id, transaction_id=transaction_id
         )
-    return AiRetryResult(queued=len(ids))
+    return AiRetryResult(queued=len(ids), private_held_back=held_back)
