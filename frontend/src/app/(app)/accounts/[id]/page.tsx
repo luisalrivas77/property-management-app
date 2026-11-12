@@ -8,6 +8,9 @@
 // „Eigentümer festlegen“ while none is set. Kontoauszüge starts, on the rental account, with
 // the Bankabruf card (phase-5.md §11): the FinTS connection and its runs; a run that imports
 // reloads the imports below. The private accounts' FinTS connections come with phase 6 step 3.
+// A credit card (D176) takes its monthly PDF statements instead, shows its card's last four
+// digits and masked customer number, and offers the payment IBAN its latest statement prints
+// for confirmation (the card „Zahlungs-IBAN bestätigen“, principle 3).
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useState, type FormEvent } from "react";
@@ -20,6 +23,7 @@ import { formatDate, formatMoney } from "@/components/format";
 import { ACCOUNT_KIND, ACCOUNT_PURPOSE } from "@/components/labels";
 import { Breadcrumbs, Facts, Loading, TabBar, type Tab } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
+import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { AccountOwnership } from "./AccountOwnership";
 
@@ -94,6 +98,7 @@ function AccountDetail() {
                 diesem Konto und dem Mietkonto sind Privateinlagen und -entnahmen.
               </p>
             ) : null}
+            {data.kind === "credit_card" ? <PaymentIbanCard account={data} onSaved={account.reload} /> : null}
             <AccountOwnership account={data} onSaved={account.reload} />
             <TabBar tabs={tabs} current={tab} href={(key) => `/accounts/${id}?tab=${key}`} />
             {tab === "kontoauszuege" ? (
@@ -102,7 +107,14 @@ function AccountDetail() {
                 {data.kind === "bank_current" || data.kind === "bank_savings" ? (
                   <BankSyncCard account={data} onImported={statements.reload} />
                 ) : null}
-                <StatementUpload accountId={id} onImported={statements.reload} />
+                <StatementUpload
+                  accountId={id}
+                  card={data.kind === "credit_card"}
+                  onImported={() => {
+                    statements.reload();
+                    if (data.kind === "credit_card") account.reload();
+                  }}
+                />
                 {openCount > 0 ? (
                   <div className="notice notice-warn">
                     <p>
@@ -146,6 +158,20 @@ function AccountDetail() {
 }
 
 function AccountFacts({ account }: { account: Account }) {
+  if (account.kind === "credit_card") {
+    return (
+      <Facts
+        rows={[
+          ["Bank", account.provider ?? account.bank],
+          ["Karte", account.card_last4 ? `endet auf ${account.card_last4}` : "kommt mit der ersten Abrechnung"],
+          ["Kundennummer", account.external_ref_masked ?? "kommt mit der ersten Abrechnung"],
+          ["Zahlungs-IBAN", account.payment_iban_masked ?? "–"],
+          ["Anfangssaldo", `${formatMoney(account.opening_balance)} am ${formatDate(account.opening_balance_on)}`],
+          ["Kontoart", ACCOUNT_KIND[account.kind]],
+        ]}
+      />
+    );
+  }
   return (
     <Facts
       rows={[
@@ -239,6 +265,53 @@ function TransactionsTab({ accountId }: { accountId: string }) {
           </>
         )}
       </Loading>
+    </div>
+  );
+}
+
+/** D176 (4): the IBAN the latest card statement prints for payments to the card, masked, until a
+ * person confirms it. Confirming reads it again from that statement (never from this page). */
+function PaymentIbanCard({ account, onSaved }: { account: Account; onSaved: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const proposal = account.payment_iban_proposal;
+  if (!proposal) return null;
+
+  async function confirm() {
+    if (!proposal) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await ok(
+        api.POST("/api/accounts/{account_id}/payment-iban", {
+          params: { path: { account_id: account.id } },
+          body: { import_id: proposal.import_id },
+        }),
+      );
+      onSaved();
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="card stack">
+      <h2>Zahlungs-IBAN bestätigen</h2>
+      <p>
+        Die Abrechnung nennt unter „Angaben bei Einzahlungen“ die IBAN <strong>{proposal.payment_iban_masked}</strong>, auf die
+        Sie die Karte bezahlen.
+        {account.payment_iban_masked
+          ? ` Bisher bestätigt ist ${account.payment_iban_masked}.`
+          : " Stimmt sie, bestätigen Sie sie hier: Hausbuch erkennt damit später die Überweisung vom Girokonto als Ausgleich der Karte."}
+      </p>
+      <div className="row">
+        <button type="button" onClick={() => void confirm()} disabled={busy}>
+          {busy ? "Speichert …" : "Zahlungs-IBAN bestätigen"}
+        </button>
+      </div>
+      <ErrorNotice error={error} />
     </div>
   );
 }

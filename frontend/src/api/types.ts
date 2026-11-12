@@ -1470,6 +1470,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/accounts/{account_id}/payment-iban": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Account Payment Iban Confirm
+         * @description Confirm the payment IBAN a card statement prints (phase 6 D176 (4)): read again from
+         *     that import's original, stored masked + HMAC'd. 422 account.kind_not_available for an
+         *     account that is no credit card, statement.no_payment_iban for a statement that prints
+         *     none; 404 for an import of another account.
+         */
+        post: operations["account_payment_iban_confirm_api_accounts__account_id__payment_iban_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/accounts/{account_id}/imports": {
         parameters: {
             query?: never;
@@ -1485,7 +1508,8 @@ export interface paths {
         put?: never;
         /**
          * Account Import
-         * @description Import a camt.052/053 file, a ZIP of camt reports or a Sparkasse CSV-CAMT export. The
+         * @description Import a camt.052/053 file, a ZIP of camt reports, a Sparkasse CSV-CAMT export, DKB's
+         *     CSV export or, onto a credit card account, the card's PDF statement (phase 6 D176). The
          *     format is sniffed from the bytes. 201 with a new import, 200 with the existing one for
          *     the same bytes; 422 rule_violation with a statement.* code when the file cannot be
          *     imported (nothing is stored then); 413 / 415 as for POST /documents.
@@ -2670,6 +2694,11 @@ export interface components {
             currency: components["schemas"]["Currency"];
             /** External Ref Masked */
             external_ref_masked?: string | null;
+            /** Payment Iban Masked */
+            payment_iban_masked?: string | null;
+            /** Card Last4 */
+            card_last4?: string | null;
+            payment_iban_proposal?: components["schemas"]["PaymentIbanProposal"] | null;
             /** Ownership */
             ownership?: components["schemas"]["OwnershipShare"][];
             /**
@@ -2713,7 +2742,7 @@ export interface components {
          *     as AccountSource.AGGREGATOR is refused.
          * @enum {string}
          */
-        AccountKind: "bank_current" | "bank_savings" | "depot" | "exchange" | "wallet";
+        AccountKind: "bank_current" | "bank_savings" | "depot" | "exchange" | "wallet" | "credit_card";
         /**
          * AccountOwnership
          * @description account_ownership row (append-only; a change is a new set under a new
@@ -3036,7 +3065,7 @@ export interface components {
          * @description §8.2. Default tax treatment in the comment (rules/categories.py is the source).
          * @enum {string}
          */
-        AllocationCategory: "rent_cold" | "operating_costs_prepayment" | "operating_costs_settlement" | "deposit_in" | "deposit_out" | "owner_transfer_in" | "owner_transfer_out" | "loan_interest" | "loan_principal" | "loan_fees" | "loan_disbursement" | "hausgeld_umlagefaehig" | "hausgeld_verwaltung" | "hausgeld_ruecklage" | "property_management" | "grundsteuer" | "insurance" | "electricity" | "repairs" | "renovation" | "purchase_price" | "acquisition_cost" | "professional_fees" | "bank_fees" | "other_income" | "other_expense" | "uncategorized" | "hh_salary" | "hh_child_benefit" | "hh_tax_refund" | "hh_capital_income" | "hh_other_income" | "hh_housing" | "hh_groceries" | "hh_family_child" | "hh_mobility" | "hh_insurance" | "hh_subscriptions" | "hh_leisure_travel" | "hh_health" | "hh_other" | "hh_donation" | "hh_household_services" | "hh_childcare" | "hh_property_cost" | "hh_tax_payment" | "internal_transfer_in" | "internal_transfer_out" | "hh_cash" | "hh_credit_card" | "security_purchase" | "security_sale" | "distribution" | "capital_income_tax" | "depot_fee";
+        AllocationCategory: "rent_cold" | "operating_costs_prepayment" | "operating_costs_settlement" | "deposit_in" | "deposit_out" | "owner_transfer_in" | "owner_transfer_out" | "loan_interest" | "loan_principal" | "loan_fees" | "loan_disbursement" | "hausgeld_umlagefaehig" | "hausgeld_verwaltung" | "hausgeld_ruecklage" | "property_management" | "grundsteuer" | "insurance" | "electricity" | "repairs" | "renovation" | "purchase_price" | "acquisition_cost" | "professional_fees" | "bank_fees" | "other_income" | "other_expense" | "uncategorized" | "hh_salary" | "hh_child_benefit" | "hh_tax_refund" | "hh_capital_income" | "hh_other_income" | "hh_housing" | "hh_groceries" | "hh_family_child" | "hh_mobility" | "hh_insurance" | "hh_subscriptions" | "hh_leisure_travel" | "hh_health" | "hh_other" | "hh_donation" | "hh_household_services" | "hh_childcare" | "hh_property_cost" | "hh_tax_payment" | "internal_transfer_in" | "internal_transfer_out" | "hh_cash" | "hh_credit_card" | "hh_interest_fees" | "security_purchase" | "security_sale" | "distribution" | "capital_income_tax" | "depot_fee";
         /**
          * AllocationDraft
          * @description What a matcher, a rule, the model or the user proposes for part of a transaction.
@@ -3122,7 +3151,7 @@ export interface components {
          * @description allocation.method (migration 0007): who proposed the allocation set.
          * @enum {string}
          */
-        AllocationMethod: "rule" | "matcher_rent" | "matcher_loan" | "matcher_owner" | "matcher_hausgeld" | "document_match" | "llm" | "user" | "matcher_transfer";
+        AllocationMethod: "rule" | "matcher_rent" | "matcher_loan" | "matcher_owner" | "matcher_hausgeld" | "document_match" | "llm" | "user" | "matcher_transfer" | "matcher_card";
         /**
          * AllocationSet
          * @description One transaction's proposal. Σ amount must equal the transaction amount: checked by
@@ -4086,6 +4115,14 @@ export interface components {
              * @default false
              */
             same_amount_only: boolean;
+        };
+        /** ConfirmPaymentIbanBody */
+        ConfirmPaymentIbanBody: {
+            /**
+             * Format: uuid
+             * Import Id
+             */
+            import_id: string;
         };
         /**
          * CostLevel
@@ -6651,6 +6688,20 @@ export interface components {
             label: string;
         };
         /**
+         * PaymentIbanProposal
+         * @description The payment IBAN a card statement prints (D176 (4)), masked; POST
+         *     /accounts/{id}/payment-iban with its import_id confirms it.
+         */
+        PaymentIbanProposal: {
+            /**
+             * Format: uuid
+             * Import Id
+             */
+            import_id: string;
+            /** Payment Iban Masked */
+            payment_iban_masked: string;
+        };
+        /**
          * PaymentProofBody
          * @description Phase 3 D149: the bill an existing payment proof pays (the to-do's „Vorhandenen
          *     Nachweis zuordnen“).
@@ -8367,7 +8418,7 @@ export interface components {
          * @description statement_import.format (migration 0006).
          * @enum {string}
          */
-        StatementFormat: "csv_camt" | "camt" | "pdf" | "dkb_csv";
+        StatementFormat: "csv_camt" | "camt" | "pdf" | "dkb_csv" | "card_pdf";
         /** StatementImport */
         StatementImport: {
             /**
@@ -13015,6 +13066,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SetOwnershipBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Account"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    account_payment_iban_confirm_api_accounts__account_id__payment_iban_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmPaymentIbanBody"];
             };
         };
         responses: {

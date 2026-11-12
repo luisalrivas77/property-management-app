@@ -8,7 +8,9 @@
 // „Stand“ (the newest reconciled import's last booking day and closing balance, as the API
 // stored them) and the status of the last import. No total is summed here (principle 1; the
 // net worth is step 6's, computed by the API). The box „Überweisungen zwischen eigenen
-// Konten“ is step 2's, wallets phase 7's.
+// Konten“ is step 2's, wallets phase 7's. A credit card (D176) is listed under Bank with the
+// chip „Kreditkarte“ and its card's last four digits; its Stand is what is owed on the card
+// (the statement's Neuer Saldo, negative when owed, shown as a positive amount „offen“).
 import Link from "next/link";
 
 import { api, ok } from "@/api/client";
@@ -22,7 +24,7 @@ type Row = { account: Account; imports: StatementImport[] };
 type LoanRow = { loan: Loan; schedule: LoanSchedule };
 
 const GROUPS: { label: string; kinds: Account["kind"][] }[] = [
-  { label: "Bank", kinds: ["bank_current", "bank_savings"] },
+  { label: "Bank", kinds: ["bank_current", "bank_savings", "credit_card"] },
   { label: "Depot", kinds: ["depot"] },
   { label: "Krypto", kinds: ["exchange"] },
 ];
@@ -120,9 +122,16 @@ function AccountGroup({ label, rows, owners }: { label: string; rows: Row[]; own
                       <span className="tag">Mietobjekt</span>
                     </>
                   ) : null}
+                  {account.kind === "credit_card" ? (
+                    <>
+                      {" "}
+                      <span className="tag">Kreditkarte</span>
+                    </>
+                  ) : null}
                   <p className="cell-detail">
                     {account.provider ?? account.bank}
                     {account.iban_masked ? ` · ${account.iban_masked}` : ""}
+                    {account.card_last4 ? ` · Karte endet auf ${account.card_last4}` : ""}
                   </p>
                 </td>
                 <td>{account.source === "fints" ? "Bankabruf" : "Export"}</td>
@@ -133,7 +142,7 @@ function AccountGroup({ label, rows, owners }: { label: string; rows: Row[]; own
                     <span className="badge">{ownerChip(account.ownership ?? [], owners)}</span>
                   )}
                 </td>
-                <Stand imports={imports} />
+                <Stand imports={imports} owed={account.kind === "credit_card"} />
                 <LastImport imports={imports} />
               </tr>
             ))}
@@ -145,8 +154,10 @@ function AccountGroup({ label, rows, owners }: { label: string; rows: Row[]; own
 }
 
 /** The newest reconciled import's closing balance as stored (declared, which reconciliation found
- * equal to the computed one), on its last booking day; „noch nicht abgestimmt“ without one. */
-function Stand({ imports }: { imports: StatementImport[] }) {
+ * equal to the computed one), on its last booking day; „noch nicht abgestimmt“ without one. On a
+ * credit card (`owed`) the balance is a debt: a negative closing shows as the amount „offen“, a
+ * positive one as „Guthaben“ (D176 (2)). */
+function Stand({ imports, owed = false }: { imports: StatementImport[]; owed?: boolean }) {
   const reconciled = imports
     .filter((imp) => imp.status === "reconciled" && imp.last_booking_on != null)
     .sort((a, b) => (b.last_booking_on ?? "").localeCompare(a.last_booking_on ?? ""))[0];
@@ -157,9 +168,21 @@ function Stand({ imports }: { imports: StatementImport[] }) {
       </td>
     );
   }
+  const closing = reconciled.declared_closing ?? reconciled.computed_closing;
+  if (owed && closing != null) {
+    const credit = !closing.startsWith("-");
+    return (
+      <td className="num">
+        {formatMoney(credit ? closing : closing.slice(1))}
+        <p className="cell-detail">
+          {credit ? "Guthaben" : "offen"} am {formatDate(reconciled.last_booking_on)}
+        </p>
+      </td>
+    );
+  }
   return (
     <td className="num">
-      {formatMoney(reconciled.declared_closing ?? reconciled.computed_closing)}
+      {formatMoney(closing)}
       <p className="cell-detail">am {formatDate(reconciled.last_booking_on)}</p>
     </td>
   );

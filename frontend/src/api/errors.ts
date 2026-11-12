@@ -78,14 +78,16 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "statement.before_anchor":
     "Der Auszug enthält Umsätze am oder vor dem Datum des Anfangssaldos. Den Anfangssaldo auf einen früheren Tag legen.",
   "statement.unknown_format":
-    "Dateiformat nicht erkannt. Erwartet: camt (XML oder ZIP), Sparkasse CSV-CAMT oder der CSV-Export der DKB.",
+    "Dateiformat nicht erkannt. Erwartet: camt (XML oder ZIP), Sparkasse CSV-CAMT, der CSV-Export der DKB oder die PDF-Abrechnung einer Kreditkarte.",
   "statement.unparsable": "Die Datei ist beschädigt oder unvollständig und konnte nicht gelesen werden.",
   "statement.archive_rejected":
     "Das ZIP-Archiv wurde abgelehnt: nur XML-Dateien ohne Ordner, höchstens 400 Dateien und 20 MiB, keine ZIPs im ZIP.",
   "statement.entity_declared": "Die XML-Datei enthält eine DTD oder Entity-Deklaration und wird aus Sicherheitsgründen abgelehnt.",
   "statement.report_unbalanced": "In einem Tagesbericht ergeben Anfangssaldo und Umsätze nicht den Endsaldo.",
   "statement.chain_break": "Ein Tagesbericht beginnt nicht mit dem Endsaldo des vorherigen; vermutlich fehlt ein Tag.",
-  "statement.account_mismatch": "Der Auszug gehört zu einem anderen Konto: die IBAN in der Datei passt nicht.",
+  "statement.account_mismatch":
+    "Der Auszug gehört zu einem anderen Konto: die IBAN oder Kundennummer in der Datei passt nicht, oder die Datei ist keine Abrechnung dieser Kontoart (eine Kreditkartenabrechnung nur auf eine Kreditkarte, ein Kontoauszug nur auf ein Bankkonto).",
+  "statement.no_payment_iban": "Diese Abrechnung nennt keine IBAN für Einzahlungen.",
   "statement.unsupported_currency": "Es werden nur Umsätze in Euro unterstützt.",
   "statement.empty": "Die Datei enthält keine gebuchten Umsätze.",
   "statement.owner_account": "Auf ein Privatkonto der Eigentümer werden keine Kontoauszüge importiert.",

@@ -126,6 +126,9 @@ export type AccountPurpose = Schemas["AccountPurpose"];
 export type AccountOwnership = Schemas["AccountOwnership"];
 export type OwnershipShare = Schemas["OwnershipShare"];
 export type SetOwnershipBody = Schemas["SetOwnershipBody"];
+// the credit card (phase 6 D176)
+export type PaymentIbanProposal = Schemas["PaymentIbanProposal"];
+export type ConfirmPaymentIbanBody = Schemas["ConfirmPaymentIbanBody"];
 export type StatementImport = Schemas["StatementImport"];
 export type StatementFormat = Schemas["StatementFormat"];
 export type ImportStatus = Schemas["ImportStatus"];

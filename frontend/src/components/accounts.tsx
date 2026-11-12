@@ -35,9 +35,12 @@ import { ActionDialog } from "./ui";
  * DKB's CSV export (phase 6 D173 (3)); the API sniffs the format from the bytes. */
 export const STATEMENT_ACCEPT =
   ".zip,.xml,.csv,application/zip,application/x-zip-compressed,application/xml,text/xml,text/csv";
+/** A credit card's monthly statement, the PDF from the issuer's portal (phase 6 D176). */
+export const CARD_STATEMENT_ACCEPT = ".pdf,application/pdf";
 
 const TYPE_BY_EXTENSION: Record<string, string> = {
   csv: "text/csv",
+  pdf: "application/pdf",
   xml: "application/xml",
   zip: "application/zip",
 };
@@ -78,7 +81,16 @@ export function lineCounts(statementImport: StatementImport): string {
 }
 
 /** Drop zone and file input "Kontoauszug hochladen"; one notice per file afterwards. */
-export function StatementUpload({ accountId, onImported }: { accountId: string; onImported: () => void }) {
+export function StatementUpload({
+  accountId,
+  onImported,
+  card = false,
+}: {
+  accountId: string;
+  onImported: () => void;
+  /** A credit card account: its monthly PDF statements (phase 6 D176). */
+  card?: boolean;
+}) {
   const inputId = useId();
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -120,20 +132,27 @@ export function StatementUpload({ accountId, onImported }: { accountId: string; 
           void upload(event.dataTransfer.files);
         }}
       >
-        <label htmlFor={inputId}>{busy ? "Importiert …" : "Kontoauszug hochladen"}</label>
+        <label htmlFor={inputId}>{busy ? "Importiert …" : card ? "Kreditkartenabrechnung hochladen" : "Kontoauszug hochladen"}</label>
         <input
           ref={input}
           id={inputId}
           type="file"
-          accept={STATEMENT_ACCEPT}
+          accept={card ? CARD_STATEMENT_ACCEPT : STATEMENT_ACCEPT}
           multiple
           disabled={busy}
           onChange={(event: ChangeEvent<HTMLInputElement>) => void upload(event.target.files)}
         />
-        <p className="muted hint">
-          Sparkasse „Umsätze exportieren“: camt als ZIP (bevorzugt, mit Salden) oder CSV-CAMT; auch eine einzelne camt-XML.
-          DKB: der CSV-Export der Umsätze aus dem Online-Banking. Datei hierher ziehen oder auswählen.
-        </p>
+        {card ? (
+          <p className="muted hint">
+            Die monatliche Abrechnung als PDF, so wie sie im Kundenportal der Karte steht. Hausbuch liest sie selbst, ohne KI,
+            und prüft, dass Alter Saldo und Umsätze den Neuen Saldo ergeben. Datei hierher ziehen oder auswählen.
+          </p>
+        ) : (
+          <p className="muted hint">
+            Sparkasse „Umsätze exportieren“: camt als ZIP (bevorzugt, mit Salden) oder CSV-CAMT; auch eine einzelne camt-XML.
+            DKB: der CSV-Export der Umsätze aus dem Online-Banking. Datei hierher ziehen oder auswählen.
+          </p>
+        )}
       </div>
       {results.map((result, index) => (
         <ImportResult key={index} result={result} />
