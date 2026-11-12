@@ -9,7 +9,8 @@ version (`HKVVB:4v3`); a value is printed only for the segments and fields liste
   never the value) and its status; HKVVB's BPD and UPD versions, language, product version and
   the product id's length ("set (25 chars)" or "missing", never the value); HKSYN's mode;
   HKTAN's version, process, segment type and whether a TAN medium name is absent, empty or
-  set (never the name); HNSHK's security function (its key name holds the login);
+  set (never the name); HNSHK's security function (its key name holds the login); HKEKP's
+  statement number and year and whether an Aufsetzpunkt is present (D154 (8));
 - received: every answer of HIRMG (the whole message) and HIRMS (the customer segment its
   header refers to, resolved by number), its text through `rules.bank_sync.redact_bank_text`
   with the login, customer id, PIN, product id, the system id and the dialog id hidden (the
@@ -18,7 +19,8 @@ version (`HKVVB:4v3`); a value is printed only for the segments and fields liste
   printed only for 3920 (the allowed security functions), for every other code counted
   (`[2 parameters]`: 3072 carries the new login, 3040 a touchdown point); HIBPA's BPD
   version; HIUPA's UPD version (not its user id); HITANS's security functions with their
-  names and whether each is decoupled; HICAZS's camt formats.
+  names and whether each is decoupled; HICAZS's camt formats; HIEKPS's three flags; HIEKP's
+  data as its byte length only (never the PDF, its base64 or the Quittungscode).
 
 Never, at any level: the PIN, the login, the customer id, the product id, the system id, a
 dialog id, an IBAN or account number, a balance, camt content, a TAN challenge. Data segments
@@ -143,6 +145,17 @@ def _hktan(seg: Any) -> dict[str, Any]:
     }
 
 
+def _hkekp(seg: Any) -> dict[str, Any]:
+    """D154 (8): the statement's number and year; whether an Aufsetzpunkt and a number of
+    entries are present, never their values; never the Kontoverbindung (as for HKCAZ)."""
+    return {
+        "number": _text(seg.statement_number),
+        "year": _text(seg.statement_year),
+        "touchdown": "absent" if seg.touchdown_point is None else "set",
+        "max_entries": "absent" if seg.max_number_responses is None else "set",
+    }
+
+
 # The sent segments whose non-secret settings are printed; every other segment (HNSHA with
 # the PIN, HNVSK and HNHBK with the login, system id and dialog id, HKEND, the reads) prints
 # its header only.
@@ -152,6 +165,7 @@ _SENT_SETTINGS: dict[str, Callable[[Any], dict[str, Any]]] = {
     "HKSYN": lambda seg: {"mode": _text(seg.synchronization_mode)},
     "HKTAN": _hktan,
     "HNSHK": lambda seg: {"security_function": _text(seg.security_function)},
+    "HKEKP": _hkekp,
 }
 
 
@@ -245,9 +259,19 @@ def _received_fact(segment: Any, facts: dict[str, Any], hidden: tuple[str | None
     elif kind == "HICAZS":
         formats = segment.parameter.supported_camt_formats or ()
         facts.setdefault("camt_formats", []).extend(str(f) for f in formats)
+    elif kind == "HIEKPS":
+        parameter = segment.parameter
+        facts.setdefault("statement_pdf", []).append(
+            f"HIEKPS{segment.header.version} number {_text(parameter.number_allowed)}, "
+            f"receipt {_text(parameter.receipt_required)}, "
+            f"entries {_text(parameter.entries_allowed)}"
+        )
+    elif kind == "HIEKP":  # D154 (8): the PDF's size only, never its bytes or the Quittungscode
+        data = getattr(segment, "statement_booked", None)
+        facts.setdefault("statement_pdf_bytes", []).append(len(data) if data else 0)
 
 
-_RECEIVED_FACTS = frozenset({"HIBPA", "HIUPA", "HITANS", "HICAZS"})
+_RECEIVED_FACTS = frozenset({"HIBPA", "HIUPA", "HITANS", "HICAZS", "HIEKPS", "HIEKP"})
 
 
 def read_received(
