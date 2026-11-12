@@ -552,3 +552,4 @@ class AiRetryResult(Schema):
     """POST /inbox/ai-retry (D50): how many waiting lines were sent to the model again."""
 
     queued: int
+    private_held_back: int

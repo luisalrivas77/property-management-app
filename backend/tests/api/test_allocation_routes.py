@@ -190,8 +190,14 @@ def test_ai_retry_queues_the_workspaces_own_unmatched_lines(
     line = _debit(lines)
     url = f"/api/transactions/{line['id']}/allocations"
     ok(client_a.put(url, json=_body(line, (line["amount"], "bank_fees"), learn_rule=False)))
-    assert ok(client_for(app, TOKEN_A).post("/api/inbox/ai-retry")) == {"queued": len(lines) - 1}
-    assert ok(client_for(app, TOKEN_B).post("/api/inbox/ai-retry")) == {"queued": 0}
+    assert ok(client_for(app, TOKEN_A).post("/api/inbox/ai-retry")) == {
+        "queued": len(lines) - 1,
+        "private_held_back": 0,
+    }
+    assert ok(client_for(app, TOKEN_B).post("/api/inbox/ai-retry")) == {
+        "queued": 0,
+        "private_held_back": 0,
+    }
     assert client_for(app, None).post("/api/inbox/ai-retry").status_code == 401
     no_origin = client_for(app, TOKEN_A, origin=None).post("/api/inbox/ai-retry")
     assert no_origin.status_code == 403

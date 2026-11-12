@@ -8005,12 +8005,17 @@
           "queued": {
             "type": "integer",
             "title": "Queued"
+          },
+          "private_held_back": {
+            "type": "integer",
+            "title": "Private Held Back"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "queued"
+          "queued",
+          "private_held_back"
         ],
         "title": "AiRetryResult",
         "description": "POST /inbox/ai-retry (D50): how many waiting lines were sent to the model again."
