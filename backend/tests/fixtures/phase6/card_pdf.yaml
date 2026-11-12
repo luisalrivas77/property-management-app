@@ -111,7 +111,7 @@ cases:
           MINDESTBETRAG ZU ZAHLEN 25.00
           FÄLLIG AM 05.03.2026
           Bitte überweisen Sie den Mindestbetrag bis zum Fälligkeitstag.
-          Beispielbank AB, Musterweg 1, 10115 Berlin
+          Beispielbank AB, Musterweg 1, 12345 Musterstadt
         - |
           Kontoauszug
           Nummer: 1234567-7654321-260115-260214
@@ -134,7 +134,7 @@ cases:
           177.75 EUR -177.75 D
           Verwendeter Gesamtbetrag: -312.75
           Bezahlter Gesamtbetrag: 1 250.40
-          Beispielbank AB, Musterweg 1, 10115 Berlin
+          Beispielbank AB, Musterweg 1, 12345 Musterstadt
     expect:
       format: card_pdf
       account_ref: "1234567"
