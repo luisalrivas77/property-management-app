@@ -43,6 +43,8 @@ from .document import (
     RetentionResult,
 )
 from .enums import (
+    AccountKind,
+    AccountPurpose,
     AcquisitionCostKind,
     DepositForm,
     LinkTarget,
@@ -177,6 +179,12 @@ class AccountPatch(Patch):
     opening_balance: Money = Field(default=None)
     opening_balance_on: date = Field(default=None)
     is_owner_account: bool = Field(default=None)
+    # Phase 6 D156: a bank account's kind stays a bank kind (its IBAN is its identity); a
+    # change of purpose re-checks the waiting lines and is refused while the account holds
+    # a booking of a category the new purpose does not allow (D159). provider: null clears.
+    kind: AccountKind = Field(default=None)
+    purpose: AccountPurpose = Field(default=None)
+    provider: str | None = Field(default=None, min_length=1, max_length=100)
 
 
 class LoanPatch(Patch):

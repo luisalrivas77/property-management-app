@@ -61,7 +61,6 @@ from hausbuch.schemas.bank_sync import SyncPreview
 from hausbuch.schemas.common import TAX_YEAR_MIN
 from hausbuch.schemas.document import DocumentTyping
 from hausbuch.schemas.enums import (
-    AccountPurpose,
     AllocationStatus,
     BalanceSource,
     DocumentSource,
@@ -117,14 +116,12 @@ def import_statement(
     existing import and write nothing (the document is deduplicated on its bytes, D9); a
     different file overlapping stored lines adds only the lines not stored yet (D22).
 
-    Refused before anything is written (RuleError): an owner account, an unreadable file
-    (statement.* parser codes), another account's statement, a file without booked lines.
-    A camt file whose reports do not sum or chain (D34) is stored, unreconciled."""
+    Refused before anything is written (RuleError): an unreadable file (statement.* parser
+    codes), another account's statement (statement.account_mismatch: the file's own IBAN
+    routes it, phase 6 D164), a file without booked lines. A camt file whose reports do not
+    sum or chain (D34) is stored, unreconciled. Since phase 6 step 1 a private account
+    imports like the rental one (D156: the owner-account guard is gone)."""
     account = require_row(ctx.conn, account_table, EntityType.ACCOUNT, account_id, for_update=True)
-    # Since migration 0025 the household's accounts are keyed by purpose (phase 6 D156); the
-    # same accounts as before, until phase 6 step 1 removes this guard.
-    if account.purpose == AccountPurpose.PRIVATE.value:
-        raise RuleError(rules.OWNER_ACCOUNT, "owner accounts hold no statements")
     outcome = parse_statement(data, media_type)
     statement = outcome.statement
     _require_same_account(statement.account_iban, account.iban_hmac, iban_key)
@@ -292,10 +289,8 @@ def preview_import(
     same parser, the same account check, the same line hash over the same fields, compared
     with the account's stored hashes. A FinTS sync stores its ZIP (and imports it) only when
     lines_new > 0. Raises the same RuleErrors import_statement raises before its first
-    write (owner account, unreadable file, another account's statement, no booked line)."""
+    write (unreadable file, another account's statement, no booked line)."""
     account = require_row(conn, account_table, EntityType.ACCOUNT, account_id)
-    if account.purpose == AccountPurpose.PRIVATE.value:  # phase 6 D156, as import_statement
-        raise RuleError(rules.OWNER_ACCOUNT, "owner accounts hold no statements")
     statement = parse_statement(data, media_type).statement
     _require_same_account(statement.account_iban, account.iban_hmac, iban_key)
     if not statement.lines:

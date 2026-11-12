@@ -5,36 +5,65 @@
 - opening_balance on opening_balance_on is the balance anchor every import of the account
   reconciles against. Moving it re-checks those imports (statement.reconciled/unreconciled
   for each one whose result changes).
-- An owner account (is_owner_account) only serves to recognize owner transfers by IBAN; it
-  never holds imports, so an account with imports cannot become one.
-- Phase 6 step 0 (D156, migration 0025): an account has a kind, a purpose and a provider.
-  Migration 0025 sets is_owner_account on every account and keys the rental account by
-  `purpose = rental`, so every read that meant "the rental account" now reads purpose (the
-  same accounts as before; step 1 removes the owner-account guards). create_account takes the
-  bank kinds only until the depot (step 4) and the exchange (step 5) are built, and refuses a
-  wallet (phase 7) with account.kind_not_available.
+- Phase 6 (D156, migration 0025): an account has a kind, a purpose and a provider.
+  is_owner_account means "one of the household's own accounts, recognised by its IBAN" and is
+  true on every account; the rental account is the one of purpose `rental`. Since step 1 a
+  private account imports like the rental one, and PATCH changes kind, purpose and provider
+  (account.kind_set): a bank account's kind stays a bank kind (its IBAN is its identity), and
+  a purpose is refused while the account holds a booking of a category the new purpose does
+  not allow (D159), so no booking ever sits on an account whose purpose refuses it.
+  create_account takes the bank kinds only until the depot (step 4) and the exchange (step 5)
+  are built, and refuses a wallet (phase 7) with account.kind_not_available.
+- Phase 6 D157: owner shares per account, append-only (account_ownership): a new full set
+  supersedes the current one; Σ = 1 and every owner known (rules.household.ownership). An
+  account without shares is the to-do „Eigentümer festlegen“ (Account.ownership_missing).
 """
 
+from collections.abc import Sequence
 from datetime import date
 from decimal import Decimal
+from fractions import Fraction
 from typing import Any
 from uuid import UUID
 
 from pydantic import create_model
-from sqlalchemy import Connection, Row, exists, insert, select, update
+from sqlalchemy import Connection, Row, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
 from hausbuch.db.tables import account as account_table
-from hausbuch.db.tables import statement_import as import_table
+from hausbuch.db.tables import account_ownership as ownership_table
+from hausbuch.db.tables import allocation as allocation_table
+from hausbuch.db.tables import owner as owner_table
+from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.jobs import enqueue
-from hausbuch.rules.errors import ACCOUNT_KIND_NOT_AVAILABLE, RuleError
+from hausbuch.rules.errors import (
+    ACCOUNT_KIND_NOT_AVAILABLE,
+    ALLOCATION_CATEGORY_NOT_FOR_ACCOUNT,
+    RuleError,
+)
+from hausbuch.rules.household import ownership as ownership_rules
+from hausbuch.rules.household.taxonomy import allowed_categories
 from hausbuch.schemas.bank import Account, AccountCreate
 from hausbuch.schemas.common import Schema
-from hausbuch.schemas.enums import BANK_ACCOUNT_KINDS, AccountPurpose, EntityType
-from hausbuch.schemas.events import AccountCreated, EventType, Updated
+from hausbuch.schemas.enums import (
+    BANK_ACCOUNT_KINDS,
+    AccountKind,
+    AccountPurpose,
+    AllocationStatus,
+    EntityType,
+)
+from hausbuch.schemas.events import (
+    AccountCreated,
+    AccountKindSet,
+    AccountOwnershipSet,
+    AccountShare,
+    EventType,
+    Updated,
+)
+from hausbuch.schemas.household import AccountOwnership, OwnershipShare, SetOwnershipBody
 
 from .context import CommandContext
-from .errors import ConflictError, violated_constraint
+from .errors import ConflictError, RuleViolationError, violated_constraint
 from .events import append_event, diff_changes
 from .iban import protect_iban
 from .lookup import require_row
@@ -46,10 +75,11 @@ _HMAC_COLUMNS = {"iban_hmac", "external_ref_hmac"}
 _READ_COLUMNS = [c for c in account_table.c if c.name not in _HMAC_COLUMNS]
 _IBAN_TAKEN = "account_workspace_id_iban_hmac_key"
 _ANCHOR_FIELDS = {"opening_balance", "opening_balance_on"}
-# Write-only inputs (stored masked + HMAC'd), and the fields an update cannot change yet
-# (phase 6 step 1 adds kind, purpose and provider to PATCH /accounts/{id}).
+# Write-only inputs (stored masked + HMAC'd); an update cannot change them.
 _WRITE_ONLY = {"iban", "external_ref"}
-_NOT_UPDATED = _WRITE_ONLY | {"kind", "purpose", "provider"}
+_NOT_UPDATED = _WRITE_ONLY
+# The fields account.kind_set records (D156); every other change is account.updated.
+_KIND_FIELDS = ("kind", "purpose", "provider")
 # AccountCreate's rules for the fields an update may change (everything but the IBAN).
 _AccountFields = create_model(
     "_AccountFields",
@@ -89,7 +119,7 @@ def create_account(ctx: CommandContext, data: AccountCreate, *, iban_key: bytes)
                 "the workspace already has an account with that IBAN", constraint=_IBAN_TAKEN
             ) from exc
         raise
-    created = _to_account(row)
+    created = _to_account(row, [])
     append_event(
         ctx,
         EventType.ACCOUNT_CREATED,
@@ -120,9 +150,17 @@ def update_account(
     opening_balance: Decimal | Unset = UNSET,
     opening_balance_on: date | Unset = UNSET,
     is_owner_account: bool | Unset = UNSET,
+    kind: AccountKind | Unset = UNSET,
+    purpose: AccountPurpose | Unset = UNSET,
+    provider: str | None | Unset = UNSET,
 ) -> Account:
     """Change only the fields passed. No-op if nothing changes. A moved anchor re-checks
-    every import of the account in the same transaction."""
+    every import of the account in the same transaction.
+
+    Phase 6 D156: is_owner_account no longer decides the purpose (the flag is true on every
+    account since migration 0025), and an account with imports may be any purpose. kind,
+    purpose and provider are recorded as account.kind_set with their new values; a new
+    purpose or a new own account re-checks the lines waiting in the inbox."""
     requested = {
         name: value
         for name, value in (
@@ -131,47 +169,210 @@ def update_account(
             ("opening_balance", opening_balance),
             ("opening_balance_on", opening_balance_on),
             ("is_owner_account", is_owner_account),
+            ("kind", kind),
+            ("purpose", purpose),
+            ("provider", provider),
         )
         if value is not UNSET
     }
     # The account row is the lock every import, declaration and merge of it takes first.
     current = require_row(ctx.conn, account_table, EntityType.ACCOUNT, account_id, for_update=True)
+    shares = _current_shares(ctx.conn, [account_id]).get(account_id, [])
+    before = _to_account(current, shares)
     fields = set(requested)
-    old = _to_account(current).model_dump(include=fields)
+    old = before.model_dump(include=fields)
     validated = _AccountFields.model_validate(
-        _to_account(current).model_dump(include=set(_AccountFields.model_fields)) | requested
+        before.model_dump(include=set(_AccountFields.model_fields)) | requested
     )
     new_values = validated.model_dump(include=fields)
     changes = diff_changes(old, new_values)
     if not changes:
-        return _to_account(current)
-    if (
-        "is_owner_account" in changes
-        and new_values["is_owner_account"]
-        and _has_imports(ctx.conn, account_id)
+        return before
+    if "kind" in changes and (
+        before.kind not in BANK_ACCOUNT_KINDS or new_values["kind"] not in BANK_ACCOUNT_KINDS
     ):
-        raise ConflictError("an account with imported statements cannot be an owner account")
-    stored = dict(new_values)
-    if "is_owner_account" in changes:
-        # Until phase 6 step 1 adds purpose to the PATCH, the flag a person sets still decides
-        # which reads treat the account as the household's (they read purpose since 0025).
-        stored["purpose"] = (
-            AccountPurpose.PRIVATE if new_values["is_owner_account"] else AccountPurpose.RENTAL
-        ).value
+        # A bank account is identified by its IBAN, a depot or an exchange by its own number
+        # (D156): a kind across that line would be another account.
+        raise RuleError(ACCOUNT_KIND_NOT_AVAILABLE, "a bank account stays a bank account")
+    if "purpose" in changes:
+        _require_bookings_fit(ctx.conn, account_id, AccountPurpose(new_values["purpose"]))
 
     row = ctx.conn.execute(
         update(account_table)
         .where(account_table.c.id == account_id)
-        .values(**stored, updated_at=ctx.now)
+        .values(**new_values, updated_at=ctx.now)
         .returning(*_READ_COLUMNS)
     ).one()
-    updated = _to_account(row)
-    append_event(ctx, EventType.ACCOUNT_UPDATED, account_id, Updated(changes=changes))
+    updated = _to_account(row, shares)
+    plain = {name: change for name, change in changes.items() if name not in _KIND_FIELDS}
+    if plain:
+        append_event(ctx, EventType.ACCOUNT_UPDATED, account_id, Updated(changes=plain))
+    if set(_KIND_FIELDS) & set(changes):
+        append_event(
+            ctx,
+            EventType.ACCOUNT_KIND_SET,
+            account_id,
+            AccountKindSet(kind=updated.kind, purpose=updated.purpose, provider=updated.provider),
+        )
     if _ANCHOR_FIELDS & set(changes):
         recheck_account(ctx, account_id)
-    if "is_owner_account" in changes and updated.is_owner_account:
+    if "purpose" in changes or ("is_owner_account" in changes and updated.is_owner_account):
         _rematch_waiting(ctx, account_id)
     return updated
+
+
+def _require_bookings_fit(conn: Connection, account_id: UUID, purpose: AccountPurpose) -> None:
+    """D159 for a change of purpose: every live booking of the account's lines must be one
+    the new purpose allows, or the change would leave a rental cost on a private account (on
+    the Anlage V from an account that is not the property's) or a household code on the
+    rental account (on no line and in no to-do)."""
+    allowed = {c.value for c in allowed_categories(purpose)}
+    booked = set(
+        conn.execute(
+            select(allocation_table.c.category)
+            .distinct()
+            .join(transaction_table, transaction_table.c.id == allocation_table.c.transaction_id)
+            .where(
+                transaction_table.c.account_id == account_id,
+                allocation_table.c.status != AllocationStatus.SUPERSEDED.value,
+            )
+        ).scalars()
+    )
+    refused = sorted(booked - allowed)
+    if refused:
+        raise RuleViolationError(
+            [ALLOCATION_CATEGORY_NOT_FOR_ACCOUNT],
+            f"the account holds bookings a {purpose.value} account does not allow: "
+            + ", ".join(refused),
+        )
+
+
+# --- Ownership (D157) ----------------------------------------------------------------------
+
+
+def set_account_ownership(ctx: CommandContext, account_id: UUID, body: SetOwnershipBody) -> Account:
+    """POST /accounts/{id}/ownership: the full new set. Every owner must be one of the
+    workspace's (ownership.owner_missing) and the shares sum to exactly 1
+    (ownership.sum_not_one). The current rows are superseded, never deleted; the new rows
+    take effect on body.effective_from, today when absent. The same set again (shares and
+    reasons) is a no-op: no rows, no event."""
+    _lock(ctx, account_id)
+    owners = ctx.conn.execute(select(owner_table.c.id)).scalars().all()
+    ownership_rules.validate(body.shares, owners)
+    current = _ownership_rows(ctx.conn, [account_id]).get(account_id, [])
+    if _same_set(current, body.shares):
+        return _account(ctx.conn, account_id)
+    effective_from = body.effective_from or ctx.now.date()
+    inserted = ctx.conn.execute(
+        insert(ownership_table).returning(ownership_table.c.id, ownership_table.c.owner_id),
+        [
+            {
+                "workspace_id": ctx.workspace_id,
+                "account_id": account_id,
+                "owner_id": share.owner_id,
+                "share_numerator": share.share.numerator,
+                "share_denominator": share.share.denominator,
+                "reason": _reason(share.reason),
+                "effective_from": effective_from,
+                "created_at": ctx.now,
+            }
+            for share in body.shares
+        ],
+    ).all()
+    new_by_owner = {row.owner_id: row.id for row in inserted}
+    superseded = ownership_rules.supersede(current, body.shares)
+    by_id = {row.id: row for row in current}
+    for row_id in superseded:
+        # Superseded by the same owner's new row, else by the set's first row (a row of the
+        # same account, as the foreign key asks).
+        replacement = new_by_owner.get(by_id[row_id].owner_id, inserted[0].id)
+        ctx.conn.execute(
+            update(ownership_table)
+            .where(ownership_table.c.id == row_id)
+            .values(superseded_by=replacement)
+        )
+    append_event(
+        ctx,
+        EventType.ACCOUNT_OWNERSHIP_SET,
+        account_id,
+        AccountOwnershipSet(
+            effective_from=effective_from,
+            shares=[
+                AccountShare(
+                    owner_id=s.owner_id,
+                    share_numerator=s.share.numerator,
+                    share_denominator=s.share.denominator,
+                )
+                for s in body.shares
+            ],
+            superseded=superseded,
+        ),
+        effective_date=effective_from,
+    )
+    return _account(ctx.conn, account_id)
+
+
+def get_account_ownership(conn: Connection, account_id: UUID) -> list[AccountOwnership]:
+    """The current rows (superseded_by null), by owner."""
+    return _ownership_rows(conn, [account_id]).get(account_id, [])
+
+
+def _reason(text: str | None) -> str | None:
+    """A blank reason is no reason (the column holds 1-500 characters)."""
+    return " ".join((text or "").split()) or None
+
+
+def _same_set(current: Sequence[AccountOwnership], shares: Sequence[OwnershipShare]) -> bool:
+    def key(owner_id: UUID, share: Fraction, reason: str | None) -> tuple[UUID, Fraction, str]:
+        return owner_id, share, _reason(reason) or ""
+
+    return {
+        key(r.owner_id, Fraction(r.share_numerator, r.share_denominator), r.reason) for r in current
+    } == {key(s.owner_id, s.share, s.reason) for s in shares} and len(current) == len(shares)
+
+
+def _ownership_rows(
+    conn: Connection, account_ids: Sequence[UUID]
+) -> dict[UUID, list[AccountOwnership]]:
+    rows = conn.execute(
+        select(ownership_table)
+        .where(
+            ownership_table.c.account_id.in_(account_ids),
+            ownership_table.c.superseded_by.is_(None),
+        )
+        .order_by(ownership_table.c.account_id, ownership_table.c.owner_id)
+    )
+    found: dict[UUID, list[AccountOwnership]] = {}
+    for row in rows:
+        found.setdefault(row.account_id, []).append(AccountOwnership.model_validate(row._mapping))
+    return found
+
+
+def _current_shares(
+    conn: Connection, account_ids: Sequence[UUID]
+) -> dict[UUID, list[OwnershipShare]]:
+    return {
+        account_id: [
+            OwnershipShare(
+                owner_id=r.owner_id,
+                share_numerator=r.share_numerator,
+                share_denominator=r.share_denominator,
+                reason=r.reason,
+            )
+            for r in rows
+        ]
+        for account_id, rows in _ownership_rows(conn, account_ids).items()
+    }
+
+
+def _lock(ctx: CommandContext, account_id: UUID) -> Row:
+    return require_row(ctx.conn, account_table, EntityType.ACCOUNT, account_id, for_update=True)
+
+
+def _account(conn: Connection, account_id: UUID) -> Account:
+    account = get_account(conn, account_id)
+    assert account is not None
+    return account
 
 
 def _rematch_waiting(ctx: CommandContext, account_id: UUID) -> None:
@@ -185,12 +386,14 @@ def _rematch_waiting(ctx: CommandContext, account_id: UUID) -> None:
 
 def get_account(conn: Connection, account_id: UUID) -> Account | None:
     row = conn.execute(select(*_READ_COLUMNS).where(account_table.c.id == account_id)).one_or_none()
-    return None if row is None else _to_account(row)
+    if row is None:
+        return None
+    return _to_account(row, _current_shares(conn, [account_id]).get(account_id, []))
 
 
 def list_accounts(conn: Connection) -> list[Account]:
-    """Every account of the workspace: the rental accounts first, then owner accounts, each
-    by label."""
+    """Every account of the workspace: the rental accounts first, then the household's
+    private ones, each by label; each with its current owner shares (D157)."""
     rows = conn.execute(
         select(*_READ_COLUMNS).order_by(
             account_table.c.purpose != AccountPurpose.RENTAL.value,
@@ -198,16 +401,11 @@ def list_accounts(conn: Connection) -> list[Account]:
             account_table.c.created_at,
             account_table.c.id,
         )
-    )
-    return [_to_account(r) for r in rows]
+    ).all()
+    shares = _current_shares(conn, [r.id for r in rows])
+    return [_to_account(r, shares.get(r.id, [])) for r in rows]
 
 
-def _has_imports(conn: Connection, account_id: UUID) -> bool:
-    return conn.execute(
-        select(exists().where(import_table.c.account_id == account_id))
-    ).scalar_one()
-
-
-def _to_account(row: Row) -> Account:
+def _to_account(row: Row, shares: list[OwnershipShare]) -> Account:
     values: dict[str, Any] = {k: v for k, v in row._mapping.items() if k not in _HMAC_COLUMNS}
-    return Account.model_validate(values)
+    return Account.model_validate(values | {"ownership": shares, "ownership_missing": not shares})

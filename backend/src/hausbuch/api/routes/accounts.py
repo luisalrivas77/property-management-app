@@ -15,7 +15,15 @@ from starlette.concurrency import run_in_threadpool
 from hausbuch.schemas.api import AccountPatch
 from hausbuch.schemas.bank import Account, AccountCreate, StatementImport, Transaction
 from hausbuch.schemas.enums import EntityType
-from hausbuch.services.accounts import create_account, get_account, list_accounts, update_account
+from hausbuch.schemas.household import AccountOwnership, SetOwnershipBody
+from hausbuch.services.accounts import (
+    create_account,
+    get_account,
+    get_account_ownership,
+    list_accounts,
+    set_account_ownership,
+    update_account,
+)
 from hausbuch.services.context import CommandContext
 from hausbuch.services.statements import import_statement, list_imports, list_transactions
 from hausbuch.storage import BlobStore
@@ -29,7 +37,8 @@ router = domain_router()
 
 @router.get("/accounts")
 def accounts_list(cmd: Cmd) -> list[Account]:
-    """Rental accounts first, then the owners' own accounts, each by label."""
+    """Rental accounts first, then the household's private accounts, each by label; each
+    with its current owner shares, ownership_missing when none is set (phase 6 D157)."""
     return cmd.read(list_accounts)
 
 
@@ -46,8 +55,30 @@ def account_get(account_id: UUID, cmd: Cmd) -> Account:
 
 @router.patch("/accounts/{account_id}")
 def account_update(account_id: UUID, body: AccountPatch, cmd: Cmd) -> Account:
-    """Moving the anchor re-checks every import of the account."""
+    """Moving the anchor re-checks every import of the account. kind, purpose and provider
+    (phase 6 D156): 422 account.kind_not_available for a kind that is not a bank kind, 422
+    allocation.category_not_for_account for a purpose the account's bookings do not fit."""
     return cmd.run(update_account, account_id, **body.changes())
+
+
+def _ownership(conn: Connection, account_id: UUID) -> list[AccountOwnership]:
+    require(conn, get_account, EntityType.ACCOUNT, account_id)
+    return get_account_ownership(conn, account_id)
+
+
+@router.get("/accounts/{account_id}/ownership")
+def account_ownership(account_id: UUID, cmd: Cmd) -> list[AccountOwnership]:
+    """The current owner shares as stored rows (with their effective_from), by owner;
+    empty when none is set (phase 6 D157)."""
+    return cmd.read(_ownership, account_id)
+
+
+@router.post("/accounts/{account_id}/ownership")
+def account_ownership_set(account_id: UUID, body: SetOwnershipBody, cmd: Cmd) -> Account:
+    """The full new set of owner shares (phase 6 D157): the current rows are superseded,
+    never deleted. 422 when the shares do not sum to exactly 1 or name an owner twice
+    (ownership.sum_not_one) or name no owner of the household (ownership.owner_missing)."""
+    return cmd.run(set_account_ownership, account_id, body)
 
 
 def _import(

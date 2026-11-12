@@ -470,20 +470,25 @@ def test_another_accounts_statement_is_refused_before_anything_is_stored(
     assert _count(app_engine, ws, document_table) == 0
 
 
-def test_owner_accounts_take_no_statements(run, imp, fresh_workspaces):
+def test_a_private_account_imports_its_statements(run, imp, fresh_workspaces):
+    """Phase 6 D156: the guard that kept statements off an owner account is gone."""
     ws, _ = fresh_workspaces
-    owner = _account(run, ws, owner=True)
-    with pytest.raises(RuleError) as caught:
-        imp(ws, owner.id, ZIP)
-    assert caught.value.code == rules.OWNER_ACCOUNT
+    private = _account(run, ws, owner=True)
+    assert private.purpose == "private"
+    imported = imp(ws, private.id, ZIP)
+    assert imported.lines_new == 22
 
 
-def test_an_account_with_imports_cannot_become_an_owner_account(run, imp, fresh_workspaces):
+def test_an_account_with_imports_may_change_its_purpose(run, imp, fresh_workspaces):
+    """Phase 6 D156: the guard against an account with imports becoming an owner account is
+    gone; a purpose change is checked against its bookings instead (none here)."""
     ws, _ = fresh_workspaces
     account = _account(run, ws)
     imp(ws, account.id, ZIP)
-    with pytest.raises(ConflictError):
-        run(ws, update_account, account.id, is_owner_account=True)
+    flagged = run(ws, update_account, account.id, is_owner_account=True)
+    assert (flagged.is_owner_account, flagged.purpose) == (True, "rental")
+    private = run(ws, update_account, account.id, purpose="private")
+    assert private.purpose == "private"
 
 
 def test_an_unreadable_file_writes_nothing(run, imp, app_engine, fresh_workspaces):

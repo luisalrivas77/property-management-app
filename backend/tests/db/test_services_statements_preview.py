@@ -155,18 +155,20 @@ def test_a_csv_of_the_same_lines_is_another_format_so_every_line_counts_new(
     assert _preview(read, ws, account.id).lines_new == 22
 
 
-@pytest.mark.parametrize(
-    ("iban", "owner", "code"),
-    [(OTHER_IBAN, False, rules.ACCOUNT_MISMATCH), (SAMPLE_IBAN, True, rules.OWNER_ACCOUNT)],
-)
-def test_the_preview_refuses_what_the_import_refuses(
-    run, read, fresh_workspaces, iban, owner, code
-):
+def test_the_preview_refuses_what_the_import_refuses(run, read, fresh_workspaces):
     ws, _ = fresh_workspaces
-    account = _account(run, ws, iban=iban, owner=owner)
+    account = _account(run, ws, iban=OTHER_IBAN)
     with pytest.raises(RuleError) as raised:
         _preview(read, ws, account.id)
-    assert raised.value.code == code
+    assert raised.value.code == rules.ACCOUNT_MISMATCH
+
+
+def test_a_private_account_previews_like_the_rental_one(run, read, fresh_workspaces):
+    """Phase 6 D156: the owner-account guard is gone; a private account imports."""
+    ws, _ = fresh_workspaces
+    account = _account(run, ws, owner=True)
+    assert account.purpose == "private"
+    assert _preview(read, ws, account.id).lines_new == 22
 
 
 def test_a_bank_declared_balance_reconciles_a_file_without_balances(

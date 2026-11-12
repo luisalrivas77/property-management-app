@@ -3947,7 +3947,7 @@
     "/api/accounts": {
       "get": {
         "summary": "Accounts List",
-        "description": "Rental accounts first, then the owners' own accounts, each by label.",
+        "description": "Rental accounts first, then the household's private accounts, each by label; each\nwith its current owner shares, ownership_missing when none is set (phase 6 D157).",
         "operationId": "accounts_list_api_accounts_get",
         "responses": {
           "200": {
@@ -4055,7 +4055,7 @@
       },
       "patch": {
         "summary": "Account Update",
-        "description": "Moving the anchor re-checks every import of the account.",
+        "description": "Moving the anchor re-checks every import of the account. kind, purpose and provider\n(phase 6 D156): 422 account.kind_not_available for a kind that is not a bank kind, 422\nallocation.category_not_for_account for a purpose the account's bookings do not fit.",
         "operationId": "account_update_api_accounts__account_id__patch",
         "parameters": [
           {
@@ -4075,6 +4075,100 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/AccountPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/accounts/{account_id}/ownership": {
+      "get": {
+        "summary": "Account Ownership",
+        "description": "The current owner shares as stored rows (with their effective_from), by owner;\nempty when none is set (phase 6 D157).",
+        "operationId": "account_ownership_api_accounts__account_id__ownership_get",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AccountOwnership"
+                  },
+                  "title": "Response Account Ownership Api Accounts  Account Id  Ownership Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Account Ownership Set",
+        "description": "The full new set of owner shares (phase 6 D157): the current rows are superseded,\nnever deleted. 422 when the shares do not sum to exactly 1 or name an owner twice\n(ownership.sum_not_one) or name no owner of the household (ownership.owner_missing).",
+        "operationId": "account_ownership_set_api_accounts__account_id__ownership_post",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetOwnershipBody"
               }
             }
           }
@@ -7179,6 +7273,18 @@
               }
             ],
             "title": "External Ref Masked"
+          },
+          "ownership": {
+            "items": {
+              "$ref": "#/components/schemas/OwnershipShare"
+            },
+            "type": "array",
+            "title": "Ownership"
+          },
+          "ownership_missing": {
+            "type": "boolean",
+            "title": "Ownership Missing",
+            "default": true
           }
         },
         "additionalProperties": false,
@@ -7302,6 +7408,87 @@
         "title": "AccountKind",
         "description": "account.kind (migration 0025, phase 6 D156). `wallet` is in the CHECK so phase 7 adds\nno migration for it; create_account refuses it (account.kind_not_available) until then,\nas AccountSource.AGGREGATOR is refused."
       },
+      "AccountOwnership": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "owner_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Owner Id"
+          },
+          "share_numerator": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Share Numerator"
+          },
+          "share_denominator": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Share Denominator"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "effective_from": {
+            "type": "string",
+            "format": "date",
+            "title": "Effective From"
+          },
+          "superseded_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Superseded By"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "workspace_id",
+          "created_at",
+          "account_id",
+          "owner_id",
+          "share_numerator",
+          "share_denominator",
+          "effective_from"
+        ],
+        "title": "AccountOwnership",
+        "description": "account_ownership row (append-only; a change is a new set under a new\neffective_from, an old row's superseded_by names the row that replaced it)."
+      },
       "AccountPatch": {
         "properties": {
           "label": {
@@ -7328,6 +7515,25 @@
           "is_owner_account": {
             "type": "boolean",
             "title": "Is Owner Account"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AccountKind"
+          },
+          "purpose": {
+            "$ref": "#/components/schemas/AccountPurpose"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
           }
         },
         "additionalProperties": false,
@@ -16760,6 +16966,45 @@
         ],
         "title": "OwnershipBody"
       },
+      "OwnershipShare": {
+        "properties": {
+          "owner_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Owner Id"
+          },
+          "share_numerator": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Share Numerator"
+          },
+          "share_denominator": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Share Denominator"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "owner_id",
+          "share_numerator",
+          "share_denominator"
+        ],
+        "title": "OwnershipShare"
+      },
       "Passkey": {
         "properties": {
           "id": {
@@ -21031,6 +21276,37 @@
         ],
         "title": "Session",
         "description": "The current session (Me.session). The cookie token is never part of any response."
+      },
+      "SetOwnershipBody": {
+        "properties": {
+          "shares": {
+            "items": {
+              "$ref": "#/components/schemas/OwnershipShare"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Shares"
+          },
+          "effective_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective From"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "shares"
+        ],
+        "title": "SetOwnershipBody",
+        "description": "POST /accounts/{id}/ownership: the full current set. Σ = 1 and each owner once are\nchecked here; that each owner exists is the service's (ownership.owner_missing)."
       },
       "SettlementHint": {
         "properties": {

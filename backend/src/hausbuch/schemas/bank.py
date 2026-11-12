@@ -25,6 +25,7 @@ from .enums import (
     DuplicateStatus,
     ImportStatus,
 )
+from .household import OwnershipShare
 
 # Phase 6 D156: a depot or exchange's own number (a depot or customer number), masked to its
 # last four characters like an IBAN's tail and HMAC'd for the statement routing of D164.
@@ -84,6 +85,17 @@ class Account(MutableRecord):
     provider: str | None = None
     currency: Currency = Currency.EUR
     external_ref_masked: MaskedRef | None = None
+    # Phase 6 D157, §4.2: the current owner shares (the reason kept with them); none set is
+    # the Konten screen's to-do „Eigentümer festlegen“, never an error.
+    # ownership_missing is derived from ownership on every read (never set apart from it).
+    ownership: list[OwnershipShare] = Field(default_factory=list)
+    ownership_missing: bool = True
+
+    @model_validator(mode="after")
+    def _missing_follows_ownership(self) -> Self:
+        if self.ownership_missing != (not self.ownership):
+            raise ValueError("ownership_missing is true exactly when no share is set")
+        return self
 
 
 # --- Parsing (BankSource) ------------------------------------------------------------
