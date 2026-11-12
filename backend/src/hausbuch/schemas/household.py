@@ -405,6 +405,55 @@ class TransferLink(TransferLinkCreate, Record):
     superseded_by: UUID | None = None
 
 
+class TransferLegView(Schema):
+    """One leg as the screens show it: its account by label, never an IBAN."""
+
+    source: TransferLegSource
+    id: UUID
+    account_id: UUID
+    account_label: str
+    booked_on: date
+    amount: Money
+    counterparty_name: str | None = None
+
+
+class TransferLinkView(Schema):
+    """GET /transfers?month=: a current link with both legs."""
+
+    id: UUID
+    kind: TransferLinkKind
+    matched_by: TransferMatchedBy
+    created_at: datetime
+    out_leg: TransferLegView
+    in_leg: TransferLegView
+
+
+class OpenTransferCode(StrEnum):
+    """GET /transfers/open: why a leg waits for a person (D162). proposed: a counterpart
+    fits but no link was written (a leg without an own IBAN, or one booked before the
+    other)."""
+
+    AMBIGUOUS = "transfer.ambiguous"
+    UNMATCHED_LEG = "transfer.unmatched_leg"
+    PROPOSED = "transfer.proposed"
+
+
+class OpenTransfer(Schema):
+    """One leg waiting for its counterpart, with the legs it may be linked to."""
+
+    code: OpenTransferCode
+    leg: TransferLegView
+    candidates: list[TransferLegView]
+    window_end: date
+
+
+class TransferUnlinkBody(Schema):
+    """POST /transfers/{id}/unlink: the link that replaces the wrong one (append-only, D162:
+    the old row names the new one in superseded_by)."""
+
+    replacement: TransferLinkCreate
+
+
 # --- Prices (D167, D174) --------------------------------------------------------------
 
 

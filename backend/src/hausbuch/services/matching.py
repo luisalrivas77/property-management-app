@@ -298,18 +298,17 @@ def build_context(
     today: date,
     for_transaction: UUID | None = None,
     account_purpose: AccountPurpose = AccountPurpose.RENTAL,
+    account_id: UUID | None = None,
 ) -> MatchContext:
     """Everything the matchers may look at, read from the workspace. `for_transaction`: the
     line being matched (a Beleg its own rows reference stays a candidate); `account_purpose`:
-    its account's purpose, which picks the order (phase 6 D158)."""
-    # The owners' accounts by purpose since migration 0025, which sets is_owner_account on
-    # every account (phase 6 D156); step 2's transfer matcher widens this to every account.
-    owners = conn.execute(
-        select(account_table.c.iban_hmac).where(
-            account_table.c.purpose == AccountPurpose.PRIVATE.value,
-            account_table.c.iban_hmac.is_not(None),
-        )
-    ).scalars()
+    its account's purpose, which picks the order (phase 6 D158); `account_id`: its account,
+    whose own IBAN is no other own account's (D162: own_account_hmacs is every account with
+    an IBAN except the line's own)."""
+    own = select(account_table.c.iban_hmac).where(account_table.c.iban_hmac.is_not(None))
+    if account_id is not None:
+        own = own.where(account_table.c.id != account_id)
+    owners = conn.execute(own).scalars()
     plans, documents = _evidence(conn, iban_key=iban_key, today=today, exclude_for=for_transaction)
     return MatchContext(
         account_purpose=account_purpose,
@@ -983,6 +982,7 @@ def match_line(
         today=ctx.now.date(),
         for_transaction=transaction_id,
         account_purpose=line.account_purpose,
+        account_id=line.account_id,
     )
     found = deterministic_set(ctx.conn, line.tx, context)
     if rematch and not line.waiting and found is not None and _copies_a_split(ctx.conn, found):

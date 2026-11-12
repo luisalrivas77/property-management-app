@@ -54,9 +54,11 @@ from .enums import (
     RentModel,
     StateCode,
 )
+from .household import OpenTransfer
 from .loan import LoanCreate
 from .property import Address, OwnerShare, reject_raw_tax_number
 from .proposal import Proposal, RecordEntity
+from .tax import TaxInputCreate
 from .tenancy import InitialRent, RentDueDay, TenancyCreate, TenancyParty
 
 # Validation errors never echo input (spec amendment 1): bodies that carry a tax reference or
@@ -527,6 +529,15 @@ class InboxItemKind(StrEnum):
     EMAIL_FAILED = "email_failed"  # a forwarded mail failed three times
     EMAIL_INBOX_FAILED = "email_inbox_failed"  # the poll cannot log in, open its label or connect
     REMINDER = "reminder"  # an action reminder visible today
+    # Phase 6 D162: a transfer leg to link (several counterparts fit, or one fits unlinked) or
+    # one past its window without a counterpart; `transfer` carries the leg and candidates.
+    TRANSFER_LINK = "transfer_link"
+    TRANSFER_UNMATCHED = "transfer_unmatched"
+    # Phase 6 D161: a private line paying a property bill that has no private_cost row yet
+    # (path 2, `private_costs` pre-filled for POST /properties/{id}/tax-inputs), and a private
+    # line booked hh_property_cost without a bill (path 3, „Beleg hochladen“).
+    PROPERTY_COST_ROW = "property_cost_row"
+    PROPERTY_COST_BILL = "property_cost_bill"
 
 
 class InboxItem(Schema):
@@ -546,6 +557,9 @@ class InboxItem(Schema):
     account_id: UUID | None = None  # phase 5: the bank_* kinds; phase 6: a private line
     sync_id: UUID | None = None  # phase 5: bank_approval_needed, bank_sync_failed
     reminder_id: str | None = Field(default=None, max_length=160)  # phase 5: reminder
+    property_id: UUID | None = None  # phase 6: the property_cost_* kinds
+    transfer: OpenTransfer | None = None  # phase 6: the transfer_* kinds
+    private_costs: list[TaxInputCreate] = Field(default_factory=list)  # property_cost_row
 
 
 class AiRetryResult(Schema):

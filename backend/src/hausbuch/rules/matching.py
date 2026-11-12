@@ -1093,9 +1093,10 @@ def deterministic_answer(
     """The deterministic order per account purpose (D158; fixture matching_order.yaml), before
     the model. Rental: learned rules -> owner transfer -> rent -> loan -> document (Hausgeld is
     a by_wirtschaftsplan rule), as in phase 2. Private: learned rules -> transfer by an own
-    IBAN (D162) -> a property bill (D161) -> D158's question; the rent, loan, Hausgeld and owner-transfer matchers never run there. A standing
-    rule hit (confidence 1) wins at once; a rule's near-miss proposal (D49) only when no
-    matcher answers. Every answer is one the account's purpose takes (D159)."""
+    IBAN (D162) -> a property bill (D161) -> D158's question; the rent, loan, Hausgeld and
+    owner-transfer matchers never run there. A standing rule hit (confidence 1) wins at once;
+    a rule's near-miss proposal (D49) only when no matcher answers. Every answer is one the
+    account's purpose takes (D159)."""
     found = rule_answer(rules, tx, context, history)
     if found is not None and found.confidence == EXACT:
         return found

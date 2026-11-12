@@ -171,6 +171,7 @@ RULE_CONFLICTS = "rule.conflicts"  # a name pattern hits a line confirmed otherw
 RULE_TOO_BROAD = "rule.too_broad"  # one name confirmed under two categories (D160, PayPal)
 TRANSFER_AMBIGUOUS = "transfer.ambiguous"  # several candidate legs (D162)
 TRANSFER_UNMATCHED_LEG = "transfer.unmatched_leg"  # no counterpart after the window (D162)
+TRANSFER_LEGS_INVALID = "transfer.legs_invalid"  # not one out and one in leg of two accounts
 STATEMENT_ACCOUNT_MISMATCH = "statement.account_mismatch"  # the file names another IBAN (D164)
 STATEMENT_IBAN_UNREAD = "statement.iban_unread"  # a PDF whose extraction has no IBAN (D164)
 DEPOT_HOLDINGS_MISMATCH = "depot.holdings_mismatch"  # report units != Σ movements (D165)

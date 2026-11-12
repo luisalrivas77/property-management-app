@@ -778,6 +778,7 @@ def _proof_candidates(conn: Connection, document_id: UUID, today: date) -> list[
             today=today,
             checklist=checklist,
             documents=docs,
+            private_proofs=True,
         )
         for year in years:
             bills.update(bills_without_proof(facts, year))
