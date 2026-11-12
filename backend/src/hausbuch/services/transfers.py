@@ -5,13 +5,16 @@ transfer kind). rules.matching.match_transfer decides; this module reads the leg
 links and computes the cards on read.
 
 - link_leg: after a line is booked (services.allocations.record_set) its transfer is linked
-  when exactly one counterpart fits; a leg of another account booked as a transfer and still
-  unlinked is tried too, so the counterpart that arrives late, booked otherwise, still links
-  it. relink(account_id) runs the same over an account's unlinked transfer legs (confirmed
-  and proposed), for a late import.
+  when exactly one counterpart fits and both are booked as transfers; a leg of another
+  account booked as a transfer and still unlinked is tried too, so the counterpart that
+  arrives late links it. A counterpart booked otherwise is never linked by the matcher: the
+  leg's card proposes it for a link by hand (review F3). relink(account_id) runs the same
+  over an account's unlinked transfer legs (confirmed and proposed), for a late import.
 - transfer_link is append-only: a wrong link is replaced by a new row and the old one names
-  it in superseded_by (unlink). A link with no replacement cannot be undone: the table has no
-  status, and migration 0025 is on main.
+  it in superseded_by (unlink). The table has no status (migration 0025 is on main), so a
+  link the matcher wrote is current only while both its legs are booked as transfers
+  (_current_links, review F3): re-booking or rejecting a leg withdraws it, and booking it as
+  a transfer again brings the same row back.
 - open_transfers: computed on read, never written. A leg inside its window has no card; after
   it transfer.unmatched_leg; two fitting counterparts transfer.ambiguous; a counterpart that
   fits but was not linked (a movement, or a leg booked before the other) transfer.proposed.
@@ -24,7 +27,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import Connection, func, insert, select, update
+from sqlalchemy import Connection, Row, func, insert, select, update
 
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
@@ -115,17 +118,64 @@ def _hex(value: bytes | None) -> str | None:
     return None if value is None else bytes(value).hex()
 
 
-def _linked_ids(conn: Connection) -> set[UUID]:
-    """Every leg of a current link (one not superseded)."""
+def _leg_ids(row: Row) -> tuple[UUID, ...]:
+    return tuple(
+        i
+        for i in (
+            row.out_transaction_id,
+            row.out_movement_id,
+            row.in_transaction_id,
+            row.in_movement_id,
+        )
+        if i is not None
+    )
+
+
+def _current_links(conn: Connection) -> list[Row]:
+    """The current links (review F3, no migration): not superseded, and, for a link the
+    matcher wrote, both legs still booked as a transfer: a line whose live (confirmed or
+    proposed) rows are one transfer category (_transfer_booked), a movement live and not
+    superseded. So a person who
+    re-books or rejects a leg withdraws the matcher's link by that booking, which is its event;
+    booked as a transfer again, the same row counts again and no second link is written. A
+    link the person made stays current until it is replaced (unlink): its legs need not be
+    booked as transfers. A leg in two such links keeps the newer one."""
     c = link_table.c
-    ids: set[UUID] = set()
-    for row in conn.execute(
-        select(
-            c.out_transaction_id, c.out_movement_id, c.in_transaction_id, c.in_movement_id
-        ).where(c.superseded_by.is_(None))
-    ):
-        ids.update(i for i in row if i is not None)
-    return ids
+    rows = conn.execute(
+        select(link_table)
+        .where(c.superseded_by.is_(None))
+        .order_by(c.created_at.desc(), c.id.desc())
+    ).all()
+    matcher = [r for r in rows if r.matched_by == TransferMatchedBy.MATCHER.value]
+    tx_ids = {i for r in matcher for i in (r.out_transaction_id, r.in_transaction_id) if i}
+    mv_ids = {i for r in matcher for i in (r.out_movement_id, r.in_movement_id) if i}
+    booked = set(_transfer_booked(conn, sorted(tx_ids)))
+    if mv_ids:
+        m = movement_table.c
+        booked |= set(
+            conn.execute(
+                select(m.id).where(
+                    m.id.in_(mv_ids),
+                    m.superseded_by.is_(None),
+                    m.status.in_([MovementStatus.PROPOSED.value, MovementStatus.CONFIRMED.value]),
+                )
+            ).scalars()
+        )
+    current, used = [], set()
+    for r in rows:
+        legs = _leg_ids(r)
+        if r.matched_by == TransferMatchedBy.MATCHER.value and not all(i in booked for i in legs):
+            continue
+        if used.intersection(legs):
+            continue
+        used.update(legs)
+        current.append(r)
+    return current
+
+
+def _linked_ids(conn: Connection) -> set[UUID]:
+    """Every leg of a current link (_current_links)."""
+    return {i for r in _current_links(conn) for i in _leg_ids(r)}
 
 
 def _transfer_booked(conn: Connection, ids: Sequence[UUID]) -> dict[UUID, AllocationCategory]:
@@ -380,6 +430,14 @@ def link_leg(
     found = match_transfer(leg.leg, _context(ctx.conn, leg, others), today=ctx.now.date())
     if found.link is None or not _both_ways(ctx.conn, leg, found.link, linked, ctx.now.date()):
         return None
+    # The matcher links two transfer legs only (_current_links): a counterpart booked as
+    # something else is left to the person (open_transfers proposes it, transfer.proposed).
+    other_id = (
+        found.link.in_leg.id if found.link.out_leg.id == leg.leg.id else found.link.out_leg.id
+    )
+    other = next((o for o in others if o.leg.id == other_id), None)
+    if leg.booked is None or other is None or other.booked is None:
+        return None
     return _write(
         ctx, found.link.out_leg, found.link.in_leg, found.link.kind, TransferMatchedBy.MATCHER
     )
@@ -388,9 +446,9 @@ def link_leg(
 def after_booking(
     ctx: CommandContext, transaction_id: UUID, categories: set[AllocationCategory]
 ) -> None:
-    """services.allocations.record_set's hook: a line booked as a transfer is linked; any
-    line booked may also be the late counterpart of another account's unlinked transfer leg
-    near its date, which is tried then."""
+    """services.allocations.record_set's hook: a line booked as a transfer is linked; it
+    may also be the late counterpart of another account's unlinked transfer leg near its
+    date, which is tried then (link_leg links two transfer legs only)."""
     if categories & TRANSFER_CATEGORIES and link_leg(ctx, transaction_id) is not None:
         return
     leg = _one_leg(ctx.conn, TransferLegSource.TRANSACTION, transaction_id)
@@ -503,8 +561,7 @@ def unlink(ctx: CommandContext, link_id: UUID, replacement: TransferLinkCreate) 
 
 def list_links(conn: Connection, *, start: date, end: date) -> list[TransferLinkView]:
     """The current links with a leg booked between `start` and `end`, by the out leg's date."""
-    c = link_table.c
-    rows = conn.execute(select(link_table).where(c.superseded_by.is_(None))).all()
+    rows = _current_links(conn)
     legs = {leg.leg.id: leg for leg in _legs_between(conn, start - _AROUND, end + _AROUND)}
     out = []
     for r in rows:

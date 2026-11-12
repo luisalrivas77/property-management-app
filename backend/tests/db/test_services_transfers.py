@@ -208,6 +208,54 @@ def test_two_equal_transfers_into_one_account_are_told_apart_by_their_ibans(worl
     assert _open(world) == []
 
 
+def test_a_matcher_link_ends_when_its_leg_is_booked_as_something_else(world, private):
+    """Review F3: a proposed transfer answer is linked; the person corrects the line to a gift,
+    which withdraws the link by that booking: the rental leg is open again with its card,
+    list_links no longer lists the gift and no second link row is written."""
+    out = world.line(MONDAY, "-500.00", iban=PRIVATE_IBAN, purpose="Umbuchung")
+    _match(world, out)
+    line = private.line(date(2026, 10, 6), "500.00", name="Umbuchung", purpose="Umbuchung")
+    _book(world, line, "500.00", C.INTERNAL_TRANSFER_IN, confirm=False)
+    [link] = _links(world)
+    assert (link.out_transaction_id, link.in_transaction_id, link.matched_by) == (
+        out,
+        line,
+        TransferMatchedBy.MATCHER.value,
+    )
+    assert _open(world) == []
+
+    _book(world, line, "500.00", C.HH_OTHER_INCOME)  # the person: it was a gift
+    [row] = _links(world)
+    assert row.superseded_by is None  # append-only: the row stays, it is no longer current
+    # The rental leg is open again; the gift still fits it by amount and date, so its card
+    # offers it for a link by hand (transfer.proposed), never linked by the matcher again.
+    [card] = _open(world)
+    assert (card.code, card.leg.id) == (OpenTransferCode.PROPOSED, out)
+    assert [c.id for c in card.candidates] == [line]
+    month = {"start": date(2026, 10, 1), "end": date(2026, 10, 31)}
+    assert world.query(transfers.list_links, **month) == []
+
+
+def test_a_leg_booked_as_a_transfer_again_brings_its_link_back_without_a_second_row(world, private):
+    out = world.line(MONDAY, "-500.00", iban=PRIVATE_IBAN, purpose="Umbuchung")
+    _match(world, out)
+    line = private.line(date(2026, 10, 6), "500.00", name="Umbuchung", purpose="Umbuchung")
+    _book(world, line, "500.00", C.INTERNAL_TRANSFER_IN, confirm=False)
+    _book(world, line, "500.00", C.HH_OTHER_INCOME)
+    _book(world, line, "500.00", C.INTERNAL_TRANSFER_IN)  # the person changes their mind
+    [link] = _links(world)
+    assert (link.out_transaction_id, link.in_transaction_id, link.superseded_by) == (
+        out,
+        line,
+        None,
+    )
+    assert len(_events(world, "transfer.linked")) == 1
+    assert _open(world) == []
+    month = {"start": date(2026, 10, 1), "end": date(2026, 10, 31)}
+    [view] = world.query(transfers.list_links, **month)
+    assert (view.out_leg.id, view.in_leg.id) == (out, line)
+
+
 def test_a_leg_past_its_window_without_a_counterpart_gets_the_unmatched_card(world, private):
     leg = private.line(MONDAY, "-200.00", iban=ACCOUNT_IBAN, purpose="Rücklage")
     _match(world, leg)
