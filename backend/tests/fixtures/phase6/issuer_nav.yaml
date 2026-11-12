@@ -1,0 +1,111 @@
+# Rule fixture: the issuers' published NAV as a price source (services/prices/issuer_nav/
+# adapters and rules.valuation.price_on with issuer_nav; docs/phases/phase-6.md D174, D167,
+# §9, §14)
+#
+# Step 0 writes what an adapter's output becomes, not the adapter: each case holds the NAV
+# rows (schemas.household.NavPoint) an adapter returns from a recorded file. Step 5 records
+# the real files (an SPDR-style XLSX under tests/fixtures/phase6/samples/, invented values in
+# the issuer's layout), adds the parse of each to these cases, and records each adapter's URL
+# and the date it was read in §14.1.
+#
+# Recomputed on load (tests/fixture_models_phase6.py):
+# - stored: one price row per NAV day on or after the asset's first movement, source
+#   issuer_nav; a EUR NAV is the price, another currency is divided by the ECB rate of the
+#   latest ECB day on or before the NAV's day (valuation.yaml's fx rule), 8 places half up;
+# - a file the adapter cannot parse stores nothing; the position keeps its last price and is
+#   marked stale (valuation.stale_price) once that price is older than 7 days;
+# - price.source_failed once the fetch has failed on SOURCE_FAILED_AFTER_DAYS (7) days in a
+#   row, never before;
+# - a held ISIN with no adapter in the registry is valued from its latest report value
+#   (source statement), labelled „Kurs aus dem letzten Bericht“, with no card;
+# - a typed user price ranks below every fetched source on the same day (SOURCE_PRECEDENCE).
+#
+# The key "on" is quoted: YAML 1.1 reads a bare on as true.
+# Invented ISINs, NAVs and rates.
+#
+# Step 0 readings (listed in the step 0 report):
+# - "seven failed days" are seven consecutive daily runs that failed, counted in calendar
+#   days (the job runs daily); a success resets the count.
+# - "none before the first movement": a NAV row before the day of the asset's first movement
+#   on any account of the workspace is not stored.
+
+cases:
+  - id: three_days_none_before_the_first_movement
+    pending: "phase 6 step 5 (the issuer adapters)"
+    first_movement_on: 2026-06-24
+    navs:
+      - {"on": 2026-06-23, nav: "80.95000000", currency: EUR}
+      - {"on": 2026-06-24, nav: "81.10000000", currency: EUR}
+      - {"on": 2026-06-25, nav: "81.50000000", currency: EUR}
+      - {"on": 2026-06-26, nav: "81.70000000", currency: EUR}
+    expect:
+      stored:
+        - {"on": 2026-06-24, price_eur: "81.10000000"}
+        - {"on": 2026-06-25, price_eur: "81.50000000"}
+        - {"on": 2026-06-26, price_eur: "81.70000000"}
+
+  - id: usd_nav_converted
+    pending: "phase 6 step 5 (the issuer adapters)"
+    first_movement_on: 2026-06-01
+    navs:
+      - {"on": 2026-06-25, nav: "100.00000000", currency: USD}
+      - {"on": 2026-06-26, nav: "81.20000000", currency: USD}
+    rates:
+      - {"on": 2026-06-25, per_eur: "1.0850"}
+      - {"on": 2026-06-26, per_eur: "1.0850"}
+    expect:
+      stored:
+        - {"on": 2026-06-25, price_eur: "92.16589862"}
+        - {"on": 2026-06-26, price_eur: "74.83870968"}
+
+  - id: unparsable_file_stores_nothing
+    pending: "phase 6 step 5 (the issuer adapters)"
+    first_movement_on: 2026-06-01
+    unparsable: true
+    last_price_on: 2026-06-19
+    today: 2026-06-30
+    expect:
+      stored: []
+      stale: true
+      warning: valuation.stale_price
+
+  - id: seven_failed_days_raise_the_card
+    pending: "phase 6 step 5 (the issuer adapters)"
+    first_movement_on: 2026-06-01
+    failed_on: [2026-06-24, 2026-06-25, 2026-06-26, 2026-06-27, 2026-06-28, 2026-06-29, 2026-06-30]
+    expect:
+      stored: []
+      card: price.source_failed
+
+  - id: six_failed_days_raise_nothing
+    pending: "phase 6 step 5 (the issuer adapters)"
+    first_movement_on: 2026-06-01
+    failed_on: [2026-06-25, 2026-06-26, 2026-06-27, 2026-06-28, 2026-06-29, 2026-06-30]
+    expect:
+      stored: []
+      card: null
+
+  - id: no_adapter_uses_the_report
+    description: a held ISIN whose issuer has no adapter is valued from the latest report, without a card
+    pending: "phase 6 step 5 (the issuer adapters)"
+    first_movement_on: 2026-01-15
+    no_adapter: true
+    prices:
+      - {"on": 2026-06-30, price_eur: "40.00", source: statement}
+    expect:
+      stored: []
+      valued_by: statement
+      label: „Kurs aus dem letzten Bericht“
+      card: null
+
+  - id: typed_price_below_every_fetched_one
+    pending: "phase 6 step 5 (the issuer adapters)"
+    first_movement_on: 2026-01-15
+    navs:
+      - {"on": 2026-06-30, nav: "82.10000000", currency: EUR}
+    prices:
+      - {"on": 2026-06-30, price_eur: "85.00", source: user}
+    expect:
+      stored:
+        - {"on": 2026-06-30, price_eur: "82.10000000"}
+      valued_by: issuer_nav

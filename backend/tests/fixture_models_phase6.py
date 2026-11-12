@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from fractions import Fraction
 from functools import cache
 from pathlib import Path
@@ -36,7 +36,7 @@ import yaml
 from fixture_models import Lenient, RuleErrorExpect
 from pydantic import Field, model_validator
 
-from hausbuch.rules import categories, depot, review, statements
+from hausbuch.rules import categories, depot, review, statements, valuation
 from hausbuch.rules import errors as E
 from hausbuch.rules.household.taxonomy import PRIVATE_ONLY, SHARED, TAXONOMY, allowed_categories
 from hausbuch.schemas.allocation import (
@@ -57,15 +57,25 @@ from hausbuch.schemas.bank import (
 )
 from hausbuch.schemas.bank_sync import PRIMARY_SLOT, CredentialSlot
 from hausbuch.schemas.common import Money, Schema
-from hausbuch.schemas.enums import AccountKind, AccountPurpose, BalanceSource
+from hausbuch.schemas.enums import (
+    BANK_ACCOUNT_KINDS,
+    AccountKind,
+    AccountPurpose,
+    BalanceSource,
+)
 from hausbuch.schemas.household import (
     AssetSymbol,
+    CurrencyCode,
     HouseholdGroup,
     Isin,
     MovementKind,
     MovementLine,
     MovementStatus,
+    NavPoint,
+    NetWorthClass,
     NonNegativeQuantity,
+    PriceEur,
+    PriceSourceKind,
     ProposedInput,
     Quantity,
     Relevance,
@@ -1102,6 +1112,329 @@ class DkbFixture(_Fixture):
     cases: list[DkbCase] = Field(min_length=1)
 
 
+# --- valuation.yaml: rules.valuation.price_on / value (D167 revised) ------------------------
+
+_CENT, _PRICE_PLACES = Decimal("0.01"), Decimal("0.00000001")
+
+
+class PriceRow(Schema):
+    on: date
+    price_eur: PriceEur
+    source: PriceSourceKind
+
+
+def _price_on(prices: list[PriceRow], on: date) -> PriceRow | None:
+    days = [p.on for p in prices if p.on <= on]
+    if not days:
+        return None
+    rows = [p for p in prices if p.on == max(days)]
+    return min(rows, key=lambda p: valuation.SOURCE_PRECEDENCE.index(p.source))
+
+
+class FxRate(Schema):
+    on: date
+    per_eur: PriceEur
+
+    @model_validator(mode="after")
+    def _ecb_day(self) -> Self:
+        if self.on.weekday() >= 5:
+            raise ValueError(f"the ECB publishes no rate on a weekend ({self.on})")
+        return self
+
+
+def _to_eur(amount: Decimal, on: date, rates: list[FxRate]) -> tuple[date, Decimal]:
+    rate = max((r for r in rates if r.on <= on), key=lambda r: r.on)
+    return rate.on, (amount / rate.per_eur).quantize(_PRICE_PLACES, ROUND_HALF_UP)
+
+
+class HeldPosition(Schema):
+    units: Quantity
+    reconciled_through: date
+    cash: bool = False
+
+
+class PriceRef(Schema):
+    on: date
+    source: PriceSourceKind
+
+
+class ValuationExpect(Schema):
+    price: PriceRef | None
+    stale: bool
+    value_eur: Money | None
+    not_valued_reason: str | None = None
+    warning: str | None = None
+
+
+class ValuationCase(_Case):
+    on: date
+    prices: list[PriceRow]
+    position: HeldPosition
+    expect: ValuationExpect
+
+    def recompute(self) -> ValuationExpect:
+        if self.position.cash:
+            return ValuationExpect(price=None, stale=False, value_eur=self.position.units)
+        price = _price_on(self.prices, self.on)
+        if price is None:
+            raise ValueError(f"{self.id}: no price on or before {self.on}")
+        stale = (self.on - price.on).days > valuation.STALE_AFTER_DAYS
+        past = self.on > self.position.reconciled_through
+        return ValuationExpect(
+            price=PriceRef(on=price.on, source=price.source),
+            stale=stale,
+            value_eur=(
+                None
+                if past
+                else (self.position.units * price.price_eur).quantize(_CENT, ROUND_HALF_UP)
+            ),
+            not_valued_reason=E.VALUATION_NOT_VALUED if past else None,
+            warning=E.VALUATION_STALE_PRICE if stale else None,
+        )
+
+    @model_validator(mode="after")
+    def _recomputed(self) -> Self:
+        if self.recompute() != self.expect:
+            raise ValueError(f"{self.id}: the rule gives {self.recompute()}")
+        return self
+
+
+class Figure(Schema):
+    on: date
+    amount: PriceEur
+    currency: CurrencyCode
+
+
+class FxExpect(Schema):
+    rate_on: date
+    price_eur: PriceEur
+
+
+class FxCase(_Case):
+    figure: Figure
+    rates: list[FxRate] = Field(min_length=1)
+    expect: FxExpect
+
+    @model_validator(mode="after")
+    def _recomputed(self) -> Self:
+        rate_on, price = _to_eur(self.figure.amount, self.figure.on, self.rates)
+        if FxExpect(rate_on=rate_on, price_eur=price) != self.expect:
+            raise ValueError(f"{self.id}: the ECB rule gives {rate_on}, {price}")
+        return self
+
+
+class ValuationFixture(_Fixture):
+    cases: list[ValuationCase] = Field(min_length=1)
+    fx_cases: list[FxCase] = Field(min_length=1)
+
+
+# --- issuer_nav.yaml: the issuer adapters' rows as prices (D174) -----------------------------
+
+
+class StoredPrice(Schema):
+    on: date
+    price_eur: PriceEur
+
+
+class IssuerNavExpect(Schema):
+    stored: list[StoredPrice]
+    stale: bool | None = None
+    warning: str | None = None
+    card: str | None = None
+    valued_by: PriceSourceKind | None = None
+    label: str | None = None
+
+
+REPORT_PRICE_LABEL = "„Kurs aus dem letzten Bericht“"
+
+
+class IssuerNavCase(_Case):
+    first_movement_on: date
+    navs: list[NavPoint] = Field(default_factory=list)
+    rates: list[FxRate] = Field(default_factory=list)
+    unparsable: bool = False
+    last_price_on: date | None = None
+    today: date | None = None
+    failed_on: list[date] = Field(default_factory=list)
+    no_adapter: bool = False
+    prices: list[PriceRow] = Field(default_factory=list)  # rows already stored
+    expect: IssuerNavExpect
+
+    def recompute(self) -> IssuerNavExpect:
+        stored = []
+        if not self.unparsable and not self.no_adapter:
+            for nav in self.navs:
+                if nav.on < self.first_movement_on:
+                    continue
+                price = (
+                    nav.nav if nav.currency == "EUR" else _to_eur(nav.nav, nav.on, self.rates)[1]
+                )
+                stored.append(StoredPrice(on=nav.on, price_eur=price))
+        result = IssuerNavExpect(stored=stored)
+        if self.unparsable:
+            stale = (self.today - self.last_price_on).days > valuation.STALE_AFTER_DAYS
+            result = result.model_copy(
+                update={"stale": stale, "warning": E.VALUATION_STALE_PRICE if stale else None}
+            )
+        if self.failed_on:
+            days = sorted(self.failed_on)
+            run = 1
+            for before, after in zip(days, days[1:], strict=False):
+                run = run + 1 if (after - before).days == 1 else 1
+            failed = run >= valuation.SOURCE_FAILED_AFTER_DAYS
+            result = result.model_copy(update={"card": E.PRICE_SOURCE_FAILED if failed else None})
+        if self.prices or self.no_adapter:
+            rows = self.prices + [
+                PriceRow(on=s.on, price_eur=s.price_eur, source=PriceSourceKind.ISSUER_NAV)
+                for s in stored
+            ]
+            best = _price_on(rows, max(r.on for r in rows))
+            result = result.model_copy(update={"valued_by": best.source})
+            if self.no_adapter:
+                result = result.model_copy(update={"label": REPORT_PRICE_LABEL, "card": None})
+        return result
+
+    @model_validator(mode="after")
+    def _recomputed(self) -> Self:
+        if self.recompute() != self.expect:
+            raise ValueError(f"{self.id}: the rule gives {self.recompute()}")
+        return self
+
+
+class IssuerNavFixture(_Fixture):
+    cases: list[IssuerNavCase] = Field(min_length=1)
+
+
+# --- net_worth.yaml: services.net_worth over a fixture ledger (D167 (4)) --------------------
+
+_CLASS_OF_KIND = {
+    AccountKind.BANK_CURRENT: NetWorthClass.BANK,
+    AccountKind.BANK_SAVINGS: NetWorthClass.BANK,
+    AccountKind.DEPOT: NetWorthClass.DEPOT,
+    AccountKind.EXCHANGE: NetWorthClass.CRYPTO,
+}
+
+
+class ValuedPosition(Schema):
+    asset: str
+    units: Quantity
+    price_eur: PriceEur | None = None
+    source: PriceSourceKind | None = None
+    price_on: date | None = None
+    cash: bool = False
+
+    @model_validator(mode="after")
+    def _priced(self) -> Self:
+        if self.cash == (self.price_eur is not None):
+            raise ValueError(f"{self.asset}: a price unless it is cash")
+        return self
+
+    @property
+    def value(self) -> Decimal:
+        if self.cash:
+            return self.units
+        return (self.units * self.price_eur).quantize(_CENT, ROUND_HALF_UP)
+
+
+class WorthAccount(Schema):
+    id: str
+    kind: AccountKind
+    shares: dict[str, Fraction]
+    balance: Money | None = None
+    positions: list[ValuedPosition] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _shape(self) -> Self:
+        if sum(self.shares.values()) != 1:
+            raise ValueError(f"{self.id}: shares sum to 1")
+        if (self.kind in BANK_ACCOUNT_KINDS) != (self.balance is not None):
+            raise ValueError(f"{self.id}: a bank account has a balance, others positions")
+        return self
+
+
+class WorthProperty(Schema):
+    shares: dict[str, Fraction]
+    estimate: Money
+    loan_balance: Money
+
+
+class SnapshotExpect(Schema):
+    account: str
+    asset: str | None
+    value_eur: Money
+
+
+class NetWorthExpect(Schema):
+    pending: str | None = None
+    by_class: dict[NetWorthClass, Money]
+    by_owner: dict[str, Money]
+    total: Money
+    snapshots: list[SnapshotExpect]
+
+
+def _split(amount: Decimal, shares: dict[str, Fraction]) -> dict[str, Decimal]:
+    parts = {}
+    for owner, share in shares.items():
+        exact = Fraction(amount) * share
+        if (exact * 100).denominator != 1:
+            raise ValueError(f"{amount} × {share} is not a whole number of cents")
+        parts[owner] = Decimal(exact.numerator) / Decimal(exact.denominator)
+    return parts
+
+
+class NetWorthFixture(Schema):
+    on: date
+    owners: list[str] = Field(min_length=1)
+    accounts: list[WorthAccount] = Field(min_length=1)
+    property: WorthProperty
+    expect: NetWorthExpect
+
+    def recompute(self) -> NetWorthExpect:
+        by_class = dict.fromkeys(NetWorthClass, Decimal("0.00"))
+        by_owner = dict.fromkeys(self.owners, Decimal("0.00"))
+        snapshots = []
+
+        def add(cls: NetWorthClass, amount: Decimal, shares: dict[str, Fraction]) -> None:
+            by_class[cls] += amount
+            for owner, part in _split(amount, shares).items():
+                by_owner[owner] += part
+
+        for account in self.accounts:
+            cls = _CLASS_OF_KIND[account.kind]
+            if account.balance is not None:
+                add(cls, account.balance, account.shares)
+                snapshots.append(
+                    SnapshotExpect(account=account.id, asset=None, value_eur=account.balance)
+                )
+            for position in account.positions:
+                add(cls, position.value, account.shares)
+                snapshots.append(
+                    SnapshotExpect(
+                        account=account.id, asset=position.asset, value_eur=position.value
+                    )
+                )
+        add(NetWorthClass.PROPERTY, self.property.estimate, self.property.shares)
+        add(NetWorthClass.LIABILITIES, -self.property.loan_balance, self.property.shares)
+        total = sum(by_class.values(), Decimal(0))
+        if total != sum(by_owner.values(), Decimal(0)):
+            raise ValueError("the owners' figures sum to the total")
+        return NetWorthExpect(
+            pending=self.expect.pending,
+            by_class=by_class,
+            by_owner=by_owner,
+            total=total,
+            snapshots=snapshots,
+        )
+
+    @model_validator(mode="after")
+    def _recomputed(self) -> Self:
+        if self.recompute() != self.expect:
+            raise ValueError(f"net worth recomputes to {self.recompute()}")
+        if any(set(a.shares) - set(self.owners) for a in self.accounts):
+            raise ValueError("a share names an owner of the workspace")
+        return self
+
+
 MODELS: dict[str, type[Schema]] = {
     "ownership": OwnershipFixture,
     "household_categories": HouseholdCategoriesFixture,
@@ -1115,6 +1448,9 @@ MODELS: dict[str, type[Schema]] = {
     "quirion_documents": QuirionFixture,
     "bison_csv": ExchangeFixture,
     "dkb_csv": DkbFixture,
+    "valuation": ValuationFixture,
+    "issuer_nav": IssuerNavFixture,
+    "net_worth": NetWorthFixture,
 }
 
 
