@@ -1342,3 +1342,68 @@ a.button-link.capture-review {
   min-height: 36px;
   overflow-wrap: anywhere;
 }
+
+/* Haushalt (phase 6 §13, docs/mockups/10-household-cashflow.png) and the Übersicht's Cashflow
+   card (mockup 07). The KPI row, the bars and the split reuse Planung's classes (globals.css). */
+.household-open {
+  background: var(--warn-bg);
+  border-color: var(--warn-border);
+}
+
+.household-open p.planning-kpi-label,
+.household-open p.planning-kpi-value,
+.household-open p.planning-kpi-sub a {
+  color: var(--warn);
+}
+
+.planning-bar.household-bar-negative {
+  border-color: var(--warn);
+  background: var(--warn-bg);
+}
+
+.household-spending {
+  flex: 3 1 400px;
+  min-width: 0;
+}
+
+.household-side {
+  flex: 2 1 280px;
+  min-width: 0;
+}
+
+.household-share {
+  display: block;
+  min-width: 80px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--tag-bg);
+  overflow: hidden;
+}
+
+.household-share > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.household-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.household-rows li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--divider);
+  font-variant-numeric: tabular-nums;
+}
+
+.cashflow-value {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
