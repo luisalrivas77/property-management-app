@@ -535,6 +535,10 @@ The last two columns are your computer's `~/.hausbuch-owner.env`, not anything a
 | `HAUSBUCH_INBOX_IMAP_PASSWORD` | **secret** (step 16), optional | — | — | — |
 | `HAUSBUCH_INBOX_ADDRESS` | **secret** (step 16), optional | — | — | — |
 | `HAUSBUCH_INBOX_LABEL` | `Hausbuch` (step 16), optional | — | — | — |
+| `HAUSBUCH_TEM_SECRET_KEY` | **secret** (step 15), optional | — | — | — |
+| `HAUSBUCH_TEM_PROJECT_ID` | the TEM domain's project id (step 15), optional | — | — | — |
+| `HAUSBUCH_MAIL_FROM` | `hausbuch@mail.rcubed.fr` (step 15), optional | — | — | — |
+| `HAUSBUCH_TEM_REGION` | `fr-par` (step 15; the default) | — | — | — |
 | `HAUSBUCH_API_URL` | — | **build argument**, not a variable (step 7) | — | — |
 
 The API's optional settings keep their defaults unless you have a reason to change them:
@@ -767,6 +771,96 @@ stored connection, so the next sync asks for an approval again; so does a new
 
 **To switch the sync off**, remove both variables in one update and redeploy: every start
 is then refused with `bank.not_configured` and the bank is never contacted.
+
+## Step 15: Reminder emails (phase 5, D123)
+
+Every morning at 06:00 UTC the API container's worker sends each member of the household
+one email listing the reminders that are due that day (a Grundsteuer instalment, a missing
+rent, the tax return deadline and the other kinds on the Übersicht), through Scaleway
+Transactional Email (TEM). The mail names the kind of deadline, its date and the property or
+unit label as you typed it, plus a link to the Übersicht; never an amount, a tenant's name or
+an address. A member gets at most one mail a day, and none on a day nothing is due. No
+migration is needed (the tables came with `0019`).
+
+Who gets it: every member who has enrolled a passkey, at the email their account was
+created with. An invited member who never enrolled gets nothing.
+
+**What is already done.** The sending domain `mail.rcubed.fr` is added in TEM (Console:
+Transactional Email, in fr-par) and verified, with autoconfiguration on, so Scaleway wrote
+its SPF, DKIM and DMARC records into the `rcubed.fr` zone itself. The plan is
+**Essential**, which includes 300 emails a month; the household sends at most about 60 (two
+members, one mail on a day something is due), so it stays inside the included volume
+(phase-5.md Q-O38).
+
+One value is a secret: the **TEM API key's secret key**. Like the FinTS values (step 14), it
+lives in the API container's own secret environment variables, which is what the app reads;
+a copy in Secret Manager is optional and never read by the container. It is never in the
+database, an event, a job or a log line, and neither are the recipients' addresses or the
+mail's text.
+
+1. **An IAM application that can only send mail.** Console: Security & Identity → IAM →
+   Applications → **Create application**, named `hausbuch-tem`. Then IAM → Policies →
+   **Create policy** for that application, with one rule scoped to **the project that holds
+   the domain** (Access to resources → the project), and the permission set
+   **`TransactionalEmailEmailApiCreate`** only: it allows sending through the API and
+   nothing else (not reading the domain, the emails or the statistics, and no other product).
+   `TransactionalEmailFullAccess` would also work but grants far more; do not use it. If the
+   first run logs `http_403` although the key and the project id are right, widen the rule to
+   `TransactionalEmailEmailFullAccess` (the emails only, no domain configuration) and record
+   that here.
+2. **Its API key.** IAM → Applications → `hausbuch-tem` → API keys → **Generate API key**,
+   with the description `hausbuch reminder emails` and no expiry (or note the date and rotate
+   before it). Choose the domain's project as the preferred project. Copy the **secret key**
+   once; the access key is not needed by the app.
+3. **The project id.** Console: Project Dashboard of the domain's project → Settings, copy
+   the Project ID (a UUID). It is not a secret, and it must be the project the domain is in,
+   or TEM refuses every mail.
+4. **API container** (step 10): in **one update**, add
+   - `HAUSBUCH_TEM_SECRET_KEY` as a **secret** environment variable (the secret key from
+     point 2);
+   - `HAUSBUCH_TEM_PROJECT_ID` (the project id from point 3),
+     `HAUSBUCH_MAIL_FROM=hausbuch@mail.rcubed.fr` and `HAUSBUCH_TEM_REGION=fr-par` as plain
+     environment variables;
+
+   then **redeploy**. Add them beside the variables that are already there and leave those
+   alone: an update changes only the variables it names, and the secrets of steps 10, 13, 14
+   and 16 stay as they are (in the console, add rows; never clear or retype the list). The
+   container refuses to start with the secret key but no project id or sender, or with a
+   region that is not a Scaleway region such as `fr-par`. While the secret key is unset the
+   daily run does nothing but log one line, `"status": "not_configured"`.
+   `HAUSBUCH_RUN_WORKER` stays `true`: the digest is a periodic job of this container's
+   worker.
+5. **Switch it on.** Open Einstellungen › Erinnerungen. The note „Der E-Mail-Versand ist noch
+   nicht eingerichtet“ is gone once the container has the three values; switch
+   **Erinnerungen per E-Mail** on. The switch belongs to the household and is recorded in
+   History; switched off, nothing is sent even with the key set.
+6. **Check the first run.** The first mail arrives at 06:00 UTC (07:00 or 08:00 in Berlin) on
+   the first morning a reminder reaches its email day; the Übersicht shows which reminders
+   exist. The container log has one JSON line per run with `"event": "reminders_sent"`, for
+   example `"status": "done", "workspaces": 1, "mails": 2, "failed_mails": 0, "items": 3,
+   "codes": {}`. It names counts and codes only, never an address or a line of the mail.
+   Check the mail is not in the spam folder; if it is, compare the domain's records in TEM
+   (Domains → `mail.rcubed.fr`, all checks green) before changing anything.
+
+**When a mail fails**, the run logs a warning with the TEM answer as a code in `codes`, the
+other members' mails still go out, and the same item is tried again the next morning, three
+attempts in all (one a day); after the third failure that item is not mailed again (its card
+stays on the Übersicht). What the codes usually mean: `http_401` or `http_403`, the secret key
+is wrong or revoked, or the policy lacks the permission set or names another project;
+`http_400` or `http_404`, the sender's domain is not verified in that project and region or
+the project id is wrong; `http_429` or `http_5xx`, a rate limit or an outage that the next
+day's attempt usually clears; `exc:TimeoutError` or another `exc:` class name, TEM could not be
+reached. A run that finds another run still sending for the household logs `"busy": 1` and
+leaves it to that run; nothing is sent twice. A mail TEM accepted but whose record could not be
+written (the database gone in between) is sent again the next morning, the one way a member
+can get a line twice.
+
+**Rotation**: generate a new API key for `hausbuch-tem`, put its secret key into
+`HAUSBUCH_TEM_SECRET_KEY`, redeploy, then delete the old key in IAM.
+
+**To switch the emails off**, switch „Erinnerungen per E-Mail“ off (the household's choice),
+or remove the four variables in one update and redeploy (nothing can be sent at all), then
+delete the API key.
 
 ## Step 16: Email-in from the Gmail label (phase 5, D121)
 
