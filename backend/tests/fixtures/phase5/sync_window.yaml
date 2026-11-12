@@ -27,8 +27,7 @@
 #   imports_through = the last reconciled closing date of the account's imports (null without
 #   any). Before the first success the window starts after it as well:
 #   start = max(opening_balance_on + 1 day, imports_through + 1 day)
-#   After a success it is ignored: the 14-day overlap is unchanged. The cases carry a pending
-#   marker until phase 6 step 3 builds it.
+#   After a success it is ignored: the 14-day overlap is unchanged. Built by phase 6 step 3.
 #
 # Derivations (calendar arithmetic only; 2026 is not a leap year) are in a comment per case.
 
@@ -107,7 +106,6 @@ cases:
       a private account's 2026 history came from a CSV export reconciled through 31 Oct; the
       first sync starts on 1 Nov, so the CSV lines and the camt lines (which share no bank
       reference) never overlap
-    pending: "phase 6 step 3 (D173 (4)): request_window reads imports_through"
     # max(31 Dec 2025 + 1 = 1 Jan 2026, 31 Oct 2026 + 1 = 1 Nov 2026) = 1 Nov 2026;
     # 1 Nov to 12 Nov = 11 days
     today: 2026-11-12

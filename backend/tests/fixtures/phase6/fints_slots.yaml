@@ -30,80 +30,67 @@
 #   syncs, both without one.
 
 slots:
-  - {pending: "phase 6 step 3 (FinTS connections per login)", id: primary_is_the_phase5_pin, slot: primary, variable: HAUSBUCH_FINTS_PIN}
-  - {pending: "phase 6 step 3 (FinTS connections per login)", id: owner_b, slot: owner_b, variable: HAUSBUCH_FINTS_PIN_OWNER_B}
-  - {pending: "phase 6 step 3 (FinTS connections per login)", id: joint_bank, slot: joint_bank, variable: HAUSBUCH_FINTS_PIN_JOINT_BANK}
-  - {pending: "phase 6 step 3 (FinTS connections per login)", id: digits_after_the_first_letter, slot: dkb2, variable: HAUSBUCH_FINTS_PIN_DKB2}
-  - {pending: "phase 6 step 3 (FinTS connections per login)", id: upper_case_refused, slot: Owner_B, variable: null}
-  - {pending: "phase 6 step 3 (FinTS connections per login)", id: hyphen_refused, slot: owner-b, variable: null}
-  - {pending: "phase 6 step 3 (FinTS connections per login)", id: empty_refused, slot: "", variable: null}
-  - {pending: "phase 6 step 3 (FinTS connections per login)", id: leading_digit_refused, slot: 2nd_login, variable: null}
-  - pending: "phase 6 step 3 (FinTS connections per login)"
-    id: thirty_three_characters_refused
+  - {id: primary_is_the_phase5_pin, slot: primary, variable: HAUSBUCH_FINTS_PIN}
+  - {id: owner_b, slot: owner_b, variable: HAUSBUCH_FINTS_PIN_OWNER_B}
+  - {id: joint_bank, slot: joint_bank, variable: HAUSBUCH_FINTS_PIN_JOINT_BANK}
+  - {id: digits_after_the_first_letter, slot: dkb2, variable: HAUSBUCH_FINTS_PIN_DKB2}
+  - {id: upper_case_refused, slot: Owner_B, variable: null}
+  - {id: hyphen_refused, slot: owner-b, variable: null}
+  - {id: empty_refused, slot: "", variable: null}
+  - {id: leading_digit_refused, slot: 2nd_login, variable: null}
+  - id: thirty_three_characters_refused
     slot: abcdefghijklmnopqrstuvwxyz0123456
     variable: null
-  - pending: "phase 6 step 3 (FinTS connections per login)"
-    id: thirty_two_characters_allowed
+  - id: thirty_two_characters_allowed
     slot: abcdefghijklmnopqrstuvwxyz012345
     variable: HAUSBUCH_FINTS_PIN_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345
 
 sync_checks:
   - id: primary_with_its_secret_runs
-    pending: "phase 6 step 3 (FinTS connections per login)"
     slot: primary
     secrets: [primary]
   - id: owner_b_without_its_secret_fails
     description: the card names the variable to set; no dialog is opened
-    pending: "phase 6 step 3 (FinTS connections per login)"
     slot: owner_b
     secrets: [primary]
     expect_error: {code: bank.pin_missing}
     names_variable: HAUSBUCH_FINTS_PIN_OWNER_B
   - id: primary_without_any_secret_fails
-    pending: "phase 6 step 3 (FinTS connections per login)"
     slot: primary
     secrets: []
     expect_error: {code: bank.pin_missing}
     names_variable: HAUSBUCH_FINTS_PIN
   - id: two_connections_share_one_slot
     description: one login that shows several accounts at one institute (Q-O72)
-    pending: "phase 6 step 3 (FinTS connections per login)"
     slot: joint_bank
     secrets: [primary, joint_bank]
 
 approval_texts:
   - id: dkb_app
-    pending: "phase 6 step 3 (FinTS connections per login)"
     bank_name: DKB AG
     text: Jetzt in der DKB-App freigeben
   - id: sparkasse_unchanged
-    pending: "phase 6 step 3 (FinTS connections per login)"
     bank_name: Sparkasse Musterstadt
     text: null
 
 auto_sync:
   - id: dkb_before_any_manual_sync_refused
-    pending: "phase 6 step 3 (FinTS connections per login)"
     bank_name: DKB AG
     manual_syncs: []
     allowed: false
   - id: dkb_after_one_clean_sync_refused
-    pending: "phase 6 step 3 (FinTS connections per login)"
     bank_name: DKB AG
     manual_syncs: [false]
     allowed: false
   - id: dkb_after_two_clean_syncs_allowed
-    pending: "phase 6 step 3 (FinTS connections per login)"
     bank_name: DKB AG
     manual_syncs: [true, false, false]
     allowed: true
   - id: dkb_last_sync_needed_an_approval_refused
-    pending: "phase 6 step 3 (FinTS connections per login)"
     bank_name: DKB AG
     manual_syncs: [false, false, true]
     allowed: false
   - id: sparkasse_unchanged
-    pending: "phase 6 step 3 (FinTS connections per login)"
     bank_name: Sparkasse Musterstadt
     manual_syncs: []
     allowed: true
