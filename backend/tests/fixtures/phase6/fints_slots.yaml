@@ -1,0 +1,109 @@
+# Rule fixture: one FinTS login per slot (hausbuch.rules.bank_sync.pin_variable and the sync's
+# slot checks in hausbuch.services.bank_sync)
+#
+# docs/phases/phase-6.md D163, D173 (1) and (5), §14. A connection's credential_slot is a
+# label under ^[a-z][a-z0-9_]{0,31}$ (migration 0025's CHECK, schemas.bank_sync.CredentialSlot);
+# its PIN is the container secret HAUSBUCH_FINTS_PIN_<SLOT upper-cased>, and the slot primary
+# is the existing HAUSBUCH_FINTS_PIN (the live rental connection changes nothing).
+#
+# slots:          pin_variable(slot) -> the variable's name, or refused (variable: null)
+# sync_checks:    a connection whose slot has no secret fails before any dialog with
+#                 bank.pin_missing, and the card names the variable to set; the check runs at
+#                 the sync, never at start-up
+# approval_texts: the card's approval text by the BPD's bank name (D173 (1)); null = the
+#                 phase 5 text, unchanged
+# auto_sync:      a DKB connection's „Täglich automatisch abrufen“ stays off until two
+#                 consecutive manual syncs ran without an approval (D173 (5)); any other bank
+#                 unchanged
+#
+# Slot names are examples (primary, owner_b, joint_bank); the household's real ones stay in
+# its own records. No PIN, login or product id appears here.
+#
+# Step 0 readings (listed in the step 0 report):
+# - "an invalid name refused": D163 names no error code; read as the schema's pattern (a 422
+#   at the API, the CHECK in the database), so the cases say refused, not a code.
+# - "the DKB card text by bank name": the table is keyed by the BPD's bank name; read as a
+#   name starting with "DKB" (the BPD's own spelling is answered by the first connection,
+#   D173 (7)). The text is D173 (1)'s „Jetzt in der DKB-App freigeben“.
+# - D173 (5) names no error code for the refused switch; the cases state allowed or not.
+#   "Two consecutive manual syncs ... without an approval" is read as the last two manual
+#   syncs, both without one.
+
+slots:
+  - {pending: "phase 6 step 3 (FinTS connections per login)", id: primary_is_the_phase5_pin, slot: primary, variable: HAUSBUCH_FINTS_PIN}
+  - {pending: "phase 6 step 3 (FinTS connections per login)", id: owner_b, slot: owner_b, variable: HAUSBUCH_FINTS_PIN_OWNER_B}
+  - {pending: "phase 6 step 3 (FinTS connections per login)", id: joint_bank, slot: joint_bank, variable: HAUSBUCH_FINTS_PIN_JOINT_BANK}
+  - {pending: "phase 6 step 3 (FinTS connections per login)", id: digits_after_the_first_letter, slot: dkb2, variable: HAUSBUCH_FINTS_PIN_DKB2}
+  - {pending: "phase 6 step 3 (FinTS connections per login)", id: upper_case_refused, slot: Owner_B, variable: null}
+  - {pending: "phase 6 step 3 (FinTS connections per login)", id: hyphen_refused, slot: owner-b, variable: null}
+  - {pending: "phase 6 step 3 (FinTS connections per login)", id: empty_refused, slot: "", variable: null}
+  - {pending: "phase 6 step 3 (FinTS connections per login)", id: leading_digit_refused, slot: 2nd_login, variable: null}
+  - pending: "phase 6 step 3 (FinTS connections per login)"
+    id: thirty_three_characters_refused
+    slot: abcdefghijklmnopqrstuvwxyz0123456
+    variable: null
+  - pending: "phase 6 step 3 (FinTS connections per login)"
+    id: thirty_two_characters_allowed
+    slot: abcdefghijklmnopqrstuvwxyz012345
+    variable: HAUSBUCH_FINTS_PIN_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345
+
+sync_checks:
+  - id: primary_with_its_secret_runs
+    pending: "phase 6 step 3 (FinTS connections per login)"
+    slot: primary
+    secrets: [primary]
+  - id: owner_b_without_its_secret_fails
+    description: the card names the variable to set; no dialog is opened
+    pending: "phase 6 step 3 (FinTS connections per login)"
+    slot: owner_b
+    secrets: [primary]
+    expect_error: {code: bank.pin_missing}
+    names_variable: HAUSBUCH_FINTS_PIN_OWNER_B
+  - id: primary_without_any_secret_fails
+    pending: "phase 6 step 3 (FinTS connections per login)"
+    slot: primary
+    secrets: []
+    expect_error: {code: bank.pin_missing}
+    names_variable: HAUSBUCH_FINTS_PIN
+  - id: two_connections_share_one_slot
+    description: one login that shows several accounts at one institute (Q-O72)
+    pending: "phase 6 step 3 (FinTS connections per login)"
+    slot: joint_bank
+    secrets: [primary, joint_bank]
+
+approval_texts:
+  - id: dkb_app
+    pending: "phase 6 step 3 (FinTS connections per login)"
+    bank_name: DKB AG
+    text: Jetzt in der DKB-App freigeben
+  - id: sparkasse_unchanged
+    pending: "phase 6 step 3 (FinTS connections per login)"
+    bank_name: Sparkasse Musterstadt
+    text: null
+
+auto_sync:
+  - id: dkb_before_any_manual_sync_refused
+    pending: "phase 6 step 3 (FinTS connections per login)"
+    bank_name: DKB AG
+    manual_syncs: []
+    allowed: false
+  - id: dkb_after_one_clean_sync_refused
+    pending: "phase 6 step 3 (FinTS connections per login)"
+    bank_name: DKB AG
+    manual_syncs: [false]
+    allowed: false
+  - id: dkb_after_two_clean_syncs_allowed
+    pending: "phase 6 step 3 (FinTS connections per login)"
+    bank_name: DKB AG
+    manual_syncs: [true, false, false]
+    allowed: true
+  - id: dkb_last_sync_needed_an_approval_refused
+    pending: "phase 6 step 3 (FinTS connections per login)"
+    bank_name: DKB AG
+    manual_syncs: [false, false, true]
+    allowed: false
+  - id: sparkasse_unchanged
+    pending: "phase 6 step 3 (FinTS connections per login)"
+    bank_name: Sparkasse Musterstadt
+    manual_syncs: []
+    allowed: true

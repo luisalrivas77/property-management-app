@@ -1,0 +1,88 @@
+# Rule fixture: owner shares per account (hausbuch.rules.household.ownership)
+#
+# validate(shares, owners) -> None | RuleError; supersede(current, new) -> ids replaced
+# docs/phases/phase-6.md D157, §14. An account's current set of shares (superseded_by null)
+# sums to exactly 1 (exact fractions, never a rounded percentage); every share names an owner
+# of the workspace. A change is a new set of rows under a new effective_from; the old rows
+# are kept and each gets superseded_by (append-only, migration 0025's superseded_once).
+#
+# Synthetic owners A and B only.
+#
+# Step 0 readings (listed in the step 0 report):
+# - "100/0" (§14) is one row: A at 1/1. A share of 0 is not a row (share_numerator > 0, as
+#   property_ownership), so B simply has none.
+# - "a sum of 0.99 refused": 99/100 for one owner, the only row, is refused by the sum.
+# - "a second set supersedes the first": supersede returns the account's current rows (a row
+#   already superseded by an earlier change is not superseded again).
+
+cases:
+  - id: joint_fifty_fifty
+    description: a joint account at 50/50
+    pending: "phase 6 step 1 (ownership)"
+    owners: [a, b]
+    shares:
+      - {owner: a, share_numerator: 1, share_denominator: 2}
+      - {owner: b, share_numerator: 1, share_denominator: 2}
+    expect: {valid: true}
+
+  - id: sole_account_one_hundred
+    description: a sole account at 100 % of A (100/0)
+    pending: "phase 6 step 1 (ownership)"
+    owners: [a, b]
+    shares:
+      - {owner: a, share_numerator: 1, share_denominator: 1}
+    expect: {valid: true}
+
+  - id: one_third_two_thirds
+    description: thirds sum to exactly 1 as fractions (a rounded 0.33 + 0.67 would not prove it)
+    pending: "phase 6 step 1 (ownership)"
+    owners: [a, b]
+    shares:
+      - {owner: a, share_numerator: 1, share_denominator: 3}
+      - {owner: b, share_numerator: 2, share_denominator: 3, reason: "B zahlte zwei Drittel ein"}
+    expect: {valid: true}
+
+  - id: sum_point_nine_nine_refused
+    description: shares summing to 0.99 are refused
+    pending: "phase 6 step 1 (ownership)"
+    owners: [a, b]
+    shares:
+      - {owner: a, share_numerator: 99, share_denominator: 100}
+    expect:
+      error: {code: ownership.sum_not_one}
+
+  - id: sum_above_one_refused
+    description: shares summing to more than 1 are refused too
+    pending: "phase 6 step 1 (ownership)"
+    owners: [a, b]
+    shares:
+      - {owner: a, share_numerator: 2, share_denominator: 3}
+      - {owner: b, share_numerator: 1, share_denominator: 2}
+    expect:
+      error: {code: ownership.sum_not_one}
+
+  - id: missing_owner_refused
+    description: a share naming no owner of the workspace is refused
+    pending: "phase 6 step 1 (ownership)"
+    owners: [a]
+    shares:
+      - {owner: a, share_numerator: 1, share_denominator: 2}
+      - {owner: c, share_numerator: 1, share_denominator: 2}
+    expect:
+      error: {code: ownership.owner_missing}
+
+  - id: second_set_supersedes_the_first
+    description: >
+      a joint account first set at 50/50 is changed to 100 % of B; both current rows are
+      superseded, the earlier row superseded before stays as it is
+    pending: "phase 6 step 1 (ownership)"
+    owners: [a, b]
+    current:
+      - {id: first_a, owner: a, share_numerator: 1, share_denominator: 1, superseded: true}
+      - {id: second_a, owner: a, share_numerator: 1, share_denominator: 2}
+      - {id: second_b, owner: b, share_numerator: 1, share_denominator: 2}
+    shares:
+      - {owner: b, share_numerator: 1, share_denominator: 1}
+    expect:
+      valid: true
+      superseded: [second_a, second_b]
