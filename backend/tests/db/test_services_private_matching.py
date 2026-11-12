@@ -442,6 +442,32 @@ def test_a_private_fee_line_without_counterparty_learns_a_purpose_pattern_rule(
     assert plan.reason == "routing.no_match" and _rows(world, rental) == []
 
 
+def test_the_line_view_names_the_categories_no_rule_is_learned_for(world, private):
+    """The box is greyed for these instead of rule.not_learnable refusing the answer."""
+    tx = private.line(date(2026, 10, 3), "-250.00", name="Kartenabrechnung Beispiel")
+    view = world.query(review.transaction_allocations, tx, iban_key=TEST_IBAN_KEY, today=NOW.date())
+    unlearnable = set(view.unlearnable_categories)
+    assert {
+        "hh_credit_card",
+        "internal_transfer_in",
+        "internal_transfer_out",
+        "hh_donation",
+        "hh_property_cost",
+        "capital_income_tax",
+        "hh_other",
+        "uncategorized",
+    } <= unlearnable
+    assert not {"hh_groceries", "hh_salary", "bank_fees"} & unlearnable
+    # Each one is refused by the PUT, so the list says what the server does.
+    for category in unlearnable:
+        assert not matchers.learnable_household(category)
+    rental = world.line(date(2026, 10, 3), "-250.00", name="Kartenabrechnung Beispiel")
+    rental_view = world.query(
+        review.transaction_allocations, rental, iban_key=TEST_IBAN_KEY, today=NOW.date()
+    )
+    assert rental_view.unlearnable_categories == []
+
+
 def test_uncategorized_on_a_private_line_still_learns_no_rule(world, private):
     tx = private.line(date(2026, 10, 30), "-4.95", purpose="Entgelt Kontoführung 10/2026")
     with pytest.raises(RuleViolationError) as refused:

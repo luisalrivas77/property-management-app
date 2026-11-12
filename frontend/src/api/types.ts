@@ -9191,6 +9191,11 @@ export interface components {
          *     still waiting from the same IBAN hash and sign (reconciled import, not a duplicate, no
          *     confirmed row), each with its count, most frequent first, at most five; the panel then
          *     asks whether those belong to the same category (same_amount_only).
+         *     unlearnable_categories: the categories the line's account takes for which a one-row
+         *     answer can never become a rule, with or without a typed pattern (phase 6 D160 on a
+         *     private account: the transfer, depot and tax-relevant codes and those without a
+         *     threshold; empty on the rental account), in taxonomy order, so the UI greys the box and
+         *     says why instead of letting rule.not_learnable refuse the answer.
          *     rule: the rule this PUT created, if any.
          */
         TransactionAllocations: {
@@ -9205,6 +9210,8 @@ export interface components {
             no_default_rule_categories: components["schemas"]["AllocationCategory"][];
             /** Waiting Other Amounts */
             waiting_other_amounts?: components["schemas"]["WaitingAmount"][];
+            /** Unlearnable Categories */
+            unlearnable_categories?: components["schemas"]["AllocationCategory"][];
             rule?: components["schemas"]["MatchingRule"] | null;
         };
         /**

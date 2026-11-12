@@ -104,7 +104,7 @@ export const RULE_CODE_TEXT: Record<string, string> = {
     "Einheit, Mietverhältnis oder Darlehen gehören nicht zur gewählten Immobilie, oder die Immobilie fehlt.",
   "allocation.excluded_transaction": "Diese Buchung wurde als Doppelbuchung zusammengeführt und zählt nicht.",
   "rule.not_learnable":
-    "Aus dieser Zuordnung lässt sich keine Regel lernen (zum Beispiel aus einer Aufteilung auf mehrere Kategorien). Ohne Regel bestätigen.",
+    "Für diese Zuordnung lernt Hausbuch keine Regel. Bitte ohne „Künftig immer so zuordnen“ bestätigen.",
   "rule.invalid_pattern":
     "Das Muster ist kein gültiger Suchausdruck (regulärer Ausdruck, höchstens 200 Zeichen).",
   // every account of the household (phase-6.md D156-D160, D168)

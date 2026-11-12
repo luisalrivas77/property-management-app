@@ -28,7 +28,9 @@ from hausbuch.db.tables import proposal as proposal_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.jobs import enqueue
+from hausbuch.rules import matching as matchers
 from hausbuch.rules.errors import AI_DISABLED, RULE_CONFLICTS, RuleError
+from hausbuch.rules.household.taxonomy import allowed_categories
 from hausbuch.rules.review import THRESHOLDS
 from hausbuch.schemas.ai import AiJob
 from hausbuch.schemas.allocation import (
@@ -243,9 +245,21 @@ def _response(
         can_learn_rule=can_learn,
         learn_rule_default=default,
         no_default_rule_categories=[c for c in AllocationCategory if THRESHOLDS[c] is None],
+        unlearnable_categories=_unlearnable(line),
         waiting_other_amounts=matching.waiting_other_amounts(conn, tx) if can_learn else [],
         rule=rule,
     )
+
+
+def _unlearnable(line: matching.Line) -> list[AllocationCategory]:
+    """The categories the line's account takes for which a one-row answer can never become
+    a rule, whatever is typed (D160 on a private account: a transfer, depot or tax-relevant
+    code, or one without a threshold); none on the rental account, whose limits depend on the
+    counterparty (D38) and stay can_learn_rule's."""
+    if not line.private:
+        return []
+    allowed = allowed_categories(line.account_purpose)
+    return [c for c in AllocationCategory if c in allowed and not matchers.learnable_household(c)]
 
 
 def _transaction(conn: Connection, transaction_id: UUID) -> Transaction:
