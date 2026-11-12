@@ -245,7 +245,8 @@ def load_line(conn: Connection, transaction_id: UUID, *, lock: bool = False) -> 
         excluded=row.excluded_as_duplicate_of is not None,
         awaiting_duplicate=awaiting > 0,
         current=allocations.current_allocations(conn, transaction_id),
-        auto_accept_llm=auto_accept_llm(conn),
+        auto_accept_llm=auto_accept_llm(conn)
+        and not (private and in_first_import(conn, row.account_id, row.import_id)),
         counterparty_iban_hmac=row.counterparty_iban_hmac,
         account_id=row.account_id,
         account_purpose=purpose,
@@ -271,6 +272,20 @@ def match_transaction(row: Row) -> MatchTransaction:
 def auto_accept_llm(conn: Connection) -> bool:
     value = conn.execute(select(workspace_table.c.auto_accept_llm)).scalar_one_or_none()
     return bool(value)
+
+
+def in_first_import(conn: Connection, account_id: UUID, import_id: UUID) -> bool:
+    """D26 per private account (phase 6 D168, D172): the model's answers on an account's
+    first import (the 2026 history) are never auto-confirmed, whatever the workspace's
+    auto_accept_llm says, since that one switch was turned on after the rental account's
+    first month. The first import is the account's earliest by creation."""
+    first = conn.execute(
+        select(import_table.c.id)
+        .where(import_table.c.account_id == account_id)
+        .order_by(import_table.c.created_at, import_table.c.id)
+        .limit(1)
+    ).scalar_one_or_none()
+    return first == import_id
 
 
 # --- The context -------------------------------------------------------------------------

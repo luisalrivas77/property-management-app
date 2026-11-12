@@ -50,8 +50,14 @@ class Private:
         self.world = world
         with workspace_transaction(world.engine, world.ws) as conn:
             self.account_id = world._account(conn, PRIVATE_IBAN, owner=True)
+        self.import_id = self.add_import(world.now)
+
+    def add_import(self, created_at: datetime) -> uuid.UUID:
+        """A reconciled import of the account, created at `created_at`."""
+        world = self.world
+        with workspace_transaction(world.engine, world.ws) as conn:
             doc = world._document_row(conn, type="statement", subtype=None, title=None)
-            self.import_id = conn.execute(
+            return conn.execute(
                 insert(import_table)
                 .values(
                     workspace_id=world.ws,
@@ -62,8 +68,8 @@ class Private:
                     balance_source="file",
                     declared_closing=Decimal("0.00"),
                     computed_closing=Decimal("0.00"),
-                    created_at=world.now,
-                    updated_at=world.now,
+                    created_at=created_at,
+                    updated_at=created_at,
                 )
                 .returning(import_table.c.id)
             ).scalar_one()
@@ -76,6 +82,7 @@ class Private:
         name: str | None = None,
         iban: str | None = None,
         purpose: str = "",
+        import_id: uuid.UUID | None = None,
     ) -> uuid.UUID:
         protected = None if iban is None else protect_iban(iban, TEST_IBAN_KEY)
         with workspace_transaction(self.world.engine, self.world.ws) as conn:
@@ -84,7 +91,7 @@ class Private:
                 .values(
                     workspace_id=self.world.ws,
                     account_id=self.account_id,
-                    import_id=self.import_id,
+                    import_id=import_id or self.import_id,
                     line_hash=hashlib.sha256(uuid.uuid4().bytes).digest(),
                     booking_date=booking_date,
                     value_date=booking_date,
@@ -241,6 +248,31 @@ def test_with_both_consents_the_household_prompt_sees_only_the_line(
         lambda c: c.execute(select(ai_call_table).where(ai_call_table.c.transaction_id == tx)).all()
     )
     assert call.prompt_version == request.prompt_version
+
+
+def test_the_first_import_of_a_private_account_never_auto_accepts_the_model(
+    world, private, app_engine, tmp_path
+):
+    """D26 per account (D168, D172): with auto_accept_llm on (as in production since the
+    rental account's first month) and both consents, a model answer on the private account's
+    first import goes to a person; the same answer on a later import is confirmed."""
+    world.set_auto_accept_llm(True)
+    _consent_both(world)
+    answers = [text_response(_answer("hh_groceries", "-42.17")) for _ in range(2)]
+    deps = _deps(app_engine, tmp_path, FakeModelClient(answers))
+
+    first = private.line(date(2026, 3, 2), "-42.17", name="Supermarkt Beispiel")
+    _run(deps, world, first)
+    (row,) = _rows(world, first)
+    assert (row.method, row.status) == ("llm", "proposed")
+
+    later_import = private.add_import(NOW.replace(day=13))
+    later = private.line(
+        date(2026, 11, 12), "-42.17", name="Supermarkt Beispiel", import_id=later_import
+    )
+    _run(deps, world, later)
+    (row,) = _rows(world, later)
+    assert (row.method, row.status) == ("llm", "confirmed")
 
 
 def test_switching_off_and_on_asks_both_again(world, private):
