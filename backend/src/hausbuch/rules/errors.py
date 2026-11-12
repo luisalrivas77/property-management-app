@@ -99,6 +99,9 @@ SCENARIO_SALE_YEAR_BEFORE_TODAY = "scenario.sale_year_before_today"
 # correction supersedes another property's scenario (step 2).
 SCENARIO_SCOPE_INVALID = "scenario.scope_invalid"
 PROJECTION_NO_RULE_SET = "projection.no_rule_set"  # no rule set file for the year or earlier
+# D155 (7): a letter only for a flat_rate tenancy in force whose verdict today is a rise above
+# 10 € a month or a fall; any other tenancy has nothing to tell.
+FLAT_RATE_NO_LETTER = "flat_rate.no_letter"
 
 
 # --- Phase 4b codes (docs/phases/phase-4b.md §9) ---------------------------------------

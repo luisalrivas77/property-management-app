@@ -196,3 +196,6 @@ export type CategoryChange = Schemas["CategoryChange"];
 export type SettlementHint = Schemas["SettlementHint"];
 export type FlatRateVerdict = Schemas["FlatRateVerdict"];
 export type RateBasis = Schemas["RateBasis"];
+export type FlatRateLetterFigures = Schemas["FlatRateLetterFigures"];
+export type FlatRateLetterRequest = Schemas["FlatRateLetterRequest"];
+export type LetterReason = Schemas["LetterReason"];

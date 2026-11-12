@@ -1942,6 +1942,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tenancies/{tenancy_id}/flat-rate-letter": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tenancy Flat Rate Letter
+         * @description The figures of the letter that tells the tenant of a rise or a fall of their
+         *     Nebenkostenpauschale (D155 (7)), for a letter sent on `sent_on` (default today): the
+         *     reasons per Betriebskosten category with their sources, the tenant's share, the new
+         *     Pauschale and the new total, and from when it applies. 404 tenancy; 422
+         *     flat_rate.no_letter when today's check has no rise above 10 € a month or fall for it.
+         */
+        get: operations["tenancy_flat_rate_letter_api_tenancies__tenancy_id__flat_rate_letter_get"];
+        put?: never;
+        /**
+         * Tenancy Flat Rate Letter Pdf
+         * @description The letter as a PDF to download (D155 (7)), from the same figures as the GET; nothing is
+         *     stored, the sender's name and address are printed only. The same errors as the GET.
+         */
+        post: operations["tenancy_flat_rate_letter_pdf_api_tenancies__tenancy_id__flat_rate_letter_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/properties/{property_id}/scenarios": {
         parameters: {
             query?: never;
@@ -4600,6 +4629,82 @@ export interface components {
             settlements?: components["schemas"]["SettlementHint"][];
         };
         /**
+         * FlatRateLetterFigures
+         * @description GET /tenancies/{id}/flat-rate-letter (D155 (7)): the figures of the letter for one
+         *     tenancy's rise or fall, from the FlatRateCheck of `as_of` (today); the dialog shows them
+         *     before the PDF is made and the PDF prints exactly these.
+         *
+         *     `reasons`: the BetrKV categories with a cost then or now, in FLAT_RATE_BETRKV order.
+         *     `new_pauschale` = pauschale + rise, to the cent, never below 0.00; `new_total` = the cold
+         *     rent in force on the later of `as_of` and `starts_on`, + new_pauschale. `starts_on`: for a
+         *     raise the first day of the month after next from `sent_on` (§560 Abs. 2 BGB), for a lower
+         *     the date the cost fell (§560 Abs. 3 BGB).
+         */
+        FlatRateLetterFigures: {
+            /**
+             * Tenancy Id
+             * Format: uuid
+             */
+            tenancy_id: string;
+            /** Unit Label */
+            unit_label: string;
+            kind: components["schemas"]["FlatRateVerdict"];
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /**
+             * Sent On
+             * Format: date
+             */
+            sent_on: string;
+            /**
+             * Starts On
+             * Format: date
+             */
+            starts_on: string;
+            /**
+             * Set On
+             * Format: date
+             */
+            set_on: string;
+            /** Reasons */
+            reasons: components["schemas"]["LetterReason"][];
+            /** Flat Rise */
+            flat_rise: string;
+            /** Pauschale */
+            pauschale: string;
+            /** Pauschalen Total */
+            pauschalen_total: string;
+            /** Share Percent */
+            share_percent: string;
+            /** Rise */
+            rise: string;
+            /** New Pauschale */
+            new_pauschale: string;
+            /** Cold Rent */
+            cold_rent: string;
+            /** New Total */
+            new_total: string;
+        };
+        /**
+         * FlatRateLetterRequest
+         * @description POST /tenancies/{id}/flat-rate-letter (D155 (7)): what the dialog asks. The sender's
+         *     name and address lines are printed and never stored (the browser may remember them).
+         */
+        FlatRateLetterRequest: {
+            /**
+             * Sent On
+             * Format: date
+             */
+            sent_on: string;
+            /** Sender Name */
+            sender_name: string;
+            /** Sender Address */
+            sender_address?: string[];
+        };
+        /**
          * FlatRateVerdict
          * @enum {string}
          */
@@ -5208,6 +5313,26 @@ export interface components {
             operating_costs_clause?: components["schemas"]["ExtractedValue"];
             /** @description when the monthly rent is due, as printed (e.g. 'spätestens am dritten Werktag eines jeden Monats', 'im Voraus zum 1. eines Monats') */
             rent_due_clause?: components["schemas"]["ExtractedValue"];
+        };
+        /**
+         * LetterReason
+         * @description One Betriebskosten category in the letter's reason (§560 Abs. 1 S. 2 BGB: named and
+         *     explained): the flat's monthly cost when the Pauschale was set and now, each with the
+         *     allocations or tax input it came from (the service looks up their documents). Electricity
+         *     is never a reason (D155 (3)).
+         */
+        LetterReason: {
+            category: components["schemas"]["AllocationCategory"];
+            /** Then */
+            then: string;
+            /** Now */
+            now: string;
+            /** Change */
+            change: string;
+            /** Then Sources */
+            then_sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+            /** Now Sources */
+            now_sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
         };
         /**
          * Levers
@@ -13198,6 +13323,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FlatRateCheck"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    tenancy_flat_rate_letter_api_tenancies__tenancy_id__flat_rate_letter_get: {
+        parameters: {
+            query?: {
+                sent_on?: string | null;
+            };
+            header?: never;
+            path: {
+                tenancy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlatRateLetterFigures"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    tenancy_flat_rate_letter_pdf_api_tenancies__tenancy_id__flat_rate_letter_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenancy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FlatRateLetterRequest"];
+            };
+        };
+        responses: {
+            /** @description The letter as PDF */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": unknown;
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

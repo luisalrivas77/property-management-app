@@ -6,21 +6,28 @@ scenarios are rows. Scenarios are append-only (D87): a correction or a withdrawa
 naming the row it replaces (supersedes_id); services/scenarios.py holds the checks.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Query
+from fastapi import Query, Response
 
 from hausbuch.schemas.common import NonNegativeMoney, PositiveMoney, Rate, TaxYear, VacancyMonths
 from hausbuch.schemas.performance import (
     Actuals,
     FlatRateCheck,
+    FlatRateLetterFigures,
+    FlatRateLetterRequest,
     Projection,
     Scenario,
     ScenarioCreate,
 )
 from hausbuch.services.documents import LOCAL_TIME_ZONE
+from hausbuch.services.flat_rate_letter import (
+    PDF_MEDIA_TYPE,
+    flat_rate_letter_figures,
+    flat_rate_letter_pdf,
+)
 from hausbuch.services.performance import (
     performance_actuals,
     performance_projection,
@@ -29,6 +36,7 @@ from hausbuch.services.performance import (
 from hausbuch.services.scenarios import create_scenario, list_scenarios
 
 from ..deps import Cmd, domain_router
+from .documents import content_disposition
 
 router = domain_router()
 
@@ -90,6 +98,42 @@ def property_flat_rate(property_id: UUID, cmd: Cmd) -> FlatRateCheck:
     not advice; computed on read, nothing stored."""
     today = datetime.now(LOCAL_TIME_ZONE).date()
     return cmd.read(property_flat_rate_check, property_id, today=today)
+
+
+@router.get("/tenancies/{tenancy_id}/flat-rate-letter")
+def tenancy_flat_rate_letter(
+    tenancy_id: UUID, cmd: Cmd, sent_on: Annotated[date | None, Query()] = None
+) -> FlatRateLetterFigures:
+    """The figures of the letter that tells the tenant of a rise or a fall of their
+    Nebenkostenpauschale (D155 (7)), for a letter sent on `sent_on` (default today): the
+    reasons per Betriebskosten category with their sources, the tenant's share, the new
+    Pauschale and the new total, and from when it applies. 404 tenancy; 422
+    flat_rate.no_letter when today's check has no rise above 10 € a month or fall for it."""
+    today = datetime.now(LOCAL_TIME_ZONE).date()
+    return cmd.read(flat_rate_letter_figures, tenancy_id, today=today, sent_on=sent_on or today)
+
+
+@router.post(
+    "/tenancies/{tenancy_id}/flat-rate-letter",
+    response_class=Response,
+    responses={200: {"content": {PDF_MEDIA_TYPE: {}}, "description": "The letter as PDF"}},
+)
+def tenancy_flat_rate_letter_pdf(
+    tenancy_id: UUID, body: FlatRateLetterRequest, cmd: Cmd
+) -> Response:
+    """The letter as a PDF to download (D155 (7)), from the same figures as the GET; nothing is
+    stored, the sender's name and address are printed only. The same errors as the GET."""
+    today = datetime.now(LOCAL_TIME_ZONE).date()
+    data, filename = cmd.read(flat_rate_letter_pdf, tenancy_id, body, today=today)
+    return Response(
+        content=data,
+        headers={
+            "Content-Type": PDF_MEDIA_TYPE,
+            "Content-Disposition": content_disposition("attachment", filename),
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, no-store",
+        },
+    )
 
 
 @router.get("/properties/{property_id}/scenarios")

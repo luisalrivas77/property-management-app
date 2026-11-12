@@ -141,6 +141,9 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "scenario.not_current":
     "Das Szenario ist nicht mehr aktuell, oder es gibt schon ein Standard-Szenario. Bitte die Seite neu laden.",
   "scenario.scope_invalid": "Das Szenario passt nicht zu dieser Immobilie oder ihren Darlehen.",
+  // the letter to a tenant about the Nebenkostenpauschale (phase-4.md D155 (7))
+  "flat_rate.no_letter":
+    "Für dieses Mietverhältnis gibt es heute nichts mitzuteilen: die Kosten sind seit der Festlegung der Pauschale nicht um mehr als 10 € im Monat gestiegen und nicht gesunken.",
   // exports of the draft (phase-3.md §10, §12)
   // the FinTS sync (phase-5.md §4.4)
   "bank.not_configured":
