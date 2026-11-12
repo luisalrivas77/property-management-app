@@ -1,6 +1,6 @@
 # Hausbuch as a household-finance app ("super app")
 
-**Status: design plan, not built. 6 Nov 2026 (architect, from the orchestrator's brief).
+**Phase 6 is specced in `docs/phases/phase-6.md` (12 Nov 2026); where it differs from this plan (three current accounts at three institutes, ETF prices from the issuers, the migration number, the Freistellungsauftrag moved to phase 8), the spec wins.** **Status: design plan, not built. 6 Nov 2026 (architect, from the orchestrator's brief).
 Agreed by Luis the same day, with two changes to the proposal: phases 4 and 5 stay before 6–9,
 and there are no bot wallets yet. His answers to §10 are under "Luis's answers" there; where an
 answer differs from a default further down, the answer wins.** Nothing
