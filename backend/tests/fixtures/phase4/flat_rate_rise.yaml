@@ -46,6 +46,11 @@
 #   earliest date from which today's rate applies (the first line of the unbroken run of lines
 #   at today's rate, a schedule's 1 January)*.
 #   Electricity's change is shown and never counts (§2 BetrKV does not list it).
+# - A change already recorded: when a rent row dated after today (among the rows in force, so
+#   not superseded) is the first to change the Pauschale in force today, recorded_from and
+#   recorded_pauschale name it and the verdict is none (no to-do, letter or pre-fill), whatever
+#   the rise; today's Pauschale stays in the shares until the row takes effect (case
+#   change_already_recorded).
 
 ids:
   property: &P 0155000b-0000-4000-8000-000000000001
@@ -875,4 +880,64 @@ cases:
           - *none_ins
           - *none_el
         betrkv: "40.00"
+    settlements: []
+
+- id: change_already_recorded
+  description: >
+    The Hausgeld rose from 150.00 to 195.00, a rise of 45.00 for the one room, and the raise
+    is already recorded: a rent row from 1 April 2027 sets the Pauschale to 145.00 (an earlier
+    future row changes only the cold rent). Until 1 April the Pauschale in force stays 100.00
+    and the rise is still shown, but the verdict is none: no to-do, no letter, no pre-fill,
+    and the card says the change from 1 April is recorded.
+  today: 2027-02-10
+  facts:
+    property: *property
+    units: *units
+    tenancies:
+      - {id: *T1, unit_id: *Z1, start_date: 2026-07-01, operating_costs_terms: flat_rate,
+         rents: [{effective_from: 2026-07-01, cold_rent: "400.00", operating_costs_prepayment: "100.00"},
+                 {effective_from: 2027-03-01, cold_rent: "420.00", operating_costs_prepayment: "100.00"},
+                 {effective_from: 2027-04-01, cold_rent: "420.00", operating_costs_prepayment: "145.00"}]}
+    allocations:
+      - {allocation_id: 0155a100-0000-4000-8000-000000001301, booking_date: 2026-07-01, amount: "-150.00", category: hausgeld_umlagefaehig, recurring: true}
+      - {allocation_id: 0155a100-0000-4000-8000-000000001302, booking_date: 2027-02-01, amount: "-195.00", category: hausgeld_umlagefaehig, recurring: true}
+  expect:
+    property_id: *P
+    as_of: 2027-02-10
+    pauschalen_total: "100.00"
+    tenancies:
+      - tenancy_id: *T1
+        unit_id: *Z1
+        unit_label: Zimmer 1
+        pauschale: "100.00"
+        set_on: 2026-07-01
+        set_by: start
+        share_percent: "100.0"
+        changes:
+          - {category: hausgeld_umlagefaehig, then: "150.00", now: "195.00", change: "45.00"}
+          - *same_gs
+          - *same_ins
+          - *same_el
+        flat_rise: "45.00"
+        rise: "45.00"
+        verdict: none
+        recorded_from: 2027-04-01
+        recorded_pauschale: "145.00"
+    levels:
+      - as_of: 2026-07-01
+        rates:
+          - {category: hausgeld_umlagefaehig, monthly: "150.00", basis: monthly_payment,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000001301, amount: "-150.00"}]}
+          - *none_gs
+          - *none_ins
+          - *none_el
+        betrkv: "150.00"
+      - as_of: 2027-02-10
+        rates:
+          - {category: hausgeld_umlagefaehig, monthly: "195.00", basis: monthly_payment,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000001302, amount: "-195.00"}]}
+          - *none_gs
+          - *none_ins
+          - *none_el
+        betrkv: "195.00"
     settlements: []

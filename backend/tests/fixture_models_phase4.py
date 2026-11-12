@@ -580,6 +580,10 @@ class FlatRateExpect(FlatRateCheck):
                 raise ValueError(f"{t.unit_label}: share_percent {t.share_percent} != {share}")
             if t.verdict is FlatRateVerdict.RAISE and t.earliest_start != after_next:
                 raise ValueError(f"{t.unit_label}: the earliest start is {after_next}")
+            if t.recorded_from is not None and not (
+                t.recorded_from > self.as_of and t.recorded_pauschale != t.pauschale
+            ):
+                raise ValueError(f"{t.unit_label}: a recorded change is a later, other Pauschale")
         return self
 
 

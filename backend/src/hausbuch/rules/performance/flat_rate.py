@@ -277,6 +277,25 @@ def pauschale_set(t: TaxTenancy, today: date) -> tuple[Decimal, date, str]:
     return rows[-1].operating_costs_prepayment, set_on, set_by
 
 
+def recorded_change(t: TaxTenancy, today: date) -> TaxRent | None:
+    """The first rent row dated after today that changes the Pauschale in force today: a change
+    already recorded (the pre-filled „Mietänderung“ is dated in the future), so the tenancy needs
+    no to-do, letter or pre-fill until it takes effect. The rows are the ones in force (a
+    superseded row is not among them)."""
+    rows = _rows(t, today)
+    if not rows:
+        return None
+    current = rows[-1]
+    future = sorted(
+        (r for r in t.rents if r.effective_from > max(today, current.effective_from)),
+        key=lambda r: r.effective_from,
+    )
+    return next(
+        (r for r in future if r.operating_costs_prepayment != current.operating_costs_prepayment),
+        None,
+    )
+
+
 def cold_rent_on(t: TaxTenancy, today: date) -> Decimal:
     rows = _rows(t, today)
     return rows[-1].cold_rent if rows else ZERO
@@ -324,7 +343,10 @@ def flat_rate_check(facts: DraftFacts, today: date) -> FlatRateCheck:
         ]
         flat_rise = sum((ch.change for ch in changes if ch.category in FLAT_RATE_BETRKV), ZERO)
         rise = cents(flat_rise * pauschale / total) if total else ZERO
-        if rise > FLAT_RATE_RAISE_ABOVE:
+        recorded = recorded_change(t, today)
+        if recorded is not None:
+            verdict = FlatRateVerdict.NONE  # already recorded: no to-do, letter or pre-fill
+        elif rise > FLAT_RATE_RAISE_ABOVE:
             verdict = FlatRateVerdict.RAISE
         elif rise < 0:
             verdict = FlatRateVerdict.LOWER
@@ -355,6 +377,8 @@ def flat_rate_check(facts: DraftFacts, today: date) -> FlatRateCheck:
                 fell_on=(min(fell) if fell else today)
                 if verdict is FlatRateVerdict.LOWER
                 else None,
+                recorded_from=recorded.effective_from if recorded else None,
+                recorded_pauschale=recorded.operating_costs_prepayment if recorded else None,
             )
         )
     return FlatRateCheck(
@@ -372,7 +396,8 @@ def flat_rate_letter(
 ) -> FlatRateLetterFigures | None:
     """D155 (7): the letter's figures for one tenancy, from today's check (fixture
     tests/fixtures/phase4/flat_rate_letter.yaml). None when the tenancy is not a flat_rate
-    tenancy in force today or its verdict is none. The reasons are the BetrKV categories with
+    tenancy in force today or its verdict is none (also when a change of the Pauschale is
+    already recorded from a later date). The reasons are the BetrKV categories with
     a cost then or now, never electricity; the new Pauschale is the old one plus the tenancy's
     rise, never below 0.00; a raise starts on the first day of the month after next from the
     sending date (§560 Abs. 2 BGB), a lower on the date the cost fell (Abs. 3)."""

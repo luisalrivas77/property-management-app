@@ -182,3 +182,12 @@ cases:
   tenancy_id: *T1
   sent_on: 2027-01-20
   expect: null
+
+- id: no_letter_once_the_change_is_recorded
+  description: >
+    The rise of 45.00 is already recorded as a rent row from 1 April (the pre-filled
+    „Mietänderung“ was saved); no second letter (the endpoint answers flat_rate.no_letter).
+  check_case: change_already_recorded
+  tenancy_id: *T1
+  sent_on: 2027-02-10
+  expect: null

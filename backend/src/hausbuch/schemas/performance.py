@@ -732,7 +732,12 @@ class TenancyFlatRate(Schema):
     only) is the first day of the month after next from `as_of` (§560 Abs. 2 BGB);
     `fell_on` (lower only) the date the cost fell (§560 Abs. 3 BGB): of the BetrKV categories
     whose rate fell, the earliest date from which its rate today applies (the first line of the
-    unbroken run of lines at today's rate; a schedule's 1 January)."""
+    unbroken run of lines at today's rate; a schedule's 1 January).
+
+    `recorded_from` and `recorded_pauschale` (both or neither): the first rent row dated after
+    `as_of` that changes the Pauschale, a change already recorded (such as the pre-filled
+    „Mietänderung“). The verdict is then none (no to-do, no letter, no pre-fill), whatever the
+    rise; today's Pauschale stays in `pauschale` and the shares until the row takes effect."""
 
     tenancy_id: UUID
     unit_id: UUID
@@ -747,6 +752,8 @@ class TenancyFlatRate(Schema):
     verdict: FlatRateVerdict
     earliest_start: date | None = None
     fell_on: date | None = None
+    recorded_from: date | None = None
+    recorded_pauschale: NonNegativeMoney | None = None
 
     @model_validator(mode="after")
     def _verdict(self) -> Self:
@@ -761,6 +768,10 @@ class TenancyFlatRate(Schema):
             verdict = FlatRateVerdict.LOWER
         else:
             verdict = FlatRateVerdict.NONE
+        if (self.recorded_from is None) != (self.recorded_pauschale is None):
+            raise ValueError("recorded_from and recorded_pauschale both or neither")
+        if self.recorded_from is not None:
+            verdict = FlatRateVerdict.NONE  # the change is already recorded
         if self.verdict is not verdict:
             raise ValueError(f"the verdict of a rise of {self.rise} is {verdict}")
         if (self.earliest_start is not None) != (verdict is FlatRateVerdict.RAISE):

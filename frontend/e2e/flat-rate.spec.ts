@@ -1,7 +1,9 @@
 // The Nebenkostenpauschale rise test (docs/phases/phase-4.md D155): a flat_rate room whose
 // Grundsteuer rose by 22 € a month since its Pauschale was set shows the card on Planung, the
 // to-do „… kann steigen“ on Übersicht, a link that opens „Mietänderung“ pre-filled with the
-// backend's new Pauschale, and the letter downloaded as a PDF. Synthetic data only.
+// backend's new Pauschale, and the letter downloaded as a PDF; once that change is saved (from
+// a later month), the to-do is gone and the card says the change is recorded. Synthetic data
+// only.
 import { apiCall, expect, test } from "./support";
 
 const address = { street: "Teststraße", house_number: "11", postal_code: "10115", city: "Berlin", country_code: "DE" };
@@ -86,4 +88,26 @@ test("a Grundsteuer rise shows the card, the to-do, the pre-filled change and th
   const download = page.waitForEvent("download");
   await letter.getByRole("button", { name: "PDF erstellen" }).click();
   expect((await download).suggestedFilename()).toMatch(/\.pdf$/);
+
+  // Saving the pre-filled change records it from a later month: from then on the room has no
+  // to-do and no letter, and the card names the recorded change.
+  await page.goto(`/tenancies/${tenancy.id}?mietaenderung=pauschale`);
+  const save = page.getByRole("dialog", { name: "Mietänderung erfassen" });
+  await expect(save.getByLabel("Nebenkostenpauschale (€ / Monat)")).toHaveValue("122,00");
+  await save.getByRole("button", { name: "Speichern" }).click();
+  await expect(save).toBeHidden(); // closed once the row is saved
+
+  await page.goto(`/planning?immobilie=${property.id}`);
+  await page.reload();
+  const room = card.getByRole("row").filter({ hasText: "Zimmer 1" });
+  await expect(room).toContainText(/Änderung ab \d{2}\.\d{2}\.\d{4} erfasst \(122,00 €\)/);
+  await expect(room).not.toContainText("kann steigen");
+
+  await page.goto("/");
+  const overview = page.getByRole("region", { name: "Was noch fehlt" });
+  // The list is loaded once the property's other to-dos are in (it loads all at once).
+  await expect(
+    overview.getByRole("listitem").filter({ hasText: "Gebäudeanteil am Kaufpreis fehlt" }).filter({ hasText: "Wohnung Pauschale" }),
+  ).toBeVisible();
+  await expect(overview.getByRole("listitem").filter({ hasText: "Nebenkostenpauschale Zimmer 1 kann steigen" })).toHaveCount(0);
 });

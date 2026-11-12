@@ -558,6 +558,9 @@ function rateOf(level: CostLevel | undefined, category: CostRate["category"]): C
 
 /** „kann steigen, frühestens ab 01.04.2027“, „senken ab 01.01.2027“ or why not. */
 function verdictText(tenancy: TenancyFlatRate, raiseAbove: string): string {
+  if (tenancy.recorded_from) {
+    return `Änderung ab ${formatDate(tenancy.recorded_from)} erfasst (${formatMoney(tenancy.recorded_pauschale)})`;
+  }
   if (tenancy.verdict === "raise") return `kann steigen, frühestens ab ${formatDate(tenancy.earliest_start)}`;
   if (tenancy.verdict === "lower") return `senken ab ${formatDate(tenancy.fell_on)}`;
   return isZero(tenancy.rise) ? "unverändert" : `Anstieg bis ${formatMoney(raiseAbove)} im Monat: keine Erhöhung`;

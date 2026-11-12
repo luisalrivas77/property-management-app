@@ -8401,6 +8401,11 @@ export interface components {
          *     `fell_on` (lower only) the date the cost fell (§560 Abs. 3 BGB): of the BetrKV categories
          *     whose rate fell, the earliest date from which its rate today applies (the first line of the
          *     unbroken run of lines at today's rate; a schedule's 1 January).
+         *
+         *     `recorded_from` and `recorded_pauschale` (both or neither): the first rent row dated after
+         *     `as_of` that changes the Pauschale, a change already recorded (such as the pre-filled
+         *     „Mietänderung“). The verdict is then none (no to-do, no letter, no pre-fill), whatever the
+         *     rise; today's Pauschale stays in `pauschale` and the shares until the row takes effect.
          */
         TenancyFlatRate: {
             /**
@@ -8440,6 +8445,10 @@ export interface components {
             earliest_start?: string | null;
             /** Fell On */
             fell_on?: string | null;
+            /** Recorded From */
+            recorded_from?: string | null;
+            /** Recorded Pauschale */
+            recorded_pauschale?: string | null;
         };
         /**
          * TenancyPartiesBody

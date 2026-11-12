@@ -22291,6 +22291,30 @@
               }
             ],
             "title": "Fell On"
+          },
+          "recorded_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded From"
+          },
+          "recorded_pauschale": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded Pauschale"
           }
         },
         "additionalProperties": false,
@@ -22308,7 +22332,7 @@
           "verdict"
         ],
         "title": "TenancyFlatRate",
-        "description": "One flat_rate tenancy in force on `as_of` (D155 (3), (4)).\n\n`pauschale` is the rent row in force today's operating_costs_prepayment; `set_on` the date\nit was set (the latest rent-schedule row in force that changed it, else the tenancy's\nstart). `changes` per FLAT_RATE_CATEGORIES compare the levels on `set_on` and today;\n`flat_rise` is Σ of the BetrKV changes; `rise` = flat_rise × pauschale ÷ Σ Pauschalen,\nhalf-up to the cent (0.00 when the Pauschalen sum to 0). `share_percent` is that share for\ndisplay only, one decimal; the rise is never computed from it. `earliest_start` (raise\nonly) is the first day of the month after next from `as_of` (§560 Abs. 2 BGB);\n`fell_on` (lower only) the date the cost fell (§560 Abs. 3 BGB): of the BetrKV categories\nwhose rate fell, the earliest date from which its rate today applies (the first line of the\nunbroken run of lines at today's rate; a schedule's 1 January)."
+        "description": "One flat_rate tenancy in force on `as_of` (D155 (3), (4)).\n\n`pauschale` is the rent row in force today's operating_costs_prepayment; `set_on` the date\nit was set (the latest rent-schedule row in force that changed it, else the tenancy's\nstart). `changes` per FLAT_RATE_CATEGORIES compare the levels on `set_on` and today;\n`flat_rise` is Σ of the BetrKV changes; `rise` = flat_rise × pauschale ÷ Σ Pauschalen,\nhalf-up to the cent (0.00 when the Pauschalen sum to 0). `share_percent` is that share for\ndisplay only, one decimal; the rise is never computed from it. `earliest_start` (raise\nonly) is the first day of the month after next from `as_of` (§560 Abs. 2 BGB);\n`fell_on` (lower only) the date the cost fell (§560 Abs. 3 BGB): of the BetrKV categories\nwhose rate fell, the earliest date from which its rate today applies (the first line of the\nunbroken run of lines at today's rate; a schedule's 1 January).\n\n`recorded_from` and `recorded_pauschale` (both or neither): the first rent row dated after\n`as_of` that changes the Pauschale, a change already recorded (such as the pre-filled\n„Mietänderung“). The verdict is then none (no to-do, no letter, no pre-fill), whatever the\nrise; today's Pauschale stays in `pauschale` and the shares until the row takes effect."
       },
       "TenancyPartiesBody": {
         "properties": {
