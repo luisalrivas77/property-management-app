@@ -4439,6 +4439,35 @@
         }
       }
     },
+    "/api/bank-credential-slots": {
+      "get": {
+        "summary": "Bank Credential Slots",
+        "description": "Signed-in members only, as every domain route; names only, never a PIN (D119).",
+        "operationId": "bank_credential_slots_api_bank_credential_slots_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BankCredentialSlots"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/accounts/{account_id}/syncs": {
       "post": {
         "summary": "Sync Start",
@@ -9144,6 +9173,35 @@
             "type": "boolean",
             "title": "State Present",
             "default": false
+          },
+          "credential_variable": {
+            "type": "string",
+            "maxLength": 60,
+            "title": "Credential Variable",
+            "default": "HAUSBUCH_FINTS_PIN"
+          },
+          "bank_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 60
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bank Name"
+          },
+          "approval_text": {
+            "type": "string",
+            "maxLength": 100,
+            "title": "Approval Text",
+            "default": "In der S-pushTAN-App freigeben"
+          },
+          "auto_sync_allowed": {
+            "type": "boolean",
+            "title": "Auto Sync Allowed",
+            "default": true
           }
         },
         "additionalProperties": false,
@@ -9224,12 +9282,33 @@
             "maxLength": 100,
             "minLength": 1,
             "title": "Login Name"
+          },
+          "credential_slot": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,31}$",
+            "title": "Credential Slot"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "title": "BankConnectionPatch",
         "description": "PATCH /accounts/{id}/bank-connection. A changed URL or login keeps the stored client\nstate only while its MAC verifies (step 1); null is not accepted for any field."
+      },
+      "BankCredentialSlots": {
+        "properties": {
+          "slots": {
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,31}$"
+            },
+            "type": "array",
+            "title": "Slots"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "BankCredentialSlots",
+        "description": "GET /bank-credential-slots (phase 6 D163): the slots whose container secret is set,\nnames only, so the Bankabruf card can say which variable is still missing."
       },
       "BankStatement": {
         "properties": {
@@ -12720,6 +12799,7 @@
           "account.sync_completed",
           "account.sync_failed",
           "account.statement_fetched",
+          "account.bank_parameters_read",
           "account.kind_set",
           "account.ownership_set",
           "account.movements_imported",

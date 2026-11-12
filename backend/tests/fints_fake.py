@@ -20,6 +20,7 @@ from fints.client import NeedTANResponse
 from fints.models import SEPAAccount
 
 from hausbuch.rules.bank_sync import MESSAGE_LEVEL, SEGMENT_LEVEL, BankAnswer
+from hausbuch.schemas.bank_sync import BankParameters
 
 FAKE_IBAN = "DE50100000000000000001"
 FAKE_STATE = b"fake-client-state"
@@ -73,6 +74,10 @@ class Script:
     statement_fail_at: dict[tuple[int, int], BaseException] = field(default_factory=dict)
     reopen_asks_approval: bool = False
     reopen_codes: str | None = None
+    # Phase 6 D173 (7): the bank's name in its parameters (HIBPA), None for none read; a
+    # failure reading them (the run goes on, nothing is recorded).
+    bank_name: str | None = "Testbank"
+    parameters_fail: bool = False
 
 
 class FakeClient:
@@ -92,6 +97,7 @@ class FakeClient:
         self.login_name = init.get("login_name", "")
         self.statement_requests: list[tuple[int, int, str | None]] = []
         self.dialog_ended = False
+        self.parameters_read = 0
 
     # --- the scripted failures ------------------------------------------------------------
 
@@ -188,6 +194,23 @@ class FakeClient:
 
     def statement_pdf_offered(self) -> bool:
         return self.script.statements_offered
+
+    def bank_parameters(self) -> BankParameters | None:
+        self.parameters_read += 1  # not in `calls`: the call order tests stay as they are
+        if self.script.parameters_fail:
+            raise RuntimeError("unreadable parameters")
+        if self.script.bank_name is None:
+            return None
+        formats = list(self.script.camt_formats)
+        return BankParameters(
+            bank_name=self.script.bank_name,
+            bpd_version=7,
+            camt_formats=formats,
+            camt_readable=any("camt.052" in f or "camt.053" in f for f in formats),
+            statement_pdf_by_number=self.script.statements_offered,
+            decoupled_methods=[sf for sf, decoupled in self.script.mechanisms.items() if decoupled],
+            approval_versions=[7],
+        )
 
     def get_statement_pdf(
         self, account: SEPAAccount, number: int, year: int, touchdown: str | None = None

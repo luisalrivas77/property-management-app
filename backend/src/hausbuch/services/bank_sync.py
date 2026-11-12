@@ -25,6 +25,16 @@ Who owns a run (step 1's decision, §12.1 left it open):
   failed run never holds an import (§12.1 expected a failure after the import to keep its
   import_id: with one transaction there is no such failure; reported as a deviation).
 
+Phase 6 step 3 (D163, D173): each connection names a credential slot whose PIN is the
+container secret HAUSBUCH_FINTS_PIN_<SLOT> (`primary`: HAUSBUCH_FINTS_PIN); a start or a run
+whose slot has no PIN is refused with bank.pin_missing before any dialog, naming the variable.
+A private account gets a connection only once its statement export is imported and
+reconciled (bank.history_missing), and a first run starts after that history (imports_through,
+D173 (4)). The bank's parameters a run reads are recorded on the account as
+account.bank_parameters_read when they change (D173 (7)); their bank name picks the card texts
+(DKB's app, D173 (1)) and the daily-fetch guard (two manual syncs without an approval first,
+D173 (5)).
+
 Secrets (D119): the PIN and the product id are read from Settings by the job only, never
 stored. The client state is stored with a MAC (HMAC-SHA256 under a key derived from the
 session key) over the connection id, the account id, the BLZ, the URL, the login and the
@@ -50,18 +60,20 @@ from hausbuch.db.tables import bank_connection as connection_table
 from hausbuch.db.tables import bank_statement as statement_table
 from hausbuch.db.tables import bank_sync as sync_table
 from hausbuch.db.tables import event as event_table
+from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.jobs import enqueue
 from hausbuch.rules import bank_statements as statement_fetch
 from hausbuch.rules import bank_sync as rules
 from hausbuch.rules import errors as E
-from hausbuch.rules import statements as statement_rules
 from hausbuch.rules.errors import RuleError
 from hausbuch.schemas.api import InboxItem, InboxItemKind
 from hausbuch.schemas.bank_sync import (
+    PRIMARY_SLOT,
     BankConnection,
     BankConnectionCreate,
     BankConnectionPatch,
+    BankParameters,
     BankStatement,
     BankSync,
     StatementKey,
@@ -85,6 +97,7 @@ from hausbuch.schemas.enums import (
 )
 from hausbuch.schemas.events import (
     BankConnectionRecorded,
+    BankParametersRead,
     BankStatementFetched,
     BankSyncApprovalNeeded,
     BankSyncCompleted,
@@ -155,15 +168,20 @@ def verified_state(key: bytes, connection: Row) -> bytes | None:
 
 
 def create_connection(ctx: CommandContext, data: BankConnectionCreate) -> BankConnection:
-    """One connection per account; the account's source becomes fints (D125). An owner
-    account holds no statements, so it cannot have one. Since migration 0025 every account
-    is an owner account and the rental one is keyed by purpose (phase 6 D156), so the guard
-    reads purpose: the same accounts as before, until phase 6 step 3 lifts it."""
+    """One connection per account; the account's source becomes fints (D125). Phase 6
+    step 3 lifts phase 5's guard on private accounts: a private account gets one once its
+    statement export is imported and reconciled (bank.history_missing otherwise), so the
+    first window starts after that history (D173 (4), §15 step 3). The rental account is
+    unchanged."""
     account = require_row(
         ctx.conn, account_table, EntityType.ACCOUNT, data.account_id, for_update=True
     )
-    if account.purpose == AccountPurpose.PRIVATE.value:
-        raise RuleError(statement_rules.OWNER_ACCOUNT, "owner accounts hold no statements")
+    if account.purpose == AccountPurpose.PRIVATE.value and (
+        imports_through(ctx.conn, data.account_id) is None
+    ):
+        raise RuleError(
+            E.BANK_HISTORY_MISSING, "import and reconcile the account's statement export first"
+        )
     try:
         row = ctx.conn.execute(
             insert(connection_table)
@@ -196,7 +214,7 @@ def create_connection(ctx: CommandContext, data: BankConnectionCreate) -> BankCo
         data.account_id,
         _recorded(row, changed=[]),
     )
-    return _to_connection(row)
+    return _to_connection(ctx.conn, row)
 
 
 def update_connection(
@@ -204,14 +222,21 @@ def update_connection(
 ) -> BankConnection:
     """Change the fields sent. A new URL or login invalidates the stored client state (its MAC
     covers both), so the state, the TAN mechanism and the last approval are dropped with it:
-    the next run starts like a first one."""
+    the next run starts like a first one. Switching the daily fetch on is refused with
+    bank.auto_sync_waits while the bank asks for an approval too often (D173 (5)). A new
+    credential slot keeps the state (its MAC covers the login and the URL, not the PIN)."""
     current = _connection_row(ctx.conn, account_id, for_update=True)
     requested = patch.changes()
     values: dict[str, Any] = {
         name: value for name, value in requested.items() if getattr(current, name) != value
     }
     if not values:
-        return _to_connection(current)
+        return _to_connection(ctx.conn, current)
+    if values.get("auto_sync") is True and not _auto_sync_allowed(ctx.conn, current):
+        raise RuleError(
+            E.BANK_AUTO_SYNC_WAITS,
+            "the daily fetch waits for two manual syncs in a row without an approval",
+        )
     changed = sorted(values)
     if {"fints_url", "login_name"} & set(values):
         values |= {"client_data": None, "client_data_mac": None, "sca_confirmed_at": None}
@@ -227,14 +252,14 @@ def update_connection(
     append_event(
         ctx, EventType.ACCOUNT_CONNECTION_UPDATED, account_id, _recorded(row, changed=changed)
     )
-    return _to_connection(row)
+    return _to_connection(ctx.conn, row)
 
 
 def get_connection(conn: Connection, account_id: UUID) -> BankConnection | None:
     row = conn.execute(
         select(connection_table).where(connection_table.c.account_id == account_id)
     ).one_or_none()
-    return None if row is None else _to_connection(row)
+    return None if row is None else _to_connection(conn, row)
 
 
 def _connection_row(conn: Connection, account_id: UUID, *, for_update: bool = False) -> Row:
@@ -260,33 +285,146 @@ def _recorded(row: Row, *, changed: list[str]) -> BankConnectionRecorded:
     )
 
 
-def _to_connection(row: Row) -> BankConnection:
+def _to_connection(conn: Connection, row: Row) -> BankConnection:
     values = {k: v for k, v in row._mapping.items() if k not in _SECRET_COLUMNS}
+    bank_name = recorded_bank_name(conn, row.id)
     return BankConnection.model_validate(
         values
         | {
             "login_masked": mask_login(row.login_name),
             "state_present": row.client_data is not None,
+            "credential_variable": rules.pin_variable(row.credential_slot),
+            "bank_name": bank_name,
+            "approval_text": rules.approval_text(bank_name) or PHASE5_APPROVAL_TEXT,
+            "auto_sync_allowed": _auto_sync_allowed(conn, row, bank_name=bank_name),
         }
     )
+
+
+# The Bankabruf card's text while it waits for an approval, for a bank whose name is not in
+# rules.bank_sync's table (the Sparkasse's S-pushTAN, phase 5).
+PHASE5_APPROVAL_TEXT = "In der S-pushTAN-App freigeben"
+
+
+def imports_through(conn: Connection, account_id: UUID) -> date | None:
+    """D173 (4): the last booking day of the account's reconciled imports (an upload, an
+    email or an earlier sync), None without any. For a camt export it is the last day the
+    file booked; for a CSV it is the day whose closing the user confirmed ("Saldo nach der
+    letzten Buchung vom …", D173 (3))."""
+    return conn.execute(
+        select(func.max(import_table.c.last_booking_on)).where(
+            import_table.c.account_id == account_id,
+            import_table.c.status == ImportStatus.RECONCILED.value,
+        )
+    ).scalar_one()
+
+
+# --- The bank's parameters (phase 6 D173 (7)) -------------------------------------------------
+
+
+def _last_parameters(conn: Connection, connection_id: UUID) -> BankParameters | None:
+    payload = conn.execute(
+        select(event_table.c.payload)
+        .where(
+            event_table.c.type == EventType.ACCOUNT_BANK_PARAMETERS_READ.value,
+            event_table.c.payload["connection_id"].astext == str(connection_id),
+        )
+        .order_by(event_table.c.recorded_at.desc(), event_table.c.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if payload is None:
+        return None
+    read = BankParametersRead.model_validate(payload)
+    return BankParameters.model_validate(read.model_dump(exclude={"connection_id", "sync_id"}))
+
+
+def recorded_bank_name(conn: Connection, connection_id: UUID) -> str | None:
+    """The bank's name from the connection's last recorded parameters (HIBPA)."""
+    last = _last_parameters(conn, connection_id)
+    return None if last is None else last.bank_name
+
+
+def record_bank_parameters(
+    ctx: CommandContext, plan: "RunPlan", parameters: BankParameters
+) -> bool:
+    """account.bank_parameters_read when the bank's parameters differ from the connection's
+    last record (the first run always records them). A connection fact, not the run's: it
+    is written whether or not the run still owns its row. True when written."""
+    if _last_parameters(ctx.conn, plan.connection_id) == parameters:
+        return False
+    append_event(
+        ctx,
+        EventType.ACCOUNT_BANK_PARAMETERS_READ,
+        plan.account_id,
+        BankParametersRead(
+            **parameters.model_dump(), connection_id=plan.connection_id, sync_id=plan.sync_id
+        ),
+    )
+    return True
+
+
+def manual_sync_approvals(conn: Connection, connection_id: UUID) -> list[bool]:
+    """D173 (5)'s input: the connection's finished manual syncs, oldest first, each as
+    whether the bank asked for an approval in it (an account.sync_approval_needed event of
+    that run). A run that failed before the bank could ask (unreachable, refused at login)
+    says nothing about the cadence and is left out; a failed run that did ask counts."""
+    rows = conn.execute(
+        select(sync_table.c.id, sync_table.c.status)
+        .where(
+            sync_table.c.connection_id == connection_id,
+            sync_table.c.trigger == SyncTrigger.MANUAL.value,
+            sync_table.c.finished_at.is_not(None),
+        )
+        .order_by(sync_table.c.finished_at, sync_table.c.id)
+    ).all()
+    if not rows:
+        return []
+    asked = set(
+        conn.execute(
+            select(event_table.c.payload["sync_id"].astext).where(
+                event_table.c.type == EventType.ACCOUNT_SYNC_APPROVAL_NEEDED.value,
+                event_table.c.payload["sync_id"].astext.in_([str(r.id) for r in rows]),
+            )
+        ).scalars()
+    )
+    succeeded = {_S.DONE.value, _S.NOTHING_NEW.value}
+    return [str(r.id) in asked for r in rows if r.status in succeeded or str(r.id) in asked]
+
+
+def _auto_sync_allowed(conn: Connection, row: Row, *, bank_name: str | None = None) -> bool:
+    """D173 (5) for a connection row: any bank but DKB always; DKB after two manual syncs in
+    a row without an approval. A connection whose parameters were never read (no run yet)
+    has no bank name and is let through (the fixture keys the rule by the BPD's name)."""
+    name = bank_name if bank_name is not None else recorded_bank_name(conn, row.id)
+    if not rules.is_dkb(name):
+        return True
+    return rules.auto_sync_allowed(name, manual_sync_approvals(conn, row.id))
 
 
 # --- Starting a run (POST /accounts/{id}/syncs) ---------------------------------------------
 
 
 def configured(settings: Settings) -> bool:
-    """A PIN and a usable product id are set (§4.4 bank.not_configured)."""
-    return bool(settings.fints_pin) and rules.product_id_usable(settings.fints_product_id)
+    """A usable product id and at least one slot's PIN are set (§4.4 bank.not_configured).
+    Whether the connection's own slot has its PIN is check_slot's (bank.pin_missing)."""
+    return bool(settings.fints_pins) and rules.product_id_usable(settings.fints_product_id)
+
+
+def configured_slots(settings: Settings) -> list[str]:
+    """The slots whose container secret is set, names only (phase 6 D163)."""
+    return sorted(settings.fints_pins)
 
 
 def start_sync(ctx: CommandContext, account_id: UUID, *, settings: Settings) -> BankSync:
     """Queue a manual run (or restart one, see the module docstring) and its job. Refuses
-    bank.not_configured, bank.rate_limited (a fifth manual start within the hour) and
-    bank.sync_running; bank.window_invalid when the anchor is today or later."""
+    bank.not_configured, bank.pin_missing (the connection's slot has no PIN; phase 6 D163),
+    bank.rate_limited (a fifth manual start within the hour) and bank.sync_running;
+    bank.window_invalid when the anchor or the imported history reaches today."""
     account = require_row(ctx.conn, account_table, EntityType.ACCOUNT, account_id, for_update=True)
     connection = _connection_row(ctx.conn, account_id)
     if not configured(settings):
         raise RuleError(E.BANK_NOT_CONFIGURED, "the FinTS PIN or product id is not configured")
+    rules.check_slot(set(settings.fints_pins), connection.credential_slot)
     if _manual_starts_last_hour(ctx, account_id) >= rules.MANUAL_STARTS_PER_HOUR:
         raise RuleError(E.BANK_RATE_LIMITED, "at most four manual syncs per hour")
     window = _window(ctx, account, connection)
@@ -332,11 +470,12 @@ def start_sync(ctx: CommandContext, account_id: UUID, *, settings: Settings) -> 
 
 def _window(ctx: CommandContext, account: Row, connection: Row) -> SyncWindow:
     """D120's window on today's day in Europe/Berlin (bank.window_invalid when the anchor is
-    today or later)."""
+    today or later); a first run starts after the imported history (D173 (4))."""
     return rules.request_window(
         SyncWindowFacts(
             opening_balance_on=account.opening_balance_on,
             last_booking_on=connection.last_booking_on,
+            imports_through=imports_through(ctx.conn, account.id),
         ),
         ctx.now.astimezone(LOCAL_TIME_ZONE).date(),
     )
@@ -367,7 +506,8 @@ def _announce(ctx: CommandContext, row: Row, trigger: SyncTrigger) -> None:
 @dataclass(frozen=True)
 class ScheduledStart:
     """What the daily run did with one connection: `queued` with its run, or why not
-    (rules.schedule_skip's reasons, or `off` when auto_sync was switched off meanwhile)."""
+    (rules.schedule_skip's reasons, `off` when auto_sync was switched off meanwhile, or
+    `auto_sync_waits` for a DKB connection whose approvals do not allow it yet)."""
 
     outcome: str
     sync: BankSync | None = None
@@ -375,6 +515,7 @@ class ScheduledStart:
 
 SCHEDULE_QUEUED = "queued"
 SCHEDULE_OFF = "off"
+SCHEDULE_AUTO_SYNC_WAITS = "auto_sync_waits"  # D173 (5): a DKB connection's guard
 
 
 def auto_sync_accounts(conn: Connection) -> list[UUID]:
@@ -399,6 +540,8 @@ def queue_scheduled_sync(ctx: CommandContext, account_id: UUID) -> ScheduledStar
     connection = _connection_row(ctx.conn, account_id)
     if not connection.auto_sync:
         return ScheduledStart(SCHEDULE_OFF)
+    if not _auto_sync_allowed(ctx.conn, connection):  # D173 (5): switched on before the guard
+        return ScheduledStart(SCHEDULE_AUTO_SYNC_WAITS)
     live = _live_row(ctx.conn, account_id)
     last = _latest_finished(ctx.conn, account_id)
     skip = rules.schedule_skip(
@@ -681,17 +824,75 @@ _REFUSED_CARD: dict[str, tuple[str, str]] = {
 }
 
 
-def failed_card_text(error_code: str | None, response_code: str | None) -> tuple[str, str]:
+# Phase 6 D163: the slot's PIN is missing; the card names the variable to set (never a value).
+def _pin_missing_card(credential_slot: str) -> tuple[str, str]:
+    variable = rules.pin_variable(credential_slot)
+    return (
+        f"Für den Zugang „{credential_slot}“ ist keine PIN hinterlegt: die Variable {variable}"
+        " fehlt im API-Container.",
+        f"In der Scaleway-Konsole (Serverless › Containers › API-Container › Einstellungen)"
+        f" die geheime Umgebungsvariable (Secret) {variable} mit der PIN dieses Zugangs anlegen"
+        " und den Container neu bereitstellen (Runbook Schritt 17), dann erneut abrufen.",
+    )
+
+
+# D173 (1), (2): DKB's approval is in the DKB app, and without camt its CSV export is the way.
+_DKB_WORDING = (
+    ("das Verfahren S-pushTAN einrichten", "die DKB-App als Freigabeverfahren einrichten"),
+    (
+        "dass S-pushTAN für diesen Zugang eingerichtet und aktiv ist",
+        "dass die DKB-App für diesen Zugang als Freigabeverfahren eingerichtet und aktiv ist",
+    ),
+    ("dass S-pushTAN eingerichtet ist", "dass die DKB-App als Freigabeverfahren eingerichtet ist"),
+    ("dass S-pushTAN aktiv ist", "dass die DKB-App als Freigabeverfahren aktiv ist"),
+    ("(pushTAN)", "(DKB-App)"),
+    ("S-pushTAN-App", "DKB-App"),
+)
+_DKB_UNSUPPORTED_FORMAT = (
+    "Die DKB liefert über FinTS keine Umsätze in einem Format, das Hausbuch lesen kann (kein"
+    " camt).",
+    "Die Umsätze weiter als CSV-Export aus dem DKB-Banking („Umsätze exportieren“) hochladen.",
+)
+
+
+def for_bank(text: str, bank_name: str | None) -> str:
+    """A card text for the connection's bank: DKB's app instead of the Sparkasse's S-pushTAN
+    app (D173 (1)); any other bank's text unchanged."""
+    if not rules.is_dkb(bank_name):
+        return text
+    for sparkasse, dkb in _DKB_WORDING:
+        text = text.replace(sparkasse, dkb)
+    return text
+
+
+def failed_card_text(
+    error_code: str | None,
+    response_code: str | None,
+    *,
+    credential_slot: str = PRIMARY_SLOT,
+    bank_name: str | None = None,
+) -> tuple[str, str]:
     """A bank_sync_failed card's reasoning and question: for bank.refused with a known bank
-    code the code's own text (D151), else the error code's; the reasoning ends with the error
-    code and the bank's code, e.g. "(bank.refused, Code der Bank 9078)"."""
+    code the code's own text (D151), for bank.pin_missing the slot's variable (D163), else
+    the error code's; worded for the connection's bank (D173 (1)). The reasoning ends with
+    the error code and the bank's code, e.g. "(bank.refused, Code der Bank 9078)"."""
     reasoning, question = _FAILED_CARD.get(error_code or "", _FAILED_DEFAULT)
     if error_code == E.BANK_REFUSED and response_code in _REFUSED_CARD:
         reason, question = _REFUSED_CARD[response_code]
         reasoning = f"Die Bank hat den Abruf abgelehnt. {reason}"
+    elif error_code == E.BANK_PIN_MISSING and rules.valid_slot(credential_slot):
+        reasoning, question = _pin_missing_card(credential_slot)
+    elif error_code == E.BANK_UNSUPPORTED_FORMAT and rules.is_dkb(bank_name):
+        reasoning, question = _DKB_UNSUPPORTED_FORMAT
     shown = error_code
     if response_code is not None:
         shown = f"{error_code}, Code der Bank {response_code}"
+    reasoning, question = for_bank(reasoning, bank_name), for_bank(question, bank_name)
+    if credential_slot != PRIMARY_SLOT and rules.valid_slot(credential_slot):
+        # the PIN to check is the slot's own container secret
+        question = question.replace(
+            "(HAUSBUCH_FINTS_PIN)", f"({rules.pin_variable(credential_slot)})"
+        )
     return f"{reasoning} ({shown})", question
 
 
@@ -729,13 +930,24 @@ def bank_sync_items(conn: Connection) -> list[InboxItem]:
       manual run, which ends the card;
     - from each account's latest finished run: bank_sync_failed while it failed,
       bank_balance_drift while it brought nothing new and HKSAL differed from the last
-      reconciled closing. A later good run ends either card."""
+      reconciled closing. A later good run ends either card.
+
+    The texts name the connection's bank's approval app and a missing slot's variable
+    (phase 6 D163, D173 (1))."""
+    connections = {
+        c.id: (c.credential_slot, recorded_bank_name(conn, c.id))
+        for c in conn.execute(select(connection_table.c.id, connection_table.c.credential_slot))
+    }
+
+    def bank_name(row: Row) -> str | None:
+        return connections.get(row.connection_id, (PRIMARY_SLOT, None))[1]
+
     items = [
         InboxItem(
             kind=InboxItemKind.BANK_APPROVAL_NEEDED,
             created_at=row.updated_at,
-            reasoning=APPROVAL_NEEDED_REASONING,
-            question=APPROVAL_NEEDED_QUESTION,
+            reasoning=for_bank(APPROVAL_NEEDED_REASONING, bank_name(row)),
+            question=for_bank(APPROVAL_NEEDED_QUESTION, bank_name(row)),
             account_id=row.account_id,
             sync_id=row.id,
         )
@@ -765,7 +977,10 @@ def bank_sync_items(conn: Connection) -> list[InboxItem]:
     )
     for row in conn.execute(latest):
         if row.status == _S.FAILED.value:
-            reasoning, question = failed_card_text(row.error_code, _response_code(conn, row))
+            slot, name = connections.get(row.connection_id, (PRIMARY_SLOT, None))
+            reasoning, question = failed_card_text(
+                row.error_code, _response_code(conn, row), credential_slot=slot, bank_name=name
+            )
             items.append(
                 InboxItem(
                     kind=InboxItemKind.BANK_SYNC_FAILED,
@@ -803,7 +1018,7 @@ def bank_sync_items(conn: Connection) -> list[InboxItem]:
 @dataclass(frozen=True)
 class RunPlan:
     """What the job needs for the network part, read at begin. The PIN and product id are
-    not in it: the job reads them from Settings."""
+    not in it: the job reads them from Settings, the PIN by `credential_slot` (D163)."""
 
     sync_id: UUID
     account_id: UUID
@@ -820,6 +1035,7 @@ class RunPlan:
     iban_hmac: bytes
     created_by: UUID | None  # the person of a manual run
     fetch_statements: bool = False  # D154 (7): the PDF statements after the camt part
+    credential_slot: str = PRIMARY_SLOT  # phase 6 D163: names the PIN's container secret
 
 
 class Superseded(Exception):
@@ -831,7 +1047,8 @@ def begin_run(
 ) -> RunPlan | None:
     """Take the row for this job. None when there is nothing to run: the row is gone or
     final; a retried job (attempt > 0) of a `needs_approval` row leaves it restartable
-    (WORKER_LOST, D118); not configured or a state whose MAC fails records `failed`."""
+    (WORKER_LOST, D118); not configured, a slot without its PIN (bank.pin_missing, D163)
+    or a state whose MAC fails records `failed`."""
     row = _sync_row(ctx.conn, sync_id)
     if row is None:
         return None
@@ -849,6 +1066,9 @@ def begin_run(
     connection = require_row(ctx.conn, connection_table, "bank_connection", row.connection_id)
     if not configured(settings):
         _fail(ctx, row, E.BANK_NOT_CONFIGURED)
+        return None
+    if connection.credential_slot not in settings.fints_pins:  # before any dialog (D163)
+        _fail(ctx, row, E.BANK_PIN_MISSING)
         return None
     client_data: bytes | None = None
     if connection.client_data is not None:
@@ -879,6 +1099,7 @@ def begin_run(
         iban_hmac=bytes(account.iban_hmac),
         created_by=row.created_by,
         fetch_statements=connection.fetch_statements,
+        credential_slot=connection.credential_slot,
     )
 
 
