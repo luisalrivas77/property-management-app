@@ -16,7 +16,7 @@ import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
-import { formatDate, formatMonth } from "./format";
+import { formatDate, formatMonth, todayIso } from "./format";
 import { reminderTodo } from "./todos";
 
 export type Reminder = components["schemas"]["Reminder"];
@@ -149,7 +149,12 @@ const NEXT_DATES = 10;
  * "Erledigt". The list is GET /reminders as it comes (sorted by the API).
  */
 export function NextDates({ reminders, onChanged }: { reminders: Reminder[]; onChanged: () => void }) {
-  const rows = reminders.slice(0, NEXT_DATES);
+  // bank.sync_stale is a watchdog, not a date: its day moves on with every good fetch, so it
+  // is listed only once it is due (then it is also a to-do and a Zu prüfen card).
+  const today = todayIso();
+  const rows = reminders
+    .filter((reminder) => reminder.kind !== "bank.sync_stale" || reminder.visible_from <= today)
+    .slice(0, NEXT_DATES);
   return (
     <section className="card stack" aria-labelledby="next-dates">
       <h2 id="next-dates">Nächste Termine</h2>
