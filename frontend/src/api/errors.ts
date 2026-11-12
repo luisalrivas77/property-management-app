@@ -77,7 +77,8 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "statement.opening_mismatch": "Der Anfangssaldo der Datei stimmt nicht mit dem berechneten Kontostand überein.",
   "statement.before_anchor":
     "Der Auszug enthält Umsätze am oder vor dem Datum des Anfangssaldos. Den Anfangssaldo auf einen früheren Tag legen.",
-  "statement.unknown_format": "Dateiformat nicht erkannt. Erwartet: camt (XML oder ZIP) oder Sparkasse CSV-CAMT.",
+  "statement.unknown_format":
+    "Dateiformat nicht erkannt. Erwartet: camt (XML oder ZIP), Sparkasse CSV-CAMT oder der CSV-Export der DKB.",
   "statement.unparsable": "Die Datei ist beschädigt oder unvollständig und konnte nicht gelesen werden.",
   "statement.archive_rejected":
     "Das ZIP-Archiv wurde abgelehnt: nur XML-Dateien ohne Ordner, höchstens 400 Dateien und 20 MiB, keine ZIPs im ZIP.",
@@ -106,6 +107,18 @@ export const RULE_CODE_TEXT: Record<string, string> = {
     "Aus dieser Zuordnung lässt sich keine Regel lernen (zum Beispiel aus einer Aufteilung auf mehrere Kategorien). Ohne Regel bestätigen.",
   "rule.invalid_pattern":
     "Das Muster ist kein gültiger Suchausdruck (regulärer Ausdruck, höchstens 200 Zeichen).",
+  // every account of the household (phase-6.md D156-D160, D168)
+  "allocation.category_not_for_account":
+    "Diese Kategorie passt nicht zu diesem Konto: ein Privatkonto nimmt nur Haushaltskategorien, das Mietkonto nur die der Immobilie. Für ein Konto mit Buchungen der anderen Art bitte erst diese Buchungen umbuchen.",
+  "account.kind_not_available": "Diese Kontoart kann noch nicht angelegt werden.",
+  "ownership.sum_not_one": "Die Anteile müssen zusammen genau 1 (100 %) ergeben, jeder Eigentümer höchstens einmal.",
+  "ownership.owner_missing": "Ein Anteil nennt keinen Eigentümer dieses Haushalts. Bitte die Seite neu laden.",
+  "rule.too_broad":
+    "Unter diesem Namen wurden schon Umsätze verschiedener Kategorien bestätigt (z. B. PayPal). Bitte stattdessen ein Muster aus dem Verwendungszweck angeben.",
+  "rule.conflicts":
+    "Eine Regel für diesen Namen würde Umsätze treffen, die anders bestätigt wurden. Ohne Regel bestätigen oder ein Muster aus dem Verwendungszweck angeben.",
+  "settings.consent_switch_off": "Erst „Private Konten mit KI zuordnen“ einschalten, dann zustimmen.",
+  "settings.consent_already_recorded": "Ihre Zustimmung ist schon gespeichert.",
   // POST /inbox/ai-retry (D50); a proposal's ai.disabled has its own text in AI_ERROR_TEXT.
   "ai.disabled": "Die KI ist auf dem Server nicht eingeschaltet. Zahlungen lassen sich nur von Hand zuordnen.",
   // the Anlage V draft (phase-3.md §10)

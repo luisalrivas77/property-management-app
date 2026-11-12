@@ -10,19 +10,29 @@ import { useId, useRef, useState, type ChangeEvent, type FormEvent } from "react
 
 import { api, ok } from "@/api/client";
 import { ruleCodeText } from "@/api/errors";
-import type { Document, ImportBody, PossibleDuplicate, StatementImport, Transaction, TransactionAllocationStatus } from "@/api/schemas";
+import type {
+  Document,
+  ImportBody,
+  Owner,
+  OwnershipShare,
+  PossibleDuplicate,
+  StatementImport,
+  Transaction,
+  TransactionAllocationStatus,
+} from "@/api/schemas";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { documentLabel } from "./documents";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
-import { formatDate, formatDateTime, formatMoney } from "./format";
+import { formatDate, formatDateTime, formatMoney, formatSharePercent } from "./format";
 import { decimalInput, toSignedMoneyString } from "./input";
 import { ALLOCATION_CATEGORY, BALANCE_SOURCE, DUPLICATE_STATUS, IMPORT_STATUS, STATEMENT_FORMAT } from "./labels";
 import { ActionDialog } from "./ui";
 
 // --- upload ---------------------------------------------------------------------------
 
-/** What POST /accounts/{id}/imports takes: a Sparkasse camt ZIP, one camt XML, a CSV-CAMT. */
+/** What POST /accounts/{id}/imports takes: a Sparkasse camt ZIP, one camt XML, a CSV-CAMT, or
+ * DKB's CSV export (phase 6 D173 (3)); the API sniffs the format from the bytes. */
 export const STATEMENT_ACCEPT =
   ".zip,.xml,.csv,application/zip,application/x-zip-compressed,application/xml,text/xml,text/csv";
 
@@ -122,7 +132,7 @@ export function StatementUpload({ accountId, onImported }: { accountId: string; 
         />
         <p className="muted hint">
           Sparkasse „Umsätze exportieren“: camt als ZIP (bevorzugt, mit Salden) oder CSV-CAMT; auch eine einzelne camt-XML.
-          Datei hierher ziehen oder auswählen.
+          DKB: der CSV-Export der Umsätze aus dem Online-Banking. Datei hierher ziehen oder auswählen.
         </p>
       </div>
       {results.map((result, index) => (
@@ -156,6 +166,25 @@ function ImportResult({ result }: { result: Imported }) {
       {imp.error_code ? <p className="muted">{ruleCodeText(imp.error_code) ?? imp.error_code}</p> : null}
     </div>
   );
+}
+
+// --- owners (phase 6 D157) -----------------------------------------------------------
+
+/** The owner chip of an account (mockup 08): „Gemeinsam 50/50“ for two halves, the owner's name
+ * for a sole owner, otherwise each owner with their percentage. Empty shares give "" (the caller
+ * shows the to-do „Eigentümer festlegen“ instead). */
+export function ownerChip(shares: OwnershipShare[], owners: Owner[]): string {
+  const name = (ownerId: string) => owners.find((owner) => owner.id === ownerId)?.full_name ?? "?";
+  const half = (share: OwnershipShare) => share.share_numerator * 2 === share.share_denominator;
+  if (shares.length === 2 && shares.every(half)) return "Gemeinsam 50/50";
+  const [only] = shares;
+  if (shares.length === 1 && only && only.share_numerator === only.share_denominator) return name(only.owner_id);
+  return shares
+    .map(
+      (share) =>
+        `${name(share.owner_id)} ${formatSharePercent({ numerator: share.share_numerator, denominator: share.share_denominator })}`,
+    )
+    .join(", ");
 }
 
 // --- imports --------------------------------------------------------------------------
@@ -300,7 +329,10 @@ const BALANCE_KEYS = ["closing_balance"] as const;
 
 /** POST /imports/{id}/balances: the balance Luis reads in online banking (D21). */
 export function BalanceForm({ statementImport: imp, onDone }: { statementImport: StatementImport; onDone: () => void }) {
-  const [closing, setClosing] = useState(decimalInput(imp.declared_closing));
+  // Phase 6 D173 (3): a DKB file states its „Kontostand vom“ beside its lines; it pre-fills the
+  // closing for the person to confirm, never reconciled against on its own.
+  const stated = imp.declared_closing == null && imp.stated_closing != null ? imp.stated_closing : null;
+  const [closing, setClosing] = useState(decimalInput(imp.declared_closing ?? stated));
   const [busy, setBusy] = useState(false);
   const form = useFormErrors(BALANCE_KEYS);
 
@@ -338,6 +370,12 @@ export function BalanceForm({ statementImport: imp, onDone }: { statementImport:
       >
         <input type="text" inputMode="decimal" value={closing} onChange={(e) => setClosing(e.target.value)} autoComplete="off" required />
       </Field>
+      {stated != null ? (
+        <p className="muted">
+          Vorgeschlagen aus der Datei: Kontostand vom {formatDate(imp.stated_closing_on)}. Bitte prüfen, ob das der Saldo nach der
+          letzten Buchung vom {formatDate(imp.last_booking_on)} ist, und dann abstimmen.
+        </p>
+      ) : null}
       <div className="row">
         <Submit busy={busy}>Abstimmen</Submit>
       </div>
