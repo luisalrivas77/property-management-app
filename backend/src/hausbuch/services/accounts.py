@@ -521,6 +521,8 @@ def confirm_payment_iban(
             )
         ),
     )
+    # D176 (4): the debits to this IBAN waiting in Zu prüfen are transfers now.
+    _rematch_waiting(ctx, account_id)
     return _account(ctx.conn, account_id)
 
 

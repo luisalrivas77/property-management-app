@@ -3,7 +3,8 @@ step 2b, D176 (2)-(4); fixture tests/fixtures/phase6/card_pdf.yaml, its `import`
 
 Each case is imported onto a card account made from `bases.account`, after the cases its
 `import.after` names. A reconciled import's lines are then matched with the model off: the
-interest line is booked by code to hh_interest_fees and confirmed, every other line waits. The
+interest line is booked by code to hh_interest_fees and confirmed, the payment line
+„Bezahlung“ as internal_transfer_in (D176 (4)), every other line waits. The
 first import sets the account's reference; the printed payment IBAN is only proposed until a
 person confirms it from the statement's original.
 """
@@ -159,6 +160,15 @@ def test_a_card_statement_imports_as_the_fixture_says(
     pinned = {p.index: p.line for p in case.expect.lines}
     booked = {pinned[b.index].bank_reference: b.category for b in outcome.booked}
     statement = statements.parse_statement(case_bytes(case), "application/pdf").statement
+    # D176 (4), not in the fixture's `booked` (written before the settlement link): the payment
+    # line „Bezahlung“ is the card's transfer leg, booked by code as internal_transfer_in.
+    for parsed in statement.lines:
+        if (
+            imported.lines_new
+            and parsed.booking_text == "Bezahlung"
+            and parsed.counterparty_name is None
+        ):
+            booked.setdefault(parsed.bank_reference, "internal_transfer_in")
     for parsed in statement.lines:
         line = lines[parsed.bank_reference]
         if outcome.none_matched:

@@ -27,7 +27,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import Connection, Row, func, insert, select, update
+from sqlalchemy import Connection, Row, func, insert, or_, select, update
 
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
@@ -211,6 +211,7 @@ def _line_legs(conn: Connection, *where) -> list[_Leg]:  # noqa: ANN002
             acc.purpose,
             acc.label,
             acc.iban_hmac,
+            acc.payment_iban_hmac,
         )
         .join(account_table, acc.id == t.account_id)
         .join(import_table, import_table.c.id == t.import_id)
@@ -230,7 +231,10 @@ def _line_legs(conn: Connection, *where) -> list[_Leg]:  # noqa: ANN002
                 id=r.id,
                 account_id=r.account_id,
                 account_kind=AccountKind(r.kind),
-                account_iban_hmac=_hex(r.iban_hmac),
+                # D176 (4): a card account is paid to its confirmed payment IBAN, which
+                # stands for its account IBAN here, so the paying debit names it (ibans_agree,
+                # match_transfer's counterpart filter).
+                account_iban_hmac=_hex(r.iban_hmac or r.payment_iban_hmac),
                 booked_on=r.booking_date,
                 amount=r.amount,
                 counterparty_iban_hmac=_hex(r.counterparty_iban_hmac),
@@ -316,20 +320,22 @@ def _one_leg(conn: Connection, source: TransferLegSource, leg_id: UUID) -> _Leg 
     return found[0] if found else None
 
 
-def _iban_hmacs(conn: Connection, *, except_account: UUID) -> list[str]:
+def own_account_hmacs(conn: Connection, *, except_account: UUID | None = None) -> list[str]:
+    """D162 with D176 (4): the IBAN of every own account and the confirmed payment IBAN of every
+    card account, hex, except those of `except_account`, without repeats."""
     acc = account_table.c
-    return sorted(
-        bytes(h).hex()
-        for h in conn.execute(
-            select(acc.iban_hmac).where(acc.iban_hmac.is_not(None), acc.id != except_account)
-        ).scalars()
+    query = select(func.coalesce(acc.iban_hmac, acc.payment_iban_hmac)).where(
+        or_(acc.iban_hmac.is_not(None), acc.payment_iban_hmac.is_not(None))
     )
+    if except_account is not None:
+        query = query.where(acc.id != except_account)
+    return sorted({bytes(h).hex() for h in conn.execute(query).scalars()})
 
 
 def _context(conn: Connection, leg: _Leg, others: Iterable[_Leg]) -> MatchContext:
     return MatchContext(
         account_purpose=leg.purpose,
-        own_account_hmacs=_iban_hmacs(conn, except_account=leg.leg.account_id),
+        own_account_hmacs=own_account_hmacs(conn, except_account=leg.leg.account_id),
         open_legs=[o.leg for o in others],
     )
 
@@ -703,6 +709,7 @@ def _kinds(conn: Connection, ids: Sequence[UUID]) -> dict[UUID, AccountKind]:
 
 __all__ = [
     "after_booking",
+    "own_account_hmacs",
     "link_by_hand",
     "link_leg",
     "list_links",

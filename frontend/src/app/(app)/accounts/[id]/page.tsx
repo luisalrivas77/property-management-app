@@ -304,7 +304,7 @@ function PaymentIbanCard({ account, onSaved }: { account: Account; onSaved: () =
         Sie die Karte bezahlen.
         {account.payment_iban_masked
           ? ` Bisher bestätigt ist ${account.payment_iban_masked}.`
-          : " Stimmt sie, bestätigen Sie sie hier: Hausbuch erkennt damit später die Überweisung vom Girokonto als Ausgleich der Karte."}
+          : " Stimmt sie, bestätigen Sie sie hier: Hausbuch bucht dann die Zahlung vom Girokonto an diese IBAN als Umbuchung zwischen eigenen Konten und verknüpft sie mit der „Bezahlung“ auf der Abrechnung."}
       </p>
       <div className="row">
         <button type="button" onClick={() => void confirm()} disabled={busy}>
