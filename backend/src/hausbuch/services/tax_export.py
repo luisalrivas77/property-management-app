@@ -193,6 +193,7 @@ def build(conn: Connection, property_id: UUID, *, tax_year: int, today: date) ->
         today=today,
         checklist=checklist,
         documents=documents,
+        private_proofs=True,
     )
     return Built(facts=facts, draft=compute_draft(facts, tax_year, rule_set), rule_set=rule_set)
 

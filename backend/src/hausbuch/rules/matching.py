@@ -64,13 +64,21 @@ from hausbuch.schemas.allocation import (
     ServicePeriod,
     SplitMethod,
     TenancyFacts,
+    TransferLeg,
     WirtschaftsplanFacts,
 )
-from hausbuch.schemas.enums import AccountPurpose, AllocationStatus
+from hausbuch.schemas.enums import AccountKind, AccountPurpose, AllocationStatus
+from hausbuch.schemas.household import TransferCandidate, TransferLinkKind, TransferMatch
 from hausbuch.schemas.loan import ScheduleEntry
 
 from .categories import CATEGORY_LABEL
-from .errors import RULE_CONFLICTS, RULE_TOO_BROAD, RuleError
+from .errors import (
+    RULE_CONFLICTS,
+    RULE_TOO_BROAD,
+    TRANSFER_AMBIGUOUS,
+    TRANSFER_UNMATCHED_LEG,
+    RuleError,
+)
 from .household.taxonomy import HOUSEHOLD_CODES, TAX_RELEVANT, allowed_categories
 from .loan_schedule import build_schedule
 from .periods import months_in, service_period
@@ -167,6 +175,38 @@ def match_document(tx: MatchTransaction, context: MatchContext) -> AllocationSet
         [draft],
         "Betrag, Datum und IBAN oder Referenz passen zu einem Beleg.",
         confidence=DOCUMENT_CONFIDENCE,
+    )
+    return _as_set(tx, split, AllocationMethod.DOCUMENT_MATCH)
+
+
+def match_private_document(tx: MatchTransaction, context: MatchContext) -> AllocationSet | None:
+    """D161 on a private line: a line that pays one bill of a property (the document match's
+    test: amount within 0.01, date within 10 days, the bill's IBAN or number) is booked
+    hh_property_cost with the property and the bill, never the bill's own category, so the
+    Anlage V counts it only through the bill's private_cost row (pass_through, D159). At the
+    document match's confidence; hh_property_cost has no threshold, so it always goes to
+    review (path 1 proves the row once confirmed; path 2 then proposes the row). A bill of
+    no property is no answer here."""
+    hits = {doc.id: doc for doc in context.documents if document_hit(tx, doc)}
+    if len(hits) != 1:
+        return None
+    (doc,) = hits.values()
+    if doc.property_id is None:
+        return None
+    draft = _draft(
+        tx.amount,
+        C.HH_PROPERTY_COST,
+        service_period(tx.purpose, tx.booking_date, False),
+        False,
+        property_id=doc.property_id,
+        document_id=doc.id,
+    )
+    split = _Split(
+        [draft],
+        "Betrag, Datum und IBAN oder Referenz passen zu einer Rechnung des Mietobjekts, "
+        "bezahlt von einem privaten Konto.",
+        confidence=DOCUMENT_CONFIDENCE,
+        question="Ist das die Zahlung dieser Rechnung des Mietobjekts?",
     )
     return _as_set(tx, split, AllocationMethod.DOCUMENT_MATCH)
 
@@ -888,7 +928,6 @@ def _eur(amount: Decimal) -> str:
 # --- Phase 6 (docs/phases/phase-6.md D160, D162; built in steps 1 and 2) ------------------
 
 PHASE6_RULES_STEP = "phase 6 step 1 (learned rules on a private account)"
-PHASE6_TRANSFERS_STEP = "phase 6 step 2 (internal transfers)"
 
 
 _LOCATION = re.compile(r"//[^/]*/[A-Za-z]{2}\s*$")  # a Sparkasse card line's //<Ort>/<Land>
@@ -1022,7 +1061,8 @@ def rental_counterparty_question(
 
 def _allowed_set(found: AllocationSet | None, context: MatchContext) -> AllocationSet | None:
     """D159: an answer whose categories the line's account does not take is no answer (a
-    property bill matched on a private line is D161's path, phase 6 step 2)."""
+    property bill matched on a private line is match_private_document's hh_property_cost,
+    D161)."""
     if found is None:
         return None
     allowed = allowed_categories(context.account_purpose)
@@ -1035,10 +1075,11 @@ _RENTAL_ORDER: tuple[Callable[[MatchTransaction, MatchContext], AllocationSet | 
     match_loan,
     match_document,
 )
-# D158 on a private account: the transfer matcher (D162, phase 6 step 2) comes first once it is
-# built; then the document match; then the tenant / lender question before the model.
+# D158 on a private account: the transfer by an own IBAN (D162), the document match (a bill
+# of the property becomes hh_property_cost, D161), then the tenant / lender question.
 _PRIVATE_ORDER: tuple[Callable[[MatchTransaction, MatchContext], AllocationSet | None], ...] = (
-    match_document,
+    lambda tx, context: match_transfer_line(tx, context),  # defined below
+    match_private_document,
     rental_counterparty_question,
 )
 
@@ -1051,10 +1092,11 @@ def deterministic_answer(
 ) -> AllocationSet | None:
     """The deterministic order per account purpose (D158; fixture matching_order.yaml), before
     the model. Rental: learned rules -> owner transfer -> rent -> loan -> document (Hausgeld is
-    a by_wirtschaftsplan rule), as in phase 2. Private: learned rules -> document -> D158's
-    question; the rent, loan, Hausgeld and owner-transfer matchers never run there. A standing
-    rule hit (confidence 1) wins at once; a rule's near-miss proposal (D49) only when no
-    matcher answers. Every answer is one the account's purpose takes (D159)."""
+    a by_wirtschaftsplan rule), as in phase 2. Private: learned rules -> transfer by an own
+    IBAN (D162) -> a property bill (D161) -> D158's question; the rent, loan, Hausgeld and
+    owner-transfer matchers never run there. A standing rule hit (confidence 1) wins at once;
+    a rule's near-miss proposal (D49) only when no matcher answers. Every answer is one the
+    account's purpose takes (D159)."""
     found = rule_answer(rules, tx, context, history)
     if found is not None and found.confidence == EXACT:
         return found
@@ -1066,7 +1108,157 @@ def deterministic_answer(
     return found
 
 
-def match_transfer(tx: MatchTransaction, context: MatchContext) -> AllocationSet | None:
-    """D162: a line whose counterparty is one of the household's own accounts, linked to the
-    open leg of the other side (fixture transfers.yaml)."""
-    raise NotImplementedError(PHASE6_TRANSFERS_STEP)
+# --- Internal transfers (D162; fixture transfers.yaml) -------------------------------------
+
+TRANSFER_WINDOW_BANKING_DAYS = 3
+TRANSFER_CODES = {
+    (AccountPurpose.PRIVATE, False): C.INTERNAL_TRANSFER_OUT,
+    (AccountPurpose.PRIVATE, True): C.INTERNAL_TRANSFER_IN,
+    (AccountPurpose.RENTAL, False): C.OWNER_TRANSFER_OUT,
+    (AccountPurpose.RENTAL, True): C.OWNER_TRANSFER_IN,
+}
+TRANSFER_CATEGORIES = frozenset(TRANSFER_CODES.values())
+_CASH_KINDS = (AccountKind.EXCHANGE, AccountKind.DEPOT)
+
+
+def add_banking_days(day: date, n: int) -> date:
+    """Monday to Friday, no holiday calendar (the fixture's step 0 reading)."""
+    while n:
+        day = date.fromordinal(day.toordinal() + 1)
+        if day.weekday() < 5:
+            n -= 1
+    return day
+
+
+def transfer_window_end(booked_on: date) -> date:
+    """The last day a counterpart of a leg booked on `booked_on` may be booked: three banking
+    days later. A leg without one gets its card only after this day."""
+    return add_banking_days(booked_on, TRANSFER_WINDOW_BANKING_DAYS)
+
+
+def transfer_link_kind(a: AccountKind, b: AccountKind) -> TransferLinkKind:
+    kinds = {a, b}
+    if AccountKind.EXCHANGE in kinds:
+        return TransferLinkKind.EXCHANGE_EUR
+    if AccountKind.DEPOT in kinds:
+        return TransferLinkKind.DEPOT_CASH
+    return TransferLinkKind.BANK
+
+
+def _ordered(a: TransferLeg, b: TransferLeg) -> tuple[TransferLeg, TransferLeg]:
+    return (a, b) if a.amount < 0 else (b, a)
+
+
+def legs_fit(out: TransferLeg, in_: TransferLeg, *, exact: bool = False) -> bool:
+    """D162: the in-leg booked on or after the out-leg and within three banking days of it;
+    the amounts equal to the cent, or, when one side is an exchange (and not `exact`), the
+    in-leg less than the out-leg by at most the fee either side recorded."""
+    if not out.booked_on <= in_.booked_on <= transfer_window_end(out.booked_on):
+        return False
+    gap = -out.amount - in_.amount  # what the exchange kept
+    exchange = AccountKind.EXCHANGE in {out.account_kind, in_.account_kind}
+    if exact or not exchange:
+        return gap == 0
+    fee = (out.fee_eur or Decimal("0")) + (in_.fee_eur or Decimal("0"))
+    return Decimal("0") <= gap <= fee
+
+
+def ibans_agree(a: TransferLeg, b: TransferLeg) -> bool:
+    """D162: two legs may be one transfer only when neither names another account: a leg's
+    counterparty IBAN, when known, is the other leg's account IBAN, when that is known. So a
+    third party's line of the same amount is never the counterpart (an exchange or depot
+    account without an IBAN still pairs with the bank line to its bank)."""
+
+    def names_other(x: TransferLeg, y: TransferLeg) -> bool:
+        return (
+            x.counterparty_iban_hmac is not None
+            and y.account_iban_hmac is not None
+            and x.counterparty_iban_hmac != y.account_iban_hmac
+        )
+
+    return not names_other(a, b) and not names_other(b, a)
+
+
+def _candidate(a: TransferLeg, b: TransferLeg) -> TransferCandidate:
+    out, in_ = _ordered(a, b)
+    return TransferCandidate(
+        out_leg=out, in_leg=in_, kind=transfer_link_kind(out.account_kind, in_.account_kind)
+    )
+
+
+def transfer_category(leg: TransferLeg, context: MatchContext) -> AllocationCategory | None:
+    """The transfer code a leg is booked as: by an own account's IBAN (internal_transfer_* on
+    a private account, owner_transfer_* on the rental one, phase 2 unchanged), else the
+    depot or exchange leg's own transfer type; None for anything else."""
+    if leg.amount == 0:
+        return None
+    if leg.counterparty_iban_hmac is not None and (
+        leg.counterparty_iban_hmac in context.own_account_hmacs
+    ):
+        return TRANSFER_CODES[(context.account_purpose, leg.amount > 0)]
+    if leg.category in TRANSFER_CATEGORIES:
+        return leg.category
+    return None
+
+
+def match_transfer(leg: TransferLeg, context: MatchContext, *, today: date) -> TransferMatch:
+    """D162: one leg of a possible transfer against the other own accounts' open legs
+    (context.open_legs; the line's own account is context.account_purpose's). A leg booked by
+    an own IBAN looks for its counterpart on the account that IBAN names, a depot or exchange
+    leg booked by its type on every other account: one counterpart -> link (written by the
+    matcher), several -> transfer.ambiguous with the candidates, none -> no card until the
+    window has passed (`today` after its third banking day), then transfer.unmatched_leg. A
+    leg that is neither, whose amount and date fit exactly one exchange or depot EUR movement,
+    is proposed as a link for review, never written, and keeps no category. A candidate
+    whose IBANs name another account than the leg's is never one (ibans_agree)."""
+    credit = leg.amount > 0
+    other = [
+        o
+        for o in context.open_legs
+        if o.account_id != leg.account_id
+        and o.amount != 0
+        and (o.amount > 0) != credit
+        and ibans_agree(leg, o)
+    ]
+    category = transfer_category(leg, context)
+    if category is None:
+        fitting = [
+            o
+            for o in other
+            if o.account_kind in _CASH_KINDS and legs_fit(*_ordered(leg, o), exact=True)
+        ]
+        proposed = _candidate(leg, fitting[0]) if len(fitting) == 1 else None
+        return TransferMatch(proposed_link=proposed)
+    if leg.counterparty_iban_hmac in context.own_account_hmacs:
+        other = [o for o in other if o.account_iban_hmac == leg.counterparty_iban_hmac]
+    fitting = [o for o in other if legs_fit(*_ordered(leg, o))]
+    result = TransferMatch(category=category, confidence=EXACT)
+    if len(fitting) == 1:
+        return result.model_copy(update={"link": _candidate(leg, fitting[0])})
+    if len(fitting) > 1:
+        return result.model_copy(
+            update={"card": TRANSFER_AMBIGUOUS, "candidates": sorted(o.id for o in fitting)}
+        )
+    if today > transfer_window_end(leg.booked_on):
+        return result.model_copy(update={"card": TRANSFER_UNMATCHED_LEG})
+    return result
+
+
+def match_transfer_line(tx: MatchTransaction, context: MatchContext) -> AllocationSet | None:
+    """D162 in the private order: a line whose counterparty IBAN is another own account's is a
+    transfer by the IBAN alone, internal_transfer_out|in at confidence 1.0, booked before its
+    counterpart is linked (services.transfers links it), so a transfer is never mis-booked
+    while the other account's import lags. The rental account keeps match_owner_transfer."""
+    if tx.amount == 0 or tx.counterparty_iban_hmac is None:
+        return None
+    if tx.counterparty_iban_hmac not in context.own_account_hmacs:
+        return None
+    category = TRANSFER_CODES[(context.account_purpose, tx.amount > 0)]
+    period = service_period(tx.purpose, tx.booking_date, False)
+    return AllocationSet(
+        transaction_id=tx.id,
+        method=AllocationMethod.MATCHER_TRANSFER,
+        confidence=EXACT,
+        allocations=[_draft(tx.amount, category, period, False)],
+        reasoning="Überweisung zwischen zwei eigenen Konten.",
+    )

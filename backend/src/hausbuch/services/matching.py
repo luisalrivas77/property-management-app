@@ -298,18 +298,17 @@ def build_context(
     today: date,
     for_transaction: UUID | None = None,
     account_purpose: AccountPurpose = AccountPurpose.RENTAL,
+    account_id: UUID | None = None,
 ) -> MatchContext:
     """Everything the matchers may look at, read from the workspace. `for_transaction`: the
     line being matched (a Beleg its own rows reference stays a candidate); `account_purpose`:
-    its account's purpose, which picks the order (phase 6 D158)."""
-    # The owners' accounts by purpose since migration 0025, which sets is_owner_account on
-    # every account (phase 6 D156); step 2's transfer matcher widens this to every account.
-    owners = conn.execute(
-        select(account_table.c.iban_hmac).where(
-            account_table.c.purpose == AccountPurpose.PRIVATE.value,
-            account_table.c.iban_hmac.is_not(None),
-        )
-    ).scalars()
+    its account's purpose, which picks the order (phase 6 D158); `account_id`: its account,
+    whose own IBAN is no other own account's (D162: own_account_hmacs is every account with
+    an IBAN except the line's own)."""
+    own = select(account_table.c.iban_hmac).where(account_table.c.iban_hmac.is_not(None))
+    if account_id is not None:
+        own = own.where(account_table.c.id != account_id)
+    owners = conn.execute(own).scalars()
     plans, documents = _evidence(conn, iban_key=iban_key, today=today, exclude_for=for_transaction)
     return MatchContext(
         account_purpose=account_purpose,
@@ -575,23 +574,46 @@ def _extracted(extraction: DocumentExtraction, name: str) -> ExtractedValue:
 def paid_from_rental_account(
     conn: Connection, document_id: UUID, *, iban_key: bytes | None = None
 ) -> bool:
-    """Phase 2 D135: a bank line of the read accounts pays this bill, so none of it is a cost
-    paid from another account. True when an allocation (proposed or confirmed) already
-    carries the document as its Beleg, or when a stored transaction is a document hit of it
-    (rules.matching.document_hit: the amount within 0.01, the booking within 10 days of the
-    document date, and the bill's IBAN or its reference in the purpose; the IBAN is compared
-    only when the key is given). A document the matcher cannot read (no amount or date)
-    finds no line."""
-    carried = conn.execute(
-        select(
-            exists().where(
-                allocation_table.c.document_id == document_id,
-                allocation_table.c.status != AllocationStatus.SUPERSEDED.value,
-            )
-        )
-    ).scalar_one()
-    if carried:
-        return True
+    """Phase 2 D135: a bank line of a rental account pays this bill, so none of it is a cost
+    paid from another account. True when an allocation (proposed or confirmed) of a rental
+    account's line already carries the document as its Beleg, or when a stored rental line
+    is a document hit of it (rules.matching.document_hit: the amount within 0.01, the booking
+    within 10 days of the document date, and the bill's IBAN or its reference in the purpose;
+    the IBAN is compared only when the key is given). A document the matcher cannot read (no
+    amount or date) finds no line. A private account's line is paid_from_private_account's
+    (phase 6 review F4)."""
+    return _paid_from(conn, document_id, AccountPurpose.RENTAL, iban_key)
+
+
+def paid_from_private_account(
+    conn: Connection, document_id: UUID, *, iban_key: bytes | None = None
+) -> bool:
+    """Phase 6 D161 (review F4): a live private line is booked hh_property_cost with this
+    bill as its Beleg. Such a bill is no D135 private cost of the reading: D161's path 2 card
+    proposes its rows from the line (services.property_costs), so they are never proposed
+    twice. A bare document hit on a private line is not enough (second review F-A): that line
+    may be booked as something else, or still waiting, and then no card would ever offer the
+    rows, so the reading proposes them itself."""
+    return _paid_from(conn, document_id, AccountPurpose.PRIVATE, iban_key)
+
+
+def _paid_from(
+    conn: Connection, document_id: UUID, purpose: AccountPurpose, iban_key: bytes | None
+) -> bool:
+    t, acc = transaction_table.c, account_table.c
+    of_purpose = (
+        select(t.id).join(account_table, acc.id == t.account_id).where(acc.purpose == purpose.value)
+    )
+    booked = [
+        allocation_table.c.document_id == document_id,
+        allocation_table.c.status != AllocationStatus.SUPERSEDED.value,
+        allocation_table.c.transaction_id.in_(of_purpose),
+    ]
+    if purpose is AccountPurpose.PRIVATE:
+        booked.append(allocation_table.c.category == AllocationCategory.HH_PROPERTY_COST.value)
+    carried = conn.execute(select(exists().where(*booked))).scalar_one()
+    if carried or purpose is AccountPurpose.PRIVATE:
+        return carried
     e = evidence_of(conn, document_id)
     if e is None or e.extraction.kind is ExtractionKind.GRUNDSTEUERBESCHEID:
         return False
@@ -600,13 +622,15 @@ def paid_from_rental_account(
         return False
     if iban_key is None:
         facts = facts.model_copy(update={"iban_hmac": None})
-    t = transaction_table.c
     window = timedelta(days=matchers.DOCUMENT_WINDOW_DAYS)
     for payment in facts.payments:
         low = payment.amount - matchers.DOCUMENT_AMOUNT_TOLERANCE
         high = payment.amount + matchers.DOCUMENT_AMOUNT_TOLERANCE
         rows = conn.execute(
-            select(transaction_table).where(
+            select(transaction_table)
+            .join(account_table, acc.id == t.account_id)
+            .where(
+                acc.purpose == purpose.value,
                 func.abs(t.amount).between(low, high),
                 t.booking_date.between(payment.due_on - window, payment.due_on + window),
             )
@@ -983,6 +1007,7 @@ def match_line(
         today=ctx.now.date(),
         for_transaction=transaction_id,
         account_purpose=line.account_purpose,
+        account_id=line.account_id,
     )
     found = deterministic_set(ctx.conn, line.tx, context)
     if rematch and not line.waiting and found is not None and _copies_a_split(ctx.conn, found):

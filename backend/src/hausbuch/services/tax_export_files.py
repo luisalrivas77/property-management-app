@@ -69,7 +69,7 @@ from hausbuch.rules.tax.rounding import cents
 from hausbuch.schemas.allocation import AllocationCategory, TaxTreatment
 from hausbuch.schemas.checklist import ChecklistStatus, RequirementCode
 from hausbuch.schemas.employment import AnlageNDraft
-from hausbuch.schemas.enums import AcquisitionCostKind, PriceSplitSource
+from hausbuch.schemas.enums import AccountPurpose, AcquisitionCostKind, PriceSplitSource
 from hausbuch.schemas.tax import (
     AnlageVDraft,
     DraftFacts,
@@ -1004,13 +1004,15 @@ def _where(draft: AnlageVDraft) -> dict[UUID, str]:
 
 
 def year_allocations(draft: AnlageVDraft, facts: DraftFacts) -> list:
-    """The payments zahlungen.csv lists: every confirmed allocation booked in the tax year or
-    counted by the draft, in booking order."""
+    """The payments zahlungen.csv lists: every confirmed rental-account allocation booked in
+    the tax year or counted by the draft, in booking order (a private line proving a bill,
+    phase 6 D161, is no payment of the rental account and stays out of the archive)."""
     cited = _where(draft)
     listed = [
         a
         for a in facts.allocations
-        if a.booking_date.year == draft.tax_year or a.allocation_id in cited
+        if a.account_purpose is AccountPurpose.RENTAL
+        and (a.booking_date.year == draft.tax_year or a.allocation_id in cited)
     ]
     return sorted(listed, key=lambda a: (a.booking_date, str(a.allocation_id)))
 

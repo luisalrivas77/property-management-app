@@ -123,6 +123,7 @@ def anlage_v_draft(
         today=today,
         checklist=checklist,
         documents=documents,
+        private_proofs=True,
     )
     return draft(facts, tax_year, rule_set)
 
@@ -134,7 +135,9 @@ def anlage_v_sources(
     allocations the draft reads (every year of the property, since the 15 % window, §82b and
     the ten-day rule reach across years), as AllocationFact: date, amount, category, period,
     transaction and Beleg ids and the masked counterparty IBAN only, never a name or purpose
-    text (D5). The same checks and errors as anlage_v_draft."""
+    text (D5). Also the private-account lines the draft takes as a bill's proof (phase 6
+    D161), so a proof the draft cites resolves here too. The same checks and errors as
+    anlage_v_draft."""
     _year_checked(conn, property_id, tax_year, today)
     units = list_units(conn, property_id)
     tenancies = _tenancies(conn, [u.id for u in units])
@@ -145,7 +148,7 @@ def anlage_v_sources(
         _accounts(conn, property_id),
         due_day={t.id: t.rent_due_day for t in tenancies},
         loans={lo.id: lo for lo in loans},
-    )
+    ) + _private_proofs(conn, property_id)
 
 
 def _year_checked(
@@ -172,9 +175,13 @@ def draft_facts(
     today: date,
     checklist: ChecklistFacts | None = None,
     documents: dict[UUID, Document] | None = None,
+    private_proofs: bool = False,
 ) -> DraftFacts:
     """Everything draft() reads for one property (§5.11). `checklist` and `documents` are
-    checklist_facts' result when the caller has it already; loaded otherwise."""
+    checklist_facts' result when the caller has it already; loaded otherwise.
+    `private_proofs` (phase 6 D161): also the confirmed private-account lines booked
+    hh_property_cost with this property and a bill, which draft() takes as the bill's proof
+    and never sums; off for phase 4's figures, which read the allocations directly."""
     if checklist is None or documents is None:
         checklist, documents = checklist_facts(conn, property_id)  # 404 for an unknown one
     prop = get_property(conn, property_id)
@@ -193,6 +200,8 @@ def draft_facts(
     )
     ownership = get_ownership(conn, property_id)
     cost_rows = _cost_rows(conn, property_id, allocations)
+    if private_proofs:
+        allocations += _private_proofs(conn, property_id)
     tax_inputs = _tax_inputs(conn, property_id)
     bills = {r.document_id for r in cost_rows} | {r.document_id for r in tax_inputs}
     bills.discard(None)
@@ -610,6 +619,50 @@ def _allocations(
             )
         )
     return facts
+
+
+def _private_proofs(conn: Connection, property_id: UUID) -> list[AllocationFact]:
+    """D161: the confirmed private-purpose lines booked hh_property_cost with the property and
+    a bill, as the draft reads them (account_purpose private: a proof, never a cost)."""
+    a, t = allocation_table.c, transaction_table.c
+    rows = conn.execute(
+        select(
+            a.id,
+            a.transaction_id,
+            a.amount,
+            a.document_id,
+            t.booking_date,
+            t.value_date,
+            t.counterparty_iban_masked,
+        )
+        .select_from(allocation_table.join(transaction_table, t.id == a.transaction_id))
+        .join(account_table, account_table.c.id == t.account_id)
+        .where(
+            a.status == _CONFIRMED,
+            a.amount != 0,
+            a.category == C.HH_PROPERTY_COST.value,
+            a.property_id == property_id,
+            a.document_id.is_not(None),
+            t.excluded_as_duplicate_of.is_(None),
+            account_table.c.purpose == AccountPurpose.PRIVATE.value,
+        )
+        .order_by(t.booking_date, t.id, a.id)
+    )
+    return [
+        AllocationFact(
+            allocation_id=r.id,
+            transaction_id=r.transaction_id,
+            booking_date=r.booking_date,
+            value_date=r.value_date,
+            amount=r.amount,
+            category=C.HH_PROPERTY_COST,
+            property_id=property_id,
+            document_id=r.document_id,
+            account_purpose=AccountPurpose.PRIVATE,
+            counterparty_iban_masked=r.counterparty_iban_masked,
+        )
+        for r in rows
+    ]
 
 
 def _loan_entry(

@@ -184,6 +184,7 @@ def _context(conn: Connection, today: date, line: matching.Line, iban_key: bytes
         today=today,
         for_transaction=line.tx.id,
         account_purpose=line.account_purpose,
+        account_id=line.account_id,
     )
 
 
@@ -285,14 +286,21 @@ _PROPOSED_QUESTION = "Stimmt diese Zuordnung?"
 def inbox(
     conn: Connection, today: date | None = None, now: datetime | None = None
 ) -> list[InboxItem]:
-    """Every item of §8.3, newest first. Texts quote no bank line, name or IBAN. With `today`,
-    also last year's open Jahresfragen (phase 4b D110, `questionnaire_open`) and the reminders
-    visible today (phase 5 §6, `reminder`); with `now`, the email-in cards (phase 5 §5.4:
-    email_received, email_failed) and the bank sync's (phase 5 §4.6, D117: bank_sync_failed,
-    bank_balance_drift)."""
+    """Every item of §8.3, newest first. Texts quote no bank line, name or IBAN. Also the
+    phase 6 D161 cards of private lines paying property costs. With `today`, also last year's
+    open Jahresfragen (phase 4b D110, `questionnaire_open`), the reminders visible today
+    (phase 5 §6, `reminder`) and the transfer cards (phase 6 D162); with `now`, the email-in
+    cards (phase 5 §5.4: email_received, email_failed) and the bank sync's (phase 5 §4.6,
+    D117: bank_sync_failed, bank_balance_drift)."""
     items = _proposal_items(conn) + import_inbox_items(conn) + _allocation_items(conn)
+    from .property_costs import property_cost_items  # it imports the matching services
+
+    items += property_cost_items(conn)
     if today is not None:
         items += _questionnaire_items(conn, today)
+        from .transfers import transfer_inbox_items
+
+        items += transfer_inbox_items(conn, today)
         from .reminders import reminder_inbox_items  # it imports the checklist services
 
         items += reminder_inbox_items(conn, today)

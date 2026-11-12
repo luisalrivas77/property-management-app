@@ -26,6 +26,15 @@
 //   scope (the Grundsteuer card to the schedule row on Steuern) and "Erledigt", which posts
 //   the acknowledgement. GET /inbox names the reminder's id only; the label comes from
 //   GET /reminders, loaded alongside.
+// - a transfer between own accounts that waits for a person (transfer_link, transfer_unmatched,
+//   phase 6 D162): the counterparts to pick and „Verknüpfen“ (POST /transfers); one without a
+//   counterpart links to Konten, to import the other account.
+// - a property cost paid from a private account (phase 6 D161): „Übernehmen“ records the
+//   proposed privately paid costs (property_cost_row, POST /transactions/{id}/private-costs);
+//   „Beleg hochladen“ uploads the missing bill and saves it on the line (property_cost_bill);
+//   „In <Jahr> zählen“ moves the bill's costs to the year the line paid them
+//   (property_cost_year, POST /transactions/{id}/private-costs/year); an attached bill that
+//   yields no costs links to its document page (property_cost_document).
 //
 // GET /inbox names ids only, so the lines, imports, accounts, duplicates and documents are
 // loaded alongside to show what each item is about. Amounts are shown as the API returns them.
@@ -45,7 +54,7 @@ import { ErrorNotice } from "@/lib/ErrorNotice";
 import { notifyInboxChanged } from "@/lib/inboxCount";
 
 import { BalanceForm, DuplicateCard } from "./accounts";
-import { documentLabel } from "./documents";
+import { documentLabel, UploadControl } from "./documents";
 import { formatDate, formatDateTime, formatMoney } from "./format";
 import { INBOX_ITEM_KIND } from "./labels";
 import { ReminderDone, reminderLabel, reminderLink, type Reminder } from "./reminders";
@@ -71,6 +80,8 @@ const SECTIONS = [
   { key: "imports", title: "Kontoauszüge" },
   { key: "duplicates", title: "Mögliche Doppelbuchungen" },
   { key: "automatic", title: "Automatisch" },
+  { key: "transfers", title: "Überweisungen zwischen eigenen Konten" },
+  { key: "property_costs", title: "Immobilie, privat bezahlt" },
   { key: "other", title: "Weitere Punkte" },
 ] as const;
 
@@ -96,6 +107,13 @@ const SECTION_OF: Record<InboxItemKind, SectionKey> = {
   email_failed: "automatic",
   email_inbox_failed: "automatic",
   reminder: "automatic",
+  // Phase 6: a transfer between own accounts (D162) and a property cost paid privately (D161).
+  transfer_link: "transfers",
+  transfer_unmatched: "transfers",
+  property_cost_row: "property_costs",
+  property_cost_bill: "property_costs",
+  property_cost_year: "property_costs",
+  property_cost_document: "property_costs",
 };
 
 /** A line kind without a line id cannot open the panel: it is listed under Weitere Punkte,
@@ -122,6 +140,12 @@ const PILL_CLASS: Record<InboxItemKind, string> = {
   email_failed: "badge badge-danger",
   email_inbox_failed: "badge badge-danger",
   reminder: "badge badge-info",
+  transfer_link: "badge badge-info",
+  transfer_unmatched: "badge badge-warn",
+  property_cost_row: "badge badge-info",
+  property_cost_bill: "badge badge-warn",
+  property_cost_year: "badge badge-info",
+  property_cost_document: "badge badge-warn",
 };
 
 export interface InboxData {
@@ -390,6 +414,38 @@ function EntryTitle({ item, data }: { item: InboxItem; data: InboxData }) {
       <strong>Termin</strong>
     );
   }
+  if ((item.kind === "transfer_link" || item.kind === "transfer_unmatched") && item.transfer) {
+    const { leg } = item.transfer;
+    return (
+      <>
+        <strong>
+          {leg.account_label} · {signedMoney(leg.amount)}
+        </strong>
+        <span className="inbox-detail">
+          {[formatDate(leg.booked_on), leg.counterparty_name ?? ""].filter(Boolean).join(" · ")}
+        </span>
+      </>
+    );
+  }
+  if (item.kind.startsWith("property_cost_")) {
+    const line = item.transaction_id ? data.transactions.get(item.transaction_id) : undefined;
+    const account = line ? data.accounts.get(line.account_id) : undefined;
+    return (
+      <>
+        <strong>{document ? documentLabel(document) : (line?.counterparty_name ?? "Privat bezahlte Rechnung")}</strong>
+        {line ? (
+          <span className="inbox-detail">
+            {[formatDate(line.booking_date), formatMoney(line.amount.replace(/^-/, "")), account?.label ?? ""].filter(Boolean).join(" · ")}
+          </span>
+        ) : null}
+        {(item.private_costs ?? []).map((row, index) => (
+          <span key={index} className="inbox-detail">
+            {privateCostText(row)}
+          </span>
+        ))}
+      </>
+    );
+  }
   if (item.import_id) {
     const imp = data.imports.get(item.import_id);
     const account = imp ? data.accounts.get(imp.account_id) : undefined;
@@ -511,7 +567,217 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
         </>
       );
     }
+    case "transfer_link":
+    case "transfer_unmatched": {
+      const open = item.transfer;
+      if (!open) return null;
+      if (open.candidates.length > 0) return <TransferPick open={open} accounts={data.accounts} onLinked={onChanged} />;
+      return (
+        <>
+          <Link href="/accounts">Anderes Konto importieren</Link>
+          {open.leg.source === "transaction" ? <Link href={`/inbox?umsatz=${open.leg.id}`}>Buchung öffnen</Link> : null}
+        </>
+      );
+    }
+    case "property_cost_row":
+      return item.transaction_id && (item.private_costs ?? []).length > 0 ? (
+        <PrivateCostApply transactionId={item.transaction_id} onApplied={onChanged} />
+      ) : null;
+    case "property_cost_bill":
+      return item.transaction_id ? <BillUpload transactionId={item.transaction_id} onAttached={onChanged} /> : null;
+    case "property_cost_year":
+      return item.transaction_id && item.tax_year != null ? (
+        <YearPaidApply transactionId={item.transaction_id} year={item.tax_year} onApplied={onChanged} />
+      ) : null;
+    case "property_cost_document":
+      return item.document_id ? <Link href={`/documents/${item.document_id}`}>Beleg öffnen</Link> : null;
     default:
       return null;
   }
+}
+
+// --- Phase 6: transfers between own accounts (D162) and privately paid property costs (D161)
+
+type OpenTransfer = components["schemas"]["OpenTransfer"];
+type TransferLegView = components["schemas"]["TransferLegView"];
+type TransferLinkCreate = components["schemas"]["TransferLinkCreate"];
+type TransferLinkKind = components["schemas"]["TransferLinkKind"];
+type TaxInputCreate = components["schemas"]["TaxInputCreate"];
+type PrivateCostValue = components["schemas"]["PrivateCostValue"];
+
+/** The link's kind from its two accounts, as backend rules/matching.transfer_link_kind. */
+function linkKind(accounts: Map<string, Account>, a: TransferLegView, b: TransferLegView): TransferLinkKind {
+  const kinds = [accounts.get(a.account_id)?.kind, accounts.get(b.account_id)?.kind];
+  if (kinds.includes("exchange")) return "exchange_eur";
+  if (kinds.includes("depot")) return "depot_cash";
+  return "bank";
+}
+
+/** POST /transfers' body: the leg paid out is the out leg, each by its table (D162). */
+function linkBody(accounts: Map<string, Account>, leg: TransferLegView, other: TransferLegView): TransferLinkCreate {
+  const [out, in_] = leg.amount.startsWith("-") ? [leg, other] : [other, leg];
+  return {
+    kind: linkKind(accounts, out, in_),
+    out_transaction_id: out.source === "transaction" ? out.id : null,
+    out_movement_id: out.source === "movement" ? out.id : null,
+    in_transaction_id: in_.source === "transaction" ? in_.id : null,
+    in_movement_id: in_.source === "movement" ? in_.id : null,
+  };
+}
+
+function legText(leg: TransferLegView): string {
+  return [leg.account_label, formatDate(leg.booked_on), signedMoney(leg.amount), leg.counterparty_name ?? ""].filter(Boolean).join(" · ");
+}
+
+/** The counterpart's picker of a transfer card: one candidate is pre-selected, several are
+ * listed for the person to choose; „Verknüpfen“ posts the link (matched_by user). */
+function TransferPick({ open, accounts, onLinked }: { open: OpenTransfer; accounts: Map<string, Account>; onLinked: () => void }) {
+  const [choice, setChoice] = useState(open.candidates.length === 1 ? (open.candidates[0]?.id ?? "") : "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const name = `transfer-${open.leg.id}`;
+
+  async function link() {
+    const other = open.candidates.find((candidate) => candidate.id === choice);
+    if (!other) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await ok(api.POST("/api/transfers", { body: linkBody(accounts, open.leg, other) }));
+      onLinked();
+    } catch (caught) {
+      setError(caught);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <fieldset className="stack">
+      <legend className="visually-hidden">Gegenbuchung</legend>
+      {open.candidates.map((candidate) => (
+        <label key={candidate.id}>
+          <input type="radio" name={name} value={candidate.id} checked={choice === candidate.id} onChange={() => setChoice(candidate.id)} />{" "}
+          {legText(candidate)}
+        </label>
+      ))}
+      <button type="button" onClick={() => void link()} disabled={busy || choice === ""}>
+        {busy ? "Verknüpft …" : "Verknüpfen"}
+      </button>
+      <ErrorNotice error={error} />
+    </fieldset>
+  );
+}
+
+/** One proposed private_cost row as the card lists it: label and amount, before „Übernehmen“. */
+function privateCostText(row: TaxInputCreate): string {
+  const value = row.value as PrivateCostValue;
+  const year = row.tax_year != null ? ` · Steuerjahr ${row.tax_year}` : "";
+  return `${value.label}: ${formatMoney(value.amount)}${year}`;
+}
+
+/** D161 path 2: the bill's rows as privately paid costs (tax_input private_cost), recorded as
+ * the card proposed them by POST /transactions/{id}/private-costs in one step; a bill whose
+ * rows exist already is left as it is (no cost counted twice). */
+function PrivateCostApply({ transactionId, onApplied }: { transactionId: string; onApplied: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+
+  async function apply() {
+    setBusy(true);
+    setError(null);
+    try {
+      await ok(api.POST("/api/transactions/{transaction_id}/private-costs", { params: { path: { transaction_id: transactionId } } }));
+      onApplied();
+    } catch (caught) {
+      setError(caught);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <button type="button" onClick={() => void apply()} disabled={busy}>
+        {busy ? "Übernimmt …" : "Übernehmen"}
+      </button>
+      <ErrorNotice error={error} />
+    </>
+  );
+}
+
+/** D161 (1) with D143's rule: the bill's privately paid costs count in the year the private
+ * line paid them; „In <Jahr> zählen“ moves them (POST /transactions/{id}/private-costs/year).
+ * Until then they stay in their year. */
+function YearPaidApply({ transactionId, year, onApplied }: { transactionId: string; year: number; onApplied: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+
+  async function apply() {
+    setBusy(true);
+    setError(null);
+    try {
+      await ok(api.POST("/api/transactions/{transaction_id}/private-costs/year", { params: { path: { transaction_id: transactionId } } }));
+      onApplied();
+    } catch (caught) {
+      setError(caught);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <button type="button" onClick={() => void apply()} disabled={busy}>
+        {busy ? "Wird verschoben …" : `In ${year} zählen`}
+      </button>
+      <p className="muted">Privat bezahlte Werbungskosten zählen im Jahr der Zahlung (§ 11 Abs. 2 EStG).</p>
+      <ErrorNotice error={error} />
+    </>
+  );
+}
+
+/** D161 path 3: the bill of a private line booked as a property cost. The upload is read like
+ * any other; then the line's current rows are saved again with the bill on its property-cost
+ * row(s), which brings it to path 1 or 2. */
+function BillUpload({ transactionId, onAttached }: { transactionId: string; onAttached: () => void }) {
+  const [error, setError] = useState<unknown>(null);
+
+  async function attach(documentId: string) {
+    setError(null);
+    try {
+      const path = { params: { path: { transaction_id: transactionId } } };
+      const view = await ok(api.GET("/api/transactions/{transaction_id}/allocations", path));
+      const allocations = view.allocations.map((row) => ({
+        amount: row.amount,
+        category: row.category,
+        property_id: row.property_id ?? null,
+        unit_id: row.unit_id ?? null,
+        tenancy_id: row.tenancy_id ?? null,
+        loan_id: row.loan_id ?? null,
+        service_period_start: row.service_period_start ?? null,
+        service_period_end: row.service_period_end ?? null,
+        recurring: row.recurring,
+        document_id: row.category === "hh_property_cost" && !row.document_id ? documentId : (row.document_id ?? null),
+      }));
+      await ok(
+        api.PUT("/api/transactions/{transaction_id}/allocations", {
+          ...path,
+          body: {
+            allocation_set: { transaction_id: transactionId, allocations, method: "user", confidence: "1" },
+            learn_rule: false,
+            purpose_pattern: null,
+            same_amount_only: false,
+          },
+        }),
+      );
+      onAttached();
+    } catch (caught) {
+      setError(caught);
+    }
+  }
+
+  return (
+    <>
+      <UploadControl label="Beleg hochladen" prefill onUploaded={(result) => void attach(result.document.id)} />
+      <ErrorNotice error={error} />
+    </>
+  );
 }

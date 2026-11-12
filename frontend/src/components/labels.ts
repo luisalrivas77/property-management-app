@@ -52,6 +52,7 @@ type ItemClass = components["schemas"]["EquipmentFact"]["item_class"];
 type OtherExpenseClass = components["schemas"]["OtherExpenseFact"]["expense_class"];
 type WorkRoomPrefer = NonNullable<components["schemas"]["WorkRoomFact"]["prefer"]>;
 type PrivateCostClass = components["schemas"]["PrivateCostValue"]["cost_class"];
+type HouseholdGroup = components["schemas"]["HouseholdGroup"];
 
 type Confidence = ExtractedValue["confidence"];
 type Check = NonNullable<ExtractedValue["checks"]>[number];
@@ -649,6 +650,30 @@ export const INBOX_ITEM_KIND: Record<InboxItemKind, string> = {
   email_failed: "Mail nicht übernommen",
   email_inbox_failed: "Posteingang gestört",
   reminder: "Termin",
+  // phase 6 (D161, D162)
+  transfer_link: "Gegenbuchung wählen",
+  transfer_unmatched: "Überweisung ohne Gegenstück",
+  property_cost_row: "Privat bezahlte Kosten",
+  property_cost_bill: "Rechnung fehlt",
+  property_cost_year: "Jahr der Zahlung",
+  property_cost_document: "Beleg prüfen",
+};
+
+/** The Haushalt screen's groups (phase 6 §13, mockup 10; rules/household/taxonomy.py). */
+export const HOUSEHOLD_GROUP: Record<HouseholdGroup, string> = {
+  income: "Einnahmen",
+  housing: "Wohnen",
+  groceries: "Lebensmittel und Drogerie",
+  family_child: "Familie und Kind",
+  mobility: "Mobilität",
+  insurance: "Versicherungen",
+  subscriptions: "Abos und Verträge",
+  leisure_travel: "Freizeit und Reisen",
+  health: "Gesundheit",
+  other: "Sonstiges",
+  tax: "Steuerlich relevant",
+  movements: "Bewegungen",
+  depot: "Depot",
 };
 
 // --- The income tax return's inputs (phase-4b.md §7, §10) --------------------------------

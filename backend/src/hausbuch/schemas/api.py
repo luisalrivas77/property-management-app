@@ -54,9 +54,11 @@ from .enums import (
     RentModel,
     StateCode,
 )
+from .household import OpenTransfer
 from .loan import LoanCreate
 from .property import Address, OwnerShare, reject_raw_tax_number
 from .proposal import Proposal, RecordEntity
+from .tax import TaxInputCreate
 from .tenancy import InitialRent, RentDueDay, TenancyCreate, TenancyParty
 
 # Validation errors never echo input (spec amendment 1): bodies that carry a tax reference or
@@ -527,6 +529,21 @@ class InboxItemKind(StrEnum):
     EMAIL_FAILED = "email_failed"  # a forwarded mail failed three times
     EMAIL_INBOX_FAILED = "email_inbox_failed"  # the poll cannot log in, open its label or connect
     REMINDER = "reminder"  # an action reminder visible today
+    # Phase 6 D162: a transfer leg to link (several counterparts fit, or one fits unlinked) or
+    # one past its window without a counterpart; `transfer` carries the leg and candidates.
+    TRANSFER_LINK = "transfer_link"
+    TRANSFER_UNMATCHED = "transfer_unmatched"
+    # Phase 6 D161: a private line paying a property bill that has no private_cost row yet
+    # (path 2, `private_costs` as POST /transactions/{id}/private-costs records them), and a
+    # private line booked hh_property_cost without a bill (path 3, „Beleg hochladen“).
+    PROPERTY_COST_ROW = "property_cost_row"
+    PROPERTY_COST_BILL = "property_cost_bill"
+    # Review F2: the bill's private_cost rows are in another year than the confirmed private
+    # line paid them; `tax_year` is the year paid (POST /transactions/{id}/private-costs/year).
+    PROPERTY_COST_YEAR = "property_cost_year"
+    # Review F4: the line's attached bill yields no row yet (not read, not a bill, no property,
+    # no amount or date); `document_id` is the document to open.
+    PROPERTY_COST_DOCUMENT = "property_cost_document"
 
 
 class InboxItem(Schema):
@@ -542,10 +559,13 @@ class InboxItem(Schema):
     import_id: UUID | None = None
     possible_duplicate_id: UUID | None = None
     transaction_id: UUID | None = None
-    tax_year: int | None = None  # questionnaire_open: the year whose questions are open
+    tax_year: int | None = None  # questionnaire_open's year; property_cost_year's year paid
     account_id: UUID | None = None  # phase 5: the bank_* kinds; phase 6: a private line
     sync_id: UUID | None = None  # phase 5: bank_approval_needed, bank_sync_failed
     reminder_id: str | None = Field(default=None, max_length=160)  # phase 5: reminder
+    property_id: UUID | None = None  # phase 6: the property_cost_* kinds
+    transfer: OpenTransfer | None = None  # phase 6: the transfer_* kinds
+    private_costs: list[TaxInputCreate] = Field(default_factory=list)  # property_cost_row
 
 
 class AiRetryResult(Schema):

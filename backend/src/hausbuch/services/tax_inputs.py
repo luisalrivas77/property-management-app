@@ -288,7 +288,54 @@ def create_tax_input(ctx: CommandContext, property_id: UUID, data: TaxInputCreat
     return created
 
 
+def move_private_cost_year(ctx: CommandContext, tax_input_id: UUID, year: int) -> TaxInput:
+    """Phase 3 D143 (and phase 6 D161 (1)): a privately paid cost counts in the year it was
+    paid (§11 Abs. 2 EStG). A correction keeps its row's year (_check_supersedes), so the move
+    is two append-only writes, each with its event: the row withdrawn (its value repeated),
+    then the same value created in `year`, its document still the bill. The current row of
+    that year when it is there already (nothing written). NotFoundError when the row is not a
+    private_cost of this workspace; RuleViolationError tax_input.not_current when it is no
+    longer current."""
+    row = get_tax_input(ctx.conn, tax_input_id)
+    if row is None or row.kind is not TaxInputKind.PRIVATE_COST:
+        raise NotFoundError(TAX_INPUT, tax_input_id)
+    if row.tax_year == year:
+        return row
+    current = find_current(ctx.conn, row.property_id, row.kind, tax_year=row.tax_year)
+    if row.id not in {r.id for r in current}:
+        raise RuleViolationError(
+            [TAX_INPUT_NOT_CURRENT], f"tax input {row.id} is not current (withdrawn or replaced)"
+        )
+    base = row.model_dump(
+        mode="json",
+        include={
+            "property_id",
+            "kind",
+            "tax_year",
+            "unit_id",
+            "loan_id",
+            "allocation_id",
+            "document_id",
+            "value",
+            "note",
+        },
+    )
+    create_tax_input(
+        ctx,
+        row.property_id,
+        TaxInputCreate.model_validate(base | {"supersedes_id": str(row.id), "withdrawn": True}),
+    )
+    moved = TaxInputCreate.model_validate(base | {"tax_year": year})
+    return create_tax_input(ctx, row.property_id, moved)
+
+
 # --- Checks ------------------------------------------------------------------------------
+
+
+def lock_property(conn: Connection, property_id: UUID) -> Row:
+    """The lock every tax input write of a property takes, for a caller that reads the
+    current rows before it writes (services.property_costs.record_proposed)."""
+    return _lock_property(conn, property_id)
 
 
 def _lock_property(conn: Connection, property_id: UUID) -> Row:

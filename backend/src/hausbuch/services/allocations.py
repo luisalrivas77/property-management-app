@@ -168,6 +168,9 @@ def record_set(
     if confirm:
         superseded = [a.id for a in previous if a.status is AllocationStatus.CONFIRMED]
         _confirmed(ctx, tx, written, superseded, auto=auto)
+    from . import transfers  # phase 6 D162: it reads the lines this module books
+
+    transfers.after_booking(ctx, tx.id, {a.category for a in written})
     return written
 
 

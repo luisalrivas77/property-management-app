@@ -24,6 +24,7 @@ from pydantic import Field, JsonValue, model_validator
 from .allocation import AllocationCategory, TransferLeg, TransferLegSource
 from .common import (
     _STRING_ONLY,
+    Confidence,
     Money,
     MutableRecord,
     NonNegativeMoney,
@@ -74,8 +75,8 @@ PriceEur = Annotated[
 Isin = Annotated[str, Field(pattern=r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$")]
 AssetSymbol = Annotated[str, Field(pattern=r"^[A-Z0-9]{1,12}$")]
 CurrencyCode = Annotated[str, Field(pattern=r"^[A-Z]{3}$")]
-# A month's savings rate (saved / income) to 4 places, as a string like every figure; signed
-# and not capped at 1: a month may save more than it earned, from earlier money.
+# A month's savings rate ((income - spending) / income, the design's Sparquote) to 4 places,
+# as a string like every figure; signed (a month that spends more than it earns is negative).
 SavingsRate = Annotated[
     Decimal,
     Field(max_digits=9, decimal_places=4),
@@ -366,6 +367,22 @@ class TransferCandidate(Schema):
         return self
 
 
+class TransferMatch(Schema):
+    """rules.matching.match_transfer's answer for one leg (D162; fixture transfers.yaml).
+    category: the transfer code the leg is booked as (by an own IBAN, or the depot or exchange
+    leg's own type), None when it is no transfer by either; link: the one counterpart, written
+    by the matcher; proposed_link: a leg without an own IBAN that fits one exchange or depot
+    EUR movement exactly, for review only; card: transfer.ambiguous (candidates listed) or,
+    past the window, transfer.unmatched_leg."""
+
+    category: AllocationCategory | None = None
+    confidence: Confidence | None = None
+    link: TransferCandidate | None = None
+    proposed_link: TransferCandidate | None = None
+    card: str | None = None
+    candidates: list[UUID] = Field(default_factory=list)
+
+
 class TransferLinkCreate(Schema):
     """POST /transfers (a link by hand): exactly one out and one in leg."""
 
@@ -387,6 +404,55 @@ class TransferLinkCreate(Schema):
 class TransferLink(TransferLinkCreate, Record):
     matched_by: TransferMatchedBy
     superseded_by: UUID | None = None
+
+
+class TransferLegView(Schema):
+    """One leg as the screens show it: its account by label, never an IBAN."""
+
+    source: TransferLegSource
+    id: UUID
+    account_id: UUID
+    account_label: str
+    booked_on: date
+    amount: Money
+    counterparty_name: str | None = None
+
+
+class TransferLinkView(Schema):
+    """GET /transfers?month=: a current link with both legs."""
+
+    id: UUID
+    kind: TransferLinkKind
+    matched_by: TransferMatchedBy
+    created_at: datetime
+    out_leg: TransferLegView
+    in_leg: TransferLegView
+
+
+class OpenTransferCode(StrEnum):
+    """GET /transfers/open: why a leg waits for a person (D162). proposed: a counterpart
+    fits but no link was written (a leg without an own IBAN, or one booked before the
+    other)."""
+
+    AMBIGUOUS = "transfer.ambiguous"
+    UNMATCHED_LEG = "transfer.unmatched_leg"
+    PROPOSED = "transfer.proposed"
+
+
+class OpenTransfer(Schema):
+    """One leg waiting for its counterpart, with the legs it may be linked to."""
+
+    code: OpenTransferCode
+    leg: TransferLegView
+    candidates: list[TransferLegView]
+    window_end: date
+
+
+class TransferUnlinkBody(Schema):
+    """POST /transfers/{id}/unlink: the link that replaces the wrong one (append-only, D162:
+    the old row names the new one in superseded_by)."""
+
+    replacement: TransferLinkCreate
 
 
 # --- Prices (D167, D174) --------------------------------------------------------------
@@ -565,4 +631,8 @@ class HouseholdCashflow(Schema):
     spending_by_group: dict[HouseholdGroup, Money]
     saved: Money  # links whose in-leg is a savings, depot or exchange account (D162)
     surplus: Money
-    savings_rate: SavingsRate | None = None  # saved / income; None without income
+    savings_rate: SavingsRate | None = None  # surplus / income; None without income
+    # Step 2: the income box's rows, and the month's private lines no confirmed answer
+    # explains yet (the „Ohne Kategorie“ card, linked to Zu prüfen).
+    income_by_category: dict[AllocationCategory, Money] = Field(default_factory=dict)
+    open_lines: int = Field(default=0, ge=0)

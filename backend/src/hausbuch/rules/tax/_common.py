@@ -7,7 +7,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from hausbuch.schemas.allocation import AllocationCategory
-from hausbuch.schemas.enums import PropertyKind
+from hausbuch.schemas.enums import AccountPurpose, PropertyKind
 from hausbuch.schemas.tax import (
     AfaFacts,
     AllocationFact,
@@ -82,10 +82,36 @@ def input_sources(row: TaxInputFact) -> list[SourceRef]:
 def paid_bills(allocations: Iterable[AllocationFact]) -> dict[UUID, list[AllocationFact]]:
     """The confirmed allocations per Beleg (phase 2 D135): a private_cost row whose document is
     one of these bills was paid from the rental account after all, so neither the draft nor the
-    15 % test counts it (D137)."""
+    15 % test counts it (D137). Phase 6 D161: a line of a private account is never one of
+    these (it proves the private_cost row instead, private_payments)."""
     out: dict[UUID, list[AllocationFact]] = {}
     for a in allocations:
-        if a.document_id is not None:
+        if a.document_id is not None and a.account_purpose is AccountPurpose.RENTAL:
+            out.setdefault(a.document_id, []).append(a)
+    return out
+
+
+def rental_only(facts: DraftFacts) -> DraftFacts:
+    """Phase 6 D161: the facts with the rental-purpose allocations only, which every rule
+    sums; a private account's rows are read by private_payments alone."""
+    rental = [a for a in facts.allocations if a.account_purpose is AccountPurpose.RENTAL]
+    if len(rental) == len(facts.allocations):
+        return facts
+    return facts.model_copy(update={"allocations": rental})
+
+
+def private_payments(allocations: Iterable[AllocationFact]) -> dict[UUID, list[AllocationFact]]:
+    """Phase 6 D161: per bill, the confirmed lines of a private account booked hh_property_cost
+    with that bill. Each is the bill's proof of payment (phase 3 D143 widened from the rental
+    account to any own account) and a source of the private_cost row's line, never a cost: the
+    Anlage V counts the bill through its private_cost row only."""
+    out: dict[UUID, list[AllocationFact]] = {}
+    for a in allocations:
+        if (
+            a.account_purpose is AccountPurpose.PRIVATE
+            and a.category is AllocationCategory.HH_PROPERTY_COST
+            and a.document_id is not None
+        ):
             out.setdefault(a.document_id, []).append(a)
     return out
 

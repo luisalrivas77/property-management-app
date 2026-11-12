@@ -3,12 +3,14 @@
 // Übersicht (§9.1): the household's properties at a glance (label, address, units, the
 // tenancy in force per unit, loans) and "Immobilie anlegen"; above them "Was noch fehlt", every
 // open to-do with its action (phase-3.md D136, components/overviewTodos.tsx), and the card
-// "Nächste Termine" (phase-5.md §11, mockup 01) from GET /reminders.
+// "Nächste Termine" (phase-5.md §11, mockup 01) from GET /reminders; between them the
+// household's Cashflow card for last month (phase 6 §13, mockup 07, components/cashflow.tsx).
 import Link from "next/link";
 
 import { api, ok } from "@/api/client";
 import type { Loan, Property, Tenancy, Tenant, Unit } from "@/api/schemas";
 import { useAuth } from "@/auth/AuthGate";
+import { CashflowCard } from "@/components/cashflow";
 import { currentTenancy, partyNames } from "@/components/entities";
 import { formatArea, formatDate, formatMoney, todayIso } from "@/components/format";
 import { PROPERTY_KIND } from "@/components/labels";
@@ -71,6 +73,7 @@ export default function OverviewPage() {
         </Link>
       </div>
       <OverviewTodos reminders={reminders.data ?? []} onRemindersChanged={reminders.reload} />
+      <CashflowCard />
       <Loading state={reminders}>{(list) => <NextDates reminders={list} onChanged={reminders.reload} />}</Loading>
       <Loading state={overview}>
         {({ cards, tenants }) =>

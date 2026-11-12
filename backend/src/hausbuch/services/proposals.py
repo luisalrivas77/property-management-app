@@ -493,7 +493,8 @@ def record_read_result(
     An invoice or Bescheid read: whether a bank line already pays it
     (services.matching.paid_from_rental_account, with `iban_key` the bill's IBAN is compared
     too) goes into the context, so no part of it is proposed as paid from another account
-    (phase 2 D135).
+    (phase 2 D135); so does whether a private account's line pays it
+    (paid_from_private_account, phase 6 D161), whose card then proposes those parts.
     """
     current = _lock(ctx.conn, proposal_id)
     if current.status not in _IN_FLIGHT:
@@ -558,15 +559,19 @@ def record_read_result(
             ),
         )
 
-    paid = built_kind in (
-        ExtractionKind.INVOICE,
-        ExtractionKind.BESCHEID,
-    ) and matching.paid_from_rental_account(ctx.conn, document_id, iban_key=iban_key)
+    bill = built_kind in (ExtractionKind.INVOICE, ExtractionKind.BESCHEID)
+    paid = bill and matching.paid_from_rental_account(ctx.conn, document_id, iban_key=iban_key)
+    paid_privately = (
+        bill
+        and not paid
+        and matching.paid_from_private_account(ctx.conn, document_id, iban_key=iban_key)
+    )
     context = prefill_context(
         ctx.conn,
         document_id,
         classification,
         paid_from_rental_account=paid,
+        paid_from_private_account=paid_privately,
         # D149: only a payment proof's reading looks for the bills it may pay
         today=ctx.now.astimezone(documents.LOCAL_TIME_ZONE).date()
         if built_kind is ExtractionKind.PAYMENT_PROOF
@@ -647,6 +652,7 @@ def prefill_context(
     classification: ClassifyOutput,
     *,
     paid_from_rental_account: bool = False,
+    paid_from_private_account: bool = False,
     today: date | None = None,
 ) -> PrefillContext:
     """The workspace's records as the plain facts build_proposal reads (§6.3). `today` (the
@@ -664,6 +670,7 @@ def prefill_context(
         document_id=document_id,
         classification=classification,
         paid_from_rental_account=paid_from_rental_account,
+        paid_from_private_account=paid_from_private_account,
         linked_tenancy_id=next(iter(linked_tenancies)) if len(linked_tenancies) == 1 else None,
         properties=[
             ExistingProperty.model_validate(
@@ -778,6 +785,7 @@ def _proof_candidates(conn: Connection, document_id: UUID, today: date) -> list[
             today=today,
             checklist=checklist,
             documents=docs,
+            private_proofs=True,
         )
         for year in years:
             bills.update(bills_without_proof(facts, year))
@@ -1016,6 +1024,8 @@ class _Apply:
         self.iban_key = iban_key
         self.records = {r.key: r for r in proposal.records}
         self.applied: dict[str, AppliedEntity] = {}
+        # Review F6: the document's current private_cost rows before this apply wrote any.
+        self._private_before: list[TaxInput] | None = None
 
     def apply(self, record: ProposalRecord) -> None:
         chosen = self.given.get(record.key)
@@ -1405,36 +1415,14 @@ class _Apply:
             raise ValueError(
                 f"record {record.key!r}: its bill is not the one this proof is linked to"
             )
-        if row.tax_year == year:
-            return row.id
-        current = tax_inputs.find_current(
-            self.ctx.conn, row.property_id, row.kind, tax_year=row.tax_year
-        )
-        if row.id not in {r.id for r in current}:
+        try:
+            return tax_inputs.move_private_cost_year(self.ctx, row.id, year).id
+        except RuleViolationError as exc:
+            if exc.codes != (tax_inputs.TAX_INPUT_NOT_CURRENT,):
+                raise
             raise ValueError(
                 f"record {record.key!r}: tax input {row.id} was changed since the proposal"
-            )
-        base = row.model_dump(
-            mode="json",
-            include={
-                "property_id",
-                "kind",
-                "tax_year",
-                "unit_id",
-                "loan_id",
-                "allocation_id",
-                "document_id",
-                "value",
-                "note",
-            },
-        )
-        tax_inputs.create_tax_input(
-            self.ctx,
-            row.property_id,
-            TaxInputCreate.model_validate(base | {"supersedes_id": str(row.id), "withdrawn": True}),
-        )
-        moved = TaxInputCreate.model_validate(base | {"tax_year": year})
-        return tax_inputs.create_tax_input(self.ctx, row.property_id, moved).id
+            ) from exc
 
     def _tax_input(self, record: ProposalRecord, values: dict[str, Any]) -> UUID:
         """A certificate's figure (phase 3 §9) through services/tax_inputs, with this document
@@ -1485,6 +1473,10 @@ class _Apply:
                 "document_id": str(self.document_id),
             },
         )
+        if kind is TaxInputKind.PRIVATE_COST:
+            elsewhere = self._recorded_in_another_year(data)
+            if elsewhere is not None:
+                return elsewhere.id
         current = tax_inputs.find_current(
             self.ctx.conn, property_id, kind, tax_year=data.tax_year, loan_id=data.loan_id
         )
@@ -1496,6 +1488,20 @@ class _Apply:
                 return row.id
             data = data.model_copy(update={"supersedes_id": row.id})
         return tax_inputs.create_tax_input(self.ctx, property_id, data).id
+
+    def _recorded_in_another_year(self, data: TaxInputCreate) -> TaxInput | None:
+        """Review F6: a current private_cost row of this bill in another year than the record's,
+        recorded before this apply: by the card of the private line that paid it (phase 6
+        D161 path 2, the year paid) or moved to the year paid (D143). The bill's costs are then
+        recorded already, and this record writes nothing (its row is that one), so no bill
+        counts twice; a row of the same year is replaced as before (_replaced_private_cost).
+        Rows this apply wrote (several parts of one bill) never count."""
+        if self._private_before is None:
+            self._private_before = tax_inputs.current_of_document(
+                self.ctx.conn, self.document_id, TaxInputKind.PRIVATE_COST
+            )
+        other = [r for r in self._private_before if r.tax_year != data.tax_year]
+        return other[0] if other else None
 
     def _replaced_private_cost(
         self, record: ProposalRecord, data: TaxInputCreate, current: list[TaxInput]
