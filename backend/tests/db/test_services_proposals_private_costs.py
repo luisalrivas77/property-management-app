@@ -23,12 +23,13 @@ from hausbuch.schemas.allocation import (
     AllocationMethod,
     AllocationSet,
 )
-from hausbuch.schemas.enums import DocumentSubtype, DocumentType
+from hausbuch.schemas.api import InboxItemKind
+from hausbuch.schemas.enums import DocumentSubtype, DocumentType, LinkTarget
 from hausbuch.schemas.events import EventType
 from hausbuch.schemas.tax import TaxInputKind
-from hausbuch.services import allocations, matching, proposals
+from hausbuch.services import allocations, documents, matching, property_costs, proposals, review
 from hausbuch.services.documents import get_document
-from hausbuch.services.tax_inputs import list_tax_inputs
+from hausbuch.services.tax_inputs import current_of_document, list_tax_inputs
 
 pytestmark = pytest.mark.db
 
@@ -373,3 +374,113 @@ def test_an_allocation_carrying_the_document_pays_it(world):
     assert not _paid(world, doc)
     world.cmd(allocations.record_set, answer, confirm=False, auto=False)
     assert _paid(world, doc)
+
+
+# --- Phase 6 D161: a bill a private account's line pays (review F4 (ii), F6) ------------------
+
+
+def _private_line(world: World, booked_on: date, doc=None):
+    """A line of a private account of the household paying the repair bill, booked
+    hh_property_cost on the flat with the bill as its Beleg when `doc` is given (confirmed)."""
+    from db.test_services_private_matching import Private
+
+    tx = Private(world).line(booked_on, "-297.50", iban=FIRM_IBAN, purpose="R-2026-0815")
+    if doc is not None:
+        _on_bill(world, tx, doc)
+    return tx
+
+
+def _on_bill(world: World, tx, doc) -> None:
+    world.cmd(
+        allocations.record_set,
+        AllocationSet(
+            transaction_id=tx,
+            allocations=[
+                AllocationDraft(
+                    amount=Decimal("-297.50"),
+                    category=AllocationCategory.HH_PROPERTY_COST,
+                    property_id=world.property_id,
+                    document_id=doc,
+                )
+            ],
+            method=AllocationMethod.USER,
+            confidence=Decimal("1.000"),
+        ),
+        confirm=True,
+        auto=False,
+    )
+
+
+def test_a_bill_a_private_line_pays_proposes_no_private_cost_and_says_where(
+    world, run, read, job, blob_store, enqueued
+):
+    """Review F4 (ii): the line is a private account's, so the reading proposes no
+    private_cost (the line's card in Zu prüfen does) and never says „vom Mietkonto“."""
+    ws = world.ws
+    _private_line(world, date(2026, 6, 14))  # a document hit by its reference
+    doc, ready, _ = _read_ready(run, job, ws, blob_store, enqueued, INVOICE, _repair(), b"%PDF q")
+    assert not world.query(matching.paid_from_rental_account, doc.id, iban_key=TEST_IBAN_KEY)
+    assert world.query(matching.paid_from_private_account, doc.id, iban_key=TEST_IBAN_KEY)
+    assert not [r.key for r in ready.records if r.key.startswith("tax_input:")]
+    typing = next(r for r in ready.records if r.key == "typing")
+    assert not any("Mietkonto" in n for n in typing.notes)
+    assert any("privaten Konto" in n and "Zu prüfen" in n for n in typing.notes)
+
+
+def _linked_bill(world, run, job, blob_store, enqueued, data: bytes):
+    """The repair bill read before any line pays it (its D135 private_cost record offered,
+    not applied), linked to the flat as its reading would link it."""
+    doc, ready, _ = _read_ready(run, job, world.ws, blob_store, enqueued, INVOICE, _repair(), data)
+    assert "tax_input:private_cost:repairs" in {r.key for r in ready.records}
+    world.cmd(documents.link_document, doc.id, LinkTarget.PROPERTY, world.property_id)
+    return doc, ready
+
+
+def _current_rows(world: World, doc_id):
+    return world.query(current_of_document, doc_id, TaxInputKind.PRIVATE_COST)
+
+
+@pytest.mark.parametrize("paid_on", [date(2026, 6, 15), date(2027, 1, 5)])
+def test_the_card_first_then_the_reading_leaves_one_set_of_rows(
+    world, run, read, job, blob_store, enqueued, paid_on
+):
+    """Review F6: the private line's card records the bill's rows (the year paid); the
+    reading's proposal, built before the line existed, is applied afterwards: one set of rows
+    (the same year: the reading's row replaces the card's; another year: nothing written)."""
+    doc, ready = _linked_bill(
+        world, run, job, blob_store, enqueued, b"%PDF f6a" + str(paid_on.year).encode()
+    )
+    tx = _private_line(world, paid_on, doc.id)
+    [card] = [
+        i
+        for i in world.query(review.inbox)
+        if i.kind is InboxItemKind.PROPERTY_COST_ROW and i.transaction_id == tx
+    ]
+    [recorded] = world.cmd(property_costs.record_proposed, tx)
+    assert recorded.tax_year == paid_on.year
+    _apply(run, world.ws, ready)
+    [row] = _current_rows(world, doc.id)
+    assert (row.tax_year, row.value.category, row.value.amount) == (
+        paid_on.year,
+        AllocationCategory.REPAIRS,
+        Decimal("297.50"),
+    )
+
+
+@pytest.mark.parametrize("paid_on", [date(2026, 6, 15), date(2027, 1, 5)])
+def test_the_reading_first_then_the_card_leaves_one_set_of_rows(
+    world, run, read, job, blob_store, enqueued, paid_on
+):
+    """Review F6, the other order: the reading's row exists, so the card records nothing (its
+    button returns the bill's rows); a row of another year than paid gets the year card."""
+    doc, ready = _linked_bill(
+        world, run, job, blob_store, enqueued, b"%PDF f6b" + str(paid_on.year).encode()
+    )
+    _apply(run, world.ws, ready)
+    [before] = _current_rows(world, doc.id)
+    tx = _private_line(world, paid_on, doc.id)
+    assert [r.id for r in world.cmd(property_costs.record_proposed, tx)] == [before.id]
+    assert [r.id for r in _current_rows(world, doc.id)] == [before.id]
+    kinds = {i.kind for i in world.query(review.inbox) if i.transaction_id == tx}
+    assert InboxItemKind.PROPERTY_COST_ROW not in kinds
+    assert (InboxItemKind.PROPERTY_COST_YEAR in kinds) is (paid_on.year != 2026)

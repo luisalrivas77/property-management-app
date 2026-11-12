@@ -315,6 +315,11 @@ class PrefillContext(Schema):
     # services.matching.paid_from_rental_account), so no cost paid from another account is
     # proposed for it.
     paid_from_rental_account: bool = False
+    # Phase 6 D161 (review F4): a private account's line pays this bill
+    # (services.matching.paid_from_private_account); its parts paid from another account are
+    # proposed by the line's card in Zu prüfen (path 2), so the reading proposes none either
+    # and says where they are.
+    paid_from_private_account: bool = False
     # Phase 2 D153: the one tenancy the document is linked to (a lease confirmed before);
     # a re-read lease patches it, whatever unit label or start date the reading states.
     linked_tenancy_id: UUID | None = None

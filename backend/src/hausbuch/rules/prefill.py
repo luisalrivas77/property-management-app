@@ -22,7 +22,9 @@ acquisition_cost part becomes the Nebenkosten row (create, or patch the row whos
 is, or a row of that kind without one); every deductible part (categories.TAX_TREATMENT)
 becomes a tax_input:private_cost:<category> record {tax_year, value.cost_class,
 value.category, value.label, value.amount} unless context.paid_from_rental_account (a
-rental-account line pays the bill: the bank line's split books it). A whole financing bill
+rental-account line pays the bill: the bank line's split books it) or
+context.paid_from_private_account (a private account's line pays it: its D161 card proposes
+those rows, phase 6). A whole financing bill
 without readable lines proposes one loan_fees record of its total. A part of an undecided
 category (renovation, other_expense) is named in a note, never proposed. The catalogue's
 invoices (utility bill, §35a, work expenses) are not sorted.
@@ -209,7 +211,8 @@ _LOAN_PART_LINK_NOTE = (
     "nichts zu tun."
 )
 # A whole financing bill (D35, D138): what it is and where it counts. One text for both ways it
-# can have been paid; a rental-account payment adds _PAID_FROM_ACCOUNT_NOTE.
+# can have been paid; a rental-account payment adds _PAID_FROM_ACCOUNT_NOTE, a private
+# account's _PAID_FROM_PRIVATE_NOTE.
 _FINANCING_NOTE = (
     "Diese Rechnung gehört zur Finanzierung (Grundschuld, Hypothek oder Darlehen). Solche "
     "Kosten sind Geldbeschaffungskosten: Sie zählen im Jahr der Zahlung als Werbungskosten und "
@@ -374,6 +377,13 @@ _PAID_FROM_ACCOUNT_NOTE = (
     "Eine Zahlung dieser Rechnung vom Mietkonto wurde gefunden; ihre Aufteilung wird beim "
     "Abgleich des Kontoauszugs vorgeschlagen. Darum kein Eintrag „von einem anderen Konto "
     "bezahlt“."
+)
+# Phase 6 D161 (review F4): the payment is a private account's line, whose card proposes the
+# privately paid costs.
+_PAID_FROM_PRIVATE_NOTE = (
+    "Eine Zahlung dieser Rechnung von einem privaten Konto wurde gefunden; die privat "
+    "bezahlten Kosten werden unter „Zu prüfen“ bei dieser Zahlung vorgeschlagen. Darum hier "
+    "kein Eintrag „von einem anderen Konto bezahlt“."
 )
 
 
@@ -834,6 +844,8 @@ class _Builder:
             notes.append(_UNDECIDED_NOTE.format(parts=_parts_text(undecided)))
         if self.ctx.paid_from_rental_account and self._private_parts():
             notes.append(_PAID_FROM_ACCOUNT_NOTE)
+        elif self.ctx.paid_from_private_account and self._private_parts():
+            notes.append(_PAID_FROM_PRIVATE_NOTE)
         self.add("typing", "typing", "create", fields, notes=notes)
 
     # -- payment proof (phase 3 D143)
@@ -1243,9 +1255,10 @@ class _Builder:
 
     def _private_costs(self) -> None:
         """D135: a tax_input:private_cost:<category> record per deductible part, unless a
-        rental-account line pays the bill. tax_year: the bill's year (due_on, else its
-        date, D36); label: the title, else the sender."""
-        if self.ctx.paid_from_rental_account:
+        rental-account line pays the bill, or a private account's line whose card proposes
+        them (phase 6 D161). tax_year: the bill's year (due_on, else its date, D36); label:
+        the title, else the sender."""
+        if self.ctx.paid_from_rental_account or self.ctx.paid_from_private_account:
             return
         total = self.ev("amount_total")
         tax_year = self._invoice_tax_year() or ExtractedValue.missing()

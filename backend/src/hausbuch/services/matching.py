@@ -574,18 +574,39 @@ def _extracted(extraction: DocumentExtraction, name: str) -> ExtractedValue:
 def paid_from_rental_account(
     conn: Connection, document_id: UUID, *, iban_key: bytes | None = None
 ) -> bool:
-    """Phase 2 D135: a bank line of the read accounts pays this bill, so none of it is a cost
-    paid from another account. True when an allocation (proposed or confirmed) already
-    carries the document as its Beleg, or when a stored transaction is a document hit of it
-    (rules.matching.document_hit: the amount within 0.01, the booking within 10 days of the
-    document date, and the bill's IBAN or its reference in the purpose; the IBAN is compared
-    only when the key is given). A document the matcher cannot read (no amount or date)
-    finds no line."""
+    """Phase 2 D135: a bank line of a rental account pays this bill, so none of it is a cost
+    paid from another account. True when an allocation (proposed or confirmed) of a rental
+    account's line already carries the document as its Beleg, or when a stored rental line
+    is a document hit of it (rules.matching.document_hit: the amount within 0.01, the booking
+    within 10 days of the document date, and the bill's IBAN or its reference in the purpose;
+    the IBAN is compared only when the key is given). A document the matcher cannot read (no
+    amount or date) finds no line. A private account's line is paid_from_private_account's
+    (phase 6 review F4)."""
+    return _paid_from(conn, document_id, AccountPurpose.RENTAL, iban_key)
+
+
+def paid_from_private_account(
+    conn: Connection, document_id: UUID, *, iban_key: bytes | None = None
+) -> bool:
+    """Phase 6 D161 (review F4): the same test over the private accounts' lines. Such a bill
+    is still no D135 private cost of the reading: D161's path 2 card proposes its rows from
+    the line (services.property_costs), so they are never proposed twice."""
+    return _paid_from(conn, document_id, AccountPurpose.PRIVATE, iban_key)
+
+
+def _paid_from(
+    conn: Connection, document_id: UUID, purpose: AccountPurpose, iban_key: bytes | None
+) -> bool:
+    t, acc = transaction_table.c, account_table.c
+    of_purpose = (
+        select(t.id).join(account_table, acc.id == t.account_id).where(acc.purpose == purpose.value)
+    )
     carried = conn.execute(
         select(
             exists().where(
                 allocation_table.c.document_id == document_id,
                 allocation_table.c.status != AllocationStatus.SUPERSEDED.value,
+                allocation_table.c.transaction_id.in_(of_purpose),
             )
         )
     ).scalar_one()
@@ -599,13 +620,15 @@ def paid_from_rental_account(
         return False
     if iban_key is None:
         facts = facts.model_copy(update={"iban_hmac": None})
-    t = transaction_table.c
     window = timedelta(days=matchers.DOCUMENT_WINDOW_DAYS)
     for payment in facts.payments:
         low = payment.amount - matchers.DOCUMENT_AMOUNT_TOLERANCE
         high = payment.amount + matchers.DOCUMENT_AMOUNT_TOLERANCE
         rows = conn.execute(
-            select(transaction_table).where(
+            select(transaction_table)
+            .join(account_table, acc.id == t.account_id)
+            .where(
+                acc.purpose == purpose.value,
                 func.abs(t.amount).between(low, high),
                 t.booking_date.between(payment.due_on - window, payment.due_on + window),
             )
