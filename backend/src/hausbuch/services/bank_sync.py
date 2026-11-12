@@ -414,9 +414,21 @@ def queue_scheduled_sync(ctx: CommandContext, account_id: UUID) -> ScheduledStar
 
 
 def _latest_finished(conn: Connection, account_id: UUID) -> Row | None:
+    """The run the schedule decides on: the latest finished one that succeeded or failed for
+    a reason a person must see. A bank.unreachable failure is passed over, so an outage after
+    a refusal (a wrong PIN, pressed again while the bank was down) never hides the refusal
+    and lets the next morning try the PIN unattended (PR #200 review, F1). The failed card
+    still shows the latest run, unreachable included (bank_sync_items)."""
     return conn.execute(
         select(sync_table)
-        .where(sync_table.c.account_id == account_id, sync_table.c.finished_at.is_not(None))
+        .where(
+            sync_table.c.account_id == account_id,
+            sync_table.c.finished_at.is_not(None),
+            ~(
+                (sync_table.c.status == _S.FAILED.value)
+                & (sync_table.c.error_code == E.BANK_UNREACHABLE)
+            ),
+        )
         .order_by(sync_table.c.finished_at.desc(), sync_table.c.id.desc())
         .limit(1)
     ).one_or_none()

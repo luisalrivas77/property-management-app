@@ -141,10 +141,14 @@ def schedule_skip(
       request and then none until a person acts: every new dialog that meets the demand
       would send another one. It is closed only by that manual start (or its 35-day
       bank.sync_stale reminder says so).
-    - Any other live row is a run in progress (a dead job's row is retried by the worker's
-      stalled-job sweep, jobs/worker.py, so it does not stay live).
+    - Any other live row is a run in progress. The worker's stalled-job sweep
+      (jobs/worker.py) retries only `doing` jobs whose worker is gone; a job that failed
+      before its first write leaves the row live until a person restarts it from the
+      account card (the card offers „Erneut abrufen“ once the row is stale).
     - A failed latest run waits for a person, except bank.unreachable; the next good run,
-      manual or scheduled, lets the schedule go on."""
+      manual or scheduled, lets the schedule go on. The service passes over unreachable
+      failures when it picks the latest run (services.bank_sync._latest_finished), so an
+      outage after a refusal still counts as the refusal."""
     if live_status is SyncStatus.NEEDS_APPROVAL:
         return SKIP_APPROVAL_NEEDED
     if live_status is not None:

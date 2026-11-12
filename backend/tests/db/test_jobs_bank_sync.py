@@ -780,6 +780,37 @@ def test_an_unreachable_bank_is_tried_again_the_next_morning(bank):
     assert dict(bank.schedule().outcomes) == {"queued": 1}
 
 
+def _unreachable(bank, at):
+    """A manual start whose bank is down on its last attempt: failed bank.unreachable."""
+    sync = bank.start(now=at)
+    script = _good(fail_at={"open": FinTSConnectionError("down")})
+    outcome = bank.job(
+        sync.id, script, attempt=job.MAX_UNREACHABLE_RETRIES, at=at + timedelta(seconds=5)
+    )
+    assert outcome == "failed" and bank.sync(sync.id).error_code == E.BANK_UNREACHABLE
+
+
+def test_an_outage_after_a_refusal_still_waits_for_a_person(bank):
+    # A wrong PIN, pressed again while the bank was down: the outage must not hide the
+    # refusal, or the next morning would try the PIN unattended (PR #200 review, F1).
+    bank.auto_sync()
+    refused = bank.start()
+    assert bank.job(refused.id, _good(refuse_at={"accounts": "9942"})) == "failed"
+    _unreachable(bank, T1 + timedelta(minutes=1))
+    assert dict(bank.schedule().outcomes) == {"failed": 1}
+    assert len(bank.rows(sync_table)) == 2
+
+
+def test_an_outage_after_a_good_run_is_tried_again_the_next_morning(bank):
+    bank.auto_sync()
+    refused = bank.start()
+    assert bank.job(refused.id, _good(refuse_at={"accounts": "9942"})) == "failed"
+    fixed = bank.start(now=T1 + timedelta(minutes=1))
+    assert bank.job(fixed.id, _good(), at=T1 + timedelta(minutes=2)) == "done"
+    _unreachable(bank, T1 + timedelta(minutes=3))
+    assert dict(bank.schedule().outcomes) == {"queued": 1}
+
+
 def test_a_switched_off_connection_is_left_alone(bank):
     bank.auto_sync()
     bank.auto_sync(on=False)
