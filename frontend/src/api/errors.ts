@@ -151,7 +151,7 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "bank.rate_limited": "Höchstens vier Abrufe pro Stunde von Hand. Bitte etwas später noch einmal.",
   "bank.sync_running": "Für dieses Konto läuft schon ein Abruf.",
   "bank.window_invalid":
-    "Der Abruf hätte nach heute begonnen: der Anfangssaldo des Kontos liegt heute oder später. Den Stichtag im Konto prüfen.",
+    "Der Abruf hätte nach heute begonnen. Entweder liegt der Anfangssaldo des Kontos heute oder später: dann den Stichtag im Konto prüfen. Oder die hochgeladenen Kontoauszüge reichen schon bis heute: dann morgen erneut abrufen.",
   "bank.url_not_https": "Die FinTS-Adresse muss mit https:// beginnen.",
   "bank.tan_not_decoupled":
     "Die Bank bietet für diesen Zugang keine Freigabe per App (pushTAN) an. Im Online-Banking S-pushTAN einrichten.",
