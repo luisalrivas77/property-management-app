@@ -155,7 +155,7 @@ def test_the_haushalt_month(client_a, client_b, world, private):
         "spending_by_group": {"groceries": "450.00"},
         "saved": "500.00",
         "surplus": "2750.00",
-        "savings_rate": "0.1563",
+        "savings_rate": "0.8594",
         "income_by_category": {"hh_salary": "3200.00"},
         "open_lines": 1,
     }

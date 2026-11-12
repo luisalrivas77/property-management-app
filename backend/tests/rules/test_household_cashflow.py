@@ -36,7 +36,7 @@ def test_income_spending_saved_and_the_rate():
     }
     assert got.surplus == D("3200.00") - D("1632.40")
     assert got.saved == D("500.00")
-    assert got.savings_rate == D("0.1563")
+    assert got.savings_rate == D("0.4899")  # surplus 1567.60 / income 3200.00
     assert got.open_lines == 2
 
 

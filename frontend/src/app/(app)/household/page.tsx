@@ -116,7 +116,7 @@ function HouseholdMonth({ year }: { year: Year }) {
           <p className="planning-kpi-label">Sparquote</p>
           <p className="planning-kpi-value planning-good">{month.savings_rate != null ? formatPercent(month.savings_rate) : "–"}</p>
           <p className="planning-kpi-sub">
-            Ø 12 Monate {formatPercent(averageRate(months))} · auf eigene Spar-, Depot- und Börsenkonten
+            Ø 12 Monate {formatPercent(averageRate(months))} · Überschuss ÷ Einnahmen
           </p>
         </div>
         <div className={month.open_lines > 0 ? "planning-kpi household-open" : "planning-kpi"} role="group" aria-label="Ohne Kategorie">

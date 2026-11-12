@@ -69,14 +69,15 @@ export function averageMoney(values: string[]): string {
   return fromCents(sum < 0n ? -mean : mean);
 }
 
-/** saved ÷ income over several months as a fraction string with four places ("0.1563"), as the
+/** surplus ÷ income (the Sparquote) over several months as a fraction string with four places ("0.1563"), as the
  * server's savings_rate; null without income. */
 export function averageRate(months: HouseholdCashflow[]): string | null {
   const income = months.reduce((sum, m) => sum + toCents(m.income), 0n);
-  const saved = months.reduce((sum, m) => sum + toCents(m.saved), 0n);
-  if (income <= 0n || saved < 0n) return null;
-  const scaled = (2n * saved * 10000n + income) / (2n * income);
-  return `${scaled / 10000n}.${String(scaled % 10000n).padStart(4, "0")}`;
+  const surplus = months.reduce((sum, m) => sum + toCents(m.surplus), 0n);
+  if (income <= 0n) return null;
+  const size = surplus < 0n ? -surplus : surplus;
+  const scaled = (2n * size * 10000n + income) / (2n * income); // half up, on the magnitude
+  return `${surplus < 0n && scaled > 0n ? "-" : ""}${scaled / 10000n}.${String(scaled % 10000n).padStart(4, "0")}`;
 }
 
 /** What the month's spending groups add up to (income less surplus, as the server computed). */

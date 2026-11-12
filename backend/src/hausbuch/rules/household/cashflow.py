@@ -6,7 +6,9 @@ spending or tax code's amount, turned positive, under its taxonomy group (a refu
 group); a transfer between own accounts or a depot trade is neither (D162). bank_fees and a
 confirmed uncategorized line, the two codes both purposes share, count under „Sonstiges“.
 saved comes from the transfer links (services.transfers.saved_in), surplus is income less
-spending, and the savings rate is saved / income, None for a month without income."""
+spending, and the savings rate is surplus / income, (income - spending) / income as the
+household design defines it (docs/design/household-finances.md, Sparquote; mockup 10), None for
+a month without income."""
 
 from collections.abc import Iterable
 from decimal import ROUND_HALF_UP, Decimal
@@ -42,7 +44,7 @@ def month_cashflow(
         elif code.relevance in _SPENT:
             spending[code.group] = spending.get(code.group, Decimal("0.00")) - amount
     spent = sum(spending.values(), Decimal("0.00"))
-    rate = (saved / income).quantize(_RATE, ROUND_HALF_UP) if income > 0 else None
+    rate = ((income - spent) / income).quantize(_RATE, ROUND_HALF_UP) if income > 0 else None
     return HouseholdCashflow(
         month=month,
         income=income,

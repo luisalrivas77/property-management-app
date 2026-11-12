@@ -74,8 +74,8 @@ PriceEur = Annotated[
 Isin = Annotated[str, Field(pattern=r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$")]
 AssetSymbol = Annotated[str, Field(pattern=r"^[A-Z0-9]{1,12}$")]
 CurrencyCode = Annotated[str, Field(pattern=r"^[A-Z]{3}$")]
-# A month's savings rate (saved / income) to 4 places, as a string like every figure; signed
-# and not capped at 1: a month may save more than it earned, from earlier money.
+# A month's savings rate ((income - spending) / income, the design's Sparquote) to 4 places,
+# as a string like every figure; signed (a month that spends more than it earns is negative).
 SavingsRate = Annotated[
     Decimal,
     Field(max_digits=9, decimal_places=4),
@@ -630,7 +630,7 @@ class HouseholdCashflow(Schema):
     spending_by_group: dict[HouseholdGroup, Money]
     saved: Money  # links whose in-leg is a savings, depot or exchange account (D162)
     surplus: Money
-    savings_rate: SavingsRate | None = None  # saved / income; None without income
+    savings_rate: SavingsRate | None = None  # surplus / income; None without income
     # Step 2: the income box's rows, and the month's private lines no confirmed answer
     # explains yet (the „Ohne Kategorie“ card, linked to Zu prüfen).
     income_by_category: dict[AllocationCategory, Money] = Field(default_factory=dict)
