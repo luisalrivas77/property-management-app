@@ -219,7 +219,7 @@ class StatementAnswer:
     exception chain as class names (D148). `parts` is never logged."""
 
     answers: tuple[BankAnswer, ...]
-    parts: tuple[bytes, ...] = ()
+    parts: tuple[bytes, ...] = field(default=(), repr=False)
     touchdown: str | None = field(default=None, repr=False)
     failure: str | None = None
 

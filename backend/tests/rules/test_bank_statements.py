@@ -129,3 +129,13 @@ def test_title_and_filename():
     key = StatementKey(year=2026, number=7)
     assert rules.statement_title(key) == "Kontoauszug 7/2026"
     assert rules.statement_filename(key) == "Kontoauszug-2026-7.pdf"
+
+
+def test_parts_encoded_one_by_one_are_decoded_one_by_one():
+    """A bank that base64-encodes each 3040 part on its own puts padding inside the joined
+    text; the file is then decoded part by part (review of PR #212)."""
+    parts = [base64.b64encode(PDF[:10]), base64.b64encode(PDF[10:])]
+    assert b"=" in parts[0]
+    reading = rules.read_answer(OK, parts)
+    assert reading.outcome is StatementOutcome.STATEMENT
+    assert reading.pdf == PDF

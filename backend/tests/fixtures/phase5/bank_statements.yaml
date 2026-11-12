@@ -41,8 +41,10 @@
 # Step 2b readings (each listed in the step 2b report):
 # - D154 (2) says "each part's bytes are decoded and joined"; this rule joins first and
 #   decodes once, which gives the same file whenever a part ends on a 4-character boundary
-#   and does not break when a bank cuts the base64 text elsewhere. The continuation case
-#   below cuts on a boundary, so both readings agree on it.
+#   and does not break when a bank cuts the base64 text elsewhere; when the joined text does
+#   not decode (each part encoded on its own, with padding), each part is decoded and the
+#   bytes joined (review of PR #212). The continuation case below cuts on a boundary, so
+#   both readings agree on it.
 # - The DK text says HIEKP v1 carries base64; a bank that sends the PDF raw is accepted
 #   rather than refused, since the file is checked for %PDF- and %%EOF either way.
 # - An invalid file ends its year's walk like a refusal, so the walk never skips a number.
@@ -140,7 +142,8 @@ plan_cases:
 
   - id: cap_spans_both_years
     description: >-
-      January with fourteen 2026 statements still to fetch: the cap leaves one request for 2027
+      January with fourteen 2026 statements still to fetch: the cap is spent on 2026 (the 15th
+      request is the refusal of 2026/15); 2027 waits for the next run
     today: 2027-01-15
     first_year: 2026
     stored: []

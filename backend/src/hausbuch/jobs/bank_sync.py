@@ -3,7 +3,9 @@
 Plain synchronous code over the engine (jobs/tasks.py wraps it), tested by calling
 run_bank_sync with a fake client (tests/fints_fake.py). No transaction is open while the bank
 is talked to; each write is its own short transaction in services.bank_sync, and each checks
-the run's token, so a person's restart in between makes this job stop without writing:
+the run's token, so a person's restart in between makes this job stop without writing (one
+exception: a statement fetched while a restart happens is still stored, attributed to the run
+that fetched it; the unique key keeps it once and the restarted run skips its number):
 
 1. begin_run: take the row (queued or needs_approval → running), verify the client state.
 2. The network: open the dialog; a pushTAN demand → needs_approval, and then for a scheduled

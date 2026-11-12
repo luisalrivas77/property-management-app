@@ -1131,6 +1131,7 @@ def test_a_statement_fetch_is_traced_by_number_year_and_size_only(debug_log, tou
     )
     assert PDF_B64.decode()[:16] not in debug_log.getvalue()
     assert TOUCHDOWN not in repr(answer)
+    assert PDF_B64.decode()[:16] not in repr(answer)
 
 
 def _statement_parameters(number_allowed: bool = True) -> F.HIEKPS1:

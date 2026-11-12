@@ -90,8 +90,10 @@ def next_probe(
 
 
 def _file(parts: Sequence[bytes]) -> tuple[bytes | None, str | None]:
-    """The parts joined and decoded once (D154 (2)); raw bytes that already start with %PDF-
-    are taken as they are. Returns the file or why it is refused."""
+    """The parts joined and decoded once (D154 (2)); when that fails (a bank that encodes each
+    3040 part on its own, with padding inside the joined text), each part decoded and the bytes
+    joined (review of PR #212). Raw bytes that already start with %PDF- are taken as they are.
+    Returns the file or why it is refused."""
     joined = b"".join(parts)
     if len(joined) > _MAX_ENCODED_BYTES:
         return None, TOO_LARGE
@@ -101,7 +103,12 @@ def _file(parts: Sequence[bytes]) -> tuple[bytes | None, str | None]:
         try:
             data = base64.b64decode(b"".join(joined.split()), validate=True)
         except (binascii.Error, ValueError):
-            return None, NOT_BASE64
+            try:
+                data = b"".join(
+                    base64.b64decode(b"".join(part.split()), validate=True) for part in parts
+                )
+            except (binascii.Error, ValueError):
+                return None, NOT_BASE64
     if not data.startswith(b"%PDF-"):
         return None, NOT_PDF
     if len(data) > MAX_STATEMENT_BYTES:
