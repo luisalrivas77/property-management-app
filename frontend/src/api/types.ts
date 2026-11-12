@@ -2851,6 +2851,8 @@ export interface components {
             invoice_net?: string | null;
             /** Counterparty Iban Masked */
             counterparty_iban_masked?: string | null;
+            /** @default rental */
+            account_purpose: components["schemas"]["AccountPurpose"];
         };
         /**
          * AllocationMethod

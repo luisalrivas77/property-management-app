@@ -35,6 +35,23 @@
 #
 # rejected: rule bodies that must fail MatchingRuleCreate validation because they try to store
 # an amount (the "rule stores no amount" schema test; checked by tests/test_fixtures_valid.py).
+#
+# Phase 6 D160 (docs/phases/phase-6.md §5.4, §14), added by the phase 6 spec PR:
+# - A name-pattern rule (counterparty_name_pattern from rules.matching.merchant_pattern, see
+#   phase6/merchant_pattern.yaml) hits a private account's card line, which carries no IBAN;
+#   apply_rule is unchanged, so these cases run today.
+# - inferred: infer_rule(transaction, confirmed, context) on a private account. A single-category
+#   answer of an hh_* code with a threshold, for a line without an IBAN, becomes
+#   RuleMatcher(counterparty_name_pattern=merchant_pattern(name), amount_sign) with the answer's
+#   category and recurring. No rule: on the rental account (unchanged), for a split, a
+#   tax-relevant code, a transfer code. Refused: rule.too_broad when the same name was confirmed
+#   under two categories (PayPal); rule.conflicts when the pattern hits a line confirmed under
+#   another category. Pending phase 6 step 1.
+#   Step 0 reading (D160 does not say how the two differ): history is the account's confirmed
+#   lines the pattern hits. too_broad when those lines carry two or more categories among
+#   themselves (the name alone does not tell the kind: the card asks for a purpose pattern);
+#   conflicts when they carry one category other than the answer's (the card names the line).
+#   too_broad is checked first.
 
 ids:
   workspace: &W 0000000a-0000-4000-8000-000000000001
@@ -104,6 +121,17 @@ rules:
     split_method: as_last_split
     categories: [hausgeld_ruecklage, hausgeld_umlagefaehig]
     recurring: true
+
+  # Phase 6 D160: a name rule learned on a private account (no IBAN, no property)
+  rewe_name:
+    id: 0000002b-0000-4000-8000-000000000060
+    workspace_id: *W
+    created_at: 2026-02-01T10:00:00Z
+    updated_at: 2026-02-01T10:00:00Z
+    matcher: {counterparty_name_pattern: "^REWE SAGT DANKE", amount_sign: debit}
+    split_method: single_category
+    category: hh_groceries
+    recurring: false
 
 cases:
   - id: single_category
@@ -222,6 +250,60 @@ cases:
       id: 0000002a-0000-4000-8000-000000000107
     expect: null
 
+  # --- Phase 6 D160 ------------------------------------------------------------------------
+
+  - id: name_rule_hits_a_card_line
+    description: a card line on a private account, no IBAN, booked by its name rule
+    rule: rewe_name
+    transaction:
+      id: 0000002a-0000-4000-8000-000000000160
+      booking_date: 2026-02-14
+      amount: "-23.45"
+      counterparty_name: "REWE SAGT DANKE. 5512//Musterstadt/DE"
+      purpose: Kartenzahlung girocard
+      booking_text: KARTENZAHLUNG
+    expect:
+      method: rule
+      rule_id: 0000002b-0000-4000-8000-000000000060
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "-23.45", category: hh_groceries, recurring: false}
+
+  # Step 0 finding: a Sparkasse card line's purpose ends with the card's expiry ("Debitk.1
+  # 2028-12"), which today's period reading takes as a service period of December 2028. The
+  # spec names no service period for a household line; read as none (a card's expiry is not a
+  # period the payment is for). Pending step 1, which must not read the expiry.
+  - id: name_rule_card_expiry_is_no_period
+    description: the card's expiry in a Sparkasse card purpose is not a service period
+    pending: "phase 6 step 1 (name-pattern rules, D160)"
+    rule: rewe_name
+    transaction:
+      id: 0000002a-0000-4000-8000-000000000162
+      booking_date: 2026-02-14
+      amount: "-23.45"
+      counterparty_name: "REWE SAGT DANKE. 5512//Musterstadt/DE"
+      purpose: "2026-02-13T18:02 Debitk.1 2028-12"
+      booking_text: KARTENZAHLUNG
+    expect:
+      method: rule
+      rule_id: 0000002b-0000-4000-8000-000000000060
+      confidence: "1.000"
+      question: null
+      allocations:
+        - {amount: "-23.45", category: hh_groceries, recurring: false}
+
+  - id: name_rule_misses_a_refund
+    description: the rule is for debits; a refund from the same merchant is not booked by it
+    rule: rewe_name
+    transaction:
+      id: 0000002a-0000-4000-8000-000000000161
+      booking_date: 2026-02-16
+      amount: "4.99"
+      counterparty_name: "REWE SAGT DANKE. 5512//Musterstadt/DE"
+      purpose: Gutschrift Pfand
+    expect: null
+
 rejected:
   - id: amount_in_matcher
     rule:
@@ -252,3 +334,119 @@ rejected:
       split:
         - {category: hausgeld_umlagefaehig, amount: "220.00"}
         - {category: hausgeld_ruecklage, amount: "80.00"}
+
+# Phase 6 D160: what a confirmed answer on a private account becomes (header above).
+inferred:
+  - id: card_line_becomes_a_name_rule
+    pending: "phase 6 step 1 (name-pattern rules, D160)"
+    purpose: private
+    transaction: &TX_CARD
+      id: 0000002a-0000-4000-8000-000000000170
+      booking_date: 2026-01-09
+      amount: "-31.20"
+      counterparty_name: "REWE SAGT DANKE. 4421//Berlin/DE"
+      purpose: "2026-01-08T17:40 Debitk.1 2028-12"
+      booking_text: KARTENZAHLUNG
+    confirmed: {category: hh_groceries}
+    expect_rule:
+      matcher: {counterparty_name_pattern: "^REWE SAGT DANKE", amount_sign: debit}
+      split_method: single_category
+      category: hh_groceries
+      recurring: false
+
+  - id: dkb_payee_line_becomes_a_name_rule
+    description: "a DKB card line: the merchant in the payee column, no booking text"
+    pending: "phase 6 step 1 (name-pattern rules, D160)"
+    purpose: private
+    transaction:
+      id: 0000002a-0000-4000-8000-000000000171
+      booking_date: 2026-01-10
+      amount: "-12.80"
+      counterparty_name: "Edeka Müller"
+      purpose: "VISA Debitkartenumsatz"
+    confirmed: {category: hh_groceries}
+    expect_rule:
+      matcher: {counterparty_name_pattern: "^EDEKA MÜLLER", amount_sign: debit}
+      split_method: single_category
+      category: hh_groceries
+      recurring: false
+
+  - id: split_answer_no_rule
+    pending: "phase 6 step 1 (name-pattern rules, D160)"
+    purpose: private
+    transaction: *TX_CARD
+    confirmed: {parts: [{amount: "-20.00", category: hh_groceries}, {amount: "-11.20", category: hh_health}]}
+    expect_rule: null
+
+  - id: tax_relevant_code_no_rule
+    description: a donation proposes a return input a person confirms each time
+    pending: "phase 6 step 1 (name-pattern rules, D160)"
+    purpose: private
+    transaction:
+      id: 0000002a-0000-4000-8000-000000000172
+      booking_date: 2026-03-02
+      amount: "-50.00"
+      counterparty_name: Beispiel Hilfswerk e.V.
+      purpose: Spende
+    confirmed: {category: hh_donation}
+    expect_rule: null
+
+  - id: transfer_code_no_rule
+    description: only the transfer matcher books a transfer (D162)
+    pending: "phase 6 step 1 (name-pattern rules, D160)"
+    purpose: private
+    transaction:
+      id: 0000002a-0000-4000-8000-000000000173
+      booking_date: 2026-03-03
+      amount: "-500.00"
+      counterparty_name: Eigentümer A
+      purpose: Umbuchung
+    confirmed: {category: internal_transfer_out}
+    expect_rule: null
+
+  - id: no_threshold_code_no_rule
+    description: hh_other has no threshold (D160 infers only for a code with one)
+    pending: "phase 6 step 1 (name-pattern rules, D160)"
+    purpose: private
+    transaction: *TX_CARD
+    confirmed: {category: hh_other}
+    expect_rule: null
+
+  - id: rental_account_without_iban_unchanged
+    description: on the rental account a line without an IBAN still gets no rule (the user types a pattern)
+    pending: "phase 6 step 1 (name-pattern rules, D160)"
+    purpose: rental
+    transaction:
+      id: 0000002a-0000-4000-8000-000000000174
+      booking_date: 2026-03-04
+      amount: "-89.00"
+      counterparty_name: "BAUMARKT BEISPIEL 77//Musterstadt/DE"
+      purpose: KARTENZAHLUNG
+    confirmed: {category: repairs}
+    expect_rule: null
+
+  - id: conflicting_pattern_refused
+    description: the pattern would hit a line already confirmed under another category
+    pending: "phase 6 step 1 (name-pattern rules, D160)"
+    purpose: private
+    transaction: *TX_CARD
+    confirmed: {category: hh_groceries}
+    history:
+      - {transaction_id: 0000002a-0000-4000-8000-000000000175, counterparty_name: "REWE SAGT DANKE. 9001//Hamburg/DE", category: hh_leisure_travel}
+    expect_error: {code: rule.conflicts}
+
+  - id: paypal_too_broad
+    description: one name confirmed under two categories; the card asks for a purpose pattern
+    pending: "phase 6 step 1 (name-pattern rules, D160)"
+    purpose: private
+    transaction:
+      id: 0000002a-0000-4000-8000-000000000176
+      booking_date: 2026-03-10
+      amount: "-9.99"
+      counterparty_name: "PayPal Europe S.a.r.l. et Cie S.C.A"
+      purpose: "1041234567890 PP.1234.PP . Beispiel Streaming, Ihr Einkauf bei Beispiel Streaming"
+    confirmed: {category: hh_subscriptions}
+    history:
+      - {transaction_id: 0000002a-0000-4000-8000-000000000177, counterparty_name: "PayPal Europe S.a.r.l. et Cie S.C.A", category: hh_subscriptions}
+      - {transaction_id: 0000002a-0000-4000-8000-000000000178, counterparty_name: "PayPal Europe S.a.r.l. et Cie S.C.A", category: hh_leisure_travel}
+    expect_error: {code: rule.too_broad}

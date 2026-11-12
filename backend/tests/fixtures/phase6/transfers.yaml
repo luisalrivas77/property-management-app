@@ -1,0 +1,211 @@
+# Rule fixture: internal transfers between the household's own accounts
+# (hausbuch.rules.matching.match_transfer, hausbuch.services.transfers.relink)
+#
+# docs/phases/phase-6.md D162, §6, §14 (§6's cases). A leg is a line or an asset movement of one
+# own account; open_legs are the other own accounts' unlinked legs (MatchContext.open_legs);
+# today is the day the matcher runs (the card waits until the window has passed).
+#
+#   by IBAN      the counterparty IBAN is another own account's (MatchContext.own_account_hmacs:
+#                every account with an IBAN except the line's own) → a transfer by IBAN alone,
+#                confidence 1.0: internal_transfer_out|in on a private account,
+#                owner_transfer_out|in on the rental one (phase 2 unchanged). The candidates are
+#                that account's legs.
+#   by type      a depot cash line categorised by its booking text (Einlage, D165 (1)) or an
+#                exchange's EUR Deposit/Withdrawal row (D166) is a transfer by its type
+#                (booked_as); the candidates are every other own account's legs.
+#   the link     candidates: opposite sign, out booked on or before in, in within 3 banking days
+#                of out; amount equal to the cent, or (one side an exchange) the in-leg equal to
+#                the out-leg less at most the recorded fee. One → transfer_link written
+#                (matched_by matcher), kind bank | exchange_eur | depot_cash by the accounts'
+#                kinds; several → transfer.ambiguous with the candidates (the allocation is still
+#                booked); none → booked, no card until the window has passed, then
+#                transfer.unmatched_leg.
+#   no own IBAN  a leg whose counterparty is not an own IBAN, but whose amount and date fit one
+#                exchange or depot EUR movement exactly → proposed_link for review, never
+#                written; the line's category is left to the later stages (category null).
+#   relink       services.transfers.relink(account_id) after an import runs the same rule over
+#                confirmed and proposed legs, so a mirror of a line the rental account
+#                confirmed months ago is linked when the private history arrives.
+# Recomputed on load (tests/fixture_models_phase6.py TransfersFixture). Pending phase 6 step 2.
+#
+# Accounts are invented; HMACs are placeholders of 64 hex characters.
+#
+# Step 0 readings (listed in the step 0 report):
+# - "3 banking days": Monday to Friday, no holiday calendar; the dates here avoid holidays.
+#   The window runs from the out-leg's booking day; "past the window" is today later than its
+#   third banking day.
+# - "bank → exchange EUR with a 0.99 fee → link within fee" and "fit an exchange movement
+#   exactly → proposed for review" read together: the exchange account has no IBAN (D156),
+#   so the bank line to the exchange's bank is no transfer by IBAN; the link within the fee is
+#   made from the exchange's EUR Deposit row, a transfer by its type, and the bank line alone
+#   only proposes a link when an exchange or depot movement fits it to the cent.
+# - The fee tolerance applies only when one side is an exchange (D162 names bank ↔ exchange);
+#   a depot Einlage is equal to the cent.
+# - A by-IBAN leg's candidates are the legs of the account that IBAN names; a by-type leg's are
+#   every other own account's.
+
+accounts:
+  rental: {id: 00000ac6-0000-4000-8000-000000000001, kind: bank_current, purpose: rental,
+           iban_hmac: "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"}
+  owner_a: {id: 00000ac6-0000-4000-8000-000000000002, kind: bank_current, purpose: private,
+            iban_hmac: "a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2"}
+  joint: {id: 00000ac6-0000-4000-8000-000000000003, kind: bank_current, purpose: private,
+          iban_hmac: "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"}
+  savings: {id: 00000ac6-0000-4000-8000-000000000004, kind: bank_savings, purpose: private,
+            iban_hmac: "a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4"}
+  exchange: {id: 00000ac6-0000-4000-8000-000000000005, kind: exchange, purpose: private}
+  depot: {id: 00000ac6-0000-4000-8000-000000000006, kind: depot, purpose: private}
+
+bases:
+  hmac_exchange_bank: &H_XBANK "e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0"
+  hmac_depot_bank: &H_DBANK "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0"
+  hmac_rental: &H_R "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+  hmac_savings: &H_S "a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4"
+
+cases:
+  - id: bank_to_bank_next_day
+    pending: "phase 6 step 2 (internal transfers, D162)"
+    leg: {id: 00000e60-0000-4000-8000-000000000101, account: owner_a, booked_on: 2026-03-03,
+          amount: "-500.00", counterparty_iban_hmac: *H_S}
+    open_legs:
+      - {id: 00000e60-0000-4000-8000-000000000102, account: savings, booked_on: 2026-03-04,
+         amount: "500.00", counterparty_iban_hmac: "a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2"}
+    today: 2026-03-05
+    expect:
+      category: internal_transfer_out
+      confidence: "1.000"
+      link: {out_leg: 00000e60-0000-4000-8000-000000000101,
+             in_leg: 00000e60-0000-4000-8000-000000000102, kind: bank}
+
+  - id: bank_to_exchange_within_fee
+    description: >
+      the exchange's EUR Deposit row (999.01 after a 0.99 fee) links to the bank's 1,000.00
+      debit to the exchange's bank
+    pending: "phase 6 step 2 (internal transfers, D162)"
+    leg: {id: 00000e60-0000-4000-8000-000000000201, account: exchange, source: movement,
+          booked_on: 2026-03-10, amount: "999.01", fee_eur: "0.99",
+          booked_as: internal_transfer_in}
+    open_legs:
+      - {id: 00000e60-0000-4000-8000-000000000202, account: owner_a, booked_on: 2026-03-09,
+         amount: "-1000.00", counterparty_iban_hmac: *H_XBANK}
+    today: 2026-03-11
+    expect:
+      category: internal_transfer_in
+      confidence: "1.000"
+      link: {out_leg: 00000e60-0000-4000-8000-000000000202,
+             in_leg: 00000e60-0000-4000-8000-000000000201, kind: exchange_eur}
+
+  - id: out_without_in_inside_the_window
+    description: booked by IBAN, the savings account's import may not have arrived; no card
+    pending: "phase 6 step 2 (internal transfers, D162)"
+    leg: &LEG_LONELY {id: 00000e60-0000-4000-8000-000000000301, account: owner_a,
+                      booked_on: 2026-03-06, amount: "-300.00", counterparty_iban_hmac: *H_S}
+    today: 2026-03-11
+    expect:
+      category: internal_transfer_out
+      confidence: "1.000"
+
+  - id: out_without_in_past_the_window
+    pending: "phase 6 step 2 (internal transfers, D162)"
+    leg: *LEG_LONELY
+    today: 2026-03-12
+    expect:
+      category: internal_transfer_out
+      confidence: "1.000"
+      card: {code: transfer.unmatched_leg}
+
+  - id: two_candidates_same_day
+    pending: "phase 6 step 2 (internal transfers, D162)"
+    leg: {id: 00000e60-0000-4000-8000-000000000501, account: owner_a, booked_on: 2026-03-16,
+          amount: "-200.00", counterparty_iban_hmac: *H_S}
+    open_legs:
+      - {id: 00000e60-0000-4000-8000-000000000502, account: savings, booked_on: 2026-03-17,
+         amount: "200.00"}
+      - {id: 00000e60-0000-4000-8000-000000000503, account: savings, booked_on: 2026-03-17,
+         amount: "200.00"}
+    today: 2026-03-18
+    expect:
+      category: internal_transfer_out
+      confidence: "1.000"
+      card: {code: transfer.ambiguous}
+      candidates: [00000e60-0000-4000-8000-000000000502, 00000e60-0000-4000-8000-000000000503]
+
+  - id: private_line_to_the_rental_account
+    description: >
+      owner A's top-up of the rental account seen from the private side: internal_transfer_out,
+      linked to the rental account's confirmed owner_transfer_in
+    pending: "phase 6 step 2 (internal transfers, D162)"
+    leg: {id: 00000e60-0000-4000-8000-000000000601, account: owner_a, booked_on: 2026-04-15,
+          amount: "-1500.00", counterparty_iban_hmac: *H_R}
+    open_legs:
+      - {id: 00000e60-0000-4000-8000-000000000602, account: rental, booked_on: 2026-04-15,
+         amount: "1500.00", note: confirmed owner_transfer_in}
+    today: 2026-04-16
+    expect:
+      category: internal_transfer_out
+      confidence: "1.000"
+      link: {out_leg: 00000e60-0000-4000-8000-000000000601,
+             in_leg: 00000e60-0000-4000-8000-000000000602, kind: bank}
+
+  - id: relink_after_a_late_import
+    description: >
+      the private account's 2026 history imported in November brings the mirror of a
+      withdrawal the rental account confirmed as owner_transfer_out in February
+    pending: "phase 6 step 2 (internal transfers, D162)"
+    relink: true
+    leg: {id: 00000e60-0000-4000-8000-000000000701, account: owner_a, booked_on: 2026-02-03,
+          amount: "800.00", counterparty_iban_hmac: *H_R}
+    open_legs:
+      - {id: 00000e60-0000-4000-8000-000000000702, account: rental, booked_on: 2026-02-02,
+         amount: "-800.00", note: confirmed owner_transfer_out}
+    today: 2026-11-12
+    expect:
+      category: internal_transfer_in
+      confidence: "1.000"
+      link: {out_leg: 00000e60-0000-4000-8000-000000000702,
+             in_leg: 00000e60-0000-4000-8000-000000000701, kind: bank}
+
+  - id: depot_einlage_links_the_bank_debit
+    description: the depot statement's Einlage (no IBAN on the line) linked to the joint account's debit
+    pending: "phase 6 step 2 (internal transfers, D162)"
+    leg: {id: 00000e60-0000-4000-8000-000000000801, account: depot, booked_on: 2026-05-07,
+          amount: "2000.00", booked_as: internal_transfer_in}
+    open_legs:
+      - {id: 00000e60-0000-4000-8000-000000000802, account: joint, booked_on: 2026-05-06,
+         amount: "-2000.00", counterparty_iban_hmac: *H_DBANK}
+    today: 2026-05-08
+    expect:
+      category: internal_transfer_in
+      confidence: "1.000"
+      link: {out_leg: 00000e60-0000-4000-8000-000000000802,
+             in_leg: 00000e60-0000-4000-8000-000000000801, kind: depot_cash}
+
+  - id: partial_leg_no_link
+    description: a leg of a different amount is no counterpart; the card after the window
+    pending: "phase 6 step 2 (internal transfers, D162)"
+    leg: {id: 00000e60-0000-4000-8000-000000000901, account: owner_a, booked_on: 2026-06-01,
+          amount: "-1000.00", counterparty_iban_hmac: *H_S}
+    open_legs:
+      - {id: 00000e60-0000-4000-8000-000000000902, account: savings, booked_on: 2026-06-02,
+         amount: "600.00"}
+    today: 2026-06-05
+    expect:
+      category: internal_transfer_out
+      confidence: "1.000"
+      card: {code: transfer.unmatched_leg}
+
+  - id: no_own_iban_exact_exchange_deposit_proposed
+    description: >
+      a debit to the exchange's bank that fits the exchange's EUR Deposit row to the cent is
+      proposed as a link for review, never written; its category is left to the later stages
+    pending: "phase 6 step 2 (internal transfers, D162)"
+    leg: {id: 00000e60-0000-4000-8000-000000001001, account: owner_a, booked_on: 2026-07-07,
+          amount: "-250.00", counterparty_iban_hmac: *H_XBANK}
+    open_legs:
+      - {id: 00000e60-0000-4000-8000-000000001002, account: exchange, source: movement,
+         booked_on: 2026-07-08, amount: "250.00", booked_as: internal_transfer_in}
+    today: 2026-07-09
+    expect:
+      category: null
+      proposed_link: {out_leg: 00000e60-0000-4000-8000-000000001001,
+                      in_leg: 00000e60-0000-4000-8000-000000001002, kind: exchange_eur}

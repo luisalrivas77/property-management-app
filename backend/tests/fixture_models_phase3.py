@@ -36,6 +36,7 @@ from hausbuch.schemas.common import Area, Money, NonNegativeMoney, Percent, Sche
 from hausbuch.schemas.tax import (
     AfaFacts,
     AfaLine,
+    AllocationFact,
     BasisAddition,
     Coverage,
     DraftFacts,
@@ -450,7 +451,21 @@ class DraftCase(Lenient):
     tax_year: TaxYear
     rule_set_year: TaxYear
     facts: DraftFacts
+    # Phase 6 D161: allocations appended to the (anchor-merged) facts on load, since YAML
+    # cannot extend an anchored list.
+    add_allocations: list[AllocationFact] = Field(default_factory=list)
     expect: DraftExpect
+
+    @model_validator(mode="before")
+    @classmethod
+    def _add_allocations(cls, data: Any) -> Any:
+        # Before validation (the models are frozen), on copies: the anchored facts and their
+        # list are shared with the other cases.
+        if isinstance(data, dict) and data.get("add_allocations"):
+            facts = dict(data["facts"])
+            facts["allocations"] = [*facts.get("allocations", []), *data["add_allocations"]]
+            data = {**data, "facts": facts}
+        return data
 
 
 class DraftFixture(_Fixture):

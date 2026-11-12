@@ -8325,6 +8325,10 @@
               }
             ],
             "title": "Counterparty Iban Masked"
+          },
+          "account_purpose": {
+            "$ref": "#/components/schemas/AccountPurpose",
+            "default": "rental"
           }
         },
         "additionalProperties": false,
