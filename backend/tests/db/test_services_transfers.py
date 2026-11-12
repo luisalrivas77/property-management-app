@@ -1,7 +1,7 @@
 """Phase 6 step 2 under hausbuch_app and RLS: D162's transfer links (the late import, the
 ambiguous and unmatched cards, a link by hand and its replacement, both events) and D161's
 three paths for a property bill paid from a private account (the line proves a row, a card
-proposes the row, a card asks for the bill). The pure halves are tests/rules/test_transfers.py
+proposes the row, a card asks for the bill). The pure halves are tests/rules/test_transfer_rules.py
 and tests/rules/test_private_cost_link.py. Invented names and IBANs only."""
 
 from datetime import date
