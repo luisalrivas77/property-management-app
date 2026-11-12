@@ -393,6 +393,63 @@ def test_a_name_confirmed_under_two_categories_is_too_broad(world, private):
     assert world.query(lambda c: c.execute(select(rule_table)).all()) == []
 
 
+def _answer_with_pattern(world: World, tx, amount: str, category: str, pattern: str):
+    return world.cmd(
+        review.allocate_transaction,
+        tx,
+        ConfirmAllocationsBody(
+            allocation_set=_user_set(tx, amount, category),
+            learn_rule=True,
+            purpose_pattern=pattern,
+        ),
+        iban_key=TEST_IBAN_KEY,
+    )
+
+
+def test_a_private_fee_line_without_counterparty_learns_a_purpose_pattern_rule(
+    world, private, app_engine, tmp_path
+):
+    """The account's own fee lines carry no name and no IBAN, so the card offers the purpose
+    pattern only; bank_fees is learnable on a private account like a household code."""
+    first = private.line(date(2026, 10, 30), "-4.95", purpose="Entgelt Kontoführung 10/2026")
+    view = world.query(
+        review.transaction_allocations, first, iban_key=TEST_IBAN_KEY, today=NOW.date()
+    )
+    assert view.can_learn_rule is False  # no counterparty: the purpose pattern field
+    result = _answer_with_pattern(world, first, "-4.95", "bank_fees", "Entgelt")
+    assert result.rule is not None
+    assert result.rule.category == "bank_fees"
+    assert result.rule.matcher.purpose_pattern == "Entgelt"
+    assert result.rule.matcher.counterparty_iban_hmac is None
+
+    deps = _deps(app_engine, tmp_path, FakeModelClient())
+    second = private.line(date(2026, 11, 30), "-4.95", purpose="Entgelt Kontoführung 11/2026")
+    plan = _run(deps, world, second)
+    assert (plan.outcome, plan.reason) == ("written", "routing.auto_confirm")
+    (row,) = _rows(world, second)
+    assert (row.category, row.method, row.status) == ("bank_fees", "rule", "confirmed")
+
+    # bank_fees is a code both purposes take, so the rule stays with the purpose it was
+    # learned on: the rental account's fee line is not booked by the private rule.
+    rental = world.line(date(2026, 11, 30), "-7.50", purpose="Entgelt Kontoführung 11/2026")
+    plan = run_match_transaction(  # a re-match never calls the model
+        _deps(app_engine, tmp_path, FakeModelClient()),
+        workspace_id=world.ws,
+        transaction_id=rental,
+        attempt=0,
+        rematch=True,
+    )
+    assert plan.reason == "routing.no_match" and _rows(world, rental) == []
+
+
+def test_uncategorized_on_a_private_line_still_learns_no_rule(world, private):
+    tx = private.line(date(2026, 10, 30), "-4.95", purpose="Entgelt Kontoführung 10/2026")
+    with pytest.raises(RuleViolationError) as refused:
+        _answer_with_pattern(world, tx, "-4.95", "uncategorized", "Entgelt")
+    assert refused.value.code == "rule.not_learnable"
+    assert _rows(world, tx) == []
+
+
 # --- Review of PR #221 (F1, F2): a payee both accounts pay ---------------------------------
 
 

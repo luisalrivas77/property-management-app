@@ -752,7 +752,7 @@ def deterministic_set(
     answer is either a standing hit (confidence 1, used at once) or a near-miss proposal
     (D49), which the matchers come before: an exact rent, loan, owner or document match wins
     over it. Private: learned rules, the document match, then the tenant / lender question."""
-    rules = rules_learned.enabled_rules(conn)
+    rules = rules_learned.rules_for_purpose(conn, context.account_purpose)
     history = rule_history(conn, tx, context.account_purpose) if _any_hit(rules, tx) else []
     found = matchers.deterministic_answer(rules, tx, context, history)
     return None if found is None else _guarded(conn, found)

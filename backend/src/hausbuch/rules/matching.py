@@ -85,6 +85,10 @@ from .periods import months_in, service_period
 from .review import THRESHOLDS
 from .statements import norm
 
+# The shared code (D159) a private account may learn a rule for, beside its household codes:
+# its own bank fees. uncategorized stays unlearnable (no threshold).
+LEARNABLE_SHARED = frozenset({AllocationCategory.BANK_FEES})
+
 EXACT = Decimal("1.000")
 DOCUMENT_CONFIDENCE = Decimal("0.950")
 INEXACT_RENT_CONFIDENCE = Decimal("0.500")  # below every threshold: always reviewed
@@ -960,11 +964,13 @@ def _name_found(pattern: str, name: str | None) -> bool:
 
 
 def learnable_household(category: AllocationCategory) -> bool:
-    """D160: a household code with a threshold that is not tax-relevant. A tax-relevant code
-    proposes a return input a person confirms each time; a transfer or depot code is booked
-    by its matcher only; a code without a threshold (hh_other) is never booked unseen."""
+    """D160: a household code with a threshold that is not tax-relevant, or bank_fees (the
+    shared code a private account's own fee lines take; they carry no counterparty, so their
+    rule is a typed purpose pattern). A tax-relevant code proposes a return input a person
+    confirms each time; a transfer or depot code is booked by its matcher only; a code
+    without a threshold (hh_other, hh_credit_card, uncategorized) is never booked unseen."""
     return (
-        category in HOUSEHOLD_CODES
+        (category in HOUSEHOLD_CODES or category in LEARNABLE_SHARED)
         and category not in TAX_RELEVANT
         and THRESHOLDS[category] is not None
     )
