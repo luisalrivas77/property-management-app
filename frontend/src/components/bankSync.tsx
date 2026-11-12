@@ -11,6 +11,10 @@
 //   entered that state, its updated_at). Once those five minutes are over the button is
 //   enabled again as "Erneut abrufen" (a run whose job is gone, after a redeploy mid-wait,
 //   would otherwise stay locked), the card polls every 10 s for one more minute, then stops.
+//   A queued or running row untouched for the approval wait plus five more minutes (the API's
+//   rules.bank_sync.is_stale) has lost its job, for instance one that failed before its first
+//   write: the card says so, offers "Erneut abrufen" (the API restarts such a row) and stops
+//   polling the same way.
 //   Every count shown is the API's; nothing is summed.
 // - „Täglich automatisch abrufen“ (D120, step 2): the connection's `auto_sync`, PATCHed at
 //   once. The daily run (06:30 UTC) never waits for the phone: when the bank asks for an
@@ -36,6 +40,10 @@ const LIVE: readonly SyncStatus[] = ["queued", "running", "needs_approval", "imp
 const POLL_MS = 2000;
 /** The job waits this long for the approval (HAUSBUCH_SYNC_APPROVAL_TIMEOUT_S' default). */
 const APPROVAL_WINDOW_MS = 5 * 60 * 1000;
+/** A queued or running row untouched this much longer than the approval wait has lost its
+ * job (rules.bank_sync.is_stale: the approval timeout plus STALE_GRACE_S); the API then
+ * restarts it (start_sync). */
+const STALE_GRACE_MS = 5 * 60 * 1000;
 /** After the window: a slower poll, long enough for the job to record its timeout. */
 const EXPIRED_POLL_MS = 10_000;
 const EXPIRED_POLL_FOR_MS = 60_000;
@@ -57,12 +65,26 @@ function approvalEndsAt(run: BankSync): number | null {
   return run.status === "needs_approval" && !scheduledApproval(run) ? new Date(run.updated_at).getTime() + APPROVAL_WINDOW_MS : null;
 }
 
+/** When a queued or running row counts as stuck (its job is gone), else null. Never for
+ * importing: the API does not restart that. */
+function staleAt(run: BankSync): number | null {
+  return run.status === "queued" || run.status === "running"
+    ? new Date(run.updated_at).getTime() + APPROVAL_WINDOW_MS + STALE_GRACE_MS
+    : null;
+}
+
+/** From when the button may start a still-live run again: a manual approval's five minutes
+ * are over, or a queued or running row is stuck. */
+function restartableAt(run: BankSync): number | null {
+  return approvalEndsAt(run) ?? staleAt(run);
+}
+
 /** How often the card polls the run: every 2 s while it is live, every 10 s for a minute
- * after an approval's five minutes are over, then never (a row whose job is gone, or a daily
- * run that waits for a person). */
+ * after an approval's five minutes are over or a row turned stuck, then never (a row whose
+ * job is gone, or a daily run that waits for a person). */
 function pollInterval(run: BankSync | null, now: number): number | null {
   if (!run || !isLiveRun(run) || scheduledApproval(run)) return null;
-  const endsAt = approvalEndsAt(run);
+  const endsAt = restartableAt(run);
   if (endsAt === null || now < endsAt) return POLL_MS;
   return now < endsAt + EXPIRED_POLL_FOR_MS ? EXPIRED_POLL_MS : null;
 }
@@ -106,11 +128,11 @@ export function BankSyncCard({ account, onImported }: { account: Account; onImpo
   const latest = state.data?.syncs[0] ?? null;
   const current = newer(polled, latest);
   const currentId = current?.id ?? null;
-  const endsAt = current ? approvalEndsAt(current) : null;
+  const endsAt = current ? restartableAt(current) : null;
   const now = useNow(endsAt !== null);
   const expired = endsAt !== null && now >= endsAt;
-  // A run waiting for an approval past its five minutes can be started again, and so can a
-  // daily run the bank asked to approve (nobody waits for it).
+  // A run waiting for an approval past its five minutes can be started again, so can a stuck
+  // queued or running row, and so can a daily run the bank asked to approve (nobody waits).
   const busy = current ? isLiveRun(current) && !expired && !scheduledApproval(current) : false;
   const pollMs = pollInterval(current, now);
   const { reload } = state;
@@ -187,7 +209,7 @@ export function BankSyncCard({ account, onImported }: { account: Account; onImpo
             </ActionDialog>
           </div>
           <ErrorNotice error={startError} />
-          {current ? <RunNow run={current} accountId={account.id} now={now} /> : null}
+          {current ? <RunNow run={current} accountId={account.id} now={now} stuck={expired && staleAt(current) !== null} /> : null}
           <ErrorNotice error={pollError} />
           {state.data.syncs.length > 0 ? <RunHistory runs={state.data.syncs} /> : null}
         </>
@@ -274,7 +296,7 @@ function AutoSyncSwitch({ connection, onSaved }: { connection: BankConnection; o
   );
 }
 
-/** A clock that ticks every second while `on` (for the approval countdown). */
+/** A clock that ticks every second while `on` (for the approval countdown and a stuck row). */
 function useNow(on: boolean): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -311,8 +333,18 @@ function linesSentence(run: BankSync): string {
 }
 
 /** The current (or last) run in plain words; a daily run says so. */
-function RunNow({ run, accountId, now }: { run: BankSync; accountId: string; now: number }) {
+function RunNow({ run, accountId, now, stuck }: { run: BankSync; accountId: string; now: number; stuck: boolean }) {
   const last = run.trigger === "scheduled" ? "Letzter automatischer Abruf" : "Letzter Abruf";
+  if (stuck) {
+    return (
+      <div className="notice notice-warn" role="status">
+        <p>
+          Der Abruf vom {formatDateTime(run.created_at)} kommt nicht voran, zum Beispiel nach einem Neustart des Servers.
+          „Erneut abrufen“ drücken, um ihn neu zu starten.
+        </p>
+      </div>
+    );
+  }
   switch (run.status) {
     case "needs_approval":
       return scheduledApproval(run) ? (
