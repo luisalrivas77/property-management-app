@@ -66,6 +66,7 @@ from hausbuch.schemas.enums import ActorType, DocumentSubtype, ExtractionKind, P
 from hausbuch.schemas.extraction import EXTRACTION_MODELS, asked_fields
 from hausbuch.services import documents as document_service
 from hausbuch.services import proposals
+from hausbuch.services.bank import card_pdf
 from hausbuch.services.context import Actor, new_command
 from hausbuch.settings import Settings
 from hausbuch.storage import BlobStore
@@ -83,6 +84,10 @@ UNSUPPORTED_MEDIA_TYPE = documents.UNSUPPORTED_MEDIA_TYPE
 UNREADABLE = documents.UNREADABLE
 ADOBE_FORM = documents.ADOBE_FORM  # D43, not retried
 INTERNAL_ERROR = "ai.internal_error"  # not a model error: a bug or the database, retried out
+# Phase 6 D176 (3): a credit card statement uploaded as a document (Dokumente, the capture)
+# has no import yet, so request_read's check cannot see it; it is never sent to the model and
+# is imported on its card account instead. Not retried.
+CARD_STATEMENT = proposals.PROPOSAL_BANK_FILE_NOT_READ
 # ai.api_error and ai.unavailable come from hausbuch.ai.client.
 
 RETRY_WAITS_S = (10, 60, 300)  # §5.1: three retries
@@ -320,6 +325,12 @@ def _target_proposal(conn, document_id: UUID, proposal_id: UUID) -> tuple[UUID, 
 # --- 2. classify and extract ---------------------------------------------------------
 
 
+def _is_card_statement(data: bytes) -> bool:
+    """A card statement by its printed layout, read by code (services.bank.card_pdf)."""
+    pages = card_pdf.pdf_pages(data)
+    return pages is not None and card_pdf.looks_like(pages)
+
+
 def _read(
     deps: JobDeps,
     workspace_id: UUID,
@@ -336,6 +347,8 @@ def _read(
         pages = documents.page_count(original.data) if original.media_type == documents.PDF else 1
         if original.media_type == documents.PDF and documents.is_adobe_only_form(original.data):
             raise _Stop(ADOBE_FORM)  # D43: the model would see only Adobe's placeholder page
+        if original.media_type == documents.PDF and _is_card_statement(original.data):
+            raise _Stop(CARD_STATEMENT)  # D176 (3): read by code on its card account only
         first = (
             documents.pdf_pages(original.data, 0, min(CLASSIFY_PAGES, pages))
             if original.media_type == documents.PDF

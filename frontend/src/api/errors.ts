@@ -225,6 +225,9 @@ export const AI_ERROR_TEXT: Record<string, string> = {
   "ai.internal_error": "Beim Auslesen ist ein interner Fehler aufgetreten.",
   "document.adobe_form":
     "Dieses PDF ist ein Adobe-Formular und lässt sich nur in Adobe Reader anzeigen. Öffnen Sie es dort, drucken Sie es als PDF und laden Sie die Kopie hoch.",
+  // Phase 6 D176 (3): a credit card statement uploaded as a document is never sent to the model.
+  "proposal.bank_file_not_read":
+    "Das ist eine Kreditkartenabrechnung. Hausbuch liest sie selbst, ohne KI: Bitte unter Konten auf der Seite der Karte mit „Kreditkartenabrechnung hochladen“ importieren.",
 };
 
 /** The German sentence for a proposal's error code; unknown codes get a generic one. */

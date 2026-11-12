@@ -52,7 +52,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from hausbuch.rules.errors import RuleError
-from hausbuch.rules.statements import REPORT_UNBALANCED, UNPARSABLE
+from hausbuch.rules.statements import EMPTY, REPORT_UNBALANCED, UNPARSABLE
 from hausbuch.schemas.bank import ParsedStatement, StatementFormat, StatementLine
 
 # The label the summary block starts with and the text a card statement always carries; the
@@ -138,7 +138,11 @@ def parse_card_pages(pages: list[str]) -> CardParse:
     totals = _totals(lines)
     rows = _rows(lines)
     if not rows:
-        raise RuleError(UNPARSABLE, "the statement holds no line")
+        if any(summary[part] for part in _PARTS):
+            # The summary counts movements the rows did not yield: a layout the reader missed.
+            raise RuleError(UNPARSABLE, "the summary has movements but no row was read")
+        # A month without a booking (review F6): the code every other format gives an empty file.
+        raise RuleError(EMPTY, "the statement holds no line")
     statement_lines = [_line(row) for row in rows]
     warnings = []
     if period is not None and any(

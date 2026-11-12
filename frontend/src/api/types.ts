@@ -4119,8 +4119,8 @@ export interface components {
         /** ConfirmPaymentIbanBody */
         ConfirmPaymentIbanBody: {
             /**
-             * Format: uuid
              * Import Id
+             * Format: uuid
              */
             import_id: string;
         };
@@ -6694,8 +6694,8 @@ export interface components {
          */
         PaymentIbanProposal: {
             /**
-             * Format: uuid
              * Import Id
+             * Format: uuid
              */
             import_id: string;
             /** Payment Iban Masked */

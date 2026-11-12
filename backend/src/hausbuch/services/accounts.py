@@ -227,6 +227,9 @@ def update_account(
         # (D156): a kind across that line would be another account.
         raise RuleError(ACCOUNT_KIND_NOT_AVAILABLE, "a bank account stays a bank account")
     if "purpose" in changes:
+        if before.kind is AccountKind.CREDIT_CARD:
+            # D176: a credit card is always private, as create_account sets it (review F4).
+            raise RuleError(ACCOUNT_KIND_NOT_AVAILABLE, "a credit card is a private account")
         _require_bookings_fit(ctx.conn, account_id, AccountPurpose(new_values["purpose"]))
 
     row = ctx.conn.execute(

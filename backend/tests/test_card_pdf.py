@@ -123,6 +123,42 @@ def test_a_statement_number_of_another_customer_is_the_files_error():
     assert caught.value.code == rules.UNPARSABLE
 
 
+def _without_rows(pages: list[str]) -> list[str]:
+    """The pages with every row and the totals under them dropped (the header kept)."""
+    kept = []
+    for page in pages:
+        lines = page.splitlines()
+        if "C" in lines:
+            lines = lines[: lines.index("C") + 1] + lines[-1:]
+        kept.append("\n".join(lines))
+    return kept
+
+
+def test_a_month_without_bookings_is_an_empty_statement():
+    """Review F6: no row and a summary without movements is statement.empty, as for the other
+    formats."""
+    pages = _without_rows(CARD.pages(BUILT[0].id))
+    quiet = [
+        re.sub(
+            r"^(Rückzahlungen|Einkauf|Neuer Saldo): .*$",
+            lambda m: f"{m.group(1)}: " + ("-1 250.40" if m.group(1) == "Neuer Saldo" else "0.00"),
+            p,
+            flags=re.M,
+        )
+        for p in pages
+    ]
+    with pytest.raises(RuleError) as caught:
+        card_pdf.parse_card_pages(quiet)
+    assert caught.value.code == rules.EMPTY
+
+
+def test_rows_the_reader_misses_are_the_files_error():
+    """A summary with movements but no row read is a layout the reader does not know."""
+    with pytest.raises(RuleError) as caught:
+        card_pdf.parse_card_pages(_without_rows(CARD.pages(BUILT[0].id)))
+    assert caught.value.code == rules.UNPARSABLE
+
+
 def _tx(**overrides) -> MatchTransaction:
     case = next(c for c in BUILT if c.import_.booked)
     line = card_pdf.parse_card_pages(CARD.pages(case.id)).statement.lines[

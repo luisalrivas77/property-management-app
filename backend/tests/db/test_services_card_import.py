@@ -13,20 +13,37 @@ from decimal import Decimal
 
 import pytest
 from db.db_support import TEST_IBAN_KEY
-from sqlalchemy import select
+from sqlalchemy import select, text
 from test_card_pdf import BUILT, CARD, case_bytes
+from test_jobs_document_read import _settings as _test_settings
 
+from hausbuch.ai.fake import FakeModelClient
+from hausbuch.db.session import workspace_transaction
+from hausbuch.db.tables import ai_call as ai_call_table
 from hausbuch.db.tables import event as event_table
-from hausbuch.jobs.document_read import JobDeps
+from hausbuch.jobs.document_read import JobDeps, run_document_read
 from hausbuch.jobs.matching import run_match_transaction
 from hausbuch.rules import statements as rules
 from hausbuch.rules.errors import ACCOUNT_KIND_NOT_AVAILABLE, RuleError
 from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.bank import AccountCreate, ConfirmPaymentIbanBody, TransactionAllocationStatus
-from hausbuch.schemas.enums import AccountKind, AccountPurpose, ImportStatus
+from hausbuch.schemas.enums import (
+    AccountKind,
+    AccountPurpose,
+    ActorType,
+    DocumentSource,
+    ImportStatus,
+    ProposalStatus,
+)
 from hausbuch.schemas.events import EventType
-from hausbuch.services import proposals, statements
-from hausbuch.services.accounts import confirm_payment_iban, create_account, get_account
+from hausbuch.services import documents, proposals, statements
+from hausbuch.services.accounts import (
+    confirm_payment_iban,
+    create_account,
+    get_account,
+    update_account,
+)
+from hausbuch.services.context import Actor, new_command
 from hausbuch.services.errors import NotFoundError, RuleViolationError
 from hausbuch.services.statements import import_statement, list_imports, list_transactions
 from hausbuch.settings import Settings
@@ -225,6 +242,17 @@ def test_a_card_account_is_private_and_its_typed_number_is_masked(run, read, fre
     assert "1234567" not in str(payloads)
 
 
+def test_a_card_account_stays_private(run, fresh_workspaces):
+    """Review F4: a new purpose on a card is refused, as on create; its label still changes."""
+    ws, _ = fresh_workspaces
+    card = _card(run, ws)
+    with pytest.raises(RuleError) as caught:
+        run(ws, update_account, card.id, purpose=AccountPurpose.RENTAL, now=T0)
+    assert caught.value.code == ACCOUNT_KIND_NOT_AVAILABLE
+    renamed = run(ws, update_account, card.id, label="Karte", purpose=AccountPurpose.PRIVATE)
+    assert (renamed.label, renamed.purpose) == ("Karte", AccountPurpose.PRIVATE)
+
+
 def test_the_payment_iban_is_confirmed_from_the_statement(
     run, read, blob_store, fresh_workspaces, hook_calls
 ):
@@ -278,3 +306,45 @@ def test_a_card_statement_is_never_sent_to_the_model(run, blob_store, fresh_work
     with pytest.raises(RuleViolationError) as caught:
         run(ws, proposals.request_read, imported.document_id)
     assert caught.value.code == proposals.PROPOSAL_BANK_FILE_NOT_READ
+
+
+def test_a_card_statement_uploaded_as_a_document_is_never_sent_to_the_model(
+    app_engine, blob_store, fresh_workspaces, tmp_path
+):
+    """Review F1: POST /documents with ai on (Dokumente, the capture) has no import yet, so the
+    request is accepted; the job recognises the card layout and stops before any model call."""
+    ws, _ = fresh_workspaces
+    actor = Actor(ActorType.USER, "user:test")
+    with workspace_transaction(app_engine, ws) as conn:
+        ctx = new_command(conn, ws, actor, now=T0)
+        doc = documents.upload_document(
+            ctx,
+            blob_store,
+            case_bytes(_first()),
+            media_type="application/pdf",
+            source=DocumentSource.UPLOAD,
+        )
+        queued = proposals.request_read(ctx, doc.id)
+    assert queued.status is ProposalStatus.QUEUED
+    client = FakeModelClient([])
+    deps = JobDeps(
+        engine=app_engine,
+        settings=_test_settings(tmp_path),
+        blob_store=blob_store,
+        model_client=client,
+        clock=lambda: T0,
+    )
+    try:
+        run_document_read(
+            deps, workspace_id=ws, document_id=doc.id, proposal_id=queued.id, attempt=0
+        )
+    finally:
+        with app_engine.begin() as conn:
+            conn.execute(text("DELETE FROM procrastinate_jobs WHERE task_name = 'document_read'"))
+    assert client.requests == []
+    with workspace_transaction(app_engine, ws) as conn:
+        failed = proposals.get_proposal(conn, queued.id)
+        calls = conn.execute(select(ai_call_table.c.id)).all()
+    assert failed.status is ProposalStatus.FAILED
+    assert failed.error_code == proposals.PROPOSAL_BANK_FILE_NOT_READ
+    assert calls == []
