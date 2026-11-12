@@ -3,7 +3,8 @@
 Commands for the routes (create, update and read the connection; start a run; list runs) and
 the steps jobs/bank_sync.py runs in its own short transactions around the network: begin,
 approval needed, approval confirmed, finish (the preview, the import, the balance), fail and
-retry. Nothing here talks to the bank.
+retry; and the bank's PDF statements (D154, step 2b): what is stored, one statement stored
+(store_statement), the list. Nothing here talks to the bank.
 
 Who owns a run (step 1's decision, §12.1 left it open):
 
@@ -41,13 +42,17 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import Connection, Row, func, insert, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import bank_connection as connection_table
+from hausbuch.db.tables import bank_statement as statement_table
 from hausbuch.db.tables import bank_sync as sync_table
 from hausbuch.db.tables import event as event_table
+from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.jobs import enqueue
+from hausbuch.rules import bank_statements as statement_fetch
 from hausbuch.rules import bank_sync as rules
 from hausbuch.rules import errors as E
 from hausbuch.rules import statements as statement_rules
@@ -57,7 +62,9 @@ from hausbuch.schemas.bank_sync import (
     BankConnection,
     BankConnectionCreate,
     BankConnectionPatch,
+    BankStatement,
     BankSync,
+    StatementKey,
     SyncEvent,
     SyncStatus,
     SyncTrigger,
@@ -65,15 +72,19 @@ from hausbuch.schemas.bank_sync import (
     SyncWindowFacts,
     mask_login,
 )
+from hausbuch.schemas.common import TAX_YEAR_MIN
+from hausbuch.schemas.document import DocumentTyping
 from hausbuch.schemas.enums import (
     AccountSource,
     BalanceSource,
     DocumentSource,
+    DocumentType,
     EntityType,
     ImportStatus,
 )
 from hausbuch.schemas.events import (
     BankConnectionRecorded,
+    BankStatementFetched,
     BankSyncApprovalNeeded,
     BankSyncCompleted,
     BankSyncFailed,
@@ -85,7 +96,7 @@ from hausbuch.storage import BlobStore
 
 from .allocations import user_id
 from .context import CommandContext
-from .documents import LOCAL_TIME_ZONE, upload_document
+from .documents import LOCAL_TIME_ZONE, type_document, upload_document
 from .errors import ConflictError, NotFoundError, violated_constraint
 from .events import append_event
 from .lookup import require_row
@@ -239,6 +250,7 @@ def _recorded(row: Row, *, changed: list[str]) -> BankConnectionRecorded:
         bank_code=row.bank_code,
         login_masked=mask_login(row.login_name),
         auto_sync=row.auto_sync,
+        fetch_statements=row.fetch_statements,
         changed=changed,
     )
 
@@ -802,6 +814,7 @@ class RunPlan:
     tan_mechanism: str | None
     iban_hmac: bytes
     created_by: UUID | None  # the person of a manual run
+    fetch_statements: bool = False  # D154 (7): the PDF statements after the camt part
 
 
 class Superseded(Exception):
@@ -860,6 +873,7 @@ def begin_run(
         tan_mechanism=connection.tan_mechanism,
         iban_hmac=bytes(account.iban_hmac),
         created_by=row.created_by,
+        fetch_statements=connection.fetch_statements,
     )
 
 
@@ -1194,3 +1208,103 @@ def _fail(ctx: CommandContext, row: Row, code: str, response_code: str | None = 
         row.account_id,
         BankSyncFailed(sync_id=row.id, error_code=code, response_code=response_code),
     )
+
+
+# --- The bank's PDF statements (D154, step 2b) ----------------------------------------------
+
+STATEMENT_MEDIA_TYPE = "application/pdf"
+_STATEMENT_LIST_LIMIT = 500
+
+
+def stored_statement_keys(conn: Connection, account_id: UUID) -> list[StatementKey]:
+    """The (year, number) of every statement stored for the account (plan_probes' input)."""
+    t = statement_table.c
+    rows = conn.execute(select(t.year, t.number).where(t.account_id == account_id)).all()
+    return [StatementKey(year=r.year, number=r.number) for r in rows]
+
+
+def statements_first_year(conn: Connection, account_id: UUID, today: date) -> int:
+    """D154 (3): the year of the account's earliest booked line, or today's year when it has
+    none (rules.bank_statements never asks before 2026 either way)."""
+    t = transaction_table.c
+    first = conn.execute(
+        select(func.min(t.booking_date)).where(t.account_id == account_id, t.is_pending.is_(False))
+    ).scalar_one_or_none()
+    return today.year if first is None else first.year
+
+
+def store_statement(
+    ctx: CommandContext, store: BlobStore, plan: RunPlan, key: StatementKey, pdf: bytes
+) -> UUID | None:
+    """D154 (5): one delivered statement, in its own transaction. The PDF is stored as every
+    original (deduplicated by its SHA-256, source bank_sync) and typed by code as a statement
+    of its year, titled „Kontoauszug <Nummer>/<Jahr>“, when untyped (a person's own typing of
+    the same file is left alone). It is never imported, classified or read by the model:
+    nothing is queued. One bank_statement row and one account.statement_fetched event; None
+    (and nothing written beyond the idempotent blob) when the account already has that
+    number of that year."""
+    t = statement_table.c
+    known = ctx.conn.execute(
+        select(t.id).where(
+            t.account_id == plan.account_id, t.year == key.year, t.number == key.number
+        )
+    ).first()
+    if known is not None:
+        return None
+    document = upload_document(
+        ctx,
+        store,
+        pdf,
+        media_type=STATEMENT_MEDIA_TYPE,
+        source=DocumentSource.BANK_SYNC,
+        original_filename=statement_fetch.statement_filename(key),
+    )
+    if document.typing is None:
+        type_document(
+            ctx,
+            document.id,
+            DocumentTyping(
+                type=DocumentType.STATEMENT,
+                title=statement_fetch.statement_title(key),
+                tax_year=key.year if key.year >= TAX_YEAR_MIN else None,
+            ),
+        )
+    row = ctx.conn.execute(
+        pg_insert(statement_table)
+        .values(
+            workspace_id=ctx.workspace_id,
+            account_id=plan.account_id,
+            year=key.year,
+            number=key.number,
+            document_id=document.id,
+            sync_id=plan.sync_id,
+            fetched_at=ctx.now,
+        )
+        .on_conflict_do_nothing(index_elements=["workspace_id", "account_id", "year", "number"])
+        .returning(t.id)
+    ).first()
+    if row is None:  # a concurrent run stored the same number first
+        return None
+    append_event(
+        ctx,
+        EventType.ACCOUNT_STATEMENT_FETCHED,
+        plan.account_id,
+        BankStatementFetched(
+            sync_id=plan.sync_id, document_id=document.id, year=key.year, number=key.number
+        ),
+    )
+    return document.id
+
+
+def list_statements(
+    conn: Connection, account_id: UUID, limit: int = _STATEMENT_LIST_LIMIT
+) -> list[BankStatement]:
+    """The account's stored PDF statements, newest year and number first."""
+    t = statement_table.c
+    rows = conn.execute(
+        select(t.id, t.account_id, t.year, t.number, t.document_id, t.sync_id, t.fetched_at)
+        .where(t.account_id == account_id)
+        .order_by(t.year.desc(), t.number.desc())
+        .limit(limit)
+    ).all()
+    return [BankStatement.model_validate(dict(r._mapping)) for r in rows]

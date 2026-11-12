@@ -118,6 +118,7 @@ class BankConnectionPatch(Patch):
     state only while its MAC verifies (step 1); null is not accepted for any field."""
 
     auto_sync: bool = Field(default=None)
+    fetch_statements: bool = Field(default=None)  # D154 (7)
     fints_url: FintsUrl = Field(default=None)
     login_name: LoginName = Field(default=None)
 
@@ -137,6 +138,8 @@ class BankConnection(MutableRecord):
     login_masked: LoginMasked
     tan_mechanism: str | None = Field(default=None, max_length=8)  # the security function
     auto_sync: bool = False
+    # D154 (7): every run also fetches the bank's PDF statements after its camt part.
+    fetch_statements: bool = False
     sca_confirmed_at: datetime | None = None  # the last approval; validity shown as an estimate
     last_sync_at: datetime | None = None  # the last successful run
     # The last booking day a successful run brought from the bank, imported or already
@@ -250,3 +253,16 @@ class StatementReading(Schema):
     dialog_ended: bool = False  # a message-level 9800: the bank ended the dialog
     reason: str | None = None
     pdf: bytes | None = Field(default=None, repr=False)
+
+
+class BankStatement(Schema):
+    """GET /accounts/{id}/bank-statements: one PDF statement the bank delivered (bank_statement,
+    D154 (5)), with the document it is stored as and the run that fetched it. Never the PDF."""
+
+    id: UUID
+    account_id: UUID
+    year: int = Field(ge=1000, le=9999)
+    number: int = Field(ge=1, le=99999)
+    document_id: UUID
+    sync_id: UUID
+    fetched_at: datetime

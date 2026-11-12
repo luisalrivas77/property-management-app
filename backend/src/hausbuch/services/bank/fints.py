@@ -82,7 +82,7 @@ import functools
 import logging
 import re
 import time
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import date
@@ -273,6 +273,12 @@ def _refused(answers: list[BankAnswer]) -> BankError:
         deciding_code(answers),
         answers=tuple(a for a in answers if _is_warning_or_error(a)),
     )
+
+
+def lock_refusal(answers: Sequence[BankAnswer]) -> BankError:
+    """bank.refused for a lock code in a statement fetch's answers (D154 (4): a lock still
+    ends the run as D151 says), with the same deciding code and answers as any refusal."""
+    return _refused(list(answers))
 
 
 class WriteRefused(RuntimeError):
