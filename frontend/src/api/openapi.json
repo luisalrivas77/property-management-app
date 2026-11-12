@@ -4561,6 +4561,50 @@
         }
       }
     },
+    "/api/accounts/{account_id}/bank-statements": {
+      "get": {
+        "summary": "Bank Statement List",
+        "operationId": "bank_statement_list_api_accounts__account_id__bank_statements_get",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BankStatement"
+                  },
+                  "title": "Response Bank Statement List Api Accounts  Account Id  Bank Statements Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/imports/{import_id}": {
       "get": {
         "summary": "Import Get",
@@ -8763,6 +8807,11 @@
             "title": "Auto Sync",
             "default": false
           },
+          "fetch_statements": {
+            "type": "boolean",
+            "title": "Fetch Statements",
+            "default": false
+          },
           "sca_confirmed_at": {
             "anyOf": [
               {
@@ -8862,6 +8911,10 @@
             "type": "boolean",
             "title": "Auto Sync"
           },
+          "fetch_statements": {
+            "type": "boolean",
+            "title": "Fetch Statements"
+          },
           "fints_url": {
             "type": "string",
             "maxLength": 500,
@@ -8879,6 +8932,60 @@
         "type": "object",
         "title": "BankConnectionPatch",
         "description": "PATCH /accounts/{id}/bank-connection. A changed URL or login keeps the stored client\nstate only while its MAC verifies (step 1); null is not accepted for any field."
+      },
+      "BankStatement": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "year": {
+            "type": "integer",
+            "maximum": 9999.0,
+            "minimum": 1000.0,
+            "title": "Year"
+          },
+          "number": {
+            "type": "integer",
+            "maximum": 99999.0,
+            "minimum": 1.0,
+            "title": "Number"
+          },
+          "document_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Document Id"
+          },
+          "sync_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sync Id"
+          },
+          "fetched_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Fetched At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "account_id",
+          "year",
+          "number",
+          "document_id",
+          "sync_id",
+          "fetched_at"
+        ],
+        "title": "BankStatement",
+        "description": "GET /accounts/{id}/bank-statements: one PDF statement the bank delivered (bank_statement,\nD154 (5)), with the document it is stored as and the run that fetched it. Never the PDF."
       },
       "BankSync": {
         "properties": {
@@ -12093,6 +12200,7 @@
           "account.sync_approval_needed",
           "account.sync_completed",
           "account.sync_failed",
+          "account.statement_fetched",
           "statement.imported",
           "statement.reconciled",
           "statement.unreconciled",

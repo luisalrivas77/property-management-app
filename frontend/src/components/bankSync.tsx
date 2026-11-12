@@ -21,12 +21,17 @@
 //   approval, the run stops at `needs_approval` with trigger `scheduled` and a card appears
 //   under „Zu prüfen“. Such a row is not a live wait here (no countdown, no polling, the
 //   button enabled): „Jetzt abrufen“ restarts it as a manual run, which then waits as above.
+// - „Kontoauszüge als PDF abrufen“ (D154, step 2b): the connection's `fetch_statements`,
+//   PATCHed at once like the daily switch. Each run then also asks the bank for its own PDF
+//   statements after the Umsätze; the card lists the stored ones (GET
+//   /accounts/{id}/bank-statements), each linking to its document, and how many the latest
+//   run brought (the rows whose sync_id is that run's, counted here; no amount is summed).
 import Link from "next/link";
-import { useCallback, useEffect, useId, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 
 import { api, ok } from "@/api/client";
 import { ApiError, ruleCodeText } from "@/api/errors";
-import type { Account, BankConnection, BankSync, SyncStatus } from "@/api/schemas";
+import type { Account, BankConnection, BankStatement, BankSync, SyncStatus } from "@/api/schemas";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { Field, FormBanner, Submit, useFormErrors } from "./form";
@@ -95,17 +100,22 @@ export function bankCodeFromIban(raw: string): string | null {
   return /^DE[0-9]{20}$/.test(compact) ? compact.slice(4, 12) : null;
 }
 
-async function loadBankSync(accountId: string): Promise<{ connection: BankConnection | null; syncs: BankSync[] }> {
+async function loadBankSync(
+  accountId: string,
+): Promise<{ connection: BankConnection | null; syncs: BankSync[]; statements: BankStatement[] }> {
   const path = { params: { path: { account_id: accountId } } };
   let connection: BankConnection | null;
   try {
     connection = await ok(api.GET("/api/accounts/{account_id}/bank-connection", path));
   } catch (error) {
-    if (error instanceof ApiError && error.status === 404) return { connection: null, syncs: [] };
+    if (error instanceof ApiError && error.status === 404) return { connection: null, syncs: [], statements: [] };
     throw error;
   }
-  const syncs = await ok(api.GET("/api/accounts/{account_id}/syncs", path));
-  return { connection, syncs };
+  const [syncs, statements] = await Promise.all([
+    ok(api.GET("/api/accounts/{account_id}/syncs", path)),
+    ok(api.GET("/api/accounts/{account_id}/bank-statements", path)),
+  ]);
+  return { connection, syncs, statements };
 }
 
 /** The later of two views of the runs: the one the card polled, or the list's newest. */
@@ -191,7 +201,20 @@ export function BankSyncCard({ account, onImported }: { account: Account; onImpo
       ) : (
         <>
           <ConnectionFacts connection={state.data.connection} />
-          <AutoSyncSwitch connection={state.data.connection} onSaved={reload} />
+          <ConnectionSwitch
+            connection={state.data.connection}
+            field="auto_sync"
+            label="Täglich automatisch abrufen"
+            hint={AUTO_SYNC_HINT}
+            onSaved={reload}
+          />
+          <ConnectionSwitch
+            connection={state.data.connection}
+            field="fetch_statements"
+            label="Kontoauszüge als PDF abrufen"
+            hint={FETCH_STATEMENTS_HINT}
+            onSaved={reload}
+          />
           <div className="row">
             <button type="button" onClick={() => void start()} disabled={starting || busy}>
               {starting ? "Startet …" : busy ? "Abruf läuft …" : expired ? "Erneut abrufen" : "Jetzt abrufen"}
@@ -212,6 +235,9 @@ export function BankSyncCard({ account, onImported }: { account: Account; onImpo
           {current ? <RunNow run={current} accountId={account.id} now={now} stuck={expired && staleAt(current) !== null} /> : null}
           <ErrorNotice error={pollError} />
           {state.data.syncs.length > 0 ? <RunHistory runs={state.data.syncs} /> : null}
+          {state.data.connection.fetch_statements || state.data.statements.length > 0 ? (
+            <StatementList statements={state.data.statements} latest={latest} />
+          ) : null}
         </>
       )}
     </section>
@@ -252,13 +278,44 @@ function ConnectionFacts({ connection }: { connection: BankConnection }) {
   );
 }
 
-/** The daily fetch (D120): the connection's auto_sync, saved as soon as it is ticked. */
-function AutoSyncSwitch({ connection, onSaved }: { connection: BankConnection; onSaved: () => void }) {
+const AUTO_SYNC_HINT = (
+  <>
+    Hausbuch fragt die Bank jeden Morgen gegen halb acht (im Sommer gegen halb neun) und holt nur die Umsätze seit dem
+    letzten Abruf, zur Sicherheit ab zwei Wochen davor; schon vorhandene erkennt Hausbuch und bucht sie nicht doppelt.
+    Verlangt die Bank dafür einmal eine Freigabe, erscheint unter „Zu prüfen“ eine Karte; bis dahin ruft Hausbuch dieses
+    Konto nicht automatisch ab, damit keine weiteren Anfragen aufs Handy kommen.
+  </>
+);
+
+const FETCH_STATEMENTS_HINT = (
+  <>
+    Bei jedem Abruf holt Hausbuch nach den Umsätzen auch die Kontoauszüge der Bank als PDF, die noch fehlen, nach ihrer
+    Nummer. Sie liegen dann unten in der Liste und im Jahresarchiv unter „kontoauszuege/“, als Nachweis, den das
+    Finanzamt kennt. Gebucht wird weiter nur aus den Umsätzen; ein Auszug ändert keine Buchung. Hausbuch fragt nur nach
+    Auszügen, die die Bank schon erstellt hat, und fordert nie einen neuen an.
+  </>
+);
+
+/** A switch of the connection (the daily fetch, D120; the PDF statements, D154), saved as
+ * soon as it is ticked. */
+function ConnectionSwitch({
+  connection,
+  field,
+  label,
+  hint,
+  onSaved,
+}: {
+  connection: BankConnection;
+  field: "auto_sync" | "fetch_statements";
+  label: string;
+  hint: ReactNode;
+  onSaved: () => void;
+}) {
   const id = useId();
   const [saved, setSaved] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const on = saved ?? connection.auto_sync;
+  const on = saved ?? connection[field];
 
   async function change(value: boolean) {
     setBusy(true);
@@ -267,10 +324,10 @@ function AutoSyncSwitch({ connection, onSaved }: { connection: BankConnection; o
       const updated = await ok(
         api.PATCH("/api/accounts/{account_id}/bank-connection", {
           params: { path: { account_id: connection.account_id } },
-          body: { auto_sync: value },
+          body: field === "auto_sync" ? { auto_sync: value } : { fetch_statements: value },
         }),
       );
-      setSaved(updated.auto_sync);
+      setSaved(updated[field]);
       onSaved();
     } catch (caught) {
       setError(caught);
@@ -282,17 +339,46 @@ function AutoSyncSwitch({ connection, onSaved }: { connection: BankConnection; o
   return (
     <div className="field">
       <label className="inline" htmlFor={id}>
-        <input id={id} type="checkbox" checked={on} disabled={busy} onChange={(e) => void change(e.target.checked)} /> Täglich
-        automatisch abrufen
+        <input id={id} type="checkbox" checked={on} disabled={busy} onChange={(e) => void change(e.target.checked)} />{" "}
+        {label}
       </label>
-      <p className="muted hint">
-        Hausbuch fragt die Bank jeden Morgen gegen halb acht (im Sommer gegen halb neun) und holt nur die Umsätze seit dem
-        letzten Abruf, zur Sicherheit ab zwei Wochen davor; schon vorhandene erkennt Hausbuch und bucht sie nicht doppelt.
-        Verlangt die Bank dafür einmal eine Freigabe, erscheint unter „Zu prüfen“ eine Karte;
-        bis dahin ruft Hausbuch dieses Konto nicht automatisch ab, damit keine weiteren Anfragen aufs Handy kommen.
-      </p>
+      <p className="muted hint">{hint}</p>
       <ErrorNotice error={error} />
     </div>
+  );
+}
+
+/** The bank's PDF statements stored for the account (D154), newest first as the API lists
+ * them, each opening its document; and how many the latest run brought. */
+function StatementList({ statements, latest }: { statements: BankStatement[]; latest: BankSync | null }) {
+  const fromLatest = latest ? statements.filter((s) => s.sync_id === latest.id).length : 0;
+  return (
+    <>
+      <h3>Kontoauszüge der Bank (PDF)</h3>
+      {statements.length === 0 ? (
+        <p className="muted">
+          Noch keiner abgerufen. Beim nächsten Abruf fragt Hausbuch die Bank nach ihren Kontoauszügen als PDF.
+        </p>
+      ) : (
+        <>
+          {fromLatest > 0 ? (
+            <p className="muted">
+              Beim letzten Abruf {fromLatest === 1 ? "1 Kontoauszug" : `${fromLatest} Kontoauszüge`} neu abgerufen.
+            </p>
+          ) : null}
+          <ul>
+            {statements.map((s) => (
+              <li key={s.id}>
+                <Link href={`/documents/${s.document_id}`}>
+                  Kontoauszug {s.number}/{s.year}
+                </Link>{" "}
+                <span className="muted">abgerufen {formatDateTime(s.fetched_at)}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </>
   );
 }
 
