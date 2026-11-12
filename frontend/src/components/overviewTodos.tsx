@@ -163,9 +163,15 @@ function buildEntries(data: OverviewTodosData, reminders: Reminder[], onChanged:
     }
   }
 
+  // A reminder becomes a to-do on its visible_from day, the day its Zu prüfen card appears;
+  // until then it is only a date under Nächste Termine. Before, every listed reminder was a
+  // to-do, so the bank.sync_stale watchdog, due 35 days after the last good fetch, read as
+  // "Bankabruf … lange nicht erfolgreich" the morning after a successful one (12 Nov 2026).
+  const today = todayIso();
   for (const reminder of reminders) {
     const guide = REMINDER_GUIDE[reminder.kind];
     if (!guide?.todo || reminder.kind === "tax.questionnaire_open") continue;
+    if (reminder.visible_from > today) continue;
     if (reminder.kind === "tax.wage_certificate_missing" && certificateMissing) continue;
     const link = reminderLink(reminder);
     entries.push({
