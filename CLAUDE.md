@@ -35,6 +35,7 @@ only in a spec PR, never to make an implementation pass.
 
 Design plans for later phases (not specs; only what the Decisions table records is agreed):
 
+- Phase 6, Konten & Vermögen (every account with owner shares, the household taxonomy, internal transfers, the depot by documents, the exchange by CSV, prices from the issuers and the chains, net worth): `docs/phases/phase-6.md` (spec drafted 12 Nov 2026 and revised the same day with Luis's answers; not built; step 0 next)
 - Household finances, phases 6–9 (all accounts, crypto, Anlage KAP and SO, financial health):
   `docs/design/household-finances.md` (agreed 6 Nov 2026, Luis's answers in §10; not specced)
 
