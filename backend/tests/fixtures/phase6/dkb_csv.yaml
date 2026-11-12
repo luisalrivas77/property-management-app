@@ -26,8 +26,8 @@
 #   - the IBAN of the metadata line routes the file (D164): imported onto an account with
 #     another IBAN it is refused with statement.account_mismatch
 #
-# Invented names and amounts; IBANs are checksum-valid test IBANs (DE02120300000000202051 is
-# DKB's published example IBAN). Owner A stands for the account holder.
+# Invented names and amounts; IBANs are checksum-valid synthetic IBANs under the
+# Bundesbank test BLZ 10000000, none under a real bank. Owner A stands for the account holder.
 #
 # Step 0 readings (listed in the step 0 report):
 # - Umsatztyp (Eingang/Ausgang) is the booking_text; the account holder's own name column
@@ -46,10 +46,10 @@ cases:
     pending: "phase 6 step 1 (the DKB CSV reader, D173 (3))"
     input:
       media_type: text/csv
-      text: "﻿\"Girokonto\";\"DE02 1203 0000 0000 2020 51\"\n\"\"\n\"Kontostand vom 05.11.2026:\";\"1.234,56 €\"\n\"\"\n\"Buchungsdatum\";\"Wertstellung\";\"Status\";\"Zahlungspflichtige*r\";\"Zahlungsempfänger*in\";\"Verwendungszweck\";\"Umsatztyp\";\"IBAN\";\"Betrag (€)\";\"Gläubiger-ID\";\"Mandatsreferenz\";\"Kundenreferenz\"\n\"05.11.26\";\"05.11.26\";\"Gebucht\";\"Owner A\";\"REWE SAGT DANKE 12345\";\"Kartenzahlung girocard\";\"Ausgang\";\"\";\"-42,17\";\"\";\"\";\"\"\n\"04.11.26\";\"04.11.26\";\"Vorgemerkt\";\"Owner A\";\"BEISPIEL ONLINE SHOP\";\"Kartenzahlung\";\"Ausgang\";\"\";\"-19,99\";\"\";\"\";\"\"\n\"03.11.26\";\"03.11.26\";\"Gebucht\";\"Owner A\";\"Stadtwerke Beispiel GmbH\";\"Abschlag Strom 11/2026\";\"Ausgang\";\"DE45100000000000003001\";\"-58,00\";\"DE98ZZZ09999999999\";\"MREF-4711\";\"\"\n\"01.11.26\";\"01.11.26\";\"Gebucht\";\"Partei J\";\"Owner A\";\"Rückzahlung Konzertkarten\";\"Eingang\";\"DE18100000000000003002\";\"35,00\";\"\";\"\";\"KREF-2026-11\"\n\"28.10.26\";\"28.10.26\";\"Gebucht\";\"Owner A\";\"BÄCKEREI BEISPIEL\";\"Kartenzahlung girocard\";\"Ausgang\";\"\";\"-3,20\";\"\";\"\";\"\"\n\"28.10.26\";\"28.10.26\";\"Gebucht\";\"Owner A\";\"BÄCKEREI BEISPIEL\";\"Kartenzahlung girocard\";\"Ausgang\";\"\";\"-3,20\";\"\";\"\";\"\"\n"
+      text: "﻿\"Girokonto\";\"DE61 1000 0000 0000 0030 04\"\n\"\"\n\"Kontostand vom 05.11.2026:\";\"1.234,56 €\"\n\"\"\n\"Buchungsdatum\";\"Wertstellung\";\"Status\";\"Zahlungspflichtige*r\";\"Zahlungsempfänger*in\";\"Verwendungszweck\";\"Umsatztyp\";\"IBAN\";\"Betrag (€)\";\"Gläubiger-ID\";\"Mandatsreferenz\";\"Kundenreferenz\"\n\"05.11.26\";\"05.11.26\";\"Gebucht\";\"Owner A\";\"REWE SAGT DANKE 12345\";\"Kartenzahlung girocard\";\"Ausgang\";\"\";\"-42,17\";\"\";\"\";\"\"\n\"04.11.26\";\"04.11.26\";\"Vorgemerkt\";\"Owner A\";\"BEISPIEL ONLINE SHOP\";\"Kartenzahlung\";\"Ausgang\";\"\";\"-19,99\";\"\";\"\";\"\"\n\"03.11.26\";\"03.11.26\";\"Gebucht\";\"Owner A\";\"Stadtwerke Beispiel GmbH\";\"Abschlag Strom 11/2026\";\"Ausgang\";\"DE45100000000000003001\";\"-58,00\";\"DE98ZZZ09999999999\";\"MREF-4711\";\"\"\n\"01.11.26\";\"01.11.26\";\"Gebucht\";\"Partei J\";\"Owner A\";\"Rückzahlung Konzertkarten\";\"Eingang\";\"DE18100000000000003002\";\"35,00\";\"\";\"\";\"KREF-2026-11\"\n\"28.10.26\";\"28.10.26\";\"Gebucht\";\"Owner A\";\"BÄCKEREI BEISPIEL\";\"Kartenzahlung girocard\";\"Ausgang\";\"\";\"-3,20\";\"\";\"\";\"\"\n\"28.10.26\";\"28.10.26\";\"Gebucht\";\"Owner A\";\"BÄCKEREI BEISPIEL\";\"Kartenzahlung girocard\";\"Ausgang\";\"\";\"-3,20\";\"\";\"\";\"\"\n"
     expect:
       format: dkb_csv
-      account_iban: DE02120300000000202051
+      account_iban: DE61100000000000003004
       opening_balance: null
       closing_balance: null
       line_count: 5
@@ -73,7 +73,7 @@ cases:
         - index: 4
           line: {booking_date: 2026-10-28, value_date: 2026-10-28, amount: "-3.20", counterparty_name: BÄCKEREI BEISPIEL, purpose: Kartenzahlung girocard, booking_text: Ausgang}
     import:
-      account_iban: DE02120300000000202051
+      account_iban: DE61100000000000003004
       status: pending_balance
       prefilled_closing: "1234.56"
       prefilled_on: 2026-11-05
@@ -85,10 +85,10 @@ cases:
     pending: "phase 6 step 1 (the DKB CSV reader, D173 (3))"
     input:
       media_type: text/csv
-      text: "﻿\"Girokonto\";\"DE02 1203 0000 0000 2020 51\"\n\"\"\n\"Zeitraum:\";\"01.10.2026 - 31.10.2026\"\n\"Status:\";\"Alle Umsätze\"\n\"Kontostand vom 31.10.2026:\";\"1.306,13 €\"\n\"\"\n\"Buchungsdatum\";\"Wertstellung\";\"Status\";\"Zahlungspflichtige*r\";\"Zahlungsempfänger*in\";\"Verwendungszweck\";\"Umsatztyp\";\"IBAN\";\"Betrag (€)\";\"Gläubiger-ID\";\"Mandatsreferenz\";\"Kundenreferenz\"\n\"28.10.26\";\"28.10.26\";\"Gebucht\";\"Owner A\";\"BÄCKEREI BEISPIEL\";\"Kartenzahlung girocard\";\"Ausgang\";\"\";\"-3,20\";\"\";\"\";\"\"\n"
+      text: "﻿\"Girokonto\";\"DE61 1000 0000 0000 0030 04\"\n\"\"\n\"Zeitraum:\";\"01.10.2026 - 31.10.2026\"\n\"Status:\";\"Alle Umsätze\"\n\"Kontostand vom 31.10.2026:\";\"1.306,13 €\"\n\"\"\n\"Buchungsdatum\";\"Wertstellung\";\"Status\";\"Zahlungspflichtige*r\";\"Zahlungsempfänger*in\";\"Verwendungszweck\";\"Umsatztyp\";\"IBAN\";\"Betrag (€)\";\"Gläubiger-ID\";\"Mandatsreferenz\";\"Kundenreferenz\"\n\"28.10.26\";\"28.10.26\";\"Gebucht\";\"Owner A\";\"BÄCKEREI BEISPIEL\";\"Kartenzahlung girocard\";\"Ausgang\";\"\";\"-3,20\";\"\";\"\";\"\"\n"
     expect:
       format: dkb_csv
-      account_iban: DE02120300000000202051
+      account_iban: DE61100000000000003004
       opening_balance: null
       closing_balance: null
       line_count: 1
@@ -99,7 +99,7 @@ cases:
         - index: 0
           line: {booking_date: 2026-10-28, value_date: 2026-10-28, amount: "-3.20", counterparty_name: BÄCKEREI BEISPIEL, purpose: Kartenzahlung girocard, booking_text: Ausgang}
     import:
-      account_iban: DE02120300000000202051
+      account_iban: DE61100000000000003004
       status: pending_balance
       prefilled_closing: "1306.13"
       prefilled_on: 2026-10-31
@@ -111,10 +111,10 @@ cases:
     pending: "phase 6 step 1 (D164's routing)"
     input:
       media_type: text/csv
-      text: "﻿\"Girokonto\";\"DE02 1203 0000 0000 2020 51\"\n\"\"\n\"Kontostand vom 31.10.2026:\";\"1.306,13 €\"\n\"\"\n\"Buchungsdatum\";\"Wertstellung\";\"Status\";\"Zahlungspflichtige*r\";\"Zahlungsempfänger*in\";\"Verwendungszweck\";\"Umsatztyp\";\"IBAN\";\"Betrag (€)\";\"Gläubiger-ID\";\"Mandatsreferenz\";\"Kundenreferenz\"\n\"28.10.26\";\"28.10.26\";\"Gebucht\";\"Owner A\";\"BÄCKEREI BEISPIEL\";\"Kartenzahlung girocard\";\"Ausgang\";\"\";\"-3,20\";\"\";\"\";\"\"\n"
+      text: "﻿\"Girokonto\";\"DE61 1000 0000 0000 0030 04\"\n\"\"\n\"Kontostand vom 31.10.2026:\";\"1.306,13 €\"\n\"\"\n\"Buchungsdatum\";\"Wertstellung\";\"Status\";\"Zahlungspflichtige*r\";\"Zahlungsempfänger*in\";\"Verwendungszweck\";\"Umsatztyp\";\"IBAN\";\"Betrag (€)\";\"Gläubiger-ID\";\"Mandatsreferenz\";\"Kundenreferenz\"\n\"28.10.26\";\"28.10.26\";\"Gebucht\";\"Owner A\";\"BÄCKEREI BEISPIEL\";\"Kartenzahlung girocard\";\"Ausgang\";\"\";\"-3,20\";\"\";\"\";\"\"\n"
     expect:
       format: dkb_csv
-      account_iban: DE02120300000000202051
+      account_iban: DE61100000000000003004
       opening_balance: null
       closing_balance: null
       line_count: 1
