@@ -22,6 +22,7 @@ from hausbuch.ai.fake import FakeModelClient
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import ai_call as ai_call_table
 from hausbuch.db.tables import event as event_table
+from hausbuch.jobs import enqueue
 from hausbuch.jobs.document_read import JobDeps, run_document_read
 from hausbuch.jobs.matching import run_match_transaction
 from hausbuch.rules import statements as rules
@@ -264,7 +265,7 @@ def test_a_card_account_stays_private(run, fresh_workspaces):
 
 
 def test_the_payment_iban_is_confirmed_from_the_statement(
-    run, read, blob_store, fresh_workspaces, hook_calls
+    run, read, blob_store, fresh_workspaces, hook_calls, app_engine
 ):
     ws, _ = fresh_workspaces
     case = _first()
@@ -277,6 +278,14 @@ def test_the_payment_iban_is_confirmed_from_the_statement(
     confirmed = run(ws, confirm_payment_iban, blob_store, card.id, body, iban_key=TEST_IBAN_KEY)
     assert confirmed.payment_iban_masked == case.import_.payment_iban_masked
     assert confirmed.payment_iban_proposal is None
+    # D176 (4): the debits to the confirmed IBAN that wait are re-checked (rematch_waiting).
+    lock = enqueue.waiting_lock(enqueue.waiting_trigger(enqueue.TRIGGER_ACCOUNT, card.id))
+    with app_engine.begin() as conn:
+        queued = conn.execute(
+            text("SELECT count(*) FROM procrastinate_jobs WHERE lock = :lock"), {"lock": lock}
+        ).scalar_one()
+        conn.execute(text("DELETE FROM procrastinate_jobs WHERE lock = :lock"), {"lock": lock})
+    assert queued == 1
     again = run(ws, confirm_payment_iban, blob_store, card.id, body, iban_key=TEST_IBAN_KEY)
     assert again == confirmed
 
