@@ -35,6 +35,7 @@ from hausbuch.db.tables import transfer_link as link_table
 from hausbuch.rules.errors import TRANSFER_LEGS_INVALID
 from hausbuch.rules.matching import (
     TRANSFER_CATEGORIES,
+    ibans_agree,
     legs_fit,
     match_transfer,
     transfer_link_kind,
@@ -352,6 +353,7 @@ def _both_ways(
         for o in rest
         if o.leg.account_id != counter.leg.account_id
         and (o.leg.amount > 0) != (counter.leg.amount > 0)
+        and ibans_agree(counter.leg, o.leg)
         and legs_fit(*_out_in(counter.leg, o.leg))
     ]
     return fits == [leg.leg.id]

@@ -1163,6 +1163,22 @@ def legs_fit(out: TransferLeg, in_: TransferLeg, *, exact: bool = False) -> bool
     return Decimal("0") <= gap <= fee
 
 
+def ibans_agree(a: TransferLeg, b: TransferLeg) -> bool:
+    """D162: two legs may be one transfer only when neither names another account: a leg's
+    counterparty IBAN, when known, is the other leg's account IBAN, when that is known. So a
+    third party's line of the same amount is never the counterpart (an exchange or depot
+    account without an IBAN still pairs with the bank line to its bank)."""
+
+    def names_other(x: TransferLeg, y: TransferLeg) -> bool:
+        return (
+            x.counterparty_iban_hmac is not None
+            and y.account_iban_hmac is not None
+            and x.counterparty_iban_hmac != y.account_iban_hmac
+        )
+
+    return not names_other(a, b) and not names_other(b, a)
+
+
 def _candidate(a: TransferLeg, b: TransferLeg) -> TransferCandidate:
     out, in_ = _ordered(a, b)
     return TransferCandidate(
@@ -1193,12 +1209,16 @@ def match_transfer(leg: TransferLeg, context: MatchContext, *, today: date) -> T
     matcher), several -> transfer.ambiguous with the candidates, none -> no card until the
     window has passed (`today` after its third banking day), then transfer.unmatched_leg. A
     leg that is neither, whose amount and date fit exactly one exchange or depot EUR movement,
-    is proposed as a link for review, never written, and keeps no category."""
+    is proposed as a link for review, never written, and keeps no category. A candidate
+    whose IBANs name another account than the leg's is never one (ibans_agree)."""
     credit = leg.amount > 0
     other = [
         o
         for o in context.open_legs
-        if o.account_id != leg.account_id and o.amount != 0 and (o.amount > 0) != credit
+        if o.account_id != leg.account_id
+        and o.amount != 0
+        and (o.amount > 0) != credit
+        and ibans_agree(leg, o)
     ]
     category = transfer_category(leg, context)
     if category is None:

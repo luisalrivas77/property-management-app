@@ -11,8 +11,10 @@ import pytest
 from db.db_support import TEST_IBAN_KEY
 from db.matching_support import ACCOUNT_IBAN, PAINTER_IBAN, World
 from db.test_services_private_matching import NOW, PRIVATE_IBAN, Private
-from sqlalchemy import select
+from sqlalchemy import select, update
 
+from hausbuch.db.session import workspace_transaction
+from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import transfer_link as link_table
@@ -40,6 +42,8 @@ pytestmark = pytest.mark.db
 C = AllocationCategory
 TODAY = NOW.date()
 MONDAY = date(2026, 10, 5)
+FRIEND_IBAN = "DE46100000000000000073"  # a third party's account, not the household's
+SAVINGS_IBAN = "DE73100000000000000072"  # Bundesbank test bank code 10000000
 
 
 @pytest.fixture
@@ -95,6 +99,21 @@ def _open(world: World):
     return world.query(transfers.open_transfers, TODAY)
 
 
+def _savings(world: World) -> Private:
+    """A Tagesgeld account of the household, with its own reconciled import."""
+    savings = Private.__new__(Private)
+    savings.world = world
+    with workspace_transaction(world.engine, world.ws) as conn:
+        savings.account_id = world._account(conn, SAVINGS_IBAN, owner=True)
+        conn.execute(
+            update(account_table)
+            .where(account_table.c.id == savings.account_id)
+            .values(kind="bank_savings")
+        )
+    savings.import_id = savings.add_import(world.now)
+    return savings
+
+
 # --- D162: links --------------------------------------------------------------------------
 
 
@@ -146,6 +165,47 @@ def test_two_equal_counterparts_are_ambiguous_from_either_side(world, private):
     assert sorted(c.id for c in card.candidates) == sorted([first, second])
     [item] = [i for i in world.query(review.inbox, TODAY) if i.kind is InboxItemKind.TRANSFER_LINK]
     assert (item.transaction_id, item.question) == (out, "Welche Buchung ist die Gegenbuchung?")
+
+
+def test_a_third_partys_credit_of_the_same_amount_is_never_the_counterpart(world, private):
+    """Review F1: a friend's 500 on the private account, booked as other income, is no
+    counterpart of the rental account's transfer to that account (its IBAN names a third
+    account); the real mirror, imported later, is linked and no card is left."""
+    out = world.line(MONDAY, "-500.00", iban=PRIVATE_IBAN, purpose="Umbuchung")
+    _match(world, out)
+    assert [(r.category, r.status) for r in _rows(world, out)] == [
+        ("owner_transfer_out", "confirmed")
+    ]
+    friend = private.line(
+        date(2026, 10, 6), "500.00", iban=FRIEND_IBAN, name="Freund", purpose="Geschenk"
+    )
+    _book(world, friend, "500.00", C.HH_OTHER_INCOME)
+    assert _links(world) == []
+    mirror = private.line(date(2026, 10, 6), "500.00", iban=ACCOUNT_IBAN, purpose="Umbuchung")
+    _match(world, mirror)
+    assert [r.category for r in _rows(world, mirror)] == ["internal_transfer_in"]
+    [link] = _links(world)
+    assert (link.out_transaction_id, link.in_transaction_id) == (out, mirror)
+    assert link.matched_by == TransferMatchedBy.MATCHER.value
+    assert _open(world) == []
+
+
+def test_two_equal_transfers_into_one_account_are_told_apart_by_their_ibans(world, private):
+    """Review F1, scenario B: the rental and the private account each pay 500 into the savings
+    account on one day; each savings credit names its sender, so each is linked to its own
+    out-leg and neither side asks which (no transfer.ambiguous)."""
+    savings = _savings(world)
+    from_rental = world.line(MONDAY, "-500.00", iban=SAVINGS_IBAN, purpose="Sparen")
+    from_private = private.line(MONDAY, "-500.00", iban=SAVINGS_IBAN, purpose="Sparen")
+    in_rental = savings.line(date(2026, 10, 6), "500.00", iban=ACCOUNT_IBAN, purpose="Sparen")
+    in_private = savings.line(date(2026, 10, 6), "500.00", iban=PRIVATE_IBAN, purpose="Sparen")
+    for tx in (from_rental, from_private, in_rental, in_private):
+        _match(world, tx)
+    assert [r.category for r in _rows(world, from_rental)] == ["owner_transfer_out"]
+    assert [r.category for r in _rows(world, in_private)] == ["internal_transfer_in"]
+    pairs = {(link.out_transaction_id, link.in_transaction_id) for link in _links(world)}
+    assert pairs == {(from_rental, in_rental), (from_private, in_private)}
+    assert _open(world) == []
 
 
 def test_a_leg_past_its_window_without_a_counterpart_gets_the_unmatched_card(world, private):
