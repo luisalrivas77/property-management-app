@@ -14,6 +14,9 @@
 //   tariff: projection.no_rule_set, tariff.no_file) gets a plain notice, not an error.
 // - Every figure opens its sources (principle 2): the year's, the tax effect's or the bridge
 //   row's SourceRefs; a payment shows its bank line and Beleg, as on the Steuern screen.
+// - Above the actuals, the card „Nebenkostenpauschalen“ (D155 (5)): GET …/flat-rate-check, the
+//   costs when each Pauschale was set against today, per tenancy its share and verdict; it
+//   needs no rule set, so it shows even when the actuals are refused.
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
@@ -24,6 +27,9 @@ import type {
   AllocationFact,
   Assumption,
   BridgeRow,
+  CostLevel,
+  CostRate,
+  FlatRateCheck,
   Levers,
   Projection,
   Property,
@@ -32,8 +38,11 @@ import type {
   TaxEffect,
   TaxRateResult,
   TaxSourceRef,
+  TenancyFlatRate,
   YearFigures,
 } from "@/api/schemas";
+
+import { FLAT_RATE_CARD_ID, FLAT_RATE_NOT_ADVICE, FlatRateActions } from "./flatRate";
 
 import { Field, FormBanner, Submit, useFormErrors } from "./form";
 import { formatDate, formatDateTime, formatDecimal, formatMoney, shiftDecimal, todayIso } from "./format";
@@ -261,6 +270,11 @@ export function PlanningScreen({ property, properties }: { property: Property; p
     [property.id],
   );
   const actuals = useLoad(loadActuals);
+  const loadFlatRate = useCallback(
+    () => ok(api.GET("/api/properties/{property_id}/flat-rate-check", { params: { path: { property_id: property.id } } })),
+    [property.id],
+  );
+  const flatRate = useLoad(loadFlatRate);
   const loadProjection = useCallback(
     () =>
       orRefused(
@@ -284,6 +298,7 @@ export function PlanningScreen({ property, properties }: { property: Property; p
 
   const actualsRefused = actuals.data !== undefined && isRefused(actuals.data);
   const actualYears = actuals.data !== undefined && !isRefused(actuals.data) ? actuals.data.years : undefined;
+  const hasFlatRateCard = (flatRate.data?.tenancies ?? []).length > 0;
 
   return (
     <>
@@ -320,9 +335,18 @@ export function PlanningScreen({ property, properties }: { property: Property; p
         </span>
       </nav>
       <div className="stack planning">
+        {flatRate.data !== undefined || flatRate.error != null ? (
+          <Loading state={flatRate}>
+            {(check) => <FlatRateCard check={check} actualYears={actualYears} propertyId={property.id} />}
+          </Loading>
+        ) : null}
         <Loading state={actuals}>
           {(data) =>
-            isRefused(data) ? <RefusalNotice refusal={data.refused} /> : <ActualsCard years={data.years} propertyId={property.id} />
+            isRefused(data) ? (
+              <RefusalNotice refusal={data.refused} />
+            ) : (
+              <ActualsCard years={data.years} propertyId={property.id} flatRateCard={hasFlatRateCard} />
+            )
           }
         </Loading>
         {actualsRefused ? null : (
@@ -403,8 +427,12 @@ function Figure({ label, value, valueClass, sub }: { label: string; value: React
 }
 
 /** The current year as far as booked (D85: "bisher"), else the latest actual year. */
-function ActualsCard({ years, propertyId }: { years: YearFigures[]; propertyId: string }) {
-  const year = years.find((y) => (y.flags ?? []).includes("so_far")) ?? years[years.length - 1];
+function shownYear(years: YearFigures[]): YearFigures | undefined {
+  return years.find((y) => (y.flags ?? []).includes("so_far")) ?? years[years.length - 1];
+}
+
+function ActualsCard({ years, propertyId, flatRateCard }: { years: YearFigures[]; propertyId: string; flatRateCard: boolean }) {
+  const year = shownYear(years);
   if (!year) {
     return (
       <section className="card">
@@ -457,16 +485,18 @@ function ActualsCard({ years, propertyId }: { years: YearFigures[]; propertyId: 
         {isZero(year.other_income) ? null : <> · sonstige Einnahmen {formatMoney(year.other_income)}</>}
       </p>
       {year.flat_rate_gap_monthly != null && year.flat_rate_months != null ? (
-        <FlatRateCheck year={year} gap={year.flat_rate_gap_monthly} months={year.flat_rate_months} />
+        <FlatRateCoverage year={year} gap={year.flat_rate_gap_monthly} months={year.flat_rate_months} linked={flatRateCard} />
       ) : null}
     </section>
   );
 }
 
-/** The Pauschale check (D91, D92): flat-rate charges received against the umlagefähige costs
+/** The Pauschale coverage (D91, D92): flat-rate charges received against the umlagefähige costs
  * paid (the flat's electricity included), per month the Pauschalen were in force. Information
- * only; nothing is drafted. The lease's rise clause needs a second year to compare with. */
-function FlatRateCheck({ year, gap, months }: { year: YearFigures; gap: string; months: number }) {
+ * only. Whether a Pauschale may rise is the card „Nebenkostenpauschalen“ (D155), which compares
+ * the costs when each Pauschale was set with today and needs no second year; `linked` when that
+ * card is on the screen. */
+function FlatRateCoverage({ year, gap, months, linked }: { year: YearFigures; gap: string; months: number; linked: boolean }) {
   const verdict = isNegative(gap)
     ? "Die Kosten liegen über den Pauschalen."
     : isZero(gap)
@@ -480,11 +510,218 @@ function FlatRateCheck({ year, gap, months }: { year: YearFigures; gap: string; 
         {signedMoney(gap)} pro Monat, über {months === 1 ? "1 Monat" : `${months} Monate`}
       </span>
       . {verdict}{" "}
-      <span className="muted">
-        Ob der Mietvertrag eine Erhöhung erlaubt (Kosten mehr als 10 € im Monat gestiegen), lässt sich erst mit
-        einem zweiten Jahr vergleichen.
-      </span>
+      {linked ? (
+        <span className="muted">
+          Ob eine Pauschale steigen kann oder sinken muss, zeigt <a href={`#${FLAT_RATE_CARD_ID}`}>Nebenkostenpauschalen</a>.
+        </span>
+      ) : null}
     </p>
+  );
+}
+
+// --- Nebenkostenpauschalen card (D155) --------------------------------------------------------
+
+const RATE_BASIS: Record<CostRate["basis"], string> = {
+  monthly_payment: "Monatszahlung",
+  yearly_premium: "Jahresbeitrag ÷ 12",
+  schedule: "Grundsteuerbescheid ÷ 12",
+  twelve_months: "Zahlungen der letzten 12 Monate ÷ 12",
+  none: "nichts gebucht",
+};
+
+const ELECTRICITY_NOTE =
+  "Strom ist keine Betriebskostenart nach § 2 BetrKV; ob § 560 BGB eine Erhöhung für den mit der Pauschale abgegoltenen Strom erlaubt, ist nicht geklärt. Diese Zeile löst deshalb nichts aus.";
+
+/** A rate with its sources and how it was found. */
+function RateCell({ rate, date, propertyId }: { rate: CostRate | undefined; date: string; propertyId: string }) {
+  if (!rate) return <td className="num">–</td>;
+  const label = ALLOCATION_CATEGORY[rate.category];
+  return (
+    <td className="num">
+      <SourcesDialog
+        label={formatMoney(rate.monthly)}
+        title={`${label} am ${formatDate(date)}`}
+        refs={rate.sources ?? []}
+        propertyId={propertyId}
+      />
+      <span className="tax-line-sub">
+        {RATE_BASIS[rate.basis]}
+        {rate.from_later ? ", erste Zahlung danach" : ""}
+      </span>
+    </td>
+  );
+}
+
+function rateOf(level: CostLevel | undefined, category: CostRate["category"]): CostRate | undefined {
+  return level?.rates.find((rate) => rate.category === category);
+}
+
+/** „kann steigen, frühestens ab 01.04.2027“, „senken ab 01.01.2027“ or why not. */
+function verdictText(tenancy: TenancyFlatRate, raiseAbove: string): string {
+  if (tenancy.verdict === "raise") return `kann steigen, frühestens ab ${formatDate(tenancy.earliest_start)}`;
+  if (tenancy.verdict === "lower") return `senken ab ${formatDate(tenancy.fell_on)}`;
+  return isZero(tenancy.rise) ? "unverändert" : `Anstieg bis ${formatMoney(raiseAbove)} im Monat: keine Erhöhung`;
+}
+
+/** Per date a Pauschale was set: the costs then and now per category; per tenancy its share
+ * of the change and the verdict; the coverage of the shown year; settlements as hints. Every
+ * figure is the check's own (principle 1); nothing here adds or splits. */
+function FlatRateCard({
+  check,
+  actualYears,
+  propertyId,
+}: {
+  check: FlatRateCheck;
+  actualYears: YearFigures[] | undefined;
+  propertyId: string;
+}) {
+  const tenancies = check.tenancies ?? [];
+  if (tenancies.length === 0) return null;
+  const levels = check.levels ?? [];
+  const levelOn = (date: string) => levels.find((level) => level.as_of === date);
+  const now = levelOn(check.as_of);
+  const setDates = [...new Set(tenancies.map((t) => t.set_on))].sort();
+  const year = actualYears ? shownYear(actualYears) : undefined;
+  const gap = year?.flat_rate_gap_monthly ?? null;
+  const settlements = check.settlements ?? [];
+  const title = "Nebenkostenpauschalen";
+  return (
+    <section className="card" id={FLAT_RATE_CARD_ID} aria-label={title}>
+      <div className="planning-card-head">
+        <h2>{title}</h2>
+        <span className="muted">Kosten bei Festlegung der Pauschale und heute ({formatDate(check.as_of)}), pro Monat</span>
+      </div>
+      {setDates.map((setOn) => {
+        const group = tenancies.filter((t) => t.set_on === setOn);
+        const first = group[0];
+        if (!first) return null;
+        const then = levelOn(setOn);
+        return (
+          <div key={setOn} className="stack">
+            <h3>
+              Festgelegt am {formatDate(setOn)}: {group.map((t) => t.unit_label).join(", ")}
+            </h3>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Kostenart (ganze Wohnung)</th>
+                    <th scope="col" className="num">
+                      am {formatDate(setOn)}
+                    </th>
+                    <th scope="col" className="num">
+                      heute
+                    </th>
+                    <th scope="col" className="num">
+                      Änderung
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {first.changes
+                    .filter((change) => change.category !== "electricity")
+                    .map((change) => (
+                      <tr key={change.category}>
+                        <th scope="row">{ALLOCATION_CATEGORY[change.category]}</th>
+                        <RateCell rate={rateOf(then, change.category)} date={setOn} propertyId={propertyId} />
+                        <RateCell rate={rateOf(now, change.category)} date={check.as_of} propertyId={propertyId} />
+                        <td className={["num", tone(change.change, true)].filter(Boolean).join(" ")}>{signedMoney(change.change)}</td>
+                      </tr>
+                    ))}
+                  <tr className="planning-actual-row">
+                    <th scope="row">Betriebskosten zusammen</th>
+                    <td className="num">{then ? formatMoney(then.betrkv) : "–"}</td>
+                    <td className="num">{now ? formatMoney(now.betrkv) : "–"}</td>
+                    <td className="num">
+                      <strong>{signedMoney(first.flat_rise)}</strong>
+                    </td>
+                  </tr>
+                  {first.changes
+                    .filter((change) => change.category === "electricity")
+                    .map((change) => (
+                      <tr key={change.category}>
+                        <th scope="row">
+                          {ALLOCATION_CATEGORY[change.category]}
+                          <span className="tax-line-sub">{ELECTRICITY_NOTE}</span>
+                        </th>
+                        <RateCell rate={rateOf(then, change.category)} date={setOn} propertyId={propertyId} />
+                        <RateCell rate={rateOf(now, change.category)} date={check.as_of} propertyId={propertyId} />
+                        <td className="num">{signedMoney(change.change)}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })}
+      <h3>Je Zimmer</h3>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Zimmer</th>
+              <th scope="col" className="num">
+                Pauschale
+              </th>
+              <th scope="col" className="num">
+                Anteil
+              </th>
+              <th scope="col" className="num">
+                Anteil an der Änderung
+              </th>
+              <th scope="col">Ergebnis</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tenancies.map((tenancy) => (
+              <tr key={tenancy.tenancy_id}>
+                <th scope="row">
+                  <Link href={`/tenancies/${tenancy.tenancy_id}`}>{tenancy.unit_label}</Link>
+                  <span className="tax-line-sub">
+                    seit {formatDate(tenancy.set_on)} ({tenancy.set_by === "start" ? "Mietbeginn" : "Mietänderung"})
+                  </span>
+                </th>
+                <td className="num">{formatMoney(tenancy.pauschale)}</td>
+                <td className="num">{tenancy.share_percent != null ? percentText(tenancy.share_percent) : "–"}</td>
+                <td className={["num", tone(tenancy.rise, true)].filter(Boolean).join(" ")}>{signedMoney(tenancy.rise)}</td>
+                <td>
+                  {verdictText(tenancy, check.raise_above)}
+                  {tenancy.verdict !== "none" ? (
+                    <div className="row todo-actions">
+                      <FlatRateActions tenancyId={tenancy.tenancy_id} propertyId={propertyId} withCard={false} />
+                    </div>
+                  ) : null}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="muted planning-subline">
+        Gezählt werden nur Betriebskosten nach § 2 BetrKV (umlagefähiges Hausgeld, Grundsteuer, Versicherung). Die Änderung der
+        Wohnung wird nach den Pauschalen verteilt; ein Zimmer kann steigen, wenn sein Anteil mehr als{" "}
+        {formatMoney(check.raise_above)} im Monat beträgt, und muss sinken, sobald die Kosten fallen.
+      </p>
+      {gap != null && year ? (
+        <p className="planning-subline">
+          {year.year}: Die Pauschalen decken die Kosten{isNegative(gap) ? " nicht" : ""} ({signedMoney(gap)} pro Monat) — das
+          allein erlaubt keine Erhöhung.
+        </p>
+      ) : null}
+      {settlements.length > 0 ? (
+        <ul className="planning-subline">
+          {settlements.map((hint) => (
+            <li key={hint.allocation_id}>
+              {formatDate(hint.booking_date)}, {ALLOCATION_CATEGORY[hint.category]}:{" "}
+              {isNegative(hint.amount) ? "Erstattung" : "Nachzahlung"} {formatMoney(hint.amount.replace(/^-/, ""))} aus einer
+              Abrechnung, keine Monatsrate; die nächste Rate kann sich ändern.
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <p className="muted planning-subline">Eine Information, keine Rechtsberatung: {FLAT_RATE_NOT_ADVICE}</p>
+    </section>
   );
 }
 
