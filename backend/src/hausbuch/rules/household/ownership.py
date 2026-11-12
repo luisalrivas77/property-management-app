@@ -9,16 +9,30 @@ set replaces (a second set supersedes the first).
 """
 
 from collections.abc import Iterable, Sequence
+from fractions import Fraction
 from uuid import UUID
 
+from hausbuch.rules import errors as E
+from hausbuch.rules.errors import RuleError
 from hausbuch.schemas.household import AccountOwnership, OwnershipShare
-
-STEP = "phase 6 step 1 (ownership)"
 
 
 def validate(shares: Sequence[OwnershipShare], owners: Iterable[UUID]) -> None:
-    raise NotImplementedError(STEP)
+    """Every owner known first (a share for someone else is the clearer error), then each
+    owner once and Σ = 1 in exact fractions (a rounded 0.33 + 0.67 would not prove it)."""
+    known = set(owners)
+    if not shares or any(s.owner_id not in known for s in shares):
+        raise RuleError(E.OWNERSHIP_OWNER_MISSING)
+    named = [s.owner_id for s in shares]
+    if len(named) != len(set(named)):
+        raise RuleError(E.OWNERSHIP_SUM_NOT_ONE, "each owner once")
+    if sum((Fraction(s.share_numerator, s.share_denominator) for s in shares), Fraction(0)) != 1:
+        raise RuleError(E.OWNERSHIP_SUM_NOT_ONE)
 
 
 def supersede(current: Sequence[AccountOwnership], new: Sequence[OwnershipShare]) -> list[UUID]:
-    raise NotImplementedError(STEP)
+    """The rows a new full set replaces: every current row of the account (one already
+    superseded by an earlier change is not superseded again). The new set is the whole set,
+    so even an unchanged share gets a new row under the new effective_from."""
+    del new  # the whole current set goes, whatever the new one holds
+    return [row.id for row in current if row.superseded_by is None]

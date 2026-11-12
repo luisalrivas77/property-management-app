@@ -26,7 +26,7 @@ def test_matcher(case):
 @pytest.mark.rule
 @pytest.mark.parametrize("case", RULES.cases, ids=lambda c: c.id)
 def test_apply_rule(case):
-    if case.pending:
+    if case.pending and not case.pending.startswith("phase 6 step 1"):
         pytest.skip(case.pending)
     got = rules.apply_rule(RULES.rules[case.rule], case.transaction, RULES.context)
     if case.expect is None:
