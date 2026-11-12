@@ -61,14 +61,20 @@ def test_the_questions_are_the_fixtures():
 
 def test_no_rental_matcher_runs_on_a_private_account():
     """The rental fixtures' own lines, moved onto a private account: rent, annuity and owner
-    top-up are never booked there (D158), and no answer is outside the private codes."""
+    top-up are never booked there by a rental matcher (D158), and no answer is outside the
+    private codes. Since step 2 the owner top-up, whose IBAN is another own account's, is an
+    internal transfer by D162's matcher, which is the private order's and books at 1.0."""
     allowed = allowed_categories(AccountPurpose.PRIVATE)
     context = MatchContext.model_validate(
         {**MATCHERS.context.model_dump(), "account_purpose": AccountPurpose.PRIVATE}
     )
     for case in MATCHERS.cases:
         got = matching.deterministic_answer([], case.transaction, context)
-        if got is not None:
+        if got is not None and got.method is AllocationMethod.MATCHER_TRANSFER:
+            assert [a.category for a in got.allocations] == [
+                matching.TRANSFER_CODES[(AccountPurpose.PRIVATE, case.transaction.amount > 0)]
+            ], case.id
+        elif got is not None:
             assert got.confidence < matching.EXACT, case.id
             assert all(a.category in allowed for a in got.allocations), case.id
 

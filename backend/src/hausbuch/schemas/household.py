@@ -366,6 +366,22 @@ class TransferCandidate(Schema):
         return self
 
 
+class TransferMatch(Schema):
+    """rules.matching.match_transfer's answer for one leg (D162; fixture transfers.yaml).
+    category: the transfer code the leg is booked as (by an own IBAN, or the depot or exchange
+    leg's own type), None when it is no transfer by either; link: the one counterpart, written
+    by the matcher; proposed_link: a leg without an own IBAN that fits one exchange or depot
+    EUR movement exactly, for review only; card: transfer.ambiguous (candidates listed) or,
+    past the window, transfer.unmatched_leg."""
+
+    category: AllocationCategory | None = None
+    confidence: Decimal | None = None
+    link: TransferCandidate | None = None
+    proposed_link: TransferCandidate | None = None
+    card: str | None = None
+    candidates: list[UUID] = Field(default_factory=list)
+
+
 class TransferLinkCreate(Schema):
     """POST /transfers (a link by hand): exactly one out and one in leg."""
 

@@ -31,6 +31,7 @@ from hausbuch.schemas.checklist import (
     ChecklistMarketRent,
 )
 from hausbuch.schemas.tax import (
+    AllocationFact,
     AnlageVDraft,
     BasisAddition,
     Coverage,
@@ -69,6 +70,8 @@ from ._common import (
     input_sources,
     owned_months,
     paid_bills,
+    private_payments,
+    rental_only,
     shared,
     sources_of,
     unique,
@@ -217,7 +220,12 @@ def _private_cost_line(value, rule_set: RuleSet) -> str:
 
 
 def _private_costs(
-    facts: DraftFacts, tax_year: int, rule_set: RuleSet, book: LineBook, limit: LimitStatus
+    facts: DraftFacts,
+    tax_year: int,
+    rule_set: RuleSet,
+    book: LineBook,
+    limit: LimitStatus,
+    private: dict[UUID, list[AllocationFact]],
 ) -> list[DraftWarning]:
     """Phase 4b §5.12, D111: rental costs paid from a private account, summed into wk.other,
     except the class financing (D134), which goes to wk.financing_costs beside the ledger's
@@ -232,7 +240,10 @@ def _private_costs(
     twice; tax.private_cost_paid_from_account (warning) names the row and the allocations.
 
     Phase 3 D137: a repair row the 15 % crossing moved into the AfA basis (limit_exceeded) is
-    not booked here; the AfA carries it."""
+    not booked here; the AfA carries it.
+
+    Phase 6 D161: a private account's line that paid the row's bill (`private`, by bill) joins
+    the line's sources after the row and its bill; it is never summed."""
     warnings = []
     paid_from_account = paid_bills(facts.allocations)
     moved = {
@@ -264,7 +275,9 @@ def _private_costs(
         else:
             amount = shared(v.amount, row)
         if amount:
-            book.add(_private_cost_line(v, rule_set), amount, input_sources(row))
+            paying = private.get(row.document_id, []) if row.document_id else []
+            refs = unique([*input_sources(row), *(r for a in paying for r in sources_of(a))])
+            book.add(_private_cost_line(v, rule_set), amount, refs)
     if trips > TRAVEL_FREQUENCY_TRIPS:
         warnings.append(
             warning(
@@ -453,9 +466,14 @@ def _proof_needs(facts: DraftFacts, tax_year: int) -> list[_ProofNeed]:
 
 
 def _proofs_by_bill(facts: DraftFacts) -> dict[UUID, list[Decimal | None]]:
+    """The proofs per bill: its payment_proof documents' amounts (D143), and, since phase 6
+    D161, the magnitude of each confirmed private-account line that paid it (a bank line of any
+    own account proves the bill, as the rental account's matched line always has)."""
     proofs: dict[UUID, list[Decimal | None]] = {}
     for p in facts.payment_proofs:
         proofs.setdefault(p.bill_document_id, []).append(p.amount)
+    for bill, lines in private_payments(facts.allocations).items():
+        proofs.setdefault(bill, []).extend(abs(a.amount) for a in lines)
     return proofs
 
 
@@ -604,6 +622,10 @@ def draft(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> AnlageVDraft:
     prop = facts.property
     form = rule_set.form
     warnings: list[DraftWarning] = []
+    # Phase 6 D161: every rule sums the rental account's rows; a private account's line that
+    # paid a bill is that bill's proof and a source of its private_cost row, never a cost.
+    full, private = facts, private_payments(facts.allocations)
+    facts = rental_only(facts)
 
     # 1. The 15 % status and the AfA it changes.
     limit = limit_status(
@@ -654,8 +676,8 @@ def draft(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> AnlageVDraft:
         )
         warnings += r.warnings
     _generic(facts, tax_year, rule_set, book)
-    warnings += _private_costs(facts, tax_year, rule_set, book, limit)
-    warnings += _payment_proofs(facts, tax_year)  # D143
+    warnings += _private_costs(facts, tax_year, rule_set, book, limit, private)
+    warnings += _payment_proofs(full, tax_year)  # D143, D161
 
     rows = _merge_rows(rows)
     if rows:

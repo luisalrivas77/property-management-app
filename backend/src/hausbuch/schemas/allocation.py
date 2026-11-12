@@ -443,17 +443,23 @@ class TransferLeg(Schema):
     amount: Money
     fee_eur: Money | None = None
     counterparty_iban_hmac: HmacHex | None = Field(default=None, pattern=HMAC_PATTERN)
+    # Step 2: the IBAN HMAC of the leg's own account (None for a depot or exchange), so a line
+    # whose counterparty is that IBAN looks for its counterpart on that account only; and the
+    # transfer category a depot or exchange leg carries by its booking text or type (D165 (1),
+    # D166), which makes it a transfer without an IBAN.
+    account_iban_hmac: HmacHex | None = Field(default=None, pattern=HMAC_PATTERN)
+    category: AllocationCategory | None = None
 
 
 class MatchContext(Schema):
     """Everything a matcher or rule may look at. Lists are unordered.
 
     Phase 6 D162: own_account_hmacs replaces phase 2's owner_account_hmacs, which listed only
-    the owner accounts. Step 0 fills it with the same accounts as before (the private ones);
-    the line's own account excluded and every other account included is step 1-2's work.
+    the owner accounts: since step 2 it is every account of the workspace with an IBAN except
+    the line's own (services.matching.build_context).
     account_purpose: the purpose of the line's account (D158); rental unless stated, so every
     phase 2-5 caller and fixture keeps its meaning. open_legs: the other own accounts' unlinked
-    legs (D162), empty until step 2 fills it."""
+    legs (D162), filled by services.transfers when it links a leg."""
 
     own_account_hmacs: list[HmacHex] = Field(default_factory=list)
     tenancies: list[TenancyFacts] = Field(default_factory=list)

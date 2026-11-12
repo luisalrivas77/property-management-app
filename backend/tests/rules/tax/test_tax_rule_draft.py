@@ -18,6 +18,8 @@ DRAFT = load("anlage_v_2026")
 assert isinstance(DRAFT, DraftFixture)
 # The checklist entries phase 3 step 2 adds to rules/document_checklist.py (§8).
 PHASE3_CODES = {RequirementCode.COST_RECEIPT, RequirementCode.MARKET_RENT}
+# Cases written ahead of their rule run once the step that builds it has landed.
+BUILT = ("phase 6 step 2",)
 
 
 def _run(case) -> AnlageVDraft:
@@ -27,7 +29,7 @@ def _run(case) -> AnlageVDraft:
 @pytest.mark.rule
 @pytest.mark.parametrize("case", DRAFT.cases, ids=lambda c: c.id)
 def test_draft(case):
-    if case.pending:
+    if case.pending and not case.pending.startswith(BUILT):
         pytest.skip(f"written ahead of its rule: {case.pending}")
     got = _run(case)
     e = case.expect
