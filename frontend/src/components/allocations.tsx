@@ -310,8 +310,12 @@ function AllocationEditor({
   const balanced = rest === 0n;
 
   const noDefault = new Set(view.no_default_rule_categories);
+  // A split on a private account never becomes a rule (D160 learns one row only), so its box
+  // starts unticked there.
   const suggested =
-    rows.length === 1 ? rows.every((row) => row.category === "" || !noDefault.has(row.category)) : splitSuggested(rows, noDefault);
+    rows.length === 1
+      ? rows.every((row) => row.category === "" || !noDefault.has(row.category))
+      : account.purpose === "rental" && splitSuggested(rows, noDefault);
   // D160: one row of a category no rule is ever learned for: the box is greyed and off.
   const unlearnable = new Set(view.unlearnable_categories ?? []);
   const onlyCategory = rows.length === 1 ? (rows[0]?.category ?? "") : "";
