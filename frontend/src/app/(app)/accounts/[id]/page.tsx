@@ -98,7 +98,10 @@ function AccountDetail() {
             <TabBar tabs={tabs} current={tab} href={(key) => `/accounts/${id}?tab=${key}`} />
             {tab === "kontoauszuege" ? (
               <div className="stack">
-                {data.purpose === "rental" ? <BankSyncCard account={data} onImported={statements.reload} /> : null}
+                {/* Any bank account can fetch over FinTS; a private one only after its history is imported (D163, D173). */}
+                {data.kind === "bank_current" || data.kind === "bank_savings" ? (
+                  <BankSyncCard account={data} onImported={statements.reload} />
+                ) : null}
                 <StatementUpload accountId={id} onImported={statements.reload} />
                 {openCount > 0 ? (
                   <div className="notice notice-warn">
