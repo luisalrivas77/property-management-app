@@ -1,0 +1,502 @@
+# Parser and import fixture: the credit card's monthly PDF statement (services.bank.card_pdf
+# through services.bank.parse_statement and services.statements.import_statement;
+# docs/phases/phase-6.md D176, §14.1 „The card statement“, Q-O77).
+#
+# The input is the statement's text layer, one string per page, as pypdf extracts it; the
+# tests draw each physical line into a PDF (reportlab) and check pypdf gives the text back, so
+# the bytes path is replayed too. The statements are INVENTED in the real layout (§14.1, checked
+# against a real statement on Luis's computer, never committed): nothing here is from it.
+#
+# The layout the cases pin:
+#   - page 1: the statement number „Nummer: <customer>-<account>-<yymmdd>-<yymmdd>“ (the
+#     period's first and last day), „Zeitraum: dd.mm.yyyy - dd.mm.yyyy“, „Kundennummer: <n>“,
+#     the summary under „Kontoauszug“ (Alter Saldo vom letzten Monat, Rückzahlungen, Einkauf,
+#     Bargeldabhebungen & Quasi-Geld, Zinsen und sonstige Gebühren, Neuer Saldo; what is owed is
+#     negative), the card row starting with the card number masked to its first six and last
+#     four digits, and the issuer's IBAN under „Angaben bei Einzahlungen :“
+#   - page 2: a column header, then one row per line: Bew.ID (ten digits), Buchung, Bew.Datum
+#     (absent on the payment and on an interest line), the kind and, two spaces on, the
+#     description, „Wechselkurs <rate>“, the original amount and currency, the EUR amount and
+#     D (debit) or C (credit); a row wraps over up to three physical lines, anywhere (inside the
+#     description, between „Wechselkurs“ and its rate, before the amounts); every purchase
+#     prints a rate and an original amount, 1.00000 and EUR for a purchase in euros; the
+#     interest row has no rate and no original amount. Under the rows the totals „Verwendeter
+#     Gesamtbetrag“ (debits, negative) and „Bezahlter Gesamtbetrag“ (credits), then a footer.
+#   - amounts: a space as thousands separator (the real file also has no-break spaces), a point
+#     as decimal mark.
+#
+# Reading rules the cases pin (D176 (3), (4)):
+#   - format card_pdf; no IBAN of the account (account_iban null): the customer number is the
+#     account's reference (`account_ref`), stored as the account's external_ref, masked
+#     („**** “ + its last four) and HMAC'd, never in clear; the statement number's first part
+#     must be the same number
+#   - of the card number only the last four digits (`card_last4`); the first six are never read
+#     into anything
+#   - opening and closing balance are Alter and Neuer Saldo; the file must agree with itself
+#     (the summary's parts, the lines and the printed totals all lead from Alter to Neuer
+#     Saldo), else statement.report_unbalanced: the file is stored, unreconciled as a whole,
+#     and none of its lines is matched (phase 2 D34)
+#   - each line: bank_reference = Bew.ID (D22's reference path, so a re-downloaded statement
+#     adds nothing), booking_date = Buchung, value_date = Bew.Datum, booking_text = the kind
+#     word, counterparty_name = the description (none on the payment „Bezahlung“, whose
+#     description is the payment method, and none on an interest line), purpose = the
+#     description (the interest text on an interest line), plus „ (<original amount>
+#     <currency>, Kurs <rate>)“ for a purchase in another currency, whose original amount,
+#     currency and rate are also kept in `raw`; a wrapped description is joined with one space
+#   - the payment IBAN is returned as `payment_iban`; the import only proposes it, masked, and
+#     the user confirms it (principle 3)
+#   - an interest or fee line is booked by code to hh_interest_fees, confirmed without review
+#
+# Step 2b readings (listed in the step 2b report):
+#   - a refund's kind word is „Gutschrift“ (the real statement holds none) and it carries the
+#     merchant as its counterparty; the summary nets it inside „Einkauf“
+#   - the first import onto a card account without a reference sets it from the file; a later
+#     file naming another customer number is refused with statement.account_mismatch, as an
+#     IBAN file of another account is (D164)
+#   - `import.after` lists the cases imported onto the same account before this one, in order;
+#     the account's anchor is `bases.account` (the first statement's Alter Saldo, a day before
+#     its first booking)
+#
+# Invented names, numbers and amounts; the IBAN is a checksum-valid synthetic IBAN under the
+# Bundesbank test BLZ 10000000, none under a real bank. Owner A stands for the card holder.
+
+ids:
+  account: 0000006c-0000-4000-8000-000000000001
+
+bases:
+  account:
+    kind: credit_card
+    provider: Beispielbank Kreditkarte
+    opening_balance: "-1250.40"
+    opening_balance_on: 2026-01-14
+
+cases:
+  - id: plain_month
+    description: a month that reconciles; the first import sets the account's reference
+    pending: "phase 6 step 2b (the card statement reader, D176 (3))"
+    input:
+      pages:
+        - |
+          Kontoauszug für Owner A
+          Nummer: 1234567-7654321-260115-260214
+          Zeitraum: 15.01.2026 - 14.02.2026
+          Seite:1/2
+          Owner A
+          Beispielstraße 1
+          12345 Musterstadt
+          Kreditkartenkonto
+          Kundennummer: 1234567
+          Währung: EUR
+          Kreditlimit: 5 000.00
+          Zinssatz Kaufbetrag: 0.00
+          Kontoauszug
+          Alter Saldo vom letzten Monat: -1 250.40
+          Rückzahlungen: 1 250.40
+          Einkauf: -312.75
+          Bargeldabhebungen & Quasi-Geld: 0.00
+          Zinsen und sonstige Gebühren: 0.00
+          Neuer Saldo: -312.75
+          Ihr verfügbarer Kreditrahmen: 4 687.25
+          Mindestbetrag
+          Mindestbetrag gesamt (3% Saldo): 9.38
+          Mindestbetrag zu zahlen: 25.00
+          Fällig am: 05.03.2026
+          Kartenübersicht
+          Kartennummer Ablauf Karteninhaber Neuer Saldo Kredit Verfügbar für
+          Zeitraum
+          123456******4321 12/29 Owner A -312.75 0.00 -312.75
+          Angaben bei Einzahlungen :
+          Beispielbank AB Kreditkarten
+          IBAN DE34100000000000003005
+          MINDESTBETRAG ZU ZAHLEN 25.00
+          FÄLLIG AM 05.03.2026
+          Bitte überweisen Sie den Mindestbetrag bis zum Fälligkeitstag.
+          Beispielbank AB, Musterweg 1, 12345 Musterstadt
+        - |
+          Kontoauszug
+          Nummer: 1234567-7654321-260115-260214
+          Seite:2/2
+          Kreditkartenkonto
+          Bew.ID Buchung Bew.Datum Beschreibung Urspr. Betrag und
+          Währung
+          Wechsel.Kurs
+          (EUR)
+          D/
+          C
+          1000000001 16.01.2026 Bezahlung  Lastschrift Wechselkurs 1.00000 1 250.40 EUR 1 250.40 C
+          1000000002 19.01.2026 17.01.2026 Kauf  BEISPIEL MARKT 0815 Musterstadt Wechselkurs
+          1.00000
+          45.10 EUR -45.10 D
+          1000000003 26.01.2026 23.01.2026 Kauf  BEISPIEL BAHN Fahrkarte
+          Wechselkurs 1.00000
+          89.90 EUR -89.90 D
+          1000000004 09.02.2026 06.02.2026 Kauf  BUCHLADEN AM MARKT Wechselkurs 1.00000
+          177.75 EUR -177.75 D
+          Verwendeter Gesamtbetrag: -312.75
+          Bezahlter Gesamtbetrag: 1 250.40
+          Beispielbank AB, Musterweg 1, 12345 Musterstadt
+    expect:
+      format: card_pdf
+      account_ref: "1234567"
+      card_last4: "4321"
+      payment_iban: DE34100000000000003005
+      opening_balance: "-1250.40"
+      closing_balance: "-312.75"
+      line_count: 4
+      total: "937.65"
+      first_booking_on: 2026-01-16
+      last_booking_on: 2026-02-09
+      lines:
+        - index: 0
+          description: the payment to the card, a credit without a merchant
+          line: {booking_date: 2026-01-16, amount: "1250.40", purpose: Lastschrift, booking_text: Bezahlung, bank_reference: "1000000001"}
+        - index: 1
+          description: a purchase in euros; the rate and the amount on the next two lines
+          line: {booking_date: 2026-01-19, value_date: 2026-01-17, amount: "-45.10", counterparty_name: BEISPIEL MARKT 0815 Musterstadt, purpose: BEISPIEL MARKT 0815 Musterstadt, booking_text: Kauf, bank_reference: "1000000002"}
+        - index: 2
+          line: {booking_date: 2026-01-26, value_date: 2026-01-23, amount: "-89.90", counterparty_name: BEISPIEL BAHN Fahrkarte, purpose: BEISPIEL BAHN Fahrkarte, booking_text: Kauf, bank_reference: "1000000003"}
+        - index: 3
+          line: {booking_date: 2026-02-09, value_date: 2026-02-06, amount: "-177.75", counterparty_name: BUCHLADEN AM MARKT, purpose: BUCHLADEN AM MARKT, booking_text: Kauf, bank_reference: "1000000004"}
+    import:
+      after: []
+      status: reconciled
+      lines_new: 4
+      lines_skipped: 0
+      account_ref_masked: "**** 4567"
+      payment_iban_masked: "DE34 **** 3005"
+
+  - id: foreign_currency
+    description: >-
+      the next month: a purchase in US dollars, and a second statement whose customer number
+      routes it to the same account
+    pending: "phase 6 step 2b (the card statement reader, D176 (3))"
+    input:
+      pages:
+        - |
+          Kontoauszug für Owner A
+          Nummer: 1234567-7654321-260215-260314
+          Zeitraum: 15.02.2026 - 14.03.2026
+          Seite:1/2
+          Kundennummer: 1234567
+          Währung: EUR
+          Kontoauszug
+          Alter Saldo vom letzten Monat: -312.75
+          Rückzahlungen: 312.75
+          Einkauf: -73.16
+          Bargeldabhebungen & Quasi-Geld: 0.00
+          Zinsen und sonstige Gebühren: 0.00
+          Neuer Saldo: -73.16
+          Kartennummer Ablauf Karteninhaber Neuer Saldo Kredit Verfügbar für
+          Zeitraum
+          123456******4321 12/29 Owner A -73.16 0.00 -73.16
+          Angaben bei Einzahlungen :
+          Beispielbank AB Kreditkarten
+          IBAN DE34100000000000003005
+        - |
+          Kontoauszug
+          Nummer: 1234567-7654321-260215-260314
+          Seite:2/2
+          Bew.ID Buchung Bew.Datum Beschreibung Urspr. Betrag und
+          Währung
+          1000000011 16.02.2026 Bezahlung  Lastschrift Wechselkurs 1.00000 312.75 EUR 312.75 C
+          1000000012 23.02.2026 20.02.2026 Kauf  EXAMPLE STORE New York Wechselkurs
+          0.92150
+          54.00 USD -49.76 D
+          1000000013 02.03.2026 27.02.2026 Kauf  BEISPIEL MARKT 0815 Musterstadt Wechselkurs
+          1.00000
+          23.40 EUR -23.40 D
+          Verwendeter Gesamtbetrag: -73.16
+          Bezahlter Gesamtbetrag: 312.75
+    expect:
+      format: card_pdf
+      account_ref: "1234567"
+      card_last4: "4321"
+      payment_iban: DE34100000000000003005
+      opening_balance: "-312.75"
+      closing_balance: "-73.16"
+      line_count: 3
+      total: "239.59"
+      first_booking_on: 2026-02-16
+      last_booking_on: 2026-03-02
+      lines:
+        - index: 0
+          line: {booking_date: 2026-02-16, amount: "312.75", purpose: Lastschrift, booking_text: Bezahlung, bank_reference: "1000000011"}
+        - index: 1
+          description: the original amount, its currency and the rate in the purpose and in raw
+          line:
+            booking_date: 2026-02-23
+            value_date: 2026-02-20
+            amount: "-49.76"
+            counterparty_name: EXAMPLE STORE New York
+            purpose: EXAMPLE STORE New York (54.00 USD, Kurs 0.92150)
+            booking_text: Kauf
+            bank_reference: "1000000012"
+            raw: {original_amount: "54.00", original_currency: USD, exchange_rate: "0.92150"}
+        - index: 2
+          line: {booking_date: 2026-03-02, value_date: 2026-02-27, amount: "-23.40", counterparty_name: BEISPIEL MARKT 0815 Musterstadt, purpose: BEISPIEL MARKT 0815 Musterstadt, booking_text: Kauf, bank_reference: "1000000013"}
+    import:
+      after: [plain_month]
+      status: reconciled
+      lines_new: 3
+      lines_skipped: 0
+      account_ref_masked: "**** 4567"
+
+  - id: refund
+    description: a purchase and its refund, a credit with the merchant
+    pending: "phase 6 step 2b (the card statement reader, D176 (3))"
+    input:
+      pages:
+        - |
+          Kontoauszug für Owner A
+          Nummer: 1234567-7654321-260315-260414
+          Zeitraum: 15.03.2026 - 14.04.2026
+          Seite:1/2
+          Kundennummer: 1234567
+          Kontoauszug
+          Alter Saldo vom letzten Monat: -73.16
+          Rückzahlungen: 73.16
+          Einkauf: -12.80
+          Bargeldabhebungen & Quasi-Geld: 0.00
+          Zinsen und sonstige Gebühren: 0.00
+          Neuer Saldo: -12.80
+          123456******4321 12/29 Owner A -12.80 0.00 -12.80
+          Angaben bei Einzahlungen :
+          Beispielbank AB Kreditkarten
+          IBAN DE34100000000000003005
+        - |
+          Kontoauszug
+          Nummer: 1234567-7654321-260315-260414
+          Seite:2/2
+          Bew.ID Buchung Bew.Datum Beschreibung Urspr. Betrag und
+          1000000021 16.03.2026 Bezahlung  Lastschrift Wechselkurs 1.00000 73.16 EUR 73.16 C
+          1000000022 20.03.2026 18.03.2026 Kauf  BEISPIEL MODE Musterstadt Wechselkurs
+          1.00000
+          59.95 EUR -59.95 D
+          1000000023 30.03.2026 27.03.2026 Gutschrift  BEISPIEL MODE Musterstadt Wechselkurs
+          1.00000
+          59.95 EUR 59.95 C
+          1000000024 07.04.2026 04.04.2026 Kauf  APOTHEKE AM PLATZ Wechselkurs 1.00000
+          12.80 EUR -12.80 D
+          Verwendeter Gesamtbetrag: -72.75
+          Bezahlter Gesamtbetrag: 133.11
+    expect:
+      format: card_pdf
+      account_ref: "1234567"
+      card_last4: "4321"
+      payment_iban: DE34100000000000003005
+      opening_balance: "-73.16"
+      closing_balance: "-12.80"
+      line_count: 4
+      total: "60.36"
+      first_booking_on: 2026-03-16
+      last_booking_on: 2026-04-07
+      lines:
+        - index: 0
+          line: {booking_date: 2026-03-16, amount: "73.16", purpose: Lastschrift, booking_text: Bezahlung, bank_reference: "1000000021"}
+        - index: 1
+          line: {booking_date: 2026-03-20, value_date: 2026-03-18, amount: "-59.95", counterparty_name: BEISPIEL MODE Musterstadt, purpose: BEISPIEL MODE Musterstadt, booking_text: Kauf, bank_reference: "1000000022"}
+        - index: 2
+          description: the refund, a credit (C) carrying the merchant
+          line: {booking_date: 2026-03-30, value_date: 2026-03-27, amount: "59.95", counterparty_name: BEISPIEL MODE Musterstadt, purpose: BEISPIEL MODE Musterstadt, booking_text: Gutschrift, bank_reference: "1000000023"}
+        - index: 3
+          line: {booking_date: 2026-04-07, value_date: 2026-04-04, amount: "-12.80", counterparty_name: APOTHEKE AM PLATZ, purpose: APOTHEKE AM PLATZ, booking_text: Kauf, bank_reference: "1000000024"}
+    import:
+      after: [plain_month, foreign_currency]
+      status: reconciled
+      lines_new: 4
+      lines_skipped: 0
+      account_ref_masked: "**** 4567"
+
+  - id: wrapped_description
+    description: a description wrapping onto a second line, joined with one space; a thousands separator
+    pending: "phase 6 step 2b (the card statement reader, D176 (3))"
+    input:
+      pages:
+        - |
+          Kontoauszug für Owner A
+          Nummer: 1234567-7654321-260415-260514
+          Zeitraum: 15.04.2026 - 14.05.2026
+          Seite:1/2
+          Kundennummer: 1234567
+          Kontoauszug
+          Alter Saldo vom letzten Monat: -12.80
+          Rückzahlungen: 12.80
+          Einkauf: -1 049.00
+          Bargeldabhebungen & Quasi-Geld: 0.00
+          Zinsen und sonstige Gebühren: 0.00
+          Neuer Saldo: -1 049.00
+          123456******4321 12/29 Owner A -1 049.00 0.00 -1 049.00
+          Angaben bei Einzahlungen :
+          Beispielbank AB Kreditkarten
+          IBAN DE34100000000000003005
+        - |
+          Kontoauszug
+          Nummer: 1234567-7654321-260415-260514
+          Seite:2/2
+          Bew.ID Buchung Bew.Datum Beschreibung Urspr. Betrag und
+          1000000031 16.04.2026 Bezahlung  Lastschrift Wechselkurs 1.00000 12.80 EUR 12.80 C
+          1000000032 24.04.2026 22.04.2026 Kauf  BEISPIEL ELEKTRO FACHMARKT GMBH FILIALE 042
+          MUSTERSTADT Wechselkurs 1.00000
+          1 049.00 EUR -1 049.00 D
+          Verwendeter Gesamtbetrag: -1 049.00
+          Bezahlter Gesamtbetrag: 12.80
+    expect:
+      format: card_pdf
+      account_ref: "1234567"
+      card_last4: "4321"
+      payment_iban: DE34100000000000003005
+      opening_balance: "-12.80"
+      closing_balance: "-1049.00"
+      line_count: 2
+      total: "-1036.20"
+      first_booking_on: 2026-04-16
+      last_booking_on: 2026-04-24
+      lines:
+        - index: 0
+          line: {booking_date: 2026-04-16, amount: "12.80", purpose: Lastschrift, booking_text: Bezahlung, bank_reference: "1000000031"}
+        - index: 1
+          description: the merchant's place on the second line joins the description
+          line: {booking_date: 2026-04-24, value_date: 2026-04-22, amount: "-1049.00", counterparty_name: BEISPIEL ELEKTRO FACHMARKT GMBH FILIALE 042 MUSTERSTADT, purpose: BEISPIEL ELEKTRO FACHMARKT GMBH FILIALE 042 MUSTERSTADT, booking_text: Kauf, bank_reference: "1000000032"}
+    import:
+      after: [plain_month, foreign_currency, refund]
+      status: reconciled
+      lines_new: 2
+      lines_skipped: 0
+      account_ref_masked: "**** 4567"
+
+  - id: interest
+    description: a partial payment and the interest on the rest, booked by code to hh_interest_fees
+    pending: "phase 6 step 2b (the card statement reader, D176 (3))"
+    input:
+      pages:
+        - |
+          Kontoauszug für Owner A
+          Nummer: 1234567-7654321-260515-260614
+          Zeitraum: 15.05.2026 - 14.06.2026
+          Seite:1/2
+          Kundennummer: 1234567
+          Kontoauszug
+          Alter Saldo vom letzten Monat: -1 049.00
+          Rückzahlungen: 500.00
+          Einkauf: 0.00
+          Bargeldabhebungen & Quasi-Geld: 0.00
+          Zinsen und sonstige Gebühren: -9.84
+          Neuer Saldo: -558.84
+          123456******4321 12/29 Owner A -558.84 0.00 -558.84
+          Angaben bei Einzahlungen :
+          Beispielbank AB Kreditkarten
+          IBAN DE34100000000000003005
+        - |
+          Kontoauszug
+          Nummer: 1234567-7654321-260515-260614
+          Seite:2/2
+          Bew.ID Buchung Bew.Datum Beschreibung Urspr. Betrag und
+          1000000041 18.05.2026 Bezahlung  Lastschrift Wechselkurs 1.00000 500.00 EUR 500.00 C
+          1000000042 14.06.2026 Zinsen für einen genutzten Kredit -9.84 D
+          Verwendeter Gesamtbetrag: -9.84
+          Bezahlter Gesamtbetrag: 500.00
+    expect:
+      format: card_pdf
+      account_ref: "1234567"
+      card_last4: "4321"
+      payment_iban: DE34100000000000003005
+      opening_balance: "-1049.00"
+      closing_balance: "-558.84"
+      line_count: 2
+      total: "490.16"
+      first_booking_on: 2026-05-18
+      last_booking_on: 2026-06-14
+      lines:
+        - index: 0
+          line: {booking_date: 2026-05-18, amount: "500.00", purpose: Lastschrift, booking_text: Bezahlung, bank_reference: "1000000041"}
+        - index: 1
+          description: the interest line, no Bew.Datum, no merchant, no rate
+          line: {booking_date: 2026-06-14, amount: "-9.84", purpose: Zinsen für einen genutzten Kredit, booking_text: Zinsen, bank_reference: "1000000042"}
+    import:
+      after: [plain_month, foreign_currency, refund, wrapped_description]
+      status: reconciled
+      lines_new: 2
+      lines_skipped: 0
+      account_ref_masked: "**** 4567"
+      booked:
+        - {index: 1, category: hh_interest_fees}
+
+  - id: unbalanced
+    description: >-
+      a misread amount: the lines no longer lead from Alter to Neuer Saldo, so the file is
+      stored, unreconciled as a whole, and none of its lines is matched
+    pending: "phase 6 step 2b (the card statement reader, D176 (3))"
+    input:
+      same_as: plain_month
+      replace:
+        - ["89.90 EUR -89.90 D", "89.90 EUR -98.90 D"]
+    expect:
+      format: card_pdf
+      account_ref: "1234567"
+      card_last4: "4321"
+      payment_iban: DE34100000000000003005
+      opening_balance: "-1250.40"
+      closing_balance: "-312.75"
+      balance_error: statement.report_unbalanced
+      line_count: 4
+      total: "928.65"
+      first_booking_on: 2026-01-16
+      last_booking_on: 2026-02-09
+      lines:
+        - index: 2
+          line: {booking_date: 2026-01-26, value_date: 2026-01-23, amount: "-98.90", counterparty_name: BEISPIEL BAHN Fahrkarte, purpose: BEISPIEL BAHN Fahrkarte, booking_text: Kauf, bank_reference: "1000000003"}
+    import:
+      after: []
+      status: unreconciled
+      error_code: statement.report_unbalanced
+      lines_new: 4
+      lines_skipped: 0
+      none_matched: true
+
+  - id: same_statement_twice
+    description: >-
+      the same statement downloaded again (a new file, the same lines): every line is known by
+      its Bew.ID, nothing new
+    pending: "phase 6 step 2b (the card statement reader, D176 (3))"
+    input:
+      same_as: plain_month
+      fresh_file: true
+    expect:
+      format: card_pdf
+      account_ref: "1234567"
+      card_last4: "4321"
+      payment_iban: DE34100000000000003005
+      opening_balance: "-1250.40"
+      closing_balance: "-312.75"
+      line_count: 4
+      total: "937.65"
+      first_booking_on: 2026-01-16
+      last_booking_on: 2026-02-09
+    import:
+      after: [plain_month]
+      status: reconciled
+      lines_new: 0
+      lines_skipped: 4
+      account_ref_masked: "**** 4567"
+
+  - id: other_customer
+    description: a statement of another customer number, refused before anything is written
+    pending: "phase 6 step 2b (the card statement reader, D176 (3))"
+    input:
+      same_as: foreign_currency
+      replace:
+        - ["1234567", "7777770"]
+    expect:
+      format: card_pdf
+      account_ref: "7777770"
+      card_last4: "4321"
+      payment_iban: DE34100000000000003005
+      opening_balance: "-312.75"
+      closing_balance: "-73.16"
+      line_count: 3
+      total: "239.59"
+      first_booking_on: 2026-02-16
+      last_booking_on: 2026-03-02
+    import:
+      after: [plain_month]
+      error: statement.account_mismatch

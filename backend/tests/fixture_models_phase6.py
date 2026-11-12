@@ -39,6 +39,7 @@ from pydantic import Field, model_validator
 from hausbuch.rules import categories, depot, review, statements, valuation
 from hausbuch.rules import errors as E
 from hausbuch.rules.household.taxonomy import PRIVATE_ONLY, SHARED, TAXONOMY, allowed_categories
+from hausbuch.rules.iban import mask_iban, normalize_iban
 from hausbuch.schemas.allocation import (
     HMAC_PATTERN,
     AllocationCategory,
@@ -1112,6 +1113,170 @@ class DkbFixture(_Fixture):
     cases: list[DkbCase] = Field(min_length=1)
 
 
+# --- card_pdf.yaml: services.bank.card_pdf and its import (D176 (3), (4)) ------------------
+
+# Any run of digits as long as a masked card number's visible parts, with or without stars.
+_CARD_DIGITS = re.compile(r"\d{6}\*+\d{4}|\*{4,}\d{4}")
+
+
+class CardInput(Schema):
+    """The statement's text layer, one string per page; or another case's pages with
+    `replace` ([old, new], each old occurs, every occurrence replaced) applied. `fresh_file`:
+    the same text drawn into a new file (other bytes), so the document is not deduplicated."""
+
+    pages: list[str] | None = Field(default=None, min_length=1)
+    same_as: str | None = None
+    replace: list[tuple[str, str]] = Field(default_factory=list)
+    fresh_file: bool = False
+
+    @model_validator(mode="after")
+    def _one_source(self) -> Self:
+        if (self.pages is None) == (self.same_as is None):
+            raise ValueError("exactly one of pages/same_as")
+        if self.same_as is None and (self.replace or self.fresh_file):
+            raise ValueError("replace and fresh_file need same_as")
+        return self
+
+
+class CardExpect(Schema):
+    format: Literal["card_pdf"]
+    account_iban: None = None
+    account_ref: str = Field(pattern=r"^[0-9]+$")
+    card_last4: str | None = Field(default=None, pattern=r"^[0-9]{4}$")
+    payment_iban: str | None = None
+    opening_balance: Money
+    closing_balance: Money
+    balance_error: str | None = None  # statement.report_unbalanced
+    line_count: int = Field(ge=1)
+    total: Money
+    first_booking_on: date
+    last_booking_on: date
+    warnings: list[str] = Field(default_factory=list)
+    lines: list[phase2.PinnedLine] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _consistent(self) -> Self:
+        if self.payment_iban is not None:
+            normalize_iban(self.payment_iban)  # a checksum-valid IBAN
+        if self.balance_error is None and self.opening_balance + self.total != self.closing_balance:
+            raise ValueError("opening + total must equal closing when nothing breaks")
+        if self.balance_error not in (None, statements.REPORT_UNBALANCED):
+            raise ValueError("a card statement's only file error is statement.report_unbalanced")
+        if any(p.index >= self.line_count for p in self.lines):
+            raise ValueError("a pinned line index is past line_count")
+        pinned = [p.line for p in self.lines]
+        if len(pinned) == self.line_count:
+            if sum((line.amount for line in pinned), Decimal(0)) != self.total:
+                raise ValueError("the pinned lines sum to the total")
+            dates = [line.booking_date for line in pinned]
+            if (min(dates), max(dates)) != (self.first_booking_on, self.last_booking_on):
+                raise ValueError("first and last booking are the lines' own")
+        for line in pinned:
+            if line.bank_reference is None or not re.fullmatch(r"[0-9]{10}", line.bank_reference):
+                raise ValueError("every line's bank reference is its ten-digit Bew.ID")
+            if line.counterparty_iban is not None:
+                raise ValueError("a card line names no IBAN")
+            text = " ".join([line.purpose, line.counterparty_name or ""])
+            if _CARD_DIGITS.search(text):
+                raise ValueError("no part of a card number in a line")
+        refs = [line.bank_reference for line in pinned]
+        if len(set(refs)) != len(refs):
+            raise ValueError("every Bew.ID once")
+        return self
+
+
+class CardBooking(Schema):
+    index: int = Field(ge=0)
+    category: str  # an AllocationCategory value (hh_interest_fees from step 2b)
+
+
+class CardImportExpect(Schema):
+    after: list[str]  # the cases imported onto the same account before this one, in order
+    status: ImportStatus | None = None
+    error_code: str | None = None  # the stored import's file error
+    error: str | None = None  # refused before anything is written
+    lines_new: int | None = Field(default=None, ge=0)
+    lines_skipped: int | None = Field(default=None, ge=0)
+    account_ref_masked: str | None = Field(default=None, pattern=r"^\*{4} [A-Z0-9]{4}$")
+    payment_iban_masked: str | None = None  # proposed on the import, confirmed by a person
+    booked: list[CardBooking] = Field(default_factory=list)
+    none_matched: bool = False
+
+    @model_validator(mode="after")
+    def _one_outcome(self) -> Self:
+        if (self.status is None) == (self.error is None):
+            raise ValueError("an import has a status or an error")
+        if self.error is not None and not self.error.startswith("statement."):
+            raise ValueError("a refusal is a statement.* code")
+        if self.status is not None and None in (self.lines_new, self.lines_skipped):
+            raise ValueError("a stored import counts its new and skipped lines")
+        return self
+
+
+class CardCase(_Case):
+    input: CardInput
+    expect: CardExpect
+    import_: CardImportExpect = Field(alias="import")
+
+    @model_validator(mode="after")
+    def _consistent(self) -> Self:
+        expect, outcome = self.expect, self.import_
+        if outcome.status is not None:
+            if outcome.lines_new + outcome.lines_skipped != expect.line_count:
+                raise ValueError(f"{self.id}: every line is new or skipped")
+            if (outcome.error_code is not None) != (expect.balance_error is not None):
+                raise ValueError(f"{self.id}: a file error is stored exactly when the file breaks")
+            if outcome.error_code is not None and outcome.error_code != expect.balance_error:
+                raise ValueError(f"{self.id}: the stored error is the file's")
+            broken = outcome.error_code is not None
+            if broken != (outcome.status is ImportStatus.UNRECONCILED) or broken != (
+                outcome.none_matched
+            ):
+                raise ValueError(f"{self.id}: a broken file is unreconciled and never matched")
+        masked_ref = f"**** {expect.account_ref[-4:]}"
+        if outcome.account_ref_masked not in (None, masked_ref):
+            raise ValueError(f"{self.id}: the reference is masked to its last four")
+        if outcome.payment_iban_masked is not None:
+            if expect.payment_iban is None:
+                raise ValueError(f"{self.id}: only a printed payment IBAN is proposed")
+            if outcome.payment_iban_masked != mask_iban(normalize_iban(expect.payment_iban)):
+                raise ValueError(f"{self.id}: the proposed payment IBAN is masked")
+        by_index = {p.index: p.line for p in expect.lines}
+        for booking in outcome.booked:
+            line = by_index.get(booking.index)
+            if line is None or line.amount >= 0 or line.counterparty_name is not None:
+                raise ValueError(f"{self.id}: code books a pinned debit without a merchant")
+        return self
+
+
+class CardFixture(_Fixture):
+    cases: list[CardCase] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _references(self) -> Self:
+        seen: set[str] = set()
+        for case in self.cases:
+            if case.input.same_as is not None and case.input.same_as not in seen:
+                raise ValueError(f"{case.id}: same_as names an earlier case")
+            if any(name not in seen for name in case.import_.after):
+                raise ValueError(f"{case.id}: after names earlier cases")
+            seen.add(case.id)
+            self.pages(case.id)  # every replacement applies
+        return self
+
+    def pages(self, case_id: str) -> list[str]:
+        """The case's page texts, with another case's pages and the replacements resolved."""
+        case = next(c for c in self.cases if c.id == case_id)
+        if case.input.pages is not None:
+            return list(case.input.pages)
+        pages = self.pages(case.input.same_as)
+        for old, new in case.input.replace:
+            if not any(old in page for page in pages):
+                raise ValueError(f"{case.id}: {old!r} occurs in no page")
+            pages = [page.replace(old, new) for page in pages]
+        return pages
+
+
 # --- valuation.yaml: rules.valuation.price_on / value (D167 revised) ------------------------
 
 _CENT, _PRICE_PLACES = Decimal("0.01"), Decimal("0.00000001")
@@ -1448,6 +1613,7 @@ MODELS: dict[str, type[Schema]] = {
     "quirion_documents": QuirionFixture,
     "bison_csv": ExchangeFixture,
     "dkb_csv": DkbFixture,
+    "card_pdf": CardFixture,
     "valuation": ValuationFixture,
     "issuer_nav": IssuerNavFixture,
     "net_worth": NetWorthFixture,
