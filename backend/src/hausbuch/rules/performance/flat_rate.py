@@ -196,9 +196,17 @@ def _grundsteuer(
     if known:
         return from_schedule(*known[-1], False)
     window = add_months(on, -12)
-    lines = [a for a in cat.payments if window < reference_date(a) <= on]
-    if lines:
-        return from_lines(lines, False)
+    first = reference_date(cat.payments[0]) if cat.payments else None
+    if first is not None and first <= window:
+        # the 12 months up to the date are fully covered by lines
+        lines = [a for a in cat.payments if window < reference_date(a) <= on]
+        if lines:
+            return from_lines(lines, False)
+    elif first is not None and first <= on:
+        # the first year of instalments: the 12 months from the first line, not one or two
+        # instalments divided by 12
+        end = add_months(first, 12)
+        return from_lines([a for a in cat.payments if reference_date(a) < end], False)
     later = [s for s in schedules if s[0] > on.year]
     if later:
         return from_schedule(*later[0], True)

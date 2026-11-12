@@ -23,8 +23,13 @@
 #   monthly premium's first payment, followed by a second, is not mistaken for a yearly one),
 #   else the payment as a month's.
 # - grundsteuer: the confirmed grundsteuer_schedule in force for the date's year (the latest
-#   row with tax_year ≤ the year, as the reminders read it) ÷ 12; else Σ the lines of the 12
-#   months up to the date (reference date in (date − 12 months, date]) ÷ 12; else*, nothing
+#   row with tax_year ≤ the year, as the reminders read it, so a Bescheid holds until a later
+#   one replaces it: case grundsteuer_schedule_carried_forward) ÷ 12; else Σ the lines of the
+#   12 months up to the date (reference date in (date − 12 months, date]) ÷ 12 when the first
+#   line lies on or before date − 12 months, so that window is fully covered; else, the first
+#   line lying on or before the date, Σ the lines of the 12 months from the first line ÷ 12
+#   (one or two instalments of the first year never stand for a year: case
+#   grundsteuer_first_year_of_lines); else*, nothing
 #   being known on or before the date, the first schedule of a later year, else the first
 #   12 months of lines after the date (from_later); else 0.00. (*D155 says "else 0"; with 0 a
 #   Pauschale set before the first Grundsteuerbescheid would show the whole Grundsteuer as a
@@ -741,4 +746,133 @@ cases:
              sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000001024, amount: "-10.00"}]}
           - *none_el
         betrkv: "192.00"
+    settlements: []
+
+- id: grundsteuer_first_year_of_lines
+  description: >
+    No Grundsteuer schedule, a flat bought on 1 July 2026, quarterly instalments of 60.00 from
+    15 Aug 2026. The Pauschale was raised by a rent row on 1 Oct 2026, when only the August
+    instalment was paid: the 12 months up to that date are not covered by lines, so the year
+    from the first line (Aug, Nov, Feb, May: 240.00, 20.00 a month) stands for it, not the one
+    instalment ÷ 12 (5.00, which would have invented a rise of 15.00). Today the 12 months up
+    to the date are covered (Nov, Feb, May, Aug): 20.00 again, no to-do.
+  today: 2027-09-01
+  facts:
+    property: *property
+    units: *units
+    tenancies:
+      - {id: *T1, unit_id: *Z1, start_date: 2026-07-01, operating_costs_terms: flat_rate,
+         rents: [{effective_from: 2026-07-01, cold_rent: "400.00", operating_costs_prepayment: "100.00"},
+                 {effective_from: 2026-10-01, cold_rent: "400.00", operating_costs_prepayment: "120.00"}]}
+    allocations:
+      - {allocation_id: 0155a100-0000-4000-8000-000000001101, booking_date: 2026-08-15, amount: "-60.00", category: grundsteuer}
+      - {allocation_id: 0155a100-0000-4000-8000-000000001102, booking_date: 2026-11-15, amount: "-60.00", category: grundsteuer}
+      - {allocation_id: 0155a100-0000-4000-8000-000000001103, booking_date: 2027-02-15, amount: "-60.00", category: grundsteuer}
+      - {allocation_id: 0155a100-0000-4000-8000-000000001104, booking_date: 2027-05-15, amount: "-60.00", category: grundsteuer}
+      - {allocation_id: 0155a100-0000-4000-8000-000000001105, booking_date: 2027-08-15, amount: "-60.00", category: grundsteuer}
+  expect:
+    property_id: *P
+    as_of: 2027-09-01
+    pauschalen_total: "120.00"
+    tenancies:
+      - tenancy_id: *T1
+        unit_id: *Z1
+        unit_label: Zimmer 1
+        pauschale: "120.00"
+        set_on: 2026-10-01
+        set_by: rent_change
+        share_percent: "100.0"
+        changes:
+          - &same_hg {category: hausgeld_umlagefaehig, then: "0.00", now: "0.00", change: "0.00"}
+          - {category: grundsteuer, then: "20.00", now: "20.00", change: "0.00"}
+          - *same_ins
+          - *same_el
+        flat_rise: "0.00"
+        rise: "0.00"
+        verdict: none
+    levels:
+      - as_of: 2026-10-01
+        rates:
+          - &none_hg {category: hausgeld_umlagefaehig, monthly: "0.00", basis: none, from_later: false, sources: []}
+          - {category: grundsteuer, monthly: "20.00", basis: twelve_months,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000001101, amount: "-60.00"},
+                       {kind: allocation, id: 0155a100-0000-4000-8000-000000001102, amount: "-60.00"},
+                       {kind: allocation, id: 0155a100-0000-4000-8000-000000001103, amount: "-60.00"},
+                       {kind: allocation, id: 0155a100-0000-4000-8000-000000001104, amount: "-60.00"}]}
+          - *none_ins
+          - *none_el
+        betrkv: "20.00"
+      - as_of: 2027-09-01
+        rates:
+          - *none_hg
+          - {category: grundsteuer, monthly: "20.00", basis: twelve_months,
+             sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000001102, amount: "-60.00"},
+                       {kind: allocation, id: 0155a100-0000-4000-8000-000000001103, amount: "-60.00"},
+                       {kind: allocation, id: 0155a100-0000-4000-8000-000000001104, amount: "-60.00"},
+                       {kind: allocation, id: 0155a100-0000-4000-8000-000000001105, amount: "-60.00"}]}
+          - *none_ins
+          - *none_el
+        betrkv: "20.00"
+    settlements: []
+
+- id: grundsteuer_schedule_carried_forward
+  description: >
+    A Bescheid holds until a later one replaces it: the 2027 schedule (480.00, 40.00 a month)
+    is the only one confirmed, so it stands for 2028 too, although the 2028 instalments paid
+    so far (186.00 a quarter) differ; the lines of the 12 months up to today (51.00 a month)
+    are not used while a schedule is known. The lease began in 2026, before any Grundsteuer
+    was known: the 2027 schedule stands for it (from_later). No rise.
+  today: 2028-06-01
+  facts:
+    property: *property
+    units: *units
+    tenancies:
+      - {id: *T1, unit_id: *Z1, start_date: 2026-07-01, operating_costs_terms: flat_rate,
+         rents: [{effective_from: 2026-07-01, cold_rent: "400.00", operating_costs_prepayment: "100.00"}]}
+    allocations:
+      - {allocation_id: 0155a100-0000-4000-8000-000000001201, booking_date: 2027-02-15, amount: "-120.00", category: grundsteuer}
+      - {allocation_id: 0155a100-0000-4000-8000-000000001202, booking_date: 2027-05-15, amount: "-120.00", category: grundsteuer}
+      - {allocation_id: 0155a100-0000-4000-8000-000000001203, booking_date: 2027-08-15, amount: "-120.00", category: grundsteuer}
+      - {allocation_id: 0155a100-0000-4000-8000-000000001204, booking_date: 2027-11-15, amount: "-120.00", category: grundsteuer}
+      - {allocation_id: 0155a100-0000-4000-8000-000000001205, booking_date: 2028-02-15, amount: "-186.00", category: grundsteuer}
+      - {allocation_id: 0155a100-0000-4000-8000-000000001206, booking_date: 2028-05-15, amount: "-186.00", category: grundsteuer}
+    tax_inputs:
+      - *schedule_2027
+  expect:
+    property_id: *P
+    as_of: 2028-06-01
+    pauschalen_total: "100.00"
+    tenancies:
+      - tenancy_id: *T1
+        unit_id: *Z1
+        unit_label: Zimmer 1
+        pauschale: "100.00"
+        set_on: 2026-07-01
+        set_by: start
+        share_percent: "100.0"
+        changes:
+          - *same_hg
+          - {category: grundsteuer, then: "40.00", now: "40.00", change: "0.00"}
+          - *same_ins
+          - *same_el
+        flat_rise: "0.00"
+        rise: "0.00"
+        verdict: none
+    levels:
+      - as_of: 2026-07-01
+        rates:
+          - *none_hg
+          - {category: grundsteuer, monthly: "40.00", basis: schedule, from_later: true,
+             sources: [{kind: tax_input, id: *S27, amount: "480.00"}]}
+          - *none_ins
+          - *none_el
+        betrkv: "40.00"
+      - as_of: 2028-06-01
+        rates:
+          - *none_hg
+          - {category: grundsteuer, monthly: "40.00", basis: schedule,
+             sources: [{kind: tax_input, id: *S27, amount: "480.00"}]}
+          - *none_ins
+          - *none_el
+        betrkv: "40.00"
     settlements: []
