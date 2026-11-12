@@ -16,6 +16,7 @@ from db.matching_support import TENANT_IBAN, World
 from sqlalchemy import func, select, update
 
 from hausbuch.db.session import workspace_transaction
+from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import notification as notification_table
 from hausbuch.db.tables import property_ as property_table
 from hausbuch.db.tables import statement_import as import_table
@@ -170,6 +171,17 @@ def _rows(world: World) -> list:
         ).all()
 
 
+def _sent_events(world: World) -> list:
+    """The workspace.notification_sent events (§8): type, entity, actor and payload."""
+    c = event_table.c
+    with workspace_transaction(world.engine, world.ws) as conn:
+        return conn.execute(
+            select(c.entity_type, c.entity_id, c.actor_type, c.actor_id, c.payload)
+            .where(c.type == "workspace.notification_sent")
+            .order_by(c.seq)
+        ).all()
+
+
 def _expected_due(world: World, members, today: date = TODAY):
     with workspace_transaction(world.engine, world.ws) as conn:
         reminders = list_reminders(conn, today)
@@ -218,6 +230,25 @@ def test_one_digest_per_enrolled_member_and_its_sent_rows(setup, app_engine, tmp
     }
     assert pending[0] not in {r.recipient_user_id for r in rows}
 
+    # §8: one workspace.notification_sent per item and lead, counting the members it reached;
+    # never an address or a member id.
+    events = _sent_events(world)
+    pairs = {(d.reminder_id, d.lead_days) for d in expected}
+    assert sorted((e.payload["reminder_id"], e.payload["lead_days"]) for e in events) == sorted(
+        pairs
+    )
+    for e in events:
+        assert e.payload == {
+            "reminder_id": e.payload["reminder_id"],
+            "lead_days": e.payload["lead_days"],
+            "channel": "email",
+            "recipient_count": len(members),
+        }
+        assert (e.entity_type, e.entity_id) == ("workspace", world.ws)
+        assert (e.actor_type, e.actor_id) == ("system", "send_reminders")
+        for user_id, email in members:
+            assert email not in str(e.payload) and str(user_id) not in str(e.payload)
+
 
 # --- (b) the same day's second run sends nothing ---------------------------------------------
 
@@ -256,12 +287,15 @@ def test_a_failed_send_is_retried_next_day_and_given_up_after_three(setup, app_e
         assert attempts == sorted(
             (m, a, "failed", "http_503") for m, _ in members for a in range(1, day + 2)
         )
+        assert _sent_events(world) == []  # a failed send is no notification_sent event
     # Given up: a working mailer on the fourth day sends nothing for it.
     working = FakeMailer()
     _run(world, app_engine, tmp_path, working, at=NOW + timedelta(days=3))
     assert all("Miete WE 3" not in m.text for m in working.sent)
     assert max(r.attempt for r in _rows(world) if r.reminder_id == rent) == 3
     assert not [r for r in _rows(world) if r.status == "sent" and r.reminder_id == rent]
+    # Only a sent row is reported: the failed attempts wrote no notification_sent event.
+    assert not [e for e in _sent_events(world) if e.payload["reminder_id"] == rent]
 
 
 def test_a_retry_that_succeeds_records_its_attempt(setup, app_engine, tmp_path):

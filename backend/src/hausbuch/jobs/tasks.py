@@ -196,8 +196,9 @@ def register_tasks(app: procrastinate.App) -> procrastinate.App:
     poll = app.task(name=POLL_TASK, pass_context=True, lock=POLL_LOCK)(poll_inbox)
     app.periodic(cron=POLL_CRON, periodic_id=POLL_TASK)(poll)
     # No retry: a failed mail is retried by the next day's run (D123, up to three attempts).
-    # The lock keeps one run at a time; each workspace is also sent under an advisory lock
-    # (jobs/notify.py), so not even a run outside the queue can send a digest twice.
+    # lock= is Procrastinate's lock (one running send_reminders job at a time, a second waits),
+    # not a queueing lock; each workspace is also sent under an advisory lock (jobs/notify.py),
+    # so not even a run outside the worker can send a digest twice.
     notify = app.task(name=NOTIFY_TASK, pass_context=True, lock=NOTIFY_LOCK)(send_reminders)
     app.periodic(cron=NOTIFY_CRON, periodic_id=NOTIFY_TASK)(notify)
     return app

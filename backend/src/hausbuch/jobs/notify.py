@@ -15,22 +15,25 @@ is on:
 4. one digest per member listing that member's items (`rules.reminder_digest`), sent through
    the mailer, then one `notification` row per item, lead, member and attempt: `sent`, or
    `failed` with the mailer's code. A member's rows are written in a transaction of their
-   own right after the send, so one member's failure never undoes another's record.
+   own right after the send, so one member's failure never undoes another's record;
+5. after every member's send, one `workspace.notification_sent` event per item and lead that
+   reached at least one member this run (§8), with the number of members it reached, never
+   who, in one transaction of its own.
 
 Inert while sending is not set up (no TEM key, project or sender address): one log line,
 no error, nothing read.
 
 **Two runs never send the same digest.** The send happens before its row is inserted, and
 the `notification` table is append-only with no pending state, so the unique index alone
-cannot stop a second run that read the rows before the first one wrote them. Two guards:
-the Procrastinate task carries the queueing lock NOTIFY_LOCK, so the worker runs one
-send_reminders job at a time; and each workspace is sent under a transaction-scoped
-advisory lock (`pg_try_advisory_xact_lock` on `reminders:<workspace id>`), taken on a
-holder connection before the rows are read and kept until every member's rows are
-committed. A run that finds the lock taken skips the workspace (logged as `busy`): the
-holder is sending exactly those mails. The one gap left: a mail TEM accepted whose row could
-not be written (the database gone between the send and the insert) is sent again the next
-day; a recorded send is never repeated.
+cannot stop a second run that read the rows before the first one wrote them. Two guards: the
+Procrastinate task is registered with `lock=NOTIFY_LOCK`, so at most one send_reminders job
+runs at a time (a second one waits until the first has finished); and each workspace is sent
+under a transaction-scoped advisory lock (`pg_try_advisory_xact_lock` on
+`reminders:<workspace id>`), taken on a holder connection before the rows are read and kept
+until every member's rows are committed. A run that finds the lock taken skips the workspace
+(logged as `busy`): the holder is sending exactly those mails. The one gap left: a mail TEM
+accepted whose row could not be written (the database gone between the send and the insert)
+is sent again the next day; a recorded send is never repeated.
 
 Nothing personal is logged: one line per run with counts and codes; a workspace that fails
 is logged by its exception class only. The addresses go only to the mailer.
@@ -52,6 +55,8 @@ from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import notification as notification_table
 from hausbuch.rules.reminder_digest import render_digest
 from hausbuch.rules.reminders import due_notifications
+from hausbuch.schemas.enums import ActorType
+from hausbuch.schemas.events import EventType, NotificationSent
 from hausbuch.schemas.reminders import (
     NotificationChannel,
     NotificationDue,
@@ -59,7 +64,9 @@ from hausbuch.schemas.reminders import (
     Reminder,
     SentNotification,
 )
+from hausbuch.services.context import Actor, new_command
 from hausbuch.services.documents import LOCAL_TIME_ZONE
+from hausbuch.services.events import append_event
 from hausbuch.services.mail import Mailer, MailSendError, OutgoingMail, tem_client
 from hausbuch.services.reminders import list_reminders
 from hausbuch.services.workspace_settings import get_settings
@@ -68,8 +75,9 @@ from .document_read import JobDeps
 
 NOTIFY_TASK = "send_reminders"
 NOTIFY_CRON = "0 6 * * *"  # D123: 06:00, the worker's clock (UTC in the container)
-NOTIFY_LOCK = "reminders:send"  # one run at a time in the queue
+NOTIFY_LOCK = "reminders:send"  # Procrastinate lock=: one running job at a time
 CHANNEL = NotificationChannel.EMAIL
+SYSTEM_ACTOR = Actor(ActorType.SYSTEM, NOTIFY_TASK)
 
 logger = logging.getLogger("hausbuch.jobs.notify")
 
@@ -186,9 +194,13 @@ def _workspace(
         by_member: dict[UUID, list[NotificationDue]] = defaultdict(list)
         for item in due:
             by_member[item.recipient_user_id].append(item)
+        reached: Counter[tuple[str, int]] = Counter()  # (reminder, lead) -> members sent to
         for user_id in sorted(by_member, key=str):
             items = by_member[user_id]
-            _send(deps, mailer, ws, members[user_id], items, reminders, now, link, result)
+            if _send(deps, mailer, ws, members[user_id], items, reminders, now, link, result):
+                reached.update({(i.reminder_id, i.lead_days) for i in items})
+        if reached:
+            _record_sent(deps, ws, reached, now)
 
 
 def _sent(conn: Connection) -> list[SentNotification]:
@@ -211,8 +223,9 @@ def _send(
     now: datetime,
     link: str,
     result: NotifyResult,
-) -> None:
-    """One member's digest, then its rows in their own transaction."""
+) -> bool:
+    """One member's digest, then its rows in their own transaction. True when the mailer
+    accepted it, so every item's row is `sent`."""
     digest = render_digest(
         [reminders[rid] for rid in dict.fromkeys(i.reminder_id for i in items)], link
     )
@@ -251,3 +264,23 @@ def _send(
             ],
         )
     result.items += len(items)
+    return status is NotificationStatus.SENT
+
+
+def _record_sent(deps: JobDeps, ws: UUID, reached: Counter[tuple[str, int]], now: datetime) -> None:
+    """workspace.notification_sent (§8): per item and lead, how many members this run's
+    `sent` rows reached; never an address or a member id."""
+    with workspace_transaction(deps.engine, ws) as conn:
+        ctx = new_command(conn, ws, SYSTEM_ACTOR, now=now)
+        for (reminder_id, lead_days), count in sorted(reached.items()):
+            append_event(
+                ctx,
+                EventType.WORKSPACE_NOTIFICATION_SENT,
+                ws,
+                NotificationSent(
+                    reminder_id=reminder_id,
+                    lead_days=lead_days,
+                    channel=CHANNEL,
+                    recipient_count=count,
+                ),
+            )
