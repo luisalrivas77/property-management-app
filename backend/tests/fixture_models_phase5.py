@@ -25,6 +25,8 @@ step 0 report as a spec finding.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import calendar
 import io
 import zipfile
@@ -32,7 +34,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from functools import cache
 from pathlib import Path
-from typing import Literal, Self
+from typing import Annotated, Literal, Self
 from uuid import UUID
 
 import yaml
@@ -54,6 +56,8 @@ from hausbuch.rules.tax.return_estimate import filing_deadline
 from hausbuch.rules.tax.spekulation import tax_free_from
 from hausbuch.schemas.bank import LineForHash, ReconcileResult, StoredLine
 from hausbuch.schemas.bank_sync import (
+    StatementKey,
+    StatementOutcome,
     SyncEvent,
     SyncStatus,
     SyncTransition,
@@ -846,6 +850,187 @@ class NotificationFixture(_Fixture):
     cases: list[NotificationCase] = Field(min_length=1)
 
 
+# --- bank_statements.yaml: rules.bank_statements (D154 (2)-(4), step 2b) --------------------
+
+STATEMENT_FLOOR_YEAR = 2026  # bank accounts from 1 Jan 2026 (decided 6 Nov 2026)
+STATEMENT_REQUESTS_MAX = 15  # D154 (3): at most 15 HKEKP per run
+STATEMENT_PARTS_MAX = 10  # D154 (2): at most 10 parts of one statement
+STATEMENT_BYTES_MAX = 20 * 1024 * 1024  # D154 (2): 20 MB decoded
+_LOCKS = {"9930", "9931", "3938"}
+
+KeyText = Annotated[str, Field(pattern=r"^[0-9]{4}/[1-9][0-9]{0,4}$")]  # "2026/12"
+
+
+def _key(text: str) -> StatementKey:
+    year, number = text.split("/")
+    return StatementKey(year=int(year), number=int(number))
+
+
+def _plan(stored: list[StatementKey], today: date, first_year: int) -> list[StatementKey]:
+    """The header's plan_probes, written once more."""
+    first = max(first_year, STATEMENT_FLOOR_YEAR)
+    current, previous = today.year, today.year - 1
+
+    def start(year: int) -> StatementKey:
+        numbers = [k.number for k in stored if k.year == year]
+        return StatementKey(year=year, number=max(numbers, default=0) + 1)
+
+    plan = []
+    if previous >= first and StatementKey(year=current, number=1) not in stored:
+        plan.append(start(previous))
+    if current >= first:
+        plan.append(start(current))
+    return plan
+
+
+def _walk(plan: list[StatementKey], bank_has: set[StatementKey]) -> list[StatementKey]:
+    """The header's walk: each year from its start until a number is not delivered."""
+    requests: list[StatementKey] = []
+    for begin in plan:
+        number = begin.number
+        while len(requests) < STATEMENT_REQUESTS_MAX:
+            key = StatementKey(year=begin.year, number=number)
+            requests.append(key)
+            if key not in bank_has:
+                break
+            number += 1
+    return requests
+
+
+class FixtureAnswer(Schema):
+    level: Literal["message", "segment"]
+    code: str = Field(pattern=r"^[0-9]{4}$")
+    segment: str | None = None
+
+
+class AnswerExpect(Schema):
+    outcome: StatementOutcome
+    code: str | None = None
+    dialog_ended: bool = False
+    reason: str | None = None
+    size: int | None = None
+
+
+def _file(parts: list[bytes]) -> tuple[bytes | None, str | None]:
+    """The header's file rule: join, decode once (raw %PDF- taken as it is), check."""
+    joined = b"".join(parts)
+    if joined.startswith(b"%PDF-"):
+        data = joined
+    else:
+        try:
+            data = base64.b64decode(b"".join(joined.split()), validate=True)
+        except (binascii.Error, ValueError):
+            return None, "not_base64"
+    if not data.startswith(b"%PDF-"):
+        return None, "not_pdf"
+    if len(data) > STATEMENT_BYTES_MAX:
+        return None, "too_large"
+    if not data.rstrip().endswith(b"%%EOF"):
+        return None, "no_eof"
+    return data, None
+
+
+def _read(
+    answers: list[FixtureAnswer], parts: list[bytes], touchdown: bool, earlier: list[bytes]
+) -> AnswerExpect:
+    """The header's read_answer, written once more (size instead of the file)."""
+    ended = any(a.level == "message" and a.code == "9800" for a in answers)
+    lock = next((a.code for a in answers if a.code in _LOCKS), None)
+    if lock is not None:
+        return AnswerExpect(outcome=StatementOutcome.LOCKED, code=lock, dialog_ended=ended)
+    own = [a for a in answers if a.level == "segment" and (a.segment or "").startswith("HKEKP")]
+    refusal = next((a.code for a in own if a.code == "3010" or a.code.startswith("9")), None)
+    if refusal is not None:
+        return AnswerExpect(
+            outcome=StatementOutcome.NOT_AVAILABLE, code=refusal, dialog_ended=ended
+        )
+    if touchdown and any(a.code == "3040" for a in own):
+        if len(earlier) + 1 >= STATEMENT_PARTS_MAX:
+            return AnswerExpect(
+                outcome=StatementOutcome.INVALID, reason="too_many_parts", dialog_ended=ended
+            )
+        return AnswerExpect(outcome=StatementOutcome.CONTINUE, dialog_ended=ended)
+    if parts:
+        data, reason = _file([*earlier, *parts])
+        if data is None:
+            return AnswerExpect(outcome=StatementOutcome.INVALID, reason=reason, dialog_ended=ended)
+        return AnswerExpect(outcome=StatementOutcome.STATEMENT, size=len(data), dialog_ended=ended)
+    failed = next((a.code for a in answers if a.code.startswith("9")), None)
+    if failed is not None:
+        return AnswerExpect(outcome=StatementOutcome.STOPPED, code=failed, dialog_ended=ended)
+    return AnswerExpect(outcome=StatementOutcome.NOT_AVAILABLE, dialog_ended=ended)
+
+
+class PlanExpect(Schema):
+    probes: list[KeyText]
+    requests: list[KeyText] | None = None
+
+
+class PlanCase(Lenient):
+    today: date
+    first_year: int
+    stored: list[KeyText]
+    bank_has: list[KeyText] | None = None
+    expect: PlanExpect
+
+    @property
+    def stored_keys(self) -> list[StatementKey]:
+        return [_key(k) for k in self.stored]
+
+    @model_validator(mode="after")
+    def _recompute(self) -> Self:
+        plan = _plan(self.stored_keys, self.today, self.first_year)
+        if [str(k) for k in plan] != [str(_key(k)) for k in self.expect.probes]:
+            raise ValueError(
+                f"{self.id}: plan_probes gives {[f'{k.year}/{k.number}' for k in plan]}"
+            )
+        if (self.bank_has is None) != (self.expect.requests is None):
+            raise ValueError(f"{self.id}: bank_has and expect.requests come together")
+        if self.bank_has is not None:
+            walked = _walk(plan, {_key(k) for k in self.bank_has})
+            if walked != [_key(k) for k in self.expect.requests]:
+                raise ValueError(f"{self.id}: the walk gives {[str(k) for k in walked]}")
+        return self
+
+
+class AnswerCase(Lenient):
+    answers: list[FixtureAnswer] = Field(min_length=1)
+    parts: list[str] = Field(default_factory=list)
+    touchdown: bool = False
+    earlier: list[str] = Field(default_factory=list)
+    expect: AnswerExpect
+
+    @model_validator(mode="after")
+    def _recompute(self) -> Self:
+        got = _read(
+            self.answers,
+            [p.encode("ascii") for p in self.parts],
+            self.touchdown,
+            [p.encode("ascii") for p in self.earlier],
+        )
+        if got != self.expect:
+            raise ValueError(f"{self.id}: read_answer gives {got}")
+        return self
+
+
+class StatementsFixture(_Fixture):
+    pdf_base64: str
+    pdf_size: int
+    plan_cases: list[PlanCase] = Field(min_length=1)
+    answer_cases: list[AnswerCase] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _sample(self) -> Self:
+        data, reason = _file([self.pdf_base64.encode("ascii")])
+        if data is None or len(data) != self.pdf_size:
+            raise ValueError(f"the sample PDF does not decode to {self.pdf_size} bytes ({reason})")
+        return self
+
+    @property
+    def cases(self) -> list[Lenient]:
+        return [*self.plan_cases, *self.answer_cases]
+
+
 MODELS: dict[str, type[Schema]] = {
     "sync_window": SyncWindowFixture,
     "tan_flow": TanFlowFixture,
@@ -854,6 +1039,7 @@ MODELS: dict[str, type[Schema]] = {
     "inbound_mail": MailFixture,
     "reminders": ReminderFixture,
     "notification_schedule": NotificationFixture,
+    "bank_statements": StatementsFixture,
 }
 
 

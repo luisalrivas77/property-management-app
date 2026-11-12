@@ -213,3 +213,40 @@ class BalanceDrift(Schema):
 
     hksal_balance: Money  # HKSAL's booked balance
     last_reconciled_closing: Money  # the account's last reconciled closing
+
+
+# --- The bank's PDF statements (D154, step 2b; rules/bank_statements.py) --------------------
+
+
+class StatementKey(Schema):
+    """One statement as the bank numbers it: its Kontoauszugsjahr and Kontoauszugsnummer
+    (HKEKP v1: num 4 and num ..5)."""
+
+    year: int = Field(ge=1000, le=9999)
+    number: int = Field(ge=1, le=99999)
+
+    def __str__(self) -> str:
+        return f"{self.number}/{self.year}"
+
+
+class StatementOutcome(StrEnum):
+    """rules.bank_statements.read_answer: what one HKEKP answer means (D154 (2), (4))."""
+
+    STATEMENT = "statement"  # the PDF is complete and valid: store it
+    NOT_AVAILABLE = "not_available"  # refused (3010, 9xxx on HKEKP): ends that year's walk
+    CONTINUE = "continue"  # 3040 with an Aufsetzpunkt: ask for the next part
+    INVALID = "invalid"  # delivered, but not a valid PDF: nothing stored, the year's walk ends
+    STOPPED = "stopped"  # the message failed (9800, another 9xxx): the fetch stops for the run
+    LOCKED = "locked"  # a lock code (9930, 9931, 3938): the run fails as D151 says
+
+
+class StatementReading(Schema):
+    """rules.bank_statements.read_answer output. `code` is the answer code that decided a
+    refusal, a stop or a lock (four digits, never the bank's text); `reason` says why a
+    delivered file is invalid; `pdf` is the decoded file (STATEMENT only) and is never logged."""
+
+    outcome: StatementOutcome
+    code: str | None = None
+    dialog_ended: bool = False  # a message-level 9800: the bank ended the dialog
+    reason: str | None = None
+    pdf: bytes | None = Field(default=None, repr=False)

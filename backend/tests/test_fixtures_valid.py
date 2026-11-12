@@ -618,6 +618,23 @@ PHASE5_CASES = {
         "failed_send_retried_next_day",
         "third_failure_gives_up",
     },
+    # Step 2b, D154 (§4.8).
+    "bank_statements": {
+        "first_run_asks_number_one",
+        "continues_after_the_highest_stored",
+        "january_asks_the_previous_year_first",
+        "february_previous_year_closed",
+        "first_line_in_2025_never_before_2026",
+        "cap_of_fifteen_requests",
+        "delivered_0020_with_hiekp",
+        "none_3010",
+        "refused_9210_on_the_segment",
+        "partly_faulty_9050_with_9210",
+        "dialog_ended_9800",
+        "locked_9930",
+        "continuation_3040_with_touchdown",
+        "not_a_pdf",
+    },
 }
 
 
@@ -728,6 +745,43 @@ def test_phase5_fixtures_check_their_contract(name, case_id, path, slip):
     node[path[-1]] = slip
     with pytest.raises(ValidationError):
         phase5.MODELS[name].model_validate(data)
+
+
+@pytest.mark.parametrize(
+    ("group", "case_id", "path", "slip"),
+    [
+        ("plan_cases", "january_asks_the_previous_year_first", ("expect", "probes"), ["2027/1"]),
+        (
+            "plan_cases",
+            "february_previous_year_closed",
+            ("expect", "probes"),
+            ["2026/13", "2027/2"],
+        ),
+        (
+            "plan_cases",
+            "first_line_in_2025_never_before_2026",
+            ("expect", "probes"),
+            ["2025/1", "2026/1"],
+        ),
+        ("plan_cases", "cap_of_fifteen_requests", ("bank_has",), ["2026/1", "2026/2"]),
+        ("answer_cases", "partly_faulty_9050_with_9210", ("expect", "outcome"), "stopped"),
+        ("answer_cases", "refusal_that_ends_the_dialog", ("expect", "dialog_ended"), False),
+        ("answer_cases", "locked_wins_over_a_delivery", ("expect", "outcome"), "statement"),
+        ("answer_cases", "not_a_pdf", ("expect", "reason"), "no_eof"),
+        ("answer_cases", "continuation_last_part_joined", ("expect", "size"), 108),
+    ],
+)
+def test_bank_statements_fixture_checks_its_contract(group, case_id, path, slip):
+    """D154's fixture: a slip in a hand-filled expectation fails on load."""
+    import copy
+
+    data = copy.deepcopy(phase5.raw("bank_statements"))
+    node = next(c for c in data[group] if c["id"] == case_id)
+    for key in path[:-1]:
+        node = node[key]
+    node[path[-1]] = slip
+    with pytest.raises(ValidationError):
+        phase5.MODELS["bank_statements"].model_validate(data)
 
 
 def _has(case: dict, path: tuple) -> bool:
