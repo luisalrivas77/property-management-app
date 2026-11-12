@@ -49,6 +49,7 @@ from hausbuch.schemas.api import InboxItem, InboxItemKind
 from hausbuch.schemas.bank import (
     DeclareBalanceBody,
     LineForHash,
+    ParsedStatement,
     PossibleDuplicate,
     ReconcileStatus,
     StatementFormat,
@@ -160,7 +161,7 @@ def import_statement(
         )
 
     ibans = [_protect(line.counterparty_iban, iban_key) for line in statement.lines]
-    hashes = _line_hashes(account_id, statement.lines, iban_key)
+    hashes = _line_hashes(account_id, statement, iban_key)
     from_file = statement.closing_balance is not None
     imported = ctx.conn.execute(
         insert(import_table)
@@ -303,7 +304,7 @@ def preview_import(
     _require_same_account(statement.account_iban, account.iban_hmac, iban_key)
     if not statement.lines:
         raise RuleError(rules.EMPTY, "the file holds no booked line")
-    hashes = list(dict.fromkeys(_line_hashes(account_id, statement.lines, iban_key)))
+    hashes = list(dict.fromkeys(_line_hashes(account_id, statement, iban_key)))
     known = {
         row.line_hash.hex()
         for row in conn.execute(
@@ -321,11 +322,20 @@ def preview_import(
     )
 
 
-def _line_hashes(account_id: UUID, lines: Sequence[StatementLine], iban_key: bytes) -> list[str]:
-    """The line hashes import_statement stores, from the parsed lines."""
+def _line_hashes(account_id: UUID, statement: ParsedStatement, iban_key: bytes) -> list[str]:
+    """The line hashes import_statement stores, from the parsed lines. DKB's Kundenreferenz
+    is the counterparty's, not the bank's, so a DKB line hashes by its content and its
+    position among identical lines (phase 6 D173 (3), D22's fallback): two different lines
+    of one day, amount and customer reference both survive. The reference stays on the line."""
+    lines = statement.lines
+    own_ref = statement.format is not StatementFormat.DKB_CSV
     ibans = [_protect(line.counterparty_iban, iban_key) for line in lines]
     return rules.line_hashes(
-        account_id, [_for_hash(line, iban) for line, iban in zip(lines, ibans, strict=True)]
+        account_id,
+        [
+            _for_hash(line, iban, end_to_end=own_ref)
+            for line, iban in zip(lines, ibans, strict=True)
+        ],
     )
 
 
@@ -783,7 +793,9 @@ def _protect(raw: str | None, key: bytes) -> ProtectedIban | None:
         return None
 
 
-def _for_hash(line: StatementLine, iban: ProtectedIban | None) -> LineForHash:
+def _for_hash(
+    line: StatementLine, iban: ProtectedIban | None, *, end_to_end: bool = True
+) -> LineForHash:
     return LineForHash(
         booking_date=line.booking_date,
         value_date=line.value_date,
@@ -793,7 +805,7 @@ def _for_hash(line: StatementLine, iban: ProtectedIban | None) -> LineForHash:
         purpose=line.purpose,
         booking_text=line.booking_text,
         bank_reference=line.bank_reference,
-        end_to_end_ref=line.end_to_end_ref,
+        end_to_end_ref=line.end_to_end_ref if end_to_end else None,
     )
 
 

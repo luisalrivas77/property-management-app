@@ -714,7 +714,7 @@ def deterministic_set(
     (D49), which the matchers come before: an exact rent, loan, owner or document match wins
     over it. Private: learned rules, the document match, then the tenant / lender question."""
     rules = rules_learned.enabled_rules(conn)
-    history = rule_history(conn, tx) if _any_hit(rules, tx) else []
+    history = rule_history(conn, tx, context.account_purpose) if _any_hit(rules, tx) else []
     found = matchers.deterministic_answer(rules, tx, context, history)
     return None if found is None else _guarded(conn, found)
 
@@ -725,8 +725,12 @@ def _any_hit(rules: list[MatchingRule], tx: MatchTransaction) -> bool:
     )
 
 
-def rule_history(conn: Connection, tx: MatchTransaction) -> list[HistoryLine]:
-    """The other lines from the line's IBAN hash with the same sign, not excluded as a
+def rule_history(
+    conn: Connection, tx: MatchTransaction, purpose: AccountPurpose = AccountPurpose.RENTAL
+) -> list[HistoryLine]:
+    """The other lines from the line's IBAN hash with the same sign on accounts of the line's
+    purpose (phase 6 D158: a private line of the same payee is not a kind of the rental
+    rule's, nor the reverse), not excluded as a
     duplicate, with their current (not superseded) allocation rows, for rules.matching.
     rule_answer (D49), which keeps those whose rows are all confirmed. Each row carries its
     amount, scope and recurring flag, which an as_last_split rule copies (D51). Empty for a line
@@ -750,7 +754,9 @@ def rule_history(conn: Connection, tx: MatchTransaction) -> list[HistoryLine]:
             a.recurring,
         )
         .join(allocation_table, a.transaction_id == t.id)
+        .join(account_table, account_table.c.id == t.account_id)
         .where(
+            account_table.c.purpose == purpose.value,
             t.counterparty_iban_hmac == bytes.fromhex(tx.counterparty_iban_hmac),
             t.amount > 0 if tx.amount > 0 else t.amount < 0,
             t.id != tx.id,
@@ -1423,7 +1429,9 @@ def _without(text: str, names: list[str]) -> str:
 
 
 def _similar(conn: Connection, line: Line, limit: int = 5) -> list[SimilarAnswer]:
-    """The newest confirmed answers for the same counterparty (by IBAN hash, else by name)."""
+    """The newest confirmed answers for the same counterparty (by IBAN hash, else by name) on
+    accounts of the line's purpose: a private account's answers never reach a rental prompt
+    (phase 6 D168), as _similar_private keeps rental ones out of the household prompt."""
     t = transaction_table.c
     if line.counterparty_iban_hmac is not None:
         same = t.counterparty_iban_hmac == line.counterparty_iban_hmac
@@ -1434,8 +1442,10 @@ def _similar(conn: Connection, line: Line, limit: int = 5) -> list[SimilarAnswer
     rows = conn.execute(
         select(t.id, t.booking_date, t.amount, allocation_table.c.category)
         .join(allocation_table, allocation_table.c.transaction_id == t.id)
+        .join(account_table, account_table.c.id == t.account_id)
         .where(
             same,
+            account_table.c.purpose == line.account_purpose.value,
             t.id != line.tx.id,
             allocation_table.c.status == AllocationStatus.CONFIRMED.value,
         )

@@ -127,9 +127,9 @@ def test_the_preview_and_the_import_hash_the_same_bytes_alike(
     ws, _ = fresh_workspaces
     account = _account(run, ws)
     _import(run, blob_store, ws, account.id, ZIP)
-    lines = parse_statement(ZIP).statement.lines
+    statement = parse_statement(ZIP).statement
 
-    previewed = set(statements._line_hashes(account.id, lines, TEST_IBAN_KEY))
+    previewed = set(statements._line_hashes(account.id, statement, TEST_IBAN_KEY))
 
     with workspace_transaction(app_engine, ws) as conn:
         stored = {

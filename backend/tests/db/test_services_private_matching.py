@@ -12,7 +12,7 @@ from decimal import Decimal
 
 import pytest
 from db.db_support import TEST_IBAN_KEY
-from db.matching_support import TENANT_IBAN, World
+from db.matching_support import PAINTER_IBAN, TENANT_IBAN, World
 from sqlalchemy import insert, select
 
 from hausbuch.ai.fake import FakeModelClient, text_response
@@ -27,8 +27,8 @@ from hausbuch.jobs.matching import run_match_transaction
 from hausbuch.rules import matching as matchers
 from hausbuch.schemas.allocation import AllocationDraft, AllocationMethod, AllocationSet
 from hausbuch.schemas.api import ConfirmAllocationsBody, InboxItemKind
-from hausbuch.schemas.enums import ActorType, ImportStatus
-from hausbuch.services import allocations, review, workspace_settings
+from hausbuch.schemas.enums import AccountPurpose, ActorType, ImportStatus
+from hausbuch.services import allocations, matching, review, workspace_settings
 from hausbuch.services.context import Actor
 from hausbuch.services.errors import RuleViolationError
 from hausbuch.services.iban import protect_iban
@@ -345,3 +345,46 @@ def test_a_name_confirmed_under_two_categories_is_too_broad(world, private):
     result = _answer_line(world, third, "-20.00", "hh_groceries")
     assert result.rule is None and result.can_learn_rule is False
     assert world.query(lambda c: c.execute(select(rule_table)).all()) == []
+
+
+# --- Review of PR #221 (F1, F2): a payee both accounts pay ---------------------------------
+
+
+def test_a_private_line_of_the_same_payee_neither_breaks_a_rental_rule_nor_reaches_its_prompt(
+    world, private, app_engine, tmp_path
+):
+    """The rental rule's D49 amount test reads rental lines only, and a rental prompt's
+    similar answers hold no private line (D158, D168), whatever the switch says."""
+    name = "Versicherung Beispiel AG"
+    first = world.line(date(2026, 9, 1), "-100.00", iban=PAINTER_IBAN, name=name)
+    assert _answer_line(world, first, "-100.00", "insurance", learn=True).rule is not None
+    mine = private.line(date(2026, 9, 15), "-60.00", iban=PAINTER_IBAN, name=name)
+    _answer_line(world, mine, "-60.00", "hh_insurance", learn=False)
+
+    rental = world.line(date(2026, 10, 1), "-100.00", iban=PAINTER_IBAN, name=name)
+    run_match_transaction(  # a re-match never calls the model
+        _deps(app_engine, tmp_path, FakeModelClient()),
+        workspace_id=world.ws,
+        transaction_id=rental,
+        attempt=0,
+        rematch=True,
+    )
+    history = world.query(
+        lambda c: matching.rule_history(c, matching.load_line(c, rental).tx, AccountPurpose.RENTAL)
+    )
+    assert {h.transaction_id for h in history} == {first}
+    (row,) = _rows(world, rental)
+    assert (row.category, row.method, row.status, row.confidence) == (
+        "insurance",
+        "rule",
+        "confirmed",
+        Decimal("1.000"),
+    )
+
+    other = world.line(date(2026, 10, 5), "-77.00", iban=PAINTER_IBAN, name=name)
+    similar = world.query(
+        lambda c: matching.categorize_input(c, matching.load_line(c, other)).similar
+    )
+    assert similar, "the rental lines of the payee are still offered"
+    assert all(not cat.startswith("hh_") for s in similar for cat in s.categories)
+    assert Decimal("-60.00") not in {s.amount for s in similar}
