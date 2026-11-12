@@ -24,10 +24,11 @@ from uuid import UUID
 from sqlalchemy import Connection
 
 from hausbuch.rules.errors import SCENARIO_SALE_YEAR_BEFORE_TODAY
+from hausbuch.rules.performance.flat_rate import flat_rate_check
 from hausbuch.rules.performance.projection import actual_years, project
 from hausbuch.rules.tax import registry
 from hausbuch.rules.tax.spekulation import tax_free_from
-from hausbuch.schemas.performance import Actuals, Levers, Projection
+from hausbuch.schemas.performance import Actuals, FlatRateCheck, Levers, Projection
 from hausbuch.schemas.tax import DraftFacts
 
 from .errors import NotFoundError, RuleViolationError
@@ -120,3 +121,11 @@ def performance_projection(
         scenario_id=used_id,
         contexts=tax_contexts(conn),
     )
+
+
+def property_flat_rate_check(conn: Connection, property_id: UUID, *, today: date) -> FlatRateCheck:
+    """GET /properties/{id}/flat-rate-check (D155): the Pauschale rise test from the same draft
+    facts as the Anlage V (confirmed allocations, tax inputs in force, tenancies with their rent
+    rows in force). It needs no rule set and no tariff, so a property the actuals refuse is
+    still checked. NotFoundError for an unknown property."""
+    return flat_rate_check(_facts(conn, property_id, today), today)

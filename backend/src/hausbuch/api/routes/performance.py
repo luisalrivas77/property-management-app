@@ -13,9 +13,19 @@ from uuid import UUID
 from fastapi import Query
 
 from hausbuch.schemas.common import NonNegativeMoney, PositiveMoney, Rate, TaxYear, VacancyMonths
-from hausbuch.schemas.performance import Actuals, Projection, Scenario, ScenarioCreate
+from hausbuch.schemas.performance import (
+    Actuals,
+    FlatRateCheck,
+    Projection,
+    Scenario,
+    ScenarioCreate,
+)
 from hausbuch.services.documents import LOCAL_TIME_ZONE
-from hausbuch.services.performance import performance_actuals, performance_projection
+from hausbuch.services.performance import (
+    performance_actuals,
+    performance_projection,
+    property_flat_rate_check,
+)
 from hausbuch.services.scenarios import create_scenario, list_scenarios
 
 from ..deps import Cmd, domain_router
@@ -70,6 +80,16 @@ def property_projection(
         scenario_id=scenario_id,
         overrides=overrides,
     )
+
+
+@router.get("/properties/{property_id}/flat-rate-check")
+def property_flat_rate(property_id: UUID, cmd: Cmd) -> FlatRateCheck:
+    """The Nebenkostenpauschale rise test (D155): the monthly costs when each flat_rate
+    tenancy's Pauschale was set and today, each rate with its sources, and per tenancy its share
+    of the rise and the verdict (raise above 10.00 € a month, lower on any fall). Information,
+    not advice; computed on read, nothing stored."""
+    today = datetime.now(LOCAL_TIME_ZONE).date()
+    return cmd.read(property_flat_rate_check, property_id, today=today)
 
 
 @router.get("/properties/{property_id}/scenarios")
