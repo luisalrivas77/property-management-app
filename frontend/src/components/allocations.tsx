@@ -44,13 +44,14 @@ import { loadDirectory, partyNames, type Directory } from "./entities";
 import { collector, Field, FormBanner, useFormErrors, type FieldMessages } from "./form";
 import { formatDate, formatDateTime, formatMoney } from "./format";
 import { decimalInput, toSignedMoneyString } from "./input";
-import { ALLOCATION_CATEGORY, ALLOCATION_METHOD, PRIVATE_ONLY_CATEGORIES, options } from "./labels";
+import { ALLOCATION_CATEGORY, ALLOCATION_METHOD, categoryGroups } from "./labels";
 import { AllocationTaxInputs } from "./taxInputs";
 import { Loading } from "./ui";
 import { useLoad } from "./useLoad";
 
 // Step 4's schemas have no alias in schemas.ts yet.
 type Schemas = components["schemas"];
+type Account = Schemas["Account"];
 export type Allocation = Schemas["Allocation"];
 export type AllocationCategory = Schemas["AllocationCategory"];
 export type AllocationDraft = Schemas["AllocationDraft"];
@@ -129,10 +130,12 @@ function rowOf(allocation: Allocation): Row {
 }
 
 /** The rows a line starts with: its current allocations, else one row over the whole amount
- * (on the household's only property, if it has exactly one). */
-function initialRows(view: TransactionAllocations, directory: Directory): Row[] {
+ * (on the household's only property, if it has exactly one and the line is the rental
+ * account's; a private line starts without one, phase 6 D159). */
+function initialRows(view: TransactionAllocations, directory: Directory, account: Account): Row[] {
   if (view.allocations.length > 0) return view.allocations.map(rowOf);
-  const only = directory.properties.length === 1 ? (directory.properties[0]?.id ?? "") : "";
+  const only =
+    account.purpose === "rental" && directory.properties.length === 1 ? (directory.properties[0]?.id ?? "") : "";
   return [emptyRow(decimalInput(view.transaction.amount), only)];
 }
 
@@ -192,6 +195,8 @@ const rowKey = (index: number, field: (typeof ROW_FIELDS)[number]) => `allocatio
 interface Loaded {
   view: TransactionAllocations;
   directory: Directory;
+  /** The line's account: its purpose and kind decide the categories offered (phase 6 D159). */
+  account: Account;
 }
 
 /**
@@ -215,18 +220,22 @@ export function AllocationPanel({
       ok(api.GET("/api/transactions/{transaction_id}/allocations", { params: { path: { transaction_id: transactionId } } })),
       loadDirectory(),
     ]);
-    return { view, directory };
+    const account = await ok(
+      api.GET("/api/accounts/{account_id}", { params: { path: { account_id: view.transaction.account_id } } }),
+    );
+    return { view, directory, account };
   }, [transactionId]);
   const state = useLoad(load);
   return (
     <Loading state={state}>
-      {({ view, directory }) => (
+      {({ view, directory, account }) => (
         <>
           {/* Keyed by the line, so another line starts with its own rows. */}
           <AllocationEditor
             key={view.transaction.id}
             view={view}
             directory={directory}
+            account={account}
             reasoning={reasoning}
             question={question}
             onSaved={onSaved}
@@ -250,12 +259,14 @@ function isCredit(amount: string): boolean {
 function AllocationEditor({
   view,
   directory,
+  account,
   reasoning,
   question,
   onSaved,
 }: {
   view: TransactionAllocations;
   directory: Directory;
+  account: Account;
   reasoning?: string | null;
   question?: string | null;
   onSaved: (result: TransactionAllocations) => void;
@@ -267,7 +278,7 @@ function AllocationEditor({
   const shownReasoning = (proposed ? current[0]?.reasoning : null) ?? reasoning ?? null;
   const shownQuestion = (proposed ? current[0]?.question : null) ?? question ?? null;
 
-  const [rows, setRows] = useState<Row[]>(() => initialRows(view, directory));
+  const [rows, setRows] = useState<Row[]>(() => initialRows(view, directory, account));
   // null = not touched: the box follows the rows (see the header).
   const [learnChoice, setLearnChoice] = useState<boolean | null>(null);
   const [rowsEdited, setRowsEdited] = useState(false);
@@ -414,6 +425,7 @@ function AllocationEditor({
             row={row}
             index={index}
             directory={directory}
+            account={account}
             canRemove={rows.length > 1}
             errors={(field) => form.of(rowKey(index, field))}
             onChange={(patch) => update(row.key, patch)}
@@ -516,6 +528,7 @@ function RowFields({
   row,
   index,
   directory,
+  account,
   canRemove,
   errors,
   onChange,
@@ -524,6 +537,7 @@ function RowFields({
   row: Row;
   index: number;
   directory: Directory;
+  account: Account;
   canRemove: boolean;
   errors: (field: (typeof ROW_FIELDS)[number]) => string[];
   onChange: (patch: Partial<Row>) => void;
@@ -537,6 +551,10 @@ function RowFields({
   );
   const loans = directory.loans.filter((loan) => loan.property_id === row.propertyId);
   const unitLabel = new Map(directory.units.map((unit) => [unit.id, unit.label]));
+  // A private line (phase 6 D159) takes the household codes in their groups and names no unit,
+  // tenancy or loan; it may name the property (a bill of the flat paid privately).
+  const rental = account.purpose === "rental";
+  const groups = categoryGroups(account.purpose, account.kind);
 
   function setProperty(propertyId: string) {
     onChange({ propertyId, unitId: "", tenancyId: "", loanId: "" });
@@ -569,19 +587,32 @@ function RowFields({
         <Field
           id={`${id}-category`}
           label="Kategorie"
-          description="Wofür das Geld war, z. B. Kaltmiete, Darlehenszinsen oder Hausgeld. Nach ihr ordnet der geplante Anlage-V-Entwurf den Betrag ein."
+          description={
+            rental
+              ? "Wofür das Geld war, z. B. Kaltmiete, Darlehenszinsen oder Hausgeld. Nach ihr ordnet der Anlage-V-Entwurf den Betrag ein."
+              : "Wofür das Geld war, z. B. Lebensmittel, Gehalt oder Versicherung. Ein Privatkonto zählt nie in die Anlage V; „Kosten der Immobilie, privat bezahlt“ merkt eine Rechnung der Wohnung vor, die von hier bezahlt wurde."
+          }
           errors={errors("category")}
         >
           <select value={row.category} onChange={(e) => onChange({ category: e.target.value as AllocationCategory | "" })} required>
             <option value="">– wählen –</option>
-            {/* Only rental lines can be answered until phase 6 step 1 imports private accounts. */}
-            {options(ALLOCATION_CATEGORY)
-              .filter(([value]) => !PRIVATE_ONLY_CATEGORIES.has(value))
-              .map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
+            {groups.map((group) =>
+              group.label === null ? (
+                group.categories.map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))
+              ) : (
+                <optgroup key={group.label} label={group.label}>
+                  {group.categories.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </optgroup>
+              ),
+            )}
           </select>
         </Field>
         <Field
@@ -599,7 +630,7 @@ function RowFields({
             ))}
           </select>
         </Field>
-        {units.length > 0 || row.unitId ? (
+        {(rental && units.length > 0) || row.unitId ? (
           <Field
             id={`${id}-unit`}
             label="Einheit"
@@ -616,7 +647,7 @@ function RowFields({
             </select>
           </Field>
         ) : null}
-        {tenancies.length > 0 || row.tenancyId ? (
+        {(rental && tenancies.length > 0) || row.tenancyId ? (
           <Field
             id={`${id}-tenancy`}
             label="Mietverhältnis"
@@ -633,7 +664,7 @@ function RowFields({
             </select>
           </Field>
         ) : null}
-        {loans.length > 0 || row.loanId ? (
+        {(rental && loans.length > 0) || row.loanId ? (
           <Field
             id={`${id}-loan`}
             label="Darlehen"

@@ -134,8 +134,9 @@ export interface InboxData {
   reminders: Map<string, Reminder>;
 }
 
-/** GET /inbox plus what its items point at: every statement account's lines and imports, the
- * possible duplicates and the vault's documents (one household holds few of each). */
+/** GET /inbox plus what its items point at: every bank account's lines and imports (the rental
+ * account and, since phase 6 D156, the private ones), the possible duplicates and the vault's
+ * documents (one household holds few of each). */
 export async function loadInbox(): Promise<InboxData> {
   const [items, accounts, duplicates, documents, reminders] = await Promise.all([
     ok(api.GET("/api/inbox")),
@@ -146,7 +147,7 @@ export async function loadInbox(): Promise<InboxData> {
   ]);
   const perAccount = await Promise.all(
     accounts
-      .filter((account) => account.purpose === "rental")
+      .filter((account) => account.kind === "bank_current" || account.kind === "bank_savings")
       .map(async (account) => {
         const path = { params: { path: { account_id: account.id } } };
         const [imports, transactions] = await Promise.all([
@@ -215,6 +216,7 @@ export function InboxList({
                       <LineEntry
                         item={item}
                         line={data.transactions.get(item.transaction_id ?? "")}
+                        account={privateAccount(data.accounts, item.account_id)}
                         pressed={selected === item.transaction_id}
                         onSelect={onSelect}
                       />
@@ -290,14 +292,23 @@ function Why({ item }: { item: InboxItem }) {
 }
 
 /** A bank line: the whole row is the button that opens the panel (mockup 03). */
+/** The line's account when it is a private one (phase 6 D158), which its card names. */
+function privateAccount(accounts: Map<string, Account>, accountId: string | null | undefined): Account | undefined {
+  const account = accountId ? accounts.get(accountId) : undefined;
+  return account?.purpose === "private" ? account : undefined;
+}
+
 function LineEntry({
   item,
   line,
+  account,
   pressed,
   onSelect,
 }: {
   item: InboxItem;
   line: Transaction | undefined;
+  /** Set for a line of a private account (phase 6 D158): the card names the account. */
+  account: Account | undefined;
   pressed: boolean;
   onSelect: (transactionId: string) => void;
 }) {
@@ -308,6 +319,7 @@ function LineEntry({
       <span className="inbox-main">
         <strong>{line?.counterparty_name ?? "Ohne Gegenseite"}</strong>
         <span className="inbox-detail">{line ? line.purpose || "Kein Verwendungszweck" : "Buchung"}</span>
+        {account ? <span className="inbox-detail">Privatkonto · {account.label}</span> : null}
       </span>
       <span className={line && isCredit(line.amount) ? "inbox-amount amount-in" : "inbox-amount"}>
         {line ? signedMoney(line.amount) : "–"}
