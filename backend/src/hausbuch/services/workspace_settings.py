@@ -9,11 +9,12 @@ only the values that differ and appends one workspace.settings_changed event (en
 no event. A setting is never changed by a direct database write, which would skip the event.
 
 Phase 6 D168: `ai_private_accounts` (private-account lines and the depot's documents may be
-sent to the model). Switching it on records the signed-in member as the first consent
-(`consented_by` on the settings_changed event); the other owner records their own consent by
-their own click (`record_ai_consent`, workspace.ai_consent_recorded). The switch takes effect
-(`private_ai_allowed`) only once two different members have consented since it was last
-switched on; switching it off and on again asks both once more.
+sent to the model). Switching it on records the signed-in member's consent (`consented_by` on
+the settings_changed event), and that one consent is enough (`private_ai_allowed`): amended
+12 Nov 2026 (Luis), since the private accounts hold only one owner's own data or the joint
+household's expenses, not the other owner's pay or purchases. Another member may still record
+their own consent (`record_ai_consent`, workspace.ai_consent_recorded); switching it off and on
+again records the consent afresh.
 """
 
 from uuid import UUID
@@ -41,8 +42,9 @@ from .errors import RuleViolationError
 from .events import append_event
 
 _COLUMNS = [workspace_table.c[s.value] for s in WorkspaceSetting]
-# The members whose consent the switch needs (D168: both owners).
-CONSENTS_NEEDED = 2
+# The consents the switch needs: the switching member's (D168 as amended 12 Nov 2026; it said
+# both owners, each by their own click, and so could never take effect with one member).
+CONSENTS_NEEDED = 1
 
 
 def get_settings(conn: Connection) -> WorkspaceSettings:

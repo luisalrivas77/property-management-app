@@ -205,12 +205,25 @@ def test_a_private_line_waits_for_a_person_while_the_switch_is_off(
     assert item.account_id == private.account_id
 
 
-def test_one_consent_is_not_enough(world, private, app_engine, tmp_path):
+def test_the_switching_members_consent_is_enough(world, private):
+    """D168 as amended 12 Nov 2026 (Luis): the one member who switches it on consents for the
+    household; switched off again, the lines wait for a person once more."""
     world.cmd(workspace_settings.update_settings, ai_private_accounts=True, actor=OWNER_A)
+    assert world.query(workspace_settings.private_ai_allowed) is True
+    world.cmd(workspace_settings.update_settings, ai_private_accounts=False, actor=OWNER_A)
     assert world.query(workspace_settings.private_ai_allowed) is False
-    tx = private.line(date(2026, 10, 2), "-23.80", name="Bäckerei Beispiel")
-    plan = _run(_deps(app_engine, tmp_path, FakeModelClient()), world, tx)
-    assert plan.reason == "routing.ai_disabled"
+
+
+def test_the_retry_button_counts_the_private_lines_it_holds_back(world, private):
+    """D50 with D168: while the switch is off, „KI-Vorschläge holen“ sends no private line and
+    says how many it held back, so the screen never shows a bare 0."""
+    private.line(date(2026, 10, 2), "-23.80", name="Bäckerei Beispiel", purpose="Karte")
+    private.line(date(2026, 10, 3), "-9.10", name="Kiosk Beispiel", purpose="Karte")
+    held = world.cmd(review.request_ai_suggestions, ai_enabled=True)
+    assert (held.queued, held.private_held_back) == (0, 2)
+    world.cmd(workspace_settings.update_settings, ai_private_accounts=True, actor=OWNER_A)
+    sent = world.cmd(review.request_ai_suggestions, ai_enabled=True)
+    assert (sent.queued, sent.private_held_back) == (2, 0)
 
 
 def test_with_both_consents_the_household_prompt_sees_only_the_line(
@@ -275,11 +288,12 @@ def test_the_first_import_of_a_private_account_never_auto_accepts_the_model(
     assert (row.method, row.status) == ("llm", "confirmed")
 
 
-def test_switching_off_and_on_asks_both_again(world, private):
+def test_switching_off_and_on_records_the_consent_afresh(world, private):
     _consent_both(world)
     world.cmd(workspace_settings.update_settings, ai_private_accounts=False, actor=OWNER_A)
     world.cmd(workspace_settings.update_settings, ai_private_accounts=True, actor=OWNER_B)
-    assert world.query(workspace_settings.private_ai_allowed) is False
+    assert world.query(workspace_settings.private_ai_consents) == [uuid.UUID(int=0xB)]
+    assert world.query(workspace_settings.private_ai_allowed) is True
 
 
 def test_a_job_never_consents(world):

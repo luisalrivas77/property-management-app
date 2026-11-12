@@ -121,10 +121,10 @@ def _consents(client) -> list[dict]:
     ]
 
 
-def test_private_accounts_need_both_members_consent(client_a, auth_a, api_app, sessions):
-    """Phase 6 D168: switching ai_private_accounts on records the switching member's consent;
-    the switch takes effect only once a second member consents by their own click. Switching
-    it off and on again asks both once more."""
+def test_the_switching_members_consent_is_enough(client_a, auth_a, api_app, sessions):
+    """Phase 6 D168 as amended 12 Nov 2026: switching ai_private_accounts on records the
+    switching member's consent, and the switch takes effect with it. Another member may add
+    their own consent; switching it off and on again records the consent afresh."""
     sessions["token-a-second"] = second = auth_for(auth_a.workspace_id)
     other = client_for(api_app, "token-a-second")
 
@@ -135,7 +135,7 @@ def test_private_accounts_need_both_members_consent(client_a, auth_a, api_app, s
     on = ok(client_a.patch("/api/workspace/settings", json={"ai_private_accounts": True}))
     assert on["ai_private_accounts"] is True
     assert on["ai_private_accounts_consented_by"] == [str(auth_a.user_id)]
-    assert on["ai_private_accounts_active"] is False
+    assert on["ai_private_accounts_active"] is True
     [event] = _settings_events(client_a)
     assert event["payload"] == {
         "changes": {"ai_private_accounts": True},
@@ -159,7 +159,7 @@ def test_private_accounts_need_both_members_consent(client_a, auth_a, api_app, s
     assert off == OFF
     on_again = ok(other.patch("/api/workspace/settings", json={"ai_private_accounts": True}))
     assert on_again["ai_private_accounts_consented_by"] == [str(second.user_id)]
-    assert on_again["ai_private_accounts_active"] is False
+    assert on_again["ai_private_accounts_active"] is True
     other.close()
 
 

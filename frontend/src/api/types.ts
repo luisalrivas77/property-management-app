@@ -2826,6 +2826,8 @@ export interface components {
         AiRetryResult: {
             /** Queued */
             queued: number;
+            /** Private Held Back */
+            private_held_back: number;
         };
         /**
          * Allocation

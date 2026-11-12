@@ -27,10 +27,9 @@ const PRIVATE_TEXT =
   "Ist dies eingeschaltet, schlägt die KI für Umsätze Ihrer privaten Konten eine Haushaltskategorie vor, wenn keine Regel und " +
   "kein Abgleich sie erklärt. Gesendet werden nur Name der Gegenseite, Verwendungszweck, Betrag, Datum, die letzten vier Stellen " +
   "der IBAN und die Kontoart, nie der Name des Kontos oder seiner Eigentümer; verarbeitet bei Anthropic (Claude API) in den USA wie " +
-  "die übrigen Dokumente. Ein gemeinsames Konto zeigt auch Gehalt, Einkäufe und Zahlungen an Kirche, Gewerkschaft, Apotheke oder " +
-  "Arzt der anderen Person; deshalb gilt es erst, wenn beide Mitglieder des Haushalts zugestimmt haben. Wer es einschaltet, stimmt " +
-  "damit zu; das andere Mitglied stimmt hier mit eigenem Klick zu. Ausschalten setzt beide Zustimmungen zurück. Solange es nicht " +
-  "gilt, kommen solche Umsätze mit allen Haushaltskategorien zur Auswahl unter „Zu prüfen“.";
+  "die übrigen Dokumente. Umsätze können Gehalt, Einkäufe und Zahlungen an Kirche, Gewerkschaft, Apotheke oder " +
+  "Arzt. Wer es einschaltet, stimmt damit für den Haushalt zu; ein anderes Mitglied kann seine Zustimmung hier dazusetzen. " +
+  "Solange es ausgeschaltet ist, kommen solche Umsätze mit allen Haushaltskategorien zur Auswahl unter „Zu prüfen“.";
 
 const SWITCHES: { setting: Setting; label: string; text: string }[] = [
   {
@@ -145,8 +144,8 @@ function PrivateAccountsCard({
   const status = !on
     ? "Ausgeschaltet"
     : settings.ai_private_accounts_active
-      ? "Eingeschaltet: beide haben zugestimmt, die KI ordnet private Umsätze zu."
-      : "Eingeschaltet, wartet auf die Zustimmung des anderen Mitglieds. Bis dahin sendet Hausbuch keine privaten Umsätze an die KI.";
+      ? "Eingeschaltet: die KI ordnet private Umsätze zu."
+      : "Eingeschaltet, aber noch ohne Zustimmung. Bitte einmal aus- und wieder einschalten.";
   return (
     <div className="card stack">
       <label className="inline">
