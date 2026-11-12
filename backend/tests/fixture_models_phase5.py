@@ -124,6 +124,8 @@ def _window(facts: SyncWindowFacts, today: date) -> SyncWindow:
             start = max(start, facts.imports_through + timedelta(days=1))
     else:
         start = max(facts.last_booking_on - timedelta(days=14), first_storable)
+        if facts.unreferenced_through is not None:  # D173 (4): never into a CSV/PDF history
+            start = max(start, facts.unreferenced_through + timedelta(days=1))
     if start > today:
         raise Refused(E.BANK_WINDOW_INVALID)
     return SyncWindow(

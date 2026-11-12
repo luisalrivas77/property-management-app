@@ -27,9 +27,10 @@ from db.test_jobs_bank_sync import (  # the helpers only, never a test_* name
     _good,
     _settings,
 )
-from sqlalchemy import insert
+from sqlalchemy import insert, update
 
 from hausbuch.db.session import workspace_transaction
+from hausbuch.db.tables import bank_connection as connection_table
 from hausbuch.db.tables import bank_sync as sync_table
 from hausbuch.db.tables import document as document_table
 from hausbuch.db.tables import document_file as file_table
@@ -146,7 +147,7 @@ def _private_account(bank):
     )
 
 
-def _import(bank, account_id, *, last: date, status: str) -> None:
+def _import(bank, account_id, *, last: date, status: str, fmt: str = "csv_camt") -> None:
     """A statement import of the account, inserted directly: reconciled with a declared and
     computed closing, or still waiting for its balance."""
     sha = hashlib.sha256(uuid.uuid4().bytes).digest()
@@ -180,7 +181,7 @@ def _import(bank, account_id, *, last: date, status: str) -> None:
                 workspace_id=bank.ws,
                 account_id=account_id,
                 document_id=document_id,
-                format="csv_camt",
+                format=fmt,
                 first_booking_on=date(2026, 1, 2),
                 last_booking_on=last,
                 declared_closing=Decimal("250.00") if reconciled else None,
@@ -235,6 +236,39 @@ def test_the_first_window_starts_after_the_last_reconciled_import(bank, tmp_path
     sync = bank.run(bank.ws, service.start_sync, account.id, settings=bank.settings, now=T0)
     # max(31 Dec 2025 + 1, 31 Oct 2026 + 1) = 1 Nov 2026, to today (T0 is 11 Nov 2026)
     assert (sync.requested_from, sync.requested_to) == (date(2026, 11, 1), date(2026, 11, 11))
+
+
+def _synced_through(bank, account_id, last: date) -> None:
+    """The connection's last booking day, as a successful sync would have left it."""
+    with workspace_transaction(bank.engine, bank.ws) as conn:
+        conn.execute(
+            update(connection_table)
+            .where(connection_table.c.account_id == account_id)
+            .values(last_booking_on=last)
+        )
+
+
+def test_a_later_window_never_reaches_back_into_a_csv_history(bank, tmp_path):
+    """D173 (4) as amended after the step 3 review: the 14-day overlap stops at the end of
+    the reconciled history from files without the bank's reference; camt imports, the sync's
+    own among them, and an unreconciled CSV do not count."""
+    account = _private_account(bank)
+    _import(bank, account.id, last=date(2026, 10, 31), status="reconciled")  # the CSV export
+    _import(bank, account.id, last=date(2026, 11, 2), status="imported")  # never reconciled
+    _import(bank, account.id, last=date(2026, 11, 5), status="reconciled", fmt="camt")
+    _connect(bank, account.id)
+    _with_dkb_slot(bank, tmp_path)
+    _synced_through(bank, account.id, date(2026, 11, 5))
+    sync = bank.run(bank.ws, service.start_sync, account.id, settings=bank.settings, now=T0)
+    # max(5 Nov 2026 - 14 days = 22 Oct 2026, 31 Oct 2026 + 1 = 1 Nov 2026) = 1 Nov 2026
+    assert (sync.requested_from, sync.requested_to) == (date(2026, 11, 1), date(2026, 11, 11))
+
+
+def test_a_camt_only_history_keeps_the_overlap(bank):
+    _import(bank, bank.account.id, last=date(2026, 11, 5), status="reconciled", fmt="camt")
+    _synced_through(bank, bank.account.id, date(2026, 11, 5))
+    # 5 Nov 2026 - 14 days = 22 Oct 2026, as in phase 5
+    assert bank.start().requested_from == date(2026, 10, 22)
 
 
 def test_the_rental_account_needs_no_history_for_its_connection(bank):

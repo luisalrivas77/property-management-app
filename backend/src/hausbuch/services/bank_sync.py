@@ -30,7 +30,8 @@ container secret HAUSBUCH_FINTS_PIN_<SLOT> (`primary`: HAUSBUCH_FINTS_PIN); a st
 whose slot has no PIN is refused with bank.pin_missing before any dialog, naming the variable.
 A private account gets a connection only once its statement export is imported and
 reconciled (bank.history_missing), and a first run starts after that history (imports_through,
-D173 (4)). The bank's parameters a run reads are recorded on the account as
+D173 (4)); a later run's 14-day overlap never reaches into a history from CSV or PDF files
+(unreferenced_through). The bank's parameters a run reads are recorded on the account as
 account.bank_parameters_read when they change (D173 (7)); their bank name picks the card texts
 (DKB's app, D173 (1)) and the daily-fetch guard (two manual syncs without an approval first,
 D173 (5)).
@@ -68,6 +69,7 @@ from hausbuch.rules import bank_sync as rules
 from hausbuch.rules import errors as E
 from hausbuch.rules.errors import RuleError
 from hausbuch.schemas.api import InboxItem, InboxItemKind
+from hausbuch.schemas.bank import StatementFormat
 from hausbuch.schemas.bank_sync import (
     PRIMARY_SLOT,
     BankConnection,
@@ -319,6 +321,20 @@ def imports_through(conn: Connection, account_id: UUID) -> date | None:
     ).scalar_one()
 
 
+def unreferenced_through(conn: Connection, account_id: UUID) -> date | None:
+    """D173 (4), amended after the step 3 review: the last booking day of the account's
+    reconciled imports whose lines carry no bank reference, every format but camt (a CSV, a
+    DKB CSV, a PDF), None without any. A later sync's 14-day overlap never reaches back into
+    it, since dedup cannot tell those lines from the camt's."""
+    return conn.execute(
+        select(func.max(import_table.c.last_booking_on)).where(
+            import_table.c.account_id == account_id,
+            import_table.c.status == ImportStatus.RECONCILED.value,
+            import_table.c.format != StatementFormat.CAMT.value,
+        )
+    ).scalar_one()
+
+
 # --- The bank's parameters (phase 6 D173 (7)) -------------------------------------------------
 
 
@@ -470,12 +486,15 @@ def start_sync(ctx: CommandContext, account_id: UUID, *, settings: Settings) -> 
 
 def _window(ctx: CommandContext, account: Row, connection: Row) -> SyncWindow:
     """D120's window on today's day in Europe/Berlin (bank.window_invalid when the anchor is
-    today or later); a first run starts after the imported history (D173 (4))."""
+    today or later); a first run starts after the imported history, and a later run's
+    overlap stops at the end of the history from files without the bank's reference (D173
+    (4))."""
     return rules.request_window(
         SyncWindowFacts(
             opening_balance_on=account.opening_balance_on,
             last_booking_on=connection.last_booking_on,
             imports_through=imports_through(ctx.conn, account.id),
+            unreferenced_through=unreferenced_through(ctx.conn, account.id),
         ),
         ctx.now.astimezone(LOCAL_TIME_ZONE).date(),
     )

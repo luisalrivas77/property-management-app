@@ -230,6 +230,11 @@ class SyncWindowFacts(Schema):
     # without any); a first sync starts after it, so a CSV history and a FinTS camt that
     # share no bank reference never overlap. Built by phase 6 step 3.
     imports_through: date | None = None
+    # The same over the reconciled imports whose lines carry no bank reference (every format
+    # but camt: a CSV, a DKB CSV, a PDF; a FinTS sync's own import is camt), None without
+    # any. After a success the 14-day overlap never reaches back into that history, which
+    # dedup could not tell from the camt's lines (D173 (4), amended after the step 3 review).
+    unreferenced_through: date | None = None
 
 
 class SyncWindow(Schema):

@@ -24,7 +24,8 @@ tests/fixture_models_phase5.py, whose reference functions these must equal).
 - Phase 6 (docs/phases/phase-6.md D163, D173; tests/fixtures/phase6/fints_slots.yaml):
   `pin_variable`, `check_slot` (one container secret per credential slot), `approval_text`,
   `is_dkb` and `auto_sync_allowed` (DKB's approval in its app, and its daily fetch only after
-  two manual syncs without an approval); `request_window` reads `imports_through`.
+  two manual syncs without an approval); `request_window` reads `imports_through` (a first
+  sync) and `unreferenced_through` (the overlap of a later one).
 """
 
 import io
@@ -66,10 +67,13 @@ def request_window(facts: SyncWindowFacts, today: date) -> SyncWindow:
     anchor (phase 2's reconcile refuses a line on the anchor day), never before it. A first
     sync also starts after the account's imported history (phase 6 D173 (4)): the day after
     `imports_through`, the last reconciled import's last booking day, so a CSV history and a
-    FinTS camt that share no bank reference never overlap; after a success it is not read
-    (the 14-day overlap stays). A window longer than 90 days may need a pushTAN approval
-    (§3). Raises bank.window_invalid when the start would be after today (an anchor or an
-    imported history reaching today or later)."""
+    FinTS camt that share no bank reference never overlap; after a success it is not read.
+    After a success the 14-day overlap is bounded below by `unreferenced_through`, the end of
+    the history from files without the bank's reference (a CSV, a PDF): the window starts
+    no earlier than the day after it, for the same reason; a camt-only history leaves the
+    overlap as it was. A window longer than 90 days may need a pushTAN approval (§3). Raises
+    bank.window_invalid when the start would be after today (an anchor or an imported
+    history reaching today or later)."""
     first_storable = facts.opening_balance_on + timedelta(days=1)
     if facts.last_booking_on is None:
         start = first_storable
@@ -77,6 +81,8 @@ def request_window(facts: SyncWindowFacts, today: date) -> SyncWindow:
             start = max(start, facts.imports_through + timedelta(days=1))
     else:
         start = max(facts.last_booking_on - timedelta(days=OVERLAP_DAYS), first_storable)
+        if facts.unreferenced_through is not None:
+            start = max(start, facts.unreferenced_through + timedelta(days=1))
     if start > today:
         raise RuleError(E.BANK_WINDOW_INVALID, "the sync window would start after today")
     return SyncWindow(
