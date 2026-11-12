@@ -89,6 +89,11 @@ def test_a_link_by_hand_its_replacement_and_isolation(client_a, client_b, user_a
     assert (card["code"], card["leg"]["id"]) == ("transfer.unmatched_leg", str(leg))
     assert {c["id"] for c in card["candidates"]} == {str(late), str(other)}
     assert "iban" not in str(card).lower()
+    # Zu prüfen shows the same card, and no property-cost card for this line.
+    inbox = ok(client_a.get("/api/inbox"))
+    cards = [(i["kind"], i["transaction_id"]) for i in inbox if i["kind"].startswith("transfer")]
+    assert cards == [("transfer_unmatched", str(leg))]
+    assert not [i for i in inbox if i["kind"].startswith("property_cost")]
 
     body = {"kind": "bank", "out_transaction_id": str(leg), "in_transaction_id": str(late)}
     link = ok(client_a.post("/api/transfers", json=body), 201)
@@ -97,6 +102,7 @@ def test_a_link_by_hand_its_replacement_and_isolation(client_a, client_b, user_a
     [view] = ok(client_a.get("/api/transfers", params={"month": "2026-10"}))
     assert (view["out_leg"]["id"], view["in_leg"]["amount"]) == (str(leg), "200.00")
     assert ok(client_a.get("/api/transfers/open")) == []
+    assert not [i for i in ok(client_a.get("/api/inbox")) if i["kind"].startswith("transfer")]
 
     # Another workspace sees none of it and cannot touch it.
     assert ok(client_b.get("/api/transfers", params={"month": "2026-10"})) == []

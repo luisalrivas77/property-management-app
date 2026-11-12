@@ -1345,7 +1345,7 @@ a.button-link.capture-review {
 
 /* Haushalt (phase 6 §13, docs/mockups/10-household-cashflow.png) and the Übersicht's Cashflow
    card (mockup 07). The KPI row, the bars and the split reuse Planung's classes (globals.css). */
-.household-open {
+.planning-kpi.household-open {
   background: var(--warn-bg);
   border-color: var(--warn-border);
 }
