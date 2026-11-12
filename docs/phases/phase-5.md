@@ -195,7 +195,7 @@ Every date is computed by rule from the facts; the frontend holds the German lab
 
 - **In-app** (step 3): Zu prüfen cards and the Übersicht card. Zero infrastructure.
 - **Email** (step 3b, D123, chosen): Scaleway Transactional Email (EU, same vendor); DNS for the sending domain; one container secret; a daily digest; the kind of deadline, its date and a property or unit label only.
-- **Web push** (deferred): a service worker in the PWA (today deliberately absent, `manifest.ts`), a VAPID key pair in Secret Manager, a `push_subscription` table (endpoint, keys, user), the `pywebpush` dependency, the permission prompt behind a user gesture, and on iOS the app installed to the Home Screen (iOS 16.4+, §3). About one coder step; nothing in the reminder rules changes. Only if the digest proves too slow.
+- **Web push** (deferred): a service worker in the PWA (today deliberately absent, `manifest.ts`), a VAPID key pair in Secret Manager, a `push_subscription` table (endpoint, keys, user), the `pywebpush` dependency, the permission prompt behind a user gesture, and on iOS the app installed to the Home Screen (iOS 16.4+, §3). About one coder step; nothing in the reminder rules changes. Only if the digest proves too slow. **Not wanted for now (Luis, 12 Nov 2026):** the phone notification comes from Gmail, which notifies on the digest email (Luis set this up on his Android phone), so Web Push stays unbuilt.
 
 ## 7. Rule data 2027 (step 5, D124)
 
