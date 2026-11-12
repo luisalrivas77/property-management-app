@@ -419,3 +419,30 @@ test("a bill without a bank line asks for its payment proof, and the upload clos
   // The proof is in: the bill keeps counting and its to-do is gone.
   await expect(todos.getByRole("listitem").filter({ hasText: "Zahlungsnachweis fehlt" })).toHaveCount(0);
 });
+
+test("an owner without any pay this year is a to-do, and an expected gross pay closes it", async ({ page, signedIn }) => {
+  void signedIn;
+  const year = new Date().getFullYear(); // Übersicht's to-dos are for today's year
+  const owner = await apiCall<{ id: string }>(page, "POST", "/api/owners", { full_name: "A. Lohnlos", church_tax: false });
+
+  await page.goto("/");
+  const overview = page.getByRole("region", { name: "Was noch fehlt" });
+  const entry = overview.getByRole("listitem").filter({ hasText: `Arbeitslohn ${year} fehlt` });
+  await expect(entry).toContainText("A. Lohnlos");
+  await expect(entry).toContainText("letzte Gehaltsabrechnung hochladen");
+  await expect(entry.getByRole("button", { name: "Gehaltsabrechnung hochladen" })).toBeVisible();
+  await expect(entry.getByRole("link", { name: "Bruttogehalt eintragen" })).toHaveAttribute("href", "/owners");
+
+  // Typing the expected pay by hand waives the payslip.
+  await apiCall(page, "POST", "/api/income-inputs", {
+    kind: "expected_gross_pay",
+    tax_year: year,
+    owner_id: owner.id,
+    value: { amount: "45000.00" },
+    supersedes_id: null,
+    withdrawn: false,
+  });
+  await page.reload();
+  await expect(overview.getByText("Lädt …")).toHaveCount(0); // loaded, so the next check is not vacuous
+  await expect(overview.getByRole("listitem").filter({ hasText: `Arbeitslohn ${year} fehlt` })).toHaveCount(0);
+});

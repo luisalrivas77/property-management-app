@@ -12,9 +12,11 @@ import Link from "next/link";
 import { useCallback, useState } from "react";
 
 import { api, ok } from "@/api/client";
+import { ApiError, ruleCodes } from "@/api/errors";
 import type { AnlageVDraft, DocumentChecklistItem, DraftWarning, Owner, Property } from "@/api/schemas";
 import type { components } from "@/api/types";
 
+import { ReadUpload } from "./documents";
 import { todayIso } from "./format";
 import { ReminderDone, reminderLabel, reminderLink, type Reminder } from "./reminders";
 import { questionnaireHref, taxFormHref } from "./taxYear";
@@ -43,7 +45,8 @@ interface PropertyTodos {
 interface OverviewTodosData {
   year: number;
   properties: PropertyTodos[];
-  owners: { owner: Owner; draft: AnlageNDraft | null }[];
+  /** noPay: the owner has no certificate, payslip or expected pay this year (anlage_n.no_pay). */
+  owners: { owner: Owner; draft: AnlageNDraft | null; noPay: boolean }[];
   estimate: ReturnEstimate | null;
 }
 
@@ -75,12 +78,18 @@ async function loadTodos(): Promise<OverviewTodosData> {
     }),
   );
   const perOwner = await Promise.all(
-    (owners ?? []).map(async (owner) => ({
-      owner,
-      draft: await orNull(
-        ok(api.GET("/api/owners/{owner_id}/anlage-n", { params: { path: { owner_id: owner.id }, query: { tax_year: year } } })),
-      ),
-    })),
+    (owners ?? []).map(async (owner) => {
+      try {
+        const draft = await ok(
+          api.GET("/api/owners/{owner_id}/anlage-n", { params: { path: { owner_id: owner.id }, query: { tax_year: year } } }),
+        );
+        return { owner, draft, noPay: false };
+      } catch (error) {
+        // No pay at all is a to-do of its own (below); any other failure adds nothing.
+        const codes = error instanceof ApiError && error.body ? ruleCodes(error.body) : [];
+        return { owner, draft: null, noPay: codes.includes("anlage_n.no_pay") };
+      }
+    }),
   );
   return { year, properties: perProperty, owners: perOwner, estimate };
 }
@@ -132,7 +141,26 @@ function buildEntries(data: OverviewTodosData, reminders: Reminder[], onChanged:
   }
 
   let certificateMissing = false;
-  for (const { owner, draft } of data.owners) {
+  for (const { owner, draft, noPay } of data.owners) {
+    // Before, the Anlage N draft's anlage_n.no_pay was swallowed here, so an owner without any
+    // pay for the year had no to-do at all (Luis, 12 Nov 2026). A confirmed payslip or
+    // certificate, or an expected gross pay typed on Eigentümer, clears it.
+    if (noPay) {
+      entries.push({
+        key: `${owner.id}-no-pay`,
+        title: `Arbeitslohn ${data.year} fehlt`,
+        text:
+          "Die letzte Gehaltsabrechnung hochladen: Sie zeigt die Summen des Jahres bis dahin, die App liest sie aus und rechnet damit. " +
+          "Wer keine hochladen möchte, trägt auf der Eigentümer-Seite das erwartete Bruttogehalt ein; beides erledigt diesen Punkt.",
+        action: (
+          <>
+            <ReadUpload label="Gehaltsabrechnung hochladen" onUploaded={onChanged} />
+            <Link href="/owners">Bruttogehalt eintragen</Link>
+          </>
+        ),
+        context: owner.full_name,
+      });
+    }
     const ctx: GuideContext = { year: data.year, ownerId: owner.id };
     const tax = taxFormHref("n", { year: data.year, propertyId: null, ownerId: owner.id });
     (draft?.warnings ?? []).forEach((warning, index) => {
