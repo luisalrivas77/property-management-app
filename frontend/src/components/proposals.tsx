@@ -1119,6 +1119,14 @@ export function ProposalSection({
   let body: ReactNode;
   if (proposal === undefined) {
     body = error ? null : <p className="muted">Lädt …</p>;
+  } else if (proposal === null && detail.document.source === "bank_sync") {
+    // Phase 5 D154: a file the bank sync fetched is never read (the API refuses it too).
+    body = (
+      <p className="muted">
+        Diese Datei hat Hausbuch beim Bankabruf von der Bank geholt. Sie wird nicht automatisch ausgelesen: gebucht wird aus
+        den Umsatzdaten der Bank, ein Kontoauszug als PDF ist der Nachweis dazu.
+      </p>
+    );
   } else if (proposal === null) {
     body = (
       <div className="stack">

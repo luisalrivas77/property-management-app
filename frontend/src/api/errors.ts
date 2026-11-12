@@ -68,6 +68,8 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "proposal.not_ready": "Dieser Vorschlag ist noch nicht fertig oder wurde ersetzt.",
   "proposal.other_notice_without_patch":
     "Der zweite Eintrag passt nur, wenn der Betrag der Grunderwerbsteuer oben auf diesen Bescheid gesenkt wird. Bitte beides übernehmen oder den zweiten Eintrag überspringen.",
+  "proposal.bank_file_not_read":
+    "Diese Datei hat Hausbuch beim Bankabruf von der Bank geholt; sie wird nicht automatisch ausgelesen.",
   "document.extraction_stale": "Das Dokument wurde inzwischen neu ausgelesen. Bitte die Seite neu laden und die Felder prüfen.",
   "document.extraction_kind_mismatch": "Für diese Dokumentart gibt es eines der Felder von Hand nicht; es kann nicht gespeichert werden.",
   // bank statements (phase-2.md §12 and the step 3 additions, rules/statements.py)

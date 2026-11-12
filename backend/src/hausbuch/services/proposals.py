@@ -87,6 +87,7 @@ from hausbuch.schemas.employment import (
 )
 from hausbuch.schemas.enums import (
     ActorType,
+    DocumentSource,
     DocumentSubtype,
     DocumentType,
     EntityType,
@@ -160,6 +161,9 @@ from .events import append_event
 
 # D145 review: a Grunderwerbsteuer rest row applied without the patch that lowers its row.
 PROPOSAL_OTHER_NOTICE_WITHOUT_PATCH = "proposal.other_notice_without_patch"
+
+# Phase 5 D154: a file the bank sync fetched is never sent to the model.
+PROPOSAL_BANK_FILE_NOT_READ = "proposal.bank_file_not_read"
 
 # Undecided and still in the job's hands: a re-run supersedes these, the job may write them.
 _IN_FLIGHT = (ProposalStatus.QUEUED, ProposalStatus.RUNNING)
@@ -240,9 +244,17 @@ def request_read(
 
     The flag is sticky (D16: once said, a document stays a tenant document): it is set
     when any earlier proposal of the document carried it, whatever this call passes. Any,
-    not the latest: proposals created in one transaction share created_at."""
-    if documents.get_document(ctx.conn, document_id) is None:
+    not the latest: proposals created in one transaction share created_at.
+
+    A file the bank sync fetched (the camt ZIP, the bank's PDF statements, phase 5 D154) is
+    never read by the model: refused with proposal.bank_file_not_read, so neither the
+    document page's button nor a direct call sends a statement that names every tenant and
+    IBAN in clear."""
+    document = documents.get_document(ctx.conn, document_id)
+    if document is None:
         raise NotFoundError(EntityType.DOCUMENT, document_id)
+    if document.source is DocumentSource.BANK_SYNC:
+        raise RuleViolationError([PROPOSAL_BANK_FILE_NOT_READ], "a bank sync file is never read")
     contains_tenant_data = contains_tenant_data or any(
         p.contains_tenant_data for p in list_document_proposals(ctx.conn, document_id)
     )
