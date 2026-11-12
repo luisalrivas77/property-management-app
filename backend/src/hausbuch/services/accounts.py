@@ -145,7 +145,11 @@ def update_account(
     changes = diff_changes(old, new_values)
     if not changes:
         return _to_account(current)
-    if new_values.get("is_owner_account") and _has_imports(ctx.conn, account_id):
+    if (
+        "is_owner_account" in changes
+        and new_values["is_owner_account"]
+        and _has_imports(ctx.conn, account_id)
+    ):
         raise ConflictError("an account with imported statements cannot be an owner account")
     stored = dict(new_values)
     if "is_owner_account" in changes:

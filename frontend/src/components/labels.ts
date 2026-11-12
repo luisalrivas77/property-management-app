@@ -516,6 +516,40 @@ export const ALLOCATION_CATEGORY: Record<AllocationCategory, string> = {
   depot_fee: "Depot- und Verwaltergebühr",
 };
 
+/** The household, transfer and depot codes (phase 6 D159): for private accounts only. The
+ * server refuses them on a rental line (allocation.category_not_for_account), where they would
+ * be on no Anlage V line; mirrors rules/household/taxonomy.PRIVATE_ONLY. */
+export const PRIVATE_ONLY_CATEGORIES: ReadonlySet<AllocationCategory> = new Set<AllocationCategory>([
+  "hh_salary",
+  "hh_child_benefit",
+  "hh_tax_refund",
+  "hh_capital_income",
+  "hh_other_income",
+  "hh_housing",
+  "hh_groceries",
+  "hh_family_child",
+  "hh_mobility",
+  "hh_insurance",
+  "hh_subscriptions",
+  "hh_leisure_travel",
+  "hh_health",
+  "hh_other",
+  "hh_donation",
+  "hh_household_services",
+  "hh_childcare",
+  "hh_property_cost",
+  "hh_tax_payment",
+  "internal_transfer_in",
+  "internal_transfer_out",
+  "hh_cash",
+  "hh_credit_card",
+  "security_purchase",
+  "security_sale",
+  "distribution",
+  "capital_income_tax",
+  "depot_fee",
+]);
+
 /** Who proposed an allocation set. */
 export const ALLOCATION_METHOD: Record<AllocationMethod, string> = {
   rule: "gelernte Regel",

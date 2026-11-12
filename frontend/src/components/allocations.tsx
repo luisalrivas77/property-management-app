@@ -44,7 +44,7 @@ import { loadDirectory, partyNames, type Directory } from "./entities";
 import { collector, Field, FormBanner, useFormErrors, type FieldMessages } from "./form";
 import { formatDate, formatDateTime, formatMoney } from "./format";
 import { decimalInput, toSignedMoneyString } from "./input";
-import { ALLOCATION_CATEGORY, ALLOCATION_METHOD, options } from "./labels";
+import { ALLOCATION_CATEGORY, ALLOCATION_METHOD, PRIVATE_ONLY_CATEGORIES, options } from "./labels";
 import { AllocationTaxInputs } from "./taxInputs";
 import { Loading } from "./ui";
 import { useLoad } from "./useLoad";
@@ -574,11 +574,14 @@ function RowFields({
         >
           <select value={row.category} onChange={(e) => onChange({ category: e.target.value as AllocationCategory | "" })} required>
             <option value="">– wählen –</option>
-            {options(ALLOCATION_CATEGORY).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
+            {/* Only rental lines can be answered until phase 6 step 1 imports private accounts. */}
+            {options(ALLOCATION_CATEGORY)
+              .filter(([value]) => !PRIVATE_ONLY_CATEGORIES.has(value))
+              .map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
           </select>
         </Field>
         <Field
