@@ -1749,6 +1749,78 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/transfers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Transfers List */
+        get: operations["transfers_list_api_transfers_get"];
+        put?: never;
+        /** Transfer Link */
+        post: operations["transfer_link_api_transfers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/transfers/open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Transfers Open */
+        get: operations["transfers_open_api_transfers_open_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/transfers/{link_id}/unlink": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Transfer Unlink
+         * @description The replacing link (the old row names it in superseded_by).
+         */
+        post: operations["transfer_unlink_api_transfers__link_id__unlink_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/household/cashflow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Household Cashflow */
+        get: operations["household_cashflow_api_household_cashflow_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/properties/{property_id}/anlage-v": {
         parameters: {
             query?: never;
@@ -5170,6 +5242,42 @@ export interface components {
              */
             days_no_other_workplace: number;
         };
+        /**
+         * HouseholdCashflow
+         * @description GET /household/cashflow?month= (the Haushalt screen): confirmed allocations only.
+         */
+        HouseholdCashflow: {
+            /** Month */
+            month: string;
+            /** Income */
+            income: string;
+            /** Spending By Group */
+            spending_by_group: {
+                [key: string]: string;
+            };
+            /** Saved */
+            saved: string;
+            /** Surplus */
+            surplus: string;
+            /** Savings Rate */
+            savings_rate?: string | null;
+            /** Income By Category */
+            income_by_category?: {
+                [key: string]: string;
+            };
+            /**
+             * Open Lines
+             * @default 0
+             */
+            open_lines: number;
+        };
+        /**
+         * HouseholdGroup
+         * @description The group a household code is shown under (mockup 10's spending groups and the
+         *     others; rules/household/taxonomy.py).
+         * @enum {string}
+         */
+        HouseholdGroup: "income" | "housing" | "groceries" | "family_child" | "mobility" | "insurance" | "subscriptions" | "leisure_travel" | "health" | "other" | "tax" | "movements" | "depot";
         /** HouseholdServicesFact */
         HouseholdServicesFact: {
             /**
@@ -5325,13 +5433,18 @@ export interface components {
             sync_id?: string | null;
             /** Reminder Id */
             reminder_id?: string | null;
+            /** Property Id */
+            property_id?: string | null;
+            transfer?: components["schemas"]["OpenTransfer"] | null;
+            /** Private Costs */
+            private_costs?: components["schemas"]["TaxInputCreate"][];
         };
         /**
          * InboxItemKind
          * @description GET /inbox (§8.3): one list, newest first.
          * @enum {string}
          */
-        InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched" | "questionnaire_open" | "bank_approval_needed" | "bank_sync_failed" | "bank_balance_drift" | "email_received" | "email_failed" | "email_inbox_failed" | "reminder";
+        InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched" | "questionnaire_open" | "bank_approval_needed" | "bank_sync_failed" | "bank_balance_drift" | "email_received" | "email_failed" | "email_inbox_failed" | "reminder" | "transfer_link" | "transfer_unmatched" | "property_cost_row" | "property_cost_bill";
         /**
          * IncomeInput
          * @description API read model (the table names its timestamp recorded_at, so not Record).
@@ -6216,6 +6329,29 @@ export interface components {
             /** Property Id */
             property_id?: string | null;
         };
+        /**
+         * OpenTransfer
+         * @description One leg waiting for its counterpart, with the legs it may be linked to.
+         */
+        OpenTransfer: {
+            code: components["schemas"]["OpenTransferCode"];
+            leg: components["schemas"]["TransferLegView"];
+            /** Candidates */
+            candidates: components["schemas"]["TransferLegView"][];
+            /**
+             * Window End
+             * Format: date
+             */
+            window_end: string;
+        };
+        /**
+         * OpenTransferCode
+         * @description GET /transfers/open: why a leg waits for a person (D162). proposed: a counterpart
+         *     fits but no link was written (a leg without an own IBAN, or one booked before the
+         *     other).
+         * @enum {string}
+         */
+        OpenTransferCode: "transfer.ambiguous" | "transfer.unmatched_leg" | "transfer.proposed";
         /**
          * OperatingCostsTerms
          * @description How a lease agrees the running costs (tenancy.operating_costs_terms, 0013; phase 3 D72).
@@ -9028,6 +9164,124 @@ export interface components {
             /** Waiting Other Amounts */
             waiting_other_amounts?: components["schemas"]["WaitingAmount"][];
             rule?: components["schemas"]["MatchingRule"] | null;
+        };
+        /**
+         * TransferLegSource
+         * @description Which table a transfer leg is a row of (phase 6 D162).
+         * @enum {string}
+         */
+        TransferLegSource: "transaction" | "movement";
+        /**
+         * TransferLegView
+         * @description One leg as the screens show it: its account by label, never an IBAN.
+         */
+        TransferLegView: {
+            source: components["schemas"]["TransferLegSource"];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /** Account Label */
+            account_label: string;
+            /**
+             * Booked On
+             * Format: date
+             */
+            booked_on: string;
+            /** Amount */
+            amount: string;
+            /** Counterparty Name */
+            counterparty_name?: string | null;
+        };
+        /** TransferLink */
+        TransferLink: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            kind: components["schemas"]["TransferLinkKind"];
+            /** Out Transaction Id */
+            out_transaction_id?: string | null;
+            /** Out Movement Id */
+            out_movement_id?: string | null;
+            /** In Transaction Id */
+            in_transaction_id?: string | null;
+            /** In Movement Id */
+            in_movement_id?: string | null;
+            matched_by: components["schemas"]["TransferMatchedBy"];
+            /** Superseded By */
+            superseded_by?: string | null;
+        };
+        /**
+         * TransferLinkCreate
+         * @description POST /transfers (a link by hand): exactly one out and one in leg.
+         */
+        TransferLinkCreate: {
+            kind: components["schemas"]["TransferLinkKind"];
+            /** Out Transaction Id */
+            out_transaction_id?: string | null;
+            /** Out Movement Id */
+            out_movement_id?: string | null;
+            /** In Transaction Id */
+            in_transaction_id?: string | null;
+            /** In Movement Id */
+            in_movement_id?: string | null;
+        };
+        /**
+         * TransferLinkKind
+         * @description transfer_link.kind (migration 0025). Phase 7 adds chain, bridge and wrap.
+         * @enum {string}
+         */
+        TransferLinkKind: "bank" | "exchange_eur" | "depot_cash";
+        /**
+         * TransferLinkView
+         * @description GET /transfers?month=: a current link with both legs.
+         */
+        TransferLinkView: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            kind: components["schemas"]["TransferLinkKind"];
+            matched_by: components["schemas"]["TransferMatchedBy"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            out_leg: components["schemas"]["TransferLegView"];
+            in_leg: components["schemas"]["TransferLegView"];
+        };
+        /**
+         * TransferMatchedBy
+         * @enum {string}
+         */
+        TransferMatchedBy: "matcher" | "user";
+        /**
+         * TransferUnlinkBody
+         * @description POST /transfers/{id}/unlink: the link that replaces the wrong one (append-only, D162:
+         *     the old row names the new one in superseded_by).
+         */
+        TransferUnlinkBody: {
+            replacement: components["schemas"]["TransferLinkCreate"];
         };
         /** Unit */
         Unit: {
@@ -13316,6 +13570,165 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TransactionAllocations"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    transfers_list_api_transfers_get: {
+        parameters: {
+            query: {
+                month: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransferLinkView"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    transfer_link_api_transfers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransferLinkCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransferLink"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    transfers_open_api_transfers_open_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenTransfer"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    transfer_unlink_api_transfers__link_id__unlink_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                link_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransferUnlinkBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransferLink"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    household_cashflow_api_household_cashflow_get: {
+        parameters: {
+            query: {
+                month: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseholdCashflow"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

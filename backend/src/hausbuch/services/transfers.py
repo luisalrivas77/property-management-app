@@ -618,7 +618,7 @@ def transfer_inbox_items(conn: Connection, today: date) -> list[InboxItem]:
 def saved_in(conn: Connection, *, start: date, end: date) -> Decimal:
     """D162 for the Haushalt screen: what the current links moved into a savings, depot or
     exchange account from a current account, with the in-leg booked between the dates."""
-    total = Decimal("0")
+    total = Decimal("0.00")
     for view in list_links(conn, start=start, end=end):
         if not start <= view.in_leg.booked_on <= end:
             continue

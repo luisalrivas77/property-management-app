@@ -631,3 +631,7 @@ class HouseholdCashflow(Schema):
     saved: Money  # links whose in-leg is a savings, depot or exchange account (D162)
     surplus: Money
     savings_rate: SavingsRate | None = None  # saved / income; None without income
+    # Step 2: the income box's rows, and the month's private lines no confirmed answer
+    # explains yet (the „Ohne Kategorie“ card, linked to Zu prüfen).
+    income_by_category: dict[AllocationCategory, Money] = Field(default_factory=dict)
+    open_lines: int = Field(default=0, ge=0)

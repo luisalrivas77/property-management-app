@@ -5071,6 +5071,209 @@
         }
       }
     },
+    "/api/transfers": {
+      "get": {
+        "summary": "Transfers List",
+        "operationId": "transfers_list_api_transfers_get",
+        "parameters": [
+          {
+            "name": "month",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+              "title": "Month"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TransferLinkView"
+                  },
+                  "title": "Response Transfers List Api Transfers Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Transfer Link",
+        "operationId": "transfer_link_api_transfers_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferLinkCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransferLink"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/transfers/open": {
+      "get": {
+        "summary": "Transfers Open",
+        "operationId": "transfers_open_api_transfers_open_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OpenTransfer"
+                  },
+                  "type": "array",
+                  "title": "Response Transfers Open Api Transfers Open Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/transfers/{link_id}/unlink": {
+      "post": {
+        "summary": "Transfer Unlink",
+        "description": "The replacing link (the old row names it in superseded_by).",
+        "operationId": "transfer_unlink_api_transfers__link_id__unlink_post",
+        "parameters": [
+          {
+            "name": "link_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Link Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferUnlinkBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransferLink"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/household/cashflow": {
+      "get": {
+        "summary": "Household Cashflow",
+        "operationId": "household_cashflow_api_household_cashflow_get",
+        "parameters": [
+          {
+            "name": "month",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+              "title": "Month"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HouseholdCashflow"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/properties/{property_id}/anlage-v": {
       "get": {
         "summary": "Property Anlage V",
@@ -13957,6 +14160,101 @@
         "type": "object",
         "title": "HomeOfficeFact"
       },
+      "HouseholdCashflow": {
+        "properties": {
+          "month": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+            "title": "Month"
+          },
+          "income": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Income"
+          },
+          "spending_by_group": {
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/HouseholdGroup"
+            },
+            "type": "object",
+            "title": "Spending By Group"
+          },
+          "saved": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Saved"
+          },
+          "surplus": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Surplus"
+          },
+          "savings_rate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,4})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Savings Rate"
+          },
+          "income_by_category": {
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/AllocationCategory"
+            },
+            "type": "object",
+            "title": "Income By Category"
+          },
+          "open_lines": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Open Lines",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "month",
+          "income",
+          "spending_by_group",
+          "saved",
+          "surplus"
+        ],
+        "title": "HouseholdCashflow",
+        "description": "GET /household/cashflow?month= (the Haushalt screen): confirmed allocations only."
+      },
+      "HouseholdGroup": {
+        "type": "string",
+        "enum": [
+          "income",
+          "housing",
+          "groceries",
+          "family_child",
+          "mobility",
+          "insurance",
+          "subscriptions",
+          "leisure_travel",
+          "health",
+          "other",
+          "tax",
+          "movements",
+          "depot"
+        ],
+        "title": "HouseholdGroup",
+        "description": "The group a household code is shown under (mockup 10's spending groups and the\nothers; rules/household/taxonomy.py)."
+      },
       "HouseholdServicesFact": {
         "properties": {
           "service_class": {
@@ -14347,6 +14645,35 @@
               }
             ],
             "title": "Reminder Id"
+          },
+          "property_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Property Id"
+          },
+          "transfer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OpenTransfer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "private_costs": {
+            "items": {
+              "$ref": "#/components/schemas/TaxInputCreate"
+            },
+            "type": "array",
+            "title": "Private Costs"
           }
         },
         "additionalProperties": false,
@@ -14376,7 +14703,11 @@
           "email_received",
           "email_failed",
           "email_inbox_failed",
-          "reminder"
+          "reminder",
+          "transfer_link",
+          "transfer_unmatched",
+          "property_cost_row",
+          "property_cost_bill"
         ],
         "title": "InboxItemKind",
         "description": "GET /inbox (§8.3): one list, newest first."
@@ -16520,6 +16851,48 @@
           "scope"
         ],
         "title": "OpenQuestion"
+      },
+      "OpenTransfer": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/OpenTransferCode"
+          },
+          "leg": {
+            "$ref": "#/components/schemas/TransferLegView"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/TransferLegView"
+            },
+            "type": "array",
+            "title": "Candidates"
+          },
+          "window_end": {
+            "type": "string",
+            "format": "date",
+            "title": "Window End"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "leg",
+          "candidates",
+          "window_end"
+        ],
+        "title": "OpenTransfer",
+        "description": "One leg waiting for its counterpart, with the legs it may be linked to."
+      },
+      "OpenTransferCode": {
+        "type": "string",
+        "enum": [
+          "transfer.ambiguous",
+          "transfer.unmatched_leg",
+          "transfer.proposed"
+        ],
+        "title": "OpenTransferCode",
+        "description": "GET /transfers/open: why a leg waits for a person (D162). proposed: a counterpart\nfits but no link was written (a leg without an own IBAN, or one booked before the\nother)."
       },
       "OperatingCostsTerms": {
         "type": "string",
@@ -23791,6 +24164,296 @@
         ],
         "title": "TransactionAllocations",
         "description": "GET / PUT /transactions/{id}/allocations: the line, its current allocation rows\n(proposed or confirmed; none = not matched) and the rule checkbox.\n\ncan_learn_rule: whether a single-category answer for this line can become a rule\nwithout a typed pattern (false without an IBAN, and for a counterparty a matcher owns,\nD38). learn_rule_default: the checkbox's default for the current rows (off when a rule\ncannot be learned from them, or a category never auto-confirms, review F6).\nno_default_rule_categories: the categories that never auto-confirm (threshold None in\nrules.review.THRESHOLDS), in taxonomy order, so the UI can default the checkbox for rows\nthe person types (on unless one of these is among them, §8.1).\nwaiting_other_amounts (D49): when a rule can be learned, the other amounts of the lines\nstill waiting from the same IBAN hash and sign (reconciled import, not a duplicate, no\nconfirmed row), each with its count, most frequent first, at most five; the panel then\nasks whether those belong to the same category (same_amount_only).\nrule: the rule this PUT created, if any."
+      },
+      "TransferLegSource": {
+        "type": "string",
+        "enum": [
+          "transaction",
+          "movement"
+        ],
+        "title": "TransferLegSource",
+        "description": "Which table a transfer leg is a row of (phase 6 D162)."
+      },
+      "TransferLegView": {
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/TransferLegSource"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "account_label": {
+            "type": "string",
+            "title": "Account Label"
+          },
+          "booked_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Booked On"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "counterparty_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counterparty Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source",
+          "id",
+          "account_id",
+          "account_label",
+          "booked_on",
+          "amount"
+        ],
+        "title": "TransferLegView",
+        "description": "One leg as the screens show it: its account by label, never an IBAN."
+      },
+      "TransferLink": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TransferLinkKind"
+          },
+          "out_transaction_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Out Transaction Id"
+          },
+          "out_movement_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Out Movement Id"
+          },
+          "in_transaction_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Transaction Id"
+          },
+          "in_movement_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Movement Id"
+          },
+          "matched_by": {
+            "$ref": "#/components/schemas/TransferMatchedBy"
+          },
+          "superseded_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Superseded By"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "workspace_id",
+          "created_at",
+          "kind",
+          "matched_by"
+        ],
+        "title": "TransferLink"
+      },
+      "TransferLinkCreate": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/TransferLinkKind"
+          },
+          "out_transaction_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Out Transaction Id"
+          },
+          "out_movement_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Out Movement Id"
+          },
+          "in_transaction_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Transaction Id"
+          },
+          "in_movement_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Movement Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "TransferLinkCreate",
+        "description": "POST /transfers (a link by hand): exactly one out and one in leg."
+      },
+      "TransferLinkKind": {
+        "type": "string",
+        "enum": [
+          "bank",
+          "exchange_eur",
+          "depot_cash"
+        ],
+        "title": "TransferLinkKind",
+        "description": "transfer_link.kind (migration 0025). Phase 7 adds chain, bridge and wrap."
+      },
+      "TransferLinkView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TransferLinkKind"
+          },
+          "matched_by": {
+            "$ref": "#/components/schemas/TransferMatchedBy"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "out_leg": {
+            "$ref": "#/components/schemas/TransferLegView"
+          },
+          "in_leg": {
+            "$ref": "#/components/schemas/TransferLegView"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "matched_by",
+          "created_at",
+          "out_leg",
+          "in_leg"
+        ],
+        "title": "TransferLinkView",
+        "description": "GET /transfers?month=: a current link with both legs."
+      },
+      "TransferMatchedBy": {
+        "type": "string",
+        "enum": [
+          "matcher",
+          "user"
+        ],
+        "title": "TransferMatchedBy"
+      },
+      "TransferUnlinkBody": {
+        "properties": {
+          "replacement": {
+            "$ref": "#/components/schemas/TransferLinkCreate"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "replacement"
+        ],
+        "title": "TransferUnlinkBody",
+        "description": "POST /transfers/{id}/unlink: the link that replaces the wrong one (append-only, D162:\nthe old row names the new one in superseded_by)."
       },
       "Unit": {
         "properties": {
