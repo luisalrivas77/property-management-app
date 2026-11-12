@@ -1,0 +1,236 @@
+# Rule fixture: the depot's three readers (hausbuch.rules.extraction_parse.parse_lines for the
+# kinds trade_confirmation, distribution_note, depot_report) and what code proposes from them
+#
+# docs/phases/phase-6.md D165 (2), (3), §7, §14. The lines follow phase 2's parse contract
+# unchanged (tests/fixtures/phase2/extraction_parse.yaml's header: values normalised by their
+# kind, cited, value_in_quote, validates, confidence by the checks). The layouts are invented
+# from the secondary source of §3 and are corrected in step 4 against the anonymised real PDFs
+# (a layout difference is a spec amendment, as phase 2 §12.1 did for the camt).
+#
+# proposes (code, step 4), recomputed on load from the case's expected values:
+#   trade_confirmation  one asset_movement: kind acquisition (Kauf) or disposal (Verkauf),
+#                       quantity ± units, eur_amount ∓ the net amount, fee_eur the fees,
+#                       occurred_at the trade date; checked: a buy's net = gross + fees, a
+#                       sell's net = gross − fees.
+#   distribution_note   one asset_movement of kind distribution: quantity 0, eur_amount the
+#                       gross, tax_withheld_eur the withholding plus the German taxes,
+#                       occurred_at the payment date; checked: net = gross − both taxes.
+#   depot_report        one holding_statement per position (as_of the report date, the units
+#                       and the value), and the trades of the Umsätze list (the references
+#                       holdings_reconcile.yaml names when a confirmation is missing).
+#
+# Invented security names, ISINs (pattern only, no check digit), references and amounts.
+#
+# Each case's lines run through today's parse_lines in step 0
+# (tests/rules/test_extraction_parse_phase6.py) and pass: the three kinds were registered in
+# step 0. `pending` marks only the proposals (step 4); `parse_pending` marks a parse that
+# needs step 4 (the scrub runs as scrubber(kind) in jobs/document_read, as for phase 4b).
+#
+# Step 0 readings (listed in the step 0 report):
+# - A distribution's eur_amount is the gross and tax_withheld_eur both taxes ("the gross and
+#   the tax split kept on the row", D165 (2)); quantity 0 (the units do not change); the cash
+#   line it links to carries the net.
+# - The report's list items are written `a | b | c` (DEPOT_POSITIONS_MEANING); a PDF quote
+#   never holds the " | " form, so value_in_quote fails for them and the confidence is medium,
+#   as phase 2's rule says for a text_list item not found in its quote.
+# - The scrub of a depot number keeps the label and replaces the number by „…“, as
+#   scrub_identifiers does for the other identifiers; pending step 4 (the depot kinds join
+#   SCRUBBED_KINDS there).
+
+cases:
+  - id: trade_confirmation_buy
+    pending: "phase 6 step 4 (the depot readers' proposals)"
+    kind: trade_confirmation
+    blocks:
+      - {text: "isin: "}
+      - text: "IE00BEISPL01"
+        citations: [{cited_text: "ISIN IE00BEISPL01 Beispiel MSCI World UCITS ETF", start_page_number: 1, end_page_number: 2}]
+      - {text: "\nsecurity_name: "}
+      - text: "Beispiel MSCI World UCITS ETF"
+        citations: [{cited_text: "ISIN IE00BEISPL01 Beispiel MSCI World UCITS ETF", start_page_number: 1, end_page_number: 2}]
+      - {text: "\ntrade_date: "}
+      - text: "14.05.2026"
+        citations: [{cited_text: "Handelstag 14.05.2026 Handelszeit 09:04", start_page_number: 1, end_page_number: 2}]
+      - {text: "\nsettlement_date: "}
+      - text: "18.05.2026"
+        citations: [{cited_text: "Valuta 18.05.2026", start_page_number: 1, end_page_number: 2}]
+      - {text: "\nside: "}
+      - text: "Kauf"
+        citations: [{cited_text: "Wertpapierabrechnung Kauf", start_page_number: 1, end_page_number: 2}]
+      - {text: "\nunits: "}
+      - text: "12,345678"
+        citations: [{cited_text: "Stück 12,345678", start_page_number: 1, end_page_number: 2}]
+      - {text: "\nprice_per_unit: "}
+      - text: "81,00 EUR"
+        citations: [{cited_text: "Kurs 81,00 EUR", start_page_number: 1, end_page_number: 2}]
+      - {text: "\ngross_amount: "}
+      - text: "1.000,00 EUR"
+        citations: [{cited_text: "Kurswert 1.000,00 EUR", start_page_number: 1, end_page_number: 2}]
+      - {text: "\nfees: "}
+      - text: "0,00 EUR"
+        citations: [{cited_text: "Provision 0,00 EUR", start_page_number: 1, end_page_number: 2}]
+      - {text: "\nnet_amount: "}
+      - text: "1.000,00 EUR"
+        citations: [{cited_text: "Ausmachender Betrag 1.000,00 EUR zu Lasten", start_page_number: 1, end_page_number: 2}]
+      - {text: "\ncurrency: "}
+      - text: "EUR"
+        citations: [{cited_text: "Ausmachender Betrag 1.000,00 EUR zu Lasten", start_page_number: 1, end_page_number: 2}]
+      - {text: "\norder_reference: "}
+      - text: "A26-0514-0001"
+        citations: [{cited_text: "Auftragsnummer A26-0514-0001", start_page_number: 1, end_page_number: 2}]
+    expect:
+      isin: {value: IE00BEISPL01, source: {page: 1, quote: "ISIN IE00BEISPL01 Beispiel MSCI World UCITS ETF"}, checks: [cited, value_in_quote, validates], confidence: high}
+      security_name: {value: Beispiel MSCI World UCITS ETF, source: {page: 1, quote: "ISIN IE00BEISPL01 Beispiel MSCI World UCITS ETF"}, checks: [cited, value_in_quote, validates], confidence: high}
+      trade_date: {value: "2026-05-14", source: {page: 1, quote: "Handelstag 14.05.2026 Handelszeit 09:04"}, checks: [cited, value_in_quote, validates], confidence: high}
+      settlement_date: {value: "2026-05-18", source: {page: 1, quote: "Valuta 18.05.2026"}, checks: [cited, value_in_quote, validates], confidence: high}
+      side: {value: Kauf, source: {page: 1, quote: "Wertpapierabrechnung Kauf"}, checks: [cited, value_in_quote, validates], confidence: high}
+      units: {value: "12.345678", source: {page: 1, quote: "Stück 12,345678"}, checks: [cited, value_in_quote, validates], confidence: high}
+      price_per_unit: {value: "81.00", source: {page: 1, quote: "Kurs 81,00 EUR"}, checks: [cited, value_in_quote, validates], confidence: high}
+      gross_amount: {value: "1000.00", source: {page: 1, quote: "Kurswert 1.000,00 EUR"}, checks: [cited, value_in_quote, validates], confidence: high}
+      fees: {value: "0.00", source: {page: 1, quote: "Provision 0,00 EUR"}, checks: [cited, value_in_quote, validates], confidence: high}
+      net_amount: {value: "1000.00", source: {page: 1, quote: "Ausmachender Betrag 1.000,00 EUR zu Lasten"}, checks: [cited, value_in_quote, validates], confidence: high}
+      currency: {value: EUR, source: {page: 1, quote: "Ausmachender Betrag 1.000,00 EUR zu Lasten"}, checks: [cited, value_in_quote, validates], confidence: high}
+      order_reference: {value: A26-0514-0001, source: {page: 1, quote: "Auftragsnummer A26-0514-0001"}, checks: [cited, value_in_quote, validates], confidence: high}
+    proposes:
+      movements:
+        - {kind: acquisition, isin: IE00BEISPL01, quantity: "12.345678", eur_amount: "-1000.00", fee_eur: "0.00", occurred_on: 2026-05-14, external_ref: A26-0514-0001}
+
+  - id: trade_confirmation_sell
+    pending: "phase 6 step 4 (the depot readers' proposals)"
+    kind: trade_confirmation
+    blocks:
+      - {text: "isin: "}
+      - text: "LU0BEISPIEL3"
+        citations: [{cited_text: "ISIN LU0BEISPIEL3 Beispiel Euro Bond UCITS ETF", start_page_number: 1, end_page_number: 2}]
+      - {text: "\ntrade_date: "}
+      - text: "02.06.2026"
+        citations: [{cited_text: "Handelstag 02.06.2026", start_page_number: 1, end_page_number: 2}]
+      - {text: "\nside: "}
+      - text: "Verkauf"
+        citations: [{cited_text: "Wertpapierabrechnung Verkauf", start_page_number: 1, end_page_number: 2}]
+      - {text: "\nunits: "}
+      - text: "3,000000"
+        citations: [{cited_text: "Stück 3,000000", start_page_number: 1, end_page_number: 2}]
+      - {text: "\ngross_amount: "}
+      - text: "270,00 EUR"
+        citations: [{cited_text: "Kurswert 270,00 EUR", start_page_number: 1, end_page_number: 2}]
+      - {text: "\nfees: "}
+      - text: "1,00 EUR"
+        citations: [{cited_text: "Fremde Spesen 1,00 EUR", start_page_number: 1, end_page_number: 2}]
+      - {text: "\nnet_amount: "}
+      - text: "269,00 EUR"
+        citations: [{cited_text: "Ausmachender Betrag 269,00 EUR zu Gunsten", start_page_number: 1, end_page_number: 2}]
+      - {text: "\norder_reference: "}
+      - text: "A26-0602-0007"
+        citations: [{cited_text: "Auftragsnummer A26-0602-0007", start_page_number: 1, end_page_number: 2}]
+    expect:
+      isin: {value: LU0BEISPIEL3, source: {page: 1, quote: "ISIN LU0BEISPIEL3 Beispiel Euro Bond UCITS ETF"}, checks: [cited, value_in_quote, validates], confidence: high}
+      trade_date: {value: "2026-06-02", source: {page: 1, quote: "Handelstag 02.06.2026"}, checks: [cited, value_in_quote, validates], confidence: high}
+      side: {value: Verkauf, source: {page: 1, quote: "Wertpapierabrechnung Verkauf"}, checks: [cited, value_in_quote, validates], confidence: high}
+      units: {value: "3.000000", source: {page: 1, quote: "Stück 3,000000"}, checks: [cited, value_in_quote, validates], confidence: high}
+      gross_amount: {value: "270.00", source: {page: 1, quote: "Kurswert 270,00 EUR"}, checks: [cited, value_in_quote, validates], confidence: high}
+      fees: {value: "1.00", source: {page: 1, quote: "Fremde Spesen 1,00 EUR"}, checks: [cited, value_in_quote, validates], confidence: high}
+      net_amount: {value: "269.00", source: {page: 1, quote: "Ausmachender Betrag 269,00 EUR zu Gunsten"}, checks: [cited, value_in_quote, validates], confidence: high}
+      order_reference: {value: A26-0602-0007, source: {page: 1, quote: "Auftragsnummer A26-0602-0007"}, checks: [cited, value_in_quote, validates], confidence: high}
+    proposes:
+      movements:
+        - {kind: disposal, isin: LU0BEISPIEL3, quantity: "-3.000000", eur_amount: "269.00", fee_eur: "1.00", occurred_on: 2026-06-02, external_ref: A26-0602-0007}
+
+  - id: distribution_note_with_withholding_tax
+    pending: "phase 6 step 4 (the depot readers' proposals)"
+    kind: distribution_note
+    blocks:
+      - {text: "isin: "}
+      - text: "IE00BEISPL02"
+        citations: [{cited_text: "ISIN IE00BEISPL02 Beispiel Global Dividend UCITS ETF", start_page_number: 1, end_page_number: 2}]
+      - {text: "\nrecord_date: "}
+      - text: "11.06.2026"
+        citations: [{cited_text: "Ex-Tag 11.06.2026", start_page_number: 1, end_page_number: 2}]
+      - {text: "\npayment_date: "}
+      - text: "25.06.2026"
+        citations: [{cited_text: "Zahltag 25.06.2026", start_page_number: 1, end_page_number: 2}]
+      - {text: "\nunits: "}
+      - text: "20,000000"
+        citations: [{cited_text: "Bestand 20,000000 Stück", start_page_number: 1, end_page_number: 2}]
+      - {text: "\ngross_per_unit: "}
+      - text: "0,50 EUR"
+        citations: [{cited_text: "Ausschüttung je Stück 0,50 EUR", start_page_number: 1, end_page_number: 2}]
+      - {text: "\ngross_amount: "}
+      - text: "10,00 EUR"
+        citations: [{cited_text: "Bruttobetrag 10,00 EUR", start_page_number: 1, end_page_number: 2}]
+      - {text: "\nwithholding_tax: "}
+      - text: "1,50 EUR"
+        citations: [{cited_text: "Quellensteuer 1,50 EUR", start_page_number: 1, end_page_number: 2}]
+      - {text: "\ngerman_taxes: "}
+      - text: "1,32 EUR"
+        citations: [{cited_text: "Kapitalertragsteuer 1,25 EUR Solidaritätszuschlag 0,07 EUR Summe Steuern 1,32 EUR", start_page_number: 1, end_page_number: 2}]
+      - {text: "\nnet_amount: "}
+      - text: "7,18 EUR"
+        citations: [{cited_text: "Gutschrift 7,18 EUR", start_page_number: 1, end_page_number: 2}]
+      - {text: "\ncurrency: "}
+      - text: "EUR"
+        citations: [{cited_text: "Gutschrift 7,18 EUR", start_page_number: 1, end_page_number: 2}]
+    expect:
+      isin: {value: IE00BEISPL02, source: {page: 1, quote: "ISIN IE00BEISPL02 Beispiel Global Dividend UCITS ETF"}, checks: [cited, value_in_quote, validates], confidence: high}
+      record_date: {value: "2026-06-11", source: {page: 1, quote: "Ex-Tag 11.06.2026"}, checks: [cited, value_in_quote, validates], confidence: high}
+      payment_date: {value: "2026-06-25", source: {page: 1, quote: "Zahltag 25.06.2026"}, checks: [cited, value_in_quote, validates], confidence: high}
+      units: {value: "20.000000", source: {page: 1, quote: "Bestand 20,000000 Stück"}, checks: [cited, value_in_quote, validates], confidence: high}
+      gross_per_unit: {value: "0.50", source: {page: 1, quote: "Ausschüttung je Stück 0,50 EUR"}, checks: [cited, value_in_quote, validates], confidence: high}
+      gross_amount: {value: "10.00", source: {page: 1, quote: "Bruttobetrag 10,00 EUR"}, checks: [cited, value_in_quote, validates], confidence: high}
+      withholding_tax: {value: "1.50", source: {page: 1, quote: "Quellensteuer 1,50 EUR"}, checks: [cited, value_in_quote, validates], confidence: high}
+      german_taxes: {value: "1.32", source: {page: 1, quote: "Kapitalertragsteuer 1,25 EUR Solidaritätszuschlag 0,07 EUR Summe Steuern 1,32 EUR"}, checks: [cited, value_in_quote, validates], confidence: high}
+      net_amount: {value: "7.18", source: {page: 1, quote: "Gutschrift 7,18 EUR"}, checks: [cited, value_in_quote, validates], confidence: high}
+      currency: {value: EUR, source: {page: 1, quote: "Gutschrift 7,18 EUR"}, checks: [cited, value_in_quote, validates], confidence: high}
+    proposes:
+      movements:
+        - {kind: distribution, isin: IE00BEISPL02, quantity: "0", eur_amount: "10.00", tax_withheld_eur: "2.82", occurred_on: 2026-06-25}
+
+  - id: depot_report_three_positions_two_trades
+    pending: "phase 6 step 4 (the depot readers' proposals)"
+    kind: depot_report
+    blocks:
+      - {text: "report_date: "}
+      - text: "30.06.2026"
+        citations: [{cited_text: "Vermögensübersicht zum 30.06.2026", start_page_number: 1, end_page_number: 2}]
+      - {text: "\npositions: "}
+      - text: "IE00BEISPL01 | Beispiel MSCI World UCITS ETF | 32,345678 | 82,10 | 2.655,58 | EUR; IE00BEISPL02 | Beispiel Global Dividend UCITS ETF | 20,000000 | 40,00 | 800,00 | EUR; LU0BEISPIEL3 | Beispiel Euro Bond UCITS ETF | 7,000000 | 91,00 | 637,00 | EUR"
+        citations: [{cited_text: "IE00BEISPL01 Beispiel MSCI World UCITS ETF 32,345678 82,10 2.655,58 EUR IE00BEISPL02 Beispiel Global Dividend UCITS ETF 20,000000 40,00 800,00 EUR LU0BEISPIEL3 Beispiel Euro Bond UCITS ETF 7,000000 91,00 637,00 EUR", start_page_number: 2, end_page_number: 3}]
+      - {text: "\ntrades: "}
+      - text: "IE00BEISPL01 | 14.05.2026 | 12,345678 | 1.000,00 | A26-0514-0001; LU0BEISPIEL3 | 02.06.2026 | -3,000000 | 269,00 | A26-0602-0007"
+        citations: [{cited_text: "Wertpapierumsätze IE00BEISPL01 14.05.2026 Kauf 12,345678 1.000,00 A26-0514-0001 LU0BEISPIEL3 02.06.2026 Verkauf 3,000000 269,00 A26-0602-0007", start_page_number: 4, end_page_number: 5}]
+    expect:
+      report_date: {value: "2026-06-30", source: {page: 1, quote: "Vermögensübersicht zum 30.06.2026"}, checks: [cited, value_in_quote, validates], confidence: high}
+      positions:
+        value:
+          - "IE00BEISPL01 | Beispiel MSCI World UCITS ETF | 32,345678 | 82,10 | 2.655,58 | EUR"
+          - "IE00BEISPL02 | Beispiel Global Dividend UCITS ETF | 20,000000 | 40,00 | 800,00 | EUR"
+          - "LU0BEISPIEL3 | Beispiel Euro Bond UCITS ETF | 7,000000 | 91,00 | 637,00 | EUR"
+        source: {page: 2, quote: "IE00BEISPL01 Beispiel MSCI World UCITS ETF 32,345678 82,10 2.655,58 EUR IE00BEISPL02 Beispiel Global Dividend UCITS ETF 20,000000 40,00 800,00 EUR LU0BEISPIEL3 Beispiel Euro Bond UCITS ETF 7,000000 91,00 637,00 EUR"}
+        checks: [cited, validates]
+        confidence: medium
+      trades:
+        value:
+          - "IE00BEISPL01 | 14.05.2026 | 12,345678 | 1.000,00 | A26-0514-0001"
+          - "LU0BEISPIEL3 | 02.06.2026 | -3,000000 | 269,00 | A26-0602-0007"
+        source: {page: 4, quote: "Wertpapierumsätze IE00BEISPL01 14.05.2026 Kauf 12,345678 1.000,00 A26-0514-0001 LU0BEISPIEL3 02.06.2026 Verkauf 3,000000 269,00 A26-0602-0007"}
+        checks: [cited, validates]
+        confidence: medium
+    proposes:
+      holdings:
+        - {isin: IE00BEISPL01, as_of: 2026-06-30, declared_units: "32.345678", declared_value_eur: "2655.58"}
+        - {isin: IE00BEISPL02, as_of: 2026-06-30, declared_units: "20.000000", declared_value_eur: "800.00"}
+        - {isin: LU0BEISPIEL3, as_of: 2026-06-30, declared_units: "7.000000", declared_value_eur: "637.00"}
+      trades:
+        - {isin: IE00BEISPL01, trade_date: 2026-05-14, units: "12.345678", amount: "1000.00", reference: A26-0514-0001}
+        - {isin: LU0BEISPIEL3, trade_date: 2026-06-02, units: "-3.000000", amount: "269.00", reference: A26-0602-0007}
+
+  - id: depot_number_scrubbed
+    description: the depot number in a quote is replaced; the ISIN beside it stays
+    parse_pending: "phase 6 step 4 (scrubber(kind) for the depot kinds, D168)"
+    kind: trade_confirmation
+    blocks:
+      - {text: "isin: "}
+      - text: "IE00BEISPL01"
+        citations: [{cited_text: "Depotnummer 7712345678 ISIN IE00BEISPL01", start_page_number: 1, end_page_number: 2}]
+    expect:
+      isin: {value: IE00BEISPL01, source: {page: 1, quote: "Depotnummer … ISIN IE00BEISPL01"}, checks: [cited, value_in_quote, validates], confidence: high}

@@ -36,7 +36,7 @@ import yaml
 from fixture_models import Lenient, RuleErrorExpect
 from pydantic import Field, model_validator
 
-from hausbuch.rules import categories, review
+from hausbuch.rules import categories, depot, review, statements
 from hausbuch.rules import errors as E
 from hausbuch.rules.household.taxonomy import PRIVATE_ONLY, SHARED, TAXONOMY, allowed_categories
 from hausbuch.schemas.allocation import (
@@ -49,12 +49,25 @@ from hausbuch.schemas.allocation import (
     TaxTreatment,
     TransferLegSource,
 )
+from hausbuch.schemas.bank import (
+    ImportStatus,
+    LineForHash,
+    ReconcileStatus,
+    StatementFormat,
+)
 from hausbuch.schemas.bank_sync import PRIMARY_SLOT, CredentialSlot
 from hausbuch.schemas.common import Money, Schema
-from hausbuch.schemas.enums import AccountKind, AccountPurpose
+from hausbuch.schemas.enums import AccountKind, AccountPurpose, BalanceSource
 from hausbuch.schemas.household import (
+    AssetSymbol,
     HouseholdGroup,
+    Isin,
+    MovementKind,
+    MovementLine,
+    MovementStatus,
+    NonNegativeQuantity,
     ProposedInput,
+    Quantity,
     Relevance,
     TransferLinkKind,
 )
@@ -624,6 +637,471 @@ class PrivateCostLinkFixture(_Fixture):
         return self
 
 
+# --- depot_lines.yaml: rules.depot.categorise (D165 (1)) ------------------------------------
+
+
+def _depot_category(booking_text: str) -> AllocationCategory:
+    for pattern, category in depot.BOOKING_PATTERNS:
+        if pattern.search(booking_text):
+            return category
+    return AllocationCategory.UNCATEGORIZED
+
+
+class DepotLineCase(_Case):
+    booking_text: str = Field(min_length=1)
+    expect: AllocationCategory
+
+    @model_validator(mode="after")
+    def _recomputed(self) -> Self:
+        if _depot_category(self.booking_text) is not self.expect:
+            raise ValueError(
+                f"{self.id}: BOOKING_PATTERNS gives {_depot_category(self.booking_text)}"
+            )
+        return self
+
+
+class DepotLinesFixture(_Fixture):
+    cases: list[DepotLineCase] = Field(min_length=1)
+
+
+# --- holdings_reconcile.yaml: rules.depot.reconcile_holdings (§7) ---------------------------
+
+
+class DeclaredPosition(Schema):
+    asset: str
+    units: NonNegativeQuantity
+    value_eur: Money
+
+
+class HeldMovement(Schema):
+    asset: str
+    quantity: Quantity
+    occurred_on: date
+    external_ref: str | None = None
+    status: MovementStatus = MovementStatus.CONFIRMED
+
+
+class ReportTrade(Schema):
+    asset: str
+    reference: str
+
+
+class PositionExpect(Schema):
+    asset: str
+    reconciled: bool
+    difference_units: Quantity
+    price_stored: bool
+    error: str | None = None
+    missing_references: list[str] | None = None
+
+
+class HoldingsExpect(Schema):
+    reconciled_through: date | None
+    positions: list[PositionExpect]
+
+
+class HoldingsCase(_Case):
+    as_of: date
+    declared: list[DeclaredPosition] = Field(min_length=1)
+    movements: list[HeldMovement]
+    report_trades: list[ReportTrade]
+    expect: HoldingsExpect
+
+    def recompute(self) -> HoldingsExpect:
+        present = {m.external_ref for m in self.movements if m.external_ref}
+        positions = []
+        for position in self.declared:
+            held = sum(
+                (
+                    m.quantity
+                    for m in self.movements
+                    if m.asset == position.asset
+                    and m.status is MovementStatus.CONFIRMED
+                    and m.occurred_on <= self.as_of
+                ),
+                Decimal(0),
+            )
+            difference = position.units - held
+            reconciled = abs(difference) <= depot.UNITS_TOLERANCE
+            missing = [
+                t.reference
+                for t in self.report_trades
+                if t.asset == position.asset and t.reference not in present
+            ]
+            positions.append(
+                PositionExpect(
+                    asset=position.asset,
+                    reconciled=reconciled,
+                    difference_units=difference,
+                    price_stored=reconciled and position.units > 0,
+                    error=None if reconciled else E.DEPOT_HOLDINGS_MISMATCH,
+                    missing_references=None if reconciled else missing,
+                )
+            )
+        through = self.as_of if all(p.reconciled for p in positions) else None
+        return HoldingsExpect(reconciled_through=through, positions=positions)
+
+    @model_validator(mode="after")
+    def _recomputed(self) -> Self:
+        if self.recompute() != self.expect:
+            raise ValueError(f"{self.id}: the reconciliation gives {self.recompute()}")
+        return self
+
+
+class HoldingsFixture(_Fixture):
+    assets: dict[str, Isin]
+    cases: list[HoldingsCase] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _known_assets(self) -> Self:
+        for case in self.cases:
+            named = {p.asset for p in case.declared} | {m.asset for m in case.movements}
+            if named - set(self.assets):
+                raise ValueError(f"{case.id}: unknown assets {sorted(named - set(self.assets))}")
+        return self
+
+
+# --- quirion_documents.yaml: parse_lines for the depot kinds and the proposals (D165) --------
+
+
+class ProposedMovement(Schema):
+    kind: MovementKind
+    isin: Isin
+    quantity: Quantity
+    eur_amount: Money
+    fee_eur: Money | None = None
+    tax_withheld_eur: Money | None = None
+    occurred_on: date
+    external_ref: str | None = None
+
+
+class ProposedHolding(Schema):
+    isin: Isin
+    as_of: date
+    declared_units: NonNegativeQuantity
+    declared_value_eur: Money
+
+
+class ProposedTrade(Schema):
+    isin: Isin
+    trade_date: date
+    units: Quantity
+    amount: Money
+    reference: str
+
+
+class DepotProposals(Schema):
+    movements: list[ProposedMovement] = Field(default_factory=list)
+    holdings: list[ProposedHolding] = Field(default_factory=list)
+    trades: list[ProposedTrade] = Field(default_factory=list)
+
+
+def _german(text: str) -> Decimal:
+    return Decimal(text.strip().replace(".", "").replace(",", "."))
+
+
+def _german_date(text: str) -> date:
+    day, month, year = text.strip().split(".")
+    return date(int(year), int(month), int(day))
+
+
+class QuirionCase(phase2.ParseCase):
+    pending: str | None = None  # the proposals' step
+    parse_pending: str | None = None  # a parse that needs a later step (the scrub)
+    proposes: DepotProposals | None = None
+
+    def _value(self, field: str):
+        return self.expect[field].value if field in self.expect else None
+
+    def recompute(self) -> DepotProposals | None:
+        v = self._value
+        if self.kind == "trade_confirmation" and "side" in self.expect:
+            gross, fees, net = (Decimal(str(v(f))) for f in ("gross_amount", "fees", "net_amount"))
+            units = Decimal(str(v("units")))
+            buy = v("side") == "Kauf"
+            if net != (gross + fees if buy else gross - fees):
+                raise ValueError(f"{self.id}: net amount does not follow gross and fees")
+            return DepotProposals(
+                movements=[
+                    ProposedMovement(
+                        kind=MovementKind.ACQUISITION if buy else MovementKind.DISPOSAL,
+                        isin=v("isin"),
+                        quantity=units if buy else -units,
+                        eur_amount=-net if buy else net,
+                        fee_eur=fees,
+                        occurred_on=date.fromisoformat(v("trade_date")),
+                        external_ref=v("order_reference"),
+                    )
+                ]
+            )
+        if self.kind == "distribution_note":
+            gross, held, german, net = (
+                Decimal(str(v(f)))
+                for f in ("gross_amount", "withholding_tax", "german_taxes", "net_amount")
+            )
+            if net != gross - held - german:
+                raise ValueError(f"{self.id}: net = gross − both taxes")
+            if Decimal(str(v("units"))) * Decimal(str(v("gross_per_unit"))) != gross:
+                raise ValueError(f"{self.id}: gross = units × gross per unit")
+            return DepotProposals(
+                movements=[
+                    ProposedMovement(
+                        kind=MovementKind.DISTRIBUTION,
+                        isin=v("isin"),
+                        quantity=Decimal(0),
+                        eur_amount=gross,
+                        tax_withheld_eur=held + german,
+                        occurred_on=date.fromisoformat(v("payment_date")),
+                    )
+                ]
+            )
+        if self.kind == "depot_report":
+            as_of = date.fromisoformat(v("report_date"))
+            holdings = []
+            for item in v("positions"):
+                isin, _name, units, price, value, _currency = item.split(" | ")
+                if (_german(units) * _german(price)).quantize(Decimal("0.01")) != _german(value):
+                    raise ValueError(f"{self.id}: {isin} value = units × price")
+                holdings.append(
+                    ProposedHolding(
+                        isin=isin,
+                        as_of=as_of,
+                        declared_units=_german(units),
+                        declared_value_eur=_german(value),
+                    )
+                )
+            trades = []
+            for item in v("trades"):
+                isin, day, units, amount, reference = item.split(" | ")
+                trades.append(
+                    ProposedTrade(
+                        isin=isin,
+                        trade_date=_german_date(day),
+                        units=_german(units),
+                        amount=_german(amount),
+                        reference=reference,
+                    )
+                )
+            return DepotProposals(holdings=holdings, trades=trades)
+        return None
+
+    @model_validator(mode="after")
+    def _recomputed(self) -> Self:
+        if self.recompute() != self.proposes:
+            raise ValueError(f"{self.id}: the proposals recompute to {self.recompute()}")
+        return self
+
+
+class QuirionFixture(Schema):
+    cases: list[QuirionCase] = Field(min_length=1)
+
+
+# --- bison_csv.yaml: rules.exchange.classify / movement_hash, the typed balance (D166) -------
+
+_INWARD = {
+    MovementKind.ACQUISITION,
+    MovementKind.INTERNAL_TRANSFER_IN,
+    MovementKind.STAKING_REWARD,
+    MovementKind.CASHBACK_REWARD,
+    MovementKind.UNCATEGORIZED,
+}
+
+
+def _exchange_kind(line: MovementLine) -> tuple[MovementKind, MovementStatus]:
+    kind, eur = line.type.casefold(), line.asset == "EUR"
+    confirmed, proposed = MovementStatus.CONFIRMED, MovementStatus.PROPOSED
+    if kind == "buy":
+        return MovementKind.ACQUISITION, confirmed
+    if kind == "sell":
+        return MovementKind.DISPOSAL, confirmed
+    if kind == "deposit":
+        return (
+            (MovementKind.INTERNAL_TRANSFER_IN, confirmed)
+            if eur
+            else (MovementKind.CASHBACK_REWARD, proposed)
+        )
+    if kind == "withdrawal":
+        return MovementKind.INTERNAL_TRANSFER_OUT, confirmed if eur else proposed
+    if kind.startswith(("staking", "reward")):
+        return MovementKind.STAKING_REWARD, confirmed
+    return MovementKind.UNCATEGORIZED, proposed
+
+
+class ExpectedMovement(Schema):
+    row: int = Field(ge=0)
+    kind: MovementKind
+    status: MovementStatus
+    quantity: Quantity
+    eur_amount: Money | None = None
+    fee_eur: Money | None = None
+    fee_quantity: NonNegativeQuantity | None = None
+    external_ref: str | None = None
+    network: str | None = None
+    tx_hash: str | None = None
+    question: str | None = None
+    position: int | None = Field(default=None, ge=0)  # among identical rows without an id
+
+
+class AssetBalanceExpect(Schema):
+    asset: AssetSymbol
+    reconciled: bool
+    difference_units: Quantity
+    error: str | None = None
+
+
+class ExchangeExpect(Schema):
+    rows_new: int = Field(ge=0)
+    rows_skipped: int = Field(ge=0)
+    movements: list[ExpectedMovement]
+    status: ImportStatus | None = None  # with `typed`
+    assets: list[AssetBalanceExpect] | None = None
+
+
+class ExchangeCase(_Case):
+    rows: list[MovementLine] = Field(min_length=1)
+    stored_refs: list[str] = Field(default_factory=list)
+    held_before: dict[AssetSymbol, Quantity] = Field(default_factory=dict)
+    typed: dict[AssetSymbol, NonNegativeQuantity] | None = None
+    expect: ExchangeExpect
+
+    def recompute(self) -> ExchangeExpect:
+        seen, identical = set(self.stored_refs), {}
+        movements, skipped = [], 0
+        for index, line in enumerate(self.rows):
+            if line.external_ref is not None:
+                if line.external_ref in seen:
+                    skipped += 1
+                    continue
+                seen.add(line.external_ref)
+                position = None
+            else:
+                key = line.model_dump_json()
+                position = identical.get(key, 0)
+                identical[key] = position + 1
+            kind, status = _exchange_kind(line)
+            sign = 1 if kind in _INWARD else -1
+            eur = line.quantity * sign if line.asset == "EUR" else line.eur_amount
+            if eur is not None and kind is MovementKind.ACQUISITION:
+                eur = -eur
+            movements.append(
+                ExpectedMovement(
+                    row=index,
+                    kind=kind,
+                    status=status,
+                    quantity=line.quantity * sign,
+                    eur_amount=eur,
+                    fee_eur=line.fee_eur,
+                    fee_quantity=line.fee_quantity,
+                    external_ref=line.external_ref,
+                    network=line.network,
+                    tx_hash=line.tx_hash,
+                    question=(
+                        E.EXCHANGE_DEPOSIT_QUESTION
+                        if kind is MovementKind.CASHBACK_REWARD
+                        else None
+                    ),
+                    position=position,
+                )
+            )
+        result = ExchangeExpect(rows_new=len(movements), rows_skipped=skipped, movements=movements)
+        if self.typed is None:
+            return result
+        assets = []
+        for asset, units in self.typed.items():
+            held = self.held_before.get(asset, Decimal(0)) + sum(
+                (m.quantity for m in movements if self.rows[m.row].asset == asset), Decimal(0)
+            )
+            difference = units - held
+            assets.append(
+                AssetBalanceExpect(
+                    asset=asset,
+                    reconciled=difference == 0,
+                    difference_units=difference,
+                    error=None if difference == 0 else E.EXCHANGE_UNRECONCILED,
+                )
+            )
+        reconciled = all(a.reconciled for a in assets)
+        return result.model_copy(
+            update={
+                "status": ImportStatus.RECONCILED if reconciled else ImportStatus.UNRECONCILED,
+                "assets": assets,
+            }
+        )
+
+    @model_validator(mode="after")
+    def _recomputed(self) -> Self:
+        if self.recompute() != self.expect:
+            raise ValueError(f"{self.id}: the import gives {self.recompute()}")
+        return self
+
+
+class ExchangeFixture(_Fixture):
+    cases: list[ExchangeCase] = Field(min_length=1)
+
+
+# --- dkb_csv.yaml: services.bank.dkb_csv.parse and its import (D173 (3), D164) --------------
+
+
+class DkbImportExpect(Schema):
+    account_iban: str  # the IBAN of the account the file is imported onto
+    status: ReconcileStatus | None = None
+    prefilled_closing: Money | None = None
+    prefilled_on: date | None = None
+    question: str | None = None
+    after_confirm: dict[str, str] | None = None
+    error: str | None = None
+
+    @model_validator(mode="after")
+    def _one_outcome(self) -> Self:
+        if (self.status is None) == (self.error is None):
+            raise ValueError("an import has a status or an error")
+        return self
+
+
+class DkbCase(phase2.ParserCase):
+    pending: str | None = None
+    import_: DkbImportExpect = Field(alias="import")
+
+    @model_validator(mode="after")
+    def _consistent(self) -> Self:
+        expect, outcome = self.expect, self.import_
+        if expect is None or expect.format is not StatementFormat.DKB_CSV:
+            raise ValueError(f"{self.id}: a DKB file parses as dkb_csv")
+        mismatch = expect.account_iban != outcome.account_iban
+        if mismatch != (outcome.error == E.STATEMENT_ACCOUNT_MISMATCH):
+            raise ValueError(f"{self.id}: refused exactly when the file names another IBAN")
+        if outcome.status is not None:
+            if outcome.status is not ReconcileStatus.PENDING_BALANCE:
+                raise ValueError(f"{self.id}: a DKB import waits at pending_balance (Q-O75)")
+            day = expect.last_booking_on.strftime("%d.%m.%Y")
+            if outcome.question != f"„Ist das der Saldo nach der letzten Buchung vom {day}?“":
+                raise ValueError(f"{self.id}: the question names the last booking day")
+            if outcome.after_confirm != {
+                "status": ReconcileStatus.RECONCILED,
+                "balance_source": BalanceSource.USER,
+            }:
+                raise ValueError(f"{self.id}: a confirmed balance is the user's")
+        pinned = [p.line for p in expect.lines]
+        if expect.lines and len(pinned) == expect.line_count:
+            if sum((line.amount for line in pinned), Decimal(0)) != expect.total:
+                raise ValueError(f"{self.id}: the pinned lines sum to the total")
+            for_hash = [
+                LineForHash(
+                    **line.model_dump(include=set(LineForHash.model_fields)),
+                    counterparty_iban_hmac=None,
+                )
+                for line in pinned
+            ]
+            hashes = statements.line_hashes(UUID(int=1), for_hash)
+            if len(set(hashes)) != len(hashes):
+                raise ValueError(f"{self.id}: every line keeps its own hash")
+        return self
+
+
+class DkbFixture(_Fixture):
+    cases: list[DkbCase] = Field(min_length=1)
+
+
 MODELS: dict[str, type[Schema]] = {
     "ownership": OwnershipFixture,
     "household_categories": HouseholdCategoriesFixture,
@@ -632,6 +1110,11 @@ MODELS: dict[str, type[Schema]] = {
     "matching_order": MatchingOrderFixture,
     "transfers": TransfersFixture,
     "private_cost_link": PrivateCostLinkFixture,
+    "depot_lines": DepotLinesFixture,
+    "holdings_reconcile": HoldingsFixture,
+    "quirion_documents": QuirionFixture,
+    "bison_csv": ExchangeFixture,
+    "dkb_csv": DkbFixture,
 }
 
 
