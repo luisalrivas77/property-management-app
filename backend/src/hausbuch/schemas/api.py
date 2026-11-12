@@ -535,7 +535,7 @@ class InboxItem(Schema):
     possible_duplicate_id: UUID | None = None
     transaction_id: UUID | None = None
     tax_year: int | None = None  # questionnaire_open: the year whose questions are open
-    account_id: UUID | None = None  # phase 5: the bank_* kinds
+    account_id: UUID | None = None  # phase 5: the bank_* kinds; phase 6: a private line
     sync_id: UUID | None = None  # phase 5: bank_approval_needed, bank_sync_failed
     reminder_id: str | None = Field(default=None, max_length=160)  # phase 5: reminder
 

@@ -28,12 +28,7 @@ from hausbuch.db.tables import proposal as proposal_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.jobs import enqueue
-from hausbuch.rules.errors import (
-    AI_DISABLED,
-    ALLOCATION_CATEGORY_NOT_FOR_ACCOUNT,
-    RuleError,
-)
-from hausbuch.rules.household.taxonomy import allowed_categories
+from hausbuch.rules.errors import AI_DISABLED, RULE_CONFLICTS, RuleError
 from hausbuch.rules.review import THRESHOLDS
 from hausbuch.schemas.ai import AiJob
 from hausbuch.schemas.allocation import (
@@ -44,7 +39,7 @@ from hausbuch.schemas.allocation import (
     AllocationSet,
     MatchContext,
     MatchingRuleCreate,
-    MatchTransaction,
+    NameHistory,
 )
 from hausbuch.schemas.api import (
     AiRetryResult,
@@ -63,7 +58,7 @@ from hausbuch.schemas.enums import (
     ProposalStatus,
 )
 
-from . import allocations, matching, rules_learned
+from . import allocations, matching, rules_learned, workspace_settings
 from .context import CommandContext
 from .errors import NotFoundError, RuleViolationError
 from .statements import _to_transaction, import_inbox_items, transaction_select
@@ -90,7 +85,7 @@ def allocate_transaction(
         raise RuleViolationError([TRANSACTION_MISMATCH], "the set is for another transaction")
     line = _open_line(ctx.conn, transaction_id)
     drafts = body.allocation_set.allocations
-    _check_categories_for_account(ctx.conn, transaction_id, drafts)
+    allocations.check_categories(ctx.conn, line.account_id, drafts)
     current = line.current
     corrects = None
     if current and allocations.same_answer(drafts, current):
@@ -108,13 +103,15 @@ def allocate_transaction(
         )
         written = allocations.record_set(ctx, answer, confirm=True, auto=False)
     confirmed = _as_set(transaction_id, written)
-    context = _context(ctx.conn, ctx.now.date(), transaction_id, iban_key)
-    proposed = rules_learned.proposed_rule(
+    context = _context(ctx.conn, ctx.now.date(), line, iban_key)
+    names = _names(ctx.conn, line)
+    proposed, refusal = rules_learned.proposed_rule_or_refusal(
         line.tx,
         confirmed,
         context,
         name_pattern=body.counterparty_name_pattern,
         purpose_pattern=body.purpose_pattern,
+        names=names,
     )
     learn = body.learn_rule
     if learn is None:
@@ -122,8 +119,11 @@ def allocate_transaction(
     rule = None
     if learn:
         if proposed is None:
+            # D160: a name rule refused for the name's other lines says why, so the card can
+            # ask for a purpose pattern (rule.too_broad) or name the conflict (rule.conflicts).
             raise RuleViolationError(
-                [rules_learned.NOT_LEARNABLE], "no rule can be learned from this answer"
+                [refusal or rules_learned.NOT_LEARNABLE],
+                "no rule can be learned from this answer",
             )
         data = proposed.model_dump() | {
             "created_from_allocation_id": written[0].id,
@@ -132,7 +132,7 @@ def allocate_transaction(
         rule = rules_learned.create_rule(
             ctx, MatchingRuleCreate.model_validate(data), corrects=corrects
         )
-    return _response(ctx.conn, transaction_id, written, line.tx, context, rule=rule)
+    return _response(ctx.conn, line, written, context, names=names, rule=rule)
 
 
 def _booked_by_rule(current: list[Allocation]) -> UUID | None:
@@ -154,32 +154,14 @@ def transaction_allocations(
     line = matching.load_line(conn, transaction_id)
     if line is None:
         return None
-    context = _context(conn, today, transaction_id, iban_key)
-    return _response(conn, transaction_id, line.current, line.tx, context)
+    context = _context(conn, today, line, iban_key)
+    return _response(conn, line, line.current, context, names=_names(conn, line))
 
 
-def _check_categories_for_account(conn: Connection, transaction_id: UUID, drafts) -> None:
-    """A person's answer may carry only the categories of its account's purpose (phase 6
-    D159): a household, transfer or depot code on a rental line would be on no Anlage V line
-    and in no to-do, so the cost would vanish from the draft without a word. Checked in the
-    user command only; the matching job never proposes such a code (its schema is the rental
-    set)."""
-    purpose = conn.execute(
-        select(account_table.c.purpose)
-        .select_from(
-            transaction_table.join(
-                account_table, transaction_table.c.account_id == account_table.c.id
-            )
-        )
-        .where(transaction_table.c.id == transaction_id)
-    ).scalar_one()
-    allowed = allowed_categories(AccountPurpose(purpose))
-    refused = sorted({d.category.value for d in drafts if d.category not in allowed})
-    if refused:
-        raise RuleViolationError(
-            [ALLOCATION_CATEGORY_NOT_FOR_ACCOUNT],
-            f"categories not for a {purpose} account: {', '.join(refused)}",
-        )
+def _names(conn: Connection, line: matching.Line) -> list[NameHistory]:
+    """The private lines a name rule from this line is checked against (D160); none for a
+    rental line, which learns on its IBAN only."""
+    return matching.name_history(conn, line.tx) if line.private else []
 
 
 def _open_line(conn: Connection, transaction_id: UUID) -> matching.Line:
@@ -195,9 +177,13 @@ def _open_line(conn: Connection, transaction_id: UUID) -> matching.Line:
     return line
 
 
-def _context(conn: Connection, today: date, transaction_id: UUID, iban_key: bytes) -> MatchContext:
+def _context(conn: Connection, today: date, line: matching.Line, iban_key: bytes) -> MatchContext:
     return matching.build_context(
-        conn, iban_key=iban_key, today=today, for_transaction=transaction_id
+        conn,
+        iban_key=iban_key,
+        today=today,
+        for_transaction=line.tx.id,
+        account_purpose=line.account_purpose,
     )
 
 
@@ -216,27 +202,39 @@ def _as_set(transaction_id: UUID, rows: list[Allocation]) -> AllocationSet:
     )
 
 
+def _probe_category(line: matching.Line) -> AllocationCategory:
+    """A category the line's account takes and a rule may be learned for, to ask whether the
+    line can become a rule at all: a learnable household code on a private line (D160)."""
+    if not line.private:
+        return AllocationCategory.OTHER_EXPENSE
+    return AllocationCategory.HH_SALARY if line.tx.amount > 0 else AllocationCategory.HH_GROCERIES
+
+
 def _response(
     conn: Connection,
-    transaction_id: UUID,
+    line: matching.Line,
     rows: list[Allocation],
-    tx: MatchTransaction,
     context: MatchContext,
     *,
+    names: list[NameHistory],
     rule=None,  # noqa: ANN001 - MatchingRule | None
 ) -> TransactionAllocations:
+    tx = line.tx
+    transaction_id = tx.id
     probe = AllocationSet(
         transaction_id=transaction_id,
-        allocations=[AllocationDraft(amount=tx.amount, category=AllocationCategory.OTHER_EXPENSE)],
+        allocations=[AllocationDraft(amount=tx.amount, category=_probe_category(line))],
         method=AllocationMethod.USER,
         confidence=USER_CONFIDENCE,
     )
-    can_learn = rules_learned.proposed_rule(tx, probe, context) is not None
+    probed, refusal = rules_learned.proposed_rule_or_refusal(tx, probe, context, names=names)
+    # rule.conflicts depends on the answer (another category may be learned); too_broad not.
+    can_learn = probed is not None or refusal == RULE_CONFLICTS
     default = False
     if rows:
         current = _as_set(transaction_id, rows)
         default = rules_learned.learn_default(
-            rules_learned.proposed_rule(tx, current, context), current
+            rules_learned.proposed_rule(tx, current, context, names=names), current
         )
     return TransactionAllocations(
         transaction=_transaction(conn, transaction_id),
@@ -275,6 +273,11 @@ _PROPOSAL_TEXTS = {
 }
 _UNMATCHED_REASON = "Nicht zugeordnet: keine Regel, kein Abgleich und kein Beleg passen."
 _AI_FAILED_REASON = "Die KI konnte diese Zahlung nicht einordnen (Anfrage fehlgeschlagen)."
+# Phase 6 D168: a private line nothing explains, while the model may not see private lines.
+_PRIVATE_NO_AI_REASON = (
+    "Privates Konto: keine Regel und kein Beleg passen. Die KI ordnet private Umsätze erst zu, "
+    "wenn beide unter Einstellungen „Private Konten mit KI zuordnen“ zugestimmt haben."
+)
 _UNMATCHED_QUESTION = "Wofür war diese Buchung?"
 _PROPOSED_QUESTION = "Stimmt diese Zuordnung?"
 
@@ -361,8 +364,9 @@ def _listed_lines() -> Select:
         duplicate_table.c.status == DuplicateStatus.OPEN.value,
     )
     return (
-        select(t.id, t.created_at)
+        select(t.id, t.created_at, t.account_id, account_table.c.purpose)
         .join(import_table, import_table.c.id == t.import_id)
+        .join(account_table, account_table.c.id == t.account_id)
         .where(
             import_table.c.status == ImportStatus.RECONCILED.value,
             t.excluded_as_duplicate_of.is_(None),
@@ -388,6 +392,7 @@ def _allocation_items(conn: Connection) -> list[InboxItem]:
     a = allocation_table.c
     lines = conn.execute(_listed_lines()).all()
     failed = _failed_categorize(conn)
+    private_ai = workspace_settings.private_ai_allowed(conn)
     current: dict[UUID, list] = {}
     for row in conn.execute(
         select(a.transaction_id, a.status, a.reasoning, a.question, a.recorded_at)
@@ -398,14 +403,22 @@ def _allocation_items(conn: Connection) -> list[InboxItem]:
     items = []
     for line in lines:
         rows = current.get(line.id)
+        private = line.purpose == AccountPurpose.PRIVATE.value
         if not rows:
+            if line.id in failed:
+                reasoning = _AI_FAILED_REASON
+            elif private and not private_ai:
+                reasoning = _PRIVATE_NO_AI_REASON  # routing.ai_disabled (D168)
+            else:
+                reasoning = _UNMATCHED_REASON
             items.append(
                 InboxItem(
                     kind=InboxItemKind.UNMATCHED,
                     created_at=line.created_at,
-                    reasoning=_AI_FAILED_REASON if line.id in failed else _UNMATCHED_REASON,
+                    reasoning=reasoning,
                     question=_UNMATCHED_QUESTION,
                     transaction_id=line.id,
+                    account_id=line.account_id if private else None,
                 )
             )
         elif rows[0].status == AllocationStatus.PROPOSED.value:
@@ -416,6 +429,7 @@ def _allocation_items(conn: Connection) -> list[InboxItem]:
                     reasoning=rows[0].reasoning,
                     question=rows[0].question or _PROPOSED_QUESTION,
                     transaction_id=line.id,
+                    account_id=line.account_id if private else None,
                 )
             )
     return items
@@ -439,9 +453,10 @@ def request_ai_suggestions(ctx: CommandContext, *, ai_enabled: bool) -> AiRetryR
     has_rows = exists().where(
         a.transaction_id == t.id, a.status != AllocationStatus.SUPERSEDED.value
     )
-    ids = list(
-        ctx.conn.execute(_listed_lines().where(~has_rows).order_by(t.booking_date, t.id)).scalars()
-    )
+    listed = _listed_lines().where(~has_rows)
+    if not workspace_settings.private_ai_allowed(ctx.conn):  # D168: the model may not see them
+        listed = listed.where(account_table.c.purpose != AccountPurpose.PRIVATE.value)
+    ids = list(ctx.conn.execute(listed.order_by(t.booking_date, t.id)).scalars())
     for transaction_id in ids:
         enqueue.enqueue_match_transaction(
             ctx.conn, workspace_id=ctx.workspace_id, transaction_id=transaction_id

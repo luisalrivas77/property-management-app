@@ -32,6 +32,7 @@ a pattern (D32).
 """
 
 import re
+from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
 
@@ -40,6 +41,7 @@ from sqlalchemy import Connection, Row, insert, select, update
 from hausbuch.db.tables import matching_rule as rule_table
 from hausbuch.jobs import enqueue
 from hausbuch.rules import matching as matchers
+from hausbuch.rules.errors import RuleError
 from hausbuch.rules.review import THRESHOLDS
 from hausbuch.schemas.allocation import (
     AllocationSet,
@@ -47,10 +49,11 @@ from hausbuch.schemas.allocation import (
     MatchingRule,
     MatchingRuleCreate,
     MatchTransaction,
+    NameHistory,
     RuleMatcher,
     SplitMethod,
 )
-from hausbuch.schemas.enums import EntityType
+from hausbuch.schemas.enums import AccountPurpose, EntityType
 from hausbuch.schemas.events import EventType, RuleRecorded
 
 from .context import CommandContext
@@ -112,13 +115,52 @@ def proposed_rule(
     *,
     name_pattern: str | None = None,
     purpose_pattern: str | None = None,
+    names: Sequence[NameHistory] = (),
 ) -> MatchingRuleCreate | None:
-    """The rule this answer would become, or None when none can be learned."""
+    """The rule this answer would become, or None when none can be learned (a name rule
+    refused by D160 included; rule_refusal says why)."""
+    return proposed_rule_or_refusal(
+        tx,
+        confirmed,
+        context,
+        name_pattern=name_pattern,
+        purpose_pattern=purpose_pattern,
+        names=names,
+    )[0]
+
+
+def proposed_rule_or_refusal(
+    tx: MatchTransaction,
+    confirmed: AllocationSet,
+    context: MatchContext,
+    *,
+    name_pattern: str | None = None,
+    purpose_pattern: str | None = None,
+    names: Sequence[NameHistory] = (),
+) -> tuple[MatchingRuleCreate | None, str | None]:
+    """proposed_rule, with the code of a name rule D160 refuses (rule.too_broad: the name
+    was confirmed under two categories; rule.conflicts: the pattern hits a line confirmed
+    otherwise). A typed pattern replaces the refused name pattern, so it is learned then."""
     name_pattern = check_pattern(name_pattern)
     purpose_pattern = check_pattern(purpose_pattern)
-    inferred = matchers.infer_rule(tx, confirmed, context)
+    refusal = None
+    try:
+        inferred = matchers.infer_rule(tx, confirmed, context, names)
+    except RuleError as refused:
+        inferred, refusal = None, refused.code
     if name_pattern is None and purpose_pattern is None:
-        return inferred
+        return inferred, refusal
+    return _with_patterns(tx, confirmed, context, inferred, name_pattern, purpose_pattern), None
+
+
+def _with_patterns(
+    tx: MatchTransaction,
+    confirmed: AllocationSet,
+    context: MatchContext,
+    inferred: MatchingRuleCreate | None,
+    name_pattern: str | None,
+    purpose_pattern: str | None,
+) -> MatchingRuleCreate | None:
     patterns: dict[str, Any] = {}
     if name_pattern is not None:
         patterns["counterparty_name_pattern"] = name_pattern
@@ -134,10 +176,16 @@ def proposed_rule(
     # under this answer's category.
     if len(confirmed.allocations) != 1 or tx.amount == 0:
         return None
-    hmac = tx.counterparty_iban_hmac
-    if hmac is not None and matchers.matcher_owns(hmac, context) and purpose_pattern is None:
-        return None
     (only,) = confirmed.allocations
+    if context.account_purpose is AccountPurpose.PRIVATE:
+        # D160's limits hold for a typed pattern too: no tax-relevant, transfer or depot code
+        # and none without a threshold; the rental matchers never run on a private line.
+        if not matchers.learnable_household(only.category):
+            return None
+    else:
+        hmac = tx.counterparty_iban_hmac
+        if hmac is not None and matchers.matcher_owns(hmac, context) and purpose_pattern is None:
+            return None
     matcher = RuleMatcher(
         counterparty_iban_hmac=tx.counterparty_iban_hmac,
         amount_sign="credit" if tx.amount > 0 else "debit",

@@ -405,7 +405,7 @@ def infer_rule(
         if len(confirmed.allocations) != 1:
             return None
         (only,) = confirmed.allocations
-        if not _learnable_household(only.category):
+        if not learnable_household(only.category):
             return None
         return MatchingRuleCreate(
             matcher=RuleMatcher(
@@ -920,7 +920,7 @@ def _name_found(pattern: str, name: str | None) -> bool:
     return _found(pattern, name) or _found(pattern, _merchant_text(name))
 
 
-def _learnable_household(category: AllocationCategory) -> bool:
+def learnable_household(category: AllocationCategory) -> bool:
     """D160: a household code with a threshold that is not tax-relevant. A tax-relevant code
     proposes a return input a person confirms each time; a transfer or depot code is booked
     by its matcher only; a code without a threshold (hh_other) is never booked unseen."""
@@ -944,7 +944,7 @@ def _name_rule(
     if len(confirmed.allocations) != 1:
         return None
     (only,) = confirmed.allocations
-    if not _learnable_household(only.category):
+    if not learnable_household(only.category):
         return None
     pattern = merchant_pattern(tx.counterparty_name or "")
     if pattern == "^":

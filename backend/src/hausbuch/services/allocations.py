@@ -32,6 +32,7 @@ from uuid import UUID
 
 from sqlalchemy import Connection, Row, insert, select, update
 
+from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import loan as loan_table
 from hausbuch.db.tables import property_ as property_table
@@ -40,13 +41,15 @@ from hausbuch.db.tables import tenancy as tenancy_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.db.tables import unit as unit_table
 from hausbuch.rules.allocations import check_sum
+from hausbuch.rules.errors import ALLOCATION_CATEGORY_NOT_FOR_ACCOUNT
+from hausbuch.rules.household.taxonomy import allowed_categories
 from hausbuch.schemas.allocation import (
     Allocation,
     AllocationCategory,
     AllocationDraft,
     AllocationSet,
 )
-from hausbuch.schemas.enums import ActorType, AllocationStatus, EntityType
+from hausbuch.schemas.enums import AccountPurpose, ActorType, AllocationStatus, EntityType
 from hausbuch.schemas.events import (
     AllocatedPart,
     EventType,
@@ -121,9 +124,11 @@ def record_set(
     Raises RuleError allocation.empty / allocation.sum_mismatch (nothing written),
     RuleViolationError allocation.excluded_transaction for a line merged away as a
     duplicate, allocation.scope_mismatch when a unit, tenancy or loan is not of the
-    allocation's property."""
+    allocation's property, allocation.category_not_for_account for a category the line's
+    account does not take (phase 6 D159), whoever answers: a person, a rule or the model."""
     tx = _lock_transaction(ctx, allocation_set.transaction_id)
     check_sum(tx.amount, allocation_set.allocations)
+    check_categories(ctx.conn, tx.account_id, allocation_set.allocations)
     _check_scope(ctx.conn, allocation_set.allocations)
     previous = current_allocations(ctx.conn, tx.id)
     if previous:
@@ -196,6 +201,33 @@ def user_id(ctx: CommandContext) -> UUID | None:
 
 
 # --- Helpers -------------------------------------------------------------------------
+
+
+def account_purpose(conn: Connection, account_id: UUID) -> AccountPurpose:
+    purpose = conn.execute(
+        select(account_table.c.purpose).where(account_table.c.id == account_id)
+    ).scalar_one()
+    return AccountPurpose(purpose)
+
+
+def categories_allowed(purpose: AccountPurpose, drafts: Sequence[AllocationDraft]) -> bool:
+    allowed = allowed_categories(purpose)
+    return all(d.category in allowed for d in drafts)
+
+
+def check_categories(conn: Connection, account_id: UUID, drafts: Sequence[AllocationDraft]) -> None:
+    """An allocation carries only the categories of its account's purpose (phase 6 D159): a
+    household, transfer or depot code on a rental line would be on no Anlage V line and in no
+    to-do, so the cost would vanish from the draft without a word; a rental code on a private
+    line would reach the Anlage V from an account that is not the property's (D161)."""
+    purpose = account_purpose(conn, account_id)
+    allowed = allowed_categories(purpose)
+    refused = sorted({d.category.value for d in drafts if d.category not in allowed})
+    if refused:
+        raise RuleViolationError(
+            [ALLOCATION_CATEGORY_NOT_FOR_ACCOUNT],
+            f"categories not for a {purpose.value} account: {', '.join(refused)}",
+        )
 
 
 def _lock_transaction(ctx: CommandContext, transaction_id: UUID) -> Row:

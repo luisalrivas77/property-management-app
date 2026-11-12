@@ -53,6 +53,7 @@ from hausbuch.ai.client import ModelCallError, ModelRequest, ModelResponse
 from hausbuch.ai.provenance import record_ai_call
 from hausbuch.ai.requests import (
     LLM_CONFIDENCE,
+    categorize_household_request,
     categorize_request,
     explain_request,
     parse_explain,
@@ -169,6 +170,7 @@ class _Prepared:
     property_id: UUID | None = None
     loan_id: UUID | None = None  # the one loan, for a loan category (D51)
     loan_contract_id: UUID | None = None  # its one Darlehensvertrag, for a payout (D51)
+    private: bool = False  # a private account's line: the household request (D168)
 
 
 def run_match_transaction(
@@ -215,18 +217,30 @@ def _match(
         if plan.outcome == "categorize":
             line = matching.load_line(conn, transaction_id)
             assert line is not None
-            data = matching.categorize_input(conn, line)
-            property_id = matching.only_property(conn)
-            loan_id, contract_id = matching.only_loan(conn, property_id)
-            prepared = _Prepared(
-                plan,
-                data=_payload(data),
-                amount=line.tx.amount,
-                tx=line.tx,
-                property_id=property_id,
-                loan_id=loan_id,
-                loan_contract_id=contract_id,
-            )
+            if line.private:
+                # D168: the household input; code scopes only hh_property_cost to the one
+                # property (D161), and no part of a private line gets a loan.
+                prepared = _Prepared(
+                    plan,
+                    data=_payload(matching.household_categorize_input(conn, line)),
+                    amount=line.tx.amount,
+                    tx=line.tx,
+                    property_id=matching.only_property(conn),
+                    private=True,
+                )
+            else:
+                data = matching.categorize_input(conn, line)
+                property_id = matching.only_property(conn)
+                loan_id, contract_id = matching.only_loan(conn, property_id)
+                prepared = _Prepared(
+                    plan,
+                    data=_payload(data),
+                    amount=line.tx.amount,
+                    tx=line.tx,
+                    property_id=property_id,
+                    loan_id=loan_id,
+                    loan_contract_id=contract_id,
+                )
     if plan.outcome == "categorize":
         found, model = _categorize(deps, workspace_id, transaction_id, prepared, log)
         return _finish(deps, workspace_id, transaction_id, found, Actor(ActorType.AI, model))
@@ -273,12 +287,13 @@ def _categorize(
             return None, out.model_dump(mode="json"), SUM_MISMATCH
         return (out, drafts), out.model_dump(mode="json"), None
 
-    request = categorize_request(deps.settings, prepared.data, hard=False)
+    build = categorize_household_request if prepared.private else categorize_request
+    request = build(deps.settings, prepared.data, hard=False)
     (out, drafts), call_id, model = _with_one_retry(
         deps, workspace_id, transaction_id, request, parse
     )
     if out.ambiguous:
-        hard = categorize_request(deps.settings, prepared.data, hard=True)
+        hard = build(deps.settings, prepared.data, hard=True)
         try:
             (out, drafts), call_id, model = _with_one_retry(
                 deps, workspace_id, transaction_id, hard, parse
@@ -314,6 +329,19 @@ def _drafts(out: LlmMatchOutput, prepared: _Prepared) -> list[AllocationDraft]:
     drafts = []
     for part in out.allocations:
         period = matching.llm_period(part.service_period, prepared.tx, part.recurring)
+        if prepared.private:
+            property_cost = part.category is AllocationCategory.HH_PROPERTY_COST
+            drafts.append(
+                AllocationDraft(
+                    amount=part.amount,
+                    category=part.category,
+                    property_id=prepared.property_id if property_cost else None,
+                    service_period_start=None if period is None else period.start,
+                    service_period_end=None if period is None else period.end,
+                    recurring=part.recurring,
+                )
+            )
+            continue
         loan_part = part.category in _LOAN_CATEGORIES
         payout = part.category is AllocationCategory.LOAN_DISBURSEMENT
         drafts.append(

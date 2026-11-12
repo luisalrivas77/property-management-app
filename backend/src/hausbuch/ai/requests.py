@@ -37,7 +37,7 @@ from typing import Any
 import anthropic
 
 from hausbuch.rules.extraction_parse import CODE_ONLY_SUBTYPES, accepted_subtype
-from hausbuch.rules.household.taxonomy import allowed_categories
+from hausbuch.rules.household.taxonomy import DEPOT_CODES, allowed_categories
 from hausbuch.schemas.ai import AiJob, ClassifyOutput, ConfidenceLevel
 from hausbuch.schemas.allocation import LlmMatchOutput
 from hausbuch.schemas.common import Schema
@@ -206,6 +206,23 @@ def match_schema() -> dict:
     return anthropic.transform_schema(schema)
 
 
+# Phase 6 D168: the codes the household prompt offers. A private account's codes without
+# the depot's (D165 (1): a depot's bookings are categorised by code from its documents, never
+# by the model), in the enum's order; the prompt lists the same codes, one line each.
+HOUSEHOLD_MODEL_CODES = allowed_categories(AccountPurpose.PRIVATE) - DEPOT_CODES
+
+
+@cache
+def household_match_schema() -> dict:
+    """The household prompt's output schema (D168): HOUSEHOLD_MODEL_CODES only, so the model
+    can never answer a rental code for a private line (D159)."""
+    schema = LlmMatchOutput.model_json_schema()
+    allowed = {c.value for c in HOUSEHOLD_MODEL_CODES}
+    category = schema["$defs"]["AllocationCategory"]
+    category["enum"] = [v for v in category["enum"] if v in allowed]
+    return anthropic.transform_schema(schema)
+
+
 @cache
 def explain_schema() -> dict:
     return anthropic.transform_schema(ExplainOutput.model_json_schema())
@@ -230,6 +247,26 @@ def categorize_request(settings: Settings, data: dict[str, Any], *, hard: bool) 
         # No `thinking`: Sonnet/Opus 5.5 refuse {"type": "disabled"} with a 400 (D50).
         effort=MATCH_EFFORT,
         output_schema=match_schema(),
+    )
+
+
+def categorize_household_request(
+    settings: Settings, data: dict[str, Any], *, hard: bool
+) -> ModelRequest:
+    """A private account's line (D168): the household prompt over services.matching's
+    household input (no tenant name, no property, no other account's lines, no amounts of
+    the similar answers); the same models, limits and parsing as the rental request."""
+    prompt = load_prompt("categorize_household")
+    return ModelRequest(
+        job=AiJob.MATCH,
+        model=settings.ai_model_hard if hard else settings.ai_model_extract,
+        prompt_version=prompt.version,
+        system=prompt.text,
+        content=[{"type": "text", "text": fenced(data)}],
+        max_tokens=MATCH_MAX_TOKENS,
+        inference_geo=settings.ai_inference_geo,
+        effort=MATCH_EFFORT,
+        output_schema=household_match_schema(),
     )
 
 

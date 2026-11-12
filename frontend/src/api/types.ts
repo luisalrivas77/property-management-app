@@ -2183,6 +2183,27 @@ export interface paths {
         patch: operations["workspace_settings_update_api_workspace_settings_patch"];
         trace?: never;
     };
+    "/api/workspace/settings/ai-consent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Workspace Ai Consent
+         * @description The signed-in member's own consent to `ai_private_accounts` (phase 6 D168); the switch
+         *     takes effect once two members have consented since it was switched on.
+         */
+        post: operations["workspace_ai_consent_api_workspace_settings_ai_consent_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/enroll/options": {
         parameters: {
             query?: never;
@@ -9391,6 +9412,13 @@ export interface components {
              * @default false
              */
             ai_private_accounts: boolean;
+            /** Ai Private Accounts Consented By */
+            ai_private_accounts_consented_by?: string[];
+            /**
+             * Ai Private Accounts Active
+             * @default false
+             */
+            ai_private_accounts_active: boolean;
             /**
              * Reminder Emails Available
              * @default false
@@ -9405,6 +9433,8 @@ export interface components {
             auto_accept_llm?: boolean;
             /** Reminder Emails */
             reminder_emails?: boolean;
+            /** Ai Private Accounts */
+            ai_private_accounts?: boolean;
         };
         /**
          * YearFigures
@@ -13958,6 +13988,35 @@ export interface operations {
                 "application/json": components["schemas"]["WorkspaceSettingsPatch"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSettings"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    workspace_ai_consent_api_workspace_settings_ai_consent_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

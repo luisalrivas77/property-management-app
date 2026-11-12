@@ -77,11 +77,11 @@ from hausbuch.db.tables import unit as unit_table
 from hausbuch.db.tables import workspace as workspace_table
 from hausbuch.jobs import enqueue
 from hausbuch.rules import matching as matchers
-from hausbuch.rules.errors import RuleError
+from hausbuch.rules.errors import ALLOCATION_CATEGORY_NOT_FOR_ACCOUNT, RuleError
 from hausbuch.rules.iban import iban_hmac, normalize_iban
 from hausbuch.rules.periods import service_period
 from hausbuch.rules.prefill import names_financing, sort_reading
-from hausbuch.rules.review import route
+from hausbuch.rules.review import no_match_reason, route
 from hausbuch.schemas.ai import ExtractedValue
 from hausbuch.schemas.allocation import (
     Allocation,
@@ -97,6 +97,7 @@ from hausbuch.schemas.allocation import (
     MatchContext,
     MatchingRule,
     MatchTransaction,
+    NameHistory,
     RentInForce,
     RoutingDecision,
     RoutingInput,
@@ -116,7 +117,7 @@ from hausbuch.schemas.enums import (
 )
 from hausbuch.schemas.loan import LoanTerms
 
-from . import allocations, rules_learned
+from . import allocations, rules_learned, workspace_settings
 from .context import CommandContext
 from .documents import DOCUMENT_EVIDENCE_KINDS, EVIDENCE_KINDS, current_extraction
 from .tenancies import _rows_in_force, rent_on  # rent rows no correction supersedes
@@ -174,6 +175,17 @@ class Line:
     current: list[Allocation]
     auto_accept_llm: bool
     counterparty_iban_hmac: bytes | None = field(repr=False, default=None)
+    # Phase 6 (D158, D168): the line's account, its purpose (which order runs, which codes it
+    # takes) and its kind; `private_ai`: the model may see this private line (the switch on
+    # and both members' consent), always False on a rental line, which the gate never holds.
+    account_id: UUID | None = None
+    account_purpose: AccountPurpose = AccountPurpose.RENTAL
+    account_kind: str = "bank_current"
+    private_ai: bool = False
+
+    @property
+    def private(self) -> bool:
+        return self.account_purpose is AccountPurpose.PRIVATE
 
     def open_for(self, *, rematch: bool) -> bool:
         if self.excluded or self.awaiting_duplicate:
@@ -205,8 +217,11 @@ def load_line(conn: Connection, transaction_id: UUID, *, lock: bool = False) -> 
         select(
             transaction_table,
             import_table.c.status.label("import_status"),
+            account_table.c.purpose.label("account_purpose"),
+            account_table.c.kind.label("account_kind"),
         )
         .join(import_table, import_table.c.id == transaction_table.c.import_id)
+        .join(account_table, account_table.c.id == transaction_table.c.account_id)
         .where(transaction_table.c.id == transaction_id)
     )
     if lock:
@@ -222,6 +237,8 @@ def load_line(conn: Connection, transaction_id: UUID, *, lock: bool = False) -> 
             duplicate_table.c.status == DuplicateStatus.OPEN.value,
         )
     ).scalar_one()
+    purpose = AccountPurpose(row.account_purpose)
+    private = purpose is AccountPurpose.PRIVATE
     return Line(
         tx=match_transaction(row),
         import_status=ImportStatus(row.import_status),
@@ -230,6 +247,10 @@ def load_line(conn: Connection, transaction_id: UUID, *, lock: bool = False) -> 
         current=allocations.current_allocations(conn, transaction_id),
         auto_accept_llm=auto_accept_llm(conn),
         counterparty_iban_hmac=row.counterparty_iban_hmac,
+        account_id=row.account_id,
+        account_purpose=purpose,
+        account_kind=row.account_kind,
+        private_ai=private and workspace_settings.private_ai_allowed(conn),
     )
 
 
@@ -256,10 +277,16 @@ def auto_accept_llm(conn: Connection) -> bool:
 
 
 def build_context(
-    conn: Connection, *, iban_key: bytes, today: date, for_transaction: UUID | None = None
+    conn: Connection,
+    *,
+    iban_key: bytes,
+    today: date,
+    for_transaction: UUID | None = None,
+    account_purpose: AccountPurpose = AccountPurpose.RENTAL,
 ) -> MatchContext:
     """Everything the matchers may look at, read from the workspace. `for_transaction`: the
-    line being matched (a Beleg its own rows reference stays a candidate)."""
+    line being matched (a Beleg its own rows reference stays a candidate); `account_purpose`:
+    its account's purpose, which picks the order (phase 6 D158)."""
     # The owners' accounts by purpose since migration 0025, which sets is_owner_account on
     # every account (phase 6 D156); step 2's transfer matcher widens this to every account.
     owners = conn.execute(
@@ -270,6 +297,7 @@ def build_context(
     ).scalars()
     plans, documents = _evidence(conn, iban_key=iban_key, today=today, exclude_for=for_transaction)
     return MatchContext(
+        account_purpose=account_purpose,
         own_account_hmacs=sorted({bytes(h).hex() for h in owners}),
         tenancies=_tenancies(conn),
         loans=_loans(conn),
@@ -679,24 +707,15 @@ def _part(value: Any) -> Decimal | None:
 def deterministic_set(
     conn: Connection, tx: MatchTransaction, context: MatchContext
 ) -> AllocationSet | None:
-    """Learned rules, then the matchers, then the document match (§8.1), with the
-    service-side guards (F3, D39) applied. The rules' answer is either a standing hit
-    (confidence 1, used at once) or a near-miss proposal (D49), which the matchers come
-    before: an exact rent, loan, owner or document match wins over it."""
+    """The deterministic order of the line's account purpose (rules.matching.
+    deterministic_answer, phase 6 D158), with the service-side guards (F3, D39) applied.
+    Rental: learned rules, then the matchers, then the document match (§8.1); the rules'
+    answer is either a standing hit (confidence 1, used at once) or a near-miss proposal
+    (D49), which the matchers come before: an exact rent, loan, owner or document match wins
+    over it. Private: learned rules, the document match, then the tenant / lender question."""
     rules = rules_learned.enabled_rules(conn)
     history = rule_history(conn, tx) if _any_hit(rules, tx) else []
-    found = matchers.rule_answer(rules, tx, context, history)
-    if found is None or found.confidence != matchers.EXACT:
-        for matcher in (
-            matchers.match_owner_transfer,
-            matchers.match_rent,
-            matchers.match_loan,
-            matchers.match_document,
-        ):
-            answer = matcher(tx, context)
-            if answer is not None:
-                found = answer
-                break
+    found = matchers.deterministic_answer(rules, tx, context, history)
     return None if found is None else _guarded(conn, found)
 
 
@@ -764,6 +783,43 @@ def rule_history(conn: Connection, tx: MatchTransaction) -> list[HistoryLine]:
             rows=parts,
         )
         for row, parts in lines.values()
+    ]
+
+
+def name_history(conn: Connection, tx: MatchTransaction) -> list[NameHistory]:
+    """D160: the other lines of every private account with the line's sign and a
+    counterparty name whose current rows are confirmed under one category, for the checks a
+    name rule learned from this line must pass (rules.matching._name_rule: rule.too_broad,
+    rule.conflicts). Every private account, since a rule hits the lines of all of them."""
+    if not tx.counterparty_name or tx.amount == 0:
+        return []
+    t = transaction_table.c
+    a = allocation_table.c
+    rows = conn.execute(
+        select(t.id, t.counterparty_name, a.category, a.status)
+        .join(allocation_table, a.transaction_id == t.id)
+        .join(account_table, account_table.c.id == t.account_id)
+        .where(
+            account_table.c.purpose == AccountPurpose.PRIVATE.value,
+            t.counterparty_name.is_not(None),
+            t.amount > 0 if tx.amount > 0 else t.amount < 0,
+            t.id != tx.id,
+            t.excluded_as_duplicate_of.is_(None),
+            a.status != AllocationStatus.SUPERSEDED.value,
+        )
+        .order_by(t.booking_date, t.id)
+    ).all()
+    lines: dict[UUID, list[Row]] = {}
+    for row in rows:
+        lines.setdefault(row.id, []).append(row)
+    return [
+        NameHistory(
+            transaction_id=line_id,
+            counterparty_name=parts[0].counterparty_name,
+            category=parts[0].category,
+        )
+        for line_id, parts in lines.items()
+        if len(parts) == 1 and parts[0].status == AllocationStatus.CONFIRMED.value
     ]
 
 
@@ -901,7 +957,11 @@ def match_line(
     if not line.open_for(rematch=rematch):
         return MatchPlan("skipped", _closed_reason(line))
     context = build_context(
-        ctx.conn, iban_key=iban_key, today=ctx.now.date(), for_transaction=transaction_id
+        ctx.conn,
+        iban_key=iban_key,
+        today=ctx.now.date(),
+        for_transaction=transaction_id,
+        account_purpose=line.account_purpose,
     )
     found = deterministic_set(ctx.conn, line.tx, context)
     if rematch and not line.waiting and found is not None and _copies_a_split(ctx.conn, found):
@@ -911,12 +971,18 @@ def match_line(
     if found is None:
         if rematch or not ai_available:
             return MatchPlan("skipped", "routing.no_match")
+        if line.private and not line.private_ai:
+            # D168: a private line reaches the model only with the switch on and both
+            # members' consent; until then it waits in Zu prüfen for a person.
+            return MatchPlan("skipped", no_match_reason(line.account_purpose, False))
         return MatchPlan("categorize", "routing.no_match")
     decision = _route(line, found)
     if decision is not RoutingDecision.AUTO_CONFIRM:
         if any(a.status is AllocationStatus.CONFIRMED for a in line.current):
             return MatchPlan("skipped", "matching.keeps_confirmed")
-        if found.method in _MATCHERS and ai_available and not rematch:
+        # The model words a rental matcher's question only; D158's tenant / lender question
+        # on a private line keeps its template text (the model never sees such a line).
+        if found.method in _MATCHERS and ai_available and not rematch and not line.private:
             return MatchPlan("explain", "routing.below_threshold", allocation_set=found)
     return write(ctx, line, found)
 
@@ -956,6 +1022,10 @@ def finish_line(ctx: CommandContext, transaction_id: UUID, found: AllocationSet)
     line = load_line(ctx.conn, transaction_id, lock=True)
     if line is None or not line.open_for(rematch=False):
         return MatchPlan("skipped", "matching.answered_meanwhile")
+    if not allocations.categories_allowed(line.account_purpose, found.allocations):
+        # D159: never booked; the line stays unmatched in Zu prüfen (the request's schema
+        # makes this unreachable, so a model answer here is a bug, not a retry).
+        return MatchPlan("skipped", ALLOCATION_CATEGORY_NOT_FOR_ACCOUNT)
     return write(ctx, line, _llm_guarded(line, found))
 
 
@@ -1231,6 +1301,89 @@ def categorize_input(conn: Connection, line: Line) -> CategorizeInput:
         loans=loans,
         similar=_similar(conn, line),
     )
+
+
+@dataclass(frozen=True)
+class HouseholdSimilar:
+    """D168: an earlier confirmed answer of a private account for the same counterparty, as
+    its name and categories only, never its amount or date."""
+
+    counterparty_name: str
+    categories: list[str]
+
+
+@dataclass(frozen=True)
+class HouseholdCategorizeInput:
+    """The household request's data (D168): the line's own fields, scrubbed of IBANs and of
+    every tenant's name, the last four characters of its counterparty's IBAN and the account's
+    kind (never its label or its owner); never a property, tenancy or loan, never another
+    account's lines but the similar answers of private accounts."""
+
+    transaction_id: UUID
+    booking_date: date
+    value_date: date | None
+    amount: Decimal
+    counterparty_name: str
+    purpose: str
+    booking_text: str
+    iban_last4: str | None
+    account_kind: str
+    similar: list[HouseholdSimilar]
+
+
+def household_categorize_input(conn: Connection, line: Line) -> HouseholdCategorizeInput:
+    tx = line.tx
+    masked = conn.execute(
+        select(transaction_table.c.counterparty_iban_masked).where(transaction_table.c.id == tx.id)
+    ).scalar_one_or_none()
+    names, _ = _tenant_names(conn, line)
+    return HouseholdCategorizeInput(
+        transaction_id=tx.id,
+        booking_date=tx.booking_date,
+        value_date=tx.value_date,
+        amount=tx.amount,
+        counterparty_name=_without(scrub(tx.counterparty_name), names),
+        purpose=_without(scrub(tx.purpose), names),
+        booking_text=_without(scrub(tx.booking_text), names),
+        iban_last4=masked[-4:] if masked else None,
+        account_kind=line.account_kind,
+        similar=[
+            HouseholdSimilar(_without(scrub(name), names), categories)
+            for name, categories in _similar_private(conn, line)
+        ],
+    )
+
+
+def _similar_private(conn: Connection, line: Line, limit: int = 5) -> list[tuple[str, list[str]]]:
+    """The newest confirmed answers of private accounts for the same counterparty (by IBAN
+    hash, else by name), as (name, categories)."""
+    t = transaction_table.c
+    if line.counterparty_iban_hmac is not None:
+        same = t.counterparty_iban_hmac == line.counterparty_iban_hmac
+    elif line.tx.counterparty_name:
+        same = func.lower(t.counterparty_name) == line.tx.counterparty_name.lower()
+    else:
+        return []
+    rows = conn.execute(
+        select(t.id, t.counterparty_name, allocation_table.c.category)
+        .join(allocation_table, allocation_table.c.transaction_id == t.id)
+        .join(account_table, account_table.c.id == t.account_id)
+        .where(
+            same,
+            t.id != line.tx.id,
+            account_table.c.purpose == AccountPurpose.PRIVATE.value,
+            allocation_table.c.status == AllocationStatus.CONFIRMED.value,
+        )
+        .order_by(t.booking_date.desc(), t.id, allocation_table.c.category)
+    ).all()
+    by_tx: dict[UUID, tuple[str, list[str]]] = {}
+    for row in rows:
+        if row.id not in by_tx:
+            if len(by_tx) == limit:
+                break
+            by_tx[row.id] = (row.counterparty_name or "", [])
+        by_tx[row.id][1].append(row.category)
+    return list(by_tx.values())
 
 
 TENANT_PLACEHOLDER = "[Mieter]"

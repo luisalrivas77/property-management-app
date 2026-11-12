@@ -6467,6 +6467,35 @@
         }
       }
     },
+    "/api/workspace/settings/ai-consent": {
+      "post": {
+        "summary": "Workspace Ai Consent",
+        "description": "The signed-in member's own consent to `ai_private_accounts` (phase 6 D168); the switch\ntakes effect once two members have consented since it was switched on.",
+        "operationId": "workspace_ai_consent_api_workspace_settings_ai_consent_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceSettings"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/auth/enroll/options": {
       "post": {
         "tags": [
@@ -24534,6 +24563,19 @@
             "title": "Ai Private Accounts",
             "default": false
           },
+          "ai_private_accounts_consented_by": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Ai Private Accounts Consented By"
+          },
+          "ai_private_accounts_active": {
+            "type": "boolean",
+            "title": "Ai Private Accounts Active",
+            "default": false
+          },
           "reminder_emails_available": {
             "type": "boolean",
             "title": "Reminder Emails Available",
@@ -24563,6 +24605,10 @@
           "reminder_emails": {
             "type": "boolean",
             "title": "Reminder Emails"
+          },
+          "ai_private_accounts": {
+            "type": "boolean",
+            "title": "Ai Private Accounts"
           }
         },
         "additionalProperties": false,
