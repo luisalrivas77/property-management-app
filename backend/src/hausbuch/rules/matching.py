@@ -393,15 +393,29 @@ def infer_rule(
 
     Phase 6 D160: on a private account a line without an IBAN may become a name-pattern rule
     (_name_rule; `names` are the account's confirmed lines it is checked against; it raises
-    rule.too_broad or rule.conflicts). A private line with an IBAN learns as before, but only
-    for learnable household codes (the same limits as a name rule)."""
+    rule.too_broad or rule.conflicts). A private line with an IBAN learns the same one-category
+    rule on its IBAN, under the same limits; a tenant's or a lender's IBAN included, since a
+    household rule never hits a rental line (rule_answer drops a hit its account does not take)
+    and that rule is D158's "the counterparty is also a private one"."""
     if tx.amount == 0:
         return None
     if context.account_purpose is AccountPurpose.PRIVATE:
         if tx.counterparty_iban_hmac is None:
             return _name_rule(tx, confirmed, names)
-        if not all(_learnable_household(a.category) for a in confirmed.allocations):
+        if len(confirmed.allocations) != 1:
             return None
+        (only,) = confirmed.allocations
+        if not _learnable_household(only.category):
+            return None
+        return MatchingRuleCreate(
+            matcher=RuleMatcher(
+                counterparty_iban_hmac=tx.counterparty_iban_hmac,
+                amount_sign="credit" if tx.amount > 0 else "debit",
+            ),
+            split_method=SplitMethod.SINGLE_CATEGORY,
+            category=only.category,
+            recurring=only.recurring,
+        )
     if tx.counterparty_iban_hmac is None:
         return None
     allocs = confirmed.allocations
@@ -953,6 +967,103 @@ def _name_rule(
         category=only.category,
         recurring=only.recurring,
     )
+
+
+# D158's question for a private line whose counterparty the rental account's matchers own.
+TENANT_QUESTION = "Diese Zahlung kommt von einem Mieter: gehört sie zum Mietobjekt?"
+LENDER_QUESTION = "Diese Zahlung geht an die Bank des Darlehens: gehört sie zum Mietobjekt?"
+
+
+def rental_counterparty_question(
+    tx: MatchTransaction, context: MatchContext
+) -> AllocationSet | None:
+    """D158: a private line from or to a tenant's IBAN or a loan's account is not booked as rent
+    or annuity (the rental matchers never run on a private account); it goes to review with the
+    question whether it belongs to the property, proposing hh_other_income (a credit) or
+    hh_property_cost (a debit) with the property, at GUARDED_CONFIDENCE so it never
+    auto-confirms. The model never sees such a line. None for any other counterparty, or one
+    that two properties share (no property to name)."""
+    hmac = tx.counterparty_iban_hmac
+    if hmac is None or tx.amount == 0:
+        return None
+    tenant = {t.property_id for t in context.tenancies if hmac in t.tenant_iban_hmacs}
+    lender = {loan.property_id for loan in context.loans if hmac == loan.account_iban_hmac}
+    if tenant:
+        properties, question, method = tenant, TENANT_QUESTION, AllocationMethod.MATCHER_RENT
+    elif lender:
+        properties, question, method = lender, LENDER_QUESTION, AllocationMethod.MATCHER_LOAN
+    else:
+        return None
+    if len(properties) != 1:
+        return None
+    (property_id,) = properties
+    category = (
+        AllocationCategory.HH_OTHER_INCOME if tx.amount > 0 else AllocationCategory.HH_PROPERTY_COST
+    )
+    draft = _draft(
+        tx.amount,
+        category,
+        service_period(tx.purpose, tx.booking_date, False),
+        False,
+        property_id=property_id,
+    )
+    return AllocationSet(
+        transaction_id=tx.id,
+        method=method,
+        confidence=GUARDED_CONFIDENCE,
+        allocations=[draft],
+        reasoning=(
+            "Das Gegenkonto gehört zum Mietobjekt; auf einem privaten Konto wird daraus "
+            "keine Miete oder Rate gebucht."
+        ),
+        question=question,
+    )
+
+
+def _allowed_set(found: AllocationSet | None, context: MatchContext) -> AllocationSet | None:
+    """D159: an answer whose categories the line's account does not take is no answer (a
+    property bill matched on a private line is D161's path, phase 6 step 2)."""
+    if found is None:
+        return None
+    allowed = allowed_categories(context.account_purpose)
+    return found if all(a.category in allowed for a in found.allocations) else None
+
+
+_RENTAL_ORDER: tuple[Callable[[MatchTransaction, MatchContext], AllocationSet | None], ...] = (
+    match_owner_transfer,
+    match_rent,
+    match_loan,
+    match_document,
+)
+# D158 on a private account: the transfer matcher (D162, phase 6 step 2) comes first once it is
+# built; then the document match; then the tenant / lender question before the model.
+_PRIVATE_ORDER: tuple[Callable[[MatchTransaction, MatchContext], AllocationSet | None], ...] = (
+    match_document,
+    rental_counterparty_question,
+)
+
+
+def deterministic_answer(
+    rules: Sequence[MatchingRule],
+    tx: MatchTransaction,
+    context: MatchContext,
+    history: Sequence[HistoryLine] = (),
+) -> AllocationSet | None:
+    """The deterministic order per account purpose (D158; fixture matching_order.yaml), before
+    the model. Rental: learned rules -> owner transfer -> rent -> loan -> document (Hausgeld is
+    a by_wirtschaftsplan rule), as in phase 2. Private: learned rules -> document -> D158's
+    question; the rent, loan, Hausgeld and owner-transfer matchers never run there. A standing
+    rule hit (confidence 1) wins at once; a rule's near-miss proposal (D49) only when no
+    matcher answers. Every answer is one the account's purpose takes (D159)."""
+    found = rule_answer(rules, tx, context, history)
+    if found is not None and found.confidence == EXACT:
+        return found
+    order = _PRIVATE_ORDER if context.account_purpose is AccountPurpose.PRIVATE else _RENTAL_ORDER
+    for matcher in order:
+        answer = _allowed_set(matcher(tx, context), context)
+        if answer is not None:
+            return answer
+    return found
 
 
 def match_transfer(tx: MatchTransaction, context: MatchContext) -> AllocationSet | None:

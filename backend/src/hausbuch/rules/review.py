@@ -25,6 +25,7 @@ A user's set is confirmed by the user and never routed: route refuses it.
 from decimal import Decimal
 from types import MappingProxyType
 
+from hausbuch.rules.errors import ROUTING_AI_DISABLED
 from hausbuch.schemas.allocation import AllocationCategory as C
 from hausbuch.schemas.allocation import (
     AllocationMethod,
@@ -33,7 +34,7 @@ from hausbuch.schemas.allocation import (
     RoutingDecision,
     RoutingInput,
 )
-from hausbuch.schemas.enums import ImportStatus
+from hausbuch.schemas.enums import AccountPurpose, ImportStatus
 
 RULE_HIT = "routing.rule_hit"
 DETERMINISTIC = "routing.deterministic"
@@ -171,6 +172,15 @@ _MATCHERS = frozenset(
 
 def threshold(category: C) -> Decimal | None:
     return THRESHOLDS[category]
+
+
+def no_match_reason(purpose: AccountPurpose, ai_private_accounts: bool) -> str:
+    """Why a line nothing deterministic explains waits in review without a model answer: on a
+    private account with the switch ai_private_accounts off it never reaches the model, so the
+    card offers every household code (routing.ai_disabled, phase 6 D158, D168)."""
+    if purpose is AccountPurpose.PRIVATE and not ai_private_accounts:
+        return ROUTING_AI_DISABLED
+    return NO_MATCH
 
 
 def route(item: RoutingInput) -> Routing:
