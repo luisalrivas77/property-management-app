@@ -898,6 +898,8 @@ choice of 10 Nov 2026 over a separate account. The password is a container secre
 database column, a log line or an event; revoking it on Google's page stops the poll at
 once.
 
+**Parked 12 Nov 2026.** The household's own Gmail account cannot create an app password, so this step was not done. To set it up later, create a separate Gmail account used only for Hausbuch, do points 1–3 there, and forward documents to its token address from a member's own address (the sender check is unchanged).
+
 1. **Google account**: turn on 2-Step Verification, by a method other than security keys
    only (an app password is not offered under Advanced Protection). Then Security →
    2-Step Verification → **App passwords**: create one named `Hausbuch` and copy it once.
