@@ -120,6 +120,8 @@ def _window(facts: SyncWindowFacts, today: date) -> SyncWindow:
     first_storable = facts.opening_balance_on + timedelta(days=1)  # importer: > anchor only
     if facts.last_booking_on is None:
         start = first_storable
+        if facts.imports_through is not None:  # phase 6 D173 (4): after the imported history
+            start = max(start, facts.imports_through + timedelta(days=1))
     else:
         start = max(facts.last_booking_on - timedelta(days=14), first_storable)
     if start > today:
@@ -141,6 +143,9 @@ class SyncWindowExpect(Schema):
 
 
 class SyncWindowCase(Lenient):
+    # A case the rule does not meet yet, naming the step that makes it pass (phase 6 D173 (4)
+    # waits for phase 6 step 3); the rule test skips it until then.
+    pending: str | None = None
     today: date
     facts: SyncWindowFacts
     expect: SyncWindowExpect

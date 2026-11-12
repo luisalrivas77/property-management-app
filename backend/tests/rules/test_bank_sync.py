@@ -26,6 +26,8 @@ S, V, T = SyncStatus, SyncEvent, SyncTrigger
 
 @pytest.mark.parametrize("case", load("sync_window").cases, ids=lambda c: c.id)
 def test_request_window_matches_the_fixture(case):
+    if case.pending:
+        pytest.skip(case.pending)
     if case.expect.error is not None:
         with pytest.raises(RuleError) as raised:
             rules.request_window(case.facts, case.today)
