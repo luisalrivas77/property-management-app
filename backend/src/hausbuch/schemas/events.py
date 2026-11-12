@@ -33,7 +33,15 @@ from .allocation import (
     SplitMethod,
 )
 from .bank import StatementFormat
-from .bank_sync import PRIMARY_SLOT, BankCode, CredentialSlot, LoginMasked, SyncStatus, SyncTrigger
+from .bank_sync import (
+    PRIMARY_SLOT,
+    BankCode,
+    BankParameters,
+    CredentialSlot,
+    LoginMasked,
+    SyncStatus,
+    SyncTrigger,
+)
 from .common import (
     Area,
     BuildingShare,
@@ -751,7 +759,14 @@ class BankConnectionRecorded(Schema):
     auto_sync: bool
     fetch_statements: bool = False  # D154 (7); absent from events written before 0024
     changed: list[
-        Literal["auto_sync", "fetch_statements", "fints_url", "login_name", "tan_mechanism"]
+        Literal[
+            "auto_sync",
+            "credential_slot",
+            "fetch_statements",
+            "fints_url",
+            "login_name",
+            "tan_mechanism",
+        ]
     ] = Field(default_factory=list)
 
 
@@ -764,6 +779,15 @@ class BankStatementFetched(Schema):
     document_id: UUID
     year: int = Field(ge=1000, le=9999)
     number: int = Field(ge=1, le=99999)
+
+
+class BankParametersRead(BankParameters):
+    """account.bank_parameters_read (phase 6 D173 (7)): what the bank's parameters said in a
+    run, recorded when they differ from the connection's last record. The bank's public
+    parameters only: never a login, system id, IBAN, PIN or product id."""
+
+    connection_id: UUID
+    sync_id: UUID
 
 
 class BankSyncStarted(Schema):
@@ -1110,6 +1134,7 @@ class EventType(StrEnum):
     ACCOUNT_SYNC_COMPLETED = "account.sync_completed"
     ACCOUNT_SYNC_FAILED = "account.sync_failed"
     ACCOUNT_STATEMENT_FETCHED = "account.statement_fetched"  # D154, step 2b
+    ACCOUNT_BANK_PARAMETERS_READ = "account.bank_parameters_read"  # phase 6 D173 (7), step 3
     # Phase 6
     ACCOUNT_KIND_SET = "account.kind_set"
     ACCOUNT_OWNERSHIP_SET = "account.ownership_set"
@@ -1282,6 +1307,9 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     E.ACCOUNT_SYNC_FAILED: EventSpec(BankSyncFailed, "forbidden", "Bank sync failed"),
     E.ACCOUNT_STATEMENT_FETCHED: EventSpec(
         BankStatementFetched, "forbidden", "Bank PDF statement fetched (FinTS)"
+    ),
+    E.ACCOUNT_BANK_PARAMETERS_READ: EventSpec(
+        BankParametersRead, "forbidden", "Bank parameters read (FinTS)"
     ),
     # Phase 6
     E.ACCOUNT_KIND_SET: EventSpec(AccountKindSet, "forbidden", "Account kind or purpose set"),

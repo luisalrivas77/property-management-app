@@ -151,7 +151,7 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "bank.rate_limited": "Höchstens vier Abrufe pro Stunde von Hand. Bitte etwas später noch einmal.",
   "bank.sync_running": "Für dieses Konto läuft schon ein Abruf.",
   "bank.window_invalid":
-    "Der Abruf hätte nach heute begonnen: der Anfangssaldo des Kontos liegt heute oder später. Den Stichtag im Konto prüfen.",
+    "Der Abruf hätte nach heute begonnen. Entweder liegt der Anfangssaldo des Kontos heute oder später: dann den Stichtag im Konto prüfen. Oder die hochgeladenen Kontoauszüge reichen schon bis heute: dann morgen erneut abrufen.",
   "bank.url_not_https": "Die FinTS-Adresse muss mit https:// beginnen.",
   "bank.tan_not_decoupled":
     "Die Bank bietet für diesen Zugang keine Freigabe per App (pushTAN) an. Im Online-Banking S-pushTAN einrichten.",
@@ -164,6 +164,12 @@ export const RULE_CODE_TEXT: Record<string, string> = {
     "Die Bank hat den Abruf abgelehnt: wegen Anmeldename oder PIN, einer in der App abgelehnten Freigabe oder der ersten Einrichtung; der Code der Bank steht unter Zu prüfen. Nicht einfach erneut abrufen: nach drei falschen PINs sperrt die Bank den Zugang.",
   "bank.unsupported_format": "Die Bank liefert Umsätze in keinem Format, das Hausbuch lesen kann. Kontoauszüge weiter als Datei hochladen.",
   "bank.failed": "Der Abruf ist an einem unerwarteten Fehler gescheitert. Erneut abrufen; hält es an, als Datei hochladen.",
+  // one PIN per online-banking login, a private account's history first, DKB's daily fetch (phase-6.md D163, D173)
+  "bank.pin_missing":
+    "Für den Zugang dieses Kontos ist keine PIN auf dem Server hinterlegt. In der Scaleway-Konsole beim API-Container die geheime Umgebungsvariable anlegen, die beim Bankabruf unter „PIN-Variable“ steht, und den Container neu bereitstellen (Runbook Schritt 17).",
+  "bank.history_missing": "Laden Sie zuerst den Kontoauszug-Export für 2026 hoch, dann verbinden Sie das Konto.",
+  "bank.auto_sync_waits":
+    "Der tägliche Abruf lässt sich erst einschalten, wenn zwei Abrufe von Hand nacheinander ohne Freigabe in der DKB-App durchgelaufen sind; sonst käme jeden Morgen eine Anfrage aufs Handy.",
   "tax_export.too_large":
     "Die Belege des Jahres sind zusammen größer als 100 MiB. Das Archiv bitte von Hand aufteilen; die Ausfüllhilfe geht weiterhin.",
   "tax_export.failed": "Der Export ist fehlgeschlagen. Bitte noch einmal versuchen.",

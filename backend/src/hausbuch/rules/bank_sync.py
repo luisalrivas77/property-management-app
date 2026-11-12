@@ -21,17 +21,23 @@ tests/fixture_models_phase5.py, whose reference functions these must equal).
   the job and the card share.
 - `BankAnswer`, `deciding_code`, `redact_bank_text`: the bank's answers and which of them says
   why a run was refused (D151).
+- Phase 6 (docs/phases/phase-6.md D163, D173; tests/fixtures/phase6/fints_slots.yaml):
+  `pin_variable`, `check_slot` (one container secret per credential slot), `approval_text`,
+  `is_dkb` and `auto_sync_allowed` (DKB's approval in its app, and its daily fetch only after
+  two manual syncs without an approval); `request_window` reads `imports_through` (a first
+  sync) and `unreferenced_through` (the overlap of a later one).
 """
 
 import io
 import re
 import zipfile
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from hausbuch.schemas.bank_sync import (
+    PRIMARY_SLOT,
     SyncEvent,
     SyncStatus,
     SyncTransition,
@@ -58,14 +64,25 @@ STALE_GRACE_S = 300
 
 def request_window(facts: SyncWindowFacts, today: date) -> SyncWindow:
     """[last_booking_on − 14 days, today] after a successful sync, else from the day after the
-    anchor (phase 2's reconcile refuses a line on the anchor day), never before it. A window
-    longer than 90 days may need a pushTAN approval (§3). Raises bank.window_invalid when the
-    start would be after today (an anchor dated today or later)."""
+    anchor (phase 2's reconcile refuses a line on the anchor day), never before it. A first
+    sync also starts after the account's imported history (phase 6 D173 (4)): the day after
+    `imports_through`, the last reconciled import's last booking day, so a CSV history and a
+    FinTS camt that share no bank reference never overlap; after a success it is not read.
+    After a success the 14-day overlap is bounded below by `unreferenced_through`, the end of
+    the history from files without the bank's reference (a CSV, a PDF): the window starts
+    no earlier than the day after it, for the same reason; a camt-only history leaves the
+    overlap as it was. A window longer than 90 days may need a pushTAN approval (§3). Raises
+    bank.window_invalid when the start would be after today (an anchor or an imported
+    history reaching today or later)."""
     first_storable = facts.opening_balance_on + timedelta(days=1)
     if facts.last_booking_on is None:
         start = first_storable
+        if facts.imports_through is not None:
+            start = max(start, facts.imports_through + timedelta(days=1))
     else:
         start = max(facts.last_booking_on - timedelta(days=OVERLAP_DAYS), first_storable)
+        if facts.unreferenced_through is not None:
+            start = max(start, facts.unreferenced_through + timedelta(days=1))
     if start > today:
         raise RuleError(E.BANK_WINDOW_INVALID, "the sync window would start after today")
     return SyncWindow(
@@ -333,9 +350,61 @@ def product_id_usable(product_id: str | None) -> bool:
 # --- Phase 6: named credential slots (D163, fixtures/phase6/fints_slots.yaml; step 3) -------
 
 PIN_VARIABLE = "HAUSBUCH_FINTS_PIN"  # the slot `primary` (phase 5's one PIN, unchanged)
+_SLOT = re.compile(r"^[a-z][a-z0-9_]{0,31}$")  # schemas.bank_sync.CredentialSlot, the CHECK
+
+
+def valid_slot(slot: object) -> bool:
+    """A credential slot's name under D163's pattern (migration 0025's CHECK)."""
+    return isinstance(slot, str) and _SLOT.fullmatch(slot) is not None
 
 
 def pin_variable(slot: str) -> str:
     """The container secret holding a slot's PIN: `primary` -> HAUSBUCH_FINTS_PIN, any other
-    valid slot -> HAUSBUCH_FINTS_PIN_<SLOT upper-cased>; an invalid name is refused."""
-    raise NotImplementedError("phase 6 step 3 (FinTS connections per login)")
+    valid slot -> HAUSBUCH_FINTS_PIN_<SLOT upper-cased>. An invalid name is refused with a
+    ValueError (D163 names no code: the schema's pattern refuses it at the API, the CHECK in
+    the database); the message never echoes the name."""
+    if not valid_slot(slot):
+        raise ValueError("a credential slot is lower-case letters, digits and _, 1-32 long")
+    return PIN_VARIABLE if slot == PRIMARY_SLOT else f"{PIN_VARIABLE}_{slot.upper()}"
+
+
+def check_slot(configured: Collection[str], slot: str) -> None:
+    """The sync's check before any dialog (D163): the connection's slot must have its secret.
+    `configured` holds the names of the slots whose variable is set (never a PIN). Raises
+    bank.pin_missing, whose message names the variable to set (a name, not a secret)."""
+    if slot not in configured:
+        raise RuleError(E.BANK_PIN_MISSING, f"the container secret {pin_variable(slot)} is not set")
+
+
+# --- Phase 6: DKB (D173 (1), (5); fixtures/phase6/fints_slots.yaml; step 3) -----------------
+
+# The card's approval text by the bank's name as its parameters (BPD, HIBPA) state it, never
+# typed by a person. A bank not listed keeps phase 5's S-pushTAN text (None).
+DKB_APPROVAL_TEXT = "Jetzt in der DKB-App freigeben"
+CLEAN_SYNCS_FOR_AUTO = 2  # D173 (5): two consecutive manual syncs without an approval
+
+
+def is_dkb(bank_name: str | None) -> bool:
+    """The BPD's bank name is DKB's: it starts with "DKB", or it contains "DEUTSCHE
+    KREDITBANK" once its spaces are collapsed and it is upper-cased. Both spellings are
+    accepted until the first real dialog answers which one the BPD carries (D173 (7))."""
+    if bank_name is None:
+        return False
+    normalised = " ".join(bank_name.split()).upper()
+    return normalised.startswith("DKB") or "DEUTSCHE KREDITBANK" in normalised
+
+
+def approval_text(bank_name: str | None) -> str | None:
+    """The card's approval sentence for a bank (D173 (1)); None keeps the phase 5 text."""
+    return DKB_APPROVAL_TEXT if is_dkb(bank_name) else None
+
+
+def auto_sync_allowed(bank_name: str | None, manual_syncs: Sequence[bool]) -> bool:
+    """D173 (5): a DKB connection's daily fetch may be on only after its last two manual syncs
+    both ran without an approval. `manual_syncs` lists, oldest first, whether each finished
+    manual sync needed one. Any other bank, and a connection whose bank's name is not known
+    yet (no sync has read its parameters), is unchanged: allowed."""
+    if not is_dkb(bank_name):
+        return True
+    last = list(manual_syncs)[-CLEAN_SYNCS_FOR_AUTO:]
+    return len(last) == CLEAN_SYNCS_FOR_AUTO and not any(last)

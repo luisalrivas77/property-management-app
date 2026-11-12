@@ -127,6 +127,9 @@ class BankConnectionPatch(Patch):
     fetch_statements: bool = Field(default=None)  # D154 (7)
     fints_url: FintsUrl = Field(default=None)
     login_name: LoginName = Field(default=None)
+    # Phase 6 D163: another slot names another container secret; the stored client state
+    # stays (its MAC covers the login and the URL, not the PIN).
+    credential_slot: CredentialSlot = Field(default=None)
 
     @field_validator("fints_url")
     @classmethod
@@ -153,6 +156,43 @@ class BankConnection(MutableRecord):
     # stored (D141).
     last_booking_on: date | None = None
     state_present: bool = False  # client_data stored (and MAC'd)
+    # Phase 6 step 3 (D163, D173): the container secret's name for the slot (never its value);
+    # the bank's name from its parameters (HIBPA) once a run has read them; the text the
+    # Bankabruf card shows while it waits for an approval; and whether the daily fetch may be
+    # switched on (a DKB connection waits for two manual syncs without an approval).
+    credential_variable: str = Field(default="HAUSBUCH_FINTS_PIN", max_length=60)
+    bank_name: str | None = Field(default=None, max_length=60)
+    approval_text: str = Field(default="In der S-pushTAN-App freigeben", max_length=100)
+    auto_sync_allowed: bool = True
+
+
+class BankParameters(Schema):
+    """What the bank's parameters (BPD) say about the connection (phase 6 D173 (7), §14.1):
+    read by the facade after the dialog's bootstrap, recorded on the connection when they
+    change, logged. Public parameters of the bank only: no login, system id, IBAN, PIN or
+    product id."""
+
+    bank_name: str | None = Field(default=None, max_length=60)  # HIBPA's Kreditinstitutsname
+    bpd_version: int | None = Field(default=None, ge=0)
+    camt_formats: list[Annotated[str, Field(max_length=100)]] = Field(
+        default_factory=list, max_length=20
+    )  # HICAZS, as the bank spells them
+    camt_readable: bool = False  # a camt.052 or camt.053 the import reads
+    statement_pdf_by_number: bool = False  # HIEKPS v1, Kontoauszugsnummer erlaubt (D154)
+    # The decoupled security functions HITANS offers (e.g. "946") and the HITANS versions.
+    decoupled_methods: list[Annotated[str, Field(max_length=8)]] = Field(
+        default_factory=list, max_length=20
+    )
+    approval_versions: list[Annotated[int, Field(ge=1, le=99)]] = Field(
+        default_factory=list, max_length=10
+    )
+
+
+class BankCredentialSlots(Schema):
+    """GET /bank-credential-slots (phase 6 D163): the slots whose container secret is set,
+    names only, so the Bankabruf card can say which variable is still missing."""
+
+    slots: list[CredentialSlot] = Field(default_factory=list)
 
 
 class BankSync(MutableRecord):
@@ -190,6 +230,11 @@ class SyncWindowFacts(Schema):
     # without any); a first sync starts after it, so a CSV history and a FinTS camt that
     # share no bank reference never overlap. Built by phase 6 step 3.
     imports_through: date | None = None
+    # The same over the reconciled imports whose lines carry no bank reference (every format
+    # but camt: a CSV, a DKB CSV, a PDF; a FinTS sync's own import is camt), None without
+    # any. After a success the 14-day overlap never reaches back into that history, which
+    # dedup could not tell from the camt's lines (D173 (4), amended after the step 3 review).
+    unreferenced_through: date | None = None
 
 
 class SyncWindow(Schema):

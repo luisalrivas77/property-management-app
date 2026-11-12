@@ -181,3 +181,6 @@ PRICE_SOURCE_FAILED = "price.source_failed"  # an issuer's NAV missing seven day
 VALUATION_STALE_PRICE = "valuation.stale_price"  # the price is older than 7 days (D167)
 VALUATION_NOT_VALUED = "valuation.not_valued"  # past the asset's last reconciled date
 BANK_PIN_MISSING = "bank.pin_missing"  # the connection's slot has no secret (D163)
+# Phase 6 step 3 (FinTS connections per login, DKB)
+BANK_HISTORY_MISSING = "bank.history_missing"  # a private account without a reconciled import
+BANK_AUTO_SYNC_WAITS = "bank.auto_sync_waits"  # DKB: two manual syncs without approval first

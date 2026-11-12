@@ -123,6 +123,7 @@ def test_the_facade_has_no_write_method():
         "statements_offered",
         "statement_pdf",
         "reopen",
+        "bank_parameters",  # phase 6 D173 (7): a read of the BPD the dialog already holds
     }
 
 
@@ -751,6 +752,7 @@ _SESSION_CALLS = (
     "statement_pdf_offered",
     "get_statement_pdf",
     "restart_dialog",
+    "bank_parameters",
 )
 
 
@@ -1217,3 +1219,90 @@ def test_reopening_without_a_tan_keeps_the_dialog():
     assert client.calls[-1] == "reopen"
     session.close()
     assert client.calls[-1] == "close"
+
+
+# --- The bank's parameters for the record (phase 6 D173 (7)) --------------------------------
+
+
+class _Bpd:
+    """Just the two lookups the client uses, over a list of segments (real or stand-ins)."""
+
+    def __init__(self, *segments):
+        self.segments = segments
+
+    def find_segments(self, kind):
+        return [s for s in self.segments if str(s.header.type) == kind]
+
+    def find_segment_first(self, kind):
+        return next(iter(self.find_segments(kind)), None)
+
+
+def _hitans(version: int, *methods: tuple[str, bool]) -> SimpleNamespace:
+    return SimpleNamespace(
+        header=SimpleNamespace(type="HITANS", version=version),
+        parameter=SimpleNamespace(
+            twostep_parameters=[
+                SimpleNamespace(
+                    security_function=function,
+                    name="Freigabe",
+                    decoupled_max_poll_number=60 if decoupled else None,
+                )
+                for function, decoupled in methods
+            ]
+        ),
+    )
+
+
+def _hicazs(*formats: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        header=SimpleNamespace(type="HICAZS", version=1),
+        parameter=SimpleNamespace(supported_camt_formats=list(formats)),
+    )
+
+
+def test_the_client_reads_the_bank_parameters_for_the_record():
+    client = _client()
+    client.bpa = SimpleNamespace(bank_name="  DKB   AG ", bpd_version=42)
+    client.bpd = _Bpd(
+        _hitans(6, (CHIPTAN, False), (DECOUPLED, True)),
+        _hitans(7, (DECOUPLED, True)),
+        _hicazs("urn:iso:std:iso:20022:tech:xsd:camt.052.001.08"),
+        _statement_parameters(),
+    )
+    parameters = client.bank_parameters()
+    assert parameters is not None
+    assert parameters.model_dump() == {
+        "bank_name": "DKB AG",
+        "bpd_version": 42,
+        "camt_formats": ["urn:iso:std:iso:20022:tech:xsd:camt.052.001.08"],
+        "camt_readable": True,
+        "statement_pdf_by_number": True,
+        "decoupled_methods": [DECOUPLED],
+        "approval_versions": [6, 7],
+    }
+    for secret in SECRETS:
+        assert secret not in parameters.model_dump_json()
+
+
+def test_bank_parameters_without_camt_or_hiekps_say_so():
+    client = _client()
+    client.bpa = SimpleNamespace(bank_name="DKB AG", bpd_version=1)
+    client.bpd = _Bpd(_hitans(7, (CHIPTAN, False)), _hicazs("camt.054.001.02"))
+    parameters = client.bank_parameters()
+    assert parameters is not None
+    assert (parameters.camt_readable, parameters.statement_pdf_by_number) == (False, False)
+    assert parameters.decoupled_methods == []
+
+
+def test_no_parameters_before_any_bpd():
+    assert _client().bank_parameters() is None
+
+
+def test_the_session_never_fails_on_the_parameters():
+    session = F.FintsSession(
+        FakeClient(Script(parameters_fail=True), {}), tan_mechanism=None, restored=False
+    )
+    assert session.bank_parameters() is None
+    session = F.FintsSession(FakeClient(Script(), {}), tan_mechanism=None, restored=False)
+    read = session.bank_parameters()
+    assert read is not None and read.bank_name == "Testbank"

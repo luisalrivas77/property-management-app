@@ -530,6 +530,7 @@ The last two columns are your computer's `~/.hausbuch-owner.env`, not anything a
 | `HAUSBUCH_ANTHROPIC_API_KEY` | **secret** (step 13) | — | — | — |
 | `HAUSBUCH_AI_ENABLED` | `true` once step 13 is done (default `false`) | — | — | — |
 | `HAUSBUCH_FINTS_PIN` | **secret** (step 14), optional | — | — | — |
+| `HAUSBUCH_FINTS_PIN_<NAME>` | **secret** (step 17), optional, one per online-banking login | — | — | — |
 | `HAUSBUCH_FINTS_PRODUCT_ID` | **secret** (step 14), optional | — | — | — |
 | `HAUSBUCH_INBOX_IMAP_USER` | **secret** (step 16), optional | — | — | — |
 | `HAUSBUCH_INBOX_IMAP_PASSWORD` | **secret** (step 16), optional | — | — | — |
@@ -700,8 +701,9 @@ values; it is not a step, and the container never reads it.
    registered products, sent by email when it changes). It is how you learn that the
    Sparkasse's FinTS address moved before a sync fails with `bank.unreachable`.
 3. **API container** (step 10): in **one update**, add `HAUSBUCH_FINTS_PIN` and
-   `HAUSBUCH_FINTS_PRODUCT_ID` as **secret environment variables**, then **redeploy**. Both
-   or neither: the container refuses to start with a PIN and no product id, or the reverse.
+   `HAUSBUCH_FINTS_PRODUCT_ID` as **secret environment variables**, then **redeploy**. The
+   product id and at least one PIN come together: the container refuses to start with a PIN
+   (this one, or another login's from step 17) and no product id, or the reverse.
    A product id that is longer than 25 characters does not stop the container; every sync
    fails with `bank.not_configured` instead. `HAUSBUCH_RUN_WORKER` stays `true`: the sync is
    a job of this container's worker.
@@ -790,8 +792,9 @@ too. Changing the FinTS address or the Anmeldename on the page (Zugang ändern) 
 stored connection, so the next sync asks for an approval again; so does a new
 `HAUSBUCH_SESSION_KEY`.
 
-**To switch the sync off**, remove both variables in one update and redeploy: every start
-is then refused with `bank.not_configured` and the bank is never contacted.
+**To switch the sync off**, remove the product id and every PIN variable (this one and
+step 17's) in one update and redeploy: every start is then refused with
+`bank.not_configured` and the bank is never contacted. To stop one login only, see step 17.
 
 ## Step 15: Reminder emails (phase 5, D123)
 
@@ -967,6 +970,104 @@ revoke the app password.
 **Tenant documents are better uploaded than forwarded.** A forwarded lease meets the
 `ai_tenant_documents` switch exactly as an upload does (D16), but it has passed through
 Google first.
+
+## Step 17: One PIN per online-banking login (phase 6, D163, D173)
+
+From phase 6 the household's private accounts can be fetched over FinTS too, not only the
+rental account. Each online-banking **login** has its own PIN, so each login gets its own
+secret environment variable in the API container. The Bankabruf connection of an account
+names its login by a short **name of the access** („Name des Zugangs“, the access's name;
+in the code: the credential slot), and the app reads that login's PIN from the variable of
+that name. No migration is needed (the column came with `0025`).
+
+**Nothing changes for the rental account.** Its connection has the name `primary`, whose
+PIN stays in `HAUSBUCH_FINTS_PIN` (step 14). The product id is one for all logins:
+`HAUSBUCH_FINTS_PRODUCT_ID` (step 14) serves every connection.
+
+**The naming rule.** A name is lower-case letters, digits and `_`, starts with a letter and
+has at most 32 characters, for example `sparkasse_b` or `dkb`. Its variable is
+`HAUSBUCH_FINTS_PIN_` followed by the name in capitals:
+
+| Name des Zugangs (access name) | Secret environment variable of `hausbuch-api` |
+| --- | --- |
+| `primary` | `HAUSBUCH_FINTS_PIN` (step 14) |
+| `sparkasse_b` | `HAUSBUCH_FINTS_PIN_SPARKASSE_B` |
+| `dkb` | `HAUSBUCH_FINTS_PIN_DKB` |
+
+Several accounts under one login use the same name and so the same variable. A variable
+whose name breaks the rule (a dash, lower-case letters, more than 32 characters after
+`HAUSBUCH_FINTS_PIN_`) and `HAUSBUCH_FINTS_PIN_PRIMARY` are **ignored without an error**,
+so always check the card afterwards (point 4): it says whether the server has the PIN.
+
+**For each private account, in this order:**
+
+1. **Hausbuch app** (Konten › the account): upload the account's statement export for 2026
+   and confirm its closing balance, until the import is reconciled. Only then can the
+   account get a Bankabruf connection; before, „Bankabruf einrichten“ (set up bank sync)
+   answers „Laden Sie zuerst den Kontoauszug-Export für 2026 hoch, dann verbinden Sie das
+   Konto.“ (Upload the 2026 statement export first, then connect the account.) The first
+   sync then starts on the day after the last booking day of that export, so the export
+   and the bank's own files never overlap (D173 (4)). For a DKB account the export is the
+   CSV from the DKB web banking („Umsätze exportieren“, export transactions).
+2. **Scaleway console** (console.scaleway.com, project of step 1): Serverless → Containers
+   → namespace `hausbuch` → container `hausbuch-api` → its **Settings** tab, the
+   environment variables section. Add the login's variable from the table above as a
+   **secret** (not a plain variable, which the console would show in clear), with that
+   login's online-banking PIN as its value. Then **Deploy**/redeploy the container (step
+   10's settings stay as they are). If `HAUSBUCH_FINTS_PRODUCT_ID` is not set yet, add it
+   in the same update (step 14, point 3): the container refuses to start with any PIN and
+   no product id.
+3. **Hausbuch app** (Konten › the account › card „Bankabruf“): fill in „BLZ“ (bank code),
+   „FinTS-Adresse“ (FinTS address), „Anmeldename“ (login name) and „Name des Zugangs“
+   (access name, from the table), then press „Bankabruf einrichten“ (set up bank sync).
+4. **Check the card.** The line „PIN-Variable“ (PIN variable) names the variable and says
+   either „auf dem Server gesetzt“ (set on the server) or „noch nicht gesetzt“ (not set
+   yet). The second means point 2 is missing, the name in the console differs from the
+   card's, or the container was not redeployed; a sync would end with „PIN fehlt“ (PIN
+   missing, `bank.pin_missing`), and the card under „Zu prüfen“ (to review) names the
+   variable to add. The page never asks for the PIN and never shows it.
+5. **The first sync**: press „Jetzt abrufen“ (fetch now) and approve the request in the
+   bank's app within five minutes: the S-pushTAN app for a Sparkasse, the DKB app for DKB
+   (the card then says „Jetzt in der DKB-App freigeben“, approve now in the DKB app).
+
+**DKB** (D173). DKB's FinTS address is `https://fints.dkb.de/fints` and its BLZ `12030000`
+(DKB's own FinTS page, read for the phase 6 spec); the login is the Anmeldename of the DKB
+web banking. The approval must be the DKB app (decoupled); a login set up for chipTAN only
+fails with `bank.tan_not_decoupled`. Three things are unknown until the first real
+connection answers them, and that sync's answers are to be recorded in phase-6.md §14.1:
+
+- **Whether DKB delivers camt files.** If not, the sync fails with `bank.unsupported_format`
+  and the card says to keep uploading the CSV export; nothing else breaks (an MT940 reader
+  is designed but not built, Q-O70).
+- **How often DKB asks for an approval.** Reports say at every login. So „Täglich
+  automatisch abrufen“ (fetch daily automatically) stays greyed out for a DKB connection
+  until two manual syncs in a row ran without an approval, and the card says why; otherwise
+  the phone would get a request every morning. If every manual sync needs one, fetch by
+  hand or keep uploading the CSV (Q-O71).
+- **Whether it serves PDF statements by number** (HIEKPS, D154).
+
+**Where the answers are.** Each sync reads the bank's public parameters (the BPD) after the
+first message and logs one INFO line from `hausbuch.jobs.bank_sync`, `bank parameters`, with
+`bank_name`, `bpd_version`, `camt_formats`, `camt_readable`, `statement_pdf_by_number`,
+`decoupled_methods` and `approval_versions`. When they differ from the last ones recorded,
+the account's History also gets the event „Bankparameter (FinTS) gelesen“ (bank parameters
+read) with the same fields; the card's „Bank (laut FinTS)“ (bank according to FinTS) shows
+the name. Neither holds a PIN, login, product id, IBAN or amount. Read the log with
+`scw container container logs <api container id> region=fr-par time-span=1h
+entry-count=1000 -o json` and filter on `bank parameters`. The approval cadence is in the
+card's run list and in History („Bankabruf wartet auf Freigabe“, bank sync waiting for
+approval, once per sync that asked).
+
+**Rotation**: a PIN changed in online banking goes into **that login's** variable the same
+day (Scaleway console as in point 2, then redeploy); every other login is untouched. Three
+wrong PINs lock the login at the bank, so after a `bank.refused` with a PIN code, correct
+the variable before the next try. A new **name** for a connection („Zugang ändern“, change
+access, on the card) keeps the stored connection and only changes which variable the server
+reads; add the new variable first.
+
+**To stop one login's syncs**, untick „Täglich automatisch abrufen“ on each of its accounts,
+then remove its variable and redeploy: every start of those accounts is refused with
+`bank.pin_missing`, and the bank is never contacted. The other logins go on.
 
 ## Checks to run at the first deploy, and record here
 

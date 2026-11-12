@@ -31,7 +31,10 @@ guard) fails the run as bank.failed and is re-raised so the job shows failed in
 Procrastinate too.
 
 Logging: one line per run with the sync id, the outcome, codes and exception class names;
-the camt formats the bank offers at INFO (they answer §16 Q-O34 on the first real run). The
+the camt formats the bank offers at INFO (they answer §16 Q-O34 on the first real run), and
+the bank's public parameters once per run (phase 6 D173 (7): its name, the camt formats,
+HIEKPS, the decoupled approval methods), recorded on the account when they change. The PIN
+is the one of the connection's credential slot (phase 6 D163). The
 facade adds one trace record per FinTS exchange, tagged with the sync id (D148).
 Never the PIN, the product id, the login, an IBAN, an amount or any text from the bank.
 """
@@ -140,10 +143,13 @@ def run_bank_sync(
     run = _Run(plan, log=log)
     session: FintsSession | None = None
     try:
+        pin = deps.settings.fints_pins.get(plan.credential_slot)
+        if not pin:  # begin_run checked it; a secret gone since fails before any dialog
+            raise BankError(E.BANK_PIN_MISSING)
         session = open_session(
             bank_code=plan.bank_code,
             login_name=plan.login_name,
-            pin=deps.settings.fints_pin or "",
+            pin=pin,
             url=plan.fints_url,
             product_id=deps.settings.fints_product_id or "",
             client_data=plan.client_data,
@@ -186,7 +192,10 @@ def _fetch(
     workspace_id: UUID,
 ) -> Fetched:
     plan = run.plan
-    approval = session.open()
+    try:
+        approval = session.open()
+    finally:  # after the bootstrap the parameters are known, whether or not the open failed
+        _record_parameters(session, run, write)
     if approval is not None:
         _await(deps, session, run, approval, write, net, workspace_id)
     accounts = _value(deps, session, run, session.accounts(), write, net, workspace_id)
@@ -218,6 +227,20 @@ def _fetch(
         tan_mechanism=session.tan_mechanism,
         approved=run.approved,
     )
+
+
+def _record_parameters(session: FintsSession, run: _Run, write: Callable[..., Any]) -> None:
+    """Phase 6 D173 (7): log the bank's public parameters and record them on the account
+    when they changed. Never the run's failure: a failure here is logged by class name."""
+    parameters = session.bank_parameters()
+    if parameters is None:
+        return
+    fields = run.log | {"bank_parameters": parameters.model_dump()}
+    try:
+        fields["recorded"] = write(service.record_bank_parameters, run.plan, parameters)
+    except Exception as exc:
+        fields["record_error"] = type(exc).__name__
+    logger.info("bank parameters", extra={"fields": fields})
 
 
 # --- The bank's PDF statements (D154, step 2b) ----------------------------------------------

@@ -4,7 +4,8 @@ Nothing is read at import time, so importing hausbuch never depends on the envir
 Names and defaults: docs/phases/phase-1-step-3.md (§3.3, §3.7, §4.7, §6.1, §6.3, §6.4, §8), for
 the AI layer docs/phases/phase-2.md §4.5, and for the bank sync, email-in and reminder mail
 docs/phases/phase-5.md §4.1, §5.2 and §6.4 (D118, D119, D121, D123): all optional, each feature
-off while its values are absent.
+off while its values are absent. Phase 6 D163: one FinTS PIN per named credential slot, each the
+container secret HAUSBUCH_FINTS_PIN_<SLOT>; HAUSBUCH_FINTS_PIN stays the slot `primary`.
 
 Settings validates itself on construction, so values built directly (tests, the CLI) get the
 same checks as values read from the environment.
@@ -12,7 +13,7 @@ same checks as values read from the environment.
 
 import os
 import re
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -71,10 +72,41 @@ _MEDIA_TYPE = re.compile(r"[a-z]+/[a-z0-9.+-]+")
 _LABEL = r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?"
 _HOST = re.compile(rf"{_LABEL}(\.{_LABEL})*")
 _REGION = re.compile(r"[a-z]{2}-[a-z]{3}")  # a Scaleway region (fr-par), part of the TEM URL
+# Phase 6 D163: a credential slot (schemas.bank_sync.CredentialSlot, migration 0025's CHECK) and
+# the variable suffix it is read from (the slot upper-cased).
+FINTS_PIN_VARIABLE = "HAUSBUCH_FINTS_PIN"
+PRIMARY_FINTS_SLOT = "primary"
+_FINTS_SLOT = re.compile(r"[a-z][a-z0-9_]{0,31}")
+_FINTS_SLOT_SUFFIX = re.compile(r"[A-Z][A-Z0-9_]{0,31}")
 
 
 class SettingsError(ValueError):
     """A required setting is missing or malformed."""
+
+
+class FintsPins(Mapping[str, str]):
+    """The FinTS PINs by credential slot (phase 6 D163): read-only, hashable like the rest of
+    Settings, and its repr names the slots only, never a PIN."""
+
+    __slots__ = ("_pins",)
+
+    def __init__(self, pins: Mapping[str, str] | None = None) -> None:
+        self._pins = dict(pins or {})
+
+    def __getitem__(self, slot: str) -> str:
+        return self._pins[slot]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._pins)
+
+    def __len__(self) -> int:
+        return len(self._pins)
+
+    def __hash__(self) -> int:
+        return hash(frozenset(self._pins.items()))
+
+    def __repr__(self) -> str:
+        return f"FintsPins(slots={sorted(self._pins)})"
 
 
 @dataclass(frozen=True)
@@ -110,7 +142,11 @@ class Settings:
     ai_timeout_s: int = DEFAULT_AI_TIMEOUT_S
     eval_dir: Path | None = None  # Luis's real eval documents, outside the repo (D29)
     # Phase 5 FinTS sync (D118, D119): container secrets, never a column, payload or log line.
+    # fints_pin is the slot `primary` (HAUSBUCH_FINTS_PIN); fints_pins holds every slot's PIN by
+    # slot name, `primary` included whenever fints_pin is set (phase 6 D163). Both are filled
+    # from each other on construction, so either may be given.
     fints_pin: str | None = field(default=None, repr=False)
+    fints_pins: Mapping[str, str] = field(default_factory=FintsPins, repr=False)
     fints_product_id: str | None = field(default=None, repr=False)  # the DK registration
     sync_approval_timeout_s: int = DEFAULT_SYNC_APPROVAL_TIMEOUT_S
     # Phase 5 email-in (D121): the Gmail account, its app password and the token address are
@@ -162,12 +198,38 @@ class Settings:
         self._check_ai()
         self._check_automation()
 
+    def _merge_fints_pins(self) -> None:
+        """Phase 6 D163: fints_pin and fints_pins['primary'] are one value; every slot name
+        must be a valid slot and every PIN non-empty. Messages name variables, never values."""
+        pins = dict(self.fints_pins)
+        for slot, pin in pins.items():
+            if not isinstance(slot, str) or not _FINTS_SLOT.fullmatch(slot):
+                raise SettingsError(
+                    "a FinTS credential slot must match [a-z][a-z0-9_]{0,31} (phase 6 D163)"
+                )
+            if not isinstance(pin, str) or not pin:
+                raise SettingsError(f"{fints_pin_variable(slot)} must not be empty")
+        primary = pins.get(PRIMARY_FINTS_SLOT)
+        if self.fints_pin is not None:
+            if primary is not None and primary != self.fints_pin:
+                raise SettingsError(
+                    "HAUSBUCH_FINTS_PIN is given twice with different values (fints_pin and "
+                    "the slot primary)"
+                )
+            pins[PRIMARY_FINTS_SLOT] = self.fints_pin
+        elif primary is not None:
+            object.__setattr__(self, "fints_pin", primary)
+        object.__setattr__(self, "fints_pins", FintsPins(pins))
+
     def _check_automation(self) -> None:
         """Phase 5 (§9): each secret comes with its partner, or neither is set. The messages
         name the variables, never their values."""
-        if (self.fints_pin is None) != (self.fints_product_id is None):
+        self._merge_fints_pins()
+        if bool(self.fints_pins) != (self.fints_product_id is not None):
             raise SettingsError(
-                "HAUSBUCH_FINTS_PIN and HAUSBUCH_FINTS_PRODUCT_ID are set together or not at all"
+                "HAUSBUCH_FINTS_PIN and HAUSBUCH_FINTS_PRODUCT_ID are set together or not at all "
+                "(a HAUSBUCH_FINTS_PIN_<SLOT> also needs the product id, and the product id at "
+                "least one PIN)"
             )
         if (self.inbox_imap_user is None) != (self.inbox_imap_password is None):
             raise SettingsError(
@@ -307,7 +369,8 @@ def load_settings(environ: Mapping[str, str] = os.environ) -> Settings:
         ai_max_pages=_int(environ, "HAUSBUCH_AI_MAX_PAGES", DEFAULT_AI_MAX_PAGES),
         ai_timeout_s=_int(environ, "HAUSBUCH_AI_TIMEOUT_S", DEFAULT_AI_TIMEOUT_S),
         eval_dir=None if eval_dir is None else Path(eval_dir),
-        fints_pin=_optional(environ, "HAUSBUCH_FINTS_PIN"),
+        fints_pin=_optional(environ, FINTS_PIN_VARIABLE),
+        fints_pins=_fints_slot_pins(environ),
         fints_product_id=_optional(environ, "HAUSBUCH_FINTS_PRODUCT_ID"),
         sync_approval_timeout_s=_int(
             environ, "HAUSBUCH_SYNC_APPROVAL_TIMEOUT_S", DEFAULT_SYNC_APPROVAL_TIMEOUT_S
@@ -333,7 +396,35 @@ def load_admin_database_url(environ: Mapping[str, str] = os.environ) -> str:
     return _required(environ, "HAUSBUCH_ADMIN_DATABASE_URL")
 
 
+def fints_pin_variable(slot: str) -> str:
+    """The container secret that holds a slot's PIN (phase 6 D163): HAUSBUCH_FINTS_PIN for
+    `primary`, else HAUSBUCH_FINTS_PIN_<SLOT upper-cased>. rules.bank_sync.pin_variable is the
+    same mapping with the slot check; this one assumes a valid slot."""
+    if slot == PRIMARY_FINTS_SLOT:
+        return FINTS_PIN_VARIABLE
+    return f"{FINTS_PIN_VARIABLE}_{slot.upper()}"
+
+
 # --- Parsing -----------------------------------------------------------------
+
+
+def _fints_slot_pins(environ: Mapping[str, str]) -> dict[str, str]:
+    """Every HAUSBUCH_FINTS_PIN_<SLOT> that is set, by slot name (phase 6 D163). A suffix that
+    is no slot name upper-cased, and HAUSBUCH_FINTS_PIN_PRIMARY (the slot primary reads
+    HAUSBUCH_FINTS_PIN), are ignored: a connection whose slot has no PIN fails its sync with
+    bank.pin_missing, naming the variable to set. An empty value counts as unset."""
+    prefix = f"{FINTS_PIN_VARIABLE}_"
+    pins: dict[str, str] = {}
+    for name in environ:
+        if not name.startswith(prefix):
+            continue
+        suffix = name[len(prefix) :]
+        if not _FINTS_SLOT_SUFFIX.fullmatch(suffix) or suffix == PRIMARY_FINTS_SLOT.upper():
+            continue
+        value = _optional(environ, name)
+        if value is not None:
+            pins[suffix.lower()] = value
+    return pins
 
 
 def _optional(environ: Mapping[str, str], name: str) -> str | None:

@@ -109,6 +109,7 @@ from fints.segments.base import FinTS3Segment, ParameterSegment
 
 from hausbuch.rules import errors as E
 from hausbuch.rules.bank_sync import BankAnswer, deciding_code, refused_code
+from hausbuch.schemas.bank_sync import BankParameters
 
 from . import fints_trace
 from .fints_trace import trace_context
@@ -454,6 +455,35 @@ class _ReadOnlyClient(FinTS3PinTanClient):
         hicazs = self.bpd.find_segment_first("HICAZS")
         return [] if not hicazs else [str(m) for m in hicazs.parameter.supported_camt_formats]
 
+    def bank_parameters(self) -> BankParameters | None:
+        """Phase 6 D173 (7): what the bank's parameters (BPD) say, None before any BPD was
+        read (a bootstrap that failed). The bank's public parameters only: HIBPA's name and
+        version, HICAZS's camt formats, HIEKPS, HITANS's decoupled functions and versions."""
+        if self.bpa is None and not self.bpd.find_segment_first("HIBPA"):
+            return None
+        bpa = self.bpa or self.bpd.find_segment_first("HIBPA")
+        raw_name = getattr(bpa, "bank_name", None)
+        name = None if raw_name is None else (" ".join(str(raw_name).split())[:60] or None)
+        version = getattr(bpa, "bpd_version", None)
+        formats = [f[:100] for f in self.supported_camt_formats()][:20]
+        decoupled: list[str] = []
+        versions: list[int] = []
+        for segment in self.bpd.find_segments("HITANS"):
+            versions.append(int(segment.header.version))
+            for parameter in getattr(segment.parameter, "twostep_parameters", None) or ():
+                function = str(parameter.security_function)[:8]
+                if _is_decoupled(parameter) and function not in decoupled:
+                    decoupled.append(function)
+        return BankParameters(
+            bank_name=name,
+            bpd_version=None if version is None else int(version),
+            camt_formats=formats,
+            camt_readable=any(_READABLE_CAMT.search(f) for f in formats),
+            statement_pdf_by_number=self.statement_pdf_offered(),
+            decoupled_methods=decoupled[:20],
+            approval_versions=sorted(set(versions))[:10],
+        )
+
     def statement_pdf_offered(self) -> bool:
         """D154 (1): the bank's parameters hold HIEKPS v1 with „Kontoauszugsnummer erlaubt“
         = J. A segment python-fints could not read into HIEKPS1 counts as not offered."""
@@ -705,6 +735,15 @@ class FintsSession:
 
     def accounts(self) -> list[SEPAAccount] | Approval:
         return self._read(self._client.get_sepa_accounts, list, "accounts")
+
+    def bank_parameters(self) -> BankParameters | None:
+        """The bank's public parameters for the record (phase 6 D173 (7)); None when they
+        could not be read. Never raises: the record is a fact for §14.1, never the run's
+        failure."""
+        try:
+            return self._client.bank_parameters()
+        except Exception:
+            return None
 
     def camt_formats(self) -> list[str]:
         """The bank's camt messages the parser reads; bank.unsupported_format if none."""

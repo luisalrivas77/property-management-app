@@ -112,3 +112,27 @@ test("a running row inside ten minutes keeps the button locked", async ({ page, 
   await expect(card).toContainText("Hausbuch fragt die Bank nach den Umsätzen");
   await expect(card.getByRole("button", { name: "Abruf läuft …" })).toBeDisabled();
 });
+
+// Phase 6 D163: one PIN per online-banking login, as the API container's secret named by the
+// connection's slot; the card names that variable and where it goes, never asks for the PIN.
+test("a connection on its own login names its PIN variable and the Scaleway console", async ({ page, signedIn }) => {
+  void signedIn;
+  const accountId = await createAccountViaApi(page);
+  await page.goto(`/accounts/${accountId}`);
+  const card = page.getByRole("region", { name: "Bankabruf" });
+  await expect(card.getByLabel("Name des Zugangs")).toHaveValue("primary");
+  await card.getByLabel("BLZ").fill("10000000");
+  await card.getByLabel("FinTS-Adresse").fill("https://fints.example.org/fints");
+  await card.getByLabel("Anmeldename").fill("loginname-xyz");
+  await card.getByLabel("Name des Zugangs").fill("Sparkasse B");
+  await card.getByRole("button", { name: "Bankabruf einrichten" }).click();
+  await expect(card).toContainText("Kleinbuchstaben, Ziffern und _");
+
+  await card.getByLabel("Name des Zugangs").fill("sparkasse_b");
+  await expect(card).toContainText("HAUSBUCH_FINTS_PIN_SPARKASSE_B");
+  await card.getByRole("button", { name: "Bankabruf einrichten" }).click();
+  await expect(card.getByText("lo***yz")).toBeVisible();
+  await expect(card).toContainText("Zugang „sparkasse_b“");
+  await expect(card).toContainText("noch nicht gesetzt");
+  await expect(card).toContainText("Scaleway-Konsole");
+});

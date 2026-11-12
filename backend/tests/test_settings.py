@@ -141,6 +141,91 @@ def test_phase_5_values_load_and_the_secret_ones_stay_out_of_repr():
     assert "owner.a" not in text  # neither the account nor the token address
 
 
+# Phase 6 D163: one PIN per named slot. Synthetic values only (public repo).
+SLOT_PINS = {
+    "HAUSBUCH_FINTS_PIN": "pin-primary-synthetic",
+    "HAUSBUCH_FINTS_PIN_OWNER_B": "pin-owner-b-synthetic",
+    "HAUSBUCH_FINTS_PIN_JOINT_BANK": "pin-joint-synthetic",
+    "HAUSBUCH_FINTS_PIN_DKB2": "pin-dkb2-synthetic",
+    "HAUSBUCH_FINTS_PRODUCT_ID": "PRODUCTID0SYNTHETIC",
+}
+
+
+def test_every_slot_pin_loads_by_its_slot_and_none_appears_in_repr():
+    settings = load_settings(ENV | SLOT_PINS)
+    assert dict(settings.fints_pins) == {
+        "primary": SLOT_PINS["HAUSBUCH_FINTS_PIN"],
+        "owner_b": SLOT_PINS["HAUSBUCH_FINTS_PIN_OWNER_B"],
+        "joint_bank": SLOT_PINS["HAUSBUCH_FINTS_PIN_JOINT_BANK"],
+        "dkb2": SLOT_PINS["HAUSBUCH_FINTS_PIN_DKB2"],
+    }
+    assert settings.fints_pin == SLOT_PINS["HAUSBUCH_FINTS_PIN"]
+    text = repr(settings)
+    for value in SLOT_PINS.values():
+        assert value not in text
+
+
+def test_a_slot_pin_alone_needs_no_primary_pin():
+    settings = load_settings(
+        ENV
+        | {
+            "HAUSBUCH_FINTS_PIN_OWNER_B": "pin-owner-b-synthetic",
+            "HAUSBUCH_FINTS_PRODUCT_ID": "PRODUCTID0SYNTHETIC",
+        }
+    )
+    assert dict(settings.fints_pins) == {"owner_b": "pin-owner-b-synthetic"}
+    assert settings.fints_pin is None
+
+
+def test_names_that_are_no_slot_and_empty_values_are_ignored():
+    settings = load_settings(
+        ENV
+        | SLOT_PINS
+        | {
+            "HAUSBUCH_FINTS_PIN_PRIMARY": "ignored-synthetic",  # primary reads HAUSBUCH_FINTS_PIN
+            "HAUSBUCH_FINTS_PIN_2ND": "ignored-synthetic",  # a slot starts with a letter
+            "HAUSBUCH_FINTS_PIN_owner_c": "ignored-synthetic",  # the suffix is upper-cased
+            "HAUSBUCH_FINTS_PIN_": "ignored-synthetic",
+            "HAUSBUCH_FINTS_PIN_" + "A" * 33: "ignored-synthetic",
+            "HAUSBUCH_FINTS_PIN_EMPTY": "  ",
+        }
+    )
+    assert set(settings.fints_pins) == {"primary", "owner_b", "joint_bank", "dkb2"}
+    assert settings.fints_pins["primary"] == SLOT_PINS["HAUSBUCH_FINTS_PIN"]
+
+
+def test_fints_pin_and_the_primary_slot_are_one_value():
+    from hausbuch.settings import Settings
+
+    base = {
+        "database_url": URL,
+        "iban_hmac_key": bytes.fromhex(KEY),
+        "session_key": bytes.fromhex(SESSION_KEY),
+        "rp_id": "hausbuch.example",
+        "origin": "https://hausbuch.example",
+        "blob_store": "local",
+        "blob_root": Path("/nonexistent"),
+        "fints_product_id": "PRODUCTID0SYNTHETIC",
+    }
+    assert Settings(**base, fints_pins={"primary": "p-1"}).fints_pin == "p-1"
+    assert dict(Settings(**base, fints_pin="p-1").fints_pins) == {"primary": "p-1"}
+    with pytest.raises(SettingsError, match="different values") as raised:
+        Settings(**base, fints_pin="p-1", fints_pins={"primary": "p-2"})
+    assert "p-1" not in str(raised.value) and "p-2" not in str(raised.value)
+    with pytest.raises(SettingsError, match=r"\[a-z\]"):
+        Settings(**base, fints_pins={"Owner_B": "p-1"})
+    with pytest.raises(SettingsError, match="HAUSBUCH_FINTS_PIN_OWNER_B must not be empty"):
+        Settings(**base, fints_pins={"owner_b": ""})
+
+
+def test_the_slot_variable_names_agree_with_the_rules():
+    from hausbuch.rules.bank_sync import pin_variable
+    from hausbuch.settings import fints_pin_variable
+
+    for slot in ("primary", "owner_b", "joint_bank", "dkb2", "a" * 32):
+        assert fints_pin_variable(slot) == pin_variable(slot)
+
+
 def test_dev_environment_from_the_step_3_doc():
     settings = load_settings(
         ENV
@@ -233,6 +318,15 @@ def test_repr_hides_secrets():
         # Phase 5 §9: a secret without its partner is refused, naming variables only.
         ({"HAUSBUCH_FINTS_PIN": "12345"}, "HAUSBUCH_FINTS_PIN and HAUSBUCH_FINTS_PRODUCT_ID"),
         ({"HAUSBUCH_FINTS_PRODUCT_ID": "P1"}, "HAUSBUCH_FINTS_PIN and HAUSBUCH_FINTS_PRODUCT_ID"),
+        # Phase 6 D163: a slot's PIN needs the product id too.
+        (
+            {"HAUSBUCH_FINTS_PIN_OWNER_B": "12345"},
+            "HAUSBUCH_FINTS_PIN and HAUSBUCH_FINTS_PRODUCT_ID",
+        ),
+        (
+            {"HAUSBUCH_FINTS_PIN_2ND": "12345", "HAUSBUCH_FINTS_PRODUCT_ID": "P1"},
+            "HAUSBUCH_FINTS_PIN and HAUSBUCH_FINTS_PRODUCT_ID",
+        ),
         (
             {"HAUSBUCH_INBOX_IMAP_USER": "a@mail.example"},
             "HAUSBUCH_INBOX_IMAP_USER and HAUSBUCH_INBOX_IMAP_PASSWORD",
@@ -286,3 +380,12 @@ def test_the_s3_blob_store_gets_the_stores_own_client_config():
     assert (config.connect_timeout, config.read_timeout) == (CONNECT_TIMEOUT_S, READ_TIMEOUT_S)
     assert config.retries["total_max_attempts"] == MAX_ATTEMPTS
     assert config.request_checksum_calculation == "when_required"
+
+
+def test_the_pin_mapping_hides_its_values_and_hashes():
+    settings = load_settings(ENV | SLOT_PINS)
+    hash(settings)  # Settings stays hashable with the slot mapping
+    text = repr(settings.fints_pins)
+    assert "owner_b" in text
+    for value in SLOT_PINS.values():
+        assert value not in text

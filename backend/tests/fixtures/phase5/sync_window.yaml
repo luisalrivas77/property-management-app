@@ -27,8 +27,14 @@
 #   imports_through = the last reconciled closing date of the account's imports (null without
 #   any). Before the first success the window starts after it as well:
 #   start = max(opening_balance_on + 1 day, imports_through + 1 day)
-#   After a success it is ignored: the 14-day overlap is unchanged. The cases carry a pending
-#   marker until phase 6 step 3 builds it.
+#   After a success it is ignored: the 14-day overlap is unchanged. Built by phase 6 step 3.
+# Amended after the step 3 review (PR #220; wording in phase-6.md D173 (4)):
+#   unreferenced_through = the same over the reconciled imports whose format is not camt (a
+#   CSV, a DKB CSV, a PDF: lines without the bank's reference; a FinTS sync's import is camt),
+#   null without any. After a success the overlap never reaches back into that history:
+#   start = max(last_booking_on - 14 days, opening_balance_on + 1 day,
+#               unreferenced_through + 1 day)
+#   The first window is unchanged.
 #
 # Derivations (calendar arithmetic only; 2026 is not a leap year) are in a comment per case.
 
@@ -107,7 +113,6 @@ cases:
       a private account's 2026 history came from a CSV export reconciled through 31 Oct; the
       first sync starts on 1 Nov, so the CSV lines and the camt lines (which share no bank
       reference) never overlap
-    pending: "phase 6 step 3 (D173 (4)): request_window reads imports_through"
     # max(31 Dec 2025 + 1 = 1 Jan 2026, 31 Oct 2026 + 1 = 1 Nov 2026) = 1 Nov 2026;
     # 1 Nov to 12 Nov = 11 days
     today: 2026-11-12
@@ -129,5 +134,50 @@ cases:
     # last_booking_on 10 Nov - 14 days = 27 Oct 2026; imports_through is not read
     today: 2026-11-12
     facts: {opening_balance_on: 2025-12-31, last_booking_on: 2026-11-10, imports_through: 2026-11-10}
+    expect:
+      window: {start: 2026-10-27, end: 2026-11-12, may_need_approval: false}
+
+  # --- Amended after the step 3 review: the overlap stops at a CSV or PDF history ----------
+
+  - id: after_success_overlap_stops_at_csv_history
+    description: >
+      a private account's history came from a CSV export reconciled through 31 Oct and a sync
+      then brought camt lines through 10 Nov; the next window starts on 1 Nov, not 27 Oct, so
+      the CSV's lines (which carry no bank reference) are never fetched again as camt lines
+    # max(10 Nov 2026 - 14 days = 27 Oct 2026, 1 Jan 2026, 31 Oct 2026 + 1 = 1 Nov 2026)
+    # = 1 Nov 2026; 1 Nov to 12 Nov = 11 days
+    today: 2026-11-12
+    facts:
+      opening_balance_on: 2025-12-31
+      last_booking_on: 2026-11-10
+      imports_through: 2026-11-10
+      unreferenced_through: 2026-10-31
+    expect:
+      window: {start: 2026-11-01, end: 2026-11-12, may_need_approval: false}
+
+  - id: after_success_csv_history_older_than_overlap
+    description: >
+      a CSV history that ends before the 14-day overlap does not move the window
+    # max(27 Oct 2026, 1 Jan 2026, 30 Sep 2026 + 1 = 1 Oct 2026) = 27 Oct 2026; 16 days
+    today: 2026-11-12
+    facts:
+      opening_balance_on: 2025-12-31
+      last_booking_on: 2026-11-10
+      imports_through: 2026-11-10
+      unreferenced_through: 2026-09-30
+    expect:
+      window: {start: 2026-10-27, end: 2026-11-12, may_need_approval: false}
+
+  - id: after_success_camt_only_history_keeps_overlap
+    description: >
+      a history from the bank's camt export only (every line with the bank's reference)
+      leaves the 14-day overlap as before; dedup recognises the lines fetched again
+    # unreferenced_through null -> max(10 Nov 2026 - 14 days = 27 Oct 2026, 1 Jan 2026)
+    # = 27 Oct 2026; 16 days (imports_through is not read after a success)
+    today: 2026-11-12
+    facts:
+      opening_balance_on: 2025-12-31
+      last_booking_on: 2026-11-10
+      imports_through: 2026-11-10
     expect:
       window: {start: 2026-10-27, end: 2026-11-12, may_need_approval: false}
