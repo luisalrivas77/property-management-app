@@ -49,7 +49,7 @@ from hausbuch.rules.errors import RuleError
 from hausbuch.schemas.api import InboxItem, InboxItemKind
 from hausbuch.schemas.bank import StatementFormat
 from hausbuch.schemas.document import DocumentTyping
-from hausbuch.schemas.enums import DocumentSource, DocumentType
+from hausbuch.schemas.enums import AccountPurpose, DocumentSource, DocumentType
 from hausbuch.schemas.events import (
     DocumentReceivedByEmail,
     EventType,
@@ -114,7 +114,9 @@ def _account_for(conn: Connection, iban: str | None, iban_key: bytes) -> UUID | 
     ids = (
         conn.execute(
             select(account_table.c.id).where(
-                account_table.c.iban_hmac == digest, account_table.c.is_owner_account.is_(False)
+                account_table.c.iban_hmac == digest,
+                # The rental account by purpose since migration 0025 (phase 6 D156).
+                account_table.c.purpose == AccountPurpose.RENTAL.value,
             )
         )
         .scalars()

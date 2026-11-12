@@ -1,0 +1,62 @@
+# Rule fixture: one month-end's net worth by class and by owner, and its snapshot rows
+# (services/net_worth over a fixture ledger; docs/phases/phase-6.md D167 (4), D157, §9, §14)
+#
+# Recomputed on load (tests/fixture_models_phase6.py): each position's value = units ×
+# price, rounded to the cent half up (a bank account's balance and a cash asset as they
+# are); the class by the account's kind (bank_current and bank_savings -> bank, depot -> depot,
+# exchange -> crypto), the property's estimate -> property, the loan's balance ->
+# liabilities (negative); each figure split to the owners by its account's shares (the
+# property and its loan by the property's shares), every split exact to the cent; the total
+# is the sum of the classes and of the owners. One snapshot row per account and asset (the
+# bank accounts with asset null), none for the property or the loan.
+#
+# The key "on" is quoted: YAML 1.1 reads a bare on as true.
+# Invented accounts, owners A and B, figures and prices.
+#
+# Step 0 readings (listed in the step 0 report):
+# - An exchange's EUR balance counts in the crypto class, with the account's kind (mockup 07's
+#   bar has no class for cash held at an exchange).
+# - The property and its loan are no snapshot rows (valuation_snapshot is per account; the
+#   estimate and the loan balance are columns of the net worth run).
+# - The month-end is the calendar month's last day, a Saturday here: the prices are the
+#   latest on or before it (Friday's NAV), as valuation.yaml's date-first rule says.
+
+"on": 2026-10-31
+
+owners: [A, B]
+
+accounts:
+  - {id: joint_current, kind: bank_current, shares: {A: "1/2", B: "1/2"}, balance: "4200.00"}
+  - {id: savings_a, kind: bank_savings, shares: {A: "1/1"}, balance: "10000.00"}
+  - id: depot
+    kind: depot
+    shares: {A: "1/2", B: "1/2"}
+    positions:
+      - {asset: IE00BEISPL01, units: "32.345678", price_eur: "82.10", source: issuer_nav, price_on: 2026-10-30}
+      - {asset: IE00BEISPL02, units: "20.000000", price_eur: "40.00", source: statement, price_on: 2026-09-30}
+  - id: exchange_b
+    kind: exchange
+    shares: {B: "1/1"}
+    positions:
+      - {asset: BTC, units: "0.02500000", price_eur: "60000.00", source: kraken_daily, price_on: 2026-10-31}
+      - {asset: ETH, units: "0.50000000", price_eur: "2400.00", source: kraken_daily, price_on: 2026-10-31}
+      - {asset: EUR, units: "150.00", cash: true}
+
+property:
+  shares: {A: "1/2", B: "1/2"}
+  estimate: "320000.00"
+  loan_balance: "240000.00"
+
+expect:
+  pending: "phase 6 step 6 (net worth)"
+  by_class: {bank: "14200.00", depot: "3455.58", crypto: "2850.00", property: "320000.00", liabilities: "-240000.00"}
+  by_owner: {A: "53827.79", B: "46677.79"}
+  total: "100505.58"
+  snapshots:
+    - {account: joint_current, asset: null, value_eur: "4200.00"}
+    - {account: savings_a, asset: null, value_eur: "10000.00"}
+    - {account: depot, asset: IE00BEISPL01, value_eur: "2655.58"}
+    - {account: depot, asset: IE00BEISPL02, value_eur: "800.00"}
+    - {account: exchange_b, asset: BTC, value_eur: "1500.00"}
+    - {account: exchange_b, asset: ETH, value_eur: "1200.00"}
+    - {account: exchange_b, asset: EUR, value_eur: "150.00"}

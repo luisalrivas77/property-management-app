@@ -33,7 +33,7 @@ from .allocation import (
     SplitMethod,
 )
 from .bank import StatementFormat
-from .bank_sync import BankCode, LoginMasked, SyncStatus, SyncTrigger
+from .bank_sync import PRIMARY_SLOT, BankCode, CredentialSlot, LoginMasked, SyncStatus, SyncTrigger
 from .common import (
     Area,
     BuildingShare,
@@ -52,6 +52,8 @@ from .common import (
     Year,
 )
 from .enums import (
+    AccountKind,
+    AccountPurpose,
     AcquisitionCostKind,
     ActorType,
     BalanceSource,
@@ -70,6 +72,16 @@ from .enums import (
     RentModel,
     ReturnInputKind,
     StateCode,
+)
+from .household import (
+    AssetKind,
+    HoldingSource,
+    MovementImportFormat,
+    MovementKind,
+    MovementSource,
+    PriceSourceKind,
+    TransferLinkKind,
+    TransferMatchedBy,
 )
 from .performance import INCOME_INPUT_VALUES, IncomeInputValue, Levers, income_value_by_kind
 from .property import OwnerShare
@@ -312,18 +324,22 @@ class DocumentLinked(Schema):
 
 
 class WorkspaceSetting(StrEnum):
-    """The workspace's boolean settings: the two columns migration 0005 adds (D16, D26) and
-    phase 5's `reminder_emails` (migration 0019, D123)."""
+    """The workspace's boolean settings: the two columns migration 0005 adds (D16, D26),
+    phase 5's `reminder_emails` (migration 0019, D123) and phase 6's `ai_private_accounts`
+    (migration 0025, D168)."""
 
     AI_TENANT_DOCUMENTS = "ai_tenant_documents"
     AUTO_ACCEPT_LLM = "auto_accept_llm"
     REMINDER_EMAILS = "reminder_emails"
+    AI_PRIVATE_ACCOUNTS = "ai_private_accounts"
 
 
 class WorkspaceSettingsChanged(Schema):
-    """Changed setting names and their new values (booleans only)."""
+    """Changed setting names and their new values (booleans only). Phase 6 D168: switching
+    `ai_private_accounts` on records the member who consented (absent before 0025)."""
 
     changes: dict[WorkspaceSetting, bool] = Field(min_length=1)
+    consented_by: UUID | None = None
 
 
 class DocumentClassified(Schema):
@@ -409,12 +425,18 @@ class UserEnrolled(Schema):
 
 
 class AccountCreated(Schema):
+    """Phase 6 (D156): a depot or an exchange has no IBAN, and every account a kind and a
+    purpose; events written before migration 0025 carry neither (the defaults)."""
+
     label: str
     bank: str
-    iban_masked: MaskedIban
+    iban_masked: MaskedIban | None = None
     opening_balance: Money
     opening_balance_on: date
     is_owner_account: bool = False
+    kind: AccountKind = AccountKind.BANK_CURRENT
+    purpose: AccountPurpose | None = None
+    provider: str | None = None
 
 
 class StatementImported(Schema):
@@ -724,6 +746,8 @@ class BankConnectionRecorded(Schema):
     account_id: UUID
     bank_code: BankCode
     login_masked: LoginMasked
+    # Phase 6 D163: the slot's name, a label (never the PIN); absent before 0025 = primary.
+    credential_slot: CredentialSlot = PRIMARY_SLOT
     auto_sync: bool
     fetch_statements: bool = False  # D154 (7); absent from events written before 0024
     changed: list[
@@ -832,6 +856,156 @@ class NotificationSent(Schema):
     recipient_count: int = Field(ge=1)
 
 
+# --- Phase 6 payloads (docs/phases/phase-6.md §11) -----------------------------------
+#
+# §11 names some events by a table (`movement_import.*`, `holding_statement.*`) or by a thing
+# that is not an entity (`price.*`, `valuation.*`). An event's type prefix is its entity type
+# (the event_entity_type_check of migration 0005), so, as phase 5 did with `bank.*`, they are
+# carried on the entity they belong to: the import's and the holdings' events on the account
+# (`account.movements_imported`, `account.holdings_reconciled`, ...), a failing price source
+# on the asset (`asset.price_source_failed`), and the daily price run and the month-end
+# snapshot on the workspace (`workspace.prices_fetched`,
+# `workspace.valuation_snapshot_written`). The second owner's consent of D168 is
+# `workspace.ai_consent_recorded`. No payload carries an amount of a private line, an
+# ownership reason (the household's own words) or a balance.
+
+
+class AccountKindSet(Schema):
+    """account.kind_set (D156): kind, purpose or provider changed."""
+
+    kind: AccountKind
+    purpose: AccountPurpose
+    provider: str | None = None
+
+
+class AccountShare(Schema):
+    owner_id: UUID
+    share_numerator: int = Field(gt=0)
+    share_denominator: int = Field(gt=0)
+
+
+class AccountOwnershipSet(Schema):
+    """account.ownership_set (D157): the full new set; the reason stays in the rows."""
+
+    effective_from: date
+    shares: list[AccountShare] = Field(min_length=1)
+    superseded: list[UUID] = Field(default_factory=list)  # the account_ownership rows replaced
+
+
+class MovementImportRecorded(Schema):
+    """account.movements_imported (D166): the statement.imported of an exchange export."""
+
+    import_id: UUID
+    document_id: UUID
+    format: MovementImportFormat
+    rows_total: int = Field(ge=0)
+    rows_new: int = Field(ge=0)
+    rows_skipped: int = Field(ge=0)
+
+
+class MovementImportChecked(Schema):
+    """account.movements_reconciled and account.movements_unreconciled (D166)."""
+
+    import_id: UUID
+    assets_checked: int = Field(ge=0)
+    assets_mismatched: int = Field(ge=0)
+
+
+class HoldingsChecked(Schema):
+    """account.holdings_confirmed, account.holdings_reconciled, account.holdings_mismatch
+    (D165 (3)): ids and counts; the units stay in holding_statement."""
+
+    holding_statement_ids: list[UUID] = Field(min_length=1)
+    as_of: date
+    source: HoldingSource
+    document_id: UUID | None = None
+    assets_mismatched: int = Field(default=0, ge=0)
+
+
+class MovementRecorded(Schema):
+    """movement.proposed and movement.confirmed (D165, D166)."""
+
+    account_id: UUID
+    asset_id: UUID
+    kind: MovementKind
+    source: MovementSource
+    document_id: UUID | None = None
+
+
+class MovementSuperseded(Schema):
+    """movement.superseded: the row that replaces it (D23 pattern)."""
+
+    superseded_by: UUID
+
+
+class TransferLinked(Schema):
+    """transfer.linked (D162): the two legs, by id only."""
+
+    kind: TransferLinkKind
+    matched_by: TransferMatchedBy
+    out_transaction_id: UUID | None = None
+    out_movement_id: UUID | None = None
+    in_transaction_id: UUID | None = None
+    in_movement_id: UUID | None = None
+
+
+class TransferUnlinked(Schema):
+    """transfer.unlinked (D162): a person undid a link; a replacing link when there is one."""
+
+    superseded_by: UUID | None = None
+
+
+class AssetRecorded(Schema):
+    """asset.created (D167)."""
+
+    kind: AssetKind
+    symbol: str | None = None
+    isin: str | None = None
+    name: str
+
+
+class PriceRecorded(Schema):
+    """asset.price_recorded: a price typed by a person or read from a document (D167)."""
+
+    price_id: UUID
+    on: date
+    source: PriceSourceKind
+    document_id: UUID | None = None
+
+
+class PriceSourceFailed(Schema):
+    """asset.price_source_failed (D174): one per asset when the card is raised."""
+
+    source: PriceSourceKind
+    failed_days: int = Field(ge=1)
+    last_price_on: date | None = None
+
+
+class PricesFetched(Schema):
+    """workspace.prices_fetched: one per daily run, counts only (§11)."""
+
+    sources: list[PriceSourceKind] = Field(min_length=1)
+    assets: int = Field(ge=0)
+    rows_new: int = Field(ge=0)
+    assets_failed: int = Field(ge=0)
+
+
+class ValuationSnapshotWritten(Schema):
+    """workspace.valuation_snapshot_written (D167): one month-end run."""
+
+    net_worth_run_id: UUID
+    as_of: date
+    rows: int = Field(ge=1)
+
+
+class AiConsentRecorded(Schema):
+    """workspace.ai_consent_recorded (D168): the second owner's own click, by the member it
+    concerns; the first consent is the settings_changed event's consented_by."""
+
+    setting: WorkspaceSetting
+    consented_by: UUID
+
+
 # --- Catalog -----------------------------------------------------------------
 
 EffectiveDate = Literal["required", "optional", "forbidden"]
@@ -907,6 +1081,10 @@ class EventType(StrEnum):
     WORKSPACE_NOTIFICATION_SENT = "workspace.notification_sent"
     WORKSPACE_INBOX_POLL_FAILED = "workspace.inbox_poll_failed"
     WORKSPACE_INBOX_POLL_RECOVERED = "workspace.inbox_poll_recovered"
+    # Phase 6 (see the payloads' comment for the names)
+    WORKSPACE_AI_CONSENT_RECORDED = "workspace.ai_consent_recorded"
+    WORKSPACE_PRICES_FETCHED = "workspace.prices_fetched"
+    WORKSPACE_VALUATION_SNAPSHOT_WRITTEN = "workspace.valuation_snapshot_written"
 
     PROPOSAL_CREATED = "proposal.created"
     PROPOSAL_SUPERSEDED = "proposal.superseded"
@@ -932,6 +1110,27 @@ class EventType(StrEnum):
     ACCOUNT_SYNC_COMPLETED = "account.sync_completed"
     ACCOUNT_SYNC_FAILED = "account.sync_failed"
     ACCOUNT_STATEMENT_FETCHED = "account.statement_fetched"  # D154, step 2b
+    # Phase 6
+    ACCOUNT_KIND_SET = "account.kind_set"
+    ACCOUNT_OWNERSHIP_SET = "account.ownership_set"
+    ACCOUNT_MOVEMENTS_IMPORTED = "account.movements_imported"
+    ACCOUNT_MOVEMENTS_RECONCILED = "account.movements_reconciled"
+    ACCOUNT_MOVEMENTS_UNRECONCILED = "account.movements_unreconciled"
+    ACCOUNT_HOLDINGS_CONFIRMED = "account.holdings_confirmed"
+    ACCOUNT_HOLDINGS_RECONCILED = "account.holdings_reconciled"
+    ACCOUNT_HOLDINGS_MISMATCH = "account.holdings_mismatch"
+
+    ASSET_CREATED = "asset.created"  # phase 6
+    ASSET_UPDATED = "asset.updated"
+    ASSET_PRICE_RECORDED = "asset.price_recorded"
+    ASSET_PRICE_SOURCE_FAILED = "asset.price_source_failed"
+
+    MOVEMENT_PROPOSED = "movement.proposed"  # phase 6
+    MOVEMENT_CONFIRMED = "movement.confirmed"
+    MOVEMENT_SUPERSEDED = "movement.superseded"
+
+    TRANSFER_LINKED = "transfer.linked"  # phase 6
+    TRANSFER_UNLINKED = "transfer.unlinked"
 
     STATEMENT_IMPORTED = "statement.imported"
     STATEMENT_RECONCILED = "statement.reconciled"
@@ -1046,6 +1245,14 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     E.WORKSPACE_INBOX_POLL_RECOVERED: EventSpec(
         InboxPollRecovered, "forbidden", "Email-in works again"
     ),
+    # Phase 6
+    E.WORKSPACE_AI_CONSENT_RECORDED: EventSpec(
+        AiConsentRecorded, "forbidden", "Second owner's consent to the model recorded"
+    ),
+    E.WORKSPACE_PRICES_FETCHED: EventSpec(PricesFetched, "forbidden", "Daily prices fetched"),
+    E.WORKSPACE_VALUATION_SNAPSHOT_WRITTEN: EventSpec(
+        ValuationSnapshotWritten, "forbidden", "Month-end net worth snapshot written"
+    ),
     E.PROPOSAL_CREATED: EventSpec(ProposalNoted, "forbidden", "Pre-fill proposal created"),
     E.PROPOSAL_SUPERSEDED: EventSpec(ProposalNoted, "forbidden", "Proposal replaced by a re-run"),
     E.PROPOSAL_REJECTED: EventSpec(ProposalNoted, "forbidden", "Proposal rejected"),
@@ -1076,6 +1283,40 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     E.ACCOUNT_STATEMENT_FETCHED: EventSpec(
         BankStatementFetched, "forbidden", "Bank PDF statement fetched (FinTS)"
     ),
+    # Phase 6
+    E.ACCOUNT_KIND_SET: EventSpec(AccountKindSet, "forbidden", "Account kind or purpose set"),
+    E.ACCOUNT_OWNERSHIP_SET: EventSpec(
+        AccountOwnershipSet, "optional", "Account ownership shares set"
+    ),
+    E.ACCOUNT_MOVEMENTS_IMPORTED: EventSpec(
+        MovementImportRecorded, "optional", "Exchange export imported (date = last movement)"
+    ),
+    E.ACCOUNT_MOVEMENTS_RECONCILED: EventSpec(
+        MovementImportChecked, "forbidden", "Exchange export reconciled to its balances"
+    ),
+    E.ACCOUNT_MOVEMENTS_UNRECONCILED: EventSpec(
+        MovementImportChecked, "forbidden", "Exchange export does not match its balances"
+    ),
+    E.ACCOUNT_HOLDINGS_CONFIRMED: EventSpec(
+        HoldingsChecked, "optional", "Holdings confirmed (date = as of)"
+    ),
+    E.ACCOUNT_HOLDINGS_RECONCILED: EventSpec(
+        HoldingsChecked, "optional", "Holdings match the movements (date = as of)"
+    ),
+    E.ACCOUNT_HOLDINGS_MISMATCH: EventSpec(
+        HoldingsChecked, "optional", "Holdings differ from the movements (date = as of)"
+    ),
+    E.ASSET_CREATED: EventSpec(AssetRecorded, "forbidden", "Asset recorded"),
+    E.ASSET_UPDATED: EventSpec(Updated, "forbidden", "Asset name or price ids changed"),
+    E.ASSET_PRICE_RECORDED: EventSpec(PriceRecorded, "optional", "Price recorded"),
+    E.ASSET_PRICE_SOURCE_FAILED: EventSpec(
+        PriceSourceFailed, "forbidden", "Price source failing for this asset"
+    ),
+    E.MOVEMENT_PROPOSED: EventSpec(MovementRecorded, "optional", "Movement proposed"),
+    E.MOVEMENT_CONFIRMED: EventSpec(MovementRecorded, "optional", "Movement confirmed"),
+    E.MOVEMENT_SUPERSEDED: EventSpec(MovementSuperseded, "forbidden", "Movement corrected"),
+    E.TRANSFER_LINKED: EventSpec(TransferLinked, "forbidden", "Transfer legs linked"),
+    E.TRANSFER_UNLINKED: EventSpec(TransferUnlinked, "forbidden", "Transfer link undone"),
     E.STATEMENT_IMPORTED: EventSpec(
         StatementImported, "optional", "Statement imported (date = last booking day)"
     ),

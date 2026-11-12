@@ -23,6 +23,13 @@
 #   flagged, 90 is not (start = today - 90 is still inside the exemption).
 # - The flag is information for the job (expect a TAN); it never shortens the window.
 #
+# Phase 6 D173 (4) (docs/phases/phase-6.md §14), added by the phase 6 spec PR:
+#   imports_through = the last reconciled closing date of the account's imports (null without
+#   any). Before the first success the window starts after it as well:
+#   start = max(opening_balance_on + 1 day, imports_through + 1 day)
+#   After a success it is ignored: the 14-day overlap is unchanged. The cases carry a pending
+#   marker until phase 6 step 3 builds it.
+#
 # Derivations (calendar arithmetic only; 2026 is not a leap year) are in a comment per case.
 
 cases:
@@ -92,3 +99,35 @@ cases:
     facts: {opening_balance_on: 2026-11-10}
     expect:
       error: {code: bank.window_invalid}
+
+  # --- Phase 6 D173 (4): a first sync after an imported history -----------------------------
+
+  - id: first_sync_after_csv_history
+    description: >
+      a private account's 2026 history came from a CSV export reconciled through 31 Oct; the
+      first sync starts on 1 Nov, so the CSV lines and the camt lines (which share no bank
+      reference) never overlap
+    pending: "phase 6 step 3 (D173 (4)): request_window reads imports_through"
+    # max(31 Dec 2025 + 1 = 1 Jan 2026, 31 Oct 2026 + 1 = 1 Nov 2026) = 1 Nov 2026;
+    # 1 Nov to 12 Nov = 11 days
+    today: 2026-11-12
+    facts: {opening_balance_on: 2025-12-31, imports_through: 2026-10-31}
+    expect:
+      window: {start: 2026-11-01, end: 2026-11-12, may_need_approval: false}
+
+  - id: first_sync_without_imports_from_anchor
+    description: without imports the first window starts after the anchor, as before
+    # imports_through null -> start = 31 Dec 2025 + 1 = 1 Jan 2026; to 12 Nov 2026 = 315 days
+    today: 2026-11-12
+    facts: {opening_balance_on: 2025-12-31}
+    expect:
+      window: {start: 2026-01-01, end: 2026-11-12, may_need_approval: true}
+
+  - id: after_success_imports_through_ignored
+    description: >
+      after a successful sync the 14-day overlap is unchanged, whatever the imports reach
+    # last_booking_on 10 Nov - 14 days = 27 Oct 2026; imports_through is not read
+    today: 2026-11-12
+    facts: {opening_balance_on: 2025-12-31, last_booking_on: 2026-11-10, imports_through: 2026-11-10}
+    expect:
+      window: {start: 2026-10-27, end: 2026-11-12, may_need_approval: false}

@@ -7,6 +7,12 @@
   for each one whose result changes).
 - An owner account (is_owner_account) only serves to recognize owner transfers by IBAN; it
   never holds imports, so an account with imports cannot become one.
+- Phase 6 step 0 (D156, migration 0025): an account has a kind, a purpose and a provider.
+  Migration 0025 sets is_owner_account on every account and keys the rental account by
+  `purpose = rental`, so every read that meant "the rental account" now reads purpose (the
+  same accounts as before; step 1 removes the owner-account guards). create_account takes the
+  bank kinds only until the depot (step 4) and the exchange (step 5) are built, and refuses a
+  wallet (phase 7) with account.kind_not_available.
 """
 
 from datetime import date
@@ -21,9 +27,10 @@ from sqlalchemy.exc import IntegrityError
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.jobs import enqueue
+from hausbuch.rules.errors import ACCOUNT_KIND_NOT_AVAILABLE, RuleError
 from hausbuch.schemas.bank import Account, AccountCreate
 from hausbuch.schemas.common import Schema
-from hausbuch.schemas.enums import EntityType
+from hausbuch.schemas.enums import BANK_ACCOUNT_KINDS, AccountPurpose, EntityType
 from hausbuch.schemas.events import AccountCreated, EventType, Updated
 
 from .context import CommandContext
@@ -34,10 +41,15 @@ from .lookup import require_row
 from .owners import UNSET, Unset
 from .statements import recheck_account
 
-# Every column the Account read shape has; iban_hmac is for matching and never leaves.
-_READ_COLUMNS = [c for c in account_table.c if c.name != "iban_hmac"]
+# Every column the Account read shape has; the HMACs are for matching and never leave.
+_HMAC_COLUMNS = {"iban_hmac", "external_ref_hmac"}
+_READ_COLUMNS = [c for c in account_table.c if c.name not in _HMAC_COLUMNS]
 _IBAN_TAKEN = "account_workspace_id_iban_hmac_key"
 _ANCHOR_FIELDS = {"opening_balance", "opening_balance_on"}
+# Write-only inputs (stored masked + HMAC'd), and the fields an update cannot change yet
+# (phase 6 step 1 adds kind, purpose and provider to PATCH /accounts/{id}).
+_WRITE_ONLY = {"iban", "external_ref"}
+_NOT_UPDATED = _WRITE_ONLY | {"kind", "purpose", "provider"}
 # AccountCreate's rules for the fields an update may change (everything but the IBAN).
 _AccountFields = create_model(
     "_AccountFields",
@@ -45,19 +57,25 @@ _AccountFields = create_model(
     **{
         name: (field.annotation, field)
         for name, field in AccountCreate.model_fields.items()
-        if name != "iban"
+        if name not in _NOT_UPDATED
     },
 )
 
 
 def create_account(ctx: CommandContext, data: AccountCreate, *, iban_key: bytes) -> Account:
+    if data.kind not in BANK_ACCOUNT_KINDS or data.iban is None:
+        raise RuleError(ACCOUNT_KIND_NOT_AVAILABLE, f"accounts of kind {data.kind} come later")
     iban = protect_iban(data.iban, iban_key)
+    purpose = data.purpose or (
+        AccountPurpose.PRIVATE if data.is_owner_account else AccountPurpose.RENTAL
+    )
     try:
         row = ctx.conn.execute(
             insert(account_table)
             .values(
                 workspace_id=ctx.workspace_id,
-                **data.model_dump(exclude={"iban"}),
+                **data.model_dump(exclude=_WRITE_ONLY | {"purpose"}),
+                purpose=purpose,
                 iban_masked=iban.masked,
                 iban_hmac=iban.hmac,
                 created_at=ctx.now,
@@ -83,6 +101,9 @@ def create_account(ctx: CommandContext, data: AccountCreate, *, iban_key: bytes)
             opening_balance=created.opening_balance,
             opening_balance_on=created.opening_balance_on,
             is_owner_account=created.is_owner_account,
+            kind=created.kind,
+            purpose=created.purpose,
+            provider=created.provider,
         ),
     )
     if created.is_owner_account:
@@ -124,13 +145,24 @@ def update_account(
     changes = diff_changes(old, new_values)
     if not changes:
         return _to_account(current)
-    if new_values.get("is_owner_account") and _has_imports(ctx.conn, account_id):
+    if (
+        "is_owner_account" in changes
+        and new_values["is_owner_account"]
+        and _has_imports(ctx.conn, account_id)
+    ):
         raise ConflictError("an account with imported statements cannot be an owner account")
+    stored = dict(new_values)
+    if "is_owner_account" in changes:
+        # Until phase 6 step 1 adds purpose to the PATCH, the flag a person sets still decides
+        # which reads treat the account as the household's (they read purpose since 0025).
+        stored["purpose"] = (
+            AccountPurpose.PRIVATE if new_values["is_owner_account"] else AccountPurpose.RENTAL
+        ).value
 
     row = ctx.conn.execute(
         update(account_table)
         .where(account_table.c.id == account_id)
-        .values(**new_values, updated_at=ctx.now)
+        .values(**stored, updated_at=ctx.now)
         .returning(*_READ_COLUMNS)
     ).one()
     updated = _to_account(row)
@@ -161,7 +193,7 @@ def list_accounts(conn: Connection) -> list[Account]:
     by label."""
     rows = conn.execute(
         select(*_READ_COLUMNS).order_by(
-            account_table.c.is_owner_account,
+            account_table.c.purpose != AccountPurpose.RENTAL.value,
             account_table.c.label,
             account_table.c.created_at,
             account_table.c.id,
@@ -177,5 +209,5 @@ def _has_imports(conn: Connection, account_id: UUID) -> bool:
 
 
 def _to_account(row: Row) -> Account:
-    values: dict[str, Any] = {k: v for k, v in row._mapping.items() if k != "iban_hmac"}
+    values: dict[str, Any] = {k: v for k, v in row._mapping.items() if k not in _HMAC_COLUMNS}
     return Account.model_validate(values)

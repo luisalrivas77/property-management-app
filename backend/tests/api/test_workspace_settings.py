@@ -11,6 +11,7 @@ from api_support import make_settings, ok
 pytestmark = pytest.mark.db
 
 OFF = {
+    "ai_private_accounts": False,
     "ai_tenant_documents": False,
     "auto_accept_llm": False,
     "reminder_emails": False,
@@ -38,7 +39,7 @@ def test_a_change_writes_one_event_naming_only_what_changed(client_a, auth_a):
     [event] = _settings_events(client_a)
     assert event["entity_type"] == "workspace"
     assert event["entity_id"] == str(auth_a.workspace_id)
-    assert event["payload"] == {"changes": {"ai_tenant_documents": True}}
+    assert event["payload"] == {"changes": {"ai_tenant_documents": True}, "consented_by": None}
     assert event["actor_type"] == "user"
 
     # Sending both, one of them unchanged: the event names only the one that changed.
@@ -50,8 +51,8 @@ def test_a_change_writes_one_event_naming_only_what_changed(client_a, auth_a):
     )
     assert both == {**OFF, "ai_tenant_documents": True, "auto_accept_llm": True}
     assert [e["payload"] for e in _settings_events(client_a)] == [
-        {"changes": {"ai_tenant_documents": True}},
-        {"changes": {"auto_accept_llm": True}},
+        {"changes": {"ai_tenant_documents": True}, "consented_by": None},
+        {"changes": {"auto_accept_llm": True}, "consented_by": None},
     ]
 
 
@@ -64,12 +65,12 @@ def test_reminder_emails_changes_through_settings_changed(client_a, auth_a):
     [event] = _settings_events(client_a)
     assert event["entity_type"] == "workspace"
     assert event["entity_id"] == str(auth_a.workspace_id)
-    assert event["payload"] == {"changes": {"reminder_emails": True}}
+    assert event["payload"] == {"changes": {"reminder_emails": True}, "consented_by": None}
 
     assert ok(client_a.patch("/api/workspace/settings", json={"reminder_emails": False})) == OFF
     assert [e["payload"] for e in _settings_events(client_a)] == [
-        {"changes": {"reminder_emails": True}},
-        {"changes": {"reminder_emails": False}},
+        {"changes": {"reminder_emails": True}, "consented_by": None},
+        {"changes": {"reminder_emails": False}, "consented_by": None},
     ]
 
 

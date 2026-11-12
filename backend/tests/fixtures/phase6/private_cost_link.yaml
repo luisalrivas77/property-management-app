@@ -1,0 +1,208 @@
+# Rule fixture: a rental bill paid from a private account (D161) and the category set per
+# account purpose (D159)
+#
+# docs/phases/phase-6.md D159, D161, §14. The Anlage V reads confirmed allocations of the
+# rental account plus the private_cost tax inputs; an hh_property_cost allocation is
+# pass_through and never summed. Three paths for a private line that pays a bill of the
+# property:
+#   (1) the bill already has a private_cost row: the line is document-matched (amount ± 0.01,
+#       ± 10 days, the bill's IBAN or number in the purpose) and booked hh_property_cost with
+#       the property and the bill; it becomes the row's proof (D143 widened to any own
+#       account): payment_proof.missing ends, the year paid is the line's booking date;
+#   (2) the bill has no private_cost row yet: the row is proposed from the bill's parts and the
+#       line through the existing tax-input command, confirmed by the user;
+#   (3) no bill at all: the line booked hh_property_cost gets the to-do „Beleg hochladen“ and
+#       proposes nothing to the draft.
+# The reverse: a private_cost row that exists before the private import is linked when the
+# line arrives (the link pass proposes the match, status proposed).
+# Category set: a private account allows only the hh_* codes, the two transfer codes, the depot
+# codes, bank_fees and uncategorized; the rental account only the phase 2-4 codes; anything
+# else is refused with allocation.category_not_for_account (checked on load against
+# rules/household/taxonomy.allowed_categories).
+#
+# expect.counted: what the Anlage V counts for the bill (a line by its transaction id, or the
+# private_cost row), each once; draft_case: the case of phase 3 anlage_v_2026.yaml that shows
+# the whole draft for this path (the spec's "+ phase 3 private_cost.yaml": that file does not
+# exist, the private_cost cases live in anlage_v_2026.yaml). Pending phase 6 step 2, except
+# the category set (step 1) and the draft case that runs today.
+#
+# Step 0 readings (listed in the step 0 report):
+# - A document match on a private line is a proposal (hh_property_cost has no threshold,
+#   D159), so path (1)'s line proves the row once it is confirmed; the case states the
+#   confirmed line.
+# - Path (3)'s to-do is named by its label „Beleg hochladen“ (D161 names no warning code).
+# - "an hh_* code on the rental account → refused" is read as the same code,
+#   allocation.category_not_for_account.
+# - Path (2)'s proposed row takes the tax year of the line's booking date (D143's year-paid
+#   rule) and the bill's part as its category and amount.
+
+ids:
+  property: &P 0000000b-0000-4000-8000-000000000001
+  doc_repair: &D_R 00000d0c-0000-4000-8000-000000000601
+  doc_locksmith: &D_N 00000d0c-0000-4000-8000-000000000602
+  input_repair: &TI_R 000000f1-0000-4000-8000-000000000601
+
+bases:
+  hmac_craftsman: &H_CRAFT "c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1"
+  hmac_locksmith: &H_LOCK "c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2"
+  row_repair: &ROW_R {id: *TI_R, document_id: *D_R, category: repairs, amount: "595.00"}
+  line_repair: &LINE_R
+    id: 0000002a-0000-4000-8000-000000000701
+    booking_date: 2026-11-27
+    amount: "-595.00"
+    counterparty_name: Sanitär Beispiel GmbH
+    counterparty_iban_hmac: *H_CRAFT
+    purpose: Rechnung R-2026-0420
+
+context:
+  account_purpose: private
+  documents:
+    - id: *D_R
+      kind: invoice
+      category: repairs
+      property_id: *P
+      payments:
+        - {due_on: 2026-11-20, amount: "595.00"}
+      iban_hmac: *H_CRAFT
+      reference: R-2026-0420
+      parts:
+        - {category: repairs, amount: "595.00"}
+    - id: *D_N
+      kind: invoice
+      category: repairs
+      property_id: *P
+      payments:
+        - {due_on: 2026-09-14, amount: "238.00"}
+      iban_hmac: *H_LOCK
+      reference: "2026-1177"
+      parts:
+        - {category: repairs, amount: "238.00"}
+
+cases:
+  - id: bill_paid_from_the_rental_account_counted_once
+    description: >
+      the repair bill has a private_cost row, and the rental account paid it after all: the
+      line is counted, the row is not, and the existing warning names it (phase 2 D135)
+    pending: "phase 6 step 2 (D161's three paths)"
+    purpose: rental
+    line: *LINE_R
+    private_cost_rows: [*ROW_R]
+    booking: {by: document_match, category: repairs, property_id: *P, document_id: *D_R}
+    draft_case: private_cost_paid_from_account_not_counted
+    expect:
+      allocation: {by: document_match, category: repairs, property_id: *P, document_id: *D_R}
+      counted: [{source: line, id: 0000002a-0000-4000-8000-000000000701}]
+      todos: [tax.private_cost_paid_from_account]
+
+  - id: private_line_proves_its_row
+    description: path (1), the match confirmed
+    pending: "phase 6 step 2 (D161's three paths)"
+    purpose: private
+    line: *LINE_R
+    private_cost_rows: [*ROW_R]
+    booking: {by: document_match, category: hh_property_cost, property_id: *P, document_id: *D_R}
+    draft_case: private_repair_proven_by_private_line
+    expect:
+      allocation: {by: document_match, category: hh_property_cost, property_id: *P,
+                   document_id: *D_R}
+      status: confirmed
+      counted: [{source: tax_input, id: *TI_R}]
+      proof_of: *TI_R
+      todos: []
+
+  - id: bill_without_a_row_proposes_it
+    description: path (2), the locksmith's bill read with its parts but paid from no known account
+    pending: "phase 6 step 2 (D161's three paths)"
+    purpose: private
+    line:
+      id: 0000002a-0000-4000-8000-000000000702
+      booking_date: 2026-09-16
+      amount: "-238.00"
+      counterparty_name: Schlüsseldienst Beispiel
+      counterparty_iban_hmac: *H_LOCK
+      purpose: RE 2026-1177
+    booking: {by: document_match, category: hh_property_cost, property_id: *P, document_id: *D_N}
+    expect:
+      allocation: {by: document_match, category: hh_property_cost, property_id: *P,
+                   document_id: *D_N}
+      status: proposed
+      counted: []
+      proposes: {document_id: *D_N, category: repairs, amount: "238.00", tax_year: 2026}
+      todos: []
+
+  - id: private_line_without_a_bill
+    description: path (3), booked by the user with the property and no bill
+    pending: "phase 6 step 2 (D161's three paths)"
+    purpose: private
+    line:
+      id: 0000002a-0000-4000-8000-000000000703
+      booking_date: 2026-10-05
+      amount: "-89.00"
+      counterparty_name: "BAUMARKT BEISPIEL 77//Musterstadt/DE"
+      purpose: Kartenzahlung girocard
+      booking_text: KARTENZAHLUNG
+    booking: {by: user, category: hh_property_cost, property_id: *P}
+    expect:
+      allocation: {by: user, category: hh_property_cost, property_id: *P}
+      status: confirmed
+      counted: []
+      todos: ["Beleg hochladen"]
+
+  - id: late_import_links_an_existing_row
+    description: the private_cost row was entered in March; the private account's import brings its line in November
+    pending: "phase 6 step 2 (D161's three paths)"
+    purpose: private
+    line: *LINE_R
+    private_cost_rows: [*ROW_R]
+    booking: {by: relink, category: hh_property_cost, property_id: *P, document_id: *D_R}
+    expect:
+      allocation: {by: relink, category: hh_property_cost, property_id: *P, document_id: *D_R}
+      status: proposed
+      counted: [{source: tax_input, id: *TI_R}]
+      proof_of: *TI_R
+      todos: []
+
+  - id: household_rows_leave_the_draft_unchanged
+    description: every hh_* row removed gives the same draft (D159's test); runs today
+    purpose: private
+    draft_case: household_rows_leave_the_draft_unchanged
+    expect: {}
+
+  - id: rental_category_on_a_private_line_refused
+    pending: "phase 6 step 1 (the category set per purpose, D159)"
+    purpose: private
+    line:
+      id: 0000002a-0000-4000-8000-000000000704
+      booking_date: 2026-10-06
+      amount: "-120.00"
+      counterparty_name: Maler Beispiel
+      purpose: Rechnung 55
+    booking: {by: user, category: repairs, property_id: *P}
+    expect:
+      error: {code: allocation.category_not_for_account}
+
+  - id: household_code_on_the_rental_account_refused
+    pending: "phase 6 step 1 (the category set per purpose, D159)"
+    purpose: rental
+    line:
+      id: 0000002a-0000-4000-8000-000000000705
+      booking_date: 2026-10-07
+      amount: "-35.00"
+      counterparty_name: "REWE SAGT DANKE. 5512//Musterstadt/DE"
+      purpose: Kartenzahlung girocard
+    booking: {by: model, category: hh_groceries}
+    expect:
+      error: {code: allocation.category_not_for_account}
+
+  - id: transfer_code_on_the_rental_account_refused
+    pending: "phase 6 step 1 (the category set per purpose, D159)"
+    purpose: rental
+    line:
+      id: 0000002a-0000-4000-8000-000000000706
+      booking_date: 2026-10-08
+      amount: "-500.00"
+      counterparty_name: Eigentümer A
+      purpose: Umbuchung
+    booking: {by: user, category: internal_transfer_out}
+    expect:
+      error: {code: allocation.category_not_for_account}

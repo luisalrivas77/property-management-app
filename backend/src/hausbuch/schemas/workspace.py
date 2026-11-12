@@ -18,6 +18,9 @@ class Workspace(Schema):
     ai_tenant_documents: bool = False  # tenant documents may be sent to the model (D16)
     auto_accept_llm: bool = False  # LLM categorizations may auto-confirm (D26)
     reminder_emails: bool = False  # phase 5 (migration 0019, D123): the daily digest is mailed
+    # Phase 6 (migration 0025, D168): private-account lines and the depot's documents may be
+    # sent to the model, switched on with both owners' consent.
+    ai_private_accounts: bool = False
 
 
 class AppUser(Record):

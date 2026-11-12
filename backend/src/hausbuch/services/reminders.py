@@ -46,6 +46,7 @@ from hausbuch.rules.statements import is_direct_debit
 from hausbuch.schemas.allocation import AllocationCategory, AllocationStatus
 from hausbuch.schemas.api import InboxItem, InboxItemKind
 from hausbuch.schemas.enums import (
+    AccountPurpose,
     ImportStatus,
     IncomeInputKind,
     OperatingCostsTerms,
@@ -286,15 +287,15 @@ def _accounts(conn: Connection) -> list[ReminderAccount]:
         r.account_id: r for r in conn.execute(select(b.account_id, b.created_at, b.last_sync_at))
     }
     out = []
-    for r in conn.execute(
-        select(a.id, a.label, a.is_owner_account, a.opening_balance_on).order_by(a.id)
-    ):
+    for r in conn.execute(select(a.id, a.label, a.purpose, a.opening_balance_on).order_by(a.id)):
         connection = connections.get(r.id)
         out.append(
             ReminderAccount(
                 id=r.id,
                 label=r.label,
-                is_owner_account=r.is_owner_account,
+                # The rules' "owner account" is a private one since migration 0025 (phase 6
+                # D156): the statement reminders stay on the rental account.
+                is_owner_account=r.purpose == AccountPurpose.PRIVATE.value,
                 opening_balance_on=r.opening_balance_on,
                 reconciled_until=reconciled.get(r.id),
                 connection=connection is not None,

@@ -27,6 +27,7 @@ test("switching on Mieterdokumente is saved and recorded as one event", async ({
   await expect(page.getByRole("switch", { name: "KI-Zuordnungen automatisch bestätigen" })).not.toBeChecked();
 
   const settings = await apiCall<{
+    ai_private_accounts: boolean;
     ai_tenant_documents: boolean;
     auto_accept_llm: boolean;
     reminder_emails: boolean;
@@ -34,6 +35,7 @@ test("switching on Mieterdokumente is saved and recorded as one event", async ({
   }>(page, "GET", "/api/workspace/settings");
   // reminder_emails_available: the e2e server has no Transactional Email settings.
   expect(settings).toEqual({
+    ai_private_accounts: false,
     ai_tenant_documents: true,
     auto_accept_llm: false,
     reminder_emails: false,
@@ -41,7 +43,7 @@ test("switching on Mieterdokumente is saved and recorded as one event", async ({
   });
   const events = await apiCall<{ type: string; payload: unknown }[]>(page, "GET", "/api/events?entity_type=workspace");
   expect(events.filter((e) => e.type === "workspace.settings_changed").map((e) => e.payload)).toEqual([
-    { changes: { ai_tenant_documents: true } },
+    { changes: { ai_tenant_documents: true }, consented_by: null },
   ]);
 });
 
@@ -65,6 +67,6 @@ test("the reminder email switch is saved and says when sending is not set up", a
   await expect(page.getByRole("switch", { name: "Erinnerungen per E-Mail" })).toBeChecked();
   const events = await apiCall<{ type: string; payload: unknown }[]>(page, "GET", "/api/events?entity_type=workspace");
   expect(events.filter((e) => e.type === "workspace.settings_changed").map((e) => e.payload)).toEqual([
-    { changes: { reminder_emails: true } },
+    { changes: { reminder_emails: true }, consented_by: null },
   ]);
 });

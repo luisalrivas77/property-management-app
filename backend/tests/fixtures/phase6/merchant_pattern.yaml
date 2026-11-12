@@ -1,0 +1,73 @@
+# Rule fixture: the name pattern of a learned rule on a private account
+# (hausbuch.rules.matching.merchant_pattern)
+#
+# merchant_pattern(name) -> str, a regex anchored at the start
+# docs/phases/phase-6.md D160, §5.4, §14. The normalisation, in this order:
+#   1. the trailing location token //<Ort>/<Land> removed (Sparkasse card lines);
+#   2. upper-cased;
+#   3. digits, slashes and dots replaced by a space;
+#   4. whitespace collapsed to one space, trimmed;
+#   5. regex-escaped (a space stays a space), anchored with ^.
+# The pattern comes from the counterparty name only, never from a booking text such as
+# KARTENZAHLUNG: a DKB line carries the merchant in its payee column and the booking kind in
+# Umsatztyp. rule_hits (unchanged) matches it case-insensitively on the collapsed name.
+# Which answers become a name rule (a card line yes; a split, a tax-relevant code, a transfer
+# code no; a conflicting pattern rule.conflicts; PayPal rule.too_broad) is infer_rule's, in
+# phase 2 rules.yaml.
+#
+# Invented merchant names; the three of §5.4 are the spec's own.
+#
+# Step 0 readings (listed in the step 0 report):
+# - "digits, slashes, dots ... removed": the spec's own AMAZON example keeps "S C A" from
+#   "S.C.A.", so a removed character becomes a space before the collapse (removing it outright
+#   would give "SCA"). REWE's "DANKE. 4421" gives "DANKE" either way.
+# - "regex-escaped": §5.4's results show plain spaces (^REWE SAGT DANKE), so a space is not
+#   escaped (Python's re.escape escapes it); every other special character is (DM\-, \+).
+# - PayPal: §5.4 writes `^PAYPAL EUROPE`… . The stated normalisation gives the whole name,
+#   `^PAYPAL EUROPE S A R L ET CIE S C A`; the "…" is read as an ellipsis of the pattern, not a
+#   cut after two words (no rule in D160 cuts there). PayPal is refused as a rule anyway when
+#   the name was confirmed under two categories (rule.too_broad, D160).
+
+cases:
+  - id: rewe_card_line
+    pending: "phase 6 step 1 (name-pattern rules, D160)"
+    name: "REWE SAGT DANKE. 4421//Berlin/DE"
+    pattern: "^REWE SAGT DANKE"
+  - id: amazon_dots_become_spaces
+    pending: "phase 6 step 1 (name-pattern rules, D160)"
+    name: "AMAZON PAYMENTS EUROPE S.C.A."
+    pattern: "^AMAZON PAYMENTS EUROPE S C A"
+  - id: paypal_whole_name
+    pending: "phase 6 step 1 (name-pattern rules, D160)"
+    name: "PayPal Europe S.a.r.l. et Cie S.C.A"
+    pattern: "^PAYPAL EUROPE S A R L ET CIE S C A"
+    note: the merchant is in the purpose text; infer_rule refuses it (rule.too_broad)
+  - id: dkb_payee_column
+    description: "a DKB card payment: the merchant in the payee column, no KARTENZAHLUNG text"
+    pending: "phase 6 step 1 (name-pattern rules, D160)"
+    name: "Edeka Müller"
+    pattern: "^EDEKA MÜLLER"
+  - id: hyphen_escaped
+    pending: "phase 6 step 1 (name-pattern rules, D160)"
+    name: "dm-drogerie markt"
+    pattern: "^DM\\-DROGERIE MARKT"
+  - id: legal_form_dots
+    pending: "phase 6 step 1 (name-pattern rules, D160)"
+    name: "Netflix International B.V."
+    pattern: "^NETFLIX INTERNATIONAL B V"
+  - id: terminal_number_and_location
+    pending: "phase 6 step 1 (name-pattern rules, D160)"
+    name: "ARAL Station 123456//Musterstadt/DE"
+    pattern: "^ARAL STATION"
+  - id: contract_number_with_slash
+    pending: "phase 6 step 1 (name-pattern rules, D160)"
+    name: "Stadtwerke Musterstadt 0815/2026"
+    pattern: "^STADTWERKE MUSTERSTADT"
+  - id: plus_escaped
+    pending: "phase 6 step 1 (name-pattern rules, D160)"
+    name: "Apotheke am Markt+Co"
+    pattern: "^APOTHEKE AM MARKT\\+CO"
+  - id: whitespace_collapsed
+    pending: "phase 6 step 1 (name-pattern rules, D160)"
+    name: "  Spotify   AB  "
+    pattern: "^SPOTIFY AB"

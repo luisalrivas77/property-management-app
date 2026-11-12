@@ -51,7 +51,13 @@ from .common import (
     TaxYear,
     Year,
 )
-from .enums import AcquisitionCostKind, OperatingCostsTerms, PriceSplitSource, PropertyKind
+from .enums import (
+    AccountPurpose,
+    AcquisitionCostKind,
+    OperatingCostsTerms,
+    PriceSplitSource,
+    PropertyKind,
+)
 from .property import Address
 
 # Error codes the schemas raise inside a validation message; rules/errors.py holds the same
@@ -849,6 +855,11 @@ class AllocationFact(PaymentFacts):
     document_id: UUID | None = None
     invoice_net: PositiveMoney | None = None
     counterparty_iban_masked: MaskedIban | None = None
+    # Phase 6 D161: the purpose of the line's account. The draft sums rental-purpose rows only;
+    # a private row (hh_property_cost with the property and the bill) is that bill's proof of
+    # payment, never a cost. Rental unless stated, so every phase 3-5 fact keeps its meaning;
+    # services/tax sets it from step 2.
+    account_purpose: AccountPurpose = AccountPurpose.RENTAL
 
 
 # --- §5.2 AfA and §5.3 the 15 % tracker ------------------------------------------------

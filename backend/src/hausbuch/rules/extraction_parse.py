@@ -917,7 +917,17 @@ CATALOGUE_SUBTYPES = frozenset(set(DocumentSubtype) - _BEFORE_CATALOGUE)
 # (ai.requests.classify_schema), and dropped should a model answer one anyway.
 # A payment proof (phase 3 D143) was code-only until D149 (11 Nov 2026): one uploaded through
 # the normal upload is classified too, so it can be proposed for the bill it pays.
-CODE_ONLY_SUBTYPES = frozenset({DocumentSubtype.FINANCING_INVOICE})
+# Phase 6 (migration 0025): an exchange export is typed by its upload button and never sent
+# to the model (D166); a distribution note joins the classifier with the depot readers in
+# step 4 (D165 (2)), so until then the classify request, and every recorded eval hash, stays
+# as it was.
+CODE_ONLY_SUBTYPES = frozenset(
+    {
+        DocumentSubtype.FINANCING_INVOICE,
+        DocumentSubtype.EXCHANGE_EXPORT,
+        DocumentSubtype.DISTRIBUTION_NOTE,
+    }
+)
 # The types with a reader of their own that no catalogue subtype overrides (D131, decided 10
 # Nov 2026 after the first eval recording read an owner's Lohnsteuerbescheinigung as an
 # Arbeitgeberbescheinigung, which subtype-first routing would have read for title and date

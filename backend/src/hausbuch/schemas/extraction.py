@@ -504,6 +504,76 @@ class PaymentProofExtraction(_Typing):
     )
 
 
+# Phase 6 D165 (2), (3): the depot's documents. Written in step 0, read from step 4 (no
+# subtype routes to them before then); behind the ai_private_accounts switch (D168). The
+# depot number, customer number, IdNr and IBAN are never asked and are scrubbed from every
+# quote. Units are decimals (up to 6 places for an ETF share); the lists of a report are
+# text_list items in a fixed `a | b | c` order, as the dwellings of D139.
+
+
+class TradeConfirmationExtraction(_Typing):
+    """Wertpapierabrechnung (trade_confirmation, D165 (2)): one buy or sell of one security."""
+
+    isin: ExtractedValue = ev("text", "the security's ISIN, twelve characters")
+    security_name: ExtractedValue = ev("text", "the security's name as printed")
+    trade_date: ExtractedValue = ev("date", "the trade date (Handelstag, Schlusstag)")
+    settlement_date: ExtractedValue = ev("date", "the settlement date (Valuta)")
+    side: ExtractedValue = ev("text", "Kauf or Verkauf, as printed")
+    units: ExtractedValue = ev("decimal", "the units (Stück, Anteile) traded")
+    price_per_unit: ExtractedValue = ev("money", "the price per unit (Kurs)")
+    gross_amount: ExtractedValue = ev("money", "the gross amount (Kurswert)")
+    fees: ExtractedValue = ev("money", "the fees and costs charged on this trade, summed")
+    net_amount: ExtractedValue = ev(
+        "money", "the amount debited or credited to the cash account (Ausmachender Betrag)"
+    )
+    currency: ExtractedValue = ev("text", "the currency of the amounts, as a three-letter code")
+    order_reference: ExtractedValue = ev(
+        "text", "the order or transaction reference (Auftragsnummer, Referenz)"
+    )
+
+
+class DistributionNoteExtraction(_Typing):
+    """Ertragsabrechnung / Ausschüttung (distribution_note, D165 (2))."""
+
+    isin: ExtractedValue = ev("text", "the security's ISIN, twelve characters")
+    security_name: ExtractedValue = ev("text", "the security's name as printed")
+    record_date: ExtractedValue = ev("date", "the record date (Ex-Tag or Stichtag)")
+    payment_date: ExtractedValue = ev("date", "the payment date (Zahltag, Valuta)")
+    units: ExtractedValue = ev("decimal", "the units (Stück, Anteile) held on the record date")
+    gross_per_unit: ExtractedValue = ev("money", "the distribution per unit, before taxes")
+    gross_amount: ExtractedValue = ev("money", "the gross distribution, before taxes")
+    withholding_tax: ExtractedValue = ev(
+        "money", "foreign withholding tax (Quellensteuer) deducted, if any"
+    )
+    german_taxes: ExtractedValue = ev(
+        "money",
+        "German taxes deducted: Kapitalertragsteuer, Solidaritätszuschlag and Kirchensteuer,"
+        " summed",
+    )
+    net_amount: ExtractedValue = ev("money", "the amount credited to the cash account")
+    currency: ExtractedValue = ev("text", "the currency of the amounts, as a three-letter code")
+
+
+DEPOT_POSITIONS_MEANING = (
+    "every position the report lists, one item per security, each written `ISIN | name | "
+    "units | price | value | currency`, as printed; never a subtotal or the total row"
+)
+DEPOT_TRADES_MEANING = (
+    "every trade of the report's Wertpapierumsätze list, one item per trade, each written "
+    "`ISIN | trade date | units | amount | reference`, as printed; unbekannt for a part the "
+    "row does not state"
+)
+
+
+class DepotReportExtraction(_Typing):
+    """Quartalsbericht (depot_report, D165 (3)): the positions on a date and the period's
+    trades, from which code proposes holding_statement rows."""
+
+    report_date: ExtractedValue = ev("date", "the date the positions are stated for (Stichtag)")
+    positions: ExtractedValue = ev("text_list", DEPOT_POSITIONS_MEANING)
+    trades: ExtractedValue = ev("text_list", DEPOT_TRADES_MEANING)
+
+
 # Phase 2 D139: a Wohnflächenberechnung of a WEG lists every dwelling of the building; code
 # (rules.prefill) picks the household's row by the flat's MEA or WE label, never by a sum.
 DWELLINGS_MEANING = (
@@ -671,6 +741,9 @@ EXTRACTION_MODELS: dict[ExtractionKind, type[_Typing]] = {
     ExtractionKind.GENERAL: GeneralExtraction,
     ExtractionKind.MANAGEMENT_CONTRACT: ManagementContractExtraction,
     ExtractionKind.PAYMENT_PROOF: PaymentProofExtraction,
+    ExtractionKind.TRADE_CONFIRMATION: TradeConfirmationExtraction,  # phase 6
+    ExtractionKind.DISTRIBUTION_NOTE: DistributionNoteExtraction,
+    ExtractionKind.DEPOT_REPORT: DepotReportExtraction,
 }
 
 
@@ -711,4 +784,7 @@ AnyExtraction = (
     | GeneralExtraction
     | ManagementContractExtraction
     | PaymentProofExtraction
+    | TradeConfirmationExtraction
+    | DistributionNoteExtraction
+    | DepotReportExtraction
 )

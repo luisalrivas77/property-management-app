@@ -328,3 +328,14 @@ def product_id_usable(product_id: str | None) -> bool:
         and 0 < len(product_id) <= PRODUCT_ID_MAX
         and product_id == product_id.strip()
     )
+
+
+# --- Phase 6: named credential slots (D163, fixtures/phase6/fints_slots.yaml; step 3) -------
+
+PIN_VARIABLE = "HAUSBUCH_FINTS_PIN"  # the slot `primary` (phase 5's one PIN, unchanged)
+
+
+def pin_variable(slot: str) -> str:
+    """The container secret holding a slot's PIN: `primary` -> HAUSBUCH_FINTS_PIN, any other
+    valid slot -> HAUSBUCH_FINTS_PIN_<SLOT upper-cased>; an invalid name is refused."""
+    raise NotImplementedError("phase 6 step 3 (FinTS connections per login)")

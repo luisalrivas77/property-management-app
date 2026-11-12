@@ -1,0 +1,126 @@
+# Parser fixture: DKB's CSV export (hausbuch.services.bank.dkb_csv.parse through
+# services.bank.parse_statement; docs/phases/phase-6.md D173 (3), D164, §14)
+#
+# Same shape as phase 2's csv_camt.yaml (fixture_models_phase2.ParserCase), plus the import's
+# outcome (`import`), which the parser alone cannot show. The layout is the 2025 one from the
+# secondary sources of §3: UTF-8 with a BOM, `;`-separated, every field quoted, four metadata
+# lines (account type with the IBAN, an empty line, „Kontostand vom DD.MM.YYYY:“ with the
+# balance, an empty line), the header in line 5; dates DD.MM.YY, German amounts. Step 1
+# corrects it against the anonymised real export and records the correction in §14.1.
+#
+# Reading rules the cases pin (D173 (3)):
+#   - the delimiter and the BOM are sniffed and the header is found by its first column name
+#     (Buchungsdatum), wherever it is (line 5, or line 7 in the older layout with a period line)
+#   - Status ≠ Gebucht is dropped (the camt PDNG analogue), with one warning counting them
+#   - the counterparty is the payee on a debit and the payer on a credit; the IBAN column is
+#     the counterparty's IBAN (masked and HMAC'd on store); a card payment's merchant is the
+#     payee
+#   - Mandatsreferenz, Gläubiger-ID and Kundenreferenz are kept in the purpose for the rules and
+#     the model; the mandate also in mandate_ref, the Kundenreferenz also in end_to_end_ref
+#   - no opening and no closing balance from the file: the Kontostand's value and date only
+#     pre-fill the typed closing, so the import waits at pending_balance with the question
+#     „Ist das der Saldo nach der letzten Buchung vom <last booking day>?“ (Q-O75)
+#   - no bank reference: line_hash takes D22's fallback, so two identical lines are kept by
+#     their position (recomputed on load with rules.statements.line_hashes when every line of
+#     a case is pinned)
+#   - the IBAN of the metadata line routes the file (D164): imported onto an account with
+#     another IBAN it is refused with statement.account_mismatch
+#
+# Invented names and amounts; IBANs are checksum-valid synthetic IBANs under the
+# Bundesbank test BLZ 10000000, none under a real bank. Owner A stands for the account holder.
+#
+# Step 0 readings (listed in the step 0 report):
+# - Umsatztyp (Eingang/Ausgang) is the booking_text; the account holder's own name column
+#   (the payer on a debit, the payee on a credit) is not stored, raw stays empty.
+# - The references are appended to the purpose as "Gläubiger-ID: …", "Mandatsreferenz: …",
+#   "Kundenreferenz: …", each only when filled, in that order.
+# - The spec's `balance_source = typed` is the enum value `user` (schemas.enums.BalanceSource).
+# - The pending warning reads like the Sparkasse CSV's: "<n> pending line(s) (Vorgemerkt)
+#   skipped".
+
+ids:
+  account: 0000006b-0000-4000-8000-000000000002
+
+cases:
+  - id: export_2025_layout
+    pending: "phase 6 step 1 (the DKB CSV reader, D173 (3))"
+    input:
+      media_type: text/csv
+      text: "﻿\"Girokonto\";\"DE61 1000 0000 0000 0030 04\"\n\"\"\n\"Kontostand vom 05.11.2026:\";\"1.234,56 €\"\n\"\"\n\"Buchungsdatum\";\"Wertstellung\";\"Status\";\"Zahlungspflichtige*r\";\"Zahlungsempfänger*in\";\"Verwendungszweck\";\"Umsatztyp\";\"IBAN\";\"Betrag (€)\";\"Gläubiger-ID\";\"Mandatsreferenz\";\"Kundenreferenz\"\n\"05.11.26\";\"05.11.26\";\"Gebucht\";\"Owner A\";\"REWE SAGT DANKE 12345\";\"Kartenzahlung girocard\";\"Ausgang\";\"\";\"-42,17\";\"\";\"\";\"\"\n\"04.11.26\";\"04.11.26\";\"Vorgemerkt\";\"Owner A\";\"BEISPIEL ONLINE SHOP\";\"Kartenzahlung\";\"Ausgang\";\"\";\"-19,99\";\"\";\"\";\"\"\n\"03.11.26\";\"03.11.26\";\"Gebucht\";\"Owner A\";\"Stadtwerke Beispiel GmbH\";\"Abschlag Strom 11/2026\";\"Ausgang\";\"DE45100000000000003001\";\"-58,00\";\"DE98ZZZ09999999999\";\"MREF-4711\";\"\"\n\"01.11.26\";\"01.11.26\";\"Gebucht\";\"Partei J\";\"Owner A\";\"Rückzahlung Konzertkarten\";\"Eingang\";\"DE18100000000000003002\";\"35,00\";\"\";\"\";\"KREF-2026-11\"\n\"28.10.26\";\"28.10.26\";\"Gebucht\";\"Owner A\";\"BÄCKEREI BEISPIEL\";\"Kartenzahlung girocard\";\"Ausgang\";\"\";\"-3,20\";\"\";\"\";\"\"\n\"28.10.26\";\"28.10.26\";\"Gebucht\";\"Owner A\";\"BÄCKEREI BEISPIEL\";\"Kartenzahlung girocard\";\"Ausgang\";\"\";\"-3,20\";\"\";\"\";\"\"\n"
+    expect:
+      format: dkb_csv
+      account_iban: DE61100000000000003004
+      opening_balance: null
+      closing_balance: null
+      line_count: 5
+      total: "-71.57"
+      first_booking_on: 2026-10-28
+      last_booking_on: 2026-11-05
+      warnings: [1 pending line(s) (Vorgemerkt) skipped]
+      lines:
+        - index: 0
+          description: a card payment, the merchant in the payee column
+          line: {booking_date: 2026-11-05, value_date: 2026-11-05, amount: "-42.17", counterparty_name: REWE SAGT DANKE 12345, purpose: Kartenzahlung girocard, booking_text: Ausgang}
+        - index: 1
+          description: a direct debit with the creditor id and the mandate
+          line: {booking_date: 2026-11-03, value_date: 2026-11-03, amount: "-58.00", counterparty_name: Stadtwerke Beispiel GmbH, counterparty_iban: DE45100000000000003001, purpose: "Abschlag Strom 11/2026 Gläubiger-ID: DE98ZZZ09999999999 Mandatsreferenz: MREF-4711", booking_text: Ausgang, mandate_ref: MREF-4711}
+        - index: 2
+          description: an incoming transfer, the payer and the payer's IBAN
+          line: {booking_date: 2026-11-01, value_date: 2026-11-01, amount: "35.00", counterparty_name: Partei J, counterparty_iban: DE18100000000000003002, purpose: "Rückzahlung Konzertkarten Kundenreferenz: KREF-2026-11", booking_text: Eingang, end_to_end_ref: KREF-2026-11}
+        - index: 3
+          description: two identical card payments on one day, both kept
+          line: {booking_date: 2026-10-28, value_date: 2026-10-28, amount: "-3.20", counterparty_name: BÄCKEREI BEISPIEL, purpose: Kartenzahlung girocard, booking_text: Ausgang}
+        - index: 4
+          line: {booking_date: 2026-10-28, value_date: 2026-10-28, amount: "-3.20", counterparty_name: BÄCKEREI BEISPIEL, purpose: Kartenzahlung girocard, booking_text: Ausgang}
+    import:
+      account_iban: DE61100000000000003004
+      status: pending_balance
+      prefilled_closing: "1234.56"
+      prefilled_on: 2026-11-05
+      question: „Ist das der Saldo nach der letzten Buchung vom 05.11.2026?“
+      after_confirm: {status: reconciled, balance_source: user}
+
+  - id: header_in_line_seven
+    description: the older layout with a period line and a status line before the header
+    pending: "phase 6 step 1 (the DKB CSV reader, D173 (3))"
+    input:
+      media_type: text/csv
+      text: "﻿\"Girokonto\";\"DE61 1000 0000 0000 0030 04\"\n\"\"\n\"Zeitraum:\";\"01.10.2026 - 31.10.2026\"\n\"Status:\";\"Alle Umsätze\"\n\"Kontostand vom 31.10.2026:\";\"1.306,13 €\"\n\"\"\n\"Buchungsdatum\";\"Wertstellung\";\"Status\";\"Zahlungspflichtige*r\";\"Zahlungsempfänger*in\";\"Verwendungszweck\";\"Umsatztyp\";\"IBAN\";\"Betrag (€)\";\"Gläubiger-ID\";\"Mandatsreferenz\";\"Kundenreferenz\"\n\"28.10.26\";\"28.10.26\";\"Gebucht\";\"Owner A\";\"BÄCKEREI BEISPIEL\";\"Kartenzahlung girocard\";\"Ausgang\";\"\";\"-3,20\";\"\";\"\";\"\"\n"
+    expect:
+      format: dkb_csv
+      account_iban: DE61100000000000003004
+      opening_balance: null
+      closing_balance: null
+      line_count: 1
+      total: "-3.20"
+      first_booking_on: 2026-10-28
+      last_booking_on: 2026-10-28
+      lines:
+        - index: 0
+          line: {booking_date: 2026-10-28, value_date: 2026-10-28, amount: "-3.20", counterparty_name: BÄCKEREI BEISPIEL, purpose: Kartenzahlung girocard, booking_text: Ausgang}
+    import:
+      account_iban: DE61100000000000003004
+      status: pending_balance
+      prefilled_closing: "1306.13"
+      prefilled_on: 2026-10-31
+      question: „Ist das der Saldo nach der letzten Buchung vom 28.10.2026?“
+      after_confirm: {status: reconciled, balance_source: user}
+
+  - id: file_of_another_account_refused
+    description: the IBAN line routes the file; dropped on another account it is refused (D164)
+    pending: "phase 6 step 1 (D164's routing)"
+    input:
+      media_type: text/csv
+      text: "﻿\"Girokonto\";\"DE61 1000 0000 0000 0030 04\"\n\"\"\n\"Kontostand vom 31.10.2026:\";\"1.306,13 €\"\n\"\"\n\"Buchungsdatum\";\"Wertstellung\";\"Status\";\"Zahlungspflichtige*r\";\"Zahlungsempfänger*in\";\"Verwendungszweck\";\"Umsatztyp\";\"IBAN\";\"Betrag (€)\";\"Gläubiger-ID\";\"Mandatsreferenz\";\"Kundenreferenz\"\n\"28.10.26\";\"28.10.26\";\"Gebucht\";\"Owner A\";\"BÄCKEREI BEISPIEL\";\"Kartenzahlung girocard\";\"Ausgang\";\"\";\"-3,20\";\"\";\"\";\"\"\n"
+    expect:
+      format: dkb_csv
+      account_iban: DE61100000000000003004
+      opening_balance: null
+      closing_balance: null
+      line_count: 1
+      total: "-3.20"
+      first_booking_on: 2026-10-28
+      last_booking_on: 2026-10-28
+    import:
+      account_iban: DE88100000000000003003
+      error: statement.account_mismatch

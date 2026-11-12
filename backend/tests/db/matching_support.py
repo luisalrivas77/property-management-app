@@ -151,6 +151,8 @@ class World:
                 opening_balance=Decimal("0.00"),
                 opening_balance_on=date(2024, 1, 1),
                 is_owner_account=owner,
+                # Since migration 0025 the reads key on purpose (phase 6 D156).
+                purpose="private" if owner else "rental",
                 created_at=self.now,
                 updated_at=self.now,
             )

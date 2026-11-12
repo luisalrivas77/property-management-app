@@ -83,7 +83,7 @@ function AccountDetail() {
               </Link>
             </div>
             <AccountFacts account={data} />
-            {data.is_owner_account ? (
+            {data.purpose === "private" ? (
               <p className="muted">
                 Privatkonto eines Eigentümers: Hausbuch erkennt Überweisungen von und an dieses Konto als Privateinlagen und
                 -entnahmen. Kontoauszüge werden hier nicht importiert.
@@ -144,9 +144,9 @@ function AccountFacts({ account }: { account: Account }) {
     <Facts
       rows={[
         ["Bank", account.bank],
-        ["IBAN", account.iban_masked],
+        ["IBAN", account.iban_masked ?? "–"],
         ["Anfangssaldo", `${formatMoney(account.opening_balance)} am ${formatDate(account.opening_balance_on)}`],
-        ["Art", account.is_owner_account ? "Privatkonto Eigentümer" : "Mietkonto"],
+        ["Art", account.purpose === "private" ? "Privatkonto Eigentümer" : "Mietkonto"],
       ]}
     />
   );

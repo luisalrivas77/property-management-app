@@ -61,6 +61,7 @@ from hausbuch.schemas.bank_sync import SyncPreview
 from hausbuch.schemas.common import TAX_YEAR_MIN
 from hausbuch.schemas.document import DocumentTyping
 from hausbuch.schemas.enums import (
+    AccountPurpose,
     AllocationStatus,
     BalanceSource,
     DocumentSource,
@@ -120,7 +121,9 @@ def import_statement(
     (statement.* parser codes), another account's statement, a file without booked lines.
     A camt file whose reports do not sum or chain (D34) is stored, unreconciled."""
     account = require_row(ctx.conn, account_table, EntityType.ACCOUNT, account_id, for_update=True)
-    if account.is_owner_account:
+    # Since migration 0025 the household's accounts are keyed by purpose (phase 6 D156); the
+    # same accounts as before, until phase 6 step 1 removes this guard.
+    if account.purpose == AccountPurpose.PRIVATE.value:
         raise RuleError(rules.OWNER_ACCOUNT, "owner accounts hold no statements")
     outcome = parse_statement(data, media_type)
     statement = outcome.statement
@@ -291,7 +294,7 @@ def preview_import(
     lines_new > 0. Raises the same RuleErrors import_statement raises before its first
     write (owner account, unreadable file, another account's statement, no booked line)."""
     account = require_row(conn, account_table, EntityType.ACCOUNT, account_id)
-    if account.is_owner_account:
+    if account.purpose == AccountPurpose.PRIVATE.value:  # phase 6 D156, as import_statement
         raise RuleError(rules.OWNER_ACCOUNT, "owner accounts hold no statements")
     statement = parse_statement(data, media_type).statement
     _require_same_account(statement.account_iban, account.iban_hmac, iban_key)

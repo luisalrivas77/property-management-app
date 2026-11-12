@@ -36,6 +36,11 @@ FintsUrl = Annotated[str, Field(min_length=len("https://x"), max_length=500)]
 # three stars alone for a login shorter than six characters (where two plus two would show
 # most of it). mask_login() is the one way to make it.
 LoginMasked = Annotated[str, Field(pattern=r"^(.{2}\*{3}.{2}|\*{3})$")]
+# Phase 6 D163: the named slot whose container secret holds the login's PIN
+# (HAUSBUCH_FINTS_PIN for `primary`, HAUSBUCH_FINTS_PIN_<SLOT> otherwise). A label, never a
+# secret; the bank_connection.credential_slot CHECK (migration 0025).
+CredentialSlot = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{0,31}$")]
+PRIMARY_SLOT = "primary"
 
 
 def mask_login(login: str) -> str:
@@ -106,6 +111,7 @@ class BankConnectionCreate(Schema):
     bank_code: BankCode
     fints_url: FintsUrl
     login_name: LoginName
+    credential_slot: CredentialSlot = PRIMARY_SLOT  # phase 6 D163
 
     @field_validator("fints_url")
     @classmethod
@@ -136,6 +142,7 @@ class BankConnection(MutableRecord):
     bank_code: BankCode
     fints_url: FintsUrl
     login_masked: LoginMasked
+    credential_slot: CredentialSlot = PRIMARY_SLOT  # phase 6 D163
     tan_mechanism: str | None = Field(default=None, max_length=8)  # the security function
     auto_sync: bool = False
     # D154 (7): every run also fetches the bank's PDF statements after its camt part.
@@ -179,6 +186,10 @@ class SyncWindowFacts(Schema):
 
     opening_balance_on: date  # account.opening_balance_on: the anchor day (D21)
     last_booking_on: date | None = None  # bank_connection.last_booking_on
+    # Phase 6 D173 (4): the last reconciled closing date of the account's imports (None
+    # without any); a first sync starts after it, so a CSV history and a FinTS camt that
+    # share no bank reference never overlap. Built by phase 6 step 3.
+    imports_through: date | None = None
 
 
 class SyncWindow(Schema):

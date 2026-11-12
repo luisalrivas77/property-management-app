@@ -1,0 +1,115 @@
+# Rule fixture: the price an asset is valued at on a day, and its value
+# (hausbuch.rules.valuation.price_on / value; docs/phases/phase-6.md D167 revised, D174, §9, §14)
+#
+# Recomputed on load (tests/fixture_models_phase6.py) by the rule written once more, from
+# rules/valuation.SOURCE_PRECEDENCE and STALE_AFTER_DAYS:
+# - date first: the latest day on or before `on` that has a price; among that day's rows the
+#   source earliest in SOURCE_PRECEDENCE (trade, issuer_nav, statement, kraken_daily,
+#   coingecko_daily, user, ecb_fx);
+# - stale when `on` − the price's day > STALE_AFTER_DAYS (7): the value is still shown, with
+#   valuation.stale_price;
+# - value = units × price_eur, rounded to the cent half up; a cash asset (EUR) is valued at
+#   1.0 without a price row; a valuation day after the position's reconciled_through is not
+#   valued (valuation.not_valued);
+# - fx_cases: a foreign-currency figure / the ECB rate (units of the currency per euro) of
+#   the latest ECB day on or before the figure's day (a Saturday NAV by Friday's rate),
+#   rounded to 8 places half up (PriceEur).
+#
+# The key "on" is quoted: YAML 1.1 reads a bare on as true.
+# Invented prices and rates.
+#
+# Step 0 readings (listed in the step 0 report):
+# - "stale after 7 days": a price exactly 7 days old is not stale, 8 days old is.
+# - The ECB rate is quoted as units of the currency per euro (the ECB's own convention), so a
+#   USD figure is divided by it.
+# - A cash asset needs no price row: its valuation's price is null and its value its units.
+# - "past its reconciled date" is the valuation day after the position's reconciled_through
+#   (a position with no reconciled_through is not in these cases; step 5 decides whether an
+#   account kind without a reconciliation duty carries one).
+# - Half-up rounding to the cent (no case here ties, so the choice is not yet pinned).
+
+cases:
+  - id: trade_beats_coingecko_on_one_day
+    pending: "phase 6 step 6 (valuations)"
+    "on": 2026-06-30
+    prices:
+      - {"on": 2026-06-30, price_eur: "55000.00", source: coingecko_daily}
+      - {"on": 2026-06-30, price_eur: "55120.00", source: trade}
+    position: {units: "0.02500000", reconciled_through: 2026-06-30}
+    expect: {price: {"on": 2026-06-30, source: trade}, stale: false, value_eur: "1378.00"}
+
+  - id: nav_beats_report_value_on_one_day
+    pending: "phase 6 step 6 (valuations)"
+    "on": 2026-06-30
+    prices:
+      - {"on": 2026-06-30, price_eur: "82.00", source: statement}
+      - {"on": 2026-06-30, price_eur: "82.10", source: issuer_nav}
+    position: {units: "32.345678", reconciled_through: 2026-06-30}
+    expect: {price: {"on": 2026-06-30, source: issuer_nav}, stale: false, value_eur: "2655.58"}
+
+  - id: yesterdays_nav_beats_last_quarters_trade
+    pending: "phase 6 step 6 (valuations)"
+    "on": 2026-06-30
+    prices:
+      - {"on": 2026-03-31, price_eur: "78.00", source: trade}
+      - {"on": 2026-06-29, price_eur: "81.90", source: issuer_nav}
+    position: {units: "20.000000", reconciled_through: 2026-06-30}
+    expect: {price: {"on": 2026-06-29, source: issuer_nav}, stale: false, value_eur: "1638.00"}
+
+  - id: fridays_nav_on_a_sunday
+    pending: "phase 6 step 6 (valuations)"
+    "on": 2026-06-28
+    prices:
+      - {"on": 2026-06-25, price_eur: "81.50", source: issuer_nav}
+      - {"on": 2026-06-26, price_eur: "81.70", source: issuer_nav}
+    position: {units: "20.000000", reconciled_through: 2026-06-30}
+    expect: {price: {"on": 2026-06-26, source: issuer_nav}, stale: false, value_eur: "1634.00"}
+
+  - id: latest_before_seven_days_is_not_stale
+    pending: "phase 6 step 6 (valuations)"
+    "on": 2026-06-27
+    prices:
+      - {"on": 2026-06-20, price_eur: "2400.00", source: kraken_daily}
+    position: {units: "0.50000000", reconciled_through: 2026-06-30}
+    expect: {price: {"on": 2026-06-20, source: kraken_daily}, stale: false, value_eur: "1200.00"}
+
+  - id: latest_before_eight_days_is_stale
+    pending: "phase 6 step 6 (valuations)"
+    "on": 2026-06-28
+    prices:
+      - {"on": 2026-06-20, price_eur: "2400.00", source: kraken_daily}
+    position: {units: "0.50000000", reconciled_through: 2026-06-30}
+    expect: {price: {"on": 2026-06-20, source: kraken_daily}, stale: true, value_eur: "1200.00", warning: valuation.stale_price}
+
+  - id: past_the_reconciled_date
+    description: nothing after the last reconciled import or report is valued for the asset
+    pending: "phase 6 step 6 (valuations)"
+    "on": 2026-07-31
+    prices:
+      - {"on": 2026-07-31, price_eur: "58000.00", source: coingecko_daily}
+    position: {units: "0.02500000", reconciled_through: 2026-06-30}
+    expect: {price: {"on": 2026-07-31, source: coingecko_daily}, stale: false, value_eur: null, not_valued_reason: valuation.not_valued}
+
+  - id: cash_at_one
+    pending: "phase 6 step 6 (valuations)"
+    "on": 2026-06-30
+    prices: []
+    position: {units: "150.00", reconciled_through: 2026-06-30, cash: true}
+    expect: {price: null, stale: false, value_eur: "150.00"}
+
+fx_cases:
+  - id: usd_nav_by_the_rate_of_its_day
+    pending: "phase 6 step 5 (prices)"
+    figure: {"on": 2026-06-25, amount: "100.00", currency: USD}
+    rates:
+      - {"on": 2026-06-24, per_eur: "1.0900"}
+      - {"on": 2026-06-25, per_eur: "1.0850"}
+    expect: {rate_on: 2026-06-25, price_eur: "92.16589862"}
+
+  - id: saturday_nav_by_fridays_rate
+    pending: "phase 6 step 5 (prices)"
+    figure: {"on": 2026-06-27, amount: "81.20", currency: USD}
+    rates:
+      - {"on": 2026-06-25, per_eur: "1.0900"}
+      - {"on": 2026-06-26, per_eur: "1.0850"}
+    expect: {rate_on: 2026-06-26, price_eur: "74.83870968"}

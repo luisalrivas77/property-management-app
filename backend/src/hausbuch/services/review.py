@@ -20,6 +20,7 @@ from uuid import UUID
 
 from sqlalchemy import Connection, Select, exists, select
 
+from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import ai_call as ai_call_table
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import possible_duplicate as duplicate_table
@@ -27,7 +28,12 @@ from hausbuch.db.tables import proposal as proposal_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.jobs import enqueue
-from hausbuch.rules.errors import AI_DISABLED, RuleError
+from hausbuch.rules.errors import (
+    AI_DISABLED,
+    ALLOCATION_CATEGORY_NOT_FOR_ACCOUNT,
+    RuleError,
+)
+from hausbuch.rules.household.taxonomy import allowed_categories
 from hausbuch.rules.review import THRESHOLDS
 from hausbuch.schemas.ai import AiJob
 from hausbuch.schemas.allocation import (
@@ -49,6 +55,7 @@ from hausbuch.schemas.api import (
 )
 from hausbuch.schemas.bank import Transaction
 from hausbuch.schemas.enums import (
+    AccountPurpose,
     AllocationStatus,
     DuplicateStatus,
     EntityType,
@@ -83,6 +90,7 @@ def allocate_transaction(
         raise RuleViolationError([TRANSACTION_MISMATCH], "the set is for another transaction")
     line = _open_line(ctx.conn, transaction_id)
     drafts = body.allocation_set.allocations
+    _check_categories_for_account(ctx.conn, transaction_id, drafts)
     current = line.current
     corrects = None
     if current and allocations.same_answer(drafts, current):
@@ -148,6 +156,30 @@ def transaction_allocations(
         return None
     context = _context(conn, today, transaction_id, iban_key)
     return _response(conn, transaction_id, line.current, line.tx, context)
+
+
+def _check_categories_for_account(conn: Connection, transaction_id: UUID, drafts) -> None:
+    """A person's answer may carry only the categories of its account's purpose (phase 6
+    D159): a household, transfer or depot code on a rental line would be on no Anlage V line
+    and in no to-do, so the cost would vanish from the draft without a word. Checked in the
+    user command only; the matching job never proposes such a code (its schema is the rental
+    set)."""
+    purpose = conn.execute(
+        select(account_table.c.purpose)
+        .select_from(
+            transaction_table.join(
+                account_table, transaction_table.c.account_id == account_table.c.id
+            )
+        )
+        .where(transaction_table.c.id == transaction_id)
+    ).scalar_one()
+    allowed = allowed_categories(AccountPurpose(purpose))
+    refused = sorted({d.category.value for d in drafts if d.category not in allowed})
+    if refused:
+        raise RuleViolationError(
+            [ALLOCATION_CATEGORY_NOT_FOR_ACCOUNT],
+            f"categories not for a {purpose} account: {', '.join(refused)}",
+        )
 
 
 def _open_line(conn: Connection, transaction_id: UUID) -> matching.Line:

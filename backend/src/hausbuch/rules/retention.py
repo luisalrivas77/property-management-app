@@ -7,6 +7,10 @@ Class from (subtype, type), subtype first:
 - lease, handover_protocol, deposit_record -> tenancy_records;
 - the document catalogue (phase-2.md §6.2.1): its O subtypes -> ownership_records, its M
   subtypes (the tenancy group) -> tenancy_records;
+- phase 6 D169: trade_confirmation and exchange_export -> holding_records (held while any
+  position it carries a movement for is held, then N years after the year it reached zero);
+  depot_statement, depot_report, distribution_note and capital_income_tax_certificate are tax
+  records, the default;
 - any other typed document -> tax_records; an untyped one is held (untyped).
 
 Every period ends on 31 Dec of (base year + N years) (D11): never earlier than "date + N
@@ -57,6 +61,10 @@ _CLASS_BY_SUBTYPE: dict[DocumentSubtype, RetentionClass] = {
     DocumentSubtype.LANDLORD_CONFIRMATION: RetentionClass.TENANCY_RECORDS,
     DocumentSubtype.OPERATING_COSTS_STATEMENT: RetentionClass.TENANCY_RECORDS,
     DocumentSubtype.TENANT_CORRESPONDENCE: RetentionClass.TENANCY_RECORDS,
+    # Phase 6 D169: a disposal's gain (phase 8) is computed from the acquisition's record
+    # however old, so it is kept while the position is held.
+    DocumentSubtype.TRADE_CONFIRMATION: RetentionClass.HOLDING_RECORDS,
+    DocumentSubtype.EXCHANGE_EXPORT: RetentionClass.HOLDING_RECORDS,
 }
 
 
@@ -84,6 +92,15 @@ def document_retention(input: DocumentRetentionInput, policy: RetentionPolicy) -
                 input.tenancy_end_dates,
                 policy.tenancy_records_years,
                 RetentionHold.TENANCY_ACTIVE,
+            )
+        case RetentionClass.HOLDING_RECORDS:
+            # No movement yet: held (unlinked), like a record linked to nothing (D169's
+            # "a document with no movement yet is held as today").
+            return _after_latest(
+                cls,
+                input.holding_end_dates,
+                policy.holding_records_years,
+                RetentionHold.WHILE_HELD,
             )
         case _:
             if input.tax_year is not None:

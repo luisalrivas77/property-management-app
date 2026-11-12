@@ -34,3 +34,38 @@ categories:
   - {category: other_income, treatment: income}
   - {category: other_expense, treatment: undecided}
   - {category: uncategorized, treatment: undecided}
+  # Phase 6 (docs/phases/phase-6.md D159, D161, D162, D165), added by the phase 6 spec PR.
+  # Readings (the spec states PRIVATE for "all hh_* codes except the tax-relevant ones",
+  # pass_through for hh_property_cost (D161), PRIVATE for hh_tax_payment and the depot codes):
+  #   hh_donation, hh_household_services, hh_childcare: pass_through (tax-relevant, so not
+  #     PRIVATE; each reaches its form only through the input it proposes, never as a cost);
+  #   hh_capital_income: private (phase 8's KAP rules read the category, not a treatment);
+  #   internal_transfer_in/out: pass_through, like the owner transfers they generalise.
+  - {category: hh_salary, treatment: private}
+  - {category: hh_child_benefit, treatment: private}
+  - {category: hh_tax_refund, treatment: private}
+  - {category: hh_capital_income, treatment: private}
+  - {category: hh_other_income, treatment: private}
+  - {category: hh_housing, treatment: private}
+  - {category: hh_groceries, treatment: private}
+  - {category: hh_family_child, treatment: private}
+  - {category: hh_mobility, treatment: private}
+  - {category: hh_insurance, treatment: private}
+  - {category: hh_subscriptions, treatment: private}
+  - {category: hh_leisure_travel, treatment: private}
+  - {category: hh_health, treatment: private}
+  - {category: hh_other, treatment: private}
+  - {category: hh_donation, treatment: pass_through}
+  - {category: hh_household_services, treatment: pass_through}
+  - {category: hh_childcare, treatment: pass_through}
+  - {category: hh_property_cost, treatment: pass_through}
+  - {category: hh_tax_payment, treatment: private}
+  - {category: internal_transfer_in, treatment: pass_through}
+  - {category: internal_transfer_out, treatment: pass_through}
+  - {category: hh_cash, treatment: private}
+  - {category: hh_credit_card, treatment: private}
+  - {category: security_purchase, treatment: private}
+  - {category: security_sale, treatment: private}
+  - {category: distribution, treatment: private}
+  - {category: capital_income_tax, treatment: private}
+  - {category: depot_fee, treatment: private}

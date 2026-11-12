@@ -83,6 +83,38 @@ THRESHOLDS = MappingProxyType(
         C.OTHER_INCOME: None,
         C.OTHER_EXPENSE: None,
         C.UNCATEGORIZED: None,
+        # Phase 6 D159: recurring employers and merchants at the recurring threshold; the
+        # tax-relevant codes, the catch-alls and the movements need a person.
+        C.HH_SALARY: _RECURRING,
+        C.HH_CHILD_BENEFIT: _RECURRING,
+        C.HH_HOUSING: _RECURRING,
+        C.HH_GROCERIES: _RECURRING,
+        C.HH_FAMILY_CHILD: _RECURRING,
+        C.HH_MOBILITY: _RECURRING,
+        C.HH_INSURANCE: _RECURRING,
+        C.HH_SUBSCRIPTIONS: _RECURRING,
+        C.HH_LEISURE_TRAVEL: _RECURRING,
+        C.HH_HEALTH: _RECURRING,
+        C.HH_OTHER: None,  # named in D159's None list, though a spending group
+        C.HH_CAPITAL_INCOME: None,
+        C.HH_TAX_REFUND: None,
+        C.HH_OTHER_INCOME: None,
+        C.HH_DONATION: None,
+        C.HH_HOUSEHOLD_SERVICES: None,
+        C.HH_CHILDCARE: None,
+        C.HH_PROPERTY_COST: None,
+        C.HH_TAX_PAYMENT: None,
+        C.HH_CREDIT_CARD: None,
+        C.HH_CASH: None,  # not named by D159; the conservative reading
+        # D162: only the transfer matcher books a transfer, never a model or a threshold.
+        C.INTERNAL_TRANSFER_IN: None,
+        C.INTERNAL_TRANSFER_OUT: None,
+        # D165 (1): the depot's bookings are categorised by code from the booking text.
+        C.SECURITY_PURCHASE: None,
+        C.SECURITY_SALE: None,
+        C.DISTRIBUTION: None,
+        C.CAPITAL_INCOME_TAX: None,
+        C.DEPOT_FEE: None,
     }
 )
 
@@ -108,6 +140,15 @@ ZERO_EXCLUDED = frozenset(
         C.DEPOSIT_OUT,
         C.PURCHASE_PRICE,
         C.UNCATEGORIZED,
+        # Phase 6 D159: the transfer codes (the matcher alone books them, D162) and the
+        # tax-relevant codes (each proposes an input a person confirms).
+        C.INTERNAL_TRANSFER_IN,
+        C.INTERNAL_TRANSFER_OUT,
+        C.HH_DONATION,
+        C.HH_HOUSEHOLD_SERVICES,
+        C.HH_CHILDCARE,
+        C.HH_PROPERTY_COST,
+        C.HH_TAX_PAYMENT,
     }
 )
 
@@ -123,6 +164,7 @@ _MATCHERS = frozenset(
         AllocationMethod.MATCHER_LOAN,
         AllocationMethod.MATCHER_OWNER,
         AllocationMethod.MATCHER_HAUSGELD,
+        AllocationMethod.MATCHER_TRANSFER,  # phase 6 D162
     }
 )
 

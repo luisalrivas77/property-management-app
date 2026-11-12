@@ -204,6 +204,9 @@ export const DOCUMENT_SUBTYPE: Record<DocumentSubtype, string> = {
   depot_report: "Depotbericht",
   trade_confirmation: "Wertpapierabrechnung",
   capital_income_tax_certificate: "Jahressteuerbescheinigung Kapitalerträge",
+  // Phase 6
+  exchange_export: "Börse / Exchange-Export (CSV)",
+  distribution_note: "Ertragsabrechnung (Ausschüttung)",
 };
 
 export const LINK_TARGET: Record<LinkTarget, string> = {
@@ -222,6 +225,7 @@ export const RETENTION_CLASS: Record<RetentionClass, string> = {
   tax_records: "Steuerunterlagen (10 Jahre nach dem Steuerjahr)",
   tenancy_records: "Mietunterlagen (Mietende + 4 Jahre)",
   tenant_contact: "Kontaktdaten Mieter (Mietende + 4 Jahre)",
+  holding_records: "Anlageunterlagen (solange gehalten + 10 Jahre)",
 };
 
 export const RETENTION_HOLD: Record<RetentionHold, string> = {
@@ -229,6 +233,7 @@ export const RETENTION_HOLD: Record<RetentionHold, string> = {
   tenancy_active: "solange das Mietverhältnis läuft",
   untyped: "Dokument ist noch nicht typisiert",
   unlinked: "Dokument ist noch nicht verknüpft",
+  while_held: "solange die Anlage gehalten wird",
 };
 
 /** History and audit labels per event type (§9.4). */
@@ -283,6 +288,9 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "workspace.notification_sent": "Erinnerung per E-Mail verschickt",
   "workspace.inbox_poll_failed": "Posteingang per E-Mail gestört",
   "workspace.inbox_poll_recovered": "Posteingang per E-Mail läuft wieder",
+  "workspace.ai_consent_recorded": "Zustimmung zur KI-Zuordnung privater Konten erfasst",
+  "workspace.prices_fetched": "Kurse abgerufen",
+  "workspace.valuation_snapshot_written": "Monatsendstand des Vermögens gespeichert",
   "proposal.created": "Vorschlag erstellt",
   "proposal.superseded": "Vorschlag ersetzt",
   "proposal.rejected": "Vorschlag abgelehnt",
@@ -304,6 +312,23 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "account.sync_completed": "Bankabruf abgeschlossen",
   "account.sync_failed": "Bankabruf fehlgeschlagen",
   "account.statement_fetched": "Kontoauszug (PDF) von der Bank abgerufen",
+  "account.kind_set": "Kontoart geändert",
+  "account.ownership_set": "Kontoinhaber und Anteile festgelegt",
+  "account.movements_imported": "Börsen-Export importiert",
+  "account.movements_reconciled": "Börsen-Export abgestimmt",
+  "account.movements_unreconciled": "Börsen-Export nicht abgestimmt",
+  "account.holdings_confirmed": "Bestände bestätigt",
+  "account.holdings_reconciled": "Bestände abgestimmt",
+  "account.holdings_mismatch": "Bestände weichen ab",
+  "asset.created": "Anlage angelegt",
+  "asset.updated": "Anlage geändert",
+  "asset.price_recorded": "Kurs erfasst",
+  "asset.price_source_failed": "Kursquelle gestört",
+  "movement.proposed": "Bewegung vorgeschlagen",
+  "movement.confirmed": "Bewegung bestätigt",
+  "movement.superseded": "Bewegung korrigiert",
+  "transfer.linked": "Übertrag verknüpft",
+  "transfer.unlinked": "Übertrag getrennt",
   "statement.imported": "Kontoauszug importiert",
   "statement.reconciled": "Kontoauszug abgestimmt",
   "statement.unreconciled": "Kontoauszug nicht abgestimmt",
@@ -347,6 +372,9 @@ export const EXTRACTION_KIND: Record<ExtractionKind, string> = {
   general: "Titel und Datum",
   management_contract: "Verwaltervertrag",
   payment_proof: "Zahlungsnachweis",
+  trade_confirmation: "Wertpapierabrechnung",
+  distribution_note: "Ertragsabrechnung",
+  depot_report: "Depotbericht",
 };
 
 /** The confidence dot's text (computed by code from the checks, D15). */
@@ -384,6 +412,7 @@ export const STATEMENT_FORMAT: Record<StatementFormat, string> = {
   camt: "camt (XML)",
   csv_camt: "CSV-CAMT",
   pdf: "PDF-Kontoauszug",
+  dkb_csv: "DKB-CSV",
 };
 
 /** The pill of an import. `imported` is an import whose closing balance is still missing
@@ -456,7 +485,70 @@ export const ALLOCATION_CATEGORY: Record<AllocationCategory, string> = {
   other_income: "Sonstige Einnahme",
   other_expense: "Sonstige Ausgabe",
   uncategorized: "Noch offen (nicht zugeordnet)",
+  // Phase 6 (D159, D162, D165)
+  hh_salary: "Gehalt",
+  hh_child_benefit: "Kindergeld",
+  hh_tax_refund: "Steuererstattung",
+  hh_capital_income: "Zinsen und Dividenden",
+  hh_other_income: "Sonstige Einnahme (privat)",
+  hh_housing: "Wohnen",
+  hh_groceries: "Lebensmittel und Drogerie",
+  hh_family_child: "Familie und Kind",
+  hh_mobility: "Mobilität",
+  hh_insurance: "Versicherungen",
+  hh_subscriptions: "Abos und Verträge",
+  hh_leisure_travel: "Freizeit und Reisen",
+  hh_health: "Gesundheit",
+  hh_other: "Sonstiges",
+  hh_donation: "Spende",
+  hh_household_services: "Haushaltsnahe Dienstleistung oder Handwerker",
+  hh_childcare: "Kinderbetreuung",
+  hh_property_cost: "Kosten der Immobilie, privat bezahlt",
+  hh_tax_payment: "Einkommensteuer (Vorauszahlung oder Nachzahlung)",
+  internal_transfer_in: "Übertrag von eigenem Konto",
+  internal_transfer_out: "Übertrag auf eigenes Konto",
+  hh_cash: "Bargeldabhebung",
+  hh_credit_card: "Kreditkartenabrechnung",
+  security_purchase: "Wertpapierkauf",
+  security_sale: "Wertpapierverkauf",
+  distribution: "Ausschüttung oder Dividende",
+  capital_income_tax: "Kapitalertragsteuer und Vorabpauschale",
+  depot_fee: "Depot- und Verwaltergebühr",
 };
+
+/** The household, transfer and depot codes (phase 6 D159): for private accounts only. The
+ * server refuses them on a rental line (allocation.category_not_for_account), where they would
+ * be on no Anlage V line; mirrors rules/household/taxonomy.PRIVATE_ONLY. */
+export const PRIVATE_ONLY_CATEGORIES: ReadonlySet<AllocationCategory> = new Set<AllocationCategory>([
+  "hh_salary",
+  "hh_child_benefit",
+  "hh_tax_refund",
+  "hh_capital_income",
+  "hh_other_income",
+  "hh_housing",
+  "hh_groceries",
+  "hh_family_child",
+  "hh_mobility",
+  "hh_insurance",
+  "hh_subscriptions",
+  "hh_leisure_travel",
+  "hh_health",
+  "hh_other",
+  "hh_donation",
+  "hh_household_services",
+  "hh_childcare",
+  "hh_property_cost",
+  "hh_tax_payment",
+  "internal_transfer_in",
+  "internal_transfer_out",
+  "hh_cash",
+  "hh_credit_card",
+  "security_purchase",
+  "security_sale",
+  "distribution",
+  "capital_income_tax",
+  "depot_fee",
+]);
 
 /** Who proposed an allocation set. */
 export const ALLOCATION_METHOD: Record<AllocationMethod, string> = {
@@ -465,6 +557,7 @@ export const ALLOCATION_METHOD: Record<AllocationMethod, string> = {
   matcher_loan: "Tilgungsplan des Darlehens",
   matcher_owner: "Überweisung eines Eigentümers",
   matcher_hausgeld: "Wirtschaftsplan",
+  matcher_transfer: "Übertrag zwischen eigenen Konten",
   document_match: "passender Beleg",
   llm: "KI",
   user: "von Hand",

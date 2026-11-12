@@ -1,0 +1,23 @@
+# The asset registry (docs/phases/phase-6.md D167 (3), D174 (2)): how an asset is priced.
+#
+# coins: a symbol (as an exchange export names it) -> the CoinGecko id and the Kraken pair of
+#   its daily EUR price. Only public market data; nothing here is the household's.
+# funds: an ISIN -> the issuer adapter (services/prices/issuer_nav/<issuer>.py) and the fund's
+#   reference on the issuer's site, plus the NAV currency read. fund_ref null = no adapter yet:
+#   the fund is priced from the depot's documents („Kurs aus dem letzten Bericht“, D174 (4)).
+#   The ISINs below are the public funds named in the spec's §3 (quirion's published universe);
+#   which of them the household holds is not recorded here.
+#
+# Readings: the SPDR file states the NAV in USD, EUR and GBP (§3); the EUR column is read, so
+# no conversion is needed. The iShares pages offer no NAV history download (§3), so their
+# fund_ref stays null until step 5 finds one on the real page.
+
+coins:
+  - {symbol: BTC, name: Bitcoin, coingecko_id: bitcoin, kraken_pair: XXBTZEUR}
+  - {symbol: ETH, name: Ether, coingecko_id: ethereum, kraken_pair: XETHZEUR}
+  - {symbol: SOL, name: Solana, coingecko_id: solana, kraken_pair: SOLEUR}
+
+funds:
+  - {isin: IE00BFY0GT14, name: SPDR MSCI World UCITS ETF, issuer: spdr, fund_ref: sppw-gy, nav_currency: EUR}
+  - {isin: IE00BKM4GZ66, name: iShares Core MSCI EM IMI UCITS ETF, issuer: ishares, fund_ref: null, nav_currency: USD}
+  - {isin: IE00B4L5YC18, name: iShares MSCI EM UCITS ETF, issuer: ishares, fund_ref: null, nav_currency: USD}

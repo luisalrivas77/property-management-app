@@ -1,5 +1,5 @@
 """Closed value sets. Each mirrors a CHECK constraint in a migration (phase 1: 0001-0004,
-phase 2: 0005-0012, phase 3: 0013, phase 4: 0016, phase 4b: 0018);
+phase 2: 0005-0012, phase 3: 0013, phase 4: 0016, phase 4b: 0018, phase 6: 0025);
 tests/db/test_schema_consistency.py keeps them in sync.
 
 Phase 2 sets that belong to one module live there instead (AiJob in ai.py, StatementFormat in
@@ -174,6 +174,14 @@ class DocumentSubtype(StrEnum):
     DEPOT_REPORT = "depot_report"  # Quartals- oder Vermögensbericht (other)
     TRADE_CONFIRMATION = "trade_confirmation"  # Wertpapierabrechnung (letter)
     CAPITAL_INCOME_TAX_CERTIFICATE = "capital_income_tax_certificate"  # (letter)
+    # Phase 6 (migration 0025). An exchange's transaction history CSV (D166): typed by code
+    # from the upload page's „Börse / Exchange-Export“ button, never classified and never sent
+    # to the model (it holds every trade and the EUR legs); retention holding_records (D169).
+    EXCHANGE_EXPORT = "exchange_export"
+    # A depot's distribution note (Ertragsabrechnung, D165 (2)); read in phase 6 step 4 by the
+    # distribution_note reader, until then left out of the classify schema like the other
+    # code-only subtypes; retention tax_records (D169).
+    DISTRIBUTION_NOTE = "distribution_note"
 
 
 class ExtractionSource(StrEnum):
@@ -205,6 +213,10 @@ class EntityType(StrEnum):
     TRANSACTION = "transaction"
     RULE = "rule"  # a matching_rule row
     WORKSPACE = "workspace"
+    # Phase 6 (migration 0025, §11).
+    ASSET = "asset"  # an asset row; its prices' events too (price.* -> asset.*)
+    MOVEMENT = "movement"  # an asset_movement row
+    TRANSFER = "transfer"  # a transfer_link row
 
 
 class LinkTarget(StrEnum):
@@ -226,6 +238,9 @@ class RetentionClass(StrEnum):
     TAX_RECORDS = "tax_records"  # 10 years after the tax year
     TENANCY_RECORDS = "tenancy_records"  # end of tenancy + 4 years
     TENANT_CONTACT = "tenant_contact"  # end of tenancy + 4 years, then deleted
+    # Phase 6 D169: a trade confirmation or an exchange export, kept while the position is
+    # held and 10 years after the year it is sold.
+    HOLDING_RECORDS = "holding_records"
 
 
 class RetentionHold(StrEnum):
@@ -235,6 +250,7 @@ class RetentionHold(StrEnum):
     TENANCY_ACTIVE = "tenancy_active"
     UNTYPED = "untyped"
     UNLINKED = "unlinked"
+    WHILE_HELD = "while_held"  # phase 6 D169: an asset it carries a movement for is still held
 
 
 class InvitePurpose(StrEnum):
@@ -275,6 +291,10 @@ class ExtractionKind(StrEnum):
     MANAGEMENT_CONTRACT = "management_contract"
     # Phase 3 D143 (migration 0023): a payment proof's date, amount, payee and purpose.
     PAYMENT_PROOF = "payment_proof"
+    # Phase 6 D165 (migration 0025): the depot's three readers, built in step 4.
+    TRADE_CONFIRMATION = "trade_confirmation"  # Wertpapierabrechnung
+    DISTRIBUTION_NOTE = "distribution_note"  # Ertragsabrechnung
+    DEPOT_REPORT = "depot_report"  # the quarterly PM-Reporting
 
 
 class ProposalStatus(StrEnum):
@@ -303,6 +323,29 @@ class AccountSource(StrEnum):
     UPLOAD = "upload"
     FINTS = "fints"  # phase 5
     AGGREGATOR = "aggregator"  # only if it goes SaaS
+
+
+class AccountKind(StrEnum):
+    """account.kind (migration 0025, phase 6 D156). `wallet` is in the CHECK so phase 7 adds
+    no migration for it; create_account refuses it (account.kind_not_available) until then,
+    as AccountSource.AGGREGATOR is refused."""
+
+    BANK_CURRENT = "bank_current"
+    BANK_SAVINGS = "bank_savings"
+    DEPOT = "depot"
+    EXCHANGE = "exchange"
+    WALLET = "wallet"
+
+
+BANK_ACCOUNT_KINDS = frozenset({AccountKind.BANK_CURRENT, AccountKind.BANK_SAVINGS})
+
+
+class AccountPurpose(StrEnum):
+    """account.purpose (migration 0025, phase 6 D156): `rental` is the account the property's
+    rent and costs run on; every other account of the household is `private`."""
+
+    RENTAL = "rental"
+    PRIVATE = "private"
 
 
 class ImportStatus(StrEnum):

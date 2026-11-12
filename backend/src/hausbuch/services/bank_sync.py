@@ -75,6 +75,7 @@ from hausbuch.schemas.bank_sync import (
 from hausbuch.schemas.common import TAX_YEAR_MIN
 from hausbuch.schemas.document import DocumentTyping
 from hausbuch.schemas.enums import (
+    AccountPurpose,
     AccountSource,
     BalanceSource,
     DocumentSource,
@@ -155,11 +156,13 @@ def verified_state(key: bytes, connection: Row) -> bytes | None:
 
 def create_connection(ctx: CommandContext, data: BankConnectionCreate) -> BankConnection:
     """One connection per account; the account's source becomes fints (D125). An owner
-    account holds no statements, so it cannot have one."""
+    account holds no statements, so it cannot have one. Since migration 0025 every account
+    is an owner account and the rental one is keyed by purpose (phase 6 D156), so the guard
+    reads purpose: the same accounts as before, until phase 6 step 3 lifts it."""
     account = require_row(
         ctx.conn, account_table, EntityType.ACCOUNT, data.account_id, for_update=True
     )
-    if account.is_owner_account:
+    if account.purpose == AccountPurpose.PRIVATE.value:
         raise RuleError(statement_rules.OWNER_ACCOUNT, "owner accounts hold no statements")
     try:
         row = ctx.conn.execute(
@@ -170,6 +173,7 @@ def create_connection(ctx: CommandContext, data: BankConnectionCreate) -> BankCo
                 bank_code=data.bank_code,
                 fints_url=data.fints_url,
                 login_name=data.login_name,
+                credential_slot=data.credential_slot,
                 created_at=ctx.now,
                 updated_at=ctx.now,
             )
@@ -249,6 +253,7 @@ def _recorded(row: Row, *, changed: list[str]) -> BankConnectionRecorded:
         account_id=row.account_id,
         bank_code=row.bank_code,
         login_masked=mask_login(row.login_name),
+        credential_slot=row.credential_slot,
         auto_sync=row.auto_sync,
         fetch_statements=row.fetch_statements,
         changed=changed,

@@ -153,6 +153,7 @@ class RetentionPolicy(Schema):
     tax_records_years: int = Field(default=10, ge=0)
     tenancy_records_years: int = Field(default=4, ge=0)
     tenant_contact_years: int = Field(default=4, ge=0)
+    holding_records_years: int = Field(default=10, ge=0)  # phase 6 D169
 
 
 class DocumentRetentionInput(Schema):
@@ -161,6 +162,9 @@ class DocumentRetentionInput(Schema):
     ownership_end_dates: one entry per property the document is linked to (directly, or via a
       unit, tenancy or loan of that property), or backs as cost evidence; null = still owned.
     tenancy_end_dates: one entry per tenancy linked; null = still running.
+    holding_end_dates (phase 6 D169): one entry per asset and account the document carries a
+      movement for, the day that position reached zero; null = still held. Gathered by phase 6
+      step 4 (the depot) and step 5 (the exchange); empty until then.
     cost_basis_reference: the document is recorded as the evidence of an acquisition cost or a
       building/land split, so the AfA basis and the §23 gain are built from it. It is then an
       ownership record whatever its subtype (spec amendment 1, Luis 5 Nov 2026).
@@ -174,6 +178,7 @@ class DocumentRetentionInput(Schema):
     received_on: date
     ownership_end_dates: list[date | None] = Field(default_factory=list)
     tenancy_end_dates: list[date | None] = Field(default_factory=list)
+    holding_end_dates: list[date | None] = Field(default_factory=list)
 
 
 class TenantRetentionInput(Schema):

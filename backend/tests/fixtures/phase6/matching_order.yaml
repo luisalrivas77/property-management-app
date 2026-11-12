@@ -1,0 +1,158 @@
+# Rule fixture: which matchers run on which account (the matching order per purpose)
+#
+# docs/phases/phase-6.md D158, §5.2, §14. The order reads context.account_purpose:
+#   rental   rules → owner transfer → rent → loan → Hausgeld → document → model (phase 2,
+#            unchanged; three phase 2 matchers.yaml cases replayed by id with their own
+#            transaction and expectation)
+#   private  rules (IBAN or name pattern, D160) → transfer by own IBAN (D162) → document match
+#            (D161) → the household model (D168), or with the switch ai_private_accounts off,
+#            review with routing.ai_disabled and every permitted code offered
+# The rent, loan and Hausgeld matchers never run on a private account. A private line whose
+# counterparty is a tenant's IBAN, a loan account or the Hausverwaltung goes to review with
+# D158's question, answered by booking hh_property_cost / hh_other_income with the property,
+# or by marking the counterparty as also a private one (a learned rule).
+#
+# expect: outcome booked (by the stage that booked it, with its allocations) or review (the
+# question, the card's code, the categories the card offers). Checked on load: the stage runs
+# on that purpose, the allocations sum to the line, every category is allowed on the purpose
+# (rules/household/taxonomy.allowed_categories). Pending phase 6 step 1 (§14 names a
+# `rules/matching.match_transaction`; today the order lives in services/matching, so step 1
+# decides where the per-purpose order is tested).
+#
+# Step 0 readings (listed in the step 0 report):
+# - D158's question „Diese Zahlung kommt von einem Mieter / geht an die Bank des Darlehens:
+#   gehört sie zum Mietobjekt?“ is read as two texts, one per counterparty; D158 names no text
+#   for the Hausverwaltung, so no case here.
+# - The answers offered: a credit hh_other_income, a debit hh_property_cost (D158 lists both
+#   without saying which sign takes which); the "also a private counterparty" answer is a rule,
+#   not a category, so it is not in `offered`.
+# - The tenant and lender lines are routed to review before the household model runs (the
+#   model never sees them), so the outcome does not depend on the switch.
+
+ids:
+  workspace: &W 0000000a-0000-4000-8000-000000000001
+  property: &P 0000000b-0000-4000-8000-000000000001
+  unit: &U 0000000c-0000-4000-8000-000000000001
+  tenancy: &T 0000000e-0000-4000-8000-000000000001
+  loan: &L 0000000f-0000-4000-8000-000000000001
+
+bases:
+  hmac_tenant: &H_TENANT "1111111111111111111111111111111111111111111111111111111111111111"
+  hmac_loan: &H_LOAN "3333333333333333333333333333333333333333333333333333333333333333"
+  hmac_rental: &H_RENTAL "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+
+context:
+  account_purpose: private
+  own_account_hmacs: [*H_RENTAL]
+  tenancies:
+    - id: *T
+      property_id: *P
+      unit_id: *U
+      start_date: 2026-07-01
+      tenant_iban_hmacs: [*H_TENANT]
+      rent:
+        - {effective_from: 2026-07-01, cold_rent: "1150.00", operating_costs_prepayment: "250.00"}
+  loans:
+    - id: *L
+      property_id: *P
+      lender: Beispielbank AG
+      account_iban_hmac: *H_LOAN
+      terms:
+        principal: "20000.00"
+        nominal_rate: "0.05"
+        monthly_payment: "1000.00"
+        disbursed_on: 2025-01-01
+        first_payment_on: 2025-02-01
+        fixed_until: 2025-06-30
+        follow_up_rate: "0.08"
+
+rules:
+  rewe_name:
+    id: 0000002b-0000-4000-8000-000000000060
+    workspace_id: *W
+    created_at: 2026-02-01T10:00:00Z
+    updated_at: 2026-02-01T10:00:00Z
+    matcher: {counterparty_name_pattern: "^REWE SAGT DANKE", amount_sign: debit}
+    split_method: single_category
+    category: hh_groceries
+    recurring: false
+
+cases:
+  - id: tenant_credit_on_a_private_account
+    description: the tenant's exact rent reaches owner A's account; the rent matcher does not run
+    pending: "phase 6 step 1 (the matching order per purpose, D158)"
+    purpose: private
+    transaction:
+      id: 0000002a-0000-4000-8000-000000000601
+      booking_date: 2027-01-04
+      amount: "1400.00"
+      counterparty_name: Erika Beispiel
+      counterparty_iban_hmac: *H_TENANT
+      purpose: Miete 01/2027
+    expect:
+      outcome: review
+      question: "Diese Zahlung kommt von einem Mieter: gehört sie zum Mietobjekt?"
+      offered: [hh_other_income]
+
+  - id: lender_debit_on_a_private_account
+    description: a debit to the loan's account from the joint account; the loan matcher does not run
+    pending: "phase 6 step 1 (the matching order per purpose, D158)"
+    purpose: private
+    transaction:
+      id: 0000002a-0000-4000-8000-000000000602
+      booking_date: 2026-08-01
+      amount: "-1000.00"
+      counterparty_name: Beispielbank AG
+      counterparty_iban_hmac: *H_LOAN
+      purpose: Darlehen 600999999 Rate
+    expect:
+      outcome: review
+      question: "Diese Zahlung geht an die Bank des Darlehens: gehört sie zum Mietobjekt?"
+      offered: [hh_property_cost]
+
+  - id: rule_hit_on_a_private_account
+    pending: "phase 6 step 1 (the matching order per purpose, D158)"
+    purpose: private
+    rules: [rewe_name]
+    transaction:
+      id: 0000002a-0000-4000-8000-000000000603
+      booking_date: 2026-02-14
+      amount: "-23.45"
+      counterparty_name: "REWE SAGT DANKE. 5512//Musterstadt/DE"
+      purpose: Kartenzahlung girocard
+      booking_text: KARTENZAHLUNG
+    expect:
+      outcome: booked
+      by: rule
+      allocations:
+        - {amount: "-23.45", category: hh_groceries, recurring: false}
+
+  - id: switch_off_goes_to_review
+    description: no rule, no transfer, no document; ai_private_accounts off
+    pending: "phase 6 step 1 (the matching order per purpose, D158)"
+    purpose: private
+    ai_private_accounts: false
+    transaction:
+      id: 0000002a-0000-4000-8000-000000000604
+      booking_date: 2026-02-20
+      amount: "-42.00"
+      counterparty_name: Buchhandlung Beispiel
+      purpose: Kartenzahlung girocard
+      booking_text: KARTENZAHLUNG
+    expect:
+      outcome: review
+      error: {code: routing.ai_disabled}
+
+  # The rental account: phase 2's order and results, unchanged.
+  - id: rental_rent_unchanged
+    pending: "phase 6 step 1 (the matching order per purpose, D158)"
+    purpose: rental
+    replay: rent_exact
+  - id: rental_annuity_unchanged
+    pending: "phase 6 step 1 (the matching order per purpose, D158)"
+    purpose: rental
+    replay: annuity_at_fixed_rate_switch
+  - id: rental_owner_transfer_unchanged
+    pending: "phase 6 step 1 (the matching order per purpose, D158)"
+    purpose: rental
+    replay: owner_top_up

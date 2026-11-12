@@ -20,7 +20,7 @@ from pydantic import Field, model_validator
 
 from .ai import ConfidenceLevel
 from .common import Confidence, Money, MutableRecord, PositiveMoney, Record, Schema
-from .enums import AllocationStatus, ExtractionKind, ImportStatus
+from .enums import AccountKind, AccountPurpose, AllocationStatus, ExtractionKind, ImportStatus
 from .loan import LoanTerms
 
 HmacHex = str  # 64 lower-case hex characters: an IBAN's keyed HMAC, as the rules see it
@@ -62,6 +62,44 @@ class AllocationCategory(StrEnum):
     OTHER_INCOME = "other_income"  # income
     OTHER_EXPENSE = "other_expense"  # undecided
     UNCATEGORIZED = "uncategorized"  # undecided
+    # --- Phase 6 D159: the household taxonomy (migration 0025). Allowed on a `private`
+    # account only, never on the rental one (rules.household.taxonomy.allowed_categories);
+    # group, relevance and the input each proposes live in rules/household/taxonomy.py.
+    # Income
+    HH_SALARY = "hh_salary"  # private
+    HH_CHILD_BENEFIT = "hh_child_benefit"  # private
+    HH_TAX_REFUND = "hh_tax_refund"  # private
+    HH_CAPITAL_INCOME = "hh_capital_income"  # private (Zinsen, Dividenden; read in phase 8)
+    HH_OTHER_INCOME = "hh_other_income"  # private
+    # Spending, the groups of mockup 10
+    HH_HOUSING = "hh_housing"  # private
+    HH_GROCERIES = "hh_groceries"  # private
+    HH_FAMILY_CHILD = "hh_family_child"  # private
+    HH_MOBILITY = "hh_mobility"  # private
+    HH_INSURANCE = "hh_insurance"  # private
+    HH_SUBSCRIPTIONS = "hh_subscriptions"  # private
+    HH_LEISURE_TRAVEL = "hh_leisure_travel"  # private
+    HH_HEALTH = "hh_health"  # private
+    HH_OTHER = "hh_other"  # private
+    # Tax-relevant spending: each a proposal into the input the form already reads (D161),
+    # never summed by a form itself
+    HH_DONATION = "hh_donation"  # pass_through (-> return_input special_expense)
+    HH_HOUSEHOLD_SERVICES = "hh_household_services"  # pass_through (-> household_services)
+    HH_CHILDCARE = "hh_childcare"  # pass_through (-> return_input childcare_cost)
+    HH_PROPERTY_COST = "hh_property_cost"  # pass_through (-> tax_input private_cost, D161)
+    HH_TAX_PAYMENT = "hh_tax_payment"  # private (phase 4b D95: not modelled, nothing proposed)
+    # Movements
+    INTERNAL_TRANSFER_IN = "internal_transfer_in"  # pass_through (D162: the matcher books it)
+    INTERNAL_TRANSFER_OUT = "internal_transfer_out"  # pass_through
+    HH_CASH = "hh_cash"  # private (Bargeldabhebung)
+    HH_CREDIT_CARD = "hh_credit_card"  # private (a card's monthly settlement)
+    # --- Phase 6 D165: the depot's own cash bookings, by booking text in code (rules.depot);
+    # not hh_* because phase 8's KAP rules read distribution and capital_income_tax.
+    SECURITY_PURCHASE = "security_purchase"  # private
+    SECURITY_SALE = "security_sale"  # private
+    DISTRIBUTION = "distribution"  # private
+    CAPITAL_INCOME_TAX = "capital_income_tax"  # private (Vorabpauschale, KapSt, Soli)
+    DEPOT_FEE = "depot_fee"  # private (Verwaltergebühr)
 
 
 class TaxTreatment(StrEnum):
@@ -71,6 +109,9 @@ class TaxTreatment(StrEnum):
     CAPITALIZED = "capitalized"
     PASS_THROUGH = "pass_through"
     UNDECIDED = "undecided"
+    # Phase 6 D159 (Q-O67): outside every form. rules/tax never reads such a row; a new value
+    # rather than pass_through so that invariant can be tested.
+    PRIVATE = "private"
 
 
 class AllocationMethod(StrEnum):
@@ -84,6 +125,8 @@ class AllocationMethod(StrEnum):
     DOCUMENT_MATCH = "document_match"
     LLM = "llm"
     USER = "user"
+    # Phase 6 D162 (migration 0025): the transfer matcher over every own account.
+    MATCHER_TRANSFER = "matcher_transfer"
 
 
 class SplitMethod(StrEnum):
@@ -379,14 +422,46 @@ class WirtschaftsplanFacts(Schema):
         return self
 
 
-class MatchContext(Schema):
-    """Everything a matcher or rule may look at. Lists are unordered."""
+class TransferLegSource(StrEnum):
+    """Which table a transfer leg is a row of (phase 6 D162)."""
 
-    owner_account_hmacs: list[HmacHex] = Field(default_factory=list)
+    TRANSACTION = "transaction"  # a bank or depot cash line
+    MOVEMENT = "movement"  # an asset_movement row (an exchange's EUR deposit or withdrawal)
+
+
+class TransferLeg(Schema):
+    """One side of a possible transfer between two own accounts, as rules.matching.
+    match_transfer reads it (phase 6 D162): an unlinked line or asset movement of another own
+    account. amount is in EUR and signed (an out leg is negative); fee_eur is the fee the
+    exchange or depot recorded, which a link within the fee tolerates."""
+
+    source: TransferLegSource
+    id: UUID
+    account_id: UUID
+    account_kind: AccountKind
+    booked_on: date
+    amount: Money
+    fee_eur: Money | None = None
+    counterparty_iban_hmac: HmacHex | None = Field(default=None, pattern=HMAC_PATTERN)
+
+
+class MatchContext(Schema):
+    """Everything a matcher or rule may look at. Lists are unordered.
+
+    Phase 6 D162: own_account_hmacs replaces phase 2's owner_account_hmacs, which listed only
+    the owner accounts. Step 0 fills it with the same accounts as before (the private ones);
+    the line's own account excluded and every other account included is step 1-2's work.
+    account_purpose: the purpose of the line's account (D158); rental unless stated, so every
+    phase 2-5 caller and fixture keeps its meaning. open_legs: the other own accounts' unlinked
+    legs (D162), empty until step 2 fills it."""
+
+    own_account_hmacs: list[HmacHex] = Field(default_factory=list)
     tenancies: list[TenancyFacts] = Field(default_factory=list)
     loans: list[LoanFacts] = Field(default_factory=list)
     documents: list[DocumentFacts] = Field(default_factory=list)
     wirtschaftsplaene: list[WirtschaftsplanFacts] = Field(default_factory=list)
+    account_purpose: AccountPurpose = AccountPurpose.RENTAL
+    open_legs: list[TransferLeg] = Field(default_factory=list)
 
 
 class HistoryRow(Schema):

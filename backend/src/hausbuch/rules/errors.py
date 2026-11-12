@@ -157,3 +157,27 @@ REMINDER_UNKNOWN = "reminder.unknown"
 REMINDER_SCOPE_INVALID = "reminder.scope_invalid"
 NOTIFICATION_FAILED = "notification.failed"
 TAX_INPUT_GRUNDSTEUER_SCHEDULE_INVALID = "tax_input.grundsteuer_schedule_invalid"  # D126
+
+
+# --- Phase 6 codes (docs/phases/phase-6.md D156-D175, §12) -----------------------------
+# Step 0 names them; the steps that build each rule raise them.
+
+ACCOUNT_KIND_NOT_AVAILABLE = "account.kind_not_available"  # wallet until phase 7 (D156)
+OWNERSHIP_SUM_NOT_ONE = "ownership.sum_not_one"  # an account's shares do not sum to 1 (D157)
+OWNERSHIP_OWNER_MISSING = "ownership.owner_missing"  # a share names no owner of the workspace
+ALLOCATION_CATEGORY_NOT_FOR_ACCOUNT = "allocation.category_not_for_account"  # D159
+ROUTING_AI_DISABLED = "routing.ai_disabled"  # a private line with ai_private_accounts off (D168)
+RULE_CONFLICTS = "rule.conflicts"  # a name pattern hits a line confirmed otherwise (D160)
+RULE_TOO_BROAD = "rule.too_broad"  # one name confirmed under two categories (D160, PayPal)
+TRANSFER_AMBIGUOUS = "transfer.ambiguous"  # several candidate legs (D162)
+TRANSFER_UNMATCHED_LEG = "transfer.unmatched_leg"  # no counterpart after the window (D162)
+STATEMENT_ACCOUNT_MISMATCH = "statement.account_mismatch"  # the file names another IBAN (D164)
+STATEMENT_IBAN_UNREAD = "statement.iban_unread"  # a PDF whose extraction has no IBAN (D164)
+DEPOT_HOLDINGS_MISMATCH = "depot.holdings_mismatch"  # report units != Σ movements (D165)
+EXCHANGE_UNRECONCILED = "exchange.unreconciled"  # typed balance != Σ movements (D166)
+EXCHANGE_DEPOSIT_QUESTION = "exchange.deposit_question"  # a crypto Deposit: a bonus? (D166)
+PRICE_NO_SOURCE = "price.no_source"  # an asset not in the registry (D167)
+PRICE_SOURCE_FAILED = "price.source_failed"  # an issuer's NAV missing seven days (D174)
+VALUATION_STALE_PRICE = "valuation.stale_price"  # the price is older than 7 days (D167)
+VALUATION_NOT_VALUED = "valuation.not_valued"  # past the asset's last reconciled date
+BANK_PIN_MISSING = "bank.pin_missing"  # the connection's slot has no secret (D163)

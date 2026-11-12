@@ -8,12 +8,12 @@ any rule is implemented.
 from datetime import date
 from functools import cache
 from pathlib import Path
-from typing import Any, Literal, Self
+from typing import Annotated, Any, Literal, Self
 from uuid import UUID
 
 import yaml
-from fixture_models import Lenient
-from pydantic import Field, JsonValue, ValidationError, model_validator
+from fixture_models import Lenient, RuleErrorExpect
+from pydantic import BeforeValidator, Field, JsonValue, ValidationError, model_validator
 
 from hausbuch.schemas.ai import CitedTextBlock, ExtractedValue, SourceRef
 from hausbuch.schemas.allocation import (
@@ -42,11 +42,23 @@ from hausbuch.schemas.bank import (
     WindowSums,
 )
 from hausbuch.schemas.common import Confidence, Money, Schema, Sha256Hex
-from hausbuch.schemas.enums import DuplicateStatus, ExtractionKind
+from hausbuch.schemas.enums import AccountPurpose, DuplicateStatus, ExtractionKind
 from hausbuch.schemas.extraction import EXTRACTION_MODELS, _Typing
 from hausbuch.schemas.proposal import PrefillContext, RecordEntity
 
 FIXTURES = Path(__file__).parent / "fixtures" / "phase2"
+
+
+def _phase2_context_keys(value: Any) -> Any:
+    """Phase 6 D162 renamed MatchContext.owner_account_hmacs to own_account_hmacs; the phase 2
+    fixture files keep their key, and this maps it (phase-6.md D162)."""
+    if isinstance(value, dict) and "owner_account_hmacs" in value:
+        value = dict(value)
+        value["own_account_hmacs"] = value.pop("owner_account_hmacs")
+    return value
+
+
+Phase2Context = Annotated[MatchContext, BeforeValidator(_phase2_context_keys)]
 
 
 @cache
@@ -174,11 +186,12 @@ class MatcherCase(Lenient):
 
 class MatchersFixture(Schema):
     ids: dict[str, str]
-    context: MatchContext
+    context: Phase2Context
     cases: list[MatcherCase]
 
 
 class RuleCase(Lenient):
+    pending: str | None = None  # phase 6 cases whose rule a later step builds
     rule: str
     transaction: MatchTransaction
     expect: SetExpect | None
@@ -201,12 +214,70 @@ class RejectedRule(Lenient):
         raise ValueError(f"{self.id}: a rule that stores an amount must not validate")
 
 
+class InferPart(Schema):
+    amount: Money
+    category: AllocationCategory
+
+
+class InferConfirmed(Schema):
+    """The confirmed answer: one category for the whole line, or its parts."""
+
+    category: AllocationCategory | None = None
+    parts: list[InferPart] | None = Field(default=None, min_length=2)
+
+    @model_validator(mode="after")
+    def _one(self) -> Self:
+        if (self.category is None) == (self.parts is None):
+            raise ValueError("confirmed: a category or parts")
+        return self
+
+
+class InferHistory(Schema):
+    """A line confirmed earlier on the same account, by name and category (D160)."""
+
+    transaction_id: UUID
+    counterparty_name: str
+    category: AllocationCategory
+
+
+class InferCase(Lenient):
+    """infer_rule on a private account (phase 6 D160); pending until phase 6 step 1."""
+
+    pending: str | None = None
+    purpose: AccountPurpose
+    transaction: MatchTransaction
+    confirmed: InferConfirmed
+    history: list[InferHistory] = Field(default_factory=list)
+    expect_rule: MatchingRuleCreate | None = None
+    expect_error: RuleErrorExpect | None = None
+
+    @model_validator(mode="after")
+    def _shape(self) -> Self:
+        if self.expect_rule is not None and self.expect_error is not None:
+            raise ValueError(f"{self.id}: expect a rule, none or an error, not both")
+        if self.confirmed.parts is not None:
+            total = sum(p.amount for p in self.confirmed.parts)
+            if total != self.transaction.amount:
+                raise ValueError(f"{self.id}: the parts do not sum to the amount")
+        rule = self.expect_rule
+        if rule is not None:
+            if self.purpose is not AccountPurpose.PRIVATE:
+                raise ValueError(f"{self.id}: a name rule is learned on a private account only")
+            if rule.matcher.counterparty_iban_hmac is not None:
+                raise ValueError(f"{self.id}: a name rule stores no IBAN")
+            if rule.category != self.confirmed.category:
+                raise ValueError(f"{self.id}: the rule takes the answer's category")
+        return self
+
+
 class RulesFixture(Schema):
     ids: dict[str, str]
-    context: MatchContext
+    context: Phase2Context
     rules: dict[str, MatchingRule]
     cases: list[RuleCase]
     rejected: list[RejectedRule] = Field(min_length=1)
+    # Phase 6 D160: infer_rule on a private account (added by the phase 6 spec PR).
+    inferred: list[InferCase] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _known_rules(self) -> Self:
@@ -243,7 +314,7 @@ class RuleHistoryCase(Lenient):
 
 class RuleHistoryFixture(Schema):
     ids: dict[str, str]
-    context: MatchContext
+    context: Phase2Context
     rules: dict[str, MatchingRule]
     history: dict[str, HistoryLine]  # named lines the cases reuse (YAML anchors)
     cases: list[RuleHistoryCase]
@@ -573,7 +644,7 @@ class MonthExpect(Schema):
 class MonthStatementFixture(Schema):
     ids: dict[str, str]
     balances: Balances
-    context: MatchContext
+    context: Phase2Context
     rules: list[MatchingRule]
     lines: list[MonthLine] = Field(min_length=12, max_length=12)
     expect: MonthExpect
@@ -648,7 +719,7 @@ class NoRuleCase(Lenient):
 
 class RepeatFixture(Schema):
     ids: dict[str, str]
-    context: MatchContext
+    context: Phase2Context
     cases: list[RepeatCase]
     no_rule: list[NoRuleCase] = Field(default_factory=list)
 

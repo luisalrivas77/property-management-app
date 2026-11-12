@@ -1,0 +1,67 @@
+# Rule fixture: the household taxonomy (hausbuch.rules.household.taxonomy)
+#
+# docs/phases/phase-6.md D159, D162, D165 (1), §5.3, §14. Every household, transfer and depot
+# code with its group (the Haushalt screen's groups, mockup 10), its relevance, its tax
+# treatment (rules/categories.py), its review threshold (rules/review.py) and the input it
+# proposes. Checked on load against the three tables, with the completeness check: the codes
+# listed here are exactly the codes only a private account carries, and `shared` are the codes
+# both purposes carry. A code without all six fails here before any rule exists.
+#
+# Written from D159's text, not from the tables. Labels are given only where D159 names one.
+#
+# Step 0 readings (listed in the step 0 report):
+# - Group and relevance follow D159's headings: "Income" codes are group income, relevance
+#   income; "Tax-relevant spending" codes are group tax, relevance tax; "Movements" are group
+#   movements, relevance transfer for the two transfer codes and spending for hh_cash and
+#   hh_credit_card (the money leaves the tracked accounts to be spent).
+# - hh_capital_income: D159 lists it under Income and calls it "tax-relevant, phase 8". Read
+#   as relevance income (the Haushalt view counts it as income), treatment private (phase 8's
+#   KAP rules read the category, not the treatment), no threshold, nothing proposed in this
+#   phase.
+# - D159: "All hh_* codes except the tax-relevant ones get TaxTreatment.PRIVATE". The four
+#   that propose an input are pass_through (they reach a form only through the confirmed
+#   input, never summed as a cost; hh_property_cost so by D161); hh_tax_payment is private,
+#   as D159 says, with nothing proposed (phase 4b D95).
+# - The transfer codes are pass_through (neither income nor cost, like owner transfers), the
+#   depot codes private (phase 8 reads distribution and capital_income_tax by category).
+# - Thresholds: D159's 0.9 list and its None list; hh_cash is named in neither, read as None
+#   (a cash withdrawal is a movement a person confirms); the depot codes are None (D165 (1):
+#   categorised by code from the booking text, never by a model's confidence).
+
+codes:
+  # Income
+  - {category: hh_salary, label: Gehalt, group: income, relevance: income, treatment: private, threshold: "0.900"}
+  - {category: hh_child_benefit, label: Kindergeld, group: income, relevance: income, treatment: private, threshold: "0.900"}
+  - {category: hh_tax_refund, label: Steuererstattung, group: income, relevance: income, treatment: private, threshold: null}
+  - {category: hh_capital_income, group: income, relevance: income, treatment: private, threshold: null}
+  - {category: hh_other_income, group: income, relevance: income, treatment: private, threshold: null}
+  # Spending, the groups of mockup 10
+  - {category: hh_housing, label: Wohnen, group: housing, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_groceries, label: Lebensmittel und Drogerie, group: groceries, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_family_child, label: Familie und Kind, group: family_child, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_mobility, label: Mobilität, group: mobility, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_insurance, label: Versicherungen, group: insurance, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_subscriptions, label: Abos und Verträge, group: subscriptions, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_leisure_travel, label: Freizeit und Reisen, group: leisure_travel, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_health, label: Gesundheit, group: health, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_other, label: Sonstiges, group: other, relevance: spending, treatment: private, threshold: null}
+  # Tax-relevant spending: each proposes the input its form already reads
+  - {category: hh_donation, group: tax, relevance: tax, treatment: pass_through, threshold: null, proposes: "return_input:special_expense"}
+  - {category: hh_household_services, group: tax, relevance: tax, treatment: pass_through, threshold: null, proposes: "return_input:household_services"}
+  - {category: hh_childcare, group: tax, relevance: tax, treatment: pass_through, threshold: null, proposes: "return_input:childcare_cost"}
+  - {category: hh_property_cost, group: tax, relevance: tax, treatment: pass_through, threshold: null, proposes: "tax_input:private_cost"}
+  - {category: hh_tax_payment, group: tax, relevance: tax, treatment: private, threshold: null}
+  # Movements
+  - {category: internal_transfer_in, group: movements, relevance: transfer, treatment: pass_through, threshold: null}
+  - {category: internal_transfer_out, group: movements, relevance: transfer, treatment: pass_through, threshold: null}
+  - {category: hh_cash, label: Bargeldabhebung, group: movements, relevance: spending, treatment: private, threshold: null}
+  - {category: hh_credit_card, group: movements, relevance: spending, treatment: private, threshold: null}
+  # The depot's own bookings (D165 (1))
+  - {category: security_purchase, group: depot, relevance: transfer, treatment: private, threshold: null}
+  - {category: security_sale, group: depot, relevance: transfer, treatment: private, threshold: null}
+  - {category: distribution, group: depot, relevance: income, treatment: private, threshold: null}
+  - {category: capital_income_tax, group: depot, relevance: tax, treatment: private, threshold: null}
+  - {category: depot_fee, group: depot, relevance: spending, treatment: private, threshold: null}
+
+# D159: bank_fees is reused for every bank kind; uncategorized is the catch-all of both.
+shared: [bank_fees, uncategorized]

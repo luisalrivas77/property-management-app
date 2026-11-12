@@ -11,6 +11,17 @@ from hausbuch.schemas.ai import AiJob
 from hausbuch.schemas.allocation import AllocationCategory, AllocationMethod, SplitMethod
 from hausbuch.schemas.bank import StatementFormat
 from hausbuch.schemas.bank_sync import SyncStatus, SyncTrigger
+from hausbuch.schemas.household import (
+    AssetKind,
+    HoldingSource,
+    MovementImportFormat,
+    MovementKind,
+    MovementSource,
+    MovementStatus,
+    PriceSourceKind,
+    TransferLinkKind,
+    TransferMatchedBy,
+)
 from hausbuch.schemas.inbound_mail import InboundDecision
 from hausbuch.schemas.reminders import (
     NotificationChannel,
@@ -71,6 +82,21 @@ COLUMNS: dict[tuple[str, str], type[StrEnum]] = {
     ("reminder_ack", "action"): ReminderAckAction,
     ("notification", "channel"): NotificationChannel,
     ("notification", "status"): NotificationStatus,
+    # Phase 6
+    ("account", "kind"): E.AccountKind,
+    ("account", "purpose"): E.AccountPurpose,
+    ("account", "currency"): E.Currency,
+    ("asset", "kind"): AssetKind,
+    ("asset_movement", "kind"): MovementKind,
+    ("asset_movement", "source"): MovementSource,
+    ("asset_movement", "status"): MovementStatus,
+    ("movement_import", "format"): MovementImportFormat,
+    ("movement_import", "status"): E.ImportStatus,
+    ("holding_statement", "source"): HoldingSource,
+    ("transfer_link", "kind"): TransferLinkKind,
+    ("transfer_link", "matched_by"): TransferMatchedBy,
+    ("price", "source"): PriceSourceKind,
+    ("valuation_snapshot", "price_source"): PriceSourceKind,
 }
 
 

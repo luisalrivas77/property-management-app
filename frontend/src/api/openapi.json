@@ -7059,8 +7059,15 @@
             "title": "Bank"
           },
           "iban_masked": {
-            "type": "string",
-            "pattern": "^[A-Z]{2}[0-9]{2} \\*{4} [A-Z0-9]{4}$",
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Z]{2}[0-9]{2} \\*{4} [A-Z0-9]{4}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Iban Masked"
           },
           "source": {
@@ -7079,6 +7086,41 @@
           "is_owner_account": {
             "type": "boolean",
             "title": "Is Owner Account"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AccountKind",
+            "default": "bank_current"
+          },
+          "purpose": {
+            "$ref": "#/components/schemas/AccountPurpose",
+            "default": "private"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency",
+            "default": "EUR"
+          },
+          "external_ref_masked": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\*{4} [A-Z0-9]{4}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Ref Masked"
           }
         },
         "additionalProperties": false,
@@ -7112,9 +7154,16 @@
             "title": "Bank"
           },
           "iban": {
-            "type": "string",
-            "maxLength": 42,
-            "minLength": 15,
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 42,
+                "minLength": 15
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Iban"
           },
           "opening_balance": {
@@ -7131,6 +7180,46 @@
             "type": "boolean",
             "title": "Is Owner Account",
             "default": false
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AccountKind",
+            "default": "bank_current"
+          },
+          "purpose": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccountPurpose"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "external_ref": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 4
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Ref"
           }
         },
         "additionalProperties": false,
@@ -7138,11 +7227,22 @@
         "required": [
           "label",
           "bank",
-          "iban",
           "opening_balance",
           "opening_balance_on"
         ],
         "title": "AccountCreate"
+      },
+      "AccountKind": {
+        "type": "string",
+        "enum": [
+          "bank_current",
+          "bank_savings",
+          "depot",
+          "exchange",
+          "wallet"
+        ],
+        "title": "AccountKind",
+        "description": "account.kind (migration 0025, phase 6 D156). `wallet` is in the CHECK so phase 7 adds\nno migration for it; create_account refuses it (account.kind_not_available) until then,\nas AccountSource.AGGREGATOR is refused."
       },
       "AccountPatch": {
         "properties": {
@@ -7176,6 +7276,15 @@
         "type": "object",
         "title": "AccountPatch",
         "description": "PATCH /accounts/{id}. The IBAN cannot change: a different IBAN is another account.\nMoving the anchor (opening_balance, opening_balance_on) re-checks every import."
+      },
+      "AccountPurpose": {
+        "type": "string",
+        "enum": [
+          "rental",
+          "private"
+        ],
+        "title": "AccountPurpose",
+        "description": "account.purpose (migration 0025, phase 6 D156): `rental` is the account the property's\nrent and costs run on; every other account of the household is `private`."
       },
       "AccountSource": {
         "type": "string",
@@ -7920,7 +8029,35 @@
           "bank_fees",
           "other_income",
           "other_expense",
-          "uncategorized"
+          "uncategorized",
+          "hh_salary",
+          "hh_child_benefit",
+          "hh_tax_refund",
+          "hh_capital_income",
+          "hh_other_income",
+          "hh_housing",
+          "hh_groceries",
+          "hh_family_child",
+          "hh_mobility",
+          "hh_insurance",
+          "hh_subscriptions",
+          "hh_leisure_travel",
+          "hh_health",
+          "hh_other",
+          "hh_donation",
+          "hh_household_services",
+          "hh_childcare",
+          "hh_property_cost",
+          "hh_tax_payment",
+          "internal_transfer_in",
+          "internal_transfer_out",
+          "hh_cash",
+          "hh_credit_card",
+          "security_purchase",
+          "security_sale",
+          "distribution",
+          "capital_income_tax",
+          "depot_fee"
         ],
         "title": "AllocationCategory",
         "description": "§8.2. Default tax treatment in the comment (rules/categories.py is the source)."
@@ -8188,6 +8325,10 @@
               }
             ],
             "title": "Counterparty Iban Masked"
+          },
+          "account_purpose": {
+            "$ref": "#/components/schemas/AccountPurpose",
+            "default": "rental"
           }
         },
         "additionalProperties": false,
@@ -8211,7 +8352,8 @@
           "matcher_hausgeld",
           "document_match",
           "llm",
-          "user"
+          "user",
+          "matcher_transfer"
         ],
         "title": "AllocationMethod",
         "description": "allocation.method (migration 0007): who proposed the allocation set."
@@ -8934,6 +9076,12 @@
             "pattern": "^(.{2}\\*{3}.{2}|\\*{3})$",
             "title": "Login Masked"
           },
+          "credential_slot": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,31}$",
+            "title": "Credential Slot",
+            "default": "primary"
+          },
           "tan_mechanism": {
             "anyOf": [
               {
@@ -9036,6 +9184,12 @@
             "maxLength": 100,
             "minLength": 1,
             "title": "Login Name"
+          },
+          "credential_slot": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,31}$",
+            "title": "Credential Slot",
+            "default": "primary"
           }
         },
         "additionalProperties": false,
@@ -10781,6 +10935,39 @@
         "title": "DepositRecordExtraction",
         "description": "Kautionsnachweis (letter / deposit_record). Step 2."
       },
+      "DepotReportExtraction": {
+        "properties": {
+          "title": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "a short German title, two to six words naming what the document is",
+            "value_kind": "text"
+          },
+          "document_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the date the document carries",
+            "value_kind": "date"
+          },
+          "report_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the date the positions are stated for (Stichtag)",
+            "value_kind": "date"
+          },
+          "positions": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "every position the report lists, one item per security, each written `ISIN | name | units | price | value | currency`, as printed; never a subtotal or the total row",
+            "value_kind": "text_list"
+          },
+          "trades": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "every trade of the report's Wertpapierumsätze list, one item per trade, each written `ISIN | trade date | units | amount | reference`, as printed; unbekannt for a part the row does not state",
+            "value_kind": "text_list"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "DepotReportExtraction",
+        "description": "Quartalsbericht (depot_report, D165 (3)): the positions on a date and the period's\ntrades, from which code proposes holding_statement rows."
+      },
       "DisbursementCorrection": {
         "properties": {
           "new_date": {
@@ -10812,6 +10999,79 @@
         "type": "object",
         "title": "DisbursementCorrection",
         "description": "POST /loans/{id}/corrections/disbursement: the payout date and/or the principal; an\nabsent (or null) field keeps the recorded value."
+      },
+      "DistributionNoteExtraction": {
+        "properties": {
+          "title": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "a short German title, two to six words naming what the document is",
+            "value_kind": "text"
+          },
+          "document_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the date the document carries",
+            "value_kind": "date"
+          },
+          "isin": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the security's ISIN, twelve characters",
+            "value_kind": "text"
+          },
+          "security_name": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the security's name as printed",
+            "value_kind": "text"
+          },
+          "record_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the record date (Ex-Tag or Stichtag)",
+            "value_kind": "date"
+          },
+          "payment_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the payment date (Zahltag, Valuta)",
+            "value_kind": "date"
+          },
+          "units": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the units (Stück, Anteile) held on the record date",
+            "value_kind": "decimal"
+          },
+          "gross_per_unit": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the distribution per unit, before taxes",
+            "value_kind": "money"
+          },
+          "gross_amount": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the gross distribution, before taxes",
+            "value_kind": "money"
+          },
+          "withholding_tax": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "foreign withholding tax (Quellensteuer) deducted, if any",
+            "value_kind": "money"
+          },
+          "german_taxes": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "German taxes deducted: Kapitalertragsteuer, Solidaritätszuschlag and Kirchensteuer, summed",
+            "value_kind": "money"
+          },
+          "net_amount": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the amount credited to the cash account",
+            "value_kind": "money"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the currency of the amounts, as a three-letter code",
+            "value_kind": "text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "DistributionNoteExtraction",
+        "description": "Ertragsabrechnung / Ausschüttung (distribution_note, D165 (2))."
       },
       "Document": {
         "properties": {
@@ -11115,6 +11375,15 @@
               },
               {
                 "$ref": "#/components/schemas/PaymentProofExtraction"
+              },
+              {
+                "$ref": "#/components/schemas/TradeConfirmationExtraction"
+              },
+              {
+                "$ref": "#/components/schemas/DistributionNoteExtraction"
+              },
+              {
+                "$ref": "#/components/schemas/DepotReportExtraction"
               }
             ],
             "title": "Fields"
@@ -11268,7 +11537,9 @@
           "depot_statement",
           "depot_report",
           "trade_confirmation",
-          "capital_income_tax_certificate"
+          "capital_income_tax_certificate",
+          "exchange_export",
+          "distribution_note"
         ],
         "title": "DocumentSubtype",
         "description": "Finer typing where retention or the AfA basis depends on it."
@@ -11795,7 +12066,10 @@
           "statement",
           "transaction",
           "rule",
-          "workspace"
+          "workspace",
+          "asset",
+          "movement",
+          "transfer"
         ],
         "title": "EntityType",
         "description": "Entities that carry events. Also the prefix of every event type."
@@ -12422,6 +12696,9 @@
           "workspace.notification_sent",
           "workspace.inbox_poll_failed",
           "workspace.inbox_poll_recovered",
+          "workspace.ai_consent_recorded",
+          "workspace.prices_fetched",
+          "workspace.valuation_snapshot_written",
           "proposal.created",
           "proposal.superseded",
           "proposal.rejected",
@@ -12443,6 +12720,23 @@
           "account.sync_completed",
           "account.sync_failed",
           "account.statement_fetched",
+          "account.kind_set",
+          "account.ownership_set",
+          "account.movements_imported",
+          "account.movements_reconciled",
+          "account.movements_unreconciled",
+          "account.holdings_confirmed",
+          "account.holdings_reconciled",
+          "account.holdings_mismatch",
+          "asset.created",
+          "asset.updated",
+          "asset.price_recorded",
+          "asset.price_source_failed",
+          "movement.proposed",
+          "movement.confirmed",
+          "movement.superseded",
+          "transfer.linked",
+          "transfer.unlinked",
           "statement.imported",
           "statement.reconciled",
           "statement.unreconciled",
@@ -12570,7 +12864,10 @@
           "einkommensteuerbescheid",
           "general",
           "management_contract",
-          "payment_proof"
+          "payment_proof",
+          "trade_confirmation",
+          "distribution_note",
+          "depot_report"
         ],
         "title": "ExtractionKind",
         "description": "document_extraction.kind and proposal.kind (migration 0005): which field set an\nextraction holds. `manual` is phase 1's ManualDocumentFields; the others are the per-type\nmodels in schemas/extraction.py."
@@ -19220,7 +19517,8 @@
           "ownership_records",
           "tax_records",
           "tenancy_records",
-          "tenant_contact"
+          "tenant_contact",
+          "holding_records"
         ],
         "title": "RetentionClass"
       },
@@ -19230,7 +19528,8 @@
           "while_owned",
           "tenancy_active",
           "untyped",
-          "unlinked"
+          "unlinked",
+          "while_held"
         ],
         "title": "RetentionHold",
         "description": "Why a retain_until date cannot be computed yet."
@@ -20789,7 +21088,8 @@
         "enum": [
           "csv_camt",
           "camt",
-          "pdf"
+          "pdf",
+          "dkb_csv"
         ],
         "title": "StatementFormat",
         "description": "statement_import.format (migration 0006)."
@@ -22748,6 +23048,84 @@
         "title": "TrackedAmount",
         "description": "Booked, not deductible this year (Tilgung, Erhaltungsrücklage)."
       },
+      "TradeConfirmationExtraction": {
+        "properties": {
+          "title": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "a short German title, two to six words naming what the document is",
+            "value_kind": "text"
+          },
+          "document_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the date the document carries",
+            "value_kind": "date"
+          },
+          "isin": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the security's ISIN, twelve characters",
+            "value_kind": "text"
+          },
+          "security_name": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the security's name as printed",
+            "value_kind": "text"
+          },
+          "trade_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the trade date (Handelstag, Schlusstag)",
+            "value_kind": "date"
+          },
+          "settlement_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the settlement date (Valuta)",
+            "value_kind": "date"
+          },
+          "side": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Kauf or Verkauf, as printed",
+            "value_kind": "text"
+          },
+          "units": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the units (Stück, Anteile) traded",
+            "value_kind": "decimal"
+          },
+          "price_per_unit": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the price per unit (Kurs)",
+            "value_kind": "money"
+          },
+          "gross_amount": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the gross amount (Kurswert)",
+            "value_kind": "money"
+          },
+          "fees": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the fees and costs charged on this trade, summed",
+            "value_kind": "money"
+          },
+          "net_amount": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the amount debited or credited to the cash account (Ausmachender Betrag)",
+            "value_kind": "money"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the currency of the amounts, as a three-letter code",
+            "value_kind": "text"
+          },
+          "order_reference": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the order or transaction reference (Auftragsnummer, Referenz)",
+            "value_kind": "text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TradeConfirmationExtraction",
+        "description": "Wertpapierabrechnung (trade_confirmation, D165 (2)): one buy or sell of one security."
+      },
       "TrainingFact": {
         "properties": {
           "label": {
@@ -24040,6 +24418,11 @@
             "type": "boolean",
             "title": "Reminder Emails",
             "default": false
+          },
+          "ai_private_accounts": {
+            "type": "boolean",
+            "title": "Ai Private Accounts",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -24065,6 +24448,11 @@
           "reminder_emails": {
             "type": "boolean",
             "title": "Reminder Emails"
+          },
+          "ai_private_accounts": {
+            "type": "boolean",
+            "title": "Ai Private Accounts",
+            "default": false
           },
           "reminder_emails_available": {
             "type": "boolean",

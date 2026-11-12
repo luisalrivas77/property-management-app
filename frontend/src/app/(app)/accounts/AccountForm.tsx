@@ -28,7 +28,10 @@ export function AccountForm({ account }: { account?: Account }) {
   const [iban, setIban] = useState("");
   const [opening, setOpening] = useState(account ? decimalInput(account.opening_balance) : "0,00");
   const [openingOn, setOpeningOn] = useState(account?.opening_balance_on ?? "");
-  const [ownerAccount, setOwnerAccount] = useState(account?.is_owner_account ?? false);
+  // Phase 6 (D156, migration 0025): is_owner_account is true on every account, the rental one
+  // included; whether an account is a private one is its purpose.
+  const wasPrivate = account?.purpose === "private";
+  const [ownerAccount, setOwnerAccount] = useState(wasPrivate);
   const [busy, setBusy] = useState(false);
   const form = useFormErrors(KEYS, CODE_FIELDS);
 
@@ -53,17 +56,20 @@ export function AccountForm({ account }: { account?: Account }) {
       bank: bank.trim(),
       opening_balance: openingBalance,
       opening_balance_on: openingOn,
-      is_owner_account: ownerAccount,
     };
     setBusy(true);
     form.clear();
     try {
       if (account) {
-        const body: AccountPatch = common;
+        // The flag only when the person changed it, so editing the rental account keeps it.
+        const body: AccountPatch =
+          ownerAccount === wasPrivate ? common : { ...common, is_owner_account: ownerAccount };
         await ok(api.PATCH("/api/accounts/{account_id}", { params: { path: { account_id: account.id } }, body }));
         router.push(`/accounts/${account.id}`);
       } else {
-        const created = await ok(api.POST("/api/accounts", { body: { ...common, iban: iban.trim() } }));
+        // A bank account (phase 6 D156); the other kinds come with their own steps.
+        const body = { ...common, iban: iban.trim(), is_owner_account: ownerAccount, kind: "bank_current" as const };
+        const created = await ok(api.POST("/api/accounts", { body }));
         router.push(`/accounts/${created.id}`);
       }
     } catch (error) {
@@ -136,7 +142,7 @@ export function AccountForm({ account }: { account?: Account }) {
       ) : null}
       {account ? (
         <>
-          <Facts rows={[["IBAN", account.iban_masked]]} />
+          <Facts rows={[["IBAN", account.iban_masked ?? "–"]]} />
           <p className="muted">
             Die IBAN lässt sich nicht ändern: eine andere IBAN ist ein anderes Konto. Wird der Anfangssaldo geändert, prüft
             Hausbuch alle Kontoauszüge dieses Kontos neu.

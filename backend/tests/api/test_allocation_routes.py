@@ -132,7 +132,27 @@ def test_refusals_are_coded_422s_and_write_nothing(client_a, lines):
         422,
     )
     assert pattern["code"] == "rule.invalid_pattern"
+    # Phase 6 D159: a household code on a rental line would be on no Anlage V line and in no
+    # to-do, so the answer is refused rather than the cost silently dropped from the draft.
+    private = ok(client_a.put(url, json=_body(line, (line["amount"], "hh_insurance"))), 422)
+    assert private["code"] == "allocation.category_not_for_account"
     assert ok(client_a.get(url))["allocations"] == []
+
+
+def test_a_patch_echoing_the_migrated_owner_flag_is_not_refused(client_a, lines, dbname):
+    """Migration 0025 sets is_owner_account on the rental account too (phase 6 D156); a PATCH
+    that sends the flag unchanged with another field must not hit the 'imports cannot become
+    an owner account' guard, which is for a change of the flag only."""
+    account_id = lines[0]["account_id"]
+    with _admin(dbname) as conn:
+        conn.execute("UPDATE account SET is_owner_account = true WHERE id = %s", (account_id,))
+    patched = ok(
+        client_a.patch(
+            f"/api/accounts/{account_id}", json={"label": "Mietkonto neu", "is_owner_account": True}
+        )
+    )
+    assert patched["label"] == "Mietkonto neu"
+    assert patched["purpose"] == "rental"
 
 
 def test_another_workspace_gets_404(client_a, client_b, lines):

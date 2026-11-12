@@ -1,0 +1,159 @@
+# Rule fixture: a depot report's positions against the confirmed movements
+# (hausbuch.rules.depot.reconcile_holdings; docs/phases/phase-6.md D165 (3), §7, §14)
+#
+# reconcile_holdings(declared, movements) -> one HoldingStatement per declared position with
+# `reconciled` and `difference_units` = declared units − Σ quantity of the account's
+# CONFIRMED movements of that asset with occurred_at on or before the report's as_of.
+# Reconciled when |difference| <= rules/depot.UNITS_TOLERANCE (0.000001, units to 6
+# decimals). A position that does not reconcile raises depot.holdings_mismatch on the card,
+# which names the report's Umsätze lines (DepotReportExtraction.trades) whose reference no
+# movement carries as external_ref: the confirmation still to upload.
+#
+# Every expectation is recomputed on load by that rule, written once more in
+# tests/fixture_models_phase6.py.
+#
+# Step 0 readings (listed in the step 0 report):
+# - "reconciled through as_of": the case's reconciled_through is the report's as_of when every
+#   position reconciles, else null (nothing after the last reconciled report is valued for the
+#   asset, as D166 says for the exchange).
+# - "prices stored": a reconciled position with units > 0 stores a price of source
+#   `statement` on as_of (its declared value ÷ units, the precision settled in step 4); an
+#   unreconciled position or a position of 0 stores none.
+# - A proposed movement (not confirmed) does not count; a movement on the report's day counts.
+# - The missing Umsätze lines are listed only for a position that does not reconcile, and a
+#   reference counts as present when any movement carries it, proposed or confirmed (a
+#   proposed one waits for „Übernehmen“ on its own card, not for an upload).
+
+assets:
+  msci: IE00BEISPL01
+  bond: LU0BEISPIEL3
+  div: IE00BEISPL02
+
+cases:
+  - id: equal
+    pending: "phase 6 step 4 (the depot)"
+    as_of: 2026-06-30
+    declared:
+      - {asset: msci, units: "32.345678", value_eur: "2655.58"}
+      - {asset: div, units: "20.000000", value_eur: "800.00"}
+    movements:
+      - {asset: msci, quantity: "20.000000", occurred_on: 2026-01-15, external_ref: A26-0115-0001}
+      - {asset: msci, quantity: "12.345678", occurred_on: 2026-05-14, external_ref: A26-0514-0001}
+      - {asset: div, quantity: "20.000000", occurred_on: 2026-01-15, external_ref: A26-0115-0002}
+      - {asset: div, quantity: "0", occurred_on: 2026-06-25}
+    report_trades:
+      - {asset: msci, reference: A26-0514-0001}
+    expect:
+      reconciled_through: 2026-06-30
+      positions:
+        - {asset: msci, reconciled: true, difference_units: "0", price_stored: true}
+        - {asset: div, reconciled: true, difference_units: "0", price_stored: true}
+
+  - id: missing_acquisition
+    description: the report lists a purchase whose confirmation was never uploaded
+    pending: "phase 6 step 4 (the depot)"
+    as_of: 2026-06-30
+    declared:
+      - {asset: msci, units: "32.345678", value_eur: "2655.58"}
+    movements:
+      - {asset: msci, quantity: "20.000000", occurred_on: 2026-01-15, external_ref: A26-0115-0001}
+    report_trades:
+      - {asset: msci, reference: A26-0115-0001}
+      - {asset: msci, reference: A26-0514-0001}
+    expect:
+      reconciled_through: null
+      positions:
+        - {asset: msci, reconciled: false, difference_units: "12.345678", price_stored: false, error: depot.holdings_mismatch, missing_references: [A26-0514-0001]}
+
+  - id: sale_listed_and_confirmed
+    pending: "phase 6 step 4 (the depot)"
+    as_of: 2026-06-30
+    declared:
+      - {asset: bond, units: "7.000000", value_eur: "637.00"}
+    movements:
+      - {asset: bond, quantity: "10.000000", occurred_on: 2026-02-03, external_ref: A26-0203-0004}
+      - {asset: bond, quantity: "-3.000000", occurred_on: 2026-06-02, external_ref: A26-0602-0007}
+    report_trades:
+      - {asset: bond, reference: A26-0602-0007}
+    expect:
+      reconciled_through: 2026-06-30
+      positions:
+        - {asset: bond, reconciled: true, difference_units: "0", price_stored: true}
+
+  - id: report_before_the_last_movement
+    description: a purchase after the report's date does not count; the report reconciles through its own date only
+    pending: "phase 6 step 4 (the depot)"
+    as_of: 2026-03-31
+    declared:
+      - {asset: msci, units: "20.000000", value_eur: "1580.00"}
+    movements:
+      - {asset: msci, quantity: "20.000000", occurred_on: 2026-01-15, external_ref: A26-0115-0001}
+      - {asset: msci, quantity: "12.345678", occurred_on: 2026-05-14, external_ref: A26-0514-0001}
+    report_trades: []
+    expect:
+      reconciled_through: 2026-03-31
+      positions:
+        - {asset: msci, reconciled: true, difference_units: "0", price_stored: true}
+
+  - id: position_of_zero
+    description: everything bought was sold; the report lists 0 units
+    pending: "phase 6 step 4 (the depot)"
+    as_of: 2026-09-30
+    declared:
+      - {asset: bond, units: "0", value_eur: "0.00"}
+    movements:
+      - {asset: bond, quantity: "10.000000", occurred_on: 2026-02-03, external_ref: A26-0203-0004}
+      - {asset: bond, quantity: "-3.000000", occurred_on: 2026-06-02, external_ref: A26-0602-0007}
+      - {asset: bond, quantity: "-7.000000", occurred_on: 2026-08-20, external_ref: A26-0820-0003}
+    report_trades: []
+    expect:
+      reconciled_through: 2026-09-30
+      positions:
+        - {asset: bond, reconciled: true, difference_units: "0", price_stored: false}
+
+  - id: within_the_tolerance
+    description: a rounding of one millionth in the report reconciles
+    pending: "phase 6 step 4 (the depot)"
+    as_of: 2026-06-30
+    declared:
+      - {asset: msci, units: "32.345679", value_eur: "2655.58"}
+    movements:
+      - {asset: msci, quantity: "20.000000", occurred_on: 2026-01-15, external_ref: A26-0115-0001}
+      - {asset: msci, quantity: "12.345678", occurred_on: 2026-05-14, external_ref: A26-0514-0001}
+    report_trades: []
+    expect:
+      reconciled_through: 2026-06-30
+      positions:
+        - {asset: msci, reconciled: true, difference_units: "0.000001", price_stored: true}
+
+  - id: beyond_the_tolerance
+    description: two millionths do not reconcile
+    pending: "phase 6 step 4 (the depot)"
+    as_of: 2026-06-30
+    declared:
+      - {asset: msci, units: "32.345680", value_eur: "2655.58"}
+    movements:
+      - {asset: msci, quantity: "20.000000", occurred_on: 2026-01-15, external_ref: A26-0115-0001}
+      - {asset: msci, quantity: "12.345678", occurred_on: 2026-05-14, external_ref: A26-0514-0001}
+    report_trades:
+      - {asset: msci, reference: A26-0514-0001}
+    expect:
+      reconciled_through: null
+      positions:
+        - {asset: msci, reconciled: false, difference_units: "0.000002", price_stored: false, error: depot.holdings_mismatch, missing_references: []}
+
+  - id: proposed_movement_does_not_count
+    description: a confirmation read but not yet confirmed (still on its card) is not a holding
+    pending: "phase 6 step 4 (the depot)"
+    as_of: 2026-06-30
+    declared:
+      - {asset: msci, units: "32.345678", value_eur: "2655.58"}
+    movements:
+      - {asset: msci, quantity: "20.000000", occurred_on: 2026-01-15, external_ref: A26-0115-0001}
+      - {asset: msci, quantity: "12.345678", occurred_on: 2026-05-14, external_ref: A26-0514-0001, status: proposed}
+    report_trades:
+      - {asset: msci, reference: A26-0514-0001}
+    expect:
+      reconciled_through: null
+      positions:
+        - {asset: msci, reconciled: false, difference_units: "12.345678", price_stored: false, error: depot.holdings_mismatch, missing_references: []}

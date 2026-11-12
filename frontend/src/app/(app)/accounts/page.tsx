@@ -43,7 +43,7 @@ export default function AccountsPage() {
                     <tr key={account.id}>
                       <td>
                         <Link href={`/accounts/${account.id}`}>{account.label}</Link>
-                        {account.is_owner_account ? (
+                        {account.purpose === "private" ? (
                           <>
                             {" "}
                             <span className="tag">Privatkonto Eigentümer</span>
@@ -51,7 +51,7 @@ export default function AccountsPage() {
                         ) : null}
                       </td>
                       <td>{account.bank}</td>
-                      <td>{account.iban_masked}</td>
+                      <td>{account.iban_masked ?? "–"}</td>
                       <td className="num">
                         {formatMoney(account.opening_balance)}
                         <p className="cell-detail">am {formatDate(account.opening_balance_on)}</p>

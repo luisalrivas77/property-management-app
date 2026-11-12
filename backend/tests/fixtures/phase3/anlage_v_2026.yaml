@@ -204,6 +204,12 @@ ids:
   doc_proof_unlinked: &D_PU 00000d0c-0000-4000-8000-000000000012
   # phase 3 D150: a second payment_proof document, the other part of a bill
   doc_proof_notary_2: &D_PN2 00000d0c-0000-4000-8000-000000000013
+  # phase 6 D161: lines of a private account (allocation facts with account_purpose private)
+  hh_repair_line: &HPL 000000a1-0000-4000-8000-000000000801
+  hh_groceries_line: &HGL 000000a1-0000-4000-8000-000000000802
+  hh_salary_line: &HSL 000000a1-0000-4000-8000-000000000803
+  hh_transfer_line: &HTL 000000a1-0000-4000-8000-000000000804
+  hh_donation_line: &HDL 000000a1-0000-4000-8000-000000000805
 
 bases:
   property: &property
@@ -1350,3 +1356,81 @@ cases:
         - {code: payment_proof.missing,
            params: {document: *D_NOTAR, source: acquisition_cost, kind: notary,
                     amount: "4200.00", proof_offer: *D_PU, proof_offer_amount: "1200.00"}}
+
+  # Phase 6 D161 (docs/phases/phase-6.md §14, added by the phase 6 spec PR; the spec names a
+  # phase 3 "private_cost.yaml", which does not exist: the private_cost cases live here).
+  # The draft sums the allocations of rental-purpose accounts only (AllocationFact.
+  # account_purpose, default rental); a private line booked hh_property_cost with the property
+  # and a bill is that bill's proof of payment (D143 widened to any own account): the bill's
+  # payment_proof.missing ends, the figures stay, the line joins the line's sources ("the
+  # Anlage V line's source list then holds the input, the bill and the bank line"), and it is
+  # neither a cost nor a reason for tax.private_cost_paid_from_account (that warning is for a
+  # rental-account line). add_allocations: rows appended to the merged facts' allocations
+  # (tests/fixture_models_phase3.py), since YAML cannot extend an anchored list.
+  - id: private_repair_proven_by_private_line
+    description: >
+      private_repair_below_limit_stays_in_maintenance plus the repair's payment from a
+      private account (hh_property_cost, 595.00, the property and the repair bill) → the
+      bill's payment_proof.missing ends; wk.maintenance stays 6,545.00 with the line among its
+      sources; the 15 % test counts the tax input, not the line; no
+      tax.private_cost_paid_from_account
+    pending: "phase 6 step 2 (D161's proof path and the D143 widening)"
+    tax_year: 2026
+    rule_set_year: 2026
+    facts:
+      <<: *facts
+      tax_inputs: [*inputs_a_tiles, *input_certified, *input_private_repair]
+    add_allocations:
+      - {allocation_id: *HPL, booking_date: 2026-11-27, amount: "-595.00",
+         category: hh_property_cost, property_id: *P, document_id: *D_PR,
+         account_purpose: private}
+    expect:
+      <<: *expect_private_repair
+      lines:
+        - *line_rent
+        - *line_umlagen
+        - {key: income.total, amount: "6180.00", amount_rounded: 6180}
+        - *line_afa
+        - *line_interest
+        - *line_financing
+        - key: wk.maintenance
+          amount: "6545.00"
+          amount_rounded: 6545
+          provisional: true
+          sources: [{kind: allocation, id: *PA}, {kind: document, id: *D_P},
+                    {kind: allocation, id: *TL}, {kind: document, id: *D_T},
+                    {kind: tax_input, id: *TI1}, {kind: tax_input, id: *TI9},
+                    {kind: document, id: *D_PR}, {kind: allocation, id: *HPL}]
+        - *line_allocable
+        - *line_non_allocable
+        - {key: wk.total, amount: "14723.66", amount_rounded: 14725}
+        - {key: result.surplus, amount: "-8543.66", amount_rounded: -8545}
+        - {key: result.owner_a, amount: "-4271.83", amount_rounded: -4273}
+        - {key: result.owner_b, amount: "-4271.83", amount_rounded: -4272}
+      warnings:
+        - *w_notary_proof
+        - {code: hausgeld.abrechnung_pending}
+        - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
+        - {code: reduced_rent.no_market_rent}
+        - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
+        - {code: draft.form_provisional}
+
+  - id: household_rows_leave_the_draft_unchanged
+    description: >
+      case A plus lines of a private account (groceries, salary, a transfer to another own
+      account, a donation; no property) → the draft is case A's, to the cent (D159's test:
+      the Anlage V reads rental-purpose allocations only)
+    tax_year: 2026
+    rule_set_year: 2026
+    facts: *facts
+    add_allocations:
+      - {allocation_id: *HGL, booking_date: 2026-08-03, amount: "-54.20", category: hh_groceries,
+         account_purpose: private}
+      - {allocation_id: *HSL, booking_date: 2026-08-28, amount: "3200.00", category: hh_salary,
+         account_purpose: private}
+      - {allocation_id: *HTL, booking_date: 2026-09-01, amount: "-500.00",
+         category: internal_transfer_out, account_purpose: private}
+      - {allocation_id: *HDL, booking_date: 2026-12-10, amount: "-100.00", category: hh_donation,
+         account_purpose: private}
+    expect: *expect_a
+
