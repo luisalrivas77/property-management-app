@@ -111,6 +111,9 @@ class StatementFormat(StrEnum):
     # no opening balance, its „Kontostand vom“ pre-fills the typed closing. MT940 only by the
     # amendment D173 names.
     DKB_CSV = "dkb_csv"
+    # Phase 6 D176 (migration 0026): the credit card's monthly PDF statement, read by code
+    # from its text layer (services/bank/card_pdf.py); balances from the file.
+    CARD_PDF = "card_pdf"
 
 
 class StatementLine(Schema):
@@ -135,6 +138,8 @@ class StatementLine(Schema):
 
 
 class ParsedStatement(Schema):
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+
     format: StatementFormat
     account_iban: str | None
     opening_balance: Money | None  # None for CSV (D21)
@@ -146,6 +151,13 @@ class ParsedStatement(Schema):
     # closing balance the user confirms, so the import waits at pending_balance.
     stated_balance: Money | None = None
     stated_balance_on: date | None = None
+    # Phase 6 D176: a card statement names its account by the issuer's customer number, not
+    # an IBAN (routed by account.external_ref, D164); plaintext here only, masked and HMAC'd
+    # on store. Of the card number only the last four digits are read. payment_iban: the
+    # issuer's IBAN for payments to the card, proposed as the account's payment IBAN.
+    account_ref: str | None = None
+    card_last4: str | None = Field(default=None, pattern=r"^[0-9]{4}$")
+    payment_iban: str | None = None
 
 
 class BankSource(Protocol):

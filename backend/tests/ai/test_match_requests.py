@@ -22,7 +22,7 @@ from hausbuch.ai.requests import (
     parse_explain,
     parse_match,
 )
-from hausbuch.rules.household.taxonomy import DEPOT_CODES, allowed_categories
+from hausbuch.rules.household.taxonomy import CARD_CODES, DEPOT_CODES, allowed_categories
 from hausbuch.schemas.ai import AiJob
 from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.enums import AccountPurpose
@@ -163,7 +163,9 @@ def test_the_household_prompt_offers_the_private_codes_but_the_depot_ones():
     assert prompt.text.startswith("You categorize one line of a German household's private")
     offered = set(household_match_schema()["$defs"]["AllocationCategory"]["enum"])
     assert offered == {c.value for c in HOUSEHOLD_MODEL_CODES}
-    assert allowed_categories(AccountPurpose.PRIVATE) - DEPOT_CODES == HOUSEHOLD_MODEL_CODES
+    # D176 (3): the card's interest and fees are booked by code, like the depot's codes
+    code_only = DEPOT_CODES | CARD_CODES
+    assert allowed_categories(AccountPurpose.PRIVATE) - code_only == HOUSEHOLD_MODEL_CODES
     for category in AllocationCategory:
         defined = f"- `{category.value}`:" in prompt.text
         assert defined == (category in HOUSEHOLD_MODEL_CODES), category

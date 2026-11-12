@@ -107,6 +107,8 @@ THRESHOLDS = MappingProxyType(
         C.HH_TAX_PAYMENT: None,
         C.HH_CREDIT_CARD: None,
         C.HH_CASH: None,  # not named by D159; the conservative reading
+        # D176 (3): a card's interest and fee lines are booked by code, never by a threshold.
+        C.HH_INTEREST_FEES: None,
         # D162: only the transfer matcher books a transfer, never a model or a threshold.
         C.INTERNAL_TRANSFER_IN: None,
         C.INTERNAL_TRANSFER_OUT: None,
@@ -166,6 +168,7 @@ _MATCHERS = frozenset(
         AllocationMethod.MATCHER_OWNER,
         AllocationMethod.MATCHER_HAUSGELD,
         AllocationMethod.MATCHER_TRANSFER,  # phase 6 D162
+        AllocationMethod.MATCHER_CARD,  # phase 6 D176 (3)
     }
 )
 

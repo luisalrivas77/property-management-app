@@ -76,6 +76,7 @@ thresholds:
   - {category: internal_transfer_out, threshold: null}
   - {category: hh_cash, threshold: null}
   - {category: hh_credit_card, threshold: null}
+  - {category: hh_interest_fees, threshold: null}  # D176 (3): booked by code, step 2b
   - {category: security_purchase, threshold: null}
   - {category: security_sale, threshold: null}
   - {category: distribution, threshold: null}

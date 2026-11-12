@@ -64,6 +64,7 @@ categories:
   - {category: internal_transfer_out, treatment: pass_through}
   - {category: hh_cash, treatment: private}
   - {category: hh_credit_card, treatment: private}
+  - {category: hh_interest_fees, treatment: private}  # phase 6 D176 (3), step 2b
   - {category: security_purchase, treatment: private}
   - {category: security_sale, treatment: private}
   - {category: distribution, treatment: private}

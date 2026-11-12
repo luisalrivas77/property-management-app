@@ -56,6 +56,8 @@ codes:
   - {category: internal_transfer_out, group: movements, relevance: transfer, treatment: pass_through, threshold: null}
   - {category: hh_cash, label: Bargeldabhebung, group: movements, relevance: spending, treatment: private, threshold: null}
   - {category: hh_credit_card, group: movements, relevance: spending, treatment: private, threshold: null}
+  # D176 (3), step 2b: a card's interest and fee lines, booked by code; shown under Sonstiges
+  - {category: hh_interest_fees, label: Zinsen und Gebühren, group: other, relevance: spending, treatment: private, threshold: null}
   # The depot's own bookings (D165 (1))
   - {category: security_purchase, group: depot, relevance: transfer, treatment: private, threshold: null}
   - {category: security_sale, group: depot, relevance: transfer, treatment: private, threshold: null}

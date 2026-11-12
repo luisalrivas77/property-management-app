@@ -511,6 +511,9 @@ account = Table(
     _text("currency", server_default=text("'EUR'")),
     _text("external_ref_masked", nullable=True),
     Column("external_ref_hmac", LargeBinary, nullable=True),
+    # 0026 (phase 6, D176 (4)): the IBAN a credit card is paid to, confirmed by a person
+    _text("payment_iban_masked", nullable=True),
+    Column("payment_iban_hmac", LargeBinary, nullable=True),
 )
 
 statement_import = Table(

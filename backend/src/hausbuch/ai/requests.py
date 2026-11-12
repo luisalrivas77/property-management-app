@@ -37,7 +37,7 @@ from typing import Any
 import anthropic
 
 from hausbuch.rules.extraction_parse import CODE_ONLY_SUBTYPES, accepted_subtype
-from hausbuch.rules.household.taxonomy import DEPOT_CODES, allowed_categories
+from hausbuch.rules.household.taxonomy import CARD_CODES, DEPOT_CODES, allowed_categories
 from hausbuch.schemas.ai import AiJob, ClassifyOutput, ConfidenceLevel
 from hausbuch.schemas.allocation import LlmMatchOutput
 from hausbuch.schemas.common import Schema
@@ -208,8 +208,9 @@ def match_schema() -> dict:
 
 # Phase 6 D168: the codes the household prompt offers. A private account's codes without
 # the depot's (D165 (1): a depot's bookings are categorised by code from its documents, never
-# by the model), in the enum's order; the prompt lists the same codes, one line each.
-HOUSEHOLD_MODEL_CODES = allowed_categories(AccountPurpose.PRIVATE) - DEPOT_CODES
+# by the model), nor the card's interest and fees (D176 (3): booked by code from the
+# statement), in the enum's order; the prompt lists the same codes, one line each.
+HOUSEHOLD_MODEL_CODES = allowed_categories(AccountPurpose.PRIVATE) - DEPOT_CODES - CARD_CODES
 
 
 @cache

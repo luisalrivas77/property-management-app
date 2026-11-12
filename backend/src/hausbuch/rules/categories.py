@@ -77,6 +77,7 @@ TAX_TREATMENT = MappingProxyType(
         C.INTERNAL_TRANSFER_OUT: T.PASS_THROUGH,
         C.HH_CASH: T.PRIVATE,
         C.HH_CREDIT_CARD: T.PRIVATE,
+        C.HH_INTEREST_FEES: T.PRIVATE,  # D176 (3)
         # The depot's own bookings (D165 (1)); phase 8 reads distribution and
         # capital_income_tax.
         C.SECURITY_PURCHASE: T.PRIVATE,
@@ -151,6 +152,7 @@ CATEGORY_LABEL = MappingProxyType(
         C.INTERNAL_TRANSFER_OUT: "Übertrag auf eigenes Konto",
         C.HH_CASH: "Bargeldabhebung",
         C.HH_CREDIT_CARD: "Kreditkartenabrechnung",
+        C.HH_INTEREST_FEES: "Zinsen und Gebühren",  # D176 (3)
         C.SECURITY_PURCHASE: "Wertpapierkauf",
         C.SECURITY_SALE: "Wertpapierverkauf",
         C.DISTRIBUTION: "Ausschüttung oder Dividende",

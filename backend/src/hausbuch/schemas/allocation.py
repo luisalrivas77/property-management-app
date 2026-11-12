@@ -93,6 +93,8 @@ class AllocationCategory(StrEnum):
     INTERNAL_TRANSFER_OUT = "internal_transfer_out"  # pass_through
     HH_CASH = "hh_cash"  # private (Bargeldabhebung)
     HH_CREDIT_CARD = "hh_credit_card"  # private (a card's monthly settlement)
+    # Phase 6 D176 (3) (migration 0026): a card's interest and fee lines, booked by code.
+    HH_INTEREST_FEES = "hh_interest_fees"  # private (Zinsen und Gebühren)
     # --- Phase 6 D165: the depot's own cash bookings, by booking text in code (rules.depot);
     # not hh_* because phase 8's KAP rules read distribution and capital_income_tax.
     SECURITY_PURCHASE = "security_purchase"  # private
@@ -127,6 +129,9 @@ class AllocationMethod(StrEnum):
     USER = "user"
     # Phase 6 D162 (migration 0025): the transfer matcher over every own account.
     MATCHER_TRANSFER = "matcher_transfer"
+    # Phase 6 D176 (3) (migration 0026): a card statement's interest or fee line, booked by
+    # code to hh_interest_fees (rules/household/card.py).
+    MATCHER_CARD = "matcher_card"
 
 
 class SplitMethod(StrEnum):

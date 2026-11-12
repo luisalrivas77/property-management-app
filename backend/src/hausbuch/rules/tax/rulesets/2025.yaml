@@ -209,6 +209,7 @@ form:
     internal_transfer_out: null
     hh_cash: null
     hh_credit_card: null
+    hh_interest_fees: null  # phase 6 D176 (3): private, on no form
     security_purchase: null
     security_sale: null
     distribution: null

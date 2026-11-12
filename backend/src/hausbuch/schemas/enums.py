@@ -335,6 +335,9 @@ class AccountKind(StrEnum):
     DEPOT = "depot"
     EXCHANGE = "exchange"
     WALLET = "wallet"
+    # Phase 6 D176 (migration 0026): a credit card, fed by its PDF statements and routed by
+    # the issuer's customer number (external_ref), with no IBAN of its own.
+    CREDIT_CARD = "credit_card"
 
 
 BANK_ACCOUNT_KINDS = frozenset({AccountKind.BANK_CURRENT, AccountKind.BANK_SAVINGS})

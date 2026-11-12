@@ -55,6 +55,7 @@ TAXONOMY = MappingProxyType(
             _code(C.HH_LEISURE_TRAVEL, G.LEISURE_TRAVEL, R.SPENDING),
             _code(C.HH_HEALTH, G.HEALTH, R.SPENDING),
             _code(C.HH_OTHER, G.OTHER, R.SPENDING),
+            _code(C.HH_INTEREST_FEES, G.OTHER, R.SPENDING),  # a card's interest, D176 (3)
             # Tax-relevant spending: each proposes the input its form already reads
             _code(C.HH_DONATION, G.TAX, R.TAX, P.RETURN_SPECIAL_EXPENSE),
             _code(C.HH_HOUSEHOLD_SERVICES, G.TAX, R.TAX, P.RETURN_HOUSEHOLD_SERVICES),
@@ -80,6 +81,9 @@ DEPOT_CODES = frozenset(
     {C.SECURITY_PURCHASE, C.SECURITY_SALE, C.DISTRIBUTION, C.CAPITAL_INCOME_TAX, C.DEPOT_FEE}
 )
 TRANSFER_CODES = frozenset({C.INTERNAL_TRANSFER_IN, C.INTERNAL_TRANSFER_OUT})
+# D176 (3): a card's interest and fee lines, booked by code from the statement (they have no
+# payee a rule could learn), never offered to the model, like the depot's codes.
+CARD_CODES = frozenset({C.HH_INTEREST_FEES})
 HOUSEHOLD_CODES = frozenset(c for c in C if c.value.startswith("hh_"))
 # The codes only a private account may carry; they never reach the rental account.
 PRIVATE_ONLY = HOUSEHOLD_CODES | TRANSFER_CODES | DEPOT_CODES
