@@ -86,15 +86,19 @@ export function ActionDialog({
   title,
   buttonClass = "secondary",
   disabled,
+  initialOpen = false,
   children,
 }: {
   label: string;
   title: string;
   buttonClass?: string;
   disabled?: boolean;
+  /** Open on mount, e.g. a to-do's link to a pre-filled form. Mount it only on the client
+   * (after data has loaded), since the open dialog is portalled to document.body. */
+  initialOpen?: boolean;
   children: (close: () => void) => ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initialOpen);
   const ref = useRef<HTMLDialogElement>(null);
   const button = useRef<HTMLButtonElement>(null);
   const wasOpen = useRef(false);

@@ -6,20 +6,23 @@
 // each Kaution receipt) change only through their corrections, offered once there is
 // something to correct; the page says when a date was corrected (from History, §9.4).
 // Deposits received come from GET …/deposits. A notice or move-out cannot be withdrawn, only
-// corrected.
+// corrected. A flat_rate tenancy whose Pauschale can rise or must fall shows that to-do
+// (phase-4.md D155 (4)); its link ?mietaenderung=pauschale opens „Mietänderung“ pre-filled.
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useCallback } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback } from "react";
 
 import { api, ok } from "@/api/client";
-import type { Property, Tenancy, Tenant, TimelineEntry, Unit } from "@/api/schemas";
+import type { FlatRateCheck, Property, Tenancy, Tenant, TimelineEntry, Unit } from "@/api/schemas";
 import { DateCorrectionForm } from "@/components/corrections";
 import { LinkedDocuments } from "@/components/documents";
 import { tenantName } from "@/components/entities";
+import { flatRateTodos, RENT_CHANGE_PARAM, RENT_CHANGE_PAUSCHALE } from "@/components/flatRate";
 import { formatDate, formatMoney, todayIso } from "@/components/format";
 import { correctedFrom, findMilestone } from "@/components/history";
 import { DEPOSIT_FORM, RENT_MODEL, TENANCY_ROLE } from "@/components/labels";
 import { OPERATING_COSTS_TERMS } from "@/components/taxInputs";
+import { TodoList } from "@/components/todos";
 import { ActionDialog, Breadcrumbs, CorrectedNote, Facts, Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 
@@ -35,7 +38,18 @@ interface TenancyData {
 }
 
 export default function TenancyPage() {
+  return (
+    <Suspense fallback={<p className="muted">Lädt …</p>}>
+      <TenancyScreen />
+    </Suspense>
+  );
+}
+
+function TenancyScreen() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+  const search = useSearchParams();
+  const prefillPauschale = search.get(RENT_CHANGE_PARAM) === RENT_CHANGE_PAUSCHALE;
   const load = useCallback(async (): Promise<TenancyData> => {
     const tenancy = await ok(api.GET("/api/tenancies/{tenancy_id}", { params: { path: { tenancy_id: id } } }));
     const unit = await ok(api.GET("/api/units/{unit_id}", { params: { path: { unit_id: tenancy.unit_id } } }));
@@ -50,13 +64,28 @@ export default function TenancyPage() {
   return (
     <section>
       <Loading state={data}>
-        {(found) => <TenancyDetail {...found} onChanged={data.reload} />}
+        {(found) => (
+          <TenancyDetail
+            {...found}
+            onChanged={data.reload}
+            prefillPauschale={prefillPauschale}
+            onPrefillDone={() => router.replace(`/tenancies/${id}`, { scroll: false })}
+          />
+        )}
       </Loading>
     </section>
   );
 }
 
-function TenancyDetail({ tenancy, unit, property, tenants, onChanged }: TenancyData & { onChanged: () => void }) {
+function TenancyDetail({
+  tenancy,
+  unit,
+  property,
+  tenants,
+  onChanged,
+  prefillPauschale,
+  onPrefillDone,
+}: TenancyData & { onChanged: () => void; prefillPauschale: boolean; onPrefillDone: () => void }) {
   const loadHistory = useCallback(
     () =>
       ok(
@@ -70,8 +99,22 @@ function TenancyDetail({ tenancy, unit, property, tenants, onChanged }: TenancyD
     () => ok(api.GET("/api/tenancies/{tenancy_id}/deposits", { params: { path: { tenancy_id: tenancy.id } } })),
     [tenancy.id],
   );
+  const flatRate = tenancy.operating_costs_terms === "flat_rate";
+  // The rise test of the property, for this tenancy's to-do only; a failure adds nothing (the
+  // card on Planung shows the check itself).
+  const loadFlatRate = useCallback(
+    (): Promise<FlatRateCheck | null> =>
+      flatRate
+        ? ok(api.GET("/api/properties/{property_id}/flat-rate-check", { params: { path: { property_id: property.id } } })).catch(
+            () => null,
+          )
+        : Promise.resolve(null),
+    [flatRate, property.id],
+  );
   const history = useLoad(loadHistory);
   const received = useLoad(loadDeposits);
+  const flatRateCheck = useLoad(loadFlatRate);
+  const todos = flatRateTodos(flatRateCheck.data ?? null, { propertyId: property.id, onlyTenancyId: tenancy.id });
   const moveInFrom = correctedFrom(findMilestone(history.data, "tenancy.started", tenancy.id), tenancy.start_date);
   const signedFrom = tenancy.signed_on ? correctedFrom(findMilestone(history.data, "tenancy.created", tenancy.id), tenancy.signed_on) : null;
   const moveOutFrom = tenancy.end_date ? correctedFrom(findMilestone(history.data, "tenancy.ended", tenancy.id), tenancy.end_date) : null;
@@ -85,6 +128,7 @@ function TenancyDetail({ tenancy, unit, property, tenants, onChanged }: TenancyD
     onChanged();
     history.reload();
     received.reload();
+    flatRateCheck.reload();
   }
 
   return (
@@ -100,6 +144,7 @@ function TenancyDetail({ tenancy, unit, property, tenants, onChanged }: TenancyD
         Mietverhältnis {unit.label}
         {ended ? <span className="muted"> (beendet)</span> : null}
       </h1>
+      {todos.length > 0 ? <TodoList titleId="tenancy-todos" entries={todos} empty="" /> : null}
       <Facts
         rows={[
           [
@@ -298,7 +343,16 @@ function TenancyDetail({ tenancy, unit, property, tenants, onChanged }: TenancyD
       <h2>Mietstaffel</h2>
       {/* Keyed on the move-in: correcting it also moves the first rent row (§10.8 item 6), so
           the schedule reloads. */}
-      <RentSchedule key={tenancy.start_date} tenancy={tenancy} onChanged={() => history.reload()} />
+      <RentSchedule
+        key={tenancy.start_date}
+        tenancy={tenancy}
+        onChanged={() => {
+          history.reload();
+          flatRateCheck.reload();
+        }}
+        prefillPauschale={prefillPauschale}
+        onPrefillDone={onPrefillDone}
+      />
       <h2>Dokumente</h2>
       <LinkedDocuments targetType="tenancy" targetId={tenancy.id} />
     </>

@@ -2,13 +2,16 @@
 
 // Mietstaffel (§4.5, D12): dated rent rows, never edited. A wrong row is superseded by a
 // correction row (struck through here); a rent change is a new row. "Gilt heute" is the
-// API's answer (GET …/rent?at=today), not computed here.
+// API's answer (GET …/rent?at=today), not computed here. On a flat_rate tenancy the amount is
+// the Nebenkostenpauschale (D155 (5)); a to-do's link (?mietaenderung=pauschale) opens
+// „Mietänderung“ pre-filled with the new Pauschale and its start from the backend (D155 (4)).
 import Link from "next/link";
 import { useCallback, useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
 import type { RentChangeReason, RentRowCorrection, RentScheduleEntry, Tenancy } from "@/api/schemas";
 import { DocumentPicker } from "@/components/documents";
+import { loadPauschaleChange, type PauschaleChange } from "@/components/flatRate";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "@/components/form";
 import { formatDate, formatDateTime, formatMoney, todayIso } from "@/components/format";
 import { decimalInput, toMoneyString } from "@/components/input";
@@ -25,8 +28,21 @@ const CHANGE_REASONS = (Object.keys(RENT_CHANGE_REASON) as RentChangeReason[]).f
   (reason) => reason !== "initial" && reason !== "correction",
 );
 
-export function RentSchedule({ tenancy, onChanged }: { tenancy: Tenancy; onChanged: () => void }) {
+export function RentSchedule({
+  tenancy,
+  onChanged,
+  prefillPauschale = false,
+  onPrefillDone,
+}: {
+  tenancy: Tenancy;
+  onChanged: () => void;
+  /** Open „Mietänderung“ pre-filled with the Pauschale change of today (a to-do's link). */
+  prefillPauschale?: boolean;
+  /** Called once a pre-filled change was saved, so the page can drop the link's parameter. */
+  onPrefillDone?: () => void;
+}) {
   const today = todayIso();
+  const flatRate = tenancy.operating_costs_terms === "flat_rate";
   const load = useCallback(async () => {
     const path = { params: { path: { tenancy_id: tenancy.id } } };
     const [rows, current] = await Promise.all([
@@ -36,6 +52,15 @@ export function RentSchedule({ tenancy, onChanged }: { tenancy: Tenancy; onChang
     return { rows, current };
   }, [tenancy.id, today]);
   const schedule = useLoad(load);
+  const prefillOn = prefillPauschale && flatRate;
+  const loadPrefill = useCallback(
+    (): Promise<PauschaleChange | null> => (prefillOn ? loadPauschaleChange(tenancy.id) : Promise.resolve(null)),
+    [prefillOn, tenancy.id],
+  );
+  const prefill = useLoad(loadPrefill);
+  // The pre-filled dialog mounts open once the change has loaded (or is known to be none, then
+  // unfilled); keyed so it replaces the closed one rather than reusing its state.
+  const prefillReady = prefillOn && prefill.data !== undefined;
   const [note, setNote] = useState<string | null>(null);
   const latest = latestRow(schedule.data?.rows ?? []);
 
@@ -60,7 +85,7 @@ export function RentSchedule({ tenancy, onChanged }: { tenancy: Tenancy; onChang
                   <tr>
                     <th>Ab</th>
                     <th className="num">Kaltmiete</th>
-                    <th className="num">NK-Vorauszahlung</th>
+                    <th className="num">{flatRate ? "Nebenkostenpauschale" : "NK-Vorauszahlung"}</th>
                     <th>Grund</th>
                     <th>Beleg</th>
                     <th>Erfasst</th>
@@ -89,6 +114,7 @@ export function RentSchedule({ tenancy, onChanged }: { tenancy: Tenancy; onChang
                               {(close) => (
                                 <CorrectRowForm
                                   row={row}
+                                  flatRate={flatRate}
                                   onDone={(message) => {
                                     close();
                                     changed(message);
@@ -108,14 +134,23 @@ export function RentSchedule({ tenancy, onChanged }: { tenancy: Tenancy; onChang
         }}
       </Loading>
       <div>
-        <ActionDialog label="Mietänderung" title="Mietänderung erfassen" buttonClass="" disabled={tenancy.end_date !== null && tenancy.end_date < today}>
+        <ActionDialog
+          key={prefillReady ? "prefill" : "plain"}
+          label="Mietänderung"
+          title="Mietänderung erfassen"
+          buttonClass=""
+          disabled={tenancy.end_date !== null && tenancy.end_date < today}
+          initialOpen={prefillReady}
+        >
           {(close) => (
             <RentChangeForm
               tenancy={tenancy}
               latest={latest}
+              initial={prefillReady ? (prefill.data ?? undefined) : undefined}
               onDone={() => {
                 close();
                 changed("Mietänderung gespeichert.");
+                if (prefillReady) onPrefillDone?.();
               }}
             />
           )}
@@ -134,12 +169,26 @@ function latestRow(rows: RentScheduleEntry[]): RentScheduleEntry | null {
 }
 
 /** A rent change starts from the latest row's amounts, so changing one of them keeps the
- * other (a blank NK-Vorauszahlung would otherwise be saved as 0 €). */
-function RentChangeForm({ tenancy, latest, onDone }: { tenancy: Tenancy; latest: RentScheduleEntry | null; onDone: () => void }) {
-  const [effectiveFrom, setEffectiveFrom] = useState("");
+ * other (a blank NK-Vorauszahlung or Pauschale would otherwise be saved as 0 €). `initial`
+ * pre-fills a Pauschale change (start, new Pauschale, reason) from the backend's figures. */
+function RentChangeForm({
+  tenancy,
+  latest,
+  initial,
+  onDone,
+}: {
+  tenancy: Tenancy;
+  latest: RentScheduleEntry | null;
+  initial?: PauschaleChange;
+  onDone: () => void;
+}) {
+  const flatRate = tenancy.operating_costs_terms === "flat_rate";
+  const [effectiveFrom, setEffectiveFrom] = useState(initial?.effectiveFrom ?? "");
   const [cold, setCold] = useState(latest ? decimalInput(latest.cold_rent) : "");
-  const [prepayment, setPrepayment] = useState(latest ? decimalInput(latest.operating_costs_prepayment) : "");
-  const [reason, setReason] = useState<RentChangeReason>(tenancy.rent_model === "staffel" ? "staffel_step" : tenancy.rent_model === "index" ? "index_adjustment" : "rent_increase");
+  const [prepayment, setPrepayment] = useState(initial?.prepayment ?? (latest ? decimalInput(latest.operating_costs_prepayment) : ""));
+  const [reason, setReason] = useState<RentChangeReason>(
+    initial?.reason ?? (tenancy.rent_model === "staffel" ? "staffel_step" : tenancy.rent_model === "index" ? "index_adjustment" : "rent_increase"),
+  );
   const [documentId, setDocumentId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const form = useFormErrors(KEYS, CODE_FIELDS);
@@ -176,7 +225,12 @@ function RentChangeForm({ tenancy, latest, onDone }: { tenancy: Tenancy; latest:
 
   return (
     <form className="stack" onSubmit={submit} noValidate>
-      {latest ? (
+      {initial ? (
+        <p className="muted">
+          Vorbelegt mit der neuen Nebenkostenpauschale aus der Prüfung der Pauschalen und ihrem frühesten Beginn; die Kaltmiete
+          bleibt. Erst speichern, wenn das Schreiben an den Mieter verschickt ist, und das Datum anpassen, falls es später zugeht.
+        </p>
+      ) : latest ? (
         <p className="muted">
           Vorbelegt mit der Miete ab {formatDate(latest.effective_from)}. Nur ändern, was sich ändert.
         </p>
@@ -199,8 +253,12 @@ function RentChangeForm({ tenancy, latest, onDone }: { tenancy: Tenancy; latest:
       </Field>
       <Field
         id="rent-change-prepayment"
-        label="NK-Vorauszahlung (€ / Monat)"
-        description="Die neue monatliche Vorauszahlung auf Betriebs- und Heizkosten, beide zusammen. Leer, wenn keine vereinbart ist."
+        label={flatRate ? "Nebenkostenpauschale (€ / Monat)" : "NK-Vorauszahlung (€ / Monat)"}
+        description={
+          flatRate
+            ? "Die neue monatliche Nebenkostenpauschale laut Mietvertrag oder Erhöhungsschreiben; über eine Pauschale wird nicht abgerechnet."
+            : "Die neue monatliche Vorauszahlung auf Betriebs- und Heizkosten, beide zusammen. Leer, wenn keine vereinbart ist."
+        }
         errors={form.of("operating_costs_prepayment")}
       >
         <input type="text" inputMode="decimal" value={prepayment} onChange={(e) => setPrepayment(e.target.value)} autoComplete="off" />
@@ -235,7 +293,7 @@ function RentChangeForm({ tenancy, latest, onDone }: { tenancy: Tenancy; latest:
 
 /** Supersede a wrong row. Only the fields that differ from the row are sent: an absent field
  * keeps the wrong row's value (RentRowCorrection). The API answers 200 when nothing changed. */
-function CorrectRowForm({ row, onDone }: { row: RentScheduleEntry; onDone: (message: string) => void }) {
+function CorrectRowForm({ row, flatRate, onDone }: { row: RentScheduleEntry; flatRate: boolean; onDone: (message: string) => void }) {
   const [effectiveFrom, setEffectiveFrom] = useState(row.effective_from);
   const [cold, setCold] = useState(decimalInput(row.cold_rent));
   const [prepayment, setPrepayment] = useState(decimalInput(row.operating_costs_prepayment));
@@ -291,8 +349,12 @@ function CorrectRowForm({ row, onDone }: { row: RentScheduleEntry; onDone: (mess
       </Field>
       <Field
         id={`correct-${row.id}-prepayment`}
-        label="NK-Vorauszahlung (€ / Monat)"
-        description="Die richtige monatliche Vorauszahlung auf Betriebs- und Heizkosten. Leer, wenn keine vereinbart ist."
+        label={flatRate ? "Nebenkostenpauschale (€ / Monat)" : "NK-Vorauszahlung (€ / Monat)"}
+        description={
+          flatRate
+            ? "Die richtige monatliche Nebenkostenpauschale laut Mietvertrag."
+            : "Die richtige monatliche Vorauszahlung auf Betriebs- und Heizkosten. Leer, wenn keine vereinbart ist."
+        }
         errors={form.of("operating_costs_prepayment")}
       >
         <input type="text" inputMode="decimal" value={prepayment} onChange={(e) => setPrepayment(e.target.value)} autoComplete="off" />

@@ -49,11 +49,17 @@ from hausbuch.schemas.employment import OwnerEmployment
 from hausbuch.schemas.enums import OperatingCostsTerms
 from hausbuch.schemas.loan import LoanTerms
 from hausbuch.schemas.performance import (
+    FLAT_RATE_BETRKV,
+    CostLevel,
     DatedFlow,
+    FlatRateCheck,
+    FlatRateLetterFigures,
+    FlatRateVerdict,
     HouseholdTaxContext,
     IncomeInputFact,
     Levers,
     OwnerTaxProfile,
+    RateBasis,
     SaleResult,
     TariffStamp,
     TaxBreakdown,
@@ -510,6 +516,173 @@ class ProjectionFixture(_Fixture):
     cases: list[ProjectionCase]
 
 
+# --- flat_rate_rise.yaml (D155) --------------------------------------------------------
+
+
+def _rate_arithmetic(level: CostLevel, what: str) -> None:
+    """Each rate from its own sources: a payment is −Σ its lines, a yearly premium and twelve
+    months of lines −Σ ÷ 12, a schedule its yearly total ÷ 12 (half-up to the cent)."""
+    for r in level.rates:
+        paid = -sum((s.amount or Decimal("0") for s in r.sources), Decimal("0"))
+        kinds = {s.kind for s in r.sources}
+        if r.basis is RateBasis.MONTHLY_PAYMENT:
+            want = paid
+        elif r.basis in (RateBasis.YEARLY_PREMIUM, RateBasis.TWELVE_MONTHS):
+            want = _monthly(paid, 12)
+        elif r.basis is RateBasis.SCHEDULE:
+            if kinds != {"tax_input"} or len(r.sources) != 1:
+                raise ValueError(f"{what}: a schedule rate names its one tax input")
+            want = _monthly(r.sources[0].amount or Decimal("0"), 12)
+        else:
+            want = Decimal("0.00")
+        if r.basis not in (RateBasis.SCHEDULE, RateBasis.NONE) and kinds != {"allocation"}:
+            raise ValueError(f"{what}: a {r.basis} rate names its allocations")
+        if r.monthly != want:
+            raise ValueError(f"{what} {level.as_of} {r.category}: {r.monthly} != {want}")
+
+
+class FlatRateExpect(FlatRateCheck):
+    """FlatRateCheck that checks its own arithmetic: every rate from its sources, every
+    tenancy's changes from the levels on its set_on and today, its share of the rise half-up
+    to the cent, its share in percent, and the earliest start from today."""
+
+    @model_validator(mode="after")
+    def _arithmetic(self) -> Self:
+        levels = {lv.as_of: lv for lv in self.levels}
+        for lv in self.levels:
+            _rate_arithmetic(lv, "flat_rate_rise")
+        start = date(self.as_of.year, self.as_of.month, 1)
+        index = start.year * 12 + start.month - 1 + 2
+        after_next = date(index // 12, index % 12 + 1, 1)
+        for t in self.tenancies:
+            then = {r.category: r.monthly for r in levels[t.set_on].rates}
+            now = {r.category: r.monthly for r in levels[self.as_of].rates}
+            for c in t.changes:
+                if (c.then, c.now) != (then[c.category], now[c.category]):
+                    raise ValueError(f"{t.unit_label} {c.category}: then/now are the levels'")
+            betrkv = sum((now[c] - then[c] for c in FLAT_RATE_BETRKV), Decimal("0"))
+            if t.flat_rise != betrkv:
+                raise ValueError(f"{t.unit_label}: flat_rise = Σ BetrKV now − then")
+            total = self.pauschalen_total
+            rise = (
+                (t.flat_rise * t.pauschale / total).quantize(CENT, ROUND_HALF_UP) + 0
+                if total
+                else Decimal("0.00")
+            )
+            if t.rise != rise:
+                raise ValueError(f"{t.unit_label}: rise {t.rise} != {rise}")
+            share = (
+                (t.pauschale * 100 / total).quantize(Decimal("0.1"), ROUND_HALF_UP)
+                if total
+                else None
+            )
+            if t.share_percent != share:
+                raise ValueError(f"{t.unit_label}: share_percent {t.share_percent} != {share}")
+            if t.verdict is FlatRateVerdict.RAISE and t.earliest_start != after_next:
+                raise ValueError(f"{t.unit_label}: the earliest start is {after_next}")
+            if t.recorded_from is not None and not (
+                t.recorded_from > self.as_of and t.recorded_pauschale != t.pauschale
+            ):
+                raise ValueError(f"{t.unit_label}: a recorded change is a later, other Pauschale")
+        return self
+
+
+class FlatRateCase(Lenient):
+    today: date
+    facts: DraftFacts
+    expect: FlatRateExpect
+
+    @model_validator(mode="after")
+    def _scope(self) -> Self:
+        if self.expect.as_of != self.today or self.expect.property_id != self.facts.property.id:
+            raise ValueError(f"{self.id}: the expectation is for the case's property and day")
+        return self
+
+
+class FlatRateFixture(_Fixture):
+    cases: list[FlatRateCase]
+
+
+def _month_after_next(day: date) -> date:
+    index = day.year * 12 + day.month - 1 + 2
+    return date(index // 12, index % 12 + 1, 1)
+
+
+class LetterExpect(FlatRateLetterFigures):
+    """FlatRateLetterFigures that checks its own arithmetic: the share of the rise half-up to
+    the cent and in percent, and a raise's start from the sending date."""
+
+    @model_validator(mode="after")
+    def _arithmetic(self) -> Self:
+        rise = (self.flat_rise * self.pauschale / self.pauschalen_total).quantize(
+            CENT, ROUND_HALF_UP
+        )
+        if self.rise != rise:
+            raise ValueError(f"{self.unit_label}: rise {self.rise} != {rise}")
+        share = (self.pauschale * 100 / self.pauschalen_total).quantize(
+            Decimal("0.1"), ROUND_HALF_UP
+        )
+        if self.share_percent != share:
+            raise ValueError(f"{self.unit_label}: share_percent {self.share_percent} != {share}")
+        if self.kind is FlatRateVerdict.RAISE and self.starts_on != _month_after_next(self.sent_on):
+            raise ValueError(f"{self.unit_label}: a raise starts {_month_after_next(self.sent_on)}")
+        return self
+
+
+class FlatRateLetterCase(Lenient):
+    """A letter for one tenancy of a flat_rate_rise.yaml case (its facts and today); `expect`
+    None: no letter (no rise above 10 € and no fall). The figures are checked against that
+    case's expected check: the tenancy's row, and each reason's then/now and sources from the
+    levels on its set_on and today."""
+
+    check_case: str
+    tenancy_id: UUID
+    sent_on: date
+    expect: LetterExpect | None
+
+    @model_validator(mode="after")
+    def _against_the_check(self) -> Self:
+        rise = {c.id: c for c in load("flat_rate_rise").cases}  # type: ignore[attr-defined]
+        if self.check_case not in rise:
+            raise ValueError(f"{self.id}: no flat_rate_rise case {self.check_case}")
+        check = rise[self.check_case].expect
+        [row] = [t for t in check.tenancies if t.tenancy_id == self.tenancy_id]
+        if self.expect is None:
+            if row.verdict is not FlatRateVerdict.NONE:
+                raise ValueError(f"{self.id}: a {row.verdict} gets a letter")
+            return self
+        e = self.expect
+        mine = (e.tenancy_id, e.unit_label, e.as_of, e.sent_on, e.kind, e.set_on)
+        theirs = (row.tenancy_id, row.unit_label, check.as_of, self.sent_on, row.verdict)
+        if mine != (*theirs, row.set_on):
+            raise ValueError(f"{self.id}: the letter is for the case's tenancy, day and verdict")
+        if (e.pauschale, e.pauschalen_total, e.flat_rise, e.rise) != (
+            row.pauschale,
+            check.pauschalen_total,
+            row.flat_rise,
+            row.rise,
+        ):
+            raise ValueError(f"{self.id}: the figures are the check's")
+        if e.kind is FlatRateVerdict.LOWER and e.starts_on != row.fell_on:
+            raise ValueError(f"{self.id}: a lower starts on the date the cost fell")
+        levels = {lv.as_of: lv for lv in check.levels}
+        then = {r.category: r for r in levels[row.set_on].rates}
+        now = {r.category: r for r in levels[check.as_of].rates}
+        want = [c for c in FLAT_RATE_BETRKV if then[c].monthly or now[c].monthly]
+        if [r.category for r in e.reasons] != want:
+            raise ValueError(f"{self.id}: a reason per BetrKV category with a cost, {want}")
+        for r in e.reasons:
+            c = r.category
+            got = (r.then, r.now, r.then_sources, r.now_sources)
+            if got != (then[c].monthly, now[c].monthly, then[c].sources, now[c].sources):
+                raise ValueError(f"{self.id} {c}: then/now and sources are the levels'")
+        return self
+
+
+class FlatRateLetterFixture(_Fixture):
+    cases: list[FlatRateLetterCase]
+
+
 MODELS: dict[str, type[Schema]] = {
     "tariff": TariffFixture,
     "marginal_rate": MarginalFixture,
@@ -517,6 +690,8 @@ MODELS: dict[str, type[Schema]] = {
     "projection": ProjectionFixture,
     "sale": SaleFixture,
     "irr": IrrFixture,
+    "flat_rate_rise": FlatRateFixture,
+    "flat_rate_letter": FlatRateLetterFixture,
 }
 
 

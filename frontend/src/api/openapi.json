@@ -5752,6 +5752,150 @@
         }
       }
     },
+    "/api/properties/{property_id}/flat-rate-check": {
+      "get": {
+        "summary": "Property Flat Rate",
+        "description": "The Nebenkostenpauschale rise test (D155): the monthly costs when each flat_rate\ntenancy's Pauschale was set and today, each rate with its sources, and per tenancy its share\nof the rise and the verdict (raise above 10.00 € a month, lower on any fall). Information,\nnot advice; computed on read, nothing stored.",
+        "operationId": "property_flat_rate_api_properties__property_id__flat_rate_check_get",
+        "parameters": [
+          {
+            "name": "property_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Property Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlatRateCheck"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tenancies/{tenancy_id}/flat-rate-letter": {
+      "get": {
+        "summary": "Tenancy Flat Rate Letter",
+        "description": "The figures of the letter that tells the tenant of a rise or a fall of their\nNebenkostenpauschale (D155 (7)), for a letter sent on `sent_on` (default today): the\nreasons per Betriebskosten category with their sources, the tenant's share, the new\nPauschale and the new total, and from when it applies. 404 tenancy; 422\nflat_rate.no_letter when today's check has no rise above 10 € a month or fall for it.",
+        "operationId": "tenancy_flat_rate_letter_api_tenancies__tenancy_id__flat_rate_letter_get",
+        "parameters": [
+          {
+            "name": "tenancy_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Tenancy Id"
+            }
+          },
+          {
+            "name": "sent_on",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sent On"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlatRateLetterFigures"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Tenancy Flat Rate Letter Pdf",
+        "description": "The letter as a PDF to download (D155 (7)), from the same figures as the GET; nothing is\nstored, the sender's name and address are printed only. The same errors as the GET.",
+        "operationId": "tenancy_flat_rate_letter_pdf_api_tenancies__tenancy_id__flat_rate_letter_post",
+        "parameters": [
+          {
+            "name": "tenancy_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Tenancy Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FlatRateLetterRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The letter as PDF",
+            "content": {
+              "application/pdf": {}
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/properties/{property_id}/scenarios": {
       "get": {
         "summary": "Scenarios List",
@@ -9405,6 +9549,38 @@
         "title": "CarriedField",
         "description": "A field of another record of the same proposal (D132): its record key and field name,\ndotted as the apply body names it (\"tax_input:interest_certified\", \"value.amount\")."
       },
+      "CategoryChange": {
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/AllocationCategory"
+          },
+          "then": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Then"
+          },
+          "now": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Now"
+          },
+          "change": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Change"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "category",
+          "then",
+          "now",
+          "change"
+        ],
+        "title": "CategoryChange",
+        "description": "A category's rate when the Pauschale was set and today, for the whole flat."
+      },
       "ChecklistBankLine": {
         "properties": {
           "allocation_id": {
@@ -10230,6 +10406,72 @@
         ],
         "title": "ConfirmAllocationsBody",
         "description": "PUT /transactions/{id}/allocations: the user's allocation set and the \"Künftig immer\nso zuordnen\" checkbox.\n\nOnly the set's allocations are read: the rows are written with method `user` and\nconfidence 1, whatever method, confidence, rule_id or ai_call_id the body carries. A set\nequal to the current proposed rows confirms those rows as they are (the proposer's method\nstays); one equal to the current confirmed rows changes nothing.\n\nlearn_rule: null = the server default (TransactionAllocations.learn_rule_default for this\nset); true for a set no rule can be learned from is refused with rule.not_learnable.\nThe patterns (case-insensitive regular expressions, refused with rule.invalid_pattern\nwhen they do not compile) narrow the rule, and let a line without an IBAN, or a\ncounterparty a matcher owns (D38), have one.\nsame_amount_only (D49): the answer to \"Gehören die auch zu …?\" when other amounts from\nthe same IBAN are waiting: true = the rule books only payments of this line's amount (the\nlatest confirmed one of its category, read from the ledger); ignored without learn_rule\nand for a rule whose split method checks the amount itself."
+      },
+      "CostLevel": {
+        "properties": {
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "rates": {
+            "items": {
+              "$ref": "#/components/schemas/CostRate"
+            },
+            "type": "array",
+            "title": "Rates"
+          },
+          "betrkv": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Betrkv"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "as_of",
+          "rates",
+          "betrkv"
+        ],
+        "title": "CostLevel",
+        "description": "The flat's costs per month in force on `as_of`: one rate per FLAT_RATE_CATEGORIES, in that\norder; `betrkv` is the sum of the three BetrKV rates (electricity left out)."
+      },
+      "CostRate": {
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/AllocationCategory"
+          },
+          "monthly": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Monthly"
+          },
+          "basis": {
+            "$ref": "#/components/schemas/RateBasis"
+          },
+          "from_later": {
+            "type": "boolean",
+            "title": "From Later",
+            "default": false
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Sources"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "category",
+          "monthly",
+          "basis"
+        ],
+        "title": "CostRate",
+        "description": "One category's monthly rate in force on a date (D155 (2)), with what it came from\n(principle 2): the allocations of the payment or the 12 months, or the schedule's tax\ninput. `from_later`: nothing was known on or before the date, so the first payment (or the\nfirst schedule, or the first 12 months of lines) after it stands for it, as the handover\nmonth's payment does for a lease that began before the landlord paid anything."
       },
       "CountedCost": {
         "properties": {
@@ -12437,6 +12679,208 @@
         "title": "FilingCheck",
         "description": "§46 Abs. 2 EStG. deadline: 31 July of the following year (§149 Abs. 2 S. 1 AO), moved\nto the next working day when that is a Saturday, Sunday or a nationwide public holiday\n(§108 Abs. 3 AO); computed by rule, never typed. Regional holidays are not considered."
       },
+      "FlatRateCheck": {
+        "properties": {
+          "property_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Property Id"
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "raise_above": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Raise Above",
+            "default": "10.00"
+          },
+          "pauschalen_total": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Pauschalen Total"
+          },
+          "tenancies": {
+            "items": {
+              "$ref": "#/components/schemas/TenancyFlatRate"
+            },
+            "type": "array",
+            "title": "Tenancies"
+          },
+          "levels": {
+            "items": {
+              "$ref": "#/components/schemas/CostLevel"
+            },
+            "type": "array",
+            "title": "Levels"
+          },
+          "settlements": {
+            "items": {
+              "$ref": "#/components/schemas/SettlementHint"
+            },
+            "type": "array",
+            "title": "Settlements"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "property_id",
+          "as_of",
+          "pauschalen_total"
+        ],
+        "title": "FlatRateCheck",
+        "description": "GET /properties/{id}/flat-rate-check (D155): information, not advice; §560 BGB decides.\n\n`levels` are the cost levels on every tenancy's set_on and on `as_of` (today), distinct and\nascending; `tenancies` the flat_rate tenancies in force on `as_of`; both empty without one.\n`settlements` are the hints of the 12 months up to `as_of`."
+      },
+      "FlatRateLetterFigures": {
+        "properties": {
+          "tenancy_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Tenancy Id"
+          },
+          "unit_label": {
+            "type": "string",
+            "title": "Unit Label"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/FlatRateVerdict"
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "sent_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Sent On"
+          },
+          "starts_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Starts On"
+          },
+          "set_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Set On"
+          },
+          "reasons": {
+            "items": {
+              "$ref": "#/components/schemas/LetterReason"
+            },
+            "type": "array",
+            "title": "Reasons"
+          },
+          "flat_rise": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Flat Rise"
+          },
+          "pauschale": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Pauschale"
+          },
+          "pauschalen_total": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Pauschalen Total"
+          },
+          "share_percent": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,1})?$",
+            "title": "Share Percent"
+          },
+          "rise": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Rise"
+          },
+          "new_pauschale": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "New Pauschale"
+          },
+          "cold_rent": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Cold Rent"
+          },
+          "new_total": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "New Total"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "tenancy_id",
+          "unit_label",
+          "kind",
+          "as_of",
+          "sent_on",
+          "starts_on",
+          "set_on",
+          "reasons",
+          "flat_rise",
+          "pauschale",
+          "pauschalen_total",
+          "share_percent",
+          "rise",
+          "new_pauschale",
+          "cold_rent",
+          "new_total"
+        ],
+        "title": "FlatRateLetterFigures",
+        "description": "GET /tenancies/{id}/flat-rate-letter (D155 (7)): the figures of the letter for one\ntenancy's rise or fall, from the FlatRateCheck of `as_of` (today); the dialog shows them\nbefore the PDF is made and the PDF prints exactly these.\n\n`reasons`: the BetrKV categories with a cost then or now, in FLAT_RATE_BETRKV order.\n`new_pauschale` = pauschale + rise, to the cent, never below 0.00; `new_total` = the cold\nrent in force on the later of `as_of` and `starts_on`, + new_pauschale. `starts_on`: for a\nraise the first day of the month after next from `sent_on` (§560 Abs. 2 BGB), for a lower\nthe date the cost fell (§560 Abs. 3 BGB)."
+      },
+      "FlatRateLetterRequest": {
+        "properties": {
+          "sent_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Sent On"
+          },
+          "sender_name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Sender Name"
+          },
+          "sender_address": {
+            "items": {
+              "type": "string",
+              "maxLength": 120,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Sender Address"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "sent_on",
+          "sender_name"
+        ],
+        "title": "FlatRateLetterRequest",
+        "description": "POST /tenancies/{id}/flat-rate-letter (D155 (7)): what the dialog asks. The sender's\nname and address lines are printed and never stored (the browser may remember them)."
+      },
+      "FlatRateVerdict": {
+        "type": "string",
+        "enum": [
+          "raise",
+          "lower",
+          "none"
+        ],
+        "title": "FlatRateVerdict"
+      },
       "FormStatus": {
         "type": "string",
         "enum": [
@@ -13904,6 +14348,52 @@
         "type": "object",
         "title": "LeaseExtraction",
         "description": "Mietvertrag (contract / lease). Step 2, gated by ai_tenant_documents (D16)."
+      },
+      "LetterReason": {
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/AllocationCategory"
+          },
+          "then": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Then"
+          },
+          "now": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Now"
+          },
+          "change": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Change"
+          },
+          "then_sources": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Then Sources"
+          },
+          "now_sources": {
+            "items": {
+              "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
+            },
+            "type": "array",
+            "title": "Now Sources"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "category",
+          "then",
+          "now",
+          "change"
+        ],
+        "title": "LetterReason",
+        "description": "One Betriebskosten category in the letter's reason (§560 Abs. 1 S. 2 BGB: named and\nexplained): the flat's monthly cost when the Pauschale was set and now, each with the\nallocations or tax input it came from (the service looks up their documents). Electricity\nis never a reason (D155 (3))."
       },
       "Levers": {
         "properties": {
@@ -18028,6 +18518,18 @@
         "title": "QuestionnaireView",
         "description": "GET /tax/questionnaire: the year's questions and slots in file order (owners in name\norder) and the progress. reused_from is set when the year has no file of its own. questions\nare the file's (texts, answer type, choices, targets, carry-forward), each once; a slot\nnames its question by key, so the screen renders the question from the data, never from\nits own copy (phase 4b §10, principle 5)."
       },
+      "RateBasis": {
+        "type": "string",
+        "enum": [
+          "monthly_payment",
+          "yearly_premium",
+          "schedule",
+          "twelve_months",
+          "none"
+        ],
+        "title": "RateBasis",
+        "description": "How a category's monthly rate was found (D155 (2))."
+      },
       "ReducedRentCheck": {
         "properties": {
           "wohnung": {
@@ -20122,6 +20624,38 @@
         "title": "Session",
         "description": "The current session (Me.session). The cookie token is never part of any response."
       },
+      "SettlementHint": {
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/AllocationCategory"
+          },
+          "allocation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Allocation Id"
+          },
+          "booking_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Booking Date"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "category",
+          "allocation_id",
+          "booking_date",
+          "amount"
+        ],
+        "title": "SettlementHint",
+        "description": "A line of a monthly category that is not an instalment (an electricity Jahresabrechnung,\na Hausgeldabrechnung's back-payment): not a rate, shown as a hint that the next instalment\nmay rise. `amount` is the cost (a refund is negative)."
+      },
       "SpecialExpenseFact": {
         "properties": {
           "expense_class": {
@@ -21667,6 +22201,138 @@
         ],
         "title": "TenancyCreateRequest",
         "description": "POST /tenancies: TenancyCreate plus the first rent row (create_tenancy's initial_rent)."
+      },
+      "TenancyFlatRate": {
+        "properties": {
+          "tenancy_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Tenancy Id"
+          },
+          "unit_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Unit Id"
+          },
+          "unit_label": {
+            "type": "string",
+            "title": "Unit Label"
+          },
+          "pauschale": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Pauschale"
+          },
+          "set_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Set On"
+          },
+          "set_by": {
+            "type": "string",
+            "enum": [
+              "start",
+              "rent_change"
+            ],
+            "title": "Set By"
+          },
+          "share_percent": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Share Percent"
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/CategoryChange"
+            },
+            "type": "array",
+            "title": "Changes"
+          },
+          "flat_rise": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Flat Rise"
+          },
+          "rise": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Rise"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/FlatRateVerdict"
+          },
+          "earliest_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Earliest Start"
+          },
+          "fell_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fell On"
+          },
+          "recorded_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded From"
+          },
+          "recorded_pauschale": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded Pauschale"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "tenancy_id",
+          "unit_id",
+          "unit_label",
+          "pauschale",
+          "set_on",
+          "set_by",
+          "changes",
+          "flat_rise",
+          "rise",
+          "verdict"
+        ],
+        "title": "TenancyFlatRate",
+        "description": "One flat_rate tenancy in force on `as_of` (D155 (3), (4)).\n\n`pauschale` is the rent row in force today's operating_costs_prepayment; `set_on` the date\nit was set (the latest rent-schedule row in force that changed it, else the tenancy's\nstart). `changes` per FLAT_RATE_CATEGORIES compare the levels on `set_on` and today;\n`flat_rise` is Σ of the BetrKV changes; `rise` = flat_rise × pauschale ÷ Σ Pauschalen,\nhalf-up to the cent (0.00 when the Pauschalen sum to 0). `share_percent` is that share for\ndisplay only, one decimal; the rise is never computed from it. `earliest_start` (raise\nonly) is the first day of the month after next from `as_of` (§560 Abs. 2 BGB);\n`fell_on` (lower only) the date the cost fell (§560 Abs. 3 BGB): of the BetrKV categories\nwhose rate fell, the earliest date from which its rate today applies (the first line of the\nunbroken run of lines at today's rate; a schedule's 1 January).\n\n`recorded_from` and `recorded_pauschale` (both or neither): the first rent row dated after\n`as_of` that changes the Pauschale, a change already recorded (such as the pre-filled\n„Mietänderung“). The verdict is then none (no to-do, no letter, no pre-fill), whatever the\nrise; today's Pauschale stays in `pauschale` and the shares until the row takes effect."
       },
       "TenancyPartiesBody": {
         "properties": {

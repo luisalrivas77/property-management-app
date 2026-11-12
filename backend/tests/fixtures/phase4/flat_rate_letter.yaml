@@ -1,0 +1,193 @@
+# flat_rate_letter.yaml: the figures of the letter that tells a tenant of a rise or a fall of
+# their Nebenkostenpauschale (docs/phases/phase-4.md D155 (7)), rules/performance/flat_rate.py:
+#
+#   flat_rate_letter(facts: DraftFacts, today: date, tenancy_id, sent_on: date)
+#       -> FlatRateLetterFigures | None
+#
+# Each case names a flat_rate_rise.yaml case (`check_case`: its facts and today) and one of its
+# tenancies. Synthetic numbers only (the repo is public). Loaded through
+# tests/fixture_models_phase4.py, which checks every expectation against that case's expected
+# check on load: the tenancy's Pauschale, share and rise, and each reason's monthly cost then
+# and now with its sources from the levels; and its own arithmetic: the share of the rise
+# half-up to the cent, the new Pauschale, the new total, a raise's start.
+#
+# The rules, as written for this fixture (D155 (7); the interpretations are marked *):
+# - A letter only for a tenancy whose verdict today is raise or lower; otherwise none.
+# - reasons: the BetrKV categories (hausgeld_umlagefaehig, grundsteuer, insurance, in that
+#   order) with a monthly cost then or now*; never electricity. Each names the sources of its
+#   rate then and now; the service turns them into the documents' titles and dates.
+# - new_pauschale = pauschale + rise, to the cent, never below 0.00*; new_total = the cold rent
+#   in force on the later of today and starts_on*, + new_pauschale.
+# - starts_on: a raise, the first day of the month after next from the sending date (§560
+#   Abs. 2 BGB; a letter sent on the 1st still waits a whole month); a lower, the date the cost
+#   fell (§560 Abs. 3 BGB), which may lie before the sending date.
+
+ids:
+  t1: &T1 0155000e-0000-4000-8000-000000000001
+  t2: &T2 0155000e-0000-4000-8000-000000000002
+  t3: &T3 0155000e-0000-4000-8000-000000000003
+  schedule_2027: &S27 0155f100-0000-4000-8000-000000002027
+  schedule_2028: &S28 0155f100-0000-4000-8000-000000002028
+
+cases:
+- id: rise_sent_on_the_15th
+  description: >
+    Zimmer 2 of the three rooms: half of the Hausgeld's rise of 45.00 is 22.50, so 150.00
+    becomes 172.50 and the rent 450.00 + 172.50 = 622.50. Sent on 15 February, it applies
+    from 1 April. The unchanged insurance stays in the table; the Grundsteuer, 0 both times,
+    does not.
+  check_case: hausgeld_rise_three_rooms
+  tenancy_id: *T2
+  sent_on: 2027-02-15
+  expect:
+    tenancy_id: *T2
+    unit_label: Zimmer 2
+    kind: raise
+    as_of: 2027-02-10
+    sent_on: 2027-02-15
+    starts_on: 2027-04-01
+    set_on: 2026-07-01
+    reasons:
+      - category: hausgeld_umlagefaehig
+        then: "150.00"
+        now: "195.00"
+        change: "45.00"
+        then_sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000101, amount: "-150.00"}]
+        now_sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000106, amount: "-195.00"}]
+      - category: insurance
+        then: "20.00"
+        now: "20.00"
+        change: "0.00"
+        then_sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000107, amount: "-240.00"}]
+        now_sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000107, amount: "-240.00"}]
+    flat_rise: "45.00"
+    pauschale: "150.00"
+    pauschalen_total: "300.00"
+    share_percent: "50.0"
+    rise: "22.50"
+    new_pauschale: "172.50"
+    cold_rent: "450.00"
+    new_total: "622.50"
+
+- id: rise_sent_on_the_1st
+  description: >
+    Sent on 1 March, the day of the check, the Grundsteuer rise of 22.00 (the 2028 Bescheid)
+    still waits a whole month: it applies from 1 May, not 1 April. The reasons cite the two
+    Bescheide's schedules.
+  check_case: grundsteuer_from_schedule
+  tenancy_id: *T1
+  sent_on: 2028-03-01
+  expect:
+    tenancy_id: *T1
+    unit_label: Zimmer 1
+    kind: raise
+    as_of: 2028-03-01
+    sent_on: 2028-03-01
+    starts_on: 2028-05-01
+    set_on: 2026-07-01
+    reasons:
+      - category: hausgeld_umlagefaehig
+        then: "150.00"
+        now: "150.00"
+        change: "0.00"
+        then_sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000801, amount: "-150.00"}]
+        now_sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000802, amount: "-150.00"}]
+      - category: grundsteuer
+        then: "40.00"
+        now: "62.00"
+        change: "22.00"
+        then_sources: [{kind: tax_input, id: *S27, amount: "480.00"}]
+        now_sources: [{kind: tax_input, id: *S28, amount: "744.00"}]
+    flat_rise: "22.00"
+    pauschale: "100.00"
+    pauschalen_total: "100.00"
+    share_percent: "100.0"
+    rise: "22.00"
+    new_pauschale: "122.00"
+    cold_rent: "400.00"
+    new_total: "522.00"
+
+- id: rise_just_above_ten_sent_later
+  description: >
+    The 10.01 € edge: 100.00 becomes 110.01. The check is of 15 January; the letter is sent
+    on 1 February, so it applies from 1 April (from the sending date, not the check's day).
+  check_case: rise_ten_01_todo
+  tenancy_id: *T1
+  sent_on: 2027-02-01
+  expect:
+    tenancy_id: *T1
+    unit_label: Zimmer 1
+    kind: raise
+    as_of: 2027-01-15
+    sent_on: 2027-02-01
+    starts_on: 2027-04-01
+    set_on: 2026-07-01
+    reasons:
+      - category: hausgeld_umlagefaehig
+        then: "150.00"
+        now: "170.02"
+        change: "20.02"
+        then_sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000301, amount: "-150.00"}]
+        now_sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000302, amount: "-170.02"}]
+    flat_rise: "20.02"
+    pauschale: "100.00"
+    pauschalen_total: "200.00"
+    share_percent: "50.0"
+    rise: "10.01"
+    new_pauschale: "110.01"
+    cold_rent: "400.00"
+    new_total: "510.01"
+
+- id: fall_from_the_date_the_cost_fell
+  description: >
+    A fall of 0.01: 120.00 becomes 119.99 from 1 January, the date the Hausgeld fell, though
+    the letter is sent on 15 January (§560 Abs. 3 BGB).
+  check_case: fall_lowers
+  tenancy_id: *T1
+  sent_on: 2027-01-15
+  expect:
+    tenancy_id: *T1
+    unit_label: Zimmer 1
+    kind: lower
+    as_of: 2027-01-15
+    sent_on: 2027-01-15
+    starts_on: 2027-01-01
+    set_on: 2026-07-01
+    reasons:
+      - category: hausgeld_umlagefaehig
+        then: "150.00"
+        now: "149.99"
+        change: "-0.01"
+        then_sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000401, amount: "-150.00"}]
+        now_sources: [{kind: allocation, id: 0155a100-0000-4000-8000-000000000402, amount: "-149.99"}]
+    flat_rise: "-0.01"
+    pauschale: "120.00"
+    pauschalen_total: "120.00"
+    share_percent: "100.0"
+    rise: "-0.01"
+    new_pauschale: "119.99"
+    cold_rent: "400.00"
+    new_total: "519.99"
+
+- id: no_letter_below_the_threshold
+  description: Zimmer 3's share of the rise is 7.50, not above 10 €; no letter.
+  check_case: hausgeld_rise_three_rooms
+  tenancy_id: *T3
+  sent_on: 2027-02-10
+  expect: null
+
+- id: no_letter_for_electricity
+  description: An electricity rise alone is never a reason (§2 BetrKV); no letter.
+  check_case: electricity_rise_no_todo
+  tenancy_id: *T1
+  sent_on: 2027-01-20
+  expect: null
+
+- id: no_letter_once_the_change_is_recorded
+  description: >
+    The rise of 45.00 is already recorded as a rent row from 1 April (the pre-filled
+    „Mietänderung“ was saved); no second letter (the endpoint answers flat_rate.no_letter).
+  check_case: change_already_recorded
+  tenancy_id: *T1
+  sent_on: 2027-02-10
+  expect: null

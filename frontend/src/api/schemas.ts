@@ -186,3 +186,16 @@ export type Assumption = Schemas["Assumption"];
 export type Levers = Schemas["Levers"];
 export type Scenario = Schemas["Scenario"];
 export type ScenarioCreate = Schemas["ScenarioCreate"];
+
+// the Nebenkostenpauschale rise test (phase 4 step 2c, D155)
+export type FlatRateCheck = Schemas["FlatRateCheck"];
+export type TenancyFlatRate = Schemas["TenancyFlatRate"];
+export type CostLevel = Schemas["CostLevel"];
+export type CostRate = Schemas["CostRate"];
+export type CategoryChange = Schemas["CategoryChange"];
+export type SettlementHint = Schemas["SettlementHint"];
+export type FlatRateVerdict = Schemas["FlatRateVerdict"];
+export type RateBasis = Schemas["RateBasis"];
+export type FlatRateLetterFigures = Schemas["FlatRateLetterFigures"];
+export type FlatRateLetterRequest = Schemas["FlatRateLetterRequest"];
+export type LetterReason = Schemas["LetterReason"];

@@ -7,16 +7,19 @@
 // whole-return estimate (its warnings and its open Jahresfragen, one entry for all of them)
 // and the reminders the page already holds. What counts as a to-do and what to do about it
 // is components/todos.tsx; a source that cannot be read (no rule set for the year, no pay
-// yet) adds nothing. The Anlage V tab keeps its own list for one property.
+// yet) adds nothing. The Anlage V tab keeps its own list for one property. Per property also
+// the Nebenkostenpauschale rise test (phase-4.md D155 (4)): a Pauschale that can rise or must
+// fall is a to-do with its pre-filled „Mietänderung“ and the letter (components/flatRate.tsx).
 import Link from "next/link";
 import { useCallback, useState } from "react";
 
 import { api, ok } from "@/api/client";
 import { ApiError, ruleCodes } from "@/api/errors";
-import type { AnlageVDraft, DocumentChecklistItem, DraftWarning, Owner, Property } from "@/api/schemas";
+import type { AnlageVDraft, DocumentChecklistItem, DraftWarning, FlatRateCheck, Owner, Property } from "@/api/schemas";
 import type { components } from "@/api/types";
 
 import { ReadUpload } from "./documents";
+import { flatRateTodos } from "./flatRate";
 import { todayIso } from "./format";
 import { ReminderDone, reminderLabel, reminderLink, type Reminder } from "./reminders";
 import { questionnaireHref, taxFormHref } from "./taxYear";
@@ -40,6 +43,7 @@ interface PropertyTodos {
   year: number | null;
   items: DocumentChecklistItem[];
   draft: AnlageVDraft | null;
+  flatRate: FlatRateCheck | null;
 }
 
 interface OverviewTodosData {
@@ -68,13 +72,15 @@ async function loadTodos(): Promise<OverviewTodosData> {
   const perProperty = await Promise.all(
     properties.map(async (property): Promise<PropertyTodos> => {
       const path = { property_id: property.id };
+      const flatRatePromise = orNull(ok(api.GET("/api/properties/{property_id}/flat-rate-check", { params: { path } })));
       const checklist = await orNull(ok(api.GET("/api/properties/{property_id}/checklist", { params: { path } })));
       const draft = checklist
         ? await orNull(
             ok(api.GET("/api/properties/{property_id}/anlage-v", { params: { path, query: { tax_year: checklist.tax_year } } })),
           )
         : null;
-      return { property, year: checklist?.tax_year ?? null, items: checklist?.items ?? [], draft };
+      const flatRate = await flatRatePromise;
+      return { property, year: checklist?.tax_year ?? null, items: checklist?.items ?? [], draft, flatRate };
     }),
   );
   const perOwner = await Promise.all(
@@ -123,7 +129,9 @@ function buildEntries(data: OverviewTodosData, reminders: Reminder[], onChanged:
     return true;
   };
 
-  for (const { property, year, items, draft } of data.properties) {
+  for (const { property, year, items, draft, flatRate } of data.properties) {
+    // The rise test needs no tax year, so it is listed even when the checklist is unreadable.
+    entries.push(...flatRateTodos(flatRate, { propertyId: property.id, context: property.label }));
     if (year === null) continue;
     const ctx: GuideContext = { year, propertyId: property.id, draft: draft ?? undefined };
     const tax = taxFormHref("v", { year, propertyId: property.id, ownerId: null });

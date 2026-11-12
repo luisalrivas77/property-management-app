@@ -1919,6 +1919,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/properties/{property_id}/flat-rate-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Property Flat Rate
+         * @description The Nebenkostenpauschale rise test (D155): the monthly costs when each flat_rate
+         *     tenancy's Pauschale was set and today, each rate with its sources, and per tenancy its share
+         *     of the rise and the verdict (raise above 10.00 € a month, lower on any fall). Information,
+         *     not advice; computed on read, nothing stored.
+         */
+        get: operations["property_flat_rate_api_properties__property_id__flat_rate_check_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tenancies/{tenancy_id}/flat-rate-letter": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tenancy Flat Rate Letter
+         * @description The figures of the letter that tells the tenant of a rise or a fall of their
+         *     Nebenkostenpauschale (D155 (7)), for a letter sent on `sent_on` (default today): the
+         *     reasons per Betriebskosten category with their sources, the tenant's share, the new
+         *     Pauschale and the new total, and from when it applies. 404 tenancy; 422
+         *     flat_rate.no_letter when today's check has no rise above 10 € a month or fall for it.
+         */
+        get: operations["tenancy_flat_rate_letter_api_tenancies__tenancy_id__flat_rate_letter_get"];
+        put?: never;
+        /**
+         * Tenancy Flat Rate Letter Pdf
+         * @description The letter as a PDF to download (D155 (7)), from the same figures as the GET; nothing is
+         *     stored, the sender's name and address are printed only. The same errors as the GET.
+         */
+        post: operations["tenancy_flat_rate_letter_pdf_api_tenancies__tenancy_id__flat_rate_letter_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/properties/{property_id}/scenarios": {
         parameters: {
             query?: never;
@@ -3332,6 +3384,19 @@ export interface components {
             field: string;
         };
         /**
+         * CategoryChange
+         * @description A category's rate when the Pauschale was set and today, for the whole flat.
+         */
+        CategoryChange: {
+            category: components["schemas"]["AllocationCategory"];
+            /** Then */
+            then: string;
+            /** Now */
+            now: string;
+            /** Change */
+            change: string;
+        };
+        /**
          * ChecklistBankLine
          * @description A confirmed allocation as a checklist item cites it (D142): no counterparty, no purpose
          *     text (D5); the frontend labels it by date and amount and opens its bank line.
@@ -3686,6 +3751,43 @@ export interface components {
              * @default false
              */
             same_amount_only: boolean;
+        };
+        /**
+         * CostLevel
+         * @description The flat's costs per month in force on `as_of`: one rate per FLAT_RATE_CATEGORIES, in that
+         *     order; `betrkv` is the sum of the three BetrKV rates (electricity left out).
+         */
+        CostLevel: {
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Rates */
+            rates: components["schemas"]["CostRate"][];
+            /** Betrkv */
+            betrkv: string;
+        };
+        /**
+         * CostRate
+         * @description One category's monthly rate in force on a date (D155 (2)), with what it came from
+         *     (principle 2): the allocations of the payment or the 12 months, or the schedule's tax
+         *     input. `from_later`: nothing was known on or before the date, so the first payment (or the
+         *     first schedule, or the first 12 months of lines) after it stands for it, as the handover
+         *     month's payment does for a lease that began before the landlord paid anything.
+         */
+        CostRate: {
+            category: components["schemas"]["AllocationCategory"];
+            /** Monthly */
+            monthly: string;
+            basis: components["schemas"]["RateBasis"];
+            /**
+             * From Later
+             * @default false
+             */
+            from_later: boolean;
+            /** Sources */
+            sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
         };
         /**
          * CountedCost
@@ -4494,6 +4596,120 @@ export interface components {
             deadline: string;
         };
         /**
+         * FlatRateCheck
+         * @description GET /properties/{id}/flat-rate-check (D155): information, not advice; §560 BGB decides.
+         *
+         *     `levels` are the cost levels on every tenancy's set_on and on `as_of` (today), distinct and
+         *     ascending; `tenancies` the flat_rate tenancies in force on `as_of`; both empty without one.
+         *     `settlements` are the hints of the 12 months up to `as_of`.
+         */
+        FlatRateCheck: {
+            /**
+             * Property Id
+             * Format: uuid
+             */
+            property_id: string;
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /**
+             * Raise Above
+             * @default 10.00
+             */
+            raise_above: string;
+            /** Pauschalen Total */
+            pauschalen_total: string;
+            /** Tenancies */
+            tenancies?: components["schemas"]["TenancyFlatRate"][];
+            /** Levels */
+            levels?: components["schemas"]["CostLevel"][];
+            /** Settlements */
+            settlements?: components["schemas"]["SettlementHint"][];
+        };
+        /**
+         * FlatRateLetterFigures
+         * @description GET /tenancies/{id}/flat-rate-letter (D155 (7)): the figures of the letter for one
+         *     tenancy's rise or fall, from the FlatRateCheck of `as_of` (today); the dialog shows them
+         *     before the PDF is made and the PDF prints exactly these.
+         *
+         *     `reasons`: the BetrKV categories with a cost then or now, in FLAT_RATE_BETRKV order.
+         *     `new_pauschale` = pauschale + rise, to the cent, never below 0.00; `new_total` = the cold
+         *     rent in force on the later of `as_of` and `starts_on`, + new_pauschale. `starts_on`: for a
+         *     raise the first day of the month after next from `sent_on` (§560 Abs. 2 BGB), for a lower
+         *     the date the cost fell (§560 Abs. 3 BGB).
+         */
+        FlatRateLetterFigures: {
+            /**
+             * Tenancy Id
+             * Format: uuid
+             */
+            tenancy_id: string;
+            /** Unit Label */
+            unit_label: string;
+            kind: components["schemas"]["FlatRateVerdict"];
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /**
+             * Sent On
+             * Format: date
+             */
+            sent_on: string;
+            /**
+             * Starts On
+             * Format: date
+             */
+            starts_on: string;
+            /**
+             * Set On
+             * Format: date
+             */
+            set_on: string;
+            /** Reasons */
+            reasons: components["schemas"]["LetterReason"][];
+            /** Flat Rise */
+            flat_rise: string;
+            /** Pauschale */
+            pauschale: string;
+            /** Pauschalen Total */
+            pauschalen_total: string;
+            /** Share Percent */
+            share_percent: string;
+            /** Rise */
+            rise: string;
+            /** New Pauschale */
+            new_pauschale: string;
+            /** Cold Rent */
+            cold_rent: string;
+            /** New Total */
+            new_total: string;
+        };
+        /**
+         * FlatRateLetterRequest
+         * @description POST /tenancies/{id}/flat-rate-letter (D155 (7)): what the dialog asks. The sender's
+         *     name and address lines are printed and never stored (the browser may remember them).
+         */
+        FlatRateLetterRequest: {
+            /**
+             * Sent On
+             * Format: date
+             */
+            sent_on: string;
+            /** Sender Name */
+            sender_name: string;
+            /** Sender Address */
+            sender_address?: string[];
+        };
+        /**
+         * FlatRateVerdict
+         * @enum {string}
+         */
+        FlatRateVerdict: "raise" | "lower" | "none";
+        /**
          * FormStatus
          * @description Whether a form mapping is the year's published form or a copy of an earlier one (§4.3).
          * @enum {string}
@@ -5097,6 +5313,26 @@ export interface components {
             operating_costs_clause?: components["schemas"]["ExtractedValue"];
             /** @description when the monthly rent is due, as printed (e.g. 'spätestens am dritten Werktag eines jeden Monats', 'im Voraus zum 1. eines Monats') */
             rent_due_clause?: components["schemas"]["ExtractedValue"];
+        };
+        /**
+         * LetterReason
+         * @description One Betriebskosten category in the letter's reason (§560 Abs. 1 S. 2 BGB: named and
+         *     explained): the flat's monthly cost when the Pauschale was set and now, each with the
+         *     allocations or tax input it came from (the service looks up their documents). Electricity
+         *     is never a reason (D155 (3)).
+         */
+        LetterReason: {
+            category: components["schemas"]["AllocationCategory"];
+            /** Then */
+            then: string;
+            /** Now */
+            now: string;
+            /** Change */
+            change: string;
+            /** Then Sources */
+            then_sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+            /** Now Sources */
+            now_sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
         };
         /**
          * Levers
@@ -6828,6 +7064,12 @@ export interface components {
             reminders: string[];
         };
         /**
+         * RateBasis
+         * @description How a category's monthly rate was found (D155 (2)).
+         * @enum {string}
+         */
+        RateBasis: "monthly_payment" | "yearly_premium" | "schedule" | "twelve_months" | "none";
+        /**
          * ReducedRentCheck
          * @description §5.8 per Wohnung, monthly figures. market_warm = cold_rent_per_m2 × area + the year's
          *     umlagefähige costs ÷ months owned. ratio_percent: agreed ÷ market_warm, one decimal; the
@@ -7572,6 +7814,27 @@ export interface components {
              */
             idle_expires_at: string;
         };
+        /**
+         * SettlementHint
+         * @description A line of a monthly category that is not an instalment (an electricity Jahresabrechnung,
+         *     a Hausgeldabrechnung's back-payment): not a rate, shown as a hint that the next instalment
+         *     may rise. `amount` is the cost (a refund is negative).
+         */
+        SettlementHint: {
+            category: components["schemas"]["AllocationCategory"];
+            /**
+             * Allocation Id
+             * Format: uuid
+             */
+            allocation_id: string;
+            /**
+             * Booking Date
+             * Format: date
+             */
+            booking_date: string;
+            /** Amount */
+            amount: string;
+        };
         /** SpecialExpenseFact */
         SpecialExpenseFact: {
             /**
@@ -8123,6 +8386,69 @@ export interface components {
             /** @default prepayment */
             operating_costs_terms: components["schemas"]["OperatingCostsTerms"];
             initial_rent?: components["schemas"]["InitialRent"] | null;
+        };
+        /**
+         * TenancyFlatRate
+         * @description One flat_rate tenancy in force on `as_of` (D155 (3), (4)).
+         *
+         *     `pauschale` is the rent row in force today's operating_costs_prepayment; `set_on` the date
+         *     it was set (the latest rent-schedule row in force that changed it, else the tenancy's
+         *     start). `changes` per FLAT_RATE_CATEGORIES compare the levels on `set_on` and today;
+         *     `flat_rise` is Σ of the BetrKV changes; `rise` = flat_rise × pauschale ÷ Σ Pauschalen,
+         *     half-up to the cent (0.00 when the Pauschalen sum to 0). `share_percent` is that share for
+         *     display only, one decimal; the rise is never computed from it. `earliest_start` (raise
+         *     only) is the first day of the month after next from `as_of` (§560 Abs. 2 BGB);
+         *     `fell_on` (lower only) the date the cost fell (§560 Abs. 3 BGB): of the BetrKV categories
+         *     whose rate fell, the earliest date from which its rate today applies (the first line of the
+         *     unbroken run of lines at today's rate; a schedule's 1 January).
+         *
+         *     `recorded_from` and `recorded_pauschale` (both or neither): the first rent row dated after
+         *     `as_of` that changes the Pauschale, a change already recorded (such as the pre-filled
+         *     „Mietänderung“). The verdict is then none (no to-do, no letter, no pre-fill), whatever the
+         *     rise; today's Pauschale stays in `pauschale` and the shares until the row takes effect.
+         */
+        TenancyFlatRate: {
+            /**
+             * Tenancy Id
+             * Format: uuid
+             */
+            tenancy_id: string;
+            /**
+             * Unit Id
+             * Format: uuid
+             */
+            unit_id: string;
+            /** Unit Label */
+            unit_label: string;
+            /** Pauschale */
+            pauschale: string;
+            /**
+             * Set On
+             * Format: date
+             */
+            set_on: string;
+            /**
+             * Set By
+             * @enum {string}
+             */
+            set_by: "start" | "rent_change";
+            /** Share Percent */
+            share_percent?: string | null;
+            /** Changes */
+            changes: components["schemas"]["CategoryChange"][];
+            /** Flat Rise */
+            flat_rise: string;
+            /** Rise */
+            rise: string;
+            verdict: components["schemas"]["FlatRateVerdict"];
+            /** Earliest Start */
+            earliest_start?: string | null;
+            /** Fell On */
+            fell_on?: string | null;
+            /** Recorded From */
+            recorded_from?: string | null;
+            /** Recorded Pauschale */
+            recorded_pauschale?: string | null;
         };
         /**
          * TenancyPartiesBody
@@ -12975,6 +13301,105 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Projection"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    property_flat_rate_api_properties__property_id__flat_rate_check_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                property_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlatRateCheck"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    tenancy_flat_rate_letter_api_tenancies__tenancy_id__flat_rate_letter_get: {
+        parameters: {
+            query?: {
+                sent_on?: string | null;
+            };
+            header?: never;
+            path: {
+                tenancy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlatRateLetterFigures"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    tenancy_flat_rate_letter_pdf_api_tenancies__tenancy_id__flat_rate_letter_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenancy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FlatRateLetterRequest"];
+            };
+        };
+        responses: {
+            /** @description The letter as PDF */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": unknown;
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

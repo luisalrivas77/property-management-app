@@ -258,6 +258,28 @@ PHASE4_CASES = {
         "no_sign_change",
         "cagr_ten_and_a_half_years",  # §5.5: E₀ 85,000, profit 20,000, 10.5 years
     },
+    # D155 (6): the Nebenkostenpauschale rise test
+    "flat_rate_rise": {
+        "hausgeld_rise_three_rooms",
+        "rise_exactly_ten_no_todo",
+        "rise_ten_01_todo",
+        "fall_lowers",
+        "electricity_rise_no_todo",
+        "pauschale_changed_by_rent_row",
+        "lease_before_first_payment",
+        "grundsteuer_from_schedule",
+        "grundsteuer_known_later_no_rise",  # D155 (2): the first Bescheid stands for before it
+        "grundsteuer_from_twelve_months_of_lines",
+    },
+    # D155 (7): the letter's figures
+    "flat_rate_letter": {
+        "rise_sent_on_the_15th",
+        "rise_sent_on_the_1st",  # still the month after next
+        "rise_just_above_ten_sent_later",  # the start runs from the sending date
+        "fall_from_the_date_the_cost_fell",
+        "no_letter_below_the_threshold",
+        "no_letter_for_electricity",
+    },
 }
 
 
@@ -279,6 +301,12 @@ def test_phase4_cases_cover_the_spec():
         ("projection", ("expect", "sale", "afa_claimed"), "49140.01"),
         ("sale", ("expect", "profit"), "-42151.77"),
         ("sale", ("expect", "afa_claimed_movable"), "1300.01"),  # D94: the parts add up
+        ("flat_rate_rise", ("expect", "tenancies", 0, "rise"), "15.01"),  # D155: the share
+        ("flat_rate_rise", ("expect", "levels", 0, "betrkv"), "170.01"),  # Σ of the rates
+        ("flat_rate_rise", ("expect", "levels", 0, "rates", 2, "monthly"), "20.01"),  # ÷ 12
+        ("flat_rate_letter", ("expect", "new_pauschale"), "172.51"),  # D155 (7): old + rise
+        ("flat_rate_letter", ("expect", "starts_on"), "2027-03-01"),  # the month after next
+        ("flat_rate_letter", ("expect", "reasons", 0, "now"), "195.01"),  # the check's level
     ],
 )
 def test_phase4_fixtures_check_their_arithmetic(name, path, slip):
