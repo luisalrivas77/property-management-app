@@ -386,9 +386,12 @@ class WorkspaceSettings(Schema):
     ai_tenant_documents: bool
     auto_accept_llm: bool
     reminder_emails: bool
-    # Phase 6 (migration 0025, D168): read here; the PATCH gains it with the consent flow of
-    # the step that builds the household prompt, so it cannot be switched on without consent.
+    # Phase 6 (migration 0025, D168): switching it on records the member's consent; the
+    # other member consents by POST /workspace/settings/ai-consent. Active (private lines
+    # reach the model) once two members consented since it was switched on.
     ai_private_accounts: bool = False
+    ai_private_accounts_consented_by: list[UUID] = Field(default_factory=list)
+    ai_private_accounts_active: bool = False
     # Not a workspace column: whether the process can send mail (TEM configured), set by the
     # route so the settings page can say when the switch has no effect yet.
     reminder_emails_available: bool = False
@@ -398,6 +401,7 @@ class WorkspaceSettingsPatch(Patch):
     ai_tenant_documents: bool = Field(default=None)
     auto_accept_llm: bool = Field(default=None)
     reminder_emails: bool = Field(default=None)
+    ai_private_accounts: bool = Field(default=None)
 
 
 class DocumentUploadResult(Schema):
