@@ -5274,6 +5274,96 @@
         }
       }
     },
+    "/api/transactions/{transaction_id}/private-costs": {
+      "post": {
+        "summary": "Private Costs Record",
+        "description": "The bill's current private_cost rows after the card's „Übernehmen“.",
+        "operationId": "private_costs_record_api_transactions__transaction_id__private_costs_post",
+        "parameters": [
+          {
+            "name": "transaction_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Transaction Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaxInput"
+                  },
+                  "title": "Response Private Costs Record Api Transactions  Transaction Id  Private Costs Post"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/transactions/{transaction_id}/private-costs/year": {
+      "post": {
+        "summary": "Private Costs Year",
+        "description": "The bill's current private_cost rows, in the year the line paid them.",
+        "operationId": "private_costs_year_api_transactions__transaction_id__private_costs_year_post",
+        "parameters": [
+          {
+            "name": "transaction_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Transaction Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaxInput"
+                  },
+                  "title": "Response Private Costs Year Api Transactions  Transaction Id  Private Costs Year Post"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/properties/{property_id}/anlage-v": {
       "get": {
         "summary": "Property Anlage V",
@@ -14712,7 +14802,9 @@
           "transfer_link",
           "transfer_unmatched",
           "property_cost_row",
-          "property_cost_bill"
+          "property_cost_bill",
+          "property_cost_year",
+          "property_cost_document"
         ],
         "title": "InboxItemKind",
         "description": "GET /inbox (§8.3): one list, newest first."

@@ -655,6 +655,8 @@ export const INBOX_ITEM_KIND: Record<InboxItemKind, string> = {
   transfer_unmatched: "Überweisung ohne Gegenstück",
   property_cost_row: "Privat bezahlte Kosten",
   property_cost_bill: "Rechnung fehlt",
+  property_cost_year: "Jahr der Zahlung",
+  property_cost_document: "Beleg prüfen",
 };
 
 /** The Haushalt screen's groups (phase 6 §13, mockup 10; rules/household/taxonomy.py). */

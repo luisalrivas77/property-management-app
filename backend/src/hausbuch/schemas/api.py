@@ -534,10 +534,16 @@ class InboxItemKind(StrEnum):
     TRANSFER_LINK = "transfer_link"
     TRANSFER_UNMATCHED = "transfer_unmatched"
     # Phase 6 D161: a private line paying a property bill that has no private_cost row yet
-    # (path 2, `private_costs` pre-filled for POST /properties/{id}/tax-inputs), and a private
-    # line booked hh_property_cost without a bill (path 3, „Beleg hochladen“).
+    # (path 2, `private_costs` as POST /transactions/{id}/private-costs records them), and a
+    # private line booked hh_property_cost without a bill (path 3, „Beleg hochladen“).
     PROPERTY_COST_ROW = "property_cost_row"
     PROPERTY_COST_BILL = "property_cost_bill"
+    # Review F2: the bill's private_cost rows are in another year than the confirmed private
+    # line paid them; `tax_year` is the year paid (POST /transactions/{id}/private-costs/year).
+    PROPERTY_COST_YEAR = "property_cost_year"
+    # Review F4: the line's attached bill yields no row yet (not read, not a bill, no property,
+    # no amount or date); `document_id` is the document to open.
+    PROPERTY_COST_DOCUMENT = "property_cost_document"
 
 
 class InboxItem(Schema):
@@ -553,7 +559,7 @@ class InboxItem(Schema):
     import_id: UUID | None = None
     possible_duplicate_id: UUID | None = None
     transaction_id: UUID | None = None
-    tax_year: int | None = None  # questionnaire_open: the year whose questions are open
+    tax_year: int | None = None  # questionnaire_open's year; property_cost_year's year paid
     account_id: UUID | None = None  # phase 5: the bank_* kinds; phase 6: a private line
     sync_id: UUID | None = None  # phase 5: bank_approval_needed, bank_sync_failed
     reminder_id: str | None = Field(default=None, max_length=160)  # phase 5: reminder

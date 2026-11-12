@@ -1406,36 +1406,14 @@ class _Apply:
             raise ValueError(
                 f"record {record.key!r}: its bill is not the one this proof is linked to"
             )
-        if row.tax_year == year:
-            return row.id
-        current = tax_inputs.find_current(
-            self.ctx.conn, row.property_id, row.kind, tax_year=row.tax_year
-        )
-        if row.id not in {r.id for r in current}:
+        try:
+            return tax_inputs.move_private_cost_year(self.ctx, row.id, year).id
+        except RuleViolationError as exc:
+            if exc.codes != (tax_inputs.TAX_INPUT_NOT_CURRENT,):
+                raise
             raise ValueError(
                 f"record {record.key!r}: tax input {row.id} was changed since the proposal"
-            )
-        base = row.model_dump(
-            mode="json",
-            include={
-                "property_id",
-                "kind",
-                "tax_year",
-                "unit_id",
-                "loan_id",
-                "allocation_id",
-                "document_id",
-                "value",
-                "note",
-            },
-        )
-        tax_inputs.create_tax_input(
-            self.ctx,
-            row.property_id,
-            TaxInputCreate.model_validate(base | {"supersedes_id": str(row.id), "withdrawn": True}),
-        )
-        moved = TaxInputCreate.model_validate(base | {"tax_year": year})
-        return tax_inputs.create_tax_input(self.ctx, row.property_id, moved).id
+            ) from exc
 
     def _tax_input(self, record: ProposalRecord, values: dict[str, Any]) -> UUID:
         """A certificate's figure (phase 3 §9) through services/tax_inputs, with this document

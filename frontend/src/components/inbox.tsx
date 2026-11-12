@@ -30,8 +30,11 @@
 //   phase 6 D162): the counterparts to pick and „Verknüpfen“ (POST /transfers); one without a
 //   counterpart links to Konten, to import the other account.
 // - a property cost paid from a private account (phase 6 D161): „Übernehmen“ records the
-//   proposed privately paid costs (property_cost_row); „Beleg hochladen“ uploads the missing
-//   bill and saves it on the line (property_cost_bill).
+//   proposed privately paid costs (property_cost_row, POST /transactions/{id}/private-costs);
+//   „Beleg hochladen“ uploads the missing bill and saves it on the line (property_cost_bill);
+//   „In <Jahr> zählen“ moves the bill's costs to the year the line paid them
+//   (property_cost_year, POST /transactions/{id}/private-costs/year); an attached bill that
+//   yields no costs links to its document page (property_cost_document).
 //
 // GET /inbox names ids only, so the lines, imports, accounts, duplicates and documents are
 // loaded alongside to show what each item is about. Amounts are shown as the API returns them.
@@ -109,6 +112,8 @@ const SECTION_OF: Record<InboxItemKind, SectionKey> = {
   transfer_unmatched: "transfers",
   property_cost_row: "property_costs",
   property_cost_bill: "property_costs",
+  property_cost_year: "property_costs",
+  property_cost_document: "property_costs",
 };
 
 /** A line kind without a line id cannot open the panel: it is listed under Weitere Punkte,
@@ -139,6 +144,8 @@ const PILL_CLASS: Record<InboxItemKind, string> = {
   transfer_unmatched: "badge badge-warn",
   property_cost_row: "badge badge-info",
   property_cost_bill: "badge badge-warn",
+  property_cost_year: "badge badge-info",
+  property_cost_document: "badge badge-warn",
 };
 
 export interface InboxData {
@@ -420,7 +427,7 @@ function EntryTitle({ item, data }: { item: InboxItem; data: InboxData }) {
       </>
     );
   }
-  if (item.kind === "property_cost_row" || item.kind === "property_cost_bill") {
+  if (item.kind.startsWith("property_cost_")) {
     const line = item.transaction_id ? data.transactions.get(item.transaction_id) : undefined;
     const account = line ? data.accounts.get(line.account_id) : undefined;
     return (
@@ -573,11 +580,17 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
       );
     }
     case "property_cost_row":
-      return item.property_id && (item.private_costs ?? []).length > 0 ? (
-        <PrivateCostApply propertyId={item.property_id} rows={item.private_costs ?? []} onApplied={onChanged} />
+      return item.transaction_id && (item.private_costs ?? []).length > 0 ? (
+        <PrivateCostApply transactionId={item.transaction_id} onApplied={onChanged} />
       ) : null;
     case "property_cost_bill":
       return item.transaction_id ? <BillUpload transactionId={item.transaction_id} onAttached={onChanged} /> : null;
+    case "property_cost_year":
+      return item.transaction_id && item.tax_year != null ? (
+        <YearPaidApply transactionId={item.transaction_id} year={item.tax_year} onApplied={onChanged} />
+      ) : null;
+    case "property_cost_document":
+      return item.document_id ? <Link href={`/documents/${item.document_id}`}>Beleg öffnen</Link> : null;
     default:
       return null;
   }
@@ -662,9 +675,10 @@ function privateCostText(row: TaxInputCreate): string {
   return `${value.label}: ${formatMoney(value.amount)}${year}`;
 }
 
-/** D161 path 2: the bill's rows as privately paid costs (tax_input private_cost), each through
- * POST /properties/{id}/tax-inputs as the card proposed them. */
-function PrivateCostApply({ propertyId, rows, onApplied }: { propertyId: string; rows: TaxInputCreate[]; onApplied: () => void }) {
+/** D161 path 2: the bill's rows as privately paid costs (tax_input private_cost), recorded as
+ * the card proposed them by POST /transactions/{id}/private-costs in one step; a bill whose
+ * rows exist already is left as it is (no cost counted twice). */
+function PrivateCostApply({ transactionId, onApplied }: { transactionId: string; onApplied: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
@@ -672,9 +686,7 @@ function PrivateCostApply({ propertyId, rows, onApplied }: { propertyId: string;
     setBusy(true);
     setError(null);
     try {
-      for (const body of rows) {
-        await ok(api.POST("/api/properties/{property_id}/tax-inputs", { params: { path: { property_id: propertyId } }, body }));
-      }
+      await ok(api.POST("/api/transactions/{transaction_id}/private-costs", { params: { path: { transaction_id: transactionId } } }));
       onApplied();
     } catch (caught) {
       setError(caught);
@@ -687,6 +699,36 @@ function PrivateCostApply({ propertyId, rows, onApplied }: { propertyId: string;
       <button type="button" onClick={() => void apply()} disabled={busy}>
         {busy ? "Übernimmt …" : "Übernehmen"}
       </button>
+      <ErrorNotice error={error} />
+    </>
+  );
+}
+
+/** D161 (1) with D143's rule: the bill's privately paid costs count in the year the private
+ * line paid them; „In <Jahr> zählen“ moves them (POST /transactions/{id}/private-costs/year).
+ * Until then they stay in their year. */
+function YearPaidApply({ transactionId, year, onApplied }: { transactionId: string; year: number; onApplied: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+
+  async function apply() {
+    setBusy(true);
+    setError(null);
+    try {
+      await ok(api.POST("/api/transactions/{transaction_id}/private-costs/year", { params: { path: { transaction_id: transactionId } } }));
+      onApplied();
+    } catch (caught) {
+      setError(caught);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <button type="button" onClick={() => void apply()} disabled={busy}>
+        {busy ? "Wird verschoben …" : `In ${year} zählen`}
+      </button>
+      <p className="muted">Privat bezahlte Werbungskosten zählen im Jahr der Zahlung (§ 11 Abs. 2 EStG).</p>
       <ErrorNotice error={error} />
     </>
   );

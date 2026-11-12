@@ -33,7 +33,7 @@ from hausbuch.schemas.household import (
     TransferMatchedBy,
 )
 from hausbuch.schemas.tax import PrivateCostValue, TaxInputCreate, TaxInputKind, WarningCode
-from hausbuch.services import allocations, matching, review, tax_inputs, transfers
+from hausbuch.services import allocations, matching, property_costs, review, tax_inputs, transfers
 from hausbuch.services import tax as tax_service
 from hausbuch.services.errors import ConflictError, RuleViolationError
 
@@ -362,6 +362,10 @@ def _missing_proofs(world: World):
     ]
 
 
+def _on_bill(world: World, doc) -> dict:
+    return {"property_id": world.property_id, "document_id": doc}
+
+
 def _private_cost(world: World, doc):
     return world.cmd(
         tax_inputs.create_tax_input,
@@ -457,3 +461,80 @@ def test_path_3_a_line_without_a_bill_asks_for_it(world, private):
     # Never a cost in the draft: hh_property_cost is pass_through and never summed (D161).
     draft, _ = _missing_proofs(world)
     assert not any(s.id == tx for line in draft.lines for s in line.sources)
+
+
+def _cards(world: World, kind: InboxItemKind):
+    return [i for i in world.query(review.inbox, TODAY) if i.kind is kind]
+
+
+def _cited_rows(world: World, year: int) -> set:
+    draft = world.query(tax_service.anlage_v_draft, world.property_id, tax_year=year, today=TODAY)
+    return {s.id for line in draft.lines for s in line.sources if s.kind == "tax_input"}
+
+
+def test_path_1_a_row_of_another_year_is_moved_to_the_year_paid_once_confirmed(world, private):
+    """Review F2: the bill's row is in 2026, the private line paid it on 5 Jan 2027. Once the
+    line is confirmed a card proposes counting it in 2027 (D143's year-paid rule); until the
+    person confirms, the 2026 draft keeps the row (principle 3); the button moves it."""
+    doc = _bill(world)
+    row = _private_cost(world, doc)
+    tx = private.line(date(2027, 1, 5), "-297.50", iban=PAINTER_IBAN, purpose="R-2026-0815")
+    _book(world, tx, "-297.50", C.HH_PROPERTY_COST, confirm=False, **_on_bill(world, doc))
+    assert _cards(world, InboxItemKind.PROPERTY_COST_YEAR) == []  # a proposed line: not yet
+    world.cmd(allocations.confirm_proposed, tx)
+
+    [card] = _cards(world, InboxItemKind.PROPERTY_COST_YEAR)
+    assert (card.transaction_id, card.document_id, card.property_id, card.tax_year) == (
+        tx,
+        doc,
+        world.property_id,
+        2027,
+    )
+    assert card.question == "In 2027 zählen?"
+    assert "05.01.2027" in card.reasoning and "2026" in card.reasoning
+    assert _cards(world, InboxItemKind.PROPERTY_COST_ROW) == []
+    assert row.id in _cited_rows(world, 2026)  # unchanged until the person confirms
+
+    recorded = len(_events(world, "property.tax_input_recorded"))
+    [moved] = world.cmd(property_costs.count_in_year_paid, tx)
+    assert (moved.tax_year, moved.document_id, moved.value) == (2027, doc, row.value)
+    assert len(_events(world, "property.tax_input_recorded")) == recorded + 2  # withdrawn, new
+    [current] = world.query(tax_inputs.current_of_document, doc, TaxInputKind.PRIVATE_COST)
+    assert current.id == moved.id
+    assert row.id not in _cited_rows(world, 2026)
+    assert _cards(world, InboxItemKind.PROPERTY_COST_YEAR) == []
+    # Again: nothing to move, nothing written.
+    assert [r.id for r in world.cmd(property_costs.count_in_year_paid, tx)] == [moved.id]
+    assert len(_events(world, "property.tax_input_recorded")) == recorded + 2
+
+
+def test_an_attached_bill_that_yields_no_row_keeps_a_card_with_the_reason(world, private):
+    """Review F4 (i): after „Beleg hochladen“ the line keeps a card naming why no row is
+    proposed, with the document to open: not read as a bill (a till receipt read as a
+    general document), no property linked, or no amount or date."""
+    receipt = world.document(
+        "general", {"title": "Kassenbon", "document_date": "2026-07-03"}, type="other"
+    )
+    unlinked = world.document(
+        "invoice",
+        {"document_date": "2026-07-03", "amount_total": "80.00"},
+        link_property=False,
+    )
+    undated = world.document("invoice", {"amount_total": "80.00"})
+    expected = {}
+    for doc, text in (
+        (receipt, "nicht als Rechnung oder Bescheid gelesen"),
+        (unlinked, "noch keinem Mietobjekt zugeordnet"),
+        (undated, "fehlt der Betrag oder das Datum"),
+    ):
+        tx = private.line(date(2026, 7, 3), "-80.00", name="Schlüsseldienst", purpose="bar")
+        _book(world, tx, "-80.00", C.HH_PROPERTY_COST, **_on_bill(world, doc))
+        expected[tx] = (doc, text)
+    cards = _cards(world, InboxItemKind.PROPERTY_COST_DOCUMENT)
+    assert {c.transaction_id for c in cards} == set(expected)
+    for card in cards:
+        doc, text = expected[card.transaction_id]
+        assert card.document_id == doc and text in card.reasoning
+        assert card.question == "Beleg öffnen und prüfen"
+    assert _cards(world, InboxItemKind.PROPERTY_COST_BILL) == []
+    assert _cards(world, InboxItemKind.PROPERTY_COST_ROW) == []

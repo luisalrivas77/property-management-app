@@ -8,6 +8,11 @@
 - POST /transfers/{id}/unlink: replace a wrong link by the one the user picks. 404, 409 when
   it was replaced already or a leg of the replacement is linked.
 - GET /household/cashflow?month=: the Haushalt screen, confirmed allocations only.
+- POST /transactions/{id}/private-costs: a property bill paid from a private account (D161
+  path 2): the card's private_cost rows recorded; the bill's current rows unchanged when it
+  has them already. 404 for a line that is no private property-cost payment with a bill.
+- POST /transactions/{id}/private-costs/year: the bill's private_cost rows moved to the year
+  the confirmed private line paid them (D161 (1), D143's rule). 404 as above.
 """
 
 from datetime import datetime
@@ -24,7 +29,8 @@ from hausbuch.schemas.household import (
     TransferLinkView,
     TransferUnlinkBody,
 )
-from hausbuch.services import household, transfers
+from hausbuch.schemas.tax import TaxInput
+from hausbuch.services import household, property_costs, transfers
 from hausbuch.services.documents import LOCAL_TIME_ZONE
 
 from ..deps import Cmd, domain_router
@@ -59,3 +65,15 @@ def transfer_unlink(link_id: UUID, body: TransferUnlinkBody, cmd: Cmd) -> Transf
 @router.get("/household/cashflow")
 def household_cashflow(month: Month, cmd: Cmd) -> HouseholdCashflow:
     return cmd.read(household.cashflow, month)
+
+
+@router.post("/transactions/{transaction_id}/private-costs")
+def private_costs_record(transaction_id: UUID, cmd: Cmd) -> list[TaxInput]:
+    """The bill's current private_cost rows after the card's „Übernehmen“."""
+    return cmd.run(property_costs.record_proposed, transaction_id)
+
+
+@router.post("/transactions/{transaction_id}/private-costs/year")
+def private_costs_year(transaction_id: UUID, cmd: Cmd) -> list[TaxInput]:
+    """The bill's current private_cost rows, in the year the line paid them."""
+    return cmd.run(property_costs.count_in_year_paid, transaction_id)
