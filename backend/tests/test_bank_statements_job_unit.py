@@ -240,6 +240,17 @@ def test_at_most_fifteen_requests_per_run(monkeypatch):
     assert len(walk.stored) == 15
 
 
+def test_the_cap_inside_a_continuation_says_so(monkeypatch, caplog):
+    statements = {(2026, n): [TEXT] for n in range(1, 14)}
+    statements[(2026, 14)] = [TEXT[:40], TEXT[40:80], TEXT[80:]]
+    walk = Walk(monkeypatch, Script(statements_offered=True, statements=statements))
+    with caplog.at_level(logging.INFO, logger="hausbuch.jobs.bank_sync"):
+        walk.run()
+    assert len(walk.asked()) == 15
+    assert len(walk.stored) == 13  # 14/2026 was cut off by the cap: asked again next run
+    assert _record(caplog)["statements_end"] == "request_cap"
+
+
 def test_an_invalid_file_is_not_stored_and_ends_its_year(monkeypatch, caplog):
     not_a_pdf = base64.b64encode(b"<html>not a statement</html>")
     script = Script(statements_offered=True, statements={(2026, 1): [not_a_pdf]})

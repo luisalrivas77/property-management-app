@@ -221,6 +221,7 @@ def _fetch(
 # --- The bank's PDF statements (D154, step 2b) ----------------------------------------------
 
 _SO = StatementOutcome
+_REQUEST_CAP = "request_cap"  # MAX_STATEMENT_REQUESTS reached (a log value, never stored)
 
 
 @dataclass
@@ -317,7 +318,8 @@ def _walk_statements(
         walk.asked.append(str(key))
         reading = _one_statement(session, account, key, walk)
         if reading.outcome is _SO.STOPPED:
-            walk.end, walk.code = "stopped", reading.code
+            walk.end = _REQUEST_CAP if reading.reason == _REQUEST_CAP else "stopped"
+            walk.code = reading.code
             return
         delivered = reading.outcome is _SO.STATEMENT
         if delivered:
@@ -342,6 +344,8 @@ def _walk_statements(
         if opened.failure is not None:
             walk.end, walk.failure = "reopen_failed", opened.failure
             return
+    if walk.requests >= statement_rules.MAX_STATEMENT_REQUESTS:
+        walk.end = _REQUEST_CAP  # the next run goes on from what was stored
 
 
 def _one_statement(
@@ -371,7 +375,7 @@ def _one_statement(
         if reading.outcome is not _SO.CONTINUE:
             return reading
         if walk.requests >= statement_rules.MAX_STATEMENT_REQUESTS:
-            return StatementReading(outcome=_SO.STOPPED)
+            return StatementReading(outcome=_SO.STOPPED, reason=_REQUEST_CAP)
         earlier.extend(answer.parts)
         touchdown = answer.touchdown
 

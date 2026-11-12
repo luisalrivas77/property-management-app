@@ -5,6 +5,7 @@ jobs.bank_sync.run_bank_sync, as hausbuch_app under RLS.
 The bank's streams are the daily reports of phase 2's anonymised camt ZIP (22 bookings,
 closing -3.028,51) for a synthetic IBAN; the PIN, login and product id are invented."""
 
+import base64
 import io
 import zipfile
 from datetime import UTC, date, datetime, timedelta
@@ -19,9 +20,11 @@ from test_bank_parsers import CAMT, build
 
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import bank_connection as connection_table
+from hausbuch.db.tables import bank_statement as statement_table
 from hausbuch.db.tables import bank_sync as sync_table
 from hausbuch.db.tables import document as document_table
 from hausbuch.db.tables import event as event_table
+from hausbuch.db.tables import proposal as proposal_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.jobs import bank_sync as job
@@ -847,3 +850,124 @@ def test_no_secret_reaches_a_sync_row_an_event_or_a_document_row(bank):
         )
         == 2
     )
+
+
+# --- The bank's PDF statements (D154, step 2b) -------------------------------------------------
+
+PDF_1 = b"%PDF-1.4\n% invented statement one\n%%EOF\n"
+PDF_2 = b"%PDF-1.4\n% invented statement two\n%%EOF\n"
+
+
+def _with_statements(**overrides) -> Script:
+    statements = {
+        (2026, 1): [base64.b64encode(PDF_1)],
+        (2026, 2): [base64.b64encode(PDF_2)],
+    }
+    return _good(**({"statements_offered": True, "statements": statements} | overrides))
+
+
+def _fetch_statements(bank, on=True):
+    return bank.run(
+        bank.ws,
+        service.update_connection,
+        bank.account.id,
+        BankConnectionPatch(fetch_statements=on),
+        now=T0,
+    )
+
+
+def test_the_statement_switch_starts_off_and_is_recorded_like_auto_sync(bank):
+    assert bank.connection.fetch_statements is False
+    assert _fetch_statements(bank).fetch_statements is True
+    updated = bank.events(EventType.ACCOUNT_CONNECTION_UPDATED)[-1]
+    assert updated["changed"] == ["fetch_statements"]
+    assert updated["fetch_statements"] is True
+
+
+def test_with_the_switch_off_no_statement_is_asked_for(bank):
+    sync = bank.start()
+    assert bank.job(sync.id, _with_statements()) == "done"
+    assert "statement" not in bank.clients[0].calls
+    assert bank.rows(statement_table) == []
+
+
+def test_with_the_switch_on_the_statements_are_stored_after_the_camt_part(bank):
+    """D154: the camt result is the same as without the switch; each statement is a typed
+    document of its year with one bank_statement row and one event, and is never imported,
+    classified or read (no statement import, no proposal)."""
+    _fetch_statements(bank)
+    sync = bank.start()
+    assert bank.job(sync.id, _with_statements()) == "done"
+    done = bank.sync(sync.id)
+    assert (done.status, done.lines_new) == (SyncStatus.DONE, 22)
+
+    client = bank.clients[0]
+    assert client.statement_requests == [(2026, 1, None), (2026, 2, None), (2026, 3, None)]
+    calls = client.calls
+    assert calls.index("balance") < calls.index("statement") < calls.index("close")
+
+    rows = sorted(bank.rows(statement_table), key=lambda r: r.number)
+    assert [(r.year, r.number, r.sync_id) for r in rows] == [
+        (2026, 1, sync.id),
+        (2026, 2, sync.id),
+    ]
+    for row, pdf in zip(rows, (PDF_1, PDF_2), strict=True):
+        (document,) = bank.rows(document_table, document_table.c.id == row.document_id)
+        assert document.source == DocumentSource.BANK_SYNC.value
+        assert (document.type, document.title, document.tax_year) == (
+            "statement",
+            f"Kontoauszug {row.number}/2026",
+            2026,
+        )
+        assert document.original_filename == f"Kontoauszug-2026-{row.number}.pdf"
+        assert bank.rows(import_table, import_table.c.document_id == row.document_id) == []
+        assert bank.rows(proposal_table, proposal_table.c.document_id == row.document_id) == []
+        key = f"{bank.ws}/sha256/{bytes(document.file_sha256).hex()}"
+        assert bank.deps.blob_store.get(key) == pdf
+    fetched = bank.events(EventType.ACCOUNT_STATEMENT_FETCHED)
+    assert sorted((e["year"], e["number"]) for e in fetched) == [(2026, 1), (2026, 2)]
+    assert all(e["sync_id"] == str(sync.id) for e in fetched)
+    listed = bank.read(bank.ws, service.list_statements, bank.account.id)
+    assert [(s.year, s.number) for s in listed] == [(2026, 2), (2026, 1)]
+
+
+def test_the_next_run_asks_after_the_highest_stored_number(bank):
+    _fetch_statements(bank)
+    first = bank.start()
+    bank.job(first.id, _with_statements())
+    later = T1 + timedelta(minutes=1)
+    second = bank.start(now=later)
+    assert bank.job(second.id, _with_statements(), at=later) == "nothing_new"
+    assert bank.clients[1].statement_requests == [(2026, 3, None)]
+    assert len(bank.rows(statement_table)) == 2
+
+
+def test_a_statement_failure_leaves_the_run_done_and_shows_no_card(bank):
+    _fetch_statements(bank)
+    sync = bank.start()
+    script = _with_statements(statement_fail_at={(2026, 1): FinTSConnectionError("down")})
+    assert bank.job(sync.id, script) == "done"
+    assert bank.sync(sync.id).lines_new == 22
+    assert [i for i in bank.read(bank.ws, review.inbox, now=T1) if i.sync_id == sync.id] == []
+    assert bank.events(EventType.ACCOUNT_SYNC_FAILED) == []
+    assert bank.rows(statement_table) == []
+
+
+def test_a_refused_number_that_ends_the_dialog_leaves_the_run_done(bank):
+    _fetch_statements(bank)
+    sync = bank.start()
+    script = _with_statements(statement_codes={(2026, 3): "m9050,m9800,9210"})
+    assert bank.job(sync.id, script) == "done"
+    assert len(bank.rows(statement_table)) == 2
+    assert bank.events(EventType.ACCOUNT_SYNC_FAILED) == []
+
+
+def test_a_lock_code_on_a_statement_fails_the_run_as_d151_says(bank):
+    _fetch_statements(bank)
+    sync = bank.start()
+    script = _with_statements(statement_codes={(2026, 1): "m9050,9930"}, statements={})
+    assert bank.job(sync.id, script) == "failed"
+    _failed(bank, sync.id, E.BANK_REFUSED)
+    (failed,) = bank.events(EventType.ACCOUNT_SYNC_FAILED)
+    assert failed["response_code"] == "9930"
+    assert bank.rows(import_table, import_table.c.account_id == bank.account.id) == []
