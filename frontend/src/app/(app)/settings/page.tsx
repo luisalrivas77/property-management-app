@@ -2,8 +2,8 @@
 
 // Einstellungen (§9.1, §6.7): the user's passkeys (list, add, rename, remove), the household's
 // members (invite → one-time enrollment link, pending invites), the two AI switches
-// (docs/phases/phase-2.md D42), the email-in address (docs/phases/phase-5.md §5.2) and
-// signing out.
+// (docs/phases/phase-2.md D42), the reminder email switch (docs/phases/phase-5.md D123), the
+// email-in address (docs/phases/phase-5.md §5.2) and signing out.
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
@@ -15,6 +15,7 @@ import { ErrorNotice } from "@/lib/ErrorNotice";
 import { AiSettings } from "./AiSettings";
 import { InboxAddress } from "./InboxAddress";
 import { Members } from "./Members";
+import { ReminderSettings } from "./ReminderSettings";
 import { RenamePasskey } from "./RenamePasskey";
 
 const MAX_LABEL_LENGTH = 100; // auth_passkey.label CHECK
@@ -145,6 +146,9 @@ export default function SettingsPage() {
 
       <h2>KI</h2>
       <AiSettings />
+
+      <h2>Erinnerungen</h2>
+      <ReminderSettings />
 
       <h2>Posteingang-Adresse</h2>
       <InboxAddress />

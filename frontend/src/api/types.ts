@@ -8820,6 +8820,11 @@ export interface components {
             auto_accept_llm: boolean;
             /** Reminder Emails */
             reminder_emails: boolean;
+            /**
+             * Reminder Emails Available
+             * @default false
+             */
+            reminder_emails_available: boolean;
         };
         /** WorkspaceSettingsPatch */
         WorkspaceSettingsPatch: {

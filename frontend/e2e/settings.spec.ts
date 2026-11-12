@@ -26,14 +26,45 @@ test("switching on Mieterdokumente is saved and recorded as one event", async ({
   await expect(page.getByRole("switch", { name: "Mieterdokumente von der KI lesen lassen" })).toBeChecked();
   await expect(page.getByRole("switch", { name: "KI-Zuordnungen automatisch bestätigen" })).not.toBeChecked();
 
-  const settings = await apiCall<{ ai_tenant_documents: boolean; auto_accept_llm: boolean; reminder_emails: boolean }>(
-    page,
-    "GET",
-    "/api/workspace/settings",
-  );
-  expect(settings).toEqual({ ai_tenant_documents: true, auto_accept_llm: false, reminder_emails: false });
+  const settings = await apiCall<{
+    ai_tenant_documents: boolean;
+    auto_accept_llm: boolean;
+    reminder_emails: boolean;
+    reminder_emails_available: boolean;
+  }>(page, "GET", "/api/workspace/settings");
+  // reminder_emails_available: the e2e server has no Transactional Email settings.
+  expect(settings).toEqual({
+    ai_tenant_documents: true,
+    auto_accept_llm: false,
+    reminder_emails: false,
+    reminder_emails_available: false,
+  });
   const events = await apiCall<{ type: string; payload: unknown }[]>(page, "GET", "/api/events?entity_type=workspace");
   expect(events.filter((e) => e.type === "workspace.settings_changed").map((e) => e.payload)).toEqual([
     { changes: { ai_tenant_documents: true } },
+  ]);
+});
+
+// Erinnerungen (docs/phases/phase-5.md D123): the reminder email switch is saved like the KI
+// switches; without Transactional Email settings the page says sending is not set up yet.
+test("the reminder email switch is saved and says when sending is not set up", async ({ page, signedIn }) => {
+  void signedIn;
+  await page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Einstellungen" }).click();
+  await expect(page.getByRole("heading", { name: "Erinnerungen" })).toBeVisible();
+
+  const reminders = page.getByRole("switch", { name: "Erinnerungen per E-Mail" });
+  await expect(reminders).not.toBeChecked();
+  await expect(page.getByTestId("reminder-emails-unavailable")).toContainText("noch nicht eingerichtet");
+
+  const saved = page.waitForResponse((r) => r.url().endsWith("/api/workspace/settings") && r.request().method() === "PATCH");
+  await reminders.click();
+  expect((await saved).status()).toBe(200);
+  await expect(reminders).toBeChecked();
+
+  await page.reload();
+  await expect(page.getByRole("switch", { name: "Erinnerungen per E-Mail" })).toBeChecked();
+  const events = await apiCall<{ type: string; payload: unknown }[]>(page, "GET", "/api/events?entity_type=workspace");
+  expect(events.filter((e) => e.type === "workspace.settings_changed").map((e) => e.payload)).toEqual([
+    { changes: { reminder_emails: true } },
   ]);
 });

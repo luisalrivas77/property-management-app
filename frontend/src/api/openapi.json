@@ -23291,6 +23291,11 @@
           "reminder_emails": {
             "type": "boolean",
             "title": "Reminder Emails"
+          },
+          "reminder_emails_available": {
+            "type": "boolean",
+            "title": "Reminder Emails Available",
+            "default": false
           }
         },
         "additionalProperties": false,
