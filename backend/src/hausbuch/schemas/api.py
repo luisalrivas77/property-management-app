@@ -386,6 +386,9 @@ class WorkspaceSettings(Schema):
     ai_tenant_documents: bool
     auto_accept_llm: bool
     reminder_emails: bool
+    # Not a workspace column: whether the process can send mail (TEM configured), set by the
+    # route so the settings page can say when the switch has no effect yet.
+    reminder_emails_available: bool = False
 
 
 class WorkspaceSettingsPatch(Patch):

@@ -248,6 +248,7 @@ def test_repr_hides_secrets():
         ({"HAUSBUCH_INBOX_IMAP_HOST": "imap.gmail.com:993"}, "lower-case host name"),
         ({"HAUSBUCH_INBOX_AUTHSERV_ID": "MX.google.com"}, "lower-case host name"),
         ({"HAUSBUCH_TEM_SECRET_KEY": "k"}, "needs HAUSBUCH_TEM_PROJECT_ID and HAUSBUCH_MAIL_FROM"),
+        ({"HAUSBUCH_TEM_REGION": "fr-par/x"}, "must be a Scaleway region"),
         ({"HAUSBUCH_SYNC_APPROVAL_TIMEOUT_S": "0"}, "positive integer"),
     ],
     ids=lambda v: str(v) if isinstance(v, str) else None,

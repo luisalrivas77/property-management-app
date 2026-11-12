@@ -11,7 +11,7 @@ import { Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
-type Setting = keyof WorkspaceSettings;
+type Setting = "ai_tenant_documents" | "auto_accept_llm"; // reminder_emails: ReminderSettings
 
 const loadSettings = () => ok(api.GET("/api/workspace/settings"));
 

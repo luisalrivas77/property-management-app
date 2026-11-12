@@ -35,6 +35,7 @@ from .matching import (
     run_rematch_on_evidence,
     run_rematch_waiting,
 )
+from .notify import NOTIFY_CRON, NOTIFY_LOCK, NOTIFY_TASK, run_send_reminders
 from .scrub import SCRUB_CRON, SCRUB_TASK, run_scrub_proposals
 from .tax_export import run_tax_export
 
@@ -165,6 +166,13 @@ def poll_inbox(context: JobContext, *, timestamp: int) -> None:
     run_poll_inbox(deps)
 
 
+def send_reminders(context: JobContext, *, timestamp: int) -> None:
+    """D123, daily at 06:00: the reminder digest to each member of a workspace whose
+    reminder_emails switch is on. Off (one log line) until the HAUSBUCH_TEM_* values are set."""
+    deps: JobDeps = context.additional_context[DEPS_KEY]
+    run_send_reminders(deps)
+
+
 def register_tasks(app: procrastinate.App) -> procrastinate.App:
     """The queued tasks, plus scrub_proposals as a periodic task: the worker's periodic
     deferrer queues it at SCRUB_CRON. Procrastinate skips a schedule missed by more than
@@ -187,4 +195,10 @@ def register_tasks(app: procrastinate.App) -> procrastinate.App:
     # slow one is still running at the next tick.
     poll = app.task(name=POLL_TASK, pass_context=True, lock=POLL_LOCK)(poll_inbox)
     app.periodic(cron=POLL_CRON, periodic_id=POLL_TASK)(poll)
+    # No retry: a failed mail is retried by the next day's run (D123, up to three attempts).
+    # lock= is Procrastinate's lock (one running send_reminders job at a time, a second waits),
+    # not a queueing lock; each workspace is also sent under an advisory lock (jobs/notify.py),
+    # so not even a run outside the worker can send a digest twice.
+    notify = app.task(name=NOTIFY_TASK, pass_context=True, lock=NOTIFY_LOCK)(send_reminders)
+    app.periodic(cron=NOTIFY_CRON, periodic_id=NOTIFY_TASK)(notify)
     return app
