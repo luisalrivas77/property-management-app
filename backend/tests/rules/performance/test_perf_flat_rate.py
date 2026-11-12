@@ -1,19 +1,32 @@
-"""The Nebenkostenpauschale rise test against flat_rate_rise.yaml (docs/phases/phase-4.md
-D155): every field compares exactly, sources included."""
+"""The Nebenkostenpauschale rise test against flat_rate_rise.yaml and the letter's figures
+against flat_rate_letter.yaml (docs/phases/phase-4.md D155): every field compares exactly,
+sources included."""
 
 from datetime import date
 from decimal import Decimal
+from uuid import uuid4
 
 import pytest
-from fixture_models_phase4 import FlatRateFixture, load
+from fixture_models_phase4 import FlatRateFixture, FlatRateLetterFixture, load
 
-from hausbuch.rules.performance.flat_rate import flat_rate_check, month_after_next
+from hausbuch.rules.performance.flat_rate import (
+    flat_rate_check,
+    flat_rate_letter,
+    month_after_next,
+)
 from hausbuch.schemas.allocation import AllocationCategory, ServicePeriod
 from hausbuch.schemas.enums import OperatingCostsTerms
-from hausbuch.schemas.performance import FlatRateCheck, FlatRateVerdict, RateBasis
+from hausbuch.schemas.performance import (
+    FlatRateCheck,
+    FlatRateLetterFigures,
+    FlatRateVerdict,
+    RateBasis,
+)
 
 FIXTURE = load("flat_rate_rise")
 assert isinstance(FIXTURE, FlatRateFixture)
+LETTER = load("flat_rate_letter")
+assert isinstance(LETTER, FlatRateLetterFixture)
 
 
 def _case(case_id: str):
@@ -87,6 +100,41 @@ def test_electricity_never_triggers_even_a_large_rise():
     got = flat_rate_check(facts, case.today)
     assert got.tenancies[0].verdict is FlatRateVerdict.NONE
     assert got.tenancies[0].changes[3].change == Decimal("840.00")
+
+
+@pytest.mark.rule
+@pytest.mark.parametrize("case", LETTER.cases, ids=lambda c: c.id)
+def test_flat_rate_letter_fixture(case):
+    check_case = _case(case.check_case)
+    got = flat_rate_letter(check_case.facts, check_case.today, case.tenancy_id, case.sent_on)
+    want = (
+        None
+        if case.expect is None
+        else FlatRateLetterFigures.model_validate(case.expect.model_dump())
+    )
+    assert got == want, case.id
+
+
+def test_no_letter_for_a_tenancy_outside_the_check():
+    case = _case("fall_lowers")
+    assert flat_rate_letter(case.facts, case.today, uuid4(), case.today) is None
+
+
+def test_a_fall_never_lowers_the_pauschale_below_zero():
+    case = _case("fall_lowers")
+    allocations = [
+        a.model_copy(update={"amount": Decimal("-10.00")}) if a.amount == Decimal("-149.99") else a
+        for a in case.facts.allocations
+    ]
+    facts = case.facts.model_copy(update={"allocations": allocations})
+    tenancy_id = case.facts.tenancies[0].id
+    got = flat_rate_letter(facts, case.today, tenancy_id, case.today)
+    assert got is not None
+    assert (got.rise, got.new_pauschale, got.new_total) == (
+        Decimal("-140.00"),
+        Decimal("0.00"),
+        Decimal("400.00"),
+    )
 
 
 def test_a_lone_insurance_line_is_a_yearly_premium():

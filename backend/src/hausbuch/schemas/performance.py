@@ -11,7 +11,8 @@ Four groups:
   tax breakdown and effect (D82), the household zvE estimate (D84), the year figures of actual
   and projected years alike (D85, D86, D91), the sale (D88, D89) and the projection.
 - The Nebenkostenpauschale rise test (D155): the cost level when each Pauschale was set and
-  today, and per flat-rate tenancy its share of the rise and the to-do's verdict.
+  today, and per flat-rate tenancy its share of the rise and the to-do's verdict; the
+  figures of the letter that tells a tenant (D155 (7)).
 
 Sign conventions: year figures are magnitudes as the screen shows them (rent in, costs out);
 `taxable_result`, `tax_effect.effect`, `umlagen_net`, `net_cash` and `flat_rate_gap_monthly`
@@ -21,7 +22,7 @@ are signed (a saving is a negative tax effect). Money is Decimal; nothing here i
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
-from typing import Any, Literal, Self
+from typing import Annotated, Any, Literal, Self
 from uuid import UUID
 
 from pydantic import Field, model_validator
@@ -809,3 +810,89 @@ class FlatRateCheck(Schema):
         if self.pauschalen_total != total:
             raise ValueError("pauschalen_total = Σ of the tenancies' Pauschalen")
         return self
+
+
+# --- The letter to a tenant (D155 (7)) ----------------------------------------------------
+
+# Free text the sender types (D155 (7)): their name and address lines, printed on the letter
+# and never stored; bounded so a body cannot grow the PDF without limit.
+LetterLine = Annotated[str, Field(min_length=1, max_length=120)]
+
+
+class LetterReason(Schema):
+    """One Betriebskosten category in the letter's reason (§560 Abs. 1 S. 2 BGB: named and
+    explained): the flat's monthly cost when the Pauschale was set and now, each with the
+    allocations or tax input it came from (the service looks up their documents). Electricity
+    is never a reason (D155 (3))."""
+
+    category: AllocationCategory
+    then: Money
+    now: Money
+    change: Money
+    then_sources: list[SourceRef] = Field(default_factory=list)
+    now_sources: list[SourceRef] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _betrkv(self) -> Self:
+        if self.category not in FLAT_RATE_BETRKV:
+            raise ValueError("only a Betriebskosten category (§2 BetrKV) is a reason")
+        if self.change != self.now - self.then:
+            raise ValueError("change = now − then")
+        return self
+
+
+class FlatRateLetterFigures(Schema):
+    """GET /tenancies/{id}/flat-rate-letter (D155 (7)): the figures of the letter for one
+    tenancy's rise or fall, from the FlatRateCheck of `as_of` (today); the dialog shows them
+    before the PDF is made and the PDF prints exactly these.
+
+    `reasons`: the BetrKV categories with a cost then or now, in FLAT_RATE_BETRKV order.
+    `new_pauschale` = pauschale + rise, to the cent, never below 0.00; `new_total` = the cold
+    rent in force on the later of `as_of` and `starts_on`, + new_pauschale. `starts_on`: for a
+    raise the first day of the month after next from `sent_on` (§560 Abs. 2 BGB), for a lower
+    the date the cost fell (§560 Abs. 3 BGB)."""
+
+    tenancy_id: UUID
+    unit_label: str
+    kind: FlatRateVerdict
+    as_of: date
+    sent_on: date
+    starts_on: date
+    set_on: date
+    reasons: list[LetterReason]
+    flat_rise: Money
+    pauschale: NonNegativeMoney
+    pauschalen_total: PositiveMoney
+    share_percent: Percent
+    rise: Money
+    new_pauschale: NonNegativeMoney
+    cold_rent: NonNegativeMoney
+    new_total: NonNegativeMoney
+
+    @model_validator(mode="after")
+    def _figures(self) -> Self:
+        if self.kind is FlatRateVerdict.NONE:
+            raise ValueError("a letter is for a raise or a lower only")
+        if self.kind is FlatRateVerdict.RAISE and not self.rise > FLAT_RATE_RAISE_ABOVE:
+            raise ValueError(f"a raise is a rise above {FLAT_RATE_RAISE_ABOVE}")
+        if self.kind is FlatRateVerdict.LOWER and not self.rise < 0:
+            raise ValueError("a lower is a fall")
+        categories = [r.category for r in self.reasons]
+        if categories != [c for c in FLAT_RATE_BETRKV if c in categories]:
+            raise ValueError("reasons in FLAT_RATE_BETRKV order, one per category")
+        if self.flat_rise != sum((r.change for r in self.reasons), ZERO_MONEY):
+            raise ValueError("flat_rise = Σ of the reasons' changes")
+        if self.new_pauschale != max(ZERO_MONEY, self.pauschale + self.rise):
+            raise ValueError("new_pauschale = pauschale + rise, never below 0.00")
+        if self.new_total != self.cold_rent + self.new_pauschale:
+            raise ValueError("new_total = cold_rent + new_pauschale")
+        return self
+
+
+class FlatRateLetterRequest(Schema):
+    """POST /tenancies/{id}/flat-rate-letter (D155 (7)): what the dialog asks. The sender's
+    name and address lines are printed and never stored (the browser may remember them)."""
+
+    sent_on: date
+    sender_name: LetterLine
+    sender_address: list[LetterLine] = Field(default_factory=list, max_length=4)

@@ -53,6 +53,7 @@ from hausbuch.schemas.performance import (
     CostLevel,
     DatedFlow,
     FlatRateCheck,
+    FlatRateLetterFigures,
     FlatRateVerdict,
     HouseholdTaxContext,
     IncomeInputFact,
@@ -598,6 +599,86 @@ class FlatRateFixture(_Fixture):
     cases: list[FlatRateCase]
 
 
+def _month_after_next(day: date) -> date:
+    index = day.year * 12 + day.month - 1 + 2
+    return date(index // 12, index % 12 + 1, 1)
+
+
+class LetterExpect(FlatRateLetterFigures):
+    """FlatRateLetterFigures that checks its own arithmetic: the share of the rise half-up to
+    the cent and in percent, and a raise's start from the sending date."""
+
+    @model_validator(mode="after")
+    def _arithmetic(self) -> Self:
+        rise = (self.flat_rise * self.pauschale / self.pauschalen_total).quantize(
+            CENT, ROUND_HALF_UP
+        )
+        if self.rise != rise:
+            raise ValueError(f"{self.unit_label}: rise {self.rise} != {rise}")
+        share = (self.pauschale * 100 / self.pauschalen_total).quantize(
+            Decimal("0.1"), ROUND_HALF_UP
+        )
+        if self.share_percent != share:
+            raise ValueError(f"{self.unit_label}: share_percent {self.share_percent} != {share}")
+        if self.kind is FlatRateVerdict.RAISE and self.starts_on != _month_after_next(self.sent_on):
+            raise ValueError(f"{self.unit_label}: a raise starts {_month_after_next(self.sent_on)}")
+        return self
+
+
+class FlatRateLetterCase(Lenient):
+    """A letter for one tenancy of a flat_rate_rise.yaml case (its facts and today); `expect`
+    None: no letter (no rise above 10 € and no fall). The figures are checked against that
+    case's expected check: the tenancy's row, and each reason's then/now and sources from the
+    levels on its set_on and today."""
+
+    check_case: str
+    tenancy_id: UUID
+    sent_on: date
+    expect: LetterExpect | None
+
+    @model_validator(mode="after")
+    def _against_the_check(self) -> Self:
+        rise = {c.id: c for c in load("flat_rate_rise").cases}  # type: ignore[attr-defined]
+        if self.check_case not in rise:
+            raise ValueError(f"{self.id}: no flat_rate_rise case {self.check_case}")
+        check = rise[self.check_case].expect
+        [row] = [t for t in check.tenancies if t.tenancy_id == self.tenancy_id]
+        if self.expect is None:
+            if row.verdict is not FlatRateVerdict.NONE:
+                raise ValueError(f"{self.id}: a {row.verdict} gets a letter")
+            return self
+        e = self.expect
+        mine = (e.tenancy_id, e.unit_label, e.as_of, e.sent_on, e.kind, e.set_on)
+        theirs = (row.tenancy_id, row.unit_label, check.as_of, self.sent_on, row.verdict)
+        if mine != (*theirs, row.set_on):
+            raise ValueError(f"{self.id}: the letter is for the case's tenancy, day and verdict")
+        if (e.pauschale, e.pauschalen_total, e.flat_rise, e.rise) != (
+            row.pauschale,
+            check.pauschalen_total,
+            row.flat_rise,
+            row.rise,
+        ):
+            raise ValueError(f"{self.id}: the figures are the check's")
+        if e.kind is FlatRateVerdict.LOWER and e.starts_on != row.fell_on:
+            raise ValueError(f"{self.id}: a lower starts on the date the cost fell")
+        levels = {lv.as_of: lv for lv in check.levels}
+        then = {r.category: r for r in levels[row.set_on].rates}
+        now = {r.category: r for r in levels[check.as_of].rates}
+        want = [c for c in FLAT_RATE_BETRKV if then[c].monthly or now[c].monthly]
+        if [r.category for r in e.reasons] != want:
+            raise ValueError(f"{self.id}: a reason per BetrKV category with a cost, {want}")
+        for r in e.reasons:
+            c = r.category
+            got = (r.then, r.now, r.then_sources, r.now_sources)
+            if got != (then[c].monthly, now[c].monthly, then[c].sources, now[c].sources):
+                raise ValueError(f"{self.id} {c}: then/now and sources are the levels'")
+        return self
+
+
+class FlatRateLetterFixture(_Fixture):
+    cases: list[FlatRateLetterCase]
+
+
 MODELS: dict[str, type[Schema]] = {
     "tariff": TariffFixture,
     "marginal_rate": MarginalFixture,
@@ -606,6 +687,7 @@ MODELS: dict[str, type[Schema]] = {
     "sale": SaleFixture,
     "irr": IrrFixture,
     "flat_rate_rise": FlatRateFixture,
+    "flat_rate_letter": FlatRateLetterFixture,
 }
 
 

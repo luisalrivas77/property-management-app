@@ -46,7 +46,9 @@ from hausbuch.schemas.performance import (
     CostLevel,
     CostRate,
     FlatRateCheck,
+    FlatRateLetterFigures,
     FlatRateVerdict,
+    LetterReason,
     RateBasis,
     SettlementHint,
     TenancyFlatRate,
@@ -354,4 +356,61 @@ def flat_rate_check(facts: DraftFacts, today: date) -> FlatRateCheck:
         tenancies=tenancies,
         levels=[by_date[d] for d in sorted(by_date)],
         settlements=levels.settlements(today),
+    )
+
+
+def flat_rate_letter(
+    facts: DraftFacts, today: date, tenancy_id: UUID, sent_on: date
+) -> FlatRateLetterFigures | None:
+    """D155 (7): the letter's figures for one tenancy, from today's check (fixture
+    tests/fixtures/phase4/flat_rate_letter.yaml). None when the tenancy is not a flat_rate
+    tenancy in force today or its verdict is none. The reasons are the BetrKV categories with
+    a cost then or now, never electricity; the new Pauschale is the old one plus the tenancy's
+    rise, never below 0.00; a raise starts on the first day of the month after next from the
+    sending date (§560 Abs. 2 BGB), a lower on the date the cost fell (Abs. 3)."""
+    check = flat_rate_check(facts, today)
+    row = next((t for t in check.tenancies if t.tenancy_id == tenancy_id), None)
+    if row is None or row.verdict is FlatRateVerdict.NONE:
+        return None
+    levels = {lv.as_of: lv for lv in check.levels}
+    then = {r.category: r for r in levels[row.set_on].rates}
+    now = {r.category: r for r in levels[today].rates}
+    reasons = [
+        LetterReason(
+            category=c,
+            then=then[c].monthly,
+            now=now[c].monthly,
+            change=now[c].monthly - then[c].monthly,
+            then_sources=then[c].sources,
+            now_sources=now[c].sources,
+        )
+        for c in FLAT_RATE_BETRKV
+        if then[c].monthly or now[c].monthly
+    ]
+    if row.verdict is FlatRateVerdict.RAISE:
+        starts_on = month_after_next(sent_on)
+    else:
+        assert row.fell_on is not None  # TenancyFlatRate's validator
+        starts_on = row.fell_on
+    tenancy = next(t for t in facts.tenancies if t.id == tenancy_id)
+    cold_rent = cold_rent_on(tenancy, max(today, starts_on))
+    new_pauschale = max(ZERO, row.pauschale + row.rise)
+    assert row.share_percent is not None  # a rise or a fall means Σ Pauschalen > 0
+    return FlatRateLetterFigures(
+        tenancy_id=tenancy_id,
+        unit_label=row.unit_label,
+        kind=row.verdict,
+        as_of=today,
+        sent_on=sent_on,
+        starts_on=starts_on,
+        set_on=row.set_on,
+        reasons=reasons,
+        flat_rise=row.flat_rise,
+        pauschale=row.pauschale,
+        pauschalen_total=check.pauschalen_total,
+        share_percent=row.share_percent,
+        rise=row.rise,
+        new_pauschale=new_pauschale,
+        cold_rent=cold_rent,
+        new_total=cold_rent + new_pauschale,
     )

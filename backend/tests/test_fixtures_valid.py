@@ -271,6 +271,15 @@ PHASE4_CASES = {
         "grundsteuer_known_later_no_rise",  # D155 (2): the first Bescheid stands for before it
         "grundsteuer_from_twelve_months_of_lines",
     },
+    # D155 (7): the letter's figures
+    "flat_rate_letter": {
+        "rise_sent_on_the_15th",
+        "rise_sent_on_the_1st",  # still the month after next
+        "rise_just_above_ten_sent_later",  # the start runs from the sending date
+        "fall_from_the_date_the_cost_fell",
+        "no_letter_below_the_threshold",
+        "no_letter_for_electricity",
+    },
 }
 
 
@@ -295,6 +304,9 @@ def test_phase4_cases_cover_the_spec():
         ("flat_rate_rise", ("expect", "tenancies", 0, "rise"), "15.01"),  # D155: the share
         ("flat_rate_rise", ("expect", "levels", 0, "betrkv"), "170.01"),  # Σ of the rates
         ("flat_rate_rise", ("expect", "levels", 0, "rates", 2, "monthly"), "20.01"),  # ÷ 12
+        ("flat_rate_letter", ("expect", "new_pauschale"), "172.51"),  # D155 (7): old + rise
+        ("flat_rate_letter", ("expect", "starts_on"), "2027-03-01"),  # the month after next
+        ("flat_rate_letter", ("expect", "reasons", 0, "now"), "195.01"),  # the check's level
     ],
 )
 def test_phase4_fixtures_check_their_arithmetic(name, path, slip):
