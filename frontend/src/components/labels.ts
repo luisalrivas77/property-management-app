@@ -312,6 +312,7 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "account.sync_completed": "Bankabruf abgeschlossen",
   "account.sync_failed": "Bankabruf fehlgeschlagen",
   "account.statement_fetched": "Kontoauszug (PDF) von der Bank abgerufen",
+  "account.bank_parameters_read": "Bankparameter (FinTS) gelesen",
   "account.kind_set": "Kontoart geändert",
   "account.ownership_set": "Kontoinhaber und Anteile festgelegt",
   "account.movements_imported": "Börsen-Export importiert",

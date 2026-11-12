@@ -26,6 +26,13 @@
 //   statements after the Umsätze; the card lists the stored ones (GET
 //   /accounts/{id}/bank-statements), each linking to its document, and how many the latest
 //   run brought (the rows whose sync_id is that run's, counted here; no amount is summed).
+// - Phase 6 step 3 (phase-6.md D163, D173): each connection names its online-banking login's
+//   credential slot; its PIN is the API container's secret HAUSBUCH_FINTS_PIN_<SLOT> (slot
+//   `primary`: HAUSBUCH_FINTS_PIN), set in the Scaleway console (runbook step 17). The form
+//   and the facts name that variable and say whether it is set (GET /bank-credential-slots,
+//   names only). The approval texts are the connection's `approval_text` (the DKB app for a
+//   DKB connection), and the daily switch stays locked while `auto_sync_allowed` is false
+//   (DKB before two manual syncs in a row without an approval).
 import Link from "next/link";
 import { useCallback, useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 
@@ -100,22 +107,36 @@ export function bankCodeFromIban(raw: string): string | null {
   return /^DE[0-9]{20}$/.test(compact) ? compact.slice(4, 12) : null;
 }
 
+/** A credential slot's name (rules.bank_sync.SLOT_PATTERN, phase 6 D163). */
+const SLOT_PATTERN = /^[a-z][a-z0-9_]{0,31}$/;
+const PRIMARY_SLOT = "primary";
+
+/** The API container's secret that holds a slot's PIN (rules.bank_sync.pin_variable). */
+export function pinVariable(slot: string): string {
+  return slot === PRIMARY_SLOT ? "HAUSBUCH_FINTS_PIN" : `HAUSBUCH_FINTS_PIN_${slot.toUpperCase()}`;
+}
+
+async function loadSlots(): Promise<string[]> {
+  return (await ok(api.GET("/api/bank-credential-slots"))).slots ?? [];
+}
+
 async function loadBankSync(
   accountId: string,
-): Promise<{ connection: BankConnection | null; syncs: BankSync[]; statements: BankStatement[] }> {
+): Promise<{ connection: BankConnection | null; syncs: BankSync[]; statements: BankStatement[]; slots: string[] }> {
   const path = { params: { path: { account_id: accountId } } };
   let connection: BankConnection | null;
   try {
     connection = await ok(api.GET("/api/accounts/{account_id}/bank-connection", path));
   } catch (error) {
-    if (error instanceof ApiError && error.status === 404) return { connection: null, syncs: [], statements: [] };
+    if (error instanceof ApiError && error.status === 404) return { connection: null, syncs: [], statements: [], slots: await loadSlots() };
     throw error;
   }
-  const [syncs, statements] = await Promise.all([
+  const [syncs, statements, slots] = await Promise.all([
     ok(api.GET("/api/accounts/{account_id}/syncs", path)),
     ok(api.GET("/api/accounts/{account_id}/bank-statements", path)),
+    loadSlots(),
   ]);
-  return { connection, syncs, statements };
+  return { connection, syncs, statements, slots };
 }
 
 /** The later of two views of the runs: the one the card polled, or the list's newest. */
@@ -197,15 +218,16 @@ export function BankSyncCard({ account, onImported }: { account: Account; onImpo
       {state.data === undefined ? (
         state.error ? null : <p className="muted">Lädt …</p>
       ) : state.data.connection === null ? (
-        <ConnectionCreateForm account={account} onCreated={reload} />
+        <ConnectionCreateForm account={account} slots={state.data.slots} onCreated={reload} />
       ) : (
         <>
-          <ConnectionFacts connection={state.data.connection} />
+          <ConnectionFacts connection={state.data.connection} slots={state.data.slots} />
           <ConnectionSwitch
             connection={state.data.connection}
             field="auto_sync"
             label="Täglich automatisch abrufen"
             hint={AUTO_SYNC_HINT}
+            locked={state.data.connection.auto_sync_allowed ? null : AUTO_SYNC_WAITS}
             onSaved={reload}
           />
           <ConnectionSwitch
@@ -223,6 +245,7 @@ export function BankSyncCard({ account, onImported }: { account: Account; onImpo
               {(close) => (
                 <ConnectionEditForm
                   connection={state.data!.connection!}
+                  slots={state.data!.slots}
                   onSaved={() => {
                     close();
                     reload();
@@ -232,7 +255,15 @@ export function BankSyncCard({ account, onImported }: { account: Account; onImpo
             </ActionDialog>
           </div>
           <ErrorNotice error={startError} />
-          {current ? <RunNow run={current} accountId={account.id} now={now} stuck={expired && staleAt(current) !== null} /> : null}
+          {current ? (
+            <RunNow
+              run={current}
+              accountId={account.id}
+              approvalText={state.data.connection.approval_text}
+              now={now}
+              stuck={expired && staleAt(current) !== null}
+            />
+          ) : null}
           <ErrorNotice error={pollError} />
           {state.data.syncs.length > 0 ? <RunHistory runs={state.data.syncs} /> : null}
           {state.data.connection.fetch_statements || state.data.statements.length > 0 ? (
@@ -254,18 +285,41 @@ function dayAfter(timestamp: string, days: number): string {
   return localDay.format(day);
 }
 
-function ConnectionFacts({ connection }: { connection: BankConnection }) {
+/** Where a slot's PIN goes and whether the server has it (names only, never a PIN). */
+function PinPlace({ slot, slots }: { slot: string; slots: string[] }) {
+  const variable = pinVariable(slot);
+  return slots.includes(slot) ? (
+    <>
+      <code>{variable}</code>: auf dem Server gesetzt.
+    </>
+  ) : (
+    <>
+      <code>{variable}</code>: <strong>noch nicht gesetzt.</strong> In der Scaleway-Konsole beim API-Container als geheime
+      Umgebungsvariable (Secret) mit genau diesem Namen anlegen, als Wert die PIN dieses Online-Banking-Zugangs, und den
+      Container neu bereitstellen (Runbook Schritt 17). Bis dahin endet jeder Abruf mit „PIN fehlt“.
+    </>
+  );
+}
+
+function ConnectionFacts({ connection, slots }: { connection: BankConnection; slots: string[] }) {
   return (
     <Facts
       rows={[
         ["BLZ", connection.bank_code],
+        ...(connection.bank_name ? ([["Bank (laut FinTS)", connection.bank_name]] as [string, ReactNode][]) : []),
         ["FinTS-Adresse", connection.fints_url],
         ["Anmeldename", connection.login_masked],
+        [
+          "PIN-Variable",
+          <>
+            Zugang „{connection.credential_slot}“, <PinPlace slot={connection.credential_slot} slots={slots} />
+          </>,
+        ],
         [
           "Freigabe",
           connection.sca_confirmed_at
             ? `zuletzt am ${dayAfter(connection.sca_confirmed_at, 0)}, gültig bis etwa ${dayAfter(connection.sca_confirmed_at, SCA_DAYS)} (geschätzt)`
-            : "noch keine: beim ersten Abruf fragt die Bank in der S-pushTAN-App nach einer Freigabe",
+            : `noch keine: beim ersten Abruf fragt die Bank nach einer Freigabe („${connection.approval_text}“)`,
         ],
         [
           "Letzter Abruf",
@@ -287,6 +341,14 @@ const AUTO_SYNC_HINT = (
   </>
 );
 
+const AUTO_SYNC_WAITS = (
+  <>
+    Noch nicht möglich: diese Bank (DKB) fragt womöglich bei jedem Abruf nach einer Freigabe in der DKB-App, und dann käme
+    jeden Morgen eine Anfrage aufs Handy. Der tägliche Abruf lässt sich einschalten, sobald zwei Abrufe von Hand
+    nacheinander ohne Freigabe durchgelaufen sind. Bis dahin „Jetzt abrufen“ von Hand nutzen oder den CSV-Export hochladen.
+  </>
+);
+
 const FETCH_STATEMENTS_HINT = (
   <>
     Bei jedem Abruf holt Hausbuch nach den Umsätzen auch die Kontoauszüge der Bank als PDF, die noch fehlen, nach ihrer
@@ -303,12 +365,15 @@ function ConnectionSwitch({
   field,
   label,
   hint,
+  locked = null,
   onSaved,
 }: {
   connection: BankConnection;
   field: "auto_sync" | "fetch_statements";
   label: string;
   hint: ReactNode;
+  /** Why the switch cannot be turned on yet (D173 (5)); turning it off stays possible. */
+  locked?: ReactNode;
   onSaved: () => void;
 }) {
   const id = useId();
@@ -339,9 +404,16 @@ function ConnectionSwitch({
   return (
     <div className="field">
       <label className="inline" htmlFor={id}>
-        <input id={id} type="checkbox" checked={on} disabled={busy} onChange={(e) => void change(e.target.checked)} />{" "}
+        <input
+          id={id}
+          type="checkbox"
+          checked={on}
+          disabled={busy || (locked !== null && !on)}
+          onChange={(e) => void change(e.target.checked)}
+        />{" "}
         {label}
       </label>
+      {locked !== null ? <p className="hint">{locked}</p> : null}
       <p className="muted hint">{hint}</p>
       <ErrorNotice error={error} />
     </div>
@@ -393,14 +465,14 @@ function useNow(on: boolean): number {
   return now;
 }
 
-function ApprovalWait({ run, now }: { run: BankSync; now: number }) {
+function ApprovalWait({ run, approvalText, now }: { run: BankSync; approvalText: string; now: number }) {
   const left = Math.max(0, new Date(run.updated_at).getTime() + APPROVAL_WINDOW_MS - now);
   const minutes = Math.floor(left / 60_000);
   const seconds = Math.floor((left % 60_000) / 1000);
   return (
     <div className="notice notice-warn" role="status">
       <p>
-        <strong>In der S-pushTAN-App freigeben.</strong> Die Bank hat eine Freigabe für den Abruf an Ihr Handy geschickt.
+        <strong>{approvalText}.</strong> Die Bank hat eine Freigabe für den Abruf an Ihr Handy geschickt.
       </p>
       <p>
         {left > 0
@@ -419,7 +491,19 @@ function linesSentence(run: BankSync): string {
 }
 
 /** The current (or last) run in plain words; a daily run says so. */
-function RunNow({ run, accountId, now, stuck }: { run: BankSync; accountId: string; now: number; stuck: boolean }) {
+function RunNow({
+  run,
+  accountId,
+  approvalText,
+  now,
+  stuck,
+}: {
+  run: BankSync;
+  accountId: string;
+  approvalText: string;
+  now: number;
+  stuck: boolean;
+}) {
   const last = run.trigger === "scheduled" ? "Letzter automatischer Abruf" : "Letzter Abruf";
   if (stuck) {
     return (
@@ -436,14 +520,16 @@ function RunNow({ run, accountId, now, stuck }: { run: BankSync; accountId: stri
       return scheduledApproval(run) ? (
         <div className="notice notice-warn" role="status">
           <p>
-            <strong>Der automatische Abruf braucht eine Freigabe: jetzt abrufen und in der S-pushTAN-App bestätigen.</strong>{" "}
+            <strong>
+              Der automatische Abruf braucht eine Freigabe: „Jetzt abrufen“ drücken. {approvalText}.
+            </strong>{" "}
             Die Bank hat beim Abruf am {formatDateTime(run.updated_at)} nach einer Freigabe gefragt; Hausbuch hat ihn beendet,
             weil niemand aufs Handy schaut. „Jetzt abrufen“ drücken und die neue Anfrage gleich in der App freigeben. Bis dahin
             ruft Hausbuch dieses Konto nicht automatisch ab.
           </p>
         </div>
       ) : (
-        <ApprovalWait run={run} now={now} />
+        <ApprovalWait run={run} approvalText={approvalText} now={now} />
       );
     case "queued":
       return <p role="status">Der Abruf ist angestoßen und startet gleich …</p>;
@@ -535,24 +621,33 @@ function RunHistory({ runs }: { runs: BankSync[] }) {
 
 // --- the connection's forms -------------------------------------------------------------
 
-const CREATE_KEYS = ["bank_code", "fints_url", "login_name"] as const;
+const CREATE_KEYS = ["bank_code", "fints_url", "login_name", "credential_slot"] as const;
 const CODE_FIELDS = { "bank.url_not_https": "fints_url" };
 
 const BLZ_HINT = "8 Ziffern: in Ihrer IBAN die Stellen 5 bis 12, nach „DE“ und den zwei Prüfziffern. Sie können auch die ganze IBAN einfügen.";
 const URL_HINT =
   "Beginnt mit https://. Ihre Sparkasse nennt sie auf ihrer Website unter „FinTS“ oder „HBCI PIN/TAN“; sonst steht sie in der Bankenliste der Deutschen Kreditwirtschaft.";
 const LOGIN_HINT = "Der Anmeldename oder die Legitimations-ID, mit dem Sie sich im Online-Banking anmelden. Wird nur gekürzt angezeigt.";
+const SLOT_HINT =
+  "Ein kurzer Name für diesen Online-Banking-Zugang, klein geschrieben, z. B. „dkb“ oder „sparkasse_b“; „primary“ ist der Zugang des Mietkontos. Konten unter demselben Zugang tragen denselben Namen. Die PIN geben Sie hier nie ein.";
+
+function checkSlot(slot: string): string | null {
+  return SLOT_PATTERN.test(slot.trim())
+    ? null
+    : "Kleinbuchstaben, Ziffern und _ , beginnend mit einem Buchstaben, höchstens 32 Zeichen (z. B. dkb).";
+}
 
 function checkUrl(url: string): string | null {
   if (!url.trim()) return "Bitte die FinTS-Adresse Ihrer Bank eingeben.";
   return url.trim().startsWith("https://") ? null : "Die FinTS-Adresse muss mit https:// beginnen.";
 }
 
-function ConnectionCreateForm({ account, onCreated }: { account: Account; onCreated: () => void }) {
+function ConnectionCreateForm({ account, slots, onCreated }: { account: Account; slots: string[]; onCreated: () => void }) {
   const ids = useId();
   const [bankCode, setBankCode] = useState("");
   const [url, setUrl] = useState("");
   const [login, setLogin] = useState("");
+  const [slot, setSlot] = useState(PRIMARY_SLOT);
   const [busy, setBusy] = useState(false);
   const form = useFormErrors(CREATE_KEYS, CODE_FIELDS);
 
@@ -567,6 +662,8 @@ function ConnectionCreateForm({ account, onCreated }: { account: Account; onCrea
     const urlMessage = checkUrl(url);
     if (urlMessage) messages.fints_url = [urlMessage];
     if (!login.trim()) messages.login_name = ["Bitte den Anmeldenamen eingeben."];
+    const slotMessage = checkSlot(slot);
+    if (slotMessage) messages.credential_slot = [slotMessage];
     if (Object.keys(messages).length > 0) return form.invalid(messages);
     setBusy(true);
     form.clear();
@@ -574,13 +671,13 @@ function ConnectionCreateForm({ account, onCreated }: { account: Account; onCrea
       await ok(
         api.POST("/api/accounts/{account_id}/bank-connection", {
           params: { path: { account_id: account.id } },
-          // The slot primary is HAUSBUCH_FINTS_PIN (phase 6 D163); the card offers others in step 3.
+          // The slot names the PIN's container secret (phase 6 D163); the PIN itself never comes here.
           body: {
             account_id: account.id,
             bank_code: bankCode.trim(),
             fints_url: url.trim(),
             login_name: login.trim(),
-            credential_slot: "primary",
+            credential_slot: slot.trim(),
           },
         }),
       );
@@ -596,7 +693,7 @@ function ConnectionCreateForm({ account, onCreated }: { account: Account; onCrea
     <form className="stack" onSubmit={submit} noValidate aria-label="Bankabruf einrichten">
       <p>
         Hausbuch kann die Umsätze dieses Kontos selbst bei der Bank abrufen (FinTS, nur lesen). Beim ersten Abruf geben Sie ihn in
-        der S-pushTAN-App frei.
+        der App Ihrer Bank frei (Sparkasse: S-pushTAN-App, DKB: DKB-App).
       </p>
       <div className="grid">
         <Field id={`${ids}-blz`} label="BLZ" hint={BLZ_HINT} errors={form.of("bank_code")}>
@@ -608,7 +705,15 @@ function ConnectionCreateForm({ account, onCreated }: { account: Account; onCrea
         <Field id={`${ids}-login`} label="Anmeldename" hint={LOGIN_HINT} errors={form.of("login_name")}>
           <input type="text" value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="off" spellCheck={false} />
         </Field>
+        <Field id={`${ids}-slot`} label="Name des Zugangs" hint={SLOT_HINT} errors={form.of("credential_slot")}>
+          <input type="text" value={slot} onChange={(e) => setSlot(e.target.value)} autoComplete="off" spellCheck={false} />
+        </Field>
       </div>
+      {checkSlot(slot) === null ? (
+        <p>
+          Die PIN dieses Zugangs liegt nur auf dem Server, in der Variable <PinPlace slot={slot.trim()} slots={slots} />
+        </p>
+      ) : null}
       <FormBanner errors={form.errors} />
       <div className="row">
         <Submit busy={busy}>Bankabruf einrichten</Submit>
@@ -617,14 +722,24 @@ function ConnectionCreateForm({ account, onCreated }: { account: Account; onCrea
   );
 }
 
-const EDIT_KEYS = ["fints_url", "login_name"] as const;
+const EDIT_KEYS = ["fints_url", "login_name", "credential_slot"] as const;
 
-/** PATCH the URL and/or the login; an empty login keeps the stored one (it is shown masked
- * only). The BLZ cannot change: another BLZ is another bank. */
-function ConnectionEditForm({ connection, onSaved }: { connection: BankConnection; onSaved: () => void }) {
+/** PATCH the URL, the login and/or the slot; an empty login keeps the stored one (it is shown
+ * masked only). The BLZ cannot change: another BLZ is another bank. A new slot keeps the
+ * stored connection: only the PIN's variable changes. */
+function ConnectionEditForm({
+  connection,
+  slots,
+  onSaved,
+}: {
+  connection: BankConnection;
+  slots: string[];
+  onSaved: () => void;
+}) {
   const ids = useId();
   const [url, setUrl] = useState(connection.fints_url);
   const [login, setLogin] = useState("");
+  const [slot, setSlot] = useState(connection.credential_slot);
   const [busy, setBusy] = useState(false);
   const form = useFormErrors(EDIT_KEYS, CODE_FIELDS);
 
@@ -633,9 +748,12 @@ function ConnectionEditForm({ connection, onSaved }: { connection: BankConnectio
     event.stopPropagation();
     const urlMessage = checkUrl(url);
     if (urlMessage) return form.invalid({ fints_url: [urlMessage] });
-    const body: { fints_url?: string; login_name?: string } = {};
+    const slotMessage = checkSlot(slot);
+    if (slotMessage) return form.invalid({ credential_slot: [slotMessage] });
+    const body: { fints_url?: string; login_name?: string; credential_slot?: string } = {};
     if (url.trim() !== connection.fints_url) body.fints_url = url.trim();
     if (login.trim()) body.login_name = login.trim();
+    if (slot.trim() !== connection.credential_slot) body.credential_slot = slot.trim();
     if (Object.keys(body).length === 0) return onSaved();
     setBusy(true);
     form.clear();
@@ -658,7 +776,8 @@ function ConnectionEditForm({ connection, onSaved }: { connection: BankConnectio
     <form className="stack" onSubmit={submit} noValidate aria-label="Zugang ändern">
       <p className="muted">
         Eine neue Adresse oder ein neuer Anmeldename verwirft die gespeicherte Verbindung: der nächste Abruf fragt wieder nach
-        einer Freigabe in der S-pushTAN-App.
+        einer Freigabe („{connection.approval_text}“). Ein neuer Name des Zugangs ändert nur, aus welcher Variable der Server
+        die PIN liest.
       </p>
       <Field id={`${ids}-url`} label="FinTS-Adresse" hint={URL_HINT} errors={form.of("fints_url")}>
         <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} autoComplete="off" spellCheck={false} />
@@ -671,6 +790,14 @@ function ConnectionEditForm({ connection, onSaved }: { connection: BankConnectio
       >
         <input type="text" value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="off" spellCheck={false} />
       </Field>
+      <Field id={`${ids}-slot`} label="Name des Zugangs" hint={SLOT_HINT} errors={form.of("credential_slot")}>
+        <input type="text" value={slot} onChange={(e) => setSlot(e.target.value)} autoComplete="off" spellCheck={false} />
+      </Field>
+      {checkSlot(slot) === null ? (
+        <p className="muted">
+          PIN-Variable: <PinPlace slot={slot.trim()} slots={slots} />
+        </p>
+      ) : null}
       <FormBanner errors={form.errors} />
       <div className="row">
         <Submit busy={busy}>Speichern</Submit>
