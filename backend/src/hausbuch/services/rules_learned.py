@@ -92,6 +92,16 @@ def rules_for_purpose(conn: Connection, purpose: AccountPurpose) -> list[Matchin
     applied on the purpose of the account it was learned on only: a private account's fee
     rule on a typed pattern („Entgelt“) never books a rental line, nor a rental fee rule (with
     its property) a private one. A rule without a known origin keeps applying everywhere."""
+    return [
+        rule
+        for rule, origin in _enabled_with_origin(conn)
+        if not (origin is not None and origin != purpose.value and _shared_only(rule))
+    ]
+
+
+def _enabled_with_origin(conn: Connection) -> list[tuple[MatchingRule, str | None]]:
+    """Enabled rules, oldest first, each with the purpose of the account whose answer it was
+    learned from (None when unknown)."""
     a, t, acc = allocation_table.c, transaction_table.c, account_table.c
     rows = conn.execute(
         select(rule_table, acc.purpose.label("origin_purpose"))
@@ -103,20 +113,44 @@ def rules_for_purpose(conn: Connection, purpose: AccountPurpose) -> list[Matchin
         .where(rule_table.c.enabled.is_(True))
         .order_by(rule_table.c.created_at, rule_table.c.id)
     ).all()
-    out: list[MatchingRule] = []
+    out: list[tuple[MatchingRule, str | None]] = []
     for row in rows:
         fields = row._asdict()
         origin = fields.pop("origin_purpose")
-        rule = MatchingRule.model_validate(fields)
-        if origin is not None and origin != purpose.value and _shared_only(rule):
-            continue
-        out.append(rule)
+        out.append((MatchingRule.model_validate(fields), origin))
     return out
 
 
-def _shared_only(rule: MatchingRule) -> bool:
+def _allocation_purpose(conn: Connection, allocation_id: UUID | None) -> str | None:
+    """The purpose of the account an allocation's line is on (None when unknown)."""
+    if allocation_id is None:
+        return None
+    a, t, acc = allocation_table.c, transaction_table.c, account_table.c
+    return conn.execute(
+        select(acc.purpose)
+        .select_from(
+            allocation_table.join(transaction_table, t.id == a.transaction_id).join(
+                account_table, acc.id == t.account_id
+            )
+        )
+        .where(a.id == allocation_id)
+    ).scalar_one_or_none()
+
+
+def _shared_only(rule: MatchingRuleCreate) -> bool:
     categories = [rule.category] if rule.category is not None else list(rule.categories or [])
     return bool(categories) and all(c in SHARED for c in categories)
+
+
+def _other_purpose(old: MatchingRule, old_origin: str | None, new_origin: str | None) -> bool:
+    """Two shared-code rules learned on accounts of different purposes are two answers, one
+    per purpose (rules_for_purpose applies each on its own), so neither replaces the other."""
+    return (
+        _shared_only(old)
+        and old_origin is not None
+        and new_origin is not None
+        and old_origin != new_origin
+    )
 
 
 def list_rules(conn: Connection) -> list[MatchingRule]:
@@ -266,13 +300,20 @@ def create_rule(
     """Store the rule, append rule.created and queue rematch_waiting for the waiting lines it
     may now book. Disabled first: an enabled rule with the same matcher and the same split
     method and category, and `corrects` (the rule whose booking this answer replaced with
-    another split, review.allocate_transaction) when it has the same matcher (D49)."""
+    another split, review.allocate_transaction) when it has the same matcher (D49). A
+    shared-code rule learned on an account of the other purpose stays (rules_for_purpose):
+    the rental and a private account may each learn their fees on „Entgelt“."""
     matcher = data.matcher.model_dump(mode="json", exclude_none=True)
     for pattern in (data.matcher.counterparty_name_pattern, data.matcher.purpose_pattern):
         check_pattern(pattern)
-    for old in enabled_rules(ctx.conn):
+    new_origin = _allocation_purpose(ctx.conn, data.created_from_allocation_id)
+    for old, old_origin in _enabled_with_origin(ctx.conn):
         same_matcher = old.matcher.model_dump(mode="json", exclude_none=True) == matcher
-        if same_matcher and (old.id == corrects or _split(old) == _split(data)):
+        if not same_matcher:
+            continue
+        if old.id == corrects or (
+            _split(old) == _split(data) and not _other_purpose(old, old_origin, new_origin)
+        ):
             disable_rule(ctx, old.id)
     values = data.model_dump(mode="json", exclude={"matcher"})
     row = ctx.conn.execute(

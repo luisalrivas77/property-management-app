@@ -442,6 +442,32 @@ def test_a_private_fee_line_without_counterparty_learns_a_purpose_pattern_rule(
     assert plan.reason == "routing.no_match" and _rows(world, rental) == []
 
 
+def test_the_rental_and_a_private_account_each_keep_their_fee_rule(world, private):
+    """The same typed pattern learned on both accounts is two answers, not one given twice:
+    neither rule disables the other, and each books its own account's fee lines only."""
+    mine = private.line(date(2026, 10, 30), "-4.95", purpose="Entgelt Kontoführung 10/2026")
+    private_rule = _answer_with_pattern(world, mine, "-4.95", "bank_fees", "Entgelt").rule
+    rental = world.line(date(2026, 10, 30), "-7.50", purpose="Entgelt Kontoführung 10/2026")
+    rental_rule = _answer_with_pattern(world, rental, "-7.50", "bank_fees", "Entgelt").rule
+    assert private_rule is not None and rental_rule is not None
+    assert private_rule.matcher == rental_rule.matcher
+    enabled = world.query(
+        lambda c: (
+            c.execute(select(rule_table.c.id).where(rule_table.c.enabled.is_(True))).scalars().all()
+        )
+    )
+    assert set(enabled) == {private_rule.id, rental_rule.id}
+    # The same account learning it again still replaces its own rule (review F4).
+    again = private.line(date(2026, 11, 30), "-4.95", purpose="Entgelt Kontoführung 11/2026")
+    newer = _answer_with_pattern(world, again, "-4.95", "bank_fees", "Entgelt").rule
+    enabled = world.query(
+        lambda c: (
+            c.execute(select(rule_table.c.id).where(rule_table.c.enabled.is_(True))).scalars().all()
+        )
+    )
+    assert set(enabled) == {newer.id, rental_rule.id}
+
+
 def test_the_line_view_names_the_categories_no_rule_is_learned_for(world, private):
     """The box is greyed for these instead of rule.not_learnable refusing the answer."""
     tx = private.line(date(2026, 10, 3), "-250.00", name="Kartenabrechnung Beispiel")
