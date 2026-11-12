@@ -3,7 +3,9 @@
 Plain synchronous code over the engine (jobs/tasks.py wraps it), tested by calling
 run_bank_sync with a fake client (tests/fints_fake.py). No transaction is open while the bank
 is talked to; each write is its own short transaction in services.bank_sync, and each checks
-the run's token, so a person's restart in between makes this job stop without writing:
+the run's token, so a person's restart in between makes this job stop without writing (one
+exception: a statement fetched while a restart happens is still stored, attributed to the run
+that fetched it; the unique key keeps it once and the restarted run skips its number):
 
 1. begin_run: take the row (queued or needs_approval → running), verify the client state.
 2. The network: open the dialog; a pushTAN demand → needs_approval, and then for a scheduled
@@ -12,6 +14,11 @@ the run's token, so a person's restart in between makes this job stop without wr
    (bank.approval_timeout, the dialog ended). Then the accounts (the one whose IBAN hash is
    the account's, else bank.account_not_found), the booked camt streams of the window, the
    HKSAL balance, HKEND, and the client state.
+   With the connection's switch fetch_statements on (D154, step 2b), the bank's own PDF
+   statements are fetched after the balance and before HKEND, in the same dialog: the camt
+   streams and the balance are in hand by then, and nothing in the statement fetch writes
+   the run's row (a refusal, an invalid file, a failure end the statement fetch only; a lock
+   code fails the run as D151 says). Each file is stored in its own transaction.
 3. finish_run: the state stored with its MAC, then nothing_new, or the ZIP imported → done.
 
 Failures: bank.unreachable is retried by Procrastinate, at most MAX_UNREACHABLE_RETRIES
@@ -37,9 +44,11 @@ from typing import Any
 from uuid import UUID
 
 from hausbuch.db.session import workspace_transaction
+from hausbuch.rules import bank_statements as statement_rules
 from hausbuch.rules import errors as E
-from hausbuch.rules.bank_sync import REFUSED_CODES_LOGGED
+from hausbuch.rules.bank_sync import LOCK_CODES, REFUSED_CODES_LOGGED, BankAnswer
 from hausbuch.rules.errors import RuleError
+from hausbuch.schemas.bank_sync import StatementKey, StatementOutcome, StatementReading
 from hausbuch.schemas.enums import ActorType
 from hausbuch.services import bank_sync as service
 from hausbuch.services.bank.fints import (
@@ -49,11 +58,13 @@ from hausbuch.services.bank.fints import (
     Confirmed,
     FintsSession,
     WriteRefused,
+    lock_refusal,
     make_client,
     open_session,
 )
 from hausbuch.services.bank_sync import Fetched, RunPlan, Superseded
 from hausbuch.services.context import Actor, new_command
+from hausbuch.services.documents import LOCAL_TIME_ZONE
 from hausbuch.services.iban import protect_iban
 
 from .document_read import JobDeps, RetryLater
@@ -197,6 +208,8 @@ def _fetch(
         workspace_id,
     )
     balance = _value(deps, session, run, session.balance(account), write, net, workspace_id)
+    if plan.fetch_statements:  # D154: after the camt part, in the same dialog
+        _fetch_statements(deps, session, run, account, write, workspace_id)
     session.close()
     return Fetched(
         streams=list(streams),
@@ -205,6 +218,168 @@ def _fetch(
         tan_mechanism=session.tan_mechanism,
         approved=run.approved,
     )
+
+
+# --- The bank's PDF statements (D154, step 2b) ----------------------------------------------
+
+_SO = StatementOutcome
+_REQUEST_CAP = "request_cap"  # MAX_STATEMENT_REQUESTS reached (a log value, never stored)
+
+
+@dataclass
+class _StatementWalk:
+    """One run's statement fetch, for its one log line: what was asked (as "number/year"),
+    how many HKEKP messages were sent and files stored, and why the fetch ended (with the
+    answer code, the invalid file's reason or the failure's exception classes). Never the
+    PDF, its base64, the Aufsetzpunkt or the Quittungscode."""
+
+    asked: list[str] = field(default_factory=list)
+    requests: int = 0
+    stored: int = 0
+    end: str = "done"
+    code: str | None = None
+    reason: str | None = None
+    failure: str | None = None
+
+
+class _Locked(Exception):
+    """A lock code in a statement answer: the run fails as D151 says (D154 (4))."""
+
+    def __init__(self, answers: tuple[BankAnswer, ...]) -> None:
+        super().__init__("locked")
+        self.answers = answers
+
+
+def _fetch_statements(
+    deps: JobDeps,
+    session: FintsSession,
+    run: _Run,
+    account: Any,
+    write: Callable[..., Any],
+    workspace_id: UUID,
+) -> None:
+    """D154 (3)-(5): ask for the statements plan_probes names, one HKEKP per message, store
+    each delivered file in its own transaction, and log one line. The camt part is complete
+    when this starts; nothing here writes the run's row: a refusal, an invalid file, a
+    failure or any exception ends the statement fetch only. Two things leave it: a lock code
+    (raised as bank.refused, so the run fails as D151 says) and a WriteRefused (a bug), and a
+    person's restart (Superseded), which finish_run would meet anyway."""
+    walk = _StatementWalk()
+    try:
+        if session.statements_offered():
+            _walk_statements(deps, session, run, account, write, workspace_id, walk)
+        else:
+            walk.end = "not_offered"
+    except _Locked as locked:
+        walk.end = "locked"
+        _log_statements(run, walk)
+        raise lock_refusal(locked.answers) from None
+    except (WriteRefused, Superseded):
+        walk.end = "refused_write" if walk.end == "done" else walk.end
+        _log_statements(run, walk)
+        raise
+    except Exception as exc:  # never the run's failure: its class name only
+        walk.end, walk.failure = "error", type(exc).__name__
+    _log_statements(run, walk)
+
+
+def _log_statements(run: _Run, walk: _StatementWalk) -> None:
+    fields = run.log | {
+        "statements_end": walk.end,
+        "statements_asked": walk.asked,
+        "statements_requests": walk.requests,
+        "statements_stored": walk.stored,
+    }
+    extra = (("code", walk.code), ("reason", walk.reason), ("exc_chain", walk.failure))
+    fields |= {f"statements_{name}": value for name, value in extra if value is not None}
+    logger.info("bank statements", extra={"fields": fields})
+
+
+def _walk_statements(
+    deps: JobDeps,
+    session: FintsSession,
+    run: _Run,
+    account: Any,
+    write: Callable[..., Any],
+    workspace_id: UUID,
+    walk: _StatementWalk,
+) -> None:
+    plan = run.plan
+    today = deps.clock().astimezone(LOCAL_TIME_ZONE).date()
+    with workspace_transaction(deps.engine, workspace_id) as conn:
+        stored = service.stored_statement_keys(conn, plan.account_id)
+        first_year = service.statements_first_year(conn, plan.account_id, today)
+    probes = statement_rules.plan_probes(stored, today, first_year)
+    answered: list[tuple[StatementKey, bool]] = []
+    reopened = False
+    while (key := statement_rules.next_probe(probes, answered, walk.requests)) is not None:
+        with workspace_transaction(deps.engine, workspace_id) as conn:
+            if not service.still_owned(conn, plan):  # a person restarted the run
+                walk.end = "superseded"
+                raise Superseded
+        walk.asked.append(str(key))
+        reading = _one_statement(session, account, key, walk)
+        if reading.outcome is _SO.STOPPED:
+            walk.end = _REQUEST_CAP if reading.reason == _REQUEST_CAP else "stopped"
+            walk.code = reading.code
+            return
+        delivered = reading.outcome is _SO.STATEMENT
+        if delivered:
+            if write(service.store_statement, deps.blob_store, plan, key, reading.pdf):
+                walk.stored += 1
+        elif reading.outcome is _SO.INVALID:
+            walk.reason = reading.reason  # nothing stored; the year's walk ends
+        answered.append((key, delivered))
+        if not reading.dialog_ended:
+            continue
+        # D154 (4): the bank ended the dialog. Only a refusal may open one new dialog, once,
+        # for the other year's request; a reopening that asks for a pushTAN stops the fetch.
+        following = statement_rules.next_probe(probes, answered, walk.requests)
+        other_year = following is not None and following.year != key.year
+        if reading.outcome is not _SO.NOT_AVAILABLE or not other_year or reopened:
+            walk.end, walk.code = "dialog_ended", statement_rules.DIALOG_ENDED
+            return
+        reopened = True
+        opened = session.reopen()
+        if any(a.code in LOCK_CODES for a in opened.answers):
+            raise _Locked(opened.answers)
+        if opened.failure is not None:
+            walk.end, walk.failure = "reopen_failed", opened.failure
+            return
+    if walk.requests >= statement_rules.MAX_STATEMENT_REQUESTS:
+        walk.end = _REQUEST_CAP  # the next run goes on from what was stored
+
+
+def _one_statement(
+    session: FintsSession, account: Any, key: StatementKey, walk: _StatementWalk
+) -> StatementReading:
+    """One statement: its first HKEKP and every 3040 continuation (at most 10 parts, and never
+    past MAX_STATEMENT_REQUESTS), read by rules.bank_statements.read_answer. A failed exchange
+    is a stop, unless the HKEKP's own refusal code is among its answers (python-fints raises
+    on some general codes the bank may send with a refused number; the dialog stays open)."""
+    earlier: list[bytes] = []
+    touchdown: str | None = None
+    while True:
+        answer = session.statement_pdf(account, key.number, key.year, touchdown)
+        walk.requests += 1
+        reading = statement_rules.read_answer(
+            answer.answers, answer.parts, answer.touchdown is not None, earlier
+        )
+        if reading.outcome is _SO.LOCKED:
+            raise _Locked(answer.answers)
+        if answer.failure is not None:
+            refused = reading.outcome is _SO.NOT_AVAILABLE and reading.code is not None
+            if not refused:  # a transport error, a pushTAN demand, an unreadable answer
+                walk.failure = answer.failure
+                return StatementReading(
+                    outcome=_SO.STOPPED, code=reading.code, dialog_ended=reading.dialog_ended
+                )
+        if reading.outcome is not _SO.CONTINUE:
+            return reading
+        if walk.requests >= statement_rules.MAX_STATEMENT_REQUESTS:
+            return StatementReading(outcome=_SO.STOPPED, reason=_REQUEST_CAP)
+        earlier.extend(answer.parts)
+        touchdown = answer.touchdown
 
 
 def _iban_hmac(iban: str | None, key: bytes) -> bytes | None:

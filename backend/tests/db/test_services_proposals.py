@@ -255,6 +255,29 @@ def test_request_read_queues_a_proposal_and_enqueues_its_job(
     assert events[0].payload["document_id"] == str(doc.id)
 
 
+def test_a_file_the_bank_sync_fetched_is_never_read(
+    run, read, fresh_workspaces, blob_store, enqueued
+):
+    """Phase 5 D154: a bank statement PDF names every tenant and IBAN in clear; neither a
+    first read nor a re-run of a bank_sync document reaches the job."""
+    ws, _ = fresh_workspaces
+    statement = run(
+        ws,
+        upload_document,
+        blob_store,
+        b"%PDF-1.4\n% invented statement\n%%EOF\n",
+        media_type="application/pdf",
+        source=DocumentSource.BANK_SYNC,
+        original_filename="Kontoauszug-2026-1.pdf",
+    )
+    for command in (proposals.request_read, proposals.rerun_proposal):
+        with pytest.raises(RuleViolationError) as refused:
+            run(ws, command, statement.id)
+        assert refused.value.code == proposals.PROPOSAL_BANK_FILE_NOT_READ
+    assert enqueued == []
+    assert read(ws, proposals.list_document_proposals, statement.id) == []
+
+
 def test_enqueue_failure_rolls_the_proposal_back(
     run, read, fresh_workspaces, blob_store, monkeypatch
 ):

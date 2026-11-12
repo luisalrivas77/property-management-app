@@ -11,6 +11,10 @@ itself: it gets a `FintsSession`, whose whole surface is
     close()                            HKEND
     state() -> bytes                   deconstruct(including_private=False) (D119)
     tan_mechanism                      the decoupled security function in use
+    statements_offered() / statement_pdf() / reopen()   the bank's PDF statements by
+                                       number (HKEKP v1, D154); they never raise a
+                                       BankError: the answers go to
+                                       rules.bank_statements.read_answer
 
 Three guards keep it read-only, each tested on its own (tests/test_fints_facade.py):
 
@@ -48,7 +52,8 @@ only and is re-raised unchanged. `open()` adds one record of the session's facts
 or restored, the security function, whether the system id is assigned, BPD/UPD versions, the
 python-fints version, the product id's length, the product version, the URL's host). Each
 record carries
-the step (`bootstrap`, `open`, `poll`, `accounts`, `transactions`, `balance`, `close`), the
+the step (`bootstrap`, `open`, `poll`, `accounts`, `transactions`, `balance`, `statements`,
+`close`), the
 exchange's number in the session and the job's `log_fields` (the sync id).
 It never logs, at any level: the PIN, the login, the customer id, the product id, the system
 id or a dialog id value, an IBAN, an account number, a balance, camt content or a TAN
@@ -77,9 +82,9 @@ import functools
 import logging
 import re
 import time
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager, suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -97,7 +102,10 @@ from fints.exceptions import (
     FinTSSCARequiredError,
     FinTSUnsupportedOperation,
 )
+from fints.fields import DataElementField, DataElementGroupField
+from fints.formals import KTI1, DataElementGroup
 from fints.models import SEPAAccount
+from fints.segments.base import FinTS3Segment, ParameterSegment
 
 from hausbuch.rules import errors as E
 from hausbuch.rules.bank_sync import BankAnswer, deciding_code, refused_code
@@ -128,12 +136,96 @@ ALLOWED_SEGMENTS = frozenset(
         "HKSPA",  # SEPA-Kontoverbindungen
         "HKCAZ",  # Kontoumsätze camt
         "HKSAL",  # Saldenabfrage
+        # Kontoauszug PDF (D154): only ever with a statement number and year, which
+        # re-delivers a statement the bank already cut; `_check_statement_request` refuses
+        # one without them (an empty number would cut a new statement) or with a count.
+        # HKQTG, the receipt the bank asks for, is never on this list: it changes state.
+        "HKEKP",
     }
 )
 
 # camt messages phase 2's parser reads (D33): camt.052 and camt.053, versions 02 and 08.
 _READABLE_CAMT = re.compile(r"camt\.05[23]\.001\.0[28]")
 _ANSWER_CODE = re.compile(r"[0-9]{4}")
+
+
+# --- Kontoauszug PDF (D154; DK Messages, Multibankfähige Geschäftsvorfälle C.2.5.1) ---------
+# python-fints 5.0.1 defines no HKEKP, so these three are ours. Defining them registers them
+# with python-fints' parser (it finds a segment class by TYPE and VERSION among
+# FinTS3Segment's subclasses), so the bank's HIEKPS and HIEKP are read into them.
+
+
+class StatementPdfParameter1(DataElementGroup):
+    """Parameter Kontoauszug PDF, version 1 (HIEKPS v1)."""
+
+    number_allowed = DataElementField(type="jn", _d="Kontoauszugsnummer erlaubt")
+    receipt_required = DataElementField(type="jn", _d="Quittierung benötigt")
+    entries_allowed = DataElementField(type="jn", _d="Eingabe Anzahl Einträge erlaubt")
+
+
+class HIEKPS1(ParameterSegment):
+    """Kontoauszug PDF Parameter, version 1."""
+
+    parameter = DataElementGroupField(type=StatementPdfParameter1, _d="Parameter Kontoauszug PDF")
+
+
+class HKEKP1(FinTS3Segment):
+    """Kontoauszug PDF anfordern, version 1. The facade fills the number and the year always
+    and the number of entries never (the guard checks both on the wire)."""
+
+    account = DataElementGroupField(type=KTI1, _d="Kontoverbindung international")
+    statement_number = DataElementField(
+        type="num", max_length=5, required=False, _d="Kontoauszugsnummer"
+    )
+    statement_year = DataElementField(type="num", length=4, required=False, _d="Kontoauszugsjahr")
+    max_number_responses = DataElementField(
+        type="num", max_length=4, required=False, _d="Maximale Anzahl Einträge"
+    )
+    touchdown_point = DataElementField(type="an", max_length=35, required=False, _d="Aufsetzpunkt")
+
+
+class HIEKP1(FinTS3Segment):
+    """Kontoauszug PDF, version 1. „Gebuchte Umsätze“ holds the PDF, base64-encoded by the
+    DK's note for this version. The Quittungscode is read by the parser but never by us: it
+    only serves an HKQTG, which is never sent."""
+
+    statement_booked = DataElementField(type="bin", _d="Gebuchte Umsätze")
+    receipt_code = DataElementField(type="bin", required=False, _d="Quittungscode")
+
+
+def _positive(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def _check_statement_request(segments: Any) -> None:
+    """D154 (1) on the wire: an HKEKP leaves only with a number and a year above 0 and
+    without a number of entries, whoever built it."""
+    for segment in fints_trace.walk(segments):
+        if str(segment.header.type) != "HKEKP":
+            continue
+        number = getattr(segment, "statement_number", None)
+        year = getattr(segment, "statement_year", None)
+        if not (_positive(number) and _positive(year)):
+            raise WriteRefused("HKEKP without a statement number and year is not allowed")
+        if getattr(segment, "max_number_responses", None) is not None:
+            raise WriteRefused("HKEKP with a number of entries is not allowed")
+
+
+@dataclass(frozen=True)
+class StatementAnswer:
+    """What one HKEKP brought back, for rules.bank_statements.read_answer: the answers of the
+    message (both levels), the HIEKP data, the 3040's Aufsetzpunkt (only to send it back,
+    never logged) and, when the exchange failed without an answer to read, the failure's
+    exception chain as class names (D148). `parts` is never logged."""
+
+    answers: tuple[BankAnswer, ...]
+    parts: tuple[bytes, ...] = field(default=(), repr=False)
+    touchdown: str | None = field(default=None, repr=False)
+    failure: str | None = None
+
+
+class StatementTanRequired(Exception):
+    """The bank's parameters mark HKEKP as needing a TAN: the facade does not send it."""
 
 
 class BankError(Exception):
@@ -181,6 +273,12 @@ def _refused(answers: list[BankAnswer]) -> BankError:
         deciding_code(answers),
         answers=tuple(a for a in answers if _is_warning_or_error(a)),
     )
+
+
+def lock_refusal(answers: Sequence[BankAnswer]) -> BankError:
+    """bank.refused for a lock code in a statement fetch's answers (D154 (4): a lock still
+    ends the run as D151 says), with the same deciding code and answers as any refusal."""
+    return _refused(list(answers))
 
 
 class WriteRefused(RuntimeError):
@@ -291,6 +389,7 @@ class _GuardedConnection(FinTSHTTPSConnection):
         refused = sorted({t for t in _segment_types(msg.segments) if t not in ALLOWED_SEGMENTS})
         if refused:
             raise WriteRefused(f"segment not allowed: {', '.join(refused)}")
+        _check_statement_request(msg.segments)
         self._exchanges += 1
         self.session.last_http = {}
         try:
@@ -354,6 +453,57 @@ class _ReadOnlyClient(FinTS3PinTanClient):
         """The camt messages HICAZS (the bank's parameters) lists, as the bank spells them."""
         hicazs = self.bpd.find_segment_first("HICAZS")
         return [] if not hicazs else [str(m) for m in hicazs.parameter.supported_camt_formats]
+
+    def statement_pdf_offered(self) -> bool:
+        """D154 (1): the bank's parameters hold HIEKPS v1 with „Kontoauszugsnummer erlaubt“
+        = J. A segment python-fints could not read into HIEKPS1 counts as not offered."""
+        for segment in self.bpd.find_segments("HIEKPS"):
+            parameter = getattr(segment, "parameter", None)
+            if isinstance(segment, HIEKPS1) and getattr(parameter, "number_allowed", None):
+                return True
+        return False
+
+    def get_statement_pdf(
+        self, account: SEPAAccount, number: int, year: int, touchdown: str | None = None
+    ) -> tuple[list[bytes], str | None]:
+        """One HKEKP v1 for statement `number` of `year` in the standing dialog (one order
+        per message, HIEKPS: at most 1). Returns the HIEKP data and the 3040's Aufsetzpunkt.
+        Never sends a TAN segment: when HIPINS marks HKEKP as needing one, it raises
+        StatementTanRequired before building anything."""
+        if not (_positive(number) and _positive(year)):
+            raise WriteRefused("HKEKP without a statement number and year is not allowed")
+        if not self._standing_dialog:
+            raise FinTSError("no standing dialog")
+        segment = HKEKP1(
+            account=KTI1.from_sepa_account(account),
+            statement_number=number,
+            statement_year=year,
+            touchdown_point=touchdown,
+        )
+        if self._need_twostep_tan_for_segment(segment):
+            raise StatementTanRequired
+        with self._get_dialog() as dialog:
+            response = dialog.send(segment)
+        parts = []
+        for answer in response.response_segments(segment, "HIEKP"):
+            data = getattr(answer, "statement_booked", None)
+            if data:
+                parts.append(bytes(data))
+        following = None
+        for answer in response.responses(segment, "3040"):
+            parameters = list(answer.parameters or ())
+            following = str(parameters[0]) if parameters and parameters[0] else None
+        return parts, following
+
+    def restart_dialog(self) -> NeedTANResponse | None:
+        """A new standing dialog after the bank ended the last one (9800, D154 (4)): the
+        ended one is dropped without HKEND (the bank closed it), the new one opened as
+        `open()` does. Returns the TAN demand of its opening, if any (the caller then
+        closes it and never polls)."""
+        self._standing_dialog = None
+        self.init_tan_response = None
+        self.__enter__()
+        return self.init_tan_response
 
     simple_sepa_transfer = _refuse("simple_sepa_transfer")
     sepa_transfer = _refuse("sepa_transfer")
@@ -590,6 +740,55 @@ class FintsSession:
             lambda balance: None if balance is None else _amount(balance),
             "balance",
         )
+
+    # --- Kontoauszug PDF (D154): never raises a BankError; the job reads every answer through
+    # rules.bank_statements.read_answer, never through deciding_code. -----------------------
+
+    def statements_offered(self) -> bool:
+        """The bank's parameters offer HKEKP v1 by number (D154 (1))."""
+        try:
+            return bool(self._client.statement_pdf_offered())
+        except Exception:  # parameters python-fints could not read: not offered
+            return False
+
+    def statement_pdf(
+        self, account: SEPAAccount, number: int, year: int, touchdown: str | None = None
+    ) -> StatementAnswer:
+        """One HKEKP for statement `number`/`year` (with the Aufsetzpunkt of a 3040 when it
+        continues one). Only a write the facade refuses (WriteRefused, a bug) raises; any
+        other failure comes back as `failure` with the bank's answers kept so far."""
+        seen = len(self._client.bank_answers)
+        parts: list[bytes] = []
+        following: str | None = None
+        failure: str | None = None
+        with self._traced("statements"):
+            try:
+                parts, following = self._client.get_statement_pdf(account, number, year, touchdown)
+            except WriteRefused:
+                raise
+            except Exception as exc:  # the text is dropped: class names only (D148)
+                failure = fints_trace.exc_chain(exc)
+        answers = tuple(self._client.bank_answers[seen:])
+        return StatementAnswer(answers, tuple(parts), following, failure)
+
+    def reopen(self) -> StatementAnswer:
+        """A new dialog after the bank ended the last one (D154 (4)). `failure` is set when it
+        did not open, or when its opening asked for a pushTAN (then it is closed at once and
+        never polled: nobody is asked to approve a statement fetch)."""
+        seen = len(self._client.bank_answers)
+        failure: str | None = None
+        with self._traced("statements"):
+            try:
+                demand = self._client.restart_dialog()
+            except Exception as exc:
+                demand, failure = None, fints_trace.exc_chain(exc)
+        self._entered = True  # whatever happened, close() ends what may be open
+        if demand is not None:
+            failure = "approval_required"
+        answers = tuple(self._client.bank_answers[seen:])
+        if failure is not None:
+            self.close()
+        return StatementAnswer(answers, failure=failure)
 
     def close(self) -> None:
         """End the dialog (HKEND). Never raises: a dialog the bank already closed is fine."""

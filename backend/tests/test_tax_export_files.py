@@ -437,6 +437,28 @@ def test_the_archive_carries_the_proofs_and_the_bank_statements_untouched():
     assert "(2 enthalten)" in readme and "nicht enthalten" not in readme
 
 
+def test_a_statement_the_bank_delivered_is_named_by_its_number_and_year():
+    """D154 (6): no booking dates are read from a fetched statement; its name is the bank's."""
+    fetched = ArchiveStatement(
+        document_id=UUID(int=60), number="01", data=b"%PDF-1.7", bank_number=3, bank_year=2026
+    )
+    assert fetched.path == "kontoauszuege/01 Kontoauszug 3-2026.pdf"
+    data = render_archive(
+        DRAFT,
+        RULES,
+        CASE.facts,
+        STAMP,
+        property_label="Wohnung Beispielweg",
+        documents=[],
+        statements=[fetched, _statement(7, b"%PDF-1.7 Juli")],
+    )
+    archive = zipfile.ZipFile(io.BytesIO(data))
+    assert archive.read("kontoauszuege/01 Kontoauszug 3-2026.pdf") == b"%PDF-1.7"
+    assert "kontoauszuege/  2 Kontoauszüge der Bank, unverändert" in archive.read(
+        "README.txt"
+    ).decode("utf-8")
+
+
 def test_statements_left_out_are_named_in_the_readme():
     data = render_archive(
         DRAFT,

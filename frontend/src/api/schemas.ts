@@ -132,6 +132,7 @@ export type BankConnection = Schemas["BankConnection"];
 export type BankConnectionCreate = Schemas["BankConnectionCreate"];
 export type BankConnectionPatch = Schemas["BankConnectionPatch"];
 export type BankSync = Schemas["BankSync"];
+export type BankStatement = Schemas["BankStatement"];
 export type SyncStatus = Schemas["SyncStatus"];
 export type SyncTrigger = Schemas["SyncTrigger"];
 export type TransactionAllocationStatus = Schemas["TransactionAllocationStatus"];

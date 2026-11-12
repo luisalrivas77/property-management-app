@@ -12,6 +12,8 @@
   bank.sync_running or bank.window_invalid.
 - GET /accounts/{id}/syncs: the latest runs, newest first; GET /syncs/{id}: one run (the
   page polls it every 2 s while `queued`, `running` or `needs_approval`).
+- GET /accounts/{id}/bank-statements: the PDF statements the bank delivered (D154), newest
+  first by year and number, each with its document id; 404 for an unknown account.
 
 The PIN and the product id are never part of a request or a response (D119).
 """
@@ -25,6 +27,7 @@ from hausbuch.schemas.bank_sync import (
     BankConnection,
     BankConnectionCreate,
     BankConnectionPatch,
+    BankStatement,
     BankSync,
 )
 from hausbuch.schemas.enums import EntityType
@@ -33,6 +36,7 @@ from hausbuch.services.bank_sync import (
     create_connection,
     get_connection,
     get_sync,
+    list_statements,
     list_syncs,
     start_sync,
     update_connection,
@@ -86,3 +90,13 @@ def sync_list(account_id: UUID, cmd: Cmd) -> list[BankSync]:
 @router.get("/syncs/{sync_id}")
 def sync_get(sync_id: UUID, cmd: Cmd) -> BankSync:
     return found(cmd.read(get_sync, sync_id), "bank_sync", sync_id)
+
+
+def _statements(conn: Connection, account_id: UUID) -> list[BankStatement]:
+    require(conn, get_account, EntityType.ACCOUNT, account_id)
+    return list_statements(conn, account_id)
+
+
+@router.get("/accounts/{account_id}/bank-statements")
+def bank_statement_list(account_id: UUID, cmd: Cmd) -> list[BankStatement]:
+    return cmd.read(_statements, account_id)

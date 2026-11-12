@@ -755,6 +755,8 @@ bank_connection = Table(
     _date("last_booking_on", nullable=True),
     _created_at(),
     _updated_at(),
+    # 0024 (D154 (7))
+    Column("fetch_statements", Boolean, nullable=False, server_default=text("false")),
 )
 bank_sync = Table(
     "bank_sync",
@@ -792,6 +794,18 @@ inbound_mail = Table(
     Column("attachments_total", SmallInteger, nullable=True),
     Column("attachments_accepted", SmallInteger, nullable=True),
     _timestamp("recorded_at"),
+)
+bank_statement = Table(
+    "bank_statement",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("account_id"),
+    Column("year", SmallInteger, nullable=False),
+    Column("number", Integer, nullable=False),
+    _uuid("document_id"),
+    _uuid("sync_id"),
+    _timestamp("fetched_at"),
 )
 inbound_mail_attachment = Table(
     "inbound_mail_attachment",

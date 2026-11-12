@@ -397,6 +397,58 @@ def test_the_archive_carries_payment_proofs_and_the_bank_statements(
     assert hashlib.sha256(STATEMENT).hexdigest() in readme
 
 
+def _fetched_statements(client, dbname, ws, numbers: list[tuple[int, int]]) -> None:
+    """Statements the bank delivered over FinTS (D154): each file uploaded as a document and
+    its bank_statement row written directly, with a connection and a sync of the rental
+    account (the FinTS run itself is covered by tests/db/test_jobs_bank_sync.py)."""
+    with _admin(dbname) as conn:
+        (account_id,) = conn.execute(
+            "SELECT account_id FROM statement_import WHERE workspace_id = %s LIMIT 1", (ws,)
+        ).fetchone()
+        (connection_id,) = conn.execute(
+            "INSERT INTO bank_connection (workspace_id, account_id, bank_code, fints_url,"
+            " login_name) VALUES (%s, %s, '12345678', 'https://banking.example/fints',"
+            " 'anmeldename42') RETURNING id",
+            (ws, account_id),
+        ).fetchone()
+        (sync_id,) = conn.execute(
+            "INSERT INTO bank_sync (workspace_id, account_id, connection_id, trigger)"
+            " VALUES (%s, %s, %s, 'manual') RETURNING id",
+            (ws, account_id, connection_id),
+        ).fetchone()
+    for year, number in numbers:
+        data = f"%PDF-1.7 Kontoauszug {number}/{year} Beispielbank\n%%EOF\n".encode()
+        document = ok(upload(client, data, filename=f"Kontoauszug-{year}-{number}.pdf"), 201)
+        with _admin(dbname) as conn:
+            conn.execute(
+                "INSERT INTO bank_statement (workspace_id, account_id, year, number,"
+                " document_id, sync_id) VALUES (%s, %s, %s, %s, %s, %s)",
+                (ws, account_id, year, number, document["id"], sync_id),
+            )
+
+
+def test_the_archive_carries_the_statements_the_bank_delivered_by_number(
+    client_a, booked, deps, jobs, ws_a, dbname
+):
+    """D154 (6): the year's fetched statements first, by the bank's number and year (their
+    period is never read), then the PDF imports; another year's are left out."""
+    pid = booked["pid"]
+    _fetched_statements(client_a, dbname, ws_a, [(2026, 2), (2025, 12), (2026, 1)])
+    _pdf_statement(client_a, dbname, ws_a, STATEMENT, "2026-04-01", "2026-04-30")
+    archive = zipfile.ZipFile(
+        io.BytesIO(_download(client_a, _export(client_a, deps, jobs, ws_a, pid, "archive")))
+    )
+    statements = [n for n in archive.namelist() if n.startswith("kontoauszuege/")]
+    assert statements == [
+        "kontoauszuege/01 Kontoauszug 1-2026.pdf",
+        "kontoauszuege/02 Kontoauszug 2-2026.pdf",
+        "kontoauszuege/03 Kontoauszug 2026-04-01 bis 2026-04-30.pdf",
+    ]
+    assert archive.read(statements[0]).startswith(b"%PDF-1.7 Kontoauszug 1/2026")
+    readme = archive.read("README.txt").decode("utf-8")
+    assert "kontoauszuege/  3 Kontoauszüge der Bank, unverändert" in readme
+
+
 def test_the_limit_leaves_out_the_bank_statements_before_any_beleg(
     client_a, booked, deps, jobs, ws_a, dbname, monkeypatch
 ):

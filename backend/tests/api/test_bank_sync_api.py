@@ -80,7 +80,10 @@ def test_the_connection_is_created_read_and_patched_with_the_login_masked(client
     assert ok(client_a.get(f"/api/accounts/{account['id']}"))["source"] == "fints"
 
     patched = ok(client_a.patch(path, json={"auto_sync": True}))
-    assert patched["auto_sync"] is True
+    assert patched["auto_sync"] is True and patched["fetch_statements"] is False
+    patched = ok(client_a.patch(path, json={"fetch_statements": True}))
+    assert patched["fetch_statements"] is True and patched["auto_sync"] is True
+    assert client_a.patch(path, json={"fetch_statements": None}).status_code == 422
     assert client_a.post(path, json=_connection(account["id"])).status_code == 409
     assert client_b.get(path).status_code == 404
 
@@ -129,3 +132,53 @@ def test_a_start_is_202_with_the_run_and_a_second_is_refused(configured, client_
 def test_a_start_of_an_account_without_a_connection_is_404(configured):
     account = create(configured, "/api/accounts", ACCOUNT)
     assert configured.post(f"/api/accounts/{account['id']}/syncs").status_code == 404
+
+
+def test_the_fetched_statements_are_listed_newest_first_per_workspace(client_a, client_b, dbname):
+    """D154: GET /accounts/{id}/bank-statements, newest first by year and number; the rows are
+    written directly (the FinTS run is covered in tests/db/test_jobs_bank_sync.py)."""
+    account = create(client_a, "/api/accounts", ACCOUNT)
+    path = f"/api/accounts/{account['id']}/bank-statements"
+    assert ok(client_a.get(path)) == []
+    connection = create(
+        client_a, f"/api/accounts/{account['id']}/bank-connection", _connection(account["id"])
+    )
+    with _admin(dbname) as conn:
+        ws = conn.execute(
+            "SELECT workspace_id FROM account WHERE id = %s", (account["id"],)
+        ).fetchone()[0]
+        (sync_id,) = conn.execute(
+            "INSERT INTO bank_sync (workspace_id, account_id, connection_id, trigger)"
+            " VALUES (%s, %s, %s, 'manual') RETURNING id",
+            (ws, account["id"], connection["id"]),
+        ).fetchone()
+        for year, number in ((2025, 12), (2026, 1), (2026, 2)):
+            digest = bytes([number]) * 32
+            conn.execute(
+                "INSERT INTO document_file (workspace_id, sha256, size_bytes, media_type,"
+                " storage_key) VALUES (%s, %s, 11, 'application/pdf', %s)",
+                (ws, digest, f"{ws}/sha256/{digest.hex()}"),
+            )
+            (document_id,) = conn.execute(
+                "INSERT INTO document (workspace_id, file_sha256, source, type)"
+                " VALUES (%s, %s, 'bank_sync', 'statement') RETURNING id",
+                (ws, digest),
+            ).fetchone()
+            conn.execute(
+                "INSERT INTO bank_statement (workspace_id, account_id, year, number,"
+                " document_id, sync_id) VALUES (%s, %s, %s, %s, %s, %s)",
+                (ws, account["id"], year, number, document_id, sync_id),
+            )
+    listed = ok(client_a.get(path))
+    assert [(s["year"], s["number"]) for s in listed] == [(2026, 2), (2026, 1), (2025, 12)]
+    assert {s["sync_id"] for s in listed} == {str(sync_id)}
+    assert set(listed[0]) == {
+        "id",
+        "account_id",
+        "year",
+        "number",
+        "document_id",
+        "sync_id",
+        "fetched_at",
+    }
+    assert client_b.get(path).status_code == 404

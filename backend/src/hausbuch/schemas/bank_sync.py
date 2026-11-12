@@ -118,6 +118,7 @@ class BankConnectionPatch(Patch):
     state only while its MAC verifies (step 1); null is not accepted for any field."""
 
     auto_sync: bool = Field(default=None)
+    fetch_statements: bool = Field(default=None)  # D154 (7)
     fints_url: FintsUrl = Field(default=None)
     login_name: LoginName = Field(default=None)
 
@@ -137,6 +138,8 @@ class BankConnection(MutableRecord):
     login_masked: LoginMasked
     tan_mechanism: str | None = Field(default=None, max_length=8)  # the security function
     auto_sync: bool = False
+    # D154 (7): every run also fetches the bank's PDF statements after its camt part.
+    fetch_statements: bool = False
     sca_confirmed_at: datetime | None = None  # the last approval; validity shown as an estimate
     last_sync_at: datetime | None = None  # the last successful run
     # The last booking day a successful run brought from the bank, imported or already
@@ -213,3 +216,53 @@ class BalanceDrift(Schema):
 
     hksal_balance: Money  # HKSAL's booked balance
     last_reconciled_closing: Money  # the account's last reconciled closing
+
+
+# --- The bank's PDF statements (D154, step 2b; rules/bank_statements.py) --------------------
+
+
+class StatementKey(Schema):
+    """One statement as the bank numbers it: its Kontoauszugsjahr and Kontoauszugsnummer
+    (HKEKP v1: num 4 and num ..5)."""
+
+    year: int = Field(ge=1000, le=9999)
+    number: int = Field(ge=1, le=99999)
+
+    def __str__(self) -> str:
+        return f"{self.number}/{self.year}"
+
+
+class StatementOutcome(StrEnum):
+    """rules.bank_statements.read_answer: what one HKEKP answer means (D154 (2), (4))."""
+
+    STATEMENT = "statement"  # the PDF is complete and valid: store it
+    NOT_AVAILABLE = "not_available"  # refused (3010, 9xxx on HKEKP): ends that year's walk
+    CONTINUE = "continue"  # 3040 with an Aufsetzpunkt: ask for the next part
+    INVALID = "invalid"  # delivered, but not a valid PDF: nothing stored, the year's walk ends
+    STOPPED = "stopped"  # the message failed (9800, another 9xxx): the fetch stops for the run
+    LOCKED = "locked"  # a lock code (9930, 9931, 3938): the run fails as D151 says
+
+
+class StatementReading(Schema):
+    """rules.bank_statements.read_answer output. `code` is the answer code that decided a
+    refusal, a stop or a lock (four digits, never the bank's text); `reason` says why a
+    delivered file is invalid; `pdf` is the decoded file (STATEMENT only) and is never logged."""
+
+    outcome: StatementOutcome
+    code: str | None = None
+    dialog_ended: bool = False  # a message-level 9800: the bank ended the dialog
+    reason: str | None = None
+    pdf: bytes | None = Field(default=None, repr=False)
+
+
+class BankStatement(Schema):
+    """GET /accounts/{id}/bank-statements: one PDF statement the bank delivered (bank_statement,
+    D154 (5)), with the document it is stored as and the run that fetched it. Never the PDF."""
+
+    id: UUID
+    account_id: UUID
+    year: int = Field(ge=1000, le=9999)
+    number: int = Field(ge=1, le=99999)
+    document_id: UUID
+    sync_id: UUID
+    fetched_at: datetime

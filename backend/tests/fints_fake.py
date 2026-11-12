@@ -60,6 +60,19 @@ class Script:
     # (recorded, nothing raised).
     bootstrap_codes: list[str] = field(default_factory=list)
     state: bytes = FAKE_STATE
+    # Kontoauszug PDF (D154): whether HIEKPS offers fetching by number; the statements the
+    # bank delivers, (year, number) -> the HIEKP data of each answer (more than one: a 3040
+    # continuation per part but the last); the answer codes for a number it does not
+    # deliver (the same comma-separated form as refuse_at, on the HKEKP segment; "m9800,9210"
+    # ends the dialog), per key or `statement_refusal` for every other key; an exception per
+    # key; whether reopening after a 9800 asks for a pushTAN.
+    statements_offered: bool = False
+    statements: dict[tuple[int, int], list[bytes]] = field(default_factory=dict)
+    statement_codes: dict[tuple[int, int], str] = field(default_factory=dict)
+    statement_refusal: str = "3010"
+    statement_fail_at: dict[tuple[int, int], BaseException] = field(default_factory=dict)
+    reopen_asks_approval: bool = False
+    reopen_codes: str | None = None
 
 
 class FakeClient:
@@ -77,15 +90,17 @@ class FakeClient:
         self._polls_left = script.approval_polls or 0
         self._restored = init.get("client_data") is not None
         self.login_name = init.get("login_name", "")
+        self.statement_requests: list[tuple[int, int, str | None]] = []
+        self.dialog_ended = False
 
     # --- the scripted failures ------------------------------------------------------------
 
-    def _answer(self, codes: str) -> None:
+    def _answer(self, codes: str, segment: str = "HKCAZ:5") -> None:
         for code in codes.split(","):
             if code.startswith("m"):
                 self.bank_answers.append(BankAnswer(MESSAGE_LEVEL, code[1:]))
             else:
-                self.bank_answers.append(BankAnswer(SEGMENT_LEVEL, code, "HKCAZ:5"))
+                self.bank_answers.append(BankAnswer(SEGMENT_LEVEL, code, segment))
 
     def _step(self, name: str) -> None:
         self.calls.append(name)
@@ -170,6 +185,43 @@ class FakeClient:
         if self.script.balance is None:
             return None
         return SimpleNamespace(amount=SimpleNamespace(amount=self.script.balance))
+
+    def statement_pdf_offered(self) -> bool:
+        return self.script.statements_offered
+
+    def get_statement_pdf(
+        self, account: SEPAAccount, number: int, year: int, touchdown: str | None = None
+    ) -> tuple[list[bytes], str | None]:
+        self.calls.append("statement")
+        self.statement_requests.append((year, number, touchdown))
+        key = (year, number)
+        if self.dialog_ended:  # the bank answers nothing but 9800 in an ended dialog
+            self._answer("m9800")
+            return [], None
+        if key in self.script.statement_fail_at:
+            raise self.script.statement_fail_at[key]
+        parts = self.script.statements.get(key)
+        if parts is None:
+            codes = self.script.statement_codes.get(key, self.script.statement_refusal)
+            self._answer(codes, "HKEKP:3")
+            self.dialog_ended = "m9800" in codes.split(",")
+            return [], None
+        index = 0 if touchdown is None else int(touchdown.removeprefix("part-"))
+        if index + 1 < len(parts):
+            self._answer("m3060,3040", "HKEKP:3")
+            return [parts[index]], f"part-{index + 1}"
+        self._answer("m0010,0020", "HKEKP:3")
+        return [parts[index]], None
+
+    def restart_dialog(self):
+        self.calls.append("reopen")
+        self.dialog_ended = False
+        self.init_tan_response = None
+        if self.script.reopen_codes:
+            self._answer(self.script.reopen_codes, "HKIDN:3")
+        if self.script.reopen_asks_approval:
+            self.init_tan_response = self._challenge("_continue_dialog_initialization")
+        return self.init_tan_response
 
     def deconstruct(self, including_private: bool = False) -> bytes:
         self._step("state")

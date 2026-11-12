@@ -725,9 +725,21 @@ class BankConnectionRecorded(Schema):
     bank_code: BankCode
     login_masked: LoginMasked
     auto_sync: bool
-    changed: list[Literal["auto_sync", "fints_url", "login_name", "tan_mechanism"]] = Field(
-        default_factory=list
-    )
+    fetch_statements: bool = False  # D154 (7); absent from events written before 0024
+    changed: list[
+        Literal["auto_sync", "fetch_statements", "fints_url", "login_name", "tan_mechanism"]
+    ] = Field(default_factory=list)
+
+
+class BankStatementFetched(Schema):
+    """account.statement_fetched (D154 (5)): one PDF statement the bank delivered and the app
+    stored, by its number and year as the bank numbers them. Never the PDF, its size or the
+    bank's Quittungscode."""
+
+    sync_id: UUID
+    document_id: UUID
+    year: int = Field(ge=1000, le=9999)
+    number: int = Field(ge=1, le=99999)
 
 
 class BankSyncStarted(Schema):
@@ -919,6 +931,7 @@ class EventType(StrEnum):
     ACCOUNT_SYNC_APPROVAL_NEEDED = "account.sync_approval_needed"
     ACCOUNT_SYNC_COMPLETED = "account.sync_completed"
     ACCOUNT_SYNC_FAILED = "account.sync_failed"
+    ACCOUNT_STATEMENT_FETCHED = "account.statement_fetched"  # D154, step 2b
 
     STATEMENT_IMPORTED = "statement.imported"
     STATEMENT_RECONCILED = "statement.reconciled"
@@ -1060,6 +1073,9 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     ),
     E.ACCOUNT_SYNC_COMPLETED: EventSpec(BankSyncCompleted, "forbidden", "Bank sync finished"),
     E.ACCOUNT_SYNC_FAILED: EventSpec(BankSyncFailed, "forbidden", "Bank sync failed"),
+    E.ACCOUNT_STATEMENT_FETCHED: EventSpec(
+        BankStatementFetched, "forbidden", "Bank PDF statement fetched (FinTS)"
+    ),
     E.STATEMENT_IMPORTED: EventSpec(
         StatementImported, "optional", "Statement imported (date = last booking day)"
     ),

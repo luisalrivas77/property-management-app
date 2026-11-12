@@ -1542,6 +1542,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/accounts/{account_id}/bank-statements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Bank Statement List */
+        get: operations["bank_statement_list_api_accounts__account_id__bank_statements_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/imports/{import_id}": {
         parameters: {
             query?: never;
@@ -3069,6 +3086,11 @@ export interface components {
              * @default false
              */
             auto_sync: boolean;
+            /**
+             * Fetch Statements
+             * @default false
+             */
+            fetch_statements: boolean;
             /** Sca Confirmed At */
             sca_confirmed_at?: string | null;
             /** Last Sync At */
@@ -3107,10 +3129,48 @@ export interface components {
         BankConnectionPatch: {
             /** Auto Sync */
             auto_sync?: boolean;
+            /** Fetch Statements */
+            fetch_statements?: boolean;
             /** Fints Url */
             fints_url?: string;
             /** Login Name */
             login_name?: string;
+        };
+        /**
+         * BankStatement
+         * @description GET /accounts/{id}/bank-statements: one PDF statement the bank delivered (bank_statement,
+         *     D154 (5)), with the document it is stored as and the run that fetched it. Never the PDF.
+         */
+        BankStatement: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /** Year */
+            year: number;
+            /** Number */
+            number: number;
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            /**
+             * Sync Id
+             * Format: uuid
+             */
+            sync_id: string;
+            /**
+             * Fetched At
+             * Format: date-time
+             */
+            fetched_at: string;
         };
         /**
          * BankSync
@@ -4334,7 +4394,7 @@ export interface components {
          * EventType
          * @enum {string}
          */
-        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "rule.created" | "rule.disabled";
+        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "account.statement_fetched" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "rule.created" | "rule.disabled";
         /** ExcludeFrom15Pct */
         ExcludeFrom15Pct: {
             /**
@@ -12218,6 +12278,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BankSync"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    bank_statement_list_api_accounts__account_id__bank_statements_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankStatement"][];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

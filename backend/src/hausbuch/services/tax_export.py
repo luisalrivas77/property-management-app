@@ -19,7 +19,8 @@ The flow:
    row and the event. A second run for the same id finds the row and writes nothing. An
    archive also carries zahlungsnachweise.pdf (bank_lines: the year's bank transactions with
    the statement file each came from) and the bank's own PDF statements of the year under
-   kontoauszuege/ (statement_files, D144). Under the limit the statements are the first thing
+   kontoauszuege/ (statement_files: those the bank delivered over FinTS, D154, then the PDF
+   imports, D144). Under the limit the statements are the first thing
    left out, never a Beleg: they fill what the Belege and the Anlage N pages leave, and if the
    finished ZIP is still over, the newest are dropped and it is rendered again; README.txt
    names how many were left out. The POST's check sums the Belege only.
@@ -46,7 +47,7 @@ import hashlib
 import hmac
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Literal
+from typing import Any, Literal
 from urllib.parse import urlencode
 from uuid import UUID, uuid4
 
@@ -54,6 +55,7 @@ from sqlalchemy import Connection, func, insert, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from hausbuch.db.tables import account as account_table
+from hausbuch.db.tables import bank_statement as bank_statement_table
 from hausbuch.db.tables import document as document_table
 from hausbuch.db.tables import document_file as file_table
 from hausbuch.db.tables import owner as owner_table
@@ -495,28 +497,80 @@ def bank_lines(conn: Connection, draft: AnlageVDraft, facts: DraftFacts) -> dict
     return out
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class StatementFile:
-    """A PDF statement of the bank the archive may carry (D144), before it is read."""
+    """A PDF statement of the bank the archive may carry (D144, D154), before it is read."""
 
     document_id: UUID
     number: str
-    first_booking_on: date
-    last_booking_on: date
     size: int
+    first_booking_on: date | None = None
+    last_booking_on: date | None = None
+    bank_number: int | None = None
+    bank_year: int | None = None
 
 
 def statement_files(
     conn: Connection, facts: DraftFacts, tax_year: int, *, skip: set[UUID]
 ) -> list[StatementFile]:
-    """The bank's own PDF statements of the year (D144): documents imported as a PDF
-    statement on an account that carries the property's payments, whose bookings overlap the
-    tax year, and that are PDFs; each once, oldest first, numbered 01…. An import without
-    booking dates (nothing read from it) is left out: its period is unknown. `skip`: the
-    documents already in dokumente/."""
+    """The bank's own PDF statements of the year, on an account that carries the property's
+    payments, each once, numbered 01…: first those the bank delivered over FinTS whose year
+    is the tax year (D154 (6)), by the bank's number; then the documents imported as a PDF
+    statement whose bookings overlap the tax year and that are PDFs (D144), oldest first. An
+    import without booking dates (nothing read from it) is left out: its period is unknown.
+    `skip`: the documents already in dokumente/."""
     accounts = [c.account_id for c in facts.coverage]
     if not accounts:
         return []
+    fetched = [
+        r for r in _fetched_statements(conn, accounts, tax_year) if r.document_id not in skip
+    ]
+    seen = skip | {r.document_id for r in fetched}
+    imported = [
+        r for r in _imported_statements(conn, accounts, tax_year) if r.document_id not in seen
+    ]
+    files = [
+        StatementFile(
+            document_id=r.document_id,
+            number=f"{n:02d}",
+            size=int(r.size_bytes),
+            bank_number=r.number,
+            bank_year=r.year,
+        )
+        for n, r in enumerate(fetched, start=1)
+    ]
+    return files + [
+        StatementFile(
+            document_id=r.document_id,
+            number=f"{n:02d}",
+            size=int(r.size_bytes),
+            first_booking_on=r.first,
+            last_booking_on=r.last,
+        )
+        for n, r in enumerate(imported, start=len(files) + 1)
+    ]
+
+
+def _fetched_statements(conn: Connection, accounts: list[UUID], tax_year: int) -> list[Any]:
+    """D154 (6): the bank_statement rows of the tax year (the year the bank gives; the PDF's
+    period is never read), by number."""
+    bs, d, f = bank_statement_table.c, document_table.c, file_table.c
+    return list(
+        conn.execute(
+            select(bs.document_id, bs.year, bs.number, f.size_bytes)
+            .select_from(
+                bank_statement_table.join(document_table, d.id == bs.document_id).join(
+                    file_table, (f.workspace_id == d.workspace_id) & (f.sha256 == d.file_sha256)
+                )
+            )
+            .where(bs.account_id.in_(accounts), bs.year == tax_year)
+            .order_by(bs.number, bs.account_id)
+        ).all()
+    )
+
+
+def _imported_statements(conn: Connection, accounts: list[UUID], tax_year: int) -> list[Any]:
+    """D144: the documents imported as a PDF statement whose bookings overlap the tax year."""
     si, d, f = import_table.c, document_table.c, file_table.c
     first, last = func.min(si.first_booking_on), func.max(si.last_booking_on)
     rows = conn.execute(
@@ -538,17 +592,7 @@ def statement_files(
         .group_by(si.document_id, f.size_bytes)
         .order_by(first, last, si.document_id)
     ).all()
-    kept = [r for r in rows if r.document_id not in skip]
-    return [
-        StatementFile(
-            document_id=r.document_id,
-            number=f"{n:02d}",
-            first_booking_on=r.first,
-            last_booking_on=r.last,
-            size=int(r.size_bytes),
-        )
-        for n, r in enumerate(kept, start=1)
-    ]
+    return list(rows)
 
 
 def _fitting(files: list[StatementFile], budget: int) -> list[StatementFile]:
@@ -572,6 +616,8 @@ def _archive_statements(
             number=file.number,
             first_booking_on=file.first_booking_on,
             last_booking_on=file.last_booking_on,
+            bank_number=file.bank_number,
+            bank_year=file.bank_year,
             data=read_original(conn, store, file.document_id),
         )
         for file in files

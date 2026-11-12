@@ -1106,19 +1106,28 @@ class BankLine:
         return self.amount < 0
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class ArchiveStatement:
-    """A PDF statement of the bank, carried untouched under kontoauszuege/ (D144). Named by its
-    booking dates, never by its uploaded name (which can carry the account number)."""
+    """A PDF statement of the bank, carried untouched under kontoauszuege/ (D144). An uploaded
+    one is named by its booking dates, never by its uploaded name (which can carry the account
+    number); one the bank delivered over FinTS (D154 (6)) by the bank's own number and year,
+    since its period is never read."""
 
     document_id: UUID
-    number: str  # "01"
-    first_booking_on: date
-    last_booking_on: date
+    number: str  # "01", the archive's running number
     data: bytes
+    first_booking_on: date | None = None
+    last_booking_on: date | None = None
+    bank_number: int | None = None  # D154: the statement's number and year at the bank
+    bank_year: int | None = None
 
     @property
     def path(self) -> str:
+        if self.bank_number is not None:
+            return (
+                f"kontoauszuege/{self.number} Kontoauszug {self.bank_number}-{self.bank_year}.pdf"
+            )
+        assert self.first_booking_on is not None and self.last_booking_on is not None
         return (
             f"kontoauszuege/{self.number} Kontoauszug {self.first_booking_on.isoformat()} bis "
             f"{self.last_booking_on.isoformat()}.pdf"

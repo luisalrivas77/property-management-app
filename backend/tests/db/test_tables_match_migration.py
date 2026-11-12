@@ -40,7 +40,7 @@ def reflected(dbname):
 
 def test_same_tables(reflected):
     assert set(metadata.tables) == set(reflected)
-    assert len(metadata.tables) == 41
+    assert len(metadata.tables) == 42  # 0024 adds bank_statement
 
 
 @pytest.mark.parametrize("table", sorted(metadata.tables))

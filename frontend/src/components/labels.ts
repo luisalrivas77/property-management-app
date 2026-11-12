@@ -303,6 +303,7 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "account.sync_approval_needed": "Bankabruf wartet auf Freigabe",
   "account.sync_completed": "Bankabruf abgeschlossen",
   "account.sync_failed": "Bankabruf fehlgeschlagen",
+  "account.statement_fetched": "Kontoauszug (PDF) von der Bank abgerufen",
   "statement.imported": "Kontoauszug importiert",
   "statement.reconciled": "Kontoauszug abgestimmt",
   "statement.unreconciled": "Kontoauszug nicht abgestimmt",

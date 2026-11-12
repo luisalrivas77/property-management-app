@@ -1,0 +1,287 @@
+# Rule fixture: the bank's own PDF statements over FinTS (hausbuch.rules.bank_statements)
+#
+# docs/phases/phase-5.md D154 (3), (4), §4.8. Two rules, both pure:
+#
+# plan_probes(stored, today, first_year) -> list[StatementKey]
+#   The (year, number) each year's walk starts at, in the order they are asked:
+#   - the current year (today's): the highest stored number + 1, else 1;
+#   - the previous year, the same, asked FIRST, but only while statement 1 of the current year
+#     is not stored (once the new year's first statement exists the bank has closed the
+#     previous year) and only when that year is not before first_year;
+#   - first_year is the year of the account's earliest booked line, never before 2026 (bank
+#     accounts from 1 Jan 2026, decided 6 Nov 2026): the rule applies the floor itself.
+#   A gap below the highest stored number is not asked again.
+#
+# next_probe(plan, answered, requests) -> StatementKey | None   (cases with `bank_has`)
+#   The walk over the plan: within a year the numbers are asked one after the other from the
+#   start until the bank does not deliver one; that ends the year for the run (nothing is
+#   stored about it, so the next run asks the same number again). Then the next year of the
+#   plan. At most 15 requests per run (an HKEKP per message; a 3040 continuation counts as a
+#   request too). `bank_has` is what the bank would deliver; `requests` the HKEKPs sent, in
+#   order.
+#
+# read_answer(answers, parts, touchdown, earlier) -> StatementReading
+#   One answer to one HKEKP, read by this rule and never by D151's deciding_code:
+#   - answers: every answer code of the message (level message = HIRMG, segment = HIRMS with
+#     the segment of ours it refers to); parts: the "Gebuchte Umsätze" of each HIEKP in this
+#     answer, as the bytes on the wire (written below as their ASCII text); touchdown: the
+#     answer's 3040 carried an Aufsetzpunkt; earlier: the parts of the previous answers of the
+#     same statement (a 3040 continuation).
+#   - in this order: a lock code (9930, 9931, 3938) anywhere -> locked; 3010 or any 9xxx on
+#     the HKEKP segment -> not_available (that code); 3040 with an Aufsetzpunkt on HKEKP ->
+#     continue (invalid "too_many_parts" when the next part would be the 11th); HIEKP data ->
+#     the file, else invalid; a 9xxx at the message level or on another segment -> stopped;
+#     nothing of these -> not_available.
+#   - dialog_ended: the message carries 9800 (Dialog abgebrochen), whatever else it says.
+#   - the file: the parts of `earlier` and this answer joined, then base64-decoded once (raw
+#     bytes that already start with %PDF- are taken as they are); it must start with %PDF-,
+#     end with %%EOF (trailing whitespace allowed) and be at most 20 MB decoded. `size` is the
+#     decoded file's length in bytes.
+#
+# Step 2b readings (each listed in the step 2b report):
+# - D154 (2) says "each part's bytes are decoded and joined"; this rule joins first and
+#   decodes once, which gives the same file whenever a part ends on a 4-character boundary
+#   and does not break when a bank cuts the base64 text elsewhere; when the joined text does
+#   not decode (each part encoded on its own, with padding), each part is decoded and the
+#   bytes joined (review of PR #212). The continuation case below cuts on a boundary, so
+#   both readings agree on it.
+# - The DK text says HIEKP v1 carries base64; a bank that sends the PDF raw is accepted
+#   rather than refused, since the file is checked for %PDF- and %%EOF either way.
+# - An invalid file ends its year's walk like a refusal, so the walk never skips a number.
+#
+# All data is invented: the "PDF" below is a minimal file written for this fixture.
+
+pdf_base64: &pdf "JVBERi0xLjQKJSBLb250b2F1c3p1ZyAxLzIwMjYgKGludmVudGVkKQoxIDAgb2JqIDw8IC9UeXBlIC9DYXRhbG9nID4+IGVuZG9iagp0cmFpbGVyIDw8IC9Sb290IDEgMCBSID4+CiUlRU9GCg=="
+pdf_size: 109
+
+plan_cases:
+  - id: first_run_asks_number_one
+    description: the first run of 2026, nothing stored
+    today: 2026-11-12
+    first_year: 2026
+    stored: []
+    expect:
+      probes: ["2026/1"]
+
+  - id: continues_after_the_highest_stored
+    description: statements 1 to 10 of 2026 stored
+    today: 2026-11-12
+    first_year: 2026
+    stored: ["2026/1", "2026/2", "2026/3", "2026/4", "2026/5", "2026/6", "2026/7", "2026/8",
+             "2026/9", "2026/10"]
+    expect:
+      probes: ["2026/11"]
+
+  - id: january_asks_the_previous_year_first
+    description: >-
+      January 2027, 2026/1-11 stored and no 2027/1 yet: the bank may still cut 2026/12, so
+      2026 is asked first, then 2027 from 1
+    today: 2027-01-15
+    first_year: 2026
+    stored: ["2026/1", "2026/2", "2026/3", "2026/4", "2026/5", "2026/6", "2026/7", "2026/8",
+             "2026/9", "2026/10", "2026/11"]
+    bank_has: ["2026/12", "2027/1"]
+    expect:
+      probes: ["2026/12", "2027/1"]
+      requests: ["2026/12", "2026/13", "2027/1", "2027/2"]
+
+  - id: february_previous_year_closed
+    description: 2027/1 stored, so 2026 is closed and only 2027 is asked
+    today: 2027-02-10
+    first_year: 2026
+    stored: ["2026/11", "2026/12", "2027/1"]
+    expect:
+      probes: ["2027/2"]
+
+  - id: first_line_in_2025_never_before_2026
+    description: the account's first line is from 2025; 2025 is never asked
+    today: 2026-03-01
+    first_year: 2025
+    stored: []
+    expect:
+      probes: ["2026/1"]
+
+  - id: first_line_in_2025_january_2027
+    description: >-
+      the same account in January 2027 with nothing stored: 2026 then 2027, never 2025
+    today: 2027-01-05
+    first_year: 2025
+    stored: []
+    expect:
+      probes: ["2026/1", "2027/1"]
+
+  - id: account_opened_this_year
+    description: the first line is from this year, so there is no previous year to ask
+    today: 2027-01-20
+    first_year: 2027
+    stored: []
+    expect:
+      probes: ["2027/1"]
+
+  - id: gap_not_asked_again
+    description: 2026/3 and 2026/4 are missing below the highest stored; the walk goes on from 6
+    today: 2026-11-12
+    first_year: 2026
+    stored: ["2026/1", "2026/2", "2026/5"]
+    expect:
+      probes: ["2026/6"]
+
+  - id: cap_of_fifteen_requests
+    description: the bank holds 20 statements, a run asks at most 15
+    today: 2026-11-12
+    first_year: 2026
+    stored: []
+    bank_has: ["2026/1", "2026/2", "2026/3", "2026/4", "2026/5", "2026/6", "2026/7", "2026/8",
+               "2026/9", "2026/10", "2026/11", "2026/12", "2026/13", "2026/14", "2026/15",
+               "2026/16", "2026/17", "2026/18", "2026/19", "2026/20"]
+    expect:
+      probes: ["2026/1"]
+      requests: ["2026/1", "2026/2", "2026/3", "2026/4", "2026/5", "2026/6", "2026/7",
+                 "2026/8", "2026/9", "2026/10", "2026/11", "2026/12", "2026/13", "2026/14",
+                 "2026/15"]
+
+  - id: cap_spans_both_years
+    description: >-
+      January with fourteen 2026 statements still to fetch: the cap is spent on 2026 (the 15th
+      request is the refusal of 2026/15); 2027 waits for the next run
+    today: 2027-01-15
+    first_year: 2026
+    stored: []
+    bank_has: ["2026/1", "2026/2", "2026/3", "2026/4", "2026/5", "2026/6", "2026/7", "2026/8",
+               "2026/9", "2026/10", "2026/11", "2026/12", "2026/13", "2026/14", "2027/1",
+               "2027/2"]
+    expect:
+      probes: ["2026/1", "2027/1"]
+      requests: ["2026/1", "2026/2", "2026/3", "2026/4", "2026/5", "2026/6", "2026/7",
+                 "2026/8", "2026/9", "2026/10", "2026/11", "2026/12", "2026/13", "2026/14",
+                 "2026/15"]
+
+  - id: refused_number_one_ends_the_year
+    description: nothing delivered for 2026/1 today; the next run asks 2026/1 again
+    today: 2026-11-12
+    first_year: 2026
+    stored: []
+    bank_has: []
+    expect:
+      probes: ["2026/1"]
+      requests: ["2026/1"]
+
+answer_cases:
+  - id: delivered_0020_with_hiekp
+    description: the statement in one answer
+    answers:
+      - {level: message, code: "0010"}
+      - {level: segment, code: "0020", segment: "HKEKP:3"}
+    parts: [*pdf]
+    expect: {outcome: statement, size: 109}
+
+  - id: none_3010
+    description: no statement for this number (Keine Einträge vorhanden)
+    answers:
+      - {level: message, code: "0010"}
+      - {level: segment, code: "3010", segment: "HKEKP:3"}
+    expect: {outcome: not_available, code: "3010"}
+
+  - id: refused_9210_on_the_segment
+    description: the DK's Auftrag abgelehnt for a number that does not exist
+    answers:
+      - {level: segment, code: "9210", segment: "HKEKP:3"}
+    expect: {outcome: not_available, code: "9210"}
+
+  - id: partly_faulty_9050_with_9210
+    description: >-
+      the message is partly faulty because the HKEKP was refused; the segment's code decides
+      and the dialog goes on
+    answers:
+      - {level: message, code: "9050"}
+      - {level: segment, code: "9210", segment: "HKEKP:3"}
+    expect: {outcome: not_available, code: "9210"}
+
+  - id: dialog_ended_9800
+    description: the bank ended the dialog without a reason on the HKEKP; the fetch stops
+    answers:
+      - {level: message, code: "9800"}
+    expect: {outcome: stopped, code: "9800", dialog_ended: true}
+
+  - id: refusal_that_ends_the_dialog
+    description: >-
+      a refused number whose message also ends the dialog: not available, and the job may
+      open one new dialog for the other year's request (D154 (4))
+    answers:
+      - {level: message, code: "9800"}
+      - {level: segment, code: "9210", segment: "HKEKP:3"}
+    expect: {outcome: not_available, code: "9210", dialog_ended: true}
+
+  - id: locked_9930
+    description: the access is locked; the run fails as D151 says
+    answers:
+      - {level: message, code: "9050"}
+      - {level: message, code: "9930"}
+    expect: {outcome: locked, code: "9930"}
+
+  - id: locked_wins_over_a_delivery
+    description: a lock code decides over anything else in the answer
+    answers:
+      - {level: segment, code: "0020", segment: "HKEKP:3"}
+      - {level: segment, code: "3938", segment: "HNSHK:2"}
+    parts: [*pdf]
+    expect: {outcome: locked, code: "3938"}
+
+  - id: continuation_3040_with_touchdown
+    description: the first part of a statement; the job asks again with the Aufsetzpunkt
+    answers:
+      - {level: message, code: "3060"}
+      - {level: segment, code: "3040", segment: "HKEKP:3"}
+    parts: ["JVBERi0xLjQKJSBLb250b2F1c3p1ZyAxLzIwMjYgKGludmVu"]
+    touchdown: true
+    expect: {outcome: continue}
+
+  - id: continuation_last_part_joined
+    description: the second and last part; the two parts joined make the file
+    answers:
+      - {level: segment, code: "0020", segment: "HKEKP:3"}
+    earlier: ["JVBERi0xLjQKJSBLb250b2F1c3p1ZyAxLzIwMjYgKGludmVu"]
+    parts: ["dGVkKQoxIDAgb2JqIDw8IC9UeXBlIC9DYXRhbG9nID4+IGVuZG9iagp0cmFpbGVyIDw8IC9Sb290IDEgMCBSID4+CiUlRU9GCg=="]
+    expect: {outcome: statement, size: 109}
+
+  - id: eleventh_part_refused
+    description: ten parts arrived and the bank still has more; nothing is stored
+    answers:
+      - {level: segment, code: "3040", segment: "HKEKP:3"}
+    earlier: ["JVBE", "Ri0x", "LjQK", "JSBL", "b250", "b2F1", "c3p1", "ZyAx", "LzIw"]
+    parts: ["MjYg"]
+    touchdown: true
+    expect: {outcome: invalid, reason: too_many_parts}
+
+  - id: not_a_pdf
+    description: the decoded bytes do not start with %PDF-; nothing is stored
+    answers:
+      - {level: segment, code: "0020", segment: "HKEKP:3"}
+    parts: ["PGh0bWw+RmVobGVyPC9odG1sPgo="]
+    expect: {outcome: invalid, reason: not_pdf}
+
+  - id: pdf_without_end
+    description: the file starts like a PDF but lacks its %%EOF (a cut-off transfer)
+    answers:
+      - {level: segment, code: "0020", segment: "HKEKP:3"}
+    parts: ["JVBERi0xLjQKMSAwIG9iaiA8PCA+PiBlbmRvYmoK"]
+    expect: {outcome: invalid, reason: no_eof}
+
+  - id: not_base64
+    description: text that is neither a PDF nor base64
+    answers:
+      - {level: segment, code: "0020", segment: "HKEKP:3"}
+    parts: ["Kontoauszug!"]
+    expect: {outcome: invalid, reason: not_base64}
+
+  - id: general_9010_stops
+    description: the message failed with no word on the HKEKP; the fetch stops for the run
+    answers:
+      - {level: message, code: "9010"}
+    expect: {outcome: stopped, code: "9010"}
+
+  - id: success_without_data
+    description: the bank answered 0020 but sent no HIEKP; treated as not available
+    answers:
+      - {level: segment, code: "0020", segment: "HKEKP:3"}
+    expect: {outcome: not_available}

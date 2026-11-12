@@ -26,6 +26,7 @@ from fints.exceptions import (
     FinTSClientPINError,
     FinTSConnectionError,
     FinTSDialogInitError,
+    FinTSError,
     FinTSNoResponseError,
     FinTSUnsupportedOperation,
 )
@@ -35,14 +36,18 @@ from fints.formals import (
     BankIdentifier,
     Language2,
     Response,
+    SegmentHeader,
     SystemIDStatus,
     UPDUsage,
 )
 from fints.message import FinTSInstituteMessage
+from fints.parser import FinTS3Parser
 from fints.segments.auth import HKIDN2, HKTAB5, HKTAN7, HKVVB3
 from fints.segments.bank import HIUPA4, HIUPD6
+from fints.segments.base import FinTS3Segment
 from fints.segments.dialog import HIRMG2, HIRMS2, HISYN4
 from fints.segments.transfer import HKCCS1
+from fints.types import SegmentSequence
 from fints.utils import decompress_datablob
 from fints_fake import CHIPTAN, DECOUPLED, FakeClient, Script, factory, fake_account
 from urllib3.exceptions import MaxRetryError, NameResolutionError
@@ -115,6 +120,9 @@ def test_the_facade_has_no_write_method():
         "close",
         "state",
         "tan_mechanism",
+        "statements_offered",
+        "statement_pdf",
+        "reopen",
     }
 
 
@@ -204,7 +212,7 @@ def test_an_allowed_message_is_posted_with_a_timeout():
     assert "HNVSD" in [s.header.type for s in answer.segments]
 
 
-def test_the_whitelist_has_only_the_envelope_the_dialog_and_four_reads():
+def test_the_whitelist_has_only_the_envelope_the_dialog_and_five_reads():
     assert {
         "HNHBK",
         "HNHBS",
@@ -220,7 +228,9 @@ def test_the_whitelist_has_only_the_envelope_the_dialog_and_four_reads():
         "HKSPA",
         "HKCAZ",
         "HKSAL",
+        "HKEKP",
     } == F.ALLOWED_SEGMENTS
+    assert "HKQTG" not in F.ALLOWED_SEGMENTS
 
 
 # --- Logging (D119) -------------------------------------------------------------------------
@@ -649,8 +659,8 @@ def test_the_trace_prints_no_field_of_a_segment_off_its_whitelist():
     assert {"HISYN", "HIUPA", "HIUPD", "HKIDN"} <= {e.split(":")[0] for e in received["received"]}
     everything = repr(sent) + repr(received)
     assert not [s for s in NEVER_LOGGED if s in everything]
-    assert set(fints_trace._SENT_SETTINGS) == {"HKIDN", "HKVVB", "HKSYN", "HKTAN", "HNSHK"}
-    assert {"HIBPA", "HIUPA", "HITANS", "HICAZS"} == fints_trace._RECEIVED_FACTS
+    assert set(fints_trace._SENT_SETTINGS) == {"HKIDN", "HKVVB", "HKSYN", "HKTAN", "HNSHK", "HKEKP"}
+    assert {"HIBPA", "HIUPA", "HITANS", "HICAZS", "HIEKPS", "HIEKP"} == fints_trace._RECEIVED_FACTS
 
 
 def _segment(kind: str, number: int, version: int, **fields) -> SimpleNamespace:
@@ -738,6 +748,9 @@ _SESSION_CALLS = (
     "get_transactions_xml",
     "get_balance",
     "deconstruct",
+    "statement_pdf_offered",
+    "get_statement_pdf",
+    "restart_dialog",
 )
 
 
@@ -948,3 +961,259 @@ def test_the_client_no_longer_records_answers_inside_python_fints():
     """D151: the answers come from the guarded connection only; a hook in python-fints'
     `_process_response` would miss every HIRMS answer once python-fints raised on HIRMG."""
     assert "_process_response" not in F._ReadOnlyClient.__dict__
+
+
+# --- Kontoauszug PDF (D154) -----------------------------------------------------------------
+
+PDF_MARKER = b"Kontoauszug-Inhalt-GEHEIM"
+PDF_BYTES = b"%PDF-1.4\n% " + PDF_MARKER + b"\n%%EOF\n"
+PDF_B64 = base64.b64encode(PDF_BYTES)
+RECEIPT = b"QUITTUNG-0815-SECRET"
+
+
+def _hkekp(number=3, year=2026, **more) -> F.HKEKP1:
+    return F.HKEKP1(
+        account=KTI1(iban=IBAN, bic="TESTDEFFXXX"),
+        statement_number=number,
+        statement_year=year,
+        **more,
+    )
+
+
+def _hkqtg() -> FinTS3Segment:
+    """A receipt (Quittung) segment: python-fints has no class for it, so a bare one."""
+    segment = FinTS3Segment()
+    segment.header = SegmentHeader("HKQTG", 0, 1)
+    return segment
+
+
+@pytest.mark.parametrize(
+    "segment",
+    [
+        _hkekp(number=None),
+        _hkekp(year=None),
+        _hkekp(number=None, year=None),
+        _hkekp(number=0),
+        _hkekp(max_number_responses=5),
+    ],
+    ids=["no_number", "no_year", "empty", "number_zero", "with_count"],
+)
+def test_an_hkekp_without_number_and_year_never_leaves(segment):
+    """D154 (1): an empty number cuts a new statement (a state change); the guard refuses it
+    on the wire, inside the envelope, whoever built the segment."""
+    client = _client()
+    message = _message(client, segment)
+    with (
+        mock.patch.object(requests.Session, "request") as request,
+        pytest.raises(F.WriteRefused),
+    ):
+        client.connection.send(message)
+    request.assert_not_called()
+
+
+def test_an_hkqtg_never_leaves():
+    """D154 (1): the receipt confirms the bank's message and is a state change."""
+    client = _client()
+    message = _message(client, _hkqtg())
+    with (
+        mock.patch.object(requests.Session, "request") as request,
+        pytest.raises(F.WriteRefused) as refused,
+    ):
+        client.connection.send(message)
+    request.assert_not_called()
+    assert "HKQTG" in str(refused.value)
+
+
+def test_an_hkekp_with_number_and_year_is_posted():
+    client = _client()
+    message = _message(client, _hkekp())
+    with mock.patch.object(
+        requests.Session, "request", return_value=_bank_answer(message)
+    ) as request:
+        client.connection.send(message)
+    request.assert_called_once()
+
+
+@pytest.mark.parametrize(("number", "year"), [(0, 2026), (3, 0), (None, 2026), (True, 2026)])
+def test_the_client_refuses_to_build_an_hkekp_without_number_and_year(number, year):
+    client = _client()
+    client._standing_dialog = mock.Mock()
+    with (
+        mock.patch.object(requests.Session, "request") as request,
+        pytest.raises(F.WriteRefused),
+    ):
+        client.get_statement_pdf(fake_account(IBAN), number, year)
+    request.assert_not_called()
+    client._standing_dialog.send.assert_not_called()
+
+
+def test_the_client_sends_no_hkekp_that_would_need_a_tan():
+    client = _client()
+    client._standing_dialog = mock.Mock()
+    with (
+        mock.patch.object(F._ReadOnlyClient, "_need_twostep_tan_for_segment", return_value=True),
+        pytest.raises(F.StatementTanRequired),
+    ):
+        client.get_statement_pdf(fake_account(IBAN), 3, 2026)
+    client._standing_dialog.send.assert_not_called()
+
+
+def test_the_client_sends_no_hkekp_outside_a_standing_dialog():
+    client = _client()
+    with (
+        mock.patch.object(requests.Session, "request") as request,
+        pytest.raises(FinTSError),
+    ):
+        client.get_statement_pdf(fake_account(IBAN), 3, 2026)
+    request.assert_not_called()
+
+
+def _statement_bank(numbers: dict, *, touchdown: bool):
+    """A bank that answers an HKEKP with one HIEKP (the PDF in base64 and a Quittungscode)
+    and, for `touchdown`, a 3040 whose Aufsetzpunkt is an account number in dash groups."""
+
+    def bank(method, url, data=None, **kwargs):
+        sent = FinTSInstituteMessage(segments=base64.b64decode(data))
+        numbers["HKEKP"] = number = sent.find_segment_first("HKEKP").header.number
+        code = _answer("3040", "Weitere Daten", [TOUCHDOWN]) if touchdown else None
+        hirms = HIRMS2(responses=[code or _answer("0020", "Auftrag ausgeführt")])
+        hirms.header.reference = number
+        hiekp = F.HIEKP1(statement_booked=PDF_B64, receipt_code=RECEIPT)
+        hiekp.header.reference = number
+        hirmg = HIRMG2(responses=[_answer("0010", "Nachricht entgegengenommen")])
+        return _bank_answer(_institute_answer(hirmg, hirms, hiekp))
+
+    return bank
+
+
+def _standing(client: F._ReadOnlyClient) -> None:
+    dialog = client._new_dialog()
+    dialog.open = True
+    dialog.need_init = False
+    dialog._context_count = 1  # entered once, as client.__enter__ does after its init
+    client._standing_dialog = dialog
+
+
+@pytest.mark.parametrize("touchdown", [False, True])
+def test_a_statement_fetch_is_traced_by_number_year_and_size_only(debug_log, touchdown):
+    """D154 (8): the trace logs HKEKP's number and year and HIEKP's byte length; never the
+    PDF, its base64, the Quittungscode, the Aufsetzpunkt or the account."""
+    client = _client()
+    _standing(client)
+    session = F.FintsSession(
+        client, tan_mechanism=None, restored=False, log_fields={"sync_id": "sync-0002"}
+    )
+    numbers: dict = {}
+    with mock.patch.object(
+        requests.Session, "request", side_effect=_statement_bank(numbers, touchdown=touchdown)
+    ):
+        answer = session.statement_pdf(fake_account(IBAN), 3, 2026)
+
+    assert answer.failure is None, answer.failure
+    assert answer.parts == (PDF_B64,)
+    assert answer.touchdown == (TOUCHDOWN if touchdown else None)
+    own = [a for a in answer.answers if a.level == "segment"]
+    assert [(a.code, a.segment) for a in own] == [
+        ("3040" if touchdown else "0020", f"HKEKP:{numbers['HKEKP']}")
+    ]
+    [record] = _trace_records(debug_log)
+    assert record["step"] == "statements" and record["sync_id"] == "sync-0002"
+    settings = {k.split(":")[0]: v for k, v in record["settings"].items()}
+    assert settings["HKEKP"] == {
+        "number": "3",
+        "year": "2026",
+        "touchdown": "absent",
+        "max_entries": "absent",
+    }
+    assert record["facts"] == {"statement_pdf_bytes": [len(PDF_B64)]}
+    _assert_nothing_secret(
+        debug_log, PDF_B64.decode(), PDF_MARKER.decode(), RECEIPT.decode(), TOUCHDOWN
+    )
+    assert PDF_B64.decode()[:16] not in debug_log.getvalue()
+    assert TOUCHDOWN not in repr(answer)
+    assert PDF_B64.decode()[:16] not in repr(answer)
+
+
+def _statement_parameters(number_allowed: bool = True) -> F.HIEKPS1:
+    return F.HIEKPS1(
+        max_number_tasks=1,
+        min_number_signatures=1,
+        security_class=0,
+        parameter=F.StatementPdfParameter1(
+            number_allowed=number_allowed, receipt_required=True, entries_allowed=False
+        ),
+    )
+
+
+def test_the_trace_reads_the_statement_parameters():
+    facts: dict = {}
+    fints_trace._received_fact(_statement_parameters(), facts, ())
+    assert facts == {"statement_pdf": ["HIEKPS1 number True, receipt True, entries False"]}
+
+
+def test_the_client_reads_whether_statements_are_offered_by_number():
+    client = _client()
+    client.bpd = SegmentSequence([_statement_parameters()])
+    assert client.statement_pdf_offered()
+    client.bpd = SegmentSequence([_statement_parameters(number_allowed=False)])
+    assert not client.statement_pdf_offered()
+    client.bpd = SegmentSequence([])
+    assert not client.statement_pdf_offered()
+
+
+def test_the_bank_parameters_parse_into_our_segments():
+    """python-fints finds our HIEKPS1 and HIEKP1 by type and version."""
+    parsed = FinTS3Parser().parse_message(b"HIEKPS:20:1:4+1+1+0+J:J:N'HIEKP:5:1:3+@4@JVBE'")
+    hiekps, hiekp = parsed.segments
+    assert isinstance(hiekps, F.HIEKPS1) and isinstance(hiekp, F.HIEKP1)
+    assert (hiekps.parameter.number_allowed, hiekps.parameter.receipt_required) == (True, True)
+    assert hiekp.statement_booked == b"JVBE"
+
+
+def _statement_session(script: Script):
+    session, client = _session(script)
+    session.open()
+    return session, client
+
+
+def test_a_session_fetch_returns_the_parts_and_the_answers():
+    session, client = _statement_session(
+        Script(statements_offered=True, statements={(2026, 1): [b"AAAA", b"BBBB"]})
+    )
+    assert session.statements_offered()
+    first = session.statement_pdf(fake_account(), 1, 2026)
+    assert (first.parts, first.touchdown) == ((b"AAAA",), "part-1")
+    second = session.statement_pdf(fake_account(), 1, 2026, first.touchdown)
+    assert (second.parts, second.touchdown) == ((b"BBBB",), None)
+    assert client.statement_requests == [(2026, 1, None), (2026, 1, "part-1")]
+
+
+def test_a_session_fetch_never_raises_a_bank_error():
+    session, _ = _statement_session(
+        Script(statement_fail_at={(2026, 1): FinTSClientPINError(f"PIN {PIN} wrong?")})
+    )
+    answer = session.statement_pdf(fake_account(), 1, 2026)
+    assert answer.failure == "FinTSClientPINError" and answer.parts == ()
+    assert PIN not in repr(answer)
+
+
+def test_a_write_refusal_in_a_statement_fetch_still_raises():
+    session, _ = _statement_session(Script(statement_fail_at={(2026, 1): F.WriteRefused("x")}))
+    with pytest.raises(F.WriteRefused):
+        session.statement_pdf(fake_account(), 1, 2026)
+
+
+def test_reopening_that_asks_for_a_tan_closes_and_never_polls():
+    session, client = _statement_session(Script(reopen_asks_approval=True))
+    answer = session.reopen()
+    assert answer.failure == "approval_required"
+    assert client.calls[-2:] == ["reopen", "close"]
+    assert "poll" not in client.calls
+
+
+def test_reopening_without_a_tan_keeps_the_dialog():
+    session, client = _statement_session(Script())
+    assert session.reopen().failure is None
+    assert client.calls[-1] == "reopen"
+    session.close()
+    assert client.calls[-1] == "close"
