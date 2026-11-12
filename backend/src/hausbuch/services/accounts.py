@@ -34,6 +34,7 @@ from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import account_ownership as ownership_table
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import owner as owner_table
+from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.jobs import enqueue
 from hausbuch.rules.errors import (
@@ -43,7 +44,8 @@ from hausbuch.rules.errors import (
 )
 from hausbuch.rules.household import ownership as ownership_rules
 from hausbuch.rules.household.taxonomy import allowed_categories
-from hausbuch.schemas.bank import Account, AccountCreate
+from hausbuch.rules.statements import OPENING_NOT_DERIVABLE
+from hausbuch.schemas.bank import Account, AccountCreate, StatementImport
 from hausbuch.schemas.common import Schema
 from hausbuch.schemas.enums import (
     BANK_ACCOUNT_KINDS,
@@ -68,7 +70,7 @@ from .events import append_event, diff_changes
 from .iban import protect_iban
 from .lookup import require_row
 from .owners import UNSET, Unset
-from .statements import recheck_account
+from .statements import derived_opening, get_import, recheck_account
 
 # Every column the Account read shape has; the HMACs are for matching and never leave.
 _HMAC_COLUMNS = {"iban_hmac", "external_ref_hmac"}
@@ -219,6 +221,26 @@ def update_account(
     if "purpose" in changes or ("is_owner_account" in changes and updated.is_owner_account):
         _rematch_waiting(ctx, account_id)
     return updated
+
+
+def opening_from_closing(ctx: CommandContext, import_id: UUID) -> StatementImport:
+    """„Anfangssaldo daraus übernehmen“ (principle 7): set the account's opening balance to
+    the one its earliest import implies (statements.derived_opening), through update_account,
+    so account.updated is recorded and every import of the account is re-checked. The
+    conditions are checked again under the account's lock (every import, declaration and
+    merge takes it first); refused with statement.opening_not_derivable when they no longer
+    hold (another import reconciled, an earlier import arrived, the closing was corrected)."""
+    found = require_row(ctx.conn, import_table, EntityType.STATEMENT, import_id)
+    account = require_row(
+        ctx.conn, account_table, EntityType.ACCOUNT, found.account_id, for_update=True
+    )
+    opening = derived_opening(ctx.conn, account, import_id)
+    if opening is None:
+        raise RuleError(OPENING_NOT_DERIVABLE, "the import no longer implies the opening balance")
+    update_account(ctx, account.id, opening_balance=opening)
+    result = get_import(ctx.conn, import_id)
+    assert result is not None  # read in this transaction
+    return result
 
 
 def _require_bookings_fit(conn: Connection, account_id: UUID, purpose: AccountPurpose) -> None:

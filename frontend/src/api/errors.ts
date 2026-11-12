@@ -90,6 +90,8 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "statement.empty": "Die Datei enthält keine gebuchten Umsätze.",
   "statement.owner_account": "Auf ein Privatkonto der Eigentümer werden keine Kontoauszüge importiert.",
   "statement.balance_from_file": "Dieser Auszug bringt seine Salden selbst mit; ein Saldo wird nicht eingegeben.",
+  "statement.opening_not_derivable":
+    "Der Anfangssaldo lässt sich aus diesem Auszug nicht mehr ableiten: ein früherer Auszug ist hinzugekommen, ein anderer geht schon auf, oder der Endsaldo wurde geändert. Bitte die Seite neu laden.",
   "statement.duplicate_accounts_differ": "Die beiden Umsätze gehören zu verschiedenen Konten.",
   "statement.duplicate_excludes_both": "Zusammenführen würde beide Umsätze aus dem Saldo nehmen; einer muss zählen.",
   // allocations and learned rules (phase-2.md §8, step 4)
@@ -104,7 +106,7 @@ export const RULE_CODE_TEXT: Record<string, string> = {
     "Einheit, Mietverhältnis oder Darlehen gehören nicht zur gewählten Immobilie, oder die Immobilie fehlt.",
   "allocation.excluded_transaction": "Diese Buchung wurde als Doppelbuchung zusammengeführt und zählt nicht.",
   "rule.not_learnable":
-    "Aus dieser Zuordnung lässt sich keine Regel lernen (zum Beispiel aus einer Aufteilung auf mehrere Kategorien). Ohne Regel bestätigen.",
+    "Für diese Zuordnung lernt Hausbuch keine Regel. Bitte ohne „Künftig immer so zuordnen“ bestätigen.",
   "rule.invalid_pattern":
     "Das Muster ist kein gültiger Suchausdruck (regulärer Ausdruck, höchstens 200 Zeichen).",
   // every account of the household (phase-6.md D156-D160, D168)

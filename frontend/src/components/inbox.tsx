@@ -53,7 +53,7 @@ import type { components } from "@/api/types";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 import { notifyInboxChanged } from "@/lib/inboxCount";
 
-import { BalanceForm, DuplicateCard } from "./accounts";
+import { BalanceForm, DuplicateCard, OpeningFromClosing } from "./accounts";
 import { documentLabel, UploadControl } from "./documents";
 import { formatDate, formatDateTime, formatMoney } from "./format";
 import { INBOX_ITEM_KIND } from "./labels";
@@ -532,7 +532,13 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
     }
     case "import_unreconciled": {
       const imp = item.import_id ? data.imports.get(item.import_id) : undefined;
-      return imp ? <Link href={`/accounts/${imp.account_id}?tab=kontoauszuege`}>Kontoauszug prüfen</Link> : null;
+      if (!imp) return null;
+      return (
+        <>
+          <OpeningFromClosing statementImport={imp} onDone={onChanged} />
+          <Link href={`/accounts/${imp.account_id}?tab=kontoauszuege`}>Kontoauszug prüfen</Link>
+        </>
+      );
     }
     case "possible_duplicate": {
       const pair = item.possible_duplicate_id ? data.duplicates.get(item.possible_duplicate_id) : undefined;

@@ -160,7 +160,12 @@ function ImportResult({ result }: { result: Imported }) {
       <p>
         Importiert: {fileName} · {lineCounts(imp)} · {IMPORT_STATUS[imp.status]}
       </p>
-      {imp.status === "imported" ? (
+      {imp.status === "imported" && imp.stated_closing != null ? (
+        <p className="muted">
+          Die Datei nennt den Kontostand vom {formatDate(imp.stated_closing_on)}: unten „Endsaldo eingeben“, der Betrag ist schon
+          eingetragen – bitte mit dem Online-Banking vergleichen.
+        </p>
+      ) : imp.status === "imported" ? (
         <p className="muted">Die Datei enthält keinen Kontostand: unten „Endsaldo eingeben“ mit dem Saldo aus dem Online-Banking.</p>
       ) : null}
       {imp.error_code ? <p className="muted">{ruleCodeText(imp.error_code) ?? imp.error_code}</p> : null}
@@ -225,9 +230,12 @@ function ImportReason({ statementImport: imp }: { statementImport: StatementImpo
   );
 }
 
-/** A CSV export states no balance (D21): the closing balance typed from online banking. */
+/** Every import whose balances do not come from the file takes a closing balance typed from
+ * online banking (D21): a Sparkasse CSV, a DKB CSV (phase 6 D173 (3), its „Kontostand vom“
+ * pre-filled), a bank sync's. Mirrors services/statements._declare, which refuses only a
+ * balance_source of file. */
 function canDeclareBalance(imp: StatementImport): boolean {
-  return imp.format === "csv_camt" && imp.balance_source !== "file";
+  return imp.balance_source !== "file";
 }
 
 function period(imp: StatementImport): string {
@@ -298,6 +306,7 @@ export function ImportsTable({
                   <ImportReason statementImport={imp} />
                 </td>
                 <td className="actions">
+                  <OpeningFromClosing statementImport={imp} onDone={onChanged} />
                   {canDeclareBalance(imp) ? (
                     <ActionDialog
                       label={imp.declared_closing == null ? "Endsaldo eingeben" : "Endsaldo korrigieren"}
@@ -321,6 +330,42 @@ export function ImportsTable({
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/** Principle 7: a new account's balance on its anchor day is rarely known, but its first
+ * export states today's. When the API offers the opening balance this import implies
+ * (derived_opening_balance: the account's earliest import, off by its closing only, nothing
+ * reconciled yet), one click takes it (POST /imports/{id}/opening-from-closing); the API
+ * computes it and re-checks every import of the account. */
+export function OpeningFromClosing({ statementImport: imp, onDone }: { statementImport: StatementImport; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  if (imp.derived_opening_balance == null) return null;
+
+  async function take() {
+    setBusy(true);
+    setError(null);
+    try {
+      await ok(api.POST("/api/imports/{import_id}/opening-from-closing", { params: { path: { import_id: imp.id } } }));
+      onDone();
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="stack">
+      <p className="cell-detail">
+        Der Kontostand am {formatDate(imp.derived_opening_balance_on)} war dann {formatMoney(imp.derived_opening_balance)}.
+      </p>
+      <button type="button" onClick={() => void take()} disabled={busy}>
+        {busy ? "Übernimmt …" : "Anfangssaldo daraus übernehmen"}
+      </button>
+      <ErrorNotice error={error} />
     </div>
   );
 }

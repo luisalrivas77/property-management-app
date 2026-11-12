@@ -570,6 +570,17 @@ export const PRIVATE_ONLY_CATEGORIES: ReadonlySet<AllocationCategory> = new Set<
   "depot_fee",
 ]);
 
+/** The tax-relevant codes (relevance tax in rules/household/taxonomy.py, D159, D160): never
+ * auto-confirmed and never a learned rule, since each proposes an input a person confirms. */
+export const TAX_RELEVANT_CATEGORIES: ReadonlySet<AllocationCategory> = new Set<AllocationCategory>([
+  "hh_donation",
+  "hh_household_services",
+  "hh_childcare",
+  "hh_property_cost",
+  "hh_tax_payment",
+  "capital_income_tax",
+]);
+
 /** The household codes in the groups of rules/household/taxonomy.py (phase 6 D159), for the
  * category picker of a private line; the API's allowed set per purpose decides. */
 const HOUSEHOLD_GROUPS: { label: string; categories: AllocationCategory[] }[] = [

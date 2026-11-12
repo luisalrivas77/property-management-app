@@ -4819,6 +4819,47 @@
         }
       }
     },
+    "/api/imports/{import_id}/opening-from-closing": {
+      "post": {
+        "summary": "Import Opening From Closing",
+        "description": "„Anfangssaldo daraus übernehmen“: the account's opening balance becomes the one this\nimport implies (StatementImport.derived_opening_balance), and every import of the account\nis re-checked. 422 statement.opening_not_derivable when the import does not offer it.",
+        "operationId": "import_opening_from_closing_api_imports__import_id__opening_from_closing_post",
+        "parameters": [
+          {
+            "name": "import_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Import Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatementImport"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/possible-duplicates": {
       "get": {
         "summary": "Possible Duplicates List",
@@ -22111,6 +22152,30 @@
               }
             ],
             "title": "Stated Closing On"
+          },
+          "derived_opening_balance": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Derived Opening Balance"
+          },
+          "derived_opening_balance_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Derived Opening Balance On"
           }
         },
         "additionalProperties": false,
@@ -24239,6 +24304,13 @@
             "type": "array",
             "title": "Waiting Other Amounts"
           },
+          "unlearnable_categories": {
+            "items": {
+              "$ref": "#/components/schemas/AllocationCategory"
+            },
+            "type": "array",
+            "title": "Unlearnable Categories"
+          },
           "rule": {
             "anyOf": [
               {
@@ -24260,7 +24332,7 @@
           "no_default_rule_categories"
         ],
         "title": "TransactionAllocations",
-        "description": "GET / PUT /transactions/{id}/allocations: the line, its current allocation rows\n(proposed or confirmed; none = not matched) and the rule checkbox.\n\ncan_learn_rule: whether a single-category answer for this line can become a rule\nwithout a typed pattern (false without an IBAN, and for a counterparty a matcher owns,\nD38). learn_rule_default: the checkbox's default for the current rows (off when a rule\ncannot be learned from them, or a category never auto-confirms, review F6).\nno_default_rule_categories: the categories that never auto-confirm (threshold None in\nrules.review.THRESHOLDS), in taxonomy order, so the UI can default the checkbox for rows\nthe person types (on unless one of these is among them, §8.1).\nwaiting_other_amounts (D49): when a rule can be learned, the other amounts of the lines\nstill waiting from the same IBAN hash and sign (reconciled import, not a duplicate, no\nconfirmed row), each with its count, most frequent first, at most five; the panel then\nasks whether those belong to the same category (same_amount_only).\nrule: the rule this PUT created, if any."
+        "description": "GET / PUT /transactions/{id}/allocations: the line, its current allocation rows\n(proposed or confirmed; none = not matched) and the rule checkbox.\n\ncan_learn_rule: whether a single-category answer for this line can become a rule\nwithout a typed pattern (false without an IBAN, and for a counterparty a matcher owns,\nD38). learn_rule_default: the checkbox's default for the current rows (off when a rule\ncannot be learned from them, or a category never auto-confirms, review F6).\nno_default_rule_categories: the categories that never auto-confirm (threshold None in\nrules.review.THRESHOLDS), in taxonomy order, so the UI can default the checkbox for rows\nthe person types (on unless one of these is among them, §8.1).\nwaiting_other_amounts (D49): when a rule can be learned, the other amounts of the lines\nstill waiting from the same IBAN hash and sign (reconciled import, not a duplicate, no\nconfirmed row), each with its count, most frequent first, at most five; the panel then\nasks whether those belong to the same category (same_amount_only).\nunlearnable_categories: the categories the line's account takes for which a one-row\nanswer can never become a rule, with or without a typed pattern (phase 6 D160 on a\nprivate account: the transfer, depot and tax-relevant codes and those without a\nthreshold; empty on the rental account), in taxonomy order, so the UI greys the box and\nsays why instead of letting rule.not_learnable refuse the answer.\nrule: the rule this PUT created, if any."
       },
       "TransferLegSource": {
         "type": "string",

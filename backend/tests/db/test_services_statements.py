@@ -27,7 +27,13 @@ from hausbuch.schemas.bank import AccountCreate, DeclareBalanceBody
 from hausbuch.schemas.enums import BalanceSource, DocumentType, DuplicateStatus, ImportStatus
 from hausbuch.schemas.events import EventType
 from hausbuch.services import statements
-from hausbuch.services.accounts import create_account, get_account, list_accounts, update_account
+from hausbuch.services.accounts import (
+    create_account,
+    get_account,
+    list_accounts,
+    opening_from_closing,
+    update_account,
+)
 from hausbuch.services.bank import parse_statement
 from hausbuch.services.documents import get_document
 from hausbuch.services.errors import ConflictError, NotFoundError
@@ -583,3 +589,97 @@ def test_another_workspace_sees_nothing(run, imp, read, fresh_workspaces):
         run(other, declare_balances, imported.id, DeclareBalanceBody(closing_balance=CLOSING))
     with pytest.raises(NotFoundError):
         run(other, update_account, account.id, label="x")
+
+
+# --- The opening balance from the first import (principle 7) ----------------------------
+
+JAN_CSV = _bytes(CSV, "utf8_with_bom")  # 04.01.2027, +1.400,00
+FEB_CSV = _bytes(CSV, "header_variants_unquoted_reordered_windows_1252")  # Feb 2027, 990,00
+YEAR_END = date(2026, 12, 31)
+
+
+def _declare(run, ws, import_id, closing: str, now=T2):
+    body = DeclareBalanceBody(closing_balance=Decimal(closing))
+    return run(ws, declare_balances, import_id, body, now=now)
+
+
+def test_the_first_import_offers_the_opening_balance_it_implies(
+    run, imp, read, fresh_workspaces, hook_calls
+):
+    """A new account's balance on its anchor day is rarely known, but its first export states
+    today's: anchor + sum of the lines = closing gives the anchor, and taking it reconciles."""
+    ws, _ = fresh_workspaces
+    account = _account(run, ws, opening_on=YEAR_END)
+    jan = imp(ws, account.id, JAN_CSV, media_type="text/csv")
+    feb = imp(ws, account.id, FEB_CSV, media_type="text/csv", now=T2)
+    _declare(run, ws, jan.id, "5400.00")
+    shown = {i.id: i for i in read(ws, list_imports, account.id)}
+    assert (shown[jan.id].status, shown[jan.id].error_code) == (
+        ImportStatus.UNRECONCILED,
+        rules.UNRECONCILED,
+    )
+    assert shown[jan.id].derived_opening_balance == Decimal("4000.00")
+    assert shown[jan.id].derived_opening_balance_on == YEAR_END
+    assert shown[feb.id].derived_opening_balance is None  # pending, and not the first
+    assert read(ws, get_import, jan.id).derived_opening_balance == Decimal("4000.00")
+
+    taken = run(ws, opening_from_closing, jan.id, now=T3)
+    assert taken.status is ImportStatus.RECONCILED and taken.derived_opening_balance is None
+    moved = read(ws, get_account, account.id)
+    # The anchor is the closing less the lines since the anchor day.
+    assert moved.opening_balance == Decimal("5400.00") - Decimal("1400.00")
+    assert moved.opening_balance_on == YEAR_END
+    assert _types(read, ws, account.id)[-1] == EventType.ACCOUNT_UPDATED
+    assert hook_calls == [jan.id]
+    # Taken twice (a double click): the import reconciles now, so nothing is derived.
+    with pytest.raises(RuleError) as caught:
+        run(ws, opening_from_closing, jan.id, now=T3)
+    assert caught.value.code == rules.OPENING_NOT_DERIVABLE
+
+
+def test_a_later_import_does_not_offer_the_opening_balance(run, imp, read, fresh_workspaces):
+    ws, _ = fresh_workspaces
+    account = _account(run, ws, opening_on=YEAR_END)
+    feb = imp(ws, account.id, FEB_CSV, media_type="text/csv")
+    _declare(run, ws, feb.id, "5000.00")
+    assert read(ws, get_import, feb.id).derived_opening_balance == Decimal("4010.00")
+    imp(ws, account.id, JAN_CSV, media_type="text/csv", now=T2)  # an earlier export arrives
+    assert read(ws, get_import, feb.id).derived_opening_balance is None
+    with pytest.raises(RuleError) as caught:
+        run(ws, opening_from_closing, feb.id, now=T3)
+    assert caught.value.code == rules.OPENING_NOT_DERIVABLE
+    assert read(ws, get_account, account.id).opening_balance == Decimal("0.00")
+
+
+def test_a_reconciled_import_already_proves_the_opening_balance(run, imp, read, fresh_workspaces):
+    ws, _ = fresh_workspaces
+    account = _account(run, ws, opening_on=YEAR_END)
+    jan = imp(ws, account.id, JAN_CSV, media_type="text/csv")
+    feb = imp(ws, account.id, FEB_CSV, media_type="text/csv", now=T2)
+    _declare(run, ws, jan.id, "5400.00")  # a typo in the earliest import
+    assert _declare(run, ws, feb.id, "2390.00").status is ImportStatus.RECONCILED
+    assert read(ws, get_import, jan.id).derived_opening_balance is None
+    with pytest.raises(RuleError) as caught:
+        run(ws, opening_from_closing, jan.id, now=T3)
+    assert caught.value.code == rules.OPENING_NOT_DERIVABLE
+
+
+def test_a_file_with_an_opening_balance_offers_none(run, imp, read, fresh_workspaces):
+    """A camt import that misses its own opening is a fault of the file or the anchor day,
+    not of the anchor's amount (statement.opening_mismatch)."""
+    ws, _ = fresh_workspaces
+    account = _account(run, ws)
+    imported = imp(ws, account.id, ZIP)
+    run(ws, update_account, account.id, opening_balance=Decimal("5.00"), now=T2)
+    moved = read(ws, get_import, imported.id)
+    assert moved.error_code == rules.OPENING_MISMATCH
+    assert moved.derived_opening_balance is None
+
+
+def test_another_workspace_cannot_take_the_opening_balance(run, imp, fresh_workspaces):
+    ws, other = fresh_workspaces
+    account = _account(run, ws, opening_on=YEAR_END)
+    jan = imp(ws, account.id, JAN_CSV, media_type="text/csv")
+    _declare(run, ws, jan.id, "5400.00")
+    with pytest.raises(NotFoundError):
+        run(other, opening_from_closing, jan.id, now=T3)
