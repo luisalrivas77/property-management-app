@@ -92,7 +92,7 @@ def test_the_first_issuers_statement_still_goes_to_its_own_reader():
 
 
 def test_any_other_pdf_is_still_refused():
-    data = draw(["Kontoauszug zu Beispielkarte\nALTER SALDO VOM 01.01.26  -1,00\nGESAMTUMSÄTZE"])
+    data = draw(["Kontoauszug zu Beispielkarte\nALTER SALDO VOM 05.05.26  -1,00\nGESAMTUMSÄTZE"])
     assert detect_format(data, "application/pdf") is StatementFormat.PDF
     with pytest.raises(RuleError) as caught:
         parse_statement(data, "application/pdf")
