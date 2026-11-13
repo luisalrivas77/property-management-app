@@ -363,11 +363,38 @@ type ConfirmCategoryResult = components["schemas"]["ConfirmCategoryResult"];
 
 /** „Alle bestätigen“ (phase 6 D159 amended 13 Nov 2026): the private lines' plain proposals
  * (one part, no question, a household code that is not tax-relevant; the API's
- * bulk_confirmable), grouped by category with a count. A group of two or more gets „Alle N
- * bestätigen“, which lists exactly those lines; „Bestätigen“ sends their ids, never the
- * category alone (POST /inbox/confirm-category). A line that changed meanwhile is skipped. */
+ * bulk_confirmable), grouped by category with a count. A group of two or more gets
+ * „Zahlungen ansehen“, which lists its lines inline without confirming anything, and „Alle N
+ * prüfen und bestätigen“, which lists them in a dialog. In both lists every line has a
+ * checkbox, ticked by default; „Ausgewählte bestätigen (N)“ sends the ticked ids only, never
+ * the category alone (POST /inbox/confirm-category). An unticked line keeps waiting. The
+ * ticks are shared by the inline list and the dialog. A line that changed meanwhile is
+ * skipped by the API. */
 function BulkConfirm({ items, data, onChanged }: { items: InboxItem[]; data: InboxData; onChanged: () => void }) {
   const [result, setResult] = useState<ConfirmCategoryResult | null>(null);
+  const [shown, setShown] = useState<ReadonlySet<AllocationCategory>>(new Set());
+  const [unticked, setUnticked] = useState<ReadonlySet<string>>(new Set());
+  const toggleShown = (category: AllocationCategory) =>
+    setShown((current) => {
+      const next = new Set(current);
+      if (next.has(category)) next.delete(category);
+      else next.add(category);
+      return next;
+    });
+  const setTicked = (ids: string[], ticked: boolean) =>
+    setUnticked((current) => {
+      const next = new Set(current);
+      for (const id of ids) {
+        if (ticked) next.delete(id);
+        else next.add(id);
+      }
+      return next;
+    });
+  const done = (confirmed: ConfirmCategoryResult) => {
+    setResult(confirmed);
+    notifyInboxChanged();
+    onChanged();
+  };
   const groups = new Map<AllocationCategory, InboxItem[]>();
   for (const item of items) {
     if (item.kind !== "allocation_proposed" || !item.bulk_confirmable || !item.category || !item.transaction_id) continue;
@@ -383,30 +410,53 @@ function BulkConfirm({ items, data, onChanged }: { items: InboxItem[]; data: Inb
         <>
           <p className="muted">Vorschläge für private Konten, nach Kategorie: eine ganze Gruppe lässt sich auf einmal bestätigen.</p>
           <ul className="inbox-bulk" aria-label="Vorschläge privater Konten nach Kategorie">
-            {listed.map(([category, group]) => (
-              <li key={category} className="row">
-                <span>{ALLOCATION_CATEGORY[category]}</span> <span className="inbox-section-count">{group.length}</span>
-                <span className="spacer" />
-                <ActionDialog
-                  label={`Alle ${group.length} bestätigen`}
-                  title={`${ALLOCATION_CATEGORY[category]}: ${group.length} Zahlungen bestätigen`}
-                >
-                  {(close) => (
-                    <BulkConfirmList
-                      category={category}
-                      items={group}
-                      data={data}
-                      onDone={(done) => {
-                        close();
-                        setResult(done);
-                        notifyInboxChanged();
-                        onChanged();
-                      }}
-                    />
-                  )}
-                </ActionDialog>
-              </li>
-            ))}
+            {listed.map(([category, group]) => {
+              const open = shown.has(category);
+              const listId = `inbox-bulk-${category}`;
+              const list = (onDone: (confirmed: ConfirmCategoryResult) => void) => (
+                <BulkConfirmList
+                  category={category}
+                  items={group}
+                  data={data}
+                  unticked={unticked}
+                  onTick={setTicked}
+                  onDone={onDone}
+                />
+              );
+              return (
+                <li key={category} className="stack">
+                  <div className="row">
+                    <span>{ALLOCATION_CATEGORY[category]}</span> <span className="inbox-section-count">{group.length}</span>
+                    <span className="spacer" />
+                    <button
+                      type="button"
+                      className="secondary"
+                      aria-expanded={open}
+                      aria-controls={listId}
+                      onClick={() => toggleShown(category)}
+                    >
+                      {open ? "Zahlungen ausblenden" : "Zahlungen ansehen"}
+                    </button>
+                    <ActionDialog
+                      label={`Alle ${group.length} prüfen und bestätigen`}
+                      title={`${ALLOCATION_CATEGORY[category]}: Zahlungen auswählen und bestätigen`}
+                    >
+                      {(close) =>
+                        list((confirmed) => {
+                          close();
+                          done(confirmed);
+                        })
+                      }
+                    </ActionDialog>
+                  </div>
+                  {open ? (
+                    <div id={listId} className="stack">
+                      {list(done)}
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
           </ul>
         </>
       ) : null}
@@ -426,22 +476,29 @@ function BulkConfirmList({
   category,
   items,
   data,
+  unticked,
+  onTick,
   onDone,
 }: {
   category: AllocationCategory;
   items: InboxItem[];
   data: InboxData;
+  /** The lines of any group the person unticked; every other line is ticked. */
+  unticked: ReadonlySet<string>;
+  onTick: (ids: string[], ticked: boolean) => void;
   onDone: (result: ConfirmCategoryResult) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const ids = items.flatMap((item) => (item.transaction_id ? [item.transaction_id] : []));
+  const ticked = ids.filter((id) => !unticked.has(id));
+  const label = ALLOCATION_CATEGORY[category];
 
   async function confirm() {
     setBusy(true);
     setError(null);
     try {
-      onDone(await ok(api.POST("/api/inbox/confirm-category", { body: { category, transaction_ids: ids } })));
+      onDone(await ok(api.POST("/api/inbox/confirm-category", { body: { category, transaction_ids: ticked } })));
     } catch (caught) {
       setError(caught);
     } finally {
@@ -452,26 +509,47 @@ function BulkConfirmList({
   return (
     <>
       <p>
-        Diese {ids.length} Zahlungen werden als „{ALLOCATION_CATEGORY[category]}“ bestätigt, jede wie mit ihrem eigenen
-        „Bestätigen“. Es wird keine Regel gelernt; jede Zahlung lässt sich danach einzeln ändern.
+        Die angehakten Zahlungen werden als „{label}“ bestätigt, jede wie mit ihrem eigenen „Bestätigen“. Eine Zahlung ohne
+        Haken bleibt in der Liste. Es wird keine Regel gelernt; jede Zahlung lässt sich danach einzeln ändern.
       </p>
       <div className="table-wrap">
-        <table aria-label="Zahlungen, die bestätigt werden">
+        <table aria-label={`Zahlungen als „${label}“`}>
           <thead>
             <tr>
+              <th>
+                <input
+                  type="checkbox"
+                  aria-label="Alle auswählen"
+                  checked={ticked.length === ids.length}
+                  onChange={(e) => onTick(ids, e.target.checked)}
+                />
+              </th>
               <th>Datum</th>
               <th>Empfänger oder Zahler</th>
               <th className="num">Betrag</th>
+              <th>Konto</th>
             </tr>
           </thead>
           <tbody>
             {ids.map((id) => {
               const line = data.transactions.get(id);
+              const payee = line?.counterparty_name ?? line?.booking_text ?? "Ohne Gegenseite";
+              const amount = line ? signedMoney(line.amount) : "–";
+              const account = line ? data.accounts.get(line.account_id) : undefined;
               return (
                 <tr key={id}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      aria-label={`Auswählen: ${line ? formatDate(line.booking_date) : ""} ${payee} ${amount}`}
+                      checked={!unticked.has(id)}
+                      onChange={(e) => onTick([id], e.target.checked)}
+                    />
+                  </td>
                   <td>{line ? formatDate(line.booking_date) : "–"}</td>
-                  <td>{line?.counterparty_name ?? line?.booking_text ?? "Ohne Gegenseite"}</td>
-                  <td className="num">{line ? signedMoney(line.amount) : "–"}</td>
+                  <td>{payee}</td>
+                  <td className="num">{amount}</td>
+                  <td>{account?.label ?? "–"}</td>
                 </tr>
               );
             })}
@@ -479,8 +557,8 @@ function BulkConfirmList({
         </table>
       </div>
       <div className="row">
-        <button type="button" disabled={busy} onClick={() => void confirm()}>
-          Bestätigen
+        <button type="button" disabled={busy || ticked.length === 0} onClick={() => void confirm()}>
+          Ausgewählte bestätigen ({ticked.length})
         </button>
       </div>
       <ErrorNotice error={error} />
