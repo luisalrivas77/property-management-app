@@ -375,8 +375,8 @@ def statement_file_kind(statement: ParsedStatement) -> AccountKind | None:
 
 def statement_file_identity(statement: ParsedStatement, key: bytes) -> ProtectedIban | None:
     """The file's own account identifier, masked + HMAC'd: a bank export's account IBAN, a
-    card's customer number or a depot's account number (D164). None when the file names
-    none that can be protected."""
+    card's number (the first issuer's customer number, Consors Finanz's Kontonummer) or a
+    depot's account number (D164). None when the file names none that can be protected."""
     try:
         if statement.format in BANK_EXPORT_FORMATS:
             return protect_iban(statement.account_iban, key) if statement.account_iban else None
@@ -412,9 +412,10 @@ def statement_offer(
     """For „Auf Konto importieren“ (phase 6 D176 (3), step 4): the accounts a statement file
     stored as a document can be imported onto (refused_statement_file says which documents).
 
-    A card or depot statement: the file's printed number (the card's customer number, the
-    depot's account number) decides: an account of the kind whose stored number is it is the
-    suggestion; an account with another number is left out (the import would refuse it); one
+    A card or depot statement: the file's printed number (the card's customer or account
+    number, the depot's account number) decides: an account of the kind whose stored number
+    is it is the suggestion; an account with another number is left out (the import would
+    refuse it); one
     without a number may take it (its first statement sets the number) and is the suggestion
     when it is the only candidate. A bank's export (camt, Sparkasse CSV, DKB CSV; 13 Nov 2026):
     the bank account whose IBAN is the file's own, pre-selected; no other (the import would
@@ -1145,7 +1146,7 @@ def _lock_account(ctx: CommandContext, account_id: UUID) -> Row:
 def _route(conn: Connection, account: Row, statement: ParsedStatement, key: bytes) -> None:
     """Whether the file is this account's statement (D164). A card statement goes onto a
     card account only, and a card account takes card statements only (phase 6 D176 (3)); a
-    card statement is routed by the issuer's customer number (account.external_ref), every
+    card statement is routed by the number its issuer prints (account.external_ref), every
     other file by its own IBAN when it names one. The same holds for a depot and its cash
     statement (phase 6 step 4): routed by the account number it prints, and, once the depot
     carries the IBAN a person confirmed (D156 amended), by that IBAN too."""
@@ -1176,9 +1177,9 @@ def _require_same_account(file_iban: str | None, account_hmac: bytes | None, key
 
 
 def _require_same_ref(conn: Connection, account: Row, file_ref: str | None, key: bytes) -> None:
-    """A card statement names its customer number, a depot's its account number: it must be
-    the account's, or, while the account has none yet (its first import sets it, _set_ref),
-    no other account's."""
+    """A card statement names its customer or account number, a depot's its account number:
+    it must be the account's, or, while the account has none yet (its first import sets it,
+    _set_ref), no other account's."""
     if file_ref is None:
         raise RuleError(rules.ACCOUNT_MISMATCH, "the file names no account reference")
     theirs = protect_ref(file_ref, key).hmac
