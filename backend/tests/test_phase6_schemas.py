@@ -205,10 +205,8 @@ def test_every_price_source_has_a_place_in_the_precedence():
     [
         lambda: exchange.classify(None),
         lambda: exchange.movement_hash(uuid.uuid4(), None, 0),
-        lambda: valuation.price_on([], date(2026, 6, 30)),
-        lambda: valuation.value(None, None, date(2026, 6, 30)),
     ],
-    ids=["classify", "movement_hash", "price_on", "value"],
+    ids=["classify", "movement_hash"],
 )
 def test_stub_until_its_step(call):
     with pytest.raises(NotImplementedError, match="phase 6 step"):
