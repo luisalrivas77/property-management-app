@@ -174,7 +174,9 @@ export async function loadInbox(): Promise<InboxData> {
   ]);
   const perAccount = await Promise.all(
     accounts
-      .filter((account) => account.kind === "bank_current" || account.kind === "bank_savings")
+      // Every account that holds bank lines: bank accounts, the credit card and the depot's
+      // cash (phase 6 D176, D165); an exchange or wallet holds movements, not lines.
+      .filter((account) => account.kind !== "exchange" && account.kind !== "wallet")
       .map(async (account) => {
         const path = { params: { path: { account_id: account.id } } };
         const [imports, transactions] = await Promise.all([
