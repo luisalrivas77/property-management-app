@@ -99,6 +99,34 @@ def test_a_refused_file_quotes_no_cell(client_a):
     assert response.status_code == 422 and secret not in response.text
 
 
+def test_a_typed_zero_balance_comes_back_plain_and_can_be_sent_again(client_a):
+    """A typed 0 is stored as numeric(28,10) 0.0000000000; it came back as "0E-10", which the
+    form pre-filled and the next save refused as not a number."""
+    account = create(client_a, "/api/accounts", ACCOUNT)
+    imported = ok(_upload(client_a, account["id"]), 201)["movement_import"]
+    [view] = ok(client_a.get(f"/api/accounts/{account['id']}/exchange"))["imports"]
+    balances = {b["symbol"]: b for b in view["balances"]}
+    body = {
+        "balances": [
+            {"asset_id": balances["EUR"]["asset_id"], "units": "250.00"},
+            {"asset_id": balances["BTC"]["asset_id"], "units": "0"},
+        ]
+    }
+    ok(client_a.post(f"/api/movement-imports/{imported['id']}/holdings", json=body))
+    [view] = ok(client_a.get(f"/api/accounts/{account['id']}/exchange"))["imports"]
+    typed = {b["symbol"]: b["typed"] for b in view["balances"]}
+    assert typed["BTC"] == "0.0000000000"
+    assert all("E" not in (value or "") for value in typed.values())
+    again = {
+        "balances": [
+            {"asset_id": b["asset_id"], "units": b["typed"]}
+            for b in view["balances"]
+            if b["typed"] is not None
+        ]
+    }
+    ok(client_a.post(f"/api/movement-imports/{imported['id']}/holdings", json=again))
+
+
 def test_the_page_of_an_account_that_is_no_exchange_is_refused(client_a):
     bank = create(
         client_a,

@@ -4,7 +4,9 @@ Spec amendment 2 (docs/phases/phase-1.md): the decimal types below accept a deci
 a Decimal and nothing else. A float (a JSON number such as 1400.0) is refused, because it may
 already have been rounded before it arrived, and so is an int, so that a client sending JSON
 numbers fails on every value rather than only on the ones with cents. Their JSON schema is
-`type: string`, which is what the generated TypeScript types follow.
+`type: string`, which is what the generated TypeScript types follow. On the way out they are
+always written in plain notation ("0.0000000000", "100"), never with an exponent ("0E-10",
+"1E+2"): a client that parses or re-sends the string must get a decimal string back.
 """
 
 from datetime import datetime
@@ -12,7 +14,16 @@ from decimal import Decimal
 from typing import Annotated, Any, Self
 from uuid import UUID
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, WithJsonSchema, model_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    GetCoreSchemaHandler,
+    WithJsonSchema,
+    model_validator,
+)
+from pydantic_core import CoreSchema, core_schema
 
 
 class Schema(BaseModel):
@@ -32,11 +43,34 @@ def _decimal_string_only(value: Any) -> Any:
 _STRING_ONLY = BeforeValidator(_decimal_string_only)
 
 
+def plain_decimal(value: Decimal) -> str:
+    """A Decimal in plain notation: format(d, "f"), never str(d), which writes a stored
+    numeric(28,10) zero as "0E-10" and Decimal("1E+2") as "1E+2" (neither matches the
+    published pattern, and a form that re-sends it is refused)."""
+    return format(value, "f")
+
+
+class _DecimalString(WithJsonSchema):
+    """WithJsonSchema that also serialises the value in plain notation in JSON mode, so every
+    decimal type built by _string_schema gets both from the one annotation (python mode keeps
+    the Decimal)."""
+
+    def __get_pydantic_core_schema__(
+        self, source: Any, handler: GetCoreSchemaHandler
+    ) -> CoreSchema:
+        schema = handler(source)
+        schema["serialization"] = core_schema.plain_serializer_function_ser_schema(
+            plain_decimal, return_schema=core_schema.str_schema(), when_used="json"
+        )
+        return schema
+
+
 def _string_schema(decimal_places: int, *, signed: bool = False) -> WithJsonSchema:
-    """JSON schema `string` with the canonical decimal form. The pattern is for clients; the
-    server validates with Pydantic's Decimal rules (digits, places, bounds)."""
+    """JSON schema `string` with the canonical decimal form, and the value written in plain
+    notation in JSON (plain_decimal). The pattern is for clients; the server validates with
+    Pydantic's Decimal rules (digits, places, bounds)."""
     sign = "-?" if signed else ""
-    return WithJsonSchema(
+    return _DecimalString(
         {"type": "string", "pattern": rf"^{sign}[0-9]+(\.[0-9]{{1,{decimal_places}}})?$"}
     )
 

@@ -23,8 +23,10 @@ from hausbuch.schemas.common import (
     PositiveMoney,
     Rate,
     Rooms,
+    Schema,
     TaxRate,
 )
+from hausbuch.schemas.household import NonNegativeQuantity, PriceEur, Quantity
 from hausbuch.schemas.property import OwnerCreate, PropertyCreate
 
 # alias, a valid decimal string for it, its decimal places
@@ -71,6 +73,37 @@ def test_publishes_a_string_schema_in_both_modes(alias):
         assert schema["type"] == "string", mode
         assert schema["pattern"].endswith(rf"(\.[0-9]{{1,{places}}})?$")
     assert adapter.dump_json(Decimal(valid)) == json.dumps(valid).encode()
+
+
+@pytest.mark.parametrize(
+    ("value", "plain"),
+    [
+        ("0E-10", "0.0000000000"),  # a typed 0 read back from numeric(28,10)
+        ("1E+2", "100"),
+        ("0.1234567891", "0.1234567891"),
+        ("-0.0000001", "-0.0000001"),  # str() would write -1E-7
+    ],
+)
+def test_written_in_plain_notation_never_with_an_exponent(value, plain):
+    """A stored numeric(28,10) zero is Decimal("0E-10"); str() would send "0E-10", which the
+    published pattern does not match, and a form re-sending it was refused."""
+    decimal = Decimal(value)
+    for annotation in (Quantity, NonNegativeQuantity):
+        if annotation is NonNegativeQuantity and decimal < 0:
+            continue
+        adapter = TypeAdapter(annotation)
+        assert adapter.dump_json(adapter.validate_python(decimal)) == json.dumps(plain).encode()
+        assert adapter.dump_python(decimal) == decimal  # python mode keeps the Decimal
+    assert TypeAdapter(Money).dump_json(Decimal("1E+2")) == b'"100"'
+    assert TypeAdapter(PriceEur).dump_json(Decimal("1E+2")) == b'"100"'
+
+
+def test_plain_notation_inside_a_model_and_an_optional_field():
+    class Holding(Schema):
+        units: Quantity | None = None
+
+    assert Holding(units=Decimal("0E-10")).model_dump_json() == '{"units":"0.0000000000"}'
+    assert Holding().model_dump_json() == '{"units":null}'
 
 
 def test_the_bounds_still_apply_to_strings():
