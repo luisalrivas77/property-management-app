@@ -543,3 +543,133 @@ def test_a_private_line_of_the_same_payee_neither_breaks_a_rental_rule_nor_reach
     assert similar, "the rental lines of the payee are still offered"
     assert all(not cat.startswith("hh_") for s in similar for cat in s.categories)
     assert Decimal("-60.00") not in {s.amount for s in similar}
+
+
+# --- D160 amended: a shared counterparty IBAN ------------------------------------------------
+
+# One clearing IBAN on every card payment, as DKB's export writes it; invented.
+CLEARING_IBAN = "DE55100000000000000881"
+SINGLE_IBAN = "DE28100000000000000882"
+DELIVERY = "Lieferdienst Beispiel"
+GROCER = "Supermarkt Beispiel"
+CHEMIST = "Drogerie Beispiel"
+
+
+def _rematch(app_engine, tmp_path, world: World, tx):
+    return run_match_transaction(  # a re-match never calls the model
+        _deps(app_engine, tmp_path, FakeModelClient()),
+        workspace_id=world.ws,
+        transaction_id=tx,
+        attempt=0,
+        rematch=True,
+    )
+
+
+def _shared_world(private: Private) -> dict[str, uuid.UUID]:
+    """Three payees on the clearing IBAN: the IBAN is shared."""
+    return {
+        name: private.line(date(2026, 9, day), amount, name=name, iban=CLEARING_IBAN)
+        for name, day, amount in (
+            (DELIVERY, 3, "-23.40"),
+            (GROCER, 4, "-61.15"),
+            (CHEMIST, 5, "-8.95"),
+        )
+    }
+
+
+def test_a_shared_iban_learns_the_iban_and_the_name_and_books_that_payee_only(
+    world, private, app_engine, tmp_path
+):
+    lines = _shared_world(private)
+    assert world.query(
+        lambda c: matching.is_shared_iban(c, protect_iban(CLEARING_IBAN, TEST_IBAN_KEY).hmac)
+    )
+    # Another payee of the IBAN confirmed under another category: unfiltered, the IBAN's
+    # history would look like two kinds of payment and the rule would stand at one amount only.
+    _answer_line(world, lines[GROCER], "-61.15", "hh_groceries", learn=False)
+    result = _answer_line(world, lines[DELIVERY], "-23.40", "hh_dining", learn=True)
+    assert result.rule is not None
+    matcher = result.rule.matcher
+    assert matcher.counterparty_iban_hmac == protect_iban(CLEARING_IBAN, TEST_IBAN_KEY).hmac.hex()
+    assert matcher.counterparty_name_pattern == "^LIEFERDIENST BEISPIEL"
+
+    # The same payee at another amount: booked by the rule at once.
+    again = private.line(date(2026, 10, 2), "-31.70", name=DELIVERY, iban=CLEARING_IBAN)
+    _rematch(app_engine, tmp_path, world, again)
+    (row,) = _rows(world, again)
+    assert (row.category, row.method, row.status, row.confidence) == (
+        "hh_dining",
+        "rule",
+        "confirmed",
+        Decimal("1.000"),
+    )
+    # Another payee of the same IBAN: never booked by it.
+    grocer = private.line(date(2026, 10, 2), "-31.70", name=GROCER, iban=CLEARING_IBAN)
+    plan = _rematch(app_engine, tmp_path, world, grocer)
+    assert plan.reason == "routing.no_match" and _rows(world, grocer) == []
+    # The waiting chemist line was not touched by the new rule's re-check either.
+    assert _rows(world, lines[CHEMIST]) == []
+
+
+def test_an_iban_only_rule_learned_before_the_iban_was_shared_no_longer_applies(
+    world, private, app_engine, tmp_path
+):
+    first = private.line(date(2026, 8, 3), "-23.40", name=DELIVERY, iban=CLEARING_IBAN)
+    result = _answer_line(world, first, "-23.40", "hh_dining", learn=True)
+    assert result.rule is not None
+    assert result.rule.matcher.counterparty_name_pattern is None  # one payee: the IBAN alone
+
+    _shared_world(private)  # two more payees arrive: now the IBAN is shared
+    grocer = private.line(date(2026, 10, 2), "-44.10", name=GROCER, iban=CLEARING_IBAN)
+    plan = _rematch(app_engine, tmp_path, world, grocer)
+    assert plan.reason == "routing.no_match" and _rows(world, grocer) == []
+    # Not even its own payee: the rule on the IBAN alone is off on a shared IBAN.
+    delivery = private.line(date(2026, 10, 3), "-23.40", name=DELIVERY, iban=CLEARING_IBAN)
+    _rematch(app_engine, tmp_path, world, delivery)
+    assert _rows(world, delivery) == []
+    # The new rule's re-check of waiting lines would pick none of them.
+    assert (
+        world.query(lambda c: matching.waiting_lines(c, "rule", result.rule.id)) == []  # type: ignore[union-attr]
+    )
+
+
+def test_the_waiting_amounts_on_a_shared_iban_are_the_payees_own(world, private):
+    lines = _shared_world(private)
+    private.line(date(2026, 9, 10), "-18.90", name=DELIVERY, iban=CLEARING_IBAN)
+    private.line(date(2026, 9, 12), "-18.90", name="LIEFERDIENST BEISPIEL", iban=CLEARING_IBAN)
+    private.line(date(2026, 9, 14), "-12.00", name=GROCER, iban=CLEARING_IBAN)
+    view = world.query(
+        lambda c: review.transaction_allocations(
+            c, lines[DELIVERY], iban_key=TEST_IBAN_KEY, today=NOW.date()
+        )
+    )
+    assert view.can_learn_rule is True
+    assert [(w.amount, w.count) for w in view.waiting_other_amounts] == [(Decimal("-18.90"), 2)]
+    # The model's similar answers for the line: only its own payee's.
+    _answer_line(world, lines[GROCER], "-61.15", "hh_groceries", learn=False)
+    similar = world.query(
+        lambda c: (
+            matching.household_categorize_input(c, matching.load_line(c, lines[DELIVERY])).similar
+        )
+    )
+    assert similar == []
+
+
+def test_a_single_payee_iban_behaves_as_before(world, private, app_engine, tmp_path):
+    first = private.line(
+        date(2026, 9, 3), "-29.99", name="Fitnessstudio Beispiel", iban=SINGLE_IBAN
+    )
+    private.line(date(2026, 9, 10), "-35.00", name="Fitnessstudio Beispiel", iban=SINGLE_IBAN)
+    private.line(date(2026, 9, 17), "-35.00", name="FITNESSSTUDIO BEISPIEL", iban=SINGLE_IBAN)
+    view = world.query(
+        lambda c: review.transaction_allocations(c, first, iban_key=TEST_IBAN_KEY, today=NOW.date())
+    )
+    assert [(w.amount, w.count) for w in view.waiting_other_amounts] == [(Decimal("-35.00"), 2)]
+    result = _answer_line(world, first, "-29.99", "hh_sport", learn=True)
+    assert result.rule is not None
+    assert result.rule.matcher.counterparty_name_pattern is None
+    assert result.rule.matcher.counterparty_iban_hmac is not None
+    later = private.line(date(2026, 10, 3), "-29.99", name="Anderer Name", iban=SINGLE_IBAN)
+    _rematch(app_engine, tmp_path, world, later)
+    (row,) = _rows(world, later)
+    assert (row.category, row.method, row.status) == ("hh_sport", "rule", "confirmed")
