@@ -1281,6 +1281,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/documents/{document_id}/statement-account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Document Statement Account
+         * @description „Konto anlegen und einlesen“ (phase 6, 13 Nov 2026, amends D176 (3) and D165 (b)): for
+         *     a statement file stored through Dokumente with no account for it yet (its
+         *     `statement_offer.new_account`), the account is created from the file and the file imported
+         *     onto it, in one transaction. The kind, the IBAN or number and the opening balance are read
+         *     from the stored original on the server; the body carries only what the person sets (label,
+         *     bank, provider, purpose, owner shares). 201 with the account and the import; 404 for an
+         *     unknown document; 409 when an account already holds the file's IBAN or number (import onto
+         *     it with „Auf Konto importieren“); 422 rule_violation statement.no_account_offer for a
+         *     document without such an offer, or another statement.* code when the import refuses the
+         *     file (nothing is written then).
+         */
+        post: operations["document_statement_account_api_documents__document_id__statement_account_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/documents/{document_id}/links/{target_type}/{target_id}": {
         parameters: {
             query?: never;
@@ -9414,6 +9443,35 @@ export interface components {
          */
         StateCode: "BW" | "BY" | "BE" | "BB" | "HB" | "HH" | "HE" | "MV" | "NI" | "NW" | "RP" | "SL" | "SN" | "ST" | "SH" | "TH";
         /**
+         * StatementAccountBody
+         * @description POST /documents/{id}/statement-account, „Konto anlegen und einlesen“: what the person
+         *     sets for the new account. The kind, the IBAN or number and the opening balance come from
+         *     the stored file on the server, never from the browser (the D176 (4) pattern). `shares`
+         *     as POST /accounts/{id}/ownership takes them (D157); empty leaves the to-do „Eigentümer
+         *     festlegen“.
+         */
+        StatementAccountBody: {
+            /** Label */
+            label: string;
+            /** Bank */
+            bank: string;
+            /** Provider */
+            provider?: string | null;
+            /** @default private */
+            purpose: components["schemas"]["AccountPurpose"];
+            /** Shares */
+            shares?: components["schemas"]["OwnershipShare"][];
+        };
+        /**
+         * StatementAccountCreated
+         * @description The account „Konto anlegen und einlesen“ created and the file's import onto it, both
+         *     written in one transaction.
+         */
+        StatementAccountCreated: {
+            account: components["schemas"]["Account"];
+            statement_import: components["schemas"]["StatementImport"];
+        };
+        /**
          * StatementExtraction
          * @description PDF Kontoauszug (§7.1): balances and lines. Every amount is a model reading, so the
          *     reconciliation is the guard; `lines` holds one text per booking line, parsed into
@@ -9476,13 +9534,16 @@ export interface components {
         };
         /**
          * StatementFileOffer
-         * @description A credit card's PDF statement or a depot's cash statement uploaded through Dokumente,
+         * @description A statement file uploaded through Dokumente (a credit card's PDF statement, a depot's
+         *     cash statement or, since 13 Nov 2026, a bank's own export: camt, Sparkasse CSV, DKB CSV),
          *     whose read failed with proposal.bank_file_not_read and which no account holds yet: the
          *     accounts it can be imported onto with „Auf Konto importieren“ (principle 7: the app
          *     proposes, the person confirms). `suggested_account_id` is the account whose stored number
-         *     is the one the file prints, else the only candidate; none when there is no candidate or
-         *     several without a number. No candidate means no account of this kind takes it yet
-         *     (`account_kind` names the kind to create).
+         *     or IBAN is the one the file prints, else the only candidate; none when there is no
+         *     candidate or several without a number. No candidate means no account of this kind takes
+         *     it yet (`account_kind` names the kind to create). `new_account` is set whenever no account
+         *     holds the file's own IBAN or number, also beside candidates without a number (a second
+         *     depot), for „Konto anlegen und einlesen“.
          */
         StatementFileOffer: {
             format: components["schemas"]["StatementFormat"];
@@ -9491,6 +9552,7 @@ export interface components {
             candidates?: components["schemas"]["StatementFileCandidate"][];
             /** Suggested Account Id */
             suggested_account_id?: string | null;
+            new_account?: components["schemas"]["StatementNewAccount"] | null;
         };
         /**
          * StatementFormat
@@ -9561,6 +9623,28 @@ export interface components {
             derived_opening_balance?: string | null;
             /** Derived Opening Balance On */
             derived_opening_balance_on?: string | null;
+        };
+        /**
+         * StatementNewAccount
+         * @description „Konto anlegen und einlesen“ (phase 6, 13 Nov 2026, amends D176 (3) and D165 (b)): the
+         *     account the file's own content implies, offered when no account holds the file's IBAN or
+         *     number yet. The kind comes from the format; `bank`, `provider` and `label` are suggestions
+         *     the person edits (None where the format does not tell, e.g. a camt file); the identifier is
+         *     shown masked only (an IBAN as „DE89 **** 3000“, a number as „**** 4567“) and never travels
+         *     back from the browser: POST /documents/{id}/statement-account reads it from the original.
+         */
+        StatementNewAccount: {
+            kind: components["schemas"]["AccountKind"];
+            /** Label */
+            label: string;
+            /** Bank */
+            bank?: string | null;
+            /** Provider */
+            provider?: string | null;
+            /** Iban Masked */
+            iban_masked?: string | null;
+            /** External Ref Masked */
+            external_ref_masked?: string | null;
         };
         /** SumComponent */
         SumComponent: {
@@ -13809,6 +13893,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StatementImport"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    document_statement_account_api_documents__document_id__statement_account_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StatementAccountBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatementAccountCreated"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

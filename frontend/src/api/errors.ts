@@ -69,7 +69,9 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "proposal.other_notice_without_patch":
     "Der zweite Eintrag passt nur, wenn der Betrag der Grunderwerbsteuer oben auf diesen Bescheid gesenkt wird. Bitte beides übernehmen oder den zweiten Eintrag überspringen.",
   "proposal.bank_file_not_read":
-    "Diese Datei wird nicht mit KI ausgelesen: Hausbuch hat sie beim Bankabruf von der Bank geholt, oder sie ist eine Kreditkartenabrechnung oder ein Kontoauszug des Depot-Verrechnungskontos. Solche Dateien liest Hausbuch selbst, ohne KI, auf ihrem Konto ein; steht sie dort noch nicht, auf der Seite des Dokuments „Auf Konto importieren“ wählen.",
+    "Diese Datei wird nicht mit KI ausgelesen: Hausbuch hat sie beim Bankabruf von der Bank geholt, oder sie ist ein Kontoauszug oder Umsatz-Export einer Bank, eine Kreditkartenabrechnung oder ein Kontoauszug des Depot-Verrechnungskontos. Solche Dateien liest Hausbuch selbst, ohne KI, auf ihrem Konto ein; steht sie dort noch nicht, auf der Seite des Dokuments „Auf Konto importieren“ oder „Konto anlegen und einlesen“ wählen.",
+  "statement.no_account_offer":
+    "Aus dieser Datei lässt sich kein neues Konto anlegen: sie ist schon eingelesen, oder sie ist kein Kontoauszug, den Hausbuch selbst liest. Bitte die Seite neu laden.",
   // Phase 6 D166, step 5a: an exchange export is never sent to the model.
   "proposal.exchange_export_not_read":
     "Das ist ein Export einer Börse (BISON oder Binance). Hausbuch liest ihn selbst, ohne KI, auf dem Konto der Börse ein: unter Konten das Konto der Börse öffnen und den Export dort mit „Export der Börse hochladen“ hochladen; gibt es noch keins, ein Konto der Art „Börse (Krypto)“ anlegen.",
@@ -269,9 +271,9 @@ export const AI_ERROR_TEXT: Record<string, string> = {
   "ai.blocked_private_data":
     "Das ist ein Dokument Ihres Depots. Es geht erst an die KI, wenn unter Einstellungen „Private Konten mit KI zuordnen“ eingeschaltet ist; danach hier „Neu auslesen“ drücken.",
   // Phase 6 D176 (3) and step 4: a credit card statement or the depot's cash statement uploaded
-  // as a document is never sent to the model.
+  // as a document is never sent to the model; since 13 Nov 2026 a bank's export neither.
   "proposal.bank_file_not_read":
-    "Das ist eine Kreditkartenabrechnung oder ein Kontoauszug des Depot-Verrechnungskontos. Hausbuch liest sie selbst, ohne KI, auf ihrem Konto ein: mit „Auf Konto importieren“ auf der Seite dieses Dokuments oder unter Zu prüfen, direkt aus der gespeicherten Datei, ohne sie noch einmal hochzuladen.",
+    "Das ist ein Kontoauszug oder Umsatz-Export einer Bank, eine Kreditkartenabrechnung oder ein Kontoauszug des Depot-Verrechnungskontos. Hausbuch liest die Datei selbst, ohne KI, auf ihrem Konto ein: mit „Auf Konto importieren“ auf der Seite dieses Dokuments oder unter Zu prüfen, direkt aus der gespeicherten Datei, ohne sie noch einmal hochzuladen. Gibt es das Konto noch nicht, legt „Konto anlegen und einlesen“ es aus der Datei an.",
   // Phase 6 D166, step 5a: a BISON or Binance export uploaded through Dokumente.
   "proposal.exchange_export_not_read":
     "Das ist ein Export einer Börse (BISON oder Binance). Hausbuch liest ihn selbst, ohne KI, auf dem Konto der Börse ein: unter Konten das Konto der Börse öffnen und den Export dort mit „Export der Börse hochladen“ hochladen; gibt es noch keins, ein Konto der Art „Börse (Krypto)“ anlegen.",

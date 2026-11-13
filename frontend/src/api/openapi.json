@@ -3632,6 +3632,57 @@
         }
       }
     },
+    "/api/documents/{document_id}/statement-account": {
+      "post": {
+        "summary": "Document Statement Account",
+        "description": "„Konto anlegen und einlesen“ (phase 6, 13 Nov 2026, amends D176 (3) and D165 (b)): for\na statement file stored through Dokumente with no account for it yet (its\n`statement_offer.new_account`), the account is created from the file and the file imported\nonto it, in one transaction. The kind, the IBAN or number and the opening balance are read\nfrom the stored original on the server; the body carries only what the person sets (label,\nbank, provider, purpose, owner shares). 201 with the account and the import; 404 for an\nunknown document; 409 when an account already holds the file's IBAN or number (import onto\nit with „Auf Konto importieren“); 422 rule_violation statement.no_account_offer for a\ndocument without such an offer, or another statement.* code when the import refuses the\nfile (nothing is written then).",
+        "operationId": "document_statement_account_api_documents__document_id__statement_account_post",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Document Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StatementAccountBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatementAccountCreated"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/documents/{document_id}/links/{target_type}/{target_id}": {
       "delete": {
         "summary": "Document Unlink",
@@ -24468,6 +24519,71 @@
         "title": "StateCode",
         "description": "owner.tax_state (migration 0016, phase 4 D90): the Bundesland whose church tax rate\napplies (rules/tax/tariffs/<year>.yaml, church_tax_rates)."
       },
+      "StatementAccountBody": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Label"
+          },
+          "bank": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Bank"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "purpose": {
+            "$ref": "#/components/schemas/AccountPurpose",
+            "default": "private"
+          },
+          "shares": {
+            "items": {
+              "$ref": "#/components/schemas/OwnershipShare"
+            },
+            "type": "array",
+            "title": "Shares"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "label",
+          "bank"
+        ],
+        "title": "StatementAccountBody",
+        "description": "POST /documents/{id}/statement-account, „Konto anlegen und einlesen“: what the person\nsets for the new account. The kind, the IBAN or number and the opening balance come from\nthe stored file on the server, never from the browser (the D176 (4) pattern). `shares`\nas POST /accounts/{id}/ownership takes them (D157); empty leaves the to-do „Eigentümer\nfestlegen“."
+      },
+      "StatementAccountCreated": {
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/Account"
+          },
+          "statement_import": {
+            "$ref": "#/components/schemas/StatementImport"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "account",
+          "statement_import"
+        ],
+        "title": "StatementAccountCreated",
+        "description": "The account „Konto anlegen und einlesen“ created and the file's import onto it, both\nwritten in one transaction."
+      },
       "StatementExtraction": {
         "properties": {
           "title": {
@@ -24611,6 +24727,16 @@
               }
             ],
             "title": "Suggested Account Id"
+          },
+          "new_account": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatementNewAccount"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -24620,7 +24746,7 @@
           "account_kind"
         ],
         "title": "StatementFileOffer",
-        "description": "A credit card's PDF statement or a depot's cash statement uploaded through Dokumente,\nwhose read failed with proposal.bank_file_not_read and which no account holds yet: the\naccounts it can be imported onto with „Auf Konto importieren“ (principle 7: the app\nproposes, the person confirms). `suggested_account_id` is the account whose stored number\nis the one the file prints, else the only candidate; none when there is no candidate or\nseveral without a number. No candidate means no account of this kind takes it yet\n(`account_kind` names the kind to create)."
+        "description": "A statement file uploaded through Dokumente (a credit card's PDF statement, a depot's\ncash statement or, since 13 Nov 2026, a bank's own export: camt, Sparkasse CSV, DKB CSV),\nwhose read failed with proposal.bank_file_not_read and which no account holds yet: the\naccounts it can be imported onto with „Auf Konto importieren“ (principle 7: the app\nproposes, the person confirms). `suggested_account_id` is the account whose stored number\nor IBAN is the one the file prints, else the only candidate; none when there is no\ncandidate or several without a number. No candidate means no account of this kind takes\nit yet (`account_kind` names the kind to create). `new_account` is set whenever no account\nholds the file's own IBAN or number, also beside candidates without a number (a second\ndepot), for „Konto anlegen und einlesen“."
       },
       "StatementFormat": {
         "type": "string",
@@ -24847,6 +24973,71 @@
           "error_code"
         ],
         "title": "StatementImport"
+      },
+      "StatementNewAccount": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/AccountKind"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "bank": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bank"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "iban_masked": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Z]{2}[0-9]{2} \\*{4} [A-Z0-9]{4}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Iban Masked"
+          },
+          "external_ref_masked": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\*{4} [A-Z0-9]{4}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Ref Masked"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "label"
+        ],
+        "title": "StatementNewAccount",
+        "description": "„Konto anlegen und einlesen“ (phase 6, 13 Nov 2026, amends D176 (3) and D165 (b)): the\naccount the file's own content implies, offered when no account holds the file's IBAN or\nnumber yet. The kind comes from the format; `bank`, `provider` and `label` are suggestions\nthe person edits (None where the format does not tell, e.g. a camt file); the identifier is\nshown masked only (an IBAN as „DE89 **** 3000“, a number as „**** 4567“) and never travels\nback from the browser: POST /documents/{id}/statement-account reads it from the original."
       },
       "SumComponent": {
         "properties": {

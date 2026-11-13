@@ -5,15 +5,15 @@
 // /accounts/{id}/ownership; the old rows are kept, superseded). The shares are fractions that
 // must sum to exactly 1, checked here exactly (whole numbers, no floats) before the API checks it
 // again (ownership.sum_not_one). Offered when none is set: 1/1 with one owner, 1/2 each with two.
+// The share inputs are shared with „Konto anlegen und einlesen“ (components/ownershipShares).
 import Link from "next/link";
 import { useCallback, useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
-import type { Account, Owner, OwnershipShare } from "@/api/schemas";
+import type { Account, Owner } from "@/api/schemas";
 import { ownerChip } from "@/components/accounts";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "@/components/form";
-import { formatFraction } from "@/components/format";
-import { toFraction } from "@/components/input";
+import { collectShares, initialShares, OwnerShareInputs } from "@/components/ownershipShares";
 import { Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 
@@ -77,7 +77,7 @@ function OwnershipForm({
   onSaved: () => void;
   onCancel: (() => void) | null;
 }) {
-  const [shares, setShares] = useState<Record<string, string>>(() => initialShares(account, owners));
+  const [shares, setShares] = useState<Record<string, string>>(() => initialShares(account.ownership, owners));
   const [reason, setReason] = useState(account.ownership?.[0]?.reason ?? "");
   const [effectiveFrom, setEffectiveFrom] = useState("");
   const [busy, setBusy] = useState(false);
@@ -86,24 +86,7 @@ function OwnershipForm({
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const values = collector();
-    const body: OwnershipShare[] = [];
-    for (const owner of owners) {
-      const raw = shares[owner.id] ?? "";
-      if (raw.trim() === "") continue;
-      const share = values.take(`share-${owner.id}`, toFraction(raw));
-      if (share) {
-        body.push({
-          owner_id: owner.id,
-          share_numerator: share.numerator,
-          share_denominator: share.denominator,
-          reason: reason.trim() || null,
-        });
-      }
-    }
-    if (values.ok && body.length === 0) values.messages.shares = ["Mindestens einen Anteil eingeben."];
-    else if (values.ok && !sumsToOne(body)) {
-      values.messages.shares = ["Die Anteile müssen zusammen genau 1 (100 %) ergeben, z. B. 1/2 und 1/2."];
-    }
+    const body = collectShares(values, owners, shares, { reason: reason.trim() || null });
     if (!values.ok) return form.invalid(values.messages);
     setBusy(true);
     form.clear();
@@ -122,38 +105,9 @@ function OwnershipForm({
     }
   }
 
-  const sharesErrors = form.of("shares");
   return (
     <form className="stack" onSubmit={submit} noValidate>
-      <fieldset className="stack" aria-describedby={sharesErrors.length > 0 ? "account-shares-error" : undefined}>
-        <legend>Anteile (als Bruch oder Prozent, z. B. 1/2 oder 50 %; leer = kein Anteil)</legend>
-        <div className="grid">
-          {owners.map((owner) => (
-            <Field
-              key={owner.id}
-              id={`share-${owner.id}`}
-              label={owner.full_name}
-              description="Der Anteil dieser Person am Konto, z. B. 1/2 bei einem gemeinsamen Konto, 1/1 bei einem eigenen. Alle Anteile zusammen müssen genau 1 (100 %) ergeben."
-              errors={form.of(`share-${owner.id}`)}
-            >
-              <input
-                type="text"
-                value={shares[owner.id] ?? ""}
-                onChange={(e) => setShares((current) => ({ ...current, [owner.id]: e.target.value }))}
-                placeholder="1/2"
-                autoComplete="off"
-              />
-            </Field>
-          ))}
-        </div>
-        {sharesErrors.length > 0 ? (
-          <ul className="field-errors" id="account-shares-error">
-            {sharesErrors.map((message, index) => (
-              <li key={index}>{message}</li>
-            ))}
-          </ul>
-        ) : null}
-      </fieldset>
+      <OwnerShareInputs owners={owners} shares={shares} onChange={setShares} form={form} errorId="account-shares-error" />
       <Field
         id="account-ownership-reason"
         label="Begründung (optional)"
@@ -183,33 +137,4 @@ function OwnershipForm({
       <FormBanner errors={form.errors} />
     </form>
   );
-}
-
-/** The inputs to start from: the current shares, else the offer of D157 (1/1 for one owner, 1/2
- * each for two), else empty. */
-function initialShares(account: Account, owners: Owner[]): Record<string, string> {
-  const current = account.ownership ?? [];
-  if (current.length > 0) {
-    return Object.fromEntries(
-      owners.map((owner) => {
-        const share = current.find((s) => s.owner_id === owner.id);
-        return [owner.id, share ? formatFraction({ numerator: share.share_numerator, denominator: share.share_denominator }) : ""];
-      }),
-    );
-  }
-  const offer = owners.length === 1 ? "1/1" : owners.length === 2 ? "1/2" : "";
-  return Object.fromEntries(owners.map((owner) => [owner.id, offer]));
-}
-
-/** Σ n/d = 1 exactly, in whole numbers (BigInt), the rule the API applies (D157). */
-function sumsToOne(shares: OwnershipShare[]): boolean {
-  let numerator = 0n;
-  let denominator = 1n;
-  for (const share of shares) {
-    const n = BigInt(share.share_numerator);
-    const d = BigInt(share.share_denominator);
-    numerator = numerator * d + n * denominator;
-    denominator = denominator * d;
-  }
-  return numerator === denominator;
 }
