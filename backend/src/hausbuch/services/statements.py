@@ -230,6 +230,11 @@ def import_statement(
             stated_closing_on=statement.stated_balance_on,
             card_last4=statement.card_last4,
             payment_iban_masked=_masked(statement.payment_iban, iban_key),
+            account_iban_masked=(
+                _masked(statement.account_iban, iban_key)
+                if statement.format is StatementFormat.DEPOT_PDF
+                else None
+            ),
         ),
         effective_date=last,
     )
@@ -884,12 +889,19 @@ def _route(conn: Connection, account: Row, statement: ParsedStatement, key: byte
     """Whether the file is this account's statement (D164). A card statement goes onto a
     card account only, and a card account takes card statements only (phase 6 D176 (3)); a
     card statement is routed by the issuer's customer number (account.external_ref), every
-    other file by its own IBAN when it names one."""
+    other file by its own IBAN when it names one. The same holds for a depot and its cash
+    statement (phase 6 step 4): routed by the account number it prints, and, once the depot
+    carries the IBAN a person confirmed (D156 amended), by that IBAN too."""
     is_card = account.kind == AccountKind.CREDIT_CARD.value
+    is_depot = account.kind == AccountKind.DEPOT.value
     if (statement.format is StatementFormat.CARD_PDF) != is_card:
         raise RuleError(rules.ACCOUNT_MISMATCH, "the file is not a statement of this kind")
-    if is_card:
+    if (statement.format is StatementFormat.DEPOT_PDF) != is_depot:
+        raise RuleError(rules.ACCOUNT_MISMATCH, "the file is not a statement of this kind")
+    if is_card or is_depot:
         _require_same_ref(conn, account, statement.account_ref, key)
+        if is_depot and account.iban_hmac is not None:
+            _require_same_account(statement.account_iban, account.iban_hmac, key)
     else:
         _require_same_account(statement.account_iban, account.iban_hmac, key)
 
@@ -907,8 +919,9 @@ def _require_same_account(file_iban: str | None, account_hmac: bytes | None, key
 
 
 def _require_same_ref(conn: Connection, account: Row, file_ref: str | None, key: bytes) -> None:
-    """A card statement names its customer number: it must be the account's, or, while the
-    account has none yet (its first import sets it, _set_ref), no other account's."""
+    """A card statement names its customer number, a depot's its account number: it must be
+    the account's, or, while the account has none yet (its first import sets it, _set_ref),
+    no other account's."""
     if file_ref is None:
         raise RuleError(rules.ACCOUNT_MISMATCH, "the file names no account reference")
     theirs = protect_ref(file_ref, key).hmac
@@ -927,9 +940,13 @@ def _require_same_ref(conn: Connection, account: Row, file_ref: str | None, key:
 
 def _set_ref(ctx: CommandContext, account: Row, file_ref: str | None, key: bytes) -> None:
     """Phase 6 D176 (3): the first card statement imported onto a card account without a
-    reference sets it (masked + HMAC'd, never in clear), recorded as account.updated. The
-    routing check (_route) ran first, under the account row's lock."""
-    if account.kind != AccountKind.CREDIT_CARD.value or account.external_ref_hmac is not None:
+    reference sets it (masked + HMAC'd, never in clear), recorded as account.updated; so does
+    a depot's first cash statement (step 4). The routing check (_route) ran first, under the
+    account row's lock."""
+    if account.external_ref_hmac is not None or account.kind not in (
+        AccountKind.CREDIT_CARD.value,
+        AccountKind.DEPOT.value,
+    ):
         return
     assert file_ref is not None  # _route refused a card statement without one
     ref = protect_ref(file_ref, key)

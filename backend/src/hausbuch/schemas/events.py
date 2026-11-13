@@ -468,6 +468,9 @@ class StatementImported(Schema):
     # confirm (D176 (4)); absent for every other format.
     card_last4: str | None = Field(default=None, pattern=r"^[0-9]{4}$")
     payment_iban_masked: MaskedIban | None = None
+    # Phase 6 step 4: the IBAN a depot's cash statement prints, masked: the proposal the
+    # account page offers to confirm (D156 amended); absent for every other format.
+    account_iban_masked: MaskedIban | None = None
 
 
 class StatementBalanceChecked(Schema):

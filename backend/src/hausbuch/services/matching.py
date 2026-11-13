@@ -76,6 +76,7 @@ from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.db.tables import unit as unit_table
 from hausbuch.db.tables import workspace as workspace_table
 from hausbuch.jobs import enqueue
+from hausbuch.rules import depot as depot_rules
 from hausbuch.rules import matching as matchers
 from hausbuch.rules.errors import ALLOCATION_CATEGORY_NOT_FOR_ACCOUNT, RuleError
 from hausbuch.rules.household import card as card_rules
@@ -87,6 +88,7 @@ from hausbuch.schemas.ai import ExtractedValue
 from hausbuch.schemas.allocation import (
     Allocation,
     AllocationCategory,
+    AllocationDraft,
     AllocationMethod,
     AllocationSet,
     DocumentFacts,
@@ -1011,7 +1013,9 @@ def match_line(
         account_purpose=line.account_purpose,
         account_id=line.account_id,
     )
-    found = _card_charge(line) or deterministic_set(ctx.conn, line.tx, context)
+    found = (
+        _card_charge(line) or _depot_booking(line) or deterministic_set(ctx.conn, line.tx, context)
+    )
     if rematch and not line.waiting and found is not None and _copies_a_split(ctx.conn, found):
         # D51, review F1: an as_last_split copy reads the ledger, it is no new evidence, so a
         # re-match never replaces confirmed rows with it (a waiting line is still booked).
@@ -1043,6 +1047,26 @@ def _card_charge(line: Line) -> AllocationSet | None:
     if line.account_kind != AccountKind.CREDIT_CARD.value:
         return None
     return card_rules.interest_fee_set(line.tx) or card_rules.payment_set(line.tx)
+
+
+def _depot_booking(line: Line) -> AllocationSet | None:
+    """Phase 6 step 4 (D165 (1)): a depot cash line booked by code from its headline
+    (rules.depot.categorise) before any rule or model, at confidence 1 (method
+    matcher_depot). A headline no pattern knows is left to the usual order and waits in Zu
+    prüfen. Depot accounts only. An Einlage or Auszahlung is booked as a transfer, which
+    services.transfers links to the bank account's leg (D162), as the card's payment is."""
+    if line.account_kind != AccountKind.DEPOT.value:
+        return None
+    category = depot_rules.categorise(line.tx.booking_text or "")
+    if category is AllocationCategory.UNCATEGORIZED:
+        return None
+    return AllocationSet(
+        transaction_id=line.tx.id,
+        allocations=[AllocationDraft(amount=line.tx.amount, category=category)],
+        method=AllocationMethod.MATCHER_DEPOT,
+        confidence=Decimal(1),
+        reasoning=depot_rules.REASONING,
+    )
 
 
 def _copies_a_split(conn: Connection, found: AllocationSet) -> bool:

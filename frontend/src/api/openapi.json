@@ -4248,6 +4248,57 @@
         }
       }
     },
+    "/api/accounts/{account_id}/iban": {
+      "post": {
+        "summary": "Account Iban Confirm",
+        "description": "Confirm the IBAN a depot's cash statement prints (phase 6 step 4, D156 amended): read\nagain from that import's original, stored masked + HMAC'd as the depot's IBAN, so a\ntransfer from a bank account to it is linked (D162). 422 account.kind_not_available for an\naccount that is no depot, statement.no_payment_iban for a statement that prints none; 404\nfor an import of another account; 409 when another account has that IBAN. Every enabled\nlearned rule on the IBAN is switched off, counted in rules_disabled.",
+        "operationId": "account_iban_confirm_api_accounts__account_id__iban_post",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmPaymentIbanBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentIbanConfirmed"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/accounts/{account_id}/imports": {
       "post": {
         "summary": "Account Import",
@@ -7687,6 +7738,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/PaymentIbanProposal"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "iban_proposal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DepotIbanProposal"
               },
               {
                 "type": "null"
@@ -11691,6 +11752,28 @@
         "type": "object",
         "title": "DepositRecordExtraction",
         "description": "Kautionsnachweis (letter / deposit_record). Step 2."
+      },
+      "DepotIbanProposal": {
+        "properties": {
+          "import_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Import Id"
+          },
+          "iban_masked": {
+            "type": "string",
+            "pattern": "^[A-Z]{2}[0-9]{2} \\*{4} [A-Z0-9]{4}$",
+            "title": "Iban Masked"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "import_id",
+          "iban_masked"
+        ],
+        "title": "DepotIbanProposal",
+        "description": "The IBAN a depot's cash statement prints (phase 6 step 4, D156 amended), masked; POST\n/accounts/{id}/iban with its import_id confirms it (the D176 (4) pattern)."
       },
       "DepotReportExtraction": {
         "properties": {

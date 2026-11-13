@@ -236,12 +236,15 @@ _JSONB_COLUMNS = ("targets", "fields", "decisions", "applied_entities")
 
 
 def _is_card_statement(conn: Connection, document_id: UUID) -> bool:
-    """The document is the original of a card statement import (phase 6 D176 (3))."""
+    """The document is the original of a card statement import (phase 6 D176 (3)) or of a
+    depot's cash statement import (step 4): both read by code only."""
     return (
         conn.execute(
             select(statement_import_table.c.id).where(
                 statement_import_table.c.document_id == document_id,
-                statement_import_table.c.format == StatementFormat.CARD_PDF.value,
+                statement_import_table.c.format.in_(
+                    (StatementFormat.CARD_PDF.value, StatementFormat.DEPOT_PDF.value)
+                ),
             )
         ).first()
         is not None

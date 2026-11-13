@@ -47,6 +47,7 @@ BOOKING_PATTERNS: tuple[tuple[re.Pattern[str], C], ...] = tuple(
     )
 )
 UNITS_TOLERANCE = Decimal("0.000001")
+REASONING = "Buchung des Depotkontos, nach ihrem Buchungstext zugeordnet."
 
 
 def categorise(booking_text: str) -> C:

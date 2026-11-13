@@ -1494,6 +1494,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/accounts/{account_id}/iban": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Account Iban Confirm
+         * @description Confirm the IBAN a depot's cash statement prints (phase 6 step 4, D156 amended): read
+         *     again from that import's original, stored masked + HMAC'd as the depot's IBAN, so a
+         *     transfer from a bank account to it is linked (D162). 422 account.kind_not_available for an
+         *     account that is no depot, statement.no_payment_iban for a statement that prints none; 404
+         *     for an import of another account; 409 when another account has that IBAN. Every enabled
+         *     learned rule on the IBAN is switched off, counted in rules_disabled.
+         */
+        post: operations["account_iban_confirm_api_accounts__account_id__iban_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/accounts/{account_id}/imports": {
         parameters: {
             query?: never;
@@ -2700,6 +2725,7 @@ export interface components {
             /** Card Last4 */
             card_last4?: string | null;
             payment_iban_proposal?: components["schemas"]["PaymentIbanProposal"] | null;
+            iban_proposal?: components["schemas"]["DepotIbanProposal"] | null;
             /** Ownership */
             ownership?: components["schemas"]["OwnershipShare"][];
             /**
@@ -4301,6 +4327,20 @@ export interface components {
             amount?: components["schemas"]["ExtractedValue"];
             /** @description Eingang */
             received_on?: components["schemas"]["ExtractedValue"];
+        };
+        /**
+         * DepotIbanProposal
+         * @description The IBAN a depot's cash statement prints (phase 6 step 4, D156 amended), masked; POST
+         *     /accounts/{id}/iban with its import_id confirms it (the D176 (4) pattern).
+         */
+        DepotIbanProposal: {
+            /**
+             * Import Id
+             * Format: uuid
+             */
+            import_id: string;
+            /** Iban Masked */
+            iban_masked: string;
         };
         /**
          * DepotReportExtraction
@@ -13155,6 +13195,41 @@ export interface operations {
         };
     };
     account_payment_iban_confirm_api_accounts__account_id__payment_iban_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmPaymentIbanBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentIbanConfirmed"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    account_iban_confirm_api_accounts__account_id__iban_post: {
         parameters: {
             query?: never;
             header?: never;

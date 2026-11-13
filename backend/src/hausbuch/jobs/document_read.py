@@ -66,7 +66,7 @@ from hausbuch.schemas.enums import ActorType, DocumentSubtype, ExtractionKind, P
 from hausbuch.schemas.extraction import EXTRACTION_MODELS, asked_fields
 from hausbuch.services import documents as document_service
 from hausbuch.services import proposals
-from hausbuch.services.bank import card_pdf
+from hausbuch.services.bank import card_pdf, depot_pdf
 from hausbuch.services.context import Actor, new_command
 from hausbuch.settings import Settings
 from hausbuch.storage import BlobStore
@@ -326,9 +326,11 @@ def _target_proposal(conn, document_id: UUID, proposal_id: UUID) -> tuple[UUID, 
 
 
 def _is_card_statement(data: bytes) -> bool:
-    """A card statement by its printed layout, read by code (services.bank.card_pdf)."""
+    """A card statement (services.bank.card_pdf) or, since phase 6 step 4, a depot's cash
+    statement (services.bank.depot_pdf) by its printed layout: both are read by code on their
+    account only."""
     pages = card_pdf.pdf_pages(data)
-    return pages is not None and card_pdf.looks_like(pages)
+    return pages is not None and (card_pdf.looks_like(pages) or depot_pdf.looks_like(pages))
 
 
 def _read(
@@ -348,7 +350,7 @@ def _read(
         if original.media_type == documents.PDF and documents.is_adobe_only_form(original.data):
             raise _Stop(ADOBE_FORM)  # D43: the model would see only Adobe's placeholder page
         if original.media_type == documents.PDF and _is_card_statement(original.data):
-            raise _Stop(CARD_STATEMENT)  # D176 (3): read by code on its card account only
+            raise _Stop(CARD_STATEMENT)  # D176 (3), step 4: read by code on its account only
         first = (
             documents.pdf_pages(original.data, 0, min(CLASSIFY_PAGES, pages))
             if original.media_type == documents.PDF
