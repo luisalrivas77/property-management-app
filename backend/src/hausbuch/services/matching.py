@@ -1431,9 +1431,13 @@ def waiting_lines(conn: Connection, kind: str, entity_id: UUID) -> list[UUID]:
             return []
         if rule.matcher.counterparty_iban_hmac is not None:
             hmac = bytes.fromhex(rule.matcher.counterparty_iban_hmac)
-            if matchers.iban_only(rule.matcher) and is_shared_iban(conn, hmac):
-                return []  # D160 amended: never applied to a shared IBAN's lines
             query = query.where(t.counterparty_iban_hmac == hmac)
+            if matchers.iban_only(rule.matcher) and is_shared_iban(conn, hmac):
+                # D160 amended: such a rule never applies to a private line of a shared IBAN
+                # (rules.matching.apply_rule), so none is re-checked; a rental line still is.
+                query = query.join(account_table, account_table.c.id == t.account_id).where(
+                    account_table.c.purpose != AccountPurpose.PRIVATE.value
+                )
         if rule.matcher.amount_sign == "credit":
             query = query.where(t.amount > 0)
         elif rule.matcher.amount_sign == "debit":

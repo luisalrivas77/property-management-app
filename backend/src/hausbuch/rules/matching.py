@@ -36,6 +36,9 @@ amount itself stands only at the latest amount of its kind, read from the ledger
 An as_last_split rule (D51) copies the parts of the latest confirmed line of its category set
 from that history when the amount is the same; it never computes a part, so any other amount
 is no hit (and never a near-miss proposal).
+A shared IBAN (phase 6 D160 amended: a private account's clearing IBAN that carries many
+payees, shared_iban) names no payee: a rule on it alone never applies there, and a rule learned
+there is the IBAN plus the payee's name.
 """
 
 import re
