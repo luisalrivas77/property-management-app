@@ -779,7 +779,7 @@ class ProposedMovement(Schema):
     kind: MovementKind
     isin: Isin
     quantity: Quantity
-    eur_amount: Money
+    eur_amount: Money | None = None
     fee_eur: Money | None = None
     tax_withheld_eur: Money | None = None
     occurred_on: date
@@ -816,6 +816,9 @@ def _german_date(text: str) -> date:
     return date(int(year), int(month), int(day))
 
 
+_CENT = Decimal("0.01")
+
+
 class QuirionCase(phase2.ParseCase):
     pending: str | None = None  # the proposals' step
     parse_pending: str | None = None  # a parse that needs a later step (the scrub)
@@ -824,14 +827,20 @@ class QuirionCase(phase2.ParseCase):
     def _value(self, field: str):
         return self.expect[field].value if field in self.expect else None
 
+    def _decimal(self, field: str) -> Decimal | None:
+        value = self._value(field)
+        return None if value is None else Decimal(str(value))
+
     def recompute(self) -> DepotProposals | None:
-        v = self._value
+        v, d = self._value, self._decimal
         if self.kind == "trade_confirmation" and "side" in self.expect:
-            gross, fees, net = (Decimal(str(v(f))) for f in ("gross_amount", "fees", "net_amount"))
-            units = Decimal(str(v("units")))
+            gross, fees, taxes, net = (
+                d(f) for f in ("gross_amount", "fees", "taxes", "net_amount")
+            )
             buy = v("side") == "Kauf"
-            if net != (gross + fees if buy else gross - fees):
-                raise ValueError(f"{self.id}: net amount does not follow gross and fees")
+            if net != (gross + fees + taxes if buy else gross - fees - taxes):
+                raise ValueError(f"{self.id}: net amount does not follow gross, fees and taxes")
+            units = d("units")
             return DepotProposals(
                 movements=[
                     ProposedMovement(
@@ -840,6 +849,7 @@ class QuirionCase(phase2.ParseCase):
                         quantity=units if buy else -units,
                         eur_amount=-net if buy else net,
                         fee_eur=fees,
+                        tax_withheld_eur=taxes,
                         occurred_on=date.fromisoformat(v("trade_date")),
                         external_ref=v("order_reference"),
                     )
@@ -847,21 +857,25 @@ class QuirionCase(phase2.ParseCase):
             )
         if self.kind == "distribution_note":
             gross, held, german, net = (
-                Decimal(str(v(f)))
-                for f in ("gross_amount", "withholding_tax", "german_taxes", "net_amount")
+                d(f) for f in ("gross_amount", "withholding_tax", "german_taxes", "net_amount")
             )
             if net != gross - held - german:
                 raise ValueError(f"{self.id}: net = gross − both taxes")
-            if Decimal(str(v("units"))) * Decimal(str(v("gross_per_unit"))) != gross:
+            if (d("units") * d("gross_per_unit")).quantize(_CENT) != gross:
                 raise ValueError(f"{self.id}: gross = units × gross per unit")
+            gross_eur, taxes_eur, net_eur = (
+                d(f) for f in ("gross_amount_eur", "german_taxes_eur", "net_amount_eur")
+            )
+            if abs(gross_eur - taxes_eur - net_eur) > _CENT * 3:
+                raise ValueError(f"{self.id}: the euro net is not the euro gross − taxes")
             return DepotProposals(
                 movements=[
                     ProposedMovement(
                         kind=MovementKind.DISTRIBUTION,
                         isin=v("isin"),
                         quantity=Decimal(0),
-                        eur_amount=gross,
-                        tax_withheld_eur=held + german,
+                        eur_amount=gross_eur,
+                        tax_withheld_eur=gross_eur - net_eur,
                         occurred_on=date.fromisoformat(v("payment_date")),
                     )
                 ]
@@ -871,7 +885,7 @@ class QuirionCase(phase2.ParseCase):
             holdings = []
             for item in v("positions"):
                 isin, _name, units, price, value, _currency = item.split(" | ")
-                if (_german(units) * _german(price)).quantize(Decimal("0.01")) != _german(value):
+                if (_german(units) * _german(price)).quantize(_CENT) != _german(value):
                     raise ValueError(f"{self.id}: {isin} value = units × price")
                 holdings.append(
                     ProposedHolding(
@@ -894,6 +908,23 @@ class QuirionCase(phase2.ParseCase):
                     )
                 )
             return DepotProposals(holdings=holdings, trades=trades)
+        if self.kind == "securities_transfer" and "positions" in self.expect:
+            inward = v("direction") == "Einbuchung"
+            movements = []
+            for item in v("positions"):
+                isin, _name, units = item.split(" | ")
+                movements.append(
+                    ProposedMovement(
+                        kind=MovementKind.INTERNAL_TRANSFER_IN
+                        if inward
+                        else MovementKind.INTERNAL_TRANSFER_OUT,
+                        isin=isin,
+                        quantity=_german(units) if inward else -_german(units),
+                        occurred_on=date.fromisoformat(v("transfer_date")),
+                        external_ref=v("reference"),
+                    )
+                )
+            return DepotProposals(movements=movements)
         return None
 
     @model_validator(mode="after")

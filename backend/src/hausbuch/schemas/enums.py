@@ -295,6 +295,8 @@ class ExtractionKind(StrEnum):
     TRADE_CONFIRMATION = "trade_confirmation"  # Wertpapierabrechnung
     DISTRIBUTION_NOTE = "distribution_note"  # Ertragsabrechnung
     DEPOT_REPORT = "depot_report"  # the quarterly PM-Reporting
+    # Phase 6 step 4 (migration 0027, §14.1): an Einbuchung or Ausbuchung von Wertpapieren.
+    SECURITIES_TRANSFER = "securities_transfer"
 
 
 class ProposalStatus(StrEnum):
