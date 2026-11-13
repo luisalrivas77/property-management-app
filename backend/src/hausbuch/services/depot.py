@@ -4,8 +4,10 @@ between own depots, and the reconciliation of a report against the movements.
 
 Nothing here is called by the model or the job: a reading's records are applied by
 services.proposals.apply_proposal when the user presses „Übernehmen“ (D132), and every row is
-written confirmed in that one transaction. Rows are append-only (migration 0025's triggers): a
-correction is a new row that supersedes the old one.
+written confirmed in that one transaction. Rows are append-only (the triggers of migrations
+0025 and 0027): a holding statement read again with other figures is a new row that
+supersedes the old one (record_holding); a movement is never corrected here, a document
+applied twice is refused (record_movement). Every read of holdings ignores superseded rows.
 """
 
 from dataclasses import dataclass
@@ -15,7 +17,7 @@ from typing import Any
 from uuid import UUID
 
 from pydantic import Field
-from sqlalchemy import Connection, func, insert, select
+from sqlalchemy import Connection, func, insert, select, update
 
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import asset as asset_table
@@ -33,6 +35,7 @@ from hausbuch.schemas.enums import AccountKind
 from hausbuch.schemas.events import (
     AssetRecorded,
     EventType,
+    HoldingCorrected,
     HoldingsChecked,
     MovementRecorded,
     PriceRecorded,
@@ -305,22 +308,27 @@ def transfer_pair(conn: Connection, movement_id: UUID) -> UUID | None:
 def record_holding(ctx: CommandContext, values: DepotHoldingValues, document_id: UUID) -> UUID:
     """One position of a report, reconciled against the account's confirmed movements up to
     its date (rules.depot.reconcile_holdings); a reconciled position with units stores the
-    report's price (value ÷ units) as price(source = statement). Refused when a report's
-    position of the asset on that account and date is stored already (the report applied
-    twice, after „Neu auslesen“ or from a second copy): holdings and prices are append-only,
-    so a second row would double the event's count and the day's price."""
+    report's price (value ÷ units) as price(source = statement), when the value is above 0.
+    A report's position of the asset on that account and date stored already is a twin: with
+    the same units and value it is refused (the report applied twice, after „Neu auslesen“
+    or from a second copy), with other figures the new row supersedes it (a corrected
+    reading; account.holding_corrected)."""
     _require_depot(ctx.conn, values.account_id)
     asset_id = asset_for_isin(ctx, values.isin, values.name)
     h = holding_table.c
     twin = ctx.conn.execute(
-        select(h.id).where(
+        select(h.id, h.declared_units, h.declared_value_eur).where(
             h.account_id == values.account_id,
             h.asset_id == asset_id,
             h.as_of == values.as_of,
             h.source == HoldingSource.REPORT.value,
+            h.superseded_by.is_(None),
         )
     ).first()
-    if twin is not None:
+    if twin is not None and (twin.declared_units, twin.declared_value_eur) == (
+        values.declared_units,
+        values.declared_value_eur,
+    ):
         raise RuleViolationError(
             [DEPOT_HOLDING_EXISTS], "this report's position is stored on the account already"
         )
@@ -338,7 +346,25 @@ def record_holding(ctx: CommandContext, values: DepotHoldingValues, document_id:
         values.declared_value_eur,
         document_id,
     )
-    if check.price_stored and values.declared_value_eur is not None:
+    if twin is not None:
+        ctx.conn.execute(
+            update(holding_table).where(h.id == twin.id).values(superseded_by=holding_id)
+        )
+        append_event(
+            ctx,
+            EventType.ACCOUNT_HOLDING_CORRECTED,
+            values.account_id,
+            HoldingCorrected(
+                holding_statement_id=twin.id,
+                superseded_by=holding_id,
+                asset_id=asset_id,
+                as_of=values.as_of,
+                document_id=document_id,
+            ),
+            effective_date=values.as_of,
+        )
+    # A value of 0 for units held is no price (price_eur > 0); the position stays as stored.
+    if check.price_stored and values.declared_value_eur:
         _store_price(ctx, asset_id, values, document_id)
     return holding_id
 
@@ -446,14 +472,19 @@ def finish_report(ctx: CommandContext, document_id: UUID) -> list[ReportChecked]
     report = HoldingSource.REPORT.value
     dates = ctx.conn.execute(
         select(h.account_id, h.as_of)
-        .where(h.document_id == document_id, h.source == report)
+        .where(h.document_id == document_id, h.source == report, h.superseded_by.is_(None))
         .distinct()
     ).all()
     results = []
     for account_id, as_of in sorted(dates, key=str):
         mine = ctx.conn.execute(
             select(h.id, h.asset_id, h.declared_units)
-            .where(h.account_id == account_id, h.as_of == as_of, h.source == report)
+            .where(
+                h.account_id == account_id,
+                h.as_of == as_of,
+                h.source == report,
+                h.superseded_by.is_(None),
+            )
             .order_by(h.created_at, h.id)
         ).all()
         ids = [r.id for r in mine]
@@ -544,14 +575,14 @@ def holdings_inbox_items(conn: Connection) -> list[InboxItem]:
     report = HoldingSource.REPORT.value
     latest = (
         select(h.account_id, func.max(h.as_of).label("as_of"))
-        .where(h.source == report)
+        .where(h.source == report, h.superseded_by.is_(None))
         .group_by(h.account_id)
         .subquery()
     )
     rows = conn.execute(
         select(h.account_id, h.asset_id, h.as_of, h.declared_units, h.document_id, h.created_at)
         .join(latest, (h.account_id == latest.c.account_id) & (h.as_of == latest.c.as_of))
-        .where(h.source == report)
+        .where(h.source == report, h.superseded_by.is_(None))
     ).all()
     items = []
     for account_id in sorted({r.account_id for r in rows}, key=str):
@@ -679,7 +710,11 @@ def _positions(conn: Connection, account_id: UUID) -> list[DepotPosition]:
     ).all()
     reports = conn.execute(
         select(h.asset_id, h.as_of, h.declared_units, h.declared_value_eur, h.created_at)
-        .where(h.account_id == account_id, h.source == HoldingSource.REPORT.value)
+        .where(
+            h.account_id == account_id,
+            h.source == HoldingSource.REPORT.value,
+            h.superseded_by.is_(None),
+        )
         .order_by(h.as_of.desc(), h.created_at.desc())
     ).all()
     latest: dict[UUID, Any] = {}
@@ -714,12 +749,16 @@ def _positions(conn: Connection, account_id: UUID) -> list[DepotPosition]:
             if reconciled and not moved:
                 value = report.declared_value_eur
         if report is not None and not isinstance(report, _Omitted):
+            # The price is stored with its position (one ctx.now): one stored before the
+            # current row is a superseded reading's, which a corrected position that stored
+            # none (it no longer reconciles) must not show. The newest wins.
             price = conn.execute(
                 select(pr.price_eur)
                 .where(
                     pr.asset_id == asset_id,
                     pr.on == report.as_of,
                     pr.source == PriceSourceKind.STATEMENT.value,
+                    pr.fetched_at >= report.created_at,
                 )
                 .order_by(pr.fetched_at.desc())
                 .limit(1)

@@ -1,11 +1,12 @@
 """Migration 0027 (docs/phases/phase-6.md D156 and D165 as amended in step 4): a depot account
 may carry an IBAN, the format depot_pdf, the method matcher_depot, the subtype, reading kind,
-proposal kind and movement source securities_transfer, and the downgrade guard. The enum CHECKs
+proposal kind and movement source securities_transfer, a holding statement corrected once by
+a row of the same position, and the downgrade guard. The enum CHECKs
 against the schemas are test_schema_consistency.py's. Synthetic data only: invented
 references."""
 
 import pytest
-from db.db_support import OWNER, _admin, alembic, create_database, drop_database
+from db.db_support import APP, OWNER, _admin, alembic, create_database, drop_database
 from db.test_phase2_catalogue_migration import _document, _extraction, _proposal
 from db.test_phase2_migrations import _allocation, _transaction
 from db.test_phase6_migration import (
@@ -83,6 +84,56 @@ def test_the_depot_format_method_subtype_and_source_are_accepted(connect, worksp
         )
 
 
+def _holding(ws, account, asset, **overrides) -> dict:
+    return {
+        "workspace_id": ws,
+        "account_id": account,
+        "asset_id": asset,
+        "as_of": "2026-06-30",
+        "declared_units": "4.8000000000",
+        "declared_value_eur": "501.60",
+        "source": "report",
+    } | overrides
+
+
+def test_a_holding_statement_is_corrected_once_by_a_row_of_the_same_position(connect, workspaces):
+    """0027: a report read again with other figures supersedes its position; nothing else
+    of the row changes, and a delete stays refused (as the app role, under RLS)."""
+    a, _ = workspaces
+    with connect(APP, a) as conn:
+        depot = _depot(conn, a)
+        asset = _asset(conn, a, kind="etf", symbol=None, isin="IE00BEISPL01", name="Beispiel-ETF")
+        old = _insert(conn, "holding_statement", _holding(a, depot, asset))
+        new = _insert(
+            conn, "holding_statement", _holding(a, depot, asset, declared_value_eur="510.00")
+        )
+        with pytest.raises(errors.RestrictViolation), conn.transaction():
+            conn.execute("UPDATE holding_statement SET reconciled = true WHERE id = %s", (old,))
+        with pytest.raises(errors.CheckViolation), conn.transaction():
+            conn.execute("UPDATE holding_statement SET superseded_by = id WHERE id = %s", (old,))
+        # Another date, asset or account is no correction of this position.
+        other_day = _insert(
+            conn, "holding_statement", _holding(a, depot, asset, as_of="2026-09-30")
+        )
+        other_depot = _insert(conn, "holding_statement", _holding(a, _depot(conn, a), asset))
+        for elsewhere in (other_day, other_depot):
+            with pytest.raises(errors.ForeignKeyViolation), conn.transaction():
+                conn.execute(
+                    "UPDATE holding_statement SET superseded_by = %s WHERE id = %s",
+                    (elsewhere, old),
+                )
+        conn.execute("UPDATE holding_statement SET superseded_by = %s WHERE id = %s", (new, old))
+        with pytest.raises(errors.RestrictViolation), conn.transaction():  # once only
+            conn.execute("UPDATE holding_statement SET superseded_by = NULL WHERE id = %s", (old,))
+        with pytest.raises(errors.InsufficientPrivilege), conn.transaction():
+            conn.execute("DELETE FROM holding_statement WHERE id = %s", (old,))
+    with connect(OWNER, a) as conn:  # not even the owner deletes one
+        asset = _asset(conn, a, kind="etf", symbol=None, isin="IE00BEISPL01", name="Beispiel-ETF")
+        row = _insert(conn, "holding_statement", _holding(a, _depot(conn, a), asset))
+        with pytest.raises(errors.RestrictViolation), conn.transaction():
+            conn.execute("DELETE FROM holding_statement WHERE id = %s", (row,))
+
+
 def test_0027_runs_up_down_and_up_on_an_empty_database():
     name = create_database()
     try:
@@ -94,6 +145,19 @@ def test_0027_runs_up_down_and_up_on_an_empty_database():
                 " WHERE conname = 'statement_import_format_check'"
             ).fetchone()[0]
             assert "depot_pdf" not in formats
+            columns = conn.execute(
+                "SELECT column_name FROM information_schema.columns"
+                " WHERE table_name = 'holding_statement'"
+            ).fetchall()
+            assert ("superseded_by",) not in columns
+            triggers = conn.execute(
+                "SELECT tgname FROM pg_trigger"
+                " WHERE tgrelid = 'holding_statement'::regclass AND NOT tgisinternal"
+            ).fetchall()
+            assert sorted(t for (t,) in triggers) == [
+                "holding_statement_append_only",
+                "holding_statement_no_truncate",
+            ]
         alembic(name, "upgrade", HEAD)
     finally:
         drop_database(name)
@@ -115,6 +179,11 @@ def _seed(conn, ws, data) -> None:
         _extraction(conn, ws, _document(conn, ws), "securities_transfer")
     elif data == "proposal":
         _proposal(conn, ws, _document(conn, ws), "securities_transfer")
+    elif data == "corrected":
+        asset = _asset(conn, ws, kind="etf", symbol=None, isin="IE00BEISPL01", name="Beispiel-ETF")
+        old = _insert(conn, "holding_statement", _holding(ws, depot, asset))
+        new = _insert(conn, "holding_statement", _holding(ws, depot, asset, declared_units="5"))
+        conn.execute("UPDATE holding_statement SET superseded_by = %s WHERE id = %s", (new, old))
     elif data == "movement":
         document = _document(conn, ws, type="letter")
         asset = _asset(conn, ws, kind="etf", symbol=None, isin="IE00BEISPL01", name="Beispiel-ETF")
@@ -141,6 +210,7 @@ DATA = {
     "reading": "a securities_transfer reading",
     "proposal": "a securities_transfer proposal",
     "movement": "a movement read from a securities_transfer",
+    "corrected": "a holding statement was corrected",
 }
 
 

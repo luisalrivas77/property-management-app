@@ -13878,6 +13878,7 @@
           "account.holdings_confirmed",
           "account.holdings_reconciled",
           "account.holdings_mismatch",
+          "account.holding_corrected",
           "asset.created",
           "asset.updated",
           "asset.price_recorded",

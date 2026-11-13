@@ -956,6 +956,7 @@ holding_statement = Table(
     _uuid("import_id", nullable=True),
     Column("reconciled", Boolean, nullable=True),
     _quantity("difference_units", nullable=True),
+    _uuid("superseded_by", nullable=True),  # 0027: a report read again with other figures
     _created_at(),
 )
 transfer_link = Table(

@@ -17,11 +17,16 @@ What 0025's tables lack, found on quirion's real documents:
   reference: document.subtype, document_extraction.kind and proposal.kind gain
   `securities_transfer`, and asset_movement.source gains it (a movement read from such a
   document names it).
+- A report read again with other figures corrects its position: holding_statement gains
+  `superseded_by` (the row of the same account, asset and date that replaced it), set once
+  by the superseded_once() trigger of 0025 instead of its append-only trigger, so the app
+  role gains UPDATE on it; a delete stays refused.
 
 The downgrade is refused while it would leave a row the old CHECKs refuse (the 0025 guard): a
 depot account with an IBAN, a depot_pdf import, a matcher_depot allocation, a
-securities_transfer document, reading, proposal or movement. It lifts FORCE RLS for each check,
-since the owner has no workspace set.
+securities_transfer document, reading, proposal or movement, or a corrected holding statement
+(its column would be dropped). It lifts FORCE RLS for each check, since the owner has no
+workspace set.
 
 Revision ID: 0027_depot
 Revises: 0026_credit_card
@@ -35,6 +40,7 @@ down_revision = "0026_credit_card"
 branch_labels = None
 depends_on = None
 
+APP_ROLE = "hausbuch_app"
 BANK_KINDS = ("bank_current", "bank_savings")
 # The lists as 0025 and 0026 left them, in their order.
 OLD_SUBTYPES = (
@@ -207,6 +213,11 @@ _DATA_CHECKS = (
         f"SELECT 1 FROM asset_movement WHERE source = '{NEW}'",
         "a movement read from a securities_transfer",
     ),
+    (
+        "holding_statement",
+        "SELECT 1 FROM holding_statement WHERE superseded_by IS NOT NULL",
+        "a holding statement was corrected",
+    ),
 )
 _CHECKED = tuple(dict.fromkeys(t for t, _, _ in _DATA_CHECKS))
 REFUSE_IF_DATA = (
@@ -226,14 +237,69 @@ REFUSE_IF_DATA = (
 )
 
 
+def _app_role(statement: str) -> str:
+    return f"""
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{APP_ROLE}') THEN
+        {statement}
+    ELSE
+        RAISE NOTICE 'role {APP_ROLE} does not exist; skipping grants';
+    END IF;
+END
+$$;
+"""
+
+
+HOLDING_CORRECTIONS = """
+ALTER TABLE holding_statement
+    ADD COLUMN superseded_by uuid,
+    ADD CONSTRAINT holding_statement_position_key
+        UNIQUE (workspace_id, account_id, asset_id, as_of, id),
+    -- A correction is of the same account, asset and date.
+    ADD CONSTRAINT holding_statement_superseded_by_fkey
+        FOREIGN KEY (workspace_id, account_id, asset_id, as_of, superseded_by)
+        REFERENCES holding_statement (workspace_id, account_id, asset_id, as_of, id),
+    ADD CONSTRAINT holding_statement_superseded_by_check CHECK (superseded_by <> id);
+DROP TRIGGER holding_statement_append_only ON holding_statement;
+CREATE TRIGGER holding_statement_superseded_once BEFORE UPDATE ON holding_statement
+    FOR EACH ROW EXECUTE FUNCTION superseded_once();
+CREATE TRIGGER holding_statement_no_delete BEFORE DELETE ON holding_statement
+    FOR EACH ROW EXECUTE FUNCTION forbid_mutation();
+COMMENT ON TABLE holding_statement IS
+    'D165 (3), D166: what a report or the user declares an account held of an asset on as_of, '
+    'and whether the confirmed movements agreed. Append-only; superseded_by set once (0027: a '
+    'report read again with other figures).';
+"""
+
+HOLDING_APPEND_ONLY = """
+DROP TRIGGER holding_statement_superseded_once ON holding_statement;
+DROP TRIGGER holding_statement_no_delete ON holding_statement;
+CREATE TRIGGER holding_statement_append_only BEFORE UPDATE OR DELETE ON holding_statement
+    FOR EACH ROW EXECUTE FUNCTION forbid_mutation();
+ALTER TABLE holding_statement
+    DROP CONSTRAINT holding_statement_superseded_by_check,
+    DROP CONSTRAINT holding_statement_superseded_by_fkey,
+    DROP CONSTRAINT holding_statement_position_key,
+    DROP COLUMN superseded_by;
+COMMENT ON TABLE holding_statement IS
+    'D165 (3), D166: what a report or the user declares an account held of an asset on as_of, '
+    'and whether the confirmed movements agreed. Append-only.';
+"""
+
+
 def upgrade() -> None:
     _set_checks(new=True)
     op.execute(
         "COMMENT ON COLUMN account.iban_hmac IS 'A bank account''s IBAN, keyed HMAC; on a depot"
         " (0027, D156 amended) the IBAN its statement prints, set when a person confirms it.';"
     )
+    op.execute(HOLDING_CORRECTIONS)
+    op.execute(_app_role(f"GRANT UPDATE ON holding_statement TO {APP_ROLE};"))
 
 
 def downgrade() -> None:
     op.execute(REFUSE_IF_DATA)
+    op.execute(_app_role(f"REVOKE UPDATE ON holding_statement FROM {APP_ROLE};"))
+    op.execute(HOLDING_APPEND_ONLY)
     _set_checks(new=False)

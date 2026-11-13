@@ -325,6 +325,7 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "account.holdings_confirmed": "Bestände bestätigt",
   "account.holdings_reconciled": "Bestände abgestimmt",
   "account.holdings_mismatch": "Bestände weichen ab",
+  "account.holding_corrected": "Bestand korrigiert",
   "asset.created": "Anlage angelegt",
   "asset.updated": "Anlage geändert",
   "asset.price_recorded": "Kurs erfasst",

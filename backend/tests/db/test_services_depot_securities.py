@@ -476,11 +476,11 @@ def test_a_fund_a_first_reading_missed_is_added_from_a_second_reading(
     events = _events(
         read, ws, EventType.ACCOUNT_HOLDINGS_RECONCILED, EventType.ACCOUNT_HOLDINGS_MISMATCH
     )
-    assert [t for t, _ in events] == [
-        EventType.ACCOUNT_HOLDINGS_MISMATCH,
-        EventType.ACCOUNT_HOLDINGS_RECONCILED,
-    ]
-    assert sorted(events[1][1]["holding_statement_ids"]) == sorted(str(r.id) for r in rows)
+    by_document = {p["document_id"]: (t, p) for t, p in events}
+    assert by_document[str(first.document_id)][0] is EventType.ACCOUNT_HOLDINGS_MISMATCH
+    kind, payload = by_document[str(second.document_id)]
+    assert kind is EventType.ACCOUNT_HOLDINGS_RECONCILED
+    assert sorted(payload["holding_statement_ids"]) == sorted(str(r.id) for r in rows)
 
 
 def test_a_report_applied_a_second_time_is_refused(
@@ -504,6 +504,108 @@ def test_a_report_applied_a_second_time_is_refused(
         _apply(run, ws, again)
     assert refused.value.code == depot.DEPOT_HOLDING_EXISTS
     assert len(_rows(read, ws, holding_table)) == 1
+
+
+def test_a_report_read_again_with_other_figures_corrects_its_position(
+    run,
+    read,
+    fresh_workspaces,
+    blob_store,
+    job,
+    enqueued,  # noqa: F811
+):
+    """Review F3: the new position supersedes the stored one of the same account, asset and
+    date; every read sees the current row only, and its price wins. Identical figures stay
+    refused."""
+    ws, _ = fresh_workspaces
+    depot_id = _account(run, ws).id
+    _apply(
+        run,
+        ws,
+        _read(run, job, ws, blob_store, enqueued, DocumentSubtype.TRADE_CONFIRMATION, _trade()),
+    )
+
+    def report(units, price, value):
+        row = f"{ISIN_CASH} | Beispiel Euro Geldmarkt | {units} | {price} | {value} | EUR"
+        proposal = _read(
+            run, job, ws, blob_store, enqueued, DocumentSubtype.DEPOT_REPORT, _report(row)
+        )
+        _apply(run, ws, proposal)
+        return proposal
+
+    def position():
+        (only,) = read(ws, depot.etf_overview).accounts[0].positions
+        return only
+
+    def cards():
+        return [i for i in read(ws, review.inbox) if i.kind is InboxItemKind.HOLDINGS_MISMATCH]
+
+    report("4,8000", "104,50", "501,60")
+    assert position().report_price_eur == Decimal("104.50")
+
+    # The value read wrongly the first time: the corrected position and its price win.
+    second = report("4,8000", "106,25", "510,00")
+    rows = _rows(read, ws, holding_table)
+    (old,) = [r for r in rows if r.superseded_by is not None]
+    (current,) = [r for r in rows if r.superseded_by is None]
+    assert old.superseded_by == current.id
+    assert current.declared_value_eur == Decimal("510.00") and current.reconciled is True
+    assert (position().value_eur, position().report_price_eur) == (
+        Decimal("510.00"),
+        Decimal("106.25"),
+    )
+    ((_, corrected),) = _events(read, ws, EventType.ACCOUNT_HOLDING_CORRECTED)
+    assert corrected["holding_statement_id"] == str(old.id)
+    assert corrected["superseded_by"] == str(current.id)
+    checked = _events(
+        read, ws, EventType.ACCOUNT_HOLDINGS_RECONCILED, EventType.ACCOUNT_HOLDINGS_MISMATCH
+    )
+    (mine,) = [p for _, p in checked if p["document_id"] == str(second.document_id)]
+    assert mine["holding_statement_ids"] == [str(current.id)]
+
+    # Corrected to units the movements do not explain: no price is stored, and the older
+    # readings' prices are not shown for it.
+    report("5,0000", "102,00", "510,00")
+    assert len(_rows(read, ws, price_table)) == 2
+    now = position()
+    assert now.report_units == Decimal(5) and now.reconciled is False
+    assert now.report_price_eur is None and now.value_eur is None
+    (card,) = cards()
+    assert card.account_id == depot_id and "laut Bericht 5, gebucht 4,8" in card.reasoning
+
+    # The same figures again are the report applied twice.
+    with pytest.raises(RuleError) as refused:
+        report("5,0000", "102,00", "510,00")
+    assert refused.value.code == depot.DEPOT_HOLDING_EXISTS
+    assert len(_rows(read, ws, holding_table)) == 3
+
+
+def test_a_position_of_units_with_a_value_of_0_stores_no_price(
+    run,
+    read,
+    fresh_workspaces,
+    blob_store,
+    job,
+    enqueued,  # noqa: F811
+):
+    """Review F4: value ÷ units = 0 would break price_eur > 0 (a 500); the position is stored,
+    reconciled, without a price."""
+    ws, _ = fresh_workspaces
+    _account(run, ws)
+    _apply(
+        run,
+        ws,
+        _read(run, job, ws, blob_store, enqueued, DocumentSubtype.TRADE_CONFIRMATION, _trade()),
+    )
+    row = f"{ISIN_CASH} | Beispiel Euro Geldmarkt | 4,8000 | 0,00 | 0,00 | EUR"
+    _apply(
+        run,
+        ws,
+        _read(run, job, ws, blob_store, enqueued, DocumentSubtype.DEPOT_REPORT, _report(row)),
+    )
+    (holding,) = _rows(read, ws, holding_table)
+    assert holding.reconciled is True and holding.declared_value_eur == Decimal("0.00")
+    assert _rows(read, ws, price_table) == []
 
 
 def test_a_report_naming_an_unbooked_trade_is_a_card_until_that_trade_is_applied(
