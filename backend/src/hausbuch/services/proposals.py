@@ -29,6 +29,7 @@ from uuid import UUID
 from pydantic import BaseModel, JsonValue, ValidationError
 from sqlalchemy import Connection, exists, insert, null, select, update
 
+from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import asset_movement as movement_table
 from hausbuch.db.tables import document_extraction as extraction_table
 from hausbuch.db.tables import movement_import as movement_import_table
@@ -90,6 +91,7 @@ from hausbuch.schemas.employment import (
     ReturnInputEvidenceValue,
 )
 from hausbuch.schemas.enums import (
+    AccountKind,
     ActorType,
     DocumentSource,
     DocumentSubtype,
@@ -249,7 +251,8 @@ def _is_exchange_original(conn: Connection, document: Document) -> bool:
     """The document is an exchange export read on its account (phase 6 D166, step 5a): typed
     as one by the import (a statement of subtype exchange_export; this is how a withdrawal
     history is known, since the movement it completes keeps its import's document), the
-    original of a movement import, or a document a movement points to."""
+    original of a movement import, or a document a movement of an exchange account points
+    to. A depot's note is no exchange original: it is read by the model (step 4)."""
     typing = document.typing
     if (
         typing is not None
@@ -260,7 +263,14 @@ def _is_exchange_original(conn: Connection, document: Document) -> bool:
     imported = select(movement_import_table.c.id).where(
         movement_import_table.c.document_id == document.id
     )
-    moved = select(movement_table.c.id).where(movement_table.c.document_id == document.id)
+    moved = (
+        select(movement_table.c.id)
+        .join(account_table, account_table.c.id == movement_table.c.account_id)
+        .where(
+            movement_table.c.document_id == document.id,
+            account_table.c.kind == AccountKind.EXCHANGE.value,
+        )
+    )
     return conn.execute(imported.union_all(moved).limit(1)).first() is not None
 
 
