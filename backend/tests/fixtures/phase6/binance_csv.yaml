@@ -1,0 +1,367 @@
+# Rule fixture: Binance's exports to asset movements (hausbuch.services.exchange.binance_csv,
+# hausbuch.rules.exchange; docs/phases/phase-6.md D178, D166 as amended 13 Nov 2026, D175,
+# D162, §8, §14)
+#
+# Each case is the text of the files as Binance writes them, and the movements the import
+# stores, or the error it refuses with:
+# - `transactions`: the „Transaction History“ (User ID, Time, Account, Operation, Coin,
+#   Change, Remark), the source of every movement;
+# - `withdrawals`: the „Withdraw History“ (Time, Coin, Network, Amount, Fee, Address, TXID,
+#   Status), uploaded with it (`withdrawals_later: false`, completing each withdrawal as it is
+#   stored) or after it (`withdrawals_later: true`, completing each stored withdrawal by a new
+#   row that supersedes it, D178 (4));
+# - `stored`: an earlier export of the same account already imported (dedup, D178 (5));
+# - `typed`: the balance per coin Binance shows, typed for the import (D166, D178 (6)).
+#
+# The layout (read on the real files on Luis's computer 13 Nov 2026, never committed): a
+# comma-separated CSV with a UTF-8 BOM and CRLF line ends inside the ZIP Binance sends, no
+# quoting; times YYYY-MM-DD HH:MM:SS in UTC; the transaction history newest first, Change
+# signed and written without trailing zeros, Account always Spot, Remark „Withdraw fee is
+# included“ on a withdrawal and empty elsewhere; the withdrawal history oldest first, Status
+# Completed. The texts below leave out the BOM and use LF; the parser tests replay them inside
+# a ZIP with a BOM and CRLF as well. Every value below is invented; `never_stored` names the
+# invented User ID and Address the texts carry, which must reach no movement, event, log or
+# card (D178 (2); the DB test greps for them).
+#
+# Rows to movements (D178 (3)), in code:
+# - The trade rows of one second (Transaction Buy / Spend / Fee / Revenue / Sold, and Binance
+#   Convert) are summed per coin and role: the coin received (Buy, Revenue, a positive
+#   Convert) -> acquisition, the coin given (Spend, Sold, a negative Convert) -> disposal,
+#   each fee coin -> fee with quantity -amount and fee_quantity the amount. A second that
+#   does not give exactly one coin and receive exactly one is refused with
+#   exchange.binance_ambiguous_trade.
+# - A EUR leg is never its own movement: it is the eur_amount of the coin leg (negative on an
+#   acquisition, positive on a disposal). A trade with no EUR leg keeps eur_amount empty on
+#   both legs. A fee paid in EUR is a fee movement of the EUR asset.
+# - Deposit of EUR -> internal_transfer_in of EUR, confirmed (D162 links it to the bank leg);
+#   a crypto Deposit -> cashback_reward PROPOSED with exchange.deposit_question (D166's crypto
+#   Deposit, as D178 (3) says); Withdraw -> internal_transfer_out PROPOSED with quantity
+#   -amount (the Remark: the fee is included); any other Operation -> uncategorized PROPOSED.
+#   Every trade leg is confirmed.
+# - A withdrawal is completed from the withdrawal history's row of the same coin whose
+#   Amount + Fee equals the amount sent and whose time lies within one hour before it (0 to
+#   3600 seconds, both ends included), each history row used once: fee_quantity = Fee,
+#   network = Network, tx_hash = external_ref = TXID. Without such a row the withdrawal keeps
+#   them empty and the import shows the to-do exchange.withdrawal_history_missing
+#   („Auszahlungsverlauf hochladen“, D178 (4)).
+# - The „Spot Trade History“ is refused with exchange.binance_spot_history (D178 (1)).
+#
+# Order of `movements`: by second, oldest first; within a second the trade's acquisition,
+# disposal and fees (by coin), then the other rows in the order Binance wrote them.
+#
+# Step 5 readings (listed in the report):
+# - eur_amount is a euro amount in cents (numeric(14,2)), and the real file's EUR legs carry
+#   up to 8 decimals (most trade seconds sum to a sub-cent amount), so the summed EUR leg is
+#   rounded to the cent, half up (`sub_cent_eur_leg_rounded`). An EUR movement's eur_amount is
+#   its quantity rounded the same way; its quantity keeps every decimal. The EUR position of
+#   D178 (6) is therefore exact to the cent per trade, not to Binance's eighth decimal: on the
+#   real file a typed EUR balance can differ by a few cents (reported as a spec question).
+# - rows_total counts the movements the file gives (a trade's fills are one movement per coin
+#   and role), so rows_new + rows_skipped = rows_total, as for BISON.
+# - The dedup hash takes the summed amount without trailing zeros, so a re-export that writes
+#   the same amount with other trailing zeros still matches.
+# - A crypto Deposit on Binance can come from a foreign address, unlike BISON's; it is still
+#   D166's proposed cashback_reward, and the card's answers include an own wallet.
+
+ids:
+  account: 0000006b-0000-4000-8000-000000000002
+
+never_stored:
+  user_id: "987654321"
+  address: bc1qinventedaddressqq7k3m9x2v5c8n4w6e0r1t3y5u7i9o0p
+
+cases:
+  - id: fills_summed_within_one_second
+    description: three fills of one order in one second are one acquisition and one fee, the fee in the coin bought
+    transactions: |
+      User ID,Time,Account,Operation,Coin,Change,Remark
+      987654321,2026-02-10 14:03:22,Spot,Transaction Fee,BTC,-0.0000002,
+      987654321,2026-02-10 14:03:22,Spot,Transaction Spend,EUR,-12,
+      987654321,2026-02-10 14:03:22,Spot,Transaction Buy,BTC,0.0002,
+      987654321,2026-02-10 14:03:22,Spot,Transaction Fee,BTC,-0.0000005,
+      987654321,2026-02-10 14:03:22,Spot,Transaction Spend,EUR,-30,
+      987654321,2026-02-10 14:03:22,Spot,Transaction Buy,BTC,0.0005,
+      987654321,2026-02-10 14:03:22,Spot,Transaction Fee,BTC,-0.000001,
+      987654321,2026-02-10 14:03:22,Spot,Transaction Spend,EUR,-60,
+      987654321,2026-02-10 14:03:22,Spot,Transaction Buy,BTC,0.001,
+    expect:
+      rows_total: 2
+      rows_new: 2
+      rows_skipped: 0
+      movements:
+        - {occurred_at: "2026-02-10T14:03:22Z", asset: BTC, kind: acquisition, status: confirmed, quantity: "0.0017", eur_amount: "-102.00"}
+        - {occurred_at: "2026-02-10T14:03:22Z", asset: BTC, kind: fee, status: confirmed, quantity: "-0.0000017", fee_quantity: "0.0000017"}
+
+  - id: fee_in_a_third_coin
+    description: the fee paid in Binance's own coin is its own fee movement of that coin
+    transactions: |
+      User ID,Time,Account,Operation,Coin,Change,Remark
+      987654321,2026-02-11 09:30:05,Spot,Transaction Fee,BNB,-0.00021,
+      987654321,2026-02-11 09:30:05,Spot,Transaction Spend,EUR,-120.5,
+      987654321,2026-02-11 09:30:05,Spot,Transaction Buy,ETH,0.05,
+    expect:
+      rows_total: 2
+      rows_new: 2
+      rows_skipped: 0
+      movements:
+        - {occurred_at: "2026-02-11T09:30:05Z", asset: ETH, kind: acquisition, status: confirmed, quantity: "0.05", eur_amount: "-120.50"}
+        - {occurred_at: "2026-02-11T09:30:05Z", asset: BNB, kind: fee, status: confirmed, quantity: "-0.00021", fee_quantity: "0.00021"}
+
+  - id: stablecoin_trade_without_eur
+    description: a coin bought with a stablecoin has no EUR leg, so both legs keep eur_amount empty (valued from the price table later)
+    transactions: |
+      User ID,Time,Account,Operation,Coin,Change,Remark
+      987654321,2026-02-12 16:45:59,Spot,Transaction Fee,SOL,-0.0012,
+      987654321,2026-02-12 16:45:59,Spot,Transaction Spend,USDC,-180.36,
+      987654321,2026-02-12 16:45:59,Spot,Transaction Buy,SOL,1.2,
+    expect:
+      rows_total: 3
+      rows_new: 3
+      rows_skipped: 0
+      movements:
+        - {occurred_at: "2026-02-12T16:45:59Z", asset: SOL, kind: acquisition, status: confirmed, quantity: "1.2"}
+        - {occurred_at: "2026-02-12T16:45:59Z", asset: USDC, kind: disposal, status: confirmed, quantity: "-180.36"}
+        - {occurred_at: "2026-02-12T16:45:59Z", asset: SOL, kind: fee, status: confirmed, quantity: "-0.0012", fee_quantity: "0.0012"}
+
+  - id: sale_for_eur
+    description: a sale's EUR leg is the disposal's positive eur_amount; a fee paid in EUR is a fee movement of the EUR asset
+    transactions: |
+      User ID,Time,Account,Operation,Coin,Change,Remark
+      987654321,2026-02-13 11:00:00,Spot,Transaction Fee,EUR,-0.13,
+      987654321,2026-02-13 11:00:00,Spot,Transaction Revenue,EUR,130.5,
+      987654321,2026-02-13 11:00:00,Spot,Transaction Sold,BTC,-0.002,
+    expect:
+      rows_total: 2
+      rows_new: 2
+      rows_skipped: 0
+      movements:
+        - {occurred_at: "2026-02-13T11:00:00Z", asset: BTC, kind: disposal, status: confirmed, quantity: "-0.002", eur_amount: "130.50"}
+        - {occurred_at: "2026-02-13T11:00:00Z", asset: EUR, kind: fee, status: confirmed, quantity: "-0.13", eur_amount: "-0.13", fee_quantity: "0.13"}
+
+  - id: binance_convert
+    description: a Convert pair of rows is a trade like any other
+    transactions: |
+      User ID,Time,Account,Operation,Coin,Change,Remark
+      987654321,2026-02-14 08:12:40,Spot,Binance Convert,USDC,100,
+      987654321,2026-02-14 08:12:40,Spot,Binance Convert,EUR,-92.5,
+    expect:
+      rows_total: 1
+      rows_new: 1
+      rows_skipped: 0
+      movements:
+        - {occurred_at: "2026-02-14T08:12:40Z", asset: USDC, kind: acquisition, status: confirmed, quantity: "100", eur_amount: "-92.50"}
+
+  - id: sub_cent_eur_leg_rounded
+    description: the fills' EUR legs sum to -150.0064, booked as -150.01 (to the cent, half up)
+    transactions: |
+      User ID,Time,Account,Operation,Coin,Change,Remark
+      987654321,2026-02-15 13:14:15,Spot,Transaction Fee,ETH,-0.00002,
+      987654321,2026-02-15 13:14:15,Spot,Transaction Spend,EUR,-50.00213,
+      987654321,2026-02-15 13:14:15,Spot,Transaction Buy,ETH,0.02,
+      987654321,2026-02-15 13:14:15,Spot,Transaction Fee,ETH,-0.00004,
+      987654321,2026-02-15 13:14:15,Spot,Transaction Spend,EUR,-100.00427,
+      987654321,2026-02-15 13:14:15,Spot,Transaction Buy,ETH,0.04,
+    expect:
+      rows_total: 2
+      rows_new: 2
+      rows_skipped: 0
+      movements:
+        - {occurred_at: "2026-02-15T13:14:15Z", asset: ETH, kind: acquisition, status: confirmed, quantity: "0.06", eur_amount: "-150.01"}
+        - {occurred_at: "2026-02-15T13:14:15Z", asset: ETH, kind: fee, status: confirmed, quantity: "-0.00006", fee_quantity: "0.00006"}
+
+  - id: eur_deposit
+    description: the EUR deposit D162 links to its bank leg
+    transactions: |
+      User ID,Time,Account,Operation,Coin,Change,Remark
+      987654321,2026-02-01 08:00:00,Spot,Deposit,EUR,500,
+    expect:
+      rows_total: 1
+      rows_new: 1
+      rows_skipped: 0
+      movements:
+        - {occurred_at: "2026-02-01T08:00:00Z", asset: EUR, kind: internal_transfer_in, status: confirmed, quantity: "500", eur_amount: "500.00"}
+
+  - id: crypto_deposit_asked
+    transactions: |
+      User ID,Time,Account,Operation,Coin,Change,Remark
+      987654321,2026-02-02 08:00:00,Spot,Deposit,BTC,0.0003,
+    expect:
+      rows_total: 1
+      rows_new: 1
+      rows_skipped: 0
+      movements:
+        - {occurred_at: "2026-02-02T08:00:00Z", asset: BTC, kind: cashback_reward, status: proposed, quantity: "0.0003", question: exchange.deposit_question}
+
+  - id: other_operation_uncategorized
+    transactions: |
+      User ID,Time,Account,Operation,Coin,Change,Remark
+      987654321,2026-02-03 00:00:00,Spot,Simple Earn Flexible Interest,USDC,0.0123,
+    expect:
+      rows_total: 1
+      rows_new: 1
+      rows_skipped: 0
+      movements:
+        - {occurred_at: "2026-02-03T00:00:00Z", asset: USDC, kind: uncategorized, status: proposed, quantity: "0.0123"}
+
+  - id: withdrawal_completed_from_history
+    description: the history's row of the same coin, Amount + Fee equal to the amount sent, fifteen minutes before; a row of another coin is ignored
+    transactions: |
+      User ID,Time,Account,Operation,Coin,Change,Remark
+      987654321,2026-03-05 12:20:00,Spot,Withdraw,BTC,-0.0105,Withdraw fee is included
+    withdrawals: |
+      Time,Coin,Network,Amount,Fee,Address,TXID,Status
+      2026-03-05 12:04:00,SOL,SOL,0.0100,0.0005,bc1qinventedaddressqq7k3m9x2v5c8n4w6e0r1t3y5u7i9o0p,6nkGdbTBEM4axSBBYP9dzQxg7mHhB3H1MNwgt6Vmf7esJVsmWvCo6Uwv3jpCFYBmN2kdvcj5cZUVm5Zi8AUvyA7,Completed
+      2026-03-05 12:05:00,BTC,BTC,0.0100,0.0005,bc1qinventedaddressqq7k3m9x2v5c8n4w6e0r1t3y5u7i9o0p,c8e9e7ce98e98cdbb4b0dd51563e5713145ad9b98617dcebe12676ee885902a0,Completed
+    expect:
+      rows_total: 1
+      rows_new: 1
+      rows_skipped: 0
+      movements:
+        - {occurred_at: "2026-03-05T12:20:00Z", asset: BTC, kind: internal_transfer_out, status: proposed, quantity: "-0.0105", fee_quantity: "0.0005", network: BTC, tx_hash: c8e9e7ce98e98cdbb4b0dd51563e5713145ad9b98617dcebe12676ee885902a0, external_ref: c8e9e7ce98e98cdbb4b0dd51563e5713145ad9b98617dcebe12676ee885902a0}
+
+  - id: withdrawal_history_outside_the_hour
+    description: a history row more than one hour before, or after the withdrawal, completes nothing
+    transactions: |
+      User ID,Time,Account,Operation,Coin,Change,Remark
+      987654321,2026-03-05 12:20:00,Spot,Withdraw,BTC,-0.0105,Withdraw fee is included
+    withdrawals: |
+      Time,Coin,Network,Amount,Fee,Address,TXID,Status
+      2026-03-05 11:19:59,BTC,BTC,0.0100,0.0005,bc1qinventedaddressqq7k3m9x2v5c8n4w6e0r1t3y5u7i9o0p,c8e9e7ce98e98cdbb4b0dd51563e5713145ad9b98617dcebe12676ee885902a0,Completed
+      2026-03-05 12:20:01,BTC,BTC,0.0100,0.0005,bc1qinventedaddressqq7k3m9x2v5c8n4w6e0r1t3y5u7i9o0p,bd31e44c1ed45d7197be80f498155cd65d4b589eb000bbf566b8c7053af62597,Completed
+    expect:
+      rows_total: 1
+      rows_new: 1
+      rows_skipped: 0
+      movements:
+        - {occurred_at: "2026-03-05T12:20:00Z", asset: BTC, kind: internal_transfer_out, status: proposed, quantity: "-0.0105"}
+      todo: exchange.withdrawal_history_missing
+
+  - id: withdrawal_without_history
+    description: without the withdrawal history the withdrawal keeps network and hash empty and the import asks for the file
+    transactions: |
+      User ID,Time,Account,Operation,Coin,Change,Remark
+      987654321,2026-03-05 12:20:00,Spot,Withdraw,BTC,-0.0105,Withdraw fee is included
+    expect:
+      rows_total: 1
+      rows_new: 1
+      rows_skipped: 0
+      movements:
+        - {occurred_at: "2026-03-05T12:20:00Z", asset: BTC, kind: internal_transfer_out, status: proposed, quantity: "-0.0105"}
+      todo: exchange.withdrawal_history_missing
+
+  - id: withdrawal_history_uploaded_later
+    description: the history uploaded after the import completes the stored withdrawal by a new row that supersedes it
+    transactions: |
+      User ID,Time,Account,Operation,Coin,Change,Remark
+      987654321,2026-03-05 12:20:00,Spot,Withdraw,BTC,-0.0105,Withdraw fee is included
+    withdrawals: |
+      Time,Coin,Network,Amount,Fee,Address,TXID,Status
+      2026-03-05 12:05:00,BTC,BTC,0.0100,0.0005,bc1qinventedaddressqq7k3m9x2v5c8n4w6e0r1t3y5u7i9o0p,c8e9e7ce98e98cdbb4b0dd51563e5713145ad9b98617dcebe12676ee885902a0,Completed
+    withdrawals_later: true
+    expect:
+      rows_total: 1
+      rows_new: 1
+      rows_skipped: 0
+      superseded: 1
+      movements:
+        - {occurred_at: "2026-03-05T12:20:00Z", asset: BTC, kind: internal_transfer_out, status: proposed, quantity: "-0.0105", fee_quantity: "0.0005", network: BTC, tx_hash: c8e9e7ce98e98cdbb4b0dd51563e5713145ad9b98617dcebe12676ee885902a0, external_ref: c8e9e7ce98e98cdbb4b0dd51563e5713145ad9b98617dcebe12676ee885902a0}
+
+  - id: spot_trade_history_refused
+    description: the third file adds nothing (its fills sum to the transaction history's trade rows) and is refused with a message naming the two files
+    transactions: |
+      Order No,Time,Pair,Side,Price,Executed,Amount,Fee,AOR Conversion Pair,AOR Conversion Rate
+      1000000000000000001,2026-02-10 14:03:22,BTCEUR,BUY,60000,0.001BTC,60EUR,0.000001BTC,,
+    error: exchange.binance_spot_history
+
+  - id: two_pairs_in_one_second_refused
+    description: two coins received in one second cannot be paired with what was given, so nothing is guessed
+    transactions: |
+      User ID,Time,Account,Operation,Coin,Change,Remark
+      987654321,2026-02-16 10:00:00,Spot,Transaction Spend,USDC,-50,
+      987654321,2026-02-16 10:00:00,Spot,Transaction Buy,ETH,0.02,
+      987654321,2026-02-16 10:00:00,Spot,Transaction Spend,EUR,-60,
+      987654321,2026-02-16 10:00:00,Spot,Transaction Buy,BTC,0.001,
+    error: exchange.binance_ambiguous_trade
+
+  - id: longer_export_reuploaded
+    description: a later export covering the earlier one adds only the rows after it
+    stored: |
+      User ID,Time,Account,Operation,Coin,Change,Remark
+      987654321,2026-02-10 14:03:22,Spot,Transaction Fee,BTC,-0.000001,
+      987654321,2026-02-10 14:03:22,Spot,Transaction Spend,EUR,-60,
+      987654321,2026-02-10 14:03:22,Spot,Transaction Buy,BTC,0.001,
+      987654321,2026-02-01 08:00:00,Spot,Deposit,EUR,500,
+    transactions: |
+      User ID,Time,Account,Operation,Coin,Change,Remark
+      987654321,2026-02-20 09:00:00,Spot,Transaction Fee,BTC,-0.0000005,
+      987654321,2026-02-20 09:00:00,Spot,Transaction Spend,EUR,-31.25,
+      987654321,2026-02-20 09:00:00,Spot,Transaction Buy,BTC,0.0005,
+      987654321,2026-02-10 14:03:22,Spot,Transaction Fee,BTC,-0.000001,
+      987654321,2026-02-10 14:03:22,Spot,Transaction Spend,EUR,-60,
+      987654321,2026-02-10 14:03:22,Spot,Transaction Buy,BTC,0.001,
+      987654321,2026-02-01 08:00:00,Spot,Deposit,EUR,500,
+    expect:
+      rows_total: 5
+      rows_new: 2
+      rows_skipped: 3
+      movements:
+        - {occurred_at: "2026-02-20T09:00:00Z", asset: BTC, kind: acquisition, status: confirmed, quantity: "0.0005", eur_amount: "-31.25"}
+        - {occurred_at: "2026-02-20T09:00:00Z", asset: BTC, kind: fee, status: confirmed, quantity: "-0.0000005", fee_quantity: "0.0000005"}
+
+  - id: identical_rows_kept_by_position
+    description: two equal deposits in one second are both kept, their position among identical rows making each hash unique
+    transactions: |
+      User ID,Time,Account,Operation,Coin,Change,Remark
+      987654321,2026-02-01 08:00:00,Spot,Deposit,EUR,100,
+      987654321,2026-02-01 08:00:00,Spot,Deposit,EUR,100,
+    expect:
+      rows_total: 2
+      rows_new: 2
+      rows_skipped: 0
+      movements:
+        - {occurred_at: "2026-02-01T08:00:00Z", asset: EUR, kind: internal_transfer_in, status: confirmed, quantity: "100", eur_amount: "100.00", position: 0}
+        - {occurred_at: "2026-02-01T08:00:00Z", asset: EUR, kind: internal_transfer_in, status: confirmed, quantity: "100", eur_amount: "100.00", position: 1}
+
+  - id: typed_balance_matches
+    description: the EUR position is the EUR movements plus the trades' EUR legs, 500 - 250 = 250
+    transactions: |
+      User ID,Time,Account,Operation,Coin,Change,Remark
+      987654321,2026-03-02 10:00:00,Spot,Transaction Fee,BTC,-0.000004,
+      987654321,2026-03-02 10:00:00,Spot,Transaction Spend,EUR,-250,
+      987654321,2026-03-02 10:00:00,Spot,Transaction Buy,BTC,0.004,
+      987654321,2026-03-01 08:00:00,Spot,Deposit,EUR,500,
+    typed: {EUR: "250.00", BTC: "0.003996"}
+    expect:
+      rows_total: 3
+      rows_new: 3
+      rows_skipped: 0
+      movements:
+        - {occurred_at: "2026-03-01T08:00:00Z", asset: EUR, kind: internal_transfer_in, status: confirmed, quantity: "500", eur_amount: "500.00"}
+        - {occurred_at: "2026-03-02T10:00:00Z", asset: BTC, kind: acquisition, status: confirmed, quantity: "0.004", eur_amount: "-250.00"}
+        - {occurred_at: "2026-03-02T10:00:00Z", asset: BTC, kind: fee, status: confirmed, quantity: "-0.000004", fee_quantity: "0.000004"}
+      status: reconciled
+      assets:
+        - {asset: EUR, reconciled: true, difference_units: "0"}
+        - {asset: BTC, reconciled: true, difference_units: "0"}
+
+  - id: typed_balance_does_not_match
+    description: a typed EUR balance one cent off is named for EUR alone, never bridged
+    transactions: |
+      User ID,Time,Account,Operation,Coin,Change,Remark
+      987654321,2026-03-02 10:00:00,Spot,Transaction Fee,BTC,-0.000004,
+      987654321,2026-03-02 10:00:00,Spot,Transaction Spend,EUR,-250,
+      987654321,2026-03-02 10:00:00,Spot,Transaction Buy,BTC,0.004,
+      987654321,2026-03-01 08:00:00,Spot,Deposit,EUR,500,
+    typed: {EUR: "250.01", BTC: "0.003996"}
+    expect:
+      rows_total: 3
+      rows_new: 3
+      rows_skipped: 0
+      movements:
+        - {occurred_at: "2026-03-01T08:00:00Z", asset: EUR, kind: internal_transfer_in, status: confirmed, quantity: "500", eur_amount: "500.00"}
+        - {occurred_at: "2026-03-02T10:00:00Z", asset: BTC, kind: acquisition, status: confirmed, quantity: "0.004", eur_amount: "-250.00"}
+        - {occurred_at: "2026-03-02T10:00:00Z", asset: BTC, kind: fee, status: confirmed, quantity: "-0.000004", fee_quantity: "0.000004"}
+      status: unreconciled
+      assets:
+        - {asset: EUR, reconciled: false, difference_units: "0.01", error: exchange.unreconciled}
+        - {asset: BTC, reconciled: true, difference_units: "0"}
