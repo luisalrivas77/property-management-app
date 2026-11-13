@@ -555,6 +555,48 @@ def test_a_report_applied_a_second_time_is_refused(
     assert len(_rows(read, ws, holding_table)) == 1
 
 
+def test_a_report_read_again_keeps_its_unchanged_positions_and_corrects_the_changed_one(
+    run,
+    read,
+    fresh_workspaces,
+    blob_store,
+    job,
+    enqueued,  # noqa: F811
+):
+    """Second review: „Neu auslesen“ of the same report, where one position was misread, is
+    applied as a whole: the unchanged position stays its stored row (no „überspringen“
+    needed), the changed one supersedes its row."""
+    ws, _ = fresh_workspaces
+    _account(run, ws)
+    data = b"%PDF-1.7 depot " + uuid.uuid4().hex.encode()
+    world = f"{ISIN_WORLD} | Beispiel Welt ETF | 2,0000 | 50,00 | 100,00 | EUR"
+
+    def read_and_apply(cash_value):
+        cash = f"{ISIN_CASH} | Beispiel Euro Geldmarkt | 4,8000 | 104,50 | {cash_value} | EUR"
+        _, ready, _ = _read_ready(
+            run,
+            job,
+            ws,
+            blob_store,
+            enqueued,
+            _classified(DocumentSubtype.DEPOT_REPORT),
+            _report(world, cash),
+            data,
+        )
+        _apply(run, ws, ready)
+        return ready
+
+    first = read_and_apply("501,60")
+    again = read_and_apply("510,00")
+    assert again.document_id == first.document_id
+    rows = _rows(read, ws, holding_table)
+    assert len(rows) == 3
+    (old,) = [r for r in rows if r.superseded_by is not None]
+    assert old.declared_value_eur == Decimal("501.60")
+    current = sorted(r.declared_value_eur for r in rows if r.superseded_by is None)
+    assert current == [Decimal("100.00"), Decimal("510.00")]
+
+
 def test_a_report_read_again_with_other_figures_corrects_its_position(
     run,
     read,

@@ -310,14 +310,16 @@ def record_holding(ctx: CommandContext, values: DepotHoldingValues, document_id:
     its date (rules.depot.reconcile_holdings); a reconciled position with units stores the
     report's price (value ÷ units) as price(source = statement), when the value is above 0.
     A report's position of the asset on that account and date stored already is a twin: with
-    the same units and value it is refused (the report applied twice, after „Neu auslesen“
-    or from a second copy), with other figures the new row supersedes it (a corrected
-    reading; account.holding_corrected)."""
+    the same units and value it is the stored row when it came from this same document (a
+    report read again with „Neu auslesen“, where only some positions changed, so the
+    unchanged ones need no „überspringen“) and refused when it came from another one (a second
+    copy); with other figures the new row supersedes it (a corrected reading;
+    account.holding_corrected)."""
     _require_depot(ctx.conn, values.account_id)
     asset_id = asset_for_isin(ctx, values.isin, values.name)
     h = holding_table.c
     twin = ctx.conn.execute(
-        select(h.id, h.declared_units, h.declared_value_eur).where(
+        select(h.id, h.declared_units, h.declared_value_eur, h.document_id).where(
             h.account_id == values.account_id,
             h.asset_id == asset_id,
             h.as_of == values.as_of,
@@ -329,6 +331,8 @@ def record_holding(ctx: CommandContext, values: DepotHoldingValues, document_id:
         values.declared_units,
         values.declared_value_eur,
     ):
+        if twin.document_id == document_id:
+            return twin.id
         raise RuleViolationError(
             [DEPOT_HOLDING_EXISTS], "this report's position is stored on the account already"
         )
