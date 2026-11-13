@@ -313,8 +313,8 @@ class StatementFileOffer(Schema):
     or IBAN is the one the file prints, else the only candidate; none when there is no
     candidate or several without a number. No candidate means no account of this kind takes
     it yet (`account_kind` names the kind to create). `new_account` is set whenever no account
-    holds the file's own IBAN or number, also beside candidates without a number (a second
-    depot), for „Konto anlegen und einlesen“."""
+    holds the file's own IBAN or number and the file holds a booked line, also beside
+    candidates without a number (a second depot), for „Konto anlegen und einlesen“."""
 
     format: StatementFormat
     account_kind: AccountKind
