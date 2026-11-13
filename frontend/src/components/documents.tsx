@@ -9,7 +9,9 @@ import { useCallback, useId, useRef, useState, type ChangeEvent } from "react";
 
 import { api, ok } from "@/api/client";
 import type {
+  AccountKind,
   Document,
+  DocumentDetail,
   DocumentExplanation,
   DocumentSubtype,
   DocumentUploadResult,
@@ -17,6 +19,7 @@ import type {
   LinkTargetRef,
   ProposalStatus,
   RelatedDocument,
+  StatementFileImport,
   UploadBody,
 } from "@/api/schemas";
 import { ErrorNotice } from "@/lib/ErrorNotice";
@@ -662,5 +665,134 @@ export function DocumentExplanationBox({ explanation }: { explanation: DocumentE
         <strong>Was die App damit tut:</strong> {explanation.aktion}
       </p>
     </aside>
+  );
+}
+
+/** Where a stored statement went (phase 6 D176 (3), step 4): „Importiert auf <Konto>“, linked to
+ * the account's Kontoauszüge, where the import's status and „Anfangssaldo daraus übernehmen“
+ * live. Nothing for a document that is no statement's original. */
+export function StatementImportsNotice({ imports }: { imports: StatementFileImport[] | undefined }) {
+  if (!imports?.length) return null;
+  return (
+    <div className="notice notice-ok" role="status">
+      {imports.map((imp) => (
+        <p key={imp.import_id}>
+          Importiert auf <Link href={`/accounts/${imp.account_id}?tab=kontoauszuege`}>{imp.account_label}</Link>
+          {imp.status === "reconciled" ? "." : " – bitte dort den Kontoauszug prüfen."}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+const STATEMENT_KIND: Partial<Record<AccountKind, { file: string; account: string }>> = {
+  credit_card: { file: "Kreditkartenabrechnung", account: "Kreditkarte" },
+  depot: { file: "Kontoauszug des Depot-Verrechnungskontos", account: "Depot" },
+};
+
+/** „Auf Konto importieren“ (phase 6 D176 (3), step 4): a card statement or a depot's cash
+ * statement uploaded through Dokumente is never read by the model; it is imported onto its
+ * account from the stored file, with no second upload. The accounts it can go to come from
+ * GET /documents/{id} (`statement_offer`): the one whose number the file prints, else the only
+ * one, is pre-selected; with none of its kind the person is sent to „Konto anlegen“ with the
+ * kind chosen. Pass `detail` when the page has it already; without it the detail is loaded. */
+export function ImportStoredStatement({
+  documentId,
+  detail,
+  onImported,
+}: {
+  documentId: string;
+  detail?: DocumentDetail;
+  onImported?: () => void;
+}) {
+  const load = useCallback(
+    async () => detail ?? ok(api.GET("/api/documents/{document_id}", { params: { path: { document_id: documentId } } })),
+    [detail, documentId],
+  );
+  const state = useLoad(load);
+  return <Loading state={state}>{(data) => <StatementImportForm key={documentId} detail={data} onImported={onImported} />}</Loading>;
+}
+
+function StatementImportForm({ detail, onImported }: { detail: DocumentDetail; onImported?: () => void }) {
+  const offer = detail.statement_offer ?? null;
+  const candidates = offer?.candidates ?? [];
+  const [accountId, setAccountId] = useState(offer?.suggested_account_id ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const [imported, setImported] = useState<StatementFileImport | null>(null);
+  const selectId = useId();
+
+  if (imported) return <StatementImportsNotice imports={[imported]} />;
+  if (detail.statement_imports?.length) return <StatementImportsNotice imports={detail.statement_imports} />;
+  if (!offer) return null;
+  const words = STATEMENT_KIND[offer.account_kind] ?? { file: "Kontoauszug", account: "Konto" };
+  const only = candidates.length === 1 ? candidates[0] : undefined;
+
+  if (candidates.length === 0) {
+    return (
+      <div className="notice notice-info" role="status">
+        <p>
+          Das ist eine {words.file}. Hausbuch liest sie selbst, ohne KI, auf ihrem Konto ein; dafür gibt es noch kein passendes Konto der Art „
+          {words.account}“.
+        </p>
+        <p>
+          <Link href={`/accounts/new?kind=${offer.account_kind}`}>Konto anlegen</Link> und danach hier „Auf Konto importieren“ wählen.
+        </p>
+      </div>
+    );
+  }
+
+  async function submit() {
+    if (!accountId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await ok(
+        api.POST("/api/documents/{document_id}/import-statement", {
+          params: { path: { document_id: detail.document.id } },
+          body: { account_id: accountId },
+        }),
+      );
+      const account = candidates.find((c) => c.account_id === accountId);
+      setImported({ import_id: result.id, account_id: result.account_id, account_label: account?.label ?? "Konto", status: result.status });
+      onImported?.();
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="stack">
+      <p>
+        Das ist eine {words.file}. Hausbuch liest sie selbst, ohne KI, und importiert sie direkt aus der gespeicherten Datei; ein zweites Hochladen ist
+        nicht nötig.
+      </p>
+      <div className="row">
+        {only ? (
+          <span>
+            Konto: <strong>{only.label}</strong> ({only.bank})
+          </span>
+        ) : (
+          <label htmlFor={selectId}>
+            Konto{" "}
+            <select id={selectId} value={accountId} onChange={(e) => setAccountId(e.target.value)} disabled={busy}>
+              {offer.suggested_account_id ? null : <option value="">Konto wählen …</option>}
+              {candidates.map((c) => (
+                <option key={c.account_id} value={c.account_id}>
+                  {c.label} ({c.bank}
+                  {c.external_ref_masked ? `, ${c.external_ref_masked}` : ""})
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <button type="button" onClick={() => void submit()} disabled={busy || !accountId}>
+          {busy ? "Importiert …" : "Auf Konto importieren"}
+        </button>
+      </div>
+      <ErrorNotice error={error} />
+    </div>
   );
 }

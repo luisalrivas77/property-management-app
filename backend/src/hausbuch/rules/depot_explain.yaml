@@ -227,9 +227,10 @@ kinds:
       - 'Datum: {datum}.'
       - 'Konto: {konto}.'
     aktion: >-
-      Hausbuch liest ihn selbst, ohne KI, auf dem Konto ein: unter Konten auf der Seite des
-      Verrechnungskontos mit „Kontoauszug hochladen“. Jede Zeile wird dann ein Umsatz, den
-      Hausbuch zuordnet.
+      Hausbuch liest ihn selbst, ohne KI, auf dem Depot ein. Steht auf dieser Seite noch nicht
+      „Importiert auf …“, unter „Vorschlag“ „Auf Konto importieren“ wählen: Hausbuch nimmt die
+      schon gespeicherte Datei, ein zweites Hochladen ist nicht nötig. Jede Zeile wird dann ein
+      Umsatz, den Hausbuch zuordnet.
 
   - kind: depotauszug
     titles: ['Depotauszug']

@@ -34,7 +34,10 @@ const CODE_FIELDS = { "iban.": "iban", "allocation.category_not_for_account": "p
 const BANK_KINDS: AccountKind[] = ["bank_current", "bank_savings"];
 const NEW_KINDS: AccountKind[] = [...BANK_KINDS, "credit_card", "depot"];
 
-export function AccountForm({ account }: { account?: Account }) {
+/** `initialKind` pre-selects the Kontoart of a new account (a link „Konto anlegen“ for a card or
+ * depot statement waiting on its document page, phase 6 D176 (3)); a kind this form does not
+ * offer is ignored. */
+export function AccountForm({ account, initialKind }: { account?: Account; initialKind?: string | null }) {
   const router = useRouter();
   const [label, setLabel] = useState(account?.label ?? "");
   const [bank, setBank] = useState(account?.bank ?? "");
@@ -44,7 +47,8 @@ export function AccountForm({ account }: { account?: Account }) {
   // Phase 6 (D156, migration 0025): is_owner_account is true on every account, the rental one
   // included; whether an account is a private one is its purpose. A new account is private
   // unless the person picks the rental purpose.
-  const [kind, setKind] = useState<AccountKind>(account?.kind ?? "bank_current");
+  const offered = NEW_KINDS.find((k) => k === initialKind);
+  const [kind, setKind] = useState<AccountKind>(account?.kind ?? offered ?? "bank_current");
   const [purpose, setPurpose] = useState<AccountPurpose>(account?.purpose ?? "private");
   const [provider, setProvider] = useState(account?.provider ?? "");
   const [busy, setBusy] = useState(false);

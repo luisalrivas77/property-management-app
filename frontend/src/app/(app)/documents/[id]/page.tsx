@@ -14,7 +14,7 @@ import { useCallback, useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
 import type { DocumentDetail, DocumentSubtype, DocumentType, HandFields, LinkTarget, ManualDocumentFields } from "@/api/schemas";
-import { DocumentExplanationBox, documentLabel, NO_TAX_YEAR } from "@/components/documents";
+import { DocumentExplanationBox, documentLabel, NO_TAX_YEAR, StatementImportsNotice } from "@/components/documents";
 import { loadDirectory, targets, type Target } from "@/components/entities";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "@/components/form";
 import { formatDate, formatDateTime, shortId } from "@/components/format";
@@ -46,6 +46,8 @@ export default function DocumentPage() {
             <Breadcrumbs items={[{ href: "/documents", label: "Dokumente" }, { label: documentLabel(data.document) }]} />
             <h1>{documentLabel(data.document)}</h1>
             <Original detail={data} />
+            {/* Phase 6 D176 (3), step 4: a statement's original names the account it went to. */}
+            <StatementImportsNotice imports={data.statement_imports} />
             {/* D177: while a suggestion waits, its card carries the same box. */}
             {proposalPending === false ? <DocumentExplanationBox explanation={data.explanation} /> : null}
             <ProposalSection
