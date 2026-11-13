@@ -601,7 +601,8 @@ class InboxItem(Schema):
     asset_id: UUID | None = None  # phase 6 step 5b: the price_* kinds
     private_costs: list[TaxInputCreate] = Field(default_factory=list)  # property_cost_row
     # read_failed: the proposal's error code; proposal.bank_file_not_read (a card or depot
-    # statement) is answered with „Auf Konto importieren“, not a new read (phase 6 D176 (3))
+    # statement) is answered with „Auf Konto importieren“, not a new read (phase 6 D176 (3));
+    # proposal.exchange_export_not_read (step 5a, D166) points to the exchange account's page
     error_code: str | None = None
 
 

@@ -135,3 +135,16 @@ def read_export(data: bytes) -> ExchangeExport:
     raw = _unzip(data) if data.startswith(_ZIP_MAGIC) else data
     text = _decode(raw)
     return ExchangeExport(kind=sniff(text), text=text)
+
+
+def is_exchange_export(data: bytes) -> bool:
+    """D166: whether the bytes are one of the exchanges' exports (BISON's, or one of
+    Binance's three, the spot trade history included), by the header line only. Such a file
+    is never classified or sent to the model (it holds Binance's User ID and the withdrawal
+    addresses); it is read by code on its exchange account. Anything this cannot read as an
+    export is False."""
+    try:
+        read_export(data)
+    except RuleError as exc:
+        return exc.code == E.EXCHANGE_BINANCE_SPOT_HISTORY
+    return True

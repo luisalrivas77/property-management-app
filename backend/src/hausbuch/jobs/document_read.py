@@ -73,6 +73,7 @@ from hausbuch.services import documents as document_service
 from hausbuch.services import proposals
 from hausbuch.services.bank import card_pdf, depot_pdf
 from hausbuch.services.context import Actor, new_command
+from hausbuch.services.exchange import is_exchange_export
 from hausbuch.services.workspace_settings import private_ai_allowed
 from hausbuch.settings import Settings
 from hausbuch.storage import BlobStore
@@ -94,6 +95,10 @@ INTERNAL_ERROR = "ai.internal_error"  # not a model error: a bug or the database
 # has no import yet, so request_read's check cannot see it; it is never sent to the model and
 # is imported on its card account instead. Not retried.
 CARD_STATEMENT = proposals.PROPOSAL_BANK_FILE_NOT_READ
+# Phase 6 D166, step 5a: an exchange's export (BISON's, or one of Binance's three) uploaded
+# through Dokumente, recognised by its header before anything else; never classified or sent
+# to the model (it holds Binance's User ID and addresses). Not retried.
+EXCHANGE_EXPORT = proposals.PROPOSAL_EXCHANGE_EXPORT_NOT_READ
 # Phase 6 step 4 (D168): a depot document while ai_private_accounts is off, stopped before the
 # model sees it when its text layer names the depot, else right after the classifier typed it.
 # Not retried: „Erneut auslesen“ once the switch is on.
@@ -377,6 +382,14 @@ def _is_card_statement(pages: list[str]) -> bool:
     return bool(pages) and (card_pdf.looks_like(pages) or depot_pdf.looks_like(pages))
 
 
+def _is_exchange_export(original: _Original) -> bool:
+    """An exchange export by its header line (services.exchange.is_exchange_export); a PDF
+    or an image never is one, so it is not decoded as text."""
+    if original.media_type == documents.PDF or original.media_type in documents.IMAGE_TYPES:
+        return False
+    return is_exchange_export(original.data)
+
+
 def _note_depot_kind(deps: JobDeps, workspace_id: UUID, document_id: UUID, text: str) -> None:
     """Phase 6 D177: a depot document uploaded before its kind was recorded at upload
     (services.documents.depot_kind_of) gets it at its next reading; code only, before the
@@ -405,6 +418,8 @@ def _read(
     if original.contains_tenant_data and not original.tenant_documents_allowed:
         raise _Stop(BLOCKED_TENANT_DATA)  # gate 2
     try:
+        if _is_exchange_export(original):
+            raise _Stop(EXCHANGE_EXPORT)  # D166: read by code on its exchange account only
         documents.check_media_type(original.media_type)
         pages = documents.page_count(original.data) if original.media_type == documents.PDF else 1
         if original.media_type == documents.PDF and documents.is_adobe_only_form(original.data):

@@ -70,6 +70,9 @@ export const RULE_CODE_TEXT: Record<string, string> = {
     "Der zweite Eintrag passt nur, wenn der Betrag der Grunderwerbsteuer oben auf diesen Bescheid gesenkt wird. Bitte beides übernehmen oder den zweiten Eintrag überspringen.",
   "proposal.bank_file_not_read":
     "Diese Datei wird nicht mit KI ausgelesen: Hausbuch hat sie beim Bankabruf von der Bank geholt, oder sie ist eine Kreditkartenabrechnung oder ein Kontoauszug des Depot-Verrechnungskontos. Solche Dateien liest Hausbuch selbst, ohne KI, auf ihrem Konto ein; steht sie dort noch nicht, auf der Seite des Dokuments „Auf Konto importieren“ wählen.",
+  // Phase 6 D166, step 5a: an exchange export is never sent to the model.
+  "proposal.exchange_export_not_read":
+    "Das ist ein Export einer Börse (BISON oder Binance). Hausbuch liest ihn selbst, ohne KI, auf dem Konto der Börse ein: unter Konten das Konto der Börse öffnen und den Export dort mit „Export der Börse hochladen“ hochladen; gibt es noch keins, ein Konto der Art „Börse (Krypto)“ anlegen.",
   "document.extraction_stale": "Das Dokument wurde inzwischen neu ausgelesen. Bitte die Seite neu laden und die Felder prüfen.",
   "document.extraction_kind_mismatch": "Für diese Dokumentart gibt es eines der Felder von Hand nicht; es kann nicht gespeichert werden.",
   // bank statements (phase-2.md §12 and the step 3 additions, rules/statements.py)
@@ -267,6 +270,9 @@ export const AI_ERROR_TEXT: Record<string, string> = {
   // as a document is never sent to the model.
   "proposal.bank_file_not_read":
     "Das ist eine Kreditkartenabrechnung oder ein Kontoauszug des Depot-Verrechnungskontos. Hausbuch liest sie selbst, ohne KI, auf ihrem Konto ein: mit „Auf Konto importieren“ auf der Seite dieses Dokuments oder unter Zu prüfen, direkt aus der gespeicherten Datei, ohne sie noch einmal hochzuladen.",
+  // Phase 6 D166, step 5a: a BISON or Binance export uploaded through Dokumente.
+  "proposal.exchange_export_not_read":
+    "Das ist ein Export einer Börse (BISON oder Binance). Hausbuch liest ihn selbst, ohne KI, auf dem Konto der Börse ein: unter Konten das Konto der Börse öffnen und den Export dort mit „Export der Börse hochladen“ hochladen; gibt es noch keins, ein Konto der Art „Börse (Krypto)“ anlegen.",
 };
 
 /** The German sentence for a proposal's error code; unknown codes get a generic one. */

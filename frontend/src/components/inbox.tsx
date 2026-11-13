@@ -582,6 +582,15 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
           </>
         );
       }
+      // Phase 6 D166, step 5a: an exchange export goes onto its exchange account, never to the model.
+      if (item.error_code === "proposal.exchange_export_not_read") {
+        return (
+          <>
+            <Link href="/accounts">Konten öffnen</Link>
+            {item.document_id ? <Link href={`/documents/${item.document_id}`}>Dokument öffnen</Link> : null}
+          </>
+        );
+      }
       return item.document_id ? <Link href={`/documents/${item.document_id}`}>Dokument öffnen</Link> : null;
     case "proposal":
     case "blocked_tenant_data":

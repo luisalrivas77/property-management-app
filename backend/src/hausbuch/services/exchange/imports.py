@@ -239,6 +239,14 @@ def _store_original(
         source=DocumentSource.UPLOAD,
         original_filename=original_filename,
     )
+    # The same file uploaded through Dokumente before failed its read with
+    # proposal.exchange_export_not_read; read on its account now, that card leaves Zu prüfen.
+    from hausbuch.services.proposals import (  # proposals imports matching, which imports this
+        PROPOSAL_EXCHANGE_EXPORT_NOT_READ,
+        supersede_bank_file_refusals,
+    )
+
+    supersede_bank_file_refusals(ctx, document.id, PROPOSAL_EXCHANGE_EXPORT_NOT_READ)
     if document.typing is None:
         # Typed by code only when untyped: a person's own typing of the same file stays.
         day = last.date()
