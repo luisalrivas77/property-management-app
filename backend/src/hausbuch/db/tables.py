@@ -941,6 +941,7 @@ asset_movement = Table(
     _text("status", server_default=text("'proposed'")),
     _uuid("superseded_by", nullable=True),
     _created_at(),
+    _text("note", nullable=True),  # 0030: a balance_correction's reason (D178 amended)
 )
 holding_statement = Table(
     "holding_statement",

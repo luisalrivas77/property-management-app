@@ -19,7 +19,7 @@ from fractions import Fraction
 from typing import Annotated, Protocol, Self
 from uuid import UUID
 
-from pydantic import Field, JsonValue, model_validator
+from pydantic import Field, JsonValue, StringConstraints, model_validator
 
 from .allocation import AllocationCategory, TransferLeg, TransferLegSource
 from .common import (
@@ -204,6 +204,10 @@ class MovementKind(StrEnum):
     DISTRIBUTION = "distribution"
     CAPITAL_INCOME_TAX = "capital_income_tax"
     UNCATEGORIZED = "uncategorized"
+    # Migration 0030 (D178 amended): a typed balance's difference a person booked, with a
+    # reason, when the export misses a movement. Never a trade, a transfer or an acquisition;
+    # phase 8's FIFO treats an inflow correction as a lot with unknown cost.
+    BALANCE_CORRECTION = "balance_correction"
 
 
 class MovementSource(StrEnum):
@@ -246,6 +250,8 @@ class AssetMovementDraft(Schema):
     source: MovementSource
     document_id: UUID | None = None
     transaction_id: UUID | None = None  # the cash leg on the depot's own statement
+    # A balance_correction's reason, written by the person (0030); never sent to a model.
+    note: str | None = Field(default=None, min_length=1, max_length=500)
 
     @model_validator(mode="after")
     def _sourced(self) -> Self:
@@ -493,6 +499,16 @@ class WithdrawalsConfirmed(Schema):
     Wallets“ (D178 (4)); how many proposed withdrawals of the import it confirmed."""
 
     confirmed: int = Field(ge=0)
+
+
+class BalanceCorrectionBody(Schema):
+    """POST /movement-imports/{id}/corrections: „Differenz als Korrektur buchen“ (D178
+    amended, 0030). The coin whose typed balance differs, and why, in the person's words
+    (stored on the movement, never sent to a model). The person types no amount: code books
+    the typed balance's difference."""
+
+    asset_id: UUID
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=500)]
 
 
 # --- Transfers (D162) -----------------------------------------------------------------
