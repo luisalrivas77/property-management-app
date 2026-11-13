@@ -1,22 +1,27 @@
 "use client";
 
+// Anlagen: tabs as ?tab=… links. Übersicht (phase 6 step 5b, ./Overview.tsx, mockup 09) values
+// every position by its daily price; `?kurs=<asset id>` opens its price card there.
+//
 // Anlagen › ETF (phase 6 step 4, §13, docs/mockups/09b-holdings-etf.png): every depot account
 // with its funds, from GET /assets/etf. Anteile are the confirmed trades to today; Kurs and Wert
 // are the latest depot report's, shown only while that report agrees with the booked trades and
 // nothing was traded after it (D165 (3)); Einstand is the plain sum of the purchases while a
 // fund was only bought (lots are phase 7). The Sparer-Pauschbetrag and Vorabpauschale cards are
-// phase 8 (D170) and carry no figure. The Übersicht tab and the issuers' daily prices come with
-// step 5, the Krypto tab with phase 7.
+// phase 8 (D170) and carry no figure. The Krypto tab comes with phase 7.
 import Link from "next/link";
-import { useCallback } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useCallback } from "react";
 
 import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
 import { signedMoney } from "@/components/cashflow";
 import { formatDate, formatDecimal, formatMoney } from "@/components/format";
 import { DOCUMENT_SUBTYPE, PROPOSAL_STATUS } from "@/components/labels";
-import { Loading } from "@/components/ui";
+import { Loading, TabBar, type Tab } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
+
+import { OverviewTab } from "./Overview";
 
 type EtfOverview = components["schemas"]["EtfOverview"];
 type DepotAccountPositions = components["schemas"]["DepotAccountPositions"];
@@ -27,20 +32,43 @@ type ProposalStatus = components["schemas"]["ProposalStatus"];
 
 const PHASE_8 = "Kommt mit Anlage KAP (Phase 8)";
 
+type TabKey = "uebersicht" | "etf";
+
+const TABS: Tab<TabKey>[] = [
+  { key: "uebersicht", label: "Übersicht" },
+  { key: "etf", label: "ETF" },
+];
+
 export default function AssetsPage() {
-  const load = useCallback(() => ok(api.GET("/api/assets/etf")), []);
-  const overview = useLoad(load);
+  return (
+    <Suspense fallback={<p className="muted">Lädt …</p>}>
+      <Assets />
+    </Suspense>
+  );
+}
+
+function Assets() {
+  const search = useSearchParams();
+  const priceFor = search.get("kurs");
+  const tab: TabKey = search.get("tab") === "etf" && !priceFor ? "etf" : "uebersicht";
   return (
     <section>
       <div className="page-head">
         <div>
-          <p className="eyebrow">Anlagen · ETF</p>
+          <p className="eyebrow">Anlagen · {tab === "etf" ? "ETF" : "Übersicht"}</p>
           <h1>Anlagen</h1>
         </div>
       </div>
-      <Loading state={overview}>{(data) => <Etf data={data} />}</Loading>
+      <TabBar tabs={TABS} current={tab} href={(key) => (key === "uebersicht" ? "/assets" : `/assets?tab=${key}`)} />
+      {tab === "etf" ? <EtfTab /> : <OverviewTab priceFor={priceFor} />}
     </section>
   );
+}
+
+function EtfTab() {
+  const load = useCallback(() => ok(api.GET("/api/assets/etf")), []);
+  const overview = useLoad(load);
+  return <Loading state={overview}>{(data) => <Etf data={data} />}</Loading>;
 }
 
 function Etf({ data }: { data: EtfOverview }) {

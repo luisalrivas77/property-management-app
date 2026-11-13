@@ -116,6 +116,10 @@ const SECTION_OF: Record<InboxItemKind, SectionKey> = {
   property_cost_document: "property_costs",
   // Phase 6 step 4: a depot report that disagrees with the booked trades.
   holdings_mismatch: "other",
+  // Phase 6 step 5b: a fund's daily price missing seven runs (D174 (4)), an asset no source
+  // prices (D167).
+  price_source_failed: "automatic",
+  price_no_source: "other",
 };
 
 /** A line kind without a line id cannot open the panel: it is listed under Weitere Punkte,
@@ -149,6 +153,8 @@ const PILL_CLASS: Record<InboxItemKind, string> = {
   property_cost_year: "badge badge-info",
   property_cost_document: "badge badge-warn",
   holdings_mismatch: "badge badge-warn",
+  price_source_failed: "badge badge-danger",
+  price_no_source: "badge badge-warn",
 };
 
 export interface InboxData {
@@ -407,6 +413,9 @@ function EntryTitle({ item, data }: { item: InboxItem; data: InboxData }) {
     const account = item.account_id ? data.accounts.get(item.account_id) : undefined;
     return <strong>Depotbestand{account ? ` · ${account.label}` : ""}</strong>;
   }
+  if (item.kind === "price_source_failed" || item.kind === "price_no_source") {
+    return <strong>Kurs einer Anlage</strong>;
+  }
   if (item.kind === "bank_sync_failed" || item.kind === "bank_balance_drift" || item.kind === "bank_approval_needed") {
     const account = item.account_id ? data.accounts.get(item.account_id) : undefined;
     return <strong>Bankabruf{account ? ` · ${account.label}` : ""}</strong>;
@@ -626,6 +635,10 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
           {item.account_id ? <Link href={`/accounts/${item.account_id}`}>Zum Depot</Link> : null}
         </>
       );
+    case "price_source_failed":
+      return item.asset_id ? <Link href={`/assets?kurs=${item.asset_id}`}>Kurs eintragen</Link> : null;
+    case "price_no_source":
+      return item.asset_id ? <Link href={`/assets?kurs=${item.asset_id}`}>Kursquelle wählen</Link> : null;
     default:
       return null;
   }

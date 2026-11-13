@@ -5,6 +5,7 @@ import type {
   AccountPurpose,
   AccountSource,
   AcquisitionCostKind,
+  AssetKind,
   BalanceSource,
   DepositForm,
   DocumentSubtype,
@@ -15,6 +16,7 @@ import type {
   ExtractionKind,
   ImportStatus,
   LinkTarget,
+  PriceSourceKind,
   PriceSplitSource,
   PropertyKind,
   ProposalRecord,
@@ -426,6 +428,25 @@ export const ACCOUNT_KIND: Record<AccountKind, string> = {
   credit_card: "Kreditkarte",
 };
 
+/** price.source (D167, D174): where a stored price came from, shown beside every price. */
+export const PRICE_SOURCE: Record<PriceSourceKind, string> = {
+  trade: "Wertpapierabrechnung",
+  statement: "Depotbericht",
+  issuer_nav: "NAV der Fondsgesellschaft",
+  coingecko_daily: "CoinGecko",
+  kraken_daily: "Kraken",
+  ecb_fx: "EZB-Referenzkurs",
+  user: "von Hand eingetragen",
+};
+
+/** asset.kind (D166): the Übersicht's groups. */
+export const ASSET_KIND: Record<AssetKind, string> = {
+  etf: "ETF",
+  stock: "Aktien",
+  crypto: "Krypto",
+  cash: "Guthaben",
+};
+
 /** account.purpose (D156): the rental account feeds the Anlage V, a private one never does. */
 export const ACCOUNT_PURPOSE: Record<AccountPurpose, string> = {
   rental: "Mietkonto (für die Immobilie)",
@@ -681,6 +702,9 @@ export const INBOX_ITEM_KIND: Record<InboxItemKind, string> = {
   property_cost_document: "Beleg prüfen",
   // phase 6 step 4
   holdings_mismatch: "Bestand weicht ab",
+  // phase 6 step 5b (D167, D174)
+  price_source_failed: "Kursquelle gestört",
+  price_no_source: "Kursquelle fehlt",
 };
 
 /** The Haushalt screen's groups (phase 6 §13, mockup 10; rules/household/taxonomy.py). */
