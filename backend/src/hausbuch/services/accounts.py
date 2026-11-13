@@ -263,8 +263,9 @@ def update_account(
 
 
 def opening_from_closing(ctx: CommandContext, import_id: UUID) -> StatementImport:
-    """„Anfangssaldo daraus übernehmen“ (principle 7): set the account's opening balance to
-    the one its earliest import implies (statements.derived_opening), through update_account,
+    """„Anfangssaldo daraus übernehmen“ (principle 7): set the account's opening balance, and
+    for a file that states its opening the anchor day too, to what its earliest import
+    implies (statements.derived_opening), through update_account,
     so account.updated is recorded and every import of the account is re-checked. The
     conditions are checked again under the account's lock (every import, declaration and
     merge takes it first); refused with statement.opening_not_derivable when they no longer
@@ -273,10 +274,11 @@ def opening_from_closing(ctx: CommandContext, import_id: UUID) -> StatementImpor
     account = require_row(
         ctx.conn, account_table, EntityType.ACCOUNT, found.account_id, for_update=True
     )
-    opening = derived_opening(ctx.conn, account, import_id)
-    if opening is None:
+    derived = derived_opening(ctx.conn, account, import_id)
+    if derived is None:
         raise RuleError(OPENING_NOT_DERIVABLE, "the import no longer implies the opening balance")
-    update_account(ctx, account.id, opening_balance=opening)
+    opening, opening_on = derived
+    update_account(ctx, account.id, opening_balance=opening, opening_balance_on=opening_on)
     result = get_import(ctx.conn, import_id)
     assert result is not None  # read in this transaction
     return result
