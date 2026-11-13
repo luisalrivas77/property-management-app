@@ -19,6 +19,8 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
+from pydantic import SecretStr
+
 MIN_IBAN_HMAC_KEY_BYTES = 32
 MIN_SESSION_KEY_BYTES = 32
 
@@ -162,6 +164,9 @@ class Settings:
     tem_project_id: str | None = None
     tem_region: str = DEFAULT_TEM_REGION
     mail_from: str | None = None  # the sending address on the verified domain
+    # Phase 6 prices (D167 (3)): the CoinGecko Demo key, sent only in its request header;
+    # without it the coin prices come from Kraken alone.
+    coingecko_key: SecretStr | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if not self.database_url:
@@ -387,6 +392,7 @@ def load_settings(environ: Mapping[str, str] = os.environ) -> Settings:
         tem_project_id=_optional(environ, "HAUSBUCH_TEM_PROJECT_ID"),
         tem_region=_optional(environ, "HAUSBUCH_TEM_REGION") or DEFAULT_TEM_REGION,
         mail_from=_optional(environ, "HAUSBUCH_MAIL_FROM"),
+        coingecko_key=_secret(environ, "HAUSBUCH_COINGECKO_KEY"),
     )
 
 
@@ -430,6 +436,11 @@ def _fints_slot_pins(environ: Mapping[str, str]) -> dict[str, str]:
 def _optional(environ: Mapping[str, str], name: str) -> str | None:
     value = environ.get(name, "").strip()
     return value or None
+
+
+def _secret(environ: Mapping[str, str], name: str) -> SecretStr | None:
+    value = _optional(environ, name)
+    return None if value is None else SecretStr(value)
 
 
 def _required(environ: Mapping[str, str], name: str) -> str:

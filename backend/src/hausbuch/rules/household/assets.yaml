@@ -1,23 +1,65 @@
 # The asset registry (docs/phases/phase-6.md D167 (3), D174 (2)): how an asset is priced.
 #
 # coins: a symbol (as an exchange export names it) -> the CoinGecko id and the Kraken pair of
-#   its daily EUR price. Only public market data; nothing here is the household's.
+#   its daily EUR price. Public market data: the larger coins by market value, nothing here is
+#   the household's. Every id and pair was checked live on 13 Nov 2026 (CoinGecko
+#   /simple/price, Kraken /0/public/AssetPairs, every pair online); a coin Kraken does not
+#   trade against EUR has kraken_pair null.
 # funds: an ISIN -> the issuer adapter (services/prices/issuer_nav/<issuer>.py) and the fund's
-#   reference on the issuer's site, plus the NAV currency read. fund_ref null = no adapter yet:
-#   the fund is priced from the depot's documents („Kurs aus dem letzten Bericht“, D174 (4)).
-#   The ISINs below are the public funds named in the spec's §3 (quirion's published universe);
-#   which of them the household holds is not recorded here.
+#   reference on the issuer's site; nav_currency is what the issuer's file stated on
+#   13 Nov 2026 (the adapter reads the currency from the file each time, so a change there is
+#   followed). fund_ref null = no adapter: the fund is priced from the depot's documents
+#   („Kurs aus dem letzten Bericht“, D174 (4)).
 #
-# Readings: the SPDR file states the NAV in USD, EUR and GBP (§3); the EUR column is read, so
-# no conversion is needed. The iShares pages offer no NAV history download (§3), so their
-# fund_ref stays null until step 5 finds one on the real page.
+# Which funds: every fund of quirion's public investment universe
+# (quirion.de/en/investment-concept/investment-universe, read 13 Nov 2026) whose issuer
+# publishes a NAV history file the app can read, every share class the public name allows
+# (both Acc and Dist when the name says neither), plus IE00B4L5YC18 from the spec's §3. The
+# page names funds without ISINs; each ISIN was read from the issuer's own file for that
+# fund_ref on 13 Nov 2026. Which of them the household holds is not recorded here.
+#
+# Issuer files (read 13 Nov 2026):
+# - spdr: https://www.ssga.com/library-content/products/fund-data/etfs/emea/
+#   navhist-emea-en-<fund_ref>.xlsx, one NAV column in the currency the file names
+#   („NAV Currency:“), four to six decimals.
+# - ishares: https://www.blackrock.com/varnish-api/uk-retail01-product-data/product-data/api/
+#   v1/get-fund-document?...&portfolioId=<fund_ref>&component=fundDownloadV2 (the „Download“
+#   on the fund's ishares.com page), a SpreadsheetML file whose „Historical NAVs“ sheet gives
+#   the NAV to two decimals.
+#
+# The universe's other issuers (Amundi, Xtrackers, Invesco, UBS, HSBC, BNP Paribas, Assenagon)
+# publish no NAV history file the app can read (pages drawn by script, monthly PDFs only), so
+# their funds are not listed: a fund missing here is priced from the reports exactly like a
+# listed one with fund_ref null.
 
 coins:
   - {symbol: BTC, name: Bitcoin, coingecko_id: bitcoin, kraken_pair: XXBTZEUR}
   - {symbol: ETH, name: Ether, coingecko_id: ethereum, kraken_pair: XETHZEUR}
   - {symbol: SOL, name: Solana, coingecko_id: solana, kraken_pair: SOLEUR}
+  - {symbol: USDT, name: Tether, coingecko_id: tether, kraken_pair: USDTEUR}
+  - {symbol: USDC, name: USD Coin, coingecko_id: usd-coin, kraken_pair: USDCEUR}
+  - {symbol: BNB, name: BNB, coingecko_id: binancecoin, kraken_pair: BNBEUR}
+  - {symbol: XRP, name: XRP, coingecko_id: ripple, kraken_pair: XXRPZEUR}
+  - {symbol: ADA, name: Cardano, coingecko_id: cardano, kraken_pair: ADAEUR}
+  - {symbol: DOGE, name: Dogecoin, coingecko_id: dogecoin, kraken_pair: XDGEUR}
+  - {symbol: TRX, name: TRON, coingecko_id: tron, kraken_pair: TRXEUR}
+  - {symbol: DOT, name: Polkadot, coingecko_id: polkadot, kraken_pair: DOTEUR}
+  - {symbol: LTC, name: Litecoin, coingecko_id: litecoin, kraken_pair: XLTCZEUR}
+  - {symbol: LINK, name: Chainlink, coingecko_id: chainlink, kraken_pair: LINKEUR}
+  - {symbol: AVAX, name: Avalanche, coingecko_id: avalanche-2, kraken_pair: AVAXEUR}
+  - {symbol: BCH, name: Bitcoin Cash, coingecko_id: bitcoin-cash, kraken_pair: BCHEUR}
+  - {symbol: POL, name: POL (ex-MATIC), coingecko_id: polygon-ecosystem-token, kraken_pair: POLEUR}
+  - {symbol: UNI, name: Uniswap, coingecko_id: uniswap, kraken_pair: UNIEUR}
+  - {symbol: XLM, name: Stellar, coingecko_id: stellar, kraken_pair: XXLMZEUR}
 
 funds:
-  - {isin: IE00BFY0GT14, name: SPDR MSCI World UCITS ETF, issuer: spdr, fund_ref: sppw-gy, nav_currency: EUR}
-  - {isin: IE00BKM4GZ66, name: iShares Core MSCI EM IMI UCITS ETF, issuer: ishares, fund_ref: null, nav_currency: USD}
-  - {isin: IE00B4L5YC18, name: iShares MSCI EM UCITS ETF, issuer: ishares, fund_ref: null, nav_currency: USD}
+  - {isin: IE00BFY0GT14, name: SPDR MSCI World UCITS ETF, issuer: spdr, fund_ref: sppw-gy, nav_currency: USD}
+  - {isin: IE00B48X4842, name: SPDR MSCI Emerging Markets Small Cap UCITS ETF, issuer: spdr, fund_ref: spyx-gy, nav_currency: USD}
+  - {isin: IE000AQ7A2X6, name: SPDR Bloomberg Global Aggregate Bond EUR Hdg UCITS ETF (Acc), issuer: spdr, fund_ref: spff-gy, nav_currency: EUR}
+  - {isin: IE00BF1QPL78, name: SPDR Bloomberg Global Aggregate Bond EUR Hdg UCITS ETF (Dist), issuer: spdr, fund_ref: spfe-gy, nav_currency: EUR}
+  - {isin: IE00BKM4GZ66, name: iShares Core MSCI EM IMI UCITS ETF (Acc), issuer: ishares, fund_ref: "264659", nav_currency: USD}
+  - {isin: IE00BD45KH83, name: iShares Core MSCI EM IMI UCITS ETF (Dist), issuer: ishares, fund_ref: "295689", nav_currency: USD}
+  - {isin: IE00BG0SKF03, name: iShares Edge MSCI EM Value Factor UCITS ETF, issuer: ishares, fund_ref: "297452", nav_currency: USD}
+  - {isin: IE00BF4RFH31, name: iShares MSCI World Small Cap UCITS ETF, issuer: ishares, fund_ref: "296576", nav_currency: USD}
+  - {isin: IE00BMCZLH06, name: iShares $ Development Bank Bonds UCITS ETF EUR Hedged (Acc), issuer: ishares, fund_ref: "315563", nav_currency: EUR}
+  - {isin: IE00B4L5YC18, name: iShares MSCI EM UCITS ETF (Acc), issuer: ishares, fund_ref: "251858", nav_currency: USD}
