@@ -2,7 +2,7 @@
 (docs/phases/phase-6.md D167, D174 (4), §13; phase 6 step 5b). Invented coins, funds and
 prices only; the fetch itself is tests/db/test_services_prices_fetch.py."""
 
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -22,6 +22,7 @@ from db.test_services_prices_fetch import funds as funds  # noqa: F401 (a fixtur
 from sqlalchemy import insert, select
 
 from hausbuch.db.tables import account as account_table
+from hausbuch.db.tables import holding_statement as holding_table
 from hausbuch.db.tables import price as price_table
 from hausbuch.rules import errors as E
 from hausbuch.rules.errors import RuleError
@@ -31,7 +32,7 @@ from hausbuch.schemas.enums import AccountKind
 from hausbuch.schemas.events import EventType
 from hausbuch.schemas.household import AssetPatch
 from hausbuch.schemas.prices import PriceSourceKind, TypedPriceBody
-from hausbuch.services import review
+from hausbuch.services import depot, review
 from hausbuch.services.accounts import create_account
 from hausbuch.services.prices import overview
 from hausbuch.services.prices.fetch import Sources, run_workspace
@@ -225,3 +226,112 @@ def test_a_successful_run_ends_the_failed_card(run, read, app_engine, fresh_work
     ok_day = NOW + timedelta(days=7)
     run_workspace(app_engine, ws, ACTOR, Sources(fetch=Fake(), coingecko=None), ok_day)
     assert _cards(read, ws, ok_day, InboxItemKind.PRICE_SOURCE_FAILED) == []
+
+
+def _report(ctx, account_id, asset_id, as_of, units):
+    """A current depot report's position (source report), as finish_report stores it."""
+    ctx.conn.execute(
+        insert(holding_table).values(
+            workspace_id=ctx.workspace_id,
+            account_id=account_id,
+            asset_id=asset_id,
+            as_of=as_of,
+            declared_units=Decimal(units),
+            source="report",
+            created_at=ctx.now,
+        )
+    )
+
+
+def test_a_report_that_disagrees_leaves_the_fund_unvalued_until_it_agrees(
+    run, read, app_engine, fresh_workspaces, funds
+):
+    ws, _ = fresh_workspaces
+    ids = _setup(run, ws)  # 2 units each of the coin and both funds, bought 24 Jun
+    run_workspace(app_engine, ws, ACTOR, Sources(fetch=Fake(), coingecko=None), NOW)
+    account = _account_id(read, ws)
+    on = date(2026, 6, 27)
+
+    def eur_of(seen):
+        return next(p for acc in seen.accounts for p in acc.positions if p.asset_id == ids["eur"])
+
+    # The report of the 25th says 3 units of the EUR fund; 2 are booked.
+    run(
+        ws,
+        lambda ctx: [
+            _report(ctx, account, ids[name], date(2026, 6, 25), units)
+            for name, units in (("eur", "3"), ("usd", "2"), ("coin", "2"))
+        ],
+        now=NOW,
+    )
+    seen = read(ws, overview.assets_overview, on)
+    eur = eur_of(seen)
+    assert eur.value_eur is None and eur.not_valued_reason == E.VALUATION_NOT_VALUED
+    assert eur.reconciled_through == overview.NEVER_RECONCILED
+    assert eur.price is not None  # the NAV is still shown, its value is not counted
+    assert seen.unvalued_positions == 1
+    assert ids["eur"] not in {
+        p.asset_id for acc in seen.accounts for p in acc.positions if p.value_eur is not None
+    }
+    assert seen.total_eur == sum(
+        (p.value_eur for p in seen.accounts[0].positions if p.value_eur is not None), Decimal(0)
+    )
+    # The ETF tab says the same about that fund.
+    [etf] = [
+        p for p in read(ws, depot.etf_overview).accounts[0].positions if p.asset_id == ids["eur"]
+    ]
+    assert etf.reconciled is False and etf.value_eur is None
+
+    # A newer report that disagrees too: bounded by the 25th only once the 25th agrees.
+    run(
+        ws,
+        lambda ctx: [
+            _report(ctx, account, ids[name], date(2026, 6, 26), units)
+            for name, units in (("eur", "5"), ("usd", "2"), ("coin", "2"))
+        ],
+        now=NOW,
+    )
+    assert eur_of(read(ws, overview.assets_overview, on)).reconciled_through == (
+        overview.NEVER_RECONCILED
+    )
+
+    # The missing trade confirmation, confirmed later: the 25th now agrees, the 26th not.
+    run(ws, _held, account, ids["eur"], "1", datetime(2026, 6, 25, 9, 0, tzinfo=UTC), now=NOW)
+    eur = eur_of(read(ws, overview.assets_overview, on))
+    assert eur.reconciled_through == date(2026, 6, 25) and eur.value_eur is None
+
+    # And the one the 26th lists: the latest report agrees, so the fund is valued again,
+    # units x the day's NAV, without a new report and past the report's own day.
+    run(ws, _held, account, ids["eur"], "2", datetime(2026, 6, 26, 9, 0, tzinfo=UTC), now=NOW)
+    seen = read(ws, overview.assets_overview, on)
+    eur = eur_of(seen)
+    assert eur.reconciled_through is None and eur.not_valued_reason is None
+    assert (eur.price.source, eur.value_eur) == (S.ISSUER_NAV, Decimal("408.50"))  # 5 x 81.70
+    assert seen.unvalued_positions == 0
+    [etf] = [
+        p for p in read(ws, depot.etf_overview).accounts[0].positions if p.asset_id == ids["eur"]
+    ]
+    assert etf.reconciled is True
+
+
+def test_a_fund_the_report_omits_is_unvalued(run, read, app_engine, fresh_workspaces, funds):
+    ws, _ = fresh_workspaces
+    ids = _setup(run, ws)
+    run_workspace(app_engine, ws, ACTOR, Sources(fetch=Fake(), coingecko=None), NOW)
+    account = _account_id(read, ws)
+    # The report lists the coin and the EUR fund only: the USD fund is 0 by omission.
+    run(
+        ws,
+        lambda ctx: [
+            _report(ctx, account, ids[name], date(2026, 6, 25), "2") for name in ("eur", "coin")
+        ],
+        now=NOW,
+    )
+    seen = read(ws, overview.assets_overview, date(2026, 6, 27))
+    by_id = {p.asset_id: p for p in seen.accounts[0].positions}
+    assert by_id[ids["usd"]].not_valued_reason == E.VALUATION_NOT_VALUED
+    assert by_id[ids["eur"]].value_eur == Decimal("163.40")  # 2 x 81.70: the report agrees
+    assert by_id[ids["eur"]].reconciled_through is None
+    # Before the report's day the report does not apply.
+    earlier = read(ws, overview.assets_overview, date(2026, 6, 24))
+    assert all(p.reconciled_through is None for p in earlier.accounts[0].positions)

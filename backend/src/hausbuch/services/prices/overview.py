@@ -16,11 +16,18 @@
   or stock with no adapter and no price at all, which the next depot report or a typed price
   values).
 
-Reading of the reconciled date (D167 (4)): units come from the confirmed movements, which
-the trade confirmations and the exchange imports write; a position is valued on any day
-(`reconciled_through` None, the step 5b reading of valuation.yaml). Whether a report still
-agrees is the ETF tab's and the holdings card's job (D165 (3)); step 6's net worth may bound
-a position by its account's reconciliation once the exchange imports (5a) state theirs.
+The reconciled date (D167 (4), D165 (3)): units come from the confirmed movements, which
+the trade confirmations and the exchange imports write. On a depot account the latest
+current depot report on or before `on` is checked on read against today's movements
+(`rules.depot.reconcile_holdings`, the holdings card's check, a fund held but not listed
+counting as 0 by omission; never the stored `reconciled` flag). A fund that disagrees is
+bounded by the newest earlier report at which it agreed, or by NEVER_RECONCILED, so
+`valuation.value` leaves it unvalued (valuation.not_valued), out of the total and counted
+in `unvalued_positions`; a trade confirmation applied later that makes it agree values it
+again without a new report. A fund that agrees, and every position of an account with no
+report, keeps `reconciled_through` None and is valued on any later day (units x price): a
+report is not a ceiling the day after it. Step 6's net worth may bound the exchange
+accounts once their imports (5a) state their reconciliation.
 """
 
 from collections import defaultdict
@@ -35,14 +42,22 @@ from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import asset as asset_table
 from hausbuch.db.tables import asset_movement as movement_table
 from hausbuch.db.tables import event as event_table
+from hausbuch.db.tables import holding_statement as holding_table
 from hausbuch.db.tables import price as price_table
+from hausbuch.rules import depot as depot_rules
 from hausbuch.rules import errors as E
 from hausbuch.rules import valuation
 from hausbuch.rules.errors import RuleError
 from hausbuch.schemas.api import InboxItem, InboxItemKind
 from hausbuch.schemas.enums import AccountKind, EntityType
 from hausbuch.schemas.events import EventType, PriceRecorded, Updated
-from hausbuch.schemas.household import AssetKind, AssetPatch, MovementStatus, Position
+from hausbuch.schemas.household import (
+    AssetKind,
+    AssetPatch,
+    HoldingSource,
+    MovementStatus,
+    Position,
+)
 from hausbuch.schemas.prices import (
     AssetPriceRow,
     AssetRow,
@@ -55,6 +70,7 @@ from hausbuch.schemas.prices import (
     TypedPriceBody,
 )
 from hausbuch.services.context import CommandContext
+from hausbuch.services.depot import _movements as depot_movements
 from hausbuch.services.events import append_event, diff_changes
 from hausbuch.services.lookup import require_row
 
@@ -119,6 +135,45 @@ def _is_euro(row: Any) -> bool:
     return row.kind == AssetKind.CASH.value and (row.symbol or row.currency) == "EUR"
 
 
+# A fund whose latest report disagrees and no earlier report agreed: never valued.
+NEVER_RECONCILED = date.min
+
+
+def _depot_bounds(conn: Connection, account_id: UUID, on: date) -> dict[UUID, date]:
+    """The depot's funds that its latest current report on or before `on` contradicts, each
+    with the newest earlier report date at which it agreed (else NEVER_RECONCILED). Re-run
+    on read against today's movements, as the holdings card does (services.depot)."""
+    h = holding_table.c
+    rows = conn.execute(
+        select(h.asset_id, h.as_of, h.declared_units).where(
+            h.account_id == account_id,
+            h.source == HoldingSource.REPORT.value,
+            h.superseded_by.is_(None),
+            h.as_of <= on,
+        )
+    ).all()
+    if not rows:
+        return {}
+    declared: dict[date, dict[UUID, Decimal]] = defaultdict(dict)
+    for r in rows:
+        declared[r.as_of][r.asset_id] = r.declared_units
+    days = sorted(declared, reverse=True)
+    movements = depot_movements(conn, account_id)
+    agreed: dict[date, dict[UUID, bool]] = {}
+
+    def agrees(day: date) -> dict[UUID, bool]:
+        if day not in agreed:
+            checks = depot_rules.reconcile_holdings(day, declared[day], movements)
+            agreed[day] = {c.asset: c.reconciled for c in checks}
+        return agreed[day]
+
+    return {
+        asset: next((day for day in days[1:] if agrees(day).get(asset)), NEVER_RECONCILED)
+        for asset, reconciled in agrees(days[0]).items()
+        if not reconciled
+    }
+
+
 def assets_overview(conn: Connection, on: date) -> AssetsOverview:
     a, m, acc = asset_table.c, movement_table.c, account_table.c
     accounts = conn.execute(
@@ -155,6 +210,9 @@ def assets_overview(conn: Connection, on: date) -> AssetsOverview:
     by_kind: dict[str, Decimal] = defaultdict(Decimal)
     stale = unvalued = 0
     for account in accounts:
+        bounds = (
+            _depot_bounds(conn, account.id, on) if account.kind == AccountKind.DEPOT.value else {}
+        )
         positions = []
         for u in sorted(
             by_account.get(account.id, []),
@@ -166,7 +224,12 @@ def assets_overview(conn: Connection, on: date) -> AssetsOverview:
             asset = assets[u.asset_id]
             point = prices.get(u.asset_id)
             valued = valuation.value(
-                Position(account_id=account.id, asset_id=u.asset_id, units=u.units),
+                Position(
+                    account_id=account.id,
+                    asset_id=u.asset_id,
+                    units=u.units,
+                    reconciled_through=bounds.get(u.asset_id),
+                ),
                 point,
                 on,
                 cash=_is_euro(asset),
@@ -191,13 +254,14 @@ def assets_overview(conn: Connection, on: date) -> AssetsOverview:
                     stale=valued.stale,
                     not_valued_reason=valued.not_valued_reason,
                     from_report=from_report,
+                    reconciled_through=bounds.get(u.asset_id),
                 )
             )
             if valued.value_eur is not None:
                 by_kind[kind.value] += valued.value_eur
+                stale += valued.stale
             else:
                 unvalued += 1
-            stale += valued.stale
         if positions:
             out_accounts.append(
                 OverviewAccount(
