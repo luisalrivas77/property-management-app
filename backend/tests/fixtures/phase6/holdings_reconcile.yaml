@@ -23,6 +23,15 @@
 # - The missing Umsätze lines are listed only for a position that does not reconcile, and a
 #   reference counts as present when any movement carries it, proposed or confirmed (a
 #   proposed one waits for „Übernehmen“ on its own card, not for an upload).
+#
+# Step 4 corrections (§14.1), from quirion's real quarterly report:
+# - Units moved in from another own depot (an Einbuchung, internal_transfer_in) or out to one
+#   (an Ausbuchung, internal_transfer_out) are movements like a trade's: the report's position
+#   counts them, and without them it does not reconcile from its Umsätze alone.
+# - The report lists only what the depot holds. An asset the confirmed movements still hold on
+#   as_of but the report does not list is a position of 0 by omission (listed: false): it does
+#   not reconcile, so a missing Ausbuchung or sale is never silently held. An asset whose
+#   movements sum to 0 and that the report does not list has no row.
 
 assets:
   msci: IE00BEISPL01
@@ -157,3 +166,51 @@ cases:
       reconciled_through: null
       positions:
         - {asset: msci, reconciled: false, difference_units: "12.345678", price_stored: false, error: depot.holdings_mismatch, missing_references: []}
+
+  - id: transferred_in_from_another_own_depot
+    description: an Einbuchung from the household's other depot counts like a purchase
+    pending: "phase 6 step 4 (the depot)"
+    as_of: 2026-06-30
+    declared:
+      - {asset: msci, units: "32.345678", value_eur: "2655.58"}
+    movements:
+      - {asset: msci, quantity: "20.000000", occurred_on: 2026-03-16, external_ref: "700000010"}
+      - {asset: msci, quantity: "12.345678", occurred_on: 2026-05-14, external_ref: A26-0514-0001}
+    report_trades:
+      - {asset: msci, reference: A26-0514-0001}
+    expect:
+      reconciled_through: 2026-06-30
+      positions:
+        - {asset: msci, reconciled: true, difference_units: "0", price_stored: true}
+
+  - id: transferred_out_and_not_listed
+    description: the Ausbuchung moved every unit out; the report no longer lists the asset and nothing is said about it
+    pending: "phase 6 step 4 (the depot)"
+    as_of: 2026-06-30
+    declared:
+      - {asset: div, units: "20.000000", value_eur: "800.00"}
+    movements:
+      - {asset: msci, quantity: "20.000000", occurred_on: 2026-01-15, external_ref: A26-0115-0001}
+      - {asset: msci, quantity: "-20.000000", occurred_on: 2026-03-16, external_ref: "700000010"}
+      - {asset: div, quantity: "20.000000", occurred_on: 2026-01-15, external_ref: A26-0115-0002}
+    report_trades: []
+    expect:
+      reconciled_through: 2026-06-30
+      positions:
+        - {asset: div, reconciled: true, difference_units: "0", price_stored: true}
+
+  - id: held_but_not_listed
+    description: the movements still hold units the report does not list (the Ausbuchung was never uploaded)
+    pending: "phase 6 step 4 (the depot)"
+    as_of: 2026-06-30
+    declared:
+      - {asset: div, units: "20.000000", value_eur: "800.00"}
+    movements:
+      - {asset: msci, quantity: "20.000000", occurred_on: 2026-01-15, external_ref: A26-0115-0001}
+      - {asset: div, quantity: "20.000000", occurred_on: 2026-01-15, external_ref: A26-0115-0002}
+    report_trades: []
+    expect:
+      reconciled_through: null
+      positions:
+        - {asset: div, reconciled: true, difference_units: "0", price_stored: true}
+        - {asset: msci, listed: false, reconciled: false, difference_units: "-20.000000", price_stored: false, error: depot.holdings_mismatch, missing_references: []}
