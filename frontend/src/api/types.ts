@@ -1687,7 +1687,7 @@ export interface paths {
         put?: never;
         /**
          * Asset Price Record
-         * @description „Kurs eintragen“: the lowest precedence of its day (D174 (4)).
+         * @description „Kurs eintragen“: wins on its own day (D167 amended 13 Nov 2026).
          */
         post: operations["asset_price_record_api_assets__asset_id__prices_post"];
         delete?: never;
@@ -10036,8 +10036,8 @@ export interface components {
         };
         /**
          * TypedPriceBody
-         * @description POST /assets/{id}/prices: a price typed by a person („Kurs eintragen“, source user,
-         *     the lowest precedence, D174 (4)).
+         * @description POST /assets/{id}/prices: a price typed by a person („Kurs eintragen“, source user;
+         *     it wins on its own day, D167 amended 13 Nov 2026).
          */
         TypedPriceBody: {
             /**

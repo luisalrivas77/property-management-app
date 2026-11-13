@@ -4723,7 +4723,7 @@
     "/api/assets/{asset_id}/prices": {
       "post": {
         "summary": "Asset Price Record",
-        "description": "„Kurs eintragen“: the lowest precedence of its day (D174 (4)).",
+        "description": "„Kurs eintragen“: wins on its own day (D167 amended 13 Nov 2026).",
         "operationId": "asset_price_record_api_assets__asset_id__prices_post",
         "parameters": [
           {
@@ -10029,8 +10029,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 100,
-                "minLength": 1
+                "pattern": "^[a-z0-9-]{1,100}$"
               },
               {
                 "type": "null"
@@ -10042,8 +10041,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 20,
-                "minLength": 1
+                "pattern": "^[A-Z0-9]{1,20}$"
               },
               {
                 "type": "null"
@@ -26241,7 +26239,7 @@
           "price_eur"
         ],
         "title": "TypedPriceBody",
-        "description": "POST /assets/{id}/prices: a price typed by a person („Kurs eintragen“, source user,\nthe lowest precedence, D174 (4))."
+        "description": "POST /assets/{id}/prices: a price typed by a person („Kurs eintragen“, source user;\nit wins on its own day, D167 amended 13 Nov 2026)."
       },
       "Unit": {
         "properties": {
