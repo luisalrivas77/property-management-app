@@ -191,7 +191,15 @@ def run_match_transaction(
     kind = None
     plan = matching.MatchPlan("skipped", "matching.failed")
     try:
-        plan = _match(deps, workspace_id, transaction_id, rematch=rematch, reask=reask, log=log)
+        plan = _match(
+            deps,
+            workspace_id,
+            transaction_id,
+            rematch=rematch,
+            reask=reask,
+            first_attempt=attempt == 0,
+            log=log,
+        )
     except _Retry as retry:
         kind = retry.kind
     except _GiveUp as stop:  # no usable answer: the line stays unmatched (inbox item)
@@ -215,13 +223,22 @@ def _match(
     rematch: bool,
     log: dict,
     reask: bool = False,
+    first_attempt: bool = True,
 ) -> matching.MatchPlan:
     key = deps.settings.iban_hmac_key
     ai = _ai_on(deps) and not rematch
     with workspace_transaction(deps.engine, workspace_id) as conn:
         ctx = new_command(conn, workspace_id, SYSTEM_ACTOR, now=deps.clock())
+        # A retried re-ask asks again: its first attempt may have called the model and then
+        # failed to write the answer (the ai_call row commits on its own).
         plan = matching.match_line(
-            ctx, transaction_id, iban_key=key, ai_available=ai, rematch=rematch, reask=reask
+            ctx,
+            transaction_id,
+            iban_key=key,
+            ai_available=ai,
+            rematch=rematch,
+            reask=reask,
+            skip_if_asked=first_attempt,
         )
         prepared = _Prepared(plan)
         if plan.outcome == "categorize":

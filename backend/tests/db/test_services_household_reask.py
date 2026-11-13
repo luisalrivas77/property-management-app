@@ -259,3 +259,46 @@ def test_the_command_counts_with_dry_run_and_then_queues(dbname, world, private,
     assert "queued 1 line(s)" in out and "postgresql" not in out
     assert len(_jobs(world)) == 1
     assert uuid.UUID(_jobs(world)[0].args["transaction_id"]) == tx
+
+
+def test_a_retried_job_writes_the_answer_its_first_attempt_lost(
+    world, private, app_engine, tmp_path, monkeypatch
+):
+    """Attempt 0 asks the model (its ai_call commits) and then fails to write: the retry asks
+    again and writes, rather than skipping as „asked already“ and losing the answer."""
+    from hausbuch.jobs import matching as jobs_matching
+    from hausbuch.jobs.document_read import RetryLater
+
+    _consent_both(world)
+    tx = private.line(date(2026, 10, 16), "-24.00", name="Salon Beispiel", purpose="Karte")
+    _propose(world, tx, "-24.00", "hh_other")
+    world.cmd(reask_household)
+    client = FakeModelClient(
+        [
+            text_response(_answer("hh_personal_care", "-24.00")),
+            text_response(_answer("hh_personal_care", "-24.00")),
+        ]
+    )
+    deps = _deps(app_engine, tmp_path, client)
+    real = jobs_matching.matching.finish_line
+    calls = []
+
+    def fail_once(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("connection lost")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(jobs_matching.matching, "finish_line", fail_once)
+    with pytest.raises(RetryLater):
+        run_match_transaction(deps, workspace_id=world.ws, transaction_id=tx, attempt=0, reask=True)
+    (row,) = _rows(world, tx)
+    assert (row.category, row.status) == ("hh_other", "proposed")
+
+    plan = run_match_transaction(
+        deps, workspace_id=world.ws, transaction_id=tx, attempt=1, reask=True
+    )
+    assert plan.outcome == "written"
+    (row,) = _rows(world, tx)
+    assert (row.category, row.status) == ("hh_personal_care", "proposed")
+    assert len(client.requests) == 2

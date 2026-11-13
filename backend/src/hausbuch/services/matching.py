@@ -1003,6 +1003,7 @@ def match_line(
     ai_available: bool,
     rematch: bool = False,
     reask: bool = False,
+    skip_if_asked: bool = True,
 ) -> MatchPlan:
     """Run the deterministic order on one line and write what it can. With `ai_available`,
     a line nothing matched comes back as `categorize`, and a matcher's set bound for review
@@ -1010,13 +1011,15 @@ def match_line(
     unmatched line stays without rows (inbox "Nicht zugeordnet"). A re-match never calls
     the model. A re-ask (`reask`, reask_household) takes a line whose rows are all proposed
     and runs the order as for a new line: the model is asked again when nothing else
-    answers, and its set supersedes the proposal (finish_line)."""
+    answers, and its set supersedes the proposal (finish_line). `skip_if_asked` makes a
+    second queued re-ask a no-op; a retry of the same job passes False, since its own
+    model call succeeded but writing the answer failed, and the answer must not be lost."""
     line = load_line(ctx.conn, transaction_id, lock=True)
     if line is None:
         return MatchPlan("skipped", "matching.not_found")
     if not (line.open_for_reask() if reask else line.open_for(rematch=rematch)):
         return MatchPlan("skipped", _closed_reason(line))
-    if reask and asked_with_current_prompt(ctx.conn, transaction_id):
+    if reask and skip_if_asked and asked_with_current_prompt(ctx.conn, transaction_id):
         return MatchPlan("skipped", "matching.asked_already")  # a re-ask queued twice
     context = build_context(
         ctx.conn,
