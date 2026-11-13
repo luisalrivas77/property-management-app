@@ -9,7 +9,9 @@
 // account holds bookings the new purpose does not take (D159). A credit card (phase 6 D176) has
 // no IBAN and is always private: its customer number comes with its first PDF statement, and its
 // anchor is the first statement's „Alter Saldo“ (an owed amount negative); a bank account stays
-// a bank account and a card a card. Depots, exchanges and wallets come with their own steps.
+// a bank account and a card a card. A depot (phase 6 step 4, D165) is always private too: its
+// IBAN (the Verrechnungskonto's) is optional and its account number comes with its first cash
+// statement. Exchanges and wallets come with their own steps.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
@@ -27,10 +29,10 @@ const KEYS = ["label", "bank", "iban", "opening_balance", "opening_balance_on", 
 
 const CODE_FIELDS = { "iban.": "iban", "allocation.category_not_for_account": "purpose" };
 
-/** The kinds this form offers: the bank kinds (D156) and the credit card (D176); the others come
- * with steps 4, 5 and phase 7. */
+/** The kinds this form offers: the bank kinds (D156), the credit card (D176) and the depot
+ * (step 4, D165); the exchange comes with step 5, the wallet with phase 7. */
 const BANK_KINDS: AccountKind[] = ["bank_current", "bank_savings"];
-const NEW_KINDS: AccountKind[] = [...BANK_KINDS, "credit_card"];
+const NEW_KINDS: AccountKind[] = [...BANK_KINDS, "credit_card", "depot"];
 
 export function AccountForm({ account }: { account?: Account }) {
   const router = useRouter();
@@ -48,15 +50,22 @@ export function AccountForm({ account }: { account?: Account }) {
   const [busy, setBusy] = useState(false);
   const form = useFormErrors(KEYS, CODE_FIELDS);
   const card = kind === "credit_card";
-  // An existing card stays a card, an existing bank account a bank account.
-  const kinds: AccountKind[] = account ? (account.kind === "credit_card" ? ["credit_card"] : BANK_KINDS) : NEW_KINDS;
+  const depot = kind === "depot";
+  // An existing card stays a card, a depot a depot, an existing bank account a bank account.
+  const kinds: AccountKind[] = account
+    ? account.kind === "credit_card" || account.kind === "depot"
+      ? [account.kind]
+      : BANK_KINDS
+    : NEW_KINDS;
 
   // A 409 on create means the IBAN is taken; the generic conflict sentence would not say so.
   const conflictText = (error: unknown) =>
     error instanceof ApiError && error.status === 409 && !account
       ? card
         ? "Eine Karte mit dieser Kundennummer gibt es in diesem Haushalt schon."
-        : "Ein Konto mit dieser IBAN gibt es in diesem Haushalt schon."
+        : depot
+          ? "Ein Depot mit dieser IBAN gibt es in diesem Haushalt schon."
+          : "Ein Konto mit dieser IBAN gibt es in diesem Haushalt schon."
       : null;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -64,7 +73,7 @@ export function AccountForm({ account }: { account?: Account }) {
     const values = collector();
     const openingBalance = values.take("opening_balance", toSignedMoneyString(opening));
     if (!openingOn) values.messages.opening_balance_on = ["Bitte das Datum des Anfangssaldos eingeben."];
-    if (!account && !card && iban.trim() === "") values.messages.iban = ["Bitte die IBAN des Kontos eingeben."];
+    if (!account && !card && !depot && iban.trim() === "") values.messages.iban = ["Bitte die IBAN des Kontos eingeben."];
     if (!values.ok || openingBalance === undefined) return form.invalid(values.messages);
     const common = {
       label: label.trim(),
@@ -89,7 +98,10 @@ export function AccountForm({ account }: { account?: Account }) {
         // sent. A credit card has no IBAN and is always private (D176): its statements name it.
         const body = card
           ? { ...common, is_owner_account: true, kind, purpose: "private" as const, provider: provider.trim() || null }
-          : { ...common, iban: iban.trim(), is_owner_account: true, kind, purpose };
+          : depot
+            ? // A depot is always private; its IBAN is optional (its cash statement offers it, D156).
+              { ...common, iban: iban.trim() || null, is_owner_account: true, kind, purpose: "private" as const }
+            : { ...common, iban: iban.trim(), is_owner_account: true, kind, purpose };
         const created = await ok(api.POST("/api/accounts", { body }));
         router.push(`/accounts/${created.id}`);
       }
@@ -106,7 +118,7 @@ export function AccountForm({ account }: { account?: Account }) {
         <Field
           id="account-kind"
           label="Kontoart"
-          description="Girokonto, Sparkonto (auch Tagesgeld) oder Kreditkarte. Eine Kreditkarte wird aus ihren monatlichen Abrechnungen (PDF) gefüllt. Depots und Börsenkonten kommen später dazu."
+          description="Girokonto, Sparkonto (auch Tagesgeld), Kreditkarte oder Depot. Eine Kreditkarte wird aus ihren monatlichen Abrechnungen (PDF) gefüllt, ein Depot aus den Dokumenten seiner Bank (Kontoauszüge, Abrechnungen, Berichte). Börsenkonten kommen später dazu."
           errors={form.of("kind")}
         >
           <select value={kind} onChange={(e) => setKind(e.target.value as AccountKind)} disabled={kinds.length === 1}>
@@ -117,7 +129,7 @@ export function AccountForm({ account }: { account?: Account }) {
             ))}
           </select>
         </Field>
-        {card ? null : (
+        {card || depot ? null : (
           <Field
             id="account-purpose"
             label="Wofür"
@@ -138,7 +150,7 @@ export function AccountForm({ account }: { account?: Account }) {
         <Field
           id="account-label"
           label="Bezeichnung"
-          hint={card ? "z. B. Kreditkarte" : "z. B. Mietkonto Musterstraße"}
+          hint={card ? "z. B. Kreditkarte" : depot ? "z. B. Depot" : "z. B. Mietkonto Musterstraße"}
           description="Ein frei wählbarer Name, unter dem Sie das Konto in Hausbuch wiederfinden."
           errors={form.of("label")}
         >
@@ -150,7 +162,9 @@ export function AccountForm({ account }: { account?: Account }) {
           description={
             card
               ? "Die Bank, die die Karte herausgibt, wie auf der Abrechnung."
-              : "Die Bank, bei der das Konto geführt wird, wie auf dem Kontoauszug."
+              : depot
+                ? "Die Bank, bei der das Depot geführt wird, wie auf seinem Kontoauszug."
+                : "Die Bank, bei der das Konto geführt wird, wie auf dem Kontoauszug."
           }
           errors={form.of("bank")}
         >
@@ -171,11 +185,15 @@ export function AccountForm({ account }: { account?: Account }) {
           <Field
             id="account-iban"
             label="IBAN"
-            hint="Wird nur maskiert angezeigt."
-            description="Die IBAN des Kontos laut Kontoauszug. Hausbuch zeigt sie nur maskiert und prüft damit, dass ein hochgeladener Kontoauszug zu diesem Konto gehört."
+            hint={depot ? "Optional; wird nur maskiert angezeigt." : "Wird nur maskiert angezeigt."}
+            description={
+              depot
+                ? "Die IBAN des Verrechnungskontos, falls Sie sie zur Hand haben. Sonst leer lassen: der erste Kontoauszug bringt sie mit, und Sie bestätigen sie auf der Seite des Depots."
+                : "Die IBAN des Kontos laut Kontoauszug. Hausbuch zeigt sie nur maskiert und prüft damit, dass ein hochgeladener Kontoauszug zu diesem Konto gehört."
+            }
             errors={form.of("iban")}
           >
-            <input type="text" value={iban} onChange={(e) => setIban(e.target.value)} required autoComplete="off" spellCheck={false} />
+            <input type="text" value={iban} onChange={(e) => setIban(e.target.value)} required={!depot} autoComplete="off" spellCheck={false} />
           </Field>
         )}
         <Field
@@ -184,7 +202,9 @@ export function AccountForm({ account }: { account?: Account }) {
           hint={
             card
               ? "Der „Alte Saldo“ der ersten Abrechnung, die Sie hochladen; ein offener Betrag mit Minus."
-              : "Der Kontostand am Ende des Tages unten, laut Bank. Bei einem neuen Konto 0,00; negativ mit Minus."
+              : depot
+                ? "Der „alte Saldo“ des ersten Kontoauszugs, den Sie hochladen. Unbekannt? 0,00 lassen und nach dem Hochladen „Anfangssaldo daraus übernehmen“ wählen."
+                : "Der Kontostand am Ende des Tages unten, laut Bank. Bei einem neuen Konto 0,00; negativ mit Minus."
           }
           description="Der Kontostand laut Bank am Ende des Tages, den Sie darunter angeben. Von ihm aus prüft Hausbuch, ob jeder importierte Kontoauszug aufgeht: Anfangssaldo plus Umsätze gleich Endsaldo."
           errors={form.of("opening_balance")}
@@ -197,6 +217,8 @@ export function AccountForm({ account }: { account?: Account }) {
           hint={
             card
               ? "Ein Tag vor der ersten Buchung dieser Abrechnung, z. B. der letzte Tag des Vormonats."
+              : depot
+                ? "Ein Tag vor der ersten Buchung des ersten Kontoauszugs, z. B. der letzte Tag des Vormonats."
               : "Ein Tag vor dem ersten Umsatz, der importiert wird: Umsätze an oder vor diesem Tag passen nicht zum Anfangssaldo."
           }
           description="Der Tag, an dem dieser Kontostand galt, laut Kontoauszug oder Online-Banking."
@@ -211,7 +233,14 @@ export function AccountForm({ account }: { account?: Account }) {
           ordnet Hausbuch selbst zu. Wem die Karte gehört, legen Sie nach dem Anlegen auf ihrer Seite fest.
         </p>
       ) : null}
-      {account && !card ? (
+      {depot && !account ? (
+        <p className="muted">
+          Ein Depot ist immer ein Privatkonto. Legen Sie eins je Konto Ihrer Depotbank an, das auf deren Kontoauszügen erscheint
+          (bei quirion das Verrechnungskonto und jedes Vermögensverwaltungskonto). Die Kontonummer bringt der erste Kontoauszug
+          mit; wem das Depot gehört, legen Sie nach dem Anlegen auf seiner Seite fest.
+        </p>
+      ) : null}
+      {account && !card && !depot ? (
         <>
           <Facts rows={[["IBAN", account.iban_masked ?? "–"]]} />
           <p className="muted">
