@@ -4200,7 +4200,7 @@
     "/api/accounts/{account_id}/payment-iban": {
       "post": {
         "summary": "Account Payment Iban Confirm",
-        "description": "Confirm the payment IBAN a card statement prints (phase 6 D176 (4)): read again from\nthat import's original, stored masked + HMAC'd. 422 account.kind_not_available for an\naccount that is no credit card, statement.no_payment_iban for a statement that prints\nnone; 404 for an import of another account.",
+        "description": "Confirm the payment IBAN a card statement prints (phase 6 D176 (4)): read again from\nthat import's original, stored masked + HMAC'd. 422 account.kind_not_available for an\naccount that is no credit card, statement.no_payment_iban for a statement that prints\nnone; 404 for an import of another account. Every enabled learned rule on the IBAN is\nswitched off, counted in rules_disabled (a payment to the card is a transfer now).",
         "operationId": "account_payment_iban_confirm_api_accounts__account_id__payment_iban_post",
         "parameters": [
           {
@@ -4230,7 +4230,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Account"
+                  "$ref": "#/components/schemas/PaymentIbanConfirmed"
                 }
               }
             }
@@ -17720,6 +17720,26 @@
         ],
         "title": "PasskeyVerifyRequest",
         "description": "POST /auth/passkeys/verify: a further passkey for the signed-in user."
+      },
+      "PaymentIbanConfirmed": {
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/Account"
+          },
+          "rules_disabled": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Rules Disabled",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "account"
+        ],
+        "title": "PaymentIbanConfirmed",
+        "description": "POST /accounts/{id}/payment-iban (D176 (4)): the card account, and how many learned\nrules on the confirmed IBAN were switched off by it (a payment to the card is a transfer\nnow, so a rule booking it as spending would pre-empt the transfer matcher)."
       },
       "PaymentIbanProposal": {
         "properties": {

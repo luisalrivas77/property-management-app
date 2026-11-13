@@ -1484,7 +1484,8 @@ export interface paths {
          * @description Confirm the payment IBAN a card statement prints (phase 6 D176 (4)): read again from
          *     that import's original, stored masked + HMAC'd. 422 account.kind_not_available for an
          *     account that is no credit card, statement.no_payment_iban for a statement that prints
-         *     none; 404 for an import of another account.
+         *     none; 404 for an import of another account. Every enabled learned rule on the IBAN is
+         *     switched off, counted in rules_disabled (a payment to the card is a transfer now).
          */
         post: operations["account_payment_iban_confirm_api_accounts__account_id__payment_iban_post"];
         delete?: never;
@@ -6686,6 +6687,20 @@ export interface components {
             };
             /** Label */
             label: string;
+        };
+        /**
+         * PaymentIbanConfirmed
+         * @description POST /accounts/{id}/payment-iban (D176 (4)): the card account, and how many learned
+         *     rules on the confirmed IBAN were switched off by it (a payment to the card is a transfer
+         *     now, so a rule booking it as spending would pre-empt the transfer matcher).
+         */
+        PaymentIbanConfirmed: {
+            account: components["schemas"]["Account"];
+            /**
+             * Rules Disabled
+             * @default 0
+             */
+            rules_disabled: number;
         };
         /**
          * PaymentIbanProposal
@@ -13147,7 +13162,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Account"];
+                    "application/json": components["schemas"]["PaymentIbanConfirmed"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

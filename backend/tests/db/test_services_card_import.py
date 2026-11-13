@@ -27,7 +27,12 @@ from hausbuch.jobs.document_read import JobDeps, run_document_read
 from hausbuch.jobs.matching import run_match_transaction
 from hausbuch.rules import statements as rules
 from hausbuch.rules.errors import ACCOUNT_KIND_NOT_AVAILABLE, RuleError
-from hausbuch.schemas.allocation import AllocationCategory
+from hausbuch.schemas.allocation import (
+    AllocationCategory,
+    MatchingRuleCreate,
+    RuleMatcher,
+    SplitMethod,
+)
 from hausbuch.schemas.bank import AccountCreate, ConfirmPaymentIbanBody, TransactionAllocationStatus
 from hausbuch.schemas.enums import (
     AccountKind,
@@ -38,7 +43,7 @@ from hausbuch.schemas.enums import (
     ProposalStatus,
 )
 from hausbuch.schemas.events import EventType
-from hausbuch.services import documents, proposals, statements
+from hausbuch.services import documents, proposals, rules_learned, statements
 from hausbuch.services.accounts import (
     confirm_payment_iban,
     create_account,
@@ -47,6 +52,7 @@ from hausbuch.services.accounts import (
 )
 from hausbuch.services.context import Actor, new_command
 from hausbuch.services.errors import NotFoundError, RuleViolationError
+from hausbuch.services.iban import protect_iban
 from hausbuch.services.statements import import_statement, list_imports, list_transactions
 from hausbuch.settings import Settings
 
@@ -266,9 +272,11 @@ def test_the_payment_iban_is_confirmed_from_the_statement(
     assert proposal.import_id == imported.id
 
     body = ConfirmPaymentIbanBody(import_id=imported.id)
-    confirmed = run(ws, confirm_payment_iban, blob_store, card.id, body, iban_key=TEST_IBAN_KEY)
+    result = run(ws, confirm_payment_iban, blob_store, card.id, body, iban_key=TEST_IBAN_KEY)
+    confirmed = result.account
     assert confirmed.payment_iban_masked == case.import_.payment_iban_masked
     assert confirmed.payment_iban_proposal is None
+    assert result.rules_disabled == 0
     # D176 (4): the debits to the confirmed IBAN that wait are re-checked (rematch_waiting).
     lock = enqueue.waiting_lock(enqueue.waiting_trigger(enqueue.TRIGGER_ACCOUNT, card.id))
     with app_engine.begin() as conn:
@@ -278,7 +286,7 @@ def test_the_payment_iban_is_confirmed_from_the_statement(
         conn.execute(text("DELETE FROM procrastinate_jobs WHERE lock = :lock"), {"lock": lock})
     assert queued == 1
     again = run(ws, confirm_payment_iban, blob_store, card.id, body, iban_key=TEST_IBAN_KEY)
-    assert again == confirmed
+    assert (again.account, again.rules_disabled) == (confirmed, 0)
 
     events = read(
         ws,
@@ -296,6 +304,49 @@ def test_the_payment_iban_is_confirmed_from_the_statement(
     changed = [set(p["changes"]) for p in events]
     assert changed == [{"external_ref_masked"}, {"payment_iban_masked"}]
     assert case.expect.payment_iban not in str(events)
+
+
+def _rule_on(run, ws, iban: str, category: AllocationCategory):
+    matcher = RuleMatcher(counterparty_iban_hmac=protect_iban(iban, TEST_IBAN_KEY).hmac.hex())
+    data = MatchingRuleCreate(
+        matcher=matcher, split_method=SplitMethod.SINGLE_CATEGORY, category=category
+    )
+    return run(ws, rules_learned.create_rule, data)
+
+
+def test_confirming_the_payment_iban_switches_off_the_rules_on_it(
+    run, read, blob_store, fresh_workspaces, hook_calls, app_engine
+):
+    """A card bill answered as spending with „Künftig immer so zuordnen“ before the card
+    account existed left a rule on the issuer's IBAN; a rule books before the transfer
+    matcher, so confirming the IBAN switches it off (rule.disabled) and says how many. A rule
+    on another IBAN stays."""
+    ws, _ = fresh_workspaces
+    case = _first()
+    on_card = _rule_on(run, ws, case.expect.payment_iban, AllocationCategory.HH_CREDIT_CARD)
+    other = _rule_on(run, ws, "DE50100000000000003008", AllocationCategory.HH_GROCERIES)
+    card = _card(run, ws)
+    imported = _import(run, blob_store, ws, card.id, case)
+    body = ConfirmPaymentIbanBody(import_id=imported.id)
+    result = run(ws, confirm_payment_iban, blob_store, card.id, body, iban_key=TEST_IBAN_KEY)
+    assert result.rules_disabled == 1
+    enabled = {r.id for r in read(ws, rules_learned.enabled_rules)}
+    assert on_card.id not in enabled and other.id in enabled
+    disabled = read(
+        ws,
+        lambda conn: (
+            conn.execute(
+                select(event_table.c.entity_id).where(
+                    event_table.c.type == EventType.RULE_DISABLED.value
+                )
+            )
+            .scalars()
+            .all()
+        ),
+    )
+    assert disabled == [on_card.id]
+    with app_engine.begin() as conn:
+        conn.execute(text("DELETE FROM procrastinate_jobs WHERE task_name = 'rematch_waiting'"))
 
 
 def test_the_payment_iban_needs_an_import_of_this_card(

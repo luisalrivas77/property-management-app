@@ -17,6 +17,7 @@ from hausbuch.schemas.bank import (
     Account,
     AccountCreate,
     ConfirmPaymentIbanBody,
+    PaymentIbanConfirmed,
     StatementImport,
     Transaction,
 )
@@ -91,11 +92,12 @@ def account_ownership_set(account_id: UUID, body: SetOwnershipBody, cmd: Cmd) ->
 @router.post("/accounts/{account_id}/payment-iban")
 def account_payment_iban_confirm(
     account_id: UUID, body: ConfirmPaymentIbanBody, cmd: Cmd, store: StoreDep, settings: SettingsDep
-) -> Account:
+) -> PaymentIbanConfirmed:
     """Confirm the payment IBAN a card statement prints (phase 6 D176 (4)): read again from
     that import's original, stored masked + HMAC'd. 422 account.kind_not_available for an
     account that is no credit card, statement.no_payment_iban for a statement that prints
-    none; 404 for an import of another account."""
+    none; 404 for an import of another account. Every enabled learned rule on the IBAN is
+    switched off, counted in rules_disabled (a payment to the card is a transfer now)."""
     return cmd.run(confirm_payment_iban, store, account_id, body, iban_key=settings.iban_hmac_key)
 
 

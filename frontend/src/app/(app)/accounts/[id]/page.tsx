@@ -21,7 +21,7 @@ import { DuplicatesList, ImportsTable, openDuplicateCount, StatementUpload, Tran
 import { BankSyncCard } from "@/components/bankSync";
 import { formatDate, formatMoney } from "@/components/format";
 import { ACCOUNT_KIND, ACCOUNT_PURPOSE } from "@/components/labels";
-import { Breadcrumbs, Facts, Loading, TabBar, type Tab } from "@/components/ui";
+import { Breadcrumbs, Facts, Loading, Notice, TabBar, type Tab } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
@@ -68,6 +68,8 @@ function AccountDetail() {
   const tab: TabKey = isTab(requested) ? requested : "kontoauszuege";
   const loadAccount = useCallback(() => ok(api.GET("/api/accounts/{account_id}", { params: { path: { account_id: id } } })), [id]);
   const account = useLoad(loadAccount);
+  // D176 (4): how many learned rules on the payment IBAN its confirmation switched off.
+  const [rulesDisabled, setRulesDisabled] = useState(0);
   const load = useCallback(() => loadStatements(id), [id]);
   const statements = useLoad(load);
   const openCount = statements.data ? openDuplicateCount(statements.data.duplicates, statements.data.transactionById) : 0;
@@ -98,7 +100,21 @@ function AccountDetail() {
                 diesem Konto und dem Mietkonto sind Privateinlagen und -entnahmen.
               </p>
             ) : null}
-            {data.kind === "credit_card" ? <PaymentIbanCard account={data} onSaved={account.reload} /> : null}
+            {data.kind === "credit_card" ? (
+              <PaymentIbanCard
+                account={data}
+                onSaved={(disabled) => {
+                  setRulesDisabled(disabled);
+                  account.reload();
+                }}
+              />
+            ) : null}
+            {rulesDisabled > 0 ? (
+              <Notice>
+                {rulesDisabled === 1 ? "1 gelernte Regel" : `${rulesDisabled} gelernte Regeln`} für diese Kontonummer abgeschaltet:
+                Zahlungen an die Karte sind jetzt Überträge.
+              </Notice>
+            ) : null}
             <AccountOwnership account={data} onSaved={account.reload} />
             <TabBar tabs={tabs} current={tab} href={(key) => `/accounts/${id}?tab=${key}`} />
             {tab === "kontoauszuege" ? (
@@ -270,8 +286,9 @@ function TransactionsTab({ accountId }: { accountId: string }) {
 }
 
 /** D176 (4): the IBAN the latest card statement prints for payments to the card, masked, until a
- * person confirms it. Confirming reads it again from that statement (never from this page). */
-function PaymentIbanCard({ account, onSaved }: { account: Account; onSaved: () => void }) {
+ * person confirms it. Confirming reads it again from that statement (never from this page) and
+ * switches off the learned rules on that IBAN; onSaved gets how many. */
+function PaymentIbanCard({ account, onSaved }: { account: Account; onSaved: (rulesDisabled: number) => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const proposal = account.payment_iban_proposal;
@@ -282,13 +299,13 @@ function PaymentIbanCard({ account, onSaved }: { account: Account; onSaved: () =
     setBusy(true);
     setError(null);
     try {
-      await ok(
+      const result = await ok(
         api.POST("/api/accounts/{account_id}/payment-iban", {
           params: { path: { account_id: account.id } },
           body: { import_id: proposal.import_id },
         }),
       );
-      onSaved();
+      onSaved(result.rules_disabled);
     } catch (caught) {
       setError(caught);
     } finally {

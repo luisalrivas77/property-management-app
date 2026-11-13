@@ -120,6 +120,15 @@ class Account(MutableRecord):
         return self
 
 
+class PaymentIbanConfirmed(Schema):
+    """POST /accounts/{id}/payment-iban (D176 (4)): the card account, and how many learned
+    rules on the confirmed IBAN were switched off by it (a payment to the card is a transfer
+    now, so a rule booking it as spending would pre-empt the transfer matcher)."""
+
+    account: Account
+    rules_disabled: int = Field(default=0, ge=0)
+
+
 # --- Parsing (BankSource) ------------------------------------------------------------
 
 

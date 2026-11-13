@@ -51,6 +51,7 @@ from hausbuch.schemas.bank import (
     Account,
     AccountCreate,
     ConfirmPaymentIbanBody,
+    PaymentIbanConfirmed,
     PaymentIbanProposal,
     StatementFormat,
     StatementImport,
@@ -82,6 +83,7 @@ from .events import append_event, diff_changes
 from .iban import protect_iban, protect_ref
 from .lookup import require_row
 from .owners import UNSET, Unset
+from .rules_learned import disable_rule, enabled_rules
 from .statements import derived_opening, get_import, recheck_account
 
 # Every column the Account read shape has; the HMACs are for matching and never leave.
@@ -477,13 +479,19 @@ def confirm_payment_iban(
     body: ConfirmPaymentIbanBody,
     *,
     iban_key: bytes,
-) -> Account:
+) -> PaymentIbanConfirmed:
     """POST /accounts/{id}/payment-iban (D176 (4)): a person confirms the payment IBAN a card
     statement of this account prints. The IBAN is read again from the statement's immutable
     original (principle 6), never from a request, and stored masked + HMAC'd, recorded as
     account.updated. The same IBAN again is a no-op. Refused for an account that is no credit
     card (account.kind_not_available) and for a statement that prints none
-    (statement.no_payment_iban); 404 for an import of another account."""
+    (statement.no_payment_iban); 404 for an import of another account.
+
+    Every enabled learned rule on that IBAN (typically the card bill answered as spending with
+    „Künftig immer so zuordnen“ before the card account existed) is switched off
+    (rules_learned.disable_rule, rule.disabled): a rule books before the transfer matcher, so
+    it would keep the payment to the card as spending; the result counts them. Lines a rule
+    booked before stay as they are."""
     account = _lock(ctx, account_id)
     if account.kind != AccountKind.CREDIT_CARD.value:
         raise RuleError(ACCOUNT_KIND_NOT_AVAILABLE, "only a credit card has a payment IBAN")
@@ -504,7 +512,7 @@ def confirm_payment_iban(
     if account.payment_iban_hmac is not None and hmac.compare_digest(
         account.payment_iban_hmac, iban.hmac
     ):
-        return _account(ctx.conn, account_id)
+        return PaymentIbanConfirmed(account=_account(ctx.conn, account_id))
     ctx.conn.execute(
         update(account_table)
         .where(account_table.c.id == account_id)
@@ -521,9 +529,13 @@ def confirm_payment_iban(
             )
         ),
     )
+    named = iban.hmac.hex()
+    rules = [r for r in enabled_rules(ctx.conn) if r.matcher.counterparty_iban_hmac == named]
+    for rule in rules:
+        disable_rule(ctx, rule.id)
     # D176 (4): the debits to this IBAN waiting in Zu prüfen are transfers now.
     _rematch_waiting(ctx, account_id)
-    return _account(ctx.conn, account_id)
+    return PaymentIbanConfirmed(account=_account(ctx.conn, account_id), rules_disabled=len(rules))
 
 
 def _with_card_facts(conn: Connection, accounts: list[Account]) -> list[Account]:
