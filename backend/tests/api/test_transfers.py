@@ -98,7 +98,8 @@ def test_a_link_by_hand_its_replacement_and_isolation(client_a, client_b, user_a
     body = {"kind": "bank", "out_transaction_id": str(leg), "in_transaction_id": str(late)}
     link = ok(client_a.post("/api/transfers", json=body), 201)
     assert (link["matched_by"], link["superseded_by"]) == ("user", None)
-    assert client_a.post("/api/transfers", json=body).status_code == 409
+    again = client_a.post("/api/transfers", json=body)  # the same pair again: no conflict
+    assert again.status_code in (200, 201) and again.json()["id"] == link["id"]
     [view] = ok(client_a.get("/api/transfers", params={"month": "2026-10"}))
     assert (view["out_leg"]["id"], view["in_leg"]["amount"]) == (str(leg), "200.00")
     assert ok(client_a.get("/api/transfers/open")) == []

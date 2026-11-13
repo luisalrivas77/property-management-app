@@ -286,8 +286,8 @@ def test_a_link_by_hand_and_its_replacement(world, private):
     link = world.cmd(transfers.link_by_hand, body)
     assert link.matched_by is TransferMatchedBy.USER
     assert _open(world) == []
-    with pytest.raises(ConflictError):
-        world.cmd(transfers.link_by_hand, body)
+    # The same pair again (a second click, a card shown before the link): no conflict.
+    assert world.cmd(transfers.link_by_hand, body).id == link.id
 
     replacement = body.model_copy(update={"in_transaction_id": other})
     new = world.cmd(transfers.unlink, link.id, replacement)

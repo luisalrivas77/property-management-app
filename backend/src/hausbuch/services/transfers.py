@@ -568,8 +568,10 @@ def _rebook_on_link(leg: _Leg, other: _Leg) -> bool:
 def link_by_hand(
     ctx: CommandContext, body: TransferLinkCreate, *, iban_key: bytes | None = None
 ) -> TransferLink:
-    """POST /transfers: the user links two legs (matched_by user). 409 when either leg is
-    linked already; 422 transfer.legs_invalid for two legs that are no transfer.
+    """POST /transfers: the user links two legs (matched_by user). The two legs linked to
+    each other already (a second click, or the matcher linked them since the card was shown)
+    return that link; 409 when either leg is linked to another; 422 transfer.legs_invalid for
+    two legs that are no transfer.
 
     With rebook (TransferLinkRequest, D176 (4)) each leg not booked as a transfer is first
     re-booked as internal_transfer_out or _in through the person's answer
@@ -581,6 +583,16 @@ def link_by_hand(
     written."""
     _lock(ctx)
     out, in_ = _pair(ctx.conn, body)
+    # The matcher may have linked exactly this pair since the card was shown (a re-check after
+    # an import reconciled): the user's answer is already true, so it is not a conflict.
+    already = _link_of(ctx.conn, out.leg.id, in_.leg.id)
+    if already is not None:
+        if getattr(body, "rebook", False) and iban_key is not None:
+            # A leg the model only proposed as a transfer is confirmed by this click.
+            for leg, other in ((out, in_), (in_, out)):
+                if leg.booked is None and _rebook_on_link(leg, other):
+                    _rebook(ctx, leg, iban_key)
+        return _link_of(ctx.conn, out.leg.id, in_.leg.id) or already
     linked = _linked_ids(ctx.conn)
     if out.leg.id in linked or in_.leg.id in linked:
         raise ConflictError("a leg of this transfer is linked already")

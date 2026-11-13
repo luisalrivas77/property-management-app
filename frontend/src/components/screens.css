@@ -1001,6 +1001,12 @@ button.inbox-entry[aria-pressed="true"] {
   font-size: 14px;
 }
 
+.inbox-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+
 @media (max-width: 559px) {
   .inbox-entry {
     grid-template-columns: minmax(0, 1fr) auto;

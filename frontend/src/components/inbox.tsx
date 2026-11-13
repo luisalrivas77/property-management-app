@@ -579,10 +579,10 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
       if (!open) return null;
       if (open.candidates.length > 0) return <TransferPick open={open} accounts={data.accounts} onLinked={onChanged} />;
       return (
-        <>
+        <span className="inbox-links">
           <Link href="/accounts">Anderes Konto importieren</Link>
           {open.leg.source === "transaction" ? <Link href={`/inbox?umsatz=${open.leg.id}`}>Buchung öffnen</Link> : null}
-        </>
+        </span>
       );
     }
     case "property_cost_row":

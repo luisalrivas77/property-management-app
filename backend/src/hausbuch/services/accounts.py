@@ -170,7 +170,11 @@ def create_account(ctx: CommandContext, data: AccountCreate, *, iban_key: bytes)
             external_ref_masked=created.external_ref_masked,
         ),
     )
-    if created.is_owner_account:
+    # A new private account with an IBAN makes the lines on the other accounts that name it
+    # transfers (D162): before, they waited with the model's answer or none.
+    if created.is_owner_account or (
+        created.purpose is AccountPurpose.PRIVATE and created.iban_masked is not None
+    ):
         _rematch_waiting(ctx, created.id)
     return created
 
@@ -434,10 +438,11 @@ def _account(conn: Connection, account_id: UUID) -> Account:
 
 def _rematch_waiting(ctx: CommandContext, account_id: UUID) -> None:
     """Queue rematch_waiting for the lines naming this account's IBAN that wait in the inbox
-    (phase-2.md §8.1). Two triggers: an account becoming an owner account (the owner-transfer
-    matcher books its transfers now; an account's IBAN never changes after creation), and a
-    credit card's payment IBAN being confirmed (D176 (4): the debits to it are transfers now;
-    matching.waiting_lines reads the payment IBAN for a card)."""
+    (phase-2.md §8.1). Three triggers: a private account created with an IBAN (the lines on the
+    other accounts that name it are transfers now, D162), an account becoming an owner account
+    (the owner-transfer matcher books its transfers now; an account's IBAN never changes after
+    creation), and a credit card's payment IBAN being confirmed (D176 (4): the debits to it
+    are transfers now; matching.waiting_lines reads the payment IBAN for a card)."""
     enqueue.enqueue_rematch_waiting(
         ctx.conn, workspace_id=ctx.workspace_id, kind=enqueue.TRIGGER_ACCOUNT, entity_id=account_id
     )
