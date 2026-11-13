@@ -220,7 +220,7 @@ def stored_rates(conn: Connection) -> dict[str, list[FxRate]]:
     rates: dict[str, list[FxRate]] = defaultdict(list)
     for row in conn.execute(
         select(a.symbol, p.on, p.raw)
-        .join(a, a.id == p.asset_id)
+        .join(asset_table, a.id == p.asset_id)
         .where(p.source == S.ECB_FX.value)
         .order_by(p.on)
     ):
@@ -357,8 +357,9 @@ def _insert(ctx: CommandContext, rows: list[dict[str, Any]]) -> int:
             index_elements=[p.workspace_id, p.asset_id, p.on, p.source],
             index_where=p.source.in_([s.value for s in DAILY_SOURCES]),
         )
+        .returning(p.id)
     )
-    return ctx.conn.execute(statement).rowcount or 0
+    return len(ctx.conn.execute(statement).all())  # rowcount is -1 for a multi-row VALUES
 
 
 def failure_runs(conn: Connection, asset_id: UUID, since: datetime) -> list[tuple[date, bool]]:
