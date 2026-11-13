@@ -181,8 +181,10 @@ class AssetPatch(Schema):
     """PATCH /assets/{id}: the name and the price-source ids only (D167)."""
 
     name: str | None = Field(default=None, min_length=1, max_length=200)
-    coingecko_id: str | None = Field(default=None, min_length=1, max_length=100)
-    kraken_pair: str | None = Field(default=None, min_length=1, max_length=20)
+    # Each id becomes part of a URL the daily fetch calls: CoinGecko's ids are lower case
+    # with hyphens ("usd-coin"), Kraken's pairs upper-case letters and digits ("XBTEUR").
+    coingecko_id: str | None = Field(default=None, pattern=r"^[a-z0-9-]{1,100}$")
+    kraken_pair: str | None = Field(default=None, pattern=r"^[A-Z0-9]{1,20}$")
 
 
 # --- Asset movements (D165, D166, D175) -----------------------------------------------

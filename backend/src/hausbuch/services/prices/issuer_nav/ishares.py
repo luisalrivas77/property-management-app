@@ -39,7 +39,15 @@ URL = (
 )
 _SS = "urn:schemas-microsoft-com:office:spreadsheet"
 _NS = {"ss": _SS}
-_PARSER = etree.XMLParser(resolve_entities=False, no_network=True, huge_tree=True)
+_PARSER = etree.XMLParser(
+    resolve_entities=False,
+    no_network=True,
+    load_dtd=False,
+    dtd_validation=False,
+    huge_tree=False,
+    remove_comments=True,
+    remove_pis=True,
+)
 _MONTHS = {
     "jan": 1,
     "feb": 2,
@@ -75,13 +83,19 @@ def _day(value: str) -> date | None:
         return None
 
 
+# German numbers only: 58,82, 1.002,50 or 1002,50. A dot without a comma ("58.82", an
+# English decimal point, or "1.002", which could be either) is refused rather than guessed,
+# so a file switched to another locale fails closed instead of storing 5882.
+_GERMAN_NUMBER = re.compile(r"\d{1,3}(?:\.\d{3})*(?:,\d+)?|\d+(?:,\d+)?")
+
+
 def _number(value: str) -> Decimal | None:
-    """58,82 or 1.234,56 (German), never a bare thousands separator."""
-    text = value.strip().replace(".", "").replace(",", ".")
-    if not re.fullmatch(r"\d+(\.\d+)?", text):
+    """The cell's German decimal, or None when it is not one beyond doubt."""
+    text = value.strip()
+    if not _GERMAN_NUMBER.fullmatch(text) or ("." in text and "," not in text):
         return None
     try:
-        return Decimal(text)
+        return Decimal(text.replace(".", "").replace(",", "."))
     except InvalidOperation:
         return None
 

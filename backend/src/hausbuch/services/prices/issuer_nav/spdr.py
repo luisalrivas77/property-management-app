@@ -38,7 +38,15 @@ MAX_UNPACKED = 40 * 1024 * 1024
 _MAIN = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 _REL = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
 _PKG_REL = "{http://schemas.openxmlformats.org/package/2006/relationships}"
-_PARSER = etree.XMLParser(resolve_entities=False, no_network=True, huge_tree=True)
+_PARSER = etree.XMLParser(
+    resolve_entities=False,
+    no_network=True,
+    load_dtd=False,
+    dtd_validation=False,
+    huge_tree=False,
+    remove_comments=True,
+    remove_pis=True,
+)
 _SLUG = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 _CELL = re.compile(r"^([A-Z]+)\d+$")
 _MONTHS = {

@@ -75,6 +75,17 @@ def test_overview_assets_patch_and_price(app_engine, auth_a, client_a, client_b)
 
     patched = ok(client_a.patch(f"/api/assets/{coin}", json={"coingecko_id": "zzz-coin"}))
     assert patched["has_source"] is True and patched["coingecko_id"] == "zzz-coin"
+    for bad_ids in (
+        {"coingecko_id": "Bitcoin"},
+        {"coingecko_id": "../coins/x?key=1"},
+        {"coingecko_id": ""},
+        {"kraken_pair": "xbteur"},
+        {"kraken_pair": "XBT/EUR"},
+        {"kraken_pair": "X" * 21},
+    ):
+        invalid = client_a.patch(f"/api/assets/{coin}", json=bad_ids)
+        assert invalid.status_code == 422, bad_ids
+        assert invalid.json()["detail"][0]["type"] == "string_pattern_mismatch", bad_ids
     refused = client_a.patch(f"/api/assets/{euro}", json={"kraken_pair": "EUREUR"})
     assert refused.status_code == 422 and refused.json()["code"] == "asset.not_crypto"
 

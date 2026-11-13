@@ -7,6 +7,10 @@ Behind a `Fetch` callable so the tests replay recorded files without a network.
 A failure raises SourceError carrying the exception class and the HTTP status only, which
 is all a caller may log (D167 (3), D174 (4)): a body can echo the request, and the
 CoinGecko key travels in a header.
+
+Redirects are never followed: a 3xx is a failed status like any other (SourceError
+"HTTPError" with its status), so a header, the CoinGecko key among them, is only ever sent
+to the URL the source names.
 """
 
 import ssl
@@ -21,6 +25,19 @@ MAX_BYTES = 5 * 1024 * 1024  # D174 (2): 5 MB
 # (url, headers, timeout, max_bytes) -> (HTTP status, body). An HTTP error status is
 # returned, not raised; a body over max_bytes raises ResponseTooLarge.
 Fetch = Callable[[str, dict[str, str], float, int], tuple[int, bytes]]
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse every redirect: urllib then raises the 3xx as an HTTPError."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _opener() -> urllib.request.OpenerDirector:
+    return urllib.request.build_opener(
+        _NoRedirect, urllib.request.HTTPSHandler(context=ssl.create_default_context())
+    )
 
 
 class ResponseTooLarge(Exception):
@@ -43,9 +60,7 @@ def urllib_fetch(
 ) -> tuple[int, bytes]:
     request = urllib.request.Request(url, headers=headers, method="GET")
     try:
-        with urllib.request.urlopen(  # noqa: S310 - every URL is a fixed https endpoint
-            request, timeout=timeout, context=ssl.create_default_context()
-        ) as response:
+        with _opener().open(request, timeout=timeout) as response:
             body = response.read(max_bytes + 1)
             if len(body) > max_bytes:
                 raise ResponseTooLarge

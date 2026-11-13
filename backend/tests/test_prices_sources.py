@@ -3,9 +3,11 @@ the issuer adapters replayed on the recorded files of issuer_nav.yaml's parse_ca
 CoinGecko and Kraken readers on their recorded answers, the one GET's failures, the job's
 registration at 07:00, and that the CoinGecko key never leaves its header."""
 
+import http.server
 import io
 import logging
 import re
+import threading
 import zipfile
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -21,8 +23,15 @@ from hausbuch.jobs import fetch_prices as job
 from hausbuch.jobs import tasks
 from hausbuch.jobs.document_read import JobDeps
 from hausbuch.services.prices import coingecko, ecb_fx, kraken
-from hausbuch.services.prices.http import MAX_BYTES, ResponseTooLarge, SourceError, get
+from hausbuch.services.prices.http import (
+    MAX_BYTES,
+    ResponseTooLarge,
+    SourceError,
+    get,
+    urllib_fetch,
+)
 from hausbuch.services.prices.issuer_nav import ADAPTERS, ISharesAdapter, SpdrAdapter, read_points
+from hausbuch.services.prices.issuer_nav.ishares import _number as ishares_number
 from hausbuch.settings import Settings, load_settings
 
 SAMPLES = phase6.SAMPLES
@@ -102,6 +111,35 @@ def test_a_file_the_adapter_does_not_understand_is_a_parse_error():
             assert raised.value.kind == "parse"
 
 
+@pytest.mark.parametrize(
+    ("cell", "expected"),
+    [
+        ("58,82", Decimal("58.82")),
+        ("1.002,50", Decimal("1002.50")),
+        ("1002,50", Decimal("1002.50")),
+        ("81", Decimal("81")),
+        ("58.82", None),  # an English decimal point: never read as 5882
+        ("1.002", None),  # a dot without a comma could be either
+        ("1.02,50", None),
+        ("-", None),
+        ("", None),
+    ],
+)
+def test_ishares_reads_german_numbers_only(cell, expected):
+    assert ishares_number(cell) == expected
+
+
+def test_an_ishares_file_with_english_numbers_is_a_parse_error():
+    def english(match: re.Match[bytes]) -> bytes:
+        return b">" + match.group(1).replace(b".", b"") + b"." + match.group(2) + b"<"
+
+    body = re.sub(rb">([\d.]+),(\d+)<", english, _sample("ishares_fund_download.xls"))
+    assert b">81.20<" in body and b">1002.50<" in body
+    with pytest.raises(SourceError) as raised:
+        ISharesAdapter.parse(body)
+    assert raised.value.kind == "parse"
+
+
 def test_spdr_refuses_a_zip_that_unpacks_too_large():
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
@@ -147,6 +185,39 @@ def test_get_reports_status_and_class_only():
         "TimeoutError",
     )
     assert raised.value.__cause__ is None
+
+
+def test_a_redirect_is_a_failed_status_and_is_never_followed():
+    """The CoinGecko key travels in a header: a 3xx must not carry it to another URL."""
+    seen: list[tuple[str, str | None]] = []
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802 - the stdlib's name
+            seen.append((self.path, self.headers.get("x-cg-demo-api-key")))
+            if self.path == "/start":
+                self.send_response(302)
+                self.send_header("Location", "/elsewhere")
+                self.end_headers()
+            else:
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"followed")
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_address[1]}/start"
+        with pytest.raises(SourceError) as raised:
+            get(urllib_fetch, url, {"x-cg-demo-api-key": KEY})
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert (raised.value.kind, raised.value.status) == ("HTTPError", 302)
+    assert seen == [("/start", KEY)]  # one request, none to the redirect's target
 
 
 # --- ECB --------------------------------------------------------------------------------------

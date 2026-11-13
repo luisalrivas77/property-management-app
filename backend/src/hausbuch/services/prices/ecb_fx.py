@@ -23,7 +23,15 @@ FX_CURRENCIES = ("USD", "GBP", "CHF")  # D167 (3)
 BACKFILL_AFTER_DAYS = 4  # the daily file holds one day: a longer gap reads the 90-day file
 
 _NS = "{http://www.ecb.int/vocabulary/2002-08-01/eurofxref}"
-_PARSER = etree.XMLParser(resolve_entities=False, no_network=True)
+_PARSER = etree.XMLParser(
+    resolve_entities=False,
+    no_network=True,
+    load_dtd=False,
+    dtd_validation=False,
+    huge_tree=False,
+    remove_comments=True,
+    remove_pis=True,
+)
 
 
 def parse(body: bytes) -> dict[str, list[FxRate]]:
