@@ -225,9 +225,10 @@ export function ImportStatusPill({ statementImport }: { statementImport: Stateme
 }
 
 /** Why an import is not reconciled, with the two balances the API compared. */
-function ImportReason({ statementImport: imp }: { statementImport: StatementImport }) {
+function ImportReason({ statementImport: imp, imports }: { statementImport: StatementImport; imports: StatementImport[] }) {
   if (imp.status === "reconciled" || imp.status === "imported") return null;
   const code = imp.error_code;
+  const gapAfter = code === "statement.opening_mismatch" && imp.derived_opening_balance == null ? previousReconciled(imp, imports) : null;
   return (
     <>
       {code ? (
@@ -245,8 +246,29 @@ function ImportReason({ statementImport: imp }: { statementImport: StatementImpo
           Endsaldo laut Bank {formatMoney(imp.declared_closing)} · berechnet {formatMoney(imp.computed_closing)}
         </p>
       ) : null}
+      {gapAfter?.last_booking_on && imp.first_booking_on ? (
+        <p className="cell-detail">
+          Zwischen dem Auszug bis {formatDate(gapAfter.last_booking_on)} und diesem ab {formatDate(imp.first_booking_on)} fehlt
+          vermutlich ein Kontoauszug. Bitte den fehlenden Auszug hochladen; dieser hier geht danach von selbst auf.
+        </p>
+      ) : null}
     </>
   );
+}
+
+/** The latest reconciled import that ends before this one starts: a later statement whose
+ * opening disagrees with it is most likely separated from it by a statement not uploaded
+ * (principle 7: say which period is missing, not only that the balances differ). */
+function previousReconciled(imp: StatementImport, imports: StatementImport[]): StatementImport | null {
+  const start = imp.first_booking_on;
+  if (!start) return null;
+  let best: StatementImport | null = null;
+  for (const other of imports) {
+    if (other.id === imp.id || other.status !== "reconciled" || !other.last_booking_on) continue;
+    if (other.last_booking_on >= start) continue;
+    if (!best?.last_booking_on || other.last_booking_on > best.last_booking_on) best = other;
+  }
+  return best;
 }
 
 /** Every import whose balances do not come from the file takes a closing balance typed from
@@ -322,7 +344,7 @@ export function ImportsTable({
                 </td>
                 <td>
                   <ImportStatusPill statementImport={imp} />
-                  <ImportReason statementImport={imp} />
+                  <ImportReason statementImport={imp} imports={imports} />
                 </td>
                 <td className="actions">
                   <OpeningFromClosing statementImport={imp} onDone={onChanged} />
@@ -354,9 +376,10 @@ export function ImportsTable({
 }
 
 /** Principle 7: a new account's balance on its anchor day is rarely known, but its first
- * export states today's. When the API offers the opening balance this import implies
- * (derived_opening_balance: the account's earliest import, off by its closing only, nothing
- * reconciled yet), one click takes it (POST /imports/{id}/opening-from-closing); the API
+ * export states today's, and a statement that prints its Alter Saldo states its opening.
+ * When the API offers the opening balance (and day) this import implies
+ * (derived_opening_balance: the account's earliest import, see statements.derived_opening),
+ * one click takes it (POST /imports/{id}/opening-from-closing); the API
  * computes it and re-checks every import of the account. */
 export function OpeningFromClosing({ statementImport: imp, onDone }: { statementImport: StatementImport; onDone: () => void }) {
   const [busy, setBusy] = useState(false);

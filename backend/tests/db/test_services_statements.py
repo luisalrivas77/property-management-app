@@ -7,7 +7,7 @@ file. The CSV and the ZIP hold the same 22 bookings, from 0,00 on 31.03.2026 to 
 """
 
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -664,16 +664,21 @@ def test_a_reconciled_import_already_proves_the_opening_balance(run, imp, read, 
     assert caught.value.code == rules.OPENING_NOT_DERIVABLE
 
 
-def test_a_file_with_an_opening_balance_offers_none(run, imp, read, fresh_workspaces):
-    """A camt import that misses its own opening is a fault of the file or the anchor day,
-    not of the anchor's amount (statement.opening_mismatch)."""
+def test_a_file_with_an_opening_balance_offers_that_opening(run, imp, read, fresh_workspaces):
+    """A file that states its opening (camt, a card's Alter Saldo) is the account's earliest
+    import and nothing is reconciled: the file's opening, dated the day before its first
+    booking, is offered (it was offered nothing until 13 Nov 2026, when a card account
+    starting at 0 € had no way out of statement.opening_mismatch)."""
     ws, _ = fresh_workspaces
     account = _account(run, ws)
     imported = imp(ws, account.id, ZIP)
     run(ws, update_account, account.id, opening_balance=Decimal("5.00"), now=T2)
     moved = read(ws, get_import, imported.id)
     assert moved.error_code == rules.OPENING_MISMATCH
-    assert moved.derived_opening_balance is None
+    assert moved.derived_opening_balance == moved.declared_opening
+    assert moved.derived_opening_balance_on == moved.first_booking_on - timedelta(days=1)
+    run(ws, opening_from_closing, imported.id, now=T3)
+    assert read(ws, get_import, imported.id).status is ImportStatus.RECONCILED
 
 
 def test_another_workspace_cannot_take_the_opening_balance(run, imp, fresh_workspaces):

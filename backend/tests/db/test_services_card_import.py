@@ -9,7 +9,7 @@ first import sets the account's reference; the printed payment IBAN is only prop
 person confirms it from the statement's original.
 """
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -50,6 +50,7 @@ from hausbuch.services.accounts import (
     confirm_payment_iban,
     create_account,
     get_account,
+    opening_from_closing,
     update_account,
 )
 from hausbuch.services.context import Actor, new_command
@@ -461,3 +462,58 @@ def test_importing_it_on_the_card_ends_the_couldnt_read_card(
         )
     assert after.count(InboxItemKind.READ_FAILED) == 1
     assert superseded == [queued.id]
+
+
+def _case(name):
+    return next(c for c in CARD.cases if c.id == name)
+
+
+def _by_id(read, ws, account_id):
+    return {i.id: i for i in read(ws, list_imports, account_id)}
+
+
+def test_a_new_cards_first_statement_offers_its_alter_saldo_as_the_opening(
+    run, read, blob_store, fresh_workspaces
+):
+    """Principle 7: a card account starts at 0 on 31 Dec; its earliest statement prints the
+    debt it started with. „Anfangssaldo daraus übernehmen“ takes that Alter Saldo, dated the
+    day before the first booking, and the statement reconciles."""
+    ws, _ = fresh_workspaces
+    account = _card(run, ws, opening_balance=Decimal("0.00"), opening_balance_on=date(2025, 12, 31))
+    first = _import(run, blob_store, ws, account.id, _case("plain_month"))
+    assert first.error_code == rules.OPENING_MISMATCH
+    shown = _by_id(read, ws, account.id)[first.id]
+    assert shown.derived_opening_balance == Decimal("-1250.40")
+    assert shown.derived_opening_balance_on == first.first_booking_on - timedelta(days=1)
+
+    taken = run(ws, opening_from_closing, first.id, now=T0)
+    assert taken.status is ImportStatus.RECONCILED
+    after = read(ws, get_account, account.id)
+    assert (after.opening_balance, after.opening_balance_on) == (
+        Decimal("-1250.40"),
+        first.first_booking_on - timedelta(days=1),
+    )
+
+    # A gap is never bridged: a statement after a missing month offers nothing, and the
+    # missing month, once uploaded, reconciles both.
+    later = _import(run, blob_store, ws, account.id, _case("refund"), 1)
+    assert later.error_code == rules.OPENING_MISMATCH
+    assert _by_id(read, ws, account.id)[later.id].derived_opening_balance is None
+    _import(run, blob_store, ws, account.id, _case("foreign_currency"), 2)
+    assert {i.status for i in read(ws, list_imports, account.id)} == {ImportStatus.RECONCILED}
+
+
+def test_an_earlier_statement_uploaded_later_extends_the_chain_backwards(
+    run, read, blob_store, fresh_workspaces
+):
+    ws, _ = fresh_workspaces
+    account = _card(run, ws, opening_balance=Decimal("0.00"), opening_balance_on=date(2025, 12, 31))
+    second = _import(run, blob_store, ws, account.id, _case("foreign_currency"))
+    run(ws, opening_from_closing, second.id, now=T0)
+    first = _import(run, blob_store, ws, account.id, _case("plain_month"), 1)
+    assert first.error_code == rules.BEFORE_ANCHOR
+    shown = _by_id(read, ws, account.id)[first.id]
+    assert shown.derived_opening_balance == Decimal("-1250.40")
+
+    run(ws, opening_from_closing, first.id, now=T0)
+    assert {i.status for i in read(ws, list_imports, account.id)} == {ImportStatus.RECONCILED}

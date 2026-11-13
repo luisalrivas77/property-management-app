@@ -25,7 +25,7 @@ kept_both queues `match_transaction` for the later line, which waited for the de
 
 import hmac
 from collections.abc import Sequence
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -607,27 +607,33 @@ def list_imports(conn: Connection, account_id: UUID) -> list[StatementImport]:
     return _with_derived(conn, _with_stated(conn, [_to_import(r) for r in rows]))
 
 
-def derived_opening(conn: Connection, account: Row, import_id: UUID) -> Decimal | None:
-    """The opening balance on the account's anchor day that makes this import reconcile
-    (principle 7: a new account's balance on its anchor day is rarely known, but its first
-    export states today's balance, so anchor + Σ lines = closing gives it): the import's
-    declared closing less the stored lines after the anchor day through its last booking day.
+def derived_opening(conn: Connection, account: Row, import_id: UUID) -> tuple[Decimal, date] | None:
+    """The opening balance, and its day, that makes this import reconcile (principle 7: a new
+    account's balance on its anchor day is rarely known, but its statements state it).
 
-    None unless the import is the account's earliest (no import with an earlier first booking
-    day), unreconciled by its closing only (statement.unreconciled with a declared closing
-    and no opening from the file, so not before_anchor or opening_mismatch), and no import of
-    the account is reconciled yet (a reconciled one already proves the anchor)."""
+    Two cases, both only for the account's earliest import (no import with an earlier first
+    booking day):
+
+    - **No opening in the file** (a CSV, a sync): the export states today's balance, so the
+      opening on the account's anchor day is the declared closing less the stored lines
+      after the anchor day through the import's last booking day. Only while the import is
+      off by its closing alone (statement.unreconciled) and no import is reconciled yet (a
+      reconciled one already proves the anchor).
+    - **An opening in the file** (a card statement's Alter Saldo, a PDF statement): the
+      anchor moves to the day before the import's first booking, with the file's opening.
+      Offered when the import is off by its opening (statement.opening_mismatch) or starts
+      on or before the anchor (statement.before_anchor), and either no import is reconciled
+      yet or this one ends where the anchor starts (its closing is the anchor balance and its
+      last booking is on or before the anchor day), so the move extends the reconciled chain
+      backwards and cannot break it. A gap between two statements is never bridged."""
     rows = conn.execute(
         select(*_IMPORT_COLUMNS).where(import_table.c.account_id == account.id)
     ).all()
     row = next((r for r in rows if r.id == import_id), None)
-    if row is None or any(r.status == ImportStatus.RECONCILED.value for r in rows):
-        return None
     if (
-        row.status != ImportStatus.UNRECONCILED.value
-        or row.error_code != rules.UNRECONCILED
+        row is None
+        or row.status != ImportStatus.UNRECONCILED.value
         or row.declared_closing is None
-        or row.declared_opening is not None
         or row.first_booking_on is None
         or row.last_booking_on is None
     ):
@@ -636,19 +642,40 @@ def derived_opening(conn: Connection, account: Row, import_id: UUID) -> Decimal 
         r.first_booking_on is not None and r.first_booking_on < row.first_booking_on for r in rows
     ):
         return None
+    any_reconciled = any(r.status == ImportStatus.RECONCILED.value for r in rows)
+    if row.declared_opening is not None:
+        if row.error_code not in (rules.OPENING_MISMATCH, rules.BEFORE_ANCHOR):
+            return None
+        if any_reconciled and not (
+            row.declared_closing == account.opening_balance
+            and row.last_booking_on <= account.opening_balance_on
+        ):
+            return None
+        return (
+            row.declared_opening.quantize(Decimal("0.01")),
+            row.first_booking_on - timedelta(days=1),
+        )
+    if any_reconciled or row.error_code != rules.UNRECONCILED:
+        return None
     sums = rules.window_sums(
         _stored_lines(conn, account.id, through=row.last_booking_on),
         anchor_on=account.opening_balance_on,
         first_booking_on=row.first_booking_on,
         last_booking_on=row.last_booking_on,
     )
-    return (row.declared_closing - sums.stored_through).quantize(Decimal("0.01"))
+    return (
+        (row.declared_closing - sums.stored_through).quantize(Decimal("0.01")),
+        account.opening_balance_on,
+    )
+
+
+_DERIVABLE_CODES = (rules.UNRECONCILED, rules.OPENING_MISMATCH, rules.BEFORE_ANCHOR)
 
 
 def _with_derived(conn: Connection, imports: list[StatementImport]) -> list[StatementImport]:
-    """derived_opening_balance on the imports that offer it (only an unreconciled import with
-    statement.unreconciled can, so the other accounts cost no query)."""
-    candidates = [i for i in imports if i.error_code == rules.UNRECONCILED]
+    """derived_opening_balance on the imports that offer it (only an unreconciled import can,
+    so the other accounts cost no query)."""
+    candidates = [i for i in imports if i.error_code in _DERIVABLE_CODES]
     if not candidates:
         return imports
     accounts = {
@@ -664,7 +691,7 @@ def _with_derived(conn: Connection, imports: list[StatementImport]) -> list[Stat
             continue
         opening = derived_opening(conn, account, imp.id)
         if opening is not None:
-            derived[imp.id] = (opening, account.opening_balance_on)
+            derived[imp.id] = opening
     return [
         i
         if i.id not in derived
