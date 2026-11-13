@@ -34,6 +34,12 @@ from .enqueue import (
     REMATCH_WAITING_TASK,
     TAX_EXPORT_TASK,
 )
+from .fetch_prices import (
+    FETCH_PRICES_CRON,
+    FETCH_PRICES_LOCK,
+    FETCH_PRICES_TASK,
+    run_fetch_prices,
+)
 from .inbound_mail import POLL_CRON, POLL_LOCK, POLL_TASK, run_poll_inbox
 from .matching import (
     run_match_import,
@@ -186,6 +192,13 @@ def bank_sync_scheduled(context: JobContext, *, timestamp: int) -> None:
     run_bank_sync_scheduled(deps)
 
 
+def fetch_prices(context: JobContext, *, timestamp: int) -> None:
+    """D167 (3), daily at 07:00: the ECB rates, then the held coins' and ETFs' prices for
+    every workspace. CoinGecko only with HAUSBUCH_COINGECKO_KEY; Kraken and the rest without."""
+    deps: JobDeps = context.additional_context[DEPS_KEY]
+    run_fetch_prices(deps)
+
+
 def register_tasks(app: procrastinate.App) -> procrastinate.App:
     """The queued tasks, plus scrub_proposals as a periodic task: the worker's periodic
     deferrer queues it at SCRUB_CRON. Procrastinate skips a schedule missed by more than
@@ -221,4 +234,10 @@ def register_tasks(app: procrastinate.App) -> procrastinate.App:
         bank_sync_scheduled
     )
     app.periodic(cron=SCHEDULE_CRON, periodic_id=SCHEDULE_TASK)(schedule)
+    # No retry: a failed source asks again the next day (D174's card after seven days).
+    # lock= keeps one run at a time; a price row is unique per asset, day and source.
+    prices = app.task(name=FETCH_PRICES_TASK, pass_context=True, lock=FETCH_PRICES_LOCK)(
+        fetch_prices
+    )
+    app.periodic(cron=FETCH_PRICES_CRON, periodic_id=FETCH_PRICES_TASK)(prices)
     return app

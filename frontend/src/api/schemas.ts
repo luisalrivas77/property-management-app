@@ -214,3 +214,15 @@ export type RateBasis = Schemas["RateBasis"];
 export type FlatRateLetterFigures = Schemas["FlatRateLetterFigures"];
 export type FlatRateLetterRequest = Schemas["FlatRateLetterRequest"];
 export type LetterReason = Schemas["LetterReason"];
+
+// assets and their daily prices (phase 6 step 5b, D167, D174, §13)
+export type AssetsOverview = Schemas["AssetsOverview"];
+export type OverviewAccount = Schemas["OverviewAccount"];
+export type OverviewPosition = Schemas["OverviewPosition"];
+export type PriceLabel = Schemas["PriceLabel"];
+export type PriceSourceKind = Schemas["PriceSourceKind"];
+export type AssetKind = Schemas["AssetKind"];
+export type AssetRow = Schemas["AssetRow"];
+export type AssetPatch = Schemas["AssetPatch"];
+export type AssetPriceRow = Schemas["AssetPriceRow"];
+export type TypedPriceBody = Schemas["TypedPriceBody"];

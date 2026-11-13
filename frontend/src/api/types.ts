@@ -1619,6 +1619,83 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/assets/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Assets Overview
+         * @description Valued on read from the stored prices; every figure names its source and day.
+         */
+        get: operations["assets_overview_api_assets_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Assets List */
+        get: operations["assets_list_api_assets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assets/{asset_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Asset Update
+         * @description „Kursquelle wählen“: the next daily fetch (07:00 UTC) prices the coin by these ids.
+         */
+        patch: operations["asset_update_api_assets__asset_id__patch"];
+        trace?: never;
+    };
+    "/api/assets/{asset_id}/prices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Asset Price Record
+         * @description „Kurs eintragen“: wins on its own day (D167 amended 13 Nov 2026).
+         */
+        post: operations["asset_price_record_api_assets__asset_id__prices_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/accounts/{account_id}/bank-connection": {
         parameters: {
             query?: never;
@@ -3467,6 +3544,115 @@ export interface components {
             church: string;
             /** Total */
             total: string;
+        };
+        /**
+         * AssetKind
+         * @description asset.kind (migration 0025). EUR is an asset of kind cash, so an exchange's EUR
+         *     balance is a position like any other.
+         * @enum {string}
+         */
+        AssetKind: "cash" | "etf" | "stock" | "crypto";
+        /**
+         * AssetPatch
+         * @description PATCH /assets/{id}: the name and the price-source ids only (D167).
+         */
+        AssetPatch: {
+            /** Name */
+            name?: string | null;
+            /** Coingecko Id */
+            coingecko_id?: string | null;
+            /** Kraken Pair */
+            kraken_pair?: string | null;
+        };
+        /** AssetPriceRow */
+        AssetPriceRow: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /**
+             * On
+             * Format: date
+             */
+            on: string;
+            /** Price Eur */
+            price_eur: string;
+            source: components["schemas"]["PriceSourceKind"];
+            /**
+             * Fetched At
+             * Format: date-time
+             */
+            fetched_at: string;
+        };
+        /**
+         * AssetRow
+         * @description GET /assets: an asset with how it is priced (D167 (1), D174 (2)).
+         */
+        AssetRow: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            kind: components["schemas"]["AssetKind"];
+            /** Name */
+            name: string;
+            /** Symbol */
+            symbol?: string | null;
+            /** Isin */
+            isin?: string | null;
+            /** Currency */
+            currency: string;
+            /** Coingecko Id */
+            coingecko_id?: string | null;
+            /** Kraken Pair */
+            kraken_pair?: string | null;
+            /** Issuer */
+            issuer?: string | null;
+            /** Has Source */
+            has_source: boolean;
+            latest_price?: components["schemas"]["PriceLabel"] | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * AssetsOverview
+         * @description GET /assets/overview: every depot and exchange account with its positions on `on`
+         *     (today by default), their total and the split by class (Depot, Krypto).
+         */
+        AssetsOverview: {
+            /**
+             * On
+             * Format: date
+             */
+            on: string;
+            /** Accounts */
+            accounts?: components["schemas"]["OverviewAccount"][];
+            /** Total Eur */
+            total_eur: string;
+            /** By Kind */
+            by_kind?: {
+                [key: string]: string;
+            };
+            /**
+             * Stale Positions
+             * @default 0
+             */
+            stale_positions: number;
+            /**
+             * Unvalued Positions
+             * @default 0
+             */
+            unvalued_positions: number;
         };
         /** AssociationFact */
         AssociationFact: {
@@ -5763,6 +5949,8 @@ export interface components {
             /** Property Id */
             property_id?: string | null;
             transfer?: components["schemas"]["OpenTransfer"] | null;
+            /** Asset Id */
+            asset_id?: string | null;
             /** Private Costs */
             private_costs?: components["schemas"]["TaxInputCreate"][];
             /** Error Code */
@@ -5773,7 +5961,7 @@ export interface components {
          * @description GET /inbox (§8.3): one list, newest first.
          * @enum {string}
          */
-        InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched" | "questionnaire_open" | "bank_approval_needed" | "bank_sync_failed" | "bank_balance_drift" | "email_received" | "email_failed" | "email_inbox_failed" | "reminder" | "transfer_link" | "transfer_unmatched" | "property_cost_row" | "property_cost_bill" | "property_cost_year" | "property_cost_document" | "holdings_mismatch";
+        InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched" | "questionnaire_open" | "bank_approval_needed" | "bank_sync_failed" | "bank_balance_drift" | "email_received" | "email_failed" | "email_inbox_failed" | "reminder" | "transfer_link" | "transfer_unmatched" | "property_cost_row" | "property_cost_bill" | "property_cost_year" | "property_cost_document" | "holdings_mismatch" | "price_source_failed" | "price_no_source";
         /**
          * IncomeInput
          * @description API read model (the table names its timestamp recorded_at, so not Record).
@@ -6704,6 +6892,63 @@ export interface components {
             /** Amount */
             amount: string;
         };
+        /** OverviewAccount */
+        OverviewAccount: {
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /** Label */
+            label: string;
+            /** Kind */
+            kind: string;
+            /** Positions */
+            positions?: components["schemas"]["OverviewPosition"][];
+            /** Value Eur */
+            value_eur: string;
+        };
+        /**
+         * OverviewPosition
+         * @description One asset on one account: units from the confirmed movements to `on`, the price
+         *     `rules.valuation.price_on` chose, and the value; `not_valued_reason` says why there is
+         *     none (valuation.not_valued past the last reconciled date, price.no_source). `from_report`
+         *     marks a price taken from a depot report (source statement) on a fund whose issuer has no
+         *     adapter: „Kurs aus dem letzten Bericht“ (D174 (4)).
+         */
+        OverviewPosition: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            kind: components["schemas"]["AssetKind"];
+            /** Name */
+            name: string;
+            /** Symbol */
+            symbol?: string | null;
+            /** Isin */
+            isin?: string | null;
+            /** Units */
+            units: string;
+            price?: components["schemas"]["PriceLabel"] | null;
+            /** Value Eur */
+            value_eur?: string | null;
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /** Not Valued Reason */
+            not_valued_reason?: string | null;
+            /**
+             * From Report
+             * @default false
+             */
+            from_report: boolean;
+            /** Reconciled Through */
+            reconciled_through?: string | null;
+        };
         /** Owner */
         Owner: {
             /**
@@ -7151,6 +7396,29 @@ export interface components {
              */
             treatment: "rent";
         };
+        /**
+         * PriceLabel
+         * @description Where a shown price comes from, in the screen's words (D174 (4)).
+         */
+        PriceLabel: {
+            source: components["schemas"]["PriceSourceKind"];
+            /**
+             * On
+             * Format: date
+             */
+            on: string;
+            /** Price Eur */
+            price_eur: string;
+            /** Issuer */
+            issuer?: string | null;
+        };
+        /**
+         * PriceSourceKind
+         * @description price.source (migration 0025). Named ...Kind because §11's PriceSource is the fetcher
+         *     protocol below. The precedence among one day's rows is rules.valuation's data.
+         * @enum {string}
+         */
+        PriceSourceKind: "trade" | "statement" | "issuer_nav" | "coingecko_daily" | "kraken_daily" | "ecb_fx" | "user";
         /** PriceSplit */
         PriceSplit: {
             /**
@@ -9765,6 +10033,20 @@ export interface components {
          */
         TransferUnlinkBody: {
             replacement: components["schemas"]["TransferLinkCreate"];
+        };
+        /**
+         * TypedPriceBody
+         * @description POST /assets/{id}/prices: a price typed by a person („Kurs eintragen“, source user;
+         *     it wins on its own day, D167 amended 13 Nov 2026).
+         */
+        TypedPriceBody: {
+            /**
+             * On
+             * Format: date
+             */
+            on: string;
+            /** Price Eur */
+            price_eur: string;
         };
         /** Unit */
         Unit: {
@@ -13686,6 +13968,136 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Transaction"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    assets_overview_api_assets_overview_get: {
+        parameters: {
+            query?: {
+                on?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetsOverview"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    assets_list_api_assets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetRow"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    asset_update_api_assets__asset_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetRow"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    asset_price_record_api_assets__asset_id__prices_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TypedPriceBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetPriceRow"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

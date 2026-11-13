@@ -337,6 +337,9 @@ def inbox(
         from .bank_sync import bank_sync_items  # it imports the statement services
 
         items += bank_sync_items(conn)
+        from .prices.overview import price_inbox_items  # phase 6 step 5b
+
+        items += price_inbox_items(conn, now)
     return sorted(items, key=lambda item: item.created_at, reverse=True)
 
 

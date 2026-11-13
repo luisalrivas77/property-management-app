@@ -3,10 +3,19 @@
 # §9, §14)
 #
 # Step 0 writes what an adapter's output becomes, not the adapter: each case holds the NAV
-# rows (schemas.household.NavPoint) an adapter returns from a recorded file. Step 5 records
-# the real files (an SPDR-style XLSX under tests/fixtures/phase6/samples/, invented values in
-# the issuer's layout), adds the parse of each to these cases, and records each adapter's URL
-# and the date it was read in §14.1.
+# rows (schemas.household.NavPoint) an adapter returns from a recorded file. Step 5b
+# (13 Nov 2026) recorded the issuers' files in their real layouts with invented values
+# under tests/fixtures/phase6/samples/ (spdr_navhist.xlsx, ishares_fund_download.xls; the
+# real files were read live on 13 Nov 2026 and never committed) and added `parse_cases`:
+# each names an adapter (services/prices/issuer_nav/<issuer>.py) and a sample, and expects
+# the ISIN, the NAV currency and the NAV rows the adapter reads from it, or the code of a
+# file it refuses. A case with `sample` takes its `navs` from that sample's parse (the
+# test checks they are equal), so the rows below come from a recorded file.
+#
+# Step 5b readings: the SPDR file has one NAV column in the currency its „NAV Currency:“
+# row names (not three currency columns, the step-0 reading); iShares states the NAV to two
+# decimals with a decimal comma and German month abbreviations, its currency in the Fund
+# Header's „USD 58,82“; a file whose ISIN differs from the registry's stores nothing.
 #
 # Recomputed on load (tests/fixture_models_phase6.py):
 # - stored: one price row per NAV day on or after the asset's first movement, source
@@ -18,7 +27,9 @@
 #   row, never before;
 # - a held ISIN with no adapter in the registry is valued from its latest report value
 #   (source statement), labelled „Kurs aus dem letzten Bericht“, with no card;
-# - a typed user price ranks below every fetched source on the same day (SOURCE_PRECEDENCE).
+# - a typed user price wins over every fetched source on its own day (SOURCE_PRECEDENCE,
+#   D167 amended 13 Nov 2026: it is how a person corrects a wrong fetched price, which the
+#   append-only, one-per-day table never replaces); the next day's NAV wins again.
 #
 # The key "on" is quoted: YAML 1.1 reads a bare on as true.
 # Invented ISINs, NAVs and rates.
@@ -31,7 +42,7 @@
 
 cases:
   - id: three_days_none_before_the_first_movement
-    pending: "phase 6 step 5 (the issuer adapters)"
+    sample: spdr_navhist
     first_movement_on: 2026-06-24
     navs:
       - {"on": 2026-06-23, nav: "80.95000000", currency: EUR}
@@ -45,9 +56,13 @@ cases:
         - {"on": 2026-06-26, price_eur: "81.70000000"}
 
   - id: usd_nav_converted
-    pending: "phase 6 step 5 (the issuer adapters)"
+    description: the iShares sample's days before the first movement are not stored
+    sample: ishares_fund_download
     first_movement_on: 2026-06-01
     navs:
+      - {"on": 2025-09-15, nav: "90.05000000", currency: USD}
+      - {"on": 2026-03-02, nav: "95.10000000", currency: USD}
+      - {"on": 2026-05-29, nav: "1002.50000000", currency: USD}
       - {"on": 2026-06-25, nav: "100.00000000", currency: USD}
       - {"on": 2026-06-26, nav: "81.20000000", currency: USD}
     rates:
@@ -59,7 +74,6 @@ cases:
         - {"on": 2026-06-26, price_eur: "74.83870968"}
 
   - id: unparsable_file_stores_nothing
-    pending: "phase 6 step 5 (the issuer adapters)"
     first_movement_on: 2026-06-01
     unparsable: true
     last_price_on: 2026-06-19
@@ -70,7 +84,6 @@ cases:
       warning: valuation.stale_price
 
   - id: seven_failed_days_raise_the_card
-    pending: "phase 6 step 5 (the issuer adapters)"
     first_movement_on: 2026-06-01
     failed_on: [2026-06-24, 2026-06-25, 2026-06-26, 2026-06-27, 2026-06-28, 2026-06-29, 2026-06-30]
     expect:
@@ -78,7 +91,6 @@ cases:
       card: price.source_failed
 
   - id: six_failed_days_raise_nothing
-    pending: "phase 6 step 5 (the issuer adapters)"
     first_movement_on: 2026-06-01
     failed_on: [2026-06-25, 2026-06-26, 2026-06-27, 2026-06-28, 2026-06-29, 2026-06-30]
     expect:
@@ -87,7 +99,6 @@ cases:
 
   - id: no_adapter_uses_the_report
     description: a held ISIN whose issuer has no adapter is valued from the latest report, without a card
-    pending: "phase 6 step 5 (the issuer adapters)"
     first_movement_on: 2026-01-15
     no_adapter: true
     prices:
@@ -98,8 +109,7 @@ cases:
       label: „Kurs aus dem letzten Bericht“
       card: null
 
-  - id: typed_price_below_every_fetched_one
-    pending: "phase 6 step 5 (the issuer adapters)"
+  - id: typed_price_wins_its_day
     first_movement_on: 2026-01-15
     navs:
       - {"on": 2026-06-30, nav: "82.10000000", currency: EUR}
@@ -108,4 +118,47 @@ cases:
     expect:
       stored:
         - {"on": 2026-06-30, price_eur: "82.10000000"}
-      valued_by: issuer_nav
+      valued_by: user
+
+parse_cases:
+  - id: spdr_navhist
+    description: State Street's NAV history XLSX, one EUR fund, newest first, disclaimer last
+    issuer: spdr
+    sample: spdr_navhist.xlsx
+    expect:
+      isin: IE000INVENT1
+      currency: EUR
+      navs:
+        - {"on": 2026-06-23, nav: "80.95000000", currency: EUR}
+        - {"on": 2026-06-24, nav: "81.10000000", currency: EUR}
+        - {"on": 2026-06-25, nav: "81.50000000", currency: EUR}
+        - {"on": 2026-06-26, nav: "81.70000000", currency: EUR}
+
+  - id: ishares_fund_download
+    description: >-
+      BlackRock's SpreadsheetML download: German months (Juni, Mai, März, Sept.), a decimal
+      comma and a thousands dot, the currency from the Fund Header, the ISIN from Key Facts
+    issuer: ishares
+    sample: ishares_fund_download.xls
+    expect:
+      isin: IE000INVENT2
+      currency: USD
+      navs:
+        - {"on": 2025-09-15, nav: "90.05000000", currency: USD}
+        - {"on": 2026-03-02, nav: "95.10000000", currency: USD}
+        - {"on": 2026-05-29, nav: "1002.50000000", currency: USD}
+        - {"on": 2026-06-25, nav: "100.00000000", currency: USD}
+        - {"on": 2026-06-26, nav: "81.20000000", currency: USD}
+
+  - id: spdr_refuses_another_file
+    description: a file that is not State Street's (here the iShares one) stores nothing
+    issuer: spdr
+    sample: ishares_fund_download.xls
+    expect:
+      error: parse
+
+  - id: ishares_refuses_another_file
+    issuer: ishares
+    sample: ecb_daily.xml
+    expect:
+      error: parse

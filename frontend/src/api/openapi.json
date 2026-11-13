@@ -4589,6 +4589,188 @@
         }
       }
     },
+    "/api/assets/overview": {
+      "get": {
+        "summary": "Assets Overview",
+        "description": "Valued on read from the stored prices; every figure names its source and day.",
+        "operationId": "assets_overview_api_assets_overview_get",
+        "parameters": [
+          {
+            "name": "on",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "On"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetsOverview"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/assets": {
+      "get": {
+        "summary": "Assets List",
+        "operationId": "assets_list_api_assets_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AssetRow"
+                  },
+                  "type": "array",
+                  "title": "Response Assets List Api Assets Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/assets/{asset_id}": {
+      "patch": {
+        "summary": "Asset Update",
+        "description": "„Kursquelle wählen“: the next daily fetch (07:00 UTC) prices the coin by these ids.",
+        "operationId": "asset_update_api_assets__asset_id__patch",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Asset Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetRow"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/assets/{asset_id}/prices": {
+      "post": {
+        "summary": "Asset Price Record",
+        "description": "„Kurs eintragen“: wins on its own day (D167 amended 13 Nov 2026).",
+        "operationId": "asset_price_record_api_assets__asset_id__prices_post",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Asset Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TypedPriceBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetPriceRow"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/accounts/{account_id}/bank-connection": {
       "post": {
         "summary": "Bank Connection Create",
@@ -9816,6 +9998,261 @@
         ],
         "title": "AssessedTax",
         "description": "§5.10: the tax as assessed. est = est_with + kindergeld when the allowances win, else\nest_without; Soli and church tax on est_with minus the §35a credit (§51a Abs. 2 S. 1)."
+      },
+      "AssetKind": {
+        "type": "string",
+        "enum": [
+          "cash",
+          "etf",
+          "stock",
+          "crypto"
+        ],
+        "title": "AssetKind",
+        "description": "asset.kind (migration 0025). EUR is an asset of kind cash, so an exchange's EUR\nbalance is a position like any other."
+      },
+      "AssetPatch": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "coingecko_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9-]{1,100}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coingecko Id"
+          },
+          "kraken_pair": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Z0-9]{1,20}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kraken Pair"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "AssetPatch",
+        "description": "PATCH /assets/{id}: the name and the price-source ids only (D167)."
+      },
+      "AssetPriceRow": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          },
+          "on": {
+            "type": "string",
+            "format": "date",
+            "title": "On"
+          },
+          "price_eur": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,8})?$",
+            "title": "Price Eur"
+          },
+          "source": {
+            "$ref": "#/components/schemas/PriceSourceKind"
+          },
+          "fetched_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Fetched At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "asset_id",
+          "on",
+          "price_eur",
+          "source",
+          "fetched_at"
+        ],
+        "title": "AssetPriceRow"
+      },
+      "AssetRow": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AssetKind"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol"
+          },
+          "isin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isin"
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$",
+            "title": "Currency"
+          },
+          "coingecko_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coingecko Id"
+          },
+          "kraken_pair": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kraken Pair"
+          },
+          "issuer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issuer"
+          },
+          "has_source": {
+            "type": "boolean",
+            "title": "Has Source"
+          },
+          "latest_price": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PriceLabel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "currency",
+          "has_source",
+          "updated_at"
+        ],
+        "title": "AssetRow",
+        "description": "GET /assets: an asset with how it is priced (D167 (1), D174 (2))."
+      },
+      "AssetsOverview": {
+        "properties": {
+          "on": {
+            "type": "string",
+            "format": "date",
+            "title": "On"
+          },
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/OverviewAccount"
+            },
+            "type": "array",
+            "title": "Accounts"
+          },
+          "total_eur": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Total Eur"
+          },
+          "by_kind": {
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+            },
+            "type": "object",
+            "title": "By Kind"
+          },
+          "stale_positions": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Stale Positions",
+            "default": 0
+          },
+          "unvalued_positions": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Unvalued Positions",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "on",
+          "total_eur"
+        ],
+        "title": "AssetsOverview",
+        "description": "GET /assets/overview: every depot and exchange account with its positions on `on`\n(today by default), their total and the split by class (Depot, Krypto)."
       },
       "AssociationFact": {
         "properties": {
@@ -15437,6 +15874,18 @@
               }
             ]
           },
+          "asset_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Id"
+          },
           "private_costs": {
             "items": {
               "$ref": "#/components/schemas/TaxInputCreate"
@@ -15490,7 +15939,9 @@
           "property_cost_bill",
           "property_cost_year",
           "property_cost_document",
-          "holdings_mismatch"
+          "holdings_mismatch",
+          "price_source_failed",
+          "price_no_source"
         ],
         "title": "InboxItemKind",
         "description": "GET /inbox (§8.3): one list, newest first."
@@ -17741,6 +18192,152 @@
         ],
         "title": "OtherInsuranceFact"
       },
+      "OverviewAccount": {
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "positions": {
+            "items": {
+              "$ref": "#/components/schemas/OverviewPosition"
+            },
+            "type": "array",
+            "title": "Positions"
+          },
+          "value_eur": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Value Eur"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "account_id",
+          "label",
+          "kind",
+          "value_eur"
+        ],
+        "title": "OverviewAccount"
+      },
+      "OverviewPosition": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AssetKind"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol"
+          },
+          "isin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isin"
+          },
+          "units": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,10})?$",
+            "title": "Units"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PriceLabel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "value_eur": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Eur"
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale",
+            "default": false
+          },
+          "not_valued_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Not Valued Reason"
+          },
+          "from_report": {
+            "type": "boolean",
+            "title": "From Report",
+            "default": false
+          },
+          "reconciled_through": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reconciled Through"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "asset_id",
+          "kind",
+          "name",
+          "units"
+        ],
+        "title": "OverviewPosition",
+        "description": "One asset on one account: units from the confirmed movements to `on`, the price\n`rules.valuation.price_on` chose, and the value; `not_valued_reason` says why there is\nnone (valuation.not_valued past the last reconciled date, price.no_source). `from_report`\nmarks a price taken from a depot report (source statement) on a fund whose issuer has no\nadapter: „Kurs aus dem letzten Bericht“ (D174 (4))."
+      },
       "Owner": {
         "properties": {
           "id": {
@@ -18653,6 +19250,57 @@
           "treatment"
         ],
         "title": "PreHandoverIncome"
+      },
+      "PriceLabel": {
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/PriceSourceKind"
+          },
+          "on": {
+            "type": "string",
+            "format": "date",
+            "title": "On"
+          },
+          "price_eur": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,8})?$",
+            "title": "Price Eur"
+          },
+          "issuer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issuer"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source",
+          "on",
+          "price_eur"
+        ],
+        "title": "PriceLabel",
+        "description": "Where a shown price comes from, in the screen's words (D174 (4))."
+      },
+      "PriceSourceKind": {
+        "type": "string",
+        "enum": [
+          "trade",
+          "statement",
+          "issuer_nav",
+          "coingecko_daily",
+          "kraken_daily",
+          "ecb_fx",
+          "user"
+        ],
+        "title": "PriceSourceKind",
+        "description": "price.source (migration 0025). Named ...Kind because §11's PriceSource is the fetcher\nprotocol below. The precedence among one day's rows is rules.valuation's data."
       },
       "PriceSplit": {
         "properties": {
@@ -25570,6 +26218,28 @@
         ],
         "title": "TransferUnlinkBody",
         "description": "POST /transfers/{id}/unlink: the link that replaces the wrong one (append-only, D162:\nthe old row names the new one in superseded_by)."
+      },
+      "TypedPriceBody": {
+        "properties": {
+          "on": {
+            "type": "string",
+            "format": "date",
+            "title": "On"
+          },
+          "price_eur": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,8})?$",
+            "title": "Price Eur"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "on",
+          "price_eur"
+        ],
+        "title": "TypedPriceBody",
+        "description": "POST /assets/{id}/prices: a price typed by a person („Kurs eintragen“, source user;\nit wins on its own day, D167 amended 13 Nov 2026)."
       },
       "Unit": {
         "properties": {

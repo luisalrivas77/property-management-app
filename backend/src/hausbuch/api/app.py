@@ -34,6 +34,7 @@ from .logging import RequestMiddleware
 from .routes import (
     accounts,
     allocations,
+    assets,
     auth,
     bank_sync,
     documents,
@@ -74,6 +75,7 @@ ROUTE_MODULES = (
     documents,
     proposals,
     accounts,
+    assets,
     bank_sync,
     statements,
     allocations,

@@ -1031,12 +1031,15 @@ class PriceSourceFailed(Schema):
 
 
 class PricesFetched(Schema):
-    """workspace.prices_fetched: one per daily run, counts only (§11)."""
+    """workspace.prices_fetched: one per daily run (§11). Step 5b adds the failed assets' ids
+    (never a price or an amount): D174's card counts an asset's failed days from these
+    events, on read, so no table holds a fetch's state."""
 
     sources: list[PriceSourceKind] = Field(min_length=1)
     assets: int = Field(ge=0)
     rows_new: int = Field(ge=0)
     assets_failed: int = Field(ge=0)
+    failed_asset_ids: list[UUID] = Field(default_factory=list)
 
 
 class ValuationSnapshotWritten(Schema):

@@ -216,6 +216,10 @@ export const RULE_CODE_TEXT: Record<string, string> = {
     "Dieser Bericht ist für dieses Depot und diesen Stichtag schon übernommen. Diesen Eintrag überspringen.",
   "depot.holdings_mismatch":
     "Der Depotbericht nennt andere Stückzahlen, als die gebuchten Abrechnungen ergeben. Bitte die fehlenden Wertpapierabrechnungen hochladen.",
+  // Phase 6 step 5b: prices (services/prices/overview.py)
+  "asset.not_crypto":
+    "Eine CoinGecko-ID oder ein Kraken-Paar gibt es nur für Kryptowährungen. Für einen Fonds bitte „Kurs eintragen“ nutzen.",
+  "asset.is_euro": "Der Euro hat immer den Kurs 1; dafür wird kein Kurs eingetragen.",
 };
 
 /** German text for a proposal's `error_code`: why reading the document failed or was
