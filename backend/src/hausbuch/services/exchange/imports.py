@@ -11,7 +11,10 @@ D178; step 5a). The parsers and the pure rules are `bison_csv`, `binance_csv` an
   each open withdrawal with its network, fee and transaction hash by a new row that
   supersedes the old one (D178 (4)).
 - `declare_holdings`: the balances the exchange shows, typed once per import; Σ movements
-  per asset to the import's last row against them (D166, D178 (6)), never bridged.
+  per asset to the import's last row against them (D166, D178 (6)), never bridged by code.
+- `book_correction`: „Differenz als Korrektur buchen“ (D178 amended, migration 0030): one
+  coin's difference booked by a person, with their reason, when the export misses a movement
+  the exchange does not list; then the import is checked again.
 - `confirm_withdrawals`, `confirm_movement`, `answer_movement`: a person's answers.
 - `exchange_overview`, `exchange_movements`, `exchange_inbox_items`: the reads.
 
@@ -51,6 +54,7 @@ from hausbuch.schemas.enums import (
 )
 from hausbuch.schemas.events import (
     AssetRecorded,
+    BalanceCorrected,
     EventType,
     MovementImportChecked,
     MovementImportRecorded,
@@ -61,6 +65,7 @@ from hausbuch.schemas.events import (
 from hausbuch.schemas.household import (
     AnswerMovementBody,
     AssetKind,
+    BalanceCorrectionBody,
     DeclareHoldingsBody,
     ExchangeImport,
     ExchangeMovement,
@@ -68,6 +73,7 @@ from hausbuch.schemas.household import (
     ExchangeOverview,
     ExchangePosition,
     ExchangeUpload,
+    HoldingBalance,
     HoldingSource,
     ImportBalance,
     MovementImport,
@@ -451,6 +457,7 @@ def _supersede(
             "document_id",
             "transaction_id",
             "status",
+            "note",
         )
     }
     values |= changes
@@ -676,6 +683,116 @@ def declare_holdings(
 
 def _refetch(conn: Connection, import_id: UUID) -> Row:
     return conn.execute(select(*_IMPORT_COLUMNS).where(import_table.c.id == import_id)).one()
+
+
+def _typed_now(conn: Connection, import_id: UUID) -> dict[UUID, Row]:
+    """The import's current typed balance per asset (source user, not superseded)."""
+    h = holding_table.c
+    return {
+        r.asset_id: r
+        for r in conn.execute(
+            select(h.asset_id, h.declared_units, h.reconciled, h.difference_units).where(
+                h.import_id == import_id,
+                h.source == HoldingSource.USER.value,
+                h.superseded_by.is_(None),
+            )
+        )
+    }
+
+
+def book_correction(
+    ctx: CommandContext, import_id: UUID, body: BalanceCorrectionBody
+) -> ExchangeImport:
+    """POST /movement-imports/{id}/corrections: „Differenz als Korrektur buchen“ (D178
+    amended, migration 0030). The export misses a movement the exchange itself does not list,
+    so a person books one coin's difference: a confirmed `balance_correction` of exactly the
+    typed balance's stored difference (the person types no amount), dated at the import's
+    last row, source user, no EUR leg, with the person's reason as its note. Then the import
+    is checked again with the same typed balances (declare_holdings), so it is reconciled when
+    that was the only difference. Never automatic; reversed only by a counter-correction after
+    a new typing.
+
+    Refused (RuleViolationError): an import that is not unreconciled
+    (exchange.correction_not_unreconciled), one with a later import on the account, whose
+    check the correction would change unseen (exchange.correction_not_latest), EUR, which
+    keeps D178 (6)'s rounding rule (exchange.correction_eur), a coin not typed for it or
+    agreeing already (exchange.correction_no_difference), and a coin whose movements changed
+    since the typing, so the difference shown is no longer the one booked
+    (exchange.correction_stale)."""
+    imported = require_row(ctx.conn, import_table, MOVEMENT_IMPORT, import_id, for_update=True)
+    _require_exchange(ctx.conn, imported.account_id)
+    if imported.status != ImportStatus.UNRECONCILED.value:
+        raise RuleViolationError(
+            [E.EXCHANGE_CORRECTION_NOT_UNRECONCILED], "this import's balances do not differ"
+        )
+    i = import_table.c
+    later = ctx.conn.execute(
+        select(i.id)
+        .where(i.account_id == imported.account_id, i.last_at > imported.last_at)
+        .limit(1)
+    ).first()
+    if later is not None:
+        raise RuleViolationError(
+            [E.EXCHANGE_CORRECTION_NOT_LATEST], "a later import of the account exists"
+        )
+    names = _symbols(ctx.conn, [body.asset_id])
+    if body.asset_id in names and names[body.asset_id].symbol == rules.EUR:
+        raise RuleViolationError([E.EXCHANGE_CORRECTION_EUR], "EUR keeps its rounding rule")
+    typed = _typed_now(ctx.conn, import_id)
+    balance = typed.get(body.asset_id)
+    if balance is None or balance.reconciled or not balance.difference_units:
+        raise RuleViolationError(
+            [E.EXCHANGE_CORRECTION_NO_DIFFERENCE], "this coin agrees with its typed balance"
+        )
+    held = _import_held(ctx.conn, imported).get(body.asset_id, Decimal(0))
+    if balance.declared_units - held != balance.difference_units:
+        raise RuleViolationError(
+            [E.EXCHANGE_CORRECTION_STALE], "the movements changed since the balance was typed"
+        )
+    quantity = balance.difference_units
+    movement_id = ctx.conn.execute(
+        insert(movement_table)
+        .values(
+            workspace_id=ctx.workspace_id,
+            account_id=imported.account_id,
+            asset_id=body.asset_id,
+            kind=MovementKind.BALANCE_CORRECTION.value,
+            quantity=quantity,
+            occurred_at=imported.last_at,
+            source=MovementSource.USER.value,
+            status=MovementStatus.CONFIRMED.value,
+            note=body.reason,
+            created_at=ctx.now,
+        )
+        .returning(movement_table.c.id)
+    ).scalar_one()
+    append_event(
+        ctx,
+        EventType.MOVEMENT_CONFIRMED,
+        movement_id,
+        MovementRecorded(
+            account_id=imported.account_id,
+            asset_id=body.asset_id,
+            kind=MovementKind.BALANCE_CORRECTION,
+            source=MovementSource.USER,
+        ),
+    )
+    append_event(
+        ctx,
+        EventType.ACCOUNT_BALANCE_CORRECTED,
+        imported.account_id,
+        BalanceCorrected(import_id=import_id, movement_id=movement_id, asset_id=body.asset_id),
+    )
+    return declare_holdings(
+        ctx,
+        import_id,
+        DeclareHoldingsBody(
+            balances=[
+                HoldingBalance(asset_id=asset_id, units=row.declared_units)
+                for asset_id, row in typed.items()
+            ]
+        ),
+    )
 
 
 # --- Answers ----------------------------------------------------------------------------------
@@ -1023,6 +1140,7 @@ def _german_day(day: date) -> str:
 __all__ = [
     "answer_movement",
     "asset_for_symbol",
+    "book_correction",
     "confirm_movement",
     "confirm_withdrawals",
     "declare_holdings",

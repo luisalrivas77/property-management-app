@@ -10,6 +10,7 @@ from starlette.concurrency import run_in_threadpool
 
 from hausbuch.schemas.household import (
     AnswerMovementBody,
+    BalanceCorrectionBody,
     DeclareHoldingsBody,
     ExchangeImport,
     ExchangeMovementRow,
@@ -101,6 +102,18 @@ def movement_import_holdings(
     """„Bestand laut Börse eingeben“: the balance per coin the exchange shows; may be sent
     again to correct it. 422 exchange.balance_missing, exchange.balance_unknown_asset."""
     return cmd.run(imports.declare_holdings, import_id, body)
+
+
+@router.post("/movement-imports/{import_id}/corrections")
+def movement_import_correction(
+    import_id: UUID, body: BalanceCorrectionBody, cmd: Cmd
+) -> ExchangeImport:
+    """„Differenz als Korrektur buchen“ (D178 amended): one coin's difference between the
+    typed balance and the export, booked once as a correction with the person's reason
+    (the amount is the stored difference, never typed), then the import checked again.
+    422 exchange.correction_not_unreconciled, exchange.correction_not_latest,
+    exchange.correction_eur, exchange.correction_no_difference, exchange.correction_stale."""
+    return cmd.run(imports.book_correction, import_id, body)
 
 
 @router.post("/movement-imports/{import_id}/withdrawals/confirm")

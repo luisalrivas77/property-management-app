@@ -196,6 +196,12 @@ EXCHANGE_PROVIDER_UNKNOWN = "exchange.provider_unknown"  # an exchange other tha
 EXCHANGE_ANSWER_INVALID = "exchange.answer_invalid"  # a kind that does not fit the movement
 EXCHANGE_MOVEMENT_DONE = "exchange.movement_done"  # confirmed or corrected already
 EXCHANGE_BALANCE_MISSING = "exchange.balance_missing"  # an asset held but not typed
+# D178 amended (0030): „Differenz als Korrektur buchen“, refused when ...
+EXCHANGE_CORRECTION_NOT_UNRECONCILED = "exchange.correction_not_unreconciled"  # nothing differs
+EXCHANGE_CORRECTION_NOT_LATEST = "exchange.correction_not_latest"  # a later import exists
+EXCHANGE_CORRECTION_EUR = "exchange.correction_eur"  # EUR keeps D178 (6)'s rounding rule
+EXCHANGE_CORRECTION_NO_DIFFERENCE = "exchange.correction_no_difference"  # the coin agrees
+EXCHANGE_CORRECTION_STALE = "exchange.correction_stale"  # movements changed since the typing
 PRICE_NO_SOURCE = "price.no_source"  # an asset not in the registry (D167)
 PRICE_SOURCE_FAILED = "price.source_failed"  # an issuer's NAV missing seven days (D174)
 VALUATION_STALE_PRICE = "valuation.stale_price"  # the price is older than 7 days (D167)
