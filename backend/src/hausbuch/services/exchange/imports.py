@@ -526,10 +526,14 @@ def _held_by_asset(stored: Sequence[_Stored], conn: Connection) -> dict[UUID, De
     return {ids[symbol]: units for symbol, units in by_symbol.items() if symbol in ids}
 
 
-def _import_held(conn: Connection, imported: Row) -> dict[UUID, Decimal]:
+def _import_stored(conn: Connection, imported: Row) -> list[_Stored]:
+    """The account's current movements through the import's last row."""
     m = movement_table.c
-    stored = _current(conn, imported.account_id, m.occurred_at <= imported.last_at)
-    return _held_by_asset(stored, conn)
+    return _current(conn, imported.account_id, m.occurred_at <= imported.last_at)
+
+
+def _import_held(conn: Connection, imported: Row) -> dict[UUID, Decimal]:
+    return _held_by_asset(_import_stored(conn, imported), conn)
 
 
 def declare_holdings(
@@ -540,10 +544,16 @@ def declare_holdings(
     (exchange.balance_missing); an asset the account never moved is refused
     (exchange.balance_unknown_asset). Each typed balance becomes a holding_statement (source
     user, as of the last row's day), replacing the import's earlier typing of that asset; the
-    import is reconciled when every typed balance equals Σ movements, else unreconciled with
-    the difference named per asset, never bridged. Typing again re-checks."""
+    import is reconciled when every typed coin equals Σ movements and the typed EUR lies
+    within the rounding bound of the account's rounded EUR legs through the import
+    (rules.exchange.agrees, D178 (6) as amended), else unreconciled with the difference named
+    per asset, never bridged. The difference is stored on a reconciled EUR too. Typing again
+    re-checks."""
     imported = require_row(ctx.conn, import_table, MOVEMENT_IMPORT, import_id, for_update=True)
-    held = _import_held(ctx.conn, imported)
+    account = _require_exchange(ctx.conn, imported.account_id)
+    stored = _import_stored(ctx.conn, imported)
+    held = _held_by_asset(stored, ctx.conn)
+    legs = rules.rounded_eur_legs(stored, account.provider or "")
     typed = {b.asset_id: b.units for b in body.balances}
     unknown = [a for a in typed if a not in held]
     if unknown:
@@ -565,10 +575,11 @@ def declare_holdings(
             )
         )
     }
+    names = _symbols(ctx.conn, held)
     mismatched = 0
     for asset_id, units in typed.items():
         difference = units - held[asset_id]
-        reconciled = difference == 0
+        reconciled = rules.agrees(names[asset_id].symbol or "", difference, legs)
         mismatched += not reconciled
         new_id = ctx.conn.execute(
             insert(holding_table)
@@ -747,7 +758,7 @@ def exchange_overview(conn: Connection, account_id: UUID) -> ExchangeOverview:
     h = holding_table.c
     last_typed = {}
     for r in conn.execute(
-        select(h.asset_id, h.as_of, h.declared_units, h.reconciled)
+        select(h.asset_id, h.as_of, h.declared_units, h.reconciled, h.difference_units)
         .where(
             h.account_id == account_id,
             h.source == HoldingSource.USER.value,
@@ -765,6 +776,9 @@ def exchange_overview(conn: Connection, account_id: UUID) -> ExchangeOverview:
             typed_units=last_typed[asset_id].declared_units if asset_id in last_typed else None,
             typed_as_of=last_typed[asset_id].as_of if asset_id in last_typed else None,
             reconciled=last_typed[asset_id].reconciled if asset_id in last_typed else None,
+            difference_units=(
+                last_typed[asset_id].difference_units if asset_id in last_typed else None
+            ),
         )
         for asset_id, units in held.items()
     ]

@@ -285,6 +285,15 @@ function reconciledPill(reconciled: boolean | null | undefined) {
   return <span className="badge badge-warn">noch nicht eingegeben</span>;
 }
 
+/** D178 (6) as amended: a EUR balance that agrees only within the rounding of the EUR legs
+ * keeps its difference; say so instead of a bare "stimmt". */
+function roundingText(reconciled: boolean | null | undefined, difference: string | null | undefined): string | null {
+  if (reconciled !== true || difference == null || /^-?0*\.?0*$/.test(difference)) return null;
+  // Display only: the check itself is the backend's Decimal rule.
+  const cents = Math.abs(Number(difference)) * 100;
+  return `innerhalb der Rundung (${cents < 1 ? "unter 1 Cent" : `${Math.round(cents)} Cent`})`;
+}
+
 function PositionsTable({ overview }: { overview: ExchangeOverview }) {
   if ((overview.positions ?? []).length === 0) return <p className="muted">Noch kein Export eingelesen.</p>;
   return (
@@ -315,7 +324,12 @@ function PositionsTable({ overview }: { overview: ExchangeOverview }) {
                 {formatUnits(position.typed_units)}
                 {position.typed_as_of ? <p className="cell-detail">am {formatDate(position.typed_as_of)}</p> : null}
               </td>
-              <td>{reconciledPill(position.reconciled)}</td>
+              <td>
+                {reconciledPill(position.reconciled)}
+                {roundingText(position.reconciled, position.difference_units) ? (
+                  <p className="cell-detail">{roundingText(position.reconciled, position.difference_units)}</p>
+                ) : null}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -357,6 +371,7 @@ function ExchangeImportsTable({
           {imports.map((imp) => {
             const withdrawals = openWithdrawals(imp, movements);
             const wrong = (imp.balances ?? []).filter((balance) => balance.reconciled === false);
+            const rounded = (imp.balances ?? []).filter((balance) => roundingText(balance.reconciled, balance.difference_units));
             return (
               <tr key={imp.id}>
                 <td>
@@ -371,6 +386,11 @@ function ExchangeImportsTable({
                   <span className={imp.status === "reconciled" ? "badge" : imp.status === "imported" ? "badge badge-warn" : "badge badge-danger"}>
                     {imp.status === "imported" ? "Bestand fehlt" : IMPORT_STATUS[imp.status]}
                   </span>
+                  {rounded.map((balance) => (
+                    <p key={balance.asset_id} className="cell-detail">
+                      {balance.symbol}: {roundingText(balance.reconciled, balance.difference_units)}
+                    </p>
+                  ))}
                   {wrong.map((balance) => (
                     <p key={balance.asset_id} className="cell-detail">
                       {balance.symbol}: laut Börse {formatUnits(balance.typed)}, laut Export {formatUnits(balance.held)}

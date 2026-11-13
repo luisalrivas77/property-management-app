@@ -54,8 +54,12 @@
 #   up to 8 decimals (most trade seconds sum to a sub-cent amount), so the summed EUR leg is
 #   rounded to the cent, half up (`sub_cent_eur_leg_rounded`). An EUR movement's eur_amount is
 #   its quantity rounded the same way; its quantity keeps every decimal. The EUR position of
-#   D178 (6) is therefore exact to the cent per trade, not to Binance's eighth decimal: on the
-#   real file a typed EUR balance can differ by a few cents (reported as a spec question).
+#   D178 (6) is therefore exact to the cent per trade, not to Binance's eighth decimal, so
+#   (D178 (6) as amended 13 Nov 2026) a typed EUR reconciles when |typed - Σ| <= 0.005 x
+#   (rounded EUR legs + 1): each trade leg with an eur_amount through the import is one
+#   rounded leg, the + 1 is Binance's own display of the balance. It is shown reconciled with
+#   the note „innerhalb der Rundung (x Cent)“ and its difference kept; coins stay exact
+#   (`typed_eur_within_rounding` and the cases after it).
 # - rows_total counts the movements the file gives (a trade's fills are one movement per coin
 #   and role), so rows_new + rows_skipped = rows_total, as for BISON.
 # - The dedup hash takes the summed amount without trailing zeros, so a re-export that writes
@@ -344,8 +348,8 @@ cases:
         - {asset: EUR, reconciled: true, difference_units: "0"}
         - {asset: BTC, reconciled: true, difference_units: "0"}
 
-  - id: typed_balance_does_not_match
-    description: a typed EUR balance one cent off is named for EUR alone, never bridged
+  - id: typed_eur_within_rounding
+    description: one rounded EUR leg allows 0.005 x (1 + 1) = 0.01 (D178 (6) as amended); a typed EUR one cent off lies on the bound, reconciled with its difference kept for the note „innerhalb der Rundung (1 Cent)“
     transactions: |
       User ID,Time,Account,Operation,Coin,Change,Remark
       987654321,2026-03-02 10:00:00,Spot,Transaction Fee,BTC,-0.000004,
@@ -361,7 +365,83 @@ cases:
         - {occurred_at: "2026-03-01T08:00:00Z", asset: EUR, kind: internal_transfer_in, status: confirmed, quantity: "500", eur_amount: "500.00"}
         - {occurred_at: "2026-03-02T10:00:00Z", asset: BTC, kind: acquisition, status: confirmed, quantity: "0.004", eur_amount: "-250.00"}
         - {occurred_at: "2026-03-02T10:00:00Z", asset: BTC, kind: fee, status: confirmed, quantity: "-0.000004", fee_quantity: "0.000004"}
+      status: reconciled
+      assets:
+        - {asset: EUR, reconciled: true, difference_units: "0.01"}
+        - {asset: BTC, reconciled: true, difference_units: "0"}
+
+  - id: typed_balance_does_not_match
+    description: a typed EUR balance two cents off is outside the bound of one rounded leg (0.01) and is named for EUR alone, never bridged
+    transactions: |
+      User ID,Time,Account,Operation,Coin,Change,Remark
+      987654321,2026-03-02 10:00:00,Spot,Transaction Fee,BTC,-0.000004,
+      987654321,2026-03-02 10:00:00,Spot,Transaction Spend,EUR,-250,
+      987654321,2026-03-02 10:00:00,Spot,Transaction Buy,BTC,0.004,
+      987654321,2026-03-01 08:00:00,Spot,Deposit,EUR,500,
+    typed: {EUR: "250.02", BTC: "0.003996"}
+    expect:
+      rows_total: 3
+      rows_new: 3
+      rows_skipped: 0
+      movements:
+        - {occurred_at: "2026-03-01T08:00:00Z", asset: EUR, kind: internal_transfer_in, status: confirmed, quantity: "500", eur_amount: "500.00"}
+        - {occurred_at: "2026-03-02T10:00:00Z", asset: BTC, kind: acquisition, status: confirmed, quantity: "0.004", eur_amount: "-250.00"}
+        - {occurred_at: "2026-03-02T10:00:00Z", asset: BTC, kind: fee, status: confirmed, quantity: "-0.000004", fee_quantity: "0.000004"}
       status: unreconciled
       assets:
-        - {asset: EUR, reconciled: false, difference_units: "0.01", error: exchange.unreconciled}
+        - {asset: EUR, reconciled: false, difference_units: "0.02", error: exchange.unreconciled}
         - {asset: BTC, reconciled: true, difference_units: "0"}
+
+  - id: typed_coin_off_is_never_within_rounding
+    description: the rounding bound is EUR's alone; a coin one unit of its last decimal off is unreconciled while the EUR within the bound stays reconciled
+    transactions: |
+      User ID,Time,Account,Operation,Coin,Change,Remark
+      987654321,2026-03-02 10:00:00,Spot,Transaction Fee,BTC,-0.000004,
+      987654321,2026-03-02 10:00:00,Spot,Transaction Spend,EUR,-250,
+      987654321,2026-03-02 10:00:00,Spot,Transaction Buy,BTC,0.004,
+      987654321,2026-03-01 08:00:00,Spot,Deposit,EUR,500,
+    typed: {EUR: "250.01", BTC: "0.003997"}
+    expect:
+      rows_total: 3
+      rows_new: 3
+      rows_skipped: 0
+      movements:
+        - {occurred_at: "2026-03-01T08:00:00Z", asset: EUR, kind: internal_transfer_in, status: confirmed, quantity: "500", eur_amount: "500.00"}
+        - {occurred_at: "2026-03-02T10:00:00Z", asset: BTC, kind: acquisition, status: confirmed, quantity: "0.004", eur_amount: "-250.00"}
+        - {occurred_at: "2026-03-02T10:00:00Z", asset: BTC, kind: fee, status: confirmed, quantity: "-0.000004", fee_quantity: "0.000004"}
+      status: unreconciled
+      assets:
+        - {asset: EUR, reconciled: true, difference_units: "0.01"}
+        - {asset: BTC, reconciled: false, difference_units: "0.000001", error: exchange.unreconciled}
+
+  - id: typed_eur_without_trades_display_rounding_only
+    description: with no trade leg the bound is the display's half cent alone; a deposit of 100.004 shown as 100.00 is reconciled, shown as 99.99 it would not be
+    transactions: |
+      User ID,Time,Account,Operation,Coin,Change,Remark
+      987654321,2026-03-01 08:00:00,Spot,Deposit,EUR,100.004,
+    typed: {EUR: "100.00"}
+    expect:
+      rows_total: 1
+      rows_new: 1
+      rows_skipped: 0
+      movements:
+        - {occurred_at: "2026-03-01T08:00:00Z", asset: EUR, kind: internal_transfer_in, status: confirmed, quantity: "100.004", eur_amount: "100.00"}
+      status: reconciled
+      assets:
+        - {asset: EUR, reconciled: true, difference_units: "-0.004"}
+
+  - id: typed_eur_without_trades_beyond_display_rounding
+    description: the same deposit typed as 99.99 is 0.014 off, beyond the display's half cent
+    transactions: |
+      User ID,Time,Account,Operation,Coin,Change,Remark
+      987654321,2026-03-01 08:00:00,Spot,Deposit,EUR,100.004,
+    typed: {EUR: "99.99"}
+    expect:
+      rows_total: 1
+      rows_new: 1
+      rows_skipped: 0
+      movements:
+        - {occurred_at: "2026-03-01T08:00:00Z", asset: EUR, kind: internal_transfer_in, status: confirmed, quantity: "100.004", eur_amount: "100.00"}
+      status: unreconciled
+      assets:
+        - {asset: EUR, reconciled: false, difference_units: "-0.014", error: exchange.unreconciled}

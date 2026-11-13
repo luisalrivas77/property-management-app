@@ -403,6 +403,44 @@ def test_binance_withdrawals_completed_by_the_history_uploaded_later(
     assert len(superseded) == 1 and superseded[0]["document_id"] is not None
 
 
+TYPED_BINANCE = [
+    c for c in BINANCE.cases if c.typed is not None and c.stored is None and c.withdrawals is None
+]
+
+
+@pytest.mark.parametrize("case", TYPED_BINANCE, ids=lambda c: c.id)
+def test_binance_typed_balances_reconcile_within_the_eur_rounding(
+    case, run, read, blob_store, fresh_workspaces
+):
+    """D178 (6) as amended: declare_holdings counts the account's rounded EUR legs through the
+    import, reconciles EUR within their bound (the difference kept), coins exactly."""
+    ws, _ = fresh_workspaces
+    account = _exchange(run, ws, provider="Binance")
+    imported = _upload(run, blob_store, ws, account.id, _zip(case.transactions)).movement_import
+    ids = {p.symbol: p.asset_id for p in read(ws, imports.exchange_overview, account.id).positions}
+    checked = run(
+        ws,
+        imports.declare_holdings,
+        imported.id,
+        DeclareHoldingsBody(
+            balances=[{"asset_id": ids[a], "units": u} for a, u in case.typed.items()]
+        ),
+        now=T0 + timedelta(minutes=5),
+    )
+    assert checked.status is case.expect.status
+    by_symbol = {b.symbol: b for b in checked.balances}
+    assert [
+        (a.asset, by_symbol[a.asset].reconciled, by_symbol[a.asset].difference_units)
+        for a in case.expect.assets
+    ] == [(a.asset, a.reconciled, a.difference_units) for a in case.expect.assets]
+    positions = {p.symbol: p for p in read(ws, imports.exchange_overview, account.id).positions}
+    for a in case.expect.assets:
+        assert (positions[a.asset].reconciled, positions[a.asset].difference_units) == (
+            a.reconciled,
+            a.difference_units,
+        )
+
+
 def test_binance_typed_balances_and_a_longer_export(run, read, blob_store, fresh_workspaces):
     ws, _ = fresh_workspaces
     account = _exchange(run, ws, provider="Binance")

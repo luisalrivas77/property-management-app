@@ -13,6 +13,9 @@ phase 6 step 5a.
   withdrawal (same coin, Amount + Fee = the amount sent, within one hour before).
 - `positions(movements)`, `reconcile(held, typed)`: the typed balance per asset (D166, D178
   (6)): Σ movements per asset, EUR plus Σ eur_amount of the acquisitions and disposals.
+  Coins must agree exactly; EUR within the rounding bound `eur_tolerance` (D178 (6) as
+  amended 13 Nov 2026): each EUR leg code rounded to the cent is off by at most half a cent,
+  and the exchange's own display of the typed balance by one more half cent.
 
 Nothing here reads a User ID or an address: the parsers drop them (D178 (2)).
 """
@@ -40,6 +43,10 @@ EUR = "EUR"
 BINANCE, BISON = "Binance", "BISON"
 EXCHANGE_PROVIDERS = (BINANCE, BISON)
 CENT = Decimal("0.01")
+HALF_CENT = Decimal("0.005")
+# The exchanges whose trade EUR legs code rounds to the cent (Binance writes up to 8
+# decimals); BISON's EUR amounts are taken as given.
+ROUNDS_EUR_LEGS = frozenset({BINANCE})
 # D178 (3): the history's row lies within one hour before the transaction history's row.
 WITHDRAWAL_WINDOW = timedelta(hours=1)
 COMPLETED = "Completed"
@@ -384,16 +391,44 @@ def positions(
     return held
 
 
-def reconcile(held: dict[str, Decimal], typed: dict[str, Decimal]) -> list[AssetCheck]:
-    """Each typed asset against the account's position: equal -> reconciled, else the
-    difference (typed - held) is named, never bridged."""
-    return [
-        AssetCheck(
-            asset=asset,
-            held=held.get(asset, Decimal(0)),
-            typed=units,
-            reconciled=units == held.get(asset, Decimal(0)),
-            difference_units=units - held.get(asset, Decimal(0)),
+def rounded_eur_legs(movements: Iterable[Moved], provider: str) -> int:
+    """How many EUR legs code rounded to the cent among these movements: on an exchange in
+    ROUNDS_EUR_LEGS every acquisition and disposal with an eur_amount (the same legs
+    `positions` adds to EUR), else none."""
+    if provider not in ROUNDS_EUR_LEGS:
+        return 0
+    return sum(1 for m in movements if m.kind in TRADE_KINDS and m.eur_amount is not None)
+
+
+def eur_tolerance(rounded_legs: int) -> Decimal:
+    """D178 (6) as amended: the most the EUR position can differ from the exchange's display
+    by rounding alone, half a cent per rounded leg plus half a cent for the display."""
+    return HALF_CENT * (rounded_legs + 1)
+
+
+def agrees(asset: str, difference: Decimal, eur_rounded_legs: int = 0) -> bool:
+    """A typed asset agrees with its position: a coin exactly, EUR within eur_tolerance."""
+    if asset == EUR:
+        return abs(difference) <= eur_tolerance(eur_rounded_legs)
+    return difference == 0
+
+
+def reconcile(
+    held: dict[str, Decimal], typed: dict[str, Decimal], *, eur_rounded_legs: int = 0
+) -> list[AssetCheck]:
+    """Each typed asset against the account's position: agreeing (`agrees`) -> reconciled,
+    else the difference (typed - held) is named, never bridged. The difference is kept on a
+    reconciled EUR too, so the page can say it lies within the rounding."""
+    checks = []
+    for asset, units in typed.items():
+        difference = units - held.get(asset, Decimal(0))
+        checks.append(
+            AssetCheck(
+                asset=asset,
+                held=held.get(asset, Decimal(0)),
+                typed=units,
+                reconciled=agrees(asset, difference, eur_rounded_legs),
+                difference_units=difference,
+            )
         )
-        for asset, units in typed.items()
-    ]
+    return checks

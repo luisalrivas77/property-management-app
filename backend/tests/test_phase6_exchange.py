@@ -72,7 +72,9 @@ def test_bison_movements(case):
             assert movement.position == expected.position
     if case.typed is not None:
         held = exchange.positions((m for _, m in kept), case.held_before)
-        checks = exchange.reconcile(held, case.typed)
+        legs = exchange.rounded_eur_legs((m for _, m in kept), exchange.BISON)
+        assert legs == 0  # BISON's EUR amounts are taken as given
+        checks = exchange.reconcile(held, case.typed, eur_rounded_legs=legs)
         assert [(c.asset, c.reconciled, c.difference_units) for c in checks] == [
             (a.asset, a.reconciled, a.difference_units) for a in case.expect.assets
         ]
@@ -139,7 +141,8 @@ def test_binance_import(case, wrap):
     todo = E.EXCHANGE_WITHDRAWAL_HISTORY_MISSING if open_withdrawal else None
     assert todo == expect.todo
     if case.typed is not None:
-        checks = exchange.reconcile(exchange.positions(new), case.typed)
+        legs = exchange.rounded_eur_legs(new, exchange.BINANCE)
+        checks = exchange.reconcile(exchange.positions(new), case.typed, eur_rounded_legs=legs)
         assert [(c.asset, c.reconciled, c.difference_units) for c in checks] == [
             (a.asset, a.reconciled, a.difference_units) for a in expect.assets
         ]

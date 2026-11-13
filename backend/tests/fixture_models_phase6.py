@@ -1235,15 +1235,22 @@ class BinanceCase(_Case):
                 raise ValueError(f"{self.id}: a status needs typed balances")
             return self
         held = self.positions()
-        assets = [
-            AssetBalanceExpect(
-                asset=asset,
-                reconciled=units == held.get(asset, Decimal(0)),
-                difference_units=units - held.get(asset, Decimal(0)),
-                error=None if units == held.get(asset, Decimal(0)) else E.EXCHANGE_UNRECONCILED,
+        # D178 (6) as amended: a coin exactly; EUR within half a cent per rounded EUR leg
+        # (every trade leg with an eur_amount) plus half a cent for Binance's own display.
+        legs = sum(1 for m in moves if m.kind in _TRADE and m.eur_amount is not None)
+        bound = Decimal("0.005") * (legs + 1)
+        assets = []
+        for asset, units in self.typed.items():
+            difference = units - held.get(asset, Decimal(0))
+            agrees = abs(difference) <= bound if asset == "EUR" else difference == 0
+            assets.append(
+                AssetBalanceExpect(
+                    asset=asset,
+                    reconciled=agrees,
+                    difference_units=difference,
+                    error=None if agrees else E.EXCHANGE_UNRECONCILED,
+                )
             )
-            for asset, units in self.typed.items()
-        ]
         status = (
             ImportStatus.RECONCILED
             if all(a.reconciled for a in assets)

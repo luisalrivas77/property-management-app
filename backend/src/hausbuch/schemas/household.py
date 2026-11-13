@@ -335,7 +335,7 @@ class AssetCheck(Schema):
     held: Quantity
     typed: NonNegativeQuantity
     reconciled: bool
-    difference_units: Quantity  # typed - held
+    difference_units: Quantity  # typed - held; non-zero on a EUR within the rounding bound
 
 
 class MovementImportFormat(StrEnum):
@@ -445,6 +445,8 @@ class ExchangePosition(Schema):
     typed_units: NonNegativeQuantity | None = None
     typed_as_of: date | None = None
     reconciled: bool | None = None
+    # typed - held at the typing; non-zero on a reconciled EUR within the rounding bound
+    difference_units: Quantity | None = None
 
 
 class ExchangeOverview(Schema):
