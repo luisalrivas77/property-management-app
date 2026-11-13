@@ -17,11 +17,12 @@ from api_support import (
     upload,
 )
 from db.db_support import _admin
-from sqlalchemy import insert
+from sqlalchemy import insert, update
 
 from hausbuch.api.app import create_app
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import ai_call as ai_call_table
+from hausbuch.db.tables import document as document_table
 from hausbuch.jobs import enqueue
 from hausbuch.schemas.ai import ClassifyOutput, ExtractedValue, SourceRef
 from hausbuch.schemas.enums import ActorType, DocumentSubtype, DocumentType
@@ -274,6 +275,14 @@ def test_a_depot_document_and_its_card_explain_it_in_plain_words(client_a, app_e
     document_id, proposal_id = body["document"]["id"], body["proposal_id"]
     ws = UUID(body["document"]["workspace_id"])
     _read_by_job(app_engine, ws, UUID(proposal_id), UUID(document_id), TRADE, TRADE_VALUES)
+    # The document job records the kind from the text layer (jobs.document_read
+    # _note_depot_kind); this test reports the reading without running the job.
+    with workspace_transaction(app_engine, ws) as conn:
+        conn.execute(
+            update(document_table)
+            .where(document_table.c.id == UUID(document_id))
+            .values(depot_kind="wertpapierabrechnung_kauf")
+        )
 
     explanation = ok(client_a.get(f"/api/documents/{document_id}"))["explanation"]
     assert explanation["was"].startswith("Wertpapierabrechnung (Kauf): die Bestätigung")
