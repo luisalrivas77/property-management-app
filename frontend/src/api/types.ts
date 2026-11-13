@@ -9324,6 +9324,18 @@ export interface components {
             amount: string;
             /** Counterparty Name */
             counterparty_name?: string | null;
+            account_kind?: components["schemas"]["AccountKind"] | null;
+            booked_category?: components["schemas"]["AllocationCategory"] | null;
+            /**
+             * Booked As Transfer
+             * @default false
+             */
+            booked_as_transfer: boolean;
+            /**
+             * Rebook On Link
+             * @default false
+             */
+            rebook_on_link: boolean;
         };
         /** TransferLink */
         TransferLink: {
@@ -9376,6 +9388,31 @@ export interface components {
          * @enum {string}
          */
         TransferLinkKind: "bank" | "exchange_eur" | "depot_cash";
+        /**
+         * TransferLinkRequest
+         * @description POST /transfers' body. rebook (D176 (4), review of step 2b): a leg booked as something
+         *     other than a transfer (typically a card bill answered hh_credit_card before the card
+         *     account existed) is first re-booked as internal_transfer_out or _in by the person's answer
+         *     (method user: the click is the confirmation), then the two are linked. Allowed only for a
+         *     bank line tied to the other leg by an own IBAN (one leg names the other's account IBAN or
+         *     the card's confirmed payment IBAN); otherwise transfer.legs_invalid.
+         */
+        TransferLinkRequest: {
+            kind: components["schemas"]["TransferLinkKind"];
+            /** Out Transaction Id */
+            out_transaction_id?: string | null;
+            /** Out Movement Id */
+            out_movement_id?: string | null;
+            /** In Transaction Id */
+            in_transaction_id?: string | null;
+            /** In Movement Id */
+            in_movement_id?: string | null;
+            /**
+             * Rebook
+             * @default false
+             */
+            rebook: boolean;
+        };
         /**
          * TransferLinkView
          * @description GET /transfers?month=: a current link with both legs.
@@ -13815,7 +13852,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["TransferLinkCreate"];
+                "application/json": components["schemas"]["TransferLinkRequest"];
             };
         };
         responses: {

@@ -14,7 +14,7 @@ from decimal import Decimal
 import pytest
 from db.db_support import TEST_IBAN_KEY
 from db.matching_support import World
-from db.test_services_private_matching import NOW, Private
+from db.test_services_private_matching import NOW, Private, _answer_line
 from sqlalchemy import insert, select, update
 
 from hausbuch.db.session import workspace_transaction
@@ -25,8 +25,14 @@ from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.db.tables import transfer_link as link_table
 from hausbuch.jobs import enqueue
 from hausbuch.schemas.enums import ImportStatus
-from hausbuch.schemas.household import OpenTransferCode, TransferLinkKind, TransferMatchedBy
-from hausbuch.services import matching, transfers
+from hausbuch.schemas.household import (
+    OpenTransferCode,
+    TransferLinkKind,
+    TransferLinkRequest,
+    TransferMatchedBy,
+)
+from hausbuch.services import household, matching, transfers
+from hausbuch.services.errors import RuleViolationError
 from hausbuch.services.iban import protect_iban
 
 pytestmark = pytest.mark.db
@@ -107,6 +113,28 @@ class Card:
                     amount=Decimal(amount),
                     booking_text="Bezahlung",
                     purpose="Lastschrift",
+                    bank_reference=str(uuid.uuid4().int)[:10],
+                    created_at=self.world.now,
+                )
+                .returning(transaction_table.c.id)
+            ).scalar_one()
+
+    def purchase(self, booking_date: date, amount: str, merchant: str) -> uuid.UUID:
+        """A purchase on the card: a debit naming its merchant."""
+        with workspace_transaction(self.world.engine, self.world.ws) as conn:
+            return conn.execute(
+                insert(transaction_table)
+                .values(
+                    workspace_id=self.world.ws,
+                    account_id=self.account_id,
+                    import_id=self.import_id,
+                    line_hash=hashlib.sha256(uuid.uuid4().bytes).digest(),
+                    booking_date=booking_date,
+                    value_date=booking_date,
+                    amount=Decimal(amount),
+                    counterparty_name=merchant,
+                    booking_text="Kauf",
+                    purpose=merchant,
                     bank_reference=str(uuid.uuid4().int)[:10],
                     created_at=self.world.now,
                 )
@@ -259,3 +287,89 @@ def test_two_cards_with_one_payment_iban_and_one_amount_ask_which(world, giro):
     [card] = [o for o in world.query(transfers.open_transfers, TODAY) if o.leg.id == debit]
     assert card.code is OpenTransferCode.AMBIGUOUS
     assert {c.id for c in card.candidates} == {a, b}
+
+
+# --- A card bill answered as spending before the card account existed (review of step 2b) -----
+
+
+def _spent(world: World, *months: str) -> Decimal:
+    return sum(
+        (
+            sum(world.query(household.cashflow, month).spending_by_group.values(), Decimal(0))
+            for month in months
+        ),
+        Decimal(0),
+    )
+
+
+def test_a_bill_answered_as_card_spending_is_re_booked_when_linked(world, giro):
+    """The debit to the issuer was answered hh_credit_card by hand while no card account
+    existed. Once the card's statement is in, its „Bezahlung“ card proposes that debit; the
+    button re-books it as a transfer by the person's answer and links the two, so Haushalt
+    counts the card's purchase once, not the purchase and its settlement."""
+    debit = giro.line(MONDAY, "-312.75", iban=PAYMENT_IBAN, name="Beispiel Bank", purpose="Karte")
+    _match(world, debit)
+    _answer_line(world, debit, "-312.75", "hh_credit_card", learn=False)
+    card = Card(world, PAYMENT_IBAN)
+    purchase = card.purchase(date(2026, 9, 20), "-312.75", "BEISPIEL MARKT")
+    _answer_line(world, purchase, "-312.75", "hh_groceries", learn=False)
+    paid = card.payment(TUESDAY, "312.75")
+    _match(world, paid)
+    assert _spent(world, "2026-09", "2026-10") == Decimal("625.50")  # counted twice
+
+    [item] = world.query(transfers.open_transfers, TODAY)
+    assert (item.code, item.leg.id) == (OpenTransferCode.PROPOSED, paid)
+    [candidate] = item.candidates
+    assert candidate.id == debit
+    assert (candidate.booked_category, candidate.booked_as_transfer) == ("hh_credit_card", False)
+    assert candidate.rebook_on_link is True
+    assert item.leg.booked_as_transfer is True
+
+    link = world.cmd(
+        transfers.link_by_hand,
+        TransferLinkRequest(
+            out_transaction_id=debit,
+            in_transaction_id=paid,
+            kind=TransferLinkKind.BANK,
+            rebook=True,
+        ),
+        iban_key=TEST_IBAN_KEY,
+    )
+    assert (link.out_transaction_id, link.in_transaction_id) == (debit, paid)
+    assert _booked(world, debit) == [("internal_transfer_out", "confirmed")]
+    with workspace_transaction(world.engine, world.ws) as conn:
+        methods = conn.execute(
+            select(allocation_table.c.method, allocation_table.c.status).where(
+                allocation_table.c.transaction_id == debit
+            )
+        ).all()
+    assert ("user", "confirmed") in methods and any(s == "superseded" for _, s in methods)
+    [current] = _links(world)
+    assert current.id == link.id
+    assert world.query(transfers.open_transfers, TODAY) == []
+    assert _spent(world, "2026-09", "2026-10") == Decimal("312.75")  # the purchase, once
+
+
+def test_a_candidate_tied_by_no_own_iban_keeps_the_plain_link(world, giro):
+    """A debit naming no IBAN fits the card's payment by amount and date only: its card links
+    it as it is, and a request to re-book it is refused (nothing written)."""
+    card = Card(world, PAYMENT_IBAN)
+    debit = giro.line(MONDAY, "-312.75", name="Barauszahlung", purpose="Karte")
+    _answer_line(world, debit, "-312.75", "hh_credit_card", learn=False)
+    paid = card.payment(TUESDAY, "312.75")
+    _match(world, paid)
+    [item] = world.query(transfers.open_transfers, TODAY)
+    [candidate] = item.candidates
+    assert candidate.id == debit
+    assert (candidate.booked_as_transfer, candidate.rebook_on_link) == (False, False)
+    body = dict(out_transaction_id=debit, in_transaction_id=paid, kind=TransferLinkKind.BANK)
+    with pytest.raises(RuleViolationError):
+        world.cmd(
+            transfers.link_by_hand,
+            TransferLinkRequest(**body, rebook=True),
+            iban_key=TEST_IBAN_KEY,
+        )
+    assert _booked(world, debit) == [("hh_credit_card", "confirmed")]
+    link = world.cmd(transfers.link_by_hand, TransferLinkRequest(**body))
+    assert link.matched_by is TransferMatchedBy.USER
+    assert _booked(world, debit) == [("hh_credit_card", "confirmed")]

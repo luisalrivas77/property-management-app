@@ -5214,7 +5214,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/TransferLinkCreate"
+                "$ref": "#/components/schemas/TransferLinkRequest"
               }
             }
           }
@@ -24508,6 +24508,36 @@
               }
             ],
             "title": "Counterparty Name"
+          },
+          "account_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccountKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "booked_category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AllocationCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "booked_as_transfer": {
+            "type": "boolean",
+            "title": "Booked As Transfer",
+            "default": false
+          },
+          "rebook_on_link": {
+            "type": "boolean",
+            "title": "Rebook On Link",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -24689,6 +24719,73 @@
         ],
         "title": "TransferLinkKind",
         "description": "transfer_link.kind (migration 0025). Phase 7 adds chain, bridge and wrap."
+      },
+      "TransferLinkRequest": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/TransferLinkKind"
+          },
+          "out_transaction_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Out Transaction Id"
+          },
+          "out_movement_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Out Movement Id"
+          },
+          "in_transaction_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Transaction Id"
+          },
+          "in_movement_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Movement Id"
+          },
+          "rebook": {
+            "type": "boolean",
+            "title": "Rebook",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "TransferLinkRequest",
+        "description": "POST /transfers' body. rebook (D176 (4), review of step 2b): a leg booked as something\nother than a transfer (typically a card bill answered hh_credit_card before the card\naccount existed) is first re-booked as internal_transfer_out or _in by the person's answer\n(method user: the click is the confirmation), then the two are linked. Allowed only for a\nbank line tied to the other leg by an own IBAN (one leg names the other's account IBAN or\nthe card's confirmed payment IBAN); otherwise transfer.legs_invalid."
       },
       "TransferLinkView": {
         "properties": {

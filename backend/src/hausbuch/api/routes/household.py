@@ -4,7 +4,9 @@
 - GET /transfers/open: every leg that waits for a person (transfer.ambiguous, a fit not yet
   written, or transfer.unmatched_leg once its three banking days have passed).
 - POST /transfers: a link by hand (matched_by user). 404 for an unknown leg, 409 when a leg
-  is linked already, 422 transfer.legs_invalid for two legs that are no transfer.
+  is linked already, 422 transfer.legs_invalid for two legs that are no transfer. With
+  rebook, a leg booked otherwise and tied to the other by an own IBAN is first re-booked as a
+  transfer by the person's answer (D176 (4)); 422 transfer.legs_invalid for one not tied.
 - POST /transfers/{id}/unlink: replace a wrong link by the one the user picks. 404, 409 when
   it was replaced already or a leg of the replacement is linked.
 - GET /household/cashflow?month=: the Haushalt screen, confirmed allocations only.
@@ -25,7 +27,7 @@ from hausbuch.schemas.household import (
     HouseholdCashflow,
     OpenTransfer,
     TransferLink,
-    TransferLinkCreate,
+    TransferLinkRequest,
     TransferLinkView,
     TransferUnlinkBody,
 )
@@ -33,7 +35,7 @@ from hausbuch.schemas.tax import TaxInput
 from hausbuch.services import household, property_costs, transfers
 from hausbuch.services.documents import LOCAL_TIME_ZONE
 
-from ..deps import Cmd, domain_router
+from ..deps import Cmd, SettingsDep, domain_router
 
 router = domain_router()
 
@@ -52,8 +54,8 @@ def transfers_open(cmd: Cmd) -> list[OpenTransfer]:
 
 
 @router.post("/transfers", status_code=201)
-def transfer_link(body: TransferLinkCreate, cmd: Cmd) -> TransferLink:
-    return cmd.run(transfers.link_by_hand, body)
+def transfer_link(body: TransferLinkRequest, cmd: Cmd, settings: SettingsDep) -> TransferLink:
+    return cmd.run(transfers.link_by_hand, body, iban_key=settings.iban_hmac_key)
 
 
 @router.post("/transfers/{link_id}/unlink", status_code=201)
