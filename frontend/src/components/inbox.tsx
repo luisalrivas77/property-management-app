@@ -275,7 +275,7 @@ export function InboxList({
               {items.map((item) => {
                 // A possible duplicate also names its later line, which may sit in two pairs: its own id first.
                 // A forwarded document can arrive in two mails, and a failed mail names no id: the time tells them apart.
-                const key = `${item.kind}:${item.possible_duplicate_id ?? item.proposal_id ?? item.import_id ?? item.transaction_id ?? item.document_id ?? item.reminder_id}:${item.created_at}`;
+                const key = `${item.kind}:${item.possible_duplicate_id ?? item.proposal_id ?? item.import_id ?? item.transaction_id ?? item.document_id ?? item.reminder_id ?? item.movement_id}:${item.created_at}`;
                 return (
                   <li key={key}>
                     {isLineItem(item) ? (
