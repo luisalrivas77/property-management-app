@@ -330,8 +330,14 @@ def test_a_card_or_depot_statement_creates_its_account_and_imports(
     assert new.kind is expected
     assert new.iban_masked is None
     assert new.external_ref_masked == f"**** {statement.account_ref[-4:]}"
+    if kind == "card":
+        # The card statement names no issuer the reader keeps: no institution is guessed, the
+        # person types the bank (13 Nov 2026).
+        assert (new.label, new.bank, new.provider) == ("Kreditkarte", None, None)
+    else:
+        assert new.bank == "quirion"
 
-    created = _create(run, blob_store, ws, doc.id, label=new.label, bank=new.bank)
+    created = _create(run, blob_store, ws, doc.id, label=new.label, bank=new.bank or "Beispielbank")
     account = created.account
     assert statement.account_ref not in created.model_dump_json()
     assert account.kind is expected

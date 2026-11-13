@@ -69,7 +69,7 @@ def test_the_offer_then_the_import_201_then_200(client_a, app_engine, auth_a):
         "new_account": {
             "kind": "credit_card",
             "label": "Kreditkarte",
-            "bank": "TF Bank",
+            "bank": None,
             "provider": None,
             "iban_masked": None,
             "external_ref_masked": "**** 4567",

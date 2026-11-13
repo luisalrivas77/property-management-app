@@ -329,8 +329,9 @@ _NEW_ACCOUNT_WORDS: dict[StatementFormat, tuple[str, str | None, str | None]] = 
     StatementFormat.CAMT: ("Girokonto", None, None),
     StatementFormat.CSV_CAMT: ("Girokonto Sparkasse", "Sparkasse", "Sparkasse"),
     StatementFormat.DKB_CSV: ("Girokonto DKB", "DKB", "DKB"),
-    # The card reader reads one issuer's layout (D176 (1): TF Bank, Avarda Bank AB's brand).
-    StatementFormat.CARD_PDF: ("Kreditkarte", "TF Bank", None),
+    # The card statement names no issuer the reader keeps, so the person types the bank: an
+    # institution's name is never guessed (13 Nov 2026).
+    StatementFormat.CARD_PDF: ("Kreditkarte", None, None),
     StatementFormat.DEPOT_PDF: ("quirion Depot", "quirion", "quirion"),
 }
 
