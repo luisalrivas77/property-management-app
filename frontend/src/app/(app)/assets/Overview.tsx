@@ -5,6 +5,8 @@
 // Each position shows its units, the price with its source and day, and the value; a price
 // older than seven days is marked, a fund no issuer adapter prices shows „Kurs aus dem letzten
 // Bericht“ (D174 (4)), and a position no source prices is a to-do with its button (principle 7).
+// A depot fund whose latest report disagrees with the booked trades is not valued (D165 (3),
+// valuation.not_valued) and links to its Zu prüfen card, as on the ETF tab.
 // The mockup's unrealised gain and „Monatlich angelegt“ need lots and plans (phases 7 and 9) and
 // are left out; the Krypto tab is phase 7.
 //
@@ -148,7 +150,7 @@ function PositionRow({ position }: { position: OverviewPosition }) {
         <span className="inbox-detail">{[assetKindLabel(position.kind), position.symbol ?? position.isin].filter(Boolean).join(" · ")}</span>
         {todo ? (
           <span className="inbox-detail todo-text">
-            {todo.text} <Link href={`/assets?kurs=${position.asset_id}`}>{todo.action}</Link>
+            {todo.text} <Link href={todo.href}>{todo.action}</Link>
           </span>
         ) : null}
       </td>
@@ -179,20 +181,29 @@ function priceSource(price: PriceLabel, fromReport: boolean): string {
   return price.issuer ? `${source} (${price.issuer}) ${day}` : `${source} ${day}`;
 }
 
-/** What to do about a position without a current price; null when nothing is to do. */
-function positionTodo(position: OverviewPosition): { text: string; action: string } | null {
+/** What to do about a position without a current value; null when nothing is to do. */
+function positionTodo(position: OverviewPosition): { text: string; action: string; href: string } | null {
+  const priceCard = `/assets?kurs=${position.asset_id}`;
+  if (position.not_valued_reason === "valuation.not_valued") {
+    return {
+      text: "Der letzte Depotbericht nennt eine andere Stückzahl als die gebuchten Abrechnungen; bis das geklärt ist, zählt diese Position nicht mit.",
+      action: "Zu prüfen",
+      href: "/inbox",
+    };
+  }
   if (position.kind === "cash") return null;
   if (position.value_eur == null) {
     if (position.kind === "crypto") {
-      return { text: "Für diese Münze kennt Hausbuch keine Kursquelle.", action: "Kursquelle wählen" };
+      return { text: "Für diese Münze kennt Hausbuch keine Kursquelle.", action: "Kursquelle wählen", href: priceCard };
     }
     return {
       text: "Für diesen Fonds gibt es keinen täglichen Kurs und noch keinen Depotbericht.",
       action: "Kurs eintragen",
+      href: priceCard,
     };
   }
   if (position.stale && !position.from_report) {
-    return { text: "Der letzte Kurs ist älter als 7 Tage.", action: "Kurs eintragen" };
+    return { text: "Der letzte Kurs ist älter als 7 Tage.", action: "Kurs eintragen", href: priceCard };
   }
   return null;
 }
@@ -265,7 +276,7 @@ function howPriced(asset: AssetRow): string {
       : `Für diese Münze kennt Hausbuch keine Kursquelle. Tragen Sie die CoinGecko-ID oder das Kraken-Paar ein, dann holt Hausbuch den Kurs jeden Morgen; bis dahin können Sie einen Kurs von Hand eintragen.${latest}`;
   }
   return asset.has_source
-    ? `Hausbuch holt den Kurs jeden Morgen von der Fondsgesellschaft (NAV). Fehlt er, können Sie ihn hier von Hand eintragen.${latest}`
+    ? `Hausbuch holt den Kurs jeden Morgen von der Fondsgesellschaft (NAV). Fehlt er oder ist er falsch, können Sie ihn hier von Hand eintragen.${latest}`
     : `Für diesen Fonds gibt es keinen täglichen Kurs der Fondsgesellschaft. Hausbuch bewertet ihn mit dem Kurs aus dem letzten Depotbericht; einen neueren Kurs, etwa aus der App Ihres Depots, können Sie hier eintragen.${latest}`;
 }
 
@@ -386,7 +397,8 @@ function TypedPriceForm({ asset, onSaved }: { asset: AssetRow; onSaved: () => vo
         </div>
       </div>
       <p className="muted hint">
-        Ein von Hand eingetragener Kurs zählt nur, solange es für denselben Tag keinen abgerufenen Kurs oder Bericht gibt.
+        Ein von Hand eingetragener Kurs ersetzt für diesen Tag den abgerufenen Kurs, etwa wenn der abgerufene falsch ist. Ab dem
+        nächsten Tag gilt wieder der abgerufene Kurs.
       </p>
       <div className="row">
         <button type="submit" disabled={busy}>
