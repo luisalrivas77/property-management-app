@@ -4299,6 +4299,35 @@
         }
       }
     },
+    "/api/assets/etf": {
+      "get": {
+        "summary": "Assets Etf",
+        "description": "The Anlagen ETF tab: per depot account its funds (units from the confirmed movements,\nthe latest report's figures while they hold, the plain cost while a fund was only\nbought) and the depot's documents with the status of their reading. The mockup's two tax\ncards are phase 8 (D170) and carry no figure.",
+        "operationId": "assets_etf_api_assets_etf_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EtfOverview"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/accounts/{account_id}/imports": {
       "post": {
         "summary": "Account Import",
@@ -11755,6 +11784,100 @@
         "title": "DepositRecordExtraction",
         "description": "Kautionsnachweis (letter / deposit_record). Step 2."
       },
+      "DepotAccountPositions": {
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "positions": {
+            "items": {
+              "$ref": "#/components/schemas/DepotPosition"
+            },
+            "type": "array",
+            "title": "Positions"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "account_id",
+          "label"
+        ],
+        "title": "DepotAccountPositions"
+      },
+      "DepotDocumentStatus": {
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Document Id"
+          },
+          "subtype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subtype"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "document_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Date"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "reading": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reading"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "document_id",
+          "created_at"
+        ],
+        "title": "DepotDocumentStatus",
+        "description": "One document of the depot's Postbox list: its subtype, title and date as typed, and\nthe status of its latest reading (None: stored, never read, e.g. while the switch\n„Private Konten mit KI zuordnen“ is off, or a tax certificate, read in phase 8)."
+      },
       "DepotIbanProposal": {
         "properties": {
           "import_id": {
@@ -11776,6 +11899,144 @@
         ],
         "title": "DepotIbanProposal",
         "description": "The IBAN a depot's cash statement prints (phase 6 step 4, D156 amended), masked; POST\n/accounts/{id}/iban with its import_id confirms it (the D176 (4) pattern)."
+      },
+      "DepotPosition": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          },
+          "isin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isin"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "units": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,10})?$",
+            "title": "Units"
+          },
+          "report_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report On"
+          },
+          "report_units": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,10})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Units"
+          },
+          "report_value_eur": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Value Eur"
+          },
+          "report_price_eur": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,8})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Price Eur"
+          },
+          "reconciled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reconciled"
+          },
+          "moved_since_report": {
+            "type": "boolean",
+            "title": "Moved Since Report",
+            "default": false
+          },
+          "value_eur": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Eur"
+          },
+          "cost_eur": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Eur"
+          },
+          "gain_eur": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gain Eur"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "asset_id",
+          "name",
+          "units"
+        ],
+        "title": "DepotPosition",
+        "description": "One fund on one depot account. `units` are the confirmed movements to today; the\nreport figures are those of the latest report that lists it (a 0-by-omission row too).\n`value_eur` is that report's stated value, shown only while the report reconciles\nagainst today's movements and nothing moved since (D165 (3): no valuation past the last\nreconciled date; computed prices and NAVs come with steps 5 and 6). `cost_eur` is the\nplain Σ of the purchases' amounts while the fund was only bought on this account (§13:\nright for ETFs bought and never sold; lots are phase 7), and `gain_eur` value − cost when\nboth are shown."
       },
       "DepotReportExtraction": {
         "properties": {
@@ -13385,6 +13646,28 @@
         "type": "object",
         "title": "EstimateLineSources",
         "description": "What each line of the whole-return estimate came from, so the Gesamt card opens the\nsources line by line (ReturnEstimate.sources stays their union). The Anlage N and V lines\ncarry theirs on OwnerIncome and PropertyIncome."
+      },
+      "EtfOverview": {
+        "properties": {
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/DepotAccountPositions"
+            },
+            "type": "array",
+            "title": "Accounts"
+          },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/DepotDocumentStatus"
+            },
+            "type": "array",
+            "title": "Documents"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "EtfOverview",
+        "description": "GET /assets/etf: every depot account with its funds, and the depot's documents."
       },
       "Event": {
         "properties": {

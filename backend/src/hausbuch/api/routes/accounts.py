@@ -2,6 +2,9 @@
 
 The IBAN appears only in the create body; every read shape carries iban_masked, and no error
 body or log line quotes an IBAN, a name or a purpose text.
+
+Phase 6 step 4 adds GET /assets/etf here, the Anlagen screen's ETF tab (§13, mockup 09b): every
+depot account with its funds and the depot's documents; read only.
 """
 
 from datetime import date
@@ -22,7 +25,8 @@ from hausbuch.schemas.bank import (
     Transaction,
 )
 from hausbuch.schemas.enums import EntityType
-from hausbuch.schemas.household import AccountOwnership, SetOwnershipBody
+from hausbuch.schemas.household import AccountOwnership, EtfOverview, SetOwnershipBody
+from hausbuch.services import depot
 from hausbuch.services.accounts import (
     confirm_depot_iban,
     confirm_payment_iban,
@@ -113,6 +117,15 @@ def account_iban_confirm(
     for an import of another account; 409 when another account has that IBAN. Every enabled
     learned rule on the IBAN is switched off, counted in rules_disabled."""
     return cmd.run(confirm_depot_iban, store, account_id, body, iban_key=settings.iban_hmac_key)
+
+
+@router.get("/assets/etf")
+def assets_etf(cmd: Cmd) -> EtfOverview:
+    """The Anlagen ETF tab: per depot account its funds (units from the confirmed movements,
+    the latest report's figures while they hold, the plain cost while a fund was only
+    bought) and the depot's documents with the status of their reading. The mockup's two tax
+    cards are phase 8 (D170) and carry no figure."""
+    return cmd.read(depot.etf_overview)
 
 
 def _import(

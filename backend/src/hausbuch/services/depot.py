@@ -19,8 +19,10 @@ from sqlalchemy import Connection, func, insert, select
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import asset as asset_table
 from hausbuch.db.tables import asset_movement as movement_table
+from hausbuch.db.tables import document as document_table
 from hausbuch.db.tables import holding_statement as holding_table
 from hausbuch.db.tables import price as price_table
+from hausbuch.db.tables import proposal as proposal_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.rules import depot as rules
 from hausbuch.rules.errors import DEPOT_HOLDINGS_MISMATCH
@@ -37,6 +39,10 @@ from hausbuch.schemas.events import (
 from hausbuch.schemas.extraction import DepotReportExtraction
 from hausbuch.schemas.household import (
     AssetKind,
+    DepotAccountPositions,
+    DepotDocumentStatus,
+    DepotPosition,
+    EtfOverview,
     HoldingSource,
     Isin,
     MovementKind,
@@ -586,6 +592,128 @@ def holdings_inbox_items(conn: Connection) -> list[InboxItem]:
     return items
 
 
+# The Postbox list's length on the ETF tab, newest first.
+POSTBOX_LIMIT = 30
+
+
+def etf_overview(conn: Connection) -> EtfOverview:
+    """The Anlagen ETF tab (§13, mockup 09b): per depot account its funds, with the latest
+    report's figures and whether they still hold, and the depot's documents with the status
+    of their reading. Read only; every figure is a stored one or a sum of stored ones."""
+    from hausbuch.rules.extraction_parse import PRIVATE_SUBTYPES  # it imports the readers
+
+    accounts = []
+    for account in depot_accounts(conn):
+        positions = _positions(conn, account.id)
+        if positions:
+            accounts.append(
+                DepotAccountPositions(
+                    account_id=account.id, label=account.label, positions=positions
+                )
+            )
+    d, p = document_table.c, proposal_table.c
+    latest = (
+        select(p.status)
+        .where(p.document_id == d.id)
+        .order_by(p.created_at.desc())
+        .limit(1)
+        .scalar_subquery()
+    )
+    rows = conn.execute(
+        select(d.id, d.subtype, d.title, d.document_date, d.created_at, latest.label("reading"))
+        .where(d.subtype.in_([s.value for s in PRIVATE_SUBTYPES]))
+        .order_by(d.document_date.desc().nulls_last(), d.created_at.desc())
+        .limit(POSTBOX_LIMIT)
+    ).all()
+    documents = [
+        DepotDocumentStatus(
+            document_id=r.id,
+            subtype=r.subtype,
+            title=r.title,
+            document_date=r.document_date,
+            created_at=r.created_at,
+            reading=r.reading,
+        )
+        for r in rows
+    ]
+    return EtfOverview(accounts=accounts, documents=documents)
+
+
+def _positions(conn: Connection, account_id: UUID) -> list[DepotPosition]:
+    m, h, a, pr = movement_table.c, holding_table.c, asset_table.c, price_table.c
+    moves = conn.execute(
+        select(m.asset_id, m.kind, m.quantity, m.eur_amount, m.occurred_at).where(
+            m.account_id == account_id,
+            m.superseded_by.is_(None),
+            m.status == MovementStatus.CONFIRMED.value,
+        )
+    ).all()
+    reports = conn.execute(
+        select(h.asset_id, h.as_of, h.declared_units, h.declared_value_eur)
+        .where(h.account_id == account_id, h.source == HoldingSource.REPORT.value)
+        .order_by(h.as_of.desc(), h.created_at.desc())
+    ).all()
+    latest = {}
+    for row in reports:
+        latest.setdefault(row.asset_id, row)
+    ids = {r.asset_id for r in moves} | set(latest)
+    if not ids:
+        return []
+    assets = {r.id: r for r in conn.execute(select(a.id, a.isin, a.name).where(a.id.in_(ids)))}
+    positions = []
+    for asset_id in sorted(ids, key=lambda i: (assets[i].name, str(i))):
+        mine = [r for r in moves if r.asset_id == asset_id]
+        units = sum((r.quantity for r in mine), Decimal(0))
+        report = latest.get(asset_id)
+        if not mine and (report is None or report.declared_units == 0):
+            continue
+        reconciled, moved, value, price = None, False, None, None
+        if report is not None:
+            held = sum(
+                (r.quantity for r in mine if r.occurred_at.date() <= report.as_of), Decimal(0)
+            )
+            reconciled = abs(report.declared_units - held) <= rules.UNITS_TOLERANCE
+            moved = any(r.quantity != 0 and r.occurred_at.date() > report.as_of for r in mine)
+            if reconciled and not moved:
+                value = report.declared_value_eur
+            price = conn.execute(
+                select(pr.price_eur)
+                .where(
+                    pr.asset_id == asset_id,
+                    pr.on == report.as_of,
+                    pr.source == PriceSourceKind.STATEMENT.value,
+                )
+                .order_by(pr.fetched_at.desc())
+                .limit(1)
+            ).scalar_one_or_none()
+        # A sale or a transfer of units needs the lots (phase 7); a purchase without its
+        # amount leaves the sum unknown.
+        bought = [r for r in mine if r.kind == MovementKind.ACQUISITION.value]
+        only_bought = all(
+            r.kind in (MovementKind.ACQUISITION.value, MovementKind.DISTRIBUTION.value)
+            for r in mine
+        ) and all(r.eur_amount is not None for r in bought)
+        cost = -sum((r.eur_amount for r in bought), Decimal(0)) if bought and only_bought else None
+        positions.append(
+            DepotPosition(
+                asset_id=asset_id,
+                isin=assets[asset_id].isin,
+                name=assets[asset_id].name,
+                units=units,
+                report_on=None if report is None else report.as_of,
+                report_units=None if report is None else report.declared_units,
+                report_value_eur=None if report is None else report.declared_value_eur,
+                report_price_eur=price,
+                reconciled=reconciled,
+                moved_since_report=moved,
+                value_eur=value,
+                cost_eur=cost,
+                gain_eur=None if value is None or cost is None else value - cost,
+            )
+        )
+    return positions
+
+
 __all__ = [
     "CASH_LINK_DAYS",
     "DEPOT_ACCOUNT_REQUIRED",
@@ -596,6 +724,7 @@ __all__ = [
     "DepotMovementValues",
     "asset_for_isin",
     "depot_accounts",
+    "etf_overview",
     "finish_report",
     "holdings_inbox_items",
     "record_holding",

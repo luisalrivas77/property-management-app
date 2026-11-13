@@ -11,7 +11,8 @@ import { ErrorNotice } from "@/lib/ErrorNotice";
 import { INBOX_CHANGED } from "@/lib/inboxCount";
 
 // §9.2 navigation, as the mockups' left sidebar (UI style decision, 5 Nov 2026): Hausbuch ·
-// Übersicht · Zu prüfen (the review page, phase 2 step 4) · Dokumente · Konten · Haushalt
+// Übersicht · Zu prüfen (the review page, phase 2 step 4) · Dokumente · Konten · Anlagen (the
+// depot's funds, phase 6 step 4) · Haushalt
 // (the household's month, phase 6 §13) · Steuern
 // (phase 3) · Planung (phase 4) · Eigentümer · Mieter · Einstellungen, then the user's name and Abmelden. On a phone it stacks above the
 // content (globals.css, .shell). "Zu prüfen" carries the number of open items.
@@ -20,6 +21,7 @@ const NAV = [
   { href: "/inbox", label: "Zu prüfen" },
   { href: "/documents", label: "Dokumente" },
   { href: "/accounts", label: "Konten" },
+  { href: "/assets", label: "Anlagen" },
   { href: "/household", label: "Haushalt" },
   { href: "/tax", label: "Steuern" },
   { href: "/planning", label: "Planung" },

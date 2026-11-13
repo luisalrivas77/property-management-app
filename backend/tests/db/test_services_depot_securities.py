@@ -419,3 +419,52 @@ def test_a_report_naming_an_unbooked_trade_is_a_card_until_that_trade_is_applied
         _read(run, job, ws, blob_store, enqueued, DocumentSubtype.TRADE_CONFIRMATION, second),
     )
     assert cards() == []
+
+
+def test_the_etf_tab_shows_the_reports_value_until_something_moves_after_it(
+    run,
+    read,
+    fresh_workspaces,
+    blob_store,
+    job,
+    enqueued,  # noqa: F811
+):
+    ws, _ = fresh_workspaces
+    depot_id = _account(run, ws).id
+    buy = _read(run, job, ws, blob_store, enqueued, DocumentSubtype.TRADE_CONFIRMATION, _trade())
+    _apply(run, ws, buy)
+    row = f"{ISIN_CASH} | Beispiel Euro Geldmarkt | 4,8000 | 104,50 | 501,60 | EUR"
+    report = _read(run, job, ws, blob_store, enqueued, DocumentSubtype.DEPOT_REPORT, _report(row))
+    _apply(run, ws, report)
+
+    overview = read(ws, depot.etf_overview)
+    (account,) = overview.accounts
+    assert account.account_id == depot_id
+    (position,) = account.positions
+    assert position.units == Decimal("4.8") and position.reconciled is True
+    assert position.report_on == date(2026, 6, 30)
+    assert position.report_price_eur == Decimal("104.50")
+    assert (position.value_eur, position.cost_eur, position.gain_eur) == (
+        Decimal("501.60"),
+        Decimal("500.00"),
+        Decimal("1.60"),
+    )
+    assert {d.document_id: d.reading for d in overview.documents} == {
+        buy.document_id: "applied",
+        report.document_id: "applied",
+    }
+
+    # A sale after the report: the report's value no longer holds, and a plain sum is no
+    # longer the cost (the lots are phase 7).
+    sale = _trade(
+        side="Verkauf", units="1.0000", net="105.00", reference="5500000009", on="2026-07-02"
+    )
+    _apply(
+        run,
+        ws,
+        _read(run, job, ws, blob_store, enqueued, DocumentSubtype.TRADE_CONFIRMATION, sale),
+    )
+    (position,) = read(ws, depot.etf_overview).accounts[0].positions
+    assert position.units == Decimal("3.8") and position.moved_since_report is True
+    assert position.value_eur is None and position.cost_eur is None and position.gain_eur is None
+    assert position.report_value_eur == Decimal("501.60")

@@ -1519,6 +1519,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/assets/etf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Assets Etf
+         * @description The Anlagen ETF tab: per depot account its funds (units from the confirmed movements,
+         *     the latest report's figures while they hold, the plain cost while a fund was only
+         *     bought) and the depot's documents with the status of their reading. The mockup's two tax
+         *     cards are phase 8 (D170) and carry no figure.
+         */
+        get: operations["assets_etf_api_assets_etf_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/accounts/{account_id}/imports": {
         parameters: {
             query?: never;
@@ -4328,6 +4351,44 @@ export interface components {
             /** @description Eingang */
             received_on?: components["schemas"]["ExtractedValue"];
         };
+        /** DepotAccountPositions */
+        DepotAccountPositions: {
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /** Label */
+            label: string;
+            /** Positions */
+            positions?: components["schemas"]["DepotPosition"][];
+        };
+        /**
+         * DepotDocumentStatus
+         * @description One document of the depot's Postbox list: its subtype, title and date as typed, and
+         *     the status of its latest reading (None: stored, never read, e.g. while the switch
+         *     „Private Konten mit KI zuordnen“ is off, or a tax certificate, read in phase 8).
+         */
+        DepotDocumentStatus: {
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            /** Subtype */
+            subtype?: string | null;
+            /** Title */
+            title?: string | null;
+            /** Document Date */
+            document_date?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Reading */
+            reading?: string | null;
+        };
         /**
          * DepotIbanProposal
          * @description The IBAN a depot's cash statement prints (phase 6 step 4, D156 amended), masked; POST
@@ -4341,6 +4402,51 @@ export interface components {
             import_id: string;
             /** Iban Masked */
             iban_masked: string;
+        };
+        /**
+         * DepotPosition
+         * @description One fund on one depot account. `units` are the confirmed movements to today; the
+         *     report figures are those of the latest report that lists it (a 0-by-omission row too).
+         *     `value_eur` is that report's stated value, shown only while the report reconciles
+         *     against today's movements and nothing moved since (D165 (3): no valuation past the last
+         *     reconciled date; computed prices and NAVs come with steps 5 and 6). `cost_eur` is the
+         *     plain Σ of the purchases' amounts while the fund was only bought on this account (§13:
+         *     right for ETFs bought and never sold; lots are phase 7), and `gain_eur` value − cost when
+         *     both are shown.
+         */
+        DepotPosition: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Isin */
+            isin?: string | null;
+            /** Name */
+            name: string;
+            /** Units */
+            units: string;
+            /** Report On */
+            report_on?: string | null;
+            /** Report Units */
+            report_units?: string | null;
+            /** Report Value Eur */
+            report_value_eur?: string | null;
+            /** Report Price Eur */
+            report_price_eur?: string | null;
+            /** Reconciled */
+            reconciled?: boolean | null;
+            /**
+             * Moved Since Report
+             * @default false
+             */
+            moved_since_report: boolean;
+            /** Value Eur */
+            value_eur?: string | null;
+            /** Cost Eur */
+            cost_eur?: string | null;
+            /** Gain Eur */
+            gain_eur?: string | null;
         };
         /**
          * DepotReportExtraction
@@ -4912,6 +5018,16 @@ export interface components {
             surcharges?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
             /** Withheld */
             withheld?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+        };
+        /**
+         * EtfOverview
+         * @description GET /assets/etf: every depot account with its funds, and the depot's documents.
+         */
+        EtfOverview: {
+            /** Accounts */
+            accounts?: components["schemas"]["DepotAccountPositions"][];
+            /** Documents */
+            documents?: components["schemas"]["DepotDocumentStatus"][];
         };
         /** Event */
         Event: {
@@ -13271,6 +13387,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PaymentIbanConfirmed"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    assets_etf_api_assets_etf_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EtfOverview"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
