@@ -363,7 +363,15 @@ def import_export(
             )
         ).scalars()
     )
-    new = [mv for mv in movements if mv.movement_hash not in stored]
+    # A movement is new when no stored movement of the account and no earlier movement of the
+    # same file carries its hash: BISON can repeat a Transaction ID inside one export, and the
+    # first row is kept (D166, D22's dedup within a file), never a unique-index failure.
+    new = []
+    for mv in movements:
+        if mv.movement_hash in stored:
+            continue
+        stored.add(mv.movement_hash)
+        new.append(mv)
     imported = ctx.conn.execute(
         insert(import_table)
         .values(

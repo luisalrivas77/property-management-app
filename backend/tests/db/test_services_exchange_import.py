@@ -235,6 +235,53 @@ def test_a_bison_export_imports_dedups_and_reconciles_against_the_typed_balances
     assert (eur_position.typed_units, eur_position.reconciled) == (Decimal("150.01"), False)
 
 
+BISON_HEADER = (
+    "Transaction ID; Transaction type; Currency; Asset; Eur (amount); Asset (amount); "
+    "Asset (market price); Fee; Date (UTC - Coordinated Universal Time)\n"
+)
+
+
+def _bison_buys(rows) -> bytes:
+    """BISON's layout for the fixture's Buy rows (the parser's output written back)."""
+    lines = [
+        f"{r.external_ref}; Buy; Eur; {r.asset.capitalize()}; {r.eur_amount}; {r.quantity}; "
+        f"60000.0000000000; 0; {r.occurred_at.strftime('%Y-%m-%d %H:%M:%S')}\n"
+        for r in rows
+    ]
+    return (BISON_HEADER + "".join(lines)).encode()
+
+
+def test_a_transaction_id_repeated_in_one_file_is_kept_once(
+    run, read, blob_store, fresh_workspaces
+):
+    """D166, the fixture's duplicate_transaction_id_skipped through the service: a Transaction
+    ID twice in one export keeps its first row and counts the second as skipped, never a
+    unique-index failure; with the earlier export's ID stored, the fixture's (1, 2)."""
+    ws, _ = fresh_workspaces
+    case = next(c for c in BISON.cases if c.id == "duplicate_transaction_id_skipped")
+    assert all(r.type == "Buy" for r in case.rows)
+
+    pair = _exchange(run, ws, label="BISON-Paar")
+    repeated = [r for r in case.rows if r.external_ref not in case.stored_refs]
+    imported = _upload(run, blob_store, ws, pair.id, _bison_buys(repeated)).movement_import
+    assert (imported.rows_total, imported.rows_new, imported.rows_skipped) == (2, 1, 1)
+    [movement] = read(ws, imports.exchange_movements, pair.id)
+    assert movement.external_ref == "BX-0007"
+
+    account = _exchange(run, ws)
+    stored = [r for r in case.rows if r.external_ref in case.stored_refs]
+    _upload(run, blob_store, ws, account.id, _bison_buys(stored))
+    replay = _upload(run, blob_store, ws, account.id, _bison_buys(case.rows), n=1)
+    imported = replay.movement_import
+    assert (imported.rows_new, imported.rows_skipped) == (
+        case.expect.rows_new,
+        case.expect.rows_skipped,
+    )
+    assert imported.rows_new + imported.rows_skipped == imported.rows_total
+    refs = sorted(m.external_ref for m in read(ws, imports.exchange_movements, account.id))
+    assert refs == ["BX-0001", "BX-0007"]
+
+
 def test_an_eur_deposit_is_linked_to_its_bank_leg(app_engine, fresh_workspaces, blob_store):
     """D162: the private account's transfer out and BISON's EUR deposit two days later are one
     transfer (kind exchange_eur), linked by the import."""
