@@ -15059,7 +15059,8 @@
           "property_cost_row",
           "property_cost_bill",
           "property_cost_year",
-          "property_cost_document"
+          "property_cost_document",
+          "holdings_mismatch"
         ],
         "title": "InboxItemKind",
         "description": "GET /inbox (§8.3): one list, newest first."

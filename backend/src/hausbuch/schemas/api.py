@@ -550,6 +550,10 @@ class InboxItemKind(StrEnum):
     # Review F4: the line's attached bill yields no row yet (not read, not a bill, no property,
     # no amount or date); `document_id` is the document to open.
     PROPERTY_COST_DOCUMENT = "property_cost_document"
+    # Phase 6 step 4 (principle 7): a depot's latest report disagrees with the confirmed
+    # movements to its date, re-checked on every read; `account_id` is the depot,
+    # `document_id` the report.
+    HOLDINGS_MISMATCH = "holdings_mismatch"
 
 
 class InboxItem(Schema):

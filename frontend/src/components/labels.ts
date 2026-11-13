@@ -678,6 +678,8 @@ export const INBOX_ITEM_KIND: Record<InboxItemKind, string> = {
   property_cost_bill: "Rechnung fehlt",
   property_cost_year: "Jahr der Zahlung",
   property_cost_document: "Beleg prüfen",
+  // phase 6 step 4
+  holdings_mismatch: "Bestand weicht ab",
 };
 
 /** The Haushalt screen's groups (phase 6 §13, mockup 10; rules/household/taxonomy.py). */

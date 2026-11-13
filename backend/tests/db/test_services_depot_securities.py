@@ -23,10 +23,11 @@ from hausbuch.db.tables import holding_statement as holding_table
 from hausbuch.db.tables import price as price_table
 from hausbuch.rules.errors import RuleError
 from hausbuch.schemas.ai import ClassifyOutput
+from hausbuch.schemas.api import InboxItemKind
 from hausbuch.schemas.bank import AccountCreate
 from hausbuch.schemas.enums import AccountKind, DocumentSubtype, DocumentType, ProposalStatus
 from hausbuch.schemas.events import EventType
-from hausbuch.services import depot, proposals
+from hausbuch.services import depot, proposals, review
 from hausbuch.services.accounts import create_account
 from hausbuch.services.statements import import_statement, list_transactions
 
@@ -361,3 +362,60 @@ def test_a_report_applied_a_second_time_is_refused(
         _apply(run, ws, again)
     assert refused.value.code == depot.DEPOT_HOLDING_EXISTS
     assert len(_rows(read, ws, holding_table)) == 1
+
+
+def test_a_report_naming_an_unbooked_trade_is_a_card_until_that_trade_is_applied(
+    run,
+    read,
+    fresh_workspaces,
+    blob_store,
+    job,
+    enqueued,  # noqa: F811
+):
+    ws, _ = fresh_workspaces
+    depot_id = _account(run, ws).id
+    _apply(
+        run,
+        ws,
+        _read(run, job, ws, blob_store, enqueued, DocumentSubtype.TRADE_CONFIRMATION, _trade()),
+    )
+    report = _read(
+        run,
+        job,
+        ws,
+        blob_store,
+        enqueued,
+        DocumentSubtype.DEPOT_REPORT,
+        _report(f"{ISIN_CASH} | Beispiel Euro Geldmarkt | 7,2000 | 104,50 | 752,40 | EUR")
+        | {
+            "trades": _v(
+                [
+                    f"{ISIN_CASH} | 13.03.2026 | 4,8000 | 500,00 | 5500000002",
+                    f"{ISIN_CASH} | 15.04.2026 | 2,4000 | 250,00 | 5500000003",
+                ]
+            )
+        },
+    )
+    _apply(run, ws, report)
+
+    def cards():
+        return [i for i in read(ws, review.inbox) if i.kind is InboxItemKind.HOLDINGS_MISMATCH]
+
+    (card,) = cards()
+    assert card.account_id == depot_id and card.document_id == report.document_id
+    assert card.reasoning == (
+        "Der Depotbericht zum 30.06.2026 nennt eine andere Stückzahl als die gebuchten "
+        "Abrechnungen (Beispiel Euro Geldmarkt UCITS ETF: laut Bericht 7,2, gebucht 4,8 "
+        "Anteile)."
+    )
+    # The trade booked already is not named; the one the report lists without a booking is.
+    assert "15.04.2026" in card.question and "13.03.2026" not in card.question
+    assert ISIN_CASH not in card.question + card.reasoning
+
+    second = _trade(units="2.4000", net="250.00", reference="5500000003", on="2026-04-15")
+    _apply(
+        run,
+        ws,
+        _read(run, job, ws, blob_store, enqueued, DocumentSubtype.TRADE_CONFIRMATION, second),
+    )
+    assert cards() == []

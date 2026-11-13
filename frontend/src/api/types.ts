@@ -5597,7 +5597,7 @@ export interface components {
          * @description GET /inbox (§8.3): one list, newest first.
          * @enum {string}
          */
-        InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched" | "questionnaire_open" | "bank_approval_needed" | "bank_sync_failed" | "bank_balance_drift" | "email_received" | "email_failed" | "email_inbox_failed" | "reminder" | "transfer_link" | "transfer_unmatched" | "property_cost_row" | "property_cost_bill" | "property_cost_year" | "property_cost_document";
+        InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched" | "questionnaire_open" | "bank_approval_needed" | "bank_sync_failed" | "bank_balance_drift" | "email_received" | "email_failed" | "email_inbox_failed" | "reminder" | "transfer_link" | "transfer_unmatched" | "property_cost_row" | "property_cost_bill" | "property_cost_year" | "property_cost_document" | "holdings_mismatch";
         /**
          * IncomeInput
          * @description API read model (the table names its timestamp recorded_at, so not Record).

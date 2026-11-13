@@ -10,6 +10,7 @@ correction is a new row that supersedes the old one.
 
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
+from typing import Any
 from uuid import UUID
 
 from pydantic import Field
@@ -23,6 +24,7 @@ from hausbuch.db.tables import price as price_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.rules import depot as rules
 from hausbuch.rules.errors import DEPOT_HOLDINGS_MISMATCH
+from hausbuch.schemas.api import InboxItem, InboxItemKind
 from hausbuch.schemas.common import Money, NonNegativeMoney, Schema
 from hausbuch.schemas.enums import AccountKind
 from hausbuch.schemas.events import (
@@ -32,6 +34,7 @@ from hausbuch.schemas.events import (
     MovementRecorded,
     PriceRecorded,
 )
+from hausbuch.schemas.extraction import DepotReportExtraction
 from hausbuch.schemas.household import (
     AssetKind,
     HoldingSource,
@@ -455,6 +458,134 @@ def finish_report(ctx: CommandContext, document_id: UUID) -> list[ReportChecked]
     return results
 
 
+def _german_day(day: date) -> str:
+    return day.strftime("%d.%m.%Y")
+
+
+def _german_units(units: Decimal) -> str:
+    """4.8000000000 → "4,8"; 0 → "0"."""
+    text = f"{units.normalize():f}" if units else "0"
+    return text.replace(".", ",")
+
+
+def _asset_names(conn: Connection, ids: list[Any]) -> dict[UUID, str]:
+    a = asset_table.c
+    return dict(conn.execute(select(a.id, a.name).where(a.id.in_(ids))).tuples().all())
+
+
+def _missing_trades(
+    conn: Connection, document_id: UUID | None, as_of: date
+) -> dict[UUID, list[rules.ProposedTrade]]:
+    """The trades the report's current reading lists, by asset (looked up by ISIN), up to its
+    date: the references a mismatch may be missing."""
+    if document_id is None:
+        return {}
+    from .documents import current_extraction  # it imports the job queue
+
+    extraction = current_extraction(conn, document_id)
+    fields = None if extraction is None else extraction.fields
+    if not isinstance(fields, DepotReportExtraction) or not fields.trades.value:
+        return {}
+    proposal = rules.propose(
+        "depot_report",
+        {"report_date": as_of.isoformat(), "positions": [], "trades": fields.trades.value},
+    )
+    trades = [] if proposal is None else [t for t in proposal.trades if t.trade_date <= as_of]
+    if not trades:
+        return {}
+    a = asset_table.c
+    by_isin = {
+        r.isin: r.id
+        for r in conn.execute(
+            select(a.id, a.isin).where(a.isin.in_({t.isin for t in trades}))
+        ).all()
+    }
+    found: dict[UUID, list[rules.ProposedTrade]] = {}
+    for trade in trades:
+        if trade.isin in by_isin:
+            found.setdefault(by_isin[trade.isin], []).append(trade)
+    return found
+
+
+def holdings_inbox_items(conn: Connection) -> list[InboxItem]:
+    """One card per depot account whose latest report (source = report) disagrees with the
+    confirmed movements to its date (§14.1, principle 7). Re-checked on every read against
+    today's movements, so a trade confirmation applied later clears the card without a
+    person closing it; the stored rows keep what the check said when the report came in.
+    D165 (3): the card names each fund with the report's and the booked units, and the
+    days of the trades the report lists that no confirmation covers; never an amount, a
+    reference or an account number."""
+    h = holding_table.c
+    report = HoldingSource.REPORT.value
+    latest = (
+        select(h.account_id, func.max(h.as_of).label("as_of"))
+        .where(h.source == report)
+        .group_by(h.account_id)
+        .subquery()
+    )
+    rows = conn.execute(
+        select(h.account_id, h.asset_id, h.as_of, h.declared_units, h.document_id, h.created_at)
+        .join(latest, (h.account_id == latest.c.account_id) & (h.as_of == latest.c.as_of))
+        .where(h.source == report)
+    ).all()
+    items = []
+    for account_id in sorted({r.account_id for r in rows}, key=str):
+        mine = [r for r in rows if r.account_id == account_id]
+        as_of = mine[0].as_of
+        newest = max(mine, key=lambda r: r.created_at)
+        trades = _missing_trades(conn, newest.document_id, as_of)
+        checks = rules.reconcile_holdings(
+            as_of,
+            {r.asset_id: r.declared_units for r in mine},
+            _movements(conn, account_id),
+            {asset: [t.reference for t in listed] for asset, listed in trades.items()},
+        )
+        wrong = [c for c in checks if not c.reconciled]
+        if not wrong:
+            continue
+        missing = sorted(
+            {
+                t.trade_date
+                for c in wrong
+                for t in trades.get(c.asset, ())
+                if t.reference in c.missing_references
+            }
+        )
+        names = _asset_names(conn, [c.asset for c in wrong])
+        funds = "; ".join(
+            f"{names.get(c.asset, 'Wertpapier')}: laut Bericht {_german_units(c.declared_units)}"
+            f", gebucht {_german_units(c.held_units)} Anteile"
+            for c in wrong
+        )
+        if missing:
+            days = ", ".join(_german_day(day) for day in missing)
+            question = (
+                f"Der Bericht nennt Umsätze vom {days}, zu denen keine Wertpapierabrechnung "
+                "gebucht ist. Bitte die Abrechnung unter Dokumente hochladen und übernehmen; "
+                "der Abgleich läuft dann von selbst neu."
+            )
+        else:
+            question = (
+                "Fehlt eine Wertpapierabrechnung oder eine Umbuchung zwischen eigenen Depots? "
+                "Bitte das Dokument unter Dokumente hochladen und übernehmen; der Abgleich "
+                "läuft dann von selbst neu."
+            )
+        items.append(
+            InboxItem(
+                kind=InboxItemKind.HOLDINGS_MISMATCH,
+                created_at=newest.created_at,
+                reasoning=(
+                    f"Der Depotbericht zum {_german_day(as_of)} nennt eine andere "
+                    f"Stückzahl als die gebuchten Abrechnungen ({funds})."
+                ),
+                question=question,
+                document_id=newest.document_id,
+                account_id=account_id,
+            )
+        )
+    return items
+
+
 __all__ = [
     "CASH_LINK_DAYS",
     "DEPOT_ACCOUNT_REQUIRED",
@@ -466,6 +597,7 @@ __all__ = [
     "asset_for_isin",
     "depot_accounts",
     "finish_report",
+    "holdings_inbox_items",
     "record_holding",
     "record_movement",
     "transfer_pair",
