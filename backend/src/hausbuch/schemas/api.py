@@ -604,6 +604,11 @@ class InboxItem(Schema):
     # statement) is answered with „Auf Konto importieren“, not a new read (phase 6 D176 (3));
     # proposal.exchange_export_not_read (step 5a, D166) points to the exchange account's page
     error_code: str | None = None
+    # allocation_proposed (phase 6 D159 amended 13 Nov 2026): the proposal's category when it
+    # has one part, and whether „Alle bestätigen“ may confirm it with the others of that
+    # category (a private line, one part, a plain household code, no question).
+    category: AllocationCategory | None = None
+    bulk_confirmable: bool = False
 
 
 class AiRetryResult(Schema):
@@ -611,3 +616,26 @@ class AiRetryResult(Schema):
 
     queued: int
     private_held_back: int
+
+
+class ConfirmCategoryBody(Schema):
+    """POST /inbox/confirm-category (phase 6 D159 amended 13 Nov 2026, „Alle bestätigen“):
+    the lines the person saw in the list, and the category they were listed under. Never a
+    category alone: only these lines are confirmed."""
+
+    category: AllocationCategory
+    transaction_ids: list[UUID] = Field(min_length=1, max_length=1000)
+
+
+class ConfirmCategorySkip(Schema):
+    """A listed line left as it is: its proposal is no longer a waiting one-part proposal of
+    the category without a question (it changed since the list was shown), or the line no
+    longer counts (merged as a duplicate, its import not reconciled)."""
+
+    transaction_id: UUID
+    reason: Literal["not_open", "not_waiting", "split", "category_changed", "question"]
+
+
+class ConfirmCategoryResult(Schema):
+    confirmed: int
+    skipped: list[ConfirmCategorySkip]

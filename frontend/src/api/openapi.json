@@ -5449,6 +5449,45 @@
         }
       }
     },
+    "/api/inbox/confirm-category": {
+      "post": {
+        "summary": "Inbox Confirm Category",
+        "description": "„Alle bestätigen“: the listed private lines' proposals of one category, in one\ntransaction; lines that changed meanwhile come back as skipped.",
+        "operationId": "inbox_confirm_category_api_inbox_confirm_category_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmCategoryBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfirmCategoryResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/transactions/{transaction_id}/allocations": {
       "get": {
         "summary": "Transaction Allocations Get",
@@ -12311,6 +12350,81 @@
         "title": "ConfirmAllocationsBody",
         "description": "PUT /transactions/{id}/allocations: the user's allocation set and the \"Künftig immer\nso zuordnen\" checkbox.\n\nOnly the set's allocations are read: the rows are written with method `user` and\nconfidence 1, whatever method, confidence, rule_id or ai_call_id the body carries. A set\nequal to the current proposed rows confirms those rows as they are (the proposer's method\nstays); one equal to the current confirmed rows changes nothing.\n\nlearn_rule: null = the server default (TransactionAllocations.learn_rule_default for this\nset); true for a set no rule can be learned from is refused with rule.not_learnable.\nThe patterns (case-insensitive regular expressions, refused with rule.invalid_pattern\nwhen they do not compile) narrow the rule, and let a line without an IBAN, or a\ncounterparty a matcher owns (D38), have one.\nsame_amount_only (D49): the answer to \"Gehören die auch zu …?\" when other amounts from\nthe same IBAN are waiting: true = the rule books only payments of this line's amount (the\nlatest confirmed one of its category, read from the ledger); ignored without learn_rule\nand for a rule whose split method checks the amount itself."
       },
+      "ConfirmCategoryBody": {
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/AllocationCategory"
+          },
+          "transaction_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Transaction Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "category",
+          "transaction_ids"
+        ],
+        "title": "ConfirmCategoryBody",
+        "description": "POST /inbox/confirm-category (phase 6 D159 amended 13 Nov 2026, „Alle bestätigen“):\nthe lines the person saw in the list, and the category they were listed under. Never a\ncategory alone: only these lines are confirmed."
+      },
+      "ConfirmCategoryResult": {
+        "properties": {
+          "confirmed": {
+            "type": "integer",
+            "title": "Confirmed"
+          },
+          "skipped": {
+            "items": {
+              "$ref": "#/components/schemas/ConfirmCategorySkip"
+            },
+            "type": "array",
+            "title": "Skipped"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "confirmed",
+          "skipped"
+        ],
+        "title": "ConfirmCategoryResult"
+      },
+      "ConfirmCategorySkip": {
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Transaction Id"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "not_open",
+              "not_waiting",
+              "split",
+              "category_changed",
+              "question"
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "transaction_id",
+          "reason"
+        ],
+        "title": "ConfirmCategorySkip",
+        "description": "A listed line left as it is: its proposal is no longer a waiting one-part proposal of\nthe category without a question (it changed since the list was shown), or the line no\nlonger counts (merged as a duplicate, its import not reconciled)."
+      },
       "ConfirmPaymentIbanBody": {
         "properties": {
           "import_id": {
@@ -16961,6 +17075,21 @@
               }
             ],
             "title": "Error Code"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AllocationCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "bulk_confirmable": {
+            "type": "boolean",
+            "title": "Bulk Confirmable",
+            "default": false
           }
         },
         "additionalProperties": false,

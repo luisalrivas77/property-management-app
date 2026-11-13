@@ -1960,6 +1960,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/inbox/confirm-category": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Inbox Confirm Category
+         * @description „Alle bestätigen“: the listed private lines' proposals of one category, in one
+         *     transaction; lines that changed meanwhile come back as skipped.
+         */
+        post: operations["inbox_confirm_category_api_inbox_confirm_category_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/transactions/{transaction_id}/allocations": {
         parameters: {
             query?: never;
@@ -4571,6 +4592,42 @@ export interface components {
              */
             same_amount_only: boolean;
         };
+        /**
+         * ConfirmCategoryBody
+         * @description POST /inbox/confirm-category (phase 6 D159 amended 13 Nov 2026, „Alle bestätigen“):
+         *     the lines the person saw in the list, and the category they were listed under. Never a
+         *     category alone: only these lines are confirmed.
+         */
+        ConfirmCategoryBody: {
+            category: components["schemas"]["AllocationCategory"];
+            /** Transaction Ids */
+            transaction_ids: string[];
+        };
+        /** ConfirmCategoryResult */
+        ConfirmCategoryResult: {
+            /** Confirmed */
+            confirmed: number;
+            /** Skipped */
+            skipped: components["schemas"]["ConfirmCategorySkip"][];
+        };
+        /**
+         * ConfirmCategorySkip
+         * @description A listed line left as it is: its proposal is no longer a waiting one-part proposal of
+         *     the category without a question (it changed since the list was shown), or the line no
+         *     longer counts (merged as a duplicate, its import not reconciled).
+         */
+        ConfirmCategorySkip: {
+            /**
+             * Transaction Id
+             * Format: uuid
+             */
+            transaction_id: string;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "not_open" | "not_waiting" | "split" | "category_changed" | "question";
+        };
         /** ConfirmPaymentIbanBody */
         ConfirmPaymentIbanBody: {
             /**
@@ -6389,6 +6446,12 @@ export interface components {
             private_costs?: components["schemas"]["TaxInputCreate"][];
             /** Error Code */
             error_code?: string | null;
+            category?: components["schemas"]["AllocationCategory"] | null;
+            /**
+             * Bulk Confirmable
+             * @default false
+             */
+            bulk_confirmable: boolean;
         };
         /**
          * InboxItemKind
@@ -15203,6 +15266,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AiRetryResult"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    inbox_confirm_category_api_inbox_confirm_category_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmCategoryBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfirmCategoryResult"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

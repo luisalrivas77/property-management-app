@@ -120,15 +120,16 @@ if set(TAXONOMY) != PRIVATE_ONLY:  # pragma: no cover - a code without its row
 # „Alle bestätigen“ in Zu prüfen (D159 amended 13 Nov 2026): the plain income and spending
 # codes whose waiting proposals a person may confirm as a group (POST /inbox/confirm-category).
 # Never a tax-relevant code, a movement or depot code, uncategorized, nor three codes that may
-# matter for a return later and are confirmed one by one: capital income (phase 8's KAP),
-# money to family (Unterhalt) and work costs (Werbungskosten on Anlage N).
+# matter for a return later and are confirmed one by one: capital income (phase 8's KAP), a
+# tax refund (a church-tax refund lowers the Sonderausgaben), money to family (Unterhalt) and
+# work costs (Werbungskosten on Anlage N).
 BULK_CONFIRMABLE = frozenset(
     c
     for c, row in TAXONOMY.items()
     if c in HOUSEHOLD_CODES
     and row.relevance in (R.INCOME, R.SPENDING)
     and row.group not in (G.TAX, G.MOVEMENTS, G.DEPOT)
-) - {C.HH_CAPITAL_INCOME, C.HH_FAMILY_TRANSFERS, C.HH_WORK_EDUCATION}
+) - {C.HH_CAPITAL_INCOME, C.HH_TAX_REFUND, C.HH_FAMILY_TRANSFERS, C.HH_WORK_EDUCATION}
 
 _ALLOWED = MappingProxyType(
     {
