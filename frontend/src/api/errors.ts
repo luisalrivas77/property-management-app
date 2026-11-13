@@ -208,6 +208,12 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "return.childcare_age": "Kinderbetreuungskosten zählen nur bis zum 14. Geburtstag des Kindes.",
   "return.household_services_cash":
     "Bar bezahlte Handwerker- oder Haushaltsleistungen zählen nicht (§ 35a): nur Überweisungen.",
+  // Phase 6 step 4: the depot's documents (services/depot.py)
+  "depot.account_required": "Bitte als Konto ein Depot wählen; Wertpapiere werden nur auf einem Depot gebucht.",
+  "depot.movement_exists":
+    "Dieser Vorgang (gleiche Referenz) ist auf dem Depot schon gebucht. Das Dokument wurde vermutlich zweimal hochgeladen; diesen Eintrag überspringen.",
+  "depot.holdings_mismatch":
+    "Der Depotbericht nennt andere Stückzahlen, als die gebuchten Abrechnungen ergeben. Bitte die fehlenden Wertpapierabrechnungen hochladen.",
 };
 
 /** German text for a proposal's `error_code`: why reading the document failed or was

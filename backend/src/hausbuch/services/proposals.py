@@ -144,6 +144,7 @@ from hausbuch.schemas.tax import LIMIT_15_CATEGORIES, TaxInput, TaxInputCreate, 
 from hausbuch.schemas.tenancy import InitialRent, TenancyCreate, TenantCreate
 
 from . import (
+    depot,
     documents,
     income_inputs,
     loans,
@@ -202,6 +203,10 @@ _APPLY_ORDER = {
     "income_input": 15,
     # phase 3 D143: a payment proof moves its bill's private_cost rows to the year paid
     "private_cost_year": 16,
+    # phase 6 step 4: a depot reading's movements, then a report's positions, which are
+    # reconciled against the movements confirmed so far
+    "movement": 17,
+    "holding": 18,
 }
 _PAY_KINDS = ("wage_certificate", "payslip")
 # The record whose entity a link record points at when the proposal had no target yet.
@@ -786,6 +791,7 @@ def prefill_context(
             and classification.subtype is DocumentSubtype.PAYMENT_PROOF
             else []
         ),
+        depot_accounts=depot.depot_accounts(conn),
     )
 
 
@@ -1000,6 +1006,10 @@ def apply_proposal(
     ordered = sorted(current.records, key=lambda r: _APPLY_ORDER.get(_prefix(r.key), 99))
     for record in ordered:
         run.apply(record)
+    if any(_prefix(a.key) == "holding" and not a.skipped for a in run.applied.values()):
+        # Phase 6 step 4: a report's assets held but not listed, and its one event per
+        # account and date (reconciled or the inbox card's mismatch).
+        depot.finish_report(ctx, current.document_id)
 
     applied = [run.applied[r.key] for r in current.records]
     decisions = {r.key: _decisions(r, given.get(r.key)) for r in current.records}
@@ -1676,6 +1686,17 @@ class _Apply:
             data = data.model_copy(update={"supersedes_id": row.id})
         return income_inputs.create_income_input(self.ctx, data).id
 
+    def _movement(self, record: ProposalRecord, values: dict[str, Any]) -> UUID:
+        """A depot reading's movement (phase 6 step 4) through services/depot, confirmed on
+        the account the user chose, with its cash line when exactly one fits."""
+        data = _validate(record.key, depot.DepotMovementValues, values)
+        return depot.record_movement(self.ctx, data, self.document_id)
+
+    def _holding(self, record: ProposalRecord, values: dict[str, Any]) -> UUID:
+        """A report's position (phase 6 step 4), reconciled against the account's movements."""
+        data = _validate(record.key, depot.DepotHoldingValues, values)
+        return depot.record_holding(self.ctx, data, self.document_id)
+
     _HANDLERS: dict[str, Callable[["_Apply", ProposalRecord, dict[str, Any]], UUID]] = {
         "property": _property,
         "correction": _correction,
@@ -1694,6 +1715,8 @@ class _Apply:
         "return_input": _return_input,
         "income_input": _income_input,
         "private_cost_year": _private_cost_year,
+        "movement": _movement,
+        "holding": _holding,
     }
 
 

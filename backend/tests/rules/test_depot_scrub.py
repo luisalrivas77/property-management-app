@@ -143,11 +143,11 @@ def test_a_document_of_another_kind_is_not_a_depot_document(text):
 
 
 def test_the_private_subtypes_are_the_depots_documents():
-    assert PRIVATE_SUBTYPES == {
+    assert {
         S.TRADE_CONFIRMATION,
         S.DISTRIBUTION_NOTE,
         S.DEPOT_REPORT,
         S.SECURITIES_TRANSFER,
         S.DEPOT_STATEMENT,
         S.CAPITAL_INCOME_TAX_CERTIFICATE,
-    }
+    } == PRIVATE_SUBTYPES

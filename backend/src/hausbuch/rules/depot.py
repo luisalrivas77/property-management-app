@@ -307,9 +307,9 @@ def _trade(values: Mapping[str, object]) -> DepotProposal | None:
     )
     buy = side == "Kauf"
     warnings = []
-    if gross is not None and fees is not None and taxes is not None and net is not None:
-        if net != (gross + fees + taxes if buy else gross - fees - taxes):
-            warnings.append(NET_MISMATCH)
+    stated = gross is not None and fees is not None and taxes is not None and net is not None
+    if stated and net != (gross + fees + taxes if buy else gross - fees - taxes):
+        warnings.append(NET_MISMATCH)
     movement = ProposedMovement(
         kind=MovementKind.ACQUISITION if buy else MovementKind.DISPOSAL,
         isin=isin,
@@ -333,17 +333,24 @@ def _distribution(values: Mapping[str, object]) -> DepotProposal | None:
     gross, held, german, net = (
         _dec(values, f) for f in ("gross_amount", "withholding_tax", "german_taxes", "net_amount")
     )
-    if gross is not None and held is not None and german is not None and net is not None:
-        if net != gross - held - german:
-            warnings.add(NET_MISMATCH)
+    stated = gross is not None and held is not None and german is not None and net is not None
+    if stated and net != gross - held - german:
+        warnings.add(NET_MISMATCH)
     units, per_unit = _dec(values, "units"), _dec(values, "gross_per_unit")
-    if units is not None and per_unit is not None and gross is not None:
-        if (units * per_unit).quantize(_CENT) != gross:
-            warnings.add(GROSS_MISMATCH)
+    if (
+        units is not None
+        and per_unit is not None
+        and gross is not None
+        and (units * per_unit).quantize(_CENT) != gross
+    ):
+        warnings.add(GROSS_MISMATCH)
     taxes_eur = _dec(values, "german_taxes_eur")
-    if taxes_eur is not None and net_eur is not None:
-        if abs(gross_eur - taxes_eur - net_eur) > _EURO_LINES_TOLERANCE:
-            warnings.add(NET_MISMATCH)
+    if (
+        taxes_eur is not None
+        and net_eur is not None
+        and abs(gross_eur - taxes_eur - net_eur) > _EURO_LINES_TOLERANCE
+    ):
+        warnings.add(NET_MISMATCH)
     movement = ProposedMovement(
         kind=MovementKind.DISTRIBUTION,
         isin=isin,

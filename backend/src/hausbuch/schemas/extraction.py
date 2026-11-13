@@ -864,4 +864,5 @@ AnyExtraction = (
     | TradeConfirmationExtraction
     | DistributionNoteExtraction
     | DepotReportExtraction
+    | SecuritiesTransferExtraction
 )
