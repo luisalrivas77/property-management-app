@@ -699,6 +699,7 @@ class ReportTrade(Schema):
 
 class PositionExpect(Schema):
     asset: str
+    listed: bool = True  # False: held by the movements, absent from the report (0 by omission)
     reconciled: bool
     difference_units: Quantity
     price_stored: bool
@@ -720,31 +721,42 @@ class HoldingsCase(_Case):
 
     def recompute(self) -> HoldingsExpect:
         present = {m.external_ref for m in self.movements if m.external_ref}
-        positions = []
-        for position in self.declared:
-            held = sum(
+
+        def held(asset: str) -> Decimal:
+            return sum(
                 (
                     m.quantity
                     for m in self.movements
-                    if m.asset == position.asset
+                    if m.asset == asset
                     and m.status is MovementStatus.CONFIRMED
                     and m.occurred_on <= self.as_of
                 ),
                 Decimal(0),
             )
-            difference = position.units - held
+
+        declared = {p.asset for p in self.declared}
+        listed = [(p.asset, p.units, True) for p in self.declared]
+        unlisted = [
+            (asset, Decimal(0), False)
+            for asset in dict.fromkeys(m.asset for m in self.movements)
+            if asset not in declared and held(asset) != 0
+        ]
+        positions = []
+        for asset, units, is_listed in listed + unlisted:
+            difference = units - held(asset)
             reconciled = abs(difference) <= depot.UNITS_TOLERANCE
             missing = [
                 t.reference
                 for t in self.report_trades
-                if t.asset == position.asset and t.reference not in present
+                if t.asset == asset and t.reference not in present
             ]
             positions.append(
                 PositionExpect(
-                    asset=position.asset,
+                    asset=asset,
+                    listed=is_listed,
                     reconciled=reconciled,
                     difference_units=difference,
-                    price_stored=reconciled and position.units > 0,
+                    price_stored=reconciled and units > 0,
                     error=None if reconciled else E.DEPOT_HOLDINGS_MISMATCH,
                     missing_references=None if reconciled else missing,
                 )
