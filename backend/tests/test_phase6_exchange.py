@@ -237,3 +237,21 @@ def test_withdrawal_takes_the_nearest_history_row_once():
     )
     found = exchange.match_withdrawals([w1, w2], history)
     assert {i: r.tx_hash for i, r in found.items()} == {0: "aaa1", 1: "aaa2"}
+
+
+def test_a_positive_transaction_fee_is_unreadable_not_a_crash():
+    """A value out of a movement's range (here a fee credited, so fee_quantity < 0) is
+    exchange.unreadable naming the second, never a ValidationError quoting the cell."""
+    rows = binance_csv.parse_transactions_text(
+        "User ID,Time,Account,Operation,Coin,Change,Remark\n"
+        "987654321,2026-03-02 10:00:00,Spot,Transaction Fee,BTC,0.000004,\n"
+        "987654321,2026-03-02 10:00:00,Spot,Transaction Spend,EUR,-250,\n"
+        "987654321,2026-03-02 10:00:00,Spot,Transaction Buy,BTC,0.004,\n"
+    )
+    with pytest.raises(RuleError) as caught:
+        exchange.binance_movements(rows)
+    assert caught.value.code == E.EXCHANGE_UNREADABLE
+    message = str(caught.value)
+    assert "2026-03-02T10:00:00" in message and "out of range" in message
+    assert "0.000004" not in message and "987654321" not in message
+    assert caught.value.__cause__ is None and caught.value.__suppress_context__

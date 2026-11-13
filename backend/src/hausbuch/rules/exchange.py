@@ -26,6 +26,8 @@ from datetime import datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Protocol
 
+from pydantic import ValidationError
+
 from hausbuch.rules import errors as E
 from hausbuch.rules.errors import RuleError
 from hausbuch.schemas.household import (
@@ -148,6 +150,16 @@ def _bison_key(line: MovementLine) -> tuple[str, ...]:
     )
 
 
+def _movement(where: str, **fields) -> ExchangeMovement:  # noqa: ANN003
+    """An ExchangeMovement, or exchange.unreadable naming the row or second whose value is
+    out of the movement's range (a positive Transaction Fee, say). The message names no
+    value and the validation error is not chained: its text would quote the cell."""
+    try:
+        return ExchangeMovement(**fields)
+    except ValidationError:
+        raise RuleError(E.EXCHANGE_UNREADABLE, f"{where}: a value is out of range") from None
+
+
 def bison_movements(lines: Sequence[MovementLine]) -> list[ExchangeMovement]:
     """One movement per row, in the file's order. A Transaction ID repeated in the file gives
     the same hash twice; the import skips the second (D166)."""
@@ -157,7 +169,7 @@ def bison_movements(lines: Sequence[MovementLine]) -> list[ExchangeMovement]:
         for line, p in zip(lines, _positions_of(keys), strict=True)
     ]
     out = []
-    for line, key, position in zip(lines, keys, positions, strict=True):
+    for n, (line, key, position) in enumerate(zip(lines, keys, positions, strict=True), 1):
         kind = classify(line)
         sign = 1 if kind in _INWARD else -1
         quantity = line.quantity * sign
@@ -168,7 +180,8 @@ def bison_movements(lines: Sequence[MovementLine]) -> list[ExchangeMovement]:
         else:
             eur = -line.eur_amount if kind is MovementKind.ACQUISITION else line.eur_amount
         out.append(
-            ExchangeMovement(
+            _movement(
+                f"row {n}",
                 occurred_at=line.occurred_at,
                 asset=line.asset,
                 kind=kind,
@@ -303,7 +316,8 @@ def binance_movements(rows: Sequence[BinanceRow]) -> list[ExchangeMovement]:
         at = datetime.fromisoformat(key[0])
         kind, asset = fields["kind"], fields["asset"]
         out.append(
-            ExchangeMovement(
+            _movement(
+                f"the second {at.isoformat()}",
                 occurred_at=at,
                 status=_status(kind, asset),
                 question=_question(kind),
