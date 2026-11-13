@@ -39,6 +39,7 @@ from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import possible_duplicate as duplicate_table
+from hausbuch.db.tables import proposal as proposal_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.jobs import enqueue
@@ -52,6 +53,9 @@ from hausbuch.schemas.bank import (
     ParsedStatement,
     PossibleDuplicate,
     ReconcileStatus,
+    StatementFileCandidate,
+    StatementFileImport,
+    StatementFileOffer,
     StatementFormat,
     StatementImport,
     StatementLine,
@@ -71,6 +75,7 @@ from hausbuch.schemas.enums import (
     DuplicateStatus,
     EntityType,
     ImportStatus,
+    ProposalStatus,
 )
 from hausbuch.schemas.events import (
     EventType,
@@ -83,8 +88,14 @@ from hausbuch.storage import BlobStore
 
 from .bank import parse_statement
 from .context import CommandContext
-from .documents import type_document, upload_document
-from .errors import ConflictError
+from .documents import (
+    document_media_type,
+    get_document,
+    read_original,
+    type_document,
+    upload_document,
+)
+from .errors import ConflictError, NotFoundError
 from .events import append_event, diff_changes
 from .iban import ProtectedIban, protect_iban, protect_ref
 from .lookup import require_row
@@ -141,6 +152,13 @@ def import_statement(
         original_filename=original_filename,
         detect_depot_kind=True,
     )
+    # A card or depot statement uploaded through Dokumente first failed its read with
+    # proposal.bank_file_not_read; on its account now, that „couldn't read this“ card is
+    # stale, whether or not the document was typed by hand meanwhile, and also when this is
+    # the same file again (a read queued before the first import may have failed after it).
+    from .proposals import supersede_bank_file_refusals  # proposals imports matching
+
+    supersede_bank_file_refusals(ctx, document.id)
     existing = ctx.conn.execute(
         select(*_IMPORT_COLUMNS).where(
             import_table.c.account_id == account_id, import_table.c.document_id == document.id
@@ -163,11 +181,6 @@ def import_statement(
                 tax_year=last.year if last.year >= TAX_YEAR_MIN else None,
             ),
         )
-        # A card statement uploaded through Dokumente first failed its read with
-        # proposal.bank_file_not_read; imported now, that „couldn't read this“ card is stale.
-        from .proposals import supersede_bank_file_refusals  # proposals imports matching
-
-        supersede_bank_file_refusals(ctx, document.id)
 
     ibans = [_protect(line.counterparty_iban, iban_key) for line in statement.lines]
     hashes = _line_hashes(account_id, statement, iban_key)
@@ -246,6 +259,136 @@ def import_statement(
             "stated_closing": statement.stated_balance,
             "stated_closing_on": statement.stated_balance_on,
         }
+    )
+
+
+def import_stored_statement(
+    ctx: CommandContext,
+    store: BlobStore,
+    document_id: UUID,
+    account_id: UUID,
+    *,
+    iban_key: bytes,
+) -> StatementImport:
+    """POST /documents/{id}/import-statement, „Auf Konto importieren“ (phase 6 D176 (3),
+    step 4): a file already stored as a document (a card or depot statement uploaded through
+    Dokumente, whose read failed with proposal.bank_file_not_read) imported onto the account
+    from its stored original, with no second upload. The same import as an upload on the
+    account's page: the bytes are the document's (verified against its SHA-256), so
+    upload_document finds this document again (D9), and every check of import_statement
+    applies (routing, reconciliation, the stale „couldn't read this“ card superseded). Called
+    again for the same account it returns the existing import and writes nothing new;
+    another account's statement is refused with statement.account_mismatch."""
+    document = get_document(ctx.conn, document_id)
+    if document is None:
+        raise NotFoundError(EntityType.DOCUMENT, document_id)
+    media_type = document_media_type(ctx.conn, document_id)
+    assert media_type is not None  # every document has its file row
+    data = read_original(ctx.conn, store, document_id)
+    return import_statement(
+        ctx,
+        store,
+        account_id,
+        data,
+        media_type=media_type,
+        iban_key=iban_key,
+        original_filename=document.original_filename,
+    )
+
+
+def document_statement_imports(conn: Connection, document_id: UUID) -> list[StatementFileImport]:
+    """The imports this document is the original of, with their account's name; oldest
+    first."""
+    i = import_table.c
+    rows = conn.execute(
+        select(i.id, i.account_id, i.status, account_table.c.label)
+        .join(account_table, account_table.c.id == i.account_id)
+        .where(i.document_id == document_id)
+        .order_by(i.created_at, i.id)
+    ).all()
+    return [
+        StatementFileImport(
+            import_id=r.id,
+            account_id=r.account_id,
+            account_label=r.label,
+            status=ImportStatus(r.status),
+        )
+        for r in rows
+    ]
+
+
+_OFFER_KINDS = {
+    StatementFormat.CARD_PDF: AccountKind.CREDIT_CARD,
+    StatementFormat.DEPOT_PDF: AccountKind.DEPOT,
+}
+
+
+def statement_offer(
+    conn: Connection, store: BlobStore, document_id: UUID, *, iban_key: bytes
+) -> StatementFileOffer | None:
+    """For „Auf Konto importieren“ (phase 6 D176 (3), step 4): the accounts a card or depot
+    statement stored as a document can be imported onto. Only for a document whose read
+    failed with proposal.bank_file_not_read (still failed, not superseded) and that no
+    import holds yet, so only such a document's original is read and parsed here.
+
+    The file's printed number (the card's customer number, the depot's account number)
+    decides: an account of the kind whose stored number is it is the suggestion; an account
+    with another number is left out (the import would refuse it); one without a number may
+    take it (its first statement sets the number) and is the suggestion when it is the only
+    candidate. None when the file is no longer one of these statements."""
+    from .proposals import PROPOSAL_BANK_FILE_NOT_READ  # proposals imports matching
+
+    p = proposal_table.c
+    refused = exists().where(
+        p.document_id == document_id,
+        p.status == ProposalStatus.FAILED.value,
+        p.error_code == PROPOSAL_BANK_FILE_NOT_READ,
+    )
+    imported = exists().where(import_table.c.document_id == document_id)
+    if not conn.execute(select(refused & ~imported)).scalar_one():
+        return None
+    media_type = document_media_type(conn, document_id)
+    if media_type is None:
+        return None
+    try:
+        statement = parse_statement(read_original(conn, store, document_id), media_type).statement
+    except RuleError:
+        return None
+    kind = _OFFER_KINDS.get(statement.format)
+    if kind is None or statement.account_ref is None:
+        return None
+    theirs = protect_ref(statement.account_ref, iban_key).hmac
+    a = account_table.c
+    rows = conn.execute(
+        select(a.id, a.label, a.bank, a.external_ref_masked, a.external_ref_hmac)
+        .where(a.kind == kind.value)
+        .order_by(a.label, a.id)
+    ).all()
+    matching = [
+        r
+        for r in rows
+        if r.external_ref_hmac is not None and hmac.compare_digest(r.external_ref_hmac, theirs)
+    ]
+    held_elsewhere = (
+        not matching
+        and conn.execute(select(a.id).where(a.external_ref_hmac == theirs)).first() is not None
+    )
+    unnumbered = [] if held_elsewhere else [r for r in rows if r.external_ref_hmac is None]
+    candidates = matching or unnumbered
+    suggested = candidates[0].id if len(candidates) == 1 else None
+    return StatementFileOffer(
+        format=statement.format,
+        account_kind=kind,
+        candidates=[
+            StatementFileCandidate(
+                account_id=r.id,
+                label=r.label,
+                bank=r.bank,
+                external_ref_masked=r.external_ref_masked,
+            )
+            for r in candidates
+        ],
+        suggested_account_id=suggested,
     )
 
 

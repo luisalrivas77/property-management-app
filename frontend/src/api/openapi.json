@@ -3338,7 +3338,7 @@
     "/api/documents/{document_id}": {
       "get": {
         "summary": "Document Get",
-        "description": "The document, its links, its current extraction and its retention, read in one\ntransaction.",
+        "description": "The document, its links, its current extraction and its retention, read in one\ntransaction; the statement imports it is the original of, and for a card or depot\nstatement whose read was refused and which no account holds yet, the accounts\n„Auf Konto importieren“ offers (phase 6 D176 (3), step 4).",
         "operationId": "document_get_api_documents__document_id__get",
         "parameters": [
           {
@@ -3564,6 +3564,67 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/documents/{document_id}/import-statement": {
+      "post": {
+        "summary": "Document Import Statement",
+        "description": "„Auf Konto importieren“ (phase 6 D176 (3), step 4): the stored document (a card or\ndepot statement uploaded through Dokumente) imported as a statement of `account_id` from\nits original, exactly as POST /accounts/{id}/imports would import the same file. 201 with\nthe new import; 200 with the existing one when this document is already imported on\nthat account (idempotent); 404 for an unknown document or account; 422 rule_violation with\na statement.* code when the file is not this account's (statement.account_mismatch) or\ncannot be imported (nothing is written then).",
+        "operationId": "document_import_statement_api_documents__document_id__import_statement_post",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Document Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportStoredStatementBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatementImport"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Already imported on this account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatementImport"
                 }
               }
             }
@@ -12409,6 +12470,23 @@
                 "type": "null"
               }
             ]
+          },
+          "statement_imports": {
+            "items": {
+              "$ref": "#/components/schemas/StatementFileImport"
+            },
+            "type": "array",
+            "title": "Statement Imports"
+          },
+          "statement_offer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatementFileOffer"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -15032,6 +15110,22 @@
         "title": "ImportStatus",
         "description": "statement_import.status. `imported` with no declared closing balance is what the\ninbox shows as \"pending balance\" (reconcile's pending_balance)."
       },
+      "ImportStoredStatementBody": {
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "account_id"
+        ],
+        "title": "ImportStoredStatementBody",
+        "description": "POST /documents/{id}/import-statement: the account the stored file is a statement of."
+      },
       "InboundDecision": {
         "type": "string",
         "enum": [
@@ -15349,6 +15443,17 @@
             },
             "type": "array",
             "title": "Private Costs"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
           }
         },
         "additionalProperties": false,
@@ -22610,6 +22715,112 @@
         "type": "object",
         "title": "StatementExtraction",
         "description": "PDF Kontoauszug (§7.1): balances and lines. Every amount is a model reading, so the\nreconciliation is the guard; `lines` holds one text per booking line, parsed into\nStatementLines by bank.pdf."
+      },
+      "StatementFileCandidate": {
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "bank": {
+            "type": "string",
+            "title": "Bank"
+          },
+          "external_ref_masked": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\*{4} [A-Z0-9]{4}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Ref Masked"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "account_id",
+          "label",
+          "bank"
+        ],
+        "title": "StatementFileCandidate",
+        "description": "An account of the kind the file imports onto that may take it: its number is the one\nthe file prints, or it has none yet (its first statement sets it)."
+      },
+      "StatementFileImport": {
+        "properties": {
+          "import_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Import Id"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "account_label": {
+            "type": "string",
+            "title": "Account Label"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ImportStatus"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "import_id",
+          "account_id",
+          "account_label",
+          "status"
+        ],
+        "title": "StatementFileImport",
+        "description": "One import of a stored document: the account it went to (GET /documents/{id})."
+      },
+      "StatementFileOffer": {
+        "properties": {
+          "format": {
+            "$ref": "#/components/schemas/StatementFormat"
+          },
+          "account_kind": {
+            "$ref": "#/components/schemas/AccountKind"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/StatementFileCandidate"
+            },
+            "type": "array",
+            "title": "Candidates"
+          },
+          "suggested_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested Account Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "format",
+          "account_kind"
+        ],
+        "title": "StatementFileOffer",
+        "description": "A credit card's PDF statement or a depot's cash statement uploaded through Dokumente,\nwhose read failed with proposal.bank_file_not_read and which no account holds yet: the\naccounts it can be imported onto with „Auf Konto importieren“ (principle 7: the app\nproposes, the person confirms). `suggested_account_id` is the account whose stored number\nis the one the file prints, else the only candidate; none when there is no candidate or\nseveral without a number. No candidate means no account of this kind takes it yet\n(`account_kind` names the kind to create)."
       },
       "StatementFormat": {
         "type": "string",

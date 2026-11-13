@@ -63,6 +63,7 @@ from hausbuch.schemas.enums import (
 from . import allocations, matching, rules_learned, workspace_settings
 from .context import CommandContext
 from .errors import NotFoundError, RuleViolationError
+from .proposals import PROPOSAL_BANK_FILE_NOT_READ
 from .statements import _to_transaction, import_inbox_items, transaction_select
 
 TRANSACTION_MISMATCH = "allocation.transaction_mismatch"
@@ -286,6 +287,13 @@ _PROPOSAL_TEXTS = {
         "Möchtest du die Werte selbst eintragen?",
     ),
 }
+# Phase 6 D176 (3), step 4: a card or depot statement uploaded through Dokumente is read by
+# code on its account; the card offers „Auf Konto importieren“ instead of a new read.
+_BANK_FILE_TEXTS = (
+    "Eine Kreditkartenabrechnung oder ein Kontoauszug des Depot-Verrechnungskontos: Hausbuch "
+    "liest sie selbst, ohne KI, auf ihrem Konto ein.",
+    "Auf welches Konto soll sie importiert werden?",
+)
 _UNMATCHED_REASON = "Nicht zugeordnet: keine Regel, kein Abgleich und kein Beleg passen."
 _AI_FAILED_REASON = "Die KI konnte diese Zahlung nicht einordnen (Anfrage fehlgeschlagen)."
 # Phase 6 D168: a private line nothing explains, while the model may not see private lines.
@@ -368,6 +376,8 @@ def _proposal_items(conn: Connection) -> list[InboxItem]:
     items = []
     for row in rows:
         kind, reasoning, question = _PROPOSAL_TEXTS[ProposalStatus(row.status)]
+        if kind is InboxItemKind.READ_FAILED and row.error_code == PROPOSAL_BANK_FILE_NOT_READ:
+            reasoning, question = _BANK_FILE_TEXTS
         items.append(
             InboxItem(
                 kind=kind,
@@ -376,6 +386,7 @@ def _proposal_items(conn: Connection) -> list[InboxItem]:
                 question=question,
                 document_id=row.document_id,
                 proposal_id=row.id,
+                error_code=row.error_code if kind is InboxItemKind.READ_FAILED else None,
             )
         )
     return items

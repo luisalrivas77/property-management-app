@@ -252,6 +252,49 @@ class DeclareBalanceBody(Schema):
     opening_balance: Money | None = None
 
 
+# --- A stored document imported as a statement (phase 6 D176 (3), step 4) ------------------
+
+
+class ImportStoredStatementBody(Schema):
+    """POST /documents/{id}/import-statement: the account the stored file is a statement of."""
+
+    account_id: UUID
+
+
+class StatementFileImport(Schema):
+    """One import of a stored document: the account it went to (GET /documents/{id})."""
+
+    import_id: UUID
+    account_id: UUID
+    account_label: str
+    status: ImportStatus
+
+
+class StatementFileCandidate(Schema):
+    """An account of the kind the file imports onto that may take it: its number is the one
+    the file prints, or it has none yet (its first statement sets it)."""
+
+    account_id: UUID
+    label: str
+    bank: str
+    external_ref_masked: MaskedRef | None = None
+
+
+class StatementFileOffer(Schema):
+    """A credit card's PDF statement or a depot's cash statement uploaded through Dokumente,
+    whose read failed with proposal.bank_file_not_read and which no account holds yet: the
+    accounts it can be imported onto with „Auf Konto importieren“ (principle 7: the app
+    proposes, the person confirms). `suggested_account_id` is the account whose stored number
+    is the one the file prints, else the only candidate; none when there is no candidate or
+    several without a number. No candidate means no account of this kind takes it yet
+    (`account_kind` names the kind to create)."""
+
+    format: StatementFormat
+    account_kind: AccountKind
+    candidates: list[StatementFileCandidate] = Field(default_factory=list)
+    suggested_account_id: UUID | None = None
+
+
 class TransactionAllocationStatus(StrEnum):
     """Where a bank line stands, for Konten › Umsätze (read-only, computed per read from the
     line, its import, its open possible duplicate and its current allocation rows; first
