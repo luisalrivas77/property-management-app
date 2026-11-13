@@ -8,8 +8,21 @@
 # expectation is recomputed on load from BOOKING_PATTERNS, so this file and the table cannot
 # drift; categorise itself is the stub of step 4.
 #
-# Booking texts are invented from the bookings §3's secondary source names; step 4 corrects
-# them against the anonymised real statements.
+# Booking texts were invented from the bookings §3's secondary source names in step 0 and
+# corrected in step 4 against a real Kontoauszug of a portfolio's Vermögensverwaltungskonto
+# (read on Luis's computer, never committed; every reference, number and ISIN below is
+# invented):
+# - booking_text is the line's headline only: „Wertpapier Kauf, Ref.: <n>“, „Wertpapier
+#   Verkauf, Ref.: <n>“, „Vermögensverwaltungshonorar <Konto>, <von> - <bis>“. The detail
+#   lines below it (the security's name, its ISIN and units, a sale's „KEST: EUR -…“, the fee's
+#   Bemessungsgrundlage and USt) are the purpose and are never categorised, so a sale stays a
+#   sale.
+# - The Verrechnungskonto is credited its interest quarterly (the bank's letter on its rate):
+#   „Zinsen“ is hh_capital_income (D159: Zinsen on an account, read by phase 8), no longer
+#   uncategorized.
+# - Not in the real month read: a deposit, a payout, a distribution and a Vorabpauschale; their
+#   texts stay as step 0 assumed them, plus „Erträgnisgutschrift“ after the bank's own
+#   Erträgnisabrechnung, until a statement with one is read.
 #
 # Step 0 readings (listed in the step 0 report):
 # - "Steuer auf Ausschüttung" is the tax, not the distribution: the taxes come before the
@@ -21,19 +34,22 @@
 #   uncategorized, for review.
 
 cases:
-  - {id: deposit, booking_text: "Einlage", expect: internal_transfer_in, pending: "phase 6 step 4 (the depot)"}
-  - {id: deposit_lower_case, booking_text: "einlage per SEPA-Überweisung", expect: internal_transfer_in, pending: "phase 6 step 4 (the depot)"}
-  - {id: payout, booking_text: "Auszahlung auf Referenzkonto", expect: internal_transfer_out, pending: "phase 6 step 4 (the depot)"}
-  - {id: purchase, booking_text: "Kauf IE00BEISPL01 Beispiel MSCI World UCITS ETF", expect: security_purchase, pending: "phase 6 step 4 (the depot)"}
-  - {id: sale, booking_text: "Verkauf LU0BEISPIEL3 Beispiel Euro Bond UCITS ETF", expect: security_sale, pending: "phase 6 step 4 (the depot)"}
-  - {id: distribution, booking_text: "Ausschüttung IE00BEISPL02", expect: distribution, pending: "phase 6 step 4 (the depot)"}
-  - {id: dividend, booking_text: "Dividende IE00BEISPL02", expect: distribution, pending: "phase 6 step 4 (the depot)"}
-  - {id: advance_lump_sum, booking_text: "Vorabpauschale 2025", expect: capital_income_tax, pending: "phase 6 step 4 (the depot)"}
-  - {id: tax_on_a_distribution, booking_text: "Steuer auf Ausschüttung IE00BEISPL02", expect: capital_income_tax, pending: "phase 6 step 4 (the depot)"}
-  - {id: kapst, booking_text: "KapSt Verkauf LU0BEISPIEL3", expect: capital_income_tax, pending: "phase 6 step 4 (the depot)"}
-  - {id: soli, booking_text: "Solidaritätszuschlag", expect: capital_income_tax, pending: "phase 6 step 4 (the depot)"}
-  - {id: tax_refund, booking_text: "Steuererstattung", expect: capital_income_tax, pending: "phase 6 step 4 (the depot)"}
-  - {id: management_fee, booking_text: "Verwaltergebühr 05/2026", expect: depot_fee, pending: "phase 6 step 4 (the depot)"}
-  - {id: fee, booking_text: "Gebühr Depotübertrag", expect: depot_fee, pending: "phase 6 step 4 (the depot)"}
-  - {id: unknown_text, booking_text: "Zinsen Verrechnungskonto", expect: uncategorized, pending: "phase 6 step 4 (the depot)"}
-  - {id: word_only_starts_with_kauf, booking_text: "Kaufpreisrückerstattung", expect: uncategorized, pending: "phase 6 step 4 (the depot)"}
+  - {id: deposit, booking_text: "Einlage", expect: internal_transfer_in}
+  - {id: deposit_lower_case, booking_text: "einlage per SEPA-Überweisung", expect: internal_transfer_in}
+  - {id: payout, booking_text: "Auszahlung auf Referenzkonto", expect: internal_transfer_out}
+  - {id: purchase, booking_text: "Wertpapier Kauf, Ref.: 1000000001", expect: security_purchase}
+  - {id: sale, booking_text: "Wertpapier Verkauf, Ref.: 1000000002", expect: security_sale}
+  - {id: distribution, booking_text: "Ausschüttung IE00BEISPL02", expect: distribution}
+  - {id: dividend, booking_text: "Dividende IE00BEISPL02", expect: distribution}
+  - {id: income_credit, booking_text: "Erträgnisgutschrift, Ref.: 1000000003", expect: distribution}
+  - {id: advance_lump_sum, booking_text: "Vorabpauschale 2025", expect: capital_income_tax}
+  - {id: tax_on_a_distribution, booking_text: "Steuer auf Ausschüttung IE00BEISPL02", expect: capital_income_tax}
+  - {id: kapst, booking_text: "KapSt Verkauf LU0BEISPIEL3", expect: capital_income_tax}
+  - {id: soli, booking_text: "Solidaritätszuschlag", expect: capital_income_tax}
+  - {id: tax_refund, booking_text: "Steuererstattung", expect: capital_income_tax}
+  - {id: management_fee, booking_text: "Verwaltergebühr 05/2026", expect: depot_fee}
+  - {id: asset_management_fee, booking_text: "Vermögensverwaltungshonorar 9900000120, 01.10.2026 - 31.10.2026", expect: depot_fee}
+  - {id: fee, booking_text: "Gebühr Depotübertrag", expect: depot_fee}
+  - {id: interest, booking_text: "Zinsen Verrechnungskonto", expect: hh_capital_income}
+  - {id: unknown_text, booking_text: "Storno Lastschrift", expect: uncategorized}
+  - {id: word_only_starts_with_kauf, booking_text: "Kaufpreisrückerstattung", expect: uncategorized}
