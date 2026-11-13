@@ -283,6 +283,61 @@ class MovementLine(Schema):
     raw: dict[str, JsonValue] = Field(default_factory=dict)
 
 
+class BinanceRow(Schema):
+    """One row of Binance's „Transaction History“ (D178 (1)). The User ID and the Account
+    column are not read; the User ID has no field here, so it reaches nothing (D178 (2))."""
+
+    occurred_at: datetime
+    operation: str = Field(min_length=1)
+    coin: AssetSymbol
+    change: Quantity  # signed as Binance writes it
+    remark: str | None = None
+
+
+class WithdrawalRecord(Schema):
+    """One row of Binance's „Withdraw History“ (D178 (3)). The Address has no field here: it is
+    dropped by the parser and never stored (D178 (2))."""
+
+    occurred_at: datetime
+    coin: AssetSymbol
+    network: str = Field(min_length=1, max_length=50)
+    amount: NonNegativeQuantity  # what reached the destination
+    fee: NonNegativeQuantity
+    tx_hash: str = Field(min_length=1, max_length=200)
+    status: str
+
+
+class ExchangeMovement(Schema):
+    """rules.exchange's answer for one movement of an export (D166, D178): what the import
+    stores, before the asset ids are resolved. movement_hash is the dedup key (the row's
+    position among identical rows already folded in); question: the card's question code."""
+
+    occurred_at: datetime
+    asset: AssetSymbol
+    kind: MovementKind
+    status: MovementStatus
+    quantity: Quantity
+    eur_amount: Money | None = None
+    fee_eur: NonNegativeMoney | None = None
+    fee_quantity: NonNegativeQuantity | None = None
+    external_ref: str | None = Field(default=None, min_length=1, max_length=200)
+    network: str | None = Field(default=None, min_length=1, max_length=50)
+    tx_hash: str | None = Field(default=None, min_length=1, max_length=200)
+    question: str | None = None
+    movement_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    position: int = Field(default=0, ge=0)  # among identical rows (D22's fallback)
+
+
+class AssetCheck(Schema):
+    """rules.exchange.reconcile's answer for one typed asset (D166)."""
+
+    asset: AssetSymbol
+    held: Quantity
+    typed: NonNegativeQuantity
+    reconciled: bool
+    difference_units: Quantity  # typed - held
+
+
 class MovementImportFormat(StrEnum):
     """movement_import.format (migration 0025)."""
 
