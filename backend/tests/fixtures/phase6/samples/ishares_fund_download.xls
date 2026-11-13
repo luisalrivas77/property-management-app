@@ -1,0 +1,174 @@
+<?xml version="1.0"?>
+<ss:Workbook xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+<ss:Styles>
+<ss:Style ss:ID="Default">
+<ss:Alignment ss:Horizontal="Left"/>
+</ss:Style>
+</ss:Styles>
+<ss:Worksheet ss:Name="Fund Header">
+<ss:Table>
+<ss:Row>
+<ss:Cell>
+<ss:Data ss:Type="String">iShares Invented EM UCITS ETF USD (Acc)</ss:Data>
+</ss:Cell>
+</ss:Row>
+<ss:Row>
+<ss:Cell>
+<ss:Data ss:Type="String"></ss:Data>
+</ss:Cell>
+</ss:Row>
+<ss:Row>
+<ss:Cell>
+<ss:Data ss:Type="String">NAV per 26.Juni2026</ss:Data>
+</ss:Cell>
+</ss:Row>
+<ss:Row>
+<ss:Cell>
+<ss:Data ss:Type="String">USD 81,20</ss:Data>
+</ss:Cell>
+</ss:Row>
+<ss:Row>
+<ss:Cell>
+<ss:Data ss:Type="String">52W-Bandbreite 70,00 - 90,00</ss:Data>
+</ss:Cell>
+</ss:Row>
+<ss:Row></ss:Row>
+<ss:Row>
+<ss:Cell ss:StyleID="Disclaimer">
+<ss:Data ss:Type="String">Invented disclaimer row of the header sheet.</ss:Data>
+</ss:Cell>
+</ss:Row>
+</ss:Table>
+</ss:Worksheet>
+<ss:Worksheet ss:Name="Holdings">
+<ss:Table>
+<ss:Row>
+<ss:Cell>
+<ss:Data ss:Type="String">Emittententicker</ss:Data>
+</ss:Cell>
+<ss:Cell>
+<ss:Data ss:Type="String">Name</ss:Data>
+</ss:Cell>
+</ss:Row>
+</ss:Table>
+</ss:Worksheet>
+<ss:Worksheet ss:Name="Historical NAVs">
+<ss:Table>
+<ss:Row>
+<ss:Cell ss:StyleID="Header">
+</ss:Cell>
+<ss:Cell ss:Index="5" ss:StyleID="Header">
+<ss:Data ss:Type="String">Historische NAVs</ss:Data>
+</ss:Cell>
+</ss:Row>
+<ss:Row>
+<ss:Cell>
+<ss:Data ss:Type="String">26.Juni2026</ss:Data>
+</ss:Cell>
+<ss:Cell>
+<ss:Data ss:Type="String">81,20</ss:Data>
+</ss:Cell>
+<ss:Cell/><ss:Cell/>
+</ss:Row>
+<ss:Row>
+<ss:Cell>
+<ss:Data ss:Type="String">25.Juni2026</ss:Data>
+</ss:Cell>
+<ss:Cell>
+<ss:Data ss:Type="String">100,00</ss:Data>
+</ss:Cell>
+<ss:Cell/><ss:Cell/>
+</ss:Row>
+<ss:Row>
+<ss:Cell>
+<ss:Data ss:Type="String">29.Mai2026</ss:Data>
+</ss:Cell>
+<ss:Cell>
+<ss:Data ss:Type="String">1.002,50</ss:Data>
+</ss:Cell>
+<ss:Cell/><ss:Cell/>
+</ss:Row>
+<ss:Row>
+<ss:Cell>
+<ss:Data ss:Type="String">02.März2026</ss:Data>
+</ss:Cell>
+<ss:Cell>
+<ss:Data ss:Type="String">95,10</ss:Data>
+</ss:Cell>
+<ss:Cell/><ss:Cell/>
+</ss:Row>
+<ss:Row>
+<ss:Cell>
+<ss:Data ss:Type="String">15.Sept.2025</ss:Data>
+</ss:Cell>
+<ss:Cell>
+<ss:Data ss:Type="String">90,05</ss:Data>
+</ss:Cell>
+<ss:Cell/><ss:Cell/>
+</ss:Row>
+<ss:Row ss:Height="200">
+<ss:Cell ss:StyleID="Disclaimer" ss:MergeAcross="11">
+<ss:Data ss:Type="String">Invented disclaimer: these figures are made up. Quelle: Test.</ss:Data>
+</ss:Cell>
+</ss:Row>
+<ss:Row/>
+</ss:Table>
+</ss:Worksheet>
+<ss:Worksheet ss:Name="Performance">
+<ss:Table>
+<ss:Row></ss:Row>
+</ss:Table>
+</ss:Worksheet>
+<ss:Worksheet ss:Name="Key Facts">
+<ss:Table>
+<ss:Row>
+<ss:Cell>
+<ss:Data ss:Type="String">Fondsvermögen</ss:Data>
+</ss:Cell>
+<ss:Cell ss:StyleID="Left">
+<ss:Data ss:Type="String">USD 1.000.000,00</ss:Data>
+</ss:Cell>
+<ss:Cell ss:StyleID="AsOfDate">
+<ss:Data ss:Type="String">Per 26.Juni2026</ss:Data>
+</ss:Cell>
+</ss:Row>
+<ss:Row>
+<ss:Cell>
+<ss:Data ss:Type="String">Fondsauflegung</ss:Data>
+</ss:Cell>
+<ss:Cell ss:StyleID="Left">
+<ss:Data ss:Type="String">25.Sept.2009</ss:Data>
+</ss:Cell>
+</ss:Row>
+<ss:Row>
+<ss:Cell>
+<ss:Data ss:Type="String">Basiswährung</ss:Data>
+</ss:Cell>
+<ss:Cell ss:StyleID="Left">
+<ss:Data ss:Type="String">USD</ss:Data>
+</ss:Cell>
+</ss:Row>
+<ss:Row>
+<ss:Cell>
+<ss:Data ss:Type="String">Anlageklasse</ss:Data>
+</ss:Cell>
+<ss:Cell ss:StyleID="Left">
+<ss:Data ss:Type="String">Aktien</ss:Data>
+</ss:Cell>
+</ss:Row>
+<ss:Row>
+<ss:Cell>
+<ss:Data ss:Type="String">ISIN</ss:Data>
+</ss:Cell>
+<ss:Cell ss:StyleID="Left">
+<ss:Data ss:Type="String">IE000INVENT2</ss:Data>
+</ss:Cell>
+</ss:Row>
+</ss:Table>
+</ss:Worksheet>
+<ss:Worksheet ss:Name="Others">
+<ss:Table>
+<ss:Row></ss:Row>
+</ss:Table>
+</ss:Worksheet>
+</ss:Workbook>

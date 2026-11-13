@@ -1462,6 +1462,7 @@ REPORT_PRICE_LABEL = "„Kurs aus dem letzten Bericht“"
 
 
 class IssuerNavCase(_Case):
+    sample: str | None = None  # a parse case's id: `navs` is that recorded file's parse
     first_movement_on: date
     navs: list[NavPoint] = Field(default_factory=list)
     rates: list[FxRate] = Field(default_factory=list)
@@ -1514,8 +1515,54 @@ class IssuerNavCase(_Case):
         return self
 
 
+SAMPLES = FIXTURES / "samples"
+
+
+class ParseExpect(Schema):
+    isin: Isin | None = None
+    currency: CurrencyCode | None = None
+    navs: list[NavPoint] = Field(default_factory=list)
+    error: str | None = None  # SourceError.kind of a file the adapter refuses
+
+    @model_validator(mode="after")
+    def _one(self) -> Self:
+        if (self.error is None) == (self.isin is None or not self.navs):
+            raise ValueError("a parse case expects an ISIN and NAV rows, or an error")
+        return self
+
+
+class ParseCase(_Case):
+    """Step 5b: an issuer adapter's parse of a recorded file under fixtures/phase6/samples/
+    (the issuer's real layout, invented values), replayed by tests/test_prices_sources.py."""
+
+    issuer: str
+    sample: str
+    expect: ParseExpect
+
+    @model_validator(mode="after")
+    def _exists(self) -> Self:
+        if not (SAMPLES / self.sample).is_file():
+            raise ValueError(f"{self.id}: no recorded file {self.sample}")
+        return self
+
+
 class IssuerNavFixture(_Fixture):
     cases: list[IssuerNavCase] = Field(min_length=1)
+    parse_cases: list[ParseCase] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _samples(self) -> Self:
+        parsed = {c.id: c.expect for c in self.parse_cases}
+        for case in self.cases:
+            if case.sample is None:
+                continue
+            if case.sample not in parsed or parsed[case.sample].error is not None:
+                raise ValueError(f"{case.id}: {case.sample} is no parse case with rows")
+            if sorted(parsed[case.sample].navs, key=lambda n: n.on) != sorted(
+                case.navs, key=lambda n: n.on
+            ):
+                raise ValueError(f"{case.id}: navs differ from the parse of {case.sample}")
+        return self
 
 
 # --- net_worth.yaml: services.net_worth over a fixture ledger (D167 (4)) --------------------
