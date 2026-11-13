@@ -1092,10 +1092,14 @@ def _copies_a_split(conn: Connection, found: AllocationSet) -> bool:
     return method == SplitMethod.AS_LAST_SPLIT.value
 
 
-def write(ctx: CommandContext, line: Line, found: AllocationSet) -> MatchPlan:
-    """Route the set and write it, unless the line already holds the same answer."""
+def write(
+    ctx: CommandContext, line: Line, found: AllocationSet, *, propose_only: bool = False
+) -> MatchPlan:
+    """Route the set and write it, unless the line already holds the same answer.
+    `propose_only` (a re-ask's model answer, reask_household): never auto-confirmed, so the
+    one-off re-ask only replaces proposals and the person confirms every new answer."""
     decision = _route(line, found)
-    auto = decision is RoutingDecision.AUTO_CONFIRM
+    auto = decision is RoutingDecision.AUTO_CONFIRM and not propose_only
     # The same split as the current rows changes nothing, except a proposed set the order
     # now auto-confirms (a new rule or evidence books it): that is written as a confirmed set
     # superseding the proposal, so it leaves the inbox with the rule's or matcher's
@@ -1127,7 +1131,7 @@ def finish_line(
         # D159: never booked; the line stays unmatched in Zu prüfen (the request's schema
         # makes this unreachable, so a model answer here is a bug, not a retry).
         return MatchPlan("skipped", ALLOCATION_CATEGORY_NOT_FOR_ACCOUNT)
-    return write(ctx, line, _llm_guarded(line, found))
+    return write(ctx, line, _llm_guarded(line, found), propose_only=reask)
 
 
 def _route(line: Line, found: AllocationSet) -> RoutingDecision:
