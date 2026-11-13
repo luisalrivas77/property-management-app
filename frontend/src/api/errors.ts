@@ -211,7 +211,7 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   // Phase 6 step 4: the depot's documents (services/depot.py)
   "depot.account_required": "Bitte als Konto ein Depot wählen; Wertpapiere werden nur auf einem Depot gebucht.",
   "depot.movement_exists":
-    "Dieser Vorgang (gleiche Referenz) ist auf dem Depot schon gebucht. Das Dokument wurde vermutlich zweimal hochgeladen; diesen Eintrag überspringen.",
+    "Dieser Vorgang (gleiche Referenz oder gleicher Tag und Betrag) ist auf dem Depot schon gebucht. Das Dokument wurde vermutlich zweimal hochgeladen; diesen Eintrag überspringen.",
   "depot.holding_exists":
     "Dieser Bericht ist für dieses Depot und diesen Stichtag schon übernommen. Diesen Eintrag überspringen.",
   "depot.holdings_mismatch":

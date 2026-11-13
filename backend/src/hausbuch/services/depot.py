@@ -60,7 +60,7 @@ from .events import append_event
 
 # Codes of this service (frontend/src/api/errors.ts has their German text).
 DEPOT_ACCOUNT_REQUIRED = "depot.account_required"  # the account picked is no depot
-DEPOT_MOVEMENT_EXISTS = "depot.movement_exists"  # the same reference is booked already
+DEPOT_MOVEMENT_EXISTS = "depot.movement_exists"  # same reference, or same day and amount
 DEPOT_HOLDING_EXISTS = "depot.holding_exists"  # a report of that date is applied already
 
 # The cash line of a trade or a distribution is booked on the Valuta, a few bank days after
@@ -209,23 +209,38 @@ def _cash_line(conn: Connection, values: DepotMovementValues) -> UUID | None:
 
 def record_movement(ctx: CommandContext, values: DepotMovementValues, document_id: UUID) -> UUID:
     """One confirmed movement read from a depot document, with its cash line when exactly one
-    fits. Refused when the account is no depot, and when a current movement of the account
-    already carries the same reference and kind (the document applied twice)."""
+    fits. Refused when the account is no depot, and when the document was applied already: a
+    current movement of the account carries the same reference and kind, or, for a movement
+    without a reference (a distribution note names none), the same fund, kind, day and
+    amount."""
     _require_depot(ctx.conn, values.account_id)
     m = movement_table.c
     if values.external_ref is not None:
-        twin = ctx.conn.execute(
-            select(m.id).where(
-                m.account_id == values.account_id,
-                m.external_ref == values.external_ref,
-                m.kind == values.kind.value,
-                m.superseded_by.is_(None),
-            )
-        ).first()
-        if twin is not None:
-            raise RuleViolationError(
-                [DEPOT_MOVEMENT_EXISTS], "this movement is booked on the account already"
-            )
+        same = [m.external_ref == values.external_ref]
+    else:
+        known = ctx.conn.execute(
+            select(asset_table.c.id).where(asset_table.c.isin == values.isin)
+        ).all()
+        same = [
+            m.asset_id.in_([r.id for r in known]),
+            m.occurred_at >= _at(values.occurred_on),
+            m.occurred_at < _at(values.occurred_on + timedelta(days=1)),
+            m.eur_amount.is_(None)
+            if values.eur_amount is None
+            else m.eur_amount == values.eur_amount,
+        ]
+    twin = ctx.conn.execute(
+        select(m.id).where(
+            m.account_id == values.account_id,
+            m.kind == values.kind.value,
+            m.superseded_by.is_(None),
+            *same,
+        )
+    ).first()
+    if twin is not None:
+        raise RuleViolationError(
+            [DEPOT_MOVEMENT_EXISTS], "this movement is booked on the account already"
+        )
     asset_id = asset_for_isin(ctx, values.isin, values.name)
     source = _SOURCES.get(values.kind, MovementSource.USER)
     movement_id = ctx.conn.execute(

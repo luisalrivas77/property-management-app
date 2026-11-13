@@ -9,7 +9,7 @@ from decimal import Decimal
 
 import pytest
 from db.db_support import TEST_IBAN_KEY
-from db.test_services_proposals import _accept_all, _read_ready, _v
+from db.test_services_proposals import _accept_all, _ai_call, _read_ready, _v
 from db.test_services_proposals import enqueued as enqueued  # noqa: F401 (a fixture)
 from db.test_services_proposals import job as job  # noqa: F401 (a fixture)
 from sqlalchemy import select
@@ -174,6 +174,66 @@ def test_the_same_trade_applied_from_a_second_upload_is_refused(
         _apply(run, ws, second)
     assert refused.value.code == depot.DEPOT_MOVEMENT_EXISTS
     assert len(_rows(read, ws, movement_table)) == 1
+
+
+def _distribution():
+    return {
+        "isin": _v(ISIN_CASH),
+        "security_name": _v("Beispiel Euro Geldmarkt"),
+        "payment_date": _v("2026-04-15"),
+        "units": _v("4.8000"),
+        "gross_amount_eur": _v("3.20"),
+        "net_amount_eur": _v("2.36"),
+        "german_taxes_eur": _v("0.84"),
+    }
+
+
+def test_a_distribution_note_read_again_and_applied_again_is_refused(
+    run,
+    read,
+    fresh_workspaces,
+    blob_store,
+    job,
+    enqueued,  # noqa: F811
+):
+    """A distribution note names no reference: its twin is the same fund, kind, day and
+    amount (review finding F1: „Neu auslesen“ and a second „Übernehmen“ booked it twice)."""
+    ws, _ = fresh_workspaces
+    _account(run, ws)
+    _apply(
+        run,
+        ws,
+        _read(run, job, ws, blob_store, enqueued, DocumentSubtype.TRADE_CONFIRMATION, _trade()),
+    )
+    fields = _distribution()
+    first = _read(run, job, ws, blob_store, enqueued, DocumentSubtype.DISTRIBUTION_NOTE, fields)
+    _apply(run, ws, first)
+    second = run(ws, proposals.request_read, first.document_id)
+    classify_id = run(ws, _ai_call, first.document_id, "classify")
+    extract_id = run(ws, _ai_call, first.document_id, "extract")
+    second = job(
+        ws,
+        proposals.record_read_result,
+        second.id,
+        classification=_classified(DocumentSubtype.DISTRIBUTION_NOTE),
+        classify_call_id=classify_id,
+        values=fields,
+        extract_call_id=extract_id,
+    )
+    with pytest.raises(RuleError) as refused:
+        _apply(run, ws, second)
+    assert refused.value.code == depot.DEPOT_MOVEMENT_EXISTS
+    kinds = sorted(r.kind for r in _rows(read, ws, movement_table))
+    assert kinds == ["acquisition", "distribution"]
+
+    # Another day's distribution of the same amount is its own payment.
+    later = _distribution() | {"payment_date": _v("2026-07-15")}
+    _apply(
+        run,
+        ws,
+        _read(run, job, ws, blob_store, enqueued, DocumentSubtype.DISTRIBUTION_NOTE, later),
+    )
+    assert sum(r.kind == "distribution" for r in _rows(read, ws, movement_table)) == 2
 
 
 def test_a_record_on_an_account_that_is_no_depot_is_refused(
