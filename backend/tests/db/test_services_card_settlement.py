@@ -15,7 +15,7 @@ import pytest
 from db.db_support import TEST_IBAN_KEY
 from db.matching_support import World
 from db.test_services_private_matching import NOW, Private, _answer_line
-from sqlalchemy import insert, select, update
+from sqlalchemy import insert, select, text, update
 
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import account as account_table
@@ -24,14 +24,15 @@ from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.db.tables import transfer_link as link_table
 from hausbuch.jobs import enqueue
-from hausbuch.schemas.enums import ImportStatus
+from hausbuch.schemas.bank import AccountCreate
+from hausbuch.schemas.enums import AccountPurpose, ImportStatus
 from hausbuch.schemas.household import (
     OpenTransferCode,
     TransferLinkKind,
     TransferLinkRequest,
     TransferMatchedBy,
 )
-from hausbuch.services import household, matching, transfers
+from hausbuch.services import accounts, household, matching, transfers
 from hausbuch.services.errors import RuleViolationError
 from hausbuch.services.iban import protect_iban
 
@@ -373,3 +374,60 @@ def test_a_candidate_tied_by_no_own_iban_keeps_the_plain_link(world, giro):
     link = world.cmd(transfers.link_by_hand, TransferLinkRequest(**body))
     assert link.matched_by is TransferMatchedBy.USER
     assert _booked(world, debit) == [("hh_credit_card", "confirmed")]
+
+
+def test_linking_a_pair_the_matcher_linked_meanwhile_returns_that_link(world, giro):
+    """The card was shown before the matcher linked the pair (a re-check after another
+    account's import reconciled): the click is already true, so it returns the link instead
+    of 409 „a leg of this transfer is linked already“, with or without re-booking."""
+    card = Card(world, PAYMENT_IBAN)
+    debit = giro.line(MONDAY, "-312.75", iban=PAYMENT_IBAN)
+    paid = card.payment(TUESDAY, "312.75")
+    _match(world, debit)
+    _match(world, paid)
+    [link] = _links(world)
+    for rebook in (False, True):
+        again = world.cmd(
+            transfers.link_by_hand,
+            TransferLinkRequest(
+                out_transaction_id=debit,
+                in_transaction_id=paid,
+                kind=TransferLinkKind.BANK,
+                rebook=rebook,
+            ),
+            iban_key=TEST_IBAN_KEY,
+        )
+        assert again.id == link.id
+    assert len(_links(world)) == 1
+
+
+def test_a_new_private_account_rechecks_the_lines_that_name_its_iban(world, giro):
+    """A line paying an account that was not yet in Hausbuch waits with the model's answer;
+    creating that account (a private one, with its IBAN) queues the re-check that books it
+    as a transfer, not only an owner account's creation."""
+    other_iban = "DE02100100100006820101"
+    debit = giro.line(MONDAY, "-1500.00", iban=other_iban, name="Gemeinsames Konto")
+    _match(world, debit)
+    assert not any(cat.startswith("internal_transfer") for cat, _ in _booked(world, debit))
+    created = world.cmd(
+        accounts.create_account,
+        AccountCreate(
+            label="Gemeinschaftskonto",
+            bank="Beispielbank",
+            iban=other_iban,
+            purpose=AccountPurpose.PRIVATE,
+            opening_balance=Decimal("0.00"),
+            opening_balance_on=date(2025, 12, 31),
+        ),
+        iban_key=TEST_IBAN_KEY,
+    )
+    lock = enqueue.waiting_lock(enqueue.waiting_trigger(enqueue.TRIGGER_ACCOUNT, created.id))
+    with workspace_transaction(world.engine, world.ws) as conn:
+        queued = conn.execute(
+            text("SELECT count(*) FROM procrastinate_jobs WHERE lock = :lock"), {"lock": lock}
+        ).scalar_one()
+    assert queued == 1
+    waiting = world.query(matching.waiting_lines, enqueue.TRIGGER_ACCOUNT, created.id)
+    assert waiting == [debit]
+    world.cmd(matching.match_line, debit, iban_key=TEST_IBAN_KEY, ai_available=False, rematch=True)
+    assert _booked(world, debit) == [("internal_transfer_out", "confirmed")]
