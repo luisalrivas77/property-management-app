@@ -322,6 +322,9 @@ def inbox(
     from .depot import holdings_inbox_items  # it imports the asset services
 
     items += holdings_inbox_items(conn)
+    from .exchange.imports import exchange_inbox_items  # it imports the transfer services
+
+    items += exchange_inbox_items(conn)
     if today is not None:
         items += _questionnaire_items(conn, today)
         from .transfers import transfer_inbox_items

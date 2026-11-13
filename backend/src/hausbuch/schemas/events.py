@@ -982,9 +982,11 @@ class MovementRecorded(Schema):
 
 
 class MovementSuperseded(Schema):
-    """movement.superseded: the row that replaces it (D23 pattern)."""
+    """movement.superseded: the row that replaces it (D23 pattern); `document_id` the file
+    that corrected it, when one did (Binance's withdrawal history, D178 (4))."""
 
     superseded_by: UUID
+    document_id: UUID | None = None
 
 
 class TransferLinked(Schema):

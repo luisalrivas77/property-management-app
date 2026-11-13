@@ -42,8 +42,10 @@ from hausbuch.jobs import enqueue
 from hausbuch.rules.errors import (
     ACCOUNT_KIND_NOT_AVAILABLE,
     ALLOCATION_CATEGORY_NOT_FOR_ACCOUNT,
+    EXCHANGE_PROVIDER_UNKNOWN,
     RuleError,
 )
+from hausbuch.rules.exchange import EXCHANGE_PROVIDERS
 from hausbuch.rules.household import ownership as ownership_rules
 from hausbuch.rules.household.taxonomy import allowed_categories
 from hausbuch.rules.statements import NO_PAYMENT_IBAN, OPENING_NOT_DERIVABLE
@@ -116,9 +118,20 @@ def create_account(ctx: CommandContext, data: AccountCreate, *, iban_key: bytes)
     masked + HMAC'd. Since step 4 a depot (D165 as amended): one per quirion account (the
     Verrechnungskonto and each strategy's Vermögensverwaltungskonto), always private, its
     account number optional (its first cash statement sets it) and its IBAN optional (typed
-    here or confirmed from a statement, D156 amended), both masked + HMAC'd. An exchange or a
-    wallet is refused (account.kind_not_available) until the step that builds it."""
-    if data.kind is AccountKind.DEPOT:
+    here or confirmed from a statement, D156 amended), both masked + HMAC'd. Since step 5a an
+    exchange (D178 (7)): Binance or BISON as its provider, always private, no IBAN and no
+    number (Binance's User ID is never stored, D178 (2)). A wallet is refused
+    (account.kind_not_available) until phase 7."""
+    if data.kind is AccountKind.EXCHANGE:
+        if data.purpose not in (None, AccountPurpose.PRIVATE):
+            raise RuleError(ACCOUNT_KIND_NOT_AVAILABLE, "an exchange is a private account")
+        if data.external_ref is not None:
+            raise RuleError(ACCOUNT_KIND_NOT_AVAILABLE, "an exchange account takes no number")
+        if data.provider not in EXCHANGE_PROVIDERS:
+            raise RuleError(EXCHANGE_PROVIDER_UNKNOWN, "the exchange is Binance or BISON")
+        purpose = AccountPurpose.PRIVATE
+        identity = {}
+    elif data.kind is AccountKind.DEPOT:
         if data.purpose not in (None, AccountPurpose.PRIVATE):
             raise RuleError(ACCOUNT_KIND_NOT_AVAILABLE, "a depot is a private account")
         purpose = AccountPurpose.PRIVATE

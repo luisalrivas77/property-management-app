@@ -21,6 +21,7 @@ import hashlib
 from collections.abc import Iterable, Sequence
 from datetime import datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
+from typing import Protocol
 
 from hausbuch.rules import errors as E
 from hausbuch.rules.errors import RuleError
@@ -35,6 +36,9 @@ from hausbuch.schemas.household import (
 )
 
 EUR = "EUR"
+# The account's provider names its exchange (D178 (7)); the export must be that exchange's.
+BINANCE, BISON = "Binance", "BISON"
+EXCHANGE_PROVIDERS = (BINANCE, BISON)
 CENT = Decimal("0.01")
 # D178 (3): the history's row lies within one hour before the transaction history's row.
 WITHDRAWAL_WINDOW = timedelta(hours=1)
@@ -304,8 +308,24 @@ def binance_movements(rows: Sequence[BinanceRow]) -> list[ExchangeMovement]:
     return out
 
 
+class Moved(Protocol):
+    """What the withdrawal match and the positions need of a movement: a parsed one
+    (ExchangeMovement) or a stored row."""
+
+    @property
+    def asset(self) -> str: ...
+    @property
+    def kind(self) -> MovementKind: ...
+    @property
+    def quantity(self) -> Decimal: ...
+    @property
+    def eur_amount(self) -> Decimal | None: ...
+    @property
+    def occurred_at(self) -> datetime: ...
+
+
 def match_withdrawals(
-    withdrawals: Sequence[ExchangeMovement], history: Sequence[WithdrawalRecord]
+    withdrawals: Sequence[Moved], history: Sequence[WithdrawalRecord]
 ) -> dict[int, WithdrawalRecord]:
     """D178 (3): for each withdrawal (by its index), the history's Completed row of the same
     coin whose Amount + Fee equals the amount sent and whose time lies 0 to 60 minutes before
@@ -352,7 +372,7 @@ def completed(movement: ExchangeMovement, record: WithdrawalRecord) -> ExchangeM
 
 
 def positions(
-    movements: Iterable[ExchangeMovement], held_before: dict[str, Decimal] | None = None
+    movements: Iterable[Moved], held_before: dict[str, Decimal] | None = None
 ) -> dict[str, Decimal]:
     """Σ quantity per asset; EUR also takes every acquisition's and disposal's eur_amount (a
     trade's EUR leg is never its own movement)."""

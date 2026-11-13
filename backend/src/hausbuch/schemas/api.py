@@ -568,6 +568,14 @@ class InboxItemKind(StrEnum):
     # eintragen“), and a held asset nothing can price („Kursquelle wählen“).
     PRICE_SOURCE_FAILED = "price_source_failed"
     PRICE_NO_SOURCE = "price_no_source"
+    # Phase 6 step 5a (D166 amended, D178): an exchange import waiting for the balances the
+    # exchange shows, or whose typed balances disagree (`import_id`, `account_id`); its
+    # proposed coin withdrawals, answered all at once (`import_id`); one coin movement that
+    # waits for a person, a crypto deposit or an unknown row (`movement_id`).
+    EXCHANGE_PENDING_BALANCE = "exchange_pending_balance"
+    EXCHANGE_UNRECONCILED = "exchange_unreconciled"
+    EXCHANGE_WITHDRAWALS = "exchange_withdrawals"
+    EXCHANGE_MOVEMENT = "exchange_movement"
 
 
 class InboxItem(Schema):
@@ -588,6 +596,7 @@ class InboxItem(Schema):
     sync_id: UUID | None = None  # phase 5: bank_approval_needed, bank_sync_failed
     reminder_id: str | None = Field(default=None, max_length=160)  # phase 5: reminder
     property_id: UUID | None = None  # phase 6: the property_cost_* kinds
+    movement_id: UUID | None = None  # phase 6 step 5a: exchange_movement
     transfer: OpenTransfer | None = None  # phase 6: the transfer_* kinds
     asset_id: UUID | None = None  # phase 6 step 5b: the price_* kinds
     private_costs: list[TaxInputCreate] = Field(default_factory=list)  # property_cost_row

@@ -402,6 +402,93 @@ class HoldingStatement(Record):
     difference_units: Quantity | None = None
 
 
+# --- The exchange account's page and answers (step 5a, D166 amended, D178) ---------------
+
+
+class ImportBalance(Schema):
+    """One asset of an exchange import: what the movements to its last row add up to (held)
+    and, once typed, what the exchange showed and whether they agree."""
+
+    asset_id: UUID
+    symbol: str
+    held: Quantity
+    typed: NonNegativeQuantity | None = None
+    reconciled: bool | None = None
+    difference_units: Quantity | None = None  # typed - held
+
+
+class ExchangeImport(MovementImport):
+    """An import on the exchange account's page, with its balances per asset."""
+
+    balances: list[ImportBalance] = Field(default_factory=list)
+
+
+class ExchangeUpload(Schema):
+    """POST /accounts/{id}/movement-imports. A transaction export gives its import (the same
+    file again returns the stored one); Binance's withdrawal history gives no import, only
+    how many withdrawals it completed and how many still have no network and hash."""
+
+    movement_import: MovementImport | None = None
+    withdrawals_completed: int = Field(default=0, ge=0)
+    withdrawals_open: int = Field(default=0, ge=0)
+
+
+class ExchangePosition(Schema):
+    """Σ current movements of one asset on the exchange account (EUR with the trades' EUR
+    legs, D178 (6)), and its last typed balance."""
+
+    asset_id: UUID
+    symbol: str
+    name: str
+    units: Quantity
+    typed_units: NonNegativeQuantity | None = None
+    typed_as_of: date | None = None
+    reconciled: bool | None = None
+
+
+class ExchangeOverview(Schema):
+    """GET /accounts/{id}/exchange: the exchange account's page. `withdrawals_open` counts
+    the crypto withdrawals without network and hash; on Binance they are the to-do
+    „Auszahlungsverlauf hochladen“ (D178 (4)), named by `todos`."""
+
+    account_id: UUID
+    provider: str
+    positions: list[ExchangePosition] = Field(default_factory=list)
+    imports: list[ExchangeImport] = Field(default_factory=list)
+    withdrawals_open: int = Field(default=0, ge=0)
+    movements_to_answer: int = Field(default=0, ge=0)
+    todos: list[str] = Field(default_factory=list)  # error codes, e.g. the history missing
+
+
+class ExchangeMovementRow(AssetMovement):
+    """GET /accounts/{id}/movements: a current movement with its asset's symbol and, while it
+    waits, its question (an error code) and the kinds a person may answer."""
+
+    symbol: str
+    question: str | None = None
+    answers: list[MovementKind] = Field(default_factory=list)
+
+
+class AnswerMovementBody(Schema):
+    """POST /movements/{id}/answer: what the movement really was. The movement is replaced
+    by a confirmed row of that kind (the old one kept, superseded_by)."""
+
+    kind: MovementKind
+
+
+class MovementAnswered(Schema):
+    """POST /movements/{id}/answer: the movement that now stands for the answered one."""
+
+    movement_id: UUID
+
+
+class WithdrawalsConfirmed(Schema):
+    """POST /movement-imports/{id}/withdrawals/confirm: „Alle Auszahlungen gingen an eigene
+    Wallets“ (D178 (4)); how many proposed withdrawals of the import it confirmed."""
+
+    confirmed: int = Field(ge=0)
+
+
 # --- Transfers (D162) -----------------------------------------------------------------
 
 
