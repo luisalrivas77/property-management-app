@@ -114,6 +114,8 @@ const SECTION_OF: Record<InboxItemKind, SectionKey> = {
   property_cost_bill: "property_costs",
   property_cost_year: "property_costs",
   property_cost_document: "property_costs",
+  // Phase 6 step 4: a depot report that disagrees with the booked trades.
+  holdings_mismatch: "other",
 };
 
 /** A line kind without a line id cannot open the panel: it is listed under Weitere Punkte,
@@ -146,6 +148,7 @@ const PILL_CLASS: Record<InboxItemKind, string> = {
   property_cost_bill: "badge badge-warn",
   property_cost_year: "badge badge-info",
   property_cost_document: "badge badge-warn",
+  holdings_mismatch: "badge badge-warn",
 };
 
 export interface InboxData {
@@ -398,6 +401,10 @@ function EntryTitle({ item, data }: { item: InboxItem; data: InboxData }) {
   if (item.kind === "email_inbox_failed") {
     return <strong>Posteingang per E-Mail</strong>;
   }
+  if (item.kind === "holdings_mismatch") {
+    const account = item.account_id ? data.accounts.get(item.account_id) : undefined;
+    return <strong>Depotbestand{account ? ` · ${account.label}` : ""}</strong>;
+  }
   if (item.kind === "bank_sync_failed" || item.kind === "bank_balance_drift" || item.kind === "bank_approval_needed") {
     const account = item.account_id ? data.accounts.get(item.account_id) : undefined;
     return <strong>Bankabruf{account ? ` · ${account.label}` : ""}</strong>;
@@ -597,6 +604,14 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
       ) : null;
     case "property_cost_document":
       return item.document_id ? <Link href={`/documents/${item.document_id}`}>Beleg öffnen</Link> : null;
+    case "holdings_mismatch":
+      return (
+        <>
+          <Link href="/documents">Abrechnung hochladen</Link>
+          {item.document_id ? <Link href={`/documents/${item.document_id}`}>Bericht öffnen</Link> : null}
+          {item.account_id ? <Link href={`/accounts/${item.account_id}`}>Zum Depot</Link> : null}
+        </>
+      );
     default:
       return null;
   }

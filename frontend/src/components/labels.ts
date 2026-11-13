@@ -210,6 +210,7 @@ export const DOCUMENT_SUBTYPE: Record<DocumentSubtype, string> = {
   // Phase 6
   exchange_export: "Börse / Exchange-Export (CSV)",
   distribution_note: "Ertragsabrechnung (Ausschüttung)",
+  securities_transfer: "Wertpapierübertrag (Ein- oder Ausbuchung)",
 };
 
 export const LINK_TARGET: Record<LinkTarget, string> = {
@@ -324,6 +325,7 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "account.holdings_confirmed": "Bestände bestätigt",
   "account.holdings_reconciled": "Bestände abgestimmt",
   "account.holdings_mismatch": "Bestände weichen ab",
+  "account.holding_corrected": "Bestand korrigiert",
   "asset.created": "Anlage angelegt",
   "asset.updated": "Anlage geändert",
   "asset.price_recorded": "Kurs erfasst",
@@ -379,6 +381,7 @@ export const EXTRACTION_KIND: Record<ExtractionKind, string> = {
   trade_confirmation: "Wertpapierabrechnung",
   distribution_note: "Ertragsabrechnung",
   depot_report: "Depotbericht",
+  securities_transfer: "Wertpapierübertrag",
 };
 
 /** The confidence dot's text (computed by code from the checks, D15). */
@@ -435,6 +438,7 @@ export const STATEMENT_FORMAT: Record<StatementFormat, string> = {
   pdf: "PDF-Kontoauszug",
   dkb_csv: "DKB-CSV",
   card_pdf: "Kreditkartenabrechnung (PDF)",
+  depot_pdf: "Depot-Kontoauszug (PDF)",
 };
 
 /** The pill of an import. `imported` is an import whose closing balance is still missing
@@ -643,6 +647,7 @@ export const ALLOCATION_METHOD: Record<AllocationMethod, string> = {
   matcher_hausgeld: "Wirtschaftsplan",
   matcher_transfer: "Übertrag zwischen eigenen Konten",
   matcher_card: "Kreditkartenabrechnung (Zinsen und Gebühren)",
+  matcher_depot: "Depot-Kontoauszug (Buchungstext)",
   document_match: "passender Beleg",
   llm: "KI",
   user: "von Hand",
@@ -674,6 +679,8 @@ export const INBOX_ITEM_KIND: Record<InboxItemKind, string> = {
   property_cost_bill: "Rechnung fehlt",
   property_cost_year: "Jahr der Zahlung",
   property_cost_document: "Beleg prüfen",
+  // phase 6 step 4
+  holdings_mismatch: "Bestand weicht ab",
 };
 
 /** The Haushalt screen's groups (phase 6 §13, mockup 10; rules/household/taxonomy.py). */

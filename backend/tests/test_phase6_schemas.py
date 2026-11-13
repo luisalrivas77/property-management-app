@@ -10,7 +10,7 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
-from hausbuch.rules import depot, exchange, valuation
+from hausbuch.rules import exchange, valuation
 from hausbuch.schemas.allocation import TransferLeg, TransferLegSource
 from hausbuch.schemas.enums import AccountKind
 from hausbuch.schemas.household import (
@@ -203,14 +203,12 @@ def test_every_price_source_has_a_place_in_the_precedence():
 @pytest.mark.parametrize(
     "call",
     [
-        lambda: depot.categorise("Einlage"),
-        lambda: depot.reconcile_holdings([], []),
         lambda: exchange.classify(None),
         lambda: exchange.movement_hash(uuid.uuid4(), None, 0),
         lambda: valuation.price_on([], date(2026, 6, 30)),
         lambda: valuation.value(None, None, date(2026, 6, 30)),
     ],
-    ids=["categorise", "reconcile", "classify", "movement_hash", "price_on", "value"],
+    ids=["classify", "movement_hash", "price_on", "value"],
 )
 def test_stub_until_its_step(call):
     with pytest.raises(NotImplementedError, match="phase 6 step"):

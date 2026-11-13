@@ -504,74 +504,150 @@ class PaymentProofExtraction(_Typing):
     )
 
 
-# Phase 6 D165 (2), (3): the depot's documents. Written in step 0, read from step 4 (no
-# subtype routes to them before then); behind the ai_private_accounts switch (D168). The
-# depot number, customer number, IdNr and IBAN are never asked and are scrubbed from every
-# quote. Units are decimals (up to 6 places for an ETF share); the lists of a report are
-# text_list items in a fixed `a | b | c` order, as the dwellings of D139.
+# Phase 6 D165 (2), (3): the depot's documents. Written in step 0, read from step 4; behind
+# the ai_private_accounts switch (D168). The depot number, customer number, IdNr, IBAN and the
+# holders' names and address are never asked and are scrubbed from every quote
+# (extraction_parse.scrub_depot). Units are decimals (up to 6 places for an ETF share); the
+# lists of a report are text_list items in a fixed `a | b | c` order, as the dwellings of D139.
+# Corrected in step 4 against quirion's real documents (§14.1): a sale's Ausmachender Betrag
+# is after its taxes, a distribution in a fund's currency states its euro side separately,
+# and units move between two own depots by an Einbuchung/Ausbuchung pair.
 
 
 class TradeConfirmationExtraction(_Typing):
     """Wertpapierabrechnung (trade_confirmation, D165 (2)): one buy or sell of one security."""
 
     isin: ExtractedValue = ev("text", "the security's ISIN, twelve characters")
-    security_name: ExtractedValue = ev("text", "the security's name as printed")
-    trade_date: ExtractedValue = ev("date", "the trade date (Handelstag, Schlusstag)")
-    settlement_date: ExtractedValue = ev("date", "the settlement date (Valuta)")
-    side: ExtractedValue = ev("text", "Kauf or Verkauf, as printed")
-    units: ExtractedValue = ev("decimal", "the units (Stück, Anteile) traded")
+    security_name: ExtractedValue = ev("text", "the security's name (Wertpapierbezeichnung)")
+    trade_date: ExtractedValue = ev(
+        "date", "the trade date (Handelstag, Schlusstag), without the time"
+    )
+    settlement_date: ExtractedValue = ev(
+        "date", "the settlement date (Valuta), from the sentence on the booking"
+    )
+    side: ExtractedValue = ev(
+        "text", "Kauf or Verkauf, as printed in the heading under Wertpapierabrechnung"
+    )
+    units: ExtractedValue = ev("decimal", "the units traded (Nominal / Stück)")
     price_per_unit: ExtractedValue = ev("money", "the price per unit (Kurs)")
     gross_amount: ExtractedValue = ev("money", "the gross amount (Kurswert)")
-    fees: ExtractedValue = ev("money", "the fees and costs charged on this trade, summed")
+    fees: ExtractedValue = ev(
+        "money",
+        "the fees charged on this trade, summed without sign: Bank-Provision, Courtage,"
+        " Spesen and Gebühren",
+    )
+    taxes: ExtractedValue = ev(
+        "money",
+        "the German taxes deducted on this trade, summed without sign: Kapitalertragsteuer,"
+        " Solidaritätszuschlag and Kirchensteuer from the tax section; 0,00 when none",
+    )
     net_amount: ExtractedValue = ev(
-        "money", "the amount debited or credited to the cash account (Ausmachender Betrag)"
+        "money",
+        "the amount debited or credited to the cash account, without sign (Ausmachender"
+        " Betrag; on a sale after the taxes)",
     )
     currency: ExtractedValue = ev("text", "the currency of the amounts, as a three-letter code")
     order_reference: ExtractedValue = ev(
-        "text", "the order or transaction reference (Auftragsnummer, Referenz)"
+        "text", "the document's reference number (Referenz-Nr.); never a depot or account number"
     )
 
 
 class DistributionNoteExtraction(_Typing):
-    """Ertragsabrechnung / Ausschüttung (distribution_note, D165 (2))."""
+    """Erträgnisabrechnung / Ausschüttung (distribution_note, D165 (2)). A note in a fund's
+    currency states its euro side separately: the rate, the gross in the tax section and the
+    amount credited in euro."""
 
     isin: ExtractedValue = ev("text", "the security's ISIN, twelve characters")
-    security_name: ExtractedValue = ev("text", "the security's name as printed")
+    security_name: ExtractedValue = ev("text", "the security's name (Wertpapierbezeichnung)")
     record_date: ExtractedValue = ev("date", "the record date (Ex-Tag or Stichtag)")
-    payment_date: ExtractedValue = ev("date", "the payment date (Zahltag, Valuta)")
-    units: ExtractedValue = ev("decimal", "the units (Stück, Anteile) held on the record date")
-    gross_per_unit: ExtractedValue = ev("money", "the distribution per unit, before taxes")
-    gross_amount: ExtractedValue = ev("money", "the gross distribution, before taxes")
+    payment_date: ExtractedValue = ev("date", "the payment date (Zahlungstag, Zahltag)")
+    units: ExtractedValue = ev("decimal", "the units held (Nominal / Stück)")
+    gross_per_unit: ExtractedValue = ev(
+        "decimal", "the distribution per unit before taxes, in the note's currency"
+    )
+    gross_amount: ExtractedValue = ev(
+        "money", "the gross distribution before taxes, in the note's currency (Betrag)"
+    )
     withholding_tax: ExtractedValue = ev(
-        "money", "foreign withholding tax (Quellensteuer) deducted, if any"
+        "money",
+        "foreign withholding tax (Quellensteuer) deducted, without sign, in the note's"
+        " currency; 0,00 when none",
     )
     german_taxes: ExtractedValue = ev(
         "money",
-        "German taxes deducted: Kapitalertragsteuer, Solidaritätszuschlag and Kirchensteuer,"
-        " summed",
+        "German taxes deducted in the note's currency, summed without sign:"
+        " Kapitalertragsteuer, Solidaritätszuschlag and Kirchensteuer",
     )
-    net_amount: ExtractedValue = ev("money", "the amount credited to the cash account")
-    currency: ExtractedValue = ev("text", "the currency of the amounts, as a three-letter code")
+    net_amount: ExtractedValue = ev(
+        "money", "the amount credited, in the note's currency (Ausmachender Betrag)"
+    )
+    currency: ExtractedValue = ev(
+        "text", "the currency of the note's amounts, as a three-letter code"
+    )
+    fx_rate: ExtractedValue = ev(
+        "decimal",
+        "the exchange rate (Devisenkurs) as printed, units of the note's currency per euro;"
+        " unbekannt when the note is in EUR",
+    )
+    gross_amount_eur: ExtractedValue = ev(
+        "money",
+        "the gross distribution in euro (Ausschüttungsbetrag in the tax section); the gross"
+        " amount when the note is in EUR",
+    )
+    german_taxes_eur: ExtractedValue = ev(
+        "money",
+        "the German taxes in euro from the tax section, summed without sign:"
+        " Kapitalertragsteuer, Solidaritätszuschlag and Kirchensteuer",
+    )
+    net_amount_eur: ExtractedValue = ev(
+        "money", "the amount credited in euro (Ausmachender Betrag in EUR)"
+    )
 
 
 DEPOT_POSITIONS_MEANING = (
     "every position the report lists, one item per security, each written `ISIN | name | "
-    "units | price | value | currency`, as printed; never a subtotal or the total row"
+    "units | price | value | currency`, as printed (the units without ST, the price the Kurs, "
+    "the value the Kurswert); never a subtotal, the total row, an account's cash or the "
+    "Kaufpreis"
 )
 DEPOT_TRADES_MEANING = (
     "every trade of the report's Wertpapierumsätze list, one item per trade, each written "
-    "`ISIN | trade date | units | amount | reference`, as printed; unbekannt for a part the "
-    "row does not state"
+    "`ISIN | trade date | units | amount | reference`, as printed: the trade date the "
+    "Schlußtag, the units signed (a sale negative), the amount the Ausmachender Betrag with "
+    "its sign (a purchase negative), the reference the Referenz; unbekannt for a part the row "
+    "does not state; never the Depot-Nr."
 )
 
 
 class DepotReportExtraction(_Typing):
-    """Quartalsbericht (depot_report, D165 (3)): the positions on a date and the period's
-    trades, from which code proposes holding_statement rows."""
+    """Quartalsbericht (depot_report, D165 (3)): the positions on a date and the trades the
+    report lists, from which code proposes holding_statement rows. The list of trades runs
+    from the mandate's start, so a later report repeats the earlier ones."""
 
     report_date: ExtractedValue = ev("date", "the date the positions are stated for (Stichtag)")
     positions: ExtractedValue = ev("text_list", DEPOT_POSITIONS_MEANING)
     trades: ExtractedValue = ev("text_list", DEPOT_TRADES_MEANING)
+
+
+SECURITIES_TRANSFER_POSITIONS_MEANING = (
+    "every security the document moves, one item per security, each written `ISIN | name | "
+    "units`, as printed (the units without ST); never the WKN or a depot number"
+)
+
+
+class SecuritiesTransferExtraction(_Typing):
+    """Einbuchung / Ausbuchung von Wertpapieren (securities_transfer, step 4, §14.1): units
+    moved into or out of the depot without a trade. Both sides of one transfer carry the same
+    reference; the other depot named in the Hinweistext is scrubbed and never asked."""
+
+    direction: ExtractedValue = ev("text", "Einbuchung or Ausbuchung, as printed in the heading")
+    transfer_date: ExtractedValue = ev(
+        "date", "the day the units were moved (Handelsdatum, else the document's date)"
+    )
+    reference: ExtractedValue = ev(
+        "text", "the document's reference number (Referenz-Nr.); never a depot number"
+    )
+    positions: ExtractedValue = ev("text_list", SECURITIES_TRANSFER_POSITIONS_MEANING)
 
 
 # Phase 2 D139: a Wohnflächenberechnung of a WEG lists every dwelling of the building; code
@@ -744,6 +820,7 @@ EXTRACTION_MODELS: dict[ExtractionKind, type[_Typing]] = {
     ExtractionKind.TRADE_CONFIRMATION: TradeConfirmationExtraction,  # phase 6
     ExtractionKind.DISTRIBUTION_NOTE: DistributionNoteExtraction,
     ExtractionKind.DEPOT_REPORT: DepotReportExtraction,
+    ExtractionKind.SECURITIES_TRANSFER: SecuritiesTransferExtraction,
 }
 
 
@@ -787,4 +864,5 @@ AnyExtraction = (
     | TradeConfirmationExtraction
     | DistributionNoteExtraction
     | DepotReportExtraction
+    | SecuritiesTransferExtraction
 )

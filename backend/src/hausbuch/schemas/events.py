@@ -468,6 +468,9 @@ class StatementImported(Schema):
     # confirm (D176 (4)); absent for every other format.
     card_last4: str | None = Field(default=None, pattern=r"^[0-9]{4}$")
     payment_iban_masked: MaskedIban | None = None
+    # Phase 6 step 4: the IBAN a depot's cash statement prints, masked: the proposal the
+    # account page offers to confirm (D156 amended); absent for every other format.
+    account_iban_masked: MaskedIban | None = None
 
 
 class StatementBalanceChecked(Schema):
@@ -957,6 +960,17 @@ class HoldingsChecked(Schema):
     assets_mismatched: int = Field(default=0, ge=0)
 
 
+class HoldingCorrected(Schema):
+    """account.holding_corrected (step 4, 0027): a report read again with other figures; the
+    new position supersedes the old one of the same asset and date. Ids only."""
+
+    holding_statement_id: UUID
+    superseded_by: UUID
+    asset_id: UUID
+    as_of: date
+    document_id: UUID | None = None
+
+
 class MovementRecorded(Schema):
     """movement.proposed and movement.confirmed (D165, D166)."""
 
@@ -1155,6 +1169,7 @@ class EventType(StrEnum):
     ACCOUNT_HOLDINGS_CONFIRMED = "account.holdings_confirmed"
     ACCOUNT_HOLDINGS_RECONCILED = "account.holdings_reconciled"
     ACCOUNT_HOLDINGS_MISMATCH = "account.holdings_mismatch"
+    ACCOUNT_HOLDING_CORRECTED = "account.holding_corrected"  # step 4, 0027
 
     ASSET_CREATED = "asset.created"  # phase 6
     ASSET_UPDATED = "asset.updated"
@@ -1344,6 +1359,9 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     ),
     E.ACCOUNT_HOLDINGS_MISMATCH: EventSpec(
         HoldingsChecked, "optional", "Holdings differ from the movements (date = as of)"
+    ),
+    E.ACCOUNT_HOLDING_CORRECTED: EventSpec(
+        HoldingCorrected, "optional", "A report's position corrected (date = as of)"
     ),
     E.ASSET_CREATED: EventSpec(AssetRecorded, "forbidden", "Asset recorded"),
     E.ASSET_UPDATED: EventSpec(Updated, "forbidden", "Asset name or price ids changed"),

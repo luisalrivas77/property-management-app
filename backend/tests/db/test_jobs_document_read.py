@@ -29,12 +29,19 @@ from hausbuch.ai.client import ModelCallError
 from hausbuch.ai.fake import FakeModelClient, cited_response, text_response
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import ai_call as ai_call_table
+from hausbuch.db.tables import document as document_table
 from hausbuch.db.tables import proposal as proposal_table
 from hausbuch.db.tables import workspace as workspace_table
 from hausbuch.jobs import document_read as job
 from hausbuch.jobs import tasks
 from hausbuch.jobs.document_read import JobDeps, RetryLater, run_document_read
-from hausbuch.schemas.enums import ActorType, DocumentSource, DocumentType, PropertyKind
+from hausbuch.schemas.enums import (
+    ActorType,
+    DocumentSource,
+    DocumentSubtype,
+    DocumentType,
+    PropertyKind,
+)
 from hausbuch.schemas.extraction import EXTRACTION_MODELS, ExtractionKind
 from hausbuch.schemas.property import Address, PropertyCreate
 from hausbuch.services import proposals
@@ -758,3 +765,137 @@ def test_logs_carry_no_key_and_no_values(setup, recorder, caplog):
     text = caplog.text + json.dumps([getattr(r, "fields", None) for r in caplog.records])
     assert KEY not in text
     assert "1.234,56" not in text and "Notar" not in text
+
+
+# --- phase 6 step 4: the depot's documents behind ai_private_accounts (D168) -----------
+
+# Invented depot texts in the depot bank's shape (value before label); no real number or name.
+TRADE_TEXT = (
+    "Quirin Privatbank AG\nWertpapierabrechnung\nKauf\n9900000120Depot\n"
+    "IE00BEISPL01ISIN\n700000010Referenz-Nr"
+)
+REPORT_TEXT = "quirion Vermögensverwaltung\nQuartalsbericht\n99000001Kunde"
+TRADE_ANSWER = {
+    "isin": ("IE00BEISPL01", 1, "IE00BEISPL01ISIN"),
+    "side": ("Kauf", 1, "Kauf"),
+}
+
+
+def _text_pdf(text: str) -> bytes:
+    from test_card_pdf import draw
+
+    return draw([text], salt=uuid.uuid4().hex)
+
+
+@pytest.fixture
+def private_switch(monkeypatch):
+    """set(on): what services.workspace_settings.private_ai_allowed answers the job (its own
+    consent logic is tested in test_services_private_matching)."""
+    state = {"on": False}
+    monkeypatch.setattr(job, "private_ai_allowed", lambda conn: state["on"])
+
+    def _set(on: bool) -> None:
+        state["on"] = on
+
+    return _set
+
+
+@pytest.mark.parametrize("text", [TRADE_TEXT, REPORT_TEXT], ids=["trade", "quarterly-report"])
+def test_a_depot_document_is_blocked_before_any_call_while_the_switch_is_off(
+    setup, recorder, app_engine, private_switch, text
+):
+    client = FakeModelClient([])
+    deps, ws, doc, proposal = setup(_text_pdf(text), client)
+    _run(deps, ws, doc, proposal)
+    assert client.requests == []
+    assert _calls(app_engine, ws, doc) == []
+    [(_, proposal_id, kw)] = recorder.failures
+    assert proposal_id == proposal
+    assert kw["error_code"] == job.BLOCKED_PRIVATE_DATA == "ai.blocked_private_data"
+    assert kw["ai_call_id"] is None
+
+
+def _depot_kind(engine, ws, doc):
+    with workspace_transaction(engine, ws) as conn:
+        return conn.execute(
+            select(document_table.c.depot_kind).where(document_table.c.id == doc)
+        ).scalar_one()
+
+
+def test_a_depot_documents_kind_is_recorded_by_its_reading(
+    setup, recorder, app_engine, private_switch
+):
+    """Phase 6 D177: the kind of its plain-words explanation, read by code from the heading
+    by the document's reading (a plain upload parses nothing), even a reading the switch
+    stops before the model."""
+    client = FakeModelClient([])
+    deps, ws, doc, proposal = setup(_text_pdf(TRADE_TEXT), client)
+    assert _depot_kind(app_engine, ws, doc) is None
+    _run(deps, ws, doc, proposal)
+    assert [kw["error_code"] for _, _, kw in recorder.failures] == [job.BLOCKED_PRIVATE_DATA]
+    assert client.requests == []
+    assert _depot_kind(app_engine, ws, doc) == "wertpapierabrechnung_kauf"
+
+    _, other_ws, other, _ = setup(_pdf(1), FakeModelClient([]))
+    assert _depot_kind(app_engine, other_ws, other) is None  # no depot document
+
+
+def test_a_depot_document_named_by_its_text_is_typed_by_code_when_the_switch_is_on(
+    setup, recorder, app_engine, private_switch
+):
+    private_switch(True)
+    client = FakeModelClient([cited_response(TRADE_ANSWER)])
+    deps, ws, doc, proposal = setup(_text_pdf(TRADE_TEXT), client)
+    _run(deps, ws, doc, proposal)
+    assert recorder.failures == []
+    assert len(client.requests) == 1  # the extraction only, no classify call
+    [(_, _, kw)] = recorder.results
+    assert kw["classification"].type is DocumentType.LETTER
+    assert kw["classification"].subtype is DocumentSubtype.TRADE_CONFIRMATION
+    assert kw["classify_call_id"] is None
+    assert set(kw["values"]) == set(
+        EXTRACTION_MODELS[ExtractionKind.TRADE_CONFIRMATION].model_fields
+    )
+    [row] = _calls(app_engine, ws, doc)
+    assert row.job == "extract"
+
+
+@pytest.mark.parametrize(
+    "subtype", ["trade_confirmation", "depot_statement", "capital_income_tax_certificate"]
+)
+def test_a_depot_document_without_a_text_layer_stops_after_its_classification(
+    setup, recorder, app_engine, private_switch, subtype
+):
+    """A photo or a scan: the classifier types it, and the switch stops it before extraction."""
+    client = FakeModelClient([text_response(_classify("letter", subtype))])
+    deps, ws, doc, proposal = setup(_pdf(1), client)
+    _run(deps, ws, doc, proposal)
+    assert len(client.requests) == 1  # the classify call, no extraction
+    [row] = _calls(app_engine, ws, doc)
+    [(_, _, kw)] = recorder.failures
+    assert kw["error_code"] == job.BLOCKED_PRIVATE_DATA
+    assert kw["ai_call_id"] == row.id
+
+
+def test_the_switch_is_read_again_before_a_depot_extraction(
+    setup, recorder, app_engine, monkeypatch
+):
+    """On when the run loads, off by the time the classifier has answered: no extraction."""
+    answers = iter([True, False])
+    monkeypatch.setattr(job, "private_ai_allowed", lambda conn: next(answers))
+    client = FakeModelClient([text_response(_classify("other", "depot_report"))])
+    deps, ws, doc, proposal = setup(_pdf(1), client)
+    _run(deps, ws, doc, proposal)
+    assert len(client.requests) == 1
+    [(_, _, kw)] = recorder.failures
+    assert kw["error_code"] == job.BLOCKED_PRIVATE_DATA
+
+
+def test_a_document_of_another_kind_is_not_held_by_the_switch(
+    setup, recorder, app_engine, private_switch
+):
+    text = "Rechnung Nr. 42\nHandwerker GmbH"
+    deps, ws, doc, proposal = setup(_text_pdf(text), FakeModelClient(list(LETTER)))
+    _run(deps, ws, doc, proposal)
+    assert recorder.failures == []
+    assert len(recorder.results) == 1

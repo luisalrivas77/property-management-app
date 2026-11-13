@@ -14,6 +14,7 @@ from sqlalchemy import Connection
 from hausbuch.schemas.api import ProposalApplyResult, ProposalRerunBody
 from hausbuch.schemas.enums import EntityType
 from hausbuch.schemas.proposal import Proposal, ProposalApplyBody
+from hausbuch.services.depot_explain import document_explanation
 from hausbuch.services.documents import get_document
 from hausbuch.services.proposals import (
     apply_proposal,
@@ -29,7 +30,16 @@ router = domain_router()
 
 
 def _get(conn: Connection, proposal_id: UUID) -> Proposal:
-    return found(get_proposal(conn, proposal_id), EntityType.PROPOSAL, proposal_id)
+    proposal = found(get_proposal(conn, proposal_id), EntityType.PROPOSAL, proposal_id)
+    return _explained(conn, proposal.document_id, [proposal])[0]
+
+
+def _explained(conn: Connection, document_id: UUID, proposals: list[Proposal]) -> list[Proposal]:
+    """Phase 6 D177: the card's plain-words box for a depot document."""
+    if not proposals:
+        return proposals
+    explanation = document_explanation(conn, document_id)
+    return [p.model_copy(update={"explanation": explanation}) for p in proposals]
 
 
 @router.get("/proposals/{proposal_id}")
@@ -56,7 +66,7 @@ def proposal_reject(proposal_id: UUID, cmd: Cmd) -> Proposal:
 
 def _document_proposals(conn: Connection, document_id: UUID) -> list[Proposal]:
     require(conn, get_document, EntityType.DOCUMENT, document_id)
-    return list_document_proposals(conn, document_id)
+    return _explained(conn, document_id, list_document_proposals(conn, document_id))
 
 
 @router.get("/documents/{document_id}/proposals")

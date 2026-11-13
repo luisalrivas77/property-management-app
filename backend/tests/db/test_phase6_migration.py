@@ -32,7 +32,7 @@ EXPECTED_GRANTS = {
     "asset": {"SELECT", "INSERT", "UPDATE"},  # mutable + events
     "movement_import": {"SELECT", "INSERT", "UPDATE"},  # mutable with status
     "asset_movement": {"SELECT", "INSERT", "UPDATE"},  # status forward, superseded_by once
-    "holding_statement": {"SELECT", "INSERT"},  # append-only
+    "holding_statement": {"SELECT", "INSERT", "UPDATE"},  # superseded_by set once (0027)
     "transfer_link": {"SELECT", "INSERT", "UPDATE"},  # superseded_by set once
     "price": {"SELECT", "INSERT"},
     "valuation_snapshot": {"SELECT", "INSERT"},
@@ -177,7 +177,7 @@ def test_a_new_account_is_a_private_current_account_in_euro(scope):
         {"iban_masked": None, "iban_hmac": None},  # a bank kind has an IBAN
         {"iban_hmac": None},  # masked and HMAC together
         {"external_ref_masked": "**** 1234", "external_ref_hmac": b"\x00" * 32},  # bank: no ref
-        {"kind": "depot"},  # any other kind has no IBAN
+        {"kind": "exchange"},  # any other kind has no IBAN (a depot may since 0027, D156)
         {"currency": "USD"},  # EUR only in this phase
         {"provider": ""},
         {"kind": "savings"},
@@ -452,8 +452,11 @@ def test_a_holding_statement_is_append_only_and_typed_for_its_own_account(scope)
         "import_id": imported,
     }
     statement = _insert(conn, "holding_statement", row)
-    with pytest.raises(errors.InsufficientPrivilege), conn.transaction():
+    # Since 0027 only superseded_by may be set, once (test_phase6_depot_migration.py).
+    with pytest.raises(errors.RestrictViolation), conn.transaction():
         conn.execute("UPDATE holding_statement SET reconciled = true WHERE id = %s", (statement,))
+    with pytest.raises(errors.InsufficientPrivilege), conn.transaction():
+        conn.execute("DELETE FROM holding_statement WHERE id = %s", (statement,))
     with pytest.raises(errors.ForeignKeyViolation), conn.transaction():
         _insert(conn, "holding_statement", row | {"account_id": ids["depot"]})
 

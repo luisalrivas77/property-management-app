@@ -41,8 +41,9 @@ class AccountCreate(Schema):
 
     label: str = Field(min_length=1, max_length=100)
     bank: str = Field(min_length=1)
-    # write-only; stored as iban_masked + keyed HMAC. Required for a bank kind, refused for a
-    # depot, an exchange or a wallet (phase 6 D156).
+    # write-only; stored as iban_masked + keyed HMAC. Required for a bank kind, optional for a
+    # depot (D156 amended in step 4: each quirion account prints its own IBAN), refused for an
+    # exchange, a card or a wallet (phase 6 D156).
     iban: IbanInput | None = None
     opening_balance: Money  # the anchor (D21)
     opening_balance_on: date
@@ -69,8 +70,8 @@ class AccountCreate(Schema):
                 raise ValueError("a bank account needs an IBAN")
             if self.external_ref is not None:
                 raise ValueError("a bank account is identified by its IBAN, not external_ref")
-        elif self.iban is not None:
-            raise ValueError("only a bank account has an IBAN")
+        elif self.iban is not None and self.kind is not AccountKind.DEPOT:
+            raise ValueError("only a bank account or a depot has an IBAN")
         return self
 
 
@@ -84,6 +85,14 @@ class PaymentIbanProposal(Schema):
 
 class ConfirmPaymentIbanBody(Schema):
     import_id: UUID
+
+
+class DepotIbanProposal(Schema):
+    """The IBAN a depot's cash statement prints (phase 6 step 4, D156 amended), masked; POST
+    /accounts/{id}/iban with its import_id confirms it (the D176 (4) pattern)."""
+
+    import_id: UUID
+    iban_masked: MaskedIban
 
 
 class Account(MutableRecord):
@@ -107,6 +116,9 @@ class Account(MutableRecord):
     payment_iban_masked: MaskedIban | None = None
     card_last4: str | None = Field(default=None, pattern=r"^[0-9]{4}$")
     payment_iban_proposal: PaymentIbanProposal | None = None
+    # Phase 6 step 4 (depot only): the IBAN the latest cash statement prints while it is not
+    # the confirmed iban_masked, read from the statement.imported events.
+    iban_proposal: DepotIbanProposal | None = None
     # Phase 6 D157, §4.2: the current owner shares (the reason kept with them); none set is
     # the Konten screen's to-do „Eigentümer festlegen“, never an error.
     # ownership_missing is derived from ownership on every read (never set apart from it).
@@ -145,6 +157,10 @@ class StatementFormat(StrEnum):
     # Phase 6 D176 (migration 0026): the credit card's monthly PDF statement, read by code
     # from its text layer (services/bank/card_pdf.py); balances from the file.
     CARD_PDF = "card_pdf"
+    # Phase 6 step 4 (migration 0027): a quirion cash statement (Kontoauszug of the
+    # Verrechnungskonto or a strategy's Vermögensverwaltungskonto), read by code from its text
+    # layer (services/bank/depot_pdf.py); balances from the file (D165 (1) amended).
+    DEPOT_PDF = "depot_pdf"
 
 
 class StatementLine(Schema):

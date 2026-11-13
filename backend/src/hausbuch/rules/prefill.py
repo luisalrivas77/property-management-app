@@ -144,6 +144,7 @@ from hausbuch.schemas.proposal import (
 )
 from hausbuch.schemas.tax import GRUNDSTEUER_SUM_TOLERANCE, LIMIT_15_CATEGORIES
 
+from . import depot as depot_rules
 from .categories import CATEGORY_LABEL, TAX_TREATMENT
 from .extraction_parse import _MONTHS, Dwelling, cost_lines_balance
 from .extraction_parse import cost_lines as parse_cost_lines
@@ -573,6 +574,13 @@ def build_proposal(
             b.income_tax_assessment()
         case ExtractionKind.PAYMENT_PROOF:
             b.payment_proof()
+        case (
+            ExtractionKind.TRADE_CONFIRMATION
+            | ExtractionKind.DISTRIBUTION_NOTE
+            | ExtractionKind.DEPOT_REPORT
+            | ExtractionKind.SECURITIES_TRANSFER
+        ):
+            b.depot_reading()
         case _:  # statement, unknown: typing only
             pass
     b.hand_fields()
@@ -782,6 +790,79 @@ class _Builder:
                 notes=list(notes),
             )
         )
+
+    # -- the depot's documents (phase 6 step 4, D165 (2), (3))
+
+    def depot_reading(self) -> None:
+        """One `movement:<n>` record per movement and one `holding:<n>` per position that
+        rules.depot.propose builds from the reading, each with the depot account to book it
+        on: offered as options, pre-selected when the workspace has only one (never routed by
+        a printed number). A reading's own figures that do not add up are notes on the first
+        record; the movement is still proposed for the user to check against the document."""
+        assert self.kind is not None
+        sources = _DEPOT_SOURCES[self.kind]
+        values = {
+            name: self.ev(name).value
+            for name in {field for fields in sources.values() for field in fields}
+        }
+        proposal = depot_rules.propose(self.kind.value, values)
+        if proposal is None:
+            return
+        accounts = self.ctx.depot_accounts
+        account = (
+            _code_value(str(accounts[0].id), "low")
+            if len(accounts) == 1
+            else ExtractedValue.missing()
+        )
+        options = (
+            {"account_id": [FieldOption(value=str(a.id), label=a.label) for a in accounts]}
+            if accounts
+            else {}
+        )
+        notes = [_DEPOT_WARNINGS[w] for w in proposal.warnings if w in _DEPOT_WARNINGS]
+        if not accounts:
+            notes.append(_NO_DEPOT_NOTE)
+        name = self.ev("security_name").value
+        rows: list[tuple[str, str, dict[str, object], tuple[str, ...]]] = [
+            (
+                f"movement:{n}",
+                "asset_movement",
+                movement.model_dump() | {"name": movement.name or name},
+                _MOVEMENT_FIELDS,
+            )
+            for n, movement in enumerate(proposal.movements, start=1)
+        ] + [
+            (f"holding:{n}", "holding_statement", holding.model_dump(), _HOLDING_FIELDS)
+            for n, holding in enumerate(proposal.holdings, start=1)
+        ]
+        for key, entity_type, row, names in rows:
+            fields = {"account_id": account} | {
+                field: self._depot_value(row[field], sources.get(field, ())) for field in names
+            }
+            self.records.append(
+                ProposalRecord(
+                    key=key,
+                    entity_type=entity_type,
+                    mode="create",
+                    fields=fields,
+                    notes=notes,
+                    options=options,
+                )
+            )
+            notes = []
+
+    def _depot_value(self, value: object, inputs: tuple[str, ...]) -> ExtractedValue:
+        """The reading's own value, with its quote, when its first field states it as is; else
+        computed by code from the fields it comes from (a sign from the side, a row of a list);
+        a value code sets by the kind of document (a distribution moves no units) is code's."""
+        if value is None:
+            return ExtractedValue.missing()
+        text = value.isoformat() if isinstance(value, date) else str(value)
+        if not inputs:
+            return _code_value(text, "high")
+        if self.ev(inputs[0]).value == text:  # unchanged (a purchase's units): its quote
+            return self.ev(inputs[0])
+        return _derived(text, [(field, self.ev(field)) for field in inputs])
 
     def link(self, key: str, target_id: UUID | None) -> None:
         self.add(key, "link", "create", {}, target_id=target_id)
@@ -2513,6 +2594,92 @@ def _same_amount(proposed: JsonValue, existing: Decimal) -> bool:
 
 
 # --- Mapping and deriving values -------------------------------------------------------
+
+
+# Phase 6 step 4: the fields of a depot record and the reading fields each comes from, per
+# kind (one field: its value as is when unchanged; several: computed by code from them; none:
+# set by code from the kind of document).
+_MOVEMENT_FIELDS = (
+    "isin",
+    "name",
+    "kind",
+    "quantity",
+    "eur_amount",
+    "fee_eur",
+    "tax_withheld_eur",
+    "occurred_on",
+    "external_ref",
+)
+_HOLDING_FIELDS = ("isin", "name", "as_of", "declared_units", "declared_value_eur")
+_DEPOT_SOURCES: dict[ExtractionKind, dict[str, tuple[str, ...]]] = {
+    ExtractionKind.TRADE_CONFIRMATION: {
+        "isin": ("isin",),
+        "name": ("security_name",),
+        "kind": ("side",),
+        "quantity": ("units", "side"),
+        "eur_amount": ("net_amount", "side"),
+        "fee_eur": ("fees",),
+        "tax_withheld_eur": ("taxes",),
+        "occurred_on": ("trade_date",),
+        "external_ref": ("order_reference",),
+        # read by the proposal's checks only
+        "_checks": ("gross_amount",),
+    },
+    ExtractionKind.DISTRIBUTION_NOTE: {
+        "isin": ("isin",),
+        "name": ("security_name",),
+        "eur_amount": ("gross_amount_eur",),
+        "tax_withheld_eur": ("gross_amount_eur", "net_amount_eur"),
+        "occurred_on": ("payment_date",),
+        "_checks": (
+            "units",
+            "gross_per_unit",
+            "gross_amount",
+            "withholding_tax",
+            "german_taxes",
+            "net_amount",
+            "german_taxes_eur",
+        ),
+    },
+    ExtractionKind.DEPOT_REPORT: {
+        "isin": ("positions",),
+        "name": ("positions",),
+        "as_of": ("report_date",),
+        "declared_units": ("positions",),
+        "declared_value_eur": ("positions",),
+        "_checks": ("trades",),
+    },
+    ExtractionKind.SECURITIES_TRANSFER: {
+        "isin": ("positions",),
+        "name": ("positions",),
+        "kind": ("direction",),
+        "quantity": ("positions", "direction"),
+        "occurred_on": ("transfer_date",),
+        "external_ref": ("reference",),
+    },
+}
+_DEPOT_WARNINGS = {
+    depot_rules.NET_MISMATCH: (
+        "Der ausgewiesene Endbetrag passt nicht zu Kurswert, Gebühren und Steuern; bitte die "
+        "Beträge mit dem Dokument vergleichen."
+    ),
+    depot_rules.GROSS_MISMATCH: (
+        "Anteile mal Ausschüttung je Anteil ergeben nicht den Bruttobetrag; bitte mit dem "
+        "Dokument vergleichen."
+    ),
+    depot_rules.POSITION_VALUE_MISMATCH: (
+        "Bei einer Position ergeben Anteile mal Kurs nicht den Wert; bitte mit dem Bericht "
+        "vergleichen."
+    ),
+    depot_rules.ROW_UNREADABLE: (
+        "Eine Zeile des Dokuments ließ sich nicht lesen und fehlt hier; bitte mit dem Dokument "
+        "vergleichen."
+    ),
+}
+_NO_DEPOT_NOTE = (
+    "Es gibt noch kein Depot unter Konten. Bitte zuerst das Depot anlegen (Konten › Konto "
+    "hinzufügen, Art „Depot“), dann hier das Depot wählen."
+)
 
 
 def _code_value(value: JsonValue, confidence: ConfidenceLevel) -> ExtractedValue:

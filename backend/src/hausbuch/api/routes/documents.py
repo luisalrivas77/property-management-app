@@ -29,6 +29,7 @@ from hausbuch.schemas.document import Document, DocumentLink, RetentionResult
 from hausbuch.schemas.enums import DocumentSource, EntityType, LinkTarget
 from hausbuch.schemas.proposal import Proposal
 from hausbuch.services.context import CommandContext
+from hausbuch.services.depot_explain import document_explanation
 from hausbuch.services.documents import (
     attach_payment_proof,
     current_extraction,
@@ -214,6 +215,7 @@ def _detail(conn: Connection, document_id: UUID) -> DocumentDetail:
         retention=document_retention(conn, document_id),
         media_type=media_type,
         opens_inline=media_type in INLINE_MEDIA_TYPES,
+        explanation=document_explanation(conn, document_id),
     )
 
 

@@ -69,7 +69,7 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "proposal.other_notice_without_patch":
     "Der zweite Eintrag passt nur, wenn der Betrag der Grunderwerbsteuer oben auf diesen Bescheid gesenkt wird. Bitte beides übernehmen oder den zweiten Eintrag überspringen.",
   "proposal.bank_file_not_read":
-    "Diese Datei wird nicht mit KI ausgelesen: Hausbuch hat sie beim Bankabruf von der Bank geholt, oder sie ist eine Kreditkartenabrechnung, die direkt auf ihrem Kartenkonto importiert wird.",
+    "Diese Datei wird nicht mit KI ausgelesen: Hausbuch hat sie beim Bankabruf von der Bank geholt, oder sie ist eine Kreditkartenabrechnung oder ein Kontoauszug des Depot-Verrechnungskontos, die direkt auf ihrem Konto importiert werden.",
   "document.extraction_stale": "Das Dokument wurde inzwischen neu ausgelesen. Bitte die Seite neu laden und die Felder prüfen.",
   "document.extraction_kind_mismatch": "Für diese Dokumentart gibt es eines der Felder von Hand nicht; es kann nicht gespeichert werden.",
   // bank statements (phase-2.md §12 and the step 3 additions, rules/statements.py)
@@ -208,6 +208,14 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "return.childcare_age": "Kinderbetreuungskosten zählen nur bis zum 14. Geburtstag des Kindes.",
   "return.household_services_cash":
     "Bar bezahlte Handwerker- oder Haushaltsleistungen zählen nicht (§ 35a): nur Überweisungen.",
+  // Phase 6 step 4: the depot's documents (services/depot.py)
+  "depot.account_required": "Bitte als Konto ein Depot wählen; Wertpapiere werden nur auf einem Depot gebucht.",
+  "depot.movement_exists":
+    "Dieser Vorgang (gleiche Referenz oder gleicher Tag und Betrag) ist auf dem Depot schon gebucht. Das Dokument wurde vermutlich zweimal hochgeladen; diesen Eintrag überspringen.",
+  "depot.holding_exists":
+    "Dieser Bericht ist für dieses Depot und diesen Stichtag schon übernommen. Diesen Eintrag überspringen.",
+  "depot.holdings_mismatch":
+    "Der Depotbericht nennt andere Stückzahlen, als die gebuchten Abrechnungen ergeben. Bitte die fehlenden Wertpapierabrechnungen hochladen.",
 };
 
 /** German text for a proposal's `error_code`: why reading the document failed or was
@@ -225,9 +233,13 @@ export const AI_ERROR_TEXT: Record<string, string> = {
   "ai.internal_error": "Beim Auslesen ist ein interner Fehler aufgetreten.",
   "document.adobe_form":
     "Dieses PDF ist ein Adobe-Formular und lässt sich nur in Adobe Reader anzeigen. Öffnen Sie es dort, drucken Sie es als PDF und laden Sie die Kopie hoch.",
-  // Phase 6 D176 (3): a credit card statement uploaded as a document is never sent to the model.
+  // Phase 6 step 4 (D168): a depot document while the private-accounts switch is off.
+  "ai.blocked_private_data":
+    "Das ist ein Dokument Ihres Depots. Es geht erst an die KI, wenn unter Einstellungen „Private Konten mit KI zuordnen“ eingeschaltet ist; danach hier „Neu auslesen“ drücken.",
+  // Phase 6 D176 (3) and step 4: a credit card statement or the depot's cash statement uploaded
+  // as a document is never sent to the model.
   "proposal.bank_file_not_read":
-    "Das ist eine Kreditkartenabrechnung. Hausbuch liest sie selbst, ohne KI: Bitte unter Konten auf der Seite der Karte mit „Kreditkartenabrechnung hochladen“ importieren.",
+    "Das ist eine Kreditkartenabrechnung oder ein Kontoauszug des Depot-Verrechnungskontos. Hausbuch liest sie selbst, ohne KI: Bitte unter Konten auf der Seite der Karte mit „Kreditkartenabrechnung hochladen“ bzw. auf der Seite des Verrechnungskontos mit „Kontoauszug hochladen“ importieren.",
 };
 
 /** The German sentence for a proposal's error code; unknown codes get a generic one. */

@@ -34,7 +34,7 @@ from functools import partial
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 
 from hausbuch.ai import documents
 from hausbuch.ai.client import ModelCallError, ModelClient, ModelRequest, ModelResponse
@@ -46,11 +46,16 @@ from hausbuch.ai.requests import (
     parse_classification,
 )
 from hausbuch.db.session import workspace_transaction
+from hausbuch.db.tables import document as document_table
 from hausbuch.db.tables import property_ as property_table
 from hausbuch.db.tables import proposal as proposal_table
 from hausbuch.db.tables import workspace as workspace_table
+from hausbuch.rules import depot as depot_rules
+from hausbuch.rules import depot_explain
+from hausbuch.rules.errors import AI_BLOCKED_PRIVATE_DATA
 from hausbuch.rules.extraction_parse import (
     GENERAL_SCRUBBED_KINDS,
+    PRIVATE_SUBTYPES,
     SCRUBBED_KINDS,
     TENANT_SUBTYPES,
     PropertyAddress,
@@ -66,8 +71,9 @@ from hausbuch.schemas.enums import ActorType, DocumentSubtype, ExtractionKind, P
 from hausbuch.schemas.extraction import EXTRACTION_MODELS, asked_fields
 from hausbuch.services import documents as document_service
 from hausbuch.services import proposals
-from hausbuch.services.bank import card_pdf
+from hausbuch.services.bank import card_pdf, depot_pdf
 from hausbuch.services.context import Actor, new_command
+from hausbuch.services.workspace_settings import private_ai_allowed
 from hausbuch.settings import Settings
 from hausbuch.storage import BlobStore
 
@@ -88,6 +94,10 @@ INTERNAL_ERROR = "ai.internal_error"  # not a model error: a bug or the database
 # has no import yet, so request_read's check cannot see it; it is never sent to the model and
 # is imported on its card account instead. Not retried.
 CARD_STATEMENT = proposals.PROPOSAL_BANK_FILE_NOT_READ
+# Phase 6 step 4 (D168): a depot document while ai_private_accounts is off, stopped before the
+# model sees it when its text layer names the depot, else right after the classifier typed it.
+# Not retried: „Erneut auslesen“ once the switch is on.
+BLOCKED_PRIVATE_DATA = AI_BLOCKED_PRIVATE_DATA
 # ai.api_error and ai.unavailable come from hausbuch.ai.client.
 
 RETRY_WAITS_S = (10, 60, 300)  # §5.1: three retries
@@ -149,6 +159,9 @@ class _Original:
     # Phase 3 D143: a document code typed (a payment proof uploaded from its bill's to-do) is
     # read as that kind without a classify call (pretyped_classification).
     pretyped: ClassifyOutput | None = None
+    # Phase 6 D168: whether the depot's documents may reach the model (the switch is on and
+    # its consent recorded), read with the proposal; re-read before the extraction.
+    private_allowed: bool = False
 
 
 def run_document_read(
@@ -256,8 +269,11 @@ def _load(
         data = document_service.read_original(conn, deps.blob_store, document_id)
         properties = property_addresses(conn)
         document = document_service.get_document(conn, document_id)
+        private_allowed = private_ai_allowed(conn)
     pretyped = pretyped_classification(None if document is None else document.typing)
-    return _Original(target, media_type or "", data, allowed, tenant, properties, pretyped)
+    return _Original(
+        target, media_type or "", data, allowed, tenant, properties, pretyped, private_allowed
+    )
 
 
 def pretyped_classification(typing: DocumentTyping | None) -> ClassifyOutput | None:
@@ -275,6 +291,22 @@ def pretyped_classification(typing: DocumentTyping | None) -> ClassifyOutput | N
     )
 
 
+def depot_classification(text: str) -> ClassifyOutput | None:
+    """Phase 6 step 4: a depot document whose text layer names its kind
+    (rules.depot.document_subtype) is typed by code, with this classification in place of a
+    classify call. None for every other text."""
+    subtype = depot_rules.document_subtype(text)
+    if subtype is None:
+        return None
+    return ClassifyOutput(
+        type=depot_rules.DOCUMENT_TYPES[subtype],
+        subtype=subtype,
+        contains_tenant_data=False,
+        language="de",
+        confidence="high",
+    )
+
+
 def property_addresses(conn) -> tuple[PropertyAddress, ...]:
     """Street, house number and postal code of every property of the workspace (row-level
     security limits the rows to it), sold ones included: a document may still concern one."""
@@ -284,6 +316,12 @@ def property_addresses(conn) -> tuple[PropertyAddress, ...]:
         ).order_by(property_table.c.id)
     ).all()
     return tuple(PropertyAddress(r.street, r.house_number, r.postal_code) for r in rows)
+
+
+def _private_allowed(deps: JobDeps, workspace_id: UUID) -> bool:
+    """D168 as it is now (read again before the extraction, like gate 3)."""
+    with workspace_transaction(deps.engine, workspace_id) as conn:
+        return private_ai_allowed(conn)
 
 
 def _tenant_documents_allowed(deps: JobDeps, workspace_id: UUID) -> bool:
@@ -325,10 +363,34 @@ def _target_proposal(conn, document_id: UUID, proposal_id: UUID) -> tuple[UUID, 
 # --- 2. classify and extract ---------------------------------------------------------
 
 
-def _is_card_statement(data: bytes) -> bool:
-    """A card statement by its printed layout, read by code (services.bank.card_pdf)."""
-    pages = card_pdf.pdf_pages(data)
-    return pages is not None and card_pdf.looks_like(pages)
+def _text_pages(original: _Original) -> list[str]:
+    """The PDF's text layer per page; empty for an image or a PDF without one."""
+    if original.media_type != documents.PDF:
+        return []
+    return card_pdf.pdf_pages(original.data) or []
+
+
+def _is_card_statement(pages: list[str]) -> bool:
+    """A card statement (services.bank.card_pdf) or, since phase 6 step 4, a depot's cash
+    statement (services.bank.depot_pdf) by its printed layout: both are read by code on their
+    account only."""
+    return bool(pages) and (card_pdf.looks_like(pages) or depot_pdf.looks_like(pages))
+
+
+def _note_depot_kind(deps: JobDeps, workspace_id: UUID, document_id: UUID, text: str) -> None:
+    """Phase 6 D177: a depot document uploaded before its kind was recorded at upload
+    (services.documents.depot_kind_of) gets it at its next reading; code only, before the
+    D168 gate, so a document the switch keeps from the model is explained too."""
+    kind = depot_explain.document_kind(text)
+    if kind is None:
+        return
+    d = document_table.c
+    with workspace_transaction(deps.engine, workspace_id) as conn:
+        conn.execute(
+            update(document_table)
+            .where(d.id == document_id, d.depot_kind.is_(None))
+            .values(depot_kind=kind.value)
+        )
 
 
 def _read(
@@ -347,8 +409,15 @@ def _read(
         pages = documents.page_count(original.data) if original.media_type == documents.PDF else 1
         if original.media_type == documents.PDF and documents.is_adobe_only_form(original.data):
             raise _Stop(ADOBE_FORM)  # D43: the model would see only Adobe's placeholder page
-        if original.media_type == documents.PDF and _is_card_statement(original.data):
-            raise _Stop(CARD_STATEMENT)  # D176 (3): read by code on its card account only
+        text_pages = _text_pages(original)
+        _note_depot_kind(deps, workspace_id, document_id, "\n".join(text_pages))
+        if _is_card_statement(text_pages):
+            raise _Stop(CARD_STATEMENT)  # D176 (3), step 4: read by code on its account only
+        text = "\n".join(text_pages)
+        # D168, step 4: a depot document never reaches the model, not even the classifier,
+        # while the switch is off; one whose text names its kind is typed by code.
+        if not original.private_allowed and depot_rules.is_depot_document(text):
+            raise _Stop(BLOCKED_PRIVATE_DATA)
         first = (
             documents.pdf_pages(original.data, 0, min(CLASSIFY_PAGES, pages))
             if original.media_type == documents.PDF
@@ -358,8 +427,9 @@ def _read(
         raise _Stop(exc.code) from None
 
     classify_id: UUID | None = None
-    if original.pretyped is not None:
-        classification = original.pretyped  # D143: no classify call
+    pretyped = original.pretyped or depot_classification(text)
+    if pretyped is not None:
+        classification = pretyped  # D143, step 4: no classify call
     else:
         block = documents.document_block(first, original.media_type, citations=False)
         classification, classify_id = _classify(
@@ -370,6 +440,12 @@ def _read(
             classify_request(settings, block),
         )
 
+    # D168: a depot document the text layer did not show (a photo, a scan) is stopped once the
+    # classifier has typed it, and the switch is read again before the extraction.
+    if classification.subtype in PRIVATE_SUBTYPES and (
+        not original.private_allowed or not _private_allowed(deps, workspace_id)
+    ):
+        raise _Stop(BLOCKED_PRIVATE_DATA, classify_id)
     tenant = classification.contains_tenant_data or classification.subtype in TENANT_SUBTYPES
     if tenant and not original.tenant_documents_allowed:  # gate 3
         _finish(deps, workspace_id, original.proposal_id, classification, classify_id)

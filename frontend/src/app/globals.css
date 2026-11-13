@@ -509,6 +509,10 @@ button:disabled {
   color: var(--info-text);
 }
 
+.notice.explanation p + p {
+  margin-top: 0.4rem;
+}
+
 .notice-ok {
   background: var(--accent-tint);
   border-color: var(--accent-tint-2);

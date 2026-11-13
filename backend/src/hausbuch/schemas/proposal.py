@@ -25,7 +25,7 @@ from .common import (
     Schema,
     Year,
 )
-from .document import HandField, HandFields
+from .document import DocumentExplanation, HandField, HandFields
 from .enums import (
     AcquisitionCostKind,
     EntityType,
@@ -51,6 +51,9 @@ RecordEntity = (
         "tax_input",  # phase 3 §9: ruecklage_spent / interest_certified via services/tax_inputs
         "return_input",  # phase 4b §8.2: wage_certificate / payslip via services/return_inputs
         "income_input",  # phase 4b §8.4 (D129): bescheid_zve via services/income_inputs
+        # phase 6 step 4 (D165): a depot reading's movements and positions via services/depot
+        "asset_movement",
+        "holding_statement",
     ]
 )
 
@@ -128,6 +131,9 @@ class Proposal(MutableRecord):
     extraction_id: UUID | None
     ai_call_id: UUID | None
     decided_at: datetime | None
+    # Phase 6 D177: a depot document in plain words, on the reads that show the card (GET
+    # /proposals/{id}, GET /documents/{id}/proposals); None for any other document.
+    explanation: DocumentExplanation | None = None
 
 
 class FieldDecision(StrEnum):
@@ -289,6 +295,14 @@ class ExistingProofBill(Schema):
     parts: list[Money] = Field(default_factory=list)
 
 
+class ExistingDepotAccount(Schema):
+    """Phase 6 step 4: a depot account a depot reading's records can be booked on (the form
+    offers each; pre-selected when the workspace has only one)."""
+
+    id: UUID
+    label: str
+
+
 class PrefillContext(Schema):
     """Everything build_proposal may look at. Lists are unordered: the result must not
     depend on their order (prefill.yaml runs every case shuffled too)."""
@@ -330,3 +344,5 @@ class PrefillContext(Schema):
     # property (of every property when it is linked to none), over every year the draft can
     # be asked for; the pre-fill proposes the one its amount pays.
     proof_candidates: list[ExistingProofBill] = Field(default_factory=list)
+    # Phase 6 step 4: the workspace's depot accounts, for a depot reading's records.
+    depot_accounts: list[ExistingDepotAccount] = Field(default_factory=list)

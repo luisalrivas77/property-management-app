@@ -169,6 +169,7 @@ _MATCHERS = frozenset(
         AllocationMethod.MATCHER_HAUSGELD,
         AllocationMethod.MATCHER_TRANSFER,  # phase 6 D162
         AllocationMethod.MATCHER_CARD,  # phase 6 D176 (3)
+        AllocationMethod.MATCHER_DEPOT,  # phase 6 step 4, D165 (1)
     }
 )
 

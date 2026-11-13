@@ -41,6 +41,10 @@ from .enums import (
 )
 
 __all__ = [
+    "DepotAccountPositions",
+    "DepotDocumentStatus",
+    "DepotPosition",
+    "EtfOverview",
     "BANK_ACCOUNT_KINDS",
     "AccountKind",
     "AccountPurpose",
@@ -208,6 +212,9 @@ class MovementSource(StrEnum):
     DISTRIBUTION_NOTE = "distribution_note"  # D165 (2)
     REPORT = "report"  # a report's Umsätze list, no confirmation stored (D165 (3))
     USER = "user"  # typed by hand
+    # Phase 6 step 4 (migration 0027): an Einbuchung or Ausbuchung, units moved between two
+    # own depots that keep their acquisition date (D165 amended).
+    SECURITIES_TRANSFER = "securities_transfer"
 
 
 class MovementStatus(StrEnum):
@@ -244,6 +251,7 @@ class AssetMovementDraft(Schema):
             MovementSource.TRADE_CONFIRMATION,
             MovementSource.DISTRIBUTION_NOTE,
             MovementSource.REPORT,
+            MovementSource.SECURITIES_TRANSFER,
         }
         if self.source in documented and self.document_id is None:
             raise ValueError(f"a movement read from a {self.source} names its document")
@@ -655,3 +663,58 @@ class HouseholdCashflow(Schema):
     # explains yet (the „Ohne Kategorie“ card, linked to Zu prüfen).
     income_by_category: dict[AllocationCategory, Money] = Field(default_factory=dict)
     open_lines: int = Field(default=0, ge=0)
+
+
+# --- The Anlagen ETF tab (phase 6 step 4, §13, mockup 09b) ------------------------------
+
+
+class DepotPosition(Schema):
+    """One fund on one depot account. `units` are the confirmed movements to today; the
+    report figures are those of the latest report that lists it; a fund the account's latest
+    report does not list is 0 on that report (0 by omission), with no value and no price.
+    `value_eur` is that report's stated value, shown only while the report reconciles
+    against today's movements and nothing moved since (D165 (3): no valuation past the last
+    reconciled date; computed prices and NAVs come with steps 5 and 6). `cost_eur` is the
+    plain Σ of the purchases' amounts while the fund was only bought on this account (§13:
+    right for ETFs bought and never sold; lots are phase 7), and `gain_eur` value − cost when
+    both are shown."""
+
+    asset_id: UUID
+    isin: str | None = None
+    name: str
+    units: Quantity
+    report_on: date | None = None
+    report_units: NonNegativeQuantity | None = None
+    report_value_eur: Money | None = None
+    report_price_eur: PriceEur | None = None
+    reconciled: bool | None = None
+    moved_since_report: bool = False
+    value_eur: Money | None = None
+    cost_eur: Money | None = None
+    gain_eur: Money | None = None
+
+
+class DepotAccountPositions(Schema):
+    account_id: UUID
+    label: str
+    positions: list[DepotPosition] = Field(default_factory=list)
+
+
+class DepotDocumentStatus(Schema):
+    """One document of the depot's Postbox list: its subtype, title and date as typed, and
+    the status of its latest reading (None: stored, never read, e.g. while the switch
+    „Private Konten mit KI zuordnen“ is off, or a tax certificate, read in phase 8)."""
+
+    document_id: UUID
+    subtype: str | None = None
+    title: str | None = None
+    document_date: date | None = None
+    created_at: datetime
+    reading: str | None = None  # ProposalStatus of the latest reading
+
+
+class EtfOverview(Schema):
+    """GET /assets/etf: every depot account with its funds, and the depot's documents."""
+
+    accounts: list[DepotAccountPositions] = Field(default_factory=list)
+    documents: list[DepotDocumentStatus] = Field(default_factory=list)

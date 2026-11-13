@@ -148,6 +148,7 @@ document = Table(
     _timestamp("received_at"),
     _created_at(),
     _updated_at(),
+    _text("depot_kind", nullable=True),  # 0027, D177: set by code from the text layer
 )
 
 document_extraction = Table(
@@ -957,6 +958,7 @@ holding_statement = Table(
     Column("reconciled", Boolean, nullable=True),
     _quantity("difference_units", nullable=True),
     _created_at(),
+    _uuid("superseded_by", nullable=True),  # 0027: a report read again with other figures
 )
 transfer_link = Table(
     "transfer_link",

@@ -51,7 +51,7 @@ import type {
 } from "@/api/schemas";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
-import { NO_TAX_YEAR } from "./documents";
+import { DocumentExplanationBox, NO_TAX_YEAR } from "./documents";
 import type { Directory } from "./entities";
 import { targets, tenantName } from "./entities";
 import { FieldDescription, FormBanner, InfoToggle, useFormErrors, type FieldMessages } from "./form";
@@ -97,7 +97,25 @@ const IN_FLIGHT: readonly ProposalStatus[] = ["queued", "running"];
 /** "unit" / "tenancy" / "loan": the id of one of the workspace's units / tenancies / loans,
  * picked from a list.
  * "bool": a checkbox; ticked is sent as true, unticked is left out (the *Create default, false). */
-type FieldKind = "text" | "money" | "date" | "year" | "count" | "rate" | "area" | "fraction" | "enum" | "fixed" | "unit" | "tenancy" | "loan" | "bool";
+type FieldKind =
+  | "text"
+  | "money"
+  | "date"
+  | "year"
+  | "count"
+  | "rate"
+  | "area"
+  | "fraction"
+  | "enum"
+  | "fixed"
+  | "unit"
+  | "tenancy"
+  | "loan"
+  | "bool"
+  // Phase 6 step 4: units of a security (signed, up to 10 decimals) and a value picked from
+  // the record's own options (a depot reading's account).
+  | "units"
+  | "offered";
 
 /** The kinds picked from the workspace's records. */
 type PickKind = "unit" | "tenancy" | "loan";
@@ -214,8 +232,78 @@ const PROPERTY_FIELDS: Record<string, FieldSpec> = {
   },
 };
 
+/** A depot movement's kind (backend schemas/household.MovementKind, the ones a depot
+ * document proposes). */
+const MOVEMENT_KIND: Readonly<Record<string, string>> = {
+  acquisition: "Kauf",
+  disposal: "Verkauf",
+  distribution: "Ausschüttung",
+  internal_transfer_in: "Einbuchung (aus eigenem Depot)",
+  internal_transfer_out: "Ausbuchung (in eigenes Depot)",
+};
+
+const DEPOT_ACCOUNT: FieldSpec = {
+  label: "Depot",
+  kind: "offered",
+  description:
+    "Das Depot unter Konten, auf dem dieser Vorgang gebucht wird. Hausbuch wählt es nur vor, wenn es genau ein Depot gibt; die Nummer auf dem Dokument ordnet es nicht von selbst zu. Bei mehreren Depots bitte das wählen, dessen Nummer auf dem Dokument steht.",
+};
+const ISIN: FieldSpec = text("ISIN", "Die zwölfstellige Kennung des Wertpapiers, wie auf dem Dokument.");
+const SECURITY_NAME: FieldSpec = text("Wertpapier", "Der Name des Fonds, wie auf dem Dokument; so heißt er unter Anlagen.");
+
+/** A depot reading's records (phase 6 step 4): movement:<n> and holding:<n>. */
+const MOVEMENT_FIELDS: Record<string, FieldSpec> = {
+  account_id: DEPOT_ACCOUNT,
+  isin: ISIN,
+  name: SECURITY_NAME,
+  kind: choice(
+    "Vorgang",
+    MOVEMENT_KIND,
+    "Kauf oder Verkauf laut Wertpapierabrechnung, Ausschüttung laut Erträgnisabrechnung, Ein- oder Ausbuchung, wenn Anteile zwischen zwei eigenen Depots umgezogen sind. Eine Umbuchung ist kein Verkauf: die Anteile behalten ihr Kaufdatum.",
+  ),
+  quantity: {
+    label: "Anteile",
+    kind: "units",
+    description:
+      "Die Stückzahl, die der Vorgang bewegt: positiv bei Kauf und Einbuchung, negativ bei Verkauf und Ausbuchung, 0 bei einer Ausschüttung.",
+  },
+  eur_amount: {
+    label: "Betrag (€)",
+    kind: "money",
+    signed: true,
+    description:
+      "Bei Kauf und Verkauf der Endbetrag (Ausmachender Betrag), beim Kauf negativ; bei einer Ausschüttung der Bruttobetrag in Euro. Mit ihm sucht Hausbuch die Buchung auf dem Kontoauszug des Depots.",
+  },
+  fee_eur: money("Gebühren (€)", "Provision, Courtage und Spesen dieses Vorgangs zusammen, laut Abrechnung."),
+  tax_withheld_eur: money(
+    "Einbehaltene Steuern (€)",
+    "Kapitalertragsteuer, Solidaritätszuschlag und Kirchensteuer, die die Bank einbehalten hat. Ausgewertet wird das mit der Anlage KAP (Phase 8).",
+  ),
+  occurred_on: date("Datum", "Der Handelstag, der Zahltag einer Ausschüttung oder der Tag der Umbuchung."),
+  external_ref: text(
+    "Referenz",
+    "Die Referenznummer der Bank. Mit ihr erkennt Hausbuch denselben Vorgang wieder und die beiden Seiten einer Umbuchung.",
+  ),
+};
+
+const HOLDING_FIELDS: Record<string, FieldSpec> = {
+  account_id: DEPOT_ACCOUNT,
+  isin: ISIN,
+  name: SECURITY_NAME,
+  as_of: date("Stichtag", "Der Tag, für den der Bericht den Bestand angibt."),
+  declared_units: {
+    label: "Anteile laut Bericht",
+    kind: "units",
+    description:
+      "Die Stückzahl laut Bericht. Hausbuch vergleicht sie mit den gebuchten Abrechnungen bis zum Stichtag; stimmen sie überein, übernimmt es den Kurs des Berichts.",
+  },
+  declared_value_eur: money("Wert laut Bericht (€)", "Der Kurswert der Position am Stichtag, laut Bericht."),
+};
+
 /** By record key prefix, then by the *Create / *Patch field name the backend uses. */
 const FIELDS: Record<string, Record<string, FieldSpec>> = {
+  movement: MOVEMENT_FIELDS,
+  holding: HOLDING_FIELDS,
   typing: {
     type: choice(
       "Typ des Dokuments",
@@ -592,6 +680,9 @@ const CREATE_FIELDS: Readonly<Record<string, readonly string[]>> = {
   ],
   // InitialRent
   rent: ["cold_rent", "operating_costs_prepayment", "effective_from"],
+  // services/depot.DepotMovementValues and DepotHoldingValues (phase 6 step 4)
+  movement: ["account_id", "kind", "isin", "name", "occurred_on", "quantity", "eur_amount", "fee_eur", "tax_withheld_eur", "external_ref"],
+  holding: ["account_id", "isin", "name", "as_of", "declared_units", "declared_value_eur"],
   // _DepositValues (DepositReceivedBody + tenancy_id)
   deposit_received: ["tenancy_id", "amount", "received_on"],
   // IncomeInputCreate, kind bescheid_zve (the apply sets the kind and this document)
@@ -665,6 +756,14 @@ const DERIVED_INPUT: Record<string, string> = {
   amount_total: "Gesamtbetrag",
   remaining_useful_life: "Restnutzungsdauer laut Gutachten",
   valuation_date: "Bewertungsstichtag des Gutachtens",
+  // Phase 6 step 4: a depot reading's fields
+  side: "Kauf oder Verkauf",
+  units: "Stückzahl",
+  net_amount: "Ausmachender Betrag",
+  gross_amount_eur: "Bruttobetrag in Euro",
+  net_amount_eur: "Auszahlung in Euro",
+  positions: "Positionen des Berichts",
+  direction: "Ein- oder Ausbuchung",
 };
 
 function lookup(map: Readonly<Record<string, string>>, key: string): string {
@@ -697,6 +796,11 @@ function proofMovesDeclined(records: ProposalRecord[], state: Record<string, Rec
 
 function isYearMove(record: ProposalRecord): boolean {
   return prefixOf(record.key)[0] === "private_cost_year";
+}
+
+/** A depot record's security: its name, else its ISIN. */
+function securityOf(record: ProposalRecord): string {
+  return scalar(record.fields?.name?.value) || scalar(record.fields?.isin?.value) || "Wertpapier";
 }
 
 function prefixOf(key: string): [string, string] {
@@ -798,6 +902,10 @@ function recordTitle(record: ProposalRecord): string {
       return "Einkommensteuerbescheid: zvE laut Bescheid";
     case "private_cost_year":
       return "Von einem anderen Konto bezahlt: Jahr der Zahlung";
+    case "movement":
+      return `${lookup(MOVEMENT_KIND, scalar(record.fields?.kind?.value))}: ${securityOf(record)}`;
+    case "holding":
+      return `Bestand laut Bericht: ${securityOf(record)}`;
     default:
       return record.key;
   }
@@ -828,6 +936,7 @@ function toRaw(spec: FieldSpec, value: unknown): string {
   switch (spec.kind) {
     case "money":
     case "area":
+    case "units":
       return decimalInput(scalar(value));
     case "rate":
       return percentInput(scalar(value));
@@ -838,6 +947,15 @@ function toRaw(spec: FieldSpec, value: unknown): string {
     default:
       return scalar(value);
   }
+}
+
+/** Units of a security, signed, to the table's 10 decimals: "-15,25" → "-15.25". */
+function toUnits(raw: string): Parsed<string> {
+  const text = raw.trim();
+  const negative = text.startsWith("-");
+  const parsed = toDecimalString(negative ? text.slice(1) : text, 10);
+  if (!parsed.ok || !negative) return parsed;
+  return { ok: true, value: /^0+(\.0+)?$/.test(parsed.value) ? parsed.value : `-${parsed.value}` };
 }
 
 /** A whole number of at least 1, e.g. a useful life in years (D147). */
@@ -861,6 +979,8 @@ function fromRaw(spec: FieldSpec, raw: string): Parsed<unknown> {
       return toYear(raw);
     case "count":
       return toCount(raw);
+    case "units":
+      return toUnits(raw);
     case "fraction":
       return toFraction(raw);
     case "bool":
@@ -880,6 +1000,8 @@ function display(spec: FieldSpec, value: unknown, fixed: (value: unknown) => str
       return formatPercent(scalar(value));
     case "area":
       return formatArea(scalar(value));
+    case "units":
+      return decimalInput(scalar(value));
     case "fraction":
       return isFraction(value) ? formatShare(value) : "–";
     case "date":
@@ -1333,6 +1455,10 @@ function appliedLabel(entity: AppliedEntity): string {
       return "zvE laut Bescheid erfasst";
     case "private_cost_year":
       return "Rechnung ins Jahr der Zahlung verschoben";
+    case "movement":
+      return "Wertpapiervorgang auf dem Depot gebucht";
+    case "holding":
+      return "Bestand laut Bericht erfasst und mit den Abrechnungen abgeglichen";
     default:
       return entity.key;
   }
@@ -1520,6 +1646,7 @@ function ProposalReview({
 
   return (
     <form className="stack proposal" onSubmit={apply} noValidate aria-label="Vorschlag prüfen">
+      <DocumentExplanationBox explanation={proposal.explanation} />
       <p className="muted">
         Bitte jeden Wert mit der Fundstelle vergleichen. Gespeichert wird erst mit „Übernehmen“; jeder Eintrag läuft dabei durch dieselben Prüfungen
         wie beim Eingeben von Hand.
@@ -1847,6 +1974,20 @@ function FieldRow({
           ))}
         </select>
       );
+    } else if (spec.kind === "offered") {
+      const raw = state?.raw ?? "";
+      const choices = offered ?? [];
+      input = (
+        <select {...common} onChange={(e) => onChange({ raw: e.target.value })}>
+          <option value="">– wählen –</option>
+          {raw && !choices.some((option) => scalar(option.value) === raw) ? <option value={raw}>{raw}</option> : null}
+          {choices.map((option) => (
+            <option key={scalar(option.value)} value={scalar(option.value)}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      );
     } else if (isPick(spec.kind)) {
       const choices: [string, string][] = directory ? pickable(spec.kind, directory) : [];
       const raw = state?.raw ?? "";
@@ -1867,7 +2008,8 @@ function FieldRow({
     } else if (spec.kind === "date") {
       input = <input type="date" {...common} onChange={(e) => onChange({ raw: e.target.value })} />;
     } else {
-      const numeric = spec.kind === "money" || spec.kind === "rate" || spec.kind === "area" || spec.kind === "year" || spec.kind === "count";
+      const numeric =
+        spec.kind === "money" || spec.kind === "rate" || spec.kind === "area" || spec.kind === "units" || spec.kind === "year" || spec.kind === "count";
       input = (
         <input
           type="text"
@@ -1915,7 +2057,7 @@ function FieldRow({
       <div className={existing && !unchanged ? "proposal-row-body with-current" : "proposal-row-body"}>
         <div>
           {input}
-          {!unchanged && offered?.length ? (
+          {!unchanged && spec.kind !== "offered" && offered?.length ? (
             <FieldOptions
               label={spec.label}
               options={offered.map((option) => ({ raw: toRaw(spec, option.value), label: option.label }))}
@@ -1967,6 +2109,7 @@ function fieldHint(spec: FieldSpec, value: ExtractedValue | null, hasNotes: bool
     if (spec.kind === "unit") return "Keine Einheit passt eindeutig zum Mietvertrag; bitte wählen.";
     if (spec.kind === "tenancy") return "Kein Mietverhältnis passt eindeutig; bitte wählen.";
     if (spec.kind === "loan") return "Kein Darlehen passt eindeutig zur Bescheinigung; bitte wählen.";
+    if (spec.kind === "offered") return "Bitte das Depot wählen, dessen Nummer auf dem Dokument steht.";
     return hasNotes ? "Im Dokument nicht als Wert gefunden; siehe Hinweis oben." : "Im Dokument nicht gefunden.";
   }
   const derived = value.derived_from ?? [];

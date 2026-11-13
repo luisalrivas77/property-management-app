@@ -1,0 +1,276 @@
+# What each document of the depot means, in plain words (docs/phases/phase-6.md D177).
+#
+# One entry per kind, in the order code tries them: the first whose `titles` pattern matches
+# the document's text layer is its kind (rules/depot_explain.py; only for a document that
+# names the depot, rules.depot.is_depot_document). The patterns are the documents' printed
+# headings; `(?m)^` anchors one to the start of a line, where the prose of another document
+# could name it too (a Kontoauszug mentions its Rechnungsabschluss).
+#
+# Each entry has three German parts, written by people and filled by code, never by the model
+# (principle 1):
+#   was        what the document is, explaining the words it uses;
+#   bedeutung  what it means for the account: sentences with {placeholders} that code fills
+#              from the document's reading; a sentence one of whose placeholders has no value
+#              is left out, never guessed;
+#   aktion     what Hausbuch does with it, and whether the person must act.
+#
+# Placeholders: konto (the depot account's name), datum, stichtag, fonds, anteile, betrag,
+# brutto, netto, gebuehren, steuern, positionen, gesamtwert, umsaetze. Amounts arrive as
+# „1.234,56 €“, dates as „14.05.2026“, units with their decimals („4,8“).
+#
+# A kind with no entry here shows nothing; a new entry needs no code change.
+
+kinds:
+  - kind: einbuchung
+    titles: ['(?m)^[ \t]*Einbuchung von Wertpapieren']
+    was: >-
+      Einbuchung von Wertpapieren: Fondsanteile sind in das Depot gekommen, ohne dass sie
+      gekauft wurden, meist von einem anderen Depot oder einer anderen Anlagestrategie
+      desselben Kunden umgebucht. Es fließt dabei kein Geld.
+    bedeutung:
+      - '{anteile} Anteile des Fonds {fonds} sind hinzugekommen.'
+      - 'Anteile von {positionen} Fonds sind hinzugekommen.'
+      - 'Tag der Einbuchung: {datum}.'
+      - 'Depot: {konto}.'
+    aktion: >-
+      Hausbuch schlägt im Vorschlag zu diesem Dokument eine Umbuchung der Anteile vor. Bitte
+      die Werte prüfen und „Übernehmen“ klicken; dann zählen die Anteile zum Bestand dieses
+      Depots. Es ist kein Kauf und keine Ausgabe.
+
+  - kind: ausbuchung
+    titles: ['(?m)^[ \t]*Ausbuchung von Wertpapieren']
+    was: >-
+      Ausbuchung von Wertpapieren: Fondsanteile haben das Depot verlassen, ohne dass sie
+      verkauft wurden, meist auf ein anderes Depot oder eine andere Anlagestrategie desselben
+      Kunden umgebucht. Es fließt dabei kein Geld.
+    bedeutung:
+      - '{anteile} Anteile des Fonds {fonds} sind abgegangen.'
+      - 'Anteile von {positionen} Fonds sind abgegangen.'
+      - 'Tag der Ausbuchung: {datum}.'
+      - 'Depot: {konto}.'
+    aktion: >-
+      Hausbuch schlägt im Vorschlag zu diesem Dokument eine Umbuchung der Anteile vor. Bitte
+      die Werte prüfen und „Übernehmen“ klicken; dann zählen die Anteile nicht mehr zum
+      Bestand dieses Depots. Es ist kein Verkauf und keine Einnahme.
+
+  - kind: finanzreport
+    titles: ['Finanzreport']
+    was: >-
+      Finanzreport: eine Zusammenfassung zu einem Stichtag. Sie enthält den Kontoauszug des
+      Verrechnungskontos (des Geldkontos, über das quirion Käufe, Verkäufe und Gebühren
+      bezahlt) und den Depotauszug (welche Fonds im Depot liegen und was sie wert sind).
+    bedeutung:
+      - 'Datum: {datum}.'
+    aktion: >-
+      Nur zur Information, ändert nichts am Konto; wird abgelegt. Die Geldbewegungen bucht
+      Hausbuch über die Kontoauszüge des Verrechnungskontos, die Bestände über das
+      PM-Reporting.
+
+  - kind: jahressteuerbescheinigung
+    titles: ['Jahressteuerbescheinigung']
+    was: >-
+      Jahressteuerbescheinigung: die Bescheinigung der Bank für das Finanzamt über ein
+      Kalenderjahr. Sie nennt die Kapitalerträge des Depots (Ausschüttungen, Gewinne aus
+      Verkäufen, die Vorabpauschale) und die Steuern, die die Bank davon schon einbehalten
+      und an das Finanzamt abgeführt hat.
+    bedeutung:
+      - 'Datum: {datum}.'
+    aktion: >-
+      Nur zur Information, ändert nichts am Konto; wird abgelegt. Sie ist der Beleg für die
+      Anlage KAP der Steuererklärung; Hausbuch rechnet daraus noch nichts.
+
+  - kind: pm_reporting
+    titles: ['Wertpapierumsätze|Detailreport']
+    was: >-
+      PM-Reporting: der Bericht, den die Vermögensverwaltung regelmäßig schicken muss. Er
+      listet, welche Fonds an einem Stichtag im Depot liegen und was sie an diesem Tag wert
+      sind, und die Käufe und Verkäufe des Zeitraums.
+    bedeutung:
+      - 'Stichtag: {stichtag}.'
+      - 'Laut Bericht liegen {positionen} Fonds im Depot, zusammen {gesamtwert} wert.'
+      - 'Er listet {umsaetze} Käufe und Verkäufe.'
+      - 'Depot: {konto}.'
+    aktion: >-
+      Hausbuch schlägt im Vorschlag zu diesem Dokument die Bestände vor; mit „Übernehmen“
+      werden sie gespeichert und mit den gebuchten Käufen und Verkäufen verglichen. Passt
+      etwas nicht zusammen, erscheint unter „Zu prüfen“ eine Karte, die sagt, welcher Fonds
+      und welche Abrechnung fehlt.
+
+  - kind: ertraegnisabrechnung
+    titles: ['(?m)^[ \t]*Erträgnisabrechnung\b']
+    was: >-
+      Erträgnisabrechnung: die Abrechnung einer Ausschüttung. Ein Fonds hat einen Teil seiner
+      Erträge (Dividenden, Zinsen) an seine Anleger ausgezahlt; die Bank zieht davon die
+      Steuern ab und schreibt den Rest dem Verrechnungskonto gut. Der „Ausmachende Betrag“
+      ist das, was gutgeschrieben wird.
+    bedeutung:
+      - 'Der Fonds {fonds} hat ausgeschüttet.'
+      - 'Zahltag: {datum}.'
+      - 'Für {anteile} Anteile im Depot.'
+      - 'Vor Steuern: {brutto}.'
+      - 'Abgezogene Steuern: {steuern}.'
+      - 'Gutgeschrieben (Ausmachender Betrag): {netto}.'
+      - 'Depot: {konto}.'
+    aktion: >-
+      Hausbuch schlägt die Ausschüttung im Vorschlag zu diesem Dokument vor; mit
+      „Übernehmen“ wird sie auf dem Depot gebucht. Die Zahl der Anteile ändert sich dadurch
+      nicht.
+
+  - kind: wertpapierabrechnung_kauf
+    titles: ['(?m)^[ \t]*Wertpapierabrechnung\b[^\n]*(?:\n[ \t]*)?\bKauf\b']
+    was: >-
+      Wertpapierabrechnung (Kauf): die Bestätigung, dass quirion für Ihr Depot Fondsanteile
+      gekauft hat. Der „Ausmachende Betrag“ ist das, was der Kauf insgesamt gekostet hat:
+      der Preis der Anteile plus Gebühren. Er wird vom Verrechnungskonto abgebucht.
+    bedeutung:
+      - '{anteile} Anteile des Fonds {fonds} wurden gekauft.'
+      - 'Handelstag: {datum}.'
+      - 'Bezahlt (Ausmachender Betrag): {betrag}.'
+      - 'Darin Gebühren: {gebuehren}.'
+      - 'Depot: {konto}.'
+    aktion: >-
+      Hausbuch schlägt den Kauf im Vorschlag zu diesem Dokument vor. Bitte die Werte prüfen
+      und „Übernehmen“ klicken; dann zählen die Anteile zum Bestand des Depots.
+
+  - kind: wertpapierabrechnung_verkauf
+    titles: ['(?m)^[ \t]*Wertpapierabrechnung\b[^\n]*(?:\n[ \t]*)?\bVerkauf\b']
+    was: >-
+      Wertpapierabrechnung (Verkauf): die Bestätigung, dass quirion für Ihr Depot
+      Fondsanteile verkauft hat. Der „Ausmachende Betrag“ ist das, was nach Abzug von
+      Gebühren und Steuern übrig bleibt. Er wird dem Verrechnungskonto gutgeschrieben.
+    bedeutung:
+      - '{anteile} Anteile des Fonds {fonds} wurden verkauft.'
+      - 'Handelstag: {datum}.'
+      - 'Gutgeschrieben (Ausmachender Betrag): {betrag}.'
+      - 'Abgezogene Gebühren: {gebuehren}.'
+      - 'Abgezogene Steuern: {steuern}.'
+      - 'Depot: {konto}.'
+    aktion: >-
+      Hausbuch schlägt den Verkauf im Vorschlag zu diesem Dokument vor. Bitte die Werte
+      prüfen und „Übernehmen“ klicken; dann zählen die Anteile nicht mehr zum Bestand des
+      Depots.
+
+  # A trade note whose heading names no side (code then takes the side from the reading).
+  - kind: wertpapierabrechnung
+    titles: ['(?m)^[ \t]*Wertpapierabrechnung\b']
+    was: >-
+      Wertpapierabrechnung: die Bestätigung, dass quirion für Ihr Depot Fondsanteile gekauft
+      oder verkauft hat. Der „Ausmachende Betrag“ ist der Betrag, der dafür vom
+      Verrechnungskonto abgebucht oder ihm gutgeschrieben wird.
+    bedeutung:
+      - 'Fonds: {fonds}.'
+      - 'Handelstag: {datum}.'
+      - 'Depot: {konto}.'
+    aktion: >-
+      Hausbuch schlägt die Buchung im Vorschlag zu diesem Dokument vor. Bitte die Werte
+      prüfen und „Übernehmen“ klicken.
+
+  - kind: ertragsuebersicht
+    titles: ['Erträgnisaufstellung|Ertragsübersicht|Income [Ss]ummary']
+    was: >-
+      Erträgnisaufstellung: eine Übersicht über ein Jahr, welche Erträge das Depot gebracht
+      hat (Ausschüttungen, Zinsen, Gewinne aus Verkäufen) und welche Steuern dafür abgezogen
+      wurden. Die „Vorabpauschale“ darin ist ein gesetzlich festgelegter Mindestertrag, den
+      ein Fonds jedes Jahr versteuern muss, auch wenn er nichts ausgeschüttet hat; die
+      Steuer darauf zieht die Bank vom Verrechnungskonto ein.
+    bedeutung:
+      - 'Datum: {datum}.'
+    aktion: >-
+      Nur zur Information, ändert nichts am Konto; wird abgelegt. Jede Ausschüttung und jede
+      abgezogene Steuer wird über ihre eigene Abrechnung oder den Kontoauszug gebucht.
+
+  - kind: kosteninformation
+    titles: ['Kosteninformation']
+    was: >-
+      Kosteninformation (ex ante, also „im Voraus“): eine Schätzung, die die Bank vorab
+      schicken muss. Sie sagt, was die Vermögensverwaltung voraussichtlich kosten wird
+      (Verwaltungsgebühr, laufende Kosten der Fonds) und wie sehr das die Rendite schmälert.
+    bedeutung:
+      - 'Datum: {datum}.'
+    aktion: >-
+      Nur zur Information, ändert nichts am Konto; wird abgelegt. Es ist eine Schätzung;
+      abgebucht wird damit nichts.
+
+  - kind: kostenausweis
+    titles: ['Kostenausweis|Kostenübersicht']
+    was: >-
+      Kostenausweis (ex post, also „im Nachhinein“): die Aufstellung der Kosten, die im
+      vergangenen Jahr tatsächlich angefallen sind: die Gebühr für die Vermögensverwaltung,
+      die laufenden Kosten der Fonds selbst und die Kosten der Käufe und Verkäufe.
+    bedeutung:
+      - 'Datum: {datum}.'
+    aktion: >-
+      Nur zur Information, ändert nichts am Konto; wird abgelegt. Die Verwaltungsgebühr
+      wurde schon vom Verrechnungskonto abgebucht und steht im Kontoauszug; die laufenden
+      Kosten der Fonds zieht jeder Fonds direkt von seinem Wert ab, sie erscheinen auf
+      keinem Konto.
+
+  - kind: rechnungsabschluss
+    titles: ['(?m)^[ \t]*Rechnungsabschluss']
+    was: >-
+      Rechnungsabschluss: die Abrechnung des Verrechnungskontos für einen Zeitraum, meist ein
+      Quartal. Darin stehen die Zinsen, die die Bank für das Guthaben gezahlt hat, und die
+      Entgelte, die sie berechnet hat.
+    bedeutung:
+      - 'Datum: {datum}.'
+    aktion: >-
+      Nur zur Information, ändert nichts am Konto; wird abgelegt. Die Zinsen und Entgelte
+      stehen als eigene Zeilen im Kontoauszug und werden dort gebucht.
+
+  - kind: kontoauszug
+    titles: ['(?m)^[ \t]*Kontoauszug']
+    was: >-
+      Kontoauszug des Verrechnungskontos: die Liste der Geldbewegungen auf dem Geldkonto des
+      Depots, über das quirion Käufe, Verkäufe, Ausschüttungen, Steuern und Gebühren bezahlt
+      und Ihre Einzahlungen empfängt.
+    bedeutung:
+      - 'Datum: {datum}.'
+      - 'Konto: {konto}.'
+    aktion: >-
+      Hausbuch liest ihn selbst, ohne KI, auf dem Konto ein: unter Konten auf der Seite des
+      Verrechnungskontos mit „Kontoauszug hochladen“. Jede Zeile wird dann ein Umsatz, den
+      Hausbuch zuordnet.
+
+  - kind: depotauszug
+    titles: ['Depotauszug']
+    was: >-
+      Depotauszug: die Liste der Fonds, die an einem Stichtag im Depot liegen, mit der Zahl
+      der Anteile und ihrem Wert an diesem Tag.
+    bedeutung:
+      - 'Datum: {datum}.'
+    aktion: >-
+      Nur zur Information, ändert nichts am Konto; wird abgelegt. Die Bestände bucht
+      Hausbuch über die Abrechnungen und vergleicht sie mit dem PM-Reporting.
+
+  - kind: quartalsbericht
+    titles: ['Bericht für das \d\. Quartal']
+    was: >-
+      Quartalsbericht: ein Brief von quirion über das vergangene Quartal: wie sich die
+      Märkte entwickelt haben und was das für die Anlagestrategie bedeutet. Die Zahlen Ihres
+      Depots stehen nicht darin, sondern im PM-Reporting, das getrennt kommt.
+    bedeutung:
+      - 'Datum: {datum}.'
+    aktion: Nur zur Information, ändert nichts am Konto; wird abgelegt.
+
+  - kind: rebalancing
+    titles: ['Rebalancing']
+    was: >-
+      Rebalancing-Mitteilung: quirion bringt die Fonds im Depot wieder auf die vereinbarte
+      Aufteilung zwischen Aktien und Anleihen, indem es einige Anteile verkauft und andere
+      kauft. Die Kurse haben die Aufteilung seit dem letzten Mal verschoben.
+    bedeutung:
+      - 'Datum: {datum}.'
+    aktion: >-
+      Nur zur Information, ändert nichts am Konto; wird abgelegt. Jeder Kauf und Verkauf
+      kommt mit seiner eigenen Wertpapierabrechnung, und erst die wird gebucht.
+
+  - kind: zinsaenderung
+    titles: ['Zinsänderung|Zinsanpassung']
+    was: >-
+      Mitteilung über eine Zinsänderung: die Bank ändert den Zinssatz, den sie für das
+      Guthaben auf dem Verrechnungskonto zahlt.
+    bedeutung:
+      - 'Datum: {datum}.'
+    aktion: >-
+      Nur zur Information, ändert nichts am Konto; wird abgelegt. Die Zinsen selbst kommen
+      mit dem Rechnungsabschluss und stehen im Kontoauszug.

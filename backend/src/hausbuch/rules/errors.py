@@ -34,6 +34,9 @@ AI_UNREADABLE = "ai.unreadable"  # the original could not be prepared for the mo
 AI_INTERNAL_ERROR = "ai.internal_error"  # a bug in the job; the dead letter names it
 # D43: an Adobe-only (dynamic XFA) form; failed before any model call, never retried.
 DOCUMENT_ADOBE_FORM = "document.adobe_form"
+# Phase 6 step 4 (D168): a depot document (by its text layer, or as the classifier typed it)
+# while ai_private_accounts is off; failed before any extraction, never retried.
+AI_BLOCKED_PRIVATE_DATA = "ai.blocked_private_data"
 
 AI_ERROR_CODES = frozenset(
     {
@@ -48,6 +51,7 @@ AI_ERROR_CODES = frozenset(
         AI_UNREADABLE,
         AI_INTERNAL_ERROR,
         DOCUMENT_ADOBE_FORM,
+        AI_BLOCKED_PRIVATE_DATA,
     }
 )
 

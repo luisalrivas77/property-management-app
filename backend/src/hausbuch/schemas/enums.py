@@ -182,6 +182,35 @@ class DocumentSubtype(StrEnum):
     # distribution_note reader, until then left out of the classify schema like the other
     # code-only subtypes; retention tax_records (D169).
     DISTRIBUTION_NOTE = "distribution_note"
+    # Phase 6 step 4 (migration 0027): a depot's Einbuchung or Ausbuchung of units moved
+    # between two own depots (letter); read by the securities_transfer reader; retention
+    # holding_records (the acquisition date travels with the units).
+    SECURITIES_TRANSFER = "securities_transfer"
+
+
+class DepotDocumentKind(StrEnum):
+    """Which of the depot's documents a file is, by its text layer's heading (phase 6 D177,
+    rules/depot_explain.yaml, migration 0027): finer than the subtype, which the classifier
+    or the readers set, and only for the plain-words explanation. Set by code at upload."""
+
+    EINBUCHUNG = "einbuchung"
+    AUSBUCHUNG = "ausbuchung"
+    FINANZREPORT = "finanzreport"
+    JAHRESSTEUERBESCHEINIGUNG = "jahressteuerbescheinigung"
+    PM_REPORTING = "pm_reporting"
+    ERTRAEGNISABRECHNUNG = "ertraegnisabrechnung"
+    WERTPAPIERABRECHNUNG_KAUF = "wertpapierabrechnung_kauf"
+    WERTPAPIERABRECHNUNG_VERKAUF = "wertpapierabrechnung_verkauf"
+    WERTPAPIERABRECHNUNG = "wertpapierabrechnung"  # its heading names no side
+    ERTRAGSUEBERSICHT = "ertragsuebersicht"
+    KOSTENINFORMATION = "kosteninformation"
+    KOSTENAUSWEIS = "kostenausweis"
+    RECHNUNGSABSCHLUSS = "rechnungsabschluss"
+    KONTOAUSZUG = "kontoauszug"
+    DEPOTAUSZUG = "depotauszug"
+    QUARTALSBERICHT = "quartalsbericht"
+    REBALANCING = "rebalancing"
+    ZINSAENDERUNG = "zinsaenderung"
 
 
 class ExtractionSource(StrEnum):
@@ -295,6 +324,8 @@ class ExtractionKind(StrEnum):
     TRADE_CONFIRMATION = "trade_confirmation"  # Wertpapierabrechnung
     DISTRIBUTION_NOTE = "distribution_note"  # Ertragsabrechnung
     DEPOT_REPORT = "depot_report"  # the quarterly PM-Reporting
+    # Phase 6 step 4 (migration 0027, §14.1): an Einbuchung or Ausbuchung von Wertpapieren.
+    SECURITIES_TRANSFER = "securities_transfer"
 
 
 class ProposalStatus(StrEnum):

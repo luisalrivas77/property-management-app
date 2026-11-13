@@ -42,6 +42,7 @@ COLUMNS: dict[tuple[str, str], type[StrEnum]] = {
     ("document", "source"): E.DocumentSource,
     ("document", "type"): E.DocumentType,
     ("document", "subtype"): E.DocumentSubtype,
+    ("document", "depot_kind"): E.DepotDocumentKind,  # 0027, phase 6 D177
     ("document_extraction", "source"): E.ExtractionSource,
     ("event", "actor_type"): E.ActorType,
     ("event", "entity_type"): E.EntityType,

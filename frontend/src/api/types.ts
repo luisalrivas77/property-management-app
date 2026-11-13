@@ -1494,6 +1494,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/accounts/{account_id}/iban": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Account Iban Confirm
+         * @description Confirm the IBAN a depot's cash statement prints (phase 6 step 4, D156 amended): read
+         *     again from that import's original, stored masked + HMAC'd as the depot's IBAN, so a
+         *     transfer from a bank account to it is linked (D162). 422 account.kind_not_available for an
+         *     account that is no depot, statement.no_payment_iban for a statement that prints none; 404
+         *     for an import of another account; 409 when another account has that IBAN. Every enabled
+         *     learned rule on the IBAN is switched off, counted in rules_disabled.
+         */
+        post: operations["account_iban_confirm_api_accounts__account_id__iban_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assets/etf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Assets Etf
+         * @description The Anlagen ETF tab: per depot account its funds (units from the confirmed movements,
+         *     the latest report's figures while they hold, the plain cost while a fund was only
+         *     bought) and the depot's documents with the status of their reading. The mockup's two tax
+         *     cards are phase 8 (D170) and carry no figure.
+         */
+        get: operations["assets_etf_api_assets_etf_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/accounts/{account_id}/imports": {
         parameters: {
             query?: never;
@@ -2700,6 +2748,7 @@ export interface components {
             /** Card Last4 */
             card_last4?: string | null;
             payment_iban_proposal?: components["schemas"]["PaymentIbanProposal"] | null;
+            iban_proposal?: components["schemas"]["DepotIbanProposal"] | null;
             /** Ownership */
             ownership?: components["schemas"]["OwnershipShare"][];
             /**
@@ -3152,7 +3201,7 @@ export interface components {
          * @description allocation.method (migration 0007): who proposed the allocation set.
          * @enum {string}
          */
-        AllocationMethod: "rule" | "matcher_rent" | "matcher_loan" | "matcher_owner" | "matcher_hausgeld" | "document_match" | "llm" | "user" | "matcher_transfer" | "matcher_card";
+        AllocationMethod: "rule" | "matcher_rent" | "matcher_loan" | "matcher_owner" | "matcher_hausgeld" | "document_match" | "llm" | "user" | "matcher_transfer" | "matcher_card" | "matcher_depot";
         /**
          * AllocationSet
          * @description One transaction's proposal. Σ amount must equal the transaction amount: checked by
@@ -3345,7 +3394,7 @@ export interface components {
             /** Key */
             key: string;
             /** Entity Type */
-            entity_type: components["schemas"]["EntityType"] | ("acquisition_cost" | "price_split" | "rent_schedule" | "typing" | "link" | "ownership" | "deposit_received" | "tax_input" | "return_input" | "income_input");
+            entity_type: components["schemas"]["EntityType"] | ("acquisition_cost" | "price_split" | "rent_schedule" | "typing" | "link" | "ownership" | "deposit_received" | "tax_input" | "return_input" | "income_input" | "asset_movement" | "holding_statement");
             /**
              * Mode
              * @enum {string}
@@ -4302,10 +4351,109 @@ export interface components {
             /** @description Eingang */
             received_on?: components["schemas"]["ExtractedValue"];
         };
+        /** DepotAccountPositions */
+        DepotAccountPositions: {
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /** Label */
+            label: string;
+            /** Positions */
+            positions?: components["schemas"]["DepotPosition"][];
+        };
+        /**
+         * DepotDocumentStatus
+         * @description One document of the depot's Postbox list: its subtype, title and date as typed, and
+         *     the status of its latest reading (None: stored, never read, e.g. while the switch
+         *     „Private Konten mit KI zuordnen“ is off, or a tax certificate, read in phase 8).
+         */
+        DepotDocumentStatus: {
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            /** Subtype */
+            subtype?: string | null;
+            /** Title */
+            title?: string | null;
+            /** Document Date */
+            document_date?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Reading */
+            reading?: string | null;
+        };
+        /**
+         * DepotIbanProposal
+         * @description The IBAN a depot's cash statement prints (phase 6 step 4, D156 amended), masked; POST
+         *     /accounts/{id}/iban with its import_id confirms it (the D176 (4) pattern).
+         */
+        DepotIbanProposal: {
+            /**
+             * Import Id
+             * Format: uuid
+             */
+            import_id: string;
+            /** Iban Masked */
+            iban_masked: string;
+        };
+        /**
+         * DepotPosition
+         * @description One fund on one depot account. `units` are the confirmed movements to today; the
+         *     report figures are those of the latest report that lists it; a fund the account's latest
+         *     report does not list is 0 on that report (0 by omission), with no value and no price.
+         *     `value_eur` is that report's stated value, shown only while the report reconciles
+         *     against today's movements and nothing moved since (D165 (3): no valuation past the last
+         *     reconciled date; computed prices and NAVs come with steps 5 and 6). `cost_eur` is the
+         *     plain Σ of the purchases' amounts while the fund was only bought on this account (§13:
+         *     right for ETFs bought and never sold; lots are phase 7), and `gain_eur` value − cost when
+         *     both are shown.
+         */
+        DepotPosition: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Isin */
+            isin?: string | null;
+            /** Name */
+            name: string;
+            /** Units */
+            units: string;
+            /** Report On */
+            report_on?: string | null;
+            /** Report Units */
+            report_units?: string | null;
+            /** Report Value Eur */
+            report_value_eur?: string | null;
+            /** Report Price Eur */
+            report_price_eur?: string | null;
+            /** Reconciled */
+            reconciled?: boolean | null;
+            /**
+             * Moved Since Report
+             * @default false
+             */
+            moved_since_report: boolean;
+            /** Value Eur */
+            value_eur?: string | null;
+            /** Cost Eur */
+            cost_eur?: string | null;
+            /** Gain Eur */
+            gain_eur?: string | null;
+        };
         /**
          * DepotReportExtraction
-         * @description Quartalsbericht (depot_report, D165 (3)): the positions on a date and the period's
-         *     trades, from which code proposes holding_statement rows.
+         * @description Quartalsbericht (depot_report, D165 (3)): the positions on a date and the trades the
+         *     report lists, from which code proposes holding_statement rows. The list of trades runs
+         *     from the mandate's start, so a later report repeats the earlier ones.
          */
         DepotReportExtraction: {
             /** @description a short German title, two to six words naming what the document is */
@@ -4314,9 +4462,9 @@ export interface components {
             document_date?: components["schemas"]["ExtractedValue"];
             /** @description the date the positions are stated for (Stichtag) */
             report_date?: components["schemas"]["ExtractedValue"];
-            /** @description every position the report lists, one item per security, each written `ISIN | name | units | price | value | currency`, as printed; never a subtotal or the total row */
+            /** @description every position the report lists, one item per security, each written `ISIN | name | units | price | value | currency`, as printed (the units without ST, the price the Kurs, the value the Kurswert); never a subtotal, the total row, an account's cash or the Kaufpreis */
             positions?: components["schemas"]["ExtractedValue"];
-            /** @description every trade of the report's Wertpapierumsätze list, one item per trade, each written `ISIN | trade date | units | amount | reference`, as printed; unbekannt for a part the row does not state */
+            /** @description every trade of the report's Wertpapierumsätze list, one item per trade, each written `ISIN | trade date | units | amount | reference`, as printed: the trade date the Schlußtag, the units signed (a sale negative), the amount the Ausmachender Betrag with its sign (a purchase negative), the reference the Referenz; unbekannt for a part the row does not state; never the Depot-Nr. */
             trades?: components["schemas"]["ExtractedValue"];
         };
         /**
@@ -4332,7 +4480,9 @@ export interface components {
         };
         /**
          * DistributionNoteExtraction
-         * @description Ertragsabrechnung / Ausschüttung (distribution_note, D165 (2)).
+         * @description Erträgnisabrechnung / Ausschüttung (distribution_note, D165 (2)). A note in a fund's
+         *     currency states its euro side separately: the rate, the gross in the tax section and the
+         *     amount credited in euro.
          */
         DistributionNoteExtraction: {
             /** @description a short German title, two to six words naming what the document is */
@@ -4341,26 +4491,34 @@ export interface components {
             document_date?: components["schemas"]["ExtractedValue"];
             /** @description the security's ISIN, twelve characters */
             isin?: components["schemas"]["ExtractedValue"];
-            /** @description the security's name as printed */
+            /** @description the security's name (Wertpapierbezeichnung) */
             security_name?: components["schemas"]["ExtractedValue"];
             /** @description the record date (Ex-Tag or Stichtag) */
             record_date?: components["schemas"]["ExtractedValue"];
-            /** @description the payment date (Zahltag, Valuta) */
+            /** @description the payment date (Zahlungstag, Zahltag) */
             payment_date?: components["schemas"]["ExtractedValue"];
-            /** @description the units (Stück, Anteile) held on the record date */
+            /** @description the units held (Nominal / Stück) */
             units?: components["schemas"]["ExtractedValue"];
-            /** @description the distribution per unit, before taxes */
+            /** @description the distribution per unit before taxes, in the note's currency */
             gross_per_unit?: components["schemas"]["ExtractedValue"];
-            /** @description the gross distribution, before taxes */
+            /** @description the gross distribution before taxes, in the note's currency (Betrag) */
             gross_amount?: components["schemas"]["ExtractedValue"];
-            /** @description foreign withholding tax (Quellensteuer) deducted, if any */
+            /** @description foreign withholding tax (Quellensteuer) deducted, without sign, in the note's currency; 0,00 when none */
             withholding_tax?: components["schemas"]["ExtractedValue"];
-            /** @description German taxes deducted: Kapitalertragsteuer, Solidaritätszuschlag and Kirchensteuer, summed */
+            /** @description German taxes deducted in the note's currency, summed without sign: Kapitalertragsteuer, Solidaritätszuschlag and Kirchensteuer */
             german_taxes?: components["schemas"]["ExtractedValue"];
-            /** @description the amount credited to the cash account */
+            /** @description the amount credited, in the note's currency (Ausmachender Betrag) */
             net_amount?: components["schemas"]["ExtractedValue"];
-            /** @description the currency of the amounts, as a three-letter code */
+            /** @description the currency of the note's amounts, as a three-letter code */
             currency?: components["schemas"]["ExtractedValue"];
+            /** @description the exchange rate (Devisenkurs) as printed, units of the note's currency per euro; unbekannt when the note is in EUR */
+            fx_rate?: components["schemas"]["ExtractedValue"];
+            /** @description the gross distribution in euro (Ausschüttungsbetrag in the tax section); the gross amount when the note is in EUR */
+            gross_amount_eur?: components["schemas"]["ExtractedValue"];
+            /** @description the German taxes in euro from the tax section, summed without sign: Kapitalertragsteuer, Solidaritätszuschlag and Kirchensteuer */
+            german_taxes_eur?: components["schemas"]["ExtractedValue"];
+            /** @description the amount credited in euro (Ausmachender Betrag in EUR) */
+            net_amount_eur?: components["schemas"]["ExtractedValue"];
         };
         /**
          * Document
@@ -4445,6 +4603,21 @@ export interface components {
             media_type: string;
             /** Opens Inline */
             opens_inline: boolean;
+            explanation?: components["schemas"]["DocumentExplanation"] | null;
+        };
+        /**
+         * DocumentExplanation
+         * @description A depot document in plain words (phase 6 D177): what it is, what it means for the
+         *     account (its own figures filled in by code), and what Hausbuch does with it. Rule data
+         *     filled by code (rules/depot_explain.yaml), never by the model.
+         */
+        DocumentExplanation: {
+            /** Was */
+            was: string;
+            /** Bedeutung */
+            bedeutung?: string | null;
+            /** Aktion */
+            aktion: string;
         };
         /**
          * DocumentExtraction
@@ -4476,7 +4649,7 @@ export interface components {
             version: number;
             source: components["schemas"]["ExtractionSource"];
             /** Fields */
-            fields: components["schemas"]["ManualDocumentFields"] | components["schemas"]["PurchaseContractExtraction"] | components["schemas"]["LoanContractExtraction"] | components["schemas"]["LeaseExtraction"] | components["schemas"]["HandoverProtocolExtraction"] | components["schemas"]["DepositRecordExtraction"] | components["schemas"]["InvoiceExtraction"] | components["schemas"]["BescheidExtraction"] | components["schemas"]["GrundsteuerbescheidExtraction"] | components["schemas"]["WirtschaftsplanExtraction"] | components["schemas"]["HausgeldabrechnungExtraction"] | components["schemas"]["ZinsbescheinigungExtraction"] | components["schemas"]["StatementExtraction"] | components["schemas"]["WageCertificateExtraction"] | components["schemas"]["PayslipExtraction"] | components["schemas"]["IncomeTaxAssessmentExtraction"] | components["schemas"]["GeneralExtraction"] | components["schemas"]["ManagementContractExtraction"] | components["schemas"]["PaymentProofExtraction"] | components["schemas"]["TradeConfirmationExtraction"] | components["schemas"]["DistributionNoteExtraction"] | components["schemas"]["DepotReportExtraction"];
+            fields: components["schemas"]["ManualDocumentFields"] | components["schemas"]["PurchaseContractExtraction"] | components["schemas"]["LoanContractExtraction"] | components["schemas"]["LeaseExtraction"] | components["schemas"]["HandoverProtocolExtraction"] | components["schemas"]["DepositRecordExtraction"] | components["schemas"]["InvoiceExtraction"] | components["schemas"]["BescheidExtraction"] | components["schemas"]["GrundsteuerbescheidExtraction"] | components["schemas"]["WirtschaftsplanExtraction"] | components["schemas"]["HausgeldabrechnungExtraction"] | components["schemas"]["ZinsbescheinigungExtraction"] | components["schemas"]["StatementExtraction"] | components["schemas"]["WageCertificateExtraction"] | components["schemas"]["PayslipExtraction"] | components["schemas"]["IncomeTaxAssessmentExtraction"] | components["schemas"]["GeneralExtraction"] | components["schemas"]["ManagementContractExtraction"] | components["schemas"]["PaymentProofExtraction"] | components["schemas"]["TradeConfirmationExtraction"] | components["schemas"]["DistributionNoteExtraction"] | components["schemas"]["DepotReportExtraction"] | components["schemas"]["SecuritiesTransferExtraction"];
             /**
              * Schema Version
              * @default 1
@@ -4534,7 +4707,7 @@ export interface components {
          * @description Finer typing where retention or the AfA basis depends on it.
          * @enum {string}
          */
-        DocumentSubtype: "purchase_contract" | "price_split_evidence" | "appraisal" | "loan_contract" | "lease" | "handover_protocol" | "deposit_record" | "cost_basis_evidence" | "grundsteuerbescheid" | "einkommensteuerbescheid" | "land_register_extract" | "declaration_of_division" | "land_charge_deed" | "energy_certificate" | "building_records" | "insurance_policy" | "management_contract" | "service_contract" | "weg_minutes" | "weg_invitation" | "special_levy" | "repayment_schedule" | "loan_terms_change" | "loan_statement" | "financing_invoice" | "lease_amendment" | "rent_increase" | "termination_notice" | "tenant_self_disclosure" | "landlord_confirmation" | "operating_costs_statement" | "tenant_correspondence" | "utility_bill" | "quote" | "chimney_sweep_notice" | "payment_proof" | "prepayment_notice" | "tax_return_copy" | "donation_receipt" | "childcare_invoice" | "household_services_invoice" | "insurance_contribution_certificate" | "pension_contribution_certificate" | "benefit_notice" | "child_benefit_notice" | "employment_contract" | "employer_certificate" | "work_expense_invoice" | "depot_statement" | "depot_report" | "trade_confirmation" | "capital_income_tax_certificate" | "exchange_export" | "distribution_note";
+        DocumentSubtype: "purchase_contract" | "price_split_evidence" | "appraisal" | "loan_contract" | "lease" | "handover_protocol" | "deposit_record" | "cost_basis_evidence" | "grundsteuerbescheid" | "einkommensteuerbescheid" | "land_register_extract" | "declaration_of_division" | "land_charge_deed" | "energy_certificate" | "building_records" | "insurance_policy" | "management_contract" | "service_contract" | "weg_minutes" | "weg_invitation" | "special_levy" | "repayment_schedule" | "loan_terms_change" | "loan_statement" | "financing_invoice" | "lease_amendment" | "rent_increase" | "termination_notice" | "tenant_self_disclosure" | "landlord_confirmation" | "operating_costs_statement" | "tenant_correspondence" | "utility_bill" | "quote" | "chimney_sweep_notice" | "payment_proof" | "prepayment_notice" | "tax_return_copy" | "donation_receipt" | "childcare_invoice" | "household_services_invoice" | "insurance_contribution_certificate" | "pension_contribution_certificate" | "benefit_notice" | "child_benefit_notice" | "employment_contract" | "employer_certificate" | "work_expense_invoice" | "depot_statement" | "depot_report" | "trade_confirmation" | "capital_income_tax_certificate" | "exchange_export" | "distribution_note" | "securities_transfer";
         /**
          * DocumentType
          * @description The classifier's output set (AI layer). Phase 1 sets it by hand.
@@ -4862,6 +5035,16 @@ export interface components {
             /** Withheld */
             withheld?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
         };
+        /**
+         * EtfOverview
+         * @description GET /assets/etf: every depot account with its funds, and the depot's documents.
+         */
+        EtfOverview: {
+            /** Accounts */
+            accounts?: components["schemas"]["DepotAccountPositions"][];
+            /** Documents */
+            documents?: components["schemas"]["DepotDocumentStatus"][];
+        };
         /** Event */
         Event: {
             /**
@@ -4918,7 +5101,7 @@ export interface components {
          * EventType
          * @enum {string}
          */
-        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "workspace.ai_consent_recorded" | "workspace.prices_fetched" | "workspace.valuation_snapshot_written" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "account.statement_fetched" | "account.bank_parameters_read" | "account.kind_set" | "account.ownership_set" | "account.movements_imported" | "account.movements_reconciled" | "account.movements_unreconciled" | "account.holdings_confirmed" | "account.holdings_reconciled" | "account.holdings_mismatch" | "asset.created" | "asset.updated" | "asset.price_recorded" | "asset.price_source_failed" | "movement.proposed" | "movement.confirmed" | "movement.superseded" | "transfer.linked" | "transfer.unlinked" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "rule.created" | "rule.disabled";
+        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "workspace.ai_consent_recorded" | "workspace.prices_fetched" | "workspace.valuation_snapshot_written" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "account.statement_fetched" | "account.bank_parameters_read" | "account.kind_set" | "account.ownership_set" | "account.movements_imported" | "account.movements_reconciled" | "account.movements_unreconciled" | "account.holdings_confirmed" | "account.holdings_reconciled" | "account.holdings_mismatch" | "account.holding_corrected" | "asset.created" | "asset.updated" | "asset.price_recorded" | "asset.price_source_failed" | "movement.proposed" | "movement.confirmed" | "movement.superseded" | "transfer.linked" | "transfer.unlinked" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "rule.created" | "rule.disabled";
         /** ExcludeFrom15Pct */
         ExcludeFrom15Pct: {
             /**
@@ -4963,7 +5146,7 @@ export interface components {
          *     models in schemas/extraction.py.
          * @enum {string}
          */
-        ExtractionKind: "manual" | "purchase_contract" | "loan_contract" | "lease" | "handover_protocol" | "deposit_record" | "invoice" | "bescheid" | "grundsteuerbescheid" | "wirtschaftsplan" | "hausgeldabrechnung" | "zinsbescheinigung" | "statement" | "lohnsteuerbescheinigung" | "gehaltsabrechnung" | "einkommensteuerbescheid" | "general" | "management_contract" | "payment_proof" | "trade_confirmation" | "distribution_note" | "depot_report";
+        ExtractionKind: "manual" | "purchase_contract" | "loan_contract" | "lease" | "handover_protocol" | "deposit_record" | "invoice" | "bescheid" | "grundsteuerbescheid" | "wirtschaftsplan" | "hausgeldabrechnung" | "zinsbescheinigung" | "statement" | "lohnsteuerbescheinigung" | "gehaltsabrechnung" | "einkommensteuerbescheid" | "general" | "management_contract" | "payment_proof" | "trade_confirmation" | "distribution_note" | "depot_report" | "securities_transfer";
         /**
          * ExtractionSource
          * @enum {string}
@@ -5546,7 +5729,7 @@ export interface components {
          * @description GET /inbox (§8.3): one list, newest first.
          * @enum {string}
          */
-        InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched" | "questionnaire_open" | "bank_approval_needed" | "bank_sync_failed" | "bank_balance_drift" | "email_received" | "email_failed" | "email_inbox_failed" | "reminder" | "transfer_link" | "transfer_unmatched" | "property_cost_row" | "property_cost_bill" | "property_cost_year" | "property_cost_document";
+        InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched" | "questionnaire_open" | "bank_approval_needed" | "bank_sync_failed" | "bank_balance_drift" | "email_received" | "email_failed" | "email_inbox_failed" | "reminder" | "transfer_link" | "transfer_unmatched" | "property_cost_row" | "property_cost_bill" | "property_cost_year" | "property_cost_document" | "holdings_mismatch";
         /**
          * IncomeInput
          * @description API read model (the table names its timestamp recorded_at, so not Record).
@@ -7232,6 +7415,7 @@ export interface components {
             ai_call_id: string | null;
             /** Decided At */
             decided_at: string | null;
+            explanation?: components["schemas"]["DocumentExplanation"] | null;
         };
         /**
          * ProposalApplyBody
@@ -7287,7 +7471,7 @@ export interface components {
             /** Key */
             key: string;
             /** Entity Type */
-            entity_type: components["schemas"]["EntityType"] | ("acquisition_cost" | "price_split" | "rent_schedule" | "typing" | "link" | "ownership" | "deposit_received" | "tax_input" | "return_input" | "income_input");
+            entity_type: components["schemas"]["EntityType"] | ("acquisition_cost" | "price_split" | "rent_schedule" | "typing" | "link" | "ownership" | "deposit_received" | "tax_input" | "return_input" | "income_input" | "asset_movement" | "holding_statement");
             /**
              * Mode
              * @enum {string}
@@ -8296,6 +8480,26 @@ export interface components {
             /** Closing Balance */
             closing_balance: string;
         };
+        /**
+         * SecuritiesTransferExtraction
+         * @description Einbuchung / Ausbuchung von Wertpapieren (securities_transfer, step 4, §14.1): units
+         *     moved into or out of the depot without a trade. Both sides of one transfer carry the same
+         *     reference; the other depot named in the Hinweistext is scrubbed and never asked.
+         */
+        SecuritiesTransferExtraction: {
+            /** @description a short German title, two to six words naming what the document is */
+            title?: components["schemas"]["ExtractedValue"];
+            /** @description the date the document carries */
+            document_date?: components["schemas"]["ExtractedValue"];
+            /** @description Einbuchung or Ausbuchung, as printed in the heading */
+            direction?: components["schemas"]["ExtractedValue"];
+            /** @description the day the units were moved (Handelsdatum, else the document's date) */
+            transfer_date?: components["schemas"]["ExtractedValue"];
+            /** @description the document's reference number (Referenz-Nr.); never a depot number */
+            reference?: components["schemas"]["ExtractedValue"];
+            /** @description every security the document moves, one item per security, each written `ISIN | name | units`, as printed (the units without ST); never the WKN or a depot number */
+            positions?: components["schemas"]["ExtractedValue"];
+        };
         /** ServicePeriod */
         ServicePeriod: {
             /**
@@ -8433,7 +8637,7 @@ export interface components {
          * @description statement_import.format (migration 0006).
          * @enum {string}
          */
-        StatementFormat: "csv_camt" | "camt" | "pdf" | "dkb_csv" | "card_pdf";
+        StatementFormat: "csv_camt" | "camt" | "pdf" | "dkb_csv" | "card_pdf" | "depot_pdf";
         /** StatementImport */
         StatementImport: {
             /**
@@ -9159,27 +9363,29 @@ export interface components {
             document_date?: components["schemas"]["ExtractedValue"];
             /** @description the security's ISIN, twelve characters */
             isin?: components["schemas"]["ExtractedValue"];
-            /** @description the security's name as printed */
+            /** @description the security's name (Wertpapierbezeichnung) */
             security_name?: components["schemas"]["ExtractedValue"];
-            /** @description the trade date (Handelstag, Schlusstag) */
+            /** @description the trade date (Handelstag, Schlusstag), without the time */
             trade_date?: components["schemas"]["ExtractedValue"];
-            /** @description the settlement date (Valuta) */
+            /** @description the settlement date (Valuta), from the sentence on the booking */
             settlement_date?: components["schemas"]["ExtractedValue"];
-            /** @description Kauf or Verkauf, as printed */
+            /** @description Kauf or Verkauf, as printed in the heading under Wertpapierabrechnung */
             side?: components["schemas"]["ExtractedValue"];
-            /** @description the units (Stück, Anteile) traded */
+            /** @description the units traded (Nominal / Stück) */
             units?: components["schemas"]["ExtractedValue"];
             /** @description the price per unit (Kurs) */
             price_per_unit?: components["schemas"]["ExtractedValue"];
             /** @description the gross amount (Kurswert) */
             gross_amount?: components["schemas"]["ExtractedValue"];
-            /** @description the fees and costs charged on this trade, summed */
+            /** @description the fees charged on this trade, summed without sign: Bank-Provision, Courtage, Spesen and Gebühren */
             fees?: components["schemas"]["ExtractedValue"];
-            /** @description the amount debited or credited to the cash account (Ausmachender Betrag) */
+            /** @description the German taxes deducted on this trade, summed without sign: Kapitalertragsteuer, Solidaritätszuschlag and Kirchensteuer from the tax section; 0,00 when none */
+            taxes?: components["schemas"]["ExtractedValue"];
+            /** @description the amount debited or credited to the cash account, without sign (Ausmachender Betrag; on a sale after the taxes) */
             net_amount?: components["schemas"]["ExtractedValue"];
             /** @description the currency of the amounts, as a three-letter code */
             currency?: components["schemas"]["ExtractedValue"];
-            /** @description the order or transaction reference (Auftragsnummer, Referenz) */
+            /** @description the document's reference number (Referenz-Nr.); never a depot or account number */
             order_reference?: components["schemas"]["ExtractedValue"];
         };
         /** TrainingFact */
@@ -13163,6 +13369,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PaymentIbanConfirmed"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    account_iban_confirm_api_accounts__account_id__iban_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmPaymentIbanBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentIbanConfirmed"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    assets_etf_api_assets_etf_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EtfOverview"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

@@ -51,6 +51,7 @@ from hausbuch.schemas.bank import (
     Account,
     AccountCreate,
     ConfirmPaymentIbanBody,
+    DepotIbanProposal,
     PaymentIbanConfirmed,
     PaymentIbanProposal,
     StatementFormat,
@@ -75,7 +76,7 @@ from hausbuch.schemas.events import (
 from hausbuch.schemas.household import AccountOwnership, OwnershipShare, SetOwnershipBody
 from hausbuch.storage import BlobStore
 
-from .bank import card_pdf
+from .bank import card_pdf, depot_pdf
 from .context import CommandContext
 from .documents import read_original
 from .errors import ConflictError, NotFoundError, RuleViolationError, violated_constraint
@@ -112,9 +113,24 @@ _AccountFields = create_model(
 def create_account(ctx: CommandContext, data: AccountCreate, *, iban_key: bytes) -> Account:
     """A bank account (by its IBAN) or, since phase 6 step 2b, a credit card (D176): no IBAN,
     always private, its customer number optional (the first statement sets it) and stored
-    masked + HMAC'd. A depot, an exchange or a wallet is refused (account.kind_not_available)
-    until the step that builds it."""
-    if data.kind is AccountKind.CREDIT_CARD:
+    masked + HMAC'd. Since step 4 a depot (D165 as amended): one per quirion account (the
+    Verrechnungskonto and each strategy's Vermögensverwaltungskonto), always private, its
+    account number optional (its first cash statement sets it) and its IBAN optional (typed
+    here or confirmed from a statement, D156 amended), both masked + HMAC'd. An exchange or a
+    wallet is refused (account.kind_not_available) until the step that builds it."""
+    if data.kind is AccountKind.DEPOT:
+        if data.purpose not in (None, AccountPurpose.PRIVATE):
+            raise RuleError(ACCOUNT_KIND_NOT_AVAILABLE, "a depot is a private account")
+        purpose = AccountPurpose.PRIVATE
+        ref = protect_ref(data.external_ref, iban_key) if data.external_ref else None
+        depot_iban = protect_iban(data.iban, iban_key) if data.iban else None
+        identity = {
+            "external_ref_masked": ref.masked if ref else None,
+            "external_ref_hmac": ref.hmac if ref else None,
+            "iban_masked": depot_iban.masked if depot_iban else None,
+            "iban_hmac": depot_iban.hmac if depot_iban else None,
+        }
+    elif data.kind is AccountKind.CREDIT_CARD:
         if data.purpose not in (None, AccountPurpose.PRIVATE):
             raise RuleError(ACCOUNT_KIND_NOT_AVAILABLE, "a credit card is a private account")
         purpose = AccountPurpose.PRIVATE
@@ -244,7 +260,7 @@ def update_account(
         .values(**new_values, updated_at=ctx.now)
         .returning(*_READ_COLUMNS)
     ).one()
-    updated = _with_card_facts(ctx.conn, [_to_account(row, shares)])[0]
+    updated = _with_statement_facts(ctx.conn, [_to_account(row, shares)])[0]
     plain = {name: change for name, change in changes.items() if name not in _KIND_FIELDS}
     if plain:
         append_event(ctx, EventType.ACCOUNT_UPDATED, account_id, Updated(changes=plain))
@@ -455,7 +471,7 @@ def get_account(conn: Connection, account_id: UUID) -> Account | None:
     if row is None:
         return None
     account = _to_account(row, _current_shares(conn, [account_id]).get(account_id, []))
-    return _with_card_facts(conn, [account])[0]
+    return _with_statement_facts(conn, [account])[0]
 
 
 def list_accounts(conn: Connection) -> list[Account]:
@@ -470,7 +486,7 @@ def list_accounts(conn: Connection) -> list[Account]:
         )
     ).all()
     shares = _current_shares(conn, [r.id for r in rows])
-    return _with_card_facts(conn, [_to_account(r, shares.get(r.id, [])) for r in rows])
+    return _with_statement_facts(conn, [_to_account(r, shares.get(r.id, [])) for r in rows])
 
 
 def _to_account(row: Row, shares: list[OwnershipShare]) -> Account:
@@ -594,4 +610,121 @@ def _with_card_facts(conn: Connection, accounts: list[Account]) -> list[Account]
                 update={"card_last4": last4.get(account.id), "payment_iban_proposal": proposal}
             )
         )
+    return result
+
+
+# --- The depot (phase 6 step 4) ----------------------------------------------------------------
+
+
+def confirm_depot_iban(
+    ctx: CommandContext,
+    store: BlobStore,
+    account_id: UUID,
+    body: ConfirmPaymentIbanBody,
+    *,
+    iban_key: bytes,
+) -> PaymentIbanConfirmed:
+    """POST /accounts/{id}/iban (D156 amended in step 4): a person confirms the IBAN a depot's
+    cash statement prints, the D176 (4) pattern. The IBAN is read again from the statement's
+    immutable original (principle 6), never from a request, and stored masked + HMAC'd as the
+    depot's iban, recorded as account.updated; it then joins the household's own IBANs, so a
+    transfer from a bank account to it is linked (D162). The same IBAN again is a no-op.
+    Refused for an account that is no depot (account.kind_not_available) and for a statement
+    that prints none (statement.no_payment_iban); 404 for an import of another account; 409
+    when another account of the workspace has that IBAN.
+
+    Every enabled learned rule on that IBAN (a transfer to quirion answered as spending before
+    the depot was set up) is switched off, as for the card's payment IBAN, and the lines
+    waiting in Zu prüfen are matched again."""
+    account = _lock(ctx, account_id)
+    if account.kind != AccountKind.DEPOT.value:
+        raise RuleError(ACCOUNT_KIND_NOT_AVAILABLE, "only a depot confirms a statement's IBAN")
+    imported = ctx.conn.execute(
+        select(import_table.c.document_id, import_table.c.format).where(
+            import_table.c.id == body.import_id, import_table.c.account_id == account_id
+        )
+    ).one_or_none()
+    if imported is None:
+        raise NotFoundError(EntityType.STATEMENT, body.import_id)
+    printed = None
+    if imported.format == StatementFormat.DEPOT_PDF.value:
+        data = read_original(ctx.conn, store, imported.document_id)
+        printed = depot_pdf.parse_depot_pdf(data).statement.account_iban
+    if printed is None:
+        raise RuleError(NO_PAYMENT_IBAN, "the statement prints no IBAN")
+    iban = protect_iban(printed, iban_key)
+    if account.iban_hmac is not None and hmac.compare_digest(account.iban_hmac, iban.hmac):
+        return PaymentIbanConfirmed(account=_account(ctx.conn, account_id))
+    try:
+        with ctx.conn.begin_nested():
+            ctx.conn.execute(
+                update(account_table)
+                .where(account_table.c.id == account_id)
+                .values(iban_masked=iban.masked, iban_hmac=iban.hmac, updated_at=ctx.now)
+            )
+    except IntegrityError as exc:
+        if violated_constraint(exc) == _IBAN_TAKEN:
+            raise ConflictError(
+                "the workspace already has an account with that IBAN", constraint=_IBAN_TAKEN
+            ) from exc
+        raise
+    append_event(
+        ctx,
+        EventType.ACCOUNT_UPDATED,
+        account_id,
+        Updated(
+            changes=diff_changes({"iban_masked": account.iban_masked}, {"iban_masked": iban.masked})
+        ),
+    )
+    named = iban.hmac.hex()
+    rules = [r for r in enabled_rules(ctx.conn) if r.matcher.counterparty_iban_hmac == named]
+    for rule in rules:
+        disable_rule(ctx, rule.id)
+    _rematch_waiting(ctx, account_id)
+    return PaymentIbanConfirmed(account=_account(ctx.conn, account_id), rules_disabled=len(rules))
+
+
+def _with_statement_facts(conn: Connection, accounts: list[Account]) -> list[Account]:
+    return _with_depot_facts(conn, _with_card_facts(conn, accounts))
+
+
+def _with_depot_facts(conn: Connection, accounts: list[Account]) -> list[Account]:
+    """A depot's IBAN proposal: the IBAN its latest cash statement prints (by its last
+    booking, then when it was imported), from the statement.imported events, offered while it
+    is not the confirmed one."""
+    depots = [a.id for a in accounts if a.kind is AccountKind.DEPOT]
+    if not depots:
+        return accounts
+    rows = conn.execute(
+        select(import_table.c.account_id, import_table.c.id, event_table.c.payload)
+        .join(
+            event_table,
+            and_(
+                event_table.c.entity_id == import_table.c.id,
+                event_table.c.type == EventType.STATEMENT_IMPORTED.value,
+            ),
+        )
+        .where(
+            import_table.c.account_id.in_(depots),
+            import_table.c.format == StatementFormat.DEPOT_PDF.value,
+        )
+        .order_by(
+            import_table.c.last_booking_on.desc().nulls_last(),
+            import_table.c.created_at.desc(),
+            event_table.c.seq.desc(),
+        )
+    ).all()
+    printed: dict[UUID, DepotIbanProposal] = {}
+    for row in rows:
+        masked = row.payload.get("account_iban_masked")
+        if masked and row.account_id not in printed:
+            printed[row.account_id] = DepotIbanProposal(import_id=row.id, iban_masked=masked)
+    result = []
+    for account in accounts:
+        proposal = printed.get(account.id)
+        if proposal is not None and proposal.iban_masked == account.iban_masked:
+            proposal = None
+        if proposal is not None:
+            account = account.model_copy(update={"iban_proposal": proposal})
+        result.append(account)
     return result

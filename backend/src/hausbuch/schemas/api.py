@@ -35,6 +35,7 @@ from .common import (
 )
 from .document import (
     Document,
+    DocumentExplanation,
     DocumentExtraction,
     DocumentLink,
     DocumentTyping,
@@ -356,6 +357,9 @@ class DocumentDetail(Schema):
     # Whether GET /documents/{id}/original?disposition=inline shows it in the browser (§4.7:
     # PDF and raster images only); otherwise the original is always a download.
     opens_inline: bool
+    # Phase 6 D177: a depot document in plain words (what it is, what it means for the
+    # account, what Hausbuch does with it); None for any other document.
+    explanation: DocumentExplanation | None = None
 
 
 class LinkTargetRef(Schema):
@@ -550,6 +554,10 @@ class InboxItemKind(StrEnum):
     # Review F4: the line's attached bill yields no row yet (not read, not a bill, no property,
     # no amount or date); `document_id` is the document to open.
     PROPERTY_COST_DOCUMENT = "property_cost_document"
+    # Phase 6 step 4 (principle 7): a depot's latest report disagrees with the confirmed
+    # movements to its date, re-checked on every read; `account_id` is the depot,
+    # `document_id` the report.
+    HOLDINGS_MISMATCH = "holdings_mismatch"
 
 
 class InboxItem(Schema):

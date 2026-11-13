@@ -301,7 +301,8 @@ def inbox(
     conn: Connection, today: date | None = None, now: datetime | None = None
 ) -> list[InboxItem]:
     """Every item of §8.3, newest first. Texts quote no bank line, name or IBAN. Also the
-    phase 6 D161 cards of private lines paying property costs. With `today`, also last year's
+    phase 6 D161 cards of private lines paying property costs, and a depot whose latest
+    report disagrees with its booked movements (phase 6 step 4). With `today`, also last year's
     open Jahresfragen (phase 4b D110, `questionnaire_open`), the reminders visible today
     (phase 5 §6, `reminder`) and the transfer cards (phase 6 D162); with `now`, the email-in
     cards (phase 5 §5.4: email_received, email_failed) and the bank sync's (phase 5 §4.6,
@@ -310,6 +311,9 @@ def inbox(
     from .property_costs import property_cost_items  # it imports the matching services
 
     items += property_cost_items(conn)
+    from .depot import holdings_inbox_items  # it imports the asset services
+
+    items += holdings_inbox_items(conn)
     if today is not None:
         items += _questionnaire_items(conn, today)
         from .transfers import transfer_inbox_items

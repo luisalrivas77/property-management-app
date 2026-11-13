@@ -52,6 +52,16 @@ class Document(Record):
     typing: DocumentTyping | None = None  # null until typed
 
 
+class DocumentExplanation(Schema):
+    """A depot document in plain words (phase 6 D177): what it is, what it means for the
+    account (its own figures filled in by code), and what Hausbuch does with it. Rule data
+    filled by code (rules/depot_explain.yaml), never by the model."""
+
+    was: str
+    bedeutung: str | None = None  # None when none of the document's figures was read
+    aktion: str
+
+
 class ManualDocumentFields(Schema):
     """The fields a person types in phase 1. Per-type schemas replace this in phase 2."""
 
