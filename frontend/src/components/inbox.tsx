@@ -393,7 +393,7 @@ function LineEntry({
     <button type="button" className="inbox-entry inbox-line" aria-pressed={pressed} onClick={() => onSelect(id)}>
       <span className="inbox-when">{line ? formatDate(line.booking_date) : formatDateTime(item.created_at)}</span>
       <span className="inbox-main">
-        <strong>{line?.counterparty_name ?? "Ohne Gegenseite"}</strong>
+        <strong>{line?.counterparty_name ?? line?.booking_text ?? "Ohne Gegenseite"}</strong>
         <span className="inbox-detail">{line ? line.purpose || "Kein Verwendungszweck" : "Buchung"}</span>
         {account ? <span className="inbox-detail">Privatkonto · {account.label}</span> : null}
       </span>

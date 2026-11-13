@@ -405,7 +405,7 @@ function AllocationEditor({
       ) : null}
       <div>
         <h2 className="allocation-title">
-          {line.counterparty_name ?? "Ohne Gegenseite"} ·{" "}
+          {line.counterparty_name ?? line.booking_text ?? "Ohne Gegenseite"} ·{" "}
           <span className={isCredit(line.amount) ? "amount-in" : undefined}>
             {isCredit(line.amount) ? "+" : ""}
             {formatMoney(line.amount)}
