@@ -43,6 +43,7 @@ from hausbuch.schemas.enums import (
     ImportStatus,
     ProposalStatus,
 )
+from hausbuch.schemas.events import EventType
 from hausbuch.schemas.household import OwnershipShare
 from hausbuch.schemas.property import OwnerCreate
 from hausbuch.services import documents, proposals, review, statements
@@ -55,6 +56,7 @@ from hausbuch.services.accounts import (
 from hausbuch.services.bank import parse_statement
 from hausbuch.services.context import Actor, new_command
 from hausbuch.services.errors import ConflictError, NotFoundError, RuleViolationError
+from hausbuch.services.events import list_events
 from hausbuch.services.owners import create_owner
 from hausbuch.services.statements import (
     document_statement_imports,
@@ -259,6 +261,8 @@ def test_a_camt_export_creates_its_account_and_imports_in_one_step(
     assert new.iban_masked == mask_iban(normalize_iban(CAMT_IBAN))
     assert new.external_ref_masked is None
     assert new.bank is None  # a camt file names no bank by its format
+    # The starting balance the button saves, shown first (D132): the camt's own opening.
+    assert new.opening_from_file is True
     assert CAMT_IBAN not in offer.model_dump_json()
 
     half = [
@@ -271,10 +275,14 @@ def test_a_camt_export_creates_its_account_and_imports_in_one_step(
     assert account.kind is AccountKind.BANK_CURRENT
     assert account.purpose is AccountPurpose.PRIVATE
     assert account.iban_masked == new.iban_masked
-    # The anchor from the file: its opening, the day before its first booking.
+    # The anchor from the file: its opening, the day before its first booking, as offered.
     assert (account.opening_balance, account.opening_balance_on) == (
         Decimal("0.00"),
         date(2026, 3, 31),
+    )
+    assert (new.opening_balance, new.opening_balance_on) == (
+        account.opening_balance,
+        account.opening_balance_on,
     )
     assert {(s.owner_id, s.share) for s in account.ownership} == {
         (owner_a.id, Fraction(1, 2)),
@@ -289,6 +297,16 @@ def test_a_camt_export_creates_its_account_and_imports_in_one_step(
     assert _offer(read, blob_store, ws, doc.id) is None
     (on,) = read(ws, document_statement_imports, doc.id)
     assert on.account_id == account.id
+    # The events as create_account, set_account_ownership and the import write them; the
+    # account is created with its IBAN and anchor, never patched after (no account.updated).
+    assert [e.type for e in read(ws, list_events, entity_id=account.id)] == [
+        EventType.ACCOUNT_CREATED,
+        EventType.ACCOUNT_OWNERSHIP_SET,
+    ]
+    assert [e.type for e in read(ws, list_events, entity_id=imported.id)] == [
+        EventType.STATEMENT_IMPORTED,
+        EventType.STATEMENT_RECONCILED,
+    ]
 
     # Done once: a second call has no offer to act on.
     with pytest.raises(RuleError) as caught:
@@ -305,10 +323,16 @@ def test_a_dkb_csv_creates_its_account_and_waits_for_its_closing(
     doc, _ = _uploaded_and_refused(app_engine, blob_store, ws, tmp_path, DKB_BYTES, "text/csv")
     new = _offer(read, blob_store, ws, doc.id).new_account
     assert (new.kind, new.bank, new.provider) == (AccountKind.BANK_CURRENT, "DKB", "DKB")
+    # Shown before it is saved (D132): 0,00 as a placeholder, the file states no opening.
+    assert new.opening_from_file is False
     created = _create(run, blob_store, ws, doc.id, label=new.label, bank=new.bank)
     account = created.account
     assert account.opening_balance == Decimal("0.00")
     assert account.opening_balance_on == DKB_CASE.expect.first_booking_on - timedelta(days=1)
+    assert (new.opening_balance, new.opening_balance_on) == (
+        account.opening_balance,
+        account.opening_balance_on,
+    )
     assert account.ownership_missing is True  # no shares: the to-do stays
     assert created.statement_import.status is ImportStatus.IMPORTED  # pending_balance
     assert created.statement_import.stated_closing == DKB_CASE.import_.prefilled_closing

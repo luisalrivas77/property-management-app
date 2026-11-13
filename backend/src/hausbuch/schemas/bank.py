@@ -294,6 +294,14 @@ class StatementNewAccount(Schema):
     provider: str | None = None
     iban_masked: MaskedIban | None = None
     external_ref_masked: MaskedRef | None = None
+    # The starting balance the account is created with (phase 2 D132: every value the button
+    # saves is shown first), read from the file on the server and never sent back: the file's
+    # own opening, else 0,00 for a CSV that states none (`opening_from_file` false; the
+    # import then waits for its closing balance and offers „Anfangssaldo daraus übernehmen“),
+    # dated the day before the file's first booking.
+    opening_balance: Money
+    opening_balance_on: date
+    opening_from_file: bool
 
 
 class StatementFileOffer(Schema):

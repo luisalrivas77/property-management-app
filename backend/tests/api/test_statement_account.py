@@ -56,6 +56,10 @@ def test_the_offer_then_create_and_import_201(client_a, app_engine, auth_a):
         "provider": None,
         "iban_masked": "DE50 **** 0001",
         "external_ref_masked": None,
+        # The starting balance the button saves, read from the file and shown first (D132).
+        "opening_balance": "0.00",
+        "opening_balance_on": "2026-03-31",
+        "opening_from_file": True,
     }
 
     owner = create(client_a, "/api/owners", {"full_name": "Owner A"})

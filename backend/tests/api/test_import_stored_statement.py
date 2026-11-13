@@ -73,6 +73,9 @@ def test_the_offer_then_the_import_201_then_200(client_a, app_engine, auth_a):
             "provider": None,
             "iban_masked": None,
             "external_ref_masked": "**** 4567",
+            "opening_balance": "-1250.40",
+            "opening_balance_on": "2026-01-15",
+            "opening_from_file": True,
         },
     }
     inbox = [i for i in ok(client_a.get("/api/inbox")) if i["kind"] == "read_failed"]

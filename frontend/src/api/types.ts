@@ -9645,6 +9645,15 @@ export interface components {
             iban_masked?: string | null;
             /** External Ref Masked */
             external_ref_masked?: string | null;
+            /** Opening Balance */
+            opening_balance: string;
+            /**
+             * Opening Balance On
+             * Format: date
+             */
+            opening_balance_on: string;
+            /** Opening From File */
+            opening_from_file: boolean;
         };
         /** SumComponent */
         SumComponent: {

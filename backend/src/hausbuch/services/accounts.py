@@ -21,7 +21,7 @@
 
 import hmac
 from collections.abc import Sequence
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 from fractions import Fraction
 from typing import Any
@@ -100,6 +100,7 @@ from .statements import (
     import_stored_statement,
     recheck_account,
     refused_statement_file,
+    statement_file_anchor,
     statement_file_held,
     statement_file_identity,
     statement_file_kind,
@@ -369,19 +370,15 @@ def create_account_from_statement(
     if not statement.lines:
         raise RuleError(EMPTY, "the file holds no booked line")
     bank_file = statement.format in BANK_EXPORT_FORMATS
-    first = min(line.booking_date for line in statement.lines)
+    opening, opening_on, _ = statement_file_anchor(statement)
     try:
         data = AccountCreate(
             label=body.label,
             bank=body.bank,
             iban=statement.account_iban if bank_file else None,
             external_ref=None if bank_file else statement.account_ref,
-            opening_balance=(
-                statement.opening_balance
-                if statement.opening_balance is not None
-                else Decimal("0.00")
-            ),
-            opening_balance_on=first - timedelta(days=1),
+            opening_balance=opening,
+            opening_balance_on=opening_on,
             is_owner_account=True,
             kind=kind,
             purpose=body.purpose,

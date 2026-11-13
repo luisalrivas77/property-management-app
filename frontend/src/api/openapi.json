@@ -25028,13 +25028,30 @@
               }
             ],
             "title": "External Ref Masked"
+          },
+          "opening_balance": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Opening Balance"
+          },
+          "opening_balance_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Opening Balance On"
+          },
+          "opening_from_file": {
+            "type": "boolean",
+            "title": "Opening From File"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
           "kind",
-          "label"
+          "label",
+          "opening_balance",
+          "opening_balance_on",
+          "opening_from_file"
         ],
         "title": "StatementNewAccount",
         "description": "„Konto anlegen und einlesen“ (phase 6, 13 Nov 2026, amends D176 (3) and D165 (b)): the\naccount the file's own content implies, offered when no account holds the file's IBAN or\nnumber yet. The kind comes from the format; `bank`, `provider` and `label` are suggestions\nthe person edits (None where the format does not tell, e.g. a camt file); the identifier is\nshown masked only (an IBAN as „DE89 **** 3000“, a number as „**** 4567“) and never travels\nback from the browser: POST /documents/{id}/statement-account reads it from the original."

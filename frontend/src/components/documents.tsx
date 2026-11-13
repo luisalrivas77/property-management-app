@@ -29,7 +29,7 @@ import type {
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
-import { formatDate, shortId } from "./format";
+import { formatDate, formatMoney, shortId } from "./format";
 import { ACCOUNT_KIND, ACCOUNT_PURPOSE, DOCUMENT_TYPE, LINK_TARGET } from "./labels";
 import { collectShares, initialShares, OwnerShareInputs } from "./ownershipShares";
 import { Loading, Notice } from "./ui";
@@ -856,7 +856,9 @@ const loadOwners = () => ok(api.GET("/api/owners"));
 /** „Konto anlegen und einlesen“ (13 Nov 2026, amends D176 (3) and D165 (b)): no account holds
  * the file's IBAN or number, so the account is created from the file and the file imported onto
  * it in one step (POST /documents/{id}/statement-account). The kind, the IBAN or number and the
- * starting balance come from the stored file on the server; the person checks the name and the
+ * starting balance come from the stored file on the server and are shown read-only (D132: every
+ * value the button saves is shown first; a CSV's 0,00 is named as a placeholder until its
+ * closing balance is typed and „Anfangssaldo daraus übernehmen“ sets it); the person checks the name and the
  * bank, says what the account is for and whose it is. The number is shown masked only. */
 function CreateStatementAccount({
   documentId,
@@ -951,8 +953,17 @@ function CreateStatementAccountForm({
             {" "}
             · {words.number}: <strong>{number}</strong> (aus der Datei)
           </>
-        ) : null}
+        ) : null}{" "}
+        · Anfangssaldo: <strong>{formatMoney(newAccount.opening_balance)}</strong> am {formatDate(newAccount.opening_balance_on)}
+        {newAccount.opening_from_file ? " (aus der Datei)" : null}
       </p>
+      {newAccount.opening_from_file ? null : (
+        <p className="muted">
+          Die Datei nennt keinen Anfangssaldo. 0,00 € ist deshalb nur ein Platzhalter: Nach dem Anlegen auf der Seite des Kontos unter
+          „Kontoauszüge“ mit „Endsaldo eingeben“ den Kontostand nach dem letzten Umsatz der Datei eintragen, wie ihn das Online-Banking zeigt.
+          „Anfangssaldo daraus übernehmen“ setzt dann den richtigen Anfangssaldo.
+        </p>
+      )}
       <div className="grid">
         <Field
           id={`${id}-label`}

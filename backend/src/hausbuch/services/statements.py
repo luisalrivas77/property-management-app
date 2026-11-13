@@ -388,6 +388,17 @@ def statement_file_identity(statement: ParsedStatement, key: bytes) -> Protected
     return ProtectedIban(masked=ref.masked, hmac=ref.hmac)
 
 
+def statement_file_anchor(statement: ParsedStatement) -> tuple[Decimal, date, bool]:
+    """The anchor an account created from a statement file starts with („Konto anlegen und
+    einlesen“): the file's own opening balance, else 0,00 for a CSV, which states none; dated
+    the day before the file's first booking; and whether the file printed it. The file must
+    hold at least one booked line."""
+    first = min(line.booking_date for line in statement.lines)
+    printed = statement.opening_balance is not None
+    opening = statement.opening_balance if printed else Decimal("0.00")
+    return opening, first - timedelta(days=1), printed
+
+
 def statement_file_held(conn: Connection, statement: ParsedStatement, digest: bytes) -> bool:
     """Whether any account of the workspace already holds the file's IBAN or number."""
     a = account_table.c
@@ -408,8 +419,9 @@ def statement_offer(
     when it is the only candidate. A bank's export (camt, Sparkasse CSV, DKB CSV; 13 Nov 2026):
     the bank account whose IBAN is the file's own, pre-selected; no other (the import would
     refuse it). `new_account` (13 Nov 2026) whenever no account holds the file's IBAN or
-    number: „Konto anlegen und einlesen“. None when the file is no longer one of these
-    statements."""
+    number and the file holds a booked line: „Konto anlegen und einlesen“, with the starting
+    balance the account gets (statement_file_anchor). None when the file is no longer one of
+    these statements."""
     statement = refused_statement_file(conn, store, document_id)
     if statement is None:
         return None
@@ -458,11 +470,13 @@ def statement_offer(
     new_account = None
     if (
         identity is not None
+        and statement.lines  # an empty export would only be refused (statement.empty)
         and not matched
         and not statement_file_held(conn, statement, identity.hmac)
     ):
         label, bank, provider = _NEW_ACCOUNT_WORDS[statement.format]
         bank_file = statement.format in BANK_EXPORT_FORMATS
+        opening, opening_on, from_file = statement_file_anchor(statement)
         new_account = StatementNewAccount(
             kind=statement_file_kind(statement) or kind,
             label=label,
@@ -470,6 +484,9 @@ def statement_offer(
             provider=provider,
             iban_masked=identity.masked if bank_file else None,
             external_ref_masked=None if bank_file else identity.masked,
+            opening_balance=opening,
+            opening_balance_on=opening_on,
+            opening_from_file=from_file,
         )
     return StatementFileOffer(
         format=statement.format,
