@@ -220,6 +220,31 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "asset.not_crypto":
     "Eine CoinGecko-ID oder ein Kraken-Paar gibt es nur für Kryptowährungen. Für einen Fonds bitte „Kurs eintragen“ nutzen.",
   "asset.is_euro": "Der Euro hat immer den Kurs 1; dafür wird kein Kurs eingetragen.",
+  // Phase 6 step 5a: an exchange's exports (services/exchange/imports.py, D166, D178)
+  "exchange.unreadable":
+    "Diese Datei ist kein Export von BISON oder Binance, oder eine Zeile darin ist unlesbar. Bitte den Transaktions-Export der Börse unverändert hochladen (CSV oder die ZIP-Datei, in der er kommt).",
+  "exchange.binance_spot_history":
+    "Das ist Binances Spot-Handelsverlauf. Hausbuch braucht ihn nicht: bitte den Transaktionsverlauf („Transaction History“) und den Auszahlungsverlauf hochladen.",
+  "exchange.binance_ambiguous_trade":
+    "In derselben Sekunde stehen zwei Tauschgeschäfte, die sich nicht eindeutig zuordnen lassen. Bitte den Export für einen kürzeren Zeitraum erneut herunterladen.",
+  "exchange.transactions_first":
+    "Das ist der Auszahlungsverlauf. Bitte zuerst den Transaktionsverlauf hochladen, dann den Auszahlungsverlauf.",
+  "exchange.account_mismatch":
+    "Diese Datei stammt von einer anderen Börse als dieses Konto. Bitte beim richtigen Börsenkonto hochladen.",
+  "exchange.not_an_exchange": "Dieses Konto ist kein Börsenkonto.",
+  "exchange.format_not_available":
+    "Exporte dieser Börse kann Hausbuch noch nicht speichern: die Datenbank braucht dafür noch eine Erweiterung. Es wurde nichts gespeichert.",
+  "exchange.balance_unknown_asset":
+    "Für einen der Coins gibt es in diesem Export keine Bewegung. Bitte nur die Coins eintragen, die das Formular zeigt.",
+  "exchange.balance_missing": "Bitte für jeden Coin, den der Export als Bestand ergibt, den Bestand laut Börse eintragen.",
+  "exchange.provider_unknown": "Bitte als Börse BISON oder Binance wählen.",
+  "exchange.answer_invalid": "Diese Antwort passt nicht zu dieser Bewegung (Eingang oder Ausgang).",
+  "exchange.movement_done": "Diese Bewegung ist schon bestätigt oder beantwortet.",
+  "exchange.unreconciled":
+    "Der Bestand laut Börse weicht von den eingelesenen Bewegungen ab. Fehlt ein Teil des Exports, oder wurde ein Bestand falsch abgelesen?",
+  "exchange.withdrawal_history_missing":
+    "Binance nennt Netzwerk und Transaktions-Hash einer Auszahlung nur im Auszahlungsverlauf. Bitte ihn hochladen.",
+  "exchange.deposit_question": "Ist dieser Eingang ein Bonus, eine Belohnung oder kam er von einer eigenen Wallet?",
 };
 
 /** German text for a proposal's `error_code`: why reading the document failed or was

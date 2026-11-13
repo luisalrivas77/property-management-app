@@ -35,6 +35,12 @@
 //   „In <Jahr> zählen“ moves the bill's costs to the year the line paid them
 //   (property_cost_year, POST /transactions/{id}/private-costs/year); an attached bill that
 //   yields no costs links to its document page (property_cost_document).
+// - an exchange account (phase 6 step 5a, D166, D178): an import waiting for its balances or
+//   disagreeing with them links to the account's page, where „Bestand laut Börse eingeben“
+//   sits; an import's proposed coin withdrawals get the one answer for all, „Alle Auszahlungen
+//   gingen an eigene Wallets“ (POST /movement-imports/{id}/withdrawals/confirm), and a link to
+//   answer them one by one; any other proposed movement (a crypto deposit) gets its answers
+//   (POST /movements/{id}/confirm or /answer), from GET /accounts/{id}/movements.
 //
 // GET /inbox names ids only, so the lines, imports, accounts, duplicates and documents are
 // loaded alongside to show what each item is about. Amounts are shown as the API returns them.
@@ -48,13 +54,14 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { api, ok } from "@/api/client";
-import type { Account, Document, PossibleDuplicate, StatementImport, Transaction } from "@/api/schemas";
+import type { Account, Document, ExchangeMovementRow, PossibleDuplicate, StatementImport, Transaction } from "@/api/schemas";
 import type { components } from "@/api/types";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 import { notifyInboxChanged } from "@/lib/inboxCount";
 
 import { BalanceForm, DuplicateCard, OpeningFromClosing } from "./accounts";
 import { documentLabel, ImportStoredStatement, UploadControl } from "./documents";
+import { ConfirmWithdrawals, formatUnits, MovementAnswers } from "./exchange";
 import { formatDate, formatDateTime, formatMoney } from "./format";
 import { ALLOCATION_CATEGORY, INBOX_ITEM_KIND } from "./labels";
 import { ReminderDone, reminderLabel, reminderLink, type Reminder } from "./reminders";
@@ -82,6 +89,7 @@ const SECTIONS = [
   { key: "automatic", title: "Automatisch" },
   { key: "transfers", title: "Überweisungen zwischen eigenen Konten" },
   { key: "property_costs", title: "Immobilie, privat bezahlt" },
+  { key: "exchanges", title: "Börsen" },
   { key: "other", title: "Weitere Punkte" },
 ] as const;
 
@@ -120,6 +128,11 @@ const SECTION_OF: Record<InboxItemKind, SectionKey> = {
   // prices (D167).
   price_source_failed: "automatic",
   price_no_source: "other",
+  // Phase 6 step 5a: an exchange's imports and movements.
+  exchange_pending_balance: "exchanges",
+  exchange_unreconciled: "exchanges",
+  exchange_withdrawals: "exchanges",
+  exchange_movement: "exchanges",
 };
 
 /** A line kind without a line id cannot open the panel: it is listed under Weitere Punkte,
@@ -155,6 +168,10 @@ const PILL_CLASS: Record<InboxItemKind, string> = {
   holdings_mismatch: "badge badge-warn",
   price_source_failed: "badge badge-danger",
   price_no_source: "badge badge-warn",
+  exchange_pending_balance: "badge badge-warn",
+  exchange_unreconciled: "badge badge-danger",
+  exchange_withdrawals: "badge badge-info",
+  exchange_movement: "badge badge-info",
 };
 
 export interface InboxData {
@@ -165,6 +182,8 @@ export interface InboxData {
   duplicates: Map<string, PossibleDuplicate>;
   documents: Map<string, Document>;
   reminders: Map<string, Reminder>;
+  /** The exchange accounts' movements (phase 6 step 5a), for an exchange_movement card. */
+  movements: Map<string, ExchangeMovementRow>;
 }
 
 /** GET /inbox plus what its items point at: every bank account's lines and imports (the rental
@@ -192,6 +211,17 @@ export async function loadInbox(): Promise<InboxData> {
         return { imports, transactions };
       }),
   );
+  // Only while a card names a movement: the exchange accounts' movements, for its answers.
+  const exchangeIds = new Set(
+    items.flatMap((item) => (item.kind === "exchange_movement" && item.account_id ? [item.account_id] : [])),
+  );
+  const movements = (
+    await Promise.all(
+      [...exchangeIds].map((accountId) =>
+        ok(api.GET("/api/accounts/{account_id}/movements", { params: { path: { account_id: accountId } } })),
+      ),
+    )
+  ).flat();
   return {
     items,
     transactions: new Map(perAccount.flatMap((entry) => entry.transactions).map((line) => [line.id, line])),
@@ -200,6 +230,7 @@ export async function loadInbox(): Promise<InboxData> {
     duplicates: new Map(duplicates.map((pair) => [pair.id, pair])),
     documents: new Map(documents.map((document) => [document.id, document])),
     reminders: new Map(reminders.map((reminder) => [reminder.id, reminder])),
+    movements: new Map(movements.map((movement) => [movement.id, movement])),
   };
 }
 
@@ -408,6 +439,20 @@ function EntryTitle({ item, data }: { item: InboxItem; data: InboxData }) {
   }
   if (item.kind === "email_inbox_failed") {
     return <strong>Posteingang per E-Mail</strong>;
+  }
+  if (item.kind.startsWith("exchange_")) {
+    const account = item.account_id ? data.accounts.get(item.account_id) : undefined;
+    const movement = item.movement_id ? data.movements.get(item.movement_id) : undefined;
+    return (
+      <>
+        <strong>Börse{account ? ` · ${account.label}` : ""}</strong>
+        {movement ? (
+          <span className="inbox-detail">
+            {formatDateTime(movement.occurred_at)} · {formatUnits(movement.quantity)} {movement.symbol}
+          </span>
+        ) : null}
+      </>
+    );
   }
   if (item.kind === "holdings_mismatch") {
     const account = item.account_id ? data.accounts.get(item.account_id) : undefined;
@@ -627,6 +672,22 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
       ) : null;
     case "property_cost_document":
       return item.document_id ? <Link href={`/documents/${item.document_id}`}>Beleg öffnen</Link> : null;
+    case "exchange_pending_balance":
+      return item.account_id ? <Link href={`/accounts/${item.account_id}`}>Bestand laut Börse eingeben</Link> : null;
+    case "exchange_unreconciled":
+      return item.account_id ? <Link href={`/accounts/${item.account_id}`}>Export oder Bestand prüfen</Link> : null;
+    case "exchange_withdrawals":
+      return item.import_id ? (
+        <>
+          <ConfirmWithdrawals importId={item.import_id} onDone={onChanged} />
+          {item.account_id ? <Link href={`/accounts/${item.account_id}`}>Einzeln beantworten</Link> : null}
+        </>
+      ) : null;
+    case "exchange_movement": {
+      const movement = item.movement_id ? data.movements.get(item.movement_id) : undefined;
+      if (movement) return <MovementAnswers movement={movement} onDone={onChanged} />;
+      return item.account_id ? <Link href={`/accounts/${item.account_id}`}>Zum Börsenkonto</Link> : null;
+    }
     case "holdings_mismatch":
       return (
         <>

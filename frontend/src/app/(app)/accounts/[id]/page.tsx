@@ -10,7 +10,10 @@
 // reloads the imports below. The private accounts' FinTS connections come with phase 6 step 3.
 // A credit card (D176) takes its monthly PDF statements instead, shows its card's last four
 // digits and masked customer number, and offers the payment IBAN its latest statement prints
-// for confirmation (the card „Zahlungs-IBAN bestätigen“, principle 3).
+// for confirmation (the card „Zahlungs-IBAN bestätigen“, principle 3). An exchange account
+// (phase 6 step 5a, D166, D178) has no statements or bank lines: its page is the export upload,
+// its to-dos, the coins it holds, the imports with „Bestand laut Börse eingeben“ and the
+// movements with their answers (components/exchange.tsx).
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useState, type FormEvent } from "react";
@@ -19,6 +22,7 @@ import { api, ok } from "@/api/client";
 import type { Account } from "@/api/schemas";
 import { DuplicatesList, ImportsTable, openDuplicateCount, StatementUpload, TransactionsTable } from "@/components/accounts";
 import { BankSyncCard } from "@/components/bankSync";
+import { ExchangeSection } from "@/components/exchange";
 import { formatDate, formatMoney } from "@/components/format";
 import { ACCOUNT_KIND, ACCOUNT_PURPOSE } from "@/components/labels";
 import { Breadcrumbs, Facts, Loading, Notice, TabBar, type Tab } from "@/components/ui";
@@ -94,7 +98,7 @@ function AccountDetail() {
               </Link>
             </div>
             <AccountFacts account={data} />
-            {data.purpose === "private" ? (
+            {data.purpose === "private" && data.kind !== "exchange" ? (
               <p className="muted">
                 Privatkonto: seine Umsätze bekommen Haushaltskategorien und zählen nie in die Anlage V. Überweisungen zwischen
                 diesem Konto und dem Mietkonto sind Privateinlagen und -entnahmen.
@@ -127,57 +131,71 @@ function AccountDetail() {
               </Notice>
             ) : null}
             <AccountOwnership account={data} onSaved={account.reload} />
-            <TabBar tabs={tabs} current={tab} href={(key) => `/accounts/${id}?tab=${key}`} />
-            {tab === "kontoauszuege" ? (
-              <div className="stack">
-                {/* Any bank account can fetch over FinTS; a private one only after its history is imported (D163, D173). */}
-                {data.kind === "bank_current" || data.kind === "bank_savings" ? (
-                  <BankSyncCard account={data} onImported={statements.reload} />
-                ) : null}
-                <StatementUpload
-                  accountId={id}
-                  card={data.kind === "credit_card"}
-                  depot={data.kind === "depot"}
-                  onImported={() => {
-                    statements.reload();
-                    if (data.kind === "credit_card" || data.kind === "depot") account.reload();
-                  }}
-                />
-                {openCount > 0 ? (
-                  <div className="notice notice-warn">
-                    <p>
-                      {openCount === 1 ? "1 mögliche Doppelbuchung wartet" : `${openCount} mögliche Doppelbuchungen warten`} auf
-                      eine Entscheidung:{" "}
-                      <Link href={`/accounts/${id}?tab=doppelbuchungen`}>prüfen</Link>.
-                    </p>
+            {data.kind === "exchange" ? (
+              <>
+                <p className="muted">
+                  Börsenkonto: Hausbuch liest die Exporte der Börse selbst, ohne KI, und zeigt je Coin, was sie ergeben. Ein Kauf,
+                  ein Verkauf und eine Gebühr sind damit gebucht; nur Auszahlungen und Eingänge, deren Ziel oder Herkunft der Export
+                  nicht nennt, fragt Hausbuch nach.
+                </p>
+                <ExchangeSection accountId={data.id} />
+              </>
+            ) : null}
+            {data.kind === "exchange" ? null : (
+              <>
+                <TabBar tabs={tabs} current={tab} href={(key) => `/accounts/${id}?tab=${key}`} />
+                {tab === "kontoauszuege" ? (
+                  <div className="stack">
+                    {/* Any bank account can fetch over FinTS; a private one only after its history is imported (D163, D173). */}
+                    {data.kind === "bank_current" || data.kind === "bank_savings" ? (
+                      <BankSyncCard account={data} onImported={statements.reload} />
+                    ) : null}
+                    <StatementUpload
+                      accountId={id}
+                      card={data.kind === "credit_card"}
+                      depot={data.kind === "depot"}
+                      onImported={() => {
+                        statements.reload();
+                        if (data.kind === "credit_card" || data.kind === "depot") account.reload();
+                      }}
+                    />
+                    {openCount > 0 ? (
+                      <div className="notice notice-warn">
+                        <p>
+                          {openCount === 1 ? "1 mögliche Doppelbuchung wartet" : `${openCount} mögliche Doppelbuchungen warten`} auf
+                          eine Entscheidung:{" "}
+                          <Link href={`/accounts/${id}?tab=doppelbuchungen`}>prüfen</Link>.
+                        </p>
+                      </div>
+                    ) : null}
+                    <h2>Importierte Kontoauszüge</h2>
+                    <Loading state={statements}>
+                      {(loaded) => (
+                        <ImportsTable
+                          accountId={id}
+                          imports={loaded.imports}
+                          documents={loaded.documentById}
+                          onChanged={statements.reload}
+                        />
+                      )}
+                    </Loading>
                   </div>
                 ) : null}
-                <h2>Importierte Kontoauszüge</h2>
-                <Loading state={statements}>
-                  {(loaded) => (
-                    <ImportsTable
-                      accountId={id}
-                      imports={loaded.imports}
-                      documents={loaded.documentById}
-                      onChanged={statements.reload}
-                    />
-                  )}
-                </Loading>
-              </div>
-            ) : null}
-            {tab === "umsaetze" ? <TransactionsTab accountId={id} /> : null}
-            {tab === "doppelbuchungen" ? (
-              <Loading state={statements}>
-                {(loaded) => (
-                  <DuplicatesList
-                    duplicates={loaded.duplicates}
-                    transactions={loaded.transactionById}
-                    imports={loaded.importById}
-                    onDecided={statements.reload}
-                  />
-                )}
-              </Loading>
-            ) : null}
+                {tab === "umsaetze" ? <TransactionsTab accountId={id} /> : null}
+                {tab === "doppelbuchungen" ? (
+                  <Loading state={statements}>
+                    {(loaded) => (
+                      <DuplicatesList
+                        duplicates={loaded.duplicates}
+                        transactions={loaded.transactionById}
+                        imports={loaded.importById}
+                        onDecided={statements.reload}
+                      />
+                    )}
+                  </Loading>
+                ) : null}
+              </>
+            )}
           </>
         )}
       </Loading>
@@ -186,6 +204,16 @@ function AccountDetail() {
 }
 
 function AccountFacts({ account }: { account: Account }) {
+  if (account.kind === "exchange") {
+    return (
+      <Facts
+        rows={[
+          ["Börse", account.provider ?? account.bank],
+          ["Kontoart", ACCOUNT_KIND[account.kind]],
+        ]}
+      />
+    );
+  }
   if (account.kind === "credit_card") {
     return (
       <Facts

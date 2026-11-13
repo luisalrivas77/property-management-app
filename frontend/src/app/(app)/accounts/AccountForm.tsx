@@ -11,7 +11,9 @@
 // anchor is the first statement's „Alter Saldo“ (an owed amount negative); a bank account stays
 // a bank account and a card a card. A depot (phase 6 step 4, D165) is always private too: its
 // IBAN (the Verrechnungskonto's) is optional and its account number comes with its first cash
-// statement. Exchanges and wallets come with their own steps.
+// statement. An exchange (phase 6 step 5a, D166, D178) is always private and has no IBAN and no
+// opening balance: it is BISON or Binance, its coins come from its exports, and its balances are
+// typed per coin on its page („Bestand laut Börse eingeben“). Wallets come with phase 7.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
@@ -20,6 +22,7 @@ import { api, ok } from "@/api/client";
 import { ApiError } from "@/api/errors";
 import type { Account, AccountKind, AccountPatch, AccountPurpose } from "@/api/schemas";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "@/components/form";
+import { todayIso } from "@/components/format";
 import { decimalInput, toSignedMoneyString } from "@/components/input";
 import { ACCOUNT_KIND, ACCOUNT_PURPOSE } from "@/components/labels";
 import { Facts } from "@/components/ui";
@@ -29,10 +32,12 @@ const KEYS = ["label", "bank", "iban", "opening_balance", "opening_balance_on", 
 
 const CODE_FIELDS = { "iban.": "iban", "allocation.category_not_for_account": "purpose" };
 
-/** The kinds this form offers: the bank kinds (D156), the credit card (D176) and the depot
- * (step 4, D165); the exchange comes with step 5, the wallet with phase 7. */
+/** The kinds this form offers: the bank kinds (D156), the credit card (D176), the depot
+ * (step 4, D165) and the exchange (step 5a, D166); the wallet comes with phase 7. */
 const BANK_KINDS: AccountKind[] = ["bank_current", "bank_savings"];
-const NEW_KINDS: AccountKind[] = [...BANK_KINDS, "credit_card", "depot"];
+const NEW_KINDS: AccountKind[] = [...BANK_KINDS, "credit_card", "depot", "exchange"];
+/** The exchanges whose exports Hausbuch reads (backend rules/exchange.EXCHANGE_PROVIDERS). */
+const EXCHANGES = ["BISON", "Binance"] as const;
 
 /** `initialKind` pre-selects the Kontoart of a new account (a link „Konto anlegen“ for a card or
  * depot statement waiting on its document page, phase 6 D176 (3)); a kind this form does not
@@ -55,9 +60,11 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
   const form = useFormErrors(KEYS, CODE_FIELDS);
   const card = kind === "credit_card";
   const depot = kind === "depot";
-  // An existing card stays a card, a depot a depot, an existing bank account a bank account.
+  const exchange = kind === "exchange";
+  // An existing card stays a card, a depot a depot, an exchange an exchange, an existing bank
+  // account a bank account.
   const kinds: AccountKind[] = account
-    ? account.kind === "credit_card" || account.kind === "depot"
+    ? account.kind === "credit_card" || account.kind === "depot" || account.kind === "exchange"
       ? [account.kind]
       : BANK_KINDS
     : NEW_KINDS;
@@ -69,21 +76,27 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
         ? "Eine Karte mit dieser Kundennummer gibt es in diesem Haushalt schon."
         : depot
           ? "Ein Depot mit dieser IBAN gibt es in diesem Haushalt schon."
+          : exchange
+            ? "Dieses Börsenkonto gibt es in diesem Haushalt schon."
           : "Ein Konto mit dieser IBAN gibt es in diesem Haushalt schon."
       : null;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const values = collector();
-    const openingBalance = values.take("opening_balance", toSignedMoneyString(opening));
-    if (!openingOn) values.messages.opening_balance_on = ["Bitte das Datum des Anfangssaldos eingeben."];
-    if (!account && !card && !depot && iban.trim() === "") values.messages.iban = ["Bitte die IBAN des Kontos eingeben."];
+    // An exchange has no cash balance to anchor (its coins are checked per import, D166): its
+    // anchor is 0,00 on the day it is created, and its bank is the exchange.
+    const openingBalance = exchange ? (account?.opening_balance ?? "0.00") : values.take("opening_balance", toSignedMoneyString(opening));
+    const openingDay = exchange ? (account?.opening_balance_on ?? todayIso()) : openingOn;
+    if (!openingDay) values.messages.opening_balance_on = ["Bitte das Datum des Anfangssaldos eingeben."];
+    if (exchange && !account && !provider) values.messages.provider = ["Bitte die Börse wählen."];
+    if (!account && !card && !depot && !exchange && iban.trim() === "") values.messages.iban = ["Bitte die IBAN des Kontos eingeben."];
     if (!values.ok || openingBalance === undefined) return form.invalid(values.messages);
     const common = {
       label: label.trim(),
-      bank: bank.trim(),
+      bank: exchange ? (account?.bank ?? provider) : bank.trim(),
       opening_balance: openingBalance,
-      opening_balance_on: openingOn,
+      opening_balance_on: openingDay,
     };
     setBusy(true);
     form.clear();
@@ -102,6 +115,9 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
         // sent. A credit card has no IBAN and is always private (D176): its statements name it.
         const body = card
           ? { ...common, is_owner_account: true, kind, purpose: "private" as const, provider: provider.trim() || null }
+          : exchange
+            ? // An exchange is always private and has no IBAN (D166).
+              { ...common, is_owner_account: true, kind, purpose: "private" as const, provider }
           : depot
             ? // A depot is always private; its IBAN is optional (its cash statement offers it, D156).
               { ...common, iban: iban.trim() || null, is_owner_account: true, kind, purpose: "private" as const }
@@ -122,7 +138,7 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
         <Field
           id="account-kind"
           label="Kontoart"
-          description="Girokonto, Sparkonto (auch Tagesgeld), Kreditkarte oder Depot. Eine Kreditkarte wird aus ihren monatlichen Abrechnungen (PDF) gefüllt, ein Depot aus den Dokumenten seiner Bank (Kontoauszüge, Abrechnungen, Berichte). Börsenkonten kommen später dazu."
+          description="Girokonto, Sparkonto (auch Tagesgeld), Kreditkarte, Depot oder Börse. Eine Kreditkarte wird aus ihren monatlichen Abrechnungen (PDF) gefüllt, ein Depot aus den Dokumenten seiner Bank (Kontoauszüge, Abrechnungen, Berichte), eine Krypto-Börse (BISON, Binance) aus ihren Exporten."
           errors={form.of("kind")}
         >
           <select value={kind} onChange={(e) => setKind(e.target.value as AccountKind)} disabled={kinds.length === 1}>
@@ -133,7 +149,7 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
             ))}
           </select>
         </Field>
-        {card || depot ? null : (
+        {card || depot || exchange ? null : (
           <Field
             id="account-purpose"
             label="Wofür"
@@ -154,26 +170,44 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
         <Field
           id="account-label"
           label="Bezeichnung"
-          hint={card ? "z. B. Kreditkarte" : depot ? "z. B. Depot" : "z. B. Mietkonto Musterstraße"}
+          hint={card ? "z. B. Kreditkarte" : depot ? "z. B. Depot" : exchange ? "z. B. BISON" : "z. B. Mietkonto Musterstraße"}
           description="Ein frei wählbarer Name, unter dem Sie das Konto in Hausbuch wiederfinden."
           errors={form.of("label")}
         >
           <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} required maxLength={100} autoComplete="off" />
         </Field>
-        <Field
-          id="account-bank"
-          label="Bank"
-          description={
-            card
-              ? "Die Bank, die die Karte herausgibt, wie auf der Abrechnung."
-              : depot
-                ? "Die Bank, bei der das Depot geführt wird, wie auf seinem Kontoauszug."
-                : "Die Bank, bei der das Konto geführt wird, wie auf dem Kontoauszug."
-          }
-          errors={form.of("bank")}
-        >
-          <input type="text" value={bank} onChange={(e) => setBank(e.target.value)} required autoComplete="off" />
-        </Field>
+        {exchange ? (
+          <Field
+            id="account-provider"
+            label="Börse"
+            description="Die Börse, deren Exporte Sie hochladen. Hausbuch liest die Exporte von BISON und Binance; eine andere Börse kommt erst, wenn ihr Export bekannt ist."
+            errors={form.of("provider")}
+          >
+            <select value={provider} onChange={(e) => setProvider(e.target.value)} disabled={account != null} required>
+              <option value="">Bitte wählen</option>
+              {EXCHANGES.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </Field>
+        ) : (
+          <Field
+            id="account-bank"
+            label="Bank"
+            description={
+              card
+                ? "Die Bank, die die Karte herausgibt, wie auf der Abrechnung."
+                : depot
+                  ? "Die Bank, bei der das Depot geführt wird, wie auf seinem Kontoauszug."
+                  : "Die Bank, bei der das Konto geführt wird, wie auf dem Kontoauszug."
+            }
+            errors={form.of("bank")}
+          >
+            <input type="text" value={bank} onChange={(e) => setBank(e.target.value)} required autoComplete="off" />
+          </Field>
+        )}
         {card ? (
           <Field
             id="account-provider"
@@ -185,7 +219,7 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
             <input type="text" value={provider} onChange={(e) => setProvider(e.target.value)} maxLength={100} autoComplete="off" />
           </Field>
         ) : null}
-        {account || card ? null : (
+        {account || card || exchange ? null : (
           <Field
             id="account-iban"
             label="IBAN"
@@ -200,36 +234,40 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
             <input type="text" value={iban} onChange={(e) => setIban(e.target.value)} required={!depot} autoComplete="off" spellCheck={false} />
           </Field>
         )}
-        <Field
-          id="account-opening"
-          label="Anfangssaldo (€)"
-          hint={
-            card
-              ? "Der „Alte Saldo“ der ersten Abrechnung, die Sie hochladen; ein offener Betrag mit Minus."
-              : depot
-                ? "Der „alte Saldo“ des ersten Kontoauszugs, den Sie hochladen. Unbekannt? 0,00 lassen und nach dem Hochladen „Anfangssaldo daraus übernehmen“ wählen."
-                : "Der Kontostand am Ende des Tages unten, laut Bank. Bei einem neuen Konto 0,00; negativ mit Minus."
-          }
-          description="Der Kontostand laut Bank am Ende des Tages, den Sie darunter angeben. Von ihm aus prüft Hausbuch, ob jeder importierte Kontoauszug aufgeht: Anfangssaldo plus Umsätze gleich Endsaldo."
-          errors={form.of("opening_balance")}
-        >
-          <input type="text" inputMode="decimal" value={opening} onChange={(e) => setOpening(e.target.value)} required autoComplete="off" />
-        </Field>
-        <Field
-          id="account-opening-on"
-          label="Anfangssaldo am"
-          hint={
-            card
-              ? "Ein Tag vor der ersten Buchung dieser Abrechnung, z. B. der letzte Tag des Vormonats."
-              : depot
-                ? "Ein Tag vor der ersten Buchung des ersten Kontoauszugs, z. B. der letzte Tag des Vormonats."
-              : "Ein Tag vor dem ersten Umsatz, der importiert wird: Umsätze an oder vor diesem Tag passen nicht zum Anfangssaldo."
-          }
-          description="Der Tag, an dem dieser Kontostand galt, laut Kontoauszug oder Online-Banking."
-          errors={form.of("opening_balance_on")}
-        >
-          <input type="date" value={openingOn} onChange={(e) => setOpeningOn(e.target.value)} required />
-        </Field>
+        {exchange ? null : (
+          <>
+            <Field
+              id="account-opening"
+              label="Anfangssaldo (€)"
+              hint={
+                card
+                  ? "Der „Alte Saldo“ der ersten Abrechnung, die Sie hochladen; ein offener Betrag mit Minus."
+                  : depot
+                    ? "Der „alte Saldo“ des ersten Kontoauszugs, den Sie hochladen. Unbekannt? 0,00 lassen und nach dem Hochladen „Anfangssaldo daraus übernehmen“ wählen."
+                    : "Der Kontostand am Ende des Tages unten, laut Bank. Bei einem neuen Konto 0,00; negativ mit Minus."
+              }
+              description="Der Kontostand laut Bank am Ende des Tages, den Sie darunter angeben. Von ihm aus prüft Hausbuch, ob jeder importierte Kontoauszug aufgeht: Anfangssaldo plus Umsätze gleich Endsaldo."
+              errors={form.of("opening_balance")}
+            >
+              <input type="text" inputMode="decimal" value={opening} onChange={(e) => setOpening(e.target.value)} required autoComplete="off" />
+            </Field>
+            <Field
+              id="account-opening-on"
+              label="Anfangssaldo am"
+              hint={
+                card
+                  ? "Ein Tag vor der ersten Buchung dieser Abrechnung, z. B. der letzte Tag des Vormonats."
+                  : depot
+                    ? "Ein Tag vor der ersten Buchung des ersten Kontoauszugs, z. B. der letzte Tag des Vormonats."
+                  : "Ein Tag vor dem ersten Umsatz, der importiert wird: Umsätze an oder vor diesem Tag passen nicht zum Anfangssaldo."
+              }
+              description="Der Tag, an dem dieser Kontostand galt, laut Kontoauszug oder Online-Banking."
+              errors={form.of("opening_balance_on")}
+            >
+              <input type="date" value={openingOn} onChange={(e) => setOpeningOn(e.target.value)} required />
+            </Field>
+          </>
+        )}
       </div>
       {card ? (
         <p className="muted">
@@ -244,7 +282,14 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
           mit; wem das Depot gehört, legen Sie nach dem Anlegen auf seiner Seite fest.
         </p>
       ) : null}
-      {account && !card && !depot ? (
+      {exchange && !account ? (
+        <p className="muted">
+          Ein Börsenkonto ist immer ein Privatkonto und hat keine IBAN und keinen Anfangssaldo: nach dem Anlegen laden Sie auf
+          seiner Seite den Export der Börse hoch, und Hausbuch zeigt je Coin, was er ergibt. Wem das Konto gehört (bei BISON die
+          Person, auf deren Namen es läuft), legen Sie nach dem Anlegen auf seiner Seite fest.
+        </p>
+      ) : null}
+      {account && !card && !depot && !exchange ? (
         <>
           <Facts rows={[["IBAN", account.iban_masked ?? "–"]]} />
           <p className="muted">
