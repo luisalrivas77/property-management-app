@@ -4406,7 +4406,8 @@ export interface components {
         /**
          * DepotPosition
          * @description One fund on one depot account. `units` are the confirmed movements to today; the
-         *     report figures are those of the latest report that lists it (a 0-by-omission row too).
+         *     report figures are those of the latest report that lists it; a fund the account's latest
+         *     report does not list is 0 on that report (0 by omission), with no value and no price.
          *     `value_eur` is that report's stated value, shown only while the report reconciles
          *     against today's movements and nothing moved since (D165 (3): no valuation past the last
          *     reconciled date; computed prices and NAVs come with steps 5 and 6). `cost_eur` is the

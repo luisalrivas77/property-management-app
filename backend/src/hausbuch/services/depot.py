@@ -8,6 +8,7 @@ written confirmed in that one transaction. Rows are append-only (migration 0025'
 correction is a new row that supersedes the old one.
 """
 
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
@@ -433,30 +434,33 @@ class ReportChecked(Schema):
 
 
 def finish_report(ctx: CommandContext, document_id: UUID) -> list[ReportChecked]:
-    """After a report's positions are applied: per account and date, every asset the
-    confirmed movements still hold that the report does not list gets a position of 0 (§14.1,
-    "0 by omission"), and one account.holdings_reconciled or account.holdings_mismatch event
-    names the rows (DEPOT_HOLDINGS_MISMATCH is the inbox card's code)."""
+    """After a report's positions are applied: per account and date it names, one
+    account.holdings_reconciled or account.holdings_mismatch event over every report
+    position stored for that account and date, from this document or an earlier one
+    (DEPOT_HOLDINGS_MISMATCH is the inbox card's code). An asset the confirmed movements
+    still hold that no position lists is a position of 0 (§14.1, "0 by omission") and counts
+    as a mismatch, but is not stored: it is recomputed on every read (holdings_inbox_items,
+    _positions), so a position added later from a second reading of the report is not
+    refused as a twin of it (review finding F2)."""
     h = holding_table.c
-    rows = ctx.conn.execute(
-        select(h.id, h.account_id, h.asset_id, h.as_of, h.reconciled).where(
-            h.document_id == document_id, h.source == HoldingSource.REPORT.value
-        )
+    report = HoldingSource.REPORT.value
+    dates = ctx.conn.execute(
+        select(h.account_id, h.as_of)
+        .where(h.document_id == document_id, h.source == report)
+        .distinct()
     ).all()
     results = []
-    for account_id, as_of in sorted({(r.account_id, r.as_of) for r in rows}, key=str):
-        mine = [r for r in rows if (r.account_id, r.as_of) == (account_id, as_of)]
-        listed = {r.asset_id: Decimal(0) for r in mine}
+    for account_id, as_of in sorted(dates, key=str):
+        mine = ctx.conn.execute(
+            select(h.id, h.asset_id, h.declared_units)
+            .where(h.account_id == account_id, h.as_of == as_of, h.source == report)
+            .order_by(h.created_at, h.id)
+        ).all()
         ids = [r.id for r in mine]
-        checks = rules.reconcile_holdings(as_of, listed, _movements(ctx.conn, account_id))
-        for check in checks:
-            if not check.listed:
-                ids.append(
-                    _insert_holding(ctx, account_id, check.asset, check, as_of, None, document_id)
-                )
-        mismatched = sum(1 for r in mine if r.reconciled is False) + sum(
-            1 for c in checks if not c.listed and not c.reconciled
+        checks = rules.reconcile_holdings(
+            as_of, {r.asset_id: r.declared_units for r in mine}, _movements(ctx.conn, account_id)
         )
+        mismatched = sum(1 for c in checks if not c.reconciled)
         append_event(
             ctx,
             EventType.ACCOUNT_HOLDINGS_MISMATCH
@@ -654,6 +658,16 @@ def etf_overview(conn: Connection) -> EtfOverview:
     return EtfOverview(accounts=accounts, documents=documents)
 
 
+@dataclass(frozen=True)
+class _Omitted:
+    """A fund's position of 0 on a report that does not list it (never stored)."""
+
+    as_of: date
+    declared_units: Decimal = Decimal(0)
+    declared_value_eur: Decimal | None = None
+    created_at: datetime | None = None
+
+
 def _positions(conn: Connection, account_id: UUID) -> list[DepotPosition]:
     m, h, a, pr = movement_table.c, holding_table.c, asset_table.c, price_table.c
     moves = conn.execute(
@@ -664,14 +678,22 @@ def _positions(conn: Connection, account_id: UUID) -> list[DepotPosition]:
         )
     ).all()
     reports = conn.execute(
-        select(h.asset_id, h.as_of, h.declared_units, h.declared_value_eur)
+        select(h.asset_id, h.as_of, h.declared_units, h.declared_value_eur, h.created_at)
         .where(h.account_id == account_id, h.source == HoldingSource.REPORT.value)
         .order_by(h.as_of.desc(), h.created_at.desc())
     ).all()
-    latest = {}
+    latest: dict[UUID, Any] = {}
     for row in reports:
         latest.setdefault(row.asset_id, row)
     ids = {r.asset_id for r in moves} | set(latest)
+    # A fund the movements hold that the account's latest report does not list is 0 on that
+    # report (§14.1, "0 by omission"); the row is not stored (finish_report), so it is made
+    # here: no stated value and no price, so it never shows a value.
+    last_on = reports[0].as_of if reports else None
+    for asset_id in ids:
+        row = latest.get(asset_id)
+        if last_on is not None and (row is None or row.as_of < last_on):
+            latest[asset_id] = _Omitted(as_of=last_on)
     if not ids:
         return []
     assets = {r.id: r for r in conn.execute(select(a.id, a.isin, a.name).where(a.id.in_(ids)))}
@@ -691,6 +713,7 @@ def _positions(conn: Connection, account_id: UUID) -> list[DepotPosition]:
             moved = any(r.quantity != 0 and r.occurred_at.date() > report.as_of for r in mine)
             if reconciled and not moved:
                 value = report.declared_value_eur
+        if report is not None and not isinstance(report, _Omitted):
             price = conn.execute(
                 select(pr.price_eur)
                 .where(

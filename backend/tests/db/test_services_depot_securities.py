@@ -27,6 +27,7 @@ from hausbuch.schemas.api import InboxItemKind
 from hausbuch.schemas.bank import AccountCreate
 from hausbuch.schemas.enums import AccountKind, DocumentSubtype, DocumentType, ProposalStatus
 from hausbuch.schemas.events import EventType
+from hausbuch.schemas.proposal import ProposalApplyBody, ProposalApplyRecord
 from hausbuch.services import depot, proposals, review
 from hausbuch.services.accounts import create_account
 from hausbuch.services.statements import import_statement, list_transactions
@@ -386,19 +387,100 @@ def test_a_fund_held_but_missing_from_the_report_is_a_position_of_0_and_a_mismat
     )
     _apply(run, ws, report)
 
-    holdings = {r.declared_units: r for r in _rows(read, ws, holding_table)}
-    listed, omitted = holdings[Decimal("2.0000000000")], holdings[Decimal(0)]
-    # The world fund was never bought: the report's 2 units are not explained.
+    # Only the listed position is stored; the world fund was never bought, so the report's
+    # 2 units are not explained.
+    (listed,) = _rows(read, ws, holding_table)
     assert listed.reconciled is False and listed.difference_units == Decimal(2)
-    # The money-market fund is held by the movements but not listed: 0 by omission.
-    assert omitted.reconciled is False and omitted.difference_units == Decimal("-4.8")
     assert _rows(read, ws, price_table) == []  # no price from a position that disagrees
+    # The money-market fund is held by the movements but not listed: 0 by omission, a
+    # mismatch counted in the event but never stored as a row (review finding F2).
     (event,) = _events(
         read, ws, EventType.ACCOUNT_HOLDINGS_RECONCILED, EventType.ACCOUNT_HOLDINGS_MISMATCH
     )
     assert event[0] is EventType.ACCOUNT_HOLDINGS_MISMATCH
     assert event[1]["assets_mismatched"] == 2
-    assert len(event[1]["holding_statement_ids"]) == 2
+    assert event[1]["holding_statement_ids"] == [str(listed.id)]
+    (card,) = [i for i in read(ws, review.inbox) if i.kind is InboxItemKind.HOLDINGS_MISMATCH]
+    assert "laut Bericht 0, gebucht 4,8 Anteile" in card.reasoning
+    positions = {p.isin: p for p in read(ws, depot.etf_overview).accounts[0].positions}
+    omitted = positions[ISIN_CASH]
+    assert (omitted.report_on, omitted.report_units) == (date(2026, 6, 30), Decimal(0))
+    assert omitted.reconciled is False
+    assert omitted.value_eur is None and omitted.report_price_eur is None
+
+
+def test_a_fund_a_first_reading_missed_is_added_from_a_second_reading(
+    run,
+    read,
+    fresh_workspaces,
+    blob_store,
+    job,
+    enqueued,  # noqa: F811
+):
+    """A report's first reading missed a fund; the second reading lists it and only that
+    position is applied (the other one is stored already). Review finding F2: the stored
+    0-by-omission row made that position a twin, and the card's „überspringen“ a dead end."""
+    ws, _ = fresh_workspaces
+    _account(run, ws)
+    _apply(
+        run,
+        ws,
+        _read(run, job, ws, blob_store, enqueued, DocumentSubtype.TRADE_CONFIRMATION, _trade()),
+    )
+    world = _trade(units="2.0000", net="100.00", reference="5500000005", on="2026-03-20") | {
+        "isin": _v(ISIN_WORLD),
+        "security_name": _v("Beispiel Welt ETF"),
+    }
+    _apply(
+        run,
+        ws,
+        _read(run, job, ws, blob_store, enqueued, DocumentSubtype.TRADE_CONFIRMATION, world),
+    )
+    cash_row = f"{ISIN_CASH} | Beispiel Euro Geldmarkt | 4,8000 | 104,50 | 501,60 | EUR"
+    world_row = f"{ISIN_WORLD} | Beispiel Welt ETF | 2,0000 | 50,00 | 100,00 | EUR"
+    first = _read(
+        run, job, ws, blob_store, enqueued, DocumentSubtype.DEPOT_REPORT, _report(cash_row)
+    )
+    _apply(run, ws, first)
+
+    def cards():
+        return [i for i in read(ws, review.inbox) if i.kind is InboxItemKind.HOLDINGS_MISMATCH]
+
+    assert len(cards()) == 1  # the world fund is 0 by omission
+
+    second = _read(
+        run,
+        job,
+        ws,
+        blob_store,
+        enqueued,
+        DocumentSubtype.DEPOT_REPORT,
+        _report(cash_row, world_row),
+    )
+    world_record = next(r for r in second.records if r.key == "holding:2")
+    body = ProposalApplyBody(
+        records=[
+            ProposalApplyRecord(key="holding:1", skip=True),
+            ProposalApplyRecord(
+                key="holding:2",
+                values={f: v.value for f, v in world_record.fields.items() if v.value is not None},
+            ),
+        ]
+    )
+    run(ws, proposals.apply_proposal, second.id, body, iban_key=TEST_IBAN_KEY)
+
+    rows = _rows(read, ws, holding_table)
+    assert sorted(r.declared_units for r in rows) == [Decimal(2), Decimal("4.8")]
+    assert all(r.reconciled for r in rows)
+    assert cards() == []
+    events = _events(
+        read, ws, EventType.ACCOUNT_HOLDINGS_RECONCILED, EventType.ACCOUNT_HOLDINGS_MISMATCH
+    )
+    assert [t for t, _ in events] == [
+        EventType.ACCOUNT_HOLDINGS_MISMATCH,
+        EventType.ACCOUNT_HOLDINGS_RECONCILED,
+    ]
+    assert sorted(events[1][1]["holding_statement_ids"]) == sorted(str(r.id) for r in rows)
 
 
 def test_a_report_applied_a_second_time_is_refused(

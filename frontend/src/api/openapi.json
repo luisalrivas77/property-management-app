@@ -12036,7 +12036,7 @@
           "units"
         ],
         "title": "DepotPosition",
-        "description": "One fund on one depot account. `units` are the confirmed movements to today; the\nreport figures are those of the latest report that lists it (a 0-by-omission row too).\n`value_eur` is that report's stated value, shown only while the report reconciles\nagainst today's movements and nothing moved since (D165 (3): no valuation past the last\nreconciled date; computed prices and NAVs come with steps 5 and 6). `cost_eur` is the\nplain Σ of the purchases' amounts while the fund was only bought on this account (§13:\nright for ETFs bought and never sold; lots are phase 7), and `gain_eur` value − cost when\nboth are shown."
+        "description": "One fund on one depot account. `units` are the confirmed movements to today; the\nreport figures are those of the latest report that lists it; a fund the account's latest\nreport does not list is 0 on that report (0 by omission), with no value and no price.\n`value_eur` is that report's stated value, shown only while the report reconciles\nagainst today's movements and nothing moved since (D165 (3): no valuation past the last\nreconciled date; computed prices and NAVs come with steps 5 and 6). `cost_eur` is the\nplain Σ of the purchases' amounts while the fund was only bought on this account (§13:\nright for ETFs bought and never sold; lots are phase 7), and `gain_eur` value − cost when\nboth are shown."
       },
       "DepotReportExtraction": {
         "properties": {
