@@ -85,11 +85,14 @@ export function StatementUpload({
   accountId,
   onImported,
   card = false,
+  depot = false,
 }: {
   accountId: string;
   onImported: () => void;
   /** A credit card account: its monthly PDF statements (phase 6 D176). */
   card?: boolean;
+  /** A depot's cash account: the bank's PDF Kontoauszug, read by code (phase 6 step 4). */
+  depot?: boolean;
 }) {
   const inputId = useId();
   const input = useRef<HTMLInputElement>(null);
@@ -132,12 +135,14 @@ export function StatementUpload({
           void upload(event.dataTransfer.files);
         }}
       >
-        <label htmlFor={inputId}>{busy ? "Importiert …" : card ? "Kreditkartenabrechnung hochladen" : "Kontoauszug hochladen"}</label>
+        <label htmlFor={inputId}>
+          {busy ? "Importiert …" : card ? "Kreditkartenabrechnung hochladen" : "Kontoauszug hochladen"}
+        </label>
         <input
           ref={input}
           id={inputId}
           type="file"
-          accept={card ? CARD_STATEMENT_ACCEPT : STATEMENT_ACCEPT}
+          accept={card || depot ? CARD_STATEMENT_ACCEPT : STATEMENT_ACCEPT}
           multiple
           disabled={busy}
           onChange={(event: ChangeEvent<HTMLInputElement>) => void upload(event.target.files)}
@@ -146,6 +151,12 @@ export function StatementUpload({
           <p className="muted hint">
             Die monatliche Abrechnung als PDF, so wie sie im Kundenportal der Karte steht. Hausbuch liest sie selbst, ohne KI,
             und prüft, dass Alter Saldo und Umsätze den Neuen Saldo ergeben. Datei hierher ziehen oder auswählen.
+          </p>
+        ) : depot ? (
+          <p className="muted hint">
+            Der Kontoauszug des Depots als PDF, so wie er im Postfach der Bank steht. Hausbuch liest ihn selbst, ohne KI, und
+            prüft, dass Anfangssaldo und Buchungen den Endsaldo ergeben. Wertpapierabrechnungen und Berichte gehören unter
+            Dokumente. Datei hierher ziehen oder auswählen.
           </p>
         ) : (
           <p className="muted hint">

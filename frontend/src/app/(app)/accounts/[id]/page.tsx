@@ -109,10 +109,21 @@ function AccountDetail() {
                 }}
               />
             ) : null}
+            {data.kind === "depot" ? (
+              <DepotIbanCard
+                account={data}
+                onSaved={(disabled) => {
+                  setRulesDisabled(disabled);
+                  account.reload();
+                }}
+              />
+            ) : null}
             {rulesDisabled > 0 ? (
               <Notice>
                 {rulesDisabled === 1 ? "1 gelernte Regel" : `${rulesDisabled} gelernte Regeln`} für diese Kontonummer abgeschaltet:
-                Zahlungen an die Karte sind jetzt Überträge.
+                {data.kind === "depot"
+                  ? " Überweisungen auf das Depot sind jetzt Überträge."
+                  : " Zahlungen an die Karte sind jetzt Überträge."}
               </Notice>
             ) : null}
             <AccountOwnership account={data} onSaved={account.reload} />
@@ -126,9 +137,10 @@ function AccountDetail() {
                 <StatementUpload
                   accountId={id}
                   card={data.kind === "credit_card"}
+                  depot={data.kind === "depot"}
                   onImported={() => {
                     statements.reload();
-                    if (data.kind === "credit_card") account.reload();
+                    if (data.kind === "credit_card" || data.kind === "depot") account.reload();
                   }}
                 />
                 {openCount > 0 ? (
@@ -281,6 +293,53 @@ function TransactionsTab({ accountId }: { accountId: string }) {
           </>
         )}
       </Loading>
+    </div>
+  );
+}
+
+/** Phase 6 step 4 (D156 amended): the IBAN the latest cash statement of a depot prints, masked,
+ * until a person confirms it. Confirming reads it again from that statement (never from this
+ * page); a transfer from an own bank account to that IBAN is then linked as a transfer (D162). */
+function DepotIbanCard({ account, onSaved }: { account: Account; onSaved: (rulesDisabled: number) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const proposal = account.iban_proposal;
+  if (!proposal) return null;
+
+  async function confirm() {
+    if (!proposal) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await ok(
+        api.POST("/api/accounts/{account_id}/iban", {
+          params: { path: { account_id: account.id } },
+          body: { import_id: proposal.import_id },
+        }),
+      );
+      onSaved(result.rules_disabled);
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="card stack">
+      <h2>IBAN des Depots bestätigen</h2>
+      <p>
+        Der Kontoauszug nennt die IBAN <strong>{proposal.iban_masked}</strong> für dieses Depot.
+        {account.iban_masked
+          ? ` Bisher bestätigt ist ${account.iban_masked}.`
+          : " Stimmt sie, bestätigen Sie sie hier: Hausbuch bucht dann eine Überweisung von Ihrem Girokonto auf diese IBAN als Umbuchung zwischen eigenen Konten, nicht als Ausgabe, und verknüpft sie mit der Einlage auf dem Kontoauszug des Depots."}
+      </p>
+      <div className="row">
+        <button type="button" onClick={() => void confirm()} disabled={busy}>
+          {busy ? "Speichert …" : "IBAN bestätigen"}
+        </button>
+      </div>
+      <ErrorNotice error={error} />
     </div>
   );
 }
