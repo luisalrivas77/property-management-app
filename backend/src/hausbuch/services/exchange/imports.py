@@ -1063,7 +1063,9 @@ def exchange_inbox_items(conn: Connection) -> list[InboxItem]:
                     question=(
                         "Fehlt ein Teil des Exports, oder wurde ein Bestand falsch abgelesen? "
                         "Bitte einen vollständigen Export hochladen oder den Bestand neu "
-                        "eingeben; Hausbuch gleicht nie selbst aus."
+                        "eingeben. Fehlt im Export eine Bewegung, die die Börse selbst nicht "
+                        "aufführt, lässt sich die Differenz eines Coins mit Grund als "
+                        "Korrektur buchen; Hausbuch gleicht nie selbst aus."
                     ),
                     import_id=r.id,
                     account_id=r.account_id,

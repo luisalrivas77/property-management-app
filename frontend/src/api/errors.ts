@@ -253,6 +253,16 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "exchange.withdrawal_history_no_match":
     "Im Auszahlungsverlauf steht keine abgeschlossene Auszahlung desselben Coins, deren Betrag plus Gebühr dem gesendeten Betrag entspricht, innerhalb einer Stunde davor.",
   "exchange.deposit_question": "Ist dieser Eingang ein Bonus, eine Belohnung oder kam er von einer eigenen Wallet?",
+  // D178 amended: „Differenz als Korrektur buchen“
+  "exchange.correction_not_unreconciled":
+    "Für diesen Export weicht kein Bestand ab. Eine Korrektur ist nur möglich, solange ein Coin abweicht.",
+  "exchange.correction_not_latest":
+    "Nach diesem Export wurde schon ein späterer eingelesen. Bitte die Korrektur beim neuesten Export buchen, sonst ändert sie dessen Abgleich unbemerkt.",
+  "exchange.correction_eur":
+    "Für Euro gibt es keine Korrektur: Euro-Beträge gleichen sich innerhalb der Rundung ab. Bitte den Euro-Bestand prüfen und neu eingeben.",
+  "exchange.correction_no_difference": "Dieser Coin stimmt mit dem Bestand laut Börse überein; es gibt nichts zu korrigieren.",
+  "exchange.correction_stale":
+    "Seit der Eingabe des Bestands haben sich die Bewegungen geändert. Bitte den Bestand laut Börse neu eingeben und dann die Differenz buchen.",
 };
 
 /** German text for a proposal's `error_code`: why reading the document failed or was

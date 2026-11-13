@@ -325,6 +325,7 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "account.movements_imported": "Börsen-Export importiert",
   "account.movements_reconciled": "Börsen-Export abgestimmt",
   "account.withdrawal_history_checked": "Auszahlungsverlauf abgeglichen",
+  "account.balance_corrected": "Differenz zum Börsenbestand als Korrektur gebucht",
   "account.movements_unreconciled": "Börsen-Export nicht abgestimmt",
   "account.holdings_confirmed": "Bestände bestätigt",
   "account.holdings_reconciled": "Bestände abgestimmt",
@@ -771,6 +772,7 @@ export const MOVEMENT_KIND: Record<MovementKind, string> = {
   distribution: "Ausschüttung",
   capital_income_tax: "Kapitalertragsteuer",
   uncategorized: "Unbekannt",
+  balance_correction: "Korrektur (von Hand)",
 };
 
 /** The Haushalt screen's groups (phase 6 §13, mockup 10; rules/household/taxonomy.py). */
