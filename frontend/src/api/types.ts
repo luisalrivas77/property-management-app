@@ -3371,7 +3371,7 @@ export interface components {
             /** Key */
             key: string;
             /** Entity Type */
-            entity_type: components["schemas"]["EntityType"] | ("acquisition_cost" | "price_split" | "rent_schedule" | "typing" | "link" | "ownership" | "deposit_received" | "tax_input" | "return_input" | "income_input");
+            entity_type: components["schemas"]["EntityType"] | ("acquisition_cost" | "price_split" | "rent_schedule" | "typing" | "link" | "ownership" | "deposit_received" | "tax_input" | "return_input" | "income_input" | "asset_movement" | "holding_statement");
             /**
              * Mode
              * @enum {string}
@@ -4527,7 +4527,7 @@ export interface components {
             version: number;
             source: components["schemas"]["ExtractionSource"];
             /** Fields */
-            fields: components["schemas"]["ManualDocumentFields"] | components["schemas"]["PurchaseContractExtraction"] | components["schemas"]["LoanContractExtraction"] | components["schemas"]["LeaseExtraction"] | components["schemas"]["HandoverProtocolExtraction"] | components["schemas"]["DepositRecordExtraction"] | components["schemas"]["InvoiceExtraction"] | components["schemas"]["BescheidExtraction"] | components["schemas"]["GrundsteuerbescheidExtraction"] | components["schemas"]["WirtschaftsplanExtraction"] | components["schemas"]["HausgeldabrechnungExtraction"] | components["schemas"]["ZinsbescheinigungExtraction"] | components["schemas"]["StatementExtraction"] | components["schemas"]["WageCertificateExtraction"] | components["schemas"]["PayslipExtraction"] | components["schemas"]["IncomeTaxAssessmentExtraction"] | components["schemas"]["GeneralExtraction"] | components["schemas"]["ManagementContractExtraction"] | components["schemas"]["PaymentProofExtraction"] | components["schemas"]["TradeConfirmationExtraction"] | components["schemas"]["DistributionNoteExtraction"] | components["schemas"]["DepotReportExtraction"];
+            fields: components["schemas"]["ManualDocumentFields"] | components["schemas"]["PurchaseContractExtraction"] | components["schemas"]["LoanContractExtraction"] | components["schemas"]["LeaseExtraction"] | components["schemas"]["HandoverProtocolExtraction"] | components["schemas"]["DepositRecordExtraction"] | components["schemas"]["InvoiceExtraction"] | components["schemas"]["BescheidExtraction"] | components["schemas"]["GrundsteuerbescheidExtraction"] | components["schemas"]["WirtschaftsplanExtraction"] | components["schemas"]["HausgeldabrechnungExtraction"] | components["schemas"]["ZinsbescheinigungExtraction"] | components["schemas"]["StatementExtraction"] | components["schemas"]["WageCertificateExtraction"] | components["schemas"]["PayslipExtraction"] | components["schemas"]["IncomeTaxAssessmentExtraction"] | components["schemas"]["GeneralExtraction"] | components["schemas"]["ManagementContractExtraction"] | components["schemas"]["PaymentProofExtraction"] | components["schemas"]["TradeConfirmationExtraction"] | components["schemas"]["DistributionNoteExtraction"] | components["schemas"]["DepotReportExtraction"] | components["schemas"]["SecuritiesTransferExtraction"];
             /**
              * Schema Version
              * @default 1
@@ -7338,7 +7338,7 @@ export interface components {
             /** Key */
             key: string;
             /** Entity Type */
-            entity_type: components["schemas"]["EntityType"] | ("acquisition_cost" | "price_split" | "rent_schedule" | "typing" | "link" | "ownership" | "deposit_received" | "tax_input" | "return_input" | "income_input");
+            entity_type: components["schemas"]["EntityType"] | ("acquisition_cost" | "price_split" | "rent_schedule" | "typing" | "link" | "ownership" | "deposit_received" | "tax_input" | "return_input" | "income_input" | "asset_movement" | "holding_statement");
             /**
              * Mode
              * @enum {string}
@@ -8346,6 +8346,26 @@ export interface components {
             payment: string;
             /** Closing Balance */
             closing_balance: string;
+        };
+        /**
+         * SecuritiesTransferExtraction
+         * @description Einbuchung / Ausbuchung von Wertpapieren (securities_transfer, step 4, §14.1): units
+         *     moved into or out of the depot without a trade. Both sides of one transfer carry the same
+         *     reference; the other depot named in the Hinweistext is scrubbed and never asked.
+         */
+        SecuritiesTransferExtraction: {
+            /** @description a short German title, two to six words naming what the document is */
+            title?: components["schemas"]["ExtractedValue"];
+            /** @description the date the document carries */
+            document_date?: components["schemas"]["ExtractedValue"];
+            /** @description Einbuchung or Ausbuchung, as printed in the heading */
+            direction?: components["schemas"]["ExtractedValue"];
+            /** @description the day the units were moved (Handelsdatum, else the document's date) */
+            transfer_date?: components["schemas"]["ExtractedValue"];
+            /** @description the document's reference number (Referenz-Nr.); never a depot number */
+            reference?: components["schemas"]["ExtractedValue"];
+            /** @description every security the document moves, one item per security, each written `ISIN | name | units`, as printed (the units without ST); never the WKN or a depot number */
+            positions?: components["schemas"]["ExtractedValue"];
         };
         /** ServicePeriod */
         ServicePeriod: {

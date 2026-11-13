@@ -9591,7 +9591,9 @@
                   "deposit_received",
                   "tax_input",
                   "return_input",
-                  "income_input"
+                  "income_input",
+                  "asset_movement",
+                  "holding_statement"
                 ]
               }
             ],
@@ -12244,6 +12246,9 @@
               },
               {
                 "$ref": "#/components/schemas/DepotReportExtraction"
+              },
+              {
+                "$ref": "#/components/schemas/SecuritiesTransferExtraction"
               }
             ],
             "title": "Fields"
@@ -19086,7 +19091,9 @@
                   "deposit_received",
                   "tax_input",
                   "return_input",
-                  "income_input"
+                  "income_input",
+                  "asset_movement",
+                  "holding_statement"
                 ]
               }
             ],
@@ -21964,6 +21971,44 @@
         ],
         "title": "ScheduleEntry",
         "description": "interest = opening_balance * (nominal * (interest_days - follow_up_days)\n+ follow_up * follow_up_days) / 360, rounded half-up (principle 2: traceable)."
+      },
+      "SecuritiesTransferExtraction": {
+        "properties": {
+          "title": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "a short German title, two to six words naming what the document is",
+            "value_kind": "text"
+          },
+          "document_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the date the document carries",
+            "value_kind": "date"
+          },
+          "direction": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "Einbuchung or Ausbuchung, as printed in the heading",
+            "value_kind": "text"
+          },
+          "transfer_date": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the day the units were moved (Handelsdatum, else the document's date)",
+            "value_kind": "date"
+          },
+          "reference": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the document's reference number (Referenz-Nr.); never a depot number",
+            "value_kind": "text"
+          },
+          "positions": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "every security the document moves, one item per security, each written `ISIN | name | units`, as printed (the units without ST); never the WKN or a depot number",
+            "value_kind": "text_list"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SecuritiesTransferExtraction",
+        "description": "Einbuchung / Ausbuchung von Wertpapieren (securities_transfer, step 4, §14.1): units\nmoved into or out of the depot without a trade. Both sides of one transfer carry the same\nreference; the other depot named in the Hinweistext is scrubbed and never asked."
       },
       "ServicePeriod": {
         "properties": {

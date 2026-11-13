@@ -212,6 +212,8 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "depot.account_required": "Bitte als Konto ein Depot wählen; Wertpapiere werden nur auf einem Depot gebucht.",
   "depot.movement_exists":
     "Dieser Vorgang (gleiche Referenz) ist auf dem Depot schon gebucht. Das Dokument wurde vermutlich zweimal hochgeladen; diesen Eintrag überspringen.",
+  "depot.holding_exists":
+    "Dieser Bericht ist für dieses Depot und diesen Stichtag schon übernommen. Diesen Eintrag überspringen.",
   "depot.holdings_mismatch":
     "Der Depotbericht nennt andere Stückzahlen, als die gebuchten Abrechnungen ergeben. Bitte die fehlenden Wertpapierabrechnungen hochladen.",
 };

@@ -338,3 +338,26 @@ def test_a_fund_held_but_missing_from_the_report_is_a_position_of_0_and_a_mismat
     assert event[0] is EventType.ACCOUNT_HOLDINGS_MISMATCH
     assert event[1]["assets_mismatched"] == 2
     assert len(event[1]["holding_statement_ids"]) == 2
+
+
+def test_a_report_applied_a_second_time_is_refused(
+    run,
+    read,
+    fresh_workspaces,
+    blob_store,
+    job,
+    enqueued,  # noqa: F811
+):
+    ws, _ = fresh_workspaces
+    _account(run, ws)
+    row = f"{ISIN_WORLD} | Beispiel Welt ETF | 2,0000 | 50,00 | 100,00 | EUR"
+    _apply(
+        run,
+        ws,
+        _read(run, job, ws, blob_store, enqueued, DocumentSubtype.DEPOT_REPORT, _report(row)),
+    )
+    again = _read(run, job, ws, blob_store, enqueued, DocumentSubtype.DEPOT_REPORT, _report(row))
+    with pytest.raises(RuleError) as refused:
+        _apply(run, ws, again)
+    assert refused.value.code == depot.DEPOT_HOLDING_EXISTS
+    assert len(_rows(read, ws, holding_table)) == 1

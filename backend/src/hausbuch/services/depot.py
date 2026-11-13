@@ -52,6 +52,7 @@ from .events import append_event
 # Codes of this service (frontend/src/api/errors.ts has their German text).
 DEPOT_ACCOUNT_REQUIRED = "depot.account_required"  # the account picked is no depot
 DEPOT_MOVEMENT_EXISTS = "depot.movement_exists"  # the same reference is booked already
+DEPOT_HOLDING_EXISTS = "depot.holding_exists"  # a report of that date is applied already
 
 # The cash line of a trade or a distribution is booked on the Valuta, a few bank days after
 # the trade or the payment date the document names.
@@ -279,9 +280,25 @@ def transfer_pair(conn: Connection, movement_id: UUID) -> UUID | None:
 def record_holding(ctx: CommandContext, values: DepotHoldingValues, document_id: UUID) -> UUID:
     """One position of a report, reconciled against the account's confirmed movements up to
     its date (rules.depot.reconcile_holdings); a reconciled position with units stores the
-    report's price (value ÷ units) as price(source = statement)."""
+    report's price (value ÷ units) as price(source = statement). Refused when a report's
+    position of the asset on that account and date is stored already (the report applied
+    twice, after „Neu auslesen“ or from a second copy): holdings and prices are append-only,
+    so a second row would double the event's count and the day's price."""
     _require_depot(ctx.conn, values.account_id)
     asset_id = asset_for_isin(ctx, values.isin, values.name)
+    h = holding_table.c
+    twin = ctx.conn.execute(
+        select(h.id).where(
+            h.account_id == values.account_id,
+            h.asset_id == asset_id,
+            h.as_of == values.as_of,
+            h.source == HoldingSource.REPORT.value,
+        )
+    ).first()
+    if twin is not None:
+        raise RuleViolationError(
+            [DEPOT_HOLDING_EXISTS], "this report's position is stored on the account already"
+        )
     [check] = rules.reconcile_holdings(
         values.as_of,
         {asset_id: values.declared_units},
@@ -442,6 +459,7 @@ __all__ = [
     "CASH_LINK_DAYS",
     "DEPOT_ACCOUNT_REQUIRED",
     "DEPOT_HOLDINGS_MISMATCH",
+    "DEPOT_HOLDING_EXISTS",
     "DEPOT_MOVEMENT_EXISTS",
     "DepotHoldingValues",
     "DepotMovementValues",
