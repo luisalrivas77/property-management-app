@@ -162,6 +162,11 @@ def import_statement(
                 tax_year=last.year if last.year >= TAX_YEAR_MIN else None,
             ),
         )
+        # A card statement uploaded through Dokumente first failed its read with
+        # proposal.bank_file_not_read; imported now, that „couldn't read this“ card is stale.
+        from .proposals import supersede_bank_file_refusals  # proposals imports matching
+
+        supersede_bank_file_refusals(ctx, document.id)
 
     ibans = [_protect(line.counterparty_iban, iban_key) for line in statement.lines]
     hashes = _line_hashes(account_id, statement, iban_key)

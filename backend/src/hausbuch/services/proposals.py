@@ -363,6 +363,27 @@ def rerun_proposal(
     return request_read(ctx, document_id, contains_tenant_data=contains_tenant_data)
 
 
+def supersede_bank_file_refusals(ctx: CommandContext, document_id: UUID) -> int:
+    """Phase 6 step 2b (review): a card statement uploaded through Dokumente fails its read
+    with proposal.bank_file_not_read („couldn't read this“, telling the person to import it on
+    the card's page). Once it is imported as a statement, those failed proposals are
+    superseded (proposal.superseded), so the stale card leaves Zu prüfen; a failure with any
+    other code stays. The number superseded."""
+    failed = ctx.conn.execute(
+        select(proposal_table)
+        .where(proposal_table.c.document_id == document_id)
+        .where(proposal_table.c.status == ProposalStatus.FAILED.value)
+        .where(proposal_table.c.error_code == PROPOSAL_BANK_FILE_NOT_READ)
+        .order_by(proposal_table.c.created_at, proposal_table.c.id)
+        .with_for_update()
+    ).all()
+    for row in failed:
+        old = _to_proposal(row)
+        _set(ctx, old.id, status=ProposalStatus.SUPERSEDED, error_code=None)
+        append_event(ctx, EventType.PROPOSAL_SUPERSEDED, old.id, _noted(old))
+    return len(failed)
+
+
 # --- A payment proof linked after its reading (phase 3 D149) ------------------------------
 
 

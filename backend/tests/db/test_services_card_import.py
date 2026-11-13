@@ -14,7 +14,7 @@ from decimal import Decimal
 
 import pytest
 from db.db_support import TEST_IBAN_KEY
-from sqlalchemy import select, text
+from sqlalchemy import insert, select, text
 from test_card_pdf import BUILT, CARD, case_bytes
 from test_jobs_document_read import _settings as _test_settings
 
@@ -22,6 +22,7 @@ from hausbuch.ai.fake import FakeModelClient
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import ai_call as ai_call_table
 from hausbuch.db.tables import event as event_table
+from hausbuch.db.tables import proposal as proposal_table
 from hausbuch.jobs import enqueue
 from hausbuch.jobs.document_read import JobDeps, run_document_read
 from hausbuch.jobs.matching import run_match_transaction
@@ -33,6 +34,7 @@ from hausbuch.schemas.allocation import (
     RuleMatcher,
     SplitMethod,
 )
+from hausbuch.schemas.api import InboxItemKind
 from hausbuch.schemas.bank import AccountCreate, ConfirmPaymentIbanBody, TransactionAllocationStatus
 from hausbuch.schemas.enums import (
     AccountKind,
@@ -43,7 +45,7 @@ from hausbuch.schemas.enums import (
     ProposalStatus,
 )
 from hausbuch.schemas.events import EventType
-from hausbuch.services import documents, proposals, rules_learned, statements
+from hausbuch.services import documents, proposals, review, rules_learned, statements
 from hausbuch.services.accounts import (
     confirm_payment_iban,
     create_account,
@@ -369,12 +371,9 @@ def test_a_card_statement_is_never_sent_to_the_model(run, blob_store, fresh_work
     assert caught.value.code == proposals.PROPOSAL_BANK_FILE_NOT_READ
 
 
-def test_a_card_statement_uploaded_as_a_document_is_never_sent_to_the_model(
-    app_engine, blob_store, fresh_workspaces, tmp_path
-):
-    """Review F1: POST /documents with ai on (Dokumente, the capture) has no import yet, so the
-    request is accepted; the job recognises the card layout and stops before any model call."""
-    ws, _ = fresh_workspaces
+def _read_as_a_document(app_engine, blob_store, ws, tmp_path):
+    """The first card statement uploaded through Dokumente with ai on, and its read run: the
+    document, its proposal and the fake model client."""
     actor = Actor(ActorType.USER, "user:test")
     with workspace_transaction(app_engine, ws) as conn:
         ctx = new_command(conn, ws, actor, now=T0)
@@ -402,6 +401,16 @@ def test_a_card_statement_uploaded_as_a_document_is_never_sent_to_the_model(
     finally:
         with app_engine.begin() as conn:
             conn.execute(text("DELETE FROM procrastinate_jobs WHERE task_name = 'document_read'"))
+    return doc, queued, client
+
+
+def test_a_card_statement_uploaded_as_a_document_is_never_sent_to_the_model(
+    app_engine, blob_store, fresh_workspaces, tmp_path
+):
+    """Review F1: POST /documents with ai on (Dokumente, the capture) has no import yet, so the
+    request is accepted; the job recognises the card layout and stops before any model call."""
+    ws, _ = fresh_workspaces
+    _, queued, client = _read_as_a_document(app_engine, blob_store, ws, tmp_path)
     assert client.requests == []
     with workspace_transaction(app_engine, ws) as conn:
         failed = proposals.get_proposal(conn, queued.id)
@@ -409,3 +418,46 @@ def test_a_card_statement_uploaded_as_a_document_is_never_sent_to_the_model(
     assert failed.status is ProposalStatus.FAILED
     assert failed.error_code == proposals.PROPOSAL_BANK_FILE_NOT_READ
     assert calls == []
+
+
+def test_importing_it_on_the_card_ends_the_couldnt_read_card(
+    run, app_engine, blob_store, fresh_workspaces, tmp_path, hook_calls
+):
+    """Review of step 2b: the person follows the failed card's text and imports the file on
+    the card's page; the „couldn't read this“ card then leaves Zu prüfen (its proposal
+    superseded, proposal.superseded). A failure with another code on the same file stays."""
+    ws, _ = fresh_workspaces
+    doc, queued, _ = _read_as_a_document(app_engine, blob_store, ws, tmp_path)
+    with workspace_transaction(app_engine, ws) as conn:
+        other = conn.execute(
+            insert(proposal_table)
+            .values(
+                workspace_id=ws,
+                document_id=doc.id,
+                status=ProposalStatus.FAILED.value,
+                error_code="ai.disabled",
+                created_at=T0,
+                updated_at=T0,
+            )
+            .returning(proposal_table.c.id)
+        ).scalar_one()
+        before = [i.kind for i in review.inbox(conn)]
+    assert before.count(InboxItemKind.READ_FAILED) == 2
+    card = _card(run, ws)
+    imported = _import(run, blob_store, ws, card.id, _first())
+    assert imported.document_id == doc.id
+    with workspace_transaction(app_engine, ws) as conn:
+        assert proposals.get_proposal(conn, queued.id).status is ProposalStatus.SUPERSEDED
+        assert proposals.get_proposal(conn, other).status is ProposalStatus.FAILED
+        after = [i.kind for i in review.inbox(conn)]
+        superseded = (
+            conn.execute(
+                select(event_table.c.entity_id).where(
+                    event_table.c.type == EventType.PROPOSAL_SUPERSEDED.value
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert after.count(InboxItemKind.READ_FAILED) == 1
+    assert superseded == [queued.id]
